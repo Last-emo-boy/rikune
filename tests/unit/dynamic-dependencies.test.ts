@@ -60,4 +60,31 @@ describe('dynamic.dependencies tool', () => {
       expect(data.recommendations.join(' ')).toContain('pip uninstall speakeasy')
     }
   })
+
+  test('should degrade to bootstrap_required when the worker probe fails', async () => {
+    const handler = createDynamicDependenciesHandler(workspaceManager, database, {
+      callWorker: async () => {
+        throw new Error('Python worker exited with code 1')
+      },
+    })
+
+    const result = await handler({})
+
+    expect(result.ok).toBe(true)
+    const data = result.data as {
+      status: string
+      components: {
+        worker?: {
+          available?: boolean
+          error?: string
+        }
+      }
+      recommendations: string[]
+    }
+
+    expect(data.status).toBe('bootstrap_required')
+    expect(data.components.worker?.available).toBe(false)
+    expect(data.components.worker?.error).toContain('Python worker exited with code 1')
+    expect(data.recommendations.join(' ')).toContain('pip install -r requirements.txt')
+  })
 })

@@ -59,6 +59,14 @@
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Last-emo-boy/windows-exe-decompiler-mcp-server.git"
+  },
+  "homepage": "https://github.com/Last-emo-boy/windows-exe-decompiler-mcp-server",
+  "bugs": {
+    "url": "https://github.com/Last-emo-boy/windows-exe-decompiler-mcp-server/issues"
+  },
   "publishConfig": {
     "access": "public"
   },

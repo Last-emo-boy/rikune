@@ -80,6 +80,56 @@ interface WorkerResponse {
   metrics: Record<string, unknown>
 }
 
+interface DynamicDependenciesDependencies {
+  callWorker?: (request: WorkerRequest) => Promise<WorkerResponse>
+}
+
+function buildBootstrapFallback(startTime: number, errorMessage: string): WorkerResult {
+  return {
+    ok: true,
+    data: {
+      status: 'bootstrap_required',
+      available_components: [],
+      components: {
+        speakeasy: {
+          available: false,
+          version: null,
+          distribution: null,
+          api_available: false,
+          warnings: [],
+          error: errorMessage,
+        },
+        frida: {
+          available: false,
+          version: null,
+          error: errorMessage,
+        },
+        psutil: {
+          available: false,
+          version: null,
+          error: errorMessage,
+        },
+        worker: {
+          available: false,
+          error: errorMessage,
+        },
+      },
+      recommendations: [
+        'Install baseline Python dependencies first: pip install -r requirements.txt',
+        'Install FLARE Speakeasy emulator for PE user-mode emulation: pip install speakeasy-emulator',
+        'Install frida for runtime API tracing: pip install frida',
+        'Install psutil for process telemetry collection: pip install psutil',
+      ],
+      checked_at: new Date().toISOString(),
+    },
+    warnings: [`dynamic.dependencies probe degraded: ${errorMessage}`],
+    metrics: {
+      elapsed_ms: Date.now() - startTime,
+      tool: TOOL_NAME,
+    },
+  }
+}
+
 async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse> {
   return new Promise((resolve, reject) => {
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
@@ -134,10 +184,12 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
 
 export function createDynamicDependenciesHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager
+  database: DatabaseManager,
+  dependencies?: DynamicDependenciesDependencies
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
+    const runWorker = dependencies?.callWorker || callStaticWorker
 
     try {
       const input = DynamicDependenciesInputSchema.parse(args)
@@ -185,17 +237,18 @@ export function createDynamicDependenciesHandler(
         },
       }
 
-      const workerResponse = await callStaticWorker(workerRequest)
+      let workerResponse: WorkerResponse
+      try {
+        workerResponse = await runWorker(workerRequest)
+      } catch (error) {
+        return buildBootstrapFallback(startTime, (error as Error).message)
+      }
+
       if (!workerResponse.ok) {
-        return {
-          ok: false,
-          errors: workerResponse.errors,
-          warnings: workerResponse.warnings,
-          metrics: {
-            elapsed_ms: Date.now() - startTime,
-            tool: TOOL_NAME,
-          },
-        }
+        return buildBootstrapFallback(
+          startTime,
+          workerResponse.errors.join('; ') || 'dynamic dependency probe failed'
+        )
       }
 
       return {
