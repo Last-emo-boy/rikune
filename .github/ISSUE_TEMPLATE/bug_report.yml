@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a defect in analysis, reconstruction, MCP routing, or packaging.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the problem and the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Include the MCP tool call, prompt, file path, or workflow that triggered the issue.
+      placeholder: |
+        Tool: workflow.reconstruct
+        Parameters: ...
+        Sample type: EXE / DLL / .NET / packed
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Node, Python, Ghidra path, and client details if relevant.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or artifacts
+      description: Paste the relevant error, normalized_error, or artifact/report paths.

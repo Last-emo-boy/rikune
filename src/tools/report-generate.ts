@@ -1,0 +1,626 @@
+/**
+ * report.generate MCP Tool
+ * 
+ * Requirements: 24.1, 24.3, 24.5, 24.6
+ * 
+ * Generates comprehensive Markdown analysis report
+ */
+
+import { z } from 'zod';
+import fs from 'fs';
+import path from 'path';
+import { createHash, randomUUID } from 'crypto';
+import type { ToolDefinition, ToolHandler, ToolResult } from '../types.js';
+import type { DatabaseManager } from '../database.js';
+import type { WorkspaceManager } from '../workspace-manager.js';
+import { logger } from '../logger.js';
+import { isGhidraReadyStatus } from '../ghidra-analysis-status.js';
+import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../dynamic-trace.js';
+import { loadSemanticFunctionExplanationIndex } from '../semantic-name-suggestion-artifacts.js';
+import { buildReportConfidenceSemantics } from '../confidence-semantics.js';
+import {
+  buildRuntimeArtifactProvenance,
+  buildSemanticArtifactProvenance,
+} from '../analysis-provenance.js';
+import {
+  buildArtifactSelectionDiff,
+} from '../selection-diff.js';
+
+/**
+ * Input schema for report.generate tool
+ */
+export const reportGenerateInputSchema = z.object({
+  sample_id: z.string().describe('Sample identifier (sha256:<hex>)'),
+  format: z.enum(['markdown', 'json', 'html']).optional().describe('Report format (default: markdown)'),
+  include_sections: z.array(z.string()).optional().describe('Sections to include (default: all)'),
+  evidence_scope: z
+    .enum(['all', 'latest', 'session'])
+    .optional()
+    .default('all')
+    .describe('Runtime evidence scope: all artifacts, latest artifact window, or a specific session selector'),
+  evidence_session_tag: z
+    .string()
+    .optional()
+    .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
+  semantic_scope: z
+    .enum(['all', 'latest', 'session'])
+    .optional()
+    .default('all')
+    .describe('Semantic explanation artifact scope: all artifacts, latest explanation window, or a specific semantic review session'),
+  semantic_session_tag: z
+    .string()
+    .optional()
+    .describe('Optional semantic review session selector used when semantic_scope=session or to narrow all/latest results'),
+  compare_evidence_scope: z
+    .enum(['all', 'latest', 'session'])
+    .optional()
+    .describe('Optional baseline runtime evidence scope used to compare this report against another runtime artifact selection'),
+  compare_evidence_session_tag: z
+    .string()
+    .optional()
+    .describe('Optional baseline runtime evidence session selector used when compare_evidence_scope=session'),
+  compare_semantic_scope: z
+    .enum(['all', 'latest', 'session'])
+    .optional()
+    .describe('Optional baseline semantic explanation scope used to compare this report against another semantic artifact selection'),
+  compare_semantic_session_tag: z
+    .string()
+    .optional()
+    .describe('Optional baseline semantic explanation session selector used when compare_semantic_scope=session'),
+}).refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
+  message: 'evidence_session_tag is required when evidence_scope=session',
+  path: ['evidence_session_tag'],
+}).refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
+  message: 'semantic_session_tag is required when semantic_scope=session',
+  path: ['semantic_session_tag'],
+}).refine(
+  (value) =>
+    value.compare_evidence_scope !== 'session' || Boolean(value.compare_evidence_session_tag?.trim()),
+  {
+    message: 'compare_evidence_session_tag is required when compare_evidence_scope=session',
+    path: ['compare_evidence_session_tag'],
+  }
+).refine(
+  (value) =>
+    value.compare_semantic_scope !== 'session' || Boolean(value.compare_semantic_session_tag?.trim()),
+  {
+    message: 'compare_semantic_session_tag is required when compare_semantic_scope=session',
+    path: ['compare_semantic_session_tag'],
+  }
+);
+
+export type ReportGenerateInput = z.infer<typeof reportGenerateInputSchema>;
+
+/**
+ * Tool definition for report.generate
+ */
+export const reportGenerateToolDefinition: ToolDefinition = {
+  name: 'report.generate',
+  description: 'Generate comprehensive analysis report aggregating all analysis results. Supports Markdown, JSON, and HTML formats.',
+  inputSchema: reportGenerateInputSchema
+};
+
+/**
+ * Generate Markdown report
+ */
+function generateMarkdownReport(
+  sample: any,
+  analyses: any[],
+  functions: any[],
+  dynamicEvidence: DynamicTraceSummary | null,
+  functionExplanations: Array<{
+    address: string | null;
+    function: string | null;
+    behavior: string;
+    summary: string;
+    confidence: number;
+    rewrite_guidance: string[];
+    source: string | null;
+  }>,
+  evidenceScope: 'all' | 'latest' | 'session',
+  evidenceSessionTag?: string,
+  semanticScope: 'all' | 'latest' | 'session' = 'all',
+  semanticSessionTag?: string,
+  provenance?: {
+    runtime: ReturnType<typeof buildRuntimeArtifactProvenance>;
+    semantic_explanations: ReturnType<typeof buildSemanticArtifactProvenance>;
+  },
+  selectionDiffs?: {
+    runtime?: ReturnType<typeof buildArtifactSelectionDiff>;
+    semantic_explanations?: ReturnType<typeof buildArtifactSelectionDiff>;
+  }
+): string {
+  const lines: string[] = [];
+
+  // Header
+  lines.push(`# Analysis Report: ${sample.sha256}`);
+  lines.push('');
+  lines.push(`**Generated:** ${new Date().toISOString()}`);
+  lines.push('');
+
+  // Sample Information
+  lines.push('## Sample Information');
+  lines.push('');
+  lines.push(`- **SHA256:** ${sample.sha256}`);
+  lines.push(`- **MD5:** ${sample.md5}`);
+  lines.push(`- **Size:** ${sample.size} bytes`);
+  lines.push(`- **File Type:** ${sample.file_type || 'Unknown'}`);
+  lines.push(`- **Ingested:** ${sample.created_at}`);
+  lines.push('');
+
+  // Analysis Summary
+  lines.push('## Analysis Summary');
+  lines.push('');
+  lines.push(`- **Total Analyses:** ${analyses.length}`);
+  lines.push(`- **Completed:** ${analyses.filter(a => isGhidraReadyStatus(a.status)).length}`);
+  lines.push(`- **Failed:** ${analyses.filter(a => a.status === 'failed').length}`);
+  lines.push('');
+
+  // Analyses Details
+  for (const analysis of analyses) {
+    lines.push(`### ${analysis.stage} (${analysis.backend})`);
+    lines.push('');
+    lines.push(`- **Status:** ${analysis.status}`);
+    lines.push(`- **Started:** ${analysis.started_at || 'N/A'}`);
+    lines.push(`- **Finished:** ${analysis.finished_at || 'N/A'}`);
+
+    if (analysis.metrics_json) {
+      try {
+        const metrics = JSON.parse(analysis.metrics_json);
+        lines.push(`- **Duration:** ${metrics.elapsed_ms}ms`);
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+
+    if (analysis.output_json) {
+      try {
+        const output = JSON.parse(analysis.output_json);
+        if (output.function_count !== undefined) {
+          lines.push(`- **Functions Extracted:** ${output.function_count}`);
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+
+    lines.push('');
+  }
+
+  // Function Statistics
+  if (functions.length > 0) {
+    lines.push('## Function Statistics');
+    lines.push('');
+    lines.push(`- **Total Functions:** ${functions.length}`);
+
+    const avgSize = functions.reduce((sum, f) => sum + (f.size || 0), 0) / functions.length;
+    lines.push(`- **Average Size:** ${Math.round(avgSize)} bytes`);
+
+    const entryPoints = functions.filter(f => f.is_entry_point === 1).length;
+    lines.push(`- **Entry Points:** ${entryPoints}`);
+
+    const exported = functions.filter(f => f.is_exported === 1).length;
+    lines.push(`- **Exported Functions:** ${exported}`);
+
+    lines.push('');
+
+    // Top Functions
+    const topFunctions = functions
+      .filter(f => f.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+
+    if (topFunctions.length > 0) {
+      lines.push('### Top 10 Functions by Interest Score');
+      lines.push('');
+      lines.push('| Rank | Address | Name | Score | Tags |');
+      lines.push('|------|---------|------|-------|------|');
+
+      topFunctions.forEach((func, index) => {
+        const tags = func.tags ? JSON.parse(func.tags).join(', ') : '';
+        lines.push(`| ${index + 1} | ${func.address} | ${func.name || 'unknown'} | ${func.score.toFixed(2)} | ${tags} |`);
+      });
+
+      lines.push('');
+    }
+  }
+
+  lines.push('## Runtime Evidence');
+  lines.push('');
+  lines.push(`- **Evidence Scope:** ${evidenceScope}`);
+  lines.push(`- **Session Selector:** ${evidenceSessionTag || 'N/A'}`);
+
+  if (dynamicEvidence) {
+    lines.push(`- **Artifacts Considered:** ${dynamicEvidence.artifact_count}`);
+    lines.push(`- **Executed Trace Present:** ${dynamicEvidence.executed ? 'Yes' : 'No'}`);
+    lines.push(`- **Latest Imported At:** ${dynamicEvidence.latest_imported_at || 'N/A'}`);
+    lines.push(`- **Scope Note:** ${dynamicEvidence.scope_note || 'N/A'}`);
+    lines.push(`- **High Signal APIs:** ${dynamicEvidence.high_signal_apis.join(', ') || 'none'}`);
+    lines.push(`- **Stages:** ${dynamicEvidence.stages.join(', ') || 'none'}`);
+    lines.push(`- **Source Formats:** ${(dynamicEvidence.source_formats || []).join(', ') || 'none'}`);
+    lines.push(`- **Source Names:** ${(dynamicEvidence.source_names || []).join(', ') || 'none'}`);
+
+    if ((dynamicEvidence.confidence_layers || []).length > 0) {
+      lines.push('');
+      lines.push('### Runtime Evidence Lineage');
+      lines.push('');
+      for (const layer of dynamicEvidence.confidence_layers || []) {
+        lines.push(
+          `- **${layer.layer}:** artifacts=${layer.artifact_count}, band=${layer.confidence_band}, latest=${layer.latest_imported_at || 'N/A'}, sources=${layer.source_names.join(', ') || 'none'}`
+        );
+      }
+      lines.push('');
+    } else {
+      lines.push('');
+    }
+  } else {
+    lines.push('- **Artifacts Considered:** 0');
+    lines.push('- **Scope Note:** No runtime evidence matched the selected scope.');
+    lines.push('');
+  }
+
+  if (provenance) {
+    lines.push('## Analysis Provenance');
+    lines.push('');
+    lines.push(`- **Runtime Artifact IDs:** ${provenance.runtime.artifact_ids.join(', ') || 'none'}`);
+    lines.push(`- **Runtime Session Tags:** ${provenance.runtime.session_tags.join(', ') || 'none'}`);
+    lines.push(`- **Runtime Latest Artifact At:** ${provenance.runtime.latest_artifact_at || 'N/A'}`);
+    lines.push(`- **Semantic Artifact IDs:** ${provenance.semantic_explanations.artifact_ids.join(', ') || 'none'}`);
+    lines.push(`- **Semantic Session Tags:** ${provenance.semantic_explanations.session_tags.join(', ') || 'none'}`);
+    lines.push(`- **Semantic Latest Artifact At:** ${provenance.semantic_explanations.latest_artifact_at || 'N/A'}`);
+    lines.push('');
+  }
+
+  if (selectionDiffs && (selectionDiffs.runtime || selectionDiffs.semantic_explanations)) {
+    lines.push('## Selection Diffs');
+    lines.push('');
+    if (selectionDiffs.runtime) {
+      lines.push(`- **Runtime Diff:** ${selectionDiffs.runtime.summary}`);
+    }
+    if (selectionDiffs.semantic_explanations) {
+      lines.push(`- **Semantic Diff:** ${selectionDiffs.semantic_explanations.summary}`);
+    }
+    lines.push('');
+  }
+
+  if (functionExplanations.length > 0) {
+    lines.push('## Function Explanations');
+    lines.push('');
+    lines.push(`- **Semantic Scope:** ${semanticScope}`);
+    lines.push(`- **Semantic Session Selector:** ${semanticSessionTag || 'N/A'}`);
+    lines.push('');
+    for (const explanation of functionExplanations) {
+      lines.push(
+        `- **${explanation.behavior}:** ${explanation.summary} (confidence=${explanation.confidence.toFixed(2)}, target=${explanation.function || explanation.address || 'unknown'}, source=${explanation.source || 'unknown'})`
+      );
+      if (explanation.rewrite_guidance.length > 0) {
+        lines.push(`  rewrite_guidance: ${explanation.rewrite_guidance.join(' | ')}`);
+      }
+    }
+    lines.push('');
+  }
+
+  const confidenceSemantics = buildReportConfidenceSemantics({
+    score: dynamicEvidence?.executed ? 0.72 : dynamicEvidence ? 0.58 : 0.42,
+    evidenceScope,
+    runtimeLayers:
+      dynamicEvidence?.confidence_layers?.map((item) => item.layer) || ['static_only'],
+    executedTracePresent: dynamicEvidence?.executed || false,
+  });
+  lines.push('## Confidence Semantics');
+  lines.push('');
+  lines.push(`- **Score Kind:** ${confidenceSemantics.score_kind}`);
+  lines.push(`- **Band:** ${confidenceSemantics.band}`);
+  lines.push(`- **Calibrated Probability:** ${confidenceSemantics.calibrated ? 'Yes' : 'No'}`);
+  lines.push(`- **Meaning:** ${confidenceSemantics.meaning}`);
+  lines.push(`- **Compare Within:** ${confidenceSemantics.compare_within}`);
+  lines.push(`- **Caution:** ${confidenceSemantics.caution}`);
+  lines.push(`- **Drivers:** ${confidenceSemantics.drivers.join(', ') || 'none'}`);
+  lines.push('');
+
+  // Footer
+  lines.push('---');
+  lines.push('');
+  lines.push('*Report generated by Windows EXE Decompiler MCP Server*');
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+/**
+ * Create handler for report.generate tool
+ */
+export function createReportGenerateHandler(
+  workspaceManager: WorkspaceManager,
+  database: DatabaseManager
+): ToolHandler {
+  return async (args: unknown): Promise<ToolResult> => {
+    try {
+      const input = reportGenerateInputSchema.parse(args);
+
+      logger.info({
+        sample_id: input.sample_id,
+        format: input.format,
+        evidence_scope: input.evidence_scope,
+        evidence_session_tag: input.evidence_session_tag || null,
+      }, 'report.generate tool called');
+
+      // Check if sample exists
+      const sample = database.findSample(input.sample_id);
+      if (!sample) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              ok: false,
+              errors: [`Sample not found: ${input.sample_id}`]
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+
+      // Get all analyses for this sample
+      const analyses = database.findAnalysesBySample(input.sample_id);
+
+      // Get all functions for this sample
+      const functions = database.findFunctions(input.sample_id);
+
+      const dynamicEvidence = await loadDynamicTraceEvidence(
+        workspaceManager,
+        database,
+        input.sample_id,
+        {
+          evidenceScope: input.evidence_scope,
+          sessionTag: input.evidence_session_tag,
+        }
+      );
+      const functionExplanationIndex = await loadSemanticFunctionExplanationIndex(
+        workspaceManager,
+        database,
+        input.sample_id,
+        {
+          scope: input.semantic_scope,
+          sessionTag: input.semantic_session_tag,
+        }
+      );
+      const functionExplanations = Array.from(functionExplanationIndex.byAddress.values())
+        .sort((a, b) => {
+          if (b.confidence !== a.confidence) {
+            return b.confidence - a.confidence;
+          }
+          return (b.created_at || '').localeCompare(a.created_at || '');
+        })
+        .slice(0, 6)
+        .map((item) => ({
+          address: item.address,
+          function: item.function,
+          behavior: item.behavior,
+          summary: item.summary,
+          confidence: item.confidence,
+          rewrite_guidance: item.rewrite_guidance.slice(0, 4),
+          source: item.model_name || item.client_name || null,
+        }));
+      const provenance = {
+        runtime: buildRuntimeArtifactProvenance(
+          dynamicEvidence,
+          input.evidence_scope,
+          input.evidence_session_tag
+        ),
+        semantic_explanations: buildSemanticArtifactProvenance(
+          'semantic explanation artifacts',
+          functionExplanationIndex,
+          input.semantic_scope,
+          input.semantic_session_tag
+        ),
+      };
+      const selectionDiffs: {
+        runtime?: ReturnType<typeof buildArtifactSelectionDiff>;
+        semantic_explanations?: ReturnType<typeof buildArtifactSelectionDiff>;
+      } = {};
+      if (input.compare_evidence_scope) {
+        const baselineDynamicEvidence = await loadDynamicTraceEvidence(
+          workspaceManager,
+          database,
+          input.sample_id,
+          {
+            evidenceScope: input.compare_evidence_scope,
+            sessionTag: input.compare_evidence_session_tag,
+          }
+        );
+        selectionDiffs.runtime = buildArtifactSelectionDiff(
+          'runtime',
+          provenance.runtime,
+          buildRuntimeArtifactProvenance(
+            baselineDynamicEvidence,
+            input.compare_evidence_scope,
+            input.compare_evidence_session_tag
+          )
+        );
+      }
+      if (input.compare_semantic_scope) {
+        const baselineSemanticIndex = await loadSemanticFunctionExplanationIndex(
+          workspaceManager,
+          database,
+          input.sample_id,
+          {
+            scope: input.compare_semantic_scope,
+            sessionTag: input.compare_semantic_session_tag,
+          }
+        );
+        selectionDiffs.semantic_explanations = buildArtifactSelectionDiff(
+          'semantic_explanations',
+          provenance.semantic_explanations,
+          buildSemanticArtifactProvenance(
+            'semantic explanation artifacts',
+            baselineSemanticIndex,
+            input.compare_semantic_scope,
+            input.compare_semantic_session_tag
+          )
+        );
+      }
+
+      // Generate report based on format
+      const format = input.format || 'markdown';
+      let reportContent: string;
+      let reportExtension: string;
+      let mimeType: string;
+
+      switch (format) {
+        case 'markdown':
+          reportContent = generateMarkdownReport(
+            sample,
+            analyses,
+            functions,
+            dynamicEvidence,
+            functionExplanations,
+            input.evidence_scope,
+            input.evidence_session_tag,
+            input.semantic_scope,
+            input.semantic_session_tag,
+            provenance,
+            selectionDiffs
+          );
+          reportExtension = 'md';
+          mimeType = 'text/markdown';
+          break;
+
+        case 'json':
+          const confidenceSemantics = buildReportConfidenceSemantics({
+            score: dynamicEvidence?.executed ? 0.72 : dynamicEvidence ? 0.58 : 0.42,
+            evidenceScope: input.evidence_scope,
+            runtimeLayers:
+              dynamicEvidence?.confidence_layers?.map((item) => item.layer) || ['static_only'],
+            executedTracePresent: dynamicEvidence?.executed || false,
+          });
+          reportContent = JSON.stringify({
+            sample,
+            analyses,
+            functions,
+            dynamic_evidence: dynamicEvidence,
+            function_explanations: functionExplanations,
+            evidence_scope: input.evidence_scope,
+            evidence_session_tag: input.evidence_session_tag || null,
+            semantic_scope: input.semantic_scope,
+            semantic_session_tag: input.semantic_session_tag || null,
+            provenance,
+            selection_diffs: Object.keys(selectionDiffs).length > 0 ? selectionDiffs : undefined,
+            confidence_semantics: confidenceSemantics,
+            generated_at: new Date().toISOString()
+          }, null, 2);
+          reportExtension = 'json';
+          mimeType = 'application/json';
+          break;
+
+        case 'html':
+          // Simple HTML wrapper around markdown
+          reportContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Analysis Report: ${sample.sha256}</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background-color: #f2f2f2; }
+  </style>
+</head>
+<body>
+<pre>${generateMarkdownReport(
+  sample,
+  analyses,
+  functions,
+  dynamicEvidence,
+  functionExplanations,
+  input.evidence_scope,
+  input.evidence_session_tag,
+  input.semantic_scope,
+  input.semantic_session_tag,
+  provenance,
+  selectionDiffs
+)}</pre>
+</body>
+</html>`;
+          reportExtension = 'html';
+          mimeType = 'text/html';
+          break;
+
+        default:
+          throw new Error(`Unsupported format: ${format}`);
+      }
+
+      // Store report to workspace
+      const workspace = await workspaceManager.getWorkspace(input.sample_id);
+      const reportFilename = `report_${Date.now()}.${reportExtension}`;
+      const reportPath = path.join(workspace.reports, reportFilename);
+
+      // Ensure reports directory exists
+      if (!fs.existsSync(workspace.reports)) {
+        fs.mkdirSync(workspace.reports, { recursive: true });
+      }
+
+      // Write report file
+      fs.writeFileSync(reportPath, reportContent, 'utf-8');
+
+      // Compute SHA256 of report
+      const reportSha256 = createHash('sha256')
+        .update(reportContent)
+        .digest('hex');
+
+      // Insert artifact record
+      const artifactId = randomUUID();
+      database.insertArtifact({
+        id: artifactId,
+        sample_id: input.sample_id,
+        type: `report_${format}`,
+        path: `reports/${reportFilename}`,
+        sha256: reportSha256,
+        mime: mimeType,
+        created_at: new Date().toISOString()
+      });
+
+      logger.info({
+        sample_id: input.sample_id,
+        format,
+        artifact_id: artifactId,
+        path: reportPath
+      }, 'Report generated successfully');
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            ok: true,
+            data: {
+              artifact_id: artifactId,
+              path: reportPath,
+              format,
+              size: reportContent.length,
+              sha256: reportSha256,
+              provenance,
+              selection_diffs: Object.keys(selectionDiffs).length > 0 ? selectionDiffs : undefined
+            }
+          }, null, 2)
+        }]
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error({
+        error: errorMessage
+      }, 'report.generate tool failed');
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            ok: false,
+            errors: [errorMessage]
+          }, null, 2)
+        }],
+        isError: true
+      };
+    }
+  };
+}

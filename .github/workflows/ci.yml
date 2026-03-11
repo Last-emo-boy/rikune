@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Validate Python worker syntax
+        run: python -m py_compile workers/static_worker.py workers/speakeasy_compat.py
+
+      - name: Run key unit tests
+        run: >
+          npm test -- --runInBand
+          tests/unit/tool-help.test.ts
+          tests/unit/sample-ingest.test.ts
+          tests/unit/dynamic-dependencies.test.ts
+          tests/unit/dotnet-metadata-extract.test.ts
+          tests/unit/system-health.test.ts
+
+      - name: Validate npm package contents
+        run: npm run pack:dry-run
+
+      - name: Create npm package tarball
+        run: npm pack
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: "*.tgz"

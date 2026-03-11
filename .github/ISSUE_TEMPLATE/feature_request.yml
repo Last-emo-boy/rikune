@@ -1,0 +1,25 @@
+name: Feature request
+description: Propose a new MCP tool, workflow, runtime capability, or reconstruction feature.
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow or reverse-engineering gap does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the desired MCP tool, workflow, output, or packaging behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: value
+    attributes:
+      label: Expected value
+      description: Explain how this would improve analysis quality, reproducibility, or usability.

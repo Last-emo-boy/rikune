@@ -1,0 +1,907 @@
+/**
+ * Reconstruction workflow implementation
+ * One-shot orchestration for source-like reconstruction across native/.NET paths.
+ */
+
+import { z } from 'zod'
+import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
+import type { WorkspaceManager } from '../workspace-manager.js'
+import type { DatabaseManager } from '../database.js'
+import type { CacheManager } from '../cache-manager.js'
+import { generateCacheKey } from '../cache-manager.js'
+import { lookupCachedResult, formatCacheWarning } from '../tools/cache-observability.js'
+import { createRuntimeDetectHandler } from '../tools/runtime-detect.js'
+import { createCodeReconstructPlanHandler } from '../tools/code-reconstruct-plan.js'
+import { createCodeReconstructExportHandler } from '../tools/code-reconstruct-export.js'
+import { createDotNetReconstructExportHandler } from '../tools/dotnet-reconstruct-export.js'
+import { findBestGhidraAnalysis } from '../ghidra-analysis-status.js'
+import { loadDynamicTraceEvidence } from '../dynamic-trace.js'
+import {
+  loadSemanticFunctionExplanationIndex,
+  loadSemanticNameSuggestionIndex,
+} from '../semantic-name-suggestion-artifacts.js'
+import {
+  AnalysisProvenanceSchema,
+  buildRuntimeArtifactProvenance,
+  buildSemanticArtifactProvenance,
+} from '../analysis-provenance.js'
+import {
+  AnalysisSelectionDiffSchema,
+  buildArtifactSelectionDiff,
+} from '../selection-diff.js'
+
+const TOOL_NAME = 'workflow.reconstruct'
+const TOOL_VERSION = '0.1.3'
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+
+export const ReconstructWorkflowInputSchema = z.object({
+  sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
+  path: z
+    .enum(['auto', 'native', 'dotnet'])
+    .default('auto')
+    .describe('Routing strategy for reconstruction path'),
+  topk: z
+    .number()
+    .int()
+    .min(1)
+    .max(40)
+    .default(16)
+    .describe('Top-K high-value functions used by export tools'),
+  export_name: z
+    .string()
+    .min(1)
+    .max(64)
+    .optional()
+    .describe('Optional export folder name'),
+  validate_build: z
+    .boolean()
+    .default(true)
+    .describe('For native path, compile the exported C skeleton when clang is available'),
+  run_harness: z
+    .boolean()
+    .default(true)
+    .describe('For native path, execute reconstruct_harness after a successful build'),
+  compiler_path: z
+    .string()
+    .min(1)
+    .max(260)
+    .optional()
+    .describe('Optional explicit clang compiler path for native validation'),
+  build_timeout_ms: z
+    .number()
+    .int()
+    .min(5000)
+    .max(300000)
+    .default(60000)
+    .describe('Timeout for native clang build validation in milliseconds'),
+  run_timeout_ms: z
+    .number()
+    .int()
+    .min(5000)
+    .max(300000)
+    .default(30000)
+    .describe('Timeout for reconstruct_harness execution in milliseconds'),
+  evidence_scope: z
+    .enum(['all', 'latest', 'session'])
+    .default('all')
+    .describe('Runtime evidence scope forwarded to downstream reconstruct/export tools'),
+  evidence_session_tag: z
+    .string()
+    .optional()
+    .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
+  semantic_scope: z
+    .enum(['all', 'latest', 'session'])
+    .default('all')
+    .describe('Semantic review artifact scope forwarded to native reconstruct/export tools'),
+  semantic_session_tag: z
+    .string()
+    .optional()
+    .describe('Optional semantic review session selector used when semantic_scope=session or to narrow all/latest results'),
+  compare_evidence_scope: z
+    .enum(['all', 'latest', 'session'])
+    .optional()
+    .describe('Optional baseline runtime evidence scope used to compare this workflow result against another runtime artifact selection'),
+  compare_evidence_session_tag: z
+    .string()
+    .optional()
+    .describe('Optional baseline runtime evidence session selector used when compare_evidence_scope=session'),
+  compare_semantic_scope: z
+    .enum(['all', 'latest', 'session'])
+    .optional()
+    .describe('Optional baseline semantic artifact scope used to compare this workflow result against another naming/explanation selection'),
+  compare_semantic_session_tag: z
+    .string()
+    .optional()
+    .describe('Optional baseline semantic artifact session selector used when compare_semantic_scope=session'),
+  include_plan: z
+    .boolean()
+    .default(true)
+    .describe('Include code.reconstruct.plan stage in the workflow'),
+  include_obfuscation_fallback: z
+    .boolean()
+    .default(true)
+    .describe('When routing to .NET path, generate IL fallback notes when needed'),
+  fallback_on_error: z
+    .boolean()
+    .default(true)
+    .describe('When primary export path fails, automatically try the alternative path'),
+  allow_partial: z
+    .boolean()
+    .default(true)
+    .describe('When all export paths fail, still return runtime/plan as partial output'),
+  reuse_cached: z
+    .boolean()
+    .default(true)
+    .describe('Reuse cached workflow result for identical inputs'),
+})
+  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
+    message: 'evidence_session_tag is required when evidence_scope=session',
+    path: ['evidence_session_tag'],
+  })
+  .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
+    message: 'semantic_session_tag is required when semantic_scope=session',
+    path: ['semantic_session_tag'],
+  })
+  .refine(
+    (value) =>
+      value.compare_evidence_scope !== 'session' || Boolean(value.compare_evidence_session_tag?.trim()),
+    {
+      message: 'compare_evidence_session_tag is required when compare_evidence_scope=session',
+      path: ['compare_evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) =>
+      value.compare_semantic_scope !== 'session' || Boolean(value.compare_semantic_session_tag?.trim()),
+    {
+      message: 'compare_semantic_session_tag is required when compare_semantic_scope=session',
+      path: ['compare_semantic_session_tag'],
+    }
+  )
+
+export type ReconstructWorkflowInput = z.infer<typeof ReconstructWorkflowInputSchema>
+
+const RuntimeSummarySchema = z.object({
+  is_dotnet: z.boolean().nullable(),
+  dotnet_version: z.string().nullable(),
+  target_framework: z.string().nullable(),
+  primary_runtime: z.string().nullable(),
+})
+
+const PlanSummarySchema = z.object({
+  feasibility: z.enum(['high', 'medium', 'low']),
+  confidence: z.number().min(0).max(1),
+  restoration_expectation: z.string(),
+  blockers: z.array(z.string()),
+  recommendations: z.array(z.string()),
+})
+
+const BinaryProfileSchema = z.object({
+  binary_role: z.string(),
+  original_filename: z.string().nullable(),
+  export_count: z.number().int().nonnegative(),
+  forwarder_count: z.number().int().nonnegative(),
+  notable_exports: z.array(z.string()),
+  packed: z.boolean(),
+  packing_confidence: z.number().min(0).max(1),
+  analysis_priorities: z.array(z.string()),
+})
+
+const ManagedProfileSchema = z.object({
+  assembly_name: z.string().nullable(),
+  assembly_version: z.string().nullable(),
+  module_name: z.string().nullable(),
+  metadata_version: z.string().nullable(),
+  is_library: z.boolean(),
+  entry_point_token: z.string().nullable(),
+  type_count: z.number().int().nonnegative(),
+  method_count: z.number().int().nonnegative(),
+  namespace_count: z.number().int().nonnegative(),
+  assembly_reference_count: z.number().int().nonnegative(),
+  resource_count: z.number().int().nonnegative(),
+  dominant_namespaces: z.array(z.string()),
+  notable_types: z.array(z.string()),
+  assembly_references: z.array(z.string()),
+  resources: z.array(z.string()),
+  analysis_priorities: z.array(z.string()),
+})
+
+const ExportSummarySchema = z.object({
+  tool: z.enum(['code.reconstruct.export', 'dotnet.reconstruct.export']),
+  export_root: z.string(),
+  manifest_path: z.string().nullable(),
+  gaps_path: z.string().nullable(),
+  notes_path: z.string().nullable(),
+  metadata_path: z.string().nullable(),
+  csproj_path: z.string().nullable(),
+  readme_path: z.string().nullable(),
+  fallback_notes_path: z.string().nullable(),
+  build_validation_status: z.enum(['passed', 'failed', 'skipped', 'unavailable']).nullable(),
+  harness_validation_status: z.enum(['passed', 'failed', 'skipped', 'unavailable']).nullable(),
+  build_log_path: z.string().nullable(),
+  harness_log_path: z.string().nullable(),
+  executable_path: z.string().nullable(),
+  degraded_mode: z.boolean().nullable(),
+  module_count: z.number().int().nonnegative().nullable(),
+  unresolved_count: z.number().int().nonnegative().nullable(),
+  class_count: z.number().int().nonnegative().nullable(),
+  binary_profile: BinaryProfileSchema.nullable(),
+  managed_profile: ManagedProfileSchema.nullable(),
+})
+
+export const ReconstructWorkflowOutputSchema = z.object({
+  ok: z.boolean(),
+  data: z
+    .object({
+      sample_id: z.string(),
+      selected_path: z.enum(['native', 'dotnet']),
+      degraded: z.boolean(),
+      stage_status: z.object({
+        runtime: z.enum(['ok', 'failed']),
+        plan: z.enum(['ok', 'failed', 'skipped']),
+        export_primary: z.enum(['ok', 'failed', 'skipped']),
+        export_fallback: z.enum(['ok', 'failed', 'skipped']),
+      }),
+      provenance: AnalysisProvenanceSchema,
+      selection_diffs: AnalysisSelectionDiffSchema.optional(),
+      runtime: RuntimeSummarySchema,
+      plan: PlanSummarySchema.nullable(),
+      export: ExportSummarySchema.nullable(),
+      notes: z.array(z.string()),
+    })
+    .optional(),
+  warnings: z.array(z.string()).optional(),
+  errors: z.array(z.string()).optional(),
+  artifacts: z.array(z.any()).optional(),
+  metrics: z
+    .object({
+      elapsed_ms: z.number(),
+      tool: z.string(),
+      cached: z.boolean().optional(),
+      cache_key: z.string().optional(),
+      cache_tier: z.string().optional(),
+      cache_created_at: z.string().optional(),
+      cache_expires_at: z.string().optional(),
+      cache_hit_at: z.string().optional(),
+    })
+    .optional(),
+})
+
+export type ReconstructWorkflowOutput = z.infer<typeof ReconstructWorkflowOutputSchema>
+
+export const reconstructWorkflowToolDefinition: ToolDefinition = {
+  name: TOOL_NAME,
+  description:
+    'Run a complete source-reconstruction workflow with auto routing (native/.NET), planning, export, and cache observability.',
+  inputSchema: ReconstructWorkflowInputSchema,
+  outputSchema: ReconstructWorkflowOutputSchema,
+}
+
+interface RuntimeSuspected {
+  runtime: string
+  confidence: number
+  evidence: string[]
+}
+
+interface RuntimeDetectData {
+  is_dotnet?: boolean
+  dotnet_version?: string | null
+  target_framework?: string | null
+  suspected?: RuntimeSuspected[]
+}
+
+interface PlanData {
+  feasibility: 'high' | 'medium' | 'low'
+  confidence: number
+  restoration_expectation: string
+  blockers: string[]
+  recommendations: string[]
+}
+
+interface NativeExportData {
+  export_root: string
+  manifest_path: string
+  gaps_path: string
+  notes_path?: string
+  build_validation?: {
+    status?: 'passed' | 'failed' | 'skipped' | 'unavailable'
+    log_path?: string | null
+    executable_path?: string | null
+  }
+  harness_validation?: {
+    status?: 'passed' | 'failed' | 'skipped' | 'unavailable'
+    log_path?: string | null
+  }
+  module_count: number
+  unresolved_count: number
+  binary_profile?: z.infer<typeof BinaryProfileSchema>
+}
+
+interface DotNetExportData {
+  export_root: string
+  csproj_path: string
+  readme_path: string
+  metadata_path: string | null
+  reverse_notes_path: string | null
+  fallback_notes_path: string | null
+  degraded_mode?: boolean
+  build_validation?: {
+    status?: 'passed' | 'failed' | 'skipped' | 'unavailable'
+  }
+  managed_profile?: z.infer<typeof ManagedProfileSchema> | null
+  classes: unknown[]
+}
+
+interface ReconstructWorkflowDependencies {
+  runtimeDetectHandler?: (args: ToolArgs) => Promise<WorkerResult>
+  planHandler?: (args: ToolArgs) => Promise<WorkerResult>
+  nativeExportHandler?: (args: ToolArgs) => Promise<WorkerResult>
+  dotnetExportHandler?: (args: ToolArgs) => Promise<WorkerResult>
+}
+
+function normalizeError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message
+  }
+  return String(error)
+}
+
+function pickPrimaryRuntime(runtimeData?: RuntimeDetectData): string | null {
+  const suspected = runtimeData?.suspected || []
+  if (suspected.length === 0) {
+    return null
+  }
+  const sorted = [...suspected].sort((a, b) => b.confidence - a.confidence)
+  return sorted[0].runtime || null
+}
+
+function summarizeRuntime(runtimeData?: RuntimeDetectData) {
+  return {
+    is_dotnet: runtimeData?.is_dotnet ?? null,
+    dotnet_version: runtimeData?.dotnet_version ?? null,
+    target_framework: runtimeData?.target_framework ?? null,
+    primary_runtime: pickPrimaryRuntime(runtimeData),
+  }
+}
+
+export function createReconstructWorkflowHandler(
+  workspaceManager: WorkspaceManager,
+  database: DatabaseManager,
+  cacheManager: CacheManager,
+  dependencies?: ReconstructWorkflowDependencies
+) {
+  const runtimeDetectHandler =
+    dependencies?.runtimeDetectHandler ||
+    createRuntimeDetectHandler(workspaceManager, database, cacheManager)
+  const planHandler =
+    dependencies?.planHandler ||
+    createCodeReconstructPlanHandler(workspaceManager, database, cacheManager)
+  const nativeExportHandler =
+    dependencies?.nativeExportHandler ||
+    createCodeReconstructExportHandler(workspaceManager, database, cacheManager)
+  const dotnetExportHandler =
+    dependencies?.dotnetExportHandler ||
+    createDotNetReconstructExportHandler(workspaceManager, database, cacheManager)
+
+  return async (args: ToolArgs): Promise<WorkerResult> => {
+    const input = ReconstructWorkflowInputSchema.parse(args)
+    const startTime = Date.now()
+
+    try {
+      const sample = database.findSample(input.sample_id)
+      if (!sample) {
+        return {
+          ok: false,
+          errors: [`Sample not found: ${input.sample_id}`],
+        }
+      }
+
+      const warnings: string[] = []
+      const notes: string[] = []
+      const stageStatus = {
+        runtime: 'failed' as 'ok' | 'failed',
+        plan: 'skipped' as 'ok' | 'failed' | 'skipped',
+        export_primary: 'skipped' as 'ok' | 'failed' | 'skipped',
+        export_fallback: 'skipped' as 'ok' | 'failed' | 'skipped',
+      }
+
+      const runtimeResult = await runtimeDetectHandler({ sample_id: input.sample_id })
+      const runtimeData =
+        runtimeResult.ok && runtimeResult.data
+          ? (runtimeResult.data as RuntimeDetectData)
+          : undefined
+
+      if (!runtimeResult.ok) {
+        warnings.push(
+          `runtime.detect unavailable: ${(runtimeResult.errors || ['unknown error']).join('; ')}`
+        )
+      } else if (runtimeResult.warnings && runtimeResult.warnings.length > 0) {
+        warnings.push(...runtimeResult.warnings.map((item) => `runtime: ${item}`))
+        stageStatus.runtime = 'ok'
+      } else {
+        stageStatus.runtime = 'ok'
+      }
+
+      let selectedPath: 'native' | 'dotnet'
+      if (input.path === 'auto') {
+        selectedPath = runtimeData?.is_dotnet ? 'dotnet' : 'native'
+      } else {
+        selectedPath = input.path
+      }
+
+      if (input.path === 'dotnet' && runtimeData?.is_dotnet === false) {
+        return {
+          ok: false,
+          errors: ['Requested dotnet path, but runtime.detect does not recognize the sample as .NET.'],
+          warnings:
+            runtimeData?.suspected && runtimeData.suspected.length > 0
+              ? [
+                  `runtime.detect suspected: ${runtimeData.suspected
+                    .map((item) => `${item.runtime}(${item.confidence.toFixed(2)})`)
+                    .join(', ')}`,
+                ]
+              : undefined,
+          metrics: {
+            elapsed_ms: Date.now() - startTime,
+            tool: TOOL_NAME,
+          },
+        }
+      }
+
+      if (selectedPath === 'native' && runtimeData?.is_dotnet) {
+        warnings.push('Selected native path while runtime indicates .NET; forcing native as requested.')
+      }
+
+      const completedGhidraAnalysis = findBestGhidraAnalysis(
+        database.findAnalysesBySample(input.sample_id),
+        'function_index'
+      )
+      const dynamicEvidence = await loadDynamicTraceEvidence(workspaceManager, database, input.sample_id, {
+        evidenceScope: input.evidence_scope,
+        sessionTag: input.evidence_session_tag,
+      })
+      const semanticNameIndex = await loadSemanticNameSuggestionIndex(
+        workspaceManager,
+        database,
+        input.sample_id,
+        {
+          scope: input.semantic_scope,
+          sessionTag: input.semantic_session_tag,
+        }
+      )
+      const semanticExplanationIndex = await loadSemanticFunctionExplanationIndex(
+        workspaceManager,
+        database,
+        input.sample_id,
+        {
+          scope: input.semantic_scope,
+          sessionTag: input.semantic_session_tag,
+        }
+      )
+      const provenance = {
+        runtime: buildRuntimeArtifactProvenance(
+          dynamicEvidence,
+          input.evidence_scope,
+          input.evidence_session_tag
+        ),
+        semantic_names: buildSemanticArtifactProvenance(
+          'semantic naming artifacts',
+          semanticNameIndex,
+          input.semantic_scope,
+          input.semantic_session_tag
+        ),
+        semantic_explanations: buildSemanticArtifactProvenance(
+          'semantic explanation artifacts',
+          semanticExplanationIndex,
+          input.semantic_scope,
+          input.semantic_session_tag
+        ),
+      }
+      const selectionDiffs: z.infer<typeof AnalysisSelectionDiffSchema> = {}
+      if (input.compare_evidence_scope) {
+        const baselineDynamicEvidence = await loadDynamicTraceEvidence(
+          workspaceManager,
+          database,
+          input.sample_id,
+          {
+            evidenceScope: input.compare_evidence_scope,
+            sessionTag: input.compare_evidence_session_tag,
+          }
+        )
+        selectionDiffs.runtime = buildArtifactSelectionDiff(
+          'runtime',
+          provenance.runtime,
+          buildRuntimeArtifactProvenance(
+            baselineDynamicEvidence,
+            input.compare_evidence_scope,
+            input.compare_evidence_session_tag
+          )
+        )
+      }
+      if (input.compare_semantic_scope) {
+        const baselineSemanticNameIndex = await loadSemanticNameSuggestionIndex(
+          workspaceManager,
+          database,
+          input.sample_id,
+          {
+            scope: input.compare_semantic_scope,
+            sessionTag: input.compare_semantic_session_tag,
+          }
+        )
+        const baselineSemanticExplanationIndex = await loadSemanticFunctionExplanationIndex(
+          workspaceManager,
+          database,
+          input.sample_id,
+          {
+            scope: input.compare_semantic_scope,
+            sessionTag: input.compare_semantic_session_tag,
+          }
+        )
+        selectionDiffs.semantic_names = buildArtifactSelectionDiff(
+          'semantic_names',
+          provenance.semantic_names!,
+          buildSemanticArtifactProvenance(
+            'semantic naming artifacts',
+            baselineSemanticNameIndex,
+            input.compare_semantic_scope,
+            input.compare_semantic_session_tag
+          )
+        )
+        selectionDiffs.semantic_explanations = buildArtifactSelectionDiff(
+          'semantic_explanations',
+          provenance.semantic_explanations!,
+          buildSemanticArtifactProvenance(
+            'semantic explanation artifacts',
+            baselineSemanticExplanationIndex,
+            input.compare_semantic_scope,
+            input.compare_semantic_session_tag
+          )
+        )
+      }
+      const analysisMarker =
+        completedGhidraAnalysis?.finished_at || completedGhidraAnalysis?.id || 'none'
+
+      const cacheKey = generateCacheKey({
+        sampleSha256: sample.sha256,
+        toolName: TOOL_NAME,
+        toolVersion: TOOL_VERSION,
+        args: {
+          path: input.path,
+          selected_path: selectedPath,
+          topk: input.topk,
+          export_name: input.export_name || null,
+          validate_build: input.validate_build,
+          run_harness: input.run_harness,
+          compiler_path: input.compiler_path || null,
+          build_timeout_ms: input.build_timeout_ms,
+          run_timeout_ms: input.run_timeout_ms,
+          evidence_scope: input.evidence_scope,
+          evidence_session_tag: input.evidence_session_tag || null,
+          semantic_scope: input.semantic_scope,
+          semantic_session_tag: input.semantic_session_tag || null,
+          compare_evidence_scope: input.compare_evidence_scope || null,
+          compare_evidence_session_tag: input.compare_evidence_session_tag || null,
+          compare_semantic_scope: input.compare_semantic_scope || null,
+          compare_semantic_session_tag: input.compare_semantic_session_tag || null,
+          include_plan: input.include_plan,
+          include_obfuscation_fallback: input.include_obfuscation_fallback,
+          fallback_on_error: input.fallback_on_error,
+          allow_partial: input.allow_partial,
+          runtime_is_dotnet: runtimeData?.is_dotnet ?? null,
+          runtime_primary: pickPrimaryRuntime(runtimeData),
+          runtime_dotnet_version: runtimeData?.dotnet_version ?? null,
+          runtime_target_framework: runtimeData?.target_framework ?? null,
+          analysis_marker: analysisMarker,
+        },
+      })
+
+      if (input.reuse_cached) {
+        const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
+        if (cachedLookup) {
+          return {
+            ok: true,
+            data: cachedLookup.data,
+            warnings: ['Result from cache', formatCacheWarning(cachedLookup.metadata)],
+            metrics: {
+              elapsed_ms: Date.now() - startTime,
+              tool: TOOL_NAME,
+              cached: true,
+              cache_key: cachedLookup.metadata.key,
+              cache_tier: cachedLookup.metadata.tier,
+              cache_created_at: cachedLookup.metadata.createdAt,
+              cache_expires_at: cachedLookup.metadata.expiresAt,
+              cache_hit_at: cachedLookup.metadata.fetchedAt,
+            },
+          }
+        }
+      }
+
+      let planSummary: PlanData | null = null
+      if (input.include_plan) {
+        const planResult = await planHandler({
+          sample_id: input.sample_id,
+          target_language: selectedPath === 'dotnet' ? 'csharp' : 'c',
+          depth: 'standard',
+          include_decompiler: true,
+          include_strings: true,
+        })
+
+        if (planResult.ok && planResult.data) {
+          const data = planResult.data as PlanData
+          planSummary = {
+            feasibility: data.feasibility,
+            confidence: data.confidence,
+            restoration_expectation: data.restoration_expectation,
+            blockers: data.blockers || [],
+            recommendations: data.recommendations || [],
+          }
+          stageStatus.plan = 'ok'
+        } else {
+          warnings.push(`plan unavailable: ${(planResult.errors || ['unknown error']).join('; ')}`)
+          stageStatus.plan = 'failed'
+        }
+
+        if (planResult.warnings && planResult.warnings.length > 0) {
+          warnings.push(...planResult.warnings.map((item) => `plan: ${item}`))
+        }
+      }
+
+      let exportSummary: z.infer<typeof ExportSummarySchema> | null = null
+      let artifacts = [] as unknown[]
+      const primaryPath = selectedPath
+      const fallbackPath: 'native' | 'dotnet' = primaryPath === 'dotnet' ? 'native' : 'dotnet'
+
+      type ExportRunSuccess = {
+        ok: true
+        warnings: string[]
+        artifacts: unknown[]
+        summary: z.infer<typeof ExportSummarySchema>
+      }
+      type ExportRunFailure = {
+        ok: false
+        errors: string[]
+        warnings: string[]
+      }
+      type ExportRunResult = ExportRunSuccess | ExportRunFailure
+
+      const runExport = async (pathToRun: 'native' | 'dotnet'): Promise<ExportRunResult> => {
+        if (pathToRun === 'dotnet') {
+          const dotnetResult = await dotnetExportHandler({
+            sample_id: input.sample_id,
+            topk: input.topk,
+            export_name: input.export_name,
+            include_obfuscation_fallback: input.include_obfuscation_fallback,
+            evidence_scope: input.evidence_scope,
+            evidence_session_tag: input.evidence_session_tag,
+            reuse_cached: input.reuse_cached,
+          })
+          if (!dotnetResult.ok || !dotnetResult.data) {
+            return {
+              ok: false,
+              errors: dotnetResult.errors || ['dotnet.reconstruct.export failed'],
+              warnings: dotnetResult.warnings || [],
+            }
+          }
+
+          const data = dotnetResult.data as DotNetExportData
+          return {
+            ok: true,
+            warnings: dotnetResult.warnings || [],
+            artifacts: dotnetResult.artifacts || [],
+            summary: {
+              tool: 'dotnet.reconstruct.export' as const,
+              export_root: data.export_root,
+              manifest_path: null,
+              gaps_path: null,
+              notes_path: data.reverse_notes_path || null,
+              metadata_path: data.metadata_path || null,
+              csproj_path: data.csproj_path,
+              readme_path: data.readme_path,
+              fallback_notes_path: data.fallback_notes_path,
+              build_validation_status: data.build_validation?.status || null,
+              harness_validation_status: null,
+              build_log_path: null,
+              harness_log_path: null,
+              executable_path: null,
+              degraded_mode: data.degraded_mode ?? null,
+              module_count: null,
+              unresolved_count: null,
+              class_count: Array.isArray(data.classes) ? data.classes.length : 0,
+              binary_profile: null,
+              managed_profile: data.managed_profile || null,
+            },
+          }
+        }
+
+        const nativeResult = await nativeExportHandler({
+          sample_id: input.sample_id,
+          topk: input.topk,
+          module_limit: 8,
+          min_module_size: 1,
+          include_imports: true,
+          include_strings: true,
+          export_name: input.export_name,
+          validate_build: input.validate_build,
+          run_harness: input.run_harness,
+          compiler_path: input.compiler_path,
+          build_timeout_ms: input.build_timeout_ms,
+          run_timeout_ms: input.run_timeout_ms,
+          evidence_scope: input.evidence_scope,
+          evidence_session_tag: input.evidence_session_tag,
+          semantic_scope: input.semantic_scope,
+          semantic_session_tag: input.semantic_session_tag,
+          reuse_cached: input.reuse_cached,
+        })
+
+        if (!nativeResult.ok || !nativeResult.data) {
+          return {
+            ok: false,
+            errors: nativeResult.errors || ['code.reconstruct.export failed'],
+            warnings: nativeResult.warnings || [],
+          }
+        }
+
+        const data = nativeResult.data as NativeExportData
+        return {
+          ok: true,
+          warnings: nativeResult.warnings || [],
+          artifacts: nativeResult.artifacts || [],
+          summary: {
+            tool: 'code.reconstruct.export' as const,
+            export_root: data.export_root,
+            manifest_path: data.manifest_path,
+            gaps_path: data.gaps_path,
+            notes_path: data.notes_path || null,
+            metadata_path: null,
+            csproj_path: null,
+            readme_path: null,
+            fallback_notes_path: null,
+            build_validation_status: data.build_validation?.status || null,
+            harness_validation_status: data.harness_validation?.status || null,
+            build_log_path: data.build_validation?.log_path || null,
+            harness_log_path: data.harness_validation?.log_path || null,
+            executable_path: data.build_validation?.executable_path || null,
+            degraded_mode: null,
+            module_count: data.module_count,
+            unresolved_count: data.unresolved_count,
+            class_count: null,
+            binary_profile: data.binary_profile || null,
+            managed_profile: null,
+          },
+        }
+      }
+
+      const primaryExportResult = await runExport(primaryPath)
+      if (primaryExportResult.ok) {
+        stageStatus.export_primary = 'ok'
+        exportSummary = primaryExportResult.summary
+        artifacts = primaryExportResult.artifacts || []
+        if (primaryExportResult.warnings.length > 0) {
+          warnings.push(
+            ...primaryExportResult.warnings.map((item) =>
+              `${primaryPath === 'dotnet' ? 'dotnet_export' : 'native_export'}: ${item}`
+            )
+          )
+        }
+      } else {
+        stageStatus.export_primary = 'failed'
+        warnings.push(
+          `primary export(${primaryPath}) failed: ${(primaryExportResult.errors || ['unknown error']).join('; ')}`
+        )
+        if (primaryExportResult.warnings.length > 0) {
+          warnings.push(
+            ...primaryExportResult.warnings.map((item) =>
+              `${primaryPath === 'dotnet' ? 'dotnet_export' : 'native_export'}: ${item}`
+            )
+          )
+        }
+      }
+
+      if (!exportSummary && input.fallback_on_error) {
+        const fallbackExportResult = await runExport(fallbackPath)
+        if (fallbackExportResult.ok) {
+          stageStatus.export_fallback = 'ok'
+          exportSummary = fallbackExportResult.summary
+          artifacts = fallbackExportResult.artifacts || []
+          selectedPath = fallbackPath
+          notes.push(`Primary export path failed; switched to fallback path: ${fallbackPath}.`)
+          if (fallbackExportResult.warnings.length > 0) {
+            warnings.push(
+              ...fallbackExportResult.warnings.map((item) =>
+                `${fallbackPath === 'dotnet' ? 'dotnet_export' : 'native_export'}: ${item}`
+              )
+            )
+          }
+        } else {
+          stageStatus.export_fallback = 'failed'
+          warnings.push(
+            `fallback export(${fallbackPath}) failed: ${(fallbackExportResult.errors || ['unknown error']).join('; ')}`
+          )
+          if (fallbackExportResult.warnings.length > 0) {
+            warnings.push(
+              ...fallbackExportResult.warnings.map((item) =>
+                `${fallbackPath === 'dotnet' ? 'dotnet_export' : 'native_export'}: ${item}`
+              )
+            )
+          }
+        }
+      }
+
+      if (!exportSummary && !input.fallback_on_error) {
+        stageStatus.export_fallback = 'skipped'
+      }
+
+      if (!exportSummary && !input.allow_partial) {
+        return {
+          ok: false,
+          errors: ['All export paths failed and allow_partial=false.'],
+          warnings,
+          metrics: {
+            elapsed_ms: Date.now() - startTime,
+            tool: TOOL_NAME,
+          },
+        }
+      }
+
+      if (planSummary?.feasibility === 'low') {
+        notes.push('Feasibility is low; treat output as partial semantic reconstruction.')
+      }
+      if (runtimeData?.is_dotnet) {
+        notes.push('Runtime signal indicates .NET metadata is available for high-fidelity recovery.')
+      } else {
+        notes.push('Runtime signal indicates native path; exact original source text is not recoverable.')
+      }
+      if (exportSummary?.binary_profile?.analysis_priorities?.length) {
+        notes.push(
+          `Binary profile priorities: ${exportSummary.binary_profile.analysis_priorities.join(', ')}.`
+        )
+      }
+      if (exportSummary?.managed_profile?.analysis_priorities?.length) {
+        notes.push(
+          `Managed profile priorities: ${exportSummary.managed_profile.analysis_priorities.join(', ')}.`
+        )
+      }
+      if (selectedPath === 'native' && exportSummary?.build_validation_status) {
+        notes.push(`Native build validation: ${exportSummary.build_validation_status}.`)
+      }
+      if (selectedPath === 'native' && exportSummary?.harness_validation_status) {
+        notes.push(`Harness validation: ${exportSummary.harness_validation_status}.`)
+      }
+
+      const outputData = {
+        sample_id: input.sample_id,
+        selected_path: selectedPath,
+        degraded: stageStatus.export_primary !== 'ok' || stageStatus.plan === 'failed' || !exportSummary,
+        stage_status: stageStatus,
+        provenance,
+        selection_diffs: Object.keys(selectionDiffs).length > 0 ? selectionDiffs : undefined,
+        runtime: summarizeRuntime(runtimeData),
+        plan: planSummary,
+        export: exportSummary,
+        notes,
+      }
+
+      await cacheManager.setCachedResult(cacheKey, outputData, CACHE_TTL_MS, sample.sha256)
+
+      return {
+        ok: true,
+        data: outputData,
+        warnings: warnings.length > 0 ? warnings : undefined,
+        artifacts: artifacts as WorkerResult['artifacts'],
+        metrics: {
+          elapsed_ms: Date.now() - startTime,
+          tool: TOOL_NAME,
+        },
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: {
+          elapsed_ms: Date.now() - startTime,
+          tool: TOOL_NAME,
+        },
+      }
+    }
+  }
+}
