@@ -4,6 +4,7 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
+import { JobQueue } from '../../src/job-queue.js'
 import type { ToolArgs, WorkerResult } from '../../src/types.js'
 import {
   createSemanticNameReviewWorkflowHandler,
@@ -56,6 +57,19 @@ describe('workflow.semantic_name_review tool', () => {
     }
   })
 
+  async function setupSample(sampleId: string, hashChar: string) {
+    database.insertSample({
+      id: sampleId,
+      sha256: hashChar.repeat(64),
+      md5: hashChar.repeat(32),
+      size: 4096,
+      file_type: 'PE',
+      created_at: new Date().toISOString(),
+      source: 'unit-test',
+    })
+    await workspaceManager.createWorkspace(sampleId)
+  }
+
   test('should apply workflow defaults', () => {
     const parsed = semanticNameReviewWorkflowInputSchema.parse({
       sample_id: 'sha256:' + 'a'.repeat(64),
@@ -99,8 +113,37 @@ describe('workflow.semantic_name_review tool', () => {
     ).toThrow('compare_evidence_session_tag')
   })
 
+  test('should enqueue semantic name review workflow as async job when queue is provided', async () => {
+    const sampleId = 'sha256:' + '9'.repeat(64)
+    await setupSample(sampleId, '9')
+
+    const queue = new JobQueue()
+    const handler = createSemanticNameReviewWorkflowHandler(
+      workspaceManager,
+      database,
+      cacheManager,
+      undefined,
+      undefined,
+      queue
+    )
+    const result = await handler({
+      sample_id: sampleId,
+      evidence_scope: 'latest',
+      semantic_scope: 'latest',
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.status).toBe('queued')
+    expect(data.tool).toBe('workflow.semantic_name_review')
+    expect(data.sample_id).toBe(sampleId)
+    expect(data.job_id).toBeTruthy()
+    expect(queue.getStatus(data.job_id)?.status).toBe('queued')
+  })
+
   test('should orchestrate rename review and reconstruct export refresh', async () => {
     const sampleId = 'sha256:' + 'b'.repeat(64)
+    await setupSample(sampleId, 'b')
 
     const renameReviewHandler = jest
       .fn<(args: ToolArgs) => Promise<WorkerResult>>()
@@ -303,6 +346,7 @@ describe('workflow.semantic_name_review tool', () => {
   })
 
   test('should default export refresh to the current naming session when only session_tag is provided', async () => {
+    await setupSample('sha256:' + 'd'.repeat(64), 'd')
     const renameReviewHandler = jest
       .fn<(args: ToolArgs) => Promise<WorkerResult>>()
       .mockResolvedValue({
@@ -388,6 +432,7 @@ describe('workflow.semantic_name_review tool', () => {
   })
 
   test('should skip export refresh when semantic review did not apply any suggestions', async () => {
+    await setupSample('sha256:' + 'c'.repeat(64), 'c')
     const renameReviewHandler = jest
       .fn<(args: ToolArgs) => Promise<WorkerResult>>()
       .mockResolvedValue({

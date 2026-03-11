@@ -8,6 +8,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
+import type { JobQueue } from '../job-queue.js'
 import { generateCacheKey } from '../cache-manager.js'
 import { lookupCachedResult, formatCacheWarning } from '../tools/cache-observability.js'
 import { createRuntimeDetectHandler } from '../tools/runtime-detect.js'
@@ -229,27 +230,36 @@ const ExportSummarySchema = z.object({
   managed_profile: ManagedProfileSchema.nullable(),
 })
 
+const ReconstructQueuedDataSchema = z.object({
+  job_id: z.string(),
+  status: z.literal('queued'),
+  tool: z.literal(TOOL_NAME),
+  sample_id: z.string(),
+  requested_path: z.enum(['auto', 'native', 'dotnet']),
+  progress: z.number().int().min(0).max(100),
+})
+
+const ReconstructCompletedDataSchema = z.object({
+  sample_id: z.string(),
+  selected_path: z.enum(['native', 'dotnet']),
+  degraded: z.boolean(),
+  stage_status: z.object({
+    runtime: z.enum(['ok', 'failed']),
+    plan: z.enum(['ok', 'failed', 'skipped']),
+    export_primary: z.enum(['ok', 'failed', 'skipped']),
+    export_fallback: z.enum(['ok', 'failed', 'skipped']),
+  }),
+  provenance: AnalysisProvenanceSchema,
+  selection_diffs: AnalysisSelectionDiffSchema.optional(),
+  runtime: RuntimeSummarySchema,
+  plan: PlanSummarySchema.nullable(),
+  export: ExportSummarySchema.nullable(),
+  notes: z.array(z.string()),
+})
+
 export const ReconstructWorkflowOutputSchema = z.object({
   ok: z.boolean(),
-  data: z
-    .object({
-      sample_id: z.string(),
-      selected_path: z.enum(['native', 'dotnet']),
-      degraded: z.boolean(),
-      stage_status: z.object({
-        runtime: z.enum(['ok', 'failed']),
-        plan: z.enum(['ok', 'failed', 'skipped']),
-        export_primary: z.enum(['ok', 'failed', 'skipped']),
-        export_fallback: z.enum(['ok', 'failed', 'skipped']),
-      }),
-      provenance: AnalysisProvenanceSchema,
-      selection_diffs: AnalysisSelectionDiffSchema.optional(),
-      runtime: RuntimeSummarySchema,
-      plan: PlanSummarySchema.nullable(),
-      export: ExportSummarySchema.nullable(),
-      notes: z.array(z.string()),
-    })
-    .optional(),
+  data: z.union([ReconstructCompletedDataSchema, ReconstructQueuedDataSchema]).optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(z.any()).optional(),
@@ -368,7 +378,8 @@ export function createReconstructWorkflowHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   cacheManager: CacheManager,
-  dependencies?: ReconstructWorkflowDependencies
+  dependencies?: ReconstructWorkflowDependencies,
+  jobQueue?: JobQueue
 ) {
   const runtimeDetectHandler =
     dependencies?.runtimeDetectHandler ||
@@ -393,6 +404,42 @@ export function createReconstructWorkflowHandler(
         return {
           ok: false,
           errors: [`Sample not found: ${input.sample_id}`],
+        }
+      }
+
+      if (jobQueue) {
+        const jobTimeoutMs = Math.max(
+          input.build_timeout_ms + input.run_timeout_ms + 45 * 60 * 1000,
+          60 * 60 * 1000
+        )
+        const jobId = jobQueue.enqueue({
+          type: 'static',
+          tool: TOOL_NAME,
+          sampleId: input.sample_id,
+          args: input,
+          priority: 5,
+          timeout: jobTimeoutMs,
+          retryPolicy: {
+            maxRetries: 1,
+            backoffMs: 5000,
+            retryableErrors: ['E_TIMEOUT', 'E_RESOURCE_EXHAUSTED'],
+          },
+        })
+
+        return {
+          ok: true,
+          data: {
+            job_id: jobId,
+            status: 'queued',
+            tool: TOOL_NAME,
+            sample_id: input.sample_id,
+            requested_path: input.path,
+            progress: 0,
+          },
+          metrics: {
+            elapsed_ms: Date.now() - startTime,
+            tool: TOOL_NAME,
+          },
         }
       }
 

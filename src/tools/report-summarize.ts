@@ -8,6 +8,10 @@ import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
+import {
+  BinaryRoleProfileDataSchema,
+  createBinaryRoleProfileHandler,
+} from './binary-role-profile.js'
 import { createTriageWorkflowHandler } from '../workflows/triage.js'
 import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../dynamic-trace.js'
 import {
@@ -183,6 +187,9 @@ export const ReportSummarizeOutputSchema = z.object({
       confidence_semantics: ReportAssessmentConfidenceSchema.optional().describe(
         'Explains how to interpret confidence scores. These are heuristic evidence scores, not calibrated probabilities.'
       ),
+      binary_profile: BinaryRoleProfileDataSchema.optional().describe(
+        'Optional binary role profile summarizing EXE/DLL/COM/service/plugin/export characteristics.'
+      ),
       provenance: AnalysisProvenanceSchema.optional().describe(
         'Explicit runtime/semantic artifact selection used to produce this report, including scope, session selector, and selected artifact IDs.'
       ),
@@ -290,6 +297,7 @@ type TriageSummaryData = {
   evidence: string[]
   evidence_lineage?: z.infer<typeof EvidenceLineageSchema>
   confidence_semantics?: z.infer<typeof ReportAssessmentConfidenceSchema>
+  binary_profile?: z.infer<typeof BinaryRoleProfileDataSchema>
   function_explanations?: Array<z.infer<typeof FunctionExplanationSummarySchema>>
   evidence_weights?: {
     import: number
@@ -320,6 +328,61 @@ type TriageSummaryData = {
     }
   }
   recommendation: string
+}
+
+function buildBinaryProfileSummary(binaryProfile: z.infer<typeof BinaryRoleProfileDataSchema>): string {
+  const parts = [
+    `Binary role profile suggests ${binaryProfile.binary_role} (confidence=${binaryProfile.role_confidence.toFixed(2)})`,
+  ]
+  if (binaryProfile.export_surface.total_exports > 0) {
+    parts.push(`exports=${binaryProfile.export_surface.total_exports}`)
+  }
+  if (binaryProfile.indicators.com_server.likely) {
+    parts.push('COM-like surface detected')
+  }
+  if (binaryProfile.indicators.service_binary.likely) {
+    parts.push('service indicators detected')
+  }
+  if (binaryProfile.packed) {
+    parts.push('packing signals present')
+  }
+  return `${parts.join(', ')}.`
+}
+
+function augmentWithBinaryProfile(
+  triageData: TriageSummaryData,
+  binaryProfile?: z.infer<typeof BinaryRoleProfileDataSchema>
+): TriageSummaryData {
+  if (!binaryProfile) {
+    return triageData
+  }
+
+  const summaryLine = buildBinaryProfileSummary(binaryProfile)
+  const evidenceLines = dedupe([
+    summaryLine,
+    ...binaryProfile.analysis_priorities.map((item) => `binary_profile_priority: ${item}`),
+  ])
+  const recommendationSuffix =
+    binaryProfile.analysis_priorities.length > 0
+      ? ` Binary role priorities: ${binaryProfile.analysis_priorities.join(', ')}.`
+      : ''
+
+  return {
+    ...triageData,
+    summary: `${triageData.summary} ${summaryLine}`,
+    evidence: dedupe([...triageData.evidence, ...evidenceLines]),
+    binary_profile: binaryProfile,
+    recommendation: `${triageData.recommendation}${recommendationSuffix}`.trim(),
+    inference: triageData.inference
+      ? {
+          ...triageData.inference,
+          hypotheses: dedupe([
+            ...triageData.inference.hypotheses,
+            `Binary role profile suggests ${binaryProfile.binary_role}.`,
+          ]),
+        }
+      : triageData.inference,
+  }
 }
 
 function toolMetrics(startTime: number): { elapsed_ms: number; tool: string } {
@@ -530,7 +593,8 @@ function createMinimalDotnetFallback(
   startTime: number,
   functionExplanations: Array<z.infer<typeof FunctionExplanationSummarySchema>> = [],
   provenance?: z.infer<typeof AnalysisProvenanceSchema>,
-  evidenceScope: 'all' | 'latest' | 'session' = 'all'
+  evidenceScope: 'all' | 'latest' | 'session' = 'all',
+  binaryProfile?: z.infer<typeof BinaryRoleProfileDataSchema>
 ): WorkerResult {
   const triageErrors = triageResult.errors || []
   const warnings = [
@@ -557,8 +621,10 @@ function createMinimalDotnetFallback(
       evidence: [
         'Dotnet mode unavailable; triage fallback failed.',
         ...triageErrors.map((item) => `triage_error: ${item}`),
+        ...(binaryProfile ? [buildBinaryProfileSummary(binaryProfile)] : []),
       ],
       confidence_semantics: buildAssessmentConfidencePayload(0.2, evidenceScope),
+      binary_profile: binaryProfile,
       provenance,
       function_explanations: functionExplanations.length > 0 ? functionExplanations : undefined,
       inference: {
@@ -569,7 +635,7 @@ function createMinimalDotnetFallback(
         false_positive_risks: ['No triage evidence is available in this degraded fallback result.'],
       },
       recommendation:
-        'Re-run after ensuring workspace/original sample file exists, then use workflow.reconstruct or dotnet.reconstruct.export for .NET-specific structure.',
+        `Re-run after ensuring workspace/original sample file exists, then use workflow.reconstruct or dotnet.reconstruct.export for .NET-specific structure.${binaryProfile?.analysis_priorities?.length ? ` Binary role priorities: ${binaryProfile.analysis_priorities.join(', ')}.` : ''}`,
     },
     warnings,
     errors: triageErrors.length > 0 ? triageErrors : undefined,
@@ -583,7 +649,8 @@ function createDynamicEvidenceFallback(
   startTime: number,
   functionExplanations: Array<z.infer<typeof FunctionExplanationSummarySchema>> = [],
   provenance?: z.infer<typeof AnalysisProvenanceSchema>,
-  evidenceScope: 'all' | 'latest' | 'session' = 'all'
+  evidenceScope: 'all' | 'latest' | 'session' = 'all',
+  binaryProfile?: z.infer<typeof BinaryRoleProfileDataSchema>
 ): WorkerResult {
   const evidenceLineage = buildEvidenceLineage(dynamicEvidence)
   const threatLevel =
@@ -593,7 +660,7 @@ function createDynamicEvidenceFallback(
     ok: true,
     data: {
       summary:
-        `Triage pipeline failed, but imported runtime evidence is available. ${buildEvidenceLayerHeadline(evidenceLineage)} ${dynamicEvidence.summary}`,
+        `Triage pipeline failed, but imported runtime evidence is available. ${buildEvidenceLayerHeadline(evidenceLineage)} ${dynamicEvidence.summary}${binaryProfile ? ` ${buildBinaryProfileSummary(binaryProfile)}` : ''}`,
       confidence: dynamicEvidence.executed ? 0.66 : 0.5,
       threat_level: threatLevel,
       iocs: {
@@ -604,13 +671,18 @@ function createDynamicEvidenceFallback(
           suspicious_apis: dynamicEvidence.high_signal_apis,
         },
       },
-      evidence: dedupe([buildEvidenceLayerHeadline(evidenceLineage), ...dynamicEvidence.evidence]),
+      evidence: dedupe([
+        buildEvidenceLayerHeadline(evidenceLineage),
+        ...dynamicEvidence.evidence,
+        ...(binaryProfile ? [buildBinaryProfileSummary(binaryProfile)] : []),
+      ]),
       evidence_lineage: evidenceLineage,
       confidence_semantics: buildAssessmentConfidencePayload(
         dynamicEvidence.executed ? 0.66 : 0.5,
         evidenceScope,
         evidenceLineage
       ),
+      binary_profile: binaryProfile,
       provenance,
       function_explanations: functionExplanations.length > 0 ? functionExplanations : undefined,
       evidence_weights: {
@@ -630,7 +702,7 @@ function createDynamicEvidenceFallback(
         ],
       },
       recommendation:
-        'Correlate imported runtime evidence with code.functions.search, code.functions.reconstruct, and code.reconstruct.export to assign concrete function ownership.',
+        `Correlate imported runtime evidence with code.functions.search, code.functions.reconstruct, and code.reconstruct.export to assign concrete function ownership.${binaryProfile?.analysis_priorities?.length ? ` Binary role priorities: ${binaryProfile.analysis_priorities.join(', ')}.` : ''}`,
     },
     warnings: [
       'Triage pipeline failed; returned imported runtime-evidence fallback.',
@@ -647,10 +719,14 @@ export function createReportSummarizeHandler(
   cacheManager: CacheManager,
   deps?: {
     triageHandler?: (args: ToolArgs) => Promise<WorkerResult>
+    binaryRoleProfileHandler?: (args: ToolArgs) => Promise<WorkerResult>
   }
 ) {
   const triageHandler =
     deps?.triageHandler || createTriageWorkflowHandler(workspaceManager, database, cacheManager)
+  const binaryRoleProfileHandler =
+    deps?.binaryRoleProfileHandler ||
+    createBinaryRoleProfileHandler(workspaceManager, database, cacheManager)
 
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -664,11 +740,24 @@ export function createReportSummarizeHandler(
           errors: [`Sample not found: ${input.sample_id}`],
         }
       }
+      const warnings: string[] = []
 
       const dynamicEvidence = await loadDynamicTraceEvidence(workspaceManager, database, input.sample_id, {
         evidenceScope: input.evidence_scope,
         sessionTag: input.evidence_session_tag,
       })
+      const binaryRoleProfileResult = await binaryRoleProfileHandler({ sample_id: input.sample_id })
+      const binaryProfile =
+        binaryRoleProfileResult.ok && binaryRoleProfileResult.data
+          ? (binaryRoleProfileResult.data as z.infer<typeof BinaryRoleProfileDataSchema>)
+          : undefined
+      if (!binaryRoleProfileResult.ok) {
+        warnings.push(
+          `binary.role.profile unavailable: ${(binaryRoleProfileResult.errors || ['unknown error']).join('; ')}`
+        )
+      } else if (binaryRoleProfileResult.warnings?.length) {
+        warnings.push(...binaryRoleProfileResult.warnings.map((item) => `binary.role.profile: ${item}`))
+      }
       const functionExplanationBundle = await loadFunctionExplanationSummaries(
         workspaceManager,
         database,
@@ -748,7 +837,8 @@ export function createReportSummarizeHandler(
               startTime,
               functionExplanations,
               provenance,
-              input.evidence_scope
+              input.evidence_scope,
+              binaryProfile
             )
           }
           return {
@@ -763,8 +853,9 @@ export function createReportSummarizeHandler(
         const triageData = dynamicEvidence
           ? augmentWithDynamicEvidence(triageDataBase, dynamicEvidence)
           : triageDataBase
+        const binaryEnrichedTriageData = augmentWithBinaryProfile(triageData, binaryProfile)
         const enrichedTriageData = augmentWithFunctionExplanations(
-          triageData,
+          binaryEnrichedTriageData,
           functionExplanations
         )
         return {
@@ -781,6 +872,7 @@ export function createReportSummarizeHandler(
               input.evidence_scope,
               enrichedTriageData.evidence_lineage || buildEvidenceLineage(dynamicEvidence)
             ),
+            binary_profile: enrichedTriageData.binary_profile,
             provenance,
             selection_diffs:
               Object.keys(selectionDiffs).length > 0 ? selectionDiffs : undefined,
@@ -791,11 +883,12 @@ export function createReportSummarizeHandler(
           },
           warnings: dynamicEvidence
             ? dedupe([
+              ...warnings,
               ...(triageResult.warnings || []),
                 `Merged imported runtime evidence from ${dynamicEvidence.artifact_count} artifact(s) using scope=${input.evidence_scope}${input.evidence_session_tag ? ` selector=${input.evidence_session_tag}` : ''}.`,
                 dynamicEvidence.scope_note || '',
               ])
-            : triageResult.warnings,
+            : dedupe([...warnings, ...(triageResult.warnings || [])]),
           errors: triageResult.errors,
           metrics: toolMetrics(startTime),
         }
@@ -808,7 +901,8 @@ export function createReportSummarizeHandler(
             startTime,
             functionExplanations,
             provenance,
-            input.evidence_scope
+            input.evidence_scope,
+            binaryProfile
           )
         }
 
@@ -833,6 +927,7 @@ export function createReportSummarizeHandler(
               input.evidence_scope,
               triageData.evidence_lineage || buildEvidenceLineage(dynamicEvidence)
             ),
+            binary_profile: binaryProfile,
             provenance,
             selection_diffs:
               Object.keys(selectionDiffs).length > 0 ? selectionDiffs : undefined,
@@ -844,6 +939,7 @@ export function createReportSummarizeHandler(
               'dotnet.reconstruct.export / workflow.reconstruct for .NET-specific structure.',
           },
           warnings: [
+            ...warnings,
             'report.summarize(mode=dotnet) not fully implemented; returned triage fallback.',
             ...(triageResult.warnings || []),
           ],

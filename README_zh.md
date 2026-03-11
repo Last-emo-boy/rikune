@@ -34,6 +34,7 @@ English version: [`README.md`](./README.md)
 - `yara.scan`
 - `runtime.detect`
 - `packer.detect`
+- `binary.role.profile`
 
 ### Ghidra 与代码分析
 
@@ -87,6 +88,7 @@ tests/                       单元与集成测试
 workers/                     Python worker、YARA 规则、动态分析辅助
 install-to-codex.ps1         本地 Codex 安装脚本
 install-to-copilot.ps1       本地 GitHub Copilot 安装脚本
+docs/QUALITY_EVALUATION.md   回归与发布质量评测清单
 ```
 
 ## 环境要求
@@ -261,6 +263,9 @@ git push origin main --follow-tags
 ## 贡献
 
 本地开发、验证和发版流程见 [`CONTRIBUTING.md`](./CONTRIBUTING.md)。
+
+发布前的回归与评测建议见 [`docs/QUALITY_EVALUATION.md`](./docs/QUALITY_EVALUATION.md) 和
+[`examples/benchmark-corpus.example.json`](./examples/benchmark-corpus.example.json)。
 
 ## 安全
 

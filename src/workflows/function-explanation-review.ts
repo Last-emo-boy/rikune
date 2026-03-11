@@ -8,6 +8,7 @@ import type { ToolArgs, ToolDefinition, WorkerResult } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
+import type { JobQueue } from '../job-queue.js'
 import type { MCPServer } from '../server.js'
 import { createCodeFunctionExplainReviewHandler } from '../tools/code-function-explain-review.js'
 import { createReconstructWorkflowHandler } from './reconstruct.js'
@@ -202,7 +203,15 @@ export const functionExplanationReviewWorkflowInputSchema = z
 export const functionExplanationReviewWorkflowOutputSchema = z.object({
   ok: z.boolean(),
   data: z
-    .object({
+    .union([
+      z.object({
+        job_id: z.string(),
+        status: z.literal('queued'),
+        tool: z.literal(TOOL_NAME),
+        sample_id: z.string(),
+        progress: z.number().int().min(0).max(100),
+      }),
+      z.object({
       sample_id: z.string(),
       review: z.object({
         review_status: z.string(),
@@ -246,7 +255,8 @@ export const functionExplanationReviewWorkflowOutputSchema = z.object({
         notes: z.array(z.string()),
       }),
       next_steps: z.array(z.string()),
-    })
+      }),
+    ])
     .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
@@ -277,7 +287,8 @@ export function createFunctionExplanationReviewWorkflowHandler(
   database: DatabaseManager,
   cacheManager: CacheManager,
   mcpServer?: MCPServer,
-  dependencies?: FunctionExplanationReviewWorkflowDependencies
+  dependencies?: FunctionExplanationReviewWorkflowDependencies,
+  jobQueue?: JobQueue
 ) {
   const explainReviewHandler =
     dependencies?.explainReviewHandler ||
@@ -299,6 +310,53 @@ export function createFunctionExplanationReviewWorkflowHandler(
 
     try {
       const input = functionExplanationReviewWorkflowInputSchema.parse(args)
+      const sample = database.findSample(input.sample_id)
+      if (!sample) {
+        return {
+          ok: false,
+          errors: [`Sample not found: ${input.sample_id}`],
+          metrics: {
+            elapsed_ms: Date.now() - startTime,
+            tool: TOOL_NAME,
+          },
+        }
+      }
+
+      if (jobQueue) {
+        const jobTimeoutMs = Math.max(
+          input.build_timeout_ms + input.run_timeout_ms + 45 * 60 * 1000,
+          60 * 60 * 1000
+        )
+        const jobId = jobQueue.enqueue({
+          type: 'static',
+          tool: TOOL_NAME,
+          sampleId: input.sample_id,
+          args: input,
+          priority: 5,
+          timeout: jobTimeoutMs,
+          retryPolicy: {
+            maxRetries: 1,
+            backoffMs: 5000,
+            retryableErrors: ['E_TIMEOUT', 'E_RESOURCE_EXHAUSTED'],
+          },
+        })
+
+        return {
+          ok: true,
+          data: {
+            job_id: jobId,
+            status: 'queued',
+            tool: TOOL_NAME,
+            sample_id: input.sample_id,
+            progress: 0,
+          },
+          metrics: {
+            elapsed_ms: Date.now() - startTime,
+            tool: TOOL_NAME,
+          },
+        }
+      }
+
       const reviewResult = await explainReviewHandler({
         sample_id: input.sample_id,
         address: input.address,

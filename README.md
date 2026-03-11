@@ -37,6 +37,7 @@ Primary use cases:
 - `yara.scan`
 - `runtime.detect`
 - `packer.detect`
+- `binary.role.profile`
 
 ### Ghidra and code analysis
 
@@ -90,6 +91,7 @@ tests/                       unit and integration tests
 workers/                     Python worker, YARA rules, dynamic helpers
 install-to-codex.ps1         local Codex MCP install helper
 install-to-copilot.ps1       local GitHub Copilot MCP install helper
+docs/QUALITY_EVALUATION.md   evaluation checklist for regression and release readiness
 ```
 
 ## Prerequisites
@@ -266,6 +268,9 @@ That tag push will trigger the publish workflow.
 
 See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local
 setup, validation, and release steps.
+
+For release-quality regression planning, see [`docs/QUALITY_EVALUATION.md`](./docs/QUALITY_EVALUATION.md)
+and [`examples/benchmark-corpus.example.json`](./examples/benchmark-corpus.example.json).
 
 ## Security
 

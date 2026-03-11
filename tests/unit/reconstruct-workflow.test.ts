@@ -8,6 +8,7 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
+import { JobQueue } from '../../src/job-queue.js'
 import type { ToolArgs, WorkerResult } from '../../src/types.js'
 import {
   createReconstructWorkflowHandler,
@@ -165,6 +166,35 @@ describe('workflow.reconstruct tool', () => {
         compare_evidence_scope: 'session',
       })
     ).toThrow('compare_evidence_session_tag')
+  })
+
+  test('should enqueue workflow.reconstruct as async job when queue is provided', async () => {
+    const sampleId = 'sha256:' + '0'.repeat(64)
+    await setupSample(sampleId, '0')
+
+    const queue = new JobQueue()
+    const handler = createReconstructWorkflowHandler(
+      workspaceManager,
+      database,
+      cacheManager,
+      undefined,
+      queue
+    )
+    const result = await handler({
+      sample_id: sampleId,
+      path: 'native',
+      evidence_scope: 'latest',
+      semantic_scope: 'latest',
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.status).toBe('queued')
+    expect(data.tool).toBe('workflow.reconstruct')
+    expect(data.sample_id).toBe(sampleId)
+    expect(data.requested_path).toBe('native')
+    expect(data.job_id).toBeTruthy()
+    expect(queue.getStatus(data.job_id)?.status).toBe('queued')
   })
 
   test('should return error when sample does not exist', async () => {

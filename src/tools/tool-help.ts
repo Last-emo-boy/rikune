@@ -180,6 +180,15 @@ function buildFieldHelpHint(path: string, toolName?: string): string | null {
     }
   }
 
+  if (toolName === 'binary.role.profile') {
+    if (path === 'max_exports') {
+      return 'Controls how many exports/forwarders are surfaced in the summarized DLL or EXE export map.'
+    }
+    if (path === 'max_strings') {
+      return 'Controls how many strings are inspected for COM/service/plugin heuristics. Increase when profiling installer/plugin-heavy samples.'
+    }
+  }
+
   if (path === 'evidence_scope') {
     return 'Controls runtime evidence selection only. Use session for one runtime import/replay lineage, latest for the newest artifact window, all to aggregate historical runtime evidence.'
   }
@@ -255,6 +264,15 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
     )
     notes.push(
       'When both path and bytes_b64 are provided, path wins. Passing an absolute file path is the most reliable option for local VS Code/Copilot clients.'
+    )
+  }
+
+  if (definition.name === 'binary.role.profile') {
+    notes.push(
+      'Use this tool before deep reconstruct when you need a universal EXE/DLL/driver/COM/plugin role summary and export/import entry map.'
+    )
+    notes.push(
+      'The returned analysis_priorities are intended to guide later MCP calls such as code.functions.search, ghidra.analyze, workflow.reconstruct, or dynamic.memory.import.'
     )
   }
 

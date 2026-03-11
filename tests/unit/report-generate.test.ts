@@ -236,6 +236,80 @@ describe('report.generate tool', () => {
     expect(reportContent.confidence_semantics.calibrated).toBe(false)
   })
 
+  test('should include binary role profile section in generated markdown report', async () => {
+    const sampleId = 'sha256:' + 'b'.repeat(64)
+    const createdAt = new Date().toISOString()
+
+    database.insertSample({
+      id: sampleId,
+      sha256: 'b'.repeat(64),
+      md5: 'b'.repeat(32),
+      size: 4096,
+      file_type: 'PE32 executable (DLL)',
+      created_at: createdAt,
+      source: 'unit-test',
+    })
+
+    await workspaceManager.createWorkspace(sampleId)
+
+    const handler = createReportGenerateHandler(workspaceManager, database, undefined, {
+      binaryRoleProfileHandler: async () => ({
+        ok: true,
+        data: {
+          sample_id: sampleId,
+          original_filename: 'demo.dll',
+          binary_role: 'dll',
+          role_confidence: 0.91,
+          runtime_hint: {
+            is_dotnet: false,
+            dotnet_version: null,
+            target_framework: null,
+            primary_runtime: 'native',
+          },
+          export_surface: {
+            total_exports: 2,
+            total_forwarders: 0,
+            notable_exports: ['DllRegisterServer', 'RunPlugin'],
+            com_related_exports: ['DllRegisterServer'],
+            service_related_exports: [],
+            plugin_related_exports: ['RunPlugin'],
+            forwarded_exports: [],
+          },
+          import_surface: {
+            dll_count: 3,
+            notable_dlls: ['kernel32.dll', 'ole32.dll'],
+            com_related_imports: ['ole32.dll'],
+            service_related_imports: [],
+            network_related_imports: [],
+            process_related_imports: ['kernel32.dll'],
+          },
+          packed: false,
+          packing_confidence: 0.08,
+          indicators: {
+            com_server: { likely: true, confidence: 0.8, evidence: ['export:DllRegisterServer'] },
+            service_binary: { likely: false, confidence: 0.1, evidence: [] },
+            plugin_binary: { likely: true, confidence: 0.67, evidence: ['export:RunPlugin'] },
+            driver_binary: { likely: false, confidence: 0.05, evidence: [] },
+          },
+          analysis_priorities: ['trace_export_surface_first'],
+          strings_considered: 14,
+        },
+      }),
+    })
+    const result = await handler({
+      sample_id: sampleId,
+      format: 'markdown',
+    })
+
+    expect(result.isError).toBeUndefined()
+    const payload = JSON.parse(result.content.find((item) => item.type === 'text')!.text!)
+    const reportContent = fs.readFileSync(payload.data.path, 'utf-8')
+    expect(reportContent).toContain('## Binary Role Profile')
+    expect(reportContent).toContain('**Binary Role:** dll')
+    expect(reportContent).toContain('DllRegisterServer')
+    expect(reportContent).toContain('trace_export_surface_first')
+  })
+
   test('should include semantic function explanations in generated reports', async () => {
     const sampleId = 'sha256:' + '3'.repeat(64)
     const createdAt = '2026-03-11T00:00:00.000Z'

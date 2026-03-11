@@ -72,6 +72,10 @@ import {
   createPackerDetectHandler
 } from './tools/packer-detect.js'
 import {
+  binaryRoleProfileToolDefinition,
+  createBinaryRoleProfileHandler,
+} from './tools/binary-role-profile.js'
+import {
   triageWorkflowToolDefinition,
   createTriageWorkflowHandler
 } from './workflows/triage.js'
@@ -343,6 +347,10 @@ async function main() {
       packerDetectToolDefinition,
       createPackerDetectHandler(workspaceManager, database, cacheManager)
     )
+    server.registerTool(
+      binaryRoleProfileToolDefinition,
+      createBinaryRoleProfileHandler(workspaceManager, database, cacheManager)
+    )
 
     // Task 9.1: workflow.triage - Quick triage workflow
     server.registerTool(
@@ -353,7 +361,7 @@ async function main() {
     // Task 40.5.1: workflow.reconstruct - End-to-end source reconstruction workflow
     server.registerTool(
       reconstructWorkflowToolDefinition,
-      createReconstructWorkflowHandler(workspaceManager, database, cacheManager)
+      createReconstructWorkflowHandler(workspaceManager, database, cacheManager, undefined, jobQueue)
     )
 
     // Task 16.x: workflow.deep_static - Comprehensive long-running static analysis
@@ -368,7 +376,9 @@ async function main() {
         workspaceManager,
         database,
         cacheManager,
-        server
+        server,
+        undefined,
+        jobQueue
       )
     )
     server.registerTool(
@@ -377,7 +387,9 @@ async function main() {
         workspaceManager,
         database,
         cacheManager,
-        server
+        server,
+        undefined,
+        jobQueue
       )
     )
 
@@ -390,7 +402,7 @@ async function main() {
     // Task 24.x: report.generate - Generate stored multi-stage analysis report artifact
     server.registerTool(
       reportGenerateToolDefinition,
-      createReportGenerateHandler(workspaceManager, database)
+      createReportGenerateHandler(workspaceManager, database, cacheManager)
     )
 
     // Task 15.1: ghidra.analyze - Analyze binary with Ghidra

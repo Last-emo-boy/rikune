@@ -11,12 +11,17 @@ import fs from 'fs';
 import path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import type { ToolDefinition, ToolHandler, ToolResult } from '../types.js';
+import type { CacheManager } from '../cache-manager.js';
 import type { DatabaseManager } from '../database.js';
 import type { WorkspaceManager } from '../workspace-manager.js';
 import { logger } from '../logger.js';
 import { isGhidraReadyStatus } from '../ghidra-analysis-status.js';
 import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../dynamic-trace.js';
 import { loadSemanticFunctionExplanationIndex } from '../semantic-name-suggestion-artifacts.js';
+import {
+  BinaryRoleProfileDataSchema,
+  createBinaryRoleProfileHandler,
+} from './binary-role-profile.js';
 import { buildReportConfidenceSemantics } from '../confidence-semantics.js';
 import {
   buildRuntimeArtifactProvenance,
@@ -108,6 +113,7 @@ function generateMarkdownReport(
   analyses: any[],
   functions: any[],
   dynamicEvidence: DynamicTraceSummary | null,
+  binaryProfile: z.infer<typeof BinaryRoleProfileDataSchema> | null,
   functionExplanations: Array<{
     address: string | null;
     function: string | null;
@@ -225,6 +231,28 @@ function generateMarkdownReport(
     }
   }
 
+  if (binaryProfile) {
+    lines.push('## Binary Role Profile');
+    lines.push('');
+    lines.push(`- **Binary Role:** ${binaryProfile.binary_role}`);
+    lines.push(`- **Role Confidence:** ${binaryProfile.role_confidence.toFixed(2)}`);
+    lines.push(`- **Packed:** ${binaryProfile.packed ? 'Yes' : 'No'}`);
+    lines.push(`- **Packing Confidence:** ${binaryProfile.packing_confidence.toFixed(2)}`);
+    lines.push(`- **Exports:** ${binaryProfile.export_surface.total_exports}`);
+    lines.push(`- **Forwarded Exports:** ${binaryProfile.export_surface.total_forwarders}`);
+    lines.push(`- **Import DLL Count:** ${binaryProfile.import_surface.dll_count}`);
+    if (binaryProfile.export_surface.notable_exports.length > 0) {
+      lines.push(`- **Notable Exports:** ${binaryProfile.export_surface.notable_exports.join(', ')}`);
+    }
+    if (binaryProfile.import_surface.notable_dlls.length > 0) {
+      lines.push(`- **Notable DLLs:** ${binaryProfile.import_surface.notable_dlls.join(', ')}`);
+    }
+    if (binaryProfile.analysis_priorities.length > 0) {
+      lines.push(`- **Analysis Priorities:** ${binaryProfile.analysis_priorities.join(', ')}`);
+    }
+    lines.push('');
+  }
+
   lines.push('## Runtime Evidence');
   lines.push('');
   lines.push(`- **Evidence Scope:** ${evidenceScope}`);
@@ -332,8 +360,21 @@ function generateMarkdownReport(
  */
 export function createReportGenerateHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager
+  database: DatabaseManager,
+  cacheManager?: CacheManager,
+  deps?: {
+    binaryRoleProfileHandler?: (args: Record<string, unknown>) => Promise<{
+      ok: boolean
+      data?: unknown
+      errors?: string[]
+      warnings?: string[]
+    }>
+  }
 ): ToolHandler {
+  const binaryRoleProfileHandler =
+    deps?.binaryRoleProfileHandler ||
+    (cacheManager ? createBinaryRoleProfileHandler(workspaceManager, database, cacheManager) : undefined)
+
   return async (args: unknown): Promise<ToolResult> => {
     try {
       const input = reportGenerateInputSchema.parse(args);
@@ -401,6 +442,15 @@ export function createReportGenerateHandler(
           rewrite_guidance: item.rewrite_guidance.slice(0, 4),
           source: item.model_name || item.client_name || null,
         }));
+      let binaryProfile: z.infer<typeof BinaryRoleProfileDataSchema> | null = null;
+      if (binaryRoleProfileHandler) {
+        const binaryRoleProfileResult = await binaryRoleProfileHandler({
+          sample_id: input.sample_id,
+        });
+        if (binaryRoleProfileResult.ok && binaryRoleProfileResult.data) {
+          binaryProfile = binaryRoleProfileResult.data as z.infer<typeof BinaryRoleProfileDataSchema>;
+        }
+      }
       const provenance = {
         runtime: buildRuntimeArtifactProvenance(
           dynamicEvidence,
@@ -473,6 +523,7 @@ export function createReportGenerateHandler(
             analyses,
             functions,
             dynamicEvidence,
+            binaryProfile,
             functionExplanations,
             input.evidence_scope,
             input.evidence_session_tag,
@@ -498,6 +549,7 @@ export function createReportGenerateHandler(
             analyses,
             functions,
             dynamic_evidence: dynamicEvidence,
+            binary_profile: binaryProfile,
             function_explanations: functionExplanations,
             evidence_scope: input.evidence_scope,
             evidence_session_tag: input.evidence_session_tag || null,
@@ -532,6 +584,7 @@ export function createReportGenerateHandler(
   analyses,
   functions,
   dynamicEvidence,
+  binaryProfile,
   functionExplanations,
   input.evidence_scope,
   input.evidence_session_tag,

@@ -1,0 +1,35 @@
+{
+  "version": "0.1.0",
+  "samples": [
+    {
+      "label": "native_dll_com_server",
+      "sample_id": "sha256:<replace-me>",
+      "kind": "dll",
+      "expected_role": "dll",
+      "expected_capabilities": [
+        "trace_export_surface_first",
+        "trace_com_activation_and_class_factory_flow"
+      ],
+      "expected_indicators": {
+        "com_server": true,
+        "service_binary": false,
+        "plugin_binary": false
+      }
+    },
+    {
+      "label": "packed_exe_operator_tool",
+      "sample_id": "sha256:<replace-me>",
+      "kind": "packed_executable",
+      "expected_role": "executable",
+      "expected_capabilities": [
+        "unpack_or_stage_memory_import_before_deep_reconstruct",
+        "review_process_manipulation_and_dynamic_resolution_paths"
+      ],
+      "expected_indicators": {
+        "com_server": false,
+        "service_binary": false,
+        "plugin_binary": false
+      }
+    }
+  ]
+}

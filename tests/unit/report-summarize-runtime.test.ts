@@ -206,6 +206,98 @@ describe('report.summarize runtime evidence integration', () => {
     expect(data.confidence_semantics.assessment.drivers).toContain('executed_trace=yes')
   })
 
+  test('should attach binary role profile and priorities to report summary output', async () => {
+    const sampleId = 'sha256:' + 'a'.repeat(64)
+    database.insertSample({
+      id: sampleId,
+      sha256: 'a'.repeat(64),
+      md5: 'a'.repeat(32),
+      size: 4096,
+      file_type: 'PE32 executable (DLL)',
+      created_at: new Date().toISOString(),
+      source: 'unit-test',
+    })
+
+    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: {
+        summary: 'Static triage suggests operator tooling.',
+        confidence: 0.7,
+        threat_level: 'clean',
+        iocs: {
+          suspicious_imports: [],
+          suspicious_strings: [],
+          yara_matches: [],
+        },
+        evidence: ['Static hint.'],
+        recommendation: 'Review exports first.',
+        inference: {
+          classification: 'unknown',
+          hypotheses: ['Static imports suggest loader-like behavior.'],
+          false_positive_risks: ['Static-only evidence can overstate role.'],
+        },
+      },
+    })
+    const binaryRoleProfileHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: {
+        sample_id: sampleId,
+        original_filename: 'demo.dll',
+        binary_role: 'dll',
+        role_confidence: 0.92,
+        runtime_hint: {
+          is_dotnet: false,
+          dotnet_version: null,
+          target_framework: null,
+          primary_runtime: 'native',
+        },
+        export_surface: {
+          total_exports: 3,
+          total_forwarders: 0,
+          notable_exports: ['DllRegisterServer', 'RunPlugin'],
+          com_related_exports: ['DllRegisterServer'],
+          service_related_exports: [],
+          plugin_related_exports: ['RunPlugin'],
+          forwarded_exports: [],
+        },
+        import_surface: {
+          dll_count: 4,
+          notable_dlls: ['kernel32.dll', 'ole32.dll'],
+          com_related_imports: ['ole32.dll'],
+          service_related_imports: [],
+          network_related_imports: [],
+          process_related_imports: ['kernel32.dll'],
+        },
+        packed: false,
+        packing_confidence: 0.12,
+        indicators: {
+          com_server: { likely: true, confidence: 0.81, evidence: ['export:DllRegisterServer'] },
+          service_binary: { likely: false, confidence: 0.1, evidence: [] },
+          plugin_binary: { likely: true, confidence: 0.69, evidence: ['export:RunPlugin'] },
+          driver_binary: { likely: false, confidence: 0.05, evidence: [] },
+        },
+        analysis_priorities: ['trace_export_surface_first', 'trace_com_activation_and_class_factory_flow'],
+        strings_considered: 10,
+      },
+    })
+
+    const handler = createReportSummarizeHandler(workspaceManager, database, cacheManager, {
+      triageHandler,
+      binaryRoleProfileHandler,
+    })
+    const result = await handler({
+      sample_id: sampleId,
+      mode: 'triage',
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.binary_profile.binary_role).toBe('dll')
+    expect(data.summary).toContain('Binary role profile suggests dll')
+    expect(data.evidence.some((item: string) => item.includes('binary_profile_priority'))).toBe(true)
+    expect(data.recommendation).toContain('trace_export_surface_first')
+  })
+
   test('should return runtime-evidence fallback when triage fails', async () => {
     const sampleId = 'sha256:' + '4'.repeat(64)
     database.insertSample({
