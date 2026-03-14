@@ -279,6 +279,30 @@ function buildFieldHelpHint(path: string, toolName?: string): string | null {
     }
   }
 
+  if (toolName === 'static.capability.triage') {
+    if (path === 'sample_id') {
+      return 'Use this after sample.ingest for capability-style behavior recognition. It is most useful early in triage before deep reconstruct.'
+    }
+    if (path === 'rules_path') {
+      return 'Optional override for a capa rules directory or rules file. Prefer CAPA_RULES_PATH or workers.static.capaRulesPath for persistent configuration.'
+    }
+  }
+
+  if (toolName === 'pe.structure.analyze') {
+    if (path === 'sample_id') {
+      return 'Use this when you need one canonical PE structure view that merges pefile and LIEF outputs instead of calling separate import/export/header tools.'
+    }
+  }
+
+  if (toolName === 'compiler.packer.detect') {
+    if (path === 'sample_id') {
+      return 'Use this during early-stage triage when you want compiler, packer, protector, and file-type attribution from Detect It Easy.'
+    }
+    if (path === 'timeout_sec') {
+      return 'Increase this for large or heavily packed binaries when Detect It Easy classification is slow.'
+    }
+  }
+
   if (toolName === 'code.module.review.prepare') {
     if (path === 'sample_id') {
       return 'Use this when reconstruct already produces grouped modules and you want an external LLM to review module roles, summaries, and rewrite guidance.'
@@ -318,6 +342,12 @@ function buildFieldHelpHint(path: string, toolName?: string): string | null {
   if (path === 'evidence_session_tag') {
     return 'Required when evidence_scope=session. You can also pass it with all/latest to narrow runtime evidence to one named session.'
   }
+  if (path === 'static_scope') {
+    return 'Controls static-analysis artifact selection only. Use session to consume one capability/PE-structure/toolchain triage session, latest for the newest static-analysis artifact window, all to aggregate historical static-analysis artifacts.'
+  }
+  if (path === 'static_session_tag') {
+    return 'Required when static_scope=session. Usually set this to the session_tag used when persisting static capability, PE structure, or compiler/packer artifacts.'
+  }
   if (path === 'semantic_scope') {
     return 'Controls semantic naming/explanation artifact selection only. Use session to consume one naming or explanation review pass, latest for the newest semantic artifact window, all to aggregate historical semantic artifacts.'
   }
@@ -352,16 +382,27 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
   const inputFields = buildSchemaSummary(definition.inputSchema, definition.name).fields.map((item) => item.path)
 
   const hasEvidenceScope = inputFields.includes('evidence_scope')
+  const hasStaticScope = inputFields.includes('static_scope')
   const hasSemanticScope = inputFields.includes('semantic_scope')
   const hasSessionTag = inputFields.includes('session_tag')
 
-  if (hasEvidenceScope && hasSemanticScope) {
+  if (hasEvidenceScope && hasStaticScope && hasSemanticScope) {
+    notes.push(
+      'This tool separates runtime, static-analysis, and semantic artifact scopes. Set all three explicitly when you need fully reproducible session-only results.'
+    )
+  } else if (hasEvidenceScope && hasSemanticScope) {
     notes.push(
       'This tool separates runtime evidence scope from semantic artifact scope. Set both when you need fully reproducible session-only results.'
     )
   } else if (hasEvidenceScope) {
     notes.push(
       'This tool consumes runtime evidence artifacts. Prefer evidence_scope=session plus evidence_session_tag for one replay/import session.'
+    )
+  }
+
+  if (hasStaticScope) {
+    notes.push(
+      'This tool consumes static-analysis artifacts such as capability triage, PE structure analysis, and compiler/packer attribution. Prefer static_scope=session plus static_session_tag to avoid mixing historical triage runs.'
     )
   }
 
@@ -482,6 +523,30 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
     )
     notes.push(
       'Use this after ghidra.analyze returns zero functions or degraded function_index readiness. The output includes imported function previews and an optional ranked preview.'
+    )
+  }
+
+  if (definition.name === 'static.capability.triage') {
+    notes.push(
+      'Use this after sample.ingest to recover capa-style behavior capabilities such as service installation, HTTP communication, injection, persistence, or crypto behavior.'
+    )
+    notes.push(
+      'When setup_actions or required_user_inputs are returned, install flare-capa and configure CAPA_RULES_PATH before retrying.'
+    )
+  }
+
+  if (definition.name === 'pe.structure.analyze') {
+    notes.push(
+      'Use this when you need one canonical PE structure response with headers, sections, imports, exports, resources, overlay, and backend-specific detail blocks.'
+    )
+  }
+
+  if (definition.name === 'compiler.packer.detect') {
+    notes.push(
+      'Use this tool early in triage to identify likely compiler, packer, protector, and primary file-type attribution with Detect It Easy.'
+    )
+    notes.push(
+      'If Detect It Easy is missing, inspect setup_actions and required_user_inputs instead of retrying blindly. Provide DIE_PATH or put diec.exe on PATH.'
     )
   }
 

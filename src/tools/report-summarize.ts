@@ -16,6 +16,9 @@ import {
   RustBinaryAnalyzeDataSchema,
   createRustBinaryAnalyzeHandler,
 } from './rust-binary-analyze.js'
+import { StaticCapabilityTriageDataSchema } from './static-capability-triage.js'
+import { PEStructureAnalyzeDataSchema } from './pe-structure-analyze.js'
+import { CompilerPackerDetectDataSchema } from './compiler-packer-detect.js'
 import { createTriageWorkflowHandler } from '../workflows/triage.js'
 import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../dynamic-trace.js'
 import {
@@ -23,12 +26,20 @@ import {
   type SemanticFunctionExplanationIndex,
 } from '../semantic-name-suggestion-artifacts.js'
 import {
+  loadStaticAnalysisArtifactSelection,
+  STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
+  PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
+  COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
+  type StaticArtifactScope,
+} from '../static-analysis-artifacts.js'
+import {
   ConfidenceSemanticsSchema,
   buildReportConfidenceSemantics,
 } from '../confidence-semantics.js'
 import {
   AnalysisProvenanceSchema,
   buildRuntimeArtifactProvenance,
+  buildStaticArtifactProvenance,
   buildSemanticArtifactProvenance,
 } from '../analysis-provenance.js'
 import {
@@ -56,6 +67,14 @@ export const ReportSummarizeInputSchema = z.object({
     .string()
     .optional()
     .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
+  static_scope: z
+    .enum(['all', 'latest', 'session'])
+    .default('latest')
+    .describe('Static-analysis artifact scope shared by capability triage, PE structure analysis, and compiler/packer attribution selections'),
+  static_session_tag: z
+    .string()
+    .optional()
+    .describe('Optional static-analysis session selector used when static_scope=session or to narrow all/latest results'),
   semantic_scope: z
     .enum(['all', 'latest', 'session'])
     .default('all')
@@ -72,6 +91,14 @@ export const ReportSummarizeInputSchema = z.object({
     .string()
     .optional()
     .describe('Optional baseline runtime evidence session selector used when compare_evidence_scope=session'),
+  compare_static_scope: z
+    .enum(['all', 'latest', 'session'])
+    .optional()
+    .describe('Optional baseline static-analysis scope used to compare capability, PE structure, and compiler/packer artifact selections'),
+  compare_static_session_tag: z
+    .string()
+    .optional()
+    .describe('Optional baseline static-analysis session selector used when compare_static_scope=session'),
   compare_semantic_scope: z
     .enum(['all', 'latest', 'session'])
     .optional()
@@ -90,6 +117,10 @@ export const ReportSummarizeInputSchema = z.object({
     message: 'evidence_session_tag is required when evidence_scope=session',
     path: ['evidence_session_tag'],
   })
+  .refine((value) => value.static_scope !== 'session' || Boolean(value.static_session_tag?.trim()), {
+    message: 'static_session_tag is required when static_scope=session',
+    path: ['static_session_tag'],
+  })
   .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
     message: 'semantic_session_tag is required when semantic_scope=session',
     path: ['semantic_session_tag'],
@@ -100,6 +131,14 @@ export const ReportSummarizeInputSchema = z.object({
     {
       message: 'compare_evidence_session_tag is required when compare_evidence_scope=session',
       path: ['compare_evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) =>
+      value.compare_static_scope !== 'session' || Boolean(value.compare_static_session_tag?.trim()),
+    {
+      message: 'compare_static_session_tag is required when compare_static_scope=session',
+      path: ['compare_static_session_tag'],
     }
   )
   .refine(
@@ -200,6 +239,15 @@ export const ReportSummarizeOutputSchema = z.object({
       ),
       rust_profile: RustBinaryAnalyzeDataSchema.optional().describe(
         'Optional Rust-oriented binary analysis summary, including crate hints, recovered symbols, and recovery priorities.'
+      ),
+      static_capabilities: StaticCapabilityTriageDataSchema.optional().describe(
+        'Optional static capability findings selected from persisted capability-triage artifacts using static_scope.'
+      ),
+      pe_structure: PEStructureAnalyzeDataSchema.optional().describe(
+        'Optional canonical PE structure analysis selected from persisted static-analysis artifacts using static_scope.'
+      ),
+      compiler_packer: CompilerPackerDetectDataSchema.optional().describe(
+        'Optional compiler/packer/protector attribution selected from persisted static-analysis artifacts using static_scope.'
       ),
       provenance: AnalysisProvenanceSchema.optional().describe(
         'Explicit runtime/semantic artifact selection used to produce this report, including scope, session selector, and selected artifact IDs.'
@@ -313,6 +361,9 @@ type TriageSummaryData = {
   confidence_semantics?: z.infer<typeof ReportAssessmentConfidenceSchema>
   binary_profile?: z.infer<typeof BinaryRoleProfileDataSchema>
   rust_profile?: z.infer<typeof RustBinaryAnalyzeDataSchema>
+  static_capabilities?: z.infer<typeof StaticCapabilityTriageDataSchema>
+  pe_structure?: z.infer<typeof PEStructureAnalyzeDataSchema>
+  compiler_packer?: z.infer<typeof CompilerPackerDetectDataSchema>
   function_explanations?: Array<z.infer<typeof FunctionExplanationSummarySchema>>
   evidence_weights?: {
     import: number
@@ -653,6 +704,153 @@ async function loadFunctionExplanationSummaries(
   }
 }
 
+async function loadStaticAnalysisSelections(
+  workspaceManager: WorkspaceManager,
+  database: DatabaseManager,
+  sampleId: string,
+  options: { scope?: StaticArtifactScope; sessionTag?: string }
+) {
+  const [capabilities, peStructure, compilerPacker] = await Promise.all([
+    loadStaticAnalysisArtifactSelection<z.infer<typeof StaticCapabilityTriageDataSchema>>(
+      workspaceManager,
+      database,
+      sampleId,
+      STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
+      options
+    ),
+    loadStaticAnalysisArtifactSelection<z.infer<typeof PEStructureAnalyzeDataSchema>>(
+      workspaceManager,
+      database,
+      sampleId,
+      PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
+      options
+    ),
+    loadStaticAnalysisArtifactSelection<z.infer<typeof CompilerPackerDetectDataSchema>>(
+      workspaceManager,
+      database,
+      sampleId,
+      COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
+      options
+    ),
+  ])
+
+  return {
+    capabilities,
+    peStructure,
+    compilerPacker,
+  }
+}
+
+function augmentWithStaticAnalysis(
+  triageData: TriageSummaryData,
+  staticArtifacts: {
+    capabilities?: z.infer<typeof StaticCapabilityTriageDataSchema> | null
+    peStructure?: z.infer<typeof PEStructureAnalyzeDataSchema> | null
+    compilerPacker?: z.infer<typeof CompilerPackerDetectDataSchema> | null
+  }
+): TriageSummaryData {
+  const evidence = [...triageData.evidence]
+  const summaryParts = [triageData.summary]
+  const recommendationParts = [triageData.recommendation]
+  let threatLevel = triageData.threat_level
+  let confidence = triageData.confidence
+
+  if (staticArtifacts.capabilities?.status === 'ready' && staticArtifacts.capabilities.capability_count > 0) {
+    const topGroups = Object.entries(staticArtifacts.capabilities.capability_groups || {})
+      .sort((left, right) => Number(right[1]) - Number(left[1]))
+      .slice(0, 4)
+      .map(([key]) => key)
+    summaryParts.push(
+      `Capability triage matched ${staticArtifacts.capabilities.capability_count} finding(s)${
+        topGroups.length > 0 ? ` across ${topGroups.join(', ')}` : ''
+      }.`
+    )
+    evidence.push(
+      `Static capability triage matched ${staticArtifacts.capabilities.capability_count} finding(s).`,
+      ...(topGroups.length > 0 ? [`Capability groups: ${topGroups.join(', ')}.`] : [])
+    )
+    recommendationParts.push(
+      'Correlate capability groups with code.functions.search, code.functions.reconstruct, or workflow.reconstruct.'
+    )
+    if (
+      threatLevel === 'clean' &&
+      topGroups.some((item) =>
+        ['network', 'service', 'persistence', 'execution', 'injection', 'command-and-control', 'c2'].includes(
+          item.toLowerCase()
+        )
+      )
+    ) {
+      threatLevel = 'suspicious'
+      confidence = Math.max(confidence, 0.58)
+    }
+  }
+
+  if (staticArtifacts.peStructure && staticArtifacts.peStructure.status !== 'setup_required') {
+    const peSummary = staticArtifacts.peStructure.summary
+    summaryParts.push(
+      `PE structure recovered ${peSummary.section_count} section(s)${
+        peSummary.overlay_present ? ' with an overlay present' : ''
+      }.`
+    )
+    evidence.push(
+      `PE structure analysis: sections=${peSummary.section_count}, imports=${peSummary.import_function_count}, exports=${peSummary.export_count}, resources=${peSummary.resource_count}.`,
+      ...(peSummary.overlay_present ? ['PE structure analysis detected an overlay.'] : [])
+    )
+    if (peSummary.overlay_present) {
+      recommendationParts.push(
+        'Inspect overlay and recovered resources before assuming the file layout is benign or complete.'
+      )
+      if (threatLevel === 'clean') {
+        threatLevel = 'suspicious'
+        confidence = Math.max(confidence, 0.56)
+      }
+    }
+  }
+
+  if (staticArtifacts.compilerPacker?.status === 'ready') {
+    const summary = staticArtifacts.compilerPacker.summary
+    const compilerNames = staticArtifacts.compilerPacker.compiler_findings.slice(0, 3).map((item) => item.name)
+    const packerNames = [
+      ...staticArtifacts.compilerPacker.packer_findings.slice(0, 3).map((item) => item.name),
+      ...staticArtifacts.compilerPacker.protector_findings.slice(0, 3).map((item) => item.name),
+    ]
+    if (summary.compiler_count + summary.packer_count + summary.protector_count > 0) {
+      summaryParts.push(
+        packerNames.length > 0
+          ? `Toolchain attribution suggests packer/protector signals (${packerNames.join(', ')}).`
+          : compilerNames.length > 0
+            ? `Toolchain attribution suggests compiler signals (${compilerNames.join(', ')}).`
+            : 'Toolchain attribution surfaced additional compiler or packer hints.'
+      )
+      evidence.push(
+        `Compiler/packer attribution: compiler=${summary.compiler_count}, packer=${summary.packer_count}, protector=${summary.protector_count}.`,
+        ...(summary.likely_primary_file_type ? [`Attributed primary file type: ${summary.likely_primary_file_type}.`] : [])
+      )
+    }
+    if (summary.packer_count > 0 || summary.protector_count > 0) {
+      recommendationParts.push(
+        'Treat compiler/packer attribution as a routing hint and verify packed/protected regions with deeper static or runtime analysis.'
+      )
+      if (threatLevel === 'clean') {
+        threatLevel = 'suspicious'
+        confidence = Math.max(confidence, 0.6)
+      }
+    }
+  }
+
+  return {
+    ...triageData,
+    summary: dedupe(summaryParts).join(' '),
+    confidence,
+    threat_level: threatLevel,
+    evidence: dedupe(evidence),
+    recommendation: dedupe(recommendationParts).join(' '),
+    static_capabilities: staticArtifacts.capabilities || undefined,
+    pe_structure: staticArtifacts.peStructure || undefined,
+    compiler_packer: staticArtifacts.compilerPacker || undefined,
+  }
+}
+
 function augmentWithFunctionExplanations(
   triageData: TriageSummaryData,
   functionExplanations: Array<z.infer<typeof FunctionExplanationSummarySchema>>
@@ -975,11 +1173,42 @@ export function createReportSummarizeHandler(
         }
       )
       const functionExplanations = functionExplanationBundle.summaries
+      const triageResult = await triageHandler({
+        sample_id: input.sample_id,
+        force_refresh: input.force_refresh,
+      })
+      const staticSelections = await loadStaticAnalysisSelections(
+        workspaceManager,
+        database,
+        input.sample_id,
+        {
+          scope: input.static_scope,
+          sessionTag: input.static_session_tag,
+        }
+      )
       const provenance = {
         runtime: buildRuntimeArtifactProvenance(
           dynamicEvidence,
           input.evidence_scope,
           input.evidence_session_tag
+        ),
+        static_capabilities: buildStaticArtifactProvenance(
+          'static capability artifacts',
+          staticSelections.capabilities,
+          input.static_scope,
+          input.static_session_tag
+        ),
+        pe_structure: buildStaticArtifactProvenance(
+          'pe structure artifacts',
+          staticSelections.peStructure,
+          input.static_scope,
+          input.static_session_tag
+        ),
+        compiler_packer: buildStaticArtifactProvenance(
+          'compiler/packer attribution artifacts',
+          staticSelections.compilerPacker,
+          input.static_scope,
+          input.static_session_tag
         ),
         semantic_explanations: buildSemanticArtifactProvenance(
           'semantic explanation artifacts',
@@ -1031,10 +1260,47 @@ export function createReportSummarizeHandler(
           )
         )
       }
-      const triageResult = await triageHandler({
-        sample_id: input.sample_id,
-        force_refresh: input.force_refresh,
-      })
+      if (input.compare_static_scope) {
+        const baselineStaticSelections = await loadStaticAnalysisSelections(
+          workspaceManager,
+          database,
+          input.sample_id,
+          {
+            scope: input.compare_static_scope,
+            sessionTag: input.compare_static_session_tag,
+          }
+        )
+        selectionDiffs.static_capabilities = buildArtifactSelectionDiff(
+          'static_capabilities',
+          provenance.static_capabilities!,
+          buildStaticArtifactProvenance(
+            'static capability artifacts',
+            baselineStaticSelections.capabilities,
+            input.compare_static_scope,
+            input.compare_static_session_tag
+          )
+        )
+        selectionDiffs.pe_structure = buildArtifactSelectionDiff(
+          'pe_structure',
+          provenance.pe_structure!,
+          buildStaticArtifactProvenance(
+            'pe structure artifacts',
+            baselineStaticSelections.peStructure,
+            input.compare_static_scope,
+            input.compare_static_session_tag
+          )
+        )
+        selectionDiffs.compiler_packer = buildArtifactSelectionDiff(
+          'compiler_packer',
+          provenance.compiler_packer!,
+          buildStaticArtifactProvenance(
+            'compiler/packer attribution artifacts',
+            baselineStaticSelections.compilerPacker,
+            input.compare_static_scope,
+            input.compare_static_session_tag
+          )
+        )
+      }
 
       if (input.mode === 'triage') {
         if (!triageResult.ok || !triageResult.data) {
@@ -1063,7 +1329,24 @@ export function createReportSummarizeHandler(
         const triageData = dynamicEvidence
           ? augmentWithDynamicEvidence(triageDataBase, dynamicEvidence)
           : triageDataBase
-        const binaryEnrichedTriageData = augmentWithBinaryProfile(triageData, binaryProfile)
+        const staticEnrichedTriageData = augmentWithStaticAnalysis(triageData, {
+          capabilities:
+            staticSelections.capabilities.latest_payload ||
+            ((triageDataBase as { raw_results?: Record<string, unknown> }).raw_results?.static_capability as
+              | z.infer<typeof StaticCapabilityTriageDataSchema>
+              | undefined),
+          peStructure:
+            staticSelections.peStructure.latest_payload ||
+            ((triageDataBase as { raw_results?: Record<string, unknown> }).raw_results?.pe_structure as
+              | z.infer<typeof PEStructureAnalyzeDataSchema>
+              | undefined),
+          compilerPacker:
+            staticSelections.compilerPacker.latest_payload ||
+            ((triageDataBase as { raw_results?: Record<string, unknown> }).raw_results?.compiler_packer as
+              | z.infer<typeof CompilerPackerDetectDataSchema>
+              | undefined),
+        })
+        const binaryEnrichedTriageData = augmentWithBinaryProfile(staticEnrichedTriageData, binaryProfile)
         const rustEnrichedTriageData = augmentWithRustProfile(binaryEnrichedTriageData, rustProfile)
         const enrichedTriageData = augmentWithFunctionExplanations(
           rustEnrichedTriageData,
@@ -1085,6 +1368,9 @@ export function createReportSummarizeHandler(
             ),
             binary_profile: enrichedTriageData.binary_profile,
             rust_profile: enrichedTriageData.rust_profile,
+            static_capabilities: enrichedTriageData.static_capabilities,
+            pe_structure: enrichedTriageData.pe_structure,
+            compiler_packer: enrichedTriageData.compiler_packer,
             provenance,
             ghidra_execution: ghidraExecution,
             selection_diffs:

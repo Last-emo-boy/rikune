@@ -162,6 +162,7 @@ export interface ArtifactRef {
   path: string
   sha256: string
   mime?: string
+  metadata?: Record<string, unknown>
 }
 
 // ============================================================================

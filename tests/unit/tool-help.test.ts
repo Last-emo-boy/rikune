@@ -29,11 +29,13 @@ describe('tool.help tool', () => {
       },
       {
         name: 'workflow.reconstruct',
-        description: 'Reconstruct with separate runtime and semantic scopes',
+        description: 'Reconstruct with separate runtime, static, and semantic scopes',
         inputSchema: z.object({
           sample_id: z.string(),
           evidence_scope: z.enum(['all', 'latest', 'session']).default('all'),
           evidence_session_tag: z.string().optional(),
+          static_scope: z.enum(['all', 'latest', 'session']).default('latest'),
+          static_session_tag: z.string().optional(),
           semantic_scope: z.enum(['all', 'latest', 'session']).default('all'),
           semantic_session_tag: z.string().optional(),
           session_tag: z.string().optional(),
@@ -72,11 +74,13 @@ describe('tool.help tool', () => {
     const definitions: ToolDefinition[] = [
       {
         name: 'workflow.reconstruct',
-        description: 'Reconstruct with separate runtime and semantic scopes',
+        description: 'Reconstruct with separate runtime, static, and semantic scopes',
         inputSchema: z.object({
           sample_id: z.string(),
           evidence_scope: z.enum(['all', 'latest', 'session']).default('all'),
           evidence_session_tag: z.string().optional(),
+          static_scope: z.enum(['all', 'latest', 'session']).default('latest'),
+          static_session_tag: z.string().optional(),
           semantic_scope: z.enum(['all', 'latest', 'session']).default('all'),
           semantic_session_tag: z.string().optional(),
           session_tag: z.string().optional(),
@@ -91,14 +95,17 @@ describe('tool.help tool', () => {
 
     expect(result.ok).toBe(true)
     const data = result.data as any
-    expect(data.tools[0].usage_notes.some((item: string) => item.includes('runtime evidence scope'))).toBe(true)
+    expect(data.tools[0].usage_notes.some((item: string) => item.includes('runtime, static-analysis, and semantic artifact scopes'))).toBe(true)
+    expect(data.tools[0].usage_notes.some((item: string) => item.includes('static-analysis artifacts'))).toBe(true)
     expect(data.tools[0].usage_notes.some((item: string) => item.includes('naming/explanation artifacts'))).toBe(true)
 
     const evidenceScopeField = data.tools[0].input.fields.find((item: any) => item.path === 'evidence_scope')
+    const staticScopeField = data.tools[0].input.fields.find((item: any) => item.path === 'static_scope')
     const semanticScopeField = data.tools[0].input.fields.find((item: any) => item.path === 'semantic_scope')
     const sessionTagField = data.tools[0].input.fields.find((item: any) => item.path === 'session_tag')
 
     expect(evidenceScopeField.help_hint).toContain('runtime evidence')
+    expect(staticScopeField.help_hint).toContain('static-analysis artifact selection')
     expect(semanticScopeField.help_hint).toContain('semantic')
     expect(sessionTagField.help_hint).toContain('newly created artifacts')
   })

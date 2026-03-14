@@ -2,7 +2,14 @@ import { z } from 'zod'
 import { ArtifactSelectionProvenanceSchema } from './analysis-provenance.js'
 
 export const ArtifactSelectionDiffSchema = z.object({
-  label: z.enum(['runtime', 'semantic_names', 'semantic_explanations']),
+  label: z.enum([
+    'runtime',
+    'static_capabilities',
+    'pe_structure',
+    'compiler_packer',
+    'semantic_names',
+    'semantic_explanations',
+  ]),
   current: ArtifactSelectionProvenanceSchema,
   baseline: ArtifactSelectionProvenanceSchema,
   added_artifact_ids: z.array(z.string()),
@@ -15,6 +22,9 @@ export const ArtifactSelectionDiffSchema = z.object({
 
 export const AnalysisSelectionDiffSchema = z.object({
   runtime: ArtifactSelectionDiffSchema.optional(),
+  static_capabilities: ArtifactSelectionDiffSchema.optional(),
+  pe_structure: ArtifactSelectionDiffSchema.optional(),
+  compiler_packer: ArtifactSelectionDiffSchema.optional(),
   semantic_names: ArtifactSelectionDiffSchema.optional(),
   semantic_explanations: ArtifactSelectionDiffSchema.optional(),
 })
@@ -31,7 +41,13 @@ function diffStrings(current: string[], baseline: string[]) {
 }
 
 export function buildArtifactSelectionDiff(
-  label: 'runtime' | 'semantic_names' | 'semantic_explanations',
+  label:
+    | 'runtime'
+    | 'static_capabilities'
+    | 'pe_structure'
+    | 'compiler_packer'
+    | 'semantic_names'
+    | 'semantic_explanations',
   current: z.infer<typeof ArtifactSelectionProvenanceSchema>,
   baseline: z.infer<typeof ArtifactSelectionProvenanceSchema>
 ): ArtifactSelectionDiff {
@@ -41,6 +57,12 @@ export function buildArtifactSelectionDiff(
   const targetLabel =
     label === 'runtime'
       ? 'runtime selection'
+      : label === 'static_capabilities'
+        ? 'static capability selection'
+        : label === 'pe_structure'
+          ? 'PE structure selection'
+          : label === 'compiler_packer'
+            ? 'compiler/packer attribution selection'
       : label === 'semantic_names'
         ? 'semantic naming selection'
         : 'semantic explanation selection'

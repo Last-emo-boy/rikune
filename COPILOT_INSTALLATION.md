@@ -18,6 +18,11 @@ It also pins:
 - `GHIDRA_PROJECT_ROOT`
 - `GHIDRA_LOG_ROOT`
 
+Optional static-analysis inputs can also be provided through:
+
+- `CAPA_RULES_PATH`
+- `DIE_PATH`
+
 The server's bundled `ghidra_scripts/` directory is resolved from the installed
 package or repository root, not from the shell's current working directory. You
 do not need to separately point Copilot at `ExtractFunctions.py`.
@@ -100,6 +105,13 @@ packages, dynamic-analysis extras, or Ghidra configuration, ask Copilot to call:
 - `ghidra.health`
 
 These tools return structured setup actions and missing user inputs.
+
+For the static capability / PE structure / compiler attribution layer, the most
+common optional requirements are:
+
+- `python -m pip install flare-capa pefile lief`
+- a capa rules bundle referenced by `CAPA_RULES_PATH`
+- Detect It Easy CLI referenced by `DIE_PATH`
 
 ## References
 

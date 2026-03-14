@@ -5,6 +5,12 @@ import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { createReportGenerateHandler } from '../../src/tools/report-generate.js'
 import { persistSemanticFunctionExplanationsArtifact } from '../../src/semantic-name-suggestion-artifacts.js'
+import {
+  persistStaticAnalysisJsonArtifact,
+  STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
+  PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
+  COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
+} from '../../src/static-analysis-artifacts.js'
 
 describe('report.generate tool', () => {
   let workspaceManager: WorkspaceManager
@@ -109,6 +115,121 @@ describe('report.generate tool', () => {
       mime: 'application/json',
       created_at: createdAt,
     })
+  }
+
+  async function seedStaticArtifacts(
+    sampleId: string,
+    sessionTag: string,
+    capabilityName: string
+  ) {
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      sampleId,
+      STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
+      'static_capability',
+      {
+        session_tag: sessionTag,
+        sample_id: sampleId,
+        status: 'ready',
+        capability_count: 1,
+        behavior_namespaces: ['communication/http'],
+        capability_groups: { network: 1 },
+        capabilities: [
+          {
+            rule_id: 'cap/http',
+            name: capabilityName,
+            namespace: 'communication/http',
+            scopes: ['file'],
+            group: 'network',
+            confidence: 0.77,
+            match_count: 1,
+            evidence_summary: capabilityName,
+          },
+        ],
+        summary: 'capability summary',
+        backend: {
+          available: true,
+          engine: 'capa',
+          source: 'python_module',
+          version: '9.3.1',
+          rules: {
+            available: true,
+            path: 'C:/rules/capa',
+            source: 'env',
+            error: null,
+          },
+          error: null,
+        },
+        confidence_semantics: null,
+      },
+      sessionTag
+    )
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      sampleId,
+      PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
+      'pe_structure',
+      {
+        session_tag: sessionTag,
+        sample_id: sampleId,
+        status: 'ready',
+        summary: {
+          section_count: 4,
+          import_dll_count: 2,
+          import_function_count: 6,
+          export_count: 0,
+          forwarder_count: 0,
+          resource_count: 1,
+          overlay_present: true,
+          parser_preference: 'lief',
+        },
+        headers: {},
+        entry_point: {},
+        sections: [],
+        imports: {},
+        exports: {},
+        resources: {},
+        overlay: {},
+        backend_details: { lief: { available: true } },
+        confidence_semantics: null,
+      },
+      sessionTag
+    )
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      sampleId,
+      COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
+      'compiler_packer',
+      {
+        session_tag: sessionTag,
+        sample_id: sampleId,
+        status: 'ready',
+        compiler_findings: [{ name: 'Microsoft Visual C++', category: 'compiler', confidence: 0.8, evidence_summary: 'compiler', source: 'die-json' }],
+        packer_findings: [{ name: 'UPX', category: 'packer', confidence: 0.8, evidence_summary: 'packer', source: 'die-json' }],
+        protector_findings: [],
+        file_type_findings: [{ name: 'PE32 executable', category: 'file_type', confidence: 0.7, evidence_summary: 'file_type', source: 'die-json' }],
+        summary: {
+          compiler_count: 1,
+          packer_count: 1,
+          protector_count: 0,
+          file_type_count: 1,
+          likely_primary_file_type: 'PE32 executable',
+        },
+        backend: {
+          available: true,
+          source: 'config',
+          path: 'C:/tools/diec.exe',
+          version: '3.10',
+          checked_candidates: ['C:/tools/diec.exe'],
+          error: null,
+        },
+        confidence_semantics: null,
+      },
+      sessionTag
+    )
   }
 
   test('should return error for a missing sample', async () => {
@@ -387,6 +508,50 @@ describe('report.generate tool', () => {
     expect(reportContent).toContain('**Callback Surface:** InitializePlugin')
     expect(reportContent).toContain('**COM Registration Strings:** InprocServer32')
     expect(reportContent).toContain('trace_export_surface_first')
+  })
+
+  test('should include scoped static analysis artifacts and provenance in generated json report', async () => {
+    const sampleId = 'sha256:' + 'c'.repeat(64)
+    const createdAt = new Date().toISOString()
+
+    database.insertSample({
+      id: sampleId,
+      sha256: 'c'.repeat(64),
+      md5: 'c'.repeat(32),
+      size: 4096,
+      file_type: 'PE32 executable',
+      created_at: createdAt,
+      source: 'unit-test',
+    })
+
+    await workspaceManager.createWorkspace(sampleId)
+    await seedStaticArtifacts(sampleId, 'static-json-alpha', 'send HTTP request')
+    await seedStaticArtifacts(sampleId, 'static-json-beta', 'install service')
+
+    const handler = createReportGenerateHandler(workspaceManager, database)
+    const result = await handler({
+      sample_id: sampleId,
+      format: 'json',
+      static_scope: 'session',
+      static_session_tag: 'static-json-alpha',
+      compare_static_scope: 'all',
+    })
+
+    expect(result.isError).toBeUndefined()
+    const payload = JSON.parse(result.content.find((item) => item.type === 'text')!.text!)
+    expect(payload.ok).toBe(true)
+
+    const reportContent = JSON.parse(fs.readFileSync(payload.data.path, 'utf-8'))
+    expect(reportContent.static_scope).toBe('session')
+    expect(reportContent.static_session_tag).toBe('static-json-alpha')
+    expect(reportContent.static_capabilities.capabilities[0].name).toBe('send HTTP request')
+    expect(reportContent.pe_structure.summary.overlay_present).toBe(true)
+    expect(reportContent.compiler_packer.summary.packer_count).toBe(1)
+    expect(reportContent.provenance.static_capabilities.scope).toBe('session')
+    expect(reportContent.provenance.static_capabilities.session_tags).toContain('static-json-alpha')
+    expect(reportContent.selection_diffs.static_capabilities.summary).toContain('static capability selection')
+    expect(reportContent.selection_diffs.pe_structure.summary).toContain('PE structure selection')
+    expect(reportContent.selection_diffs.compiler_packer.summary).toContain('compiler/packer attribution selection')
   })
 
   test('should include rust binary profile section in generated markdown report', async () => {

@@ -193,6 +193,9 @@ describe('Triage Workflow', () => {
     if (result.ok && result.data) {
       const data = result.data as any
       expect(data.raw_results).toBeDefined()
+      expect(data.raw_results).toHaveProperty('static_capability')
+      expect(data.raw_results).toHaveProperty('pe_structure')
+      expect(data.raw_results).toHaveProperty('compiler_packer')
     }
   })
 })

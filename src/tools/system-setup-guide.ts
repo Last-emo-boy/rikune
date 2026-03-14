@@ -6,6 +6,8 @@ import {
   buildAllSetupActions,
   buildBaselinePythonSetupActions,
   buildDynamicDependencySetupActions,
+  buildStaticAnalysisRequiredUserInputs,
+  buildStaticAnalysisSetupActions,
   buildJavaRequiredUserInputs,
   buildJavaSetupActions,
   buildGhidraRequiredUserInputs,
@@ -19,7 +21,7 @@ const TOOL_NAME = 'system.setup.guide'
 
 export const systemSetupGuideInputSchema = z.object({
   focus: z
-    .enum(['all', 'python', 'dynamic', 'java', 'ghidra'])
+    .enum(['all', 'python', 'static', 'dynamic', 'java', 'ghidra'])
     .default('all')
     .describe('Which setup area to describe. Use all for a first-run bootstrap guide.'),
   include_optional: z
@@ -31,7 +33,7 @@ export const systemSetupGuideInputSchema = z.object({
 export const systemSetupGuideOutputSchema = z.object({
   ok: z.boolean(),
   data: z.object({
-    focus: z.enum(['all', 'python', 'dynamic', 'java', 'ghidra']),
+    focus: z.enum(['all', 'python', 'static', 'dynamic', 'java', 'ghidra']),
     setup_actions: z.array(SetupActionSchema),
     required_user_inputs: z.array(RequiredUserInputSchema),
     notes: z.array(z.string()),
@@ -53,18 +55,27 @@ export function createSystemSetupGuideHandler() {
 
     let setupActions = buildAllSetupActions(input.include_optional)
     let requiredUserInputs = mergeRequiredUserInputs(
+      buildStaticAnalysisRequiredUserInputs(),
       buildGhidraRequiredUserInputs(),
       buildJavaRequiredUserInputs()
     )
     const notes = [
       'Prefer absolute paths when providing tool locations such as the Ghidra installation directory.',
       'When Ghidra launch fails, verify JAVA_HOME points to Java 21 or newer before retrying.',
+      'Configure CAPA_RULES_PATH when static capability triage reports that capa rules are missing.',
+      'Set DIE_PATH or place diec.exe on PATH when compiler/packer attribution requires Detect It Easy.',
       'If your MCP client can read the local filesystem, prefer sample.ingest(path=...) over bytes_b64.',
     ]
 
     if (input.focus === 'python') {
       setupActions = mergeSetupActions(buildBaselinePythonSetupActions())
       requiredUserInputs = []
+    } else if (input.focus === 'static') {
+      setupActions = mergeSetupActions(
+        buildBaselinePythonSetupActions(),
+        buildStaticAnalysisSetupActions()
+      )
+      requiredUserInputs = mergeRequiredUserInputs(buildStaticAnalysisRequiredUserInputs())
     } else if (input.focus === 'dynamic') {
       setupActions = mergeSetupActions(
         buildBaselinePythonSetupActions(),

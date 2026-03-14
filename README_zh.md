@@ -13,13 +13,25 @@
 - LLM 可深度介入：函数命名、函数解释、模块级重建 review 都已经是结构化 MCP workflow，而不是零散 prompt。
 - 适合长任务编排：长耗时 workflow 会返回 `job_id`、进度和 `polling_guidance`，方便客户端按建议 sleep/wait，而不是高频轮询浪费 token。
 
+## 本轮新增的静态初筛能力
+
+这一轮在深度逆向前补了一层更强的静态初筛能力：
+
+- `static.capability.triage`：用 `capa` 风格的能力识别回答“样本可能具备什么行为能力”，而不只是展示字符串或导入表。
+- `pe.structure.analyze`：把 `pefile` 和 `LIEF` 风格的 PE 结构解析合并成一个统一输出，同时保留后端细节块。
+- `compiler.packer.detect`：补上编译器、保护器和壳归因，并在 Detect It Easy 缺失时优雅降级成 setup guidance。
+- `workflow.triage`、`report.summarize` 和 `report.generate` 现在会直接消费这三类结果，并支持 static artifact 的 provenance、scope 和 compare/baseline。
+
 ## 典型使用路径
 
 ### 快速初筛
 
 1. `sample.ingest`
-2. `workflow.triage`
-3. `report.summarize`
+2. `static.capability.triage`
+3. `pe.structure.analyze`
+4. `compiler.packer.detect`
+5. `workflow.triage`
+6. `report.summarize`
 
 ### 困难 native 恢复
 
@@ -55,6 +67,9 @@
 
 - `sample.ingest`
 - `sample.profile.get`
+- `static.capability.triage`
+- `pe.structure.analyze`
+- `compiler.packer.detect`
 - `pe.fingerprint`
 - `pe.imports.extract`
 - `pe.exports.extract`
@@ -216,6 +231,17 @@
 - `compare_semantic_scope`
 - `compare_semantic_session_tag`
 
+静态分析 artifact 也支持独立作用域：
+
+- `static_scope=all`
+- `static_scope=latest`
+- `static_scope=session`，配合 `static_session_tag`
+
+静态基线对比参数：
+
+- `compare_static_scope`
+- `compare_static_session_tag`
+
 这样 MCP 客户端不只能够问“当前结果是什么”，还可以问“和上一轮证据或语义 review 相比变化了什么”。
 
 ## Ghidra 执行摘要
@@ -296,7 +322,63 @@
 - 设置 `JAVA_HOME`
 - 提供 `GHIDRA_PATH` / `GHIDRA_INSTALL_DIR`
 - 提供 `GHIDRA_PROJECT_ROOT` / `GHIDRA_LOG_ROOT`
+- 提供 `CAPA_RULES_PATH`
+- 提供 `DIE_PATH`
 - 安装 Speakeasy / Frida 等可选动态分析依赖
+
+### Frida 动态 Instrumentation（可选）
+
+对于运行时 API 追踪和行为分析，安装 Frida：
+
+```bash
+pip install frida frida-tools
+```
+
+**环境变量**（可选 - 当 `frida` 在 PATH 中时自动检测）：
+
+- `FRIDA_SERVER_PATH` - Frida server 二进制文件路径，用于 USB/远程设备分析
+- `FRIDA_DEVICE` - 设备 ID 或 "usb" 用于 USB 设备选择（默认：本地 spawn）
+
+**内置脚本** 位于 `frida_scripts/`：
+- `api_trace.js` - Windows API 追踪与参数日志
+- `string_decoder.js` - 运行时字符串解密
+- `anti_debug_bypass.js` - 反调试检测中和
+- `crypto_finder.js` - 加密 API 检测
+- `file_registry_monitor.js` - 文件/注册表操作追踪
+
+使用示例见 [`docs/EXAMPLES.md`](./docs/EXAMPLES.md#场景 -9-frida-运行时 instrumentation)。
+
+## 当前开发进度
+
+### 最新 Release: v0.1.4
+
+**稳定功能** (生产环境可用)：
+- PE 初筛与静态分析 (`static.capability.triage`, `pe.structure.analyze`, `compiler.packer.detect`)
+- Ghidra 辅助分析，完整执行可见性
+- DLL/COM 画像 (`dll.export.profile`, `com.role.profile`)
+- Rust 和 .NET 恢复路径
+- 源码风格重建，支持 LLM 辅助 review 层
+- 运行时证据导入与关联
+
+### 开发中 (即将发布 v0.2.0)
+
+**Frida 动态 Instrumentation** - 实现已完成，待发布：
+- `frida.runtime.instrument` - Spawn 和 attach 模式 instrumentation
+- `frida.script.inject` - 预构建和自定义脚本注入
+- `frida.trace.capture` - 规范化 trace schema，支持过滤/聚合
+- 与 `dynamic.trace.import`, `report.generate`, `report.summarize` 完全集成
+- 101 个单元测试 + 集成测试覆盖
+- 完整文档见 `docs/EXAMPLES.md`
+
+**测试覆盖**: 所有 101 个测试通过，包括 Frida instrumentation 套件。
+
+对于新的静态初筛能力，最常见的可选依赖是：
+
+- `flare-capa`
+- `pefile`
+- `lief`
+- 通过 `CAPA_RULES_PATH` 指向的 capa rules bundle
+- 通过 `DIE_PATH` 指向的 Detect It Easy CLI
 
 对于 Ghidra 12.0.4，当前默认要求 Java 21+。如果 Java 缺失或版本过低，`ghidra.health`、`system.health` 和 `system.setup.guide` 都会返回明确的兼容性提示。
 
@@ -433,6 +515,8 @@ npm start
 - `AUDIT_LOG_PATH`
 - `GHIDRA_PROJECT_ROOT`
 - `GHIDRA_LOG_ROOT`
+- `CAPA_RULES_PATH`
+- `DIE_PATH`
 
 ## 样本导入说明
 

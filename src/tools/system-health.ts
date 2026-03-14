@@ -16,15 +16,20 @@ import type { CacheManager } from '../cache-manager.js'
 import { checkGhidraHealth, type GhidraHealthStatus } from '../ghidra-config.js'
 import { resolvePackagePath } from '../runtime-paths.js'
 import { lookupCachedResult } from './cache-observability.js'
+import { resolveStaticBackends } from '../static-backend-discovery.js'
 import {
   RequiredUserInputSchema,
   SetupActionSchema,
   buildBaselinePythonSetupActions,
+  buildStaticAnalysisRequiredUserInputs,
+  buildStaticAnalysisSetupActions,
   buildJavaRequiredUserInputs,
   buildJavaSetupActions,
   buildGhidraRequiredUserInputs,
   buildGhidraSetupActions,
   buildPyGhidraSetupActions,
+  buildFridaRequiredUserInputs,
+  buildFridaSetupActions,
   mergeRequiredUserInputs,
   mergeSetupActions,
 } from '../setup-guidance.js'
@@ -118,6 +123,7 @@ interface StaticWorkerHealthData {
   status?: string
   worker?: Record<string, unknown>
   dependencies?: Record<string, unknown>
+  capa_rules?: Record<string, unknown>
   yara_rules?: Record<string, unknown>
   checked_at?: string
 }
@@ -386,33 +392,112 @@ export function createSystemHealthHandler(
       if (input.include_static_worker) {
         try {
           const workerHealth = await runStaticWorkerProbe(input.timeout_ms)
-          const statusRaw = String(workerHealth.status || 'degraded').toLowerCase()
-          const status =
+          const staticBackends = resolveStaticBackends()
+          const workerDependencies = (workerHealth.dependencies || {}) as Record<string, any>
+          const pefileAvailable = Boolean(workerDependencies.pefile?.available)
+          const liefAvailable = Boolean(workerDependencies.lief?.available)
+          const capaAvailable = Boolean(workerDependencies.capa?.available)
+          const fridaAvailable = Boolean(workerDependencies.frida?.available)
+          const staticDependencyIssues: string[] = []
+
+          let statusRaw = String(workerHealth.status || 'degraded').toLowerCase()
+          let status: z.infer<typeof ComponentSchema>['status'] =
             statusRaw === 'healthy'
               ? 'healthy'
               : statusRaw === 'unhealthy'
                 ? 'unhealthy'
                 : 'degraded'
+
+          if (!pefileAvailable) {
+            staticDependencyIssues.push('pefile unavailable')
+          }
+          if (!liefAvailable) {
+            staticDependencyIssues.push('LIEF unavailable')
+          }
+          if (!capaAvailable) {
+            staticDependencyIssues.push('capa unavailable')
+          }
+          if (!staticBackends.capa_rules.available) {
+            staticDependencyIssues.push('capa rules unavailable')
+          }
+          if (!staticBackends.die.available) {
+            staticDependencyIssues.push('Detect It Easy unavailable')
+          }
+          if (!fridaAvailable) {
+            staticDependencyIssues.push('frida unavailable')
+          }
+
+          if (status === 'healthy' && staticDependencyIssues.length > 0) {
+            status = 'degraded'
+          }
+
           staticWorkerComponent = {
             status,
             ok: status === 'healthy',
-            error: status === 'healthy' ? null : `Static worker status=${statusRaw}`,
-            details: workerHealth,
+            error:
+              status === 'healthy'
+                ? null
+                : `Static worker status=${statusRaw}${staticDependencyIssues.length > 0 ? `; ${staticDependencyIssues.join('; ')}` : ''}`,
+            details: {
+              ...workerHealth,
+              external_backends: staticBackends,
+            },
           }
+
           if (status !== 'healthy') {
             recommendations.push(
-              'Install/repair Python dependencies (yara-python, flare-floss, yara rules) for static analysis stability.'
+              'Install or configure the optional static-analysis stack (pefile, LIEF, flare-capa, capa rules, Detect It Easy) for full early-stage analysis coverage.'
             )
-            setupActions = mergeSetupActions(setupActions, buildBaselinePythonSetupActions())
+            setupActions = mergeSetupActions(
+              setupActions,
+              buildBaselinePythonSetupActions(),
+              buildStaticAnalysisSetupActions()
+            )
+            requiredUserInputs = mergeRequiredUserInputs(
+              requiredUserInputs,
+              buildStaticAnalysisRequiredUserInputs()
+            )
+            if (!capaAvailable) {
+              recommendations.push('Install flare-capa to enable static capability recognition.')
+            }
+            if (!staticBackends.capa_rules.available) {
+              recommendations.push(
+                'Provide CAPA_RULES_PATH or workers.static.capaRulesPath so capability triage can load rules.'
+              )
+            }
+            if (!staticBackends.die.available) {
+              recommendations.push(
+                'Provide DIE_PATH or add diec.exe to PATH for compiler, protector, and packer attribution.'
+              )
+            }
+            if (!fridaAvailable) {
+              recommendations.push('Install frida and frida-tools for runtime API tracing and dynamic instrumentation.')
+              setupActions = mergeSetupActions(setupActions, buildFridaSetupActions())
+              requiredUserInputs = mergeRequiredUserInputs(
+                requiredUserInputs,
+                buildFridaRequiredUserInputs()
+              )
+            }
           }
         } catch (error) {
           staticWorkerComponent = {
             status: 'degraded',
             ok: false,
             error: normalizeError(error),
+            details: {
+              external_backends: resolveStaticBackends(),
+            },
           }
           recommendations.push('Fix Python runtime or static worker startup to avoid analysis outages.')
-          setupActions = mergeSetupActions(setupActions, buildBaselinePythonSetupActions())
+          setupActions = mergeSetupActions(
+            setupActions,
+            buildBaselinePythonSetupActions(),
+            buildStaticAnalysisSetupActions()
+          )
+          requiredUserInputs = mergeRequiredUserInputs(
+            requiredUserInputs,
+            buildStaticAnalysisRequiredUserInputs()
+          )
         }
       }
 

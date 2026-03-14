@@ -41,6 +41,11 @@ It also pins:
 - `GHIDRA_PROJECT_ROOT`
 - `GHIDRA_LOG_ROOT`
 
+Optional static-analysis inputs can also be provided through:
+
+- `CAPA_RULES_PATH`
+- `DIE_PATH`
+
 The server's bundled `ghidra_scripts/` directory is resolved from the installed
 package or repository root, not from the shell's current working directory. You
 do not need to manually point Claude at `ExtractFunctions.py`.
@@ -136,6 +141,44 @@ dynamic-analysis extras, or Ghidra configuration, ask it to call:
 
 These tools return structured `setup_actions` and `required_user_inputs`
 instead of only failing with a generic error.
+
+For the static capability / PE structure / compiler attribution layer, the most
+common optional requirements are:
+
+- `python -m pip install flare-capa pefile lief`
+- a capa rules bundle referenced by `CAPA_RULES_PATH`
+- Detect It Easy CLI referenced by `DIE_PATH`
+
+### Frida Dynamic Instrumentation (Optional)
+
+For runtime API tracing and behavioral analysis, install Frida:
+
+```powershell
+pip install frida frida-tools
+```
+
+**Verify Frida installation:**
+
+```powershell
+python -c "import frida; print(frida.__version__)"
+frida --version
+```
+
+**Environment Variables** (optional):
+
+- `FRIDA_SERVER_PATH` - Path to Frida server binary for USB/remote device analysis
+- `FRIDA_DEVICE` - Device ID or "usb" for USB device selection (default: local spawn)
+
+When Frida is unavailable, tools like `frida.runtime.instrument`, `frida.script.inject`, and `frida.trace.capture` return structured setup guidance instead of generic errors.
+
+**Pre-built Scripts** are included in `frida_scripts/`:
+- `api_trace.js` - Windows API tracing
+- `string_decoder.js` - Runtime string decryption
+- `anti_debug_bypass.js` - Anti-debug neutralization
+- `crypto_finder.js` - Cryptographic API detection
+- `file_registry_monitor.js` - File/registry operation tracking
+
+See [`docs/EXAMPLES.md`](./docs/EXAMPLES.md#场景 -9-frida-运行时 instrumentation) for Frida workflow examples.
 
 ## References
 

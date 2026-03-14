@@ -13,13 +13,32 @@ An MCP server for Windows reverse engineering. It exposes PE triage, Ghidra-back
 - LLM-assisted review layers: function naming, function explanation, and module reconstruction review are exposed as structured MCP flows instead of ad hoc prompts.
 - Queue-friendly orchestration: long-running workflows return `job_id`, progress, and `polling_guidance` so MCP clients can wait efficiently instead of burning tokens on tight polling loops.
 
+## New in the static triage foundation
+
+This iteration adds a stronger first-pass static analysis layer before deep
+reverse engineering:
+
+- `static.capability.triage` uses `capa`-style behavior classification to
+  answer what a sample appears capable of, not just what strings or imports it
+  contains.
+- `pe.structure.analyze` merges `pefile` and `LIEF` style structural parsing
+  into one canonical PE summary with backend-specific detail blocks.
+- `compiler.packer.detect` adds compiler, protector, and packer attribution
+  with setup-aware degradation when Detect It Easy is unavailable.
+- `workflow.triage`, `report.summarize`, and `report.generate` now consume
+  these results directly, including artifact provenance, static scope selection,
+  and compare/baseline support.
+
 ## Typical analysis flows
 
 ### Quick triage
 
 1. `sample.ingest`
-2. `workflow.triage`
-3. `report.summarize`
+2. `static.capability.triage`
+3. `pe.structure.analyze`
+4. `compiler.packer.detect`
+5. `workflow.triage`
+6. `report.summarize`
 
 ### Hard native recovery
 
@@ -55,6 +74,9 @@ It is designed to help MCP clients:
 
 - `sample.ingest`
 - `sample.profile.get`
+- `static.capability.triage`
+- `pe.structure.analyze`
+- `compiler.packer.detect`
 - `pe.fingerprint`
 - `pe.imports.extract`
 - `pe.exports.extract`
@@ -131,6 +153,15 @@ These are the main orchestration entrypoints for MCP clients.
 ### `workflow.triage`
 
 Fast first-pass triage for PE samples. Use this when you want a quick answer before deeper recovery.
+
+`workflow.triage` now combines:
+
+- fingerprint and runtime hint extraction
+- import and string triage
+- YARA matches
+- static capability triage
+- canonical PE structure summary
+- compiler/packer attribution
 
 ### `workflow.deep_static`
 
@@ -215,6 +246,17 @@ Comparison-aware outputs are also supported through:
 
 This allows MCP clients to ask not only "what is the current result?" but also "what changed compared with the previous evidence or semantic review session?"
 
+Static-analysis artifact selection:
+
+- `static_scope=all`
+- `static_scope=latest`
+- `static_scope=session` with `static_session_tag`
+
+Static baseline comparison:
+
+- `compare_static_scope`
+- `compare_static_session_tag`
+
 ## LLM review layers
 
 This server supports multiple structured review layers for MCP clients with tool calling and optional sampling:
@@ -266,7 +308,63 @@ These return structured setup actions and required user inputs so an MCP client 
 - `JAVA_HOME`
 - `GHIDRA_PATH` / `GHIDRA_INSTALL_DIR`
 - `GHIDRA_PROJECT_ROOT` / `GHIDRA_LOG_ROOT`
+- `CAPA_RULES_PATH`
+- `DIE_PATH`
 - optional dynamic-analysis extras such as Speakeasy/Frida dependencies
+
+### Frida Dynamic Instrumentation (Optional)
+
+For runtime API tracing and behavioral analysis, install Frida:
+
+```bash
+pip install frida frida-tools
+```
+
+**Environment Variables** (optional - auto-detected when `frida` is in PATH):
+
+- `FRIDA_SERVER_PATH` - Path to Frida server binary for USB/remote device analysis
+- `FRIDA_DEVICE` - Device ID or "usb" for USB device selection (default: local spawn)
+
+**Pre-built Scripts** are included in `frida_scripts/`:
+- `api_trace.js` - Windows API tracing with argument logging
+- `string_decoder.js` - Runtime string decryption
+- `anti_debug_bypass.js` - Anti-debug detection neutralization
+- `crypto_finder.js` - Cryptographic API detection
+- `file_registry_monitor.js` - File/registry operation tracking
+
+See [`docs/EXAMPLES.md`](./docs/EXAMPLES.md#场景 -9-frida-运行时 instrumentation) for usage examples.
+
+## Current Development Status
+
+### Latest Release: v0.1.4
+
+**Stable Features** (Production Ready):
+- PE triage and static analysis (`static.capability.triage`, `pe.structure.analyze`, `compiler.packer.detect`)
+- Ghidra-backed inspection with full execution visibility
+- DLL/COM profiling (`dll.export.profile`, `com.role.profile`)
+- Rust and .NET recovery paths
+- Source-like reconstruction with LLM-assisted review layers
+- Runtime evidence ingestion and correlation
+
+### In Development (Upcoming v0.2.0)
+
+**Frida Dynamic Instrumentation** - Completed implementation, awaiting release:
+- `frida.runtime.instrument` - Spawn and attach mode instrumentation
+- `frida.script.inject` - Pre-built and custom script injection
+- `frida.trace.capture` - Canonical trace schema with filtering/aggregation
+- Full integration with `dynamic.trace.import`, `report.generate`, `report.summarize`
+- 101 unit tests + integration test coverage
+- Comprehensive documentation in `docs/EXAMPLES.md`
+
+**Test Coverage**: All 101 tests passing including Frida instrumentation suite.
+
+For the new static triage foundation, the most common optional requirements are:
+
+- `flare-capa`
+- `pefile`
+- `lief`
+- a downloaded capa rules bundle referenced by `CAPA_RULES_PATH`
+- Detect It Easy CLI referenced by `DIE_PATH`
 
 For Ghidra 12.0.4, the server expects Java 21+ and will report explicit Java compatibility hints through:
 

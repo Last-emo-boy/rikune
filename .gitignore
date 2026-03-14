@@ -73,3 +73,9 @@ V0.2_*.md
 *_COMPLETION_REPORT.md
 workers/*_IMPLEMENTATION.md
 spec/
+
+# MCP client local configuration
+.codex/
+.claude/
+.openspec/
+openspec

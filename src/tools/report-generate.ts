@@ -19,6 +19,12 @@ import { isGhidraReadyStatus } from '../ghidra-analysis-status.js';
 import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../dynamic-trace.js';
 import { loadSemanticFunctionExplanationIndex } from '../semantic-name-suggestion-artifacts.js';
 import {
+  loadStaticAnalysisArtifactSelection,
+  STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
+  PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
+  COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
+} from '../static-analysis-artifacts.js';
+import {
   BinaryRoleProfileDataSchema,
   createBinaryRoleProfileHandler,
 } from './binary-role-profile.js';
@@ -26,9 +32,13 @@ import {
   RustBinaryAnalyzeDataSchema,
   createRustBinaryAnalyzeHandler,
 } from './rust-binary-analyze.js';
+import { StaticCapabilityTriageDataSchema } from './static-capability-triage.js';
+import { PEStructureAnalyzeDataSchema } from './pe-structure-analyze.js';
+import { CompilerPackerDetectDataSchema } from './compiler-packer-detect.js';
 import { buildReportConfidenceSemantics } from '../confidence-semantics.js';
 import {
   buildRuntimeArtifactProvenance,
+  buildStaticArtifactProvenance,
   buildSemanticArtifactProvenance,
 } from '../analysis-provenance.js';
 import {
@@ -55,6 +65,15 @@ export const reportGenerateInputSchema = z.object({
     .string()
     .optional()
     .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
+  static_scope: z
+    .enum(['all', 'latest', 'session'])
+    .optional()
+    .default('latest')
+    .describe('Static-analysis artifact scope shared by capability triage, PE structure analysis, and compiler/packer attribution selections'),
+  static_session_tag: z
+    .string()
+    .optional()
+    .describe('Optional static-analysis session selector used when static_scope=session or to narrow all/latest results'),
   semantic_scope: z
     .enum(['all', 'latest', 'session'])
     .optional()
@@ -72,6 +91,14 @@ export const reportGenerateInputSchema = z.object({
     .string()
     .optional()
     .describe('Optional baseline runtime evidence session selector used when compare_evidence_scope=session'),
+  compare_static_scope: z
+    .enum(['all', 'latest', 'session'])
+    .optional()
+    .describe('Optional baseline static-analysis scope used to compare capability, PE structure, and compiler/packer selections'),
+  compare_static_session_tag: z
+    .string()
+    .optional()
+    .describe('Optional baseline static-analysis session selector used when compare_static_scope=session'),
   compare_semantic_scope: z
     .enum(['all', 'latest', 'session'])
     .optional()
@@ -83,6 +110,9 @@ export const reportGenerateInputSchema = z.object({
 }).refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
   message: 'evidence_session_tag is required when evidence_scope=session',
   path: ['evidence_session_tag'],
+}).refine((value) => value.static_scope !== 'session' || Boolean(value.static_session_tag?.trim()), {
+  message: 'static_session_tag is required when static_scope=session',
+  path: ['static_session_tag'],
 }).refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
   message: 'semantic_session_tag is required when semantic_scope=session',
   path: ['semantic_session_tag'],
@@ -92,6 +122,13 @@ export const reportGenerateInputSchema = z.object({
   {
     message: 'compare_evidence_session_tag is required when compare_evidence_scope=session',
     path: ['compare_evidence_session_tag'],
+  }
+).refine(
+  (value) =>
+    value.compare_static_scope !== 'session' || Boolean(value.compare_static_session_tag?.trim()),
+  {
+    message: 'compare_static_session_tag is required when compare_static_scope=session',
+    path: ['compare_static_session_tag'],
   }
 ).refine(
   (value) =>
@@ -123,6 +160,9 @@ function generateMarkdownReport(
   dynamicEvidence: DynamicTraceSummary | null,
   binaryProfile: z.infer<typeof BinaryRoleProfileDataSchema> | null,
   rustProfile: z.infer<typeof RustBinaryAnalyzeDataSchema> | null,
+  staticCapabilities: z.infer<typeof StaticCapabilityTriageDataSchema> | null,
+  peStructure: z.infer<typeof PEStructureAnalyzeDataSchema> | null,
+  compilerPacker: z.infer<typeof CompilerPackerDetectDataSchema> | null,
   functionExplanations: Array<{
     address: string | null;
     function: string | null;
@@ -134,15 +174,23 @@ function generateMarkdownReport(
   }>,
   evidenceScope: 'all' | 'latest' | 'session',
   evidenceSessionTag?: string,
+  staticScope: 'all' | 'latest' | 'session' = 'latest',
+  staticSessionTag?: string,
   semanticScope: 'all' | 'latest' | 'session' = 'all',
   semanticSessionTag?: string,
   provenance?: {
     runtime: ReturnType<typeof buildRuntimeArtifactProvenance>;
+    static_capabilities: ReturnType<typeof buildStaticArtifactProvenance>;
+    pe_structure: ReturnType<typeof buildStaticArtifactProvenance>;
+    compiler_packer: ReturnType<typeof buildStaticArtifactProvenance>;
     semantic_explanations: ReturnType<typeof buildSemanticArtifactProvenance>;
   },
   ghidraExecution?: z.infer<typeof GhidraExecutionSummarySchema> | null,
   selectionDiffs?: {
     runtime?: ReturnType<typeof buildArtifactSelectionDiff>;
+    static_capabilities?: ReturnType<typeof buildArtifactSelectionDiff>;
+    pe_structure?: ReturnType<typeof buildArtifactSelectionDiff>;
+    compiler_packer?: ReturnType<typeof buildArtifactSelectionDiff>;
     semantic_explanations?: ReturnType<typeof buildArtifactSelectionDiff>;
   }
 ): string {
@@ -325,6 +373,32 @@ function generateMarkdownReport(
     lines.push('');
   }
 
+  lines.push('## Static Analysis');
+  lines.push('');
+  lines.push(`- **Static Scope:** ${staticScope}`);
+  lines.push(`- **Static Session Selector:** ${staticSessionTag || 'N/A'}`);
+  if (staticCapabilities) {
+    lines.push(`- **Capability Findings:** ${staticCapabilities.capability_count}`);
+    lines.push(`- **Capability Namespaces:** ${staticCapabilities.behavior_namespaces.join(', ') || 'none'}`);
+  } else {
+    lines.push('- **Capability Findings:** none');
+  }
+  if (peStructure) {
+    lines.push(
+      `- **PE Structure Summary:** sections=${peStructure.summary.section_count}, imports=${peStructure.summary.import_function_count}, exports=${peStructure.summary.export_count}, resources=${peStructure.summary.resource_count}, overlay=${peStructure.summary.overlay_present ? 'yes' : 'no'}`
+    );
+  } else {
+    lines.push('- **PE Structure Summary:** none');
+  }
+  if (compilerPacker) {
+    lines.push(
+      `- **Compiler/Packer Attribution:** compiler=${compilerPacker.summary.compiler_count}, packer=${compilerPacker.summary.packer_count}, protector=${compilerPacker.summary.protector_count}, file_type=${compilerPacker.summary.likely_primary_file_type || 'unknown'}`
+    );
+  } else {
+    lines.push('- **Compiler/Packer Attribution:** none');
+  }
+  lines.push('');
+
   lines.push('## Runtime Evidence');
   lines.push('');
   lines.push(`- **Evidence Scope:** ${evidenceScope}`);
@@ -380,6 +454,12 @@ function generateMarkdownReport(
     lines.push(`- **Runtime Artifact IDs:** ${provenance.runtime.artifact_ids.join(', ') || 'none'}`);
     lines.push(`- **Runtime Session Tags:** ${provenance.runtime.session_tags.join(', ') || 'none'}`);
     lines.push(`- **Runtime Latest Artifact At:** ${provenance.runtime.latest_artifact_at || 'N/A'}`);
+    lines.push(`- **Static Capability Artifact IDs:** ${provenance.static_capabilities.artifact_ids.join(', ') || 'none'}`);
+    lines.push(`- **Static Capability Session Tags:** ${provenance.static_capabilities.session_tags.join(', ') || 'none'}`);
+    lines.push(`- **PE Structure Artifact IDs:** ${provenance.pe_structure.artifact_ids.join(', ') || 'none'}`);
+    lines.push(`- **PE Structure Session Tags:** ${provenance.pe_structure.session_tags.join(', ') || 'none'}`);
+    lines.push(`- **Compiler/Packer Artifact IDs:** ${provenance.compiler_packer.artifact_ids.join(', ') || 'none'}`);
+    lines.push(`- **Compiler/Packer Session Tags:** ${provenance.compiler_packer.session_tags.join(', ') || 'none'}`);
     lines.push(`- **Semantic Artifact IDs:** ${provenance.semantic_explanations.artifact_ids.join(', ') || 'none'}`);
     lines.push(`- **Semantic Session Tags:** ${provenance.semantic_explanations.session_tags.join(', ') || 'none'}`);
     lines.push(`- **Semantic Latest Artifact At:** ${provenance.semantic_explanations.latest_artifact_at || 'N/A'}`);
@@ -415,11 +495,29 @@ function generateMarkdownReport(
     lines.push('');
   }
 
-  if (selectionDiffs && (selectionDiffs.runtime || selectionDiffs.semantic_explanations)) {
+  if (
+    selectionDiffs &&
+    (
+      selectionDiffs.runtime ||
+      selectionDiffs.static_capabilities ||
+      selectionDiffs.pe_structure ||
+      selectionDiffs.compiler_packer ||
+      selectionDiffs.semantic_explanations
+    )
+  ) {
     lines.push('## Selection Diffs');
     lines.push('');
     if (selectionDiffs.runtime) {
       lines.push(`- **Runtime Diff:** ${selectionDiffs.runtime.summary}`);
+    }
+    if (selectionDiffs.static_capabilities) {
+      lines.push(`- **Static Capability Diff:** ${selectionDiffs.static_capabilities.summary}`);
+    }
+    if (selectionDiffs.pe_structure) {
+      lines.push(`- **PE Structure Diff:** ${selectionDiffs.pe_structure.summary}`);
+    }
+    if (selectionDiffs.compiler_packer) {
+      lines.push(`- **Compiler/Packer Diff:** ${selectionDiffs.compiler_packer.summary}`);
     }
     if (selectionDiffs.semantic_explanations) {
       lines.push(`- **Semantic Diff:** ${selectionDiffs.semantic_explanations.summary}`);
@@ -567,6 +665,42 @@ export function createReportGenerateHandler(
           rewrite_guidance: item.rewrite_guidance.slice(0, 4),
           source: item.model_name || item.client_name || null,
         }));
+      const [staticCapabilitiesSelection, peStructureSelection, compilerPackerSelection] =
+        await Promise.all([
+          loadStaticAnalysisArtifactSelection<z.infer<typeof StaticCapabilityTriageDataSchema>>(
+            workspaceManager,
+            database,
+            input.sample_id,
+            STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
+            {
+              scope: input.static_scope,
+              sessionTag: input.static_session_tag,
+            }
+          ),
+          loadStaticAnalysisArtifactSelection<z.infer<typeof PEStructureAnalyzeDataSchema>>(
+            workspaceManager,
+            database,
+            input.sample_id,
+            PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
+            {
+              scope: input.static_scope,
+              sessionTag: input.static_session_tag,
+            }
+          ),
+          loadStaticAnalysisArtifactSelection<z.infer<typeof CompilerPackerDetectDataSchema>>(
+            workspaceManager,
+            database,
+            input.sample_id,
+            COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
+            {
+              scope: input.static_scope,
+              sessionTag: input.static_session_tag,
+            }
+          ),
+        ]);
+      const staticCapabilities = staticCapabilitiesSelection.latest_payload;
+      const peStructure = peStructureSelection.latest_payload;
+      const compilerPacker = compilerPackerSelection.latest_payload;
       let binaryProfile: z.infer<typeof BinaryRoleProfileDataSchema> | null = null;
       let rustProfile: z.infer<typeof RustBinaryAnalyzeDataSchema> | null = null;
       if (binaryRoleProfileHandler) {
@@ -591,6 +725,24 @@ export function createReportGenerateHandler(
           input.evidence_scope,
           input.evidence_session_tag
         ),
+        static_capabilities: buildStaticArtifactProvenance(
+          'static capability artifacts',
+          staticCapabilitiesSelection,
+          input.static_scope,
+          input.static_session_tag
+        ),
+        pe_structure: buildStaticArtifactProvenance(
+          'pe structure artifacts',
+          peStructureSelection,
+          input.static_scope,
+          input.static_session_tag
+        ),
+        compiler_packer: buildStaticArtifactProvenance(
+          'compiler/packer attribution artifacts',
+          compilerPackerSelection,
+          input.static_scope,
+          input.static_session_tag
+        ),
         semantic_explanations: buildSemanticArtifactProvenance(
           'semantic explanation artifacts',
           functionExplanationIndex,
@@ -601,6 +753,9 @@ export function createReportGenerateHandler(
       const ghidraExecution = buildGhidraExecutionSummary(analyses);
       const selectionDiffs: {
         runtime?: ReturnType<typeof buildArtifactSelectionDiff>;
+        static_capabilities?: ReturnType<typeof buildArtifactSelectionDiff>;
+        pe_structure?: ReturnType<typeof buildArtifactSelectionDiff>;
+        compiler_packer?: ReturnType<typeof buildArtifactSelectionDiff>;
         semantic_explanations?: ReturnType<typeof buildArtifactSelectionDiff>;
       } = {};
       if (input.compare_evidence_scope) {
@@ -620,6 +775,70 @@ export function createReportGenerateHandler(
             baselineDynamicEvidence,
             input.compare_evidence_scope,
             input.compare_evidence_session_tag
+          )
+        );
+      }
+      if (input.compare_static_scope) {
+        const [baselineCapabilities, baselinePeStructure, baselineCompilerPacker] = await Promise.all([
+          loadStaticAnalysisArtifactSelection<z.infer<typeof StaticCapabilityTriageDataSchema>>(
+            workspaceManager,
+            database,
+            input.sample_id,
+            STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
+            {
+              scope: input.compare_static_scope,
+              sessionTag: input.compare_static_session_tag,
+            }
+          ),
+          loadStaticAnalysisArtifactSelection<z.infer<typeof PEStructureAnalyzeDataSchema>>(
+            workspaceManager,
+            database,
+            input.sample_id,
+            PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
+            {
+              scope: input.compare_static_scope,
+              sessionTag: input.compare_static_session_tag,
+            }
+          ),
+          loadStaticAnalysisArtifactSelection<z.infer<typeof CompilerPackerDetectDataSchema>>(
+            workspaceManager,
+            database,
+            input.sample_id,
+            COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
+            {
+              scope: input.compare_static_scope,
+              sessionTag: input.compare_static_session_tag,
+            }
+          ),
+        ]);
+        selectionDiffs.static_capabilities = buildArtifactSelectionDiff(
+          'static_capabilities',
+          provenance.static_capabilities,
+          buildStaticArtifactProvenance(
+            'static capability artifacts',
+            baselineCapabilities,
+            input.compare_static_scope,
+            input.compare_static_session_tag
+          )
+        );
+        selectionDiffs.pe_structure = buildArtifactSelectionDiff(
+          'pe_structure',
+          provenance.pe_structure,
+          buildStaticArtifactProvenance(
+            'pe structure artifacts',
+            baselinePeStructure,
+            input.compare_static_scope,
+            input.compare_static_session_tag
+          )
+        );
+        selectionDiffs.compiler_packer = buildArtifactSelectionDiff(
+          'compiler_packer',
+          provenance.compiler_packer,
+          buildStaticArtifactProvenance(
+            'compiler/packer attribution artifacts',
+            baselineCompilerPacker,
+            input.compare_static_scope,
+            input.compare_static_session_tag
           )
         );
       }
@@ -660,9 +879,14 @@ export function createReportGenerateHandler(
             dynamicEvidence,
             binaryProfile,
             rustProfile,
+            staticCapabilities,
+            peStructure,
+            compilerPacker,
             functionExplanations,
             input.evidence_scope,
             input.evidence_session_tag,
+            input.static_scope,
+            input.static_session_tag,
             input.semantic_scope,
             input.semantic_session_tag,
             provenance,
@@ -688,9 +912,14 @@ export function createReportGenerateHandler(
             dynamic_evidence: dynamicEvidence,
             binary_profile: binaryProfile,
             rust_profile: rustProfile,
+            static_capabilities: staticCapabilities,
+            pe_structure: peStructure,
+            compiler_packer: compilerPacker,
             function_explanations: functionExplanations,
             evidence_scope: input.evidence_scope,
             evidence_session_tag: input.evidence_session_tag || null,
+            static_scope: input.static_scope,
+            static_session_tag: input.static_session_tag || null,
             semantic_scope: input.semantic_scope,
             semantic_session_tag: input.semantic_session_tag || null,
             provenance,
@@ -725,9 +954,14 @@ export function createReportGenerateHandler(
   dynamicEvidence,
   binaryProfile,
   rustProfile,
+  staticCapabilities,
+  peStructure,
+  compilerPacker,
   functionExplanations,
   input.evidence_scope,
   input.evidence_session_tag,
+  input.static_scope,
+  input.static_session_tag,
   input.semantic_scope,
   input.semantic_session_tag,
   provenance,

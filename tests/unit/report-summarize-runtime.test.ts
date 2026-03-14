@@ -6,6 +6,12 @@ import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import { createReportSummarizeHandler } from '../../src/tools/report-summarize.js'
 import { persistSemanticFunctionExplanationsArtifact } from '../../src/semantic-name-suggestion-artifacts.js'
+import {
+  persistStaticAnalysisJsonArtifact,
+  STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
+  PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
+  COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
+} from '../../src/static-analysis-artifacts.js'
 import type { WorkerResult, ToolArgs } from '../../src/types.js'
 
 describe('report.summarize runtime evidence integration', () => {
@@ -139,6 +145,130 @@ describe('report.summarize runtime evidence integration', () => {
       mime: 'application/json',
       created_at: createdAt,
     })
+  }
+
+  async function seedStaticArtifacts(
+    sampleId: string,
+    sessionTag: string,
+    createdAt: string,
+    capabilityName: string
+  ) {
+    const capabilityPayload = {
+      session_tag: sessionTag,
+      sample_id: sampleId,
+      status: 'ready',
+      capability_count: 2,
+      behavior_namespaces: ['communication/http'],
+      capability_groups: { network: 2 },
+      capabilities: [
+        {
+          rule_id: `cap/${capabilityName.toLowerCase()}`,
+          name: capabilityName,
+          namespace: 'communication/http',
+          scopes: ['file'],
+          group: 'network',
+          confidence: 0.77,
+          match_count: 1,
+          evidence_summary: capabilityName,
+        },
+      ],
+      summary: 'Recovered capability findings.',
+      backend: {
+        available: true,
+        engine: 'capa',
+        source: 'python_module',
+        version: '9.3.1',
+        rules: {
+          available: true,
+          path: 'C:/rules/capa',
+          source: 'env',
+          error: null,
+        },
+        error: null,
+      },
+      confidence_semantics: null,
+      created_at: createdAt,
+    }
+    const peStructurePayload = {
+      session_tag: sessionTag,
+      sample_id: sampleId,
+      status: 'ready',
+      summary: {
+        section_count: 5,
+        import_dll_count: 3,
+        import_function_count: 9,
+        export_count: 0,
+        forwarder_count: 0,
+        resource_count: 1,
+        overlay_present: sessionTag === 'static-alpha',
+        parser_preference: 'lief',
+      },
+      headers: {},
+      entry_point: {},
+      sections: [],
+      imports: {},
+      exports: {},
+      resources: {},
+      overlay: {},
+      backend_details: { lief: { available: true } },
+      confidence_semantics: null,
+      created_at: createdAt,
+    }
+    const compilerPayload = {
+      session_tag: sessionTag,
+      sample_id: sampleId,
+      status: 'ready',
+      compiler_findings: [{ name: 'Microsoft Visual C++', category: 'compiler', confidence: 0.8, evidence_summary: 'compiler', source: 'die-json' }],
+      packer_findings: sessionTag === 'static-alpha' ? [{ name: 'UPX', category: 'packer', confidence: 0.8, evidence_summary: 'packer', source: 'die-json' }] : [],
+      protector_findings: [],
+      file_type_findings: [{ name: 'PE32 executable', category: 'file_type', confidence: 0.7, evidence_summary: 'file_type', source: 'die-json' }],
+      summary: {
+        compiler_count: 1,
+        packer_count: sessionTag === 'static-alpha' ? 1 : 0,
+        protector_count: 0,
+        file_type_count: 1,
+        likely_primary_file_type: 'PE32 executable',
+      },
+      backend: {
+        available: true,
+        source: 'config',
+        path: 'C:/tools/diec.exe',
+        version: '3.10',
+        checked_candidates: ['C:/tools/diec.exe'],
+        error: null,
+      },
+      confidence_semantics: null,
+      raw_backend: null,
+      created_at: createdAt,
+    }
+
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      sampleId,
+      STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
+      'static_capability',
+      capabilityPayload,
+      sessionTag
+    )
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      sampleId,
+      PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
+      'pe_structure',
+      peStructurePayload,
+      sessionTag
+    )
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      sampleId,
+      COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
+      'compiler_packer',
+      compilerPayload,
+      sessionTag
+    )
   }
 
   test('should merge imported runtime evidence into triage output', async () => {
@@ -859,5 +989,62 @@ describe('report.summarize runtime evidence integration', () => {
     expect(data.function_explanations).toHaveLength(1)
     expect(data.function_explanations[0].behavior).toBe('beta_behavior')
     expect(data.function_explanations[0].summary).toContain('beta summary')
+  })
+
+  test('should load scoped static analysis artifacts and expose provenance/diffs', async () => {
+    const sampleId = 'sha256:' + 'd'.repeat(64)
+    const createdAt = '2026-03-14T00:00:00.000Z'
+    database.insertSample({
+      id: sampleId,
+      sha256: 'd'.repeat(64),
+      md5: 'd'.repeat(32),
+      size: 4096,
+      file_type: 'PE',
+      created_at: createdAt,
+      source: 'unit-test',
+    })
+    await workspaceManager.createWorkspace(sampleId)
+    await seedStaticArtifacts(sampleId, 'static-alpha', createdAt, 'send HTTP request')
+    await seedStaticArtifacts(sampleId, 'static-beta', '2026-03-14T00:01:00.000Z', 'install service')
+
+    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: {
+        summary: 'Static triage completed.',
+        confidence: 0.41,
+        threat_level: 'clean',
+        iocs: {
+          suspicious_imports: [],
+          suspicious_strings: [],
+          yara_matches: [],
+        },
+        evidence: ['baseline triage evidence'],
+        recommendation: 'Continue analysis.',
+      },
+    })
+
+    const handler = createReportSummarizeHandler(workspaceManager, database, cacheManager, {
+      triageHandler,
+    })
+    const result = await handler({
+      sample_id: sampleId,
+      mode: 'triage',
+      static_scope: 'session',
+      static_session_tag: 'static-alpha',
+      compare_static_scope: 'all',
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.static_capabilities.capabilities[0].name).toBe('send HTTP request')
+    expect(data.pe_structure.summary.overlay_present).toBe(true)
+    expect(data.compiler_packer.summary.packer_count).toBe(1)
+    expect(data.provenance.static_capabilities.scope).toBe('session')
+    expect(data.provenance.static_capabilities.session_tags).toContain('static-alpha')
+    expect(data.selection_diffs.static_capabilities.summary).toContain('static capability selection')
+    expect(data.selection_diffs.pe_structure.summary).toContain('PE structure selection')
+    expect(data.selection_diffs.compiler_packer.summary).toContain('compiler/packer attribution selection')
+    expect(data.summary).toContain('Capability triage matched')
+    expect(data.evidence.some((item: string) => item.includes('Compiler/packer attribution'))).toBe(true)
   })
 })

@@ -7,6 +7,40 @@ Versioning where practical.
 
 ## [Unreleased]
 
+### Frida Dynamic Instrumentation
+
+- Added Frida runtime instrumentation with `frida.runtime.instrument` supporting spawn and attach modes
+- Added Frida script injection via `frida.script.inject` with pre-built script library:
+  - `api_trace.js` - Windows API tracing with argument logging
+  - `string_decoder.js` - Runtime string decryption
+  - `anti_debug_bypass.js` - Anti-debug detection neutralization
+  - `crypto_finder.js` - Cryptographic API detection
+  - `file_registry_monitor.js` - File/registry operation tracking
+- Added Frida trace capture via `frida.trace.capture` with canonical MCP trace schema
+- Implemented trace filtering, aggregation, artifact persistence, and provenance tracking
+- Integrated Frida traces into `dynamic.trace.import`, `report.generate`, and `report.summarize`
+- Added async job support for long-running Frida traces via `task.status` / `task.cancel`
+- Added evidence scope selection (`all`/`latest`/`session`) and compare/baseline support for Frida traces
+- Added comprehensive Frida documentation: installation guides, workflow examples, troubleshooting guidance
+- Added `frida_scripts/` library with README documentation
+- Added comprehensive unit tests for Frida tools:
+  - `tests/unit/frida-runtime-instrument.test.ts` - Runtime instrumentation tests (11 tests)
+  - `tests/unit/frida-script-inject.test.ts` - Script injection tests (13 tests)
+  - `tests/unit/frida-trace-capture.test.ts` - Trace capture/normalization tests (19 tests)
+  - `tests/unit/setup-guidance.test.ts` - Setup guidance behavior tests (24 tests)
+- Added integration tests for Frida workflows:
+  - `tests/integration/frida-workflow.test.ts` - End-to-end spawn/attach/capture workflow tests
+  - Tests graceful degradation when Frida unavailable with structured setup guidance
+  - Tests concurrent operations and artifact persistence
+
+### Static Analysis Foundation
+
+- Added a static triage foundation for the upcoming `0.2.0` line: `static.capability.triage`, `pe.structure.analyze`, and `compiler.packer.detect`
+- Added worker/config/setup support for `flare-capa`, `pefile`, `lief`, `CAPA_RULES_PATH`, and `DIE_PATH`
+- Integrated static capability, PE structure, and compiler/packer attribution into `workflow.triage`, `report.summarize`, and `report.generate`
+- Added static artifact persistence, provenance, scope selection, and compare/baseline support for the new analysis families
+- Updated MCP docs, install guides, and release notes to cover early-stage static triage chaining and optional dependency bootstrap
+
 ## [0.1.4] - 2026-03-14
 
 - Added safer Ghidra defaults for `GHIDRA_PROJECT_ROOT` / `GHIDRA_LOG_ROOT`, automatic project-parent creation, and safer Windows defaults that avoid unstable per-repo relative paths

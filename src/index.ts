@@ -52,6 +52,10 @@ import {
   createPESymbolsRecoverHandler,
 } from './tools/pe-symbols-recover.js'
 import {
+  peStructureAnalyzeToolDefinition,
+  createPEStructureAnalyzeHandler,
+} from './tools/pe-structure-analyze.js'
+import {
   stringsExtractToolDefinition,
   createStringsExtractHandler
 } from './tools/strings-extract.js'
@@ -79,6 +83,14 @@ import {
   packerDetectToolDefinition,
   createPackerDetectHandler
 } from './tools/packer-detect.js'
+import {
+  staticCapabilityTriageToolDefinition,
+  createStaticCapabilityTriageHandler,
+} from './tools/static-capability-triage.js'
+import {
+  compilerPackerDetectToolDefinition,
+  createCompilerPackerDetectHandler,
+} from './tools/compiler-packer-detect.js'
 import {
   binaryRoleProfileToolDefinition,
   createBinaryRoleProfileHandler,
@@ -163,6 +175,18 @@ import {
   sandboxExecuteToolDefinition,
   createSandboxExecuteHandler
 } from './tools/sandbox-execute.js'
+import {
+  fridaRuntimeInstrumentToolDefinition,
+  createFridaRuntimeInstrumentHandler
+} from './tools/frida-runtime-instrument.js'
+import {
+  fridaScriptInjectToolDefinition,
+  createFridaScriptInjectHandler
+} from './tools/frida-script-inject.js'
+import {
+  fridaTraceCaptureToolDefinition,
+  createFridaTraceCaptureHandler
+} from './tools/frida-trace-capture.js'
 import {
   attackMapToolDefinition,
   createAttackMapHandler
@@ -368,6 +392,10 @@ async function main() {
       peExportsExtractToolDefinition,
       createPEExportsExtractHandler(workspaceManager, database, cacheManager)
     )
+    server.registerTool(
+      peStructureAnalyzeToolDefinition,
+      createPEStructureAnalyzeHandler(workspaceManager, database)
+    )
 
     server.registerTool(
       pePdataExtractToolDefinition,
@@ -415,6 +443,14 @@ async function main() {
     server.registerTool(
       packerDetectToolDefinition,
       createPackerDetectHandler(workspaceManager, database, cacheManager)
+    )
+    server.registerTool(
+      staticCapabilityTriageToolDefinition,
+      createStaticCapabilityTriageHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      compilerPackerDetectToolDefinition,
+      createCompilerPackerDetectHandler(workspaceManager, database)
     )
     server.registerTool(
       binaryRoleProfileToolDefinition,
@@ -559,6 +595,24 @@ async function main() {
     server.registerTool(
       sandboxExecuteToolDefinition,
       createSandboxExecuteHandler(workspaceManager, database, policyGuard)
+    )
+
+    // Frida dynamic instrumentation: frida.runtime.instrument
+    server.registerTool(
+      fridaRuntimeInstrumentToolDefinition,
+      createFridaRuntimeInstrumentHandler(workspaceManager, database)
+    )
+
+    // Frida script injection: frida.script.inject
+    server.registerTool(
+      fridaScriptInjectToolDefinition,
+      createFridaScriptInjectHandler(workspaceManager, database)
+    )
+
+    // Frida trace capture: frida.trace.capture
+    server.registerTool(
+      fridaTraceCaptureToolDefinition,
+      createFridaTraceCaptureHandler(workspaceManager, database)
     )
 
     // P1 enhancement: ATT&CK mapping from correlated static indicators

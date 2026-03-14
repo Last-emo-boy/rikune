@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { DynamicEvidenceScope, DynamicTraceSummary } from './dynamic-trace.js'
+import type { StaticArtifactScope, StaticArtifactSelection } from './static-analysis-artifacts.js'
 import type {
   SemanticArtifactScope,
   SemanticFunctionExplanationIndex,
@@ -20,6 +21,9 @@ export const ArtifactSelectionProvenanceSchema = z.object({
 
 export const AnalysisProvenanceSchema = z.object({
   runtime: ArtifactSelectionProvenanceSchema,
+  static_capabilities: ArtifactSelectionProvenanceSchema.optional(),
+  pe_structure: ArtifactSelectionProvenanceSchema.optional(),
+  compiler_packer: ArtifactSelectionProvenanceSchema.optional(),
   semantic_names: ArtifactSelectionProvenanceSchema.optional(),
   semantic_explanations: ArtifactSelectionProvenanceSchema.optional(),
   semantic_module_reviews: ArtifactSelectionProvenanceSchema.optional(),
@@ -109,5 +113,39 @@ export function buildSemanticArtifactProvenance(
     latest_artifact_at: index.latest_created_at,
     scope_note:
       index.scope_note || emptyScopeNote(label, scope, sessionTag),
+  }
+}
+
+export function buildStaticArtifactProvenance(
+  label:
+    | 'static capability artifacts'
+    | 'pe structure artifacts'
+    | 'compiler/packer attribution artifacts',
+  selection: StaticArtifactSelection | null | undefined,
+  scope: StaticArtifactScope,
+  sessionTag?: string | null
+): ArtifactSelectionProvenance {
+  if (!selection) {
+    return {
+      scope,
+      session_selector: sessionTag?.trim() || null,
+      artifact_count: 0,
+      artifact_ids: [],
+      session_tags: [],
+      earliest_artifact_at: null,
+      latest_artifact_at: null,
+      scope_note: emptyScopeNote(label, scope, sessionTag),
+    }
+  }
+
+  return {
+    scope,
+    session_selector: sessionTag?.trim() || null,
+    artifact_count: selection.artifact_ids.length,
+    artifact_ids: selection.artifact_ids,
+    session_tags: selection.session_tags,
+    earliest_artifact_at: selection.earliest_created_at,
+    latest_artifact_at: selection.latest_created_at,
+    scope_note: selection.scope_note || emptyScopeNote(label, scope, sessionTag),
   }
 }

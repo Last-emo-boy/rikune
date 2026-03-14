@@ -462,9 +462,39 @@ export class WorkspaceManager {
   }
 
   /**
+   * Ensure a subdirectory exists under a sample's workspace
+   * Creates the workspace and the specified subdirectory if they don't exist
+   * For 'unknown' sample, creates a generic directory under the workspace root
+   *
+   * @param sampleId - Sample ID in format "sha256:<hex>" or 'unknown'
+   * @param subdir - Subdirectory name (e.g., 'dynamic', 'reports')
+   * @returns Path to the ensured directory
+   */
+  public async ensureDirectory(sampleId: string, subdir: string): Promise<string> {
+    // Handle 'unknown' sample case - create under workspace root
+    if (sampleId === 'unknown') {
+      const dirPath = path.join(this.workspaceRoot, subdir)
+      await fsPromises.mkdir(dirPath, { recursive: true })
+      return dirPath
+    }
+
+    try {
+      const workspace = await this.getWorkspace(sampleId)
+      const dirPath = path.join(workspace.root, subdir)
+      await fsPromises.mkdir(dirPath, { recursive: true })
+      return dirPath
+    } catch {
+      // Workspace doesn't exist, create under workspace root as fallback
+      const dirPath = path.join(this.workspaceRoot, subdir)
+      await fsPromises.mkdir(dirPath, { recursive: true })
+      return dirPath
+    }
+  }
+
+  /**
    * Get approximate size of a directory
    * Requirements: 26.3 (file I/O optimization)
-   * 
+   *
    * @param dirPath - Directory path
    * @returns Size in bytes
    */

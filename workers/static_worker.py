@@ -112,6 +112,8 @@ class StaticWorker:
             'pe.fingerprint': self.pe_fingerprint,
             'pe.imports.extract': self.pe_imports_extract,
             'pe.exports.extract': self.pe_exports_extract,
+            'pe.structure.analyze': self.pe_structure_analyze,
+            'static.capability.triage': self.static_capability_triage,
             'strings.extract': self.strings_extract,
             'strings.floss.decode': self.floss_decode,
             'yara.scan': self.yara_scan,
@@ -329,12 +331,181 @@ class StaticWorker:
         }
         return self._floss_cli_cache
 
+    def _resolve_capa_rules_path(self, requested_path: Optional[str] = None) -> Dict[str, Any]:
+        """Resolve a capa rules directory or compiled rules file from args or environment."""
+        candidates: List[tuple[str, str]] = []
+        if requested_path and str(requested_path).strip():
+            candidates.append((str(requested_path).strip(), "arg"))
+
+        env_rules = os.environ.get("CAPA_RULES_PATH", "").strip()
+        if env_rules:
+            candidates.append((env_rules, "env"))
+
+        seen = set()
+        for candidate, source in candidates:
+            normalized = os.path.abspath(candidate)
+            if normalized.lower() in seen:
+                continue
+            seen.add(normalized.lower())
+            if os.path.exists(normalized):
+                return {
+                    "available": True,
+                    "path": normalized,
+                    "source": source,
+                    "kind": "directory" if os.path.isdir(normalized) else "file",
+                }
+            return {
+                "available": False,
+                "path": normalized,
+                "source": source,
+                "error": f"Configured capa rules path does not exist: {normalized}",
+            }
+
+        return {
+            "available": False,
+            "path": None,
+            "source": None,
+            "error": "No capa rules path configured. Set CAPA_RULES_PATH or pass rules_path.",
+        }
+
+    def _discover_capa_backend(
+        self,
+        requested_rules_path: Optional[str] = None,
+        requested_command: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Discover a usable capa backend and the configured rules path."""
+        rules_status = self._resolve_capa_rules_path(requested_rules_path)
+        package_version = self._get_python_package_version("flare-capa") or self._get_python_package_version("capa")
+        candidates: List[List[str]] = []
+
+        if requested_command:
+            if isinstance(requested_command, list):
+                requested_items = [str(item).strip() for item in requested_command if str(item).strip()]
+                if requested_items:
+                    candidates.append(requested_items)
+            elif str(requested_command).strip():
+                candidates.append([str(requested_command).strip()])
+
+        capa_cli = shutil.which("capa")
+        if capa_cli:
+            candidates.append([capa_cli])
+        candidates.append([sys.executable, "-m", "capa.main"])
+
+        probe_errors: List[str] = []
+        for candidate in candidates:
+            try:
+                version_result = subprocess.run(
+                    candidate + ["--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                output = f"{version_result.stdout}\n{version_result.stderr}".strip()
+                if version_result.returncode == 0 or output:
+                    version = output.splitlines()[0] if output else package_version
+                    return {
+                        "available": True,
+                        "command": candidate,
+                        "version": package_version or version,
+                        "backend_version": version,
+                        "rules": rules_status,
+                        "error": None,
+                    }
+                probe_errors.append(f"{' '.join(candidate)} returned exit code {version_result.returncode}")
+            except Exception as exc:
+                probe_errors.append(f"{' '.join(candidate)} probe failed: {str(exc)}")
+
+        return {
+            "available": False,
+            "command": None,
+            "version": package_version,
+            "rules": rules_status,
+            "error": (
+                "Compatible capa backend not found. Install with `pip install flare-capa`."
+                + (f" Details: {'; '.join(probe_errors)}" if probe_errors else "")
+            ),
+        }
+
+    def _probe_frida_runtime(self) -> Dict[str, Any]:
+        """Probe whether the Frida runtime is installed and functional."""
+        frida_version = self._get_python_package_version("frida")
+        frida_tools_version = self._get_python_package_version("frida-tools")
+
+        # Resolve Frida configuration from environment variables
+        frida_path = os.environ.get("FRIDA_PATH") or os.environ.get("FRIDA_SERVER_PATH")
+        frida_script_root = os.environ.get("FRIDA_SCRIPT_ROOT")
+
+        result: Dict[str, Any] = {
+            "available": False,
+            "version": frida_version,
+            "tools_version": frida_tools_version,
+            "module_path": None,
+            "api_available": False,
+            "error": None,
+            "warnings": [],
+            "config": {
+                "frida_path": frida_path,
+                "frida_script_root": frida_script_root,
+                "frida_server_binary": None,
+            },
+        }
+
+        probe_warnings: List[str] = []
+
+        try:
+            import frida
+            result["module_path"] = getattr(frida, "__file__", None)
+            result["api_available"] = hasattr(frida, "spawn") and hasattr(frida, "attach")
+
+            # Check if frida-server binary is accessible (optional)
+            try:
+                import subprocess
+                frida_ps_result = subprocess.run(
+                    ["frida-ps", "--help"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    check=False,
+                )
+                if frida_ps_result.returncode == 0:
+                    result["frida_ps_available"] = True
+                else:
+                    probe_warnings.append("frida-ps command not available")
+            except Exception:
+                probe_warnings.append("frida-ps command not found in PATH")
+
+            # Check for frida-server binary if frida_path is configured
+            if frida_path and os.path.exists(frida_path):
+                result["config"]["frida_server_binary"] = frida_path
+                result["config"]["frida_server_exists"] = True
+            elif frida_path:
+                result["config"]["frida_server_exists"] = False
+                probe_warnings.append(f"Configured frida_path does not exist: {frida_path}")
+            else:
+                # Try to find frida-server in common locations
+                result["config"]["frida_server_auto_found"] = False
+
+            if result["api_available"]:
+                result["available"] = True
+            else:
+                result["error"] = "Frida module imported but core APIs (spawn/attach) not available"
+        except ImportError as e:
+            result["error"] = f"Frida not installed: {str(e)}"
+        except Exception as e:
+            result["error"] = f"Frida probe error: {str(e)}"
+
+        result["warnings"] = self._dedupe_preserve(probe_warnings)[:4]
+        return result
+
     def _get_dependency_status(self) -> Dict[str, Any]:
         """Collect runtime dependency status for diagnostics."""
         if self._dependency_status_cache is not None:
             return self._dependency_status_cache
 
         speakeasy_status = self._probe_speakeasy_emulator()
+        capa_status = self._discover_capa_backend()
+        frida_status = self._probe_frida_runtime()
 
         status = {
             "python": sys.version.split()[0],
@@ -345,6 +516,14 @@ class StaticWorker:
             "lief": {
                 "available": LIEF_AVAILABLE,
                 "version": self._get_python_package_version("lief"),
+            },
+            "capa": {
+                "available": bool(capa_status.get("available")),
+                "version": capa_status.get("version"),
+                "backend_version": capa_status.get("backend_version"),
+                "command": capa_status.get("command"),
+                "error": capa_status.get("error"),
+                "rules": capa_status.get("rules"),
             },
             "yara_python": {
                 "available": YARA_AVAILABLE,
@@ -360,10 +539,7 @@ class StaticWorker:
                 "version": self._get_python_package_version("dnfile"),
             },
             "speakeasy": speakeasy_status,
-            "frida": {
-                "available": self._get_python_package_version("frida") is not None,
-                "version": self._get_python_package_version("frida"),
-            },
+            "frida": frida_status,
             "psutil": {
                 "available": self._get_python_package_version("psutil") is not None,
                 "version": self._get_python_package_version("psutil"),
@@ -416,8 +592,11 @@ class StaticWorker:
                 'path': rule_path,
             }
 
+        capa_rules = dependencies.get("capa", {}).get("rules", {})
         required_checks = [
             bool(dependencies.get('pefile', {}).get('available')),
+            bool(dependencies.get('lief', {}).get('available')),
+            bool(dependencies.get('capa', {}).get('available')),
             bool(dependencies.get('floss_cli', {}).get('available')),
             bool(dependencies.get('yara_python', {}).get('available')),
             available_rule_count >= 2,
@@ -438,6 +617,7 @@ class StaticWorker:
                 'cwd': os.getcwd(),
             },
             'dependencies': dependencies,
+            'capa_rules': capa_rules,
             'yara_rules': {
                 'directory': rules_dir,
                 'available_count': available_rule_count,
@@ -456,10 +636,14 @@ class StaticWorker:
         _ = args
 
         dependencies = self._get_dependency_status()
+        speakeasy_comp = dependencies.get("speakeasy", {"available": False, "version": None})
+        frida_comp = dependencies.get("frida", {"available": False, "version": None})
+        psutil_comp = dependencies.get("psutil", {"available": False, "version": None})
+
         dynamic_components = {
-            "speakeasy": dependencies.get("speakeasy", {"available": False, "version": None}),
-            "frida": dependencies.get("frida", {"available": False, "version": None}),
-            "psutil": dependencies.get("psutil", {"available": False, "version": None}),
+            "speakeasy": speakeasy_comp,
+            "frida": frida_comp,
+            "psutil": psutil_comp,
         }
 
         available = [
@@ -472,32 +656,63 @@ class StaticWorker:
             status = "partial"
 
         recommendations = []
-        if not dynamic_components["speakeasy"].get("available"):
+        if not speakeasy_comp.get("available"):
             recommendations.append(
                 "Install FLARE Speakeasy emulator for PE user-mode emulation: pip install speakeasy-emulator"
             )
-        if dynamic_components["speakeasy"].get("legacy_distribution_summary") and "metrics aggregation server" in str(
-            dynamic_components["speakeasy"].get("legacy_distribution_summary", "")
+        if speakeasy_comp.get("legacy_distribution_summary") and "metrics aggregation server" in str(
+            speakeasy_comp.get("legacy_distribution_summary", "")
         ).lower():
             recommendations.append(
                 "Remove the unrelated `speakeasy` metrics package if present: pip uninstall speakeasy"
             )
-        setuptools_version = dynamic_components["speakeasy"].get("setuptools_version")
+        setuptools_version = speakeasy_comp.get("setuptools_version")
         setuptools_major = self._parse_major_version(str(setuptools_version) if setuptools_version else None)
         if setuptools_major is not None and setuptools_major >= 81:
             recommendations.append(
                 "Pin setuptools below 81 for Unicorn/Speakeasy compatibility: pip install \"setuptools<81\""
             )
-        if not dynamic_components["frida"].get("available"):
+        if not frida_comp.get("available"):
             recommendations.append("Install frida for runtime API tracing: pip install frida")
-        if not dynamic_components["psutil"].get("available"):
+        else:
+            # Add specific recommendations if frida is partially functional
+            frida_error = frida_comp.get("error")
+            if frida_error and "spawn" in str(frida_error).lower():
+                recommendations.append("Frida installed but core APIs are incomplete; reinstall frida-tools")
+            if not frida_comp.get("frida_ps_available"):
+                recommendations.append("frida-tools CLI not found; ensure frida-tools is installed and in PATH")
+        if not psutil_comp.get("available"):
             recommendations.append("Install psutil for process telemetry collection: pip install psutil")
+
+        # Add setup guidance for Frida if unavailable
+        setup_actions = []
+        if not frida_comp.get("available"):
+            setup_actions = [
+                {
+                    "action_type": "pip_install",
+                    "package": "frida",
+                    "description": "Install Frida runtime for dynamic instrumentation",
+                    "command": "pip install frida",
+                },
+                {
+                    "action_type": "pip_install",
+                    "package": "frida-tools",
+                    "description": "Install Frida tools package for CLI and Python APIs",
+                    "command": "pip install frida-tools",
+                },
+                {
+                    "action_type": "verify_install",
+                    "command": "python -c \"import frida; print(frida.__version__)\"",
+                    "description": "Verify Frida installation",
+                },
+            ]
 
         return {
             "status": status,
             "available_components": available,
             "components": dynamic_components,
             "recommendations": recommendations,
+            "setup_actions": setup_actions if not frida_comp.get("available") else [],
             "checked_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -2062,6 +2277,66 @@ print(json.dumps(payload))
             result["signature"] = signature_info
         
         return result
+
+
+    def _classify_capa_group(self, namespace: Optional[str], rule_name: str) -> str:
+        lowered = f"{namespace or ''} {rule_name}".lower()
+        if 'service' in lowered or 'persistence' in lowered:
+            return 'service_and_persistence'
+        if 'http' in lowered or 'network' in lowered or 'socket' in lowered:
+            return 'network_communication'
+        if 'registry' in lowered:
+            return 'registry_modification'
+        if 'credential' in lowered or 'password' in lowered or 'token' in lowered:
+            return 'credential_access'
+        if 'process' in lowered or 'inject' in lowered or 'remote thread' in lowered:
+            return 'process_manipulation'
+        if 'file' in lowered or 'filesystem' in lowered or 'resource' in lowered:
+            return 'file_and_resource_access'
+        if 'crypto' in lowered or 'encrypt' in lowered or 'decrypt' in lowered:
+            return 'cryptography'
+        if 'debugger' in lowered or 'anti-analysis' in lowered or 'evasion' in lowered:
+            return 'defense_evasion'
+        if 'execute' in lowered or 'command' in lowered or 'shell' in lowered:
+            return 'command_execution'
+        if 'com' in lowered or 'class factory' in lowered or 'dll' in lowered:
+            return 'component_activation'
+        return 'general_capability'
+
+    def _collect_capa_evidence_strings(self, value: Any, max_items: int = 8) -> List[str]:
+        evidence: List[str] = []
+
+        def visit(node: Any) -> None:
+            if len(evidence) >= max_items:
+                return
+            if isinstance(node, dict):
+                for key, item in node.items():
+                    if len(evidence) >= max_items:
+                        return
+                    if isinstance(item, (dict, list)):
+                        visit(item)
+                        continue
+                    if isinstance(item, (str, int, float)):
+                        text = str(item).strip()
+                        if not text or len(text) > 160:
+                            continue
+                        lowered_key = str(key).lower()
+                        if lowered_key in {'success', 'node', 'type'}:
+                            continue
+                        if re.fullmatch(r'0x[0-9a-f]+', text.lower()) or re.search(r'[A-Za-z]', text):
+                            evidence.append(text)
+            elif isinstance(node, list):
+                for item in node:
+                    visit(item)
+                    if len(evidence) >= max_items:
+                        return
+            elif isinstance(node, str):
+                text = node.strip()
+                if text and len(text) <= 160 and re.search(r'[A-Za-z]', text):
+                    evidence.append(text)
+
+        visit(value)
+        return self._dedupe_preserve(evidence)[:max_items]
 
     def pe_fingerprint(self, sample_path: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -3997,6 +4272,431 @@ print(json.dumps(payload))
         result["tooling"] = self._get_dependency_status()
 
         return result
+
+
+    def _safe_resource_name(self, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="ignore")
+        return str(value)
+
+    def _extract_pe_resources_pefile(self, pe: Any) -> Dict[str, Any]:
+        result = {
+            "present": False,
+            "type_count": 0,
+            "entry_count": 0,
+            "types": [],
+            "entries": [],
+        }
+
+        if not hasattr(pe, "DIRECTORY_ENTRY_RESOURCE"):
+            return result
+
+        type_names: List[str] = []
+        entries: List[Dict[str, Any]] = []
+
+        try:
+            for type_entry in pe.DIRECTORY_ENTRY_RESOURCE.entries:
+                type_name = self._safe_resource_name(getattr(type_entry, "name", None))
+                if not type_name:
+                    type_id = getattr(getattr(type_entry, "struct", None), "Id", None)
+                    type_name = pefile.RESOURCE_TYPE.get(type_id, str(type_id))
+                type_names.append(type_name)
+                if not hasattr(type_entry, "directory"):
+                    continue
+                for name_entry in type_entry.directory.entries:
+                    entry_name = self._safe_resource_name(getattr(name_entry, "name", None))
+                    if not entry_name:
+                        entry_name = str(getattr(getattr(name_entry, "struct", None), "Id", "unnamed"))
+                    if not hasattr(name_entry, "directory"):
+                        continue
+                    for lang_entry in name_entry.directory.entries:
+                        data_entry = getattr(lang_entry, "data", None)
+                        size = None
+                        if getattr(data_entry, "struct", None) is not None:
+                            size = getattr(data_entry.struct, "Size", None)
+                        elif data_entry is not None:
+                            size = getattr(data_entry, "Size", None)
+                        entries.append(
+                            {
+                                "type": type_name,
+                                "name": entry_name,
+                                "lang": getattr(data_entry, "lang", None),
+                                "sublang": getattr(data_entry, "sublang", None),
+                                "size": size,
+                            }
+                        )
+        except Exception:
+            pass
+
+        result["present"] = len(type_names) > 0
+        result["type_count"] = len(set(type_names))
+        result["entry_count"] = len(entries)
+        result["types"] = sorted(set(type_names))
+        result["entries"] = entries[:128]
+        return result
+
+    def _extract_overlay_pefile(self, pe: Any, sample_path: str) -> Dict[str, Any]:
+        offset = None
+        size = 0
+        try:
+            offset = pe.get_overlay_data_start_offset()
+            if offset is not None:
+                size = max(0, os.path.getsize(sample_path) - int(offset))
+        except Exception:
+            offset = None
+            size = 0
+        return {
+            "present": offset is not None and size > 0,
+            "offset": int(offset) if offset is not None else None,
+            "size": int(size),
+        }
+
+    def _pe_structure_pefile(self, sample_path: str) -> Dict[str, Any]:
+        pe = pefile.PE(sample_path)
+        fingerprint = self._pe_fingerprint_pefile(sample_path, False)
+        imports = self._pe_imports_extract_pefile(sample_path, True)
+        exports = self._pe_exports_extract_pefile(sample_path)
+        resources = self._extract_pe_resources_pefile(pe)
+        overlay = self._extract_overlay_pefile(pe, sample_path)
+        entry_rva = int(pe.OPTIONAL_HEADER.AddressOfEntryPoint)
+        image_base = int(pe.OPTIONAL_HEADER.ImageBase)
+        entry_section = None
+        sections = []
+        for section in pe.sections:
+            name = section.Name.decode('utf-8', errors='ignore').rstrip('\x00') or 'unknown'
+            raw_offset = int(section.PointerToRawData)
+            raw_size = int(section.SizeOfRawData)
+            virtual_address = int(section.VirtualAddress)
+            virtual_size = int(section.Misc_VirtualSize)
+            section_info = {
+                "name": name,
+                "virtual_address": virtual_address,
+                "virtual_size": virtual_size,
+                "raw_offset": raw_offset,
+                "raw_size": raw_size,
+                "entropy": round(self._calculate_entropy(section.get_data()), 2),
+                "characteristics": int(section.Characteristics),
+            }
+            sections.append(section_info)
+            if virtual_address <= entry_rva < (virtual_address + max(virtual_size, raw_size)):
+                entry_section = name
+
+        pe.close()
+        return {
+            "headers": fingerprint,
+            "sections": sections,
+            "imports": imports,
+            "exports": exports,
+            "resources": resources,
+            "overlay": overlay,
+            "entry_point": {
+                "rva": entry_rva,
+                "va": image_base + entry_rva,
+                "section": entry_section,
+            },
+        }
+
+    def _extract_pe_resources_lief(self, binary: Any) -> Dict[str, Any]:
+        result = {
+            "present": False,
+            "type_count": 0,
+            "entry_count": 0,
+            "types": [],
+            "entries": [],
+        }
+        try:
+            if not getattr(binary, "has_resources", False):
+                return result
+
+            manager = getattr(binary, "resources_manager", None)
+            types = []
+            if manager is not None:
+                for attr_name in ("types_available", "types"):
+                    values = getattr(manager, attr_name, [])
+                    if values:
+                        types.extend(self._safe_resource_name(item) for item in values)
+            result["present"] = True
+            result["types"] = [item for item in types if item]
+            result["type_count"] = len(result["types"])
+            result["entry_count"] = len(result["types"])
+        except Exception:
+            pass
+        return result
+
+    def _extract_overlay_lief(self, binary: Any) -> Dict[str, Any]:
+        try:
+            overlay = bytes(getattr(binary, "overlay", b"") or b"")
+            return {
+                "present": len(overlay) > 0,
+                "offset": None,
+                "size": len(overlay),
+            }
+        except Exception:
+            return {
+                "present": False,
+                "offset": None,
+                "size": 0,
+            }
+
+    def _pe_structure_lief(self, sample_path: str) -> Dict[str, Any]:
+        binary = lief.parse(sample_path)
+        if not binary or not isinstance(binary, lief.PE.Binary):
+            raise ValueError("Not a valid PE file")
+
+        fingerprint = self._pe_fingerprint_lief(sample_path, False)
+        imports = self._pe_imports_extract_lief(sample_path, True)
+        exports = self._pe_exports_extract_lief(sample_path)
+        resources = self._extract_pe_resources_lief(binary)
+        overlay = self._extract_overlay_lief(binary)
+        entry_rva = int(binary.optional_header.addressof_entrypoint)
+        image_base = int(binary.optional_header.imagebase)
+        entry_section = None
+        sections = []
+        for section in binary.sections:
+            name = section.name or "unknown"
+            raw_offset = int(getattr(section, "offset", 0))
+            raw_size = int(section.size)
+            virtual_address = int(section.virtual_address)
+            virtual_size = int(section.virtual_size)
+            characteristics = getattr(section, "characteristics", 0)
+            characteristics_value = int(getattr(characteristics, "value", characteristics))
+            sections.append(
+                {
+                    "name": name,
+                    "virtual_address": virtual_address,
+                    "virtual_size": virtual_size,
+                    "raw_offset": raw_offset,
+                    "raw_size": raw_size,
+                    "entropy": round(self._calculate_entropy(bytes(section.content)), 2),
+                    "characteristics": characteristics_value,
+                }
+            )
+            if virtual_address <= entry_rva < (virtual_address + max(virtual_size, raw_size)):
+                entry_section = name
+
+        return {
+            "headers": fingerprint,
+            "sections": sections,
+            "imports": imports,
+            "exports": exports,
+            "resources": resources,
+            "overlay": overlay,
+            "entry_point": {
+                "rva": entry_rva,
+                "va": image_base + entry_rva,
+                "section": entry_section,
+            },
+        }
+
+    def pe_structure_analyze(self, sample_path: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Return merged PE structure analysis using pefile and LIEF when available."""
+        warnings: List[str] = []
+        backend_details: Dict[str, Any] = {}
+
+        if PEFILE_AVAILABLE:
+            try:
+                backend_details["pefile"] = self._pe_structure_pefile(sample_path)
+            except Exception as exc:
+                warnings.append(f"pefile parsing failed: {str(exc)}")
+        else:
+            warnings.append("pefile unavailable")
+
+        if LIEF_AVAILABLE:
+            try:
+                backend_details["lief"] = self._pe_structure_lief(sample_path)
+            except Exception as exc:
+                warnings.append(f"LIEF parsing failed: {str(exc)}")
+        else:
+            warnings.append("LIEF unavailable")
+
+        primary = backend_details.get("pefile") or backend_details.get("lief")
+        if primary is None:
+            raise Exception("No PE parser available for structure analysis.")
+
+        imports = primary.get("imports", {})
+        exports = primary.get("exports", {})
+        resources = primary.get("resources", {})
+        overlay = primary.get("overlay", {})
+        sections = primary.get("sections", [])
+        headers = primary.get("headers", {})
+        entry_point = primary.get("entry_point", {})
+
+        return {
+            "status": "ready",
+            "summary": {
+                "section_count": len(sections),
+                "import_dll_count": int(imports.get("total_dlls", 0)),
+                "import_function_count": int(imports.get("total_functions", 0)),
+                "export_count": int(exports.get("total_exports", 0)),
+                "forwarder_count": int(exports.get("total_forwarders", 0)),
+                "resource_count": int(resources.get("entry_count", 0)),
+                "overlay_present": bool(overlay.get("present")),
+                "parser_preference": "pefile" if "pefile" in backend_details else "lief",
+            },
+            "headers": headers,
+            "entry_point": entry_point,
+            "sections": sections,
+            "imports": imports,
+            "exports": exports,
+            "resources": resources,
+            "overlay": overlay,
+            "backend_details": backend_details,
+            "warnings": warnings,
+        }
+
+    def _classify_capability_group(self, namespace: str, name: str) -> str:
+        combined = f"{namespace} {name}".lower()
+        if "service" in combined:
+            return "service_installation"
+        if any(item in combined for item in ["http", "socket", "dns", "network", "c2"]):
+            return "network_communication"
+        if any(item in combined for item in ["inject", "process", "thread", "remote"]):
+            return "process_manipulation"
+        if any(item in combined for item in ["registry", "autorun"]):
+            return "registry_persistence"
+        if any(item in combined for item in ["file", "write", "read", "create directory", "delete"]):
+            return "filesystem"
+        if any(item in combined for item in ["crypto", "encrypt", "decrypt", "hash"]):
+            return "cryptography"
+        if any(item in combined for item in ["persistence", "startup", "scheduled task"]):
+            return "persistence"
+        if any(item in combined for item in ["execute", "spawn", "shell", "command"]):
+            return "execution"
+        return "general"
+
+    def _normalize_capa_capabilities(self, raw_report: Dict[str, Any]) -> Dict[str, Any]:
+        rules_block = raw_report.get("rules", {})
+        if not isinstance(rules_block, dict):
+            rules_block = {}
+
+        capabilities: List[Dict[str, Any]] = []
+        namespaces = set()
+        groups: Dict[str, int] = {}
+
+        for rule_id, rule_data in rules_block.items():
+            if not isinstance(rule_data, dict):
+                continue
+
+            meta = rule_data.get("meta", {}) if isinstance(rule_data.get("meta"), dict) else {}
+            name = str(meta.get("name") or rule_id)
+            namespace = str(meta.get("namespace") or "").strip()
+            scopes_value = meta.get("scopes")
+            scopes: List[str] = []
+            if isinstance(scopes_value, list):
+                scopes = [str(item) for item in scopes_value if str(item).strip()]
+            elif isinstance(scopes_value, str) and scopes_value.strip():
+                scopes = [scopes_value.strip()]
+
+            matches = rule_data.get("matches")
+            if isinstance(matches, dict):
+                match_count = len(matches)
+            elif isinstance(matches, list):
+                match_count = len(matches)
+            else:
+                match_count = 0
+
+            group = self._classify_capability_group(namespace, name)
+            groups[group] = groups.get(group, 0) + 1
+            if namespace:
+                namespaces.add(namespace)
+
+            confidence = round(
+                min(0.96, 0.52 + 0.08 * min(match_count, 4) + (0.04 if namespace else 0.0)),
+                2,
+            )
+            capabilities.append(
+                {
+                    "rule_id": str(rule_id),
+                    "name": name,
+                    "namespace": namespace or None,
+                    "scopes": scopes,
+                    "group": group,
+                    "confidence": confidence,
+                    "match_count": match_count,
+                    "evidence_summary": (
+                        f"namespace={namespace or 'none'}, matches={match_count}, scopes={','.join(scopes) or 'unknown'}"
+                    ),
+                }
+            )
+
+        capabilities = sorted(
+            capabilities,
+            key=lambda item: (item.get("confidence", 0.0), item.get("match_count", 0), item.get("name", "")),
+            reverse=True,
+        )
+
+        return {
+            "capabilities": capabilities,
+            "behavior_namespaces": sorted(namespaces),
+            "capability_groups": groups,
+        }
+
+    def static_capability_triage(self, sample_path: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Run capa against the executable and normalize behavior capabilities."""
+        rules_path = args.get("rules_path")
+        timeout = int(args.get("timeout", 120))
+        backend = self._discover_capa_backend(str(rules_path) if rules_path else None)
+
+        if not backend.get("available"):
+            return {
+                "status": "setup_required",
+                "backend": backend,
+                "capabilities": [],
+                "behavior_namespaces": [],
+                "capability_groups": {},
+                "raw_backend": None,
+                "warnings": [backend.get("error") or "capa backend unavailable"],
+            }
+
+        if not (backend.get("rules") or {}).get("available"):
+            return {
+                "status": "setup_required",
+                "backend": backend,
+                "capabilities": [],
+                "behavior_namespaces": [],
+                "capability_groups": {},
+                "raw_backend": None,
+                "warnings": [backend.get("rules", {}).get("error") or "capa rules unavailable"],
+            }
+
+        command = list(backend["command"])
+        command.extend(["--json"])
+        rules_info = backend.get("rules", {})
+        if rules_info.get("path"):
+            command.extend(["-r", str(rules_info.get("path"))])
+        command.append(sample_path)
+
+        capa_result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=max(5, timeout),
+            check=False,
+        )
+        combined_output = f"{capa_result.stdout}\n{capa_result.stderr}".strip()
+        if capa_result.returncode != 0:
+            raise Exception(
+                f"capa execution failed with exit code {capa_result.returncode}: {combined_output}"
+            )
+
+        raw_report = json.loads(capa_result.stdout)
+        normalized = self._normalize_capa_capabilities(raw_report)
+        return {
+            "status": "ready",
+            "backend": backend,
+            "capability_count": len(normalized["capabilities"]),
+            "behavior_namespaces": normalized["behavior_namespaces"],
+            "capability_groups": normalized["capability_groups"],
+            "capabilities": normalized["capabilities"],
+            "summary": (
+                f"Recovered {len(normalized['capabilities'])} capa capability rule(s) across "
+                f"{len(normalized['behavior_namespaces'])} namespace(s)."
+            ),
+            "raw_backend": raw_report,
+            "warnings": [],
+        }
 
 
     def _augment_rust_msvc_fusion(self, suspected: List[Dict[str, Any]]) -> None:

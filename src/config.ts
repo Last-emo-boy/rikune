@@ -88,6 +88,10 @@ export const ConfigSchema = z.object({
     static: z.object({
       enabled: z.boolean().default(true),
       pythonPath: z.string().optional(),
+      capaPath: z.string().optional(),
+      capaRulesPath: z.string().optional(),
+      diePath: z.string().optional(),
+      dieTimeout: z.number().int().min(1).default(30),
       timeout: z.number().int().min(1).default(60),
     }).default({}),
     dotnet: z.object({
@@ -98,6 +102,12 @@ export const ConfigSchema = z.object({
     sandbox: z.object({
       enabled: z.boolean().default(false),
       timeout: z.number().int().min(1).default(120),
+    }).default({}),
+    frida: z.object({
+      enabled: z.boolean().default(false),
+      path: z.string().optional(),
+      scriptRoot: z.string().optional(),
+      timeout: z.number().int().min(1).default(30),
     }).default({}),
   }).default({}),
   cache: z.object({
@@ -214,6 +224,42 @@ export function loadConfigFromEnv(): Record<string, any> {
     if (!config.workers) config.workers = {}
     if (!config.workers.static) config.workers.static = {}
     config.workers.static.pythonPath = process.env.PYTHON_PATH
+  }
+  if (process.env.CAPA_PATH) {
+    if (!config.workers) config.workers = {}
+    if (!config.workers.static) config.workers.static = {}
+    config.workers.static.capaPath = process.env.CAPA_PATH
+  }
+  if (process.env.CAPA_RULES_PATH) {
+    if (!config.workers) config.workers = {}
+    if (!config.workers.static) config.workers.static = {}
+    config.workers.static.capaRulesPath = process.env.CAPA_RULES_PATH
+  }
+  if (process.env.DIE_PATH) {
+    if (!config.workers) config.workers = {}
+    if (!config.workers.static) config.workers.static = {}
+    config.workers.static.diePath = process.env.DIE_PATH
+  }
+  if (process.env.DIE_TIMEOUT) {
+    if (!config.workers) config.workers = {}
+    if (!config.workers.static) config.workers.static = {}
+    config.workers.static.dieTimeout = parseInt(process.env.DIE_TIMEOUT, 10)
+  }
+  if (process.env.FRIDA_PATH || process.env.FRIDA_SERVER_PATH) {
+    if (!config.workers) config.workers = {}
+    if (!config.workers.frida) config.workers.frida = {}
+    config.workers.frida.path = process.env.FRIDA_PATH || process.env.FRIDA_SERVER_PATH
+    config.workers.frida.enabled = true
+  }
+  if (process.env.FRIDA_SCRIPT_ROOT) {
+    if (!config.workers) config.workers = {}
+    if (!config.workers.frida) config.workers.frida = {}
+    config.workers.frida.scriptRoot = process.env.FRIDA_SCRIPT_ROOT
+  }
+  if (process.env.FRIDA_TIMEOUT) {
+    if (!config.workers) config.workers = {}
+    if (!config.workers.frida) config.workers.frida = {}
+    config.workers.frida.timeout = parseInt(process.env.FRIDA_TIMEOUT, 10)
   }
 
   // Logging configuration

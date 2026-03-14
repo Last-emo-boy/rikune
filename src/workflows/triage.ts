@@ -14,6 +14,9 @@ import { createRuntimeDetectHandler } from '../tools/runtime-detect.js'
 import { createPEImportsExtractHandler } from '../tools/pe-imports-extract.js'
 import { createStringsExtractHandler } from '../tools/strings-extract.js'
 import { createYaraScanHandler } from '../tools/yara-scan.js'
+import { createStaticCapabilityTriageHandler } from '../tools/static-capability-triage.js'
+import { createPEStructureAnalyzeHandler } from '../tools/pe-structure-analyze.js'
+import { createCompilerPackerDetectHandler } from '../tools/compiler-packer-detect.js'
 
 // ============================================================================
 // Constants
@@ -172,6 +175,9 @@ export const TriageWorkflowOutputSchema = z.object({
       imports: z.any().optional(),
       strings: z.any().optional(),
       yara: z.any().optional(),
+      static_capability: z.any().optional(),
+      pe_structure: z.any().optional(),
+      compiler_packer: z.any().optional(),
     }).describe('Raw results from individual tools'),
   }).optional(),
   warnings: z.array(z.string()).optional(),
@@ -228,6 +234,145 @@ function analyzeSuspiciousImports(imports: Record<string, string[]>): string[] {
   }
   
   return suspicious
+}
+
+function summarizeStaticCapabilityResult(data: Record<string, unknown> | null | undefined) {
+  if (!data || data.status !== 'ready') {
+    return {
+      summary: null as string | null,
+      evidence: [] as string[],
+      recommendation: null as string | null,
+      threat_hint: false,
+    }
+  }
+
+  const capabilityCount = Number(data.capability_count || 0)
+  const capabilityGroups =
+    data.capability_groups && typeof data.capability_groups === 'object'
+      ? Object.entries(data.capability_groups as Record<string, unknown>)
+          .map(([key, value]) => ({ key, count: Number(value) || 0 }))
+          .sort((left, right) => right.count - left.count)
+      : []
+  const topGroups = capabilityGroups.slice(0, 4).map((item) => item.key)
+  const threatHint = topGroups.some((item) =>
+    ['persistence', 'execution', 'injection', 'command-and-control', 'c2', 'network', 'service'].includes(
+      item.toLowerCase()
+    )
+  )
+
+  return {
+    summary:
+      capabilityCount > 0
+        ? `Static capability triage matched ${capabilityCount} capability finding(s)${
+            topGroups.length > 0 ? ` across ${topGroups.join(', ')}` : ''
+          }.`
+        : null,
+    evidence:
+      capabilityCount > 0
+        ? [
+            `Static capability triage matched ${capabilityCount} capability finding(s).`,
+            ...(topGroups.length > 0
+              ? [`Capability groups: ${topGroups.join(', ')}.`]
+              : []),
+          ]
+        : [],
+    recommendation:
+      capabilityCount > 0
+        ? 'Map the recovered capability groups to concrete functions with code.functions.search, code.functions.reconstruct, or workflow.reconstruct.'
+        : null,
+    threat_hint: threatHint,
+  }
+}
+
+function summarizePeStructureResult(data: Record<string, unknown> | null | undefined) {
+  if (!data || (data.status !== 'ready' && data.status !== 'partial')) {
+    return {
+      summary: null as string | null,
+      evidence: [] as string[],
+      recommendation: null as string | null,
+      packer_hint: false,
+    }
+  }
+
+  const summary =
+    data.summary && typeof data.summary === 'object' ? (data.summary as Record<string, unknown>) : {}
+  const overlayPresent = Boolean(summary.overlay_present)
+  const sectionCount = Number(summary.section_count || 0)
+  const resourceCount = Number(summary.resource_count || 0)
+  const forwarderCount = Number(summary.forwarder_count || 0)
+  const parserPreference = typeof summary.parser_preference === 'string' ? summary.parser_preference : 'unknown'
+
+  const evidence = [
+    `PE structure analysis used parser preference ${parserPreference}.`,
+    `PE sections=${sectionCount}, resources=${resourceCount}, forwarders=${forwarderCount}.`,
+    ...(overlayPresent ? ['PE overlay detected.'] : []),
+  ]
+
+  return {
+    summary:
+      sectionCount > 0
+        ? `PE structure analysis recovered ${sectionCount} section(s)${
+            overlayPresent ? ' and detected an overlay.' : '.'
+          }`
+        : null,
+    evidence,
+    recommendation:
+      overlayPresent || resourceCount > 0
+        ? 'Inspect recovered resources and any detected overlay before assuming the file layout is benign or complete.'
+        : null,
+    packer_hint: overlayPresent,
+  }
+}
+
+function summarizeCompilerPackerResult(data: Record<string, unknown> | null | undefined) {
+  if (!data || data.status !== 'ready') {
+    return {
+      summary: null as string | null,
+      evidence: [] as string[],
+      recommendation: null as string | null,
+      packer_hint: false,
+    }
+  }
+
+  const summary =
+    data.summary && typeof data.summary === 'object' ? (data.summary as Record<string, unknown>) : {}
+  const compilerCount = Number(summary.compiler_count || 0)
+  const packerCount = Number(summary.packer_count || 0)
+  const protectorCount = Number(summary.protector_count || 0)
+  const primaryFileType =
+    typeof summary.likely_primary_file_type === 'string' ? summary.likely_primary_file_type : null
+
+  const findingsByCategory = (field: string) =>
+    Array.isArray(data[field]) ? (data[field] as Array<Record<string, unknown>>) : []
+  const compilerNames = findingsByCategory('compiler_findings')
+    .slice(0, 3)
+    .map((item) => String(item.name))
+  const packerNames = [
+    ...findingsByCategory('packer_findings').slice(0, 3),
+    ...findingsByCategory('protector_findings').slice(0, 3),
+  ].map((item) => String(item.name))
+
+  return {
+    summary:
+      compilerCount + packerCount + protectorCount > 0
+        ? `Toolchain attribution suggests ${
+            packerNames.length > 0
+              ? `packer/protector signals (${packerNames.join(', ')})`
+              : compilerNames.length > 0
+                ? `compiler signals (${compilerNames.join(', ')})`
+                : 'additional toolchain hints'
+          }.`
+        : null,
+    evidence: [
+      `Compiler/packer attribution found compiler=${compilerCount}, packer=${packerCount}, protector=${protectorCount}.`,
+      ...(primaryFileType ? [`Primary file type attribution: ${primaryFileType}.`] : []),
+    ],
+    recommendation:
+      packerCount > 0 || protectorCount > 0
+        ? 'Treat this sample as packed or protected until deeper static analysis or runtime evidence disproves it.'
+        : null,
+    packer_hint: packerCount > 0 || protectorCount > 0,
+  }
 }
 
 /**
@@ -1510,6 +1655,9 @@ export function createTriageWorkflowHandler(
   const peImportsExtractHandler = createPEImportsExtractHandler(workspaceManager, database, cacheManager)
   const stringsExtractHandler = createStringsExtractHandler(workspaceManager, database, cacheManager)
   const yaraScanHandler = createYaraScanHandler(workspaceManager, database, cacheManager)
+  const staticCapabilityTriageHandler = createStaticCapabilityTriageHandler(workspaceManager, database)
+  const peStructureAnalyzeHandler = createPEStructureAnalyzeHandler(workspaceManager, database)
+  const compilerPackerDetectHandler = createCompilerPackerDetectHandler(workspaceManager, database)
   
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const input = args as TriageWorkflowInput
@@ -1602,9 +1750,42 @@ export function createTriageWorkflowHandler(
       if (yaraResult.warnings) {
         warnings.push(...yaraResult.warnings)
       }
+
+      // Step 6: Static capability triage
+      const staticCapabilityResult = await staticCapabilityTriageHandler({
+        sample_id: input.sample_id,
+      })
+      if (!staticCapabilityResult.ok) {
+        errors.push('Static capability triage failed')
+      }
+      if (staticCapabilityResult.warnings) {
+        warnings.push(...staticCapabilityResult.warnings)
+      }
+
+      // Step 7: Canonical PE structure analysis
+      const peStructureResult = await peStructureAnalyzeHandler({
+        sample_id: input.sample_id,
+      })
+      if (!peStructureResult.ok) {
+        errors.push('PE structure analysis failed')
+      }
+      if (peStructureResult.warnings) {
+        warnings.push(...peStructureResult.warnings)
+      }
+
+      // Step 8: Compiler / packer attribution
+      const compilerPackerResult = await compilerPackerDetectHandler({
+        sample_id: input.sample_id,
+      })
+      if (!compilerPackerResult.ok) {
+        errors.push('Compiler/packer attribution failed')
+      }
+      if (compilerPackerResult.warnings) {
+        warnings.push(...compilerPackerResult.warnings)
+      }
       
       // If all tools failed, return error
-      if (errors.length >= 5) {
+      if (errors.length >= 8) {
         return {
           ok: false,
           errors: ['All analysis tools failed', ...errors],
@@ -1616,7 +1797,7 @@ export function createTriageWorkflowHandler(
         }
       }
       
-      // Step 6: Aggregate results and generate structured summary
+      // Step 9: Aggregate results and generate structured summary
       // Requirements: 15.2, 15.4, 15.5
       
       // Extract YARA matches
@@ -1718,7 +1899,7 @@ export function createTriageWorkflowHandler(
       }
       
       // Generate summary and recommendation
-      const { summary, recommendation } = generateSummaryAndRecommendationV2(
+      let { summary, recommendation } = generateSummaryAndRecommendationV2(
         threatLevel,
         yaraSignals,
         runtimeResult.data,
@@ -1784,16 +1965,72 @@ export function createTriageWorkflowHandler(
         high_value_iocs: hasHighValue ? highValueIocs : undefined,
         compiler_artifacts: hasCompilerArtifacts ? compilerArtifacts : undefined,
       }
+
+      const staticCapabilityInsights = summarizeStaticCapabilityResult(
+        staticCapabilityResult.ok && staticCapabilityResult.data
+          ? (staticCapabilityResult.data as Record<string, unknown>)
+          : null
+      )
+      const peStructureInsights = summarizePeStructureResult(
+        peStructureResult.ok && peStructureResult.data
+          ? (peStructureResult.data as Record<string, unknown>)
+          : null
+      )
+      const compilerPackerInsights = summarizeCompilerPackerResult(
+        compilerPackerResult.ok && compilerPackerResult.data
+          ? (compilerPackerResult.data as Record<string, unknown>)
+          : null
+      )
+
+      if (staticCapabilityInsights.summary || peStructureInsights.summary || compilerPackerInsights.summary) {
+        summary = [
+          summary,
+          staticCapabilityInsights.summary,
+          peStructureInsights.summary,
+          compilerPackerInsights.summary,
+        ]
+          .filter((item): item is string => Boolean(item && item.trim().length > 0))
+          .join(' ')
+      }
+
+      const recommendationAddenda = [
+        staticCapabilityInsights.recommendation,
+        peStructureInsights.recommendation,
+        compilerPackerInsights.recommendation,
+      ].filter((item): item is string => Boolean(item && item.trim().length > 0))
+      if (recommendationAddenda.length > 0) {
+        recommendation = `${recommendation} ${Array.from(new Set(recommendationAddenda)).join(' ')}`
+      }
+
+      evidence.push(
+        ...[
+          ...staticCapabilityInsights.evidence,
+          ...peStructureInsights.evidence,
+          ...compilerPackerInsights.evidence,
+        ].filter((item) => item.trim().length > 0)
+      )
+
+      let adjustedThreatLevel = threatLevel
+      let adjustedConfidence = confidence
+      if (
+        adjustedThreatLevel === 'clean' &&
+        (staticCapabilityInsights.threat_hint ||
+          peStructureInsights.packer_hint ||
+          compilerPackerInsights.packer_hint)
+      ) {
+        adjustedThreatLevel = 'suspicious'
+        adjustedConfidence = Math.max(adjustedConfidence, 0.58)
+      }
       
       // Return structured result
       return {
         ok: true,
         data: {
           summary,
-          confidence,
-          threat_level: threatLevel,
+          confidence: adjustedConfidence,
+          threat_level: adjustedThreatLevel,
           iocs,
-          evidence,
+          evidence: Array.from(new Set(evidence)),
           evidence_weights: evidenceWeights,
           inference,
           recommendation,
@@ -1803,6 +2040,9 @@ export function createTriageWorkflowHandler(
             imports: importsResult.data || null,
             strings: stringsResult.data || null,
             yara: yaraResult.data || null,
+            static_capability: staticCapabilityResult.data || null,
+            pe_structure: peStructureResult.data || null,
+            compiler_packer: compilerPackerResult.data || null,
           },
         },
         warnings: warnings.length > 0 ? warnings : undefined,

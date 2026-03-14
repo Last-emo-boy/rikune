@@ -33,7 +33,9 @@
     "install-to-claude.ps1",
     "CODEX_INSTALLATION.md",
     "COPILOT_INSTALLATION.md",
-    "CLAUDE_INSTALLATION.md"
+    "CLAUDE_INSTALLATION.md",
+    "frida_scripts/**/*.js",
+    "frida_scripts/README.md"
   ],
   "scripts": {
     "build": "tsc",

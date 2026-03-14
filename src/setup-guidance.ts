@@ -36,27 +36,38 @@ const WINDOWS_JAVA_EXAMPLES = [
   'C:\\Program Files\\Java\\jdk-21',
 ]
 
+const WINDOWS_CAPA_RULES_EXAMPLES = [
+  'C:\\tools\\capa-rules',
+  'D:\\analysis\\capa-rules',
+]
+
+const WINDOWS_DIE_EXAMPLES = [
+  'C:\\tools\\die\\diec.exe',
+  'D:\\tools\\Detect It Easy\\diec.exe',
+]
+
+const WINDOWS_FRIDA_EXAMPLES = [
+  'pip install frida',
+  'pip install frida-tools',
+]
+
 export function mergeSetupActions(...groups: SetupAction[][]): SetupAction[] {
   const merged = new Map<string, SetupAction>()
-
   for (const group of groups) {
     for (const action of group) {
       merged.set(action.id, action)
     }
   }
-
   return [...merged.values()]
 }
 
 export function mergeRequiredUserInputs(...groups: RequiredUserInput[][]): RequiredUserInput[] {
   const merged = new Map<string, RequiredUserInput>()
-
   for (const group of groups) {
     for (const input of group) {
       merged.set(input.key, input)
     }
   }
-
   return [...merged.values()]
 }
 
@@ -72,6 +83,134 @@ export function buildBaselinePythonSetupActions(): SetupAction[] {
       command: 'python -m pip install -r requirements.txt',
       examples: ['python -m pip install -r requirements.txt'],
       applies_to: ['system.health', 'dynamic.dependencies', 'static-analysis'],
+    },
+  ]
+}
+
+export function buildStaticAnalysisRequiredUserInputs(): RequiredUserInput[] {
+  return [
+    {
+      key: 'capa_rules_path',
+      label: 'capa rules directory',
+      summary:
+        'Provide the absolute path to a downloaded capa rules directory so static capability triage can run.',
+      required: false,
+      env_vars: ['CAPA_RULES_PATH'],
+      examples: WINDOWS_CAPA_RULES_EXAMPLES,
+    },
+    {
+      key: 'die_path',
+      label: 'Detect It Easy CLI path',
+      summary:
+        'Provide the absolute path to the Detect It Easy CLI executable (diec) for compiler and protector attribution.',
+      required: false,
+      env_vars: ['DIE_PATH'],
+      examples: WINDOWS_DIE_EXAMPLES,
+    },
+  ]
+}
+
+export function buildStaticAnalysisSetupActions(): SetupAction[] {
+  return [
+    {
+      id: 'install_static_python_requirements',
+      required: true,
+      kind: 'pip_install',
+      title: 'Install static-analysis Python dependencies',
+      summary:
+        'Install the core Python packages used by PE parsing and capability triage, including pefile, LIEF, and flare-capa.',
+      command: 'python -m pip install -r requirements.txt',
+      examples: ['python -m pip install -r requirements.txt'],
+      applies_to: ['system.health', 'system.setup.guide', 'static.capability.triage', 'pe.structure.analyze'],
+    },
+    {
+      id: 'install_capa',
+      required: false,
+      kind: 'pip_install',
+      title: 'Install capa',
+      summary:
+        'Install FLARE capa so the server can recognize executable behavior capabilities from rules.',
+      command: 'python -m pip install flare-capa',
+      examples: ['python -m pip install flare-capa'],
+      applies_to: ['static.capability.triage', 'system.health'],
+    },
+    {
+      id: 'install_pefile',
+      required: false,
+      kind: 'pip_install',
+      title: 'Install pefile',
+      summary: 'Install pefile for lightweight PE header, section, import, export, and resource parsing.',
+      command: 'python -m pip install pefile',
+      examples: ['python -m pip install pefile'],
+      applies_to: ['pe.structure.analyze', 'system.health'],
+    },
+    {
+      id: 'install_lief',
+      required: false,
+      kind: 'pip_install',
+      title: 'Install LIEF',
+      summary:
+        'Install LIEF for richer normalized PE parsing and rebuild-oriented metadata extraction.',
+      command: 'python -m pip install lief',
+      examples: ['python -m pip install lief'],
+      applies_to: ['pe.structure.analyze', 'system.health'],
+    },
+    {
+      id: 'set_capa_rules_path',
+      required: false,
+      kind: 'set_env',
+      title: 'Set CAPA_RULES_PATH',
+      summary:
+        'Set CAPA_RULES_PATH to the extracted capa rules directory when the rules are not installed in a default location.',
+      env_var: 'CAPA_RULES_PATH',
+      value_hint: 'Absolute path to a capa rules directory',
+      examples: WINDOWS_CAPA_RULES_EXAMPLES.map((example) => `$env:CAPA_RULES_PATH = "${example}"`),
+      applies_to: ['static.capability.triage', 'system.health', 'system.setup.guide'],
+    },
+    {
+      id: 'provide_capa_rules_path',
+      required: false,
+      kind: 'provide_path',
+      title: 'Provide capa rules directory',
+      summary:
+        'Download and extract the official capa rules repository, then provide the absolute directory path to the server.',
+      value_hint: 'Absolute path to a capa rules directory',
+      examples: WINDOWS_CAPA_RULES_EXAMPLES,
+      applies_to: ['static.capability.triage', 'system.health'],
+    },
+    {
+      id: 'set_die_path',
+      required: false,
+      kind: 'set_env',
+      title: 'Set DIE_PATH',
+      summary:
+        'Set DIE_PATH to the Detect It Easy CLI executable (diec.exe) when it is not already available in PATH.',
+      env_var: 'DIE_PATH',
+      value_hint: 'Absolute path to diec.exe',
+      examples: WINDOWS_DIE_EXAMPLES.map((example) => `$env:DIE_PATH = "${example}"`),
+      applies_to: ['compiler.packer.detect', 'system.health', 'system.setup.guide'],
+    },
+    {
+      id: 'provide_die_path',
+      required: false,
+      kind: 'provide_path',
+      title: 'Provide Detect It Easy CLI path',
+      summary:
+        'Provide the absolute path to Detect It Easy CLI (diec.exe) so compiler, packer, and protector attribution can run.',
+      value_hint: 'Absolute path to diec.exe',
+      examples: WINDOWS_DIE_EXAMPLES,
+      applies_to: ['compiler.packer.detect', 'system.health'],
+    },
+    {
+      id: 'verify_die_install',
+      required: false,
+      kind: 'verify_install',
+      title: 'Verify Detect It Easy installation',
+      summary:
+        'Confirm that diec.exe can be launched directly and is either configured explicitly or available on PATH.',
+      command: 'diec.exe --version',
+      examples: ['diec.exe --version'],
+      applies_to: ['compiler.packer.detect', 'system.health'],
     },
   ]
 }
@@ -107,7 +246,17 @@ export function buildDynamicDependencySetupActions(): SetupAction[] {
       summary: 'Install Frida when you need live instrumentation or API tracing support.',
       command: 'python -m pip install frida',
       examples: ['python -m pip install frida'],
-      applies_to: ['dynamic.dependencies'],
+      applies_to: ['dynamic.dependencies', 'frida.runtime.instrument'],
+    },
+    {
+      id: 'install_frida_tools',
+      required: false,
+      kind: 'pip_install',
+      title: 'Install Frida tools',
+      summary: 'Install frida-tools for CLI support and script compilation.',
+      command: 'python -m pip install frida-tools',
+      examples: ['python -m pip install frida-tools'],
+      applies_to: ['dynamic.dependencies', 'frida.script.inject'],
     },
     {
       id: 'install_psutil',
@@ -118,6 +267,79 @@ export function buildDynamicDependencySetupActions(): SetupAction[] {
       command: 'python -m pip install psutil',
       examples: ['python -m pip install psutil'],
       applies_to: ['dynamic.dependencies'],
+    },
+  ]
+}
+
+export function buildFridaRequiredUserInputs(): RequiredUserInput[] {
+  return [
+    {
+      key: 'frida_path',
+      label: 'Frida server binary path',
+      summary:
+        'Optional: Provide the absolute path to the Frida server binary (frida-server) for advanced configurations. Usually not required as pip install handles this automatically.',
+      required: false,
+      env_vars: ['FRIDA_PATH'],
+      examples: WINDOWS_FRIDA_EXAMPLES,
+    },
+    {
+      key: 'frida_script_root',
+      label: 'Frida scripts directory',
+      summary:
+        'Optional: Provide the absolute path to a directory containing custom Frida scripts for reuse across analysis sessions.',
+      required: false,
+      env_vars: ['FRIDA_SCRIPT_ROOT'],
+      examples: ['C:\\tools\\frida-scripts', 'D:\\analysis\\frida-scripts'],
+    },
+  ]
+}
+
+export function buildFridaSetupActions(): SetupAction[] {
+  return [
+    {
+      id: 'install_frida_runtime',
+      required: false,
+      kind: 'pip_install',
+      title: 'Install Frida runtime',
+      summary:
+        'Install the Frida runtime for dynamic instrumentation. This provides the core functionality for process instrumentation and API tracing.',
+      command: 'python -m pip install frida',
+      examples: ['python -m pip install frida'],
+      applies_to: ['frida.runtime.instrument', 'system.health'],
+    },
+    {
+      id: 'install_frida_tools_package',
+      required: false,
+      kind: 'pip_install',
+      title: 'Install Frida tools package',
+      summary:
+        'Install frida-tools for additional CLI utilities and script compilation support.',
+      command: 'python -m pip install frida-tools',
+      examples: ['python -m pip install frida-tools'],
+      applies_to: ['frida.script.inject', 'system.health'],
+    },
+    {
+      id: 'verify_frida_install',
+      required: false,
+      kind: 'verify_install',
+      title: 'Verify Frida installation',
+      summary:
+        'Confirm that Frida can be imported in Python and the frida-server binary is accessible.',
+      command: 'python -c "import frida; print(frida.__version__)"',
+      examples: ['python -c "import frida; print(frida.__version__)"', 'frida-ps --help'],
+      applies_to: ['frida.runtime.instrument', 'system.health'],
+    },
+    {
+      id: 'set_frida_script_root',
+      required: false,
+      kind: 'set_env',
+      title: 'Set FRIDA_SCRIPT_ROOT',
+      summary:
+        'Optionally set FRIDA_SCRIPT_ROOT to a directory containing custom Frida scripts for reuse.',
+      env_var: 'FRIDA_SCRIPT_ROOT',
+      value_hint: 'Absolute path to a directory containing Frida scripts',
+      examples: WINDOWS_FRIDA_EXAMPLES.map(() => `$env:FRIDA_SCRIPT_ROOT = "C:\\tools\\frida-scripts"`),
+      applies_to: ['frida.script.inject', 'system.health'],
     },
   ]
 }
@@ -225,9 +447,7 @@ export function buildGhidraSetupActions(): SetupAction[] {
         'Set GHIDRA_PATH to the Ghidra installation root so the server can find support\\analyzeHeadless.bat.',
       env_var: 'GHIDRA_PATH',
       value_hint: 'Absolute path to the Ghidra installation root directory',
-      examples: WINDOWS_GHIDRA_EXAMPLES.map(
-        (example) => `$env:GHIDRA_PATH = "${example}"`
-      ),
+      examples: WINDOWS_GHIDRA_EXAMPLES.map((example) => `$env:GHIDRA_PATH = "${example}"`),
       applies_to: ['ghidra.health', 'ghidra.analyze', 'system.health'],
     },
     {
@@ -239,9 +459,7 @@ export function buildGhidraSetupActions(): SetupAction[] {
         'As an alternative to GHIDRA_PATH, set GHIDRA_INSTALL_DIR to the same Ghidra installation root.',
       env_var: 'GHIDRA_INSTALL_DIR',
       value_hint: 'Absolute path to the Ghidra installation root directory',
-      examples: WINDOWS_GHIDRA_EXAMPLES.map(
-        (example) => `$env:GHIDRA_INSTALL_DIR = "${example}"`
-      ),
+      examples: WINDOWS_GHIDRA_EXAMPLES.map((example) => `$env:GHIDRA_INSTALL_DIR = "${example}"`),
       applies_to: ['ghidra.health', 'ghidra.analyze', 'system.health'],
     },
     {
@@ -251,9 +469,7 @@ export function buildGhidraSetupActions(): SetupAction[] {
       title: 'Verify Ghidra install layout',
       summary:
         'Confirm the configured directory contains support\\analyzeHeadless.bat. Do not point GHIDRA_PATH at the support subdirectory itself.',
-      examples: WINDOWS_GHIDRA_EXAMPLES.map(
-        (example) => `${example}\\support\\analyzeHeadless.bat`
-      ),
+      examples: WINDOWS_GHIDRA_EXAMPLES.map((example) => `${example}\\support\\analyzeHeadless.bat`),
       applies_to: ['ghidra.health', 'ghidra.analyze'],
     },
     {
@@ -292,10 +508,12 @@ export function buildGhidraSetupActions(): SetupAction[] {
 export function buildAllSetupActions(includeOptional = true): SetupAction[] {
   return mergeSetupActions(
     buildBaselinePythonSetupActions(),
+    buildStaticAnalysisSetupActions(),
     buildDynamicDependencySetupActions(),
     buildJavaSetupActions(),
     buildGhidraSetupActions(),
-    includeOptional ? buildPyGhidraSetupActions() : []
+    includeOptional ? buildPyGhidraSetupActions() : [],
+    includeOptional ? buildFridaSetupActions() : []
   )
 }
 
@@ -316,13 +534,25 @@ function inferSetupGuidanceFromMessages(messages: string[]) {
     setupActions = mergeSetupActions(setupActions, buildPyGhidraSetupActions())
   }
   if (
-    /python worker|module not found|modulenotfounderror|no module named|yara-python|flare-floss|speakeasy|frida|psutil|pip install/i.test(
+    /python worker|module not found|modulenotfounderror|no module named|yara-python|flare-floss|flare-capa|capa rules|pefile|lief|detect it easy|diec|speakeasy|frida|psutil|pip install/i.test(
       combined
     )
   ) {
-    setupActions = mergeSetupActions(setupActions, buildBaselinePythonSetupActions())
+    setupActions = mergeSetupActions(
+      setupActions,
+      buildBaselinePythonSetupActions(),
+      buildStaticAnalysisSetupActions()
+    )
+    requiredUserInputs = mergeRequiredUserInputs(
+      requiredUserInputs,
+      buildStaticAnalysisRequiredUserInputs()
+    )
     if (/speakeasy|frida|psutil/i.test(combined)) {
       setupActions = mergeSetupActions(setupActions, buildDynamicDependencySetupActions())
+    }
+    if (/frida/i.test(combined)) {
+      setupActions = mergeSetupActions(setupActions, buildFridaSetupActions())
+      requiredUserInputs = mergeRequiredUserInputs(requiredUserInputs, buildFridaRequiredUserInputs())
     }
   }
 
@@ -331,6 +561,8 @@ function inferSetupGuidanceFromMessages(messages: string[]) {
     requiredUserInputs,
   }
 }
+
+export { inferSetupGuidanceFromMessages }
 
 export function collectSetupGuidanceFromWorkerResult(result?: WorkerResult | null) {
   if (!result) {

@@ -6,6 +6,9 @@ export const ConfidenceSemanticsSchema = z.object({
     'runtime_correlation',
     'naming_resolution',
     'report_assessment',
+    'capability_assessment',
+    'pe_structure_analysis',
+    'toolchain_attribution',
   ]),
   score: z.number().min(0).max(1).nullable(),
   band: z.enum(['none', 'low', 'medium', 'high']),
@@ -173,5 +176,85 @@ export function buildReportConfidenceSemantics(input: {
     caution:
       'Threat or intent judgments remain evidence-sensitive and can shift when scope changes from all to latest/session or when stronger runtime evidence is added.',
     drivers,
+  }
+}
+
+
+export function buildCapabilityConfidenceSemantics(input: {
+  score: number
+  findings: number
+  groups: string[]
+  rulesSource: string | null
+}): ConfidenceSemantics {
+  return {
+    score_kind: 'capability_assessment',
+    score: clamp(input.score, 0, 1),
+    band: confidenceBand(input.score),
+    calibrated: false,
+    meaning:
+      'Heuristic confidence for recovered capability findings. Higher values mean stronger rule coverage and corroborating evidence, not proof that every capability executed.',
+    compare_within:
+      'Compare within static capability triage runs that use similar capa rules and the same tool version.',
+    caution:
+      'Capability matches can overstate intent when only static rule evidence is available. Validate with runtime evidence or deeper function-level analysis when possible.',
+    drivers: [
+      `findings=${input.findings}`,
+      input.groups.length > 0 ? `groups=${input.groups.slice(0, 4).join(',')}` : 'groups=none',
+      input.rulesSource ? `rules_source=${input.rulesSource}` : 'rules_source=unknown',
+    ],
+  }
+}
+
+export function buildPeStructureConfidenceSemantics(input: {
+  score: number
+  backendCount: number
+  sections: number
+  imports: number
+  exports: number
+}): ConfidenceSemantics {
+  return {
+    score_kind: 'pe_structure_analysis',
+    score: clamp(input.score, 0, 1),
+    band: confidenceBand(input.score),
+    calibrated: false,
+    meaning:
+      'Heuristic confidence for PE structure parsing. Higher values mean multiple parsers and richer section/import/export coverage, not a guarantee that every backend field agrees perfectly.',
+    compare_within:
+      'Compare within PE structure analysis runs for the same file format and tool version.',
+    caution:
+      'Lightweight and rebuild-oriented parsers can disagree on malformed samples. Review backend_details when a packed or damaged sample is involved.',
+    drivers: [
+      `backends=${input.backendCount}`,
+      `sections=${input.sections}`,
+      `imports=${input.imports}`,
+      `exports=${input.exports}`,
+    ],
+  }
+}
+
+export function buildToolchainConfidenceSemantics(input: {
+  score: number
+  compilerCount: number
+  packerCount: number
+  protectorCount: number
+  backendSource: string | null
+}): ConfidenceSemantics {
+  return {
+    score_kind: 'toolchain_attribution',
+    score: clamp(input.score, 0, 1),
+    band: confidenceBand(input.score),
+    calibrated: false,
+    meaning:
+      'Heuristic confidence for compiler, packer, and protector attribution. Higher values mean stronger backend evidence and clearer category separation, not certainty that the original toolchain has been uniquely identified.',
+    compare_within:
+      'Compare within compiler/packer attribution runs produced by the same Detect It Easy backend version.',
+    caution:
+      'Packed, modified, or partially reconstructed files can blend compiler and protector signatures. Use as routing guidance rather than a final verdict.',
+    drivers: [
+      `compiler_findings=${input.compilerCount}`,
+      `packer_findings=${input.packerCount}`,
+      `protector_findings=${input.protectorCount}`,
+      input.backendSource ? `backend_source=${input.backendSource}` : 'backend_source=unknown',
+    ],
   }
 }
