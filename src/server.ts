@@ -197,6 +197,41 @@ export class MCPServer {
   }
 
   /**
+   * Maximum response size in bytes before truncation kicks in.
+   * ~200KB of JSON ≈ ~50-60K tokens — well within most LLM context windows.
+   */
+  private static readonly MAX_RESPONSE_BYTES = 200 * 1024
+
+  /**
+   * Tool names that are sample-ingestion entry points themselves and should
+   * NOT receive the "upload first" prerequisite hint.
+   */
+  private static readonly SAMPLE_ENTRY_TOOLS = new Set([
+    'sample.request_upload',
+    'sample.ingest',
+    'sample.profile.get',
+    'tool.help',
+  ])
+
+  private static readonly SAMPLE_PREREQUISITE_HINT =
+    '\n\nPrerequisite: before calling this tool you MUST obtain a sample_id. ' +
+    'Call sample.request_upload first to get an upload URL, POST the file bytes to that URL, ' +
+    'then use the returned sample_id. ' +
+    'If the file is already on the server filesystem, use sample.ingest(path) instead.'
+
+  /**
+   * Detect whether a Zod schema is an object that contains a `sample_id`
+   * (or `sample_id_a` / `sample_id_b`) required input field.
+   */
+  private inputRequiresSampleId(schema: z.ZodTypeAny): boolean {
+    if (!(schema instanceof z.ZodObject)) return false
+    const shape = schema.shape as Record<string, z.ZodTypeAny>
+    return Object.keys(shape).some(
+      (k) => k === 'sample_id' || k === 'sample_id_a' || k === 'sample_id_b'
+    )
+  }
+
+  /**
    * List all available tools (MCP protocol method)
    */
   public async listTools(): Promise<Tool[]> {
@@ -208,10 +243,19 @@ export class MCPServer {
       const outputSchema = definition.outputSchema
         ? this.zodToJsonSchema(definition.outputSchema)
         : undefined
+
+      // Append prerequisite hint for tools that require a sample_id input
+      const canonicalName = definition.canonicalName || definition.name
+      const needsHint =
+        !MCPServer.SAMPLE_ENTRY_TOOLS.has(canonicalName) &&
+        this.inputRequiresSampleId(definition.inputSchema)
+      const description = needsHint
+        ? definition.description + MCPServer.SAMPLE_PREREQUISITE_HINT
+        : definition.description
       
       tools.push({
         name,
-        description: definition.description,
+        description,
         inputSchema: inputSchema as Tool['inputSchema'],
         ...(outputSchema ? { outputSchema: outputSchema as Tool['outputSchema'] } : {}),
       })
@@ -409,6 +453,106 @@ export class MCPServer {
     return schema instanceof z.ZodNever
   }
 
+  /**
+   * Guard against oversized responses that would exceed LLM token limits.
+   *
+   * Strategy:
+   *  1. Serialize once and measure byte length.
+   *  2. If within budget → return as-is.
+   *  3. Otherwise, progressively prune heavy fields:
+   *     a. Strip `raw_results` from historical `run.stages[].result`
+   *     b. Strip top-level `raw_results` 
+   *     c. Strip `run.stages[].result` entirely (keep stage metadata)
+   *     d. As final fallback, hard-truncate the JSON text.
+   *  4. Tag the response so the LLM knows data was trimmed.
+   */
+  private guardResponseSize(result: CallToolResult): CallToolResult {
+    const text = (result.content as TextContent[])?.[0]?.text
+    if (!text || Buffer.byteLength(text, 'utf8') <= MCPServer.MAX_RESPONSE_BYTES) {
+      return result
+    }
+
+    // Try to parse and prune structured data
+    let data: Record<string, unknown>
+    try {
+      data = JSON.parse(text)
+    } catch {
+      return this.hardTruncateResult(result, text)
+    }
+
+    // Phase 1: Strip raw_results from historical run.stages[].result
+    const run = data.run as Record<string, unknown> | undefined
+    if (run && Array.isArray(run.stages)) {
+      for (const stage of run.stages as Array<Record<string, unknown>>) {
+        if (stage.result && typeof stage.result === 'object' && !Array.isArray(stage.result)) {
+          delete (stage.result as Record<string, unknown>).raw_results
+        }
+      }
+    }
+    let pruned = JSON.stringify(data)
+    if (Buffer.byteLength(pruned, 'utf8') <= MCPServer.MAX_RESPONSE_BYTES) {
+      data._response_trimmed = 'raw_results removed from historical stages to fit token budget'
+      return this.rebuildResult(result, data)
+    }
+
+    // Phase 2: Strip top-level raw_results from stage_result
+    const stageResult = data.stage_result as Record<string, unknown> | undefined
+    if (stageResult && typeof stageResult === 'object') {
+      delete stageResult.raw_results
+    }
+    // Also strip top-level data.raw_results
+    delete data.raw_results
+    pruned = JSON.stringify(data)
+    if (Buffer.byteLength(pruned, 'utf8') <= MCPServer.MAX_RESPONSE_BYTES) {
+      data._response_trimmed = 'raw_results removed from response to fit token budget'
+      return this.rebuildResult(result, data)
+    }
+
+    // Phase 3: Strip all stage results entirely (keep metadata)
+    if (run && Array.isArray(run.stages)) {
+      for (const stage of run.stages as Array<Record<string, unknown>>) {
+        if (stage.result) {
+          stage.result = { _omitted: 'stage result removed to fit token budget' }
+        }
+      }
+    }
+    pruned = JSON.stringify(data)
+    if (Buffer.byteLength(pruned, 'utf8') <= MCPServer.MAX_RESPONSE_BYTES) {
+      data._response_trimmed = 'stage results omitted from run history to fit token budget; use workflow.analyze.status with include_stage_results=false or query individual stages'
+      return this.rebuildResult(result, data)
+    }
+
+    // Phase 4: Hard truncate
+    data._response_trimmed = 'response heavily truncated to fit token budget'
+    return this.hardTruncateResult(result, JSON.stringify(data))
+  }
+
+  private rebuildResult(original: CallToolResult, data: Record<string, unknown>): CallToolResult {
+    const text = JSON.stringify(data)
+    return {
+      ...original,
+      content: [{ type: 'text' as const, text }],
+      structuredContent: data,
+    }
+  }
+
+  private hardTruncateResult(original: CallToolResult, text: string): CallToolResult {
+    const maxBytes = MCPServer.MAX_RESPONSE_BYTES
+    // Binary-search a safe UTF-8 cut point
+    let truncated = text.slice(0, maxBytes)
+    // Avoid cutting in the middle of a multi-byte char
+    while (Buffer.byteLength(truncated, 'utf8') > maxBytes) {
+      truncated = truncated.slice(0, -100)
+    }
+    const suffix = '\n\n[TRUNCATED: response exceeded token budget. Use more specific queries or request individual stages.]'
+    const finalText = truncated + suffix
+    return {
+      ...original,
+      content: [{ type: 'text' as const, text: finalText }],
+      structuredContent: undefined,
+    }
+  }
+
   private normalizeStructuredContent(
     structuredContent: Record<string, unknown> | undefined,
     outputSchema?: z.ZodTypeAny
@@ -507,14 +651,19 @@ export class MCPServer {
 
     // Handle array
     if (schema instanceof z.ZodArray) {
+      // When the element type is ZodAny/ZodUnknown, omit `items` entirely.
+      // JSON Schema without `items` means any element is accepted, and avoids
+      // emitting `items: {}` which strict validators (e.g. Copilot) reject
+      // because the empty schema object has no `type` property.
+      const elementType = schema._def.type
+      const hasConcreteItemType =
+        !(elementType instanceof z.ZodAny) && !(elementType instanceof z.ZodUnknown)
+      const base: Record<string, unknown> = { type: 'array' }
+      if (hasConcreteItemType) {
+        base.items = this.zodFieldToJsonSchema(elementType)
+      }
       return this.withSchemaMetadata(
-        this.applyArrayChecks(
-          {
-            type: 'array',
-            items: this.zodFieldToJsonSchema(schema._def.type),
-          },
-          schema
-        ),
+        this.applyArrayChecks(base, schema),
         schema
       )
     }
@@ -644,15 +793,15 @@ export class MCPServer {
           definition.outputSchema
         )
         this.logger.info({ tool: name, elapsed, isError: result.isError }, 'Tool execution completed')
-        return {
+        return this.guardResponseSize({
           content: this.rewriteTextContentItems(result.content as TextContent[]) as any, // MCP SDK Content type
           structuredContent,
           isError: result.isError
-        }
+        })
       } else {
         // It's a WorkerResult - convert to ToolResult
         this.logger.info({ tool: name, elapsed, ok: result.ok }, 'Tool execution completed')
-        return this.workerResultToToolResult(result, definition.outputSchema)
+        return this.guardResponseSize(this.workerResultToToolResult(result, definition.outputSchema))
       }
     } catch (error) {
       const elapsed = Date.now() - startTime

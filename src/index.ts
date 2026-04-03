@@ -384,6 +384,130 @@ import {
   yaraXScanToolDefinition,
   createYaraXScanHandler,
 } from './tools/docker-backend-tools.js'
+import {
+  unpackAutoToolDefinition,
+  createUnpackAutoHandler,
+} from './tools/unpack-auto.js'
+import {
+  binaryDiffToolDefinition,
+  createBinaryDiffHandler,
+} from './tools/binary-diff.js'
+import {
+  binaryDiffSummaryToolDefinition,
+  createBinaryDiffSummaryHandler,
+} from './tools/binary-diff-summary.js'
+import {
+  yaraGenerateToolDefinition,
+  createYaraGenerateHandler,
+} from './tools/yara-generate.js'
+import {
+  yaraGenerateBatchToolDefinition,
+  createYaraGenerateBatchHandler,
+} from './tools/yara-generate-batch.js'
+import {
+  vulnPatternScanToolDefinition,
+  createVulnPatternScanHandler,
+} from './tools/vuln-pattern-scan.js'
+import {
+  vulnPatternSummaryToolDefinition,
+  createVulnPatternSummaryHandler,
+} from './tools/vuln-pattern-summary.js'
+import {
+  kbImportBulkToolDefinition,
+  createKbImportBulkHandler,
+} from './tools/kb-import-bulk.js'
+import {
+  kbExportToolDefinition,
+  createKbExportHandler,
+} from './tools/kb-export.js'
+import {
+  kbImportToolDefinition,
+  createKbImportHandler,
+} from './tools/kb-import.js'
+import {
+  kbStatsToolDefinition,
+  createKbStatsHandler,
+} from './tools/kb-stats.js'
+import {
+  elfStructureAnalyzeToolDefinition,
+  createElfStructureAnalyzeHandler,
+} from './tools/elf-structure-analyze.js'
+import {
+  machoStructureAnalyzeToolDefinition,
+  createMachoStructureAnalyzeHandler,
+} from './tools/macho-structure-analyze.js'
+import {
+  elfImportsExtractToolDefinition,
+  createElfImportsExtractHandler,
+} from './tools/elf-imports-extract.js'
+import {
+  elfExportsExtractToolDefinition,
+  createElfExportsExtractHandler,
+} from './tools/elf-exports-extract.js'
+import {
+  debugSessionStartToolDefinition,
+  createDebugSessionStartHandler,
+} from './tools/debug-session-start.js'
+import {
+  debugSessionBreakpointToolDefinition,
+  createDebugSessionBreakpointHandler,
+} from './tools/debug-session-breakpoint.js'
+import {
+  debugSessionContinueToolDefinition,
+  createDebugSessionContinueHandler,
+} from './tools/debug-session-continue.js'
+import {
+  debugSessionStepToolDefinition,
+  createDebugSessionStepHandler,
+} from './tools/debug-session-step.js'
+import {
+  debugSessionInspectToolDefinition,
+  createDebugSessionInspectHandler,
+} from './tools/debug-session-inspect.js'
+import {
+  debugSessionEndToolDefinition,
+  createDebugSessionEndHandler,
+} from './tools/debug-session-end.js'
+import {
+  vmDetectToolDefinition,
+  createVmDetectHandler,
+} from './tools/vm-detect.js'
+import {
+  vmPatternAnalyzeToolDefinition,
+  createVmPatternAnalyzeHandler,
+} from './tools/vm-pattern-analyze.js'
+import {
+  vmOpcodeExtractToolDefinition,
+  createVmOpcodeExtractHandler,
+} from './tools/vm-opcode-extract.js'
+import {
+  vmDisasmBuildToolDefinition,
+  createVmDisasmBuildHandler,
+} from './tools/vm-disasm-build.js'
+import {
+  vmEmulateToolDefinition,
+  createVmEmulateHandler,
+} from './tools/vm-emulate.js'
+import {
+  vmSemanticDiffToolDefinition,
+  createVmSemanticDiffHandler,
+} from './tools/vm-semantic-diff.js'
+import {
+  constraintExtractToolDefinition,
+  createConstraintExtractHandler,
+} from './tools/constraint-extract.js'
+import {
+  smtSolveToolDefinition,
+  createSmtSolveHandler,
+} from './tools/smt-solve.js'
+import {
+  keygenSynthesizeToolDefinition,
+  createKeygenSynthesizeHandler,
+} from './tools/keygen-synthesize.js'
+import {
+  mbaSimplifyToolDefinition,
+  createMbaSimplifyHandler,
+} from './tools/mba-simplify.js'
 
 // Export public API
 export { MCPServer } from './server.js'
@@ -962,6 +1086,146 @@ async function main() {
     server.registerTool(
       codeReconstructPlanToolDefinition,
       createCodeReconstructPlanHandler(workspaceManager, database, cacheManager)
+    )
+
+    // Auto-unpack pipeline: unpack.auto tool
+    server.registerTool(
+      unpackAutoToolDefinition,
+      createUnpackAutoHandler(workspaceManager, database)
+    )
+
+    // Binary diffing: binary.diff and binary.diff.summary tools
+    server.registerTool(
+      binaryDiffToolDefinition,
+      createBinaryDiffHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      binaryDiffSummaryToolDefinition,
+      createBinaryDiffSummaryHandler(workspaceManager, database)
+    )
+
+    // YARA rule generation: yara.generate and yara.generate.batch tools
+    server.registerTool(
+      yaraGenerateToolDefinition,
+      createYaraGenerateHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      yaraGenerateBatchToolDefinition,
+      createYaraGenerateBatchHandler(workspaceManager, database)
+    )
+
+    // Vulnerability pattern detection: vuln.pattern.scan and vuln.pattern.summary tools
+    server.registerTool(
+      vulnPatternScanToolDefinition,
+      createVulnPatternScanHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      vulnPatternSummaryToolDefinition,
+      createVulnPatternSummaryHandler(workspaceManager, database)
+    )
+
+    // Knowledge base: kb.import.bulk, kb.export, kb.import, kb.stats tools
+    server.registerTool(
+      kbImportBulkToolDefinition,
+      createKbImportBulkHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      kbExportToolDefinition,
+      createKbExportHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      kbImportToolDefinition,
+      createKbImportHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      kbStatsToolDefinition,
+      createKbStatsHandler(workspaceManager, database)
+    )
+
+    // ELF/Mach-O cross-platform analysis tools
+    server.registerTool(
+      elfStructureAnalyzeToolDefinition,
+      createElfStructureAnalyzeHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      machoStructureAnalyzeToolDefinition,
+      createMachoStructureAnalyzeHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      elfImportsExtractToolDefinition,
+      createElfImportsExtractHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      elfExportsExtractToolDefinition,
+      createElfExportsExtractHandler(workspaceManager, database)
+    )
+
+    // Interactive debug session tools
+    server.registerTool(
+      debugSessionStartToolDefinition,
+      createDebugSessionStartHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      debugSessionBreakpointToolDefinition,
+      createDebugSessionBreakpointHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      debugSessionContinueToolDefinition,
+      createDebugSessionContinueHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      debugSessionStepToolDefinition,
+      createDebugSessionStepHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      debugSessionInspectToolDefinition,
+      createDebugSessionInspectHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      debugSessionEndToolDefinition,
+      createDebugSessionEndHandler(workspaceManager, database)
+    )
+
+    // --- VM Analysis & Constraint Solving Tools ---
+    server.registerTool(
+      vmDetectToolDefinition,
+      createVmDetectHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      vmPatternAnalyzeToolDefinition,
+      createVmPatternAnalyzeHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      vmOpcodeExtractToolDefinition,
+      createVmOpcodeExtractHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      vmDisasmBuildToolDefinition,
+      createVmDisasmBuildHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      vmEmulateToolDefinition,
+      createVmEmulateHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      vmSemanticDiffToolDefinition,
+      createVmSemanticDiffHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      constraintExtractToolDefinition,
+      createConstraintExtractHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      smtSolveToolDefinition,
+      createSmtSolveHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      keygenSynthesizeToolDefinition,
+      createKeygenSynthesizeHandler(workspaceManager, database)
+    )
+    server.registerTool(
+      mbaSimplifyToolDefinition,
+      createMbaSimplifyHandler(workspaceManager, database)
     )
 
     // Start server

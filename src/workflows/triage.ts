@@ -18,6 +18,8 @@ import { createStringsExtractHandler } from '../tools/strings-extract.js'
 import { createYaraScanHandler } from '../tools/yara-scan.js'
 import { createStaticCapabilityTriageHandler } from '../tools/static-capability-triage.js'
 import { createPEStructureAnalyzeHandler } from '../tools/pe-structure-analyze.js'
+import { createElfStructureAnalyzeHandler } from '../tools/elf-structure-analyze.js'
+import { createMachoStructureAnalyzeHandler } from '../tools/macho-structure-analyze.js'
 import { createCompilerPackerDetectHandler } from '../tools/compiler-packer-detect.js'
 import { createAnalysisContextLinkHandler } from '../tools/analysis-context-link.js'
 import {
@@ -2587,12 +2589,22 @@ export function createTriageWorkflowHandler(
         warnings.push(...staticCapabilityResult.warnings)
       }
 
-      // Step 7: Canonical PE structure analysis
-      const peStructureResult = await peStructureAnalyzeHandler({
-        sample_id: input.sample_id,
-      })
+      // Step 7: Format-aware structural analysis
+      const fileType = sample?.file_type ?? 'PE'
+      let peStructureResult: WorkerResult
+      if (fileType === 'ELF') {
+        const elfHandler = createElfStructureAnalyzeHandler(workspaceManager, database)
+        peStructureResult = await elfHandler({ sample_id: input.sample_id })
+      } else if (fileType === 'Mach-O' || fileType === 'Mach-O-Fat') {
+        const machoHandler = createMachoStructureAnalyzeHandler(workspaceManager, database)
+        peStructureResult = await machoHandler({ sample_id: input.sample_id })
+      } else {
+        peStructureResult = await peStructureAnalyzeHandler({
+          sample_id: input.sample_id,
+        })
+      }
       if (!peStructureResult.ok) {
-        errors.push('PE structure analysis failed')
+        errors.push('Structure analysis failed')
       }
       if (peStructureResult.warnings) {
         warnings.push(...peStructureResult.warnings)
