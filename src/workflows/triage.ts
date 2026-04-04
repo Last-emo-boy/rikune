@@ -18,6 +18,7 @@ import { createStringsExtractHandler } from '../tools/strings-extract.js'
 import { createYaraScanHandler } from '../tools/yara-scan.js'
 import { createStaticCapabilityTriageHandler } from '../tools/static-capability-triage.js'
 import { createPEStructureAnalyzeHandler } from '../plugins/pe-analysis/tools/pe-structure-analyze.js'
+import { logger } from '../logger.js'
 import { createCompilerPackerDetectHandler } from '../tools/compiler-packer-detect.js'
 import { createAnalysisContextLinkHandler } from '../tools/analysis-context-link.js'
 import {
@@ -302,7 +303,7 @@ function analyzeSuspiciousImports(imports: Record<string, string[]>): string[] {
     }
   } catch (error) {
     // Silently handle errors to prevent workflow failure
-    console.error('Error analyzing suspicious imports:', error)
+    logger.warn({ err: error }, 'Error analyzing suspicious imports')
   }
   
   return suspicious

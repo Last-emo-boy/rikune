@@ -7,6 +7,29 @@ Versioning where practical.
 
 ## [Unreleased]
 
+### Dashboard Iteration
+
+- **Samples display fix**: Fixed `handleSamples` SQL query that selected non-existent columns (`original_name`, `file_size`), causing samples table to show blank rows. Now queries actual schema columns (`sha256`, `size`, `file_type`, `source`).
+- **Sample detail drawer**: Clickable sample rows open a slide-in detail panel showing metadata grid, related analyses (with status badges and duration), artifacts (with inline view buttons), and top 20 functions ranked by score.
+- **Analyses tab**: New dashboard tab with paginated analysis history table. Supports status filter dropdown (All / Done / Running / Queued / Failed) and clickable sample links.
+- **Reports tab**: New dashboard tab for browsing and viewing artifacts inline.
+  - Artifact list with type filter (auto-populated from backend) and path search.
+  - **Markdown renderer**: Zero-dependency renderer supporting headers, bold/italic, code blocks, fenced code, tables, lists, blockquotes, links, horizontal rules.
+  - **JSON syntax highlighter**: Recursive renderer with color-coded keys, strings, numbers, booleans, null.
+  - **HTML viewer**: Sandboxed iframe rendering.
+  - **SVG viewer**: DOMParser-based sanitized rendering.
+  - **Code / text viewer**: Pre-formatted monospace display.
+- **Dashboard API expansion**: 4 new endpoints — sample detail (`/samples/:id`), analyses listing, artifacts listing with type aggregation, artifact content reader with format detection.
+- **Dashboard tab count**: 6 → 8 tabs (Overview, Tools, Plugins, Samples, Analyses, Reports, Config, System).
+
+### Bug Fixes & Quality
+
+- **Async error handling**: Fixed fire-and-forget `void handleArtifactContent(...)` in dashboard API — unhandled promise rejections now caught and logged with 500 response.
+- **npm packaging**: Added `dist/**/*.html` and `data/*.json` to package.json `files` array — dashboard HTML and vuln-patterns data were missing from published npm package.
+- **Structured logging**: Replaced `console.error` in `src/workflows/triage.ts` with project logger.
+- **Code hygiene**: Moved `error-handler.example.ts` from `src/` to `examples/` to avoid shipping example code in production build.
+- **npm scripts**: Added `test:coverage` (Jest with --coverage) and `validate` (build + lint + test).
+
 ### Plugin System Deep Refactoring
 
 - **Plugin directory convention**: All plugin tool handlers migrated from flat `src/tools/` into `src/plugins/<id>/tools/` directories. Each plugin is now fully self-contained.

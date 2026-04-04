@@ -18,7 +18,7 @@ a:hover{text-decoration:underline}
 .header .version{font-size:12px;background:var(--accent2);color:#fff;padding:2px 8px;border-radius:12px}
 .header .status-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-.header nav{margin-left:auto;display:flex;gap:4px}
+.header nav{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap}
 .header nav button{background:transparent;border:1px solid var(--border);color:var(--text2);padding:6px 14px;border-radius:var(--radius);cursor:pointer;font-size:13px;transition:all .15s}
 .header nav button:hover,.header nav button.active{background:var(--bg3);color:var(--text);border-color:var(--accent)}
 
@@ -45,15 +45,18 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 th{background:var(--bg3);padding:8px 12px;text-align:left;font-weight:600;color:var(--text2);position:sticky;top:0;white-space:nowrap}
 td{padding:8px 12px;border-top:1px solid var(--border);vertical-align:top}
 tr:hover td{background:rgba(88,166,255,.04)}
+tr.clickable{cursor:pointer}
+tr.clickable:hover td{background:rgba(88,166,255,.08)}
 .mono{font-family:'SFMono-Regular',Consolas,monospace;font-size:12px}
 
 /* Status badges */
 .badge-status{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
-.badge-loaded{background:rgba(63,185,80,.15);color:var(--green)}
-.badge-skipped{background:rgba(210,153,34,.15);color:var(--yellow)}
-.badge-error{background:rgba(248,81,73,.15);color:var(--red)}
+.badge-loaded,.badge-done{background:rgba(63,185,80,.15);color:var(--green)}
+.badge-skipped,.badge-queued{background:rgba(210,153,34,.15);color:var(--yellow)}
+.badge-error,.badge-failed{background:rgba(248,81,73,.15);color:var(--red)}
 .badge-ok{background:rgba(63,185,80,.15);color:var(--green)}
-.badge-warn{background:rgba(210,153,34,.15);color:var(--yellow)}
+.badge-warn,.badge-running{background:rgba(210,153,34,.15);color:var(--yellow)}
+.badge-type{background:rgba(188,140,255,.15);color:var(--purple);display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
 
 /* Tool categories */
 .tool-category{margin-bottom:12px}
@@ -78,22 +81,74 @@ tr:hover td{background:rgba(88,166,255,.04)}
 /* Live indicator */
 .live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;margin-right:4px;animation:pulse 2s infinite}
 
-/* Search */
+/* Search / Filter */
 .search-box{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;color:var(--text);font-size:13px;width:100%;max-width:360px;margin-bottom:12px;outline:none}
 .search-box:focus{border-color:var(--accent)}
 .search-box::placeholder{color:var(--text2)}
+.filter-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.filter-bar select{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;color:var(--text);font-size:13px;outline:none;cursor:pointer}
+.filter-bar select:focus{border-color:var(--accent)}
 
 /* Progress bar */
 .progress-bar{height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-top:8px}
 .progress-bar .fill{height:100%;background:var(--accent);border-radius:2px;transition:width .3s}
 
+/* Drawer/Panel */
+.drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:none;opacity:0;transition:opacity .2s}
+.drawer-overlay.open{display:block;opacity:1}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(720px,90vw);background:var(--bg);border-left:1px solid var(--border);z-index:201;transform:translateX(100%);transition:transform .25s ease;overflow-y:auto;padding:24px}
+.drawer.open{transform:translateX(0)}
+.drawer-close{position:absolute;top:16px;right:16px;background:var(--bg3);border:1px solid var(--border);color:var(--text);width:32px;height:32px;border-radius:var(--radius);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.drawer-close:hover{border-color:var(--accent)}
+.drawer h2{font-size:18px;font-weight:600;margin-bottom:16px;padding-right:48px}
+.drawer .drawer-section{margin-bottom:24px}
+.drawer .drawer-section h3{font-size:14px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.drawer .meta-grid{display:grid;grid-template-columns:140px 1fr;gap:4px 12px;font-size:13px}
+.drawer .meta-grid .label{color:var(--text2)}
+
+/* Report viewer */
+.report-viewer{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:20px;max-height:70vh;overflow-y:auto;font-size:14px;line-height:1.7}
+.report-viewer.markdown h1{font-size:20px;font-weight:700;margin:16px 0 8px;border-bottom:1px solid var(--border);padding-bottom:4px}
+.report-viewer.markdown h2{font-size:17px;font-weight:600;margin:14px 0 6px;border-bottom:1px solid var(--border);padding-bottom:3px}
+.report-viewer.markdown h3{font-size:15px;font-weight:600;margin:12px 0 4px}
+.report-viewer.markdown p{margin:6px 0}
+.report-viewer.markdown ul,.report-viewer.markdown ol{padding-left:24px;margin:6px 0}
+.report-viewer.markdown li{margin:2px 0}
+.report-viewer.markdown code{background:var(--bg3);padding:1px 5px;border-radius:3px;font-family:'SFMono-Regular',Consolas,monospace;font-size:12px}
+.report-viewer.markdown pre{background:var(--bg3);padding:12px;border-radius:var(--radius);overflow-x:auto;margin:8px 0}
+.report-viewer.markdown pre code{background:none;padding:0}
+.report-viewer.markdown blockquote{border-left:3px solid var(--accent);padding-left:12px;color:var(--text2);margin:8px 0}
+.report-viewer.markdown table{border-collapse:collapse;margin:8px 0;width:100%}
+.report-viewer.markdown table th,.report-viewer.markdown table td{border:1px solid var(--border);padding:6px 10px;text-align:left;font-size:13px}
+.report-viewer.markdown table th{background:var(--bg3)}
+.report-viewer.markdown hr{border:none;border-top:1px solid var(--border);margin:12px 0}
+.report-viewer.markdown a{color:var(--accent)}
+.report-viewer.markdown strong{font-weight:600}
+.report-viewer.markdown em{font-style:italic}
+.report-viewer.json{font-family:'SFMono-Regular',Consolas,monospace;font-size:12px;white-space:pre-wrap;word-break:break-all}
+.report-viewer.json .json-key{color:var(--accent)}
+.report-viewer.json .json-string{color:var(--green)}
+.report-viewer.json .json-number{color:var(--yellow)}
+.report-viewer.json .json-boolean{color:var(--purple)}
+.report-viewer.json .json-null{color:var(--text2)}
+.report-viewer.html iframe{width:100%;min-height:400px;border:none;background:#fff;border-radius:var(--radius)}
+
 /* Responsive */
-@media(max-width:768px){.grid-4{grid-template-columns:1fr 1fr}.grid-3,.grid-2{grid-template-columns:1fr}.header{flex-wrap:wrap}.header nav{width:100%;overflow-x:auto}}
+@media(max-width:768px){.grid-4{grid-template-columns:1fr 1fr}.grid-3,.grid-2{grid-template-columns:1fr}.header{flex-wrap:wrap}.header nav{width:100%;overflow-x:auto}.drawer{width:100%}}
 
 /* Loading */
 .spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .loading{text-align:center;padding:40px;color:var(--text2)}
+
+/* Empty state */
+.empty-state{text-align:center;padding:40px 20px;color:var(--text2)}
+.empty-state .empty-icon{font-size:48px;margin-bottom:12px;opacity:.5}
+.empty-state p{font-size:14px}
+
+/* Breadcrumb / back */
+.back-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 14px;border-radius:var(--radius);cursor:pointer;font-size:13px;margin-bottom:12px;display:inline-flex;align-items:center;gap:4px}
+.back-btn:hover{border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -107,10 +162,19 @@ tr:hover td{background:rgba(88,166,255,.04)}
     <button data-tab="tools">Tools</button>
     <button data-tab="plugins">Plugins</button>
     <button data-tab="samples">Samples</button>
+    <button data-tab="analyses">Analyses</button>
+    <button data-tab="reports">Reports</button>
     <button data-tab="config">Config</button>
     <button data-tab="system">System</button>
   </nav>
 </header>
+
+<!-- Drawer overlay for detail views -->
+<div class="drawer-overlay" id="drawerOverlay"></div>
+<div class="drawer" id="drawer">
+  <button class="drawer-close" id="drawerClose">&times;</button>
+  <div id="drawerContent"></div>
+</div>
 
 <main class="main">
   <!-- ═══════════ OVERVIEW TAB ═══════════ -->
@@ -165,14 +229,75 @@ tr:hover td{background:rgba(88,166,255,.04)}
       <div class="section-title">Sample Inventory <span class="badge" id="sampleCount">0</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>#</th><th>ID</th><th>Original Name</th><th>SHA-256</th><th>Size</th><th>Ingested</th></tr></thead>
+          <thead><tr><th>#</th><th>SHA-256</th><th>Size</th><th>Type</th><th>Source</th><th>Ingested</th></tr></thead>
           <tbody id="sampleTableBody"><tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr></tbody>
         </table>
       </div>
       <div style="margin-top:12px;display:flex;gap:8px">
-        <button id="samplePrev" style="padding:6px 12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);cursor:pointer">← Prev</button>
+        <button id="samplePrev" class="back-btn">← Prev</button>
         <span style="line-height:32px;font-size:13px;color:var(--text2)" id="samplePageInfo">—</span>
-        <button id="sampleNext" style="padding:6px 12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);cursor:pointer">Next →</button>
+        <button id="sampleNext" class="back-btn">Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ ANALYSES TAB ═══════════ -->
+  <div class="tab-content" id="tab-analyses">
+    <div class="section">
+      <div class="section-title">Analysis History <span class="badge" id="analysisCount">0</span></div>
+      <div class="filter-bar">
+        <select id="analysisStatusFilter">
+          <option value="">All Statuses</option>
+          <option value="done">Done</option>
+          <option value="running">Running</option>
+          <option value="queued">Queued</option>
+          <option value="failed">Failed</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>ID</th><th>Sample</th><th>Stage</th><th>Backend</th><th>Status</th><th>Started</th><th>Finished</th></tr></thead>
+          <tbody id="analysisTableBody"><tr><td colspan="8" class="loading"><div class="spinner"></div></td></tr></tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button id="analysisPrev" class="back-btn">← Prev</button>
+        <span style="line-height:32px;font-size:13px;color:var(--text2)" id="analysisPageInfo">—</span>
+        <button id="analysisNext" class="back-btn">Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ REPORTS / ARTIFACTS TAB ═══════════ -->
+  <div class="tab-content" id="tab-reports">
+    <div class="section" id="reportListSection">
+      <div class="section-title">Reports &amp; Artifacts <span class="badge" id="artifactCount">0</span></div>
+      <div class="filter-bar">
+        <select id="artifactTypeFilter">
+          <option value="">All Types</option>
+        </select>
+        <input class="search-box" id="artifactSearch" placeholder="Search by path…" style="max-width:280px;margin:0" />
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Type</th><th>Path</th><th>Sample</th><th>MIME</th><th>Created</th><th>Action</th></tr></thead>
+          <tbody id="artifactTableBody"><tr><td colspan="7" class="loading"><div class="spinner"></div></td></tr></tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button id="artifactPrev" class="back-btn">← Prev</button>
+        <span style="line-height:32px;font-size:13px;color:var(--text2)" id="artifactPageInfo">—</span>
+        <button id="artifactNext" class="back-btn">Next →</button>
+      </div>
+    </div>
+    <div id="reportViewSection" style="display:none">
+      <button class="back-btn" id="reportBackBtn">← Back to list</button>
+      <div class="section">
+        <div class="section-title" id="reportViewTitle">Report Viewer</div>
+        <div class="meta-grid" id="reportMeta" style="margin-bottom:16px"></div>
+        <div class="report-viewer" id="reportViewer">
+          <div class="loading"><div class="spinner"></div> Loading artifact content…</div>
+        </div>
       </div>
     </div>
   </div>
@@ -234,6 +359,19 @@ $$('.header nav button').forEach(btn => {
     loadTab(btn.dataset.tab)
   })
 })
+
+// ── Drawer ─────────────────────────────────────────────────────────────
+function openDrawer(html) {
+  $('#drawerContent').innerHTML = html
+  $('#drawer').classList.add('open')
+  $('#drawerOverlay').classList.add('open')
+}
+function closeDrawer() {
+  $('#drawer').classList.remove('open')
+  $('#drawerOverlay').classList.remove('open')
+}
+$('#drawerOverlay').addEventListener('click', closeDrawer)
+$('#drawerClose').addEventListener('click', closeDrawer)
 
 // ── Data fetching ──────────────────────────────────────────────────────
 async function api(path) {
@@ -335,13 +473,13 @@ async function loadSamples() {
   let rows = ''
   d.samples.forEach((s,i) => {
     const sha = s.sha256 ? s.sha256.substring(0,16)+'…' : '—'
-    const size = s.file_size ? formatBytes(s.file_size) : '—'
-    rows += `<tr>
+    const size = s.size ? formatBytes(s.size) : '—'
+    rows += `<tr class="clickable" data-sample-id="${esc(s.id)}">
       <td>${sampleOffset+i+1}</td>
-      <td class="mono" style="font-size:11px">${esc(s.id)}</td>
-      <td>${esc(s.original_name||'—')}</td>
       <td class="mono" style="font-size:11px" title="${esc(s.sha256||'')}">${sha}</td>
       <td>${size}</td>
+      <td>${esc(s.file_type||'—')}</td>
+      <td>${esc(s.source||'—')}</td>
       <td>${s.created_at ? new Date(s.created_at).toLocaleString() : '—'}</td>
     </tr>`
   })
@@ -351,10 +489,402 @@ async function loadSamples() {
   $('#samplePageInfo').textContent = `Page ${currentPage} / ${totalPages} (${d.total} total)`
   $('#samplePrev').disabled = sampleOffset === 0
   $('#sampleNext').disabled = sampleOffset + SAMPLE_LIMIT >= d.total
+
+  // Bind click handlers for sample rows
+  $$('#sampleTableBody tr.clickable').forEach(row => {
+    row.addEventListener('click', () => {
+      const sid = row.dataset.sampleId
+      if (sid) openSampleDetail(sid)
+    })
+  })
 }
 
 $('#samplePrev').addEventListener('click', ()=>{ sampleOffset = Math.max(0, sampleOffset - SAMPLE_LIMIT); loadSamples() })
 $('#sampleNext').addEventListener('click', ()=>{ sampleOffset += SAMPLE_LIMIT; loadSamples() })
+
+// ── Sample detail drawer ───────────────────────────────────────────────
+async function openSampleDetail(sampleId) {
+  openDrawer('<div class="loading"><div class="spinner"></div> Loading sample detail…</div>')
+  const d = await api(`/samples/${encodeURIComponent(sampleId)}`)
+  if (!d || !d.sample) {
+    openDrawer('<div class="empty-state"><div class="empty-icon">❌</div><p>Sample not found</p></div>')
+    return
+  }
+
+  const s = d.sample
+  let html = `<h2>Sample Detail</h2>`
+  html += `<div class="drawer-section"><h3>Metadata</h3><div class="meta-grid">
+    <span class="label">ID</span><span class="mono">${esc(s.id)}</span>
+    <span class="label">SHA-256</span><span class="mono" style="word-break:break-all">${esc(s.sha256)}</span>
+    ${s.md5 ? `<span class="label">MD5</span><span class="mono">${esc(s.md5)}</span>` : ''}
+    <span class="label">Size</span><span>${formatBytes(s.size)}</span>
+    <span class="label">File Type</span><span>${esc(s.file_type||'unknown')}</span>
+    <span class="label">Source</span><span>${esc(s.source||'—')}</span>
+    <span class="label">Ingested</span><span>${new Date(s.created_at).toLocaleString()}</span>
+  </div></div>`
+
+  // Analyses
+  html += `<div class="drawer-section"><h3>Analyses (${d.analyses.length})</h3>`
+  if (d.analyses.length > 0) {
+    html += '<div class="table-wrap"><table><thead><tr><th>Stage</th><th>Backend</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead><tbody>'
+    for (const a of d.analyses) {
+      const cls = a.status==='done'?'badge-done':a.status==='failed'?'badge-failed':a.status==='running'?'badge-running':'badge-queued'
+      const dur = (a.started_at && a.finished_at) ? formatDuration((new Date(a.finished_at)-new Date(a.started_at))/1000) : '—'
+      html += `<tr>
+        <td>${esc(a.stage)}</td>
+        <td class="mono">${esc(a.backend)}</td>
+        <td><span class="badge-status ${cls}">${esc(a.status)}</span></td>
+        <td>${a.started_at ? new Date(a.started_at).toLocaleString() : '—'}</td>
+        <td>${dur}</td>
+      </tr>`
+    }
+    html += '</tbody></table></div>'
+  } else {
+    html += '<div style="color:var(--text2);font-size:13px">No analyses yet</div>'
+  }
+  html += '</div>'
+
+  // Artifacts
+  html += `<div class="drawer-section"><h3>Artifacts (${d.artifacts.length})</h3>`
+  if (d.artifacts.length > 0) {
+    html += '<div class="table-wrap"><table><thead><tr><th>Type</th><th>Path</th><th>Created</th><th>Action</th></tr></thead><tbody>'
+    for (const a of d.artifacts) {
+      const viewable = isViewableArtifact(a.mime, a.path)
+      html += `<tr>
+        <td><span class="badge-type">${esc(a.type)}</span></td>
+        <td class="mono" style="font-size:11px;max-width:300px;overflow:hidden;text-overflow:ellipsis" title="${esc(a.path)}">${esc(a.path)}</td>
+        <td>${new Date(a.created_at).toLocaleString()}</td>
+        <td>${viewable ? `<button class="back-btn" onclick="event.stopPropagation();closeDrawer();viewArtifact('${esc(a.id)}')">View</button>` : '—'}</td>
+      </tr>`
+    }
+    html += '</tbody></table></div>'
+  } else {
+    html += '<div style="color:var(--text2);font-size:13px">No artifacts</div>'
+  }
+  html += '</div>'
+
+  // Functions
+  html += `<div class="drawer-section"><h3>Functions (${d.functions.total} total, top 20 by score)</h3>`
+  if (d.functions.top.length > 0) {
+    html += '<div class="table-wrap"><table><thead><tr><th>Address</th><th>Name</th><th>Size</th><th>Score</th></tr></thead><tbody>'
+    for (const f of d.functions.top) {
+      html += `<tr>
+        <td class="mono">${esc(f.address)}</td>
+        <td>${esc(f.name||'(unnamed)')}</td>
+        <td>${f.size != null ? formatBytes(f.size) : '—'}</td>
+        <td>${f.score != null ? f.score.toFixed(2) : '—'}</td>
+      </tr>`
+    }
+    html += '</tbody></table></div>'
+  } else {
+    html += '<div style="color:var(--text2);font-size:13px">No functions recovered</div>'
+  }
+  html += '</div>'
+
+  openDrawer(html)
+}
+
+// ── Analyses ───────────────────────────────────────────────────────────
+let analysisOffset = 0
+const ANALYSIS_LIMIT = 30
+
+async function loadAnalyses() {
+  const status = $('#analysisStatusFilter').value
+  const params = `limit=${ANALYSIS_LIMIT}&offset=${analysisOffset}${status ? '&status='+status : ''}`
+  const d = await api(`/analyses?${params}`)
+  if (!d) return
+  $('#analysisCount').textContent = d.total
+
+  let rows = ''
+  d.analyses.forEach((a,i) => {
+    const cls = a.status==='done'?'badge-done':a.status==='failed'?'badge-failed':a.status==='running'?'badge-running':'badge-queued'
+    const shortSample = a.sample_id ? a.sample_id.replace('sha256:','').substring(0,12)+'…' : '—'
+    rows += `<tr>
+      <td>${analysisOffset+i+1}</td>
+      <td class="mono" style="font-size:11px">${esc(a.id.substring(0,8))}</td>
+      <td class="mono" style="font-size:11px;cursor:pointer;color:var(--accent)" title="${esc(a.sample_id)}" onclick="openSampleDetail('${esc(a.sample_id)}')">${shortSample}</td>
+      <td>${esc(a.stage)}</td>
+      <td class="mono">${esc(a.backend)}</td>
+      <td><span class="badge-status ${cls}">${esc(a.status)}</span></td>
+      <td>${a.started_at ? new Date(a.started_at).toLocaleString() : '—'}</td>
+      <td>${a.finished_at ? new Date(a.finished_at).toLocaleString() : '—'}</td>
+    </tr>`
+  })
+  $('#analysisTableBody').innerHTML = rows || '<tr><td colspan="8" style="color:var(--text2)">No analyses found</td></tr>'
+  const totalPages = Math.ceil(d.total / ANALYSIS_LIMIT) || 1
+  const currentPage = Math.floor(analysisOffset / ANALYSIS_LIMIT) + 1
+  $('#analysisPageInfo').textContent = `Page ${currentPage} / ${totalPages} (${d.total} total)`
+  $('#analysisPrev').disabled = analysisOffset === 0
+  $('#analysisNext').disabled = analysisOffset + ANALYSIS_LIMIT >= d.total
+}
+
+$('#analysisPrev').addEventListener('click', ()=>{ analysisOffset = Math.max(0, analysisOffset - ANALYSIS_LIMIT); loadAnalyses() })
+$('#analysisNext').addEventListener('click', ()=>{ analysisOffset += ANALYSIS_LIMIT; loadAnalyses() })
+$('#analysisStatusFilter').addEventListener('change', ()=>{ analysisOffset = 0; loadAnalyses() })
+
+// ── Reports / Artifacts ────────────────────────────────────────────────
+let artifactOffset = 0
+const ARTIFACT_LIMIT = 30
+let artifactTypesLoaded = false
+
+async function loadArtifacts() {
+  const type = $('#artifactTypeFilter').value
+  const search = $('#artifactSearch').value.trim()
+  const params = `limit=${ARTIFACT_LIMIT}&offset=${artifactOffset}${type ? '&type='+encodeURIComponent(type) : ''}`
+  const d = await api(`/artifacts?${params}`)
+  if (!d) return
+  $('#artifactCount').textContent = d.total
+
+  // Populate type filter dropdown on first load
+  if (!artifactTypesLoaded && d.types && d.types.length > 0) {
+    const sel = $('#artifactTypeFilter')
+    for (const t of d.types) {
+      const opt = document.createElement('option')
+      opt.value = t.type
+      opt.textContent = `${t.type} (${t.cnt})`
+      sel.appendChild(opt)
+    }
+    artifactTypesLoaded = true
+  }
+
+  let rows = ''
+  const lf = search.toLowerCase()
+  const filtered = lf ? d.artifacts.filter(a => a.path.toLowerCase().includes(lf) || a.type.toLowerCase().includes(lf)) : d.artifacts
+  filtered.forEach((a,i) => {
+    const shortSample = a.sample_id ? a.sample_id.replace('sha256:','').substring(0,12)+'…' : '—'
+    const shortPath = a.path.length > 50 ? '…'+a.path.slice(-47) : a.path
+    const viewable = isViewableArtifact(a.mime, a.path)
+    rows += `<tr>
+      <td>${artifactOffset+i+1}</td>
+      <td><span class="badge-type">${esc(a.type)}</span></td>
+      <td class="mono" style="font-size:11px" title="${esc(a.path)}">${esc(shortPath)}</td>
+      <td class="mono" style="font-size:11px;cursor:pointer;color:var(--accent)" title="${esc(a.sample_id)}" onclick="openSampleDetail('${esc(a.sample_id)}')">${shortSample}</td>
+      <td style="font-size:11px">${esc(a.mime||'—')}</td>
+      <td>${new Date(a.created_at).toLocaleString()}</td>
+      <td>${viewable ? `<button class="back-btn" onclick="viewArtifact('${esc(a.id)}')">View</button>` : '—'}</td>
+    </tr>`
+  })
+  $('#artifactTableBody').innerHTML = rows || '<tr><td colspan="7" style="color:var(--text2)">No artifacts found</td></tr>'
+  const totalPages = Math.ceil(d.total / ARTIFACT_LIMIT) || 1
+  const currentPage = Math.floor(artifactOffset / ARTIFACT_LIMIT) + 1
+  $('#artifactPageInfo').textContent = `Page ${currentPage} / ${totalPages} (${d.total} total)`
+  $('#artifactPrev').disabled = artifactOffset === 0
+  $('#artifactNext').disabled = artifactOffset + ARTIFACT_LIMIT >= d.total
+}
+
+$('#artifactPrev').addEventListener('click', ()=>{ artifactOffset = Math.max(0, artifactOffset - ARTIFACT_LIMIT); loadArtifacts() })
+$('#artifactNext').addEventListener('click', ()=>{ artifactOffset += ARTIFACT_LIMIT; loadArtifacts() })
+$('#artifactTypeFilter').addEventListener('change', ()=>{ artifactOffset = 0; loadArtifacts() })
+$('#artifactSearch').addEventListener('input', ()=>{ loadArtifacts() })
+
+// ── Artifact / Report Viewer ───────────────────────────────────────────
+async function viewArtifact(artifactId) {
+  // Switch to reports tab
+  $$('.header nav button').forEach(b => b.classList.remove('active'))
+  $$('.header nav button').forEach(b => { if(b.dataset.tab==='reports') b.classList.add('active') })
+  $$('.tab-content').forEach(t => t.classList.remove('active'))
+  $('#tab-reports').classList.add('active')
+
+  $('#reportListSection').style.display = 'none'
+  $('#reportViewSection').style.display = 'block'
+  $('#reportViewer').innerHTML = '<div class="loading"><div class="spinner"></div> Loading artifact content…</div>'
+  $('#reportMeta').innerHTML = ''
+  $('#reportViewTitle').textContent = 'Report Viewer'
+
+  const d = await api(`/artifacts/${encodeURIComponent(artifactId)}/content`)
+  if (!d) {
+    $('#reportViewer').innerHTML = '<div class="empty-state"><div class="empty-icon">❌</div><p>Failed to load artifact</p></div>'
+    return
+  }
+
+  // Show metadata
+  $('#reportViewTitle').textContent = d.path || 'Artifact'
+  $('#reportMeta').innerHTML = `
+    <span class="label">Type</span><span class="badge-type">${esc(d.type)}</span>
+    <span class="label">MIME</span><span>${esc(d.mime||'—')}</span>
+    <span class="label">Size</span><span>${formatBytes(d.size)}</span>
+    <span class="label">Format</span><span>${esc(d.format||'unknown')}</span>
+  `
+
+  if (d.truncated) {
+    $('#reportViewer').innerHTML = `<div class="empty-state"><div class="empty-icon">📦</div><p>${esc(d.error||'File too large')}</p></div>`
+    return
+  }
+
+  if (d.encoding === 'base64') {
+    $('#reportViewer').innerHTML = `<div class="empty-state"><div class="empty-icon">📄</div><p>Binary file (${formatBytes(d.size)}). Cannot render inline.</p></div>`
+    return
+  }
+
+  const viewer = $('#reportViewer')
+  switch (d.format) {
+    case 'markdown':
+      viewer.className = 'report-viewer markdown'
+      viewer.innerHTML = renderMarkdown(d.content)
+      break
+    case 'json':
+      viewer.className = 'report-viewer json'
+      viewer.innerHTML = d.parsed_json ? renderJsonHtml(d.parsed_json) : esc(d.content)
+      break
+    case 'html':
+      viewer.className = 'report-viewer html'
+      // Use srcdoc sandbox for security
+      viewer.innerHTML = `<iframe sandbox="allow-same-origin" srcdoc="${esc(d.content)}"></iframe>`
+      break
+    case 'svg':
+      viewer.className = 'report-viewer'
+      // Sanitize SVG by rendering through DOMParser
+      try {
+        const parser = new DOMParser()
+        const doc = parser.parseFromString(d.content, 'image/svg+xml')
+        const svg = doc.querySelector('svg')
+        if (svg) {
+          svg.style.maxWidth = '100%'
+          svg.style.height = 'auto'
+          viewer.innerHTML = ''
+          viewer.appendChild(svg)
+        } else {
+          viewer.textContent = d.content
+        }
+      } catch {
+        viewer.textContent = d.content
+      }
+      break
+    case 'code':
+      viewer.className = 'report-viewer'
+      viewer.innerHTML = `<pre><code>${esc(d.content)}</code></pre>`
+      break
+    default:
+      viewer.className = 'report-viewer'
+      viewer.innerHTML = `<pre>${esc(d.content)}</pre>`
+  }
+}
+
+$('#reportBackBtn').addEventListener('click', () => {
+  $('#reportListSection').style.display = 'block'
+  $('#reportViewSection').style.display = 'none'
+})
+
+function isViewableArtifact(mime, path) {
+  const viewableExtensions = ['.md','.json','.txt','.html','.htm','.xml','.yaml','.yml','.svg','.csv','.log','.dot','.c','.h','.py','.js','.ts','.java','.rs']
+  const ext = (path || '').split('.').pop()
+  if (ext && viewableExtensions.includes('.'+ext.toLowerCase())) return true
+  if (mime && (mime.startsWith('text/') || mime === 'application/json' || mime === 'application/xml')) return true
+  return false
+}
+
+// ── Markdown renderer (lightweight, no dependencies) ───────────────────
+function renderMarkdown(md) {
+  let html = md
+  // Escape HTML first for security
+  html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+  // Code blocks (fenced)
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    return `<pre><code class="lang-${lang}">${code.trim()}</code></pre>`
+  })
+
+  // Inline code
+  html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>')
+
+  // Headers
+  html = html.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>')
+  html = html.replace(/^#####\s+(.+)$/gm, '<h5>$1</h5>')
+  html = html.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>')
+  html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>')
+  html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>')
+  html = html.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>')
+
+  // Bold / Italic
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
+
+  // Horizontal rule
+  html = html.replace(/^---+$/gm, '<hr>')
+
+  // Blockquote
+  html = html.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>')
+
+  // Links [text](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+
+  // Tables
+  html = html.replace(/^(\|.+\|)\n(\|\s*[-:]+[-|:\s]*\|)\n((?:\|.+\|\n?)*)/gm, (_, header, sep, body) => {
+    const hCells = header.split('|').filter(c => c.trim())
+    let t = '<table><thead><tr>'
+    hCells.forEach(c => { t += `<th>${c.trim()}</th>` })
+    t += '</tr></thead><tbody>'
+    body.trim().split('\n').forEach(row => {
+      const cells = row.split('|').filter(c => c.trim())
+      t += '<tr>'
+      cells.forEach(c => { t += `<td>${c.trim()}</td>` })
+      t += '</tr>'
+    })
+    t += '</tbody></table>'
+    return t
+  })
+
+  // Unordered lists
+  html = html.replace(/^[\-\*]\s+(.+)$/gm, '<li>$1</li>')
+  html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
+
+  // Ordered lists
+  html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
+
+  // Paragraphs (lines that aren't already wrapped in tags)
+  html = html.replace(/^(?!<[a-z])((?!<).+)$/gm, '<p>$1</p>')
+
+  // Clean up empty paragraphs
+  html = html.replace(/<p>\s*<\/p>/g, '')
+
+  return html
+}
+
+// ── JSON syntax highlighter ────────────────────────────────────────────
+function renderJsonHtml(obj, indent = 0) {
+  return '<div>' + jsonToHtml(obj, indent) + '</div>'
+}
+
+function jsonToHtml(val, indent) {
+  const pad = '  '.repeat(indent)
+  const pad1 = '  '.repeat(indent + 1)
+
+  if (val === null) return '<span class="json-null">null</span>'
+  if (typeof val === 'boolean') return `<span class="json-boolean">${val}</span>`
+  if (typeof val === 'number') return `<span class="json-number">${val}</span>`
+  if (typeof val === 'string') {
+    const escaped = val.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+    return `<span class="json-string">"${escaped}"</span>`
+  }
+
+  if (Array.isArray(val)) {
+    if (val.length === 0) return '[]'
+    let html = '[\n'
+    val.forEach((item, i) => {
+      html += pad1 + jsonToHtml(item, indent + 1)
+      if (i < val.length - 1) html += ','
+      html += '\n'
+    })
+    html += pad + ']'
+    return html
+  }
+
+  if (typeof val === 'object') {
+    const keys = Object.keys(val)
+    if (keys.length === 0) return '{}'
+    let html = '{\n'
+    keys.forEach((key, i) => {
+      const escapedKey = key.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+      html += pad1 + `<span class="json-key">"${escapedKey}"</span>: ` + jsonToHtml(val[key], indent + 1)
+      if (i < keys.length - 1) html += ','
+      html += '\n'
+    })
+    html += pad + '}'
+    return html
+  }
+
+  return String(val)
+}
 
 // ── Config ─────────────────────────────────────────────────────────────
 async function loadConfig() {
@@ -469,22 +999,28 @@ function addLogEntry(container, text, color) {
 }
 
 // ── Tab loader ─────────────────────────────────────────────────────────
-const loaded = new Set()
 function loadTab(tab) {
   switch(tab) {
     case 'overview': loadOverview(); break
     case 'tools': loadTools(); break
     case 'plugins': loadPlugins(); break
     case 'samples': loadSamples(); break
+    case 'analyses': loadAnalyses(); break
+    case 'reports': loadArtifacts(); showReportList(); break
     case 'config': loadConfig(); break
     case 'system': loadSystem(); break
   }
 }
 
+function showReportList() {
+  $('#reportListSection').style.display = 'block'
+  $('#reportViewSection').style.display = 'none'
+}
+
 // ── Utilities ──────────────────────────────────────────────────────────
 function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML }
-function formatBytes(b) { if(b<1024) return b+'B'; if(b<1048576) return (b/1024).toFixed(1)+'KB'; return (b/1048576).toFixed(1)+'MB' }
-function formatDuration(s) { const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60); return (d?d+'d ':'')+(h?h+'h ':'')+(m?m+'m ':'')+(s%60)+'s' }
+function formatBytes(b) { if(b==null) return '—'; if(b<1024) return b+'B'; if(b<1048576) return (b/1024).toFixed(1)+'KB'; return (b/1048576).toFixed(1)+'MB' }
+function formatDuration(s) { if(s==null||isNaN(s)) return '—'; s=Math.floor(s); const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60); return (d?d+'d ':'')+(h?h+'h ':'')+(m?m+'m ':'')+(s%60)+'s' }
 function tryParse(s) { try{return JSON.parse(s)}catch{return null} }
 
 // ── Init ───────────────────────────────────────────────────────────────

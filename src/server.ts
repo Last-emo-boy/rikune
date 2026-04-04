@@ -1202,7 +1202,7 @@ export class MCPServer {
 
     // Initialize dashboard API with server + database references
     const { initDashboard } = await import('./api/routes/dashboard-api.js')
-    initDashboard({ server: this, database })
+    initDashboard({ server: this, database, workspaceManager })
 
     await fileServer.start()
     this.httpFileServer = fileServer
