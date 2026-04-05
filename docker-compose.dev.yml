@@ -8,6 +8,8 @@
 # after a page refresh (no rebuild needed).
 # =============================================================================
 
+name: rikune
+
 services:
   mcp-server:
     # Override read-only for development

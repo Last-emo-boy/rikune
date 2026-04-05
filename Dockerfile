@@ -447,7 +447,7 @@ RUN mkdir -p /app/workspaces /app/data /app/cache /app/logs /ghidra-projects /gh
 WORKDIR /app
 
 COPY --chown=appuser:appuser docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+RUN sed -i 's/\r$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["node", "dist/index.js"]

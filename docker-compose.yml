@@ -8,6 +8,8 @@
 #   docker-compose exec mcp-server bash  # Enter container
 # =============================================================================
 
+name: rikune
+
 services:
   # ---------------------------------------------------------------------------
   # MCP Server (Main Service)
