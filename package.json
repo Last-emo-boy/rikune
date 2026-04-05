@@ -1,6 +1,6 @@
 {
   "name": "rikune",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.0-beta.3",
   "description": "MCP server for Windows binary reverse engineering, PE triage, Ghidra-assisted analysis, and reconstruction workflows.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

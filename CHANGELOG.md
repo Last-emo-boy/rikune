@@ -7,6 +7,8 @@ Versioning where practical.
 
 ## [Unreleased]
 
+## [1.0.0-beta.3] - 2025-07-14
+
 ### Security Hardening (P0)
 
 - **Security headers**: All responses now include `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, and a strict `Content-Security-Policy`.

@@ -104,7 +104,7 @@ export class MCPServer {
     this.server = new Server(
       {
         name: 'binary-analysis-mcp-server',
-        version: '1.0.0-beta.2',
+        version: '1.0.0-beta.3',
       },
       {
         capabilities: {

@@ -171,7 +171,7 @@ function handleOverview(res: ServerResponse): void {
 
   sendJson(res, 200, {
     server: {
-      version: '1.0.0-beta.2',
+      version: '1.0.0-beta.3',
       uptime_seconds: Math.floor((Date.now() - SERVER_START_TIME) / 1000),
       uptime_human: formatUptime(Date.now() - SERVER_START_TIME),
       started_at: new Date(SERVER_START_TIME).toISOString(),

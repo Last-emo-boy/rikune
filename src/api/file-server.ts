@@ -151,7 +151,7 @@ export class FileServer {
       }
 
       if (pathname === '/api/v1/health' && req.method === 'GET') {
-        await handleHealthCheck(res, '1.0.0-beta.2')
+        await handleHealthCheck(res, '1.0.0-beta.3')
         return
       }
 

@@ -254,7 +254,7 @@ ENV HTTP_PROXY="${HTTP_PROXY}" \
     NO_PROXY="${NO_PROXY}"
 
 LABEL maintainer="rikune"
-LABEL version="1.0.0-beta.2"
+LABEL version="1.0.0-beta.3"
 LABEL description="MCP server for Windows binary reverse engineering - full Linux analysis stack"
 LABEL node_version="20.x"
 LABEL python_version="3.11"
