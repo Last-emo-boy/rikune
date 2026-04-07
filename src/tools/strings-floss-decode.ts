@@ -448,7 +448,24 @@ export function createStringsFlossDecodeHandler(
         await cacheManager.setCachedResult(cacheKey, normalizedData, CACHE_TTL_MS, sample.sha256)
       }
 
-      // 7. Return result
+      // 7. Build warnings
+      const warnings: string[] = []
+      if (input.force_refresh) {
+        warnings.push('force_refresh=true; bypassed cache lookup')
+      }
+      if (workerResponse.warnings) {
+        warnings.push(...workerResponse.warnings)
+      }
+      const decodedStrings = (normalizedData as Record<string, unknown>).decoded_strings
+      if (Array.isArray(decodedStrings) && decodedStrings.length === 0) {
+        warnings.push(
+          'FLOSS decoded 0 strings. This is expected for samples protected by strong obfuscators ' +
+          '(e.g. .NET Reactor, Themida, VMProtect) where string decoding requires runtime execution. ' +
+          'Consider using a debugger or memory dump approach instead.'
+        )
+      }
+
+      // 8. Return result
       return {
         ok: true,
         data: {
@@ -460,9 +477,7 @@ export function createStringsFlossDecodeHandler(
           worker_pool:
             (workerResponse.metrics as Record<string, unknown> | undefined)?.worker_pool,
         },
-        warnings: input.force_refresh
-          ? ['force_refresh=true; bypassed cache lookup', ...(workerResponse.warnings || [])]
-          : workerResponse.warnings,
+        warnings: warnings.length > 0 ? warnings : undefined,
         errors: workerResponse.errors,
         artifacts,
         metrics: {

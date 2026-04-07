@@ -14,6 +14,7 @@ import { generateCacheKey } from '../cache-manager.js'
 import { getPackageRoot, resolvePackagePath } from '../runtime-paths.js'
 import { lookupCachedResult, formatCacheWarning } from './cache-observability.js'
 import { createRuntimeDetectHandler } from './runtime-detect.js'
+import { buildStaticWorkerRequest, callStaticWorker } from './static-worker-client.js'
 
 const TOOL_NAME = 'dotnet.metadata.extract'
 const TOOL_VERSION = '0.1.0'
@@ -457,12 +458,42 @@ export function createDotNetMetadataExtractHandler(
       }
 
       const samplePath = path.join(workspace.original, files[0])
-      const probeResult = await probeRunner(samplePath, {
+      let probeResult = await probeRunner(samplePath, {
         includeTypes: input.include_types,
         includeMethods: input.include_methods,
         maxTypes: input.max_types,
         maxMethodsPerType: input.max_methods_per_type,
       })
+
+      // Fallback to Python/dnfile worker when dotnet CLI is unavailable
+      if (!probeResult.ok && probeResult.errors?.some(e => e.includes('not available in PATH') || e.includes('ENOENT'))) {
+        const workerRequest = buildStaticWorkerRequest({
+          tool: TOOL_NAME,
+          sampleId: input.sample_id,
+          samplePath,
+          args: {
+            include_types: input.include_types,
+            include_methods: input.include_methods,
+            max_types: input.max_types,
+            max_methods_per_type: input.max_methods_per_type,
+          },
+          toolVersion: TOOL_VERSION,
+        })
+        const workerResponse = await callStaticWorker(workerRequest, { database })
+        if (workerResponse.ok && workerResponse.data) {
+          probeResult = {
+            ok: true,
+            data: workerResponse.data as Omit<DotNetMetadataData, 'dotnet_version'>,
+            warnings: [...(workerResponse.warnings || []), 'Used Python/dnfile backend (dotnet CLI unavailable)'],
+          }
+        } else {
+          probeResult = {
+            ok: false,
+            errors: workerResponse.errors?.length ? workerResponse.errors : ['Python dnfile backend also failed'],
+            warnings: workerResponse.warnings,
+          }
+        }
+      }
 
       if (!probeResult.ok || !probeResult.data) {
         return {

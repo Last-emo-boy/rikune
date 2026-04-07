@@ -297,6 +297,9 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./
 
+# Data files (vuln-patterns, API semantics, etc.)
+COPY data/ ./data/
+
 # Dashboard static assets (not handled by tsc)
 COPY src/api/dashboard/ ./dist/api/dashboard/
 

@@ -264,7 +264,7 @@ export function extractRuleEvidence(artifactData: Record<string, unknown>): Rule
   if (Array.isArray(stringsData)) {
     evidence.unique_strings = stringsData
       .map((s) =>
-        typeof s === 'string' ? s : s && typeof s === 'object' ? String((s as Record<string, unknown>).value ?? '') : ''
+        typeof s === 'string' ? s : s && typeof s === 'object' ? String((s as Record<string, unknown>).string ?? (s as Record<string, unknown>).value ?? '') : ''
       )
       .filter((s) => s.length >= 6 && !COMMON_STRINGS.has(s))
       .slice(0, 100)

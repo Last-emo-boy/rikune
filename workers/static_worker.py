@@ -125,6 +125,7 @@ class StaticWorker:
             'system.health': self.system_health,
             'dynamic.dependencies': self.dynamic_dependencies,
             'sandbox.execute': self.sandbox_execute,
+            'dotnet.metadata.extract': self.dotnet_metadata_extract,
             # 鍏朵粬宸ュ叿澶勭悊鍣ㄥ皢鍦ㄥ悗缁换鍔′腑瀹炵幇
         }
         self._floss_cli_cache = None
@@ -5830,6 +5831,393 @@ print(json.dumps(payload))
                     "tool": request.tool
                 }
             )
+
+    # =========================================================================
+    # dotnet.metadata.extract — Python/dnfile backend
+    # =========================================================================
+    def dotnet_metadata_extract(self, sample_path: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract .NET assembly metadata using dnfile (pure Python, no dotnet CLI)."""
+        start = time.time()
+        warnings: List[str] = []
+
+        try:
+            import dnfile
+        except ImportError:
+            return {
+                "ok": False,
+                "errors": ["dnfile Python package is not installed"],
+                "data": None,
+            }
+
+        include_types = args.get("include_types", True)
+        include_methods = args.get("include_methods", True)
+        max_types = args.get("max_types", 80)
+        max_methods_per_type = args.get("max_methods_per_type", 24)
+
+        try:
+            dn = dnfile.dnPE(sample_path)
+        except Exception as e:
+            return {
+                "ok": False,
+                "errors": [f"Failed to parse .NET metadata: {e}"],
+                "data": {"is_dotnet": False},
+            }
+
+        if not hasattr(dn, "net") or dn.net is None:
+            return {
+                "ok": False,
+                "errors": ["File does not contain .NET metadata"],
+                "data": {"is_dotnet": False},
+            }
+
+        # Assembly info
+        assembly_name = None
+        assembly_version = None
+        if hasattr(dn.net, "mdtables") and dn.net.mdtables is not None:
+            asm_table = getattr(dn.net.mdtables, "Assembly", None)
+            if asm_table and asm_table.num_rows > 0:
+                row = asm_table.rows[0]
+                assembly_name = str(getattr(row, "Name", "")) or None
+                major = getattr(row, "MajorVersion", 0)
+                minor = getattr(row, "MinorVersion", 0)
+                build_num = getattr(row, "BuildNumber", 0)
+                rev = getattr(row, "RevisionNumber", 0)
+                assembly_version = f"{major}.{minor}.{build_num}.{rev}"
+
+        # Module name
+        module_name = None
+        if hasattr(dn.net, "mdtables") and dn.net.mdtables is not None:
+            mod_table = getattr(dn.net.mdtables, "Module", None)
+            if mod_table and mod_table.num_rows > 0:
+                module_name = str(getattr(mod_table.rows[0], "Name", "")) or None
+
+        # Metadata version
+        metadata_version = None
+        if hasattr(dn.net, "metadata") and dn.net.metadata is not None:
+            metadata_version = getattr(dn.net.metadata, "Version", None)
+            if metadata_version:
+                metadata_version = str(metadata_version).strip("\x00").strip()
+
+        # Is library check
+        is_library = False
+        try:
+            if hasattr(dn, "OPTIONAL_HEADER"):
+                oh = dn.OPTIONAL_HEADER
+                # IMAGE_SUBSYSTEM_WINDOWS_CUI=3, IMAGE_SUBSYSTEM_WINDOWS_GUI=2
+                # DLL flag in Characteristics
+                if hasattr(dn, "FILE_HEADER"):
+                    is_library = bool(dn.FILE_HEADER.Characteristics & 0x2000)
+        except Exception:
+            pass
+
+        # Entry point token
+        entry_point_token = None
+        if hasattr(dn.net, "Flags") and hasattr(dn.net, "struct"):
+            ep = getattr(dn.net.struct, "EntryPointTokenOrRva", 0) or getattr(dn.net, "entry_point_token", 0)
+            if ep and ep != 0:
+                entry_point_token = f"0x{ep:08X}"
+
+        # Assembly references
+        assembly_references = []
+        if hasattr(dn.net, "mdtables") and dn.net.mdtables is not None:
+            ref_table = getattr(dn.net.mdtables, "AssemblyRef", None)
+            if ref_table:
+                for row in ref_table.rows:
+                    name = str(getattr(row, "Name", ""))
+                    major = getattr(row, "MajorVersion", 0)
+                    minor = getattr(row, "MinorVersion", 0)
+                    build_num = getattr(row, "BuildNumber", 0)
+                    rev = getattr(row, "RevisionNumber", 0)
+                    culture = getattr(row, "Culture", None)
+                    culture = str(culture) if culture else None
+                    assembly_references.append({
+                        "name": name,
+                        "version": f"{major}.{minor}.{build_num}.{rev}",
+                        "culture": culture,
+                    })
+
+        # Resources
+        resources = []
+        if hasattr(dn.net, "mdtables") and dn.net.mdtables is not None:
+            res_table = getattr(dn.net.mdtables, "ManifestResource", None)
+            if res_table:
+                for row in res_table.rows:
+                    name = str(getattr(row, "Name", ""))
+                    flags = getattr(row, "Flags", None)
+                    attrs = ""
+                    if flags is not None:
+                        try:
+                            attrs = str(flags.value) if hasattr(flags, "value") else str(flags)
+                        except Exception:
+                            attrs = str(flags)
+                    impl = getattr(row, "Implementation", None)
+                    impl_str = ""
+                    if impl is not None:
+                        try:
+                            impl_str = str(impl.row_index) if hasattr(impl, "row_index") else str(impl)
+                        except Exception:
+                            impl_str = str(impl)
+                    resources.append({
+                        "name": name,
+                        "attributes": attrs,
+                        "implementation": impl_str,
+                    })
+
+        # Types and methods
+        types_list = []
+        namespace_map: Dict[str, Dict[str, int]] = {}
+        total_method_count = 0
+
+        if include_types and hasattr(dn.net, "mdtables") and dn.net.mdtables is not None:
+            typedef_table = getattr(dn.net.mdtables, "TypeDef", None)
+            method_table = getattr(dn.net.mdtables, "MethodDef", None)
+            field_table = getattr(dn.net.mdtables, "Field", None)
+            nested_table = getattr(dn.net.mdtables, "NestedClass", None)
+
+            total_methods = method_table.num_rows if method_table else 0
+            total_fields = field_table.num_rows if field_table else 0
+
+            # Build nested type set
+            nested_parents: Dict[int, int] = {}
+            if nested_table:
+                for row in nested_table.rows:
+                    nested_class_idx = getattr(row, "NestedClass", None)
+                    enclosing_idx = getattr(row, "EnclosingClass", None)
+                    if nested_class_idx is not None and enclosing_idx is not None:
+                        try:
+                            nc = nested_class_idx.row_index if hasattr(nested_class_idx, "row_index") else int(nested_class_idx)
+                            ec = enclosing_idx.row_index if hasattr(enclosing_idx, "row_index") else int(enclosing_idx)
+                            nested_parents[nc] = ec
+                        except Exception:
+                            pass
+
+            if typedef_table:
+                for i, row in enumerate(typedef_table.rows):
+                    if len(types_list) >= max_types:
+                        warnings.append(f"Type list truncated at {max_types} (total: {typedef_table.num_rows})")
+                        break
+
+                    ns = str(getattr(row, "TypeNamespace", ""))
+                    name = str(getattr(row, "TypeName", ""))
+                    full_name = f"{ns}.{name}" if ns else name
+
+                    # Skip <Module> pseudo-type
+                    if name == "<Module>" and ns == "":
+                        continue
+
+                    # Flags
+                    flags_val = getattr(row, "Flags", None)
+                    flags_int = 0
+                    if flags_val is not None:
+                        try:
+                            flags_int = flags_val.value if hasattr(flags_val, "value") else int(flags_val)
+                        except Exception:
+                            pass
+
+                    visibility_map = {
+                        0: "NotPublic", 1: "Public", 2: "NestedPublic",
+                        3: "NestedPrivate", 4: "NestedFamily", 5: "NestedAssembly",
+                        6: "NestedFamANDAssem", 7: "NestedFamORAssem",
+                    }
+                    vis = visibility_map.get(flags_int & 0x07, "Unknown")
+
+                    # Kind detection
+                    kind = "class"
+                    if flags_int & 0x20:
+                        kind = "interface"
+                    elif flags_int & 0x100:
+                        # abstract
+                        pass
+
+                    base_type_ref = getattr(row, "Extends", None)
+                    base_type = None
+                    if base_type_ref is not None:
+                        try:
+                            if hasattr(base_type_ref, "row") and base_type_ref.row is not None:
+                                bt_row = base_type_ref.row
+                                bt_ns = str(getattr(bt_row, "TypeNamespace", getattr(bt_row, "Namespace", "")))
+                                bt_name = str(getattr(bt_row, "TypeName", getattr(bt_row, "Name", "")))
+                                base_type = f"{bt_ns}.{bt_name}" if bt_ns else bt_name
+                                if base_type == "System.Enum":
+                                    kind = "enum"
+                                elif base_type == "System.ValueType":
+                                    kind = "struct"
+                                elif base_type == "System.MulticastDelegate" or base_type == "System.Delegate":
+                                    kind = "delegate"
+                        except Exception:
+                            pass
+
+                    # Count nested types for this type
+                    type_row_index = i + 1
+                    nested_count = sum(1 for parent_idx in nested_parents.values() if parent_idx == type_row_index)
+
+                    # Determine method range for this typedef
+                    methods = []
+                    method_count_for_type = 0
+                    if include_methods and method_table:
+                        method_list_idx = getattr(row, "MethodList", None)
+                        if method_list_idx is not None:
+                            try:
+                                start_idx = method_list_idx.row_index if hasattr(method_list_idx, "row_index") else int(method_list_idx)
+                            except Exception:
+                                start_idx = 0
+                            # End index is the MethodList of next typedef or end of method table
+                            if i + 1 < typedef_table.num_rows:
+                                next_ml = getattr(typedef_table.rows[i + 1], "MethodList", None)
+                                try:
+                                    end_idx = next_ml.row_index if hasattr(next_ml, "row_index") else int(next_ml)
+                                except Exception:
+                                    end_idx = total_methods + 1
+                            else:
+                                end_idx = total_methods + 1
+
+                            method_count_for_type = max(0, end_idx - start_idx)
+                            total_method_count += method_count_for_type
+
+                            for mi in range(start_idx - 1, min(end_idx - 1, total_methods)):
+                                if len(methods) >= max_methods_per_type:
+                                    break
+                                if mi < 0 or mi >= len(method_table.rows):
+                                    continue
+                                m_row = method_table.rows[mi]
+                                m_name = str(getattr(m_row, "Name", ""))
+                                m_rva = getattr(m_row, "Rva", 0) or 0
+                                m_flags = getattr(m_row, "Flags", None)
+                                m_flags_int = 0
+                                if m_flags is not None:
+                                    try:
+                                        m_flags_int = m_flags.value if hasattr(m_flags, "value") else int(m_flags)
+                                    except Exception:
+                                        pass
+                                is_static = bool(m_flags_int & 0x10)
+                                is_ctor = m_name in (".ctor", ".cctor")
+                                m_attrs = []
+                                if m_flags_int & 0x06 == 0x06:
+                                    m_attrs.append("Public")
+                                elif m_flags_int & 0x05 == 0x05:
+                                    m_attrs.append("Family")
+                                elif m_flags_int & 0x03 == 0x03:
+                                    m_attrs.append("Assembly")
+                                elif m_flags_int & 0x01 == 0x01:
+                                    m_attrs.append("Private")
+                                if is_static:
+                                    m_attrs.append("Static")
+                                if m_flags_int & 0x0400:
+                                    m_attrs.append("Abstract")
+                                if m_flags_int & 0x0040:
+                                    m_attrs.append("Virtual")
+                                token_val = 0x06000000 | (mi + 1)
+                                methods.append({
+                                    "name": m_name,
+                                    "token": f"0x{token_val:08X}",
+                                    "rva": m_rva,
+                                    "attributes": m_attrs,
+                                    "is_constructor": is_ctor,
+                                    "is_static": is_static,
+                                })
+
+                    # Field count
+                    field_count_for_type = 0
+                    if field_table:
+                        field_list_idx = getattr(row, "FieldList", None)
+                        if field_list_idx is not None:
+                            try:
+                                f_start = field_list_idx.row_index if hasattr(field_list_idx, "row_index") else int(field_list_idx)
+                            except Exception:
+                                f_start = 0
+                            if i + 1 < typedef_table.num_rows:
+                                next_fl = getattr(typedef_table.rows[i + 1], "FieldList", None)
+                                try:
+                                    f_end = next_fl.row_index if hasattr(next_fl, "row_index") else int(next_fl)
+                                except Exception:
+                                    f_end = total_fields + 1
+                            else:
+                                f_end = total_fields + 1
+                            field_count_for_type = max(0, f_end - f_start)
+
+                    # Build flags array
+                    type_flags = []
+                    if flags_int & 0x80:
+                        type_flags.append("Abstract")
+                    if flags_int & 0x100:
+                        type_flags.append("Sealed")
+                    if flags_int & 0x2000:
+                        type_flags.append("Serializable")
+                    if flags_int & 0x20:
+                        type_flags.append("Interface")
+
+                    token_val = 0x02000000 | (i + 1)
+                    types_list.append({
+                        "token": f"0x{token_val:08X}",
+                        "namespace": ns,
+                        "name": name,
+                        "full_name": full_name,
+                        "kind": kind,
+                        "visibility": vis,
+                        "base_type": base_type,
+                        "method_count": method_count_for_type,
+                        "field_count": field_count_for_type,
+                        "nested_type_count": nested_count,
+                        "flags": type_flags,
+                        "methods": methods,
+                    })
+
+                    # Track namespaces
+                    ns_key = ns or "(root)"
+                    if ns_key not in namespace_map:
+                        namespace_map[ns_key] = {"type_count": 0, "method_count": 0}
+                    namespace_map[ns_key]["type_count"] += 1
+                    namespace_map[ns_key]["method_count"] += method_count_for_type
+
+        namespaces = [
+            {"name": k, "type_count": v["type_count"], "method_count": v["method_count"]}
+            for k, v in sorted(namespace_map.items())
+        ]
+
+        # Target framework heuristic
+        target_framework = None
+        for ref in assembly_references:
+            if ref["name"] == "System.Runtime" or ref["name"] == "netstandard":
+                target_framework = f".NETCoreApp (ref: {ref['name']} {ref['version']})"
+                break
+            if ref["name"] == "mscorlib":
+                target_framework = f".NETFramework (ref: mscorlib {ref['version']})"
+                break
+
+        data = {
+            "is_dotnet": True,
+            "assembly_name": assembly_name,
+            "assembly_version": assembly_version,
+            "module_name": module_name,
+            "metadata_version": metadata_version,
+            "dotnet_version": None,
+            "target_framework": target_framework,
+            "is_library": is_library,
+            "entry_point_token": entry_point_token,
+            "assembly_references": assembly_references,
+            "resources": resources,
+            "namespaces": namespaces,
+            "types": types_list,
+            "summary": {
+                "type_count": len(types_list),
+                "method_count": total_method_count,
+                "namespace_count": len(namespaces),
+                "assembly_reference_count": len(assembly_references),
+                "resource_count": len(resources),
+            },
+        }
+
+        elapsed_ms = (time.time() - start) * 1000
+        return {
+            "ok": True,
+            "data": data,
+            "warnings": warnings if warnings else [],
+            "metrics": {
+                "elapsed_ms": round(elapsed_ms, 1),
+                "tool": "dotnet.metadata.extract",
+                "backend": "dnfile",
+            },
+        }
 
 
 def parse_request(request_dict: Dict[str, Any]) -> WorkerRequest:

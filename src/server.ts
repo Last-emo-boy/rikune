@@ -643,9 +643,11 @@ export class MCPServer {
         {
           issues: parsed.success ? undefined : parsed.error.issues,
         },
-        'Structured content did not validate against output schema; omitting structuredContent'
+        'Structured content did not validate against output schema; returning raw content'
       )
-      return undefined
+      // Return raw content instead of undefined to avoid MCP SDK error:
+      // "Tool has an output schema but did not return structured content"
+      return structuredContent
     }
 
     return parsed.data as Record<string, unknown>
