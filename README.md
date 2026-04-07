@@ -17,6 +17,7 @@ An MCP server for Windows reverse engineering. It exposes PE triage, Ghidra-back
 - **HTTP File Server**: Embedded HTTP API on port 18080 for direct sample uploads, artifact downloads, and upload session management with API key authentication.
 - **Web Dashboard**: Dark-themed real-time monitoring dashboard at `http://localhost:18080/dashboard` — shows all tools, plugins, samples, config diagnostics, system resources, and SSE event stream.
 - **Server-Sent Events (SSE)**: Real-time event streaming at `/api/v1/events` for analysis progress, sample ingestion, and server state changes.
+- **Advanced analysis tools**: Section-level entropy analysis, obfuscation detection (CFF, opaque predicates, string encryption, .NET-specific), static taint tracking, intelligent unpacking guidance, auto-generated Frida hook scripts, and Sigma detection rule generation.
 
 ## New in the staged analysis pipeline
 
@@ -246,6 +247,15 @@ It is designed to help MCP clients:
 - `timeline.correlate` - Multi-source event timeline correlation
 - `cross_module.xref` - Cross-module cross-reference analysis
 - `kb.search` - Knowledge base semantic search
+
+### Advanced analysis
+
+- `entropy.analyze` - Section-level Shannon entropy with packing/crypto classification
+- `obfuscation.detect` - Detect CFF, opaque predicates, string encryption, import obfuscation, anti-disassembly, .NET obfuscation
+- `taint.track` - Static taint tracking: source/sink API mapping, taint path enumeration, risk classification
+- `unpack.guide` - Intelligent unpacking guidance for UPX, Themida, VMProtect, .NET Reactor, ConfuserEx, ASPack, PECompact
+- `frida.script.generate` - Auto-generate Frida hook scripts from analysis evidence (crypto, network, file I/O, registry, process, anti-debug, memory)
+- `sigma.rule.generate` - Auto-generate Sigma detection rules from sample evidence (process creation, file events, registry, network, DNS, image load)
 
 ### Semantic review and reconstruction
 
@@ -496,7 +506,7 @@ When running in Docker (`docker-compose up -d`), the container exposes:
 
 | Service | Access | Description |
 |---------|--------|-------------|
-| MCP Server | stdio (`docker exec -i`) | 160 tools, 3 prompts, 16 resources for LLM clients |
+| MCP Server | stdio (`docker exec -i`) | 166 tools, 3 prompts, 16 resources for LLM clients |
 | HTTP API | `http://localhost:18080/api/v1/*` | REST API for samples, artifacts, uploads, health, SSE |
 | Web Dashboard | `http://localhost:18080/dashboard` | Real-time monitoring SPA (8 tabs, dark theme) |
 | SSE Events | `http://localhost:18080/api/v1/events` | Real-time event stream for analysis events |
@@ -583,9 +593,9 @@ This summary is surfaced through:
 ## Architecture
 
 The server uses a **centralised tool registry** (`src/tool-registry.ts`) that
-imports and wires 109 core MCP tools, 3 prompts, and 16 resources in one place.
+imports and wires 115 core MCP tools, 3 prompts, and 16 resources in one place.
 An additional 51 tools are registered by the 15 built-in plugins, bringing the
-total to 160 MCP tools.
+total to 166 MCP tools.
 The entry point (`src/index.ts`) is kept under 90 lines.
 
 All 15 tool categories — from PE analysis and vulnerability scanning to Android,

@@ -17,6 +17,7 @@
 - **Web 实时监控面板**：`http://localhost:18080/dashboard` — 暗色主题，8 个标签页，展示工具、插件、样本、分析历史、报告查看器、配置、系统资源和 SSE 事件流。支持实时日志流显示。
 - **SSE 实时事件**：`/api/v1/events` 实时推送分析进度、样本导入、服务器状态变更。
 - **插件 SDK**：15 个内置插件，热加载/卸载，第三方自动发现。
+- **高级分析工具**：节区级熵值分析、混淆检测（CFF、不透明谓词、字符串加密、.NET 混淆）、静态污点追踪、智能脱壳指引、自动生成 Frida hook 脚本、Sigma 检测规则生成。
 
 ## 本轮新增的静态初筛能力
 
@@ -159,6 +160,15 @@
 - `timeline.correlate` - 多源事件时间线关联
 - `cross_module.xref` - 跨模块交叉引用分析
 - `kb.search` - 知识库语义搜索
+
+### 高级分析
+
+- `entropy.analyze` - 节区级 Shannon 熵值分析，加壳/加密分类
+- `obfuscation.detect` - 混淆检测：控制流平坦化、不透明谓词、字符串加密、导入混淆、反反汇编、.NET 混淆
+- `taint.track` - 静态污点追踪：源/汇 API 映射、污点路径枚举、风险分级
+- `unpack.guide` - 智能脱壳指引：UPX、Themida、VMProtect、.NET Reactor、ConfuserEx、ASPack、PECompact
+- `frida.script.generate` - 基于分析证据自动生成 Frida hook 脚本（加密、网络、文件、注册表、进程、反调试、内存）
+- `sigma.rule.generate` - 基于样本证据自动生成 Sigma 检测规则（进程创建、文件事件、注册表、网络、DNS、镜像加载）
 
 ### 语义 review 与重建
 
@@ -420,7 +430,7 @@ Docker 部署时（`docker-compose up -d`），容器暴露：
 
 | 服务 | 访问方式 | 说明 |
 |------|----------|------|
-| MCP Server | stdio (`docker exec -i`) | 160 个工具、3 个 prompt、16 个 resource |
+| MCP Server | stdio (`docker exec -i`) | 166 个工具、3 个 prompt、16 个 resource |
 | HTTP API | `http://localhost:18080/api/v1/*` | 样本/产物/上传/健康检查 REST API |
 | Web 面板 | `http://localhost:18080/dashboard` | 实时监控 SPA（8 标签页，暗色主题） |
 | SSE 事件 | `http://localhost:18080/api/v1/events` | 分析事件实时推送 |
