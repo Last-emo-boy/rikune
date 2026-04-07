@@ -1023,3 +1023,5 @@ For local clone/native mode instead, keep using the earlier examples in this REA
 ## License
 
 Released under the MIT license. See [`LICENSE`](./LICENSE).
+
+Thanks to the [LinuxDo (linux.do)](https://linux.do/) community for the discussions, sharing, and feedback.
