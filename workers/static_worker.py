@@ -126,7 +126,9 @@ class StaticWorker:
             'dynamic.dependencies': self.dynamic_dependencies,
             'sandbox.execute': self.sandbox_execute,
             'dotnet.metadata.extract': self.dotnet_metadata_extract,
-            # 鍏朵粬宸ュ叿澶勭悊鍣ㄥ皢鍦ㄥ悗缁换鍔′腑瀹炵幇
+            'entropy.analyze': self.entropy_analyze,
+            'obfuscation.detect': self.obfuscation_detect,
+            'taint.track': self.taint_track,
         }
         self._floss_cli_cache = None
         self._dependency_status_cache = None
@@ -6218,6 +6220,571 @@ print(json.dumps(payload))
                 "backend": "dnfile",
             },
         }
+
+    # =========================================================================
+    # entropy.analyze — Section-level entropy analysis
+    # =========================================================================
+    def entropy_analyze(self, sample_path: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Compute byte-level and section-level entropy for packing/crypto detection."""
+        import math
+        start = time.time()
+        warnings: List[str] = []
+        block_size = int(args.get("block_size", 256))
+        try:
+            with open(sample_path, "rb") as f:
+                raw = f.read()
+        except Exception as e:
+            return {"ok": False, "errors": [f"Cannot read file: {e}"], "data": None}
+
+        file_size = len(raw)
+        if file_size == 0:
+            return {"ok": False, "errors": ["File is empty"], "data": None}
+
+        def shannon_entropy(data: bytes) -> float:
+            if len(data) == 0:
+                return 0.0
+            freq = [0] * 256
+            for b in data:
+                freq[b] += 1
+            ent = 0.0
+            n = len(data)
+            for c in freq:
+                if c > 0:
+                    p = c / n
+                    ent -= p * math.log2(p)
+            return round(ent, 4)
+
+        # Overall entropy
+        overall_entropy = shannon_entropy(raw)
+
+        # Block-level entropy histogram
+        block_entropies = []
+        for i in range(0, file_size, block_size):
+            chunk = raw[i:i + block_size]
+            block_entropies.append(round(shannon_entropy(chunk), 4))
+
+        # Entropy histogram (0-8 in 0.5 increments)
+        histogram = [0] * 17
+        for e_val in block_entropies:
+            idx = min(int(e_val * 2), 16)
+            histogram[idx] += 1
+
+        # Section-level using pefile
+        sections = []
+        pe_parsed = False
+        try:
+            import pefile
+            pe = pefile.PE(data=raw, fast_load=True)
+            pe_parsed = True
+            for sec in pe.sections:
+                sec_name = sec.Name.rstrip(b"\x00").decode("utf-8", errors="replace")
+                sec_data = sec.get_data()
+                sec_ent = shannon_entropy(sec_data)
+                sec_size = sec.SizeOfRawData
+                sec_vsize = sec.Misc_VirtualSize
+                ratio = round(sec_vsize / sec_size, 2) if sec_size > 0 else 0
+                is_suspicious = sec_ent > 7.0 or ratio > 10.0
+                sections.append({
+                    "name": sec_name,
+                    "entropy": sec_ent,
+                    "raw_size": sec_size,
+                    "virtual_size": sec_vsize,
+                    "vsize_ratio": ratio,
+                    "characteristics": hex(sec.Characteristics),
+                    "suspicious": is_suspicious,
+                })
+            pe.close()
+        except Exception:
+            pass
+
+        # High entropy region detection
+        high_entropy_regions = []
+        window = max(16, block_size)
+        threshold = float(args.get("high_entropy_threshold", 7.2))
+        i = 0
+        region_start = None
+        while i < len(block_entropies):
+            if block_entropies[i] >= threshold:
+                if region_start is None:
+                    region_start = i
+            else:
+                if region_start is not None:
+                    high_entropy_regions.append({
+                        "offset": region_start * block_size,
+                        "end_offset": i * block_size,
+                        "length": (i - region_start) * block_size,
+                        "avg_entropy": round(sum(block_entropies[region_start:i]) / (i - region_start), 4),
+                    })
+                    region_start = None
+            i += 1
+        if region_start is not None:
+            high_entropy_regions.append({
+                "offset": region_start * block_size,
+                "end_offset": len(raw),
+                "length": len(raw) - region_start * block_size,
+                "avg_entropy": round(sum(block_entropies[region_start:]) / (len(block_entropies) - region_start), 4),
+            })
+
+        # Classification
+        packing_likelihood = "none"
+        if overall_entropy > 7.5:
+            packing_likelihood = "very_high"
+        elif overall_entropy > 7.0:
+            packing_likelihood = "high"
+        elif overall_entropy > 6.5:
+            packing_likelihood = "moderate"
+        elif overall_entropy > 6.0:
+            packing_likelihood = "low"
+
+        crypto_likelihood = "none"
+        high_blocks = sum(1 for e_val in block_entropies if e_val > 7.8)
+        if high_blocks > len(block_entropies) * 0.3:
+            crypto_likelihood = "high"
+        elif high_blocks > len(block_entropies) * 0.1:
+            crypto_likelihood = "moderate"
+        elif high_blocks > 0:
+            crypto_likelihood = "low"
+
+        data = {
+            "file_size": file_size,
+            "overall_entropy": overall_entropy,
+            "block_size": block_size,
+            "block_count": len(block_entropies),
+            "histogram": histogram,
+            "sections": sections,
+            "high_entropy_regions": high_entropy_regions[:20],
+            "classification": {
+                "packing_likelihood": packing_likelihood,
+                "crypto_data_likelihood": crypto_likelihood,
+                "is_pe": pe_parsed,
+            },
+            "recommended_next_tools": [],
+        }
+        if packing_likelihood in ("high", "very_high"):
+            data["recommended_next_tools"].append("packer.detect")
+            data["recommended_next_tools"].append("unpack.auto")
+        if crypto_likelihood in ("moderate", "high"):
+            data["recommended_next_tools"].append("crypto.identify")
+
+        return {
+            "ok": True,
+            "data": data,
+            "warnings": warnings,
+            "metrics": {"elapsed_ms": round((time.time() - start) * 1000, 1), "tool": "entropy.analyze"},
+        }
+
+    # =========================================================================
+    # obfuscation.detect — Static obfuscation technique detection
+    # =========================================================================
+    def obfuscation_detect(self, sample_path: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Detect obfuscation techniques: CFF, opaque predicates, string encryption, etc."""
+        import math
+        start = time.time()
+        warnings: List[str] = []
+        techniques: List[Dict[str, Any]] = []
+        overall_score = 0.0
+
+        try:
+            with open(sample_path, "rb") as f:
+                raw = f.read()
+        except Exception as e:
+            return {"ok": False, "errors": [f"Cannot read file: {e}"], "data": None}
+
+        file_size = len(raw)
+
+        # --- 1. PE-level analysis ---
+        pe = None
+        sections = []
+        try:
+            import pefile
+            pe = pefile.PE(data=raw, fast_load=False)
+            for sec in pe.sections:
+                sec_name = sec.Name.rstrip(b"\x00").decode("utf-8", errors="replace")
+                sections.append({
+                    "name": sec_name,
+                    "size": sec.SizeOfRawData,
+                    "vsize": sec.Misc_VirtualSize,
+                    "entropy": round(sec.get_entropy(), 4),
+                    "chars": sec.Characteristics,
+                })
+        except Exception:
+            pass
+
+        # --- 2. Control Flow Flattening detection ---
+        cff_indicators = 0
+        # Look for switch-table patterns (common in CFF): large consecutive indirect jumps
+        # Pattern: many jmp [reg*4+addr] or cmp/je chains
+        switch_pattern = b"\xff\x24"  # jmp [reg*scale+...]
+        cmp_je_count = 0
+        for i in range(len(raw) - 4):
+            if raw[i] == 0x83 and raw[i+2:i+4] in (b"\x74", b"\x75"):  # cmp reg,imm / je/jne
+                cmp_je_count += 1
+            if raw[i:i+2] == switch_pattern:
+                cff_indicators += 1
+
+        cff_score = min(1.0, cff_indicators / 50.0)
+        if cmp_je_count > 500:
+            cff_score = max(cff_score, min(1.0, cmp_je_count / 2000.0))
+        if cff_score > 0.15:
+            techniques.append({
+                "name": "control_flow_flattening",
+                "confidence": round(cff_score, 3),
+                "description": "Detected dispatcher-based control flow restructuring",
+                "indicators": {
+                    "switch_table_patterns": cff_indicators,
+                    "cmp_branch_chains": cmp_je_count,
+                },
+            })
+            overall_score += cff_score * 0.3
+
+        # --- 3. Opaque predicates detection ---
+        # Look for always-true/false conditional patterns
+        opaque_count = 0
+        # xor reg,reg / test reg,reg / jnz (always falls through)
+        for i in range(len(raw) - 5):
+            # xor eax,eax; test eax,eax; jnz
+            if raw[i] == 0x33 and raw[i+1] == 0xC0 and raw[i+2] == 0x85 and raw[i+3] == 0xC0 and raw[i+4] == 0x75:
+                opaque_count += 1
+            # xor eax,eax; jnz (simpler pattern)
+            if raw[i] == 0x31 and raw[i+1] == raw[i+1] and raw[i+2] == 0x75:
+                if raw[i+1] in (0xC0, 0xC9, 0xD2, 0xDB, 0xE4, 0xED, 0xF6, 0xFF):
+                    opaque_count += 1
+
+        opaque_score = min(1.0, opaque_count / 30.0)
+        if opaque_score > 0.1:
+            techniques.append({
+                "name": "opaque_predicates",
+                "confidence": round(opaque_score, 3),
+                "description": "Detected always-true/false conditional branches",
+                "indicators": {"opaque_pattern_count": opaque_count},
+            })
+            overall_score += opaque_score * 0.2
+
+        # --- 4. String encryption detection ---
+        # Heuristic: look for XOR loops (common decryption pattern)
+        xor_loop_count = 0
+        for i in range(len(raw) - 10):
+            # xor [mem], reg followed by inc/add and loop/jne
+            if raw[i] in (0x30, 0x31, 0x32, 0x33):  # xor byte/dword ops
+                for j in range(i+2, min(i+15, len(raw)-1)):
+                    if raw[j] in (0x75, 0xE2, 0x0F):  # jne short / loop / conditional jmp
+                        xor_loop_count += 1
+                        break
+
+        str_enc_score = min(1.0, xor_loop_count / 20.0)
+        # Also check for very few readable strings in .text section
+        if pe and sections:
+            text_sections = [s for s in sections if s["name"] in (".text", ".code", "CODE")]
+            if text_sections:
+                ts = text_sections[0]
+                if ts["entropy"] > 6.8:
+                    str_enc_score = max(str_enc_score, 0.4)
+
+        if str_enc_score > 0.15:
+            techniques.append({
+                "name": "string_encryption",
+                "confidence": round(str_enc_score, 3),
+                "description": "Detected XOR-based string decryption loops or high-entropy code sections",
+                "indicators": {"xor_loop_patterns": xor_loop_count},
+            })
+            overall_score += str_enc_score * 0.25
+
+        # --- 5. Import obfuscation (API hashing / dynamic resolution) ---
+        import_obf_score = 0.0
+        if pe:
+            try:
+                # Count actual imports
+                import_count = 0
+                if hasattr(pe, "DIRECTORY_ENTRY_IMPORT"):
+                    for entry in pe.DIRECTORY_ENTRY_IMPORT:
+                        import_count += len(entry.imports)
+
+                # Very few imports + GetProcAddress/LoadLibrary present = API hashing
+                gpa = False
+                lla = False
+                if hasattr(pe, "DIRECTORY_ENTRY_IMPORT"):
+                    for entry in pe.DIRECTORY_ENTRY_IMPORT:
+                        for imp in entry.imports:
+                            name = imp.name.decode("utf-8", errors="replace") if imp.name else ""
+                            if "GetProcAddress" in name:
+                                gpa = True
+                            if "LoadLibrary" in name:
+                                lla = True
+
+                if import_count < 15 and (gpa or lla):
+                    import_obf_score = 0.7
+                elif import_count < 30 and gpa and lla:
+                    import_obf_score = 0.5
+                elif import_count < 10:
+                    import_obf_score = 0.4
+            except Exception:
+                pass
+
+        if import_obf_score > 0.1:
+            techniques.append({
+                "name": "import_obfuscation",
+                "confidence": round(import_obf_score, 3),
+                "description": "Suspected dynamic API resolution or import table hashing",
+                "indicators": {
+                    "has_GetProcAddress": gpa if pe else False,
+                    "has_LoadLibrary": lla if pe else False,
+                    "import_count": import_count if pe else 0,
+                },
+            })
+            overall_score += import_obf_score * 0.25
+
+        # --- 6. Dead code / junk code insertion ---
+        nop_sled_count = 0
+        for i in range(len(raw) - 8):
+            if raw[i:i+4] == b"\x90\x90\x90\x90":
+                nop_sled_count += 1
+        # int3 padding
+        int3_count = raw.count(b"\xCC\xCC\xCC\xCC")
+        junk_score = min(1.0, (nop_sled_count + int3_count) / 100.0)
+        if junk_score > 0.1:
+            techniques.append({
+                "name": "junk_code_insertion",
+                "confidence": round(junk_score, 3),
+                "description": "Detected NOP sleds or INT3 padding indicating code insertion",
+                "indicators": {"nop_sleds": nop_sled_count, "int3_blocks": int3_count},
+            })
+
+        # --- 7. Anti-disassembly ---
+        # Overlapping instructions pattern
+        anti_disasm_count = 0
+        for i in range(len(raw) - 3):
+            # jmp +1 followed by a byte that looks like another instruction
+            if raw[i] == 0xEB and raw[i+1] == 0x01:
+                anti_disasm_count += 1
+            # call $+5 (push EIP trick)
+            if raw[i] == 0xE8 and raw[i+1:i+5] == b"\x00\x00\x00\x00":
+                anti_disasm_count += 1
+
+        anti_disasm_score = min(1.0, anti_disasm_count / 20.0)
+        if anti_disasm_score > 0.1:
+            techniques.append({
+                "name": "anti_disassembly",
+                "confidence": round(anti_disasm_score, 3),
+                "description": "Detected overlapping instruction tricks to confuse disassemblers",
+                "indicators": {"anti_disasm_patterns": anti_disasm_count},
+            })
+            overall_score += anti_disasm_score * 0.15
+
+        # --- 8. .NET-specific obfuscation ---
+        dotnet_obf = []
+        try:
+            import dnfile
+            dn = dnfile.dnPE(sample_path)
+            if hasattr(dn, "net") and dn.net is not None:
+                td = getattr(dn.net.mdtables, "TypeDef", None) if hasattr(dn.net, "mdtables") and dn.net.mdtables else None
+                if td:
+                    unprintable_names = 0
+                    for row in td.rows:
+                        name = str(getattr(row, "TypeName", ""))
+                        if any(ord(c) > 0xE000 for c in name) or len(name) < 2:
+                            unprintable_names += 1
+                    if unprintable_names > 3:
+                        dotnet_obf.append({
+                            "technique": "name_mangling",
+                            "description": "Type names contain Unicode PUA characters (typical of .NET obfuscators)",
+                            "count": unprintable_names,
+                        })
+                # Check for ConfuserEx / .NET Reactor markers
+                us_stream = getattr(dn.net, "user_strings", None)
+                if us_stream is None and hasattr(dn.net, "metadata"):
+                    us_stream = getattr(dn.net.metadata, "streams_list", None)
+
+                mr_table = getattr(dn.net.mdtables, "ManifestResource", None) if hasattr(dn.net, "mdtables") and dn.net.mdtables else None
+                if mr_table:
+                    for row in mr_table.rows:
+                        rname = str(getattr(row, "Name", ""))
+                        if "ConfusedByAttribute" in rname or "NETReactor" in rname or "Dotfuscator" in rname:
+                            dotnet_obf.append({"technique": "known_obfuscator_marker", "description": f"Found obfuscator marker: {rname}"})
+        except Exception:
+            pass
+
+        if dotnet_obf:
+            techniques.append({
+                "name": "dotnet_obfuscation",
+                "confidence": min(1.0, len(dotnet_obf) * 0.3 + 0.3),
+                "description": ".NET-specific obfuscation detected",
+                "indicators": {"findings": dotnet_obf},
+            })
+            overall_score += 0.2
+
+        if pe:
+            try:
+                pe.close()
+            except Exception:
+                pass
+
+        overall_score = round(min(1.0, overall_score), 3)
+        level = "none"
+        if overall_score > 0.7:
+            level = "heavy"
+        elif overall_score > 0.4:
+            level = "moderate"
+        elif overall_score > 0.15:
+            level = "light"
+
+        data = {
+            "obfuscation_score": overall_score,
+            "obfuscation_level": level,
+            "techniques": techniques,
+            "dotnet_specific": dotnet_obf,
+            "recommended_next_tools": [],
+        }
+        if any(t["name"] == "string_encryption" for t in techniques):
+            data["recommended_next_tools"].append("strings.floss.decode")
+        if any(t["name"] == "control_flow_flattening" for t in techniques):
+            data["recommended_next_tools"].append("vm.detect")
+        if any(t["name"] == "import_obfuscation" for t in techniques):
+            data["recommended_next_tools"].append("frida.script.generate")
+        if dotnet_obf:
+            data["recommended_next_tools"].append("dotnet.metadata.extract")
+
+        return {
+            "ok": True,
+            "data": data,
+            "warnings": warnings,
+            "metrics": {"elapsed_ms": round((time.time() - start) * 1000, 1), "tool": "obfuscation.detect"},
+        }
+
+    # =========================================================================
+    # taint.track — Data flow / taint analysis
+    # =========================================================================
+    def taint_track(self, sample_path: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Track data flow from sensitive sources to sinks via static analysis."""
+        start = time.time()
+        warnings: List[str] = []
+        taint_sources = args.get("sources", ["network", "file", "registry", "user_input"])
+        taint_sinks = args.get("sinks", ["exec", "write", "send", "crypto"])
+        max_paths = int(args.get("max_paths", 20))
+
+        try:
+            with open(sample_path, "rb") as f:
+                raw = f.read()
+        except Exception as e:
+            return {"ok": False, "errors": [f"Cannot read file: {e}"], "data": None}
+
+        # Define source/sink API categories
+        SOURCE_APIS: Dict[str, List[str]] = {
+            "network": ["recv", "recvfrom", "WSARecv", "InternetReadFile", "HttpQueryInfo",
+                        "WinHttpReadData", "URLDownloadToFile", "InternetOpenUrl"],
+            "file": ["ReadFile", "ReadFileEx", "fread", "fgets", "NtReadFile", "MapViewOfFile"],
+            "registry": ["RegQueryValueEx", "RegGetValue", "RegEnumValue", "NtQueryValueKey"],
+            "user_input": ["GetClipboardData", "GetWindowText", "GetDlgItemText",
+                           "GetCommandLine", "CommandLineToArgv"],
+        }
+        SINK_APIS: Dict[str, List[str]] = {
+            "exec": ["CreateProcess", "WinExec", "ShellExecute", "system", "NtCreateProcess",
+                     "CreateRemoteThread", "QueueUserAPC", "WriteProcessMemory"],
+            "write": ["WriteFile", "NtWriteFile", "fwrite", "RegSetValueEx", "NtSetValueKey"],
+            "send": ["send", "sendto", "WSASend", "InternetWriteFile", "HttpSendRequest",
+                     "WinHttpSendRequest", "WinHttpWriteData"],
+            "crypto": ["CryptEncrypt", "CryptDecrypt", "BCryptEncrypt", "BCryptDecrypt",
+                       "CryptHashData", "BCryptHash"],
+        }
+
+        # Parse PE imports to find which APIs are used
+        found_sources: Dict[str, List[str]] = {}
+        found_sinks: Dict[str, List[str]] = {}
+        all_imports: List[str] = []
+
+        try:
+            import pefile
+            pe = pefile.PE(data=raw, fast_load=False)
+            if hasattr(pe, "DIRECTORY_ENTRY_IMPORT"):
+                for entry in pe.DIRECTORY_ENTRY_IMPORT:
+                    dll_name = entry.dll.decode("utf-8", errors="replace") if entry.dll else ""
+                    for imp in entry.imports:
+                        name = imp.name.decode("utf-8", errors="replace") if imp.name else ""
+                        if name:
+                            all_imports.append(f"{dll_name}::{name}")
+                            for cat in taint_sources:
+                                if cat in SOURCE_APIS:
+                                    for api in SOURCE_APIS[cat]:
+                                        if api.lower() in name.lower():
+                                            found_sources.setdefault(cat, []).append(f"{dll_name}::{name}")
+                            for cat in taint_sinks:
+                                if cat in SINK_APIS:
+                                    for api in SINK_APIS[cat]:
+                                        if api.lower() in name.lower():
+                                            found_sinks.setdefault(cat, []).append(f"{dll_name}::{name}")
+            pe.close()
+        except Exception:
+            warnings.append("PE import parsing failed; taint analysis is limited")
+
+        # Build potential taint paths (source → sink combinations)
+        taint_paths = []
+        for src_cat, src_apis in found_sources.items():
+            for sink_cat, sink_apis in found_sinks.items():
+                for s_api in src_apis:
+                    for k_api in sink_apis:
+                        taint_paths.append({
+                            "source_category": src_cat,
+                            "source_api": s_api,
+                            "sink_category": sink_cat,
+                            "sink_api": k_api,
+                            "risk": self._taint_risk_level(src_cat, sink_cat),
+                            "description": f"Data from {src_cat} ({s_api}) may flow to {sink_cat} ({k_api})",
+                        })
+                        if len(taint_paths) >= max_paths:
+                            break
+                    if len(taint_paths) >= max_paths:
+                        break
+                if len(taint_paths) >= max_paths:
+                    break
+            if len(taint_paths) >= max_paths:
+                warnings.append(f"Taint path enumeration truncated at {max_paths}")
+                break
+
+        # Sort by risk
+        risk_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        taint_paths.sort(key=lambda p: risk_order.get(p["risk"], 4))
+
+        # Summary
+        risk_counts: Dict[str, int] = {}
+        for p in taint_paths:
+            risk_counts[p["risk"]] = risk_counts.get(p["risk"], 0) + 1
+
+        data = {
+            "source_categories": {k: len(v) for k, v in found_sources.items()},
+            "sink_categories": {k: len(v) for k, v in found_sinks.items()},
+            "total_sources": sum(len(v) for v in found_sources.values()),
+            "total_sinks": sum(len(v) for v in found_sinks.values()),
+            "taint_paths": taint_paths,
+            "path_count": len(taint_paths),
+            "risk_summary": risk_counts,
+            "all_source_apis": {k: v for k, v in found_sources.items()},
+            "all_sink_apis": {k: v for k, v in found_sinks.items()},
+            "recommended_next_tools": [],
+        }
+        if found_sinks.get("exec"):
+            data["recommended_next_tools"].append("breakpoint.smart")
+        if found_sinks.get("crypto"):
+            data["recommended_next_tools"].append("crypto.identify")
+        if found_sources.get("network") and found_sinks.get("exec"):
+            data["recommended_next_tools"].append("frida.script.generate")
+
+        return {
+            "ok": True,
+            "data": data,
+            "warnings": warnings,
+            "metrics": {"elapsed_ms": round((time.time() - start) * 1000, 1), "tool": "taint.track"},
+        }
+
+    def _taint_risk_level(self, source: str, sink: str) -> str:
+        """Determine risk level of a source→sink data flow."""
+        critical_pairs = {("network", "exec"), ("user_input", "exec"), ("network", "write")}
+        high_pairs = {("network", "crypto"), ("file", "exec"), ("registry", "exec")}
+        if (source, sink) in critical_pairs:
+            return "critical"
+        if (source, sink) in high_pairs:
+            return "high"
+        if sink == "exec":
+            return "high"
+        return "medium"
 
 
 def parse_request(request_dict: Dict[str, Any]) -> WorkerRequest:

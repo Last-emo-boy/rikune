@@ -2,7 +2,7 @@
  * Centralised tool / prompt / resource registry.
  *
  * Every MCP tool, prompt, and resource is imported here and wired to its handler factory.
- * `index.ts` calls `registerAllTools(server, deps)` once during bootstrap �?
+ * `index.ts` calls `registerAllTools(server, deps)` once during bootstrap �?
  * keeping the entry-point lean and all registration logic in one place.
  */
 
@@ -160,6 +160,14 @@ import { binaryDiffSummaryToolDefinition, createBinaryDiffSummaryHandler } from 
 import { yaraGenerateToolDefinition, createYaraGenerateHandler } from './tools/yara-generate.js'
 import { yaraGenerateBatchToolDefinition, createYaraGenerateBatchHandler } from './tools/yara-generate-batch.js'
 
+// ─── Advanced analysis (entropy, obfuscation, taint, unpack guide, frida gen, sigma gen) ──
+import { entropyAnalyzeToolDefinition, createEntropyAnalyzeHandler } from './tools/entropy-analyze.js'
+import { obfuscationDetectToolDefinition, createObfuscationDetectHandler } from './tools/obfuscation-detect.js'
+import { taintTrackToolDefinition, createTaintTrackHandler } from './tools/taint-track.js'
+import { unpackGuideToolDefinition, createUnpackGuideHandler } from './tools/unpack-guide.js'
+import { fridaScriptGenerateToolDefinition, createFridaScriptGenerateHandler } from './tools/frida-script-generate.js'
+import { sigmaRuleGenerateToolDefinition, createSigmaRuleGenerateHandler } from './tools/sigma-rule-generate.js'
+
 // ─── Vulnerability scanning ────────────────────────────────────────────────
 
 // ─── Knowledge base ────────────────────────────────────────────────────────
@@ -188,7 +196,7 @@ import { smtSolveToolDefinition, createSmtSolveHandler } from './tools/smt-solve
 import { keygenSynthesizeToolDefinition, createKeygenSynthesizeHandler } from './tools/keygen-synthesize.js'
 import { mbaSimplifyToolDefinition, createMbaSimplifyHandler } from './tools/mba-simplify.js'
 
-// ─── v2.0 �?Plugin-managed tools ─────────────────────────────────────────
+// ─── v2.0 �?Plugin-managed tools ─────────────────────────────────────────
 // Android, CrackMe, Dynamic, Malware, Frida, Ghidra, Cross-module, Visualization, KB
 // Imports are handled inside each plugin's register() function; see src/plugins.ts.
 import { loadPlugins, getPluginManager } from './plugins.js'
@@ -369,6 +377,14 @@ export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promi
   server.registerTool(yaraGenerateToolDefinition, createYaraGenerateHandler(workspaceManager, database))
   server.registerTool(yaraGenerateBatchToolDefinition, createYaraGenerateBatchHandler(workspaceManager, database))
 
+  // ── Advanced analysis ──────────────────────────────────────────────────
+  server.registerTool(entropyAnalyzeToolDefinition, createEntropyAnalyzeHandler(workspaceManager, database, cacheManager))
+  server.registerTool(obfuscationDetectToolDefinition, createObfuscationDetectHandler(workspaceManager, database, cacheManager))
+  server.registerTool(taintTrackToolDefinition, createTaintTrackHandler(workspaceManager, database, cacheManager))
+  server.registerTool(unpackGuideToolDefinition, createUnpackGuideHandler(workspaceManager, database))
+  server.registerTool(fridaScriptGenerateToolDefinition, createFridaScriptGenerateHandler(workspaceManager, database))
+  server.registerTool(sigmaRuleGenerateToolDefinition, createSigmaRuleGenerateHandler(workspaceManager, database))
+
   // ── Vulnerability scanning ─────────────────────────────────────────────
 
   // ── Knowledge base ─────────────────────────────────────────────────────
@@ -397,11 +413,11 @@ export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promi
   server.registerTool(keygenSynthesizeToolDefinition, createKeygenSynthesizeHandler(workspaceManager, database))
   server.registerTool(mbaSimplifyToolDefinition, createMbaSimplifyHandler(workspaceManager, database))
 
-  // ── v2.0 �?Plugin-managed tools ─────────────────────────────────────────
+  // ── v2.0 �?Plugin-managed tools ─────────────────────────────────────────
   // Android, CrackMe, Dynamic, Malware, Frida, Ghidra, Cross-module,
   // Visualization, and KB tools are all loaded via the plugin system.
   // Enabled/disabled via PLUGINS env var (default: all enabled).
-  // ── v2.0 �?Plugin-managed tools ─────────────────────────────────────────
+  // ── v2.0 �?Plugin-managed tools ─────────────────────────────────────────
   // All plugin tools are auto-discovered from src/plugins/<id>/index.ts
   // Plugin deps include utility functions so plugins have zero server imports.
   const pluginDeps = {
@@ -444,13 +460,13 @@ export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promi
   server.registerTool(batchResultsToolDefinition, createBatchResultsHandler())
 
   // ══════════════════════════════════════════════════════════════════════════
-  // MCP Resources �?read-only content exposed to clients
+  // MCP Resources �?read-only content exposed to clients
   // ══════════════════════════════════════════════════════════════════════════
   registerScriptResources(server)
 }
 
 // ============================================================================
-// Script Resources �?expose Frida / Ghidra scripts as readable MCP resources
+// Script Resources �?expose Frida / Ghidra scripts as readable MCP resources
 // ============================================================================
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
