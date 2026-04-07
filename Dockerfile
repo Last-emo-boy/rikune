@@ -298,7 +298,9 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./
 
 # Data files (vuln-patterns, API semantics, etc.)
-COPY data/ ./data/
+RUN mkdir -p ./data
+COPY data/vuln-patterns.json ./data/vuln-patterns.json
+COPY data/windows-api-semantics.json ./data/windows-api-semantics.json
 
 # Dashboard static assets (not handled by tsc)
 COPY src/api/dashboard/ ./dist/api/dashboard/
