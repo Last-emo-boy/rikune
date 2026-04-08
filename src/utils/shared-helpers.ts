@@ -52,3 +52,10 @@ export function matchesSessionTag(sessionTags: string[], selector?: string | nul
   const normalized = selector.trim()
   return sessionTags.some((tag) => tag === normalized)
 }
+
+export function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.filter((item): item is string => typeof item === 'string')
+}

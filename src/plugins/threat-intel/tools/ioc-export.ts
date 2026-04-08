@@ -6,6 +6,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { createHash, randomUUID } from 'crypto'
+import { toStringArray } from '../../../utils/shared-helpers.js'
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef , PluginToolDeps} from '../../sdk.js'
 import { createTriageWorkflowHandler } from '../../../workflows/triage.js'
@@ -97,12 +98,6 @@ interface IOCRecord {
   tags: string[]
 }
 
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value.filter((item): item is string => typeof item === 'string')
-}
 
 function dedupeIOC(records: IOCRecord[]): IOCRecord[] {
   const map = new Map<string, IOCRecord>()
