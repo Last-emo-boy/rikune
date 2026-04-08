@@ -22,6 +22,10 @@ const ghidraPlugin: Plugin = {
     { envVar: 'GHIDRA_INSTALL_DIR', description: 'Path to Ghidra installation directory', required: true },
     { envVar: 'GHIDRA_PROJECT_DIR', description: 'Directory for Ghidra project files', required: false },
   ],
+  systemDeps: [
+    { type: 'directory', name: 'Ghidra', target: '$GHIDRA_INSTALL_DIR', envVar: 'GHIDRA_INSTALL_DIR', dockerDefault: '/opt/ghidra', required: true, description: 'Ghidra reverse engineering suite', dockerInstall: 'Download Ghidra release to /opt/ghidra' },
+    { type: 'binary', name: 'java', versionFlag: '-version', required: true, description: 'Java 17+ runtime (Temurin recommended)', dockerDefault: '/opt/java/openjdk/bin/java', dockerInstall: 'FROM eclipse-temurin:21-jdk' },
+  ],
   check() {
     const ghidraDir = process.env.GHIDRA_INSTALL_DIR
     if (!ghidraDir) return false

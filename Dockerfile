@@ -394,6 +394,7 @@ RUN chmod +x /usr/local/bin/validate-docker-full-stack.sh && \
     retdec-decompiler --help >/dev/null 2>&1 && \
     retdec-fileinfo --help >/dev/null 2>&1 && \
     python3 -c "import yara_x, pandare, frida, psutil; print('✓ global runtime imports ready')" && \
+    python3 -c "import volatility3; print('✓ volatility3 ready')" && \
     /opt/qiling-venv/bin/python -c "import qiling; print('✓ isolated qiling runtime ready')" && \
     /opt/angr-venv/bin/python -c "import angr; print('✓ isolated angr runtime ready')" && \
     /usr/local/bin/validate-docker-full-stack.sh
@@ -439,7 +440,10 @@ ENV NODE_ENV=production \
     PANDA_PYTHON=/usr/local/bin/python3 \
     RETDEC_PATH=/opt/retdec/bin/retdec-decompiler \
     RETDEC_INSTALL_DIR=/opt/retdec \
-    JADX_PATH=/opt/jadx/bin/jadx
+    JADX_PATH=/opt/jadx/bin/jadx \
+    FRIDA_PATH=/usr/local/bin/frida \
+    VOLATILITY3_PATH=/usr/local/bin/vol \
+    SANDBOX_PYTHON_PATH=/usr/local/bin/python3
 
 RUN mkdir -p /app/workspaces /app/data /app/cache /app/logs /ghidra-projects /ghidra-logs /samples /tmp /opt/qiling-rootfs /root/.rikune && \
     chown -R appuser:appuser /app && \

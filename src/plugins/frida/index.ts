@@ -25,6 +25,9 @@ const fridaPlugin: Plugin = {
   configSchema: [
     { envVar: 'FRIDA_PATH', description: 'Path to frida CLI binary', required: false },
   ],
+  systemDeps: [
+    { type: 'binary', name: 'frida', versionFlag: '--version', envVar: 'FRIDA_PATH', required: true, description: 'Frida dynamic instrumentation toolkit', dockerInstall: 'pip install frida-tools' },
+  ],
   check() {
     try {
       execFileSync('frida', ['--version'], { stdio: 'ignore', timeout: 3000 })

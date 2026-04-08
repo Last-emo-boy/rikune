@@ -39,6 +39,9 @@ const debugSessionPlugin: Plugin = {
   name: 'Debug Session',
   description: 'Interactive debugging via GDB/LLDB — breakpoints, stepping, memory inspection',
   version: '1.0.0',
+  systemDeps: [
+    { type: 'binary', name: 'gdb', versionFlag: '--version', required: true, description: 'GNU Debugger', dockerDefault: '/usr/bin/gdb', dockerInstall: 'apt-get install -y gdb' },
+  ],
   check() {
     try {
       const { execSync } = require('child_process')

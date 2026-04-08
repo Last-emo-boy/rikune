@@ -24,6 +24,9 @@ const managedFakeC2Plugin: Plugin = {
     { envVar: 'FAKE_C2_TLS_CERT', description: 'Path to custom TLS certificate (auto-generated if omitted)', required: false },
     { envVar: 'FAKE_C2_TLS_KEY', description: 'Path to custom TLS private key', required: false },
   ],
+  systemDeps: [
+    { type: 'binary', name: 'python3', versionFlag: '--version', dockerDefault: '/usr/local/bin/python3', required: true, description: 'Python 3 for fake C2 server worker' },
+  ],
   register(server, deps) {
     server.registerTool(fakeC2ToolDefinition, createFakeC2Handler(deps))
     return ['managed.fake_c2']

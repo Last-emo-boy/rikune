@@ -54,6 +54,10 @@ const memoryForensicsPlugin: Plugin = {
     { envVar: 'VOLATILITY3_PATH', description: 'Path to Volatility 3 (vol3) executable', required: true },
     { envVar: 'VOL3_SYMBOL_PATH', description: 'Path to Volatility 3 symbol tables', required: false },
   ],
+  systemDeps: [
+    { type: 'binary', name: 'vol3', versionFlag: '--help', envVar: 'VOLATILITY3_PATH', required: true, description: 'Volatility 3 memory forensics framework', dockerInstall: 'pip install volatility3' },
+    { type: 'directory', name: 'vol3-symbols', target: '$VOL3_SYMBOL_PATH', envVar: 'VOL3_SYMBOL_PATH', required: false, description: 'Volatility 3 symbol tables' },
+  ],
 
   check() {
     const vol3 = getVolatilityPath()

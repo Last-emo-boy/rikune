@@ -21,6 +21,28 @@ const dockerBackendsPlugin: Plugin = {
   name: 'Docker Backends',
   description: 'Analysis tools backed by Docker containers (Rizin, RetDec, angr, Qiling, UPX, Graphviz, PANDA, Wine, YARA-X)',
   version: '1.0.0',
+  configSchema: [
+    { envVar: 'GRAPHVIZ_DOT_PATH', description: 'Path to Graphviz dot binary', required: false, defaultValue: '/usr/bin/dot' },
+    { envVar: 'RIZIN_PATH', description: 'Path to Rizin binary', required: false, defaultValue: '/opt/rizin/bin/rizin' },
+    { envVar: 'UPX_PATH', description: 'Path to UPX binary', required: false, defaultValue: '/usr/local/bin/upx' },
+    { envVar: 'RETDEC_PATH', description: 'Path to RetDec decompiler', required: false, defaultValue: '/opt/retdec/bin/retdec-decompiler' },
+    { envVar: 'ANGR_PYTHON', description: 'Python binary with angr installed', required: false, defaultValue: '/opt/angr-venv/bin/python' },
+    { envVar: 'QILING_PYTHON', description: 'Python binary with Qiling installed', required: false, defaultValue: '/opt/qiling-venv/bin/python' },
+    { envVar: 'WINE_PATH', description: 'Path to Wine binary', required: false, defaultValue: '/usr/bin/wine' },
+    { envVar: 'PANDA_PYTHON', description: 'Python binary with PANDA installed', required: false, defaultValue: '/usr/local/bin/python3' },
+    { envVar: 'YARAX_PYTHON', description: 'Python binary with YARA-X installed', required: false, defaultValue: '/usr/local/bin/python3' },
+  ],
+  systemDeps: [
+    { type: 'binary', name: 'dot (Graphviz)', target: '$GRAPHVIZ_DOT_PATH', envVar: 'GRAPHVIZ_DOT_PATH', dockerDefault: '/usr/bin/dot', required: false, description: 'Graphviz graph renderer', dockerInstall: 'apt-get install -y graphviz' },
+    { type: 'binary', name: 'rizin', target: '$RIZIN_PATH', envVar: 'RIZIN_PATH', dockerDefault: '/opt/rizin/bin/rizin', required: false, description: 'Rizin reverse engineering framework', dockerInstall: 'Download Rizin release to /opt/rizin' },
+    { type: 'binary', name: 'upx', target: '$UPX_PATH', envVar: 'UPX_PATH', dockerDefault: '/usr/local/bin/upx', required: false, description: 'UPX packer/unpacker', dockerInstall: 'Download UPX release to /usr/local/bin' },
+    { type: 'file', name: 'retdec', target: '$RETDEC_PATH', envVar: 'RETDEC_PATH', dockerDefault: '/opt/retdec/bin/retdec-decompiler', required: false, description: 'RetDec decompiler', dockerInstall: 'Download RetDec release to /opt/retdec' },
+    { type: 'python-venv', name: 'angr', target: '$ANGR_PYTHON', envVar: 'ANGR_PYTHON', dockerDefault: '/opt/angr-venv/bin/python', required: false, description: 'angr symbolic execution (venv)', dockerInstall: 'python3 -m venv /opt/angr-venv && pip install angr' },
+    { type: 'python-venv', name: 'qiling', target: '$QILING_PYTHON', envVar: 'QILING_PYTHON', dockerDefault: '/opt/qiling-venv/bin/python', required: false, description: 'Qiling emulation framework (venv)', dockerInstall: 'python3 -m venv /opt/qiling-venv && pip install qiling' },
+    { type: 'binary', name: 'wine', target: '$WINE_PATH', envVar: 'WINE_PATH', dockerDefault: '/usr/bin/wine', required: false, description: 'Wine Windows compatibility layer', dockerInstall: 'apt-get install -y wine wine64' },
+    { type: 'python', name: 'pandare', importName: 'pandare', required: false, description: 'PANDA record/replay analysis', dockerInstall: 'pip install pandare' },
+    { type: 'python', name: 'yara-x', importName: 'yara_x', required: false, description: 'YARA-X next-gen pattern matching', dockerInstall: 'pip install yara-x' },
+  ],
   register(server, deps) {
     const { workspaceManager: wm, database: db } = deps
 

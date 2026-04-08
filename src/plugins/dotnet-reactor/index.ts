@@ -30,6 +30,10 @@ const dotnetReactorPlugin: Plugin = {
   configSchema: [
     { envVar: 'REACTOR_SANDBOX_ENABLED', description: 'Allow sandbox execution for dynamic analysis (true/false)', required: false, defaultValue: 'false' },
   ],
+  systemDeps: [
+    { type: 'binary', name: 'python3', versionFlag: '--version', dockerDefault: '/usr/local/bin/python3', required: true, description: 'Python 3 for .NET Reactor analysis workers' },
+    { type: 'python', name: 'dnfile', importName: 'dnfile', required: true, description: 'Python dnfile for .NET metadata analysis', dockerInstall: 'pip install dnfile' },
+  ],
   register(server, deps) {
     server.registerTool(antiTamperToolDefinition, createAntiTamperHandler(deps))
     server.registerTool(stringDecryptToolDefinition, createStringDecryptHandler(deps))

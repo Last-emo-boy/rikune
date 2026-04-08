@@ -172,6 +172,77 @@ export interface PluginConfigField {
   defaultValue?: string
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// System Dependencies — declarative runtime requirement descriptors
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Describes a single runtime dependency a plugin requires.
+ *
+ * The plugin system uses these to:
+ *   1. Auto-generate `check()` when the plugin doesn't provide one
+ *   2. Produce a structured health report at startup
+ *   3. Validate Docker images include all necessary tools
+ *   4. Generate documentation of per-plugin requirements
+ *
+ * Example:
+ * ```ts
+ * systemDeps: [
+ *   { type: 'binary', name: 'frida', versionFlag: '--version', envVar: 'FRIDA_PATH' },
+ *   { type: 'python', name: 'dnfile', importName: 'dnfile' },
+ *   { type: 'binary', name: 'gdb', versionFlag: '--version', required: false },
+ * ]
+ * ```
+ */
+export interface PluginSystemDep {
+  /** Kind of dependency. */
+  type: 'binary' | 'python' | 'python-venv' | 'env-var' | 'directory' | 'file'
+
+  /** Human-readable name (e.g. `'frida'`, `'dnfile'`, `'Ghidra'`). */
+  name: string
+
+  /**
+   * For `binary`: the executable name or absolute path to test.
+   * For `python`: the pip package name.
+   * For `python-venv`: path to the venv's python binary.
+   * For `env-var`: the environment variable name.
+   * For `directory` / `file`: the path to check (may reference an env var via `$ENV_VAR`).
+   */
+  target?: string
+
+  /** For `python`: the importable module name if different from package name. */
+  importName?: string
+
+  /** For `binary`: flag to get version output (e.g. `'--version'`). */
+  versionFlag?: string
+
+  /** Environment variable that provides / overrides the path to this dependency. */
+  envVar?: string
+
+  /** Default path inside the Docker image (used for health reporting). */
+  dockerDefault?: string
+
+  /** Whether the dependency is required (true) or optional/nice-to-have (false). */
+  required: boolean
+
+  /** Short human-readable description shown in health reports. */
+  description?: string
+
+  /** Docker `RUN` instruction or package name that installs this dep. */
+  dockerInstall?: string
+}
+
+/**
+ * Result of validating a single system dependency at runtime.
+ */
+export interface DepCheckResult {
+  dep: PluginSystemDep
+  available: boolean
+  resolvedPath?: string
+  version?: string
+  error?: string
+}
+
 /** Lifecycle hooks a plugin can implement. */
 export interface PluginHooks {
   onBeforeToolCall?: (toolName: string, args: Record<string, unknown>) => void | Promise<void>
@@ -190,6 +261,8 @@ export interface PluginStatus {
   status: 'loaded' | 'skipped-disabled' | 'skipped-check' | 'skipped-deps' | 'error'
   tools: string[]
   configFields?: PluginConfigField[]
+  /** Results of system dependency checks (populated at load time). */
+  depChecks?: DepCheckResult[]
   error?: string
 }
 
@@ -212,6 +285,13 @@ export interface Plugin {
   dependencies?: string[]
   /** Declarative config fields the plugin expects. */
   configSchema?: PluginConfigField[]
+  /**
+   * Declarative system dependencies this plugin requires at runtime.
+   * Used for auto-check, health reporting, and Docker validation.
+   * When provided and no explicit `check()` is defined, the plugin system
+   * will auto-generate a check from these declarations.
+   */
+  systemDeps?: PluginSystemDep[]
   /** Optional lifecycle hooks. */
   hooks?: PluginHooks
   /** If true, hooks fire for ALL tool invocations, not just this plugin's tools. */

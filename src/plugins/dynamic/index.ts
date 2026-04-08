@@ -27,6 +27,9 @@ const dynamicPlugin: Plugin = {
   configSchema: [
     { envVar: 'FRIDA_PATH', description: 'Path to frida CLI', required: false },
   ],
+  systemDeps: [
+    { type: 'binary', name: 'frida', versionFlag: '--version', envVar: 'FRIDA_PATH', required: false, description: 'Frida dynamic instrumentation toolkit', dockerInstall: 'pip install frida-tools' },
+  ],
   register(server, deps) {
     server.registerTool(dynamicAutoHookToolDefinition, createDynamicAutoHookHandler(deps))
     server.registerTool(dynamicTraceAttributeToolDefinition, createDynamicTraceAttributeHandler(deps))

@@ -27,6 +27,9 @@ const crackmePlugin: Plugin = {
   configSchema: [
     { envVar: 'ANGR_AVAILABLE', description: 'Whether angr is installed for symbolic execution', required: false },
   ],
+  systemDeps: [
+    { type: 'python-venv', name: 'angr', target: '$ANGR_PYTHON', envVar: 'ANGR_PYTHON', dockerDefault: '/opt/angr-venv/bin/python', required: false, description: 'angr symbolic execution framework', dockerInstall: 'python3 -m venv /opt/angr-venv && pip install angr' },
+  ],
   check() {
     return true
   },
