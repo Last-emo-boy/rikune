@@ -9,6 +9,7 @@ import path from 'path'
 import { spawn } from 'child_process'
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../types.js'
+import { normalizeError, clamp } from '../utils/shared-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
@@ -286,17 +287,6 @@ interface DotNetReconstructDependencies {
     cwd: string,
     timeoutMs: number
   ) => Promise<BuildValidationResult>
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
-}
-
-function normalizeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-  return String(error)
 }
 
 function toPosixRelative(root: string, filePath: string): string {

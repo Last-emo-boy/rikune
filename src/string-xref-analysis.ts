@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { clamp } from './utils/shared-helpers.js'
 
 const IOC_CATEGORY_ORDER = [
   'suspicious_api',
@@ -151,10 +152,6 @@ export interface BuildEnrichedStringBundleOptions {
   maxRecords?: number
   maxHighlights?: number
   contextWindows?: unknown[]
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }
 
 function normalizeStringValue(value: string): string {

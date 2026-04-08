@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { clamp } from './utils/shared-helpers.js'
 import type { DynamicTraceSummary } from './dynamic-trace.js'
 
 const CRYPTO_FAMILY_VALUES = [
@@ -309,10 +310,6 @@ const FAMILY_CATALOG: Array<{
     apiPatterns: [/^BCrypt(Encrypt|Decrypt|GenerateSymmetricKey)/i],
   },
 ]
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value))
-}
 
 function dedupeStrings(values: string[]) {
   return Array.from(new Set(values.map((item) => item.trim()).filter((item) => item.length > 0)))

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { Analysis } from './database.js'
+import { dedupe } from './utils/shared-helpers.js'
 import {
   findBestGhidraAnalysis,
   getGhidraReadiness,
@@ -111,16 +112,7 @@ function latestAnalysisTimestamp(analysis: Analysis): number {
   return 0
 }
 
-function dedupe(values: Array<string | null | undefined>): string[] {
-  return Array.from(
-    new Set(
-      values
-        .filter((item): item is string => typeof item === 'string')
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0)
-    )
-  )
-}
+
 
 export function buildGhidraExecutionSummary(
   analyses: Analysis[]

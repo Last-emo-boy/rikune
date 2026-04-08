@@ -3,6 +3,7 @@ import type { ToolArgs, ToolDefinition, WorkerResult } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
+import { dedupe } from '../utils/shared-helpers.js'
 import {
   BinaryRoleProfileDataSchema,
   createBinaryRoleProfileHandler,
@@ -84,9 +85,6 @@ export const dllExportProfileToolDefinition: ToolDefinition = {
   outputSchema: DllExportProfileOutputSchema,
 }
 
-function dedupe(values: string[]): string[] {
-  return Array.from(new Set(values.map((item) => item.trim()).filter((item) => item.length > 0)))
-}
 
 function inferDllEntryModel(profile: z.infer<typeof BinaryRoleProfileDataSchema>): string {
   if (profile.com_profile.confidence >= 0.55 && profile.export_dispatch_profile.registration_exports.length > 0) {

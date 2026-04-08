@@ -74,7 +74,7 @@ export type {
 
 const execFileAsync = promisify(execFile)
 
-// ── Shared Zod Schemas ──────────────────────────────────────────────────
+// 鈹€鈹€ Shared Zod Schemas 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export const ArtifactRefSchema = z.object({
   id: z.string(),
@@ -99,7 +99,7 @@ export const SharedMetricsSchema = z.object({
   tool: z.string(),
 })
 
-// ── Shared Types ────────────────────────────────────────────────────────
+// 鈹€鈹€ Shared Types 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export type CommandResult = {
   stdout: string
@@ -131,7 +131,7 @@ export interface SharedBackendDependencies {
   ) => Promise<PythonJsonResult>
 }
 
-// ── Shared Utility Functions ────────────────────────────────────────────
+// 鈹€鈹€ Shared Utility Functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export function buildMetrics(startTime: number, tool: string) {
   return {
@@ -140,12 +140,8 @@ export function buildMetrics(startTime: number, tool: string) {
   }
 }
 
-export function normalizeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-  return String(error)
-}
+import { normalizeError } from '../../utils/shared-helpers.js'
+export { normalizeError }
 
 export function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-9;]*m/g, '')

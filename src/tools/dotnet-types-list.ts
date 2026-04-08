@@ -5,6 +5,7 @@
 
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
+import { normalizeError } from '../utils/shared-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
@@ -119,13 +120,6 @@ export const dotNetTypesListToolDefinition: ToolDefinition = {
 
 interface DotNetTypesListDependencies {
   metadataHandler?: (args: ToolArgs) => Promise<WorkerResult>
-}
-
-function normalizeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-  return String(error)
 }
 
 function isPublicVisibility(value: string): boolean {

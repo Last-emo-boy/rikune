@@ -3,6 +3,7 @@ import type { ToolArgs, ToolDefinition, WorkerResult } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
+import { dedupe } from '../utils/shared-helpers.js'
 import {
   BinaryRoleProfileDataSchema,
   createBinaryRoleProfileHandler,
@@ -77,9 +78,6 @@ export const comRoleProfileToolDefinition: ToolDefinition = {
   outputSchema: ComRoleProfileOutputSchema,
 }
 
-function dedupe(values: string[]): string[] {
-  return Array.from(new Set(values.map((item) => item.trim()).filter((item) => item.length > 0)))
-}
 
 function inferActivationModel(profile: z.infer<typeof BinaryRoleProfileDataSchema>): string {
   if (profile.com_profile.class_factory_exports.length > 0) {

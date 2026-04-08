@@ -1,4 +1,5 @@
 import type { DynamicTraceSummary } from './dynamic-trace.js'
+import { clamp, dedupe } from './utils/shared-helpers.js'
 
 export interface RuntimeCorrelationInput {
   functionName?: string
@@ -32,14 +33,6 @@ export interface RuntimeCorrelation {
   provenance_layers?: string[]
   latest_artifact_at?: string | null
   scope_note?: string
-}
-
-function dedupe(values: string[]): string[] {
-  return Array.from(new Set(values.map((item) => item.trim()).filter((item) => item.length > 0)))
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
 }
 
 function summarizeEvidenceSources(dynamicEvidence: DynamicTraceSummary): string[] {
