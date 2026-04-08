@@ -4,7 +4,7 @@ import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
 import { generateCacheKey } from '../cache-manager.js'
-import { clamp } from '../utils/shared-helpers.js'
+import { clamp, dedupeStrings as uniqueStrings } from '../utils/shared-helpers.js'
 import { lookupCachedResult, formatCacheWarning } from './cache-observability.js'
 import {
   BinaryRoleProfileDataSchema,
@@ -188,20 +188,6 @@ interface RustBinaryAnalyzeDependencies {
   smartRecoverHandler?: (args: ToolArgs) => Promise<WorkerResult>
   symbolsRecoverHandler?: (args: ToolArgs) => Promise<WorkerResult>
   binaryRoleHandler?: (args: ToolArgs) => Promise<WorkerResult>
-}
-
-function uniqueStrings(values: Array<string | null | undefined>): string[] {
-  const seen = new Set<string>()
-  const output: string[] = []
-  for (const value of values) {
-    const normalized = (value || '').trim()
-    if (!normalized || seen.has(normalized)) {
-      continue
-    }
-    seen.add(normalized)
-    output.push(normalized)
-  }
-  return output
 }
 
 function extractCrateNameFromCargoPath(input: string): string | null {

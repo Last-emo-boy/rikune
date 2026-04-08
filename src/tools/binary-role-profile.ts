@@ -12,7 +12,7 @@ import { createPEImportsExtractHandler } from '../plugins/pe-analysis/tools/pe-i
 import { createStringsExtractHandler } from './strings-extract.js'
 import { createRuntimeDetectHandler } from './runtime-detect.js'
 import { createPackerDetectHandler } from './packer-detect.js'
-import { clamp } from '../utils/shared-helpers.js'
+import { clamp, dedupeStrings as uniqueStrings } from '../utils/shared-helpers.js'
 import {
   inspectSampleWorkspace,
   formatMissingOriginalError,
@@ -238,23 +238,6 @@ interface BinaryRoleProfileDependencies {
   stringsHandler?: (args: ToolArgs) => Promise<WorkerResult>
   runtimeHandler?: (args: ToolArgs) => Promise<WorkerResult>
   packerHandler?: (args: ToolArgs) => Promise<WorkerResult>
-}
-
-function uniqueStrings(values: Array<string | null | undefined>) {
-  const seen = new Set<string>()
-  const output: string[] = []
-  for (const value of values) {
-    const trimmed = (value || '').trim()
-    if (!trimmed) {
-      continue
-    }
-    if (seen.has(trimmed)) {
-      continue
-    }
-    seen.add(trimmed)
-    output.push(trimmed)
-  }
-  return output
 }
 
 async function getOriginalFilename(
