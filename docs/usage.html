@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Usage Guide �?Rikune</title>
-<meta name="description" content="Rikune MCP tools usage guide �?sample ingestion, analysis workflows, and tool reference.">
+<title>Usage Guide — Rikune</title>
+<meta name="description" content="Rikune MCP tools usage guide — sample ingestion, analysis workflows, and tool reference.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -22,7 +22,7 @@
   <div class="nav__inner">
     <a href="index.html" class="nav__logo"><span class="nav__logo-icon">R</span> Rikune</a>
     <ul class="nav__links" id="navLinks">
-      <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特�?/a></li>
+      <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特性</a></li>
       <li><a href="api-reference.html">API</a></li>
       <li><a href="usage.html" class="active" data-lang-en>Usage</a><a href="usage.html" class="active" data-lang-zh>使用指南</a></li>
       <li><a href="docker.html">Docker</a></li>
@@ -31,7 +31,7 @@
     </ul>
     <div class="nav__right">
       <button class="lang-toggle" id="lang-toggle">中文</button>
-      <a href="https://github.com/Last-emo-boy/rikune" class="nav__cta" target="_blank" rel="noopener">GitHub �?/a>
+      <a href="https://github.com/Last-emo-boy/rikune" class="nav__cta" target="_blank" rel="noopener">GitHub →</a>
     </div>
     <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu"><span></span><span></span><span></span></button>
   </div>
@@ -44,7 +44,7 @@
     <h1><span data-lang-en>Usage Guide</span><span data-lang-zh>使用指南</span></h1>
     <p>
       <span data-lang-en>Learn how to ingest samples, launch analysis workflows, and use the 160+ MCP tools.</span>
-      <span data-lang-zh>了解如何导入样本、启动分析工作流以及使用 160+ MCP 工具�?/span>
+      <span data-lang-zh>了解如何导入样本、启动分析工作流以及使用 160+ MCP 工具。</span>
     </p>
   </div>
 </div>
@@ -68,7 +68,7 @@
       <h2>sample.ingest</h2>
       <p>
         <span data-lang-en>The primary entry point for all analysis. Ingest a PE binary and receive a structured triage result.</span>
-        <span data-lang-zh>所有分析的主入口。导�?PE 二进制文件并接收结构化的分诊结果�?/span>
+        <span data-lang-zh>所有分析的主入口。导入 PE 二进制文件并接收结构化的分诊结果。</span>
       </p>
 
       <h3><span data-lang-en>Parameters</span><span data-lang-zh>参数</span></h3>
@@ -77,9 +77,9 @@
           <tr><th><span data-lang-en>Parameter</span><span data-lang-zh>参数</span></th><th><span data-lang-en>Type</span><span data-lang-zh>类型</span></th><th><span data-lang-en>Required</span><span data-lang-zh>必需</span></th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th></tr>
         </thead>
         <tbody>
-          <tr><td><code>path</code></td><td>string</td><td>�?/td><td><span data-lang-en>Path to sample file</span><span data-lang-zh>样本文件路径</span></td></tr>
-          <tr><td><code>filename</code></td><td>string</td><td>�?/td><td><span data-lang-en>Original filename (auto-detected)</span><span data-lang-zh>原始文件名（自动检测）</span></td></tr>
-          <tr><td><code>source</code></td><td>string</td><td>�?/td><td><span data-lang-en>Source label (e.g. "malware_zoo")</span><span data-lang-zh>样本来源标签</span></td></tr>
+          <tr><td><code>path</code></td><td>string</td><td>✓</td><td><span data-lang-en>Path to sample file</span><span data-lang-zh>样本文件路径</span></td></tr>
+          <tr><td><code>filename</code></td><td>string</td><td>—</td><td><span data-lang-en>Original filename (auto-detected)</span><span data-lang-zh>原始文件名（自动检测）</span></td></tr>
+          <tr><td><code>source</code></td><td>string</td><td>—</td><td><span data-lang-en>Source label (e.g. "malware_zoo")</span><span data-lang-zh>样本来源标签</span></td></tr>
         </tbody>
       </table>
 
@@ -120,36 +120,36 @@
           <tr><th><span data-lang-en>Tool</span><span data-lang-zh>工具</span></th><th><span data-lang-en>Category</span><span data-lang-zh>类别</span></th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th></tr>
         </thead>
         <tbody>
-          <tr><td><code>sample.ingest</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Ingest &amp; triage a PE sample</span><span data-lang-zh>导入并分�?PE 样本</span></td></tr>
-          <tr><td><code>pe.headers</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Parse PE headers (DOS, COFF, Optional)</span><span data-lang-zh>解析 PE 头（DOS、COFF、可选头�?/span></td></tr>
-          <tr><td><code>pe.imports</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Extract import table</span><span data-lang-zh>提取导入�?/span></td></tr>
-          <tr><td><code>pe.exports</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Extract export table</span><span data-lang-zh>提取导出�?/span></td></tr>
+          <tr><td><code>sample.ingest</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Ingest &amp; triage a PE sample</span><span data-lang-zh>导入并分诊 PE 样本</span></td></tr>
+          <tr><td><code>pe.headers</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Parse PE headers (DOS, COFF, Optional)</span><span data-lang-zh>解析 PE 头（DOS、COFF、可选头）</span></td></tr>
+          <tr><td><code>pe.imports</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Extract import table</span><span data-lang-zh>提取导入表</span></td></tr>
+          <tr><td><code>pe.exports</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Extract export table</span><span data-lang-zh>提取导出表</span></td></tr>
           <tr><td><code>pe.sections</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Section table with entropy</span><span data-lang-zh>带熵值的节表</span></td></tr>
-          <tr><td><code>pe.resources</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Resource directory tree</span><span data-lang-zh>资源目录�?/span></td></tr>
+          <tr><td><code>pe.resources</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Resource directory tree</span><span data-lang-zh>资源目录树</span></td></tr>
           <tr><td><code>pe.strings</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Extract printable strings</span><span data-lang-zh>提取可打印字符串</span></td></tr>
-          <tr><td><code>detect.compiler</code></td><td><span class="badge badge--green">Detect</span></td><td><span data-lang-en>Compiler &amp; packer detection (DIE)</span><span data-lang-zh>编译器和加壳检测（DIE�?/span></td></tr>
+          <tr><td><code>detect.compiler</code></td><td><span class="badge badge--green">Detect</span></td><td><span data-lang-en>Compiler &amp; packer detection (DIE)</span><span data-lang-zh>编译器和加壳检测（DIE）</span></td></tr>
           <tr><td><code>yara.scan</code></td><td><span class="badge badge--purple">YARA</span></td><td><span data-lang-en>Scan with YARA rules</span><span data-lang-zh>使用 YARA 规则扫描</span></td></tr>
-          <tr><td><code>capa.analyze</code></td><td><span class="badge badge--amber">capa</span></td><td><span data-lang-en>Detect capabilities via capa</span><span data-lang-zh>通过 capa 检测能�?/span></td></tr>
+          <tr><td><code>capa.analyze</code></td><td><span class="badge badge--amber">capa</span></td><td><span data-lang-en>Detect capabilities via capa</span><span data-lang-zh>通过 capa 检测能力</span></td></tr>
         </tbody>
       </table>
     </section>
 
     <!-- Workflow Tools -->
     <section id="workflow" class="reveal">
-      <h2><span data-lang-en>Workflow Tools</span><span data-lang-zh>工作流工�?/span></h2>
+      <h2><span data-lang-en>Workflow Tools</span><span data-lang-zh>工作流工具</span></h2>
       <p>
         <span data-lang-en>Orchestrate multi-stage analysis with the staged pipeline.</span>
-        <span data-lang-zh>使用分阶段流水线编排多阶段分析�?/span>
+        <span data-lang-zh>使用分阶段流水线编排多阶段分析。</span>
       </p>
       <table class="doc-table">
         <thead>
           <tr><th><span data-lang-en>Tool</span><span data-lang-zh>工具</span></th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th></tr>
         </thead>
         <tbody>
-          <tr><td><code>workflow.analyze.start</code></td><td><span data-lang-en>Start a staged analysis run</span><span data-lang-zh>启动分阶段分析运�?/span></td></tr>
-          <tr><td><code>workflow.analyze.status</code></td><td><span data-lang-en>Check analysis run status</span><span data-lang-zh>检查分析运行状�?/span></td></tr>
-          <tr><td><code>workflow.summarize</code></td><td><span data-lang-en>Generate final summary report</span><span data-lang-zh>生成最终摘要报�?/span></td></tr>
-          <tr><td><code>workflow.stage.preview</code></td><td><span data-lang-en>Preview a stage before execution</span><span data-lang-zh>执行前预览阶�?/span></td></tr>
+          <tr><td><code>workflow.analyze.start</code></td><td><span data-lang-en>Start a staged analysis run</span><span data-lang-zh>启动分阶段分析运行</span></td></tr>
+          <tr><td><code>workflow.analyze.status</code></td><td><span data-lang-en>Check analysis run status</span><span data-lang-zh>检查分析运行状态</span></td></tr>
+          <tr><td><code>workflow.summarize</code></td><td><span data-lang-en>Generate final summary report</span><span data-lang-zh>生成最终摘要报告</span></td></tr>
+          <tr><td><code>workflow.stage.preview</code></td><td><span data-lang-en>Preview a stage before execution</span><span data-lang-zh>执行前预览阶段</span></td></tr>
           <tr><td><code>workflow.stage.advance</code></td><td><span data-lang-en>Advance to the next stage</span><span data-lang-zh>推进到下一阶段</span></td></tr>
         </tbody>
       </table>
@@ -163,7 +163,7 @@
           <tr><th><span data-lang-en>Tool</span><span data-lang-zh>工具</span></th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th></tr>
         </thead>
         <tbody>
-          <tr><td><code>ghidra.decompile</code></td><td><span data-lang-en>Decompile a function by name or address</span><span data-lang-zh>按名称或地址反编译函�?/span></td></tr>
+          <tr><td><code>ghidra.decompile</code></td><td><span data-lang-en>Decompile a function by name or address</span><span data-lang-zh>按名称或地址反编译函数</span></td></tr>
           <tr><td><code>ghidra.functions.list</code></td><td><span data-lang-en>List all recovered functions</span><span data-lang-zh>列出所有恢复的函数</span></td></tr>
           <tr><td><code>ghidra.xrefs</code></td><td><span data-lang-en>Cross-reference analysis</span><span data-lang-zh>交叉引用分析</span></td></tr>
           <tr><td><code>ghidra.cfg</code></td><td><span data-lang-en>Control flow graph extraction</span><span data-lang-zh>控制流图提取</span></td></tr>
@@ -174,7 +174,7 @@
 
     <!-- Dynamic Tools -->
     <section id="dynamic-tools" class="reveal">
-      <h2><span data-lang-en>Dynamic Analysis Tools</span><span data-lang-zh>动态分析工�?/span></h2>
+      <h2><span data-lang-en>Dynamic Analysis Tools</span><span data-lang-zh>动态分析工具</span></h2>
       <table class="doc-table">
         <thead>
           <tr><th><span data-lang-en>Tool</span><span data-lang-zh>工具</span></th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th></tr>
@@ -182,7 +182,7 @@
         <tbody>
           <tr><td><code>frida.hook</code></td><td><span data-lang-en>Generate Frida hook scripts</span><span data-lang-zh>生成 Frida Hook 脚本</span></td></tr>
           <tr><td><code>frida.trace</code></td><td><span data-lang-en>API tracing with Frida</span><span data-lang-zh>使用 Frida 进行 API 追踪</span></td></tr>
-          <tr><td><code>qiling.emulate</code></td><td><span data-lang-en>Emulate binary with Qiling</span><span data-lang-zh>使用 Qiling 模拟二进�?/span></td></tr>
+          <tr><td><code>qiling.emulate</code></td><td><span data-lang-en>Emulate binary with Qiling</span><span data-lang-zh>使用 Qiling 模拟二进制</span></td></tr>
           <tr><td><code>angr.symbolic</code></td><td><span data-lang-en>Symbolic execution with angr</span><span data-lang-zh>使用 angr 进行符号执行</span></td></tr>
           <tr><td><code>wine.debug</code></td><td><span data-lang-en>Debug with Wine/winedbg</span><span data-lang-zh>使用 Wine/winedbg 调试</span></td></tr>
         </tbody>
@@ -198,7 +198,7 @@
         </thead>
         <tbody>
           <tr><td><code>intel.c2.extract</code></td><td><span data-lang-en>Extract C2 indicators</span><span data-lang-zh>提取 C2 指标</span></td></tr>
-          <tr><td><code>intel.ioc.export</code></td><td><span data-lang-en>Export IOCs (STIX/OpenIOC)</span><span data-lang-zh>导出 IOC（STIX/OpenIOC�?/span></td></tr>
+          <tr><td><code>intel.ioc.export</code></td><td><span data-lang-en>Export IOCs (STIX/OpenIOC)</span><span data-lang-zh>导出 IOC（STIX/OpenIOC）</span></td></tr>
           <tr><td><code>intel.family.classify</code></td><td><span data-lang-en>Malware family classification</span><span data-lang-zh>恶意软件家族分类</span></td></tr>
           <tr><td><code>yara.generate</code></td><td><span data-lang-en>Auto-generate YARA rules</span><span data-lang-zh>自动生成 YARA 规则</span></td></tr>
           <tr><td><code>sigma.generate</code></td><td><span data-lang-en>Auto-generate Sigma rules</span><span data-lang-zh>自动生成 Sigma 规则</span></td></tr>
@@ -208,18 +208,18 @@
 
     <!-- Analysis Runtime -->
     <section id="analysis-runtime" class="reveal">
-      <h2><span data-lang-en>Analysis Runtime</span><span data-lang-zh>分析运行�?/span></h2>
-      <p><span data-lang-en>The server uses persisted staged runs as the primary orchestration model. All analysis flows through a seven-stage pipeline with run-level contracts.</span><span data-lang-zh>服务器使用持久化分阶段运行作为主要编排模型。所有分析通过七阶段流水线以运行级别契约执行�?/span></p>
+      <h2><span data-lang-en>Analysis Runtime</span><span data-lang-zh>分析运行时</span></h2>
+      <p><span data-lang-en>The server uses persisted staged runs as the primary orchestration model. All analysis flows through a seven-stage pipeline with run-level contracts.</span><span data-lang-zh>服务器使用持久化分阶段运行作为主要编排模型。所有分析通过七阶段流水线以运行级别契约执行。</span></p>
 
-      <h3><span data-lang-en>Primary Workflow</span><span data-lang-zh>主要工作�?/span></h3>
+      <h3><span data-lang-en>Primary Workflow</span><span data-lang-zh>主要工作流</span></h3>
       <div class="terminal">
         <div class="terminal__header"><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__title">workflow</span></div>
-        <pre><code>workflow.analyze.start   �?Create/reuse persisted run, execute fast_profile inline
-workflow.analyze.status  �?Primary progress surface for clients and AI agents
-workflow.analyze.promote �?Queue deeper stages without rerunning compatible work</code></pre>
+        <pre><code>workflow.analyze.start   → Create/reuse persisted run, execute fast_profile inline
+workflow.analyze.status  → Primary progress surface for clients and AI agents
+workflow.analyze.promote → Queue deeper stages without rerunning compatible work</code></pre>
       </div>
 
-      <h3><span data-lang-en>Stage Graph</span><span data-lang-zh>阶段�?/span></h3>
+      <h3><span data-lang-en>Stage Graph</span><span data-lang-zh>阶段图</span></h3>
       <table class="doc-table">
         <thead>
           <tr><th><span data-lang-en>Stage</span><span data-lang-zh>阶段</span></th><th><span data-lang-en>Backend Roles</span><span data-lang-zh>后端角色</span></th></tr>
@@ -228,15 +228,15 @@ workflow.analyze.promote �?Queue deeper stages without rerunning compatible wor
           <tr><td><code>fast_profile</code></td><td><span data-lang-en>PE leaf tools, preview strings, Rizin, YARA, YARA-X, UPX</span><span data-lang-zh>PE 叶工具、预览字符串、Rizin、YARA、YARA-X、UPX</span></td></tr>
           <tr><td><code>enrich_static</code></td><td><span data-lang-en>Full strings, FLOSS, capability triage, PE structure, crypto, Rust profile</span><span data-lang-zh>完整字符串、FLOSS、能力分类、PE 结构、加密、Rust 分析</span></td></tr>
           <tr><td><code>function_map</code></td><td><span data-lang-en>Ghidra deep attribution + bounded Rizin corroboration</span><span data-lang-zh>Ghidra 深度归因 + 有界 Rizin 校验</span></td></tr>
-          <tr><td><code>reconstruct</code></td><td><span data-lang-en>Reconstruct workflow + targeted RetDec and angr artifacts</span><span data-lang-zh>重建工作�?+ 定向 RetDec �?angr 产物</span></td></tr>
+          <tr><td><code>reconstruct</code></td><td><span data-lang-en>Reconstruct workflow + targeted RetDec and angr artifacts</span><span data-lang-zh>重建工作流 + 定向 RetDec 和 angr 产物</span></td></tr>
           <tr><td><code>dynamic_plan</code></td><td><span data-lang-en>Readiness probes, breakpoint planning, Qiling, PANDA</span><span data-lang-zh>就绪探测、断点规划、Qiling、PANDA</span></td></tr>
-          <tr><td><code>dynamic_execute</code></td><td><span data-lang-en>Safe simulation first, approval-gated execution paths</span><span data-lang-zh>安全模拟优先、审批门控执行路�?/span></td></tr>
+          <tr><td><code>dynamic_execute</code></td><td><span data-lang-en>Safe simulation first, approval-gated execution paths</span><span data-lang-zh>安全模拟优先、审批门控执行路径</span></td></tr>
           <tr><td><code>summarize</code></td><td><span data-lang-en>Persisted summary digests and report views</span><span data-lang-zh>持久化摘要和报告视图</span></td></tr>
         </tbody>
       </table>
 
       <h3><span data-lang-en>Worker Pools &amp; Budget Lanes</span><span data-lang-zh>工作池与预算通道</span></h3>
-      <p><span data-lang-en>The runtime separates fast reuse from deep isolation. Execution is admitted through explicit budget lanes:</span><span data-lang-zh>运行时将快速复用与深度隔离分离。执行通过显式预算通道准入�?/span></p>
+      <p><span data-lang-en>The runtime separates fast reuse from deep isolation. Execution is admitted through explicit budget lanes:</span><span data-lang-zh>运行时将快速复用与深度隔离分离。执行通过显式预算通道准入：</span></p>
       <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 16px 0;">
         <div class="feature-card" style="padding:12px;text-align:center"><code>preview-static</code></div>
         <div class="feature-card" style="padding:12px;text-align:center"><code>enrich-static</code></div>
@@ -261,39 +261,39 @@ workflow.analyze.promote �?Queue deeper stages without rerunning compatible wor
     <!-- Coverage Boundaries -->
     <section id="coverage" class="reveal">
       <h2><span data-lang-en>Analysis Coverage Boundaries</span><span data-lang-zh>分析覆盖边界</span></h2>
-      <p><span data-lang-en>Large or expensive samples may not receive the same depth. The server reports boundaries explicitly instead of forcing clients to infer from warnings.</span><span data-lang-zh>大型或高开销样本可能不会获得相同的分析深度。服务器显式报告边界，而非迫使客户端从警告中推断�?/span></p>
+      <p><span data-lang-en>Large or expensive samples may not receive the same depth. The server reports boundaries explicitly instead of forcing clients to infer from warnings.</span><span data-lang-zh>大型或高开销样本可能不会获得相同的分析深度。服务器显式报告边界，而非迫使客户端从警告中推断。</span></p>
 
       <h3><span data-lang-en>Coverage Levels</span><span data-lang-zh>覆盖级别</span></h3>
       <table class="doc-table">
         <thead><tr><th><span data-lang-en>Level</span><span data-lang-zh>级别</span></th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th></tr></thead>
         <tbody>
-          <tr><td><code>quick</code></td><td><span data-lang-en>First-pass profile only</span><span data-lang-zh>仅首次画�?/span></td></tr>
-          <tr><td><code>static_core</code></td><td><span data-lang-en>Static evidence + bounded enrichment</span><span data-lang-zh>静态证�?+ 有界增强</span></td></tr>
-          <tr><td><code>deep_static</code></td><td><span data-lang-en>Deep static stage completed</span><span data-lang-zh>深度静态阶段完�?/span></td></tr>
+          <tr><td><code>quick</code></td><td><span data-lang-en>First-pass profile only</span><span data-lang-zh>仅首次画像</span></td></tr>
+          <tr><td><code>static_core</code></td><td><span data-lang-en>Static evidence + bounded enrichment</span><span data-lang-zh>静态证据 + 有界增强</span></td></tr>
+          <tr><td><code>deep_static</code></td><td><span data-lang-en>Deep static stage completed</span><span data-lang-zh>深度静态阶段完成</span></td></tr>
           <tr><td><code>reconstruction</code></td><td><span data-lang-en>Reconstruction/export boundary reached</span><span data-lang-zh>重建/导出边界已达</span></td></tr>
-          <tr><td><code>dynamic_verified</code></td><td><span data-lang-en>Dynamic verification boundary reached</span><span data-lang-zh>动态验证边界已�?/span></td></tr>
+          <tr><td><code>dynamic_verified</code></td><td><span data-lang-en>Dynamic verification boundary reached</span><span data-lang-zh>动态验证边界已达</span></td></tr>
         </tbody>
       </table>
 
-      <h3><span data-lang-en>Completion States</span><span data-lang-zh>完成状�?/span></h3>
+      <h3><span data-lang-en>Completion States</span><span data-lang-zh>完成状态</span></h3>
       <table class="doc-table">
-        <thead><tr><th><span data-lang-en>State</span><span data-lang-zh>状�?/span></th><th><span data-lang-en>Meaning</span><span data-lang-zh>含义</span></th></tr></thead>
+        <thead><tr><th><span data-lang-en>State</span><span data-lang-zh>状态</span></th><th><span data-lang-en>Meaning</span><span data-lang-zh>含义</span></th></tr></thead>
         <tbody>
           <tr><td><code>queued</code></td><td><span data-lang-en>Work has not completed yet</span><span data-lang-zh>工作尚未完成</span></td></tr>
-          <tr><td><code>bounded</code></td><td><span data-lang-en>Intentionally partial result</span><span data-lang-zh>有意的部分结�?/span></td></tr>
+          <tr><td><code>bounded</code></td><td><span data-lang-en>Intentionally partial result</span><span data-lang-zh>有意的部分结果</span></td></tr>
           <tr><td><code>degraded</code></td><td><span data-lang-en>A deeper stage failed or fell back</span><span data-lang-zh>更深阶段失败或回退</span></td></tr>
-          <tr><td><code>completed</code></td><td><span data-lang-en>Workflow reached its intended boundary</span><span data-lang-zh>工作流达到预期边�?/span></td></tr>
-          <tr><td><code>partial</code></td><td><span data-lang-en>Only a subset of expected evidence available</span><span data-lang-zh>仅有预期证据的子集可�?/span></td></tr>
+          <tr><td><code>completed</code></td><td><span data-lang-en>Workflow reached its intended boundary</span><span data-lang-zh>工作流达到预期边界</span></td></tr>
+          <tr><td><code>partial</code></td><td><span data-lang-en>Only a subset of expected evidence available</span><span data-lang-zh>仅有预期证据的子集可用</span></td></tr>
         </tbody>
       </table>
 
       <h3><span data-lang-en>Key Response Fields</span><span data-lang-zh>关键响应字段</span></h3>
       <table class="doc-table">
-        <thead><tr><th><span data-lang-en>Field</span><span data-lang-zh>字段</span></th><th><span data-lang-en>Purpose</span><span data-lang-zh>用�?/span></th></tr></thead>
+        <thead><tr><th><span data-lang-en>Field</span><span data-lang-zh>字段</span></th><th><span data-lang-en>Purpose</span><span data-lang-zh>用途</span></th></tr></thead>
         <tbody>
-          <tr><td><code>coverage_gaps</code></td><td><span data-lang-en>Names missing, skipped, blocked, or degraded domains</span><span data-lang-zh>列出缺失、跳过、阻塞或降级的领�?/span></td></tr>
+          <tr><td><code>coverage_gaps</code></td><td><span data-lang-en>Names missing, skipped, blocked, or degraded domains</span><span data-lang-zh>列出缺失、跳过、阻塞或降级的领域</span></td></tr>
           <tr><td><code>known_findings</code></td><td><span data-lang-en>Strongest evidence-backed conclusions within current boundary</span><span data-lang-zh>当前边界内最强的证据支持结论</span></td></tr>
-          <tr><td><code>suspected_findings</code></td><td><span data-lang-en>Plausible but heuristic conclusions</span><span data-lang-zh>合理但启发式的结�?/span></td></tr>
+          <tr><td><code>suspected_findings</code></td><td><span data-lang-en>Plausible but heuristic conclusions</span><span data-lang-zh>合理但启发式的结论</span></td></tr>
           <tr><td><code>unverified_areas</code></td><td><span data-lang-en>Domains not actually covered</span><span data-lang-zh>未实际覆盖的领域</span></td></tr>
           <tr><td><code>upgrade_paths</code></td><td><span data-lang-en>Machine-readable next steps to close gaps</span><span data-lang-zh>机器可读的下一步操作以弥合差距</span></td></tr>
         </tbody>
@@ -307,7 +307,7 @@ workflow.analyze.promote �?Queue deeper stages without rerunning compatible wor
           <tr><td><code>ghidra_analysis</code></td><td><code>ghidra.analyze</code> / <code>analysis.context.link</code></td></tr>
           <tr><td><code>reconstruction_export</code></td><td><code>workflow.reconstruct</code></td></tr>
           <tr><td><code>summary_synthesis</code></td><td><code>workflow.summarize</code></td></tr>
-          <tr><td><code>dynamic_behavior</code></td><td><code>dynamic.dependencies</code> �?<code>sandbox.execute</code></td></tr>
+          <tr><td><code>dynamic_behavior</code></td><td><code>dynamic.dependencies</code> → <code>sandbox.execute</code></td></tr>
         </tbody>
       </table>
     </section>
@@ -315,7 +315,7 @@ workflow.analyze.promote �?Queue deeper stages without rerunning compatible wor
     <!-- Async Job Pattern -->
     <section id="async-jobs" class="reveal">
       <h2><span data-lang-en>Async Job Pattern</span><span data-lang-zh>异步任务模式</span></h2>
-      <p><span data-lang-en>The staged runtime uses <code>workflow.analyze.*</code> as the primary orchestration contract. <code>task.status</code> is available for low-level job inspection but is not the main workflow surface.</span><span data-lang-zh>分阶段运行时使用 <code>workflow.analyze.*</code> 作为主要编排契约�?code>task.status</code> 可用于底层任务检查但不是主要工作流界面�?/span></p>
+      <p><span data-lang-en>The staged runtime uses <code>workflow.analyze.*</code> as the primary orchestration contract. <code>task.status</code> is available for low-level job inspection but is not the main workflow surface.</span><span data-lang-zh>分阶段运行时使用 <code>workflow.analyze.*</code> 作为主要编排契约。<code>task.status</code> 可用于底层任务检查但不是主要工作流界面。</span></p>
 
       <h3><span data-lang-en>Preferred Pattern</span><span data-lang-zh>推荐模式</span></h3>
       <div class="terminal">
@@ -325,20 +325,20 @@ workflow.analyze.promote(run_id, through_stage='function_map')
 workflow.analyze.status(run_id)</code></pre>
       </div>
 
-      <h3><span data-lang-en>Tools That Queue Work</span><span data-lang-zh>排队工作的工�?/span></h3>
+      <h3><span data-lang-en>Tools That Queue Work</span><span data-lang-zh>排队工作的工具</span></h3>
       <table class="doc-table">
         <thead><tr><th><span data-lang-en>Tool</span><span data-lang-zh>工具</span></th><th><span data-lang-en>Notes</span><span data-lang-zh>说明</span></th></tr></thead>
         <tbody>
           <tr><td><code>workflow.analyze.promote</code></td><td><span data-lang-en>Queues deeper stages</span><span data-lang-zh>排队更深阶段</span></td></tr>
           <tr><td><code>ghidra.analyze</code></td><td><span data-lang-en>Deep attribution backend</span><span data-lang-zh>深度归因后端</span></td></tr>
           <tr><td><code>workflow.deep_static</code></td><td><span data-lang-en>Full static pipeline</span><span data-lang-zh>完整静态流水线</span></td></tr>
-          <tr><td><code>workflow.reconstruct</code></td><td><span data-lang-en>Source-like code export</span><span data-lang-zh>类源码导�?/span></td></tr>
+          <tr><td><code>workflow.reconstruct</code></td><td><span data-lang-en>Source-like code export</span><span data-lang-zh>类源码导出</span></td></tr>
           <tr><td><code>strings.extract(mode='full')</code></td><td><span data-lang-en>May return bounded preview depending on size</span><span data-lang-zh>可能根据大小返回有界预览</span></td></tr>
         </tbody>
       </table>
 
       <h3><span data-lang-en>Polling Guidance</span><span data-lang-zh>轮询指南</span></h3>
-      <p><span data-lang-en>When a stage is queued: (1) prefer <code>workflow.analyze.status(run_id)</code>; (2) only use <code>task.status(job_id)</code> for raw job details; (3) respect <code>polling_guidance</code> wait recommendations.</span><span data-lang-zh>当阶段排队时�?1) 优先使用 <code>workflow.analyze.status(run_id)</code>�?2) 仅在需要原始任务详情时�?<code>task.status(job_id)</code>�?3) 遵守 <code>polling_guidance</code> 等待建议�?/span></p>
+      <p><span data-lang-en>When a stage is queued: (1) prefer <code>workflow.analyze.status(run_id)</code>; (2) only use <code>task.status(job_id)</code> for raw job details; (3) respect <code>polling_guidance</code> wait recommendations.</span><span data-lang-zh>当阶段排队时：(1) 优先使用 <code>workflow.analyze.status(run_id)</code>；(2) 仅在需要原始任务详情时用 <code>task.status(job_id)</code>；(3) 遵守 <code>polling_guidance</code> 等待建议。</span></p>
     </section>
 
   </div>

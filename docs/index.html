@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rikune �?MCP Server for Windows Reverse Engineering</title>
+<title>Rikune — MCP Server for Windows Reverse Engineering</title>
 <meta name="description" content="An MCP server exposing PE triage, Ghidra-backed inspection, DLL/COM profiling, runtime evidence ingestion, and LLM-assisted review as reusable tools for any tool-calling LLM.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -196,16 +196,16 @@
       Rikune
     </a>
     <ul class="nav__links" id="navLinks">
-      <li><a href="#features" data-lang-en>Features</a><a href="#features" data-lang-zh>功能特�?/a></li>
+      <li><a href="#features" data-lang-en>Features</a><a href="#features" data-lang-zh>功能特性</a></li>
       <li><a href="#architecture" data-lang-en>Architecture</a><a href="#architecture" data-lang-zh>架构</a></li>
-      <li><a href="#pipeline" data-lang-en>Pipeline</a><a href="#pipeline" data-lang-zh>分析流水�?/a></li>
+      <li><a href="#pipeline" data-lang-en>Pipeline</a><a href="#pipeline" data-lang-zh>分析流水线</a></li>
       <li><a href="#install" data-lang-en>Install</a><a href="#install" data-lang-zh>安装</a></li>
       <li><a href="api-reference.html">API</a></li>
       <li><a href="usage.html" data-lang-en>Usage</a><a href="usage.html" data-lang-zh>使用指南</a></li>
     </ul>
     <div class="nav__right">
       <button class="lang-toggle" id="lang-toggle">中文</button>
-      <a href="https://github.com/Last-emo-boy/rikune" class="nav__cta" target="_blank" rel="noopener">GitHub �?/a>
+      <a href="https://github.com/Last-emo-boy/rikune" class="nav__cta" target="_blank" rel="noopener">GitHub →</a>
     </div>
     <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu">
       <span></span><span></span><span></span>
@@ -222,24 +222,24 @@
     </div>
     <h1>
       <span data-lang-en>Reverse Engineering<br>Meets AI Agents</span>
-      <span data-lang-zh>逆向工程<br>遇见 AI 智能�?/span>
+      <span data-lang-zh>逆向工程<br>遇见 AI 智能体</span>
     </h1>
     <p class="hero__sub">
       <span data-lang-en>An MCP server that exposes PE triage, Ghidra-backed decompilation,
       DLL/COM profiling, runtime evidence, and LLM-assisted analysis as
       reusable tools for any tool-calling LLM.</span>
-      <span data-lang-zh>一�?MCP 服务器，�?PE 分诊、Ghidra 反编译、DLL/COM 分析、运行时证据采集
-      �?LLM 辅助审查作为可复用工具，提供给任何支持工具调用的大语言模型�?/span>
+      <span data-lang-zh>一个 MCP 服务器，将 PE 分诊、Ghidra 反编译、DLL/COM 分析、运行时证据采集
+      和 LLM 辅助审查作为可复用工具，提供给任何支持工具调用的大语言模型。</span>
     </p>
     <div class="hero__actions">
       <a href="#install" class="btn btn--primary">
-        <span>�?/span>
+        <span>⚡</span>
         <span data-lang-en>Quick Start</span>
-        <span data-lang-zh>快速开�?/span>
+        <span data-lang-zh>快速开始</span>
       </a>
       <a href="#features" class="btn btn--ghost">
-        <span data-lang-en>Explore �?/span>
-        <span data-lang-zh>探索 �?/span>
+        <span data-lang-en>Explore →</span>
+        <span data-lang-zh>探索 →</span>
       </a>
     </div>
     <div class="hero__terminal">
@@ -251,15 +251,15 @@
           <span class="terminal__title">PowerShell</span>
         </div>
         <div class="terminal__body"><span class="comment"># Ingest a PE sample and run staged analysis</span>
-<span class="prompt">�?/span> <span class="cmd">sample.ingest</span> <span class="flag">--path</span> "C:\samples\target.exe"
-<span class="output">  �?sha256:a1b2c3�? ingested  (PE32+, 1.2 MB)</span>
+<span class="prompt">❯</span> <span class="cmd">sample.ingest</span> <span class="flag">--path</span> "C:\samples\target.exe"
+<span class="output">  ✓ sha256:a1b2c3…  ingested  (PE32+, 1.2 MB)</span>
 
-<span class="prompt">�?/span> <span class="cmd">workflow.analyze.start</span> <span class="flag">--sample_id</span> sha256:a1b2c3�?<span class="flag">--goal</span> reverse
-<span class="output">  �?run_id: run_0042  fast_profile completed
-  �?enrich_static �?function_map �?reconstruct  queued</span>
+<span class="prompt">❯</span> <span class="cmd">workflow.analyze.start</span> <span class="flag">--sample_id</span> sha256:a1b2c3… <span class="flag">--goal</span> reverse
+<span class="output">  ✓ run_id: run_0042  fast_profile completed
+  ⧗ enrich_static → function_map → reconstruct  queued</span>
 
-<span class="prompt">�?/span> <span class="cmd">workflow.summarize</span> <span class="flag">--sample_id</span> sha256:a1b2c3�?
-<span class="output">  �?148 functions recovered · 12 crypto APIs flagged
+<span class="prompt">❯</span> <span class="cmd">workflow.summarize</span> <span class="flag">--sample_id</span> sha256:a1b2c3…
+<span class="output">  ✓ 148 functions recovered · 12 crypto APIs flagged
     3 C2 indicators extracted · confidence 0.87</span></div>
       </div>
     </div>
@@ -297,24 +297,24 @@
       <h2><span data-lang-en>Built for Depth</span><span data-lang-zh>为深度分析而生</span></h2>
       <p>
         <span data-lang-en>Every tool is designed to be composable, observable, and reusable by any MCP-compatible AI agent.</span>
-        <span data-lang-zh>每一个工具都被设计为可组合、可观测、可复用的，适配任何 MCP 兼容�?AI 智能体�?/span>
+        <span data-lang-zh>每一个工具都被设计为可组合、可观测、可复用的，适配任何 MCP 兼容的 AI 智能体。</span>
       </p>
     </div>
     <div class="features__grid">
       <div class="feature-card reveal">
         <div class="feature-card__icon">🔬</div>
-        <h3><span data-lang-en>Universal PE Coverage</span><span data-lang-zh>全格�?PE 覆盖</span></h3>
+        <h3><span data-lang-en>Universal PE Coverage</span><span data-lang-zh>全格式 PE 覆盖</span></h3>
         <p>
-          <span data-lang-en>EXE, DLL, COM libraries, Rust binaries, .NET assemblies, APK/DEX �?all with dedicated profiling paths and automatic format detection.</span>
-          <span data-lang-zh>EXE、DLL、COM 库、Rust 二进制�?NET 程序集、APK/DEX �?全部支持专用分析路径和自动格式检测�?/span>
+          <span data-lang-en>EXE, DLL, COM libraries, Rust binaries, .NET assemblies, APK/DEX — all with dedicated profiling paths and automatic format detection.</span>
+          <span data-lang-zh>EXE、DLL、COM 库、Rust 二进制、.NET 程序集、APK/DEX — 全部支持专用分析路径和自动格式检测。</span>
         </p>
       </div>
       <div class="feature-card reveal">
         <div class="feature-card__icon feature-card__icon--purple">🧠</div>
         <h3><span data-lang-en>LLM-Assisted Review</span><span data-lang-zh>LLM 辅助审查</span></h3>
         <p>
-          <span data-lang-en>Function naming, explanation, and module reconstruction review exposed as structured MCP flows �?not ad-hoc prompt chains.</span>
-          <span data-lang-zh>函数命名、解释和模块重建审查作为结构�?MCP 流程暴露 �?而不是临时的提示链�?/span>
+          <span data-lang-en>Function naming, explanation, and module reconstruction review exposed as structured MCP flows — not ad-hoc prompt chains.</span>
+          <span data-lang-zh>函数命名、解释和模块重建审查作为结构化 MCP 流程暴露 — 而不是临时的提示链。</span>
         </p>
       </div>
       <div class="feature-card reveal">
@@ -322,31 +322,31 @@
         <h3><span data-lang-en>Staged Pipeline</span><span data-lang-zh>分阶段流水线</span></h3>
         <p>
           <span data-lang-en>Seven analysis stages with preview-first contracts, nonblocking execution, and persisted run state. No more MCP timeouts on large samples.</span>
-          <span data-lang-zh>七个分析阶段，预览优先，非阻塞执行，持久化运行状态。大样本不再超时�?/span>
+          <span data-lang-zh>七个分析阶段，预览优先，非阻塞执行，持久化运行状态。大样本不再超时。</span>
         </p>
       </div>
       <div class="feature-card reveal">
-        <div class="feature-card__icon feature-card__icon--pink">🛡�?/div>
+        <div class="feature-card__icon feature-card__icon--pink">🛡️</div>
         <h3><span data-lang-en>Malware Intelligence</span><span data-lang-zh>恶意软件情报</span></h3>
         <p>
-          <span data-lang-en>C2 extraction, family classification, config recovery, YARA/Sigma rule generation, and IOC export �?all from static and dynamic evidence.</span>
-          <span data-lang-zh>C2 提取、家族分类、配置恢复、YARA/Sigma 规则生成�?IOC 导出 �?全部基于静态和动态证据�?/span>
+          <span data-lang-en>C2 extraction, family classification, config recovery, YARA/Sigma rule generation, and IOC export — all from static and dynamic evidence.</span>
+          <span data-lang-zh>C2 提取、家族分类、配置恢复、YARA/Sigma 规则生成和 IOC 导出 — 全部基于静态和动态证据。</span>
         </p>
       </div>
       <div class="feature-card reveal">
-        <div class="feature-card__icon feature-card__icon--amber">�?/div>
+        <div class="feature-card__icon feature-card__icon--amber">⚡</div>
         <h3><span data-lang-en>Recover-First Design</span><span data-lang-zh>恢复优先设计</span></h3>
         <p>
           <span data-lang-en>When Ghidra extraction fails, the server falls back to .pdata parsing, boundary recovery, symbol recovery, and imported function definitions.</span>
-          <span data-lang-zh>�?Ghidra 提取失败时，服务器会退回到 .pdata 解析、边界恢复、符号恢复和导入函数定义�?/span>
+          <span data-lang-zh>当 Ghidra 提取失败时，服务器会退回到 .pdata 解析、边界恢复、符号恢复和导入函数定义。</span>
         </p>
       </div>
       <div class="feature-card reveal">
         <div class="feature-card__icon">🐳</div>
         <h3><span data-lang-en>Full Docker Image</span><span data-lang-zh>全栈 Docker 镜像</span></h3>
         <p>
-          <span data-lang-en>Ghidra, Rizin, YARA-X, UPX, Wine, Frida, Qiling, angr, PANDA, RetDec, capa, DIE, FLOSS �?everything bundled for instant deployment.</span>
-          <span data-lang-zh>Ghidra、Rizin、YARA-X、UPX、Wine、Frida、Qiling、angr、PANDA、RetDec、capa、DIE、FLOSS �?一键部署�?/span>
+          <span data-lang-en>Ghidra, Rizin, YARA-X, UPX, Wine, Frida, Qiling, angr, PANDA, RetDec, capa, DIE, FLOSS — everything bundled for instant deployment.</span>
+          <span data-lang-zh>Ghidra、Rizin、YARA-X、UPX、Wine、Frida、Qiling、angr、PANDA、RetDec、capa、DIE、FLOSS — 一键部署。</span>
         </p>
       </div>
     </div>
@@ -359,7 +359,7 @@
     <h2 class="reveal"><span data-lang-en>Architecture</span><span data-lang-zh>系统架构</span></h2>
     <p class="arch__sub reveal">
       <span data-lang-en>Layered design from MCP transport to native tooling, with observable intermediaries at every level.</span>
-      <span data-lang-zh>�?MCP 传输到原生工具的分层设计，每一层都具备可观测性�?/span>
+      <span data-lang-zh>从 MCP 传输到原生工具的分层设计，每一层都具备可观测性。</span>
     </p>
     <div class="arch__diagram reveal">
       <div class="arch__layer">
@@ -371,7 +371,7 @@
           <span class="arch__chip">Any MCP Client</span>
         </div>
       </div>
-      <div class="arch__arrow">�?/div>
+      <div class="arch__arrow">↕</div>
       <div class="arch__layer">
         <span class="arch__layer-title">Rikune MCP Server</span>
         <div class="arch__items">
@@ -385,7 +385,7 @@
           <span class="arch__chip">Web Dashboard</span>
         </div>
       </div>
-      <div class="arch__arrow">�?/div>
+      <div class="arch__arrow">↕</div>
       <div class="arch__layer">
         <span class="arch__layer-title">Analysis Backends</span>
         <div class="arch__items">
@@ -405,7 +405,7 @@
           <span class="arch__chip">Graphviz</span>
         </div>
       </div>
-      <div class="arch__arrow">�?/div>
+      <div class="arch__arrow">↕</div>
       <div class="arch__layer">
         <span class="arch__layer-title">Storage &amp; State</span>
         <div class="arch__items">
@@ -425,14 +425,14 @@
     <h2 class="reveal"><span data-lang-en>Staged Analysis Pipeline</span><span data-lang-zh>分阶段分析流水线</span></h2>
     <p class="pipeline__sub reveal">
       <span data-lang-en>Nonblocking execution with seven stages. Preview-first, queue-friendly, no timeouts.</span>
-      <span data-lang-zh>七阶段非阻塞执行。预览优先，队列友好，无超时�?/span>
+      <span data-lang-zh>七阶段非阻塞执行。预览优先，队列友好，无超时。</span>
     </p>
     <div class="pipeline__timeline reveal">
       <div class="pipeline__item">
         <div class="pipeline__node"></div>
         <div class="pipeline__card">
           <div class="pipeline__stage-num">01</div>
-          <div class="pipeline__stage-name"><span data-lang-en>Fast Profile</span><span data-lang-zh>快速画�?/span></div>
+          <div class="pipeline__stage-name"><span data-lang-en>Fast Profile</span><span data-lang-zh>快速画像</span></div>
           <div class="pipeline__stage-desc"><span data-lang-en>PE headers, imports, heuristics</span><span data-lang-zh>PE 头、导入表、启发式</span></div>
         </div>
       </div>
@@ -440,7 +440,7 @@
         <div class="pipeline__node"></div>
         <div class="pipeline__card">
           <div class="pipeline__stage-num">02</div>
-          <div class="pipeline__stage-name"><span data-lang-en>Enrich Static</span><span data-lang-zh>静态增�?/span></div>
+          <div class="pipeline__stage-name"><span data-lang-en>Enrich Static</span><span data-lang-zh>静态增强</span></div>
           <div class="pipeline__stage-desc"><span data-lang-en>capa, strings, entropy, YARA</span><span data-lang-zh>capa、字符串、熵值、YARA</span></div>
         </div>
       </div>
@@ -449,7 +449,7 @@
         <div class="pipeline__card">
           <div class="pipeline__stage-num">03</div>
           <div class="pipeline__stage-name"><span data-lang-en>Function Map</span><span data-lang-zh>函数映射</span></div>
-          <div class="pipeline__stage-desc"><span data-lang-en>Ghidra decompile + recovery</span><span data-lang-zh>Ghidra 反编�?+ 恢复</span></div>
+          <div class="pipeline__stage-desc"><span data-lang-en>Ghidra decompile + recovery</span><span data-lang-zh>Ghidra 反编译 + 恢复</span></div>
         </div>
       </div>
       <div class="pipeline__item">
@@ -457,23 +457,23 @@
         <div class="pipeline__card">
           <div class="pipeline__stage-num">04</div>
           <div class="pipeline__stage-name"><span data-lang-en>Reconstruct</span><span data-lang-zh>重建</span></div>
-          <div class="pipeline__stage-desc"><span data-lang-en>Source-like code export</span><span data-lang-zh>类源码导�?/span></div>
+          <div class="pipeline__stage-desc"><span data-lang-en>Source-like code export</span><span data-lang-zh>类源码导出</span></div>
         </div>
       </div>
       <div class="pipeline__item">
         <div class="pipeline__node"></div>
         <div class="pipeline__card">
           <div class="pipeline__stage-num">05</div>
-          <div class="pipeline__stage-name"><span data-lang-en>Dynamic Plan</span><span data-lang-zh>动态规�?/span></div>
-          <div class="pipeline__stage-desc"><span data-lang-en>Hook scripts, breakpoints</span><span data-lang-zh>Hook 脚本、断�?/span></div>
+          <div class="pipeline__stage-name"><span data-lang-en>Dynamic Plan</span><span data-lang-zh>动态规划</span></div>
+          <div class="pipeline__stage-desc"><span data-lang-en>Hook scripts, breakpoints</span><span data-lang-zh>Hook 脚本、断点</span></div>
         </div>
       </div>
       <div class="pipeline__item">
         <div class="pipeline__node"></div>
         <div class="pipeline__card">
           <div class="pipeline__stage-num">06</div>
-          <div class="pipeline__stage-name"><span data-lang-en>Dynamic Exec</span><span data-lang-zh>动态执�?/span></div>
-          <div class="pipeline__stage-desc"><span data-lang-en>Traces, memory, sandbox</span><span data-lang-zh>追踪、内存、沙�?/span></div>
+          <div class="pipeline__stage-name"><span data-lang-en>Dynamic Exec</span><span data-lang-zh>动态执行</span></div>
+          <div class="pipeline__stage-desc"><span data-lang-en>Traces, memory, sandbox</span><span data-lang-zh>追踪、内存、沙箱</span></div>
         </div>
       </div>
       <div class="pipeline__item">
@@ -501,7 +501,7 @@
       <div class="stack__item"><span class="stack__item-icon">🐼</span> PANDA</div>
       <div class="stack__item"><span class="stack__item-icon">🪝</span> Frida</div>
       <div class="stack__item"><span class="stack__item-icon">🍷</span> Wine</div>
-      <div class="stack__item"><span class="stack__item-icon">🛡�?/span> YARA-X</div>
+      <div class="stack__item"><span class="stack__item-icon">🛡️</span> YARA-X</div>
       <div class="stack__item"><span class="stack__item-icon">📦</span> UPX</div>
       <div class="stack__item"><span class="stack__item-icon">🔍</span> capa</div>
       <div class="stack__item"><span class="stack__item-icon">🧬</span> FLOSS</div>
@@ -514,10 +514,10 @@
 <!-- Install -->
 <section class="section" id="install">
   <div class="container install">
-    <h2 class="reveal"><span data-lang-en>Get Started</span><span data-lang-zh>开始使�?/span></h2>
+    <h2 class="reveal"><span data-lang-en>Get Started</span><span data-lang-zh>开始使用</span></h2>
     <p class="install__sub reveal">
       <span data-lang-en>Choose your MCP client and start analyzing binaries in minutes.</span>
-      <span data-lang-zh>选择你的 MCP 客户端，几分钟内开始分析二进制文件�?/span>
+      <span data-lang-zh>选择你的 MCP 客户端，几分钟内开始分析二进制文件。</span>
     </p>
     <div class="install__tabs reveal">
       <button class="install__tab active" data-tab="claude">Claude Desktop</button>
@@ -601,18 +601,18 @@ npx -y rikune</pre>
 <!-- CTA -->
 <section class="cta-section">
   <div class="container reveal">
-    <h2><span data-lang-en>Ready to Reverse?</span><span data-lang-zh>准备好逆向了吗�?/span></h2>
+    <h2><span data-lang-en>Ready to Reverse?</span><span data-lang-zh>准备好逆向了吗？</span></h2>
     <p>
       <span data-lang-en>Start analyzing Windows binaries with the power of AI agents and professional reverse engineering tools.</span>
-      <span data-lang-zh>借助 AI 智能体和专业逆向工程工具的力量，开始分�?Windows 二进制文件�?/span>
+      <span data-lang-zh>借助 AI 智能体和专业逆向工程工具的力量，开始分析 Windows 二进制文件。</span>
     </p>
     <div class="hero__actions">
       <a href="https://github.com/Last-emo-boy/rikune" class="btn btn--primary" target="_blank" rel="noopener">
-        <span>�?/span> Star on GitHub
+        <span>⭐</span> Star on GitHub
       </a>
       <a href="usage.html" class="btn btn--ghost">
-        <span data-lang-en>Read the Docs �?/span>
-        <span data-lang-zh>阅读文档 �?/span>
+        <span data-lang-en>Read the Docs →</span>
+        <span data-lang-zh>阅读文档 →</span>
       </a>
     </div>
   </div>
