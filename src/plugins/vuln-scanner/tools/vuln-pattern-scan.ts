@@ -1,5 +1,5 @@
 /**
- * vuln.pattern.scan MCP tool �?scan decompiled functions for CWE vulnerability patterns.
+ * vuln.pattern.scan MCP tool — scan decompiled functions for CWE vulnerability patterns.
  */
 
 import { z } from 'zod'

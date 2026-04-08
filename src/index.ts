@@ -1,7 +1,7 @@
 ﻿/**
  * Binary Analysis MCP Server
  * Universal reverse-engineering tool surface for PE, ELF, Mach-O, APK/DEX,
- * .NET, and more 鈥?exposed as reusable MCP tools for any tool-calling LLM.
+ * .NET, and more — exposed as reusable MCP tools for any tool-calling LLM.
  * Entry point
  */
 
