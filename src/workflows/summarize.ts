@@ -29,9 +29,8 @@ import {
   buildFinalStageDigest,
   buildStaticStageDigest,
   buildTriageStageDigest,
-  dedupeArtifactRefs,
-  dedupeStrings,
 } from '../summary-digests.js'
+import { dedupeArtifactRefs, dedupeStrings } from '../utils/shared-helpers.js'
 import { GhidraExecutionSummarySchema } from '../ghidra-execution-summary.js'
 import {
   CoverageEnvelopeSchema,

@@ -80,11 +80,9 @@ import {
   mergeCoverageEnvelope,
 } from '../analysis-coverage.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
-import {
-  createAngrAnalyzeHandler,
-  createRetDecDecompileHandler,
-  createRizinAnalyzeHandler,
-} from '../tools/docker-backend-tools.js'
+import { createAngrAnalyzeHandler } from '../tools/docker/angr-analyze.js'
+import { createRetDecDecompileHandler } from '../tools/docker/retdec-decompile.js'
+import { createRizinAnalyzeHandler } from '../tools/docker/rizin-analyze.js'
 import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'workflow.reconstruct'

@@ -64,10 +64,10 @@ import {
   buildArtifactRefFromParts,
   buildTriageStageDigest,
   buildStaticStageDigest,
-  dedupeArtifactRefs,
   limitArray,
   truncateText,
 } from '../summary-digests.js'
+import { dedupeArtifactRefs } from '../utils/shared-helpers.js'
 import {
   CoverageEnvelopeSchema,
   buildCoverageEnvelope,

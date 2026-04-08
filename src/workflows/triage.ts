@@ -38,11 +38,9 @@ import {
   mergeCoverageEnvelope,
 } from '../analysis-coverage.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
-import {
-  createRizinAnalyzeHandler,
-  createUPXInspectHandler,
-  createYaraXScanHandler,
-} from '../tools/docker-backend-tools.js'
+import { createRizinAnalyzeHandler } from '../tools/docker/rizin-analyze.js'
+import { createUPXInspectHandler } from '../tools/docker/upx-inspect.js'
+import { createYaraXScanHandler } from '../tools/docker/yara-x-scan.js'
 import { collectCryptoApiNames } from '../crypto-breakpoint-analysis.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
 

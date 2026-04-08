@@ -273,8 +273,6 @@ const DIGEST_LIST_LIMITS = {
 
 type DigestBudgetKey = keyof typeof DIGEST_LIST_LIMITS
 
-export { dedupeStrings, dedupeArtifactRefs }
-
 export function truncateText(value: string | null | undefined, limit: number): string {
   const normalized = (value || '').trim()
   if (normalized.length <= limit) {

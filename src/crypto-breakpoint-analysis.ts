@@ -518,7 +518,7 @@ function detectMode(values: string[]): string | null {
   return null
 }
 
-export function normalizeApiName(value: string) {
+function normalizeApiName(value: string) {
   return value.replace(/^.*!/, '').replace(/\(.*/, '').trim()
 }
 
