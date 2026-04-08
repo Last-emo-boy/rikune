@@ -15,6 +15,7 @@ import {
 import {
   fridaTraceCaptureToolDefinition, createFridaTraceCaptureHandler,
 } from './tools/frida-trace-capture.js'
+import { fridaScriptGenerateToolDefinition, createFridaScriptGenerateHandler } from '../../tools/frida-script-generate.js'
 
 const fridaPlugin: Plugin = {
   id: 'frida',
@@ -34,7 +35,8 @@ const fridaPlugin: Plugin = {
     server.registerTool(fridaRuntimeInstrumentToolDefinition, createFridaRuntimeInstrumentHandler(deps))
     server.registerTool(fridaScriptInjectToolDefinition, createFridaScriptInjectHandler(deps))
     server.registerTool(fridaTraceCaptureToolDefinition, createFridaTraceCaptureHandler(deps))
-    return ['frida.runtime.instrument', 'frida.script.inject', 'frida.trace.capture']
+    server.registerTool(fridaScriptGenerateToolDefinition, createFridaScriptGenerateHandler(deps.workspaceManager, deps.database))
+    return ['frida.runtime.instrument', 'frida.script.inject', 'frida.trace.capture', 'frida.script.generate']
   },
 }
 
