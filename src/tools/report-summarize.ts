@@ -8,6 +8,7 @@ import type { ArtifactRef, ToolDefinition, ToolArgs, WorkerResult } from '../typ
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { Artifact, DatabaseManager, Function as DbFunction } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
+import { dedupe } from '../utils/shared-helpers.js'
 import {
   BinaryRoleProfileDataSchema,
   createBinaryRoleProfileHandler,
@@ -63,10 +64,10 @@ import {
   buildArtifactRefFromParts,
   buildTriageStageDigest,
   buildStaticStageDigest,
-  dedupeArtifactRefs,
   limitArray,
   truncateText,
 } from '../summary-digests.js'
+import { dedupeArtifactRefs } from '../utils/shared-helpers.js'
 import {
   CoverageEnvelopeSchema,
   buildCoverageEnvelope,
@@ -1011,9 +1012,6 @@ function toolMetrics(startTime: number): { elapsed_ms: number; tool: string } {
   }
 }
 
-function dedupe(values: string[]): string[] {
-  return Array.from(new Set(values.filter((item) => item.trim().length > 0)))
-}
 
 function buildEvidenceLineage(dynamicEvidence?: DynamicTraceSummary | null): z.infer<typeof EvidenceLineageSchema> {
   const staticLayer = {

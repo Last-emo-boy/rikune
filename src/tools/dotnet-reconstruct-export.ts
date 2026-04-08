@@ -9,6 +9,7 @@ import path from 'path'
 import { spawn } from 'child_process'
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../types.js'
+import { normalizeError, clamp } from '../utils/shared-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
@@ -24,10 +25,11 @@ import {
   type DotNetMetadataMethod,
 } from './dotnet-metadata-extract.js'
 import { findBestGhidraAnalysis } from '../ghidra-analysis-status.js'
+import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'dotnet.reconstruct.export'
 const TOOL_VERSION = '0.2.0'
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
 export const DotNetReconstructExportInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
@@ -286,17 +288,6 @@ interface DotNetReconstructDependencies {
     cwd: string,
     timeoutMs: number
   ) => Promise<BuildValidationResult>
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
-}
-
-function normalizeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-  return String(error)
 }
 
 function toPosixRelative(root: string, filePath: string): string {

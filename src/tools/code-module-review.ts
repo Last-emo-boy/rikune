@@ -2,12 +2,11 @@ import { z } from 'zod'
 import type {
   ClientCapabilities,
   CreateMessageRequest,
-  CreateMessageResult,
-  CreateMessageResultWithTools,
   Implementation,
-  TextContent,
 } from '@modelcontextprotocol/sdk/types.js'
 import type { ToolArgs, ToolDefinition, WorkerResult } from '../types.js'
+import { extractJsonCandidates } from '../utils/shared-helpers.js'
+import { type SamplingResult, extractTextBlocks } from '../utils/sampling-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
@@ -227,46 +226,12 @@ export const codeModuleReviewToolDefinition: ToolDefinition = {
   outputSchema: codeModuleReviewOutputSchema,
 }
 
-type SamplingResult = CreateMessageResult | CreateMessageResultWithTools
-
 interface CodeModuleReviewDependencies {
   prepareHandler?: (args: ToolArgs) => Promise<WorkerResult>
   applyHandler?: (args: ToolArgs) => Promise<WorkerResult>
   samplingRequester?: (params: CreateMessageRequest['params']) => Promise<SamplingResult>
   clientCapabilitiesProvider?: () => ClientCapabilities | undefined
   clientVersionProvider?: () => Implementation | undefined
-}
-
-function extractTextBlocks(result: SamplingResult): string {
-  const blocks = Array.isArray(result.content) ? result.content : [result.content]
-  return blocks
-    .filter((block): block is TextContent => block?.type === 'text')
-    .map((block) => block.text || '')
-    .join('\n')
-    .trim()
-}
-
-function extractJsonCandidates(rawText: string): string[] {
-  const trimmed = rawText.trim()
-  const candidates = new Set<string>()
-  if (trimmed.length > 0) {
-    candidates.add(trimmed)
-  }
-  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fencedMatch?.[1]) {
-    candidates.add(fencedMatch[1].trim())
-  }
-  const firstBrace = trimmed.indexOf('{')
-  const lastBrace = trimmed.lastIndexOf('}')
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    candidates.add(trimmed.slice(firstBrace, lastBrace + 1))
-  }
-  const firstBracket = trimmed.indexOf('[')
-  const lastBracket = trimmed.lastIndexOf(']')
-  if (firstBracket >= 0 && lastBracket > firstBracket) {
-    candidates.add(trimmed.slice(firstBracket, lastBracket + 1))
-  }
-  return Array.from(candidates)
 }
 
 function parseSamplingReviews(rawText: string): z.infer<typeof ReviewModuleSchema>[] {

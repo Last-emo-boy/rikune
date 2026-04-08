@@ -7,6 +7,7 @@ import { spawn } from 'child_process'
 import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import { normalizeError } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'frida.script.inject'
 const TOOL_VERSION = '0.1.0'
@@ -103,13 +104,6 @@ interface WorkerResponse {
 
 interface FridaScriptInjectDependencies {
   callWorker?: (request: WorkerRequest) => Promise<WorkerResponse>
-}
-
-function normalizeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-  return String(error)
 }
 
 const WINDOWS_FRIDA_EXAMPLES = [

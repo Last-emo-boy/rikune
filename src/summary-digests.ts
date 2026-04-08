@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { ArtifactRef } from './types.js'
+import { dedupeStrings, dedupeArtifactRefs } from './utils/shared-helpers.js'
 import { GhidraExecutionSummarySchema } from './ghidra-execution-summary.js'
 import { SUMMARY_STAGE_VALUES, type SummaryStage } from './summary-artifacts.js'
 import {
@@ -272,17 +273,6 @@ const DIGEST_LIST_LIMITS = {
 
 type DigestBudgetKey = keyof typeof DIGEST_LIST_LIMITS
 
-export function dedupeStrings(values: Array<string | null | undefined>): string[] {
-  return Array.from(
-    new Set(
-      values
-        .filter((item): item is string => typeof item === 'string')
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0)
-    )
-  )
-}
-
 export function truncateText(value: string | null | undefined, limit: number): string {
   const normalized = (value || '').trim()
   if (normalized.length <= limit) {
@@ -330,18 +320,6 @@ export function collectTruncationEntries(
   return Object.keys(filtered).length > 0 ? filtered : undefined
 }
 
-export function dedupeArtifactRefs(refs: ArtifactRef[]): ArtifactRef[] {
-  const seen = new Set<string>()
-  const ordered: ArtifactRef[] = []
-  for (const ref of refs) {
-    if (!ref?.id || seen.has(ref.id)) {
-      continue
-    }
-    seen.add(ref.id)
-    ordered.push(ref)
-  }
-  return ordered
-}
 
 export interface BuildTriageStageDigestInput {
   sample_id: string

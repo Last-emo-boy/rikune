@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { clamp, dedupeStrings } from './utils/shared-helpers.js'
 import type { DynamicTraceSummary } from './dynamic-trace.js'
 
 const CRYPTO_FAMILY_VALUES = [
@@ -310,13 +311,6 @@ const FAMILY_CATALOG: Array<{
   },
 ]
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value))
-}
-
-function dedupeStrings(values: string[]) {
-  return Array.from(new Set(values.map((item) => item.trim()).filter((item) => item.length > 0)))
-}
 
 function normalizeText(value: string) {
   return value.replace(/\s+/g, ' ').trim()
@@ -524,7 +518,7 @@ function detectMode(values: string[]): string | null {
   return null
 }
 
-export function normalizeApiName(value: string) {
+function normalizeApiName(value: string) {
   return value.replace(/^.*!/, '').replace(/\(.*/, '').trim()
 }
 

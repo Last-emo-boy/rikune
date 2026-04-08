@@ -10,6 +10,7 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
+import { dedupeStrings } from '../utils/shared-helpers.js'
 import {
   normalizeDynamicTrace,
   summarizeDynamicTrace,
@@ -232,10 +233,6 @@ function isPrintableAscii(byte: number): boolean {
   return byte >= 0x20 && byte <= 0x7e
 }
 
-function dedupeStrings(values: string[], limit?: number): string[] {
-  const unique = Array.from(new Set(values.map((item) => item.trim()).filter((item) => item.length > 0)))
-  return typeof limit === 'number' ? unique.slice(0, limit) : unique
-}
 
 function inferModuleNameFromStrings(values: string[]): string | undefined {
   for (const value of values) {

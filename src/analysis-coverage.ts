@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { dedupeStrings } from './utils/shared-helpers.js'
 
 export const CoverageLevelSchema = z.enum([
   'quick',
@@ -84,15 +85,6 @@ export type CoverageEnvelope = z.infer<typeof CoverageEnvelopeSchema>
 const FINDING_LIMIT = 8
 const UPGRADE_LIMIT = 6
 
-function dedupeStrings(values: Array<string | null | undefined>, limit = FINDING_LIMIT): string[] {
-  return Array.from(
-    new Set(
-      values
-        .filter((value): value is string => Boolean(value && value.trim().length > 0))
-        .map((value) => value.trim())
-    )
-  ).slice(0, limit)
-}
 
 export function classifySampleSizeTier(sizeBytes: number): SampleSizeTier {
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
@@ -224,9 +216,9 @@ export function buildCoverageEnvelope(input: BuildCoverageEnvelopeInput): Covera
     confidence_by_domain: {
       ...(input.confidenceByDomain || {}),
     },
-    known_findings: dedupeStrings(input.knownFindings || []),
-    suspected_findings: dedupeStrings(input.suspectedFindings || []),
-    unverified_areas: dedupeStrings(input.unverifiedAreas || []),
+    known_findings: dedupeStrings(input.knownFindings || [], FINDING_LIMIT),
+    suspected_findings: dedupeStrings(input.suspectedFindings || [], FINDING_LIMIT),
+    unverified_areas: dedupeStrings(input.unverifiedAreas || [], FINDING_LIMIT),
     upgrade_paths: normalizeUpgradePaths(input.upgradePaths || []),
   }
 }

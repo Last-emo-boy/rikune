@@ -10,6 +10,7 @@ import type { JobQueue, JobResult } from '../job-queue.js'
 import { JobPriority } from '../job-queue.js'
 import type { PolicyGuard } from '../policy-guard.js'
 import type { MCPServer } from '../server.js'
+import { dedupeStrings } from '../utils/shared-helpers.js'
 import {
   AnalysisIntentDepthSchema,
   AnalysisIntentGoalSchema,
@@ -69,13 +70,25 @@ import { createReconstructWorkflowHandler } from './reconstruct.js'
 import { createGhidraAnalyzeHandler } from '../plugins/ghidra/tools/ghidra-analyze.js'
 import {
   createAngrAnalyzeHandler,
-  createPandaInspectHandler,
-  createQilingInspectHandler,
+} from '../tools/docker/angr-analyze.js'
+import {
   createRetDecDecompileHandler,
+} from '../tools/docker/retdec-decompile.js'
+import {
   createRizinAnalyzeHandler,
+} from '../tools/docker/rizin-analyze.js'
+import {
   createUPXInspectHandler,
+} from '../tools/docker/upx-inspect.js'
+import {
   createYaraXScanHandler,
-} from '../tools/docker-backend-tools.js'
+} from '../tools/docker/yara-x-scan.js'
+import {
+  createPandaInspectHandler,
+} from '../tools/docker/panda-inspect.js'
+import {
+  createQilingInspectHandler,
+} from '../tools/docker/qiling-inspect.js'
 import { buildPollingGuidance } from '../polling-guidance.js'
 import { loadDynamicTraceEvidence } from '../dynamic-trace.js'
 import { createSampleFinalizationService } from '../sample-finalization.js'
@@ -310,13 +323,6 @@ interface StageExecutionContext {
   dependencies: AnalyzePipelineDependencies
 }
 
-function dedupeStrings(values: Array<string | null | undefined>, limit = 12): string[] {
-  return Array.from(
-    new Set(
-      values.filter((value): value is string => Boolean(value && value.trim().length > 0))
-    )
-  ).slice(0, limit)
-}
 
 function collectArtifactsFromResult(result: WorkerResult | undefined): ArtifactRef[] {
   if (!result) {

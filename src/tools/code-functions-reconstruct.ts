@@ -7,6 +7,7 @@ import { z } from 'zod'
 import fs from 'fs'
 import path from 'path'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
+import { normalizeError, clamp, dedupe } from '../utils/shared-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
@@ -47,10 +48,11 @@ import {
   buildRuntimeArtifactProvenance,
   buildSemanticArtifactProvenance,
 } from '../analysis-provenance.js'
+import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'code.functions.reconstruct'
 const TOOL_VERSION = '0.2.14'
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
 export const CodeFunctionsReconstructInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
@@ -550,14 +552,6 @@ const SEMANTIC_STOPWORDS = new Set([
   'through',
   'stage',
 ])
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
-}
-
-function dedupe(values: string[]): string[] {
-  return Array.from(new Set(values.filter((value) => value.length > 0)))
-}
 
 function uniqBy<T>(items: T[], keyFn: (item: T) => string): T[] {
   const seen = new Set<string>()
@@ -3151,13 +3145,6 @@ function buildSourceLikeSnippet(
   }
 
   return [...commentLines, ...snippetLines].join('\n')
-}
-
-function normalizeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-  return String(error)
 }
 
 async function buildDegradedFallbackFunction(

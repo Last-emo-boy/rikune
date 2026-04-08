@@ -4,6 +4,7 @@ import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
 import type { JobQueue } from '../job-queue.js'
+import { dedupeStrings } from '../utils/shared-helpers.js'
 import {
   AnalysisIntentDepthSchema,
   AnalysisIntentGoalSchema,
@@ -23,7 +24,8 @@ import {
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
 import { createDynamicDependenciesHandler } from '../tools/dynamic-dependencies.js'
 import { createSandboxExecuteHandler } from '../tools/sandbox-execute.js'
-import { createQilingInspectHandler, createPandaInspectHandler } from '../tools/docker-backend-tools.js'
+import { createQilingInspectHandler } from '../tools/docker/qiling-inspect.js'
+import { createPandaInspectHandler } from '../tools/docker/panda-inspect.js'
 import { createTriageWorkflowHandler } from './triage.js'
 import { createDeepStaticWorkflowHandler } from './deep-static.js'
 import { createReconstructWorkflowHandler } from './reconstruct.js'
@@ -211,9 +213,6 @@ function extractCoverageEnvelope(
   return parsed.success ? parsed.data : null
 }
 
-function dedupeStrings(values: Array<string | undefined | null>) {
-  return Array.from(new Set(values.filter((value): value is string => Boolean(value && value.trim().length > 0))))
-}
 
 export function createAnalyzeAutoWorkflowHandler(
   workspaceManager: WorkspaceManager,

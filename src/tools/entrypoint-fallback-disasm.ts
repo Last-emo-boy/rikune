@@ -5,10 +5,8 @@
 import { spawn } from 'child_process'
 import { v4 as uuidv4 } from 'uuid'
 import { resolvePackagePath } from '../runtime-paths.js'
+import { getPythonCommand } from '../utils/shared-helpers.js'
 
-function getPythonCommand(): string {
-  return process.platform === 'win32' ? 'python' : 'python3'
-}
 
 interface WorkerResponse {
   job_id: string

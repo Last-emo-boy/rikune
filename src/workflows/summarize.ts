@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { CreateMessageRequest } from '@modelcontextprotocol/sdk/types.js'
+import { extractTextBlocks } from '../utils/sampling-helpers.js'
 import type { ArtifactRef, ToolArgs, ToolDefinition, WorkerResult } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager, Artifact, Function as DbFunction } from '../database.js'
@@ -28,9 +29,8 @@ import {
   buildFinalStageDigest,
   buildStaticStageDigest,
   buildTriageStageDigest,
-  dedupeArtifactRefs,
-  dedupeStrings,
 } from '../summary-digests.js'
+import { dedupeArtifactRefs, dedupeStrings } from '../utils/shared-helpers.js'
 import { GhidraExecutionSummarySchema } from '../ghidra-execution-summary.js'
 import {
   CoverageEnvelopeSchema,
@@ -287,15 +287,6 @@ function parseSummaryJsonCandidate(rawText: string) {
   throw new Error(
     'Sampling response could not be parsed as strict JSON summary payload. Return JSON only.'
   )
-}
-
-function extractTextBlocks(result: any): string {
-  const content = Array.isArray(result?.content) ? result.content : []
-  return content
-    .filter((item) => item && typeof item === 'object' && item.type === 'text')
-    .map((item) => String(item.text || ''))
-    .join('\n')
-    .trim()
 }
 
 function buildSamplingRequest(

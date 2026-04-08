@@ -3,6 +3,7 @@ import path from 'path'
 import type { DatabaseManager } from './database.js'
 import type { WorkspaceManager } from './workspace-manager.js'
 import { deriveArtifactSessionTag } from './artifact-inventory.js'
+import { dedupeStrings, toStringArray } from './utils/shared-helpers.js'
 
 export type DynamicTraceSourceFormat =
   | 'normalized'
@@ -156,19 +157,7 @@ const DYNAMIC_RESOLUTION_APIS = new Set([
   'LoadLibraryExW',
 ])
 
-function dedupeStrings(values: string[], limit?: number): string[] {
-  const unique = Array.from(
-    new Set(values.map((item) => item.trim()).filter((item) => item.length > 0))
-  )
-  return typeof limit === 'number' ? unique.slice(0, limit) : unique
-}
 
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value.filter((item): item is string => typeof item === 'string')
-}
 
 function normalizeApiName(value: string): string {
   const trimmed = value.trim()

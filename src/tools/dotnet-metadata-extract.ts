@@ -7,6 +7,7 @@ import { spawn } from 'child_process'
 import path from 'path'
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
+import { normalizeError } from '../utils/shared-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
@@ -15,10 +16,11 @@ import { getPackageRoot, resolvePackagePath } from '../runtime-paths.js'
 import { lookupCachedResult, formatCacheWarning } from './cache-observability.js'
 import { createRuntimeDetectHandler } from './runtime-detect.js'
 import { buildStaticWorkerRequest, callStaticWorker } from './static-worker-client.js'
+import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'dotnet.metadata.extract'
 const TOOL_VERSION = '0.1.0'
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 const DEFAULT_TIMEOUT_MS = 120000
 
 export const DotNetMetadataExtractInputSchema = z.object({
@@ -247,13 +249,6 @@ interface DotNetMetadataExtractDependencies {
       timeoutMs?: number
     }
   ) => Promise<DotNetMetadataProbeResult>
-}
-
-function normalizeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-  return String(error)
 }
 
 function extractVersionFromTargetFramework(targetFramework: string | null | undefined): string | null {

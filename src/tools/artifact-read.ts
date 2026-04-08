@@ -9,6 +9,7 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
+import { dedupe } from '../utils/shared-helpers.js'
 import {
   listArtifactInventory,
   normalizeRelativeArtifactPath,
@@ -200,9 +201,6 @@ function selectArtifact(
   return ordered[0] || null
 }
 
-function dedupe(values: string[]): string[] {
-  return Array.from(new Set(values))
-}
 
 function extractIOCTextHighlights(content: string): {
   urls?: string[]

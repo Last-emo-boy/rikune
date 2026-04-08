@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { clamp } from './utils/shared-helpers.js'
 
 export const ConfidenceSemanticsSchema = z.object({
   score_kind: z.enum([
@@ -21,10 +22,6 @@ export const ConfidenceSemanticsSchema = z.object({
 })
 
 export type ConfidenceSemantics = z.infer<typeof ConfidenceSemanticsSchema>
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
-}
 
 export function confidenceBand(score: number | null | undefined): z.infer<typeof ConfidenceSemanticsSchema>['band'] {
   if (typeof score !== 'number' || Number.isNaN(score)) {

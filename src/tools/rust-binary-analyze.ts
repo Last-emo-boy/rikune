@@ -4,6 +4,7 @@ import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
 import { generateCacheKey } from '../cache-manager.js'
+import { clamp, dedupeStrings as uniqueStrings } from '../utils/shared-helpers.js'
 import { lookupCachedResult, formatCacheWarning } from './cache-observability.js'
 import {
   BinaryRoleProfileDataSchema,
@@ -14,10 +15,11 @@ import { createStringsExtractHandler } from './strings-extract.js'
 import { createCodeFunctionsSmartRecoverHandler } from './code-functions-smart-recover.js'
 import { createPESymbolsRecoverHandler } from '../plugins/pe-analysis/tools/pe-symbols-recover.js'
 import { buildLibraryProfile } from '../workflows/triage.js'
+import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'rust_binary.analyze'
 const TOOL_VERSION = '0.1.0'
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
 const LIBRARY_HINT_PATTERNS: Array<{ name: string; patterns: RegExp[] }> = [
   { name: 'tokio', patterns: [/\btokio\b/i] },
@@ -186,27 +188,6 @@ interface RustBinaryAnalyzeDependencies {
   smartRecoverHandler?: (args: ToolArgs) => Promise<WorkerResult>
   symbolsRecoverHandler?: (args: ToolArgs) => Promise<WorkerResult>
   binaryRoleHandler?: (args: ToolArgs) => Promise<WorkerResult>
-}
-
-function uniqueStrings(values: Array<string | null | undefined>): string[] {
-  const seen = new Set<string>()
-  const output: string[] = []
-  for (const value of values) {
-    const normalized = (value || '').trim()
-    if (!normalized || seen.has(normalized)) {
-      continue
-    }
-    seen.add(normalized)
-    output.push(normalized)
-  }
-  return output
-}
-
-function clamp(value: number, min = 0, max = 1): number {
-  if (!Number.isFinite(value)) {
-    return min
-  }
-  return Math.min(max, Math.max(min, value))
 }
 
 function extractCrateNameFromCargoPath(input: string): string | null {

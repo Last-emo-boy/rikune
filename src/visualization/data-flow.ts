@@ -4,6 +4,7 @@
  */
 
 import { ExplanationGraphDigestSchema, type ExplanationGraphDigest } from '../explanation-graphs.js'
+import { escapeDot, escapeMermaid } from '../utils/shared-helpers.js'
 
 export interface DataFlowNode {
   id: string
@@ -158,5 +159,3 @@ export function dataFlowToMermaid(data: DataFlowData): string {
   return mermaid + '\nclassDef suspicious fill:#ffcccc,stroke:red,stroke-width:2px;\nclassDef data_source fill:lightblue,stroke:blue;\nclassDef data_sink fill:lightcoral,stroke:darkred;\n'
 }
 
-function escapeDot(text: string): string { return text.replace(/"/g, '\\"').replace(/\n/g, '\\n') }
-function escapeMermaid(text: string): string { return text.replace(/"/g, "'").replace(/\n/g, ' ') }

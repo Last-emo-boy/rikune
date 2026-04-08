@@ -5,6 +5,7 @@
 
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult , PluginToolDeps} from '../../sdk.js'
+import { toStringArray } from '../../../utils/shared-helpers.js'
 import { createTriageWorkflowHandler } from '../../../workflows/triage.js'
 import { createPackerDetectHandler } from '../../../tools/packer-detect.js'
 
@@ -119,12 +120,6 @@ export interface CapabilityCluster {
   indicators: string[]
 }
 
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value.filter((item): item is string => typeof item === 'string')
-}
 
 function normalizeImportApi(importRef: string): string {
   const last = importRef.split('!').pop() || importRef

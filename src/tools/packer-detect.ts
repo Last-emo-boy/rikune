@@ -6,6 +6,7 @@
 
 import { z } from 'zod'
 import { spawn } from 'child_process'
+import { getPythonCommand } from '../utils/shared-helpers.js'
 import { v4 as uuidv4 } from 'uuid'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
@@ -19,6 +20,7 @@ import {
   buildStaticWorkerRequest,
   callStaticWorker as callPooledStaticWorker,
 } from './static-worker-client.js'
+import { CACHE_TTL_30_DAYS } from '../constants/cache-ttl.js'
 
 // ============================================================================
 // Constants
@@ -27,13 +29,10 @@ import {
 /**
  * Get the correct Python command for the current platform
  */
-function getPythonCommand(): string {
-  return process.platform === 'win32' ? 'python' : 'python3'
-}
 
 const TOOL_NAME = 'packer.detect'
 const TOOL_VERSION = '1.0.0'
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+const CACHE_TTL_MS = CACHE_TTL_30_DAYS
 const DEFAULT_ENGINES: Array<'yara' | 'entropy' | 'entrypoint'> = ['yara', 'entropy', 'entrypoint']
 
 // ============================================================================

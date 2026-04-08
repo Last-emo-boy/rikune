@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { ToolArgs, ToolDefinition, WorkerResult, ArtifactRef } from '../types.js'
+import { collectArtifactRefs, dedupeArtifactRefs } from '../utils/shared-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
@@ -38,10 +39,11 @@ import {
   persistCryptoPlanningJsonArtifact,
   type CryptoPlanningArtifactScope,
 } from '../crypto-planning-artifacts.js'
+import { CACHE_TTL_30_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'crypto.identify'
 const TOOL_VERSION = '0.2.0'
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const CACHE_TTL_MS = CACHE_TTL_30_DAYS
 const LARGE_SAMPLE_INLINE_CRYPTO_FINDINGS = 4
 const MEDIUM_SAMPLE_INLINE_CRYPTO_FINDINGS = 6
 const DEFAULT_INLINE_CRYPTO_FINDINGS = 8
@@ -195,39 +197,6 @@ interface CryptoIdentifyDependencies {
     sampleId: string,
     options?: { evidenceScope?: DynamicEvidenceScope; sessionTag?: string }
   ) => Promise<DynamicTraceSummary | null>
-}
-
-function dedupeArtifactRefs(artifacts: ArtifactRef[]): ArtifactRef[] {
-  const seen = new Set<string>()
-  const output: ArtifactRef[] = []
-  for (const artifact of artifacts) {
-    const key = artifact.id || `${artifact.type}:${artifact.path}`
-    if (!key || seen.has(key)) {
-      continue
-    }
-    seen.add(key)
-    output.push(artifact)
-  }
-  return output
-}
-
-function collectArtifactRefs(result: WorkerResult | undefined): ArtifactRef[] {
-  if (!result) {
-    return []
-  }
-
-  const refs: ArtifactRef[] = []
-  if (Array.isArray(result.artifacts)) {
-    refs.push(...(result.artifacts.filter((item) => item && typeof item === 'object') as ArtifactRef[]))
-  }
-  const data = result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
-  if (data.artifact && typeof data.artifact === 'object') {
-    refs.push(data.artifact as ArtifactRef)
-  }
-  if (Array.isArray(data.source_artifact_refs)) {
-    refs.push(...(data.source_artifact_refs.filter((item) => item && typeof item === 'object') as ArtifactRef[]))
-  }
-  return refs
 }
 
 function collectStringRecords(result: WorkerResult | undefined): BasicStringRecord[] {

@@ -7,6 +7,7 @@ import {
   ExplanationGraphDigestSchema,
   type ExplanationGraphDigest,
 } from '../explanation-graphs.js'
+import { escapeDot, escapeMermaid } from '../utils/shared-helpers.js'
 
 type ExplanationConfidenceState = 'observed' | 'correlated' | 'inferred'
 
@@ -171,8 +172,6 @@ export function callGraphToMermaid(graph: CallGraphData): string {
   return mermaid + '\nclassDef suspicious fill:#ffcccc,stroke:red,stroke-width:2px;\n'
 }
 
-function escapeDot(text: string): string { return text.replace(/"/g, '\\"').replace(/\n/g, '\\n') }
-function escapeMermaid(text: string): string { return text.replace(/"/g, "'") }
 function calculateMaxDepth(nodes: CallGraphNode[], edges: CallGraphEdge[]): number {
   if (nodes.length === 0) return 0
   const adjacency = new Map<string, string[]>()

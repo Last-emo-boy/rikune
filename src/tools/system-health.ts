@@ -10,6 +10,7 @@ import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
+import { normalizeError } from '../utils/shared-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
@@ -160,13 +161,6 @@ interface SystemHealthDependencies {
   checkGhidra?: (timeoutMs: number) => GhidraHealthStatus
   probeStaticWorker?: (timeoutMs: number) => Promise<StaticWorkerHealthData>
   cacheManager?: CacheManager
-}
-
-function normalizeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-  return String(error)
 }
 
 async function callStaticWorkerHealth(timeoutMs: number): Promise<StaticWorkerHealthData> {

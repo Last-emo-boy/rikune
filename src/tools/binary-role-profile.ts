@@ -12,6 +12,7 @@ import { createPEImportsExtractHandler } from '../plugins/pe-analysis/tools/pe-i
 import { createStringsExtractHandler } from './strings-extract.js'
 import { createRuntimeDetectHandler } from './runtime-detect.js'
 import { createPackerDetectHandler } from './packer-detect.js'
+import { clamp, dedupeStrings as uniqueStrings } from '../utils/shared-helpers.js'
 import {
   inspectSampleWorkspace,
   formatMissingOriginalError,
@@ -30,10 +31,11 @@ import {
   persistCanonicalEvidence,
   resolveCanonicalEvidenceOrCache,
 } from '../analysis-evidence.js'
+import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'binary.role.profile'
 const TOOL_VERSION = '0.2.0'
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
 export const BinaryRoleProfileInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
@@ -236,30 +238,6 @@ interface BinaryRoleProfileDependencies {
   stringsHandler?: (args: ToolArgs) => Promise<WorkerResult>
   runtimeHandler?: (args: ToolArgs) => Promise<WorkerResult>
   packerHandler?: (args: ToolArgs) => Promise<WorkerResult>
-}
-
-function clamp(value: number, min = 0, max = 1) {
-  if (Number.isNaN(value)) {
-    return min
-  }
-  return Math.min(max, Math.max(min, value))
-}
-
-function uniqueStrings(values: Array<string | null | undefined>) {
-  const seen = new Set<string>()
-  const output: string[] = []
-  for (const value of values) {
-    const trimmed = (value || '').trim()
-    if (!trimmed) {
-      continue
-    }
-    if (seen.has(trimmed)) {
-      continue
-    }
-    seen.add(trimmed)
-    output.push(trimmed)
-  }
-  return output
 }
 
 async function getOriginalFilename(

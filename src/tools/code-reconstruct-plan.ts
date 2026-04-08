@@ -5,6 +5,7 @@
 
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
+import { clamp } from '../utils/shared-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
@@ -12,10 +13,11 @@ import { generateCacheKey } from '../cache-manager.js'
 import { lookupCachedResult, formatCacheWarning } from './cache-observability.js'
 import { createRuntimeDetectHandler } from './runtime-detect.js'
 import { createPackerDetectHandler } from './packer-detect.js'
+import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'code.reconstruct.plan'
 const TOOL_VERSION = '0.1.0'
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
 export const CodeReconstructPlanInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
@@ -113,10 +115,6 @@ interface PackerDetectData {
 interface ReconstructPlanDependencies {
   runtimeDetectHandler?: (args: ToolArgs) => Promise<WorkerResult>
   packerDetectHandler?: (args: ToolArgs) => Promise<WorkerResult>
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
 }
 
 function pickPrimaryRuntime(runtimeData?: RuntimeDetectData): string {

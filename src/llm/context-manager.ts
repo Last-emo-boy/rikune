@@ -5,6 +5,7 @@
  */
 
 import type { DatabaseManager } from '../database.js'
+import { CACHE_TTL_1_DAY } from '../constants/cache-ttl.js'
 
 export interface AnalysisContext {
   sampleId: string
@@ -39,7 +40,7 @@ export class ContextManager {
   constructor(database: DatabaseManager, options: ContextManagerOptions = {}) {
     this.database = database
     this.options = {
-      ttlMs: options.ttlMs ?? (24 * 60 * 60 * 1000),  // 24 hours
+      ttlMs: options.ttlMs ?? CACHE_TTL_1_DAY,
       maxHistory: options.maxHistory ?? 50,
     }
   }

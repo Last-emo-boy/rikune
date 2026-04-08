@@ -9,6 +9,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../types.js'
+import { normalizeError, clamp, dedupe } from '../utils/shared-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
@@ -48,10 +49,11 @@ import {
   buildRuntimeArtifactProvenance,
   buildSemanticArtifactProvenance,
 } from '../analysis-provenance.js'
+import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'code.reconstruct.export'
 const TOOL_VERSION = '0.2.15'
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
 export const CodeReconstructExportInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
@@ -774,19 +776,8 @@ const API_TO_MODULE_HINT: Array<{ module: string; matcher: RegExp }> = [
   },
 ]
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
-}
-
 function toPosixRelative(fromRoot: string, absoluteFile: string): string {
   return path.relative(fromRoot, absoluteFile).split(path.sep).join('/')
-}
-
-function normalizeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-  return String(error)
 }
 
 function normalizeReadableHint(value: string, maxLength = 96): string {
@@ -1250,10 +1241,6 @@ function computeStringModuleHints(stringsData?: StringsSummary): Map<string, str
   }
 
   return hints
-}
-
-function dedupe(values: string[]): string[] {
-  return Array.from(new Set(values.filter((value) => value.length > 0)))
 }
 
 interface FunctionStringSearchHint {

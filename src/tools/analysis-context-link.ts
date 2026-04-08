@@ -38,10 +38,11 @@ import {
   findCanonicalEvidence,
   persistCanonicalEvidence,
 } from '../analysis-evidence.js'
+import { CACHE_TTL_30_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'analysis.context.link'
 const TOOL_VERSION = '0.1.0'
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const CACHE_TTL_MS = CACHE_TTL_30_DAYS
 const LARGE_SAMPLE_INLINE_CONTEXTS = 8
 const MEDIUM_SAMPLE_INLINE_CONTEXTS = 12
 const DEFAULT_FULL_INLINE_CONTEXTS = 16

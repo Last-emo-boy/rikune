@@ -16,10 +16,11 @@ import {
   callStaticWorker as callPooledStaticWorker,
 } from './static-worker-client.js'
 import { persistStaticAnalysisJsonArtifact } from '../static-analysis-artifacts.js'
+import { CACHE_TTL_30_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'entropy.analyze'
 const TOOL_VERSION = '0.1.0'
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const CACHE_TTL_MS = CACHE_TTL_30_DAYS
 
 export const EntropyAnalyzeInputSchema = z.object({
   sample_id: z.string().describe('Sample identifier (sha256:<hex>)'),

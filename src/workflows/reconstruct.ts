@@ -5,6 +5,7 @@
 
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
+import { normalizeError } from '../utils/shared-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
@@ -79,15 +80,14 @@ import {
   mergeCoverageEnvelope,
 } from '../analysis-coverage.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
-import {
-  createAngrAnalyzeHandler,
-  createRetDecDecompileHandler,
-  createRizinAnalyzeHandler,
-} from '../tools/docker-backend-tools.js'
+import { createAngrAnalyzeHandler } from '../tools/docker/angr-analyze.js'
+import { createRetDecDecompileHandler } from '../tools/docker/retdec-decompile.js'
+import { createRizinAnalyzeHandler } from '../tools/docker/rizin-analyze.js'
+import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'workflow.reconstruct'
 const TOOL_VERSION = '0.1.5'
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
 export const ReconstructWorkflowInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
@@ -679,13 +679,6 @@ interface ReconstructWorkflowDependencies {
   angrAnalyzeHandler?: (args: ToolArgs) => Promise<WorkerResult>
   retdecDecompileHandler?: (args: ToolArgs) => Promise<WorkerResult>
   resolveBackends?: typeof resolveAnalysisBackends
-}
-
-function normalizeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-  return String(error)
 }
 
 function pickPrimaryRuntime(runtimeData?: RuntimeDetectData): string | null {
