@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Examples — Rikune</title>
+<meta name="description" content="Real-world analysis scenarios and walkthroughs for Rikune MCP Server.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+.scenario-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 24px; margin: 40px 0; }
+.scenario-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 28px 32px; transition: border-color .25s, box-shadow .25s, transform .2s;
+  position: relative; overflow: hidden;
+}
+.scenario-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent2), transparent);
+  opacity: 0; transition: opacity .3s;
+}
+.scenario-card:hover { border-color: var(--border-glow); transform: translateY(-4px); box-shadow: var(--glow-accent); }
+.scenario-card:hover::before { opacity: 1; }
+.scenario-card__num { font-family: var(--mono); font-size: .7rem; color: var(--accent); font-weight: 600; margin-bottom: 8px; }
+.scenario-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
+.scenario-card p { font-size: .85rem; color: var(--text-muted); line-height: 1.6; }
+.scenario-card__tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.scenario-card__tools code {
+  font-family: var(--mono); font-size: .72rem; padding: 3px 8px; border-radius: 4px;
+  background: rgba(56,189,248,.08); color: var(--accent); border: 1px solid rgba(56,189,248,.15);
+}
+</style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow bg-glow--1"></div>
+<div class="bg-glow bg-glow--2"></div>
+<canvas id="particles"></canvas>
+
+<!-- Navigation -->
+<nav class="nav" id="nav">
+  <div class="nav__inner">
+    <a href="index.html" class="nav__logo"><span class="nav__logo-icon">R</span> Rikune</a>
+    <ul class="nav__links" id="navLinks">
+      <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特性</a></li>
+      <li><a href="api-reference.html">API</a></li>
+      <li><a href="usage.html" data-lang-en>Usage</a><a href="usage.html" data-lang-zh>使用指南</a></li>
+      <li><a href="docker.html">Docker</a></li>
+      <li><a href="examples.html" class="active" data-lang-en>Examples</a><a href="examples.html" class="active" data-lang-zh>示例</a></li>
+      <li><a href="plugins.html" data-lang-en>Plugins</a><a href="plugins.html" data-lang-zh>插件</a></li>
+    </ul>
+    <div class="nav__right">
+      <button class="lang-toggle" id="lang-toggle">中文</button>
+      <a href="https://github.com/mcp-mirror/alfredo-pasquel-rikune" class="nav__cta" target="_blank" rel="noopener">GitHub →</a>
+    </div>
+    <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+
+<!-- Hero -->
+<div class="page-hero">
+  <div class="container">
+    <div class="breadcrumb"><a href="index.html">Rikune</a> / <span data-lang-en>Examples</span><span data-lang-zh>示例</span></div>
+    <h1><span data-lang-en>Analysis Examples</span><span data-lang-zh>分析示例</span></h1>
+    <p>
+      <span data-lang-en>Real-world scenarios demonstrating Rikune's analysis capabilities.</span>
+      <span data-lang-zh>展示 Rikune 分析能力的实际场景。</span>
+    </p>
+  </div>
+</div>
+
+<!-- Scenarios Grid -->
+<div class="container">
+  <div class="scenario-grid">
+
+    <div class="scenario-card reveal">
+      <div class="scenario-card__num">01</div>
+      <h3><span data-lang-en>Threat Assessment</span><span data-lang-zh>威胁评估</span></h3>
+      <p>
+        <span data-lang-en>Quick risk evaluation of an unknown PE binary — headers, imports, entropy, packer detection, and initial threat scoring.</span>
+        <span data-lang-zh>快速评估未知 PE 二进制文件的风险 — 头信息、导入表、熵值、加壳检测和初始威胁评分。</span>
+      </p>
+      <div class="scenario-card__tools">
+        <code>sample.ingest</code>
+        <code>pe.headers</code>
+        <code>pe.imports</code>
+        <code>detect.compiler</code>
+      </div>
+    </div>
+
+    <div class="scenario-card reveal">
+      <div class="scenario-card__num">02</div>
+      <h3><span data-lang-en>Malware Family Identification</span><span data-lang-zh>恶意软件家族识别</span></h3>
+      <p>
+        <span data-lang-en>Classify a sample against known families using behavioral signatures, YARA rules, and capa capabilities.</span>
+        <span data-lang-zh>使用行为签名、YARA 规则和 capa 能力检测将样本与已知家族进行分类。</span>
+      </p>
+      <div class="scenario-card__tools">
+        <code>yara.scan</code>
+        <code>capa.analyze</code>
+        <code>intel.family.classify</code>
+      </div>
+    </div>
+
+    <div class="scenario-card reveal">
+      <div class="scenario-card__num">03</div>
+      <h3><span data-lang-en>Packer Detection &amp; Unpacking</span><span data-lang-zh>加壳检测与脱壳</span></h3>
+      <p>
+        <span data-lang-en>Identify packers/protectors (UPX, Themida, VMProtect) and unpack samples for further analysis.</span>
+        <span data-lang-zh>识别加壳器/保护器（UPX、Themida、VMProtect）并脱壳进行深入分析。</span>
+      </p>
+      <div class="scenario-card__tools">
+        <code>detect.compiler</code>
+        <code>pe.sections</code>
+        <code>upx.unpack</code>
+      </div>
+    </div>
+
+    <div class="scenario-card reveal">
+      <div class="scenario-card__num">04</div>
+      <h3><span data-lang-en>.NET Assembly Analysis</span><span data-lang-zh>.NET 程序集分析</span></h3>
+      <p>
+        <span data-lang-en>Extract CLR metadata, type definitions, method signatures, and resources from managed assemblies.</span>
+        <span data-lang-zh>从托管程序集中提取 CLR 元数据、类型定义、方法签名和资源。</span>
+      </p>
+      <div class="scenario-card__tools">
+        <code>sample.ingest</code>
+        <code>dotnet.metadata</code>
+        <code>dotnet.resources</code>
+      </div>
+    </div>
+
+    <div class="scenario-card reveal">
+      <div class="scenario-card__num">05</div>
+      <h3><span data-lang-en>IOC Extraction</span><span data-lang-zh>IOC 提取</span></h3>
+      <p>
+        <span data-lang-en>Extract C2 servers, URLs, IPs, domains, mutexes, and file artifacts for threat intelligence sharing.</span>
+        <span data-lang-zh>提取 C2 服务器、URL、IP、域名、互斥体和文件特征，用于威胁情报共享。</span>
+      </p>
+      <div class="scenario-card__tools">
+        <code>intel.c2.extract</code>
+        <code>intel.ioc.export</code>
+        <code>pe.strings</code>
+      </div>
+    </div>
+
+    <div class="scenario-card reveal">
+      <div class="scenario-card__num">06</div>
+      <h3><span data-lang-en>Batch Screening</span><span data-lang-zh>批量筛查</span></h3>
+      <p>
+        <span data-lang-en>Screen a directory of samples using the staged pipeline — fast triage, then deep analysis on flagged items.</span>
+        <span data-lang-zh>使用分阶段流水线筛查目录下的样本 — 先快速分诊，然后对标记项进行深度分析。</span>
+      </p>
+      <div class="scenario-card__tools">
+        <code>sample.ingest</code>
+        <code>workflow.analyze.start</code>
+        <code>workflow.summarize</code>
+      </div>
+    </div>
+
+    <div class="scenario-card reveal">
+      <div class="scenario-card__num">07</div>
+      <h3><span data-lang-en>Import/Export Analysis</span><span data-lang-zh>导入/导出分析</span></h3>
+      <p>
+        <span data-lang-en>Map API usage patterns — identify suspicious imports (crypto, network, process injection), DLL dependencies.</span>
+        <span data-lang-zh>映射 API 使用模式 — 识别可疑导入（加密、网络、进程注入）、DLL 依赖关系。</span>
+      </p>
+      <div class="scenario-card__tools">
+        <code>pe.imports</code>
+        <code>pe.exports</code>
+        <code>ghidra.xrefs</code>
+      </div>
+    </div>
+
+    <div class="scenario-card reveal">
+      <div class="scenario-card__num">08</div>
+      <h3><span data-lang-en>String &amp; Crypto Analysis</span><span data-lang-zh>字符串与加密分析</span></h3>
+      <p>
+        <span data-lang-en>Extract obfuscated strings with FLOSS, detect cryptographic constants, and find encryption routines.</span>
+        <span data-lang-zh>使用 FLOSS 提取混淆字符串，检测密码学常量，查找加密例程。</span>
+      </p>
+      <div class="scenario-card__tools">
+        <code>floss.strings</code>
+        <code>pe.strings</code>
+        <code>capa.analyze</code>
+      </div>
+    </div>
+
+    <div class="scenario-card reveal">
+      <div class="scenario-card__num">09</div>
+      <h3><span data-lang-en>Frida Instrumentation</span><span data-lang-zh>Frida 动态插桩</span></h3>
+      <p>
+        <span data-lang-en>Generate and deploy Frida scripts for runtime API hooking, string decryption, and anti-debug bypass.</span>
+        <span data-lang-zh>生成和部署 Frida 脚本进行运行时 API Hook、字符串解密和反调试绕过。</span>
+      </p>
+      <div class="scenario-card__tools">
+        <code>frida.hook</code>
+        <code>frida.trace</code>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Walkthrough -->
+<div class="doc-content">
+  <h2 class="reveal"><span data-lang-en>Walkthrough: Threat Assessment</span><span data-lang-zh>演练：威胁评估</span></h2>
+  <p>
+    <span data-lang-en>Here's a complete workflow for assessing an unknown sample:</span>
+    <span data-lang-zh>以下是评估未知样本的完整工作流：</span>
+  </p>
+
+  <h3><span data-lang-en>Step 1 — Ingest the sample</span><span data-lang-zh>步骤 1 — 导入样本</span></h3>
+  <div class="code-block">
+    <div class="code-block__header"><span>MCP Tool Call</span><button class="code-block__copy">Copy</button></div>
+    <pre>{
+  <span class="key">"name"</span>: <span class="str">"sample.ingest"</span>,
+  <span class="key">"arguments"</span>: {
+    <span class="key">"path"</span>: <span class="str">"C:\\samples\\suspicious.exe"</span>
+  }
+}</pre>
+  </div>
+
+  <h3><span data-lang-en>Step 2 — Run staged analysis</span><span data-lang-zh>步骤 2 — 运行分阶段分析</span></h3>
+  <div class="code-block">
+    <div class="code-block__header"><span>MCP Tool Call</span><button class="code-block__copy">Copy</button></div>
+    <pre>{
+  <span class="key">"name"</span>: <span class="str">"workflow.analyze.start"</span>,
+  <span class="key">"arguments"</span>: {
+    <span class="key">"sample_id"</span>: <span class="str">"sha256:a1b2c3..."</span>,
+    <span class="key">"goal"</span>: <span class="str">"threat_assessment"</span>
+  }
+}</pre>
+  </div>
+
+  <h3><span data-lang-en>Step 3 — Get the summary</span><span data-lang-zh>步骤 3 — 获取摘要</span></h3>
+  <div class="code-block">
+    <div class="code-block__header"><span>MCP Tool Call</span><button class="code-block__copy">Copy</button></div>
+    <pre>{
+  <span class="key">"name"</span>: <span class="str">"workflow.summarize"</span>,
+  <span class="key">"arguments"</span>: {
+    <span class="key">"sample_id"</span>: <span class="str">"sha256:a1b2c3..."</span>
+  }
+}</pre>
+  </div>
+
+  <h3><span data-lang-en>Step 4 — Export IOCs</span><span data-lang-zh>步骤 4 — 导出 IOC</span></h3>
+  <div class="code-block">
+    <div class="code-block__header"><span>MCP Tool Call</span><button class="code-block__copy">Copy</button></div>
+    <pre>{
+  <span class="key">"name"</span>: <span class="str">"intel.ioc.export"</span>,
+  <span class="key">"arguments"</span>: {
+    <span class="key">"sample_id"</span>: <span class="str">"sha256:a1b2c3..."</span>,
+    <span class="key">"format"</span>: <span class="str">"stix"</span>
+  }
+}</pre>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="container footer__inner">
+    <div class="footer__brand"><span class="nav__logo-icon" style="width:24px;height:24px;font-size:.65rem;border-radius:6px;">R</span> Rikune</div>
+    <ul class="footer__links">
+      <li><a href="api-reference.html">API</a></li>
+      <li><a href="docker.html">Docker</a></li>
+      <li><a href="faq.html">FAQ</a></li>
+      <li><a href="examples.html"><span data-lang-en>Examples</span><span data-lang-zh>示例</span></a></li>
+      <li><a href="plugins.html"><span data-lang-en>Plugins</span><span data-lang-zh>插件</span></a></li>
+    </ul>
+    <span class="footer__copy">MIT License · Built for the MCP ecosystem</span>
+  </div>
+</footer>
+
+<script src="assets/main.js"></script>
+</body>
+</html>

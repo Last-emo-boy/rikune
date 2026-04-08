@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Reference — Rikune</title>
+<meta name="description" content="REST API and MCP resource reference for Rikune MCP Server.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow bg-glow--1"></div>
+<div class="bg-glow bg-glow--2"></div>
+<canvas id="particles"></canvas>
+
+<!-- Navigation -->
+<nav class="nav" id="nav">
+  <div class="nav__inner">
+    <a href="index.html" class="nav__logo"><span class="nav__logo-icon">R</span> Rikune</a>
+    <ul class="nav__links" id="navLinks">
+      <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特性</a></li>
+      <li><a href="index.html#architecture" data-lang-en>Architecture</a><a href="index.html#architecture" data-lang-zh>架构</a></li>
+      <li><a href="api-reference.html" class="active">API</a></li>
+      <li><a href="usage.html" data-lang-en>Usage</a><a href="usage.html" data-lang-zh>使用指南</a></li>
+      <li><a href="docker.html">Docker</a></li>
+      <li><a href="plugins.html" data-lang-en>Plugins</a><a href="plugins.html" data-lang-zh>插件</a></li>
+    </ul>
+    <div class="nav__right">
+      <button class="lang-toggle" id="lang-toggle">中文</button>
+      <a href="https://github.com/mcp-mirror/alfredo-pasquel-rikune" class="nav__cta" target="_blank" rel="noopener">GitHub →</a>
+    </div>
+    <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+
+<!-- Hero -->
+<div class="page-hero">
+  <div class="container">
+    <div class="breadcrumb"><a href="index.html">Rikune</a> / API Reference</div>
+    <h1><span data-lang-en>API Reference</span><span data-lang-zh>API 参考</span></h1>
+    <p>
+      <span data-lang-en>REST API endpoints & MCP resources for the Rikune file server at <code>localhost:18080</code>.</span>
+      <span data-lang-zh>Rikune 文件服务器 <code>localhost:18080</code> 的 REST API 端点和 MCP 资源。</span>
+    </p>
+  </div>
+</div>
+
+<!-- Content -->
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <div class="doc-sidebar__title"><span data-lang-en>On this page</span><span data-lang-zh>本页目录</span></div>
+    <a href="#authentication">Authentication</a>
+    <a href="#health">Health Check</a>
+    <a href="#samples">Samples</a>
+    <a href="#artifacts">Artifacts</a>
+    <a href="#uploads">Upload Sessions</a>
+    <a href="#resources">MCP Resources</a>
+    <a href="#progress">Progress Notifications</a>
+    <a href="#errors">Error Handling</a>
+  </aside>
+
+  <div class="doc-main">
+
+    <!-- Authentication -->
+    <section id="authentication" class="reveal">
+      <h2><span data-lang-en>Authentication</span><span data-lang-zh>身份验证</span></h2>
+      <p>
+        <span data-lang-en>Most endpoints require API key authentication via the <code>X-API-Key</code> header. If the <code>API_KEY</code> environment variable is not set, authentication is disabled.</span>
+        <span data-lang-zh>大多数端点需要通过 <code>X-API-Key</code> 请求头进行 API 密钥认证。如果未设置 <code>API_KEY</code> 环境变量，则禁用认证。</span>
+      </p>
+      <div class="code-block">
+        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
+        <pre>curl -H <span class="str">"X-API-Key: your-api-key"</span> http://localhost:18080/api/v1/...</pre>
+      </div>
+    </section>
+
+    <!-- Health Check -->
+    <section id="health" class="reveal">
+      <h2>Health Check</h2>
+      <div class="endpoint">
+        <span class="endpoint__method endpoint__method--get">GET</span>
+        <span class="endpoint__path">/api/v1/health</span>
+        <p class="endpoint__desc">
+          <span data-lang-en>Check server health, version, and uptime.</span>
+          <span data-lang-zh>检查服务器健康状态、版本和运行时间。</span>
+        </p>
+      </div>
+      <div class="code-block">
+        <div class="code-block__header"><span>Response</span><button class="code-block__copy">Copy</button></div>
+        <pre>{
+  <span class="key">"ok"</span>: <span class="val">true</span>,
+  <span class="key">"data"</span>: {
+    <span class="key">"status"</span>: <span class="str">"healthy"</span>,
+    <span class="key">"version"</span>: <span class="str">"1.0.0-beta.3"</span>,
+    <span class="key">"timestamp"</span>: <span class="str">"2026-03-24T10:00:00.000Z"</span>
+  }
+}</pre>
+      </div>
+    </section>
+
+    <!-- Samples -->
+    <section id="samples" class="reveal">
+      <h2>Samples</h2>
+
+      <div class="endpoint">
+        <span class="endpoint__method endpoint__method--post">POST</span>
+        <span class="endpoint__path">/api/v1/samples</span>
+        <p class="endpoint__desc">
+          <span data-lang-en>Upload a sample file for analysis. Accepts multipart/form-data.</span>
+          <span data-lang-zh>上传样本文件进行分析。接受 multipart/form-data 格式。</span>
+        </p>
+      </div>
+      <div class="code-block">
+        <div class="code-block__header"><span>curl</span><button class="code-block__copy">Copy</button></div>
+        <pre>curl -X POST http://localhost:18080/api/v1/samples \
+  -H <span class="str">"X-API-Key: your-api-key"</span> \
+  -F <span class="str">"file=@sample.exe"</span> \
+  -F <span class="str">"filename=sample.exe"</span> \
+  -F <span class="str">"source=api_upload"</span></pre>
+      </div>
+      <div class="code-block">
+        <div class="code-block__header"><span>Response — 201 Created</span><button class="code-block__copy">Copy</button></div>
+        <pre>{
+  <span class="key">"ok"</span>: <span class="val">true</span>,
+  <span class="key">"data"</span>: {
+    <span class="key">"sample_id"</span>: <span class="str">"sha256:abc123..."</span>,
+    <span class="key">"filename"</span>: <span class="str">"sample.exe"</span>,
+    <span class="key">"size"</span>: <span class="val">1048576</span>,
+    <span class="key">"uploaded_at"</span>: <span class="str">"2026-03-24T10:00:00.000Z"</span>,
+    <span class="key">"existed"</span>: <span class="val">false</span>,
+    <span class="key">"file_type"</span>: <span class="str">".exe"</span>
+  }
+}</pre>
+      </div>
+
+      <div class="endpoint">
+        <span class="endpoint__method endpoint__method--get">GET</span>
+        <span class="endpoint__path">/api/v1/samples/:id</span>
+        <p class="endpoint__desc">
+          <span data-lang-en>Retrieve sample metadata. Add <code>?download=true</code> to download the binary.</span>
+          <span data-lang-zh>获取样本元数据。添加 <code>?download=true</code> 下载二进制文件。</span>
+        </p>
+      </div>
+      <div class="code-block">
+        <div class="code-block__header"><span>Response</span><button class="code-block__copy">Copy</button></div>
+        <pre>{
+  <span class="key">"ok"</span>: <span class="val">true</span>,
+  <span class="key">"data"</span>: {
+    <span class="key">"sample_id"</span>: <span class="str">"sha256:abc123..."</span>,
+    <span class="key">"filename"</span>: <span class="str">"sample.exe"</span>,
+    <span class="key">"size"</span>: <span class="val">1048576</span>,
+    <span class="key">"sha256"</span>: <span class="str">"abc123..."</span>,
+    <span class="key">"file_type"</span>: <span class="str">".exe"</span>,
+    <span class="key">"analyses"</span>: [
+      {
+        <span class="key">"id"</span>: <span class="str">"analysis-123"</span>,
+        <span class="key">"stage"</span>: <span class="str">"triage"</span>,
+        <span class="key">"status"</span>: <span class="str">"completed"</span>
+      }
+    ]
+  }
+}</pre>
+      </div>
+    </section>
+
+    <!-- Artifacts -->
+    <section id="artifacts" class="reveal">
+      <h2>Artifacts</h2>
+
+      <div class="endpoint">
+        <span class="endpoint__method endpoint__method--get">GET</span>
+        <span class="endpoint__path">/api/v1/artifacts</span>
+        <p class="endpoint__desc">
+          <span data-lang-en>List artifacts. Filter by <code>?sample_id=sha256:...</code></span>
+          <span data-lang-zh>列出产物。通过 <code>?sample_id=sha256:...</code> 过滤。</span>
+        </p>
+      </div>
+
+      <div class="endpoint">
+        <span class="endpoint__method endpoint__method--get">GET</span>
+        <span class="endpoint__path">/api/v1/artifacts/:id</span>
+        <p class="endpoint__desc">
+          <span data-lang-en>Get artifact metadata. Add <code>?download=true</code> or <code>?content=true</code>.</span>
+          <span data-lang-zh>获取产物元数据。可添加 <code>?download=true</code> 或 <code>?content=true</code>。</span>
+        </p>
+      </div>
+
+      <div class="endpoint">
+        <span class="endpoint__method endpoint__method--delete">DELETE</span>
+        <span class="endpoint__path">/api/v1/artifacts/:id</span>
+        <p class="endpoint__desc">
+          <span data-lang-en>Delete an artifact.</span>
+          <span data-lang-zh>删除指定产物。</span>
+        </p>
+      </div>
+    </section>
+
+    <!-- Upload Sessions -->
+    <section id="uploads" class="reveal">
+      <h2>Upload Sessions</h2>
+
+      <div class="endpoint">
+        <span class="endpoint__method endpoint__method--post">POST</span>
+        <span class="endpoint__path">/api/v1/uploads/:token</span>
+        <p class="endpoint__desc">
+          <span data-lang-en>Complete an upload session with the given token.</span>
+          <span data-lang-zh>使用给定 token 完成上传会话。</span>
+        </p>
+      </div>
+
+      <div class="endpoint">
+        <span class="endpoint__method endpoint__method--get">GET</span>
+        <span class="endpoint__path">/api/v1/uploads/:token/status</span>
+        <p class="endpoint__desc">
+          <span data-lang-en>Check the status of an upload session.</span>
+          <span data-lang-zh>检查上传会话状态。</span>
+        </p>
+      </div>
+    </section>
+
+    <!-- MCP Resources -->
+    <section id="resources" class="reveal">
+      <h2>MCP Resources</h2>
+      <p>
+        <span data-lang-en>The server exposes helper scripts as MCP resources. Clients discover them via <code>resources/list</code> and read content via <code>resources/read</code>.</span>
+        <span data-lang-zh>服务器将辅助脚本作为 MCP 资源暴露。客户端通过 <code>resources/list</code> 发现资源，通过 <code>resources/read</code> 读取内容。</span>
+      </p>
+
+      <h3><span data-lang-en>Available Resources</span><span data-lang-zh>可用资源</span></h3>
+      <table class="doc-table">
+        <thead>
+          <tr><th>URI</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>script://frida/api_trace.js</code></td><td><span class="badge badge--green">Frida</span></td><td>Windows API tracing</td></tr>
+          <tr><td><code>script://frida/string_decoder.js</code></td><td><span class="badge badge--green">Frida</span></td><td>Runtime string decryption</td></tr>
+          <tr><td><code>script://frida/anti_debug_bypass.js</code></td><td><span class="badge badge--green">Frida</span></td><td>Anti-debug bypass</td></tr>
+          <tr><td><code>script://frida/crypto_finder.js</code></td><td><span class="badge badge--green">Frida</span></td><td>Cryptographic API detection</td></tr>
+          <tr><td><code>script://frida/file_registry_monitor.js</code></td><td><span class="badge badge--green">Frida</span></td><td>File/registry monitoring</td></tr>
+          <tr><td><code>script://ghidra/ExtractFunctions.java</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>Function extraction</td></tr>
+          <tr><td><code>script://ghidra/DecompileFunction.java</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>Function decompilation</td></tr>
+          <tr><td><code>script://ghidra/ExtractCFG.java</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>CFG extraction</td></tr>
+          <tr><td><code>script://ghidra/AnalyzeCrossReferences.java</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>Cross-reference analysis</td></tr>
+          <tr><td><code>script://ghidra/SearchFunctionReferences.java</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>Function reference search</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Progress Notifications -->
+    <section id="progress" class="reveal">
+      <h2>MCP Progress Notifications</h2>
+      <p>
+        <span data-lang-en>Long-running tools support progress reporting via MCP <code>notifications/progress</code>. Include <code>_meta.progressToken</code> in the tool call.</span>
+        <span data-lang-zh>长时间运行的工具支持通过 MCP <code>notifications/progress</code> 报告进度。在工具调用中包含 <code>_meta.progressToken</code>。</span>
+      </p>
+      <div class="code-block">
+        <div class="code-block__header"><span>Progress Notification</span><button class="code-block__copy">Copy</button></div>
+        <pre>{
+  <span class="key">"method"</span>: <span class="str">"notifications/progress"</span>,
+  <span class="key">"params"</span>: {
+    <span class="key">"progressToken"</span>: <span class="str">"my-progress-1"</span>,
+    <span class="key">"progress"</span>: <span class="val">50</span>,
+    <span class="key">"total"</span>: <span class="val">100</span>,
+    <span class="key">"message"</span>: <span class="str">"Enriching static analysis..."</span>
+  }
+}</pre>
+      </div>
+    </section>
+
+    <!-- Error Handling -->
+    <section id="errors" class="reveal">
+      <h2><span data-lang-en>Error Handling</span><span data-lang-zh>错误处理</span></h2>
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Error</th>
+            <th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="badge badge--amber">400</span></td><td>Bad Request</td><td><span data-lang-en>Invalid request format or parameters</span><span data-lang-zh>无效的请求格式或参数</span></td></tr>
+          <tr><td><span class="badge badge--red">401</span></td><td>Unauthorized</td><td><span data-lang-en>Invalid or missing API key</span><span data-lang-zh>无效或缺失的 API 密钥</span></td></tr>
+          <tr><td><span class="badge badge--red">403</span></td><td>Forbidden</td><td><span data-lang-en>API key missing when required</span><span data-lang-zh>需要 API 密钥但未提供</span></td></tr>
+          <tr><td><span class="badge badge--amber">404</span></td><td>Not Found</td><td><span data-lang-en>Resource not found</span><span data-lang-zh>资源未找到</span></td></tr>
+          <tr><td><span class="badge badge--amber">409</span></td><td>Conflict</td><td><span data-lang-en>Resource already exists</span><span data-lang-zh>资源已存在</span></td></tr>
+          <tr><td><span class="badge badge--red">413</span></td><td>Payload Too Large</td><td><span data-lang-en>File exceeds size limit</span><span data-lang-zh>文件超过大小限制</span></td></tr>
+          <tr><td><span class="badge badge--red">500</span></td><td>Internal Error</td><td><span data-lang-en>Server error</span><span data-lang-zh>服务器错误</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Dashboard API -->
+    <section id="dashboard-api" class="reveal">
+      <h2><span data-lang-en>Dashboard API</span><span data-lang-zh>看板 API</span></h2>
+      <p><span data-lang-en>The built-in web dashboard exposes JSON API endpoints on the same HTTP port (<code>18080</code> by default).</span><span data-lang-zh>内置 Web 看板在相同 HTTP 端口（默认 <code>18080</code>）上公开 JSON API 端点。</span></p>
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th><span data-lang-en>Method</span><span data-lang-zh>方法</span></th>
+            <th><span data-lang-en>Path</span><span data-lang-zh>路径</span></th>
+            <th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="badge badge--green">GET</span></td><td><code>/dashboard</code></td><td><span data-lang-en>Web Dashboard UI</span><span data-lang-zh>Web 看板界面</span></td></tr>
+          <tr><td><span class="badge badge--green">GET</span></td><td><code>/api/v1/dashboard/overview</code></td><td><span data-lang-en>Uptime, version, tool/plugin/sample counts, memory</span><span data-lang-zh>运行时间、版本、工具/插件/样本计数、内存</span></td></tr>
+          <tr><td><span class="badge badge--green">GET</span></td><td><code>/api/v1/dashboard/tools</code></td><td><span data-lang-en>All tools grouped by category</span><span data-lang-zh>按类别分组的全部工具</span></td></tr>
+          <tr><td><span class="badge badge--green">GET</span></td><td><code>/api/v1/dashboard/plugins</code></td><td><span data-lang-en>Plugin status (loaded/skipped/error)</span><span data-lang-zh>插件状态（loaded/skipped/error）</span></td></tr>
+          <tr><td><span class="badge badge--green">GET</span></td><td><code>/api/v1/dashboard/samples</code></td><td><span data-lang-en>Sample list with pagination</span><span data-lang-zh>样本列表（分页）</span></td></tr>
+          <tr><td><span class="badge badge--green">GET</span></td><td><code>/api/v1/dashboard/workers</code></td><td><span data-lang-en>Process &amp; system resource stats</span><span data-lang-zh>进程与系统资源统计</span></td></tr>
+          <tr><td><span class="badge badge--green">GET</span></td><td><code>/api/v1/dashboard/config</code></td><td><span data-lang-en>Configuration validation report</span><span data-lang-zh>配置校验报告</span></td></tr>
+          <tr><td><span class="badge badge--green">GET</span></td><td><code>/api/v1/dashboard/system</code></td><td><span data-lang-en>CPU, memory, hostname, Node.js version</span><span data-lang-zh>CPU、内存、主机名、Node.js 版本</span></td></tr>
+          <tr><td><span class="badge badge--green">GET</span></td><td><code>/api/v1/events</code></td><td><span data-lang-en>SSE real-time event stream</span><span data-lang-zh>SSE 实时事件流</span></td></tr>
+          <tr><td><span class="badge badge--red">DELETE</span></td><td><code>/api/v1/artifacts/:id</code></td><td><span data-lang-en>Delete a specific artifact</span><span data-lang-zh>删除指定产物</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Upload Workflow -->
+    <section id="upload-workflow" class="reveal">
+      <h2><span data-lang-en>Upload Workflow</span><span data-lang-zh>上传工作流</span></h2>
+      <p><span data-lang-en>Two upload patterns are supported — direct upload and durable session upload for large or resumable transfers.</span><span data-lang-zh>支持两种上传模式 — 直接上传和适用于大文件或可恢复传输的持久会话上传。</span></p>
+
+      <h3><span data-lang-en>Direct Upload</span><span data-lang-zh>直接上传</span></h3>
+      <div class="terminal">
+        <div class="terminal__header"><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__title">curl</span></div>
+        <pre><code>curl -X POST http://localhost:18080/api/v1/samples \
+  -H "X-API-Key: YOUR_KEY" \
+  -F "file=@malware.exe"</code></pre>
+      </div>
+
+      <h3><span data-lang-en>Durable Session Upload</span><span data-lang-zh>持久会话上传</span></h3>
+      <p><span data-lang-en>For large files, use an upload session which provides a resumable token:</span><span data-lang-zh>对于大文件，使用上传会话提供可恢复的令牌：</span></p>
+      <div class="terminal">
+        <div class="terminal__header"><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__title">workflow</span></div>
+        <pre><code><span class="comment"># 1. Create upload session → get upload_token</span>
+POST /api/v1/samples  (init session)
+
+<span class="comment"># 2. Upload via token</span>
+POST /api/v1/uploads/:token
+
+<span class="comment"># 3. Check session status</span>
+GET  /api/v1/uploads/:token</code></pre>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="container footer__inner">
+    <div class="footer__brand"><span class="nav__logo-icon" style="width:24px;height:24px;font-size:.65rem;border-radius:6px;">R</span> Rikune</div>
+    <ul class="footer__links">
+      <li><a href="api-reference.html">API</a></li>
+      <li><a href="docker.html">Docker</a></li>
+      <li><a href="faq.html">FAQ</a></li>
+      <li><a href="examples.html"><span data-lang-en>Examples</span><span data-lang-zh>示例</span></a></li>
+      <li><a href="plugins.html"><span data-lang-en>Plugins</span><span data-lang-zh>插件</span></a></li>
+    </ul>
+    <span class="footer__copy">MIT License · Built for the MCP ecosystem</span>
+  </div>
+</footer>
+
+<script src="assets/main.js"></script>
+</body>
+</html>
