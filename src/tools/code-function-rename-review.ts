@@ -8,6 +8,8 @@ import type {
   TextContent,
 } from '@modelcontextprotocol/sdk/types.js'
 import type { ToolArgs, ToolDefinition, WorkerResult, ArtifactRef } from '../types.js'
+import { extractJsonCandidates } from '../utils/shared-helpers.js'
+import { type SamplingResult, extractTextBlocks } from '../utils/sampling-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
@@ -255,8 +257,6 @@ export const codeFunctionRenameReviewToolDefinition: ToolDefinition = {
   outputSchema: codeFunctionRenameReviewOutputSchema,
 }
 
-type SamplingResult = CreateMessageResult | CreateMessageResultWithTools
-
 interface CodeFunctionRenameReviewDependencies {
   prepareHandler?: (args: ToolArgs) => Promise<WorkerResult>
   applyHandler?: (args: ToolArgs) => Promise<WorkerResult>
@@ -264,15 +264,6 @@ interface CodeFunctionRenameReviewDependencies {
   samplingRequester?: (params: CreateMessageRequest['params']) => Promise<SamplingResult>
   clientCapabilitiesProvider?: () => ClientCapabilities | undefined
   clientVersionProvider?: () => Implementation | undefined
-}
-
-function extractTextBlocks(result: SamplingResult): string {
-  const blocks = Array.isArray(result.content) ? result.content : [result.content]
-  return blocks
-    .filter((block): block is TextContent => block?.type === 'text')
-    .map((block) => block.text || '')
-    .join('\n')
-    .trim()
 }
 
 function normalizeSuggestionIdentifier(
@@ -301,33 +292,6 @@ function normalizeSuggestionIdentifier(
   }
 
   return { function: identifier }
-}
-
-function extractJsonCandidates(rawText: string): string[] {
-  const candidates: string[] = []
-  const trimmed = rawText.trim()
-  if (trimmed.length > 0) {
-    candidates.push(trimmed)
-  }
-
-  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fencedMatch?.[1]) {
-    candidates.push(fencedMatch[1].trim())
-  }
-
-  const firstBrace = trimmed.indexOf('{')
-  const lastBrace = trimmed.lastIndexOf('}')
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    candidates.push(trimmed.slice(firstBrace, lastBrace + 1))
-  }
-
-  const firstBracket = trimmed.indexOf('[')
-  const lastBracket = trimmed.lastIndexOf(']')
-  if (firstBracket >= 0 && lastBracket > firstBracket) {
-    candidates.push(trimmed.slice(firstBracket, lastBracket + 1))
-  }
-
-  return Array.from(new Set(candidates.filter((item) => item.length > 0)))
 }
 
 function parseSamplingSuggestions(rawText: string): z.infer<typeof ReviewSuggestionSchema>[] {

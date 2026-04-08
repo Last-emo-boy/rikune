@@ -15,6 +15,7 @@ import {
   deriveAnalysisBudgetProfile,
 } from './analysis-coverage.js'
 import type { ArtifactRef } from './types.js'
+import { dedupeArtifactRefs } from './utils/shared-helpers.js'
 import type { JobQueue } from './job-queue.js'
 import type {
   AnalysisIntentDepth,
@@ -222,20 +223,6 @@ function extractRecoveryState(metadata: Record<string, unknown>, rowStatus: stri
 
 function parseSchedulerMetadata(event: { metadata_json?: string | null } | null): Record<string, unknown> {
   return parseJsonRecord<Record<string, unknown>>(event?.metadata_json, {})
-}
-
-function dedupeArtifactRefs(artifactRefs: ArtifactRef[]): ArtifactRef[] {
-  const seen = new Set<string>()
-  const result: ArtifactRef[] = []
-  for (const artifact of artifactRefs) {
-    const key = artifact.id || `${artifact.type}:${artifact.path}`
-    if (seen.has(key)) {
-      continue
-    }
-    seen.add(key)
-    result.push(artifact)
-  }
-  return result
 }
 
 export function buildAnalysisRunCompatibilityMarker(input: {

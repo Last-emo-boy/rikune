@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { ToolArgs, ToolDefinition, WorkerResult, ArtifactRef } from '../types.js'
+import { collectArtifactRefs, dedupeArtifactRefs } from '../utils/shared-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
@@ -145,38 +146,6 @@ export const traceConditionToolDefinition: ToolDefinition = {
 interface TraceConditionDependencies {
   breakpointSmart?: (args: unknown) => Promise<WorkerResult>
   dynamicDependencies?: (args: unknown) => Promise<WorkerResult>
-}
-
-function dedupeArtifactRefs(artifacts: ArtifactRef[]): ArtifactRef[] {
-  const seen = new Set<string>()
-  const output: ArtifactRef[] = []
-  for (const artifact of artifacts) {
-    const key = artifact.id || `${artifact.type}:${artifact.path}`
-    if (!key || seen.has(key)) {
-      continue
-    }
-    seen.add(key)
-    output.push(artifact)
-  }
-  return output
-}
-
-function collectArtifactRefs(result: WorkerResult | undefined): ArtifactRef[] {
-  if (!result) {
-    return []
-  }
-  const refs: ArtifactRef[] = []
-  if (Array.isArray(result.artifacts)) {
-    refs.push(...(result.artifacts.filter((item) => item && typeof item === 'object') as ArtifactRef[]))
-  }
-  const data = result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
-  if (data.artifact && typeof data.artifact === 'object') {
-    refs.push(data.artifact as ArtifactRef)
-  }
-  if (Array.isArray(data.source_artifact_refs)) {
-    refs.push(...(data.source_artifact_refs.filter((item) => item && typeof item === 'object') as ArtifactRef[]))
-  }
-  return refs
 }
 
 function buildRuntimeReadiness(result: WorkerResult | undefined) {

@@ -6,6 +6,7 @@
 import fs from 'fs'
 import path from 'path'
 import { spawnSync } from 'child_process'
+import { getPythonCommand } from './utils/shared-helpers.js'
 import { logger } from './logger.js'
 import { buildRawCommandLine, decodeProcessStreams } from './process-output.js'
 import { resolvePackagePath } from './runtime-paths.js'
@@ -103,10 +104,6 @@ function getWindowsCommandInterpreter(): string {
   }
 
   return 'cmd.exe'
-}
-
-function getPythonCommand(platform: NodeJS.Platform = process.platform): string {
-  return platform === 'win32' ? 'python' : 'python3'
 }
 
 function probePyGhidra(timeoutMs: number): {

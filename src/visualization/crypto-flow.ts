@@ -4,6 +4,7 @@
  */
 
 import { ExplanationGraphDigestSchema, type ExplanationGraphDigest } from '../explanation-graphs.js'
+import { escapeDot, escapeMermaid } from '../utils/shared-helpers.js'
 
 export interface CryptoFlowNode {
   id: string
@@ -149,5 +150,3 @@ export function cryptoFlowToMermaid(data: CryptoFlowData): string {
   return mermaid + '\nclassDef suspicious fill:#ffcccc,stroke:red,stroke-width:2px;\nclassDef algorithm fill:lightyellow,stroke:orange,stroke-width:2px;\nclassDef api fill:lightgreen,stroke:green;\nclassDef data fill:lightgray,stroke:gray;\n'
 }
 
-function escapeDot(text: string): string { return text.replace(/"/g, '\\"').replace(/\n/g, '\\n') }
-function escapeMermaid(text: string): string { return text.replace(/"/g, "'").replace(/\n/g, ' ') }

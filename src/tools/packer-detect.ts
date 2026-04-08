@@ -6,6 +6,7 @@
 
 import { z } from 'zod'
 import { spawn } from 'child_process'
+import { getPythonCommand } from '../utils/shared-helpers.js'
 import { v4 as uuidv4 } from 'uuid'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
@@ -27,9 +28,6 @@ import {
 /**
  * Get the correct Python command for the current platform
  */
-function getPythonCommand(): string {
-  return process.platform === 'win32' ? 'python' : 'python3'
-}
 
 const TOOL_NAME = 'packer.detect'
 const TOOL_VERSION = '1.0.0'
