@@ -1,8 +1,11 @@
 /**
  * Centralised tool / prompt / resource registry.
  *
- * Every MCP tool, prompt, and resource is imported here and wired to its handler factory.
- * `index.ts` calls `registerAllTools(server, deps)` once during bootstrap �?
+ * Core tools (sample management, workflows, system health, plugin introspection)
+ * are registered here. All other tools are auto-discovered via the plugin system
+ * in src/plugins/<id>/index.ts.
+ *
+ * `index.ts` calls `registerAllTools(server, deps)` once during bootstrap,
  * keeping the entry-point lean and all registration logic in one place.
  */
 
@@ -56,14 +59,6 @@ import { artifactDownloadToolDefinition, createArtifactDownloadHandler } from '.
 // ─── LLM ───────────────────────────────────────────────────────────────────
 import { llmAnalyzeToolDefinition, createLlmAnalyzeHandler } from './llm/llm-analyze.js'
 
-// ─── PE analysis ───────────────────────────────────────────────────────────
-
-// ─── Strings ───────────────────────────────────────────────────────────────
-// Moved to plugins/strings
-
-// ─── Static analysis ──────────────────────────────────────────────────────
-// Moved to plugins/static-triage
-
 // ─── Workflows ─────────────────────────────────────────────────────────────
 import { triageWorkflowToolDefinition, createTriageWorkflowHandler } from './workflows/triage.js'
 import { analyzeAutoWorkflowToolDefinition, createAnalyzeAutoWorkflowHandler } from './workflows/analyze-auto.js'
@@ -82,10 +77,7 @@ import { semanticNameReviewWorkflowToolDefinition, createSemanticNameReviewWorkf
 import { functionExplanationReviewWorkflowToolDefinition, createFunctionExplanationReviewWorkflowHandler } from './workflows/function-explanation-review.js'
 import { moduleReconstructionReviewWorkflowToolDefinition, createModuleReconstructionReviewWorkflowHandler } from './workflows/module-reconstruction-review.js'
 
-// ─── Reports ───────────────────────────────────────────────────────────────
-// Moved to plugins/reporting
-
-// ─── Ghidra / task management ──────────────────────────────────────────────
+// ─── Task management & system health ───────────────────────────────────────
 import { systemHealthToolDefinition, createSystemHealthHandler } from './tools/system-health.js'
 import { systemSetupGuideToolDefinition, createSystemSetupGuideHandler } from './tools/system-setup-guide.js'
 import { setupRemediateToolDefinition, createSetupRemediateHandler } from './tools/setup-remediate.js'
@@ -93,40 +85,12 @@ import { taskStatusToolDefinition, createTaskStatusHandler } from './tools/task-
 import { taskCancelToolDefinition, createTaskCancelHandler } from './tools/task-cancel.js'
 import { taskSweepToolDefinition, createTaskSweepHandler } from './tools/task-sweep.js'
 
-// ─── Dynamic analysis ─────────────────────────────────────────────────────
-// Moved to plugins/dynamic
-
-// ─── Docker backend tools ──────────────────────────────────────────────────
-// Moved to plugins/docker-backends
-
-// ─── Threat intel & reporting ─────────────────────────────────────────────
+// ─── Utilities ─────────────────────────────────────────────────────────────
 import { toolHelpToolDefinition, createToolHelpHandler } from './tools/tool-help.js'
 
-// ─── Code analysis ─────────────────────────────────────────────────────────
-// Moved to plugins/code-analysis
-
-// ─── Unpacking / diffing / YARA ────────────────────────────────────────────
-// Moved to plugins/unpacking, plugins/binary-diff, plugins/yara
-
-// ─── Advanced analysis (entropy, obfuscation, taint, unpack guide, frida gen, sigma gen) ──
-// Moved to plugins/static-triage, plugins/unpacking, plugins/frida, plugins/threat-intel
-
-// ─── Vulnerability scanning ────────────────────────────────────────────────
-
-// ─── Knowledge base ────────────────────────────────────────────────────────
-// Moved to plugins/kb-collaboration
-
-// ─── ELF / Mach-O ─────────────────────────────────────────────────────────
-// Moved to plugins/elf-macho
-
-// ─── Debug sessions ────────────────────────────────────────────────────────
-
-// ─── VM / constraint solving ──────────────────────────────────────────────
-// Moved to plugins/vm-analysis
-
-// ─── v2.0 �?Plugin-managed tools ─────────────────────────────────────────
-// Android, CrackMe, Dynamic, Malware, Frida, Ghidra, Cross-module, Visualization, KB
-// Imports are handled inside each plugin's register() function; see src/plugins.ts.
+// ─── Plugins ───────────────────────────────────────────────────────────────
+// All non-core tools are auto-discovered from src/plugins/<id>/index.ts.
+// Enabled/disabled via PLUGINS env var (default: all enabled).
 import { loadPlugins, getPluginManager } from './plugins.js'
 
 // ── Plugin utility imports (injected into plugin deps) ────────────────────
@@ -155,12 +119,6 @@ import {
 import {
   configValidateToolDefinition, createConfigValidateHandler,
 } from './tools/config-validate.js'
-
-// ─── SBOM generation ─────────────────────────────────────────────────────
-// Moved to plugins/sbom
-
-// ─── Batch analysis ──────────────────────────────────────────────────────
-// Moved to plugins/batch
 
 // ─── Async wrapper ─────────────────────────────────────────────────────────
 import { createAsyncToolWrapper, LONG_RUNNING_TOOLS } from './async-tool-wrapper.js'
@@ -192,14 +150,6 @@ export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promi
   // ── LLM ────────────────────────────────────────────────────────────────
   server.registerTool(llmAnalyzeToolDefinition, createLlmAnalyzeHandler(server))
 
-  // ── PE analysis ────────────────────────────────────────────────────────
-
-  // ── Strings ────────────────────────────────────────────────────────────
-  // → plugins/strings
-
-  // ── Static analysis ────────────────────────────────────────────────────
-  // → plugins/static-triage
-
   // ── Workflows ──────────────────────────────────────────────────────────
   server.registerTool(triageWorkflowToolDefinition, createTriageWorkflowHandler(workspaceManager, database, cacheManager, {
     analyzeStart: createAnalyzeWorkflowStartHandler(workspaceManager, database, cacheManager, policyGuard, server, {}, jobQueue),
@@ -215,11 +165,7 @@ export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promi
   server.registerTool(functionExplanationReviewWorkflowToolDefinition, createFunctionExplanationReviewWorkflowHandler(workspaceManager, database, cacheManager, server, undefined, jobQueue))
   server.registerTool(moduleReconstructionReviewWorkflowToolDefinition, createModuleReconstructionReviewWorkflowHandler(workspaceManager, database, cacheManager, server, undefined, jobQueue))
 
-  // ── Reports ────────────────────────────────────────────────────────────
-  // → plugins/reporting
-
   // ── Task management ─────────────────────────────────────────────────────
-  // (Ghidra tools are now registered via the ghidra plugin)
   server.registerTool(taskStatusToolDefinition, createTaskStatusHandler(jobQueue, database))
   server.registerTool(taskCancelToolDefinition, createTaskCancelHandler(jobQueue))
   server.registerTool(taskSweepToolDefinition, createTaskSweepHandler(jobQueue, database))
@@ -234,44 +180,10 @@ export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promi
     setupGuideHandler: systemSetupGuideHandler,
   }))
 
-  // ── Dynamic analysis ───────────────────────────────────────────────────
-  // → plugins/dynamic
-
-  // ── Docker backend tools ───────────────────────────────────────────────
-  // → plugins/docker-backends
-
-  // ── Threat intel & reporting ───────────────────────────────────────────
+  // ── Utilities ──────────────────────────────────────────────────────────
   server.registerTool(toolHelpToolDefinition, createToolHelpHandler(() => server.getToolDefinitions()))
 
-  // ── Code analysis ──────────────────────────────────────────────────────
-  // → plugins/code-analysis
-
-  // ── Unpacking / diffing / YARA ─────────────────────────────────────────
-  // → plugins/unpacking, plugins/binary-diff, plugins/yara
-
-  // ── Advanced analysis ──────────────────────────────────────────────────
-  // → plugins/static-triage, plugins/unpacking, plugins/frida, plugins/threat-intel
-
-  // ── Vulnerability scanning ─────────────────────────────────────────────
-
-  // ── Knowledge base ─────────────────────────────────────────────────────
-  // → plugins/kb-collaboration
-
-  // ── ELF / Mach-O ──────────────────────────────────────────────────────
-  // → plugins/elf-macho
-
-  // ── Debug sessions ─────────────────────────────────────────────────────
-
-  // ── VM / constraint solving ────────────────────────────────────────────
-  // → plugins/vm-analysis
-
-  // ── v2.0 �?Plugin-managed tools ─────────────────────────────────────────
-  // Android, CrackMe, Dynamic, Malware, Frida, Ghidra, Cross-module,
-  // Visualization, and KB tools are all loaded via the plugin system.
-  // Enabled/disabled via PLUGINS env var (default: all enabled).
-  // ── v2.0 �?Plugin-managed tools ─────────────────────────────────────────
-  // All plugin tools are auto-discovered from src/plugins/<id>/index.ts
-  // Plugin deps include utility functions so plugins have zero server imports.
+  // ── Plugins ────────────────────────────────────────────────────────────
   const pluginDeps = {
     ...deps,
     resolvePrimarySamplePath,
@@ -303,20 +215,14 @@ export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promi
   // ── System diagnostics tools ───────────────────────────────────────────
   server.registerTool(configValidateToolDefinition, createConfigValidateHandler(server))
 
-  // ── SBOM generation ────────────────────────────────────────────────────
-  // → plugins/sbom
-
-  // ── Batch analysis ─────────────────────────────────────────────────────
-  // → plugins/batch
-
   // ══════════════════════════════════════════════════════════════════════════
-  // MCP Resources �?read-only content exposed to clients
+  // MCP Resources — read-only content exposed to clients
   // ══════════════════════════════════════════════════════════════════════════
   registerScriptResources(server)
 }
 
 // ============================================================================
-// Script Resources �?expose Frida / Ghidra scripts as readable MCP resources
+// Script Resources — expose Frida / Ghidra scripts as readable MCP resources
 // ============================================================================
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))

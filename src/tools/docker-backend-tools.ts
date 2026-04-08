@@ -1,21 +1,10 @@
 /**
- * Docker Backend Tools 鈥?barrel re-export.
+ * Docker Backend Tools — barrel re-export.
  *
  * All tool implementations have been split into individual files under
- * `src/tools/docker/`. This file re-exports everything for backward
- * compatibility so existing imports continue to work.
+ * `src/tools/docker/`. This file re-exports tool definitions and handler
+ * factories for backward compatibility so existing imports continue to work.
  */
-
-// Shared types and helpers
-export type { CommandResult, PythonJsonResult, SharedBackendDependencies } from './docker/docker-shared.js'
-export {
-  ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
-  normalizeError, stripAnsi, truncateText, safeJsonParse,
-  ensureSampleExists, findBackendPreviewEvidence, persistBackendPreviewEvidence,
-  persistBackendArtifact, executeCommand, runPythonJson,
-  buildStaticSetupRequired, buildDynamicSetupRequired,
-  resolveSampleFile, buildMetrics,
-} from './docker/docker-shared.js'
 
 // Tool re-exports
 export {
