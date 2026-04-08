@@ -10,6 +10,7 @@ import type { JobQueue, JobResult } from '../job-queue.js'
 import { JobPriority } from '../job-queue.js'
 import type { PolicyGuard } from '../policy-guard.js'
 import type { MCPServer } from '../server.js'
+import { dedupeStrings } from '../utils/shared-helpers.js'
 import {
   AnalysisIntentDepthSchema,
   AnalysisIntentGoalSchema,
@@ -310,13 +311,6 @@ interface StageExecutionContext {
   dependencies: AnalyzePipelineDependencies
 }
 
-function dedupeStrings(values: Array<string | null | undefined>, limit = 12): string[] {
-  return Array.from(
-    new Set(
-      values.filter((value): value is string => Boolean(value && value.trim().length > 0))
-    )
-  ).slice(0, limit)
-}
 
 function collectArtifactsFromResult(result: WorkerResult | undefined): ArtifactRef[] {
   if (!result) {

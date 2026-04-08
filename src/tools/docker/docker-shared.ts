@@ -140,7 +140,7 @@ export function buildMetrics(startTime: number, tool: string) {
   }
 }
 
-import { normalizeError } from '../../utils/shared-helpers.js'
+import { normalizeError, sanitizePathSegment as sanitizeSegment } from '../../utils/shared-helpers.js'
 export { normalizeError }
 
 export function stripAnsi(text: string): string {
@@ -219,14 +219,6 @@ export function persistBackendPreviewEvidence(
   })
 }
 
-function sanitizeSegment(value: string | undefined | null, fallback: string): string {
-  const normalized = (value || fallback)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-  return normalized.length > 0 ? normalized.slice(0, 64) : fallback
-}
 
 export async function persistBackendArtifact(
   workspaceManager: WorkspaceManager,

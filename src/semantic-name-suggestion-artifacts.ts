@@ -5,6 +5,7 @@ import type { ArtifactRef } from './types.js'
 import type { WorkspaceManager } from './workspace-manager.js'
 import type { DatabaseManager } from './database.js'
 import { deriveArtifactSessionTag } from './artifact-inventory.js'
+import { sanitizePathSegment } from './utils/shared-helpers.js'
 
 export const SEMANTIC_NAME_SUGGESTIONS_ARTIFACT_TYPE = 'semantic_name_suggestions'
 export const SEMANTIC_NAME_PREPARE_BUNDLE_ARTIFACT_TYPE = 'semantic_name_prepare_bundle'
@@ -177,14 +178,6 @@ export interface SemanticModuleReviewIndex {
 
 const LATEST_SEMANTIC_ARTIFACT_WINDOW_MS = 10 * 1000
 
-function sanitizePathSegment(value: string | undefined, fallback: string): string {
-  const normalized = (value || fallback)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-  return normalized.length > 0 ? normalized.slice(0, 64) : fallback
-}
 
 export function normalizeFunctionKey(value: string | null | undefined): string | null {
   if (!value) {

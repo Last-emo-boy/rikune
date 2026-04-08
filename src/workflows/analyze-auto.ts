@@ -4,6 +4,7 @@ import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
 import type { JobQueue } from '../job-queue.js'
+import { dedupeStrings } from '../utils/shared-helpers.js'
 import {
   AnalysisIntentDepthSchema,
   AnalysisIntentGoalSchema,
@@ -211,9 +212,6 @@ function extractCoverageEnvelope(
   return parsed.success ? parsed.data : null
 }
 
-function dedupeStrings(values: Array<string | undefined | null>) {
-  return Array.from(new Set(values.filter((value): value is string => Boolean(value && value.trim().length > 0))))
-}
 
 export function createAnalyzeAutoWorkflowHandler(
   workspaceManager: WorkspaceManager,

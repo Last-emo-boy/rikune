@@ -5,6 +5,7 @@ import { z } from 'zod'
 import type { ArtifactRef } from './types.js'
 import type { WorkspaceManager } from './workspace-manager.js'
 import type { DatabaseManager } from './database.js'
+import { sanitizePathSegment as sanitizeSegment } from './utils/shared-helpers.js'
 
 export const EXPLANATION_GRAPH_TYPE_VALUES = [
   'call_graph',
@@ -105,14 +106,6 @@ export const ExplanationGraphArtifactSchema = ExplanationGraphDigestSchema.exten
 export type ExplanationGraphDigest = z.infer<typeof ExplanationGraphDigestSchema>
 export type ExplanationGraphArtifact = z.infer<typeof ExplanationGraphArtifactSchema>
 
-function sanitizeSegment(value: string | undefined, fallback: string) {
-  const normalized = (value || fallback)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-  return normalized.length > 0 ? normalized.slice(0, 64) : fallback
-}
 
 function artifactRefFromParts(input: {
   id: string

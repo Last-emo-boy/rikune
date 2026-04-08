@@ -6,6 +6,7 @@ import { validateGraphvizFormat } from './safe-command.js'
 import type { DatabaseManager, Function as DatabaseFunction } from './database.js'
 import type { ControlFlowGraph, CFGEdge, CFGNode } from './decompiler-worker.js'
 import type { ArtifactRef } from './types.js'
+import { sanitizePathSegment as sanitizeSegment } from './utils/shared-helpers.js'
 import type { WorkspaceManager } from './workspace-manager.js'
 
 export type CFGExportFormat = 'json' | 'dot' | 'mermaid'
@@ -111,14 +112,6 @@ const MIME_BY_FORMAT: Record<CFGExportFormat | 'svg' | 'png', string> = {
   png: 'image/png',
 }
 
-function sanitizeSegment(value: string | null | undefined, fallback: string): string {
-  const normalized = (value || fallback)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-  return normalized.length > 0 ? normalized.slice(0, 64) : fallback
-}
 
 function sha256ForContent(content: string | Buffer): string {
   return createHash('sha256').update(content).digest('hex')

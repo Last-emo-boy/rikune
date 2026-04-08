@@ -1,4 +1,5 @@
 import fs from 'fs'
+import { dedupeStrings } from './utils/shared-helpers.js'
 
 export interface PESectionRecord {
   name: string
@@ -602,6 +603,3 @@ export function smartRecoverFunctionsFromPE(filePath: string): SmartRecoverResul
   }
 }
 
-function dedupeStrings(values: string[]): string[] {
-  return Array.from(new Set(values.filter((item) => item.length > 0)))
-}

@@ -5,6 +5,7 @@ import type { ArtifactRef } from './types.js'
 import type { WorkspaceManager } from './workspace-manager.js'
 import type { DatabaseManager } from './database.js'
 import { deriveArtifactSessionTag } from './artifact-inventory.js'
+import { sanitizePathSegment, matchesSessionTag } from './utils/shared-helpers.js'
 
 export const STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE = 'static_capability_triage'
 export const PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE = 'pe_structure_analysis'
@@ -34,14 +35,6 @@ export interface StaticArtifactSelection<TPayload = unknown> {
 
 const LATEST_STATIC_ARTIFACT_WINDOW_MS = 10 * 1000
 
-function sanitizePathSegment(value: string | undefined, fallback: string): string {
-  const normalized = (value || fallback)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-  return normalized.length > 0 ? normalized.slice(0, 64) : fallback
-}
 
 export async function persistStaticAnalysisJsonArtifact(
   workspaceManager: WorkspaceManager,
@@ -86,13 +79,6 @@ export async function persistStaticAnalysisJsonArtifact(
   }
 }
 
-function matchesSessionTag(sessionTags: string[], selector?: string | null): boolean {
-  if (!selector || !selector.trim()) {
-    return false
-  }
-  const normalized = selector.trim()
-  return sessionTags.some((tag) => tag === normalized)
-}
 
 export async function loadStaticAnalysisArtifactSelection<TPayload>(
   workspaceManager: WorkspaceManager,
