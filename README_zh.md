@@ -734,3 +734,5 @@ docker compose up -d mcp-server
 ## License
 
 MIT 许可证，详见 [`LICENSE`](./LICENSE)。
+
+感谢 [linuxdo (linux.do) ](https://linux.do/) 社区的交流、分享与反馈。
