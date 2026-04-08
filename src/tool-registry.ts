@@ -168,6 +168,20 @@ import { unpackGuideToolDefinition, createUnpackGuideHandler } from './tools/unp
 import { fridaScriptGenerateToolDefinition, createFridaScriptGenerateHandler } from './tools/frida-script-generate.js'
 import { sigmaRuleGenerateToolDefinition, createSigmaRuleGenerateHandler } from './tools/sigma-rule-generate.js'
 
+// ─── Unpacking automation ──────────────────────────────────────────────────
+import { unpackEmulateToolDefinition, createUnpackEmulateHandler } from './tools/unpack-emulate.js'
+import { unpackReingestToolDefinition, createUnpackReingestHandler } from './tools/unpack-reingest.js'
+
+// ─── Cross-sample correlation ──────────────────────────────────────────────
+import { sampleClusterToolDefinition, createSampleClusterHandler } from './tools/sample-cluster.js'
+import { sampleTimelineToolDefinition, createSampleTimelineHandler } from './tools/sample-timeline.js'
+import { sampleFamilyTrackToolDefinition, createSampleFamilyTrackHandler } from './tools/sample-family-track.js'
+
+// ─── IL / bytecode analysis ────────────────────────────────────────────────
+import { dotNetIlDecompileToolDefinition, createDotNetIlDecompileHandler } from './tools/dotnet-il-decompile.js'
+import { javaDecompileToolDefinition, createJavaDecompileHandler } from './tools/java-decompile.js'
+import { bytecodeTaintToolDefinition, createBytecodeTaintHandler } from './tools/bytecode-taint.js'
+
 // ─── Vulnerability scanning ────────────────────────────────────────────────
 
 // ─── Knowledge base ────────────────────────────────────────────────────────
@@ -384,6 +398,20 @@ export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promi
   server.registerTool(unpackGuideToolDefinition, createUnpackGuideHandler(workspaceManager, database))
   server.registerTool(fridaScriptGenerateToolDefinition, createFridaScriptGenerateHandler(workspaceManager, database))
   server.registerTool(sigmaRuleGenerateToolDefinition, createSigmaRuleGenerateHandler(workspaceManager, database))
+
+  // ── Unpacking automation ─────────────────────────────────────────────────
+  server.registerTool(unpackEmulateToolDefinition, createUnpackEmulateHandler(workspaceManager, database))
+  server.registerTool(unpackReingestToolDefinition, createUnpackReingestHandler(workspaceManager, database))
+
+  // ── Cross-sample correlation ────────────────────────────────────────────
+  server.registerTool(sampleClusterToolDefinition, createSampleClusterHandler(workspaceManager, database))
+  server.registerTool(sampleTimelineToolDefinition, createSampleTimelineHandler(workspaceManager, database))
+  server.registerTool(sampleFamilyTrackToolDefinition, createSampleFamilyTrackHandler(workspaceManager, database))
+
+  // ── IL / bytecode analysis ──────────────────────────────────────────────
+  server.registerTool(dotNetIlDecompileToolDefinition, createDotNetIlDecompileHandler(workspaceManager, database, cacheManager))
+  server.registerTool(javaDecompileToolDefinition, createJavaDecompileHandler(workspaceManager, database, cacheManager))
+  server.registerTool(bytecodeTaintToolDefinition, createBytecodeTaintHandler(workspaceManager, database, cacheManager))
 
   // ── Vulnerability scanning ─────────────────────────────────────────────
 

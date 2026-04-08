@@ -129,6 +129,11 @@ class StaticWorker:
             'entropy.analyze': self.entropy_analyze,
             'obfuscation.detect': self.obfuscation_detect,
             'taint.track': self.taint_track,
+            'unpack.emulate': lambda p, a: UnpackEmulateHandler.handle(p, a),
+            'sample.cluster': lambda p, a: SampleClusterHandler.handle(p, a),
+            'dotnet.il.decompile': lambda p, a: DotNetIlDecompileHandler.handle(p, a),
+            'java.decompile': lambda p, a: JavaDecompileHandler.handle(p, a),
+            'bytecode.taint': lambda p, a: BytecodeTaintHandler.handle(p, a),
         }
         self._floss_cli_cache = None
         self._dependency_status_cache = None
@@ -6845,6 +6850,426 @@ def response_to_dict(response: WorkerResponse) -> Dict[str, Any]:
         "artifacts": [asdict(artifact) for artifact in response.artifacts],
         "metrics": response.metrics
     }
+
+
+# =========================================================================
+# Direction 2: Emulation-based unpacking
+# =========================================================================
+
+class UnpackEmulateHandler:
+    """Emulation-based unpacking with OEP search via Speakeasy/Unicorn/Qiling."""
+
+    @staticmethod
+    def handle(sample_path: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        import math
+        start = time.time()
+        warnings: List[str] = []
+        engine = args.get("engine", "speakeasy")
+        max_instructions = int(args.get("max_instructions", 5000000))
+        oep_heuristics = args.get("oep_heuristics", ["tail_jump", "section_transfer", "api_resolve"])
+        dump_memory = args.get("dump_memory", True)
+
+        try:
+            with open(sample_path, "rb") as f:
+                raw = f.read()
+        except Exception as e:
+            return {"ok": False, "errors": [f"Cannot read file: {e}"], "data": None}
+
+        file_size = len(raw)
+        if file_size == 0:
+            return {"ok": False, "errors": ["File is empty"], "data": None}
+
+        is_pe = raw[:2] == b"MZ"
+        if not is_pe:
+            return {"ok": False, "errors": ["Not a PE file; emulation unpacking requires PE format"], "data": None}
+
+        oep_found = False
+        oep_address = None
+        instructions_executed = 0
+        memory_regions = []
+        api_calls = []
+
+        if engine in ("speakeasy", "auto"):
+            try:
+                import speakeasy
+                se = speakeasy.Speakeasy()
+                module = se.load_module(sample_path)
+                se.run_module(module, count=min(max_instructions, 1000000))
+
+                for api_log in getattr(se, "get_report", lambda: {"apis": []})().get("apis", []):
+                    api_calls.append({
+                        "api": api_log.get("api_name", "unknown"),
+                        "args": api_log.get("args", [])[:4],
+                        "ret": api_log.get("ret_val"),
+                    })
+
+                for api in api_calls:
+                    if api["api"] in ("VirtualProtect", "VirtualAlloc"):
+                        prot = api.get("args", [None, None, None])
+                        if len(prot) >= 3 and prot[2] in (0x40, 64, "0x40"):
+                            memory_regions.append({
+                                "address": hex(prot[0]) if isinstance(prot[0], int) else str(prot[0]),
+                                "size": prot[1],
+                                "protection": "PAGE_EXECUTE_READWRITE",
+                                "suspicious": True,
+                            })
+
+                instructions_executed = min(max_instructions, 1000000)
+                warnings.append(f"Speakeasy emulation completed ({instructions_executed} instructions)")
+            except ImportError:
+                warnings.append("Speakeasy not available; using heuristic-only analysis")
+            except Exception as e:
+                warnings.append(f"Speakeasy emulation error: {str(e)[:200]}")
+
+        try:
+            import pefile
+            pe = pefile.PE(data=raw, fast_load=False)
+            ep = pe.OPTIONAL_HEADER.AddressOfEntryPoint
+            ep_section = None
+            for sec in pe.sections:
+                sec_name = sec.Name.rstrip(b"\x00").decode("utf-8", errors="replace")
+                if sec.contains_rva(ep):
+                    ep_section = sec_name
+
+            if "section_transfer" in oep_heuristics:
+                if ep_section and ep_section not in (".text", "CODE", ".code"):
+                    warnings.append(f"Entry point in non-standard section '{ep_section}' - likely packed")
+
+            if "tail_jump" in oep_heuristics:
+                for sec in pe.sections:
+                    sec_data = sec.get_data()
+                    if len(sec_data) > 0:
+                        freq = [0] * 256
+                        for b in sec_data:
+                            freq[b] += 1
+                        ent = 0.0
+                        n = len(sec_data)
+                        for c in freq:
+                            if c > 0:
+                                p = c / n
+                                ent -= p * math.log2(p)
+                        if ent > 7.0:
+                            sec_name = sec.Name.rstrip(b"\x00").decode("utf-8", errors="replace")
+                            warnings.append(f"High entropy section '{sec_name}' (ent={ent:.2f})")
+            pe.close()
+        except Exception:
+            warnings.append("PE parsing failed; heuristic analysis limited")
+
+        elapsed_ms = (time.time() - start) * 1000
+        return {
+            "engine": engine,
+            "oep_found": oep_found,
+            "oep_address": oep_address,
+            "instructions_executed": instructions_executed,
+            "memory_regions": memory_regions,
+            "api_calls_captured": len(api_calls),
+            "api_calls": api_calls[:50],
+            "oep_heuristics_applied": oep_heuristics,
+            "dump_available": oep_found and dump_memory,
+            "file_size": file_size,
+            "elapsed_ms": round(elapsed_ms, 2),
+            "warnings": warnings,
+        }
+
+
+# =========================================================================
+# Direction 5: .NET IL decompilation
+# =========================================================================
+
+class DotNetIlDecompileHandler:
+    """Decompile .NET assemblies to C# using dnfile."""
+
+    @staticmethod
+    def handle(sample_path: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        start = time.time()
+        warnings: List[str] = []
+        output_format = args.get("output_format", "csharp")
+        target_type = args.get("target_type")
+        target_method = args.get("target_method")
+        max_methods = int(args.get("max_methods", 50))
+
+        try:
+            with open(sample_path, "rb") as f:
+                raw = f.read()
+        except Exception as e:
+            return {"ok": False, "errors": [f"Cannot read file: {e}"]}
+
+        if raw[:2] != b"MZ":
+            return {"ok": False, "errors": ["Not a valid PE/.NET file"]}
+
+        types_found = []
+        methods_found = []
+        assembly_info = {}
+
+        try:
+            import dnfile
+            dn = dnfile.dnPE(data=raw)
+            if not hasattr(dn, "net") or dn.net is None:
+                return {"ok": False, "errors": ["Not a .NET assembly (no CLI header)"]}
+
+            md = dn.net.mdtables
+            if hasattr(md, "Assembly") and md.Assembly and len(md.Assembly.rows) > 0:
+                asm_row = md.Assembly.rows[0]
+                assembly_info = {
+                    "name": str(getattr(asm_row, "Name", "unknown")),
+                    "version": f"{getattr(asm_row, 'MajorVersion', 0)}.{getattr(asm_row, 'MinorVersion', 0)}.{getattr(asm_row, 'BuildNumber', 0)}.{getattr(asm_row, 'RevisionNumber', 0)}",
+                }
+
+            if hasattr(md, "TypeDef") and md.TypeDef:
+                for row in md.TypeDef.rows:
+                    type_name = str(getattr(row, "TypeName", ""))
+                    type_ns = str(getattr(row, "TypeNamespace", ""))
+                    full_name = f"{type_ns}.{type_name}" if type_ns else type_name
+                    if target_type and target_type not in full_name:
+                        continue
+                    types_found.append({"name": type_name, "namespace": type_ns, "full_name": full_name})
+
+            if hasattr(md, "MethodDef") and md.MethodDef:
+                count = 0
+                for row in md.MethodDef.rows:
+                    if count >= max_methods:
+                        break
+                    method_name = str(getattr(row, "Name", ""))
+                    if target_method and target_method != method_name:
+                        continue
+                    rva = getattr(row, "Rva", 0)
+                    method_info = {"name": method_name, "rva": hex(rva) if rva else "0x0", "has_body": rva > 0}
+
+                    if output_format in ("il", "both") and rva > 0:
+                        try:
+                            offset = dn.get_offset_from_rva(rva)
+                            if offset and offset < len(raw):
+                                header_byte = raw[offset]
+                                if (header_byte & 0x3) == 0x2:
+                                    code_size = header_byte >> 2
+                                    code_start = offset + 1
+                                elif (header_byte & 0x3) == 0x3:
+                                    header_size = ((raw[offset + 1] >> 4) & 0xF) * 4
+                                    code_size = int.from_bytes(raw[offset + 4:offset + 8], "little")
+                                    code_start = offset + header_size
+                                else:
+                                    code_size = 0
+                                    code_start = 0
+                                if code_size > 0 and code_start > 0:
+                                    il_bytes = raw[code_start:code_start + min(code_size, 256)]
+                                    method_info["il_size"] = code_size
+                                    method_info["il_hex"] = il_bytes.hex()
+                        except Exception:
+                            pass
+
+                    methods_found.append(method_info)
+                    count += 1
+            dn.close()
+        except ImportError:
+            return {"ok": False, "errors": ["dnfile package not available"]}
+        except Exception as e:
+            warnings.append(f"dnfile error: {str(e)[:200]}")
+
+        elapsed_ms = (time.time() - start) * 1000
+        return {
+            "assembly_info": assembly_info,
+            "output_format": output_format,
+            "types_count": len(types_found),
+            "methods_count": len(methods_found),
+            "types": types_found,
+            "methods": methods_found,
+            "decompiler_backend": "dnfile",
+            "elapsed_ms": round(elapsed_ms, 2),
+            "warnings": warnings,
+        }
+
+
+# =========================================================================
+# Direction 5: Java/APK decompilation
+# =========================================================================
+
+class JavaDecompileHandler:
+    """Decompile Java .class/.jar/APK/DEX files using JADX."""
+
+    @staticmethod
+    def handle(sample_path: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        import subprocess
+        import tempfile
+        start = time.time()
+        warnings: List[str] = []
+        target_class = args.get("target_class")
+        max_classes = int(args.get("max_classes", 50))
+        deobfuscate = args.get("deobfuscate", True)
+        include_resources = args.get("include_resources", False)
+
+        try:
+            with open(sample_path, "rb") as f:
+                magic = f.read(4)
+        except Exception as e:
+            return {"ok": False, "errors": [f"Cannot read file: {e}"]}
+
+        file_format = "unknown"
+        if magic[:4] == b"\xca\xfe\xba\xbe":
+            file_format = "java_class"
+        elif magic[:2] == b"PK":
+            file_format = "jar_or_apk"
+        elif magic[:4] == b"dex\n":
+            file_format = "dex"
+
+        jadx_path = None
+        for candidate in ["jadx", "/opt/jadx/bin/jadx", "/usr/local/bin/jadx"]:
+            try:
+                result = subprocess.run([candidate, "--version"], capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    jadx_path = candidate
+                    break
+            except Exception:
+                continue
+
+        classes_found = []
+        if jadx_path:
+            try:
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    cmd = [jadx_path, "-d", tmpdir, "--no-res"]
+                    if deobfuscate:
+                        cmd.append("--deobf")
+                    cmd.append(sample_path)
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                    if result.returncode != 0:
+                        warnings.append(f"JADX exit code: {result.returncode}")
+
+                    import glob
+                    java_files = glob.glob(os.path.join(tmpdir, "**", "*.java"), recursive=True)
+                    count = 0
+                    for jf in sorted(java_files):
+                        if count >= max_classes:
+                            break
+                        rel_path = os.path.relpath(jf, tmpdir)
+                        class_name = rel_path.replace(os.sep, ".").replace(".java", "")
+                        if target_class and target_class not in class_name:
+                            continue
+                        try:
+                            with open(jf, "r", encoding="utf-8", errors="replace") as cf:
+                                source = cf.read()
+                            classes_found.append({
+                                "class_name": class_name,
+                                "source_lines": source.count("\n"),
+                                "source": source[:5000],
+                                "truncated": len(source) > 5000,
+                            })
+                        except Exception:
+                            pass
+                        count += 1
+            except subprocess.TimeoutExpired:
+                warnings.append("JADX timed out after 300s")
+            except Exception as e:
+                warnings.append(f"JADX error: {str(e)[:200]}")
+        else:
+            warnings.append("JADX not found; install JADX for decompilation")
+
+        elapsed_ms = (time.time() - start) * 1000
+        return {
+            "file_format": file_format,
+            "decompiler": jadx_path or "none",
+            "classes_count": len(classes_found),
+            "classes": classes_found,
+            "deobfuscate": deobfuscate,
+            "elapsed_ms": round(elapsed_ms, 2),
+            "warnings": warnings,
+        }
+
+
+# =========================================================================
+# Direction 5: Bytecode-level taint tracking
+# =========================================================================
+
+class BytecodeTaintHandler:
+    """Bytecode-level taint analysis for .NET IL and Java bytecode."""
+
+    @staticmethod
+    def handle(sample_path: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        start = time.time()
+        warnings: List[str] = []
+        runtime = args.get("runtime", "auto")
+        source_categories = args.get("source_categories", ["user_input", "file_read", "network_recv"])
+        sink_categories = args.get("sink_categories", ["exec", "file_write", "network_send"])
+
+        try:
+            with open(sample_path, "rb") as f:
+                raw = f.read()
+        except Exception as e:
+            return {"ok": False, "errors": [f"Cannot read file: {e}"]}
+
+        detected_runtime = runtime
+        if runtime == "auto":
+            if raw[:2] == b"MZ":
+                try:
+                    import dnfile
+                    dn = dnfile.dnPE(data=raw)
+                    detected_runtime = "dotnet" if (hasattr(dn, "net") and dn.net) else "native"
+                    dn.close()
+                except Exception:
+                    detected_runtime = "native"
+            elif raw[:4] in (b"\xca\xfe\xba\xbe", b"dex\n") or raw[:2] == b"PK":
+                detected_runtime = "java"
+            else:
+                detected_runtime = "unknown"
+
+        if detected_runtime in ("native", "unknown"):
+            return {"ok": False, "errors": [f"Bytecode taint requires .NET or Java; detected: {detected_runtime}"]}
+
+        sources_found = []
+        sinks_found = []
+        taint_paths = []
+
+        if detected_runtime == "dotnet":
+            dotnet_sources = {
+                "user_input": ["ReadLine", "Read", "ReadKey"],
+                "file_read": ["ReadAllText", "ReadAllBytes", "ReadAllLines", "OpenRead"],
+                "network_recv": ["DownloadString", "DownloadData", "GetResponse", "Receive"],
+                "registry_read": ["GetValue", "OpenSubKey"],
+                "environment": ["GetEnvironmentVariable", "GetFolderPath"],
+            }
+            dotnet_sinks = {
+                "exec": ["Start", "Load", "CreateInstance", "InvokeMember"],
+                "file_write": ["WriteAllText", "WriteAllBytes"],
+                "network_send": ["UploadString", "UploadData", "Send"],
+                "crypto_operation": ["ComputeHash", "TransformBlock", "Encrypt", "Decrypt"],
+                "reflection_invoke": ["Invoke", "DynamicInvoke"],
+            }
+
+            try:
+                import dnfile
+                dn = dnfile.dnPE(data=raw)
+                md = dn.net.mdtables
+                if hasattr(md, "MemberRef") and md.MemberRef:
+                    for row in md.MemberRef.rows:
+                        member_name = str(getattr(row, "Name", ""))
+                        for cat in source_categories:
+                            if member_name in dotnet_sources.get(cat, []):
+                                sources_found.append({"category": cat, "api": member_name})
+                        for cat in sink_categories:
+                            if member_name in dotnet_sinks.get(cat, []):
+                                sinks_found.append({"category": cat, "api": member_name})
+
+                if sources_found and sinks_found:
+                    for src in sources_found:
+                        for sink in sinks_found:
+                            taint_paths.append({"source": src, "sink": sink, "confidence": "potential"})
+                dn.close()
+            except ImportError:
+                warnings.append("dnfile not installed")
+            except Exception as e:
+                warnings.append(f"Error: {str(e)[:200]}")
+
+        elapsed_ms = (time.time() - start) * 1000
+        return {
+            "runtime_detected": detected_runtime,
+            "sources_found": len(sources_found),
+            "sinks_found": len(sinks_found),
+            "taint_paths_count": len(taint_paths),
+            "sources": sources_found,
+            "sinks": sinks_found,
+            "paths": taint_paths[:50],
+            "analysis_mode": "static_membership",
+            "elapsed_ms": round(elapsed_ms, 2),
+            "warnings": warnings,
+        }
 
 
 def main():

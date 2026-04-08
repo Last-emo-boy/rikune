@@ -7,6 +7,8 @@
 import type { Plugin } from '../sdk.js'
 import { kbFunctionMatchToolDefinition, createKbFunctionMatchHandler } from './tools/kb-function-match.js'
 import { analysisTemplateToolDefinition, createAnalysisTemplateHandler } from './tools/analysis-template.js'
+import { analysisNotesToolDefinition, createAnalysisNotesHandler } from './tools/analysis-notes.js'
+import { ruleLibraryToolDefinition, createRuleLibraryHandler } from './tools/rule-library.js'
 
 const kbCollaborationPlugin: Plugin = {
   id: 'kb-collaboration',
@@ -16,7 +18,9 @@ const kbCollaborationPlugin: Plugin = {
   register(server, deps) {
     server.registerTool(kbFunctionMatchToolDefinition, createKbFunctionMatchHandler(deps))
     server.registerTool(analysisTemplateToolDefinition, createAnalysisTemplateHandler(deps))
-    return ['kb.function_match', 'analysis.template']
+    server.registerTool(analysisNotesToolDefinition, createAnalysisNotesHandler(deps))
+    server.registerTool(ruleLibraryToolDefinition, createRuleLibraryHandler(deps))
+    return ['kb.function_match', 'analysis.template', 'analysis.notes', 'rule.library']
   },
 }
 
