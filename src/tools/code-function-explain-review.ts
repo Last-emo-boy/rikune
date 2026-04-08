@@ -2,10 +2,7 @@ import { z } from 'zod'
 import type {
   ClientCapabilities,
   CreateMessageRequest,
-  CreateMessageResult,
-  CreateMessageResultWithTools,
   Implementation,
-  TextContent,
 } from '@modelcontextprotocol/sdk/types.js'
 import type { ToolArgs, ToolDefinition, WorkerResult } from '../types.js'
 import { extractJsonCandidates } from '../utils/shared-helpers.js'
