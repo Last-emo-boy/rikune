@@ -85,10 +85,11 @@ import {
   createRetDecDecompileHandler,
   createRizinAnalyzeHandler,
 } from '../tools/docker-backend-tools.js'
+import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'workflow.reconstruct'
 const TOOL_VERSION = '0.1.5'
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
 export const ReconstructWorkflowInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),

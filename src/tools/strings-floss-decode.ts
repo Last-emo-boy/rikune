@@ -32,6 +32,7 @@ import {
   buildDeferredToolResponse,
   shouldDeferLargeSample,
 } from '../nonblocking-analysis.js'
+import { CACHE_TTL_30_DAYS } from '../constants/cache-ttl.js'
 
 // ============================================================================
 // Constants
@@ -39,7 +40,7 @@ import {
 
 const TOOL_NAME = 'strings.floss.decode'
 const TOOL_VERSION = '1.0.0'
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+const CACHE_TTL_MS = CACHE_TTL_30_DAYS
 const DEFAULT_TIMEOUT = 60 // seconds
 
 // ============================================================================

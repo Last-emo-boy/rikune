@@ -7,6 +7,7 @@ import fs from 'fs'
 import path from 'path'
 import { spawnSync } from 'child_process'
 import { getPythonCommand } from './utils/shared-helpers.js'
+import { CACHE_TTL_7_DAYS } from './constants/cache-ttl.js'
 import { logger } from './logger.js'
 import { buildRawCommandLine, decodeProcessStreams } from './process-output.js'
 import { resolvePackagePath } from './runtime-paths.js'
@@ -642,7 +643,7 @@ export function createGhidraProject(
  */
 export function cleanupOldGhidraProjects(
   ghidraWorkspaceDir: string,
-  maxAgeMs: number = 7 * 24 * 60 * 60 * 1000
+  maxAgeMs: number = CACHE_TTL_7_DAYS
 ): number {
   if (!fs.existsSync(ghidraWorkspaceDir)) {
     return 0

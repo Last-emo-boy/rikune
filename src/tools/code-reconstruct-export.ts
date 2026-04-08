@@ -49,10 +49,11 @@ import {
   buildRuntimeArtifactProvenance,
   buildSemanticArtifactProvenance,
 } from '../analysis-provenance.js'
+import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'code.reconstruct.export'
 const TOOL_VERSION = '0.2.15'
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
 export const CodeReconstructExportInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),

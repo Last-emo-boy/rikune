@@ -43,6 +43,7 @@ import {
   persistCanonicalEvidence,
   resolveCanonicalEvidenceOrCache,
 } from '../analysis-evidence.js'
+import { CACHE_TTL_30_DAYS } from '../constants/cache-ttl.js'
 
 // ============================================================================
 // Constants
@@ -50,7 +51,7 @@ import {
 
 const TOOL_NAME = 'strings.extract'
 const TOOL_VERSION = '1.1.0'
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+const CACHE_TTL_MS = CACHE_TTL_30_DAYS
 const LARGE_SAMPLE_INLINE_STRINGS = 120
 const MEDIUM_SAMPLE_INLINE_STRINGS = 180
 const DEFAULT_FULL_INLINE_STRINGS = 240

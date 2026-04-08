@@ -39,10 +39,11 @@ import {
   persistCryptoPlanningJsonArtifact,
   type CryptoPlanningArtifactScope,
 } from '../crypto-planning-artifacts.js'
+import { CACHE_TTL_30_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'crypto.identify'
 const TOOL_VERSION = '0.2.0'
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const CACHE_TTL_MS = CACHE_TTL_30_DAYS
 const LARGE_SAMPLE_INLINE_CRYPTO_FINDINGS = 4
 const MEDIUM_SAMPLE_INLINE_CRYPTO_FINDINGS = 6
 const DEFAULT_INLINE_CRYPTO_FINDINGS = 8

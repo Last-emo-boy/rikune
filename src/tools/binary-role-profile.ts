@@ -30,10 +30,11 @@ import {
   persistCanonicalEvidence,
   resolveCanonicalEvidenceOrCache,
 } from '../analysis-evidence.js'
+import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'binary.role.profile'
 const TOOL_VERSION = '0.2.0'
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
 export const BinaryRoleProfileInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),

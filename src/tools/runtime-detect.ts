@@ -19,6 +19,7 @@ import {
   buildStaticWorkerRequest,
   callStaticWorker as callPooledStaticWorker,
 } from './static-worker-client.js'
+import { CACHE_TTL_30_DAYS } from '../constants/cache-ttl.js'
 
 // ============================================================================
 // Constants
@@ -26,7 +27,7 @@ import {
 
 const TOOL_NAME = 'runtime.detect'
 const TOOL_VERSION = '1.0.0'
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+const CACHE_TTL_MS = CACHE_TTL_30_DAYS
 
 // ============================================================================
 // Input/Output Schemas

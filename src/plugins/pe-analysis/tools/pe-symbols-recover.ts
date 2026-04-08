@@ -7,10 +7,11 @@ import { createStringsExtractHandler } from '../../../tools/strings-extract.js'
 import { createRuntimeDetectHandler } from '../../../tools/runtime-detect.js'
 import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
 import { demangleRustSymbol, normalizeSymbolList, type DemangledSymbol } from '../../../tools/rust-demangle.js'
+import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 
 const TOOL_NAME = 'pe.symbols.recover'
 const TOOL_VERSION = '0.1.0'
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const CACHE_TTL_MS = CACHE_TTL_30_DAYS
 
 const cargoPathPattern = /(?:^|[\\/])cargo[\\/](?:registry|git)[\\/][^\\/]+[\\/](?<crate>[A-Za-z0-9_.-]+?)(?:-\d[\w.+-]*)?(?:[\\/]|$)/i
 

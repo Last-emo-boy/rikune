@@ -4,10 +4,11 @@ import { generateCacheKey } from '../../../cache-manager.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
 import { extractPdataFromPE } from '../../../pe-runtime-functions.js'
 import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
+import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 
 const TOOL_NAME = 'pe.pdata.extract'
 const TOOL_VERSION = '0.1.0'
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const CACHE_TTL_MS = CACHE_TTL_30_DAYS
 
 export const pePdataExtractInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),

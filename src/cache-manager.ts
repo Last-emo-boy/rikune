@@ -9,6 +9,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import type { CacheKeyParams, CachedResult } from './types.js'
 import type { DatabaseManager } from './database.js'
+import { CACHE_TTL_30_DAYS } from './constants/cache-ttl.js'
 
 export type CacheTier = 'memory' | 'filesystem' | 'database' | 'unknown'
 
@@ -218,7 +219,7 @@ export class CacheManager {
     this.memoryCache = new LRUCache(1000, 5 * 60 * 1000)
 
     // L2: File system cache - 30 days TTL
-    this.fsCache = new FileSystemCache(cacheDir, 30 * 24 * 60 * 60 * 1000)
+    this.fsCache = new FileSystemCache(cacheDir, CACHE_TTL_30_DAYS)
 
     // L3: Database cache (optional)
     this.db = db || null
