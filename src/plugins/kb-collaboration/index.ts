@@ -11,6 +11,8 @@ import { kbImportBulkToolDefinition, createKbImportBulkHandler } from '../../too
 import { kbExportToolDefinition, createKbExportHandler } from '../../tools/kb-export.js'
 import { kbImportToolDefinition, createKbImportHandler } from '../../tools/kb-import.js'
 import { kbStatsToolDefinition, createKbStatsHandler } from '../../tools/kb-stats.js'
+import { analysisNotesToolDefinition, createAnalysisNotesHandler } from './tools/analysis-notes.js'
+import { ruleLibraryToolDefinition, createRuleLibraryHandler } from './tools/rule-library.js'
 
 const kbCollaborationPlugin: Plugin = {
   id: 'kb-collaboration',
@@ -24,9 +26,12 @@ const kbCollaborationPlugin: Plugin = {
     server.registerTool(kbExportToolDefinition, createKbExportHandler(deps.workspaceManager, deps.database))
     server.registerTool(kbImportToolDefinition, createKbImportHandler(deps.workspaceManager, deps.database))
     server.registerTool(kbStatsToolDefinition, createKbStatsHandler(deps.workspaceManager, deps.database))
+    server.registerTool(analysisNotesToolDefinition, createAnalysisNotesHandler(deps))
+    server.registerTool(ruleLibraryToolDefinition, createRuleLibraryHandler(deps))
     return [
       'kb.function_match', 'analysis.template',
       'kb.import.bulk', 'kb.export', 'kb.import', 'kb.stats',
+      'analysis.notes', 'rule.library',
     ]
   },
 }

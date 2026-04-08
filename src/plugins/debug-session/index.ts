@@ -24,6 +24,15 @@ import {
 import {
   debugSessionEndToolDefinition, createDebugSessionEndHandler,
 } from './tools/debug-session-end.js'
+import {
+  debugSessionSmartBreakpointToolDefinition, createDebugSessionSmartBreakpointHandler,
+} from './tools/debug-session-smart-breakpoint.js'
+import {
+  debugSessionSnapshotToolDefinition, createDebugSessionSnapshotHandler,
+} from './tools/debug-session-snapshot.js'
+import {
+  debugSessionWatchToolDefinition, createDebugSessionWatchHandler,
+} from './tools/debug-session-watch.js'
 
 const debugSessionPlugin: Plugin = {
   id: 'debug-session',
@@ -46,9 +55,13 @@ const debugSessionPlugin: Plugin = {
     server.registerTool(debugSessionStepToolDefinition, createDebugSessionStepHandler(deps))
     server.registerTool(debugSessionInspectToolDefinition, createDebugSessionInspectHandler(deps))
     server.registerTool(debugSessionEndToolDefinition, createDebugSessionEndHandler(deps))
+    server.registerTool(debugSessionSmartBreakpointToolDefinition, createDebugSessionSmartBreakpointHandler(deps))
+    server.registerTool(debugSessionSnapshotToolDefinition, createDebugSessionSnapshotHandler(deps))
+    server.registerTool(debugSessionWatchToolDefinition, createDebugSessionWatchHandler(deps))
     return [
       'debug.session.start', 'debug.session.breakpoint', 'debug.session.continue',
       'debug.session.step', 'debug.session.inspect', 'debug.session.end',
+      'debug.session.smart_breakpoint', 'debug.session.snapshot', 'debug.session.watch',
     ]
   },
 }
