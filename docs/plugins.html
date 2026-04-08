@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Plugins — Rikune</title>
+<title>Plugins �?Rikune</title>
 <meta name="description" content="Plugin SDK, built-in plugins, and configuration for Rikune MCP Server.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,7 +22,7 @@
   <div class="nav__inner">
     <a href="index.html" class="nav__logo"><span class="nav__logo-icon">R</span> Rikune</a>
     <ul class="nav__links" id="navLinks">
-      <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特性</a></li>
+      <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特�?/a></li>
       <li><a href="api-reference.html">API</a></li>
       <li><a href="usage.html" data-lang-en>Usage</a><a href="usage.html" data-lang-zh>使用指南</a></li>
       <li><a href="docker.html">Docker</a></li>
@@ -31,7 +31,7 @@
     </ul>
     <div class="nav__right">
       <button class="lang-toggle" id="lang-toggle">中文</button>
-      <a href="https://github.com/mcp-mirror/alfredo-pasquel-rikune" class="nav__cta" target="_blank" rel="noopener">GitHub →</a>
+      <a href="https://github.com/Last-emo-boy/rikune" class="nav__cta" target="_blank" rel="noopener">GitHub �?/a>
     </div>
     <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu"><span></span><span></span><span></span></button>
   </div>
@@ -43,8 +43,8 @@
     <div class="breadcrumb"><a href="index.html">Rikune</a> / <span data-lang-en>Plugins</span><span data-lang-zh>插件</span></div>
     <h1><span data-lang-en>Plugin System</span><span data-lang-zh>插件系统</span></h1>
     <p>
-      <span data-lang-en>Extend Rikune with built-in or custom plugins — each plugin registers MCP tools with the server.</span>
-      <span data-lang-zh>通过内置或自定义插件扩展 Rikune — 每个插件都向服务器注册 MCP 工具。</span>
+      <span data-lang-en>Extend Rikune with built-in or custom plugins �?each plugin registers MCP tools with the server.</span>
+      <span data-lang-zh>通过内置或自定义插件扩展 Rikune �?每个插件都向服务器注�?MCP 工具�?/span>
     </p>
   </div>
 </div>
@@ -68,7 +68,7 @@
       <h2><span data-lang-en>Overview</span><span data-lang-zh>概述</span></h2>
       <p>
         <span data-lang-en>Rikune's plugin system allows modular registration of MCP tools. Each plugin exports a <code>register()</code> function that receives the server context and registers tools, hooks, and lifecycle callbacks.</span>
-        <span data-lang-zh>Rikune 的插件系统允许模块化注册 MCP 工具。每个插件导出一个 <code>register()</code> 函数，接收服务器上下文并注册工具、钩子和生命周期回调。</span>
+        <span data-lang-zh>Rikune 的插件系统允许模块化注册 MCP 工具。每个插件导出一�?<code>register()</code> 函数，接收服务器上下文并注册工具、钩子和生命周期回调�?/span>
       </p>
     </section>
 
@@ -79,7 +79,7 @@
         <thead>
           <tr>
             <th><span data-lang-en>Plugin</span><span data-lang-zh>插件</span></th>
-            <th><span data-lang-en>Tools</span><span data-lang-zh>工具数</span></th>
+            <th><span data-lang-en>Tools</span><span data-lang-zh>工具�?/span></th>
             <th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th>
           </tr>
         </thead>
@@ -87,12 +87,12 @@
           <tr>
             <td><code>pe-analysis</code></td>
             <td>12</td>
-            <td><span data-lang-en>Core PE parsing — headers, imports, exports, sections, resources</span><span data-lang-zh>核心 PE 解析 — 头信息、导入、导出、节、资源</span></td>
+            <td><span data-lang-en>Core PE parsing �?headers, imports, exports, sections, resources</span><span data-lang-zh>核心 PE 解析 �?头信息、导入、导出、节、资�?/span></td>
           </tr>
           <tr>
             <td><code>ghidra</code></td>
             <td>8</td>
-            <td><span data-lang-en>Ghidra decompilation, function listing, CFG, xrefs</span><span data-lang-zh>Ghidra 反编译、函数列表、CFG、交叉引用</span></td>
+            <td><span data-lang-en>Ghidra decompilation, function listing, CFG, xrefs</span><span data-lang-zh>Ghidra 反编译、函数列表、CFG、交叉引�?/span></td>
           </tr>
           <tr>
             <td><code>detection</code></td>
@@ -112,17 +112,17 @@
           <tr>
             <td><code>workflow</code></td>
             <td>6</td>
-            <td><span data-lang-en>Staged pipeline orchestration, job queue management</span><span data-lang-zh>分阶段流水线编排、作业队列管理</span></td>
+            <td><span data-lang-en>Staged pipeline orchestration, job queue management</span><span data-lang-zh>分阶段流水线编排、作业队列管�?/span></td>
           </tr>
           <tr>
             <td><code>dotnet</code></td>
             <td>5</td>
-            <td><span data-lang-en>.NET metadata, IL disassembly, type extraction</span><span data-lang-zh>.NET 元数据、IL 反汇编、类型提取</span></td>
+            <td><span data-lang-en>.NET metadata, IL disassembly, type extraction</span><span data-lang-zh>.NET 元数据、IL 反汇编、类型提�?/span></td>
           </tr>
           <tr>
             <td><code>llm-review</code></td>
             <td>4</td>
-            <td><span data-lang-en>LLM-assisted function naming, explanation, reconstruction</span><span data-lang-zh>LLM 辅助函数命名、解释、重建</span></td>
+            <td><span data-lang-en>LLM-assisted function naming, explanation, reconstruction</span><span data-lang-zh>LLM 辅助函数命名、解释、重�?/span></td>
           </tr>
           <tr>
             <td><code>docker-backend</code></td>
@@ -138,7 +138,7 @@
       <h2>Plugin SDK</h2>
       <p>
         <span data-lang-en>A plugin is a module that exports a <code>register()</code> function:</span>
-        <span data-lang-zh>插件是一个导出 <code>register()</code> 函数的模块：</span>
+        <span data-lang-zh>插件是一个导�?<code>register()</code> 函数的模块：</span>
       </p>
       <div class="code-block">
         <div class="code-block__header"><span>TypeScript</span><button class="code-block__copy">Copy</button></div>
@@ -167,7 +167,7 @@
 };</pre>
       </div>
 
-      <h3><span data-lang-en>Plugin Context API</span><span data-lang-zh>插件上下文 API</span></h3>
+      <h3><span data-lang-en>Plugin Context API</span><span data-lang-zh>插件上下�?API</span></h3>
       <table class="doc-table">
         <thead><tr><th>Method</th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th></tr></thead>
         <tbody>
@@ -176,7 +176,7 @@
           <tr><td><code>configSchema()</code></td><td><span data-lang-en>Declare configuration schema</span><span data-lang-zh>声明配置模式</span></td></tr>
           <tr><td><code>dependencies()</code></td><td><span data-lang-en>Declare plugin dependencies</span><span data-lang-zh>声明插件依赖</span></td></tr>
           <tr><td><code>hooks()</code></td><td><span data-lang-en>Register lifecycle hooks</span><span data-lang-zh>注册生命周期钩子</span></td></tr>
-          <tr><td><code>teardown()</code></td><td><span data-lang-en>Cleanup on shutdown</span><span data-lang-zh>关闭时清理</span></td></tr>
+          <tr><td><code>teardown()</code></td><td><span data-lang-en>Cleanup on shutdown</span><span data-lang-zh>关闭时清�?/span></td></tr>
         </tbody>
       </table>
     </section>
@@ -186,7 +186,7 @@
       <h2><span data-lang-en>Configuration</span><span data-lang-zh>配置</span></h2>
       <p>
         <span data-lang-en>Control which plugins are loaded via the <code>PLUGINS</code> environment variable:</span>
-        <span data-lang-zh>通过 <code>PLUGINS</code> 环境变量控制加载哪些插件：</span>
+        <span data-lang-zh>通过 <code>PLUGINS</code> 环境变量控制加载哪些插件�?/span>
       </p>
       <div class="code-block">
         <div class="code-block__header"><span>Environment Variable</span><button class="code-block__copy">Copy</button></div>
@@ -216,9 +216,9 @@ PLUGINS=*,-docker-backend</pre>
           </tr>
         </thead>
         <tbody>
-          <tr><td><code>plugin.list</code></td><td><span data-lang-en>List all loaded plugins with status</span><span data-lang-zh>列出所有已加载插件及状态</span></td></tr>
+          <tr><td><code>plugin.list</code></td><td><span data-lang-en>List all loaded plugins with status</span><span data-lang-zh>列出所有已加载插件及状�?/span></td></tr>
           <tr><td><code>plugin.enable</code></td><td><span data-lang-en>Enable a disabled plugin</span><span data-lang-zh>启用已禁用的插件</span></td></tr>
-          <tr><td><code>plugin.disable</code></td><td><span data-lang-en>Disable a plugin at runtime</span><span data-lang-zh>运行时禁用插件</span></td></tr>
+          <tr><td><code>plugin.disable</code></td><td><span data-lang-en>Disable a plugin at runtime</span><span data-lang-zh>运行时禁用插�?/span></td></tr>
         </tbody>
       </table>
     </section>
@@ -228,34 +228,34 @@ PLUGINS=*,-docker-backend</pre>
       <h2><span data-lang-en>Plugin Lifecycle</span><span data-lang-zh>插件生命周期</span></h2>
       <ol>
         <li>
-          <strong><span data-lang-en>Discovery</span><span data-lang-zh>发现</span></strong> —
+          <strong><span data-lang-en>Discovery</span><span data-lang-zh>发现</span></strong> �?
           <span data-lang-en>Server scans the <code>src/plugins/</code> directory for modules with <code>register()</code> exports.</span>
-          <span data-lang-zh>服务器扫描 <code>src/plugins/</code> 目录，查找导出 <code>register()</code> 的模块。</span>
+          <span data-lang-zh>服务器扫�?<code>src/plugins/</code> 目录，查找导�?<code>register()</code> 的模块�?/span>
         </li>
         <li>
-          <strong><span data-lang-en>Check</span><span data-lang-zh>检查</span></strong> —
+          <strong><span data-lang-en>Check</span><span data-lang-zh>检�?/span></strong> �?
           <span data-lang-en>Each plugin's <code>check()</code> verifies dependencies are met (e.g., Ghidra installed).</span>
-          <span data-lang-zh>每个插件的 <code>check()</code> 验证依赖是否满足（如 Ghidra 已安装）。</span>
+          <span data-lang-zh>每个插件�?<code>check()</code> 验证依赖是否满足（如 Ghidra 已安装）�?/span>
         </li>
         <li>
-          <strong><span data-lang-en>Register</span><span data-lang-zh>注册</span></strong> —
+          <strong><span data-lang-en>Register</span><span data-lang-zh>注册</span></strong> �?
           <span data-lang-en><code>register()</code> is called, tools are added to the registry.</span>
-          <span data-lang-zh>调用 <code>register()</code>，工具被添加到注册表。</span>
+          <span data-lang-zh>调用 <code>register()</code>，工具被添加到注册表�?/span>
         </li>
         <li>
-          <strong><span data-lang-en>Ready</span><span data-lang-zh>就绪</span></strong> —
+          <strong><span data-lang-en>Ready</span><span data-lang-zh>就绪</span></strong> �?
           <span data-lang-en>Plugin is active and tools are available to MCP clients.</span>
-          <span data-lang-zh>插件已激活，工具可供 MCP 客户端使用。</span>
+          <span data-lang-zh>插件已激活，工具可供 MCP 客户端使用�?/span>
         </li>
         <li>
-          <strong><span data-lang-en>Teardown</span><span data-lang-zh>清理</span></strong> —
+          <strong><span data-lang-en>Teardown</span><span data-lang-zh>清理</span></strong> �?
           <span data-lang-en><code>teardown()</code> is called on server shutdown for cleanup.</span>
-          <span data-lang-zh>服务器关闭时调用 <code>teardown()</code> 进行清理。</span>
+          <span data-lang-zh>服务器关闭时调用 <code>teardown()</code> 进行清理�?/span>
         </li>
       </ol>
 
       <h3><span data-lang-en>Lifecycle Hooks</span><span data-lang-zh>生命周期钩子</span></h3>
-      <p><span data-lang-en>Plugins can register hooks to intercept tool execution:</span><span data-lang-zh>插件可以注册钩子拦截工具执行：</span></p>
+      <p><span data-lang-en>Plugins can register hooks to intercept tool execution:</span><span data-lang-zh>插件可以注册钩子拦截工具执行�?/span></p>
       <table class="doc-table">
         <thead>
           <tr>
@@ -265,13 +265,13 @@ PLUGINS=*,-docker-backend</pre>
           </tr>
         </thead>
         <tbody>
-          <tr><td><code>onBeforeToolCall</code></td><td><span data-lang-en>Before tool execution</span><span data-lang-zh>工具执行前</span></td><td><span data-lang-en>Input validation, audit logging, parameter transformation</span><span data-lang-zh>输入验证、审计日志、参数转换</span></td></tr>
-          <tr><td><code>onAfterToolCall</code></td><td><span data-lang-en>After success</span><span data-lang-zh>执行成功后</span></td><td><span data-lang-en>Result enrichment, metrics, caching</span><span data-lang-zh>结果增强、指标收集、缓存</span></td></tr>
-          <tr><td><code>onToolError</code></td><td><span data-lang-en>On failure</span><span data-lang-zh>执行失败时</span></td><td><span data-lang-en>Error reporting, fallback logic, retry</span><span data-lang-zh>错误报告、降级逻辑、重试</span></td></tr>
+          <tr><td><code>onBeforeToolCall</code></td><td><span data-lang-en>Before tool execution</span><span data-lang-zh>工具执行�?/span></td><td><span data-lang-en>Input validation, audit logging, parameter transformation</span><span data-lang-zh>输入验证、审计日志、参数转�?/span></td></tr>
+          <tr><td><code>onAfterToolCall</code></td><td><span data-lang-en>After success</span><span data-lang-zh>执行成功�?/span></td><td><span data-lang-en>Result enrichment, metrics, caching</span><span data-lang-zh>结果增强、指标收集、缓�?/span></td></tr>
+          <tr><td><code>onToolError</code></td><td><span data-lang-en>On failure</span><span data-lang-zh>执行失败�?/span></td><td><span data-lang-en>Error reporting, fallback logic, retry</span><span data-lang-zh>错误报告、降级逻辑、重�?/span></td></tr>
         </tbody>
       </table>
 
-      <h3><span data-lang-en>Three Ways to Write Plugins</span><span data-lang-zh>三种编写插件的方式</span></h3>
+      <h3><span data-lang-en>Three Ways to Write Plugins</span><span data-lang-zh>三种编写插件的方�?/span></h3>
       <table class="doc-table">
         <thead>
           <tr>
@@ -281,9 +281,9 @@ PLUGINS=*,-docker-backend</pre>
           </tr>
         </thead>
         <tbody>
-          <tr><td><span data-lang-en>Built-in</span><span data-lang-zh>内建</span></td><td><code>src/plugins/</code></td><td><span data-lang-en>Shipped with the server; auto-discovered</span><span data-lang-zh>随服务器发布；自动发现</span></td></tr>
-          <tr><td><span data-lang-en>External</span><span data-lang-zh>外部</span></td><td><span data-lang-en>Any npm package</span><span data-lang-zh>任意 npm 包</span></td><td><span data-lang-en>Installed separately; configured via <code>PLUGINS</code> env</span><span data-lang-zh>单独安装；通过 <code>PLUGINS</code> 环境变量配置</span></td></tr>
-          <tr><td><span data-lang-en>Runtime</span><span data-lang-zh>运行时</span></td><td><span data-lang-en>Hot-loaded at startup</span><span data-lang-zh>启动时热加载</span></td><td><span data-lang-en>Dynamic load/unload without restart</span><span data-lang-zh>无需重启的动态加载/卸载</span></td></tr>
+          <tr><td><span data-lang-en>Built-in</span><span data-lang-zh>内建</span></td><td><code>src/plugins/</code></td><td><span data-lang-en>Shipped with the server; auto-discovered</span><span data-lang-zh>随服务器发布；自动发�?/span></td></tr>
+          <tr><td><span data-lang-en>External</span><span data-lang-zh>外部</span></td><td><span data-lang-en>Any npm package</span><span data-lang-zh>任意 npm �?/span></td><td><span data-lang-en>Installed separately; configured via <code>PLUGINS</code> env</span><span data-lang-zh>单独安装；通过 <code>PLUGINS</code> 环境变量配置</span></td></tr>
+          <tr><td><span data-lang-en>Runtime</span><span data-lang-zh>运行�?/span></td><td><span data-lang-en>Hot-loaded at startup</span><span data-lang-zh>启动时热加载</span></td><td><span data-lang-en>Dynamic load/unload without restart</span><span data-lang-zh>无需重启的动态加�?卸载</span></td></tr>
         </tbody>
       </table>
     </section>

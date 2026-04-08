@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Docker Setup — Rikune</title>
+<title>Docker Setup �?Rikune</title>
 <meta name="description" content="Docker deployment guide for Rikune MCP Server with full analysis toolchain.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,7 +22,7 @@
   <div class="nav__inner">
     <a href="index.html" class="nav__logo"><span class="nav__logo-icon">R</span> Rikune</a>
     <ul class="nav__links" id="navLinks">
-      <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特性</a></li>
+      <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特�?/a></li>
       <li><a href="api-reference.html">API</a></li>
       <li><a href="usage.html" data-lang-en>Usage</a><a href="usage.html" data-lang-zh>使用指南</a></li>
       <li><a href="docker.html" class="active">Docker</a></li>
@@ -31,7 +31,7 @@
     </ul>
     <div class="nav__right">
       <button class="lang-toggle" id="lang-toggle">中文</button>
-      <a href="https://github.com/mcp-mirror/alfredo-pasquel-rikune" class="nav__cta" target="_blank" rel="noopener">GitHub →</a>
+      <a href="https://github.com/Last-emo-boy/rikune" class="nav__cta" target="_blank" rel="noopener">GitHub �?/a>
     </div>
     <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu"><span></span><span></span><span></span></button>
   </div>
@@ -43,8 +43,8 @@
     <div class="breadcrumb"><a href="index.html">Rikune</a> / Docker</div>
     <h1><span data-lang-en>Docker Deployment</span><span data-lang-zh>Docker 部署</span></h1>
     <p>
-      <span data-lang-en>Full analysis toolchain in a single container — Ghidra, Rizin, YARA-X, capa, Frida, angr, RetDec and more.</span>
-      <span data-lang-zh>单容器全栈分析工具链 — Ghidra、Rizin、YARA-X、capa、Frida、angr、RetDec 等全部集成。</span>
+      <span data-lang-en>Full analysis toolchain in a single container �?Ghidra, Rizin, YARA-X, capa, Frida, angr, RetDec and more.</span>
+      <span data-lang-zh>单容器全栈分析工具链 �?Ghidra、Rizin、YARA-X、capa、Frida、angr、RetDec 等全部集成�?/span>
     </p>
   </div>
 </div>
@@ -77,7 +77,7 @@
 
     <!-- Quick Start -->
     <section id="quickstart" class="reveal">
-      <h2><span data-lang-en>Quick Start</span><span data-lang-zh>快速开始</span></h2>
+      <h2><span data-lang-en>Quick Start</span><span data-lang-zh>快速开�?/span></h2>
 
       <h3><span data-lang-en>Build the image</span><span data-lang-zh>构建镜像</span></h3>
       <div class="code-block">
@@ -91,7 +91,7 @@
         <pre>docker run --rm rikune:latest node -e <span class="str">"console.log('ok')"</span></pre>
       </div>
 
-      <h3><span data-lang-en>Install script (Windows)</span><span data-lang-zh>安装脚本（Windows）</span></h3>
+      <h3><span data-lang-en>Install script (Windows)</span><span data-lang-zh>安装脚本（Windows�?/span></h3>
       <div class="code-block">
         <div class="code-block__header"><span>PowerShell</span><button class="code-block__copy">Copy</button></div>
         <pre>.\install-docker.ps1</pre>
@@ -103,7 +103,7 @@
       <h2><span data-lang-en>Services Overview</span><span data-lang-zh>服务概览</span></h2>
       <p>
         <span data-lang-en>The container runs multiple services in a single Node.js process:</span>
-        <span data-lang-zh>容器在单个 Node.js 进程中运行多个服务：</span>
+        <span data-lang-zh>容器在单�?Node.js 进程中运行多个服务：</span>
       </p>
       <table class="doc-table">
         <thead>
@@ -117,22 +117,22 @@
           <tr>
             <td><span class="badge badge--blue">MCP Server</span></td>
             <td>stdio</td>
-            <td><span data-lang-en>160+ tools, 3 prompts, 16 resources</span><span data-lang-zh>160+ 工具、3 个提示、16 个资源</span></td>
+            <td><span data-lang-en>160+ tools, 3 prompts, 16 resources</span><span data-lang-zh>160+ 工具�? 个提示�?6 个资�?/span></td>
           </tr>
           <tr>
             <td><span class="badge badge--green">HTTP API</span></td>
             <td>:18080</td>
-            <td><span data-lang-en>Sample upload, artifact download, health check, SSE</span><span data-lang-zh>样本上传、产物下载、健康检查、SSE 推送</span></td>
+            <td><span data-lang-en>Sample upload, artifact download, health check, SSE</span><span data-lang-zh>样本上传、产物下载、健康检查、SSE 推�?/span></td>
           </tr>
           <tr>
             <td><span class="badge badge--purple">Dashboard</span></td>
             <td>:18080/dashboard</td>
-            <td><span data-lang-en>Dark-theme web UI — tools, plugins, samples, config</span><span data-lang-zh>暗色主题看板 — 工具、插件、样本、配置</span></td>
+            <td><span data-lang-en>Dark-theme web UI �?tools, plugins, samples, config</span><span data-lang-zh>暗色主题看板 �?工具、插件、样本、配�?/span></td>
           </tr>
           <tr>
             <td><span class="badge badge--amber">Task Runner</span></td>
             <td><span data-lang-en>Internal</span><span data-lang-zh>内部</span></td>
-            <td><span data-lang-en>Background async job queue with Python worker pool</span><span data-lang-zh>后台异步任务队列与 Python 工作进程池</span></td>
+            <td><span data-lang-en>Background async job queue with Python worker pool</span><span data-lang-zh>后台异步任务队列�?Python 工作进程�?/span></td>
           </tr>
         </tbody>
       </table>
@@ -182,7 +182,7 @@ docker-compose down</pre>
       </div>
       <blockquote>
         <span data-lang-en><strong>Note:</strong> Docker Compose is ideal for persistent volumes and the HTTP upload API. For MCP stdio connections, use a separate <code>docker run -i</code> invocation.</span>
-        <span data-lang-zh><strong>注意</strong>：Docker Compose 适合持久卷和 HTTP 上传 API。MCP stdio 连接请使用单独的 <code>docker run -i</code>。</span>
+        <span data-lang-zh><strong>注意</strong>：Docker Compose 适合持久卷和 HTTP 上传 API。MCP stdio 连接请使用单独的 <code>docker run -i</code>�?/span>
       </blockquote>
     </section>
 
@@ -192,33 +192,33 @@ docker-compose down</pre>
       <table class="doc-table">
         <thead>
           <tr>
-            <th><span data-lang-en>Variable</span><span data-lang-zh>变量名</span></th>
-            <th><span data-lang-en>Default</span><span data-lang-zh>默认值</span></th>
+            <th><span data-lang-en>Variable</span><span data-lang-zh>变量�?/span></th>
+            <th><span data-lang-en>Default</span><span data-lang-zh>默认�?/span></th>
             <th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th>
           </tr>
         </thead>
         <tbody>
-          <tr><td><code>WORKSPACE_ROOT</code></td><td><code>/app/workspaces</code></td><td><span data-lang-en>Workspace root directory</span><span data-lang-zh>工作空间根目录</span></td></tr>
-          <tr><td><code>DB_PATH</code></td><td><code>/app/data/database.db</code></td><td><span data-lang-en>SQLite database path</span><span data-lang-zh>SQLite 数据库路径</span></td></tr>
-          <tr><td><code>CACHE_ROOT</code></td><td><code>/app/cache</code></td><td><span data-lang-en>Cache root directory</span><span data-lang-zh>缓存根目录</span></td></tr>
-          <tr><td><code>GHIDRA_PROJECT_ROOT</code></td><td><code>/ghidra-projects</code></td><td><span data-lang-en>Ghidra project root</span><span data-lang-zh>Ghidra 项目根目录</span></td></tr>
+          <tr><td><code>WORKSPACE_ROOT</code></td><td><code>/app/workspaces</code></td><td><span data-lang-en>Workspace root directory</span><span data-lang-zh>工作空间根目�?/span></td></tr>
+          <tr><td><code>DB_PATH</code></td><td><code>/app/data/database.db</code></td><td><span data-lang-en>SQLite database path</span><span data-lang-zh>SQLite 数据库路�?/span></td></tr>
+          <tr><td><code>CACHE_ROOT</code></td><td><code>/app/cache</code></td><td><span data-lang-en>Cache root directory</span><span data-lang-zh>缓存根目�?/span></td></tr>
+          <tr><td><code>GHIDRA_PROJECT_ROOT</code></td><td><code>/ghidra-projects</code></td><td><span data-lang-en>Ghidra project root</span><span data-lang-zh>Ghidra 项目根目�?/span></td></tr>
           <tr><td><code>LOG_LEVEL</code></td><td><code>info</code></td><td>trace / debug / info / warn / error</td></tr>
           <tr><td><code>API_PORT</code></td><td><code>18080</code></td><td><span data-lang-en>HTTP API port</span><span data-lang-zh>HTTP API 端口</span></td></tr>
-          <tr><td><code>API_KEY</code></td><td>—</td><td><span data-lang-en>API key for authentication (optional)</span><span data-lang-zh>API 认证密钥（可选）</span></td></tr>
-          <tr><td><code>QILING_ROOTFS</code></td><td><code>/opt/qiling-rootfs</code></td><td><span data-lang-en>Qiling Windows rootfs mount</span><span data-lang-zh>Qiling Windows rootfs 挂载点</span></td></tr>
-          <tr><td><code>ANGR_PYTHON</code></td><td><code>/opt/angr-venv/bin/python</code></td><td><span data-lang-en>Isolated angr interpreter</span><span data-lang-zh>隔离的 angr 解释器</span></td></tr>
+          <tr><td><code>API_KEY</code></td><td>�?/td><td><span data-lang-en>API key for authentication (optional)</span><span data-lang-zh>API 认证密钥（可选）</span></td></tr>
+          <tr><td><code>QILING_ROOTFS</code></td><td><code>/opt/qiling-rootfs</code></td><td><span data-lang-en>Qiling Windows rootfs mount</span><span data-lang-zh>Qiling Windows rootfs 挂载�?/span></td></tr>
+          <tr><td><code>ANGR_PYTHON</code></td><td><code>/opt/angr-venv/bin/python</code></td><td><span data-lang-en>Isolated angr interpreter</span><span data-lang-zh>隔离�?angr 解释�?/span></td></tr>
           <tr><td><code>RETDEC_PATH</code></td><td><code>/opt/retdec/bin/retdec-decompiler</code></td><td><span data-lang-en>RetDec decompiler path</span><span data-lang-zh>RetDec 反编译器路径</span></td></tr>
           <tr><td><code>GHIDRA_INSTALL_DIR</code></td><td><code>/opt/ghidra</code></td><td><span data-lang-en>Ghidra installation directory</span><span data-lang-zh>Ghidra 安装目录</span></td></tr>
-          <tr><td><code>JAVA_HOME</code></td><td><code>/usr/lib/jvm/java-21-openjdk-amd64</code></td><td><span data-lang-en>Java runtime for Ghidra</span><span data-lang-zh>Ghidra 用 Java 运行时</span></td></tr>
-          <tr><td><code>CAPA_PATH</code></td><td><code>/opt/capa/capa</code></td><td><span data-lang-en>capa binary path</span><span data-lang-zh>capa 二进制路径</span></td></tr>
+          <tr><td><code>JAVA_HOME</code></td><td><code>/usr/lib/jvm/java-21-openjdk-amd64</code></td><td><span data-lang-en>Java runtime for Ghidra</span><span data-lang-zh>Ghidra �?Java 运行�?/span></td></tr>
+          <tr><td><code>CAPA_PATH</code></td><td><code>/opt/capa/capa</code></td><td><span data-lang-en>capa binary path</span><span data-lang-zh>capa 二进制路�?/span></td></tr>
           <tr><td><code>DIE_PATH</code></td><td><code>/opt/die/diec</code></td><td><span data-lang-en>Detect It Easy CLI path</span><span data-lang-zh>Detect It Easy CLI 路径</span></td></tr>
-          <tr><td><code>RIZIN_PATH</code></td><td><code>/usr/bin/rizin</code></td><td><span data-lang-en>Rizin binary path</span><span data-lang-zh>Rizin 二进制路径</span></td></tr>
-          <tr><td><code>UPX_PATH</code></td><td><code>/usr/bin/upx</code></td><td><span data-lang-en>UPX binary path</span><span data-lang-zh>UPX 二进制路径</span></td></tr>
-          <tr><td><code>WINE_PATH</code></td><td><code>/usr/bin/wine</code></td><td><span data-lang-en>Wine executable path</span><span data-lang-zh>Wine 可执行路径</span></td></tr>
-          <tr><td><code>GRAPHVIZ_DOT_PATH</code></td><td><code>/usr/bin/dot</code></td><td><span data-lang-en>Graphviz dot binary</span><span data-lang-zh>Graphviz dot 二进制</span></td></tr>
-          <tr><td><code>QILING_PYTHON</code></td><td><code>/opt/qiling-venv/bin/python</code></td><td><span data-lang-en>Isolated Qiling interpreter</span><span data-lang-zh>隔离的 Qiling 解释器</span></td></tr>
+          <tr><td><code>RIZIN_PATH</code></td><td><code>/usr/bin/rizin</code></td><td><span data-lang-en>Rizin binary path</span><span data-lang-zh>Rizin 二进制路�?/span></td></tr>
+          <tr><td><code>UPX_PATH</code></td><td><code>/usr/bin/upx</code></td><td><span data-lang-en>UPX binary path</span><span data-lang-zh>UPX 二进制路�?/span></td></tr>
+          <tr><td><code>WINE_PATH</code></td><td><code>/usr/bin/wine</code></td><td><span data-lang-en>Wine executable path</span><span data-lang-zh>Wine 可执行路�?/span></td></tr>
+          <tr><td><code>GRAPHVIZ_DOT_PATH</code></td><td><code>/usr/bin/dot</code></td><td><span data-lang-en>Graphviz dot binary</span><span data-lang-zh>Graphviz dot 二进�?/span></td></tr>
+          <tr><td><code>QILING_PYTHON</code></td><td><code>/opt/qiling-venv/bin/python</code></td><td><span data-lang-en>Isolated Qiling interpreter</span><span data-lang-zh>隔离�?Qiling 解释�?/span></td></tr>
           <tr><td><code>MAX_PYTHON_WORKERS</code></td><td><code>4</code></td><td><span data-lang-en>Concurrent Python worker limit</span><span data-lang-zh>并发 Python 工作进程限制</span></td></tr>
-          <tr><td><code>PLUGINS</code></td><td>—</td><td><span data-lang-en>Comma-separated plugin names to enable</span><span data-lang-zh>逗号分隔的启用插件名</span></td></tr>
+          <tr><td><code>PLUGINS</code></td><td>�?/td><td><span data-lang-en>Comma-separated plugin names to enable</span><span data-lang-zh>逗号分隔的启用插件名</span></td></tr>
         </tbody>
       </table>
     </section>
@@ -236,30 +236,30 @@ docker-compose down</pre>
       </div>
       <p>
         <span data-lang-en>The dashboard provides 6 tabs: <strong>Overview</strong>, <strong>Tools</strong>, <strong>Plugins</strong>, <strong>Samples</strong>, <strong>Config</strong>, and <strong>System</strong>, with SSE real-time event stream and auto-refresh.</span>
-        <span data-lang-zh>看板提供 6 个选项卡：<strong>Overview</strong>、<strong>Tools</strong>、<strong>Plugins</strong>、<strong>Samples</strong>、<strong>Config</strong> 和 <strong>System</strong>，支持 SSE 实时事件流和自动刷新。</span>
+        <span data-lang-zh>看板提供 6 个选项卡：<strong>Overview</strong>�?strong>Tools</strong>�?strong>Plugins</strong>�?strong>Samples</strong>�?strong>Config</strong> �?<strong>System</strong>，支�?SSE 实时事件流和自动刷新�?/span>
       </p>
     </section>
 
     <!-- Bundled Tools -->
     <section id="bundled" class="reveal">
-      <h2><span data-lang-en>Bundled Toolchain</span><span data-lang-zh>内置工具链</span></h2>
+      <h2><span data-lang-en>Bundled Toolchain</span><span data-lang-zh>内置工具�?/span></h2>
       <p>
         <span data-lang-en>The Docker image ships with all of these pre-installed:</span>
         <span data-lang-zh>Docker 镜像预装了以下所有工具：</span>
       </p>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:24px 0;">
-        <div class="feature-card" style="padding:16px"><strong>Ghidra 12.0.4</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Decompilation &amp; analysis</span><span data-lang-zh>反编译分析</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>Rizin</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Binary analysis</span><span data-lang-zh>二进制分析</span></span></div>
+        <div class="feature-card" style="padding:16px"><strong>Ghidra 12.0.4</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Decompilation &amp; analysis</span><span data-lang-zh>反编译分�?/span></span></div>
+        <div class="feature-card" style="padding:16px"><strong>Rizin</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Binary analysis</span><span data-lang-zh>二进制分�?/span></span></div>
         <div class="feature-card" style="padding:16px"><strong>YARA-X</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Pattern matching</span><span data-lang-zh>模式匹配</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>capa + rules</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Capability detection</span><span data-lang-zh>能力检测</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>FLOSS</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>String extraction</span><span data-lang-zh>字符串提取</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>Frida</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Dynamic instrumentation</span><span data-lang-zh>动态插桩</span></span></div>
+        <div class="feature-card" style="padding:16px"><strong>capa + rules</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Capability detection</span><span data-lang-zh>能力检�?/span></span></div>
+        <div class="feature-card" style="padding:16px"><strong>FLOSS</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>String extraction</span><span data-lang-zh>字符串提�?/span></span></div>
+        <div class="feature-card" style="padding:16px"><strong>Frida</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Dynamic instrumentation</span><span data-lang-zh>动态插�?/span></span></div>
         <div class="feature-card" style="padding:16px"><strong>angr</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Symbolic execution</span><span data-lang-zh>符号执行</span></span></div>
         <div class="feature-card" style="padding:16px"><strong>Qiling</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Emulation framework</span><span data-lang-zh>仿真框架</span></span></div>
         <div class="feature-card" style="padding:16px"><strong>RetDec</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Retargetable decompiler</span><span data-lang-zh>可重定目标反编译</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>Wine</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Windows compat layer</span><span data-lang-zh>Windows 兼容层</span></span></div>
+        <div class="feature-card" style="padding:16px"><strong>Wine</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Windows compat layer</span><span data-lang-zh>Windows 兼容�?/span></span></div>
         <div class="feature-card" style="padding:16px"><strong>UPX</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Unpacking</span><span data-lang-zh>脱壳</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>DIE</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Compiler/packer detection</span><span data-lang-zh>编译器/加壳检测</span></span></div>
+        <div class="feature-card" style="padding:16px"><strong>DIE</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Compiler/packer detection</span><span data-lang-zh>编译�?加壳检�?/span></span></div>
       </div>
     </section>
 
@@ -276,7 +276,7 @@ docker-compose down</pre>
             <td><code>docker builder prune -a</code> <span data-lang-en>then rebuild with</span><span data-lang-zh>然后使用</span> <code>--no-cache</code></td>
           </tr>
           <tr>
-            <td><span data-lang-en>Ghidra download fails (DNS / network)</span><span data-lang-zh>Ghidra 下载失败（DNS / 网络）</span></td>
+            <td><span data-lang-en>Ghidra download fails (DNS / network)</span><span data-lang-zh>Ghidra 下载失败（DNS / 网络�?/span></td>
             <td><span data-lang-en>Download manually and pass via <code>--build-arg GHIDRA_ZIP_PATH</code></span><span data-lang-zh>手动下载并通过 <code>--build-arg GHIDRA_ZIP_PATH</code> 传入</span></td>
           </tr>
           <tr>
@@ -286,21 +286,21 @@ docker-compose down</pre>
         </tbody>
       </table>
 
-      <h3><span data-lang-en>Runtime Issues</span><span data-lang-zh>运行时问题</span></h3>
+      <h3><span data-lang-en>Runtime Issues</span><span data-lang-zh>运行时问�?/span></h3>
       <table class="doc-table">
         <thead><tr><th><span data-lang-en>Symptom</span><span data-lang-zh>症状</span></th><th><span data-lang-en>Solution</span><span data-lang-zh>解决方案</span></th></tr></thead>
         <tbody>
           <tr>
             <td><code>GHIDRA_INSTALL_DIR is not set</code></td>
-            <td><span data-lang-en>Set explicitly via <code>-e GHIDRA_INSTALL_DIR=/opt/ghidra</code> or use <code>--env-file</code></span><span data-lang-zh>通过 <code>-e GHIDRA_INSTALL_DIR=/opt/ghidra</code> 显式设置或使用 <code>--env-file</code></span></td>
+            <td><span data-lang-en>Set explicitly via <code>-e GHIDRA_INSTALL_DIR=/opt/ghidra</code> or use <code>--env-file</code></span><span data-lang-zh>通过 <code>-e GHIDRA_INSTALL_DIR=/opt/ghidra</code> 显式设置或使�?<code>--env-file</code></span></td>
           </tr>
           <tr>
-            <td><span data-lang-en>Permission denied on mounted volumes</span><span data-lang-zh>挂载卷权限被拒</span></td>
+            <td><span data-lang-en>Permission denied on mounted volumes</span><span data-lang-zh>挂载卷权限被�?/span></td>
             <td><code>sudo chown -R 1000:1000 ~/.rikune/</code></td>
           </tr>
           <tr>
-            <td><span data-lang-en>Sample file not found</span><span data-lang-zh>样本文件未找到</span></td>
-            <td><span data-lang-en>Verify mount path: <code>-v /absolute/path:/samples:ro</code></span><span data-lang-zh>验证挂载路径：<code>-v /绝对路径:/samples:ro</code></span></td>
+            <td><span data-lang-en>Sample file not found</span><span data-lang-zh>样本文件未找�?/span></td>
+            <td><span data-lang-en>Verify mount path: <code>-v /absolute/path:/samples:ro</code></span><span data-lang-zh>验证挂载路径�?code>-v /绝对路径:/samples:ro</code></span></td>
           </tr>
         </tbody>
       </table>
@@ -311,11 +311,11 @@ docker-compose down</pre>
         <tbody>
           <tr>
             <td><code>write EPIPE</code> / <span data-lang-en>stdio broken</span><span data-lang-zh>stdio 中断</span></td>
-            <td><span data-lang-en>Use <code>-i</code> (not <code>-it</code>) — TTY mode breaks stdio</span><span data-lang-zh>使用 <code>-i</code>（而非 <code>-it</code>）— TTY 模式会干扰 stdio</span></td>
+            <td><span data-lang-en>Use <code>-i</code> (not <code>-it</code>) �?TTY mode breaks stdio</span><span data-lang-zh>使用 <code>-i</code>（而非 <code>-it</code>）�?TTY 模式会干�?stdio</span></td>
           </tr>
           <tr>
-            <td><span data-lang-en>MCP client cannot connect / timeout</span><span data-lang-zh>MCP 客户端无法连接 / 超时</span></td>
-            <td><span data-lang-en>Set timeout to 300000ms; increase <code>--memory=8g --cpus=4</code></span><span data-lang-zh>设置超时为 300000ms；增加 <code>--memory=8g --cpus=4</code></span></td>
+            <td><span data-lang-en>MCP client cannot connect / timeout</span><span data-lang-zh>MCP 客户端无法连�?/ 超时</span></td>
+            <td><span data-lang-en>Set timeout to 300000ms; increase <code>--memory=8g --cpus=4</code></span><span data-lang-zh>设置超时�?300000ms；增�?<code>--memory=8g --cpus=4</code></span></td>
           </tr>
         </tbody>
       </table>
@@ -326,10 +326,10 @@ docker-compose down</pre>
         <tbody>
           <tr>
             <td><code>OutOfMemoryError</code></td>
-            <td><span data-lang-en>Increase Java heap: <code>-e JAVA_OPTS="-Xmx4g"</code> and container memory</span><span data-lang-zh>增加 Java 堆：<code>-e JAVA_OPTS="-Xmx4g"</code> 并增加容器内存</span></td>
+            <td><span data-lang-en>Increase Java heap: <code>-e JAVA_OPTS="-Xmx4g"</code> and container memory</span><span data-lang-zh>增加 Java 堆：<code>-e JAVA_OPTS="-Xmx4g"</code> 并增加容器内�?/span></td>
           </tr>
           <tr>
-            <td><span data-lang-en>Lock file conflict</span><span data-lang-zh>锁文件冲突</span></td>
+            <td><span data-lang-en>Lock file conflict</span><span data-lang-zh>锁文件冲�?/span></td>
             <td><span data-lang-en>Remove stale locks: <code>rm -f /ghidra-projects/*.lock</code></span><span data-lang-zh>删除过期锁：<code>rm -f /ghidra-projects/*.lock</code></span></td>
           </tr>
         </tbody>
