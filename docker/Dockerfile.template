@@ -13,16 +13,30 @@ ARG HTTPS_PROXY=""
 ARG http_proxy=""
 ARG https_proxy=""
 ARG NO_PROXY="localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com"
+# @if ghidra
 ARG GHIDRA_VERSION=12.0.4
+# @endif ghidra
+# @if capa
 ARG CAPA_RULES_VERSION=v9.3.1
 ARG CAPA_VERSION=9.3.1
 ARG DIE_VERSION=3.10
 ARG DIE_RELEASE_CHANNEL=3.10
+# @endif capa
+# @if upx
 ARG UPX_VERSION=5.1.1
+# @endif upx
+# @if rizin
 ARG RIZIN_VERSION=0.8.2
+# @endif rizin
+# @if retdec
 ARG RETDEC_VERSION=5.0
+# @endif retdec
+# @if angr
 ARG ANGR_VERSION=9.2.205
+# @endif angr
+# @if jadx
 ARG JADX_VERSION=1.5.1
+# @endif jadx
 
 # =============================================================================
 # Stage 1: TypeScript Builder (always)
@@ -92,17 +106,22 @@ RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && 
 
 RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -r workers/requirements.txt
+# @if dynamic-python
 RUN pip install --no-cache-dir -r workers/requirements-dynamic.txt
+# @endif dynamic-python
 
 RUN ls -la /app/workers/ && \
     python3 -c "import sys; sys.path.insert(0, '/app/workers'); import static_worker; print('✓ static_worker.py loaded')" && \
     python3 -m py_compile /app/workers/static_worker.py && \
     echo "✓ Python base validated"
 
+# @if dynamic-python
 RUN python3 -c "import yara_x, pandare, frida, psutil; import speakeasy; print('✓ global dynamic imports ready')" && \
     python3 -c "import importlib.metadata as m; print('frida-tools', m.version('frida-tools')); print('yara-x', m.version('yara-x'))" && \
     echo "✓ Dynamic Python extras validated"
+# @endif dynamic-python
 
+# @if qiling
 # =============================================================================
 # Stage 3: Qiling Python (isolated unicorn>=2 runtime)
 # =============================================================================
@@ -112,7 +131,9 @@ RUN python3 -m venv /opt/qiling-venv && \
     /opt/qiling-venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
     /opt/qiling-venv/bin/pip install --no-cache-dir -r /app/workers/requirements-qiling.txt && \
     /opt/qiling-venv/bin/python -c "import qiling; print('✓ qiling', getattr(qiling, '__version__', 'unknown'))"
+# @endif qiling
 
+# @if angr
 # =============================================================================
 # Stage 4: Dynamic Python (isolated angr runtime)
 # =============================================================================
@@ -124,7 +145,9 @@ RUN python3 -m venv /opt/angr-venv && \
     /opt/angr-venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
     /opt/angr-venv/bin/pip install --no-cache-dir "angr==${ANGR_VERSION}" && \
     /opt/angr-venv/bin/python -c "import angr; print('✓ angr', angr.__version__)"
+# @endif angr
 
+# @if rizin
 # =============================================================================
 # Stage 5: Core Linux Toolchain (Rizin)
 # =============================================================================
@@ -156,7 +179,9 @@ RUN set -eux; \
     tar -xJf /tmp/rizin.tar.xz -C /opt/rizin; \
     test -x /opt/rizin/bin/rizin; \
     /opt/rizin/bin/rizin -v >/dev/null
+# @endif rizin
 
+# @if retdec
 # =============================================================================
 # Stage 6: Heavy Linux Toolchain (RetDec)
 # =============================================================================
@@ -183,7 +208,9 @@ RUN set -eux; \
     tar -xJf /tmp/retdec.tar.xz -C /opt/retdec; \
     test -x /opt/retdec/bin/retdec-decompiler; \
     /opt/retdec/bin/retdec-decompiler --help >/dev/null
+# @endif retdec
 
+# @if ghidra
 # =============================================================================
 # Stage 7: Ghidra
 # =============================================================================
@@ -235,6 +262,7 @@ ENV GHIDRA_INSTALL_DIR=/opt/ghidra
 ENV JAVA_HOME=/opt/java/openjdk
 
 RUN test -f /opt/ghidra/support/analyzeHeadless
+# @endif ghidra
 
 # =============================================================================
 # Stage 8: Runtime
@@ -242,11 +270,15 @@ RUN test -f /opt/ghidra/support/analyzeHeadless
 FROM python:3.11-slim-bookworm AS runtime
 
 ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
+# @if capa
 ARG CAPA_RULES_VERSION
 ARG CAPA_VERSION
 ARG DIE_VERSION
 ARG DIE_RELEASE_CHANNEL
+# @endif capa
+# @if upx
 ARG UPX_VERSION
+# @endif upx
 
 ENV HTTP_PROXY="${HTTP_PROXY}" \
     HTTPS_PROXY="${HTTPS_PROXY}" \
@@ -272,17 +304,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgcc-s1 \
     wget \
     xz-utils \
-    gdb \
-    ltrace \
-    strace \
-    graphviz \
-    wine \
-    wine64 \
-    && rm -rf /var/lib/apt/lists/*
+{{RUNTIME_APT_PACKAGES}}    && rm -rf /var/lib/apt/lists/*
 
+# @if ghidra
 ENV JAVA_HOME=/opt/java/openjdk
 ENV JAVA_TOOL_OPTIONS=
 ENV PATH="/opt/java/openjdk/bin:${PATH}"
+# @endif ghidra
 
 WORKDIR /app
 
@@ -308,13 +336,22 @@ COPY --from=python-base /usr/local/bin /usr/local/bin
 COPY --from=python-base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=python-base /app/workers ./workers
 
+# @if qiling
 COPY --from=qiling-python /opt/qiling-venv /opt/qiling-venv
+# @endif qiling
+# @if angr
 COPY --from=dynamic-python /opt/angr-venv /opt/angr-venv
+# @endif angr
+# @if rizin
 COPY --from=core-tools /opt/rizin /opt/rizin
+# @endif rizin
+# @if retdec
 COPY --from=heavy-tools /opt/retdec /opt/retdec
+# @endif retdec
 
 RUN python3 -m py_compile ./workers/static_worker.py || echo "Python worker validation skipped"
 
+# @if capa
 # ── capa + DIE ──
 RUN set -eux; \
     mkdir -p /opt/capa-rules /opt/capa-sigs /opt/downloads; \
@@ -340,7 +377,9 @@ RUN set -eux; \
     command -v diec >/dev/null 2>&1; \
     test -d /opt/capa-rules; \
     test -d /opt/capa-sigs
+# @endif capa
 
+# @if upx
 # ── UPX ──
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
@@ -354,7 +393,9 @@ RUN set -eux; \
     tar -xJf /tmp/upx.tar.xz -C /opt/upx --strip-components=1; \
     ln -sf /opt/upx/upx /usr/local/bin/upx; \
     /usr/local/bin/upx --version >/dev/null
+# @endif upx
 
+# @if rizin
 # ── Rizin symlinks ──
 RUN ln -sf /opt/rizin/bin/rizin /usr/local/bin/rizin && \
     ln -sf /opt/rizin/bin/rz-bin /usr/local/bin/rz-bin && \
@@ -362,11 +403,15 @@ RUN ln -sf /opt/rizin/bin/rizin /usr/local/bin/rizin && \
     ln -sf /opt/rizin/bin/rz-diff /usr/local/bin/rz-diff && \
     ln -sf /opt/rizin/bin/rz-find /usr/local/bin/rz-find && \
     ln -sf /opt/rizin/bin/rz-hash /usr/local/bin/rz-hash
+# @endif rizin
 
+# @if retdec
 # ── RetDec symlinks ──
 RUN ln -sf /opt/retdec/bin/retdec-decompiler /usr/local/bin/retdec-decompiler && \
     ln -sf /opt/retdec/bin/retdec-fileinfo /usr/local/bin/retdec-fileinfo
+# @endif retdec
 
+# @if jadx
 # ── JADX ──
 ARG JADX_VERSION
 RUN set -eux; \
@@ -378,34 +423,22 @@ RUN set -eux; \
     ln -sf /opt/jadx/bin/jadx /usr/local/bin/jadx && \
     rm -f /tmp/jadx.zip && \
     rm -rf /var/lib/apt/lists/*
+# @endif jadx
 
+# @if ghidra
 # ── Ghidra ──
 COPY --from=ghidra-stage /opt/java/openjdk /opt/java/openjdk
 COPY --from=ghidra-stage /opt/ghidra /opt/ghidra
 COPY ghidra_scripts/ ./ghidra_scripts/
+# @endif ghidra
 
 COPY helpers/ ./helpers/
+# @if frida
 COPY frida_scripts/ ./frida_scripts/
+# @endif frida
 
 # ── Validate installed tools ──
-RUN echo "[validate] Rikune Docker build" && \
-    /usr/local/bin/capa --version >/dev/null 2>&1 && \
-    diec --version >/dev/null 2>&1 && \
-    dot -V >/dev/null 2>&1 && \
-    rizin -v >/dev/null 2>&1 && \
-    upx --version >/dev/null 2>&1 && \
-    wine --version >/dev/null 2>&1 && \
-    command -v winedbg >/dev/null 2>&1 && \
-    frida-ps --help >/dev/null 2>&1 && \
-    retdec-decompiler --help >/dev/null 2>&1 && \
-    retdec-fileinfo --help >/dev/null 2>&1 && \
-    test -f /opt/ghidra/support/analyzeHeadless && \
-    jadx --version >/dev/null 2>&1 && \
-    /opt/qiling-venv/bin/python -c "import qiling; print('✓ qiling')" && \
-    /opt/angr-venv/bin/python -c "import angr; print('✓ angr')" && \
-    python3 -c "import volatility3; print('✓ volatility3')" && \
-    python3 -c "import frida, psutil; print('✓ dynamic imports')" && \
-    echo "[validate] ✓ All checks passed"
+{{VALIDATION_COMMANDS}}
 
 RUN useradd -m -u 1000 -s /bin/bash appuser
 
@@ -429,36 +462,11 @@ ENV NODE_ENV=production \
     XDG_CONFIG_HOME=/app/logs/.config \
     XDG_CACHE_HOME=/app/cache/xdg \
     SANDBOX_PYTHON_PATH=/usr/local/bin/python3
-    JAVA_HOME=/opt/java/openjdk \
-    JAVA_TOOL_OPTIONS="" \
-    GHIDRA_INSTALL_DIR=/opt/ghidra \
-    GHIDRA_PROJECT_ROOT=/ghidra-projects \
-    GHIDRA_LOG_ROOT=/ghidra-logs \
-    CAPA_PATH=/usr/local/bin/capa \
-    CAPA_RULES_PATH=/opt/capa-rules \
-    DIE_PATH=/usr/bin/diec \
-    GRAPHVIZ_DOT_PATH=/usr/bin/dot \
-    RIZIN_PATH=/opt/rizin/bin/rizin \
-    UPX_PATH=/usr/local/bin/upx \
-    WINE_PATH=/usr/bin/wine \
-    WINEDBG_PATH=/usr/bin/winedbg \
-    FRIDA_PATH=/usr/local/bin/frida \
-    QILING_PYTHON=/opt/qiling-venv/bin/python \
-    QILING_ROOTFS=/opt/qiling-rootfs \
-    ANGR_PYTHON=/opt/angr-venv/bin/python \
-    RETDEC_PATH=/opt/retdec/bin/retdec-decompiler \
-    RETDEC_INSTALL_DIR=/opt/retdec \
-    JADX_PATH=/opt/jadx/bin/jadx \
-    PANDA_PYTHON=/usr/local/bin/python3 \
-    YARAX_PYTHON=/usr/local/bin/python3 \
-    VOLATILITY3_PATH=/usr/local/bin/vol \
+{{RUNTIME_ENV_VARS}}
 
-RUN mkdir -p /app/workspaces /app/data /app/cache /app/logs /samples /tmp /ghidra-projects /ghidra-logs /opt/qiling-rootfs && \
+RUN mkdir -p /app/workspaces /app/data /app/cache /app/logs /samples /tmp {{EXTRA_DIRS}} && \
     chown -R appuser:appuser /app && \
-    chown -R appuser:appuser /ghidra-projects && \
-    chown -R appuser:appuser /ghidra-logs && \
-    chown -R appuser:appuser /opt/qiling-rootfs && \
-    chmod 1777 /tmp
+{{EXTRA_CHOWN}}    chmod 1777 /tmp
 
 WORKDIR /app
 
