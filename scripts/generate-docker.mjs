@@ -3,21 +3,19 @@
 // generate-docker.mjs — Plugin-driven Dockerfile & docker-compose generator
 // =============================================================================
 //
-// Reads plugin systemDeps declarations (from compiled dist/ or a static
-// fallback map), resolves enabled Docker features from the selected plugin
-// profile, and generates:
-//   - Dockerfile              (from docker/Dockerfile.template)
-//   - docker-compose.yml      (from docker-compose sections)
+// Reads plugin systemDeps declarations from compiled dist/plugins/ and
+// automatically derives the Docker image contents.  No hardcoded mappings —
+// plugins are the single source of truth for their Docker requirements.
 //
 // Usage:
-//   node scripts/generate-docker.mjs --profile=full
-//   node scripts/generate-docker.mjs --profile=minimal
-//   node scripts/generate-docker.mjs --plugins=ghidra,frida,malware
-//   node scripts/generate-docker.mjs --profile=full --dry-run
+//   node scripts/generate-docker.mjs                         # all plugins
+//   node scripts/generate-docker.mjs --exclude=ghidra,angr   # skip some
+//   node scripts/generate-docker.mjs --include=pe-analysis,malware,frida
+//   node scripts/generate-docker.mjs --dry-run               # preview only
 //
 // =============================================================================
 
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -25,410 +23,234 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. Dep name → Docker feature flag mapping
+// 1. Auto-discover plugins from dist/plugins/ (or src/plugins/ for names)
 // ─────────────────────────────────────────────────────────────────────────────
-// Maps systemDep.name → Docker "feature" that controls conditional blocks
-// in Dockerfile.template.  Features correspond to `# @if <feature>` markers.
 
-const DEP_NAME_TO_FEATURE = {
-  'gdb':              'gdb',
-  'frida':            'frida',
-  'Ghidra':           'ghidra',
-  'java':             'ghidra',        // Java JDK comes with the Ghidra stage
-  'rizin':            'rizin',
-  'dot (Graphviz)':   'graphviz',
-  'upx':              'upx',
-  'retdec':           'retdec',
-  'angr':             'angr',
-  'qiling':           'qiling',
-  'wine':             'wine',
-  'capa':             'capa',
-  'vol3':             'vol3',
-  'JADX':             'jadx',
-  'pandare':          'pandare',
-  'yara-x':           'yara-x',
-  'yara-python':      'yara',
-  'capa-rules':       'capa',
-  'vol3-symbols':     null,            // optional dir, no separate feature
-  // Python packages in base requirements — always available, no feature needed
-  'python3':          null,
-  'pefile':           null,
-  'dnfile':           null,
+function discoverPluginIds() {
+  for (const base of [join(ROOT, 'dist', 'plugins'), join(ROOT, 'src', 'plugins')]) {
+    if (!existsSync(base)) continue
+    return readdirSync(base)
+      .filter(name => {
+        if (name === 'sdk.ts' || name === 'sdk.js' || name.startsWith('.')) return false
+        const full = join(base, name)
+        return statSync(full).isDirectory()
+      })
+      .sort()
+  }
+  console.error('  ✗ Neither dist/plugins/ nor src/plugins/ found.')
+  process.exit(1)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. Static plugin → dep names fallback (used when dist/ is not available)
+// 2. Load systemDeps from compiled plugins
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PLUGIN_DEP_NAMES_FALLBACK = {
-  'android':          ['JADX'],
-  'debug-session':    ['gdb'],
-  'frida':            ['frida'],
-  'ghidra':           ['Ghidra', 'java'],
-  'docker-backends':  ['dot (Graphviz)', 'rizin', 'upx', 'retdec', 'angr', 'qiling', 'wine', 'pandare', 'yara-x'],
-  'memory-forensics': ['vol3'],
-  'dynamic':          ['frida'],
-  'malware':          ['capa', 'yara-python', 'capa-rules'],
-  'crackme':          ['angr'],
-  'managed-sandbox':  ['python3'],
-  'managed-il-xrefs': ['python3', 'dnfile'],
-  'dotnet-reactor':   ['python3', 'dnfile'],
-  'managed-fake-c2':  ['python3'],
-  'host-correlation': ['python3', 'pefile'],
-  // Pure TS plugins — no external deps
-  'pe-analysis': [], 'strings': [], 'static-triage': [], 'code-analysis': [],
-  'binary-diff': [], 'cross-module': [], 'elf-macho': [], 'kb-collaboration': [],
-  'observability': [], 'reporting': [], 'sbom': [], 'threat-intel': [],
-  'unpacking': [], 'visualization': [], 'vm-analysis': [], 'vuln-scanner': [],
-  'batch': [],
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 3. Feature → runtime properties
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Extra apt packages to install per feature */
-const FEATURE_APT = {
-  gdb:        ['gdb', 'ltrace', 'strace'],
-  graphviz:   ['graphviz'],
-  wine:       ['wine', 'wine64'],
-}
-
-/** ENV vars to set per feature */
-const FEATURE_ENV = {
-  ghidra:   { JAVA_HOME: '/opt/java/openjdk', JAVA_TOOL_OPTIONS: '""', GHIDRA_INSTALL_DIR: '/opt/ghidra', GHIDRA_PROJECT_ROOT: '/ghidra-projects', GHIDRA_LOG_ROOT: '/ghidra-logs' },
-  capa:     { CAPA_PATH: '/usr/local/bin/capa', CAPA_RULES_PATH: '/opt/capa-rules', DIE_PATH: '/usr/bin/diec' },
-  graphviz: { GRAPHVIZ_DOT_PATH: '/usr/bin/dot' },
-  rizin:    { RIZIN_PATH: '/opt/rizin/bin/rizin' },
-  upx:      { UPX_PATH: '/usr/local/bin/upx' },
-  wine:     { WINE_PATH: '/usr/bin/wine', WINEDBG_PATH: '/usr/bin/winedbg' },
-  frida:    { FRIDA_PATH: '/usr/local/bin/frida' },
-  qiling:   { QILING_PYTHON: '/opt/qiling-venv/bin/python', QILING_ROOTFS: '/opt/qiling-rootfs' },
-  angr:     { ANGR_PYTHON: '/opt/angr-venv/bin/python' },
-  retdec:   { RETDEC_PATH: '/opt/retdec/bin/retdec-decompiler', RETDEC_INSTALL_DIR: '/opt/retdec' },
-  jadx:     { JADX_PATH: '/opt/jadx/bin/jadx' },
-  pandare:  { PANDA_PYTHON: '/usr/local/bin/python3' },
-  'yara-x': { YARAX_PYTHON: '/usr/local/bin/python3' },
-  vol3:     { VOLATILITY3_PATH: '/usr/local/bin/vol' },
-}
-
-/** Validation commands per feature */
-const FEATURE_VALIDATION = {
-  capa:     ['/usr/local/bin/capa --version >/dev/null 2>&1', 'diec --version >/dev/null 2>&1'],
-  graphviz: ['dot -V >/dev/null 2>&1'],
-  rizin:    ['rizin -v >/dev/null 2>&1'],
-  upx:      ['upx --version >/dev/null 2>&1'],
-  wine:     ['wine --version >/dev/null 2>&1', 'command -v winedbg >/dev/null 2>&1'],
-  frida:    ['frida-ps --help >/dev/null 2>&1'],
-  retdec:   ['retdec-decompiler --help >/dev/null 2>&1', 'retdec-fileinfo --help >/dev/null 2>&1'],
-  ghidra:   ['test -f /opt/ghidra/support/analyzeHeadless'],
-  jadx:     ['jadx --version >/dev/null 2>&1'],
-  qiling:   ['/opt/qiling-venv/bin/python -c "import qiling; print(\'✓ qiling\')"'],
-  angr:     ['/opt/angr-venv/bin/python -c "import angr; print(\'✓ angr\')"'],
-  vol3:     ['python3 -c "import volatility3; print(\'✓ volatility3\')"'],
-  'dynamic-python': ['python3 -c "import frida, psutil; print(\'✓ dynamic imports\')"'],
-}
-
-/** Extra dirs to create per feature */
-const FEATURE_DIRS = {
-  ghidra: ['/ghidra-projects', '/ghidra-logs'],
-  qiling: ['/opt/qiling-rootfs'],
-}
-
-/** Extra chown per feature */
-const FEATURE_CHOWN = {
-  ghidra: ['chown -R appuser:appuser /ghidra-projects', 'chown -R appuser:appuser /ghidra-logs'],
-  qiling: ['chown -R appuser:appuser /opt/qiling-rootfs'],
-}
-
-// Implied features: if frida or pandare present, we need dynamic-python deps
-const IMPLIED_FEATURES = {
-  frida: ['dynamic-python'],
-  pandare: ['dynamic-python'],
-  'yara-x': ['dynamic-python'],
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 4. Load plugin systemDeps (dynamic from dist/ or fallback)
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function loadPluginDepNames(pluginIds) {
+async function loadPluginDeps(pluginIds) {
   const distDir = join(ROOT, 'dist', 'plugins')
-  const result = new Map()
+  if (!existsSync(distDir)) {
+    console.error('  ✗ dist/plugins/ not found. Run `npm run build` first.')
+    process.exit(1)
+  }
 
-  // Try dynamic import from compiled plugins
-  if (existsSync(distDir)) {
-    let dynamicOk = 0
-    for (const id of pluginIds) {
-      const indexPath = join(distDir, id, 'index.js')
-      if (!existsSync(indexPath)) {
-        // Fallback for this plugin
-        result.set(id, PLUGIN_DEP_NAMES_FALLBACK[id] || [])
-        continue
-      }
-      try {
-        const mod = await import(`file://${indexPath.replace(/\\/g, '/')}`)
-        const plugin = mod.default
-        if (plugin?.systemDeps?.length > 0) {
-          result.set(id, plugin.systemDeps.map(d => d.name))
-          dynamicOk++
-        } else {
-          result.set(id, [])
-        }
-      } catch {
-        result.set(id, PLUGIN_DEP_NAMES_FALLBACK[id] || [])
-      }
+  const result = new Map()
+  let loaded = 0
+
+  for (const id of pluginIds) {
+    const indexPath = join(distDir, id, 'index.js')
+    if (!existsSync(indexPath)) {
+      result.set(id, [])
+      continue
     }
-    if (dynamicOk > 0) {
-      console.log(`  Loaded systemDeps from ${dynamicOk} compiled plugins (dist/)`)
-    }
-  } else {
-    console.log('  dist/ not found, using static fallback mapping')
-    for (const id of pluginIds) {
-      result.set(id, PLUGIN_DEP_NAMES_FALLBACK[id] || [])
+    try {
+      const mod = await import(`file://${indexPath.replace(/\\/g, '/')}`)
+      const plugin = mod.default
+      result.set(id, plugin?.systemDeps ?? [])
+      if (plugin?.systemDeps?.length > 0) loaded++
+    } catch {
+      result.set(id, [])
     }
   }
 
+  console.log(`  Scanned ${pluginIds.length} plugins, ${loaded} have systemDeps`)
   return result
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. Resolve features from plugins
+// 3. Collect Docker requirements from systemDeps (no hardcoded maps)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function resolveFeatures(pluginDepMap) {
+function collectDockerRequirements(pluginDepMap) {
   const features = new Set()
+  const aptPackages = new Set()
+  const envVars = new Map()
+  const validationCmds = []
 
-  for (const [, depNames] of pluginDepMap) {
-    for (const depName of depNames) {
-      const feature = DEP_NAME_TO_FEATURE[depName]
-      if (feature) {
-        features.add(feature)
-        // Add implied features
-        if (IMPLIED_FEATURES[feature]) {
-          for (const implied of IMPLIED_FEATURES[feature]) features.add(implied)
+  for (const [, deps] of pluginDepMap) {
+    for (const dep of deps) {
+      if (dep.dockerFeature) features.add(dep.dockerFeature)
+      if (dep.aptPackages) for (const pkg of dep.aptPackages) aptPackages.add(pkg)
+      if (dep.envVar && dep.dockerDefault) envVars.set(dep.envVar, dep.dockerDefault)
+      if (dep.dockerValidation) {
+        for (const cmd of dep.dockerValidation) {
+          if (!validationCmds.includes(cmd)) validationCmds.push(cmd)
         }
-      } else if (feature === undefined) {
-        console.warn(`  ⚠ Unknown dep name "${depName}" — no Docker feature mapped`)
       }
-      // feature === null means deliberately no-op (always available)
     }
   }
 
-  return features
+  // Implied: frida/pandare/yara-x need dynamic-python deps
+  if (features.has('frida') || features.has('dynamic-python')) {
+    features.add('dynamic-python')
+  }
+
+  return { features, aptPackages: [...aptPackages].sort(), envVars, validationCmds }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. Process Dockerfile.template
+// 4. Feature → structural Docker env/dirs
+//    (infrastructure concerns tied to build stages, not individual deps)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function processTemplate(template, features) {
-  // 6a. Process conditional blocks: # @if feature ... # @endif feature
+const FEATURE_EXTRA_ENV = {
+  ghidra: { JAVA_HOME: '/opt/java/openjdk', JAVA_TOOL_OPTIONS: '""', GHIDRA_INSTALL_DIR: '/opt/ghidra', GHIDRA_PROJECT_ROOT: '/ghidra-projects', GHIDRA_LOG_ROOT: '/ghidra-logs' },
+  capa:   { CAPA_PATH: '/usr/local/bin/capa', CAPA_RULES_PATH: '/opt/capa-rules', DIE_PATH: '/usr/bin/diec' },
+  rizin:  { RIZIN_PATH: '/opt/rizin/bin/rizin' },
+  retdec: { RETDEC_PATH: '/opt/retdec/bin/retdec-decompiler', RETDEC_INSTALL_DIR: '/opt/retdec' },
+  upx:    { UPX_PATH: '/usr/local/bin/upx' },
+  jadx:   { JADX_PATH: '/opt/jadx/bin/jadx' },
+  vol3:   { VOLATILITY3_PATH: '/usr/local/bin/vol' },
+  qiling: { QILING_PYTHON: '/opt/qiling-venv/bin/python', QILING_ROOTFS: '/opt/qiling-rootfs' },
+  angr:   { ANGR_PYTHON: '/opt/angr-venv/bin/python' },
+  'dynamic-python': { PANDA_PYTHON: '/usr/local/bin/python3', YARAX_PYTHON: '/usr/local/bin/python3' },
+}
+
+const FEATURE_DIRS = {
+  ghidra: { dirs: ['/ghidra-projects', '/ghidra-logs'], chown: ['chown -R appuser:appuser /ghidra-projects', 'chown -R appuser:appuser /ghidra-logs'] },
+  qiling: { dirs: ['/opt/qiling-rootfs'], chown: ['chown -R appuser:appuser /opt/qiling-rootfs'] },
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. Process Dockerfile.template
+// ─────────────────────────────────────────────────────────────────────────────
+
+function processTemplate(template, requirements) {
+  const { features, aptPackages, envVars, validationCmds } = requirements
+
+  // 5a. Conditional blocks
   const lines = template.replace(/\r\n/g, '\n').split('\n')
   const output = []
-  const featureStack = []
+  const stack = []
   let enabled = true
 
   for (const line of lines) {
     const ifMatch = line.match(/^[ \t]*# @if (.+)$/)
     const endifMatch = line.match(/^[ \t]*# @endif (.+)$/)
-
-    if (ifMatch) {
-      featureStack.push(enabled)
-      const requiredFeature = ifMatch[1].trim()
-      enabled = enabled && features.has(requiredFeature)
-      continue // don't emit the marker line
-    } else if (endifMatch) {
-      enabled = featureStack.pop() ?? true
-      continue // don't emit the marker line
-    }
-
-    if (enabled) {
-      output.push(line)
-    }
+    if (ifMatch)    { stack.push(enabled); enabled = enabled && features.has(ifMatch[1].trim()); continue }
+    if (endifMatch) { enabled = stack.pop() ?? true; continue }
+    if (enabled) output.push(line)
   }
 
   let result = output.join('\n')
 
-  // 6b. Replace {{RUNTIME_APT_PACKAGES}}
-  const aptPkgs = []
-  for (const [feature, pkgs] of Object.entries(FEATURE_APT)) {
-    if (features.has(feature)) aptPkgs.push(...pkgs)
-  }
-  const aptLines = aptPkgs.length > 0
-    ? aptPkgs.map(p => `    ${p} \\`).join('\n') + '\n'
+  // 5b. {{RUNTIME_APT_PACKAGES}}
+  const aptLines = aptPackages.length > 0
+    ? aptPackages.map(p => `    ${p} \\`).join('\n') + '\n'
     : ''
   result = result.replace('{{RUNTIME_APT_PACKAGES}}', aptLines)
 
-  // 6c. Replace {{RUNTIME_ENV_VARS}}
-  const envPairs = []
-  for (const [feature, vars] of Object.entries(FEATURE_ENV)) {
-    if (features.has(feature)) {
-      for (const [k, v] of Object.entries(vars)) {
-        envPairs.push([k, v])
-      }
-    }
+  // 5c. {{RUNTIME_ENV_VARS}}
+  const allEnv = new Map(envVars)
+  for (const [feat, vars] of Object.entries(FEATURE_EXTRA_ENV)) {
+    if (features.has(feat)) for (const [k, v] of Object.entries(vars)) allEnv.set(k, v)
   }
-  const envLines = envPairs.length > 0
-    ? envPairs.map(([k, v]) => `    ${k}=${v} \\`).join('\n') + '\n'
-    : ''
-  // Remove trailing backslash from last base ENV line if no feature envs
-  if (envLines) {
+  allEnv.delete('SANDBOX_PYTHON_PATH') // already in base block
+
+  if (allEnv.size > 0) {
+    const envLines = [...allEnv.entries()].map(([k, v]) => `    ${k}=${v} \\`).join('\n') + '\n'
     result = result.replace('{{RUNTIME_ENV_VARS}}', envLines)
   } else {
-    // Remove the placeholder and fix the trailing backslash
     result = result.replace('\n{{RUNTIME_ENV_VARS}}', '')
   }
 
-  // 6d. Replace {{VALIDATION_COMMANDS}}
-  const validationCmds = ['echo "[validate] Rikune Docker build"']
-  for (const [feature, cmds] of Object.entries(FEATURE_VALIDATION)) {
-    if (features.has(feature)) validationCmds.push(...cmds)
-  }
-  validationCmds.push('echo "[validate] ✓ All checks passed"')
-  const validationBlock = `RUN ${validationCmds.join(' && \\\n    ')}`
-  result = result.replace('{{VALIDATION_COMMANDS}}', validationBlock)
+  // 5d. {{VALIDATION_COMMANDS}}
+  const allValidation = ['echo "[validate] Rikune Docker image"', ...validationCmds, 'echo "[validate] ✓ All checks passed"']
+  result = result.replace('{{VALIDATION_COMMANDS}}', `RUN ${allValidation.join(' && \\\n    ')}`)
 
-  // 6e. Replace {{EXTRA_DIRS}}
-  const extraDirs = []
-  for (const [feature, dirs] of Object.entries(FEATURE_DIRS)) {
-    if (features.has(feature)) extraDirs.push(...dirs)
+  // 5e. {{EXTRA_DIRS}} / {{EXTRA_CHOWN}}
+  const extraDirs = [], extraChown = []
+  for (const [feat, cfg] of Object.entries(FEATURE_DIRS)) {
+    if (features.has(feat)) { extraDirs.push(...cfg.dirs); extraChown.push(...cfg.chown) }
   }
   result = result.replace('{{EXTRA_DIRS}}', extraDirs.join(' '))
+  result = result.replace('{{EXTRA_CHOWN}}', extraChown.length > 0
+    ? extraChown.map(c => `    ${c} && \\`).join('\n') + '\n' : '')
 
-  // 6f. Replace {{EXTRA_CHOWN}}
-  const chownCmds = []
-  for (const [feature, cmds] of Object.entries(FEATURE_CHOWN)) {
-    if (features.has(feature)) chownCmds.push(...cmds)
-  }
-  const chownLines = chownCmds.length > 0
-    ? chownCmds.map(c => `    ${c} && \\`).join('\n') + '\n'
-    : ''
-  result = result.replace('{{EXTRA_CHOWN}}', chownLines)
-
-  // Clean up any double blank lines
-  result = result.replace(/\n{3,}/g, '\n\n')
-
-  return result
+  return result.replace(/\n{3,}/g, '\n\n')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. Generate docker-compose.yml
+// 6. Generate docker-compose.yml
 // ─────────────────────────────────────────────────────────────────────────────
 
-function generateDockerCompose(features, profileName) {
+function generateDockerCompose(requirements, pluginIds) {
+  const { features, envVars } = requirements
+
   const buildArgs = []
-  if (features.has('capa'))   { buildArgs.push('CAPA_RULES_VERSION: v9.3.1', 'CAPA_VERSION: "9.3.1"', 'DIE_VERSION: "3.10"', 'DIE_RELEASE_CHANNEL: "3.10"') }
-  if (features.has('upx'))    { buildArgs.push('UPX_VERSION: "5.1.1"') }
-  if (features.has('rizin'))  { buildArgs.push('RIZIN_VERSION: "0.8.2"') }
-  if (features.has('retdec')) { buildArgs.push('RETDEC_VERSION: "5.0"') }
-  if (features.has('angr'))   { buildArgs.push('ANGR_VERSION: "9.2.205"') }
-  if (features.has('jadx'))   { buildArgs.push('JADX_VERSION: "1.5.1"') }
+  if (features.has('capa'))   buildArgs.push('CAPA_RULES_VERSION: v9.3.1', 'CAPA_VERSION: "9.3.1"', 'DIE_VERSION: "3.10"', 'DIE_RELEASE_CHANNEL: "3.10"')
+  if (features.has('upx'))    buildArgs.push('UPX_VERSION: "5.1.1"')
+  if (features.has('rizin'))  buildArgs.push('RIZIN_VERSION: "0.8.2"')
+  if (features.has('retdec')) buildArgs.push('RETDEC_VERSION: "5.0"')
+  if (features.has('angr'))   buildArgs.push('ANGR_VERSION: "9.2.205"')
+  if (features.has('jadx'))   buildArgs.push('JADX_VERSION: "1.5.1"')
 
-  const envVars = [
-    'NODE_ENV=production',
-    'PYTHONUNBUFFERED=1',
-    'WORKSPACE_ROOT=/app/workspaces',
-    'DB_PATH=/app/data/database.db',
-    'CACHE_ROOT=/app/cache',
-    'AUDIT_LOG_PATH=/app/logs/audit.log',
-    'XDG_CONFIG_HOME=/app/logs/.config',
-    'XDG_CACHE_HOME=/app/cache/xdg',
-    'LOG_LEVEL=info',
-    'SANDBOX_PYTHON_PATH=/usr/local/bin/python3',
-  ]
-
-  for (const [feature, vars] of Object.entries(FEATURE_ENV)) {
-    if (features.has(feature)) {
+  const allEnv = new Map([
+    ['NODE_ENV', 'production'], ['PYTHONUNBUFFERED', '1'],
+    ['WORKSPACE_ROOT', '/app/workspaces'], ['DB_PATH', '/app/data/database.db'],
+    ['CACHE_ROOT', '/app/cache'], ['AUDIT_LOG_PATH', '/app/logs/audit.log'],
+    ['XDG_CONFIG_HOME', '/app/logs/.config'], ['XDG_CACHE_HOME', '/app/cache/xdg'],
+    ['LOG_LEVEL', 'info'], ['SANDBOX_PYTHON_PATH', '/usr/local/bin/python3'],
+  ])
+  for (const [k, v] of envVars) allEnv.set(k, v)
+  for (const [feat, vars] of Object.entries(FEATURE_EXTRA_ENV)) {
+    if (features.has(feat)) {
       for (const [k, v] of Object.entries(vars)) {
-        // Skip JAVA_TOOL_OPTIONS empty string and JAVA_HOME (set in Dockerfile)
         if (k === 'JAVA_TOOL_OPTIONS' || k === 'JAVA_HOME') continue
-        envVars.push(`${k}=${v}`)
+        allEnv.set(k, v)
       }
     }
   }
 
-  // API config
-  envVars.push(
-    '', '# API File Server',
-    'API_ENABLED=true',
-    'API_PORT=18080',
-    '# API_KEY=your-secret-key-here',
-    'API_STORAGE_ROOT=/app/storage',
-    'API_MAX_FILE_SIZE=524288000',
-    'API_RETENTION_DAYS=30',
-  )
-
-  const volumes = [
-    '# Sample files (read-only)',
-    './samples:/samples:ro',
-    '',
-    '# Persistent data',
-    '"${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/workspaces:/app/workspaces:rw"',
-    '"${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/data:/app/data:rw"',
-    '"${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/cache:/app/cache:rw"',
-    '"${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/logs:/app/logs:rw"',
-    '',
-    '# API storage',
-    '"${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/storage:/app/storage:rw"',
-  ]
-
-  const namedVolumes = ['root-config:', '  driver: local', 'storage:', '  driver: local']
-
-  if (features.has('ghidra')) {
-    volumes.push(
-      '', '# Ghidra',
-      '"${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-projects:/ghidra-projects:rw"',
-      '"${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-logs:/ghidra-logs:rw"',
-    )
-    namedVolumes.push('ghidra-projects:', '  driver: local', 'ghidra-logs:', '  driver: local')
-  }
-  if (features.has('qiling')) {
-    volumes.push(
-      '', '# Qiling rootfs',
-      '"${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/qiling-rootfs:/opt/qiling-rootfs:ro"',
-    )
-  }
-
-  volumes.push(
-    '',
-    '# Root config',
-    'type: volume',
-    'source: root-config',
-    'target: /root/.rikune',
-  )
-
-  // Assemble
+  const envLines = [...allEnv.entries()].map(([k, v]) => `      - ${k}=${v}`).join('\n')
   const buildArgsYaml = buildArgs.length > 0
-    ? buildArgs.map(a => `        ${a}`).join('\n')
-    : ''
+    ? '\n' + buildArgs.map(a => `        ${a}`).join('\n') : ''
 
-  const envYaml = envVars
-    .map(v => v === '' ? '' : v.startsWith('#') ? `      ${v}` : `      - ${v}`)
-    .join('\n')
+  let volumeYaml = `      - ./samples:/samples:ro
+      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/workspaces:/app/workspaces:rw"
+      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/data:/app/data:rw"
+      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/cache:/app/cache:rw"
+      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/logs:/app/logs:rw"
+      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/storage:/app/storage:rw"`
+  if (features.has('ghidra')) volumeYaml += `
+      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-projects:/ghidra-projects:rw"
+      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-logs:/ghidra-logs:rw"`
+  if (features.has('qiling')) volumeYaml += `
+      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/qiling-rootfs:/opt/qiling-rootfs:ro"`
+  volumeYaml += `
+      - type: volume
+        source: root-config
+        target: /root/.rikune`
 
-  let volumeYaml = ''
-  for (const v of volumes) {
-    if (v === '') { volumeYaml += '\n'; continue }
-    if (v.startsWith('#')) { volumeYaml += `      ${v}\n`; continue }
-    if (v.startsWith('type:')) {
-      // Named volume mount (multi-line)
-      volumeYaml += `      - ${v}\n`
-      continue
-    }
-    if (v.startsWith('source:') || v.startsWith('target:')) {
-      volumeYaml += `        ${v}\n`
-      continue
-    }
-    volumeYaml += `      - ${v}\n`
-  }
+  let namedVol = `  root-config:\n    driver: local\n  storage:\n    driver: local`
+  if (features.has('ghidra')) namedVol += `\n  ghidra-projects:\n    driver: local\n  ghidra-logs:\n    driver: local`
 
-  const namedVolYaml = namedVolumes.map(v => `  ${v}`).join('\n')
+  const featureList = [...features].sort().join(', ') || 'none'
 
   return `# =============================================================================
-# Docker Compose - Rikune (profile: ${profileName})
+# Docker Compose - Rikune
 # =============================================================================
-# Generated by: npm run docker:generate -- --profile=${profileName}
+# Auto-generated from plugin systemDeps.
+# Plugins: ${pluginIds.length} enabled | Features: ${featureList}
+# Regenerate: npm run docker:generate
 # =============================================================================
 
 name: rikune
@@ -439,22 +261,17 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-${buildArgsYaml}
+      args:${buildArgsYaml}
     container_name: rikune
-
     stdin_open: true
     tty: true
-
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
     read_only: true
-
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=512m
-
     deploy:
       resources:
         limits:
@@ -462,40 +279,40 @@ ${buildArgsYaml}
           cpus: '2'
         reservations:
           memory: 2G
-
     volumes:
 ${volumeYaml}
     environment:
-${envYaml}
-
+${envLines}
+      # API File Server
+      - API_ENABLED=true
+      - API_PORT=18080
+      # - API_KEY=your-secret-key-here
+      - API_STORAGE_ROOT=/app/storage
+      - API_MAX_FILE_SIZE=524288000
+      - API_RETENTION_DAYS=30
     healthcheck:
       test: ["CMD", "node", "-e", "const http=require('http');const r=http.get('http://localhost:18080/api/v1/health',res=>{process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.setTimeout(5000,()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-
     ports:
       - "18080:18080"
-
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
     restart: unless-stopped
-
     labels:
       - "app=rikune"
       - "component=mcp-server"
       - "security.isolation=high"
-      - "profile=${profileName}"
 
 volumes:
-${namedVolYaml}
+${namedVol}
 `
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. CLI
+// 7. CLI
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -508,108 +325,79 @@ async function main() {
 
   if (flags.help) {
     console.log(`
-Rikune Docker Generator — builds Dockerfile + docker-compose.yml from plugin profiles
+Rikune Docker Generator — builds Dockerfile + docker-compose.yml from plugin systemDeps
+
+Plugins are the single source of truth.  The generator auto-discovers all
+plugins, reads their systemDeps declarations, and derives the Docker image.
 
 Usage:
-  node scripts/generate-docker.mjs --profile=<name>
-  node scripts/generate-docker.mjs --plugins=id1,id2,...
-  node scripts/generate-docker.mjs --profile=full --dry-run
+  node scripts/generate-docker.mjs                         # all plugins
+  node scripts/generate-docker.mjs --exclude=ghidra,angr   # skip heavy tools
+  node scripts/generate-docker.mjs --include=pe-analysis,malware,frida
+  node scripts/generate-docker.mjs --dry-run               # no file writes
 
 Options:
-  --profile=<name>   Load profile from docker/profiles/<name>.json
-  --plugins=<ids>    Comma-separated plugin IDs (overrides --profile)
+  --include=<ids>    Only include these plugins (comma-separated)
+  --exclude=<ids>    Exclude these plugins
   --output=<dir>     Output directory (default: project root)
-  --dry-run          Print features without writing files
+  --dry-run          Preview features without writing files
   --help             Show this help
-
-Available profiles:
-  full               All plugins, all tools (largest image)
-  minimal            Core static analysis only (smallest)
-  malware-analysis   Malware-focused stack
-  dotnet-analysis    .NET reverse engineering
-
-Profiles are defined in docker/profiles/*.json
 `)
     process.exit(0)
   }
 
   console.log('─── Rikune Docker Generator ───')
 
-  // Resolve plugin list
-  let pluginIds = []
-  let profileName = 'custom'
+  const allPlugins = discoverPluginIds()
+  console.log(`  Discovered ${allPlugins.length} plugins`)
 
-  if (flags.plugins) {
-    pluginIds = flags.plugins.split(',').map(s => s.trim())
-    profileName = 'custom'
-    console.log(`  Plugin list: ${pluginIds.join(', ')}`)
-  } else {
-    profileName = flags.profile || 'full'
-    const profilePath = join(ROOT, 'docker', 'profiles', `${profileName}.json`)
-    if (!existsSync(profilePath)) {
-      console.error(`  ✗ Profile not found: ${profilePath}`)
-      console.error(`  Available: ${readdirSync(join(ROOT, 'docker', 'profiles')).filter(f => f.endsWith('.json')).map(f => f.replace('.json', '')).join(', ')}`)
-      process.exit(1)
-    }
-    const profile = JSON.parse(readFileSync(profilePath, 'utf-8'))
-    pluginIds = profile.plugins
-    profileName = profile.name
-    console.log(`  Profile: ${profileName} — ${profile.description}`)
-    console.log(`  Plugins (${pluginIds.length}): ${pluginIds.join(', ')}`)
+  let pluginIds = [...allPlugins]
+  if (flags.include) {
+    const include = new Set(flags.include.split(',').map(s => s.trim()))
+    pluginIds = pluginIds.filter(id => include.has(id))
+    console.log(`  --include: ${pluginIds.length} selected`)
   }
+  if (flags.exclude) {
+    const exclude = new Set(flags.exclude.split(',').map(s => s.trim()))
+    const before = pluginIds.length
+    pluginIds = pluginIds.filter(id => !exclude.has(id))
+    console.log(`  --exclude: removed ${before - pluginIds.length}`)
+  }
+  console.log(`  Active (${pluginIds.length}): ${pluginIds.join(', ')}`)
 
-  // Load dep names
-  console.log('\n  Loading plugin dependencies...')
-  const pluginDepMap = await loadPluginDepNames(pluginIds)
+  console.log('\n  Loading systemDeps from dist/...')
+  const pluginDepMap = await loadPluginDeps(pluginIds)
 
-  // Resolve features
-  const features = resolveFeatures(pluginDepMap)
-  const featureList = [...features].sort()
-  console.log(`\n  Enabled Docker features (${featureList.length}):`)
+  const req = collectDockerRequirements(pluginDepMap)
+  const featureList = [...req.features].sort()
+  console.log(`\n  Features from plugins (${featureList.length}):`)
   for (const f of featureList) console.log(`    ✓ ${f}`)
-
-  // Report what's NOT included
-  const allFeatures = new Set(Object.values(DEP_NAME_TO_FEATURE).filter(Boolean))
-  const disabled = [...allFeatures].filter(f => !features.has(f)).sort()
-  if (disabled.length > 0) {
-    console.log(`\n  Disabled features (${disabled.length}):`)
-    for (const f of disabled) console.log(`    ○ ${f}`)
-  }
+  console.log(`  apt: ${req.aptPackages.join(', ') || '(none)'}`)
+  console.log(`  env: ${req.envVars.size} vars`)
+  console.log(`  validation: ${req.validationCmds.length} commands`)
 
   if (flags['dry-run']) {
     console.log('\n  [dry-run] No files written.')
     process.exit(0)
   }
 
-  // Process template
   const templatePath = join(ROOT, 'docker', 'Dockerfile.template')
   if (!existsSync(templatePath)) {
     console.error(`  ✗ Template not found: ${templatePath}`)
     process.exit(1)
   }
-  const template = readFileSync(templatePath, 'utf-8')
-  const dockerfile = processTemplate(template, features)
 
-  // Write outputs
+  const dockerfile = processTemplate(readFileSync(templatePath, 'utf-8'), req)
   const outputDir = flags.output ? join(ROOT, flags.output) : ROOT
-  const dockerfilePath = join(outputDir, 'Dockerfile')
-  const composePath = join(outputDir, 'docker-compose.yml')
+  writeFileSync(join(outputDir, 'Dockerfile'), dockerfile, 'utf-8')
+  console.log(`\n  ✓ Dockerfile (${dockerfile.split('\n').length} lines)`)
 
-  writeFileSync(dockerfilePath, dockerfile, 'utf-8')
-  console.log(`\n  ✓ Dockerfile written (${dockerfile.split('\n').length} lines)`)
+  const compose = generateDockerCompose(req, pluginIds)
+  writeFileSync(join(outputDir, 'docker-compose.yml'), compose, 'utf-8')
+  console.log(`  ✓ docker-compose.yml (${compose.split('\n').length} lines)`)
 
-  const compose = generateDockerCompose(features, profileName)
-  writeFileSync(composePath, compose, 'utf-8')
-  console.log(`  ✓ docker-compose.yml written (${compose.split('\n').length} lines)`)
-
-  // Summary
-  const fullLineCount = 465  // approximate original Dockerfile line count
-  const ratio = Math.round((dockerfile.split('\n').length / fullLineCount) * 100)
-  console.log(`\n  Profile "${profileName}": ${featureList.length} features, ~${ratio}% of full image`)
+  console.log(`\n  ${pluginIds.length} plugins → ${featureList.length} features`)
   console.log('─── Done ───\n')
 }
 
-main().catch(err => {
-  console.error('Fatal:', err)
-  process.exit(1)
-})
+main().catch(err => { console.error('Fatal:', err); process.exit(1) })

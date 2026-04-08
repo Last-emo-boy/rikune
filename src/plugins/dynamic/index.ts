@@ -28,7 +28,7 @@ const dynamicPlugin: Plugin = {
     { envVar: 'FRIDA_PATH', description: 'Path to frida CLI', required: false },
   ],
   systemDeps: [
-    { type: 'binary', name: 'frida', versionFlag: '--version', envVar: 'FRIDA_PATH', required: false, description: 'Frida dynamic instrumentation toolkit', dockerInstall: 'pip install frida-tools' },
+    { type: 'binary', name: 'frida', versionFlag: '--version', envVar: 'FRIDA_PATH', required: false, description: 'Frida dynamic instrumentation toolkit', dockerInstall: 'pip install frida-tools', dockerFeature: 'frida', dockerValidation: ['frida-ps --help >/dev/null 2>&1'] },
   ],
   register(server, deps) {
     server.registerTool(dynamicAutoHookToolDefinition, createDynamicAutoHookHandler(deps))

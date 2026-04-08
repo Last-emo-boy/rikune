@@ -26,7 +26,7 @@ const fridaPlugin: Plugin = {
     { envVar: 'FRIDA_PATH', description: 'Path to frida CLI binary', required: false },
   ],
   systemDeps: [
-    { type: 'binary', name: 'frida', versionFlag: '--version', envVar: 'FRIDA_PATH', required: true, description: 'Frida dynamic instrumentation toolkit', dockerInstall: 'pip install frida-tools' },
+    { type: 'binary', name: 'frida', versionFlag: '--version', envVar: 'FRIDA_PATH', required: true, description: 'Frida dynamic instrumentation toolkit', dockerInstall: 'pip install frida-tools', dockerFeature: 'frida', dockerValidation: ['frida-ps --help >/dev/null 2>&1'] },
   ],
   check() {
     try {

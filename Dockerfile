@@ -273,9 +273,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     xz-utils \
     gdb \
+    graphviz \
     ltrace \
     strace \
-    graphviz \
     wine \
     wine64 \
     && rm -rf /var/lib/apt/lists/*
@@ -388,23 +388,22 @@ COPY helpers/ ./helpers/
 COPY frida_scripts/ ./frida_scripts/
 
 # ── Validate installed tools ──
-RUN echo "[validate] Rikune Docker build" && \
-    /usr/local/bin/capa --version >/dev/null 2>&1 && \
-    diec --version >/dev/null 2>&1 && \
+RUN echo "[validate] Rikune Docker image" && \
+    jadx --version >/dev/null 2>&1 && \
+    /opt/angr-venv/bin/python -c "import angr; print('✓ angr')" && \
     dot -V >/dev/null 2>&1 && \
     rizin -v >/dev/null 2>&1 && \
     upx --version >/dev/null 2>&1 && \
+    retdec-decompiler --help >/dev/null 2>&1 && \
+    retdec-fileinfo --help >/dev/null 2>&1 && \
+    /opt/qiling-venv/bin/python -c "import qiling; print('✓ qiling')" && \
     wine --version >/dev/null 2>&1 && \
     command -v winedbg >/dev/null 2>&1 && \
     frida-ps --help >/dev/null 2>&1 && \
-    retdec-decompiler --help >/dev/null 2>&1 && \
-    retdec-fileinfo --help >/dev/null 2>&1 && \
     test -f /opt/ghidra/support/analyzeHeadless && \
-    jadx --version >/dev/null 2>&1 && \
-    /opt/qiling-venv/bin/python -c "import qiling; print('✓ qiling')" && \
-    /opt/angr-venv/bin/python -c "import angr; print('✓ angr')" && \
+    /usr/local/bin/capa --version >/dev/null 2>&1 && \
+    diec --version >/dev/null 2>&1 && \
     python3 -c "import volatility3; print('✓ volatility3')" && \
-    python3 -c "import frida, psutil; print('✓ dynamic imports')" && \
     echo "[validate] ✓ All checks passed"
 
 RUN useradd -m -u 1000 -s /bin/bash appuser
@@ -429,29 +428,27 @@ ENV NODE_ENV=production \
     XDG_CONFIG_HOME=/app/logs/.config \
     XDG_CACHE_HOME=/app/cache/xdg \
     SANDBOX_PYTHON_PATH=/usr/local/bin/python3
-    JAVA_HOME=/opt/java/openjdk \
-    JAVA_TOOL_OPTIONS="" \
-    GHIDRA_INSTALL_DIR=/opt/ghidra \
-    GHIDRA_PROJECT_ROOT=/ghidra-projects \
-    GHIDRA_LOG_ROOT=/ghidra-logs \
-    CAPA_PATH=/usr/local/bin/capa \
-    CAPA_RULES_PATH=/opt/capa-rules \
-    DIE_PATH=/usr/bin/diec \
+    JADX_PATH=/opt/jadx/bin/jadx \
+    ANGR_PYTHON=/opt/angr-venv/bin/python \
     GRAPHVIZ_DOT_PATH=/usr/bin/dot \
     RIZIN_PATH=/opt/rizin/bin/rizin \
     UPX_PATH=/usr/local/bin/upx \
-    WINE_PATH=/usr/bin/wine \
-    WINEDBG_PATH=/usr/bin/winedbg \
-    FRIDA_PATH=/usr/local/bin/frida \
-    QILING_PYTHON=/opt/qiling-venv/bin/python \
-    QILING_ROOTFS=/opt/qiling-rootfs \
-    ANGR_PYTHON=/opt/angr-venv/bin/python \
     RETDEC_PATH=/opt/retdec/bin/retdec-decompiler \
+    QILING_PYTHON=/opt/qiling-venv/bin/python \
+    WINE_PATH=/usr/bin/wine \
+    GHIDRA_INSTALL_DIR=/opt/ghidra \
+    CAPA_RULES_PATH=/opt/capa-rules \
+    JAVA_HOME=/opt/java/openjdk \
+    JAVA_TOOL_OPTIONS="" \
+    GHIDRA_PROJECT_ROOT=/ghidra-projects \
+    GHIDRA_LOG_ROOT=/ghidra-logs \
+    CAPA_PATH=/usr/local/bin/capa \
+    DIE_PATH=/usr/bin/diec \
     RETDEC_INSTALL_DIR=/opt/retdec \
-    JADX_PATH=/opt/jadx/bin/jadx \
+    VOLATILITY3_PATH=/usr/local/bin/vol \
+    QILING_ROOTFS=/opt/qiling-rootfs \
     PANDA_PYTHON=/usr/local/bin/python3 \
     YARAX_PYTHON=/usr/local/bin/python3 \
-    VOLATILITY3_PATH=/usr/local/bin/vol \
 
 RUN mkdir -p /app/workspaces /app/data /app/cache /app/logs /samples /tmp /ghidra-projects /ghidra-logs /opt/qiling-rootfs && \
     chown -R appuser:appuser /app && \

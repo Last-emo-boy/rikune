@@ -182,15 +182,22 @@ export interface PluginConfigField {
  * The plugin system uses these to:
  *   1. Auto-generate `check()` when the plugin doesn't provide one
  *   2. Produce a structured health report at startup
- *   3. Validate Docker images include all necessary tools
+ *   3. **Drive Docker image generation** — the generator scans all plugins,
+ *      collects their systemDeps, and only includes the build stages, apt
+ *      packages, env vars, and validation commands that are actually needed.
  *   4. Generate documentation of per-plugin requirements
  *
  * Example:
  * ```ts
  * systemDeps: [
- *   { type: 'binary', name: 'frida', versionFlag: '--version', envVar: 'FRIDA_PATH' },
- *   { type: 'python', name: 'dnfile', importName: 'dnfile' },
- *   { type: 'binary', name: 'gdb', versionFlag: '--version', required: false },
+ *   {
+ *     type: 'binary', name: 'frida', versionFlag: '--version',
+ *     envVar: 'FRIDA_PATH', required: true,
+ *     dockerFeature: 'frida',
+ *     aptPackages: [],
+ *     dockerValidation: ['frida-ps --help >/dev/null 2>&1'],
+ *   },
+ *   { type: 'python', name: 'dnfile', importName: 'dnfile', required: true },
  * ]
  * ```
  */
@@ -230,6 +237,34 @@ export interface PluginSystemDep {
 
   /** Docker `RUN` instruction or package name that installs this dep. */
   dockerInstall?: string
+
+  // ── Docker generation fields (drive Dockerfile output) ───────────────
+
+  /**
+   * Docker feature group ID that controls conditional blocks in the
+   * Dockerfile template.  Deps with the same `dockerFeature` share a
+   * build stage (e.g. `'ghidra'`, `'rizin'`, `'angr'`).
+   *
+   * When the generator scans plugins, it collects all unique
+   * `dockerFeature` values and enables the corresponding `# @if <feature>`
+   * blocks in the template.
+   *
+   * Leave undefined for deps that don't require a dedicated Docker stage
+   * (e.g. Python packages already in requirements.txt).
+   */
+  dockerFeature?: string
+
+  /**
+   * apt-get packages to install in the runtime Docker image.
+   * Merged across all enabled plugins into a single `apt-get install`.
+   */
+  aptPackages?: string[]
+
+  /**
+   * Shell commands to validate this dependency inside the Docker image.
+   * Merged into a single `RUN` validation step at the end of the build.
+   */
+  dockerValidation?: string[]
 }
 
 /**
