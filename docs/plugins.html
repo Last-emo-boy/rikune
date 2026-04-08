@@ -55,6 +55,7 @@
     <div class="doc-sidebar__title"><span data-lang-en>On this page</span><span data-lang-zh>本页目录</span></div>
     <a href="#overview">Overview</a>
     <a href="#built-in">Built-in Plugins</a>
+    <a href="#bundled"><span data-lang-en>Bundled Plugins</span><span data-lang-zh>随附插件</span></a>
     <a href="#sdk">Plugin SDK</a>
     <a href="#config">Configuration</a>
     <a href="#introspection">Introspection</a>
@@ -128,6 +129,117 @@
             <td><code>docker-backend</code></td>
             <td>15</td>
             <td><span data-lang-en>Docker-specific backend tools (Rizin, RetDec, etc.)</span><span data-lang-zh>Docker 专用后端工具（Rizin、RetDec 等）</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Bundled Plugins -->
+    <section id="bundled" class="reveal">
+      <h2><span data-lang-en>Bundled Plugins</span><span data-lang-zh>随附插件</span></h2>
+      <p>
+        <span data-lang-en>These 15 plugins ship with the repository under <code>src/plugins/</code>. They are auto-discovered at startup and provide <strong>47 MCP tools</strong> in total.</span>
+        <span data-lang-zh>这 15 个插件随仓库一起发布在 <code>src/plugins/</code> 下。启动时自动发现，共提供 <strong>47 个 MCP 工具</strong>。</span>
+      </p>
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th><span data-lang-en>Plugin</span><span data-lang-zh>插件</span></th>
+            <th><span data-lang-en>Tools</span><span data-lang-zh>工具数</span></th>
+            <th><span data-lang-en>Tool Names</span><span data-lang-zh>工具名</span></th>
+            <th><span data-lang-en>Dependencies</span><span data-lang-zh>依赖</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>pe-analysis</code></td>
+            <td>6</td>
+            <td><code>pe.structure.analyze</code>, <code>pe.imports.extract</code>, <code>pe.exports.extract</code>, <code>pe.fingerprint</code>, <code>pe.pdata.extract</code>, <code>pe.symbols.recover</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>ghidra</code></td>
+            <td>2</td>
+            <td><code>ghidra.analyze</code>, <code>ghidra.health</code></td>
+            <td><code>GHIDRA_INSTALL_DIR</code></td>
+          </tr>
+          <tr>
+            <td><code>malware</code></td>
+            <td>4</td>
+            <td><code>c2.extract</code>, <code>malware.config.extract</code>, <code>malware.classify</code>, <code>sandbox.report</code></td>
+            <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: <code>CAPA_RULES_PATH</code>, <code>YARA_RULES_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>dynamic</code></td>
+            <td>3</td>
+            <td><code>dynamic.auto_hook</code>, <code>dynamic.trace_attribute</code>, <code>dynamic.memory_dump</code></td>
+            <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: <code>FRIDA_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>frida</code></td>
+            <td>3</td>
+            <td><code>frida.runtime.instrument</code>, <code>frida.script.inject</code>, <code>frida.trace.capture</code></td>
+            <td>frida CLI</td>
+          </tr>
+          <tr>
+            <td><code>threat-intel</code></td>
+            <td>2</td>
+            <td><code>attack.map</code>, <code>ioc.export</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>vuln-scanner</code></td>
+            <td>2</td>
+            <td><code>vuln.pattern.scan</code>, <code>vuln.pattern.summary</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>memory-forensics</code></td>
+            <td>6</td>
+            <td><code>memory-forensics.pslist</code>, <code>memory-forensics.dlllist</code>, <code>memory-forensics.malfind</code>, <code>memory-forensics.netscan</code>, <code>memory-forensics.hivelist</code>, <code>memory-forensics.cmdline</code></td>
+            <td><code>VOLATILITY3_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>debug-session</code></td>
+            <td>6</td>
+            <td><code>debug.session.start</code>, <code>debug.session.breakpoint</code>, <code>debug.session.continue</code>, <code>debug.session.step</code>, <code>debug.session.inspect</code>, <code>debug.session.end</code></td>
+            <td>GDB</td>
+          </tr>
+          <tr>
+            <td><code>crackme</code></td>
+            <td>4</td>
+            <td><code>crackme.locate_validation</code>, <code>symbolic.explore</code>, <code>patch.generate</code>, <code>keygen.verify</code></td>
+            <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: <code>ANGR_AVAILABLE</code></td>
+          </tr>
+          <tr>
+            <td><code>android</code></td>
+            <td>4</td>
+            <td><code>apk.structure.analyze</code>, <code>dex.decompile</code>, <code>dex.classes.list</code>, <code>apk.packer.detect</code></td>
+            <td><code>JADX_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>cross-module</code></td>
+            <td>3</td>
+            <td><code>cross_binary.compare</code>, <code>call_graph.cross_module</code>, <code>dll.dependency_tree</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>visualization</code></td>
+            <td>3</td>
+            <td><code>report.html.generate</code>, <code>behavior.timeline</code>, <code>data_flow.map</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>kb-collaboration</code></td>
+            <td>2</td>
+            <td><code>kb.function_match</code>, <code>analysis.template</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>observability</code></td>
+            <td>1</td>
+            <td><code>observability.metrics</code></td>
+            <td><span data-lang-en>— (uses global hooks)</span><span data-lang-zh>—（使用全局钩子）</span></td>
           </tr>
         </tbody>
       </table>
