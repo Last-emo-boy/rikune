@@ -4,6 +4,7 @@ import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
 import { generateCacheKey } from '../cache-manager.js'
+import { clamp } from '../utils/shared-helpers.js'
 import { lookupCachedResult, formatCacheWarning } from './cache-observability.js'
 import {
   BinaryRoleProfileDataSchema,
@@ -201,13 +202,6 @@ function uniqueStrings(values: Array<string | null | undefined>): string[] {
     output.push(normalized)
   }
   return output
-}
-
-function clamp(value: number, min = 0, max = 1): number {
-  if (!Number.isFinite(value)) {
-    return min
-  }
-  return Math.min(max, Math.max(min, value))
 }
 
 function extractCrateNameFromCargoPath(input: string): string | null {

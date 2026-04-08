@@ -12,6 +12,7 @@ import { createPEImportsExtractHandler } from '../plugins/pe-analysis/tools/pe-i
 import { createStringsExtractHandler } from './strings-extract.js'
 import { createRuntimeDetectHandler } from './runtime-detect.js'
 import { createPackerDetectHandler } from './packer-detect.js'
+import { clamp } from '../utils/shared-helpers.js'
 import {
   inspectSampleWorkspace,
   formatMissingOriginalError,
@@ -237,13 +238,6 @@ interface BinaryRoleProfileDependencies {
   stringsHandler?: (args: ToolArgs) => Promise<WorkerResult>
   runtimeHandler?: (args: ToolArgs) => Promise<WorkerResult>
   packerHandler?: (args: ToolArgs) => Promise<WorkerResult>
-}
-
-function clamp(value: number, min = 0, max = 1) {
-  if (Number.isNaN(value)) {
-    return min
-  }
-  return Math.min(max, Math.max(min, value))
 }
 
 function uniqueStrings(values: Array<string | null | undefined>) {

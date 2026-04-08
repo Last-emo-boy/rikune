@@ -11,7 +11,8 @@ export function normalizeError(error: unknown): string {
   return String(error)
 }
 
-export function clamp(value: number, min: number, max: number): number {
+export function clamp(value: number, min = 0, max = 1): number {
+  if (!Number.isFinite(value)) return min
   return Math.max(min, Math.min(max, value))
 }
 
