@@ -1,10 +1,10 @@
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
-import type { WorkspaceManager } from './workspace-manager.js'
-import type { DatabaseManager } from './database.js'
-import type { PolicyGuard } from './policy-guard.js'
-import { logWarning } from './logger.js'
+import type { WorkspaceManager } from '../workspace-manager.js'
+import type { DatabaseManager } from '../database.js'
+import type { PolicyGuard } from '../policy-guard.js'
+import { logWarning } from '../logger.js'
 
 export const MAX_SAMPLE_SIZE = 500 * 1024 * 1024
 

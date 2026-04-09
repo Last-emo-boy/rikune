@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolHandler, ToolResult } from '../../../types.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
-import { DecompilerWorker, getGhidraDiagnostics, normalizeGhidraError } from '../../../decompiler-worker.js'
+import { DecompilerWorker, getGhidraDiagnostics, normalizeGhidraError } from '../../../worker/decompiler-worker.js'
 import { logger } from '../../../logger.js'
 
 export const codeFunctionsSearchInputSchema = z

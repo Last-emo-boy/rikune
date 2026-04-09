@@ -17,7 +17,7 @@ import type { DatabaseManager } from '../database.js';
 import type { WorkspaceManager } from '../workspace-manager.js';
 import type { CacheManager } from '../cache-manager.js';
 import type { JobQueue } from '../job-queue.js';
-import { DecompilerWorker } from '../decompiler-worker.js';
+import { DecompilerWorker } from '../worker/decompiler-worker.js';
 import { logger } from '../logger.js';
 import { triageWorkflow } from './triage.js';
 import { buildPollingGuidance } from '../polling-guidance.js';
@@ -27,7 +27,7 @@ import {
   classifySampleSizeTier,
   deriveAnalysisBudgetProfile,
   mergeCoverageEnvelope,
-} from '../analysis-coverage.js'
+} from '../analysis/analysis-coverage.js'
 
 /**
  * Input schema for deep static workflow

@@ -4,13 +4,13 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { createReportGenerateHandler } from '../../src/tools/report-generate.js'
-import { persistSemanticFunctionExplanationsArtifact } from '../../src/semantic-name-suggestion-artifacts.js'
+import { persistSemanticFunctionExplanationsArtifact } from '../../src/artifacts/semantic-name-suggestion-artifacts.js'
 import {
   persistStaticAnalysisJsonArtifact,
   STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
   PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
   COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
-} from '../../src/static-analysis-artifacts.js'
+} from '../../src/artifacts/static-analysis-artifacts.js'
 
 describe('report.generate tool', () => {
   let workspaceManager: WorkspaceManager

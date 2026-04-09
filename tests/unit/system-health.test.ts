@@ -9,7 +9,7 @@ import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import { createSystemHealthHandler, SystemHealthInputSchema } from '../../src/tools/system-health.js'
-import type { GhidraHealthStatus } from '../../src/ghidra-config.js'
+import type { GhidraHealthStatus } from '../../src/ghidra/ghidra-config.js'
 
 type StaticWorkerHealthData = {
   status?: string

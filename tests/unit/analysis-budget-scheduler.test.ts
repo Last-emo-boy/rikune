@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { DatabaseManager } from '../../src/database.js'
-import { AnalysisBudgetScheduler } from '../../src/analysis-budget-scheduler.js'
+import { AnalysisBudgetScheduler } from '../../src/analysis/analysis-budget-scheduler.js'
 import { JobQueue, JobPriority } from '../../src/job-queue.js'
 
 describe('analysis budget scheduler', () => {

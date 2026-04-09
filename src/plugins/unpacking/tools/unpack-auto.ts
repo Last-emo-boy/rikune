@@ -7,7 +7,7 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
+import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import {
   selectUnpackStrategy,
   executeUnpackBackend,

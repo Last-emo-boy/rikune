@@ -22,13 +22,13 @@ import {
   loadStringXrefArtifactSelection,
   persistStringXrefJsonArtifact,
 } from '../../strings/string-xref-artifacts.js'
-import { DecompilerWorker, type CrossReferenceAnalysis } from '../../../decompiler-worker.js'
+import { DecompilerWorker, type CrossReferenceAnalysis } from '../../../worker/decompiler-worker.js'
 import {
   buildDeferredToolResponse,
   shouldDeferLargeSample,
-} from '../../../nonblocking-analysis.js'
-import { classifySampleSizeTier } from '../../../analysis-coverage.js'
-import { persistChunkedArrayArtifacts } from '../../../chunked-analysis-evidence.js'
+} from '../../../analysis/nonblocking-analysis.js'
+import { classifySampleSizeTier } from '../../../analysis/analysis-coverage.js'
+import { persistChunkedArrayArtifacts } from '../../../analysis/chunked-analysis-evidence.js'
 import {
   buildEvidenceReuseWarnings,
   AnalysisEvidenceStateSchema,
@@ -37,7 +37,7 @@ import {
   buildResolvedEvidenceState,
   findCanonicalEvidence,
   persistCanonicalEvidence,
-} from '../../../analysis-evidence.js'
+} from '../../../analysis/analysis-evidence.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 
 const TOOL_NAME = 'analysis.context.link'

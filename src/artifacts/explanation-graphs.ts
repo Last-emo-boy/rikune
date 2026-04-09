@@ -2,10 +2,10 @@ import fs from 'fs/promises'
 import path from 'path'
 import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
-import type { ArtifactRef } from './types.js'
-import type { WorkspaceManager } from './workspace-manager.js'
-import type { DatabaseManager } from './database.js'
-import { sanitizePathSegment as sanitizeSegment } from './utils/shared-helpers.js'
+import type { ArtifactRef } from '../types.js'
+import type { WorkspaceManager } from '../workspace-manager.js'
+import type { DatabaseManager } from '../database.js'
+import { sanitizePathSegment as sanitizeSegment } from '../utils/shared-helpers.js'
 
 export const EXPLANATION_GRAPH_TYPE_VALUES = [
   'call_graph',

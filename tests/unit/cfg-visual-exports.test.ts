@@ -1,6 +1,6 @@
 import { describe, expect, test } from '@jest/globals'
 import type { Function as DatabaseFunction } from '../../src/database.js'
-import type { ControlFlowGraph } from '../../src/decompiler-worker.js'
+import type { ControlFlowGraph } from '../../src/worker/decompiler-worker.js'
 import {
   buildCFGExport,
   buildCFGSummary,

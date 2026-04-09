@@ -13,7 +13,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { createHash, randomUUID } from 'crypto';
-import { logger } from './logger.js';
+import { logger } from '../logger.js';
 import {
   ghidraConfig,
   createGhidraProject,
@@ -22,7 +22,7 @@ import {
   getConfiguredGhidraLogRoot,
   getConfiguredGhidraProjectRoot,
   getSampleScopedGhidraProjectRoot,
-} from './ghidra-config.js';
+} from '../ghidra/ghidra-config.js';
 import {
   findBestGhidraAnalysis,
   getGhidraCapabilityStatus,
@@ -30,17 +30,17 @@ import {
   parseGhidraAnalysisMetadata,
   type GhidraCapability,
   type GhidraCapabilityStatus,
-} from './ghidra-analysis-status.js';
+} from '../ghidra/ghidra-analysis-status.js';
 import {
   buildRawCommandLine,
   decodeProcessStreams,
   type DecodedProcessStreams,
-} from './process-output.js';
-import { smartRecoverFunctionsFromPE, type SmartRecoveredFunction } from './pe-runtime-functions.js';
-import type { DatabaseManager, Analysis } from './database.js';
-import type { WorkspaceManager } from './workspace-manager.js';
-import type { JobResult } from './types.js';
-import { formatMissingOriginalError, resolvePrimarySamplePath } from './sample-workspace.js';
+} from '../process-output.js';
+import { smartRecoverFunctionsFromPE, type SmartRecoveredFunction } from '../pe-runtime-functions.js';
+import type { DatabaseManager, Analysis } from '../database.js';
+import type { WorkspaceManager } from '../workspace-manager.js';
+import type { JobResult } from '../types.js';
+import { formatMissingOriginalError, resolvePrimarySamplePath } from '../sample/sample-workspace.js';
 
 /**
  * Options for Ghidra analysis

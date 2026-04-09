@@ -7,7 +7,7 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
-import { listArtifactInventory, normalizeRelativeArtifactPath } from '../artifact-inventory.js'
+import { listArtifactInventory, normalizeRelativeArtifactPath } from '../artifacts/artifact-inventory.js'
 
 const TOOL_NAME = 'artifacts.list'
 const TOOL_VERSION = '0.1.2'

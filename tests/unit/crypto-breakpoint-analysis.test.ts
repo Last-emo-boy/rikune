@@ -5,7 +5,7 @@ import {
   buildNormalizedTracePlan,
   extractConstantCandidates,
   summarizeNormalizedTracePlan,
-} from '../../src/crypto-breakpoint-analysis.js'
+} from '../../src/artifacts/crypto-breakpoint-analysis.js'
 
 describe('crypto-breakpoint-analysis helpers', () => {
   test('should extract crypto constant candidates from S-box and encoded material', () => {

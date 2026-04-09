@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from 'crypto'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
-import type { DatabaseManager } from './database.js'
-import { config } from './config.js'
-import { logger } from './logger.js'
-import { resolvePackagePath } from './runtime-paths.js'
+import type { DatabaseManager } from '../database.js'
+import { config } from '../config.js'
+import { logger } from '../logger.js'
+import { resolvePackagePath } from '../runtime-paths.js'
 
 export interface RuntimeWorkerPoolLeaseMetadata {
   family: string

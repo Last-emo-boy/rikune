@@ -5,7 +5,7 @@ import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-obs
 import { smartRecoverFunctionsFromPE } from '../../../pe-runtime-functions.js'
 import { createStringsExtractHandler } from '../../strings/tools/strings-extract.js'
 import { createRuntimeDetectHandler } from '../../static-triage/tools/runtime-detect.js'
-import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
+import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import { demangleRustSymbol, normalizeSymbolList, type DemangledSymbol } from '../../../tools/rust-demangle.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 

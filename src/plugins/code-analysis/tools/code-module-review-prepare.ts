@@ -7,7 +7,7 @@ import { createCodeReconstructExportHandler } from './code-reconstruct-export.js
 import {
   persistSemanticModuleReviewPrepareBundleArtifact,
   SEMANTIC_MODULE_REVIEW_PREPARE_BUNDLE_ARTIFACT_TYPE,
-} from '../../../semantic-name-suggestion-artifacts.js'
+} from '../../../artifacts/semantic-name-suggestion-artifacts.js'
 import { buildModuleReconstructionReviewPromptText } from '../../../prompts/module-reconstruction-review.js'
 
 const TOOL_NAME = 'code.module.review.prepare'

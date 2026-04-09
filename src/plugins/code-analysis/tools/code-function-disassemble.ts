@@ -10,7 +10,7 @@ import path from 'path';
 import type { ToolDefinition, ToolHandler, ToolResult } from '../../../types.js';
 import type { DatabaseManager } from '../../../database.js';
 import type { WorkspaceManager } from '../../../workspace-manager.js';
-import { DecompilerWorker, getGhidraDiagnostics, normalizeGhidraError } from '../../../decompiler-worker.js';
+import { DecompilerWorker, getGhidraDiagnostics, normalizeGhidraError } from '../../../worker/decompiler-worker.js';
 import { runEntrypointFallbackDisasm } from '../../../tools/entrypoint-fallback-disasm.js';
 import { logger } from '../../../logger.js';
 

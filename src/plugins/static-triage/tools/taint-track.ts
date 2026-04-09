@@ -10,12 +10,12 @@ import type { DatabaseManager } from '../../../database.js'
 import type { CacheManager } from '../../../cache-manager.js'
 import { generateCacheKey } from '../../../cache-manager.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
-import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
+import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import {
   buildStaticWorkerRequest,
   callStaticWorker as callPooledStaticWorker,
 } from '../../../tools/static-worker-client.js'
-import { persistStaticAnalysisJsonArtifact } from '../../../static-analysis-artifacts.js'
+import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 
 const TOOL_NAME = 'taint.track'

@@ -8,7 +8,7 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
 import type { DatabaseManager } from '../database.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
-import { inspectSampleWorkspace } from '../sample-workspace.js'
+import { inspectSampleWorkspace } from '../sample/sample-workspace.js'
 
 const DEFAULT_ANALYSIS_DETAIL = 'compact' as const
 const DEFAULT_MAX_ANALYSES = 25

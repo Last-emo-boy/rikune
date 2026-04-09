@@ -4,8 +4,8 @@
 
 import { z } from 'zod'
 import type { ToolDefinition, WorkerResult , PluginToolDeps} from '../../sdk.js'
-import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
-import { detectFormat } from '../../../format-detect.js'
+import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
+import { detectFormat } from '../../../sample/format-detect.js'
 import { getDebugSessionManager } from '../debug/debug-session-state.js'
 
 const TOOL_NAME = 'debug.session.start'

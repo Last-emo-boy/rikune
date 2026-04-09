@@ -1,6 +1,6 @@
 import fs from 'fs/promises'
 import path from 'path'
-import type { WorkspaceManager } from './workspace-manager.js'
+import type { WorkspaceManager } from '../workspace-manager.js'
 
 export type SampleWorkspaceStatus =
   | 'ready'

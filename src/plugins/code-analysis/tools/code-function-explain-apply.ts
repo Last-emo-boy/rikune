@@ -6,7 +6,7 @@ import {
   persistSemanticFunctionExplanationsArtifact,
   type SemanticFunctionExplanationArtifactPayload,
   SEMANTIC_FUNCTION_EXPLANATIONS_ARTIFACT_TYPE,
-} from '../../../semantic-name-suggestion-artifacts.js'
+} from '../../../artifacts/semantic-name-suggestion-artifacts.js'
 
 const TOOL_NAME = 'code.function.explain.apply'
 

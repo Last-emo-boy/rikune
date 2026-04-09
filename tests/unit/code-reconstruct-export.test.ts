@@ -17,7 +17,7 @@ import {
   persistSemanticFunctionExplanationsArtifact,
   persistSemanticModuleReviewsArtifact,
   persistSemanticNameSuggestionsArtifact,
-} from '../../src/semantic-name-suggestion-artifacts.js'
+} from '../../src/artifacts/semantic-name-suggestion-artifacts.js'
 
 describe('code.reconstruct.export tool', () => {
   let workspaceManager: WorkspaceManager

@@ -10,7 +10,7 @@ import {
   findCanonicalEvidence,
   persistCanonicalEvidence,
   resolveCanonicalEvidenceOrCache,
-} from '../../src/analysis-evidence.js'
+} from '../../src/analysis/analysis-evidence.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 

@@ -1,4 +1,4 @@
-import type { DynamicTraceSummary } from '../../dynamic-trace.js'
+import type { DynamicTraceSummary } from '../../artifacts/dynamic-trace.js'
 import { clamp, dedupe } from '../../utils/shared-helpers.js'
 
 export interface RuntimeCorrelationInput {

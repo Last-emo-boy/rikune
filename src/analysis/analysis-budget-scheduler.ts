@@ -1,8 +1,8 @@
 import fs from 'fs'
 import { randomUUID } from 'crypto'
 import { z } from 'zod'
-import type { DatabaseManager } from './database.js'
-import type { Job, JobQueue } from './job-queue.js'
+import type { DatabaseManager } from '../database.js'
+import type { Job, JobQueue } from '../job-queue.js'
 import type { SampleSizeTier } from './analysis-coverage.js'
 import type { AnalysisPipelineStage } from './analysis-run-state.js'
 

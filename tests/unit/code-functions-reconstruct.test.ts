@@ -8,13 +8,13 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
-import type { RankedFunction, DecompiledFunction, ControlFlowGraph } from '../../src/decompiler-worker.js'
+import type { RankedFunction, DecompiledFunction, ControlFlowGraph } from '../../src/worker/decompiler-worker.js'
 import {
   createCodeFunctionsReconstructHandler,
   CodeFunctionsReconstructInputSchema,
 } from '../../src/tools/code-functions-reconstruct.js'
-import type { DynamicTraceSummary } from '../../src/dynamic-trace.js'
-import { persistSemanticNameSuggestionsArtifact } from '../../src/semantic-name-suggestion-artifacts.js'
+import type { DynamicTraceSummary } from '../../src/artifacts/dynamic-trace.js'
+import { persistSemanticNameSuggestionsArtifact } from '../../src/artifacts/semantic-name-suggestion-artifacts.js'
 
 describe('code.functions.reconstruct tool', () => {
   let workspaceManager: WorkspaceManager

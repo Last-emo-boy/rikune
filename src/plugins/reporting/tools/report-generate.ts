@@ -15,15 +15,15 @@ import type { CacheManager } from '../../../cache-manager.js';
 import type { DatabaseManager } from '../../../database.js';
 import type { WorkspaceManager } from '../../../workspace-manager.js';
 import { logger } from '../../../logger.js';
-import { isGhidraReadyStatus } from '../../../ghidra-analysis-status.js';
-import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../../../dynamic-trace.js';
-import { loadSemanticFunctionExplanationIndex } from '../../../semantic-name-suggestion-artifacts.js';
+import { isGhidraReadyStatus } from '../../../ghidra/ghidra-analysis-status.js';
+import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../../../artifacts/dynamic-trace.js';
+import { loadSemanticFunctionExplanationIndex } from '../../../artifacts/semantic-name-suggestion-artifacts.js';
 import {
   loadStaticAnalysisArtifactSelection,
   STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
   PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
   COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
-} from '../../../static-analysis-artifacts.js';
+} from '../../../artifacts/static-analysis-artifacts.js';
 import {
   BinaryRoleProfileDataSchema,
   createBinaryRoleProfileHandler,
@@ -35,19 +35,19 @@ import {
 import { StaticCapabilityTriageDataSchema } from '../../static-triage/tools/static-capability-triage.js';
 import { PEStructureAnalyzeDataSchema } from '../../../plugins/pe-analysis/tools/pe-structure-analyze.js';
 import { CompilerPackerDetectDataSchema } from '../../static-triage/tools/compiler-packer-detect.js';
-import { buildReportConfidenceSemantics } from '../../../confidence-semantics.js';
+import { buildReportConfidenceSemantics } from '../../../analysis/confidence-semantics.js';
 import {
   buildRuntimeArtifactProvenance,
   buildStaticArtifactProvenance,
   buildSemanticArtifactProvenance,
-} from '../../../analysis-provenance.js';
+} from '../../../analysis/analysis-provenance.js';
 import {
   buildArtifactSelectionDiff,
-} from '../../../selection-diff.js';
+} from '../../../artifacts/selection-diff.js';
 import {
   GhidraExecutionSummarySchema,
   buildGhidraExecutionSummary,
-} from '../../../ghidra-execution-summary.js';
+} from '../../../ghidra/ghidra-execution-summary.js';
 import { ToolSurfaceRoleSchema } from '../../../tool-surface-guidance.js';
 
 /**

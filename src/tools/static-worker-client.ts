@@ -4,7 +4,7 @@ import type { DatabaseManager } from '../database.js'
 import {
   buildStaticWorkerCompatibilityKey,
   getRuntimeWorkerPool,
-} from '../runtime-worker-pool.js'
+} from '../worker/runtime-worker-pool.js'
 
 export interface StaticWorkerRequest {
   job_id: string

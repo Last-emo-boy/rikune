@@ -1,4 +1,4 @@
-import type { ArtifactRef } from './types.js'
+import type { ArtifactRef } from '../types.js'
 import {
   type AnalysisEvidenceChunkManifest,
   buildChunkedEvidenceManifest,

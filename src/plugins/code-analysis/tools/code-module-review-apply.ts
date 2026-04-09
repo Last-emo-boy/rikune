@@ -6,7 +6,7 @@ import {
   persistSemanticModuleReviewsArtifact,
   type SemanticModuleReviewArtifactPayload,
   SEMANTIC_MODULE_REVIEWS_ARTIFACT_TYPE,
-} from '../../../semantic-name-suggestion-artifacts.js'
+} from '../../../artifacts/semantic-name-suggestion-artifacts.js'
 
 const TOOL_NAME = 'code.module.review.apply'
 

@@ -6,7 +6,7 @@
 import {
   ExplanationGraphDigestSchema,
   type ExplanationGraphDigest,
-} from '../../../explanation-graphs.js'
+} from '../../../artifacts/explanation-graphs.js'
 import { escapeDot, escapeMermaid } from '../../../utils/shared-helpers.js'
 
 type ExplanationConfidenceState = 'observed' | 'correlated' | 'inferred'

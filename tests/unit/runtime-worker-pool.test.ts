@@ -7,7 +7,7 @@ import {
   RuntimeWorkerPool,
   buildStaticWorkerCompatibilityKey,
   buildRizinPreviewCompatibilityKey,
-} from '../../src/runtime-worker-pool.js'
+} from '../../src/worker/runtime-worker-pool.js'
 
 describe('runtime worker pool', () => {
   test('builds deterministic compatibility keys and separates incompatible requests', () => {

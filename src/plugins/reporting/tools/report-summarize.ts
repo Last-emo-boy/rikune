@@ -21,36 +21,36 @@ import { StaticCapabilityTriageDataSchema } from '../../static-triage/tools/stat
 import { PEStructureAnalyzeDataSchema } from '../../../plugins/pe-analysis/tools/pe-structure-analyze.js'
 import { CompilerPackerDetectDataSchema } from '../../static-triage/tools/compiler-packer-detect.js'
 import { createTriageWorkflowHandler } from '../../../workflows/triage.js'
-import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../../../dynamic-trace.js'
+import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../../../artifacts/dynamic-trace.js'
 import {
   loadSemanticFunctionExplanationIndex,
   type SemanticFunctionExplanationIndex,
-} from '../../../semantic-name-suggestion-artifacts.js'
+} from '../../../artifacts/semantic-name-suggestion-artifacts.js'
 import {
   loadStaticAnalysisArtifactSelection,
   STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
   PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
   COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
   type StaticArtifactScope,
-} from '../../../static-analysis-artifacts.js'
+} from '../../../artifacts/static-analysis-artifacts.js'
 import {
   ConfidenceSemanticsSchema,
   buildReportConfidenceSemantics,
-} from '../../../confidence-semantics.js'
+} from '../../../analysis/confidence-semantics.js'
 import {
   AnalysisProvenanceSchema,
   buildRuntimeArtifactProvenance,
   buildStaticArtifactProvenance,
   buildSemanticArtifactProvenance,
-} from '../../../analysis-provenance.js'
+} from '../../../analysis/analysis-provenance.js'
 import {
   AnalysisSelectionDiffSchema,
   buildArtifactSelectionDiff,
-} from '../../../selection-diff.js'
+} from '../../../artifacts/selection-diff.js'
 import {
   GhidraExecutionSummarySchema,
   buildGhidraExecutionSummary,
-} from '../../../ghidra-execution-summary.js'
+} from '../../../ghidra/ghidra-execution-summary.js'
 import {
   BinaryProfileSummarySchema,
   RustProfileSummarySchema,
@@ -66,13 +66,13 @@ import {
   buildStaticStageDigest,
   limitArray,
   truncateText,
-} from '../../../summary-digests.js'
+} from '../../../artifacts/summary-digests.js'
 import { dedupeArtifactRefs } from '../../../utils/shared-helpers.js'
 import {
   CoverageEnvelopeSchema,
   buildCoverageEnvelope,
   classifySampleSizeTier,
-} from '../../../analysis-coverage.js'
+} from '../../../analysis/analysis-coverage.js'
 import {
   ExplanationGraphDigestSchema,
   type ExplanationGraphArtifact,
@@ -80,7 +80,7 @@ import {
   attachExplanationArtifactRef,
   buildRuntimeStageExplanationGraph,
   persistExplanationGraphArtifact,
-} from '../../../explanation-graphs.js'
+} from '../../../artifacts/explanation-graphs.js'
 import { generateCallGraph } from '../visualization/call-graph.js'
 import { generateDataFlow } from '../visualization/data-flow.js'
 import { generateCryptoFlow } from '../visualization/crypto-flow.js'
@@ -88,7 +88,7 @@ import {
   CRYPTO_IDENTIFICATION_ARTIFACT_TYPE,
   loadCryptoPlanningArtifactSelection,
 } from '../../static-triage/crypto-planning-artifacts.js'
-import { CryptoFindingSchema } from '../../../crypto-breakpoint-analysis.js'
+import { CryptoFindingSchema } from '../../../artifacts/crypto-breakpoint-analysis.js'
 import { ToolSurfaceRoleSchema } from '../../../tool-surface-guidance.js'
 import {
   ANALYSIS_DIFF_DIGEST_ARTIFACT_TYPE,

@@ -8,7 +8,7 @@ import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { PolicyGuard } from '../../src/policy-guard.js'
 import { StorageManager } from '../../src/storage/storage-manager.js'
 import { FileServer } from '../../src/api/file-server.js'
-import { createSampleFinalizationService } from '../../src/sample-finalization.js'
+import { createSampleFinalizationService } from '../../src/sample/sample-finalization.js'
 
 function httpRequest(
   url: string,

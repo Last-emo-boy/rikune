@@ -94,16 +94,16 @@ import { toolHelpToolDefinition, createToolHelpHandler } from './tools/tool-help
 import { loadPlugins, getPluginManager } from './plugins.js'
 
 // ── Plugin utility imports (injected into plugin deps) ────────────────────
-import { resolvePrimarySamplePath } from './sample-workspace.js'
-import { persistStaticAnalysisJsonArtifact } from './static-analysis-artifacts.js'
+import { resolvePrimarySamplePath } from './sample/sample-workspace.js'
+import { persistStaticAnalysisJsonArtifact } from './artifacts/static-analysis-artifacts.js'
 import { resolvePackagePath } from './runtime-paths.js'
 import { generateCacheKey } from './cache-manager.js'
-import { DecompilerWorker, getGhidraDiagnostics, normalizeGhidraError } from './decompiler-worker.js'
+import { DecompilerWorker, getGhidraDiagnostics, normalizeGhidraError } from './worker/decompiler-worker.js'
 import {
   findBestGhidraAnalysis,
   getGhidraReadiness,
   parseGhidraAnalysisMetadata,
-} from './ghidra-analysis-status.js'
+} from './ghidra/ghidra-analysis-status.js'
 import { PollingGuidanceSchema, buildPollingGuidance } from './polling-guidance.js'
 import { SetupActionSchema, RequiredUserInputSchema } from './setup-guidance.js'
 import { logger as serverLogger } from './logger.js'

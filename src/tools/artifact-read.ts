@@ -14,7 +14,7 @@ import {
   listArtifactInventory,
   normalizeRelativeArtifactPath,
   type ArtifactInventoryItem,
-} from '../artifact-inventory.js'
+} from '../artifacts/artifact-inventory.js'
 
 const TOOL_NAME = 'artifact.read'
 const TOOL_VERSION = '0.1.0'

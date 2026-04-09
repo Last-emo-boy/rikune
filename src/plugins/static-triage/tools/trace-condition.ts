@@ -15,7 +15,7 @@ import {
   summarizeCapturePlan,
   summarizeConditionGroup,
   summarizeNormalizedTracePlan,
-} from '../../../crypto-breakpoint-analysis.js'
+} from '../../../artifacts/crypto-breakpoint-analysis.js'
 import {
   CONDITIONAL_TRACE_PLAN_ARTIFACT_TYPE,
   SMART_BREAKPOINT_PLAN_ARTIFACT_TYPE,

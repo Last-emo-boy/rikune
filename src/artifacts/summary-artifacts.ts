@@ -1,11 +1,11 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { createHash, randomUUID } from 'crypto'
-import type { ArtifactRef } from './types.js'
-import type { WorkspaceManager } from './workspace-manager.js'
-import type { DatabaseManager } from './database.js'
+import type { ArtifactRef } from '../types.js'
+import type { WorkspaceManager } from '../workspace-manager.js'
+import type { DatabaseManager } from '../database.js'
 import { deriveArtifactSessionTag } from './artifact-inventory.js'
-import { sanitizePathSegment, matchesSessionTag } from './utils/shared-helpers.js'
+import { sanitizePathSegment, matchesSessionTag } from '../utils/shared-helpers.js'
 
 export const SUMMARY_STAGE_VALUES = ['triage', 'static', 'deep', 'final'] as const
 export type SummaryStage = (typeof SUMMARY_STAGE_VALUES)[number]

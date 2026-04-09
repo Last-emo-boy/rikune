@@ -12,7 +12,7 @@ import { DatabaseManager } from './database.js'
 import { PolicyGuard } from './policy-guard.js'
 import { CacheManager } from './cache-manager.js'
 import { JobQueue } from './job-queue.js'
-import { AnalysisTaskRunner } from './analysis-task-runner.js'
+import { AnalysisTaskRunner } from './analysis/analysis-task-runner.js'
 import { StorageManager } from './storage/storage-manager.js'
 import { registerAllTools } from './tool-registry.js'
 

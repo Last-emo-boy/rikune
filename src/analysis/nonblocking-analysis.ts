@@ -1,9 +1,9 @@
-import { buildPollingGuidance } from './polling-guidance.js'
+import { buildPollingGuidance } from '../polling-guidance.js'
 import { classifySampleSizeTier, type SampleSizeTier } from './analysis-coverage.js'
-import type { Sample } from './database.js'
-import type { JobQueue } from './job-queue.js'
-import { JobPriority } from './job-queue.js'
-import type { WorkerResult } from './types.js'
+import type { Sample } from '../database.js'
+import type { JobQueue } from '../job-queue.js'
+import { JobPriority } from '../job-queue.js'
+import type { WorkerResult } from '../types.js'
 
 export interface DeferredToolResponseInput {
   jobQueue: JobQueue

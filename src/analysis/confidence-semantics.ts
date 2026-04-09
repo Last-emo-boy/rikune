@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { clamp } from './utils/shared-helpers.js'
+import { clamp } from '../utils/shared-helpers.js'
 
 export const ConfidenceSemanticsSchema = z.object({
   score_kind: z.enum([

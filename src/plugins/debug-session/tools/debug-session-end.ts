@@ -4,7 +4,7 @@
 
 import { z } from 'zod'
 import type { ToolDefinition, WorkerResult, ArtifactRef , PluginToolDeps} from '../../sdk.js'
-import { persistStaticAnalysisJsonArtifact } from '../../../static-analysis-artifacts.js'
+import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { getDebugSessionManager } from '../debug/debug-session-state.js'
 
 const TOOL_NAME = 'debug.session.end'

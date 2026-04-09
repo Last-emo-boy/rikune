@@ -31,7 +31,7 @@ import {
 import {
   buildDeferredToolResponse,
   shouldDeferLargeSample,
-} from '../../../nonblocking-analysis.js'
+} from '../../../analysis/nonblocking-analysis.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 
 // ============================================================================

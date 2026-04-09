@@ -7,7 +7,7 @@ import { createCodeFunctionsReconstructHandler } from './code-functions-reconstr
 import {
   persistSemanticNamePrepareBundleArtifact,
   SEMANTIC_NAME_PREPARE_BUNDLE_ARTIFACT_TYPE,
-} from '../../../semantic-name-suggestion-artifacts.js'
+} from '../../../artifacts/semantic-name-suggestion-artifacts.js'
 import { buildSemanticNameReviewPromptText } from '../../../prompts/semantic-name-review.js'
 
 const TOOL_NAME = 'code.function.rename.prepare'

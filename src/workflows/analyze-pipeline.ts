@@ -26,7 +26,7 @@ import {
   classifySampleSizeTier,
   deriveAnalysisBudgetProfile,
   mergeCoverageEnvelope,
-} from '../analysis-coverage.js'
+} from '../analysis/analysis-coverage.js'
 import {
   AnalysisPipelineStageSchema,
   AnalysisRunSummarySchema,
@@ -37,14 +37,14 @@ import {
   getAnalysisRunSummary,
   upsertAnalysisRunStage,
   type AnalysisPipelineStage,
-} from '../analysis-run-state.js'
+} from '../analysis/analysis-run-state.js'
 import {
   ExplanationGraphDigestSchema,
   buildRuntimeStageExplanationGraph,
-} from '../explanation-graphs.js'
-import { buildSchedulerExecutionPlan } from '../analysis-budget-scheduler.js'
+} from '../artifacts/explanation-graphs.js'
+import { buildSchedulerExecutionPlan } from '../analysis/analysis-budget-scheduler.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
-import { AnalysisEvidenceStateSchema } from '../analysis-evidence.js'
+import { AnalysisEvidenceStateSchema } from '../analysis/analysis-evidence.js'
 import { createPEFingerprintHandler } from '../plugins/pe-analysis/tools/pe-fingerprint.js'
 import { createRuntimeDetectHandler } from '../plugins/static-triage/tools/runtime-detect.js'
 import { createPEImportsExtractHandler } from '../plugins/pe-analysis/tools/pe-imports-extract.js'
@@ -90,9 +90,9 @@ import {
   createQilingInspectHandler,
 } from '../plugins/docker-backends/tools/qiling-inspect.js'
 import { buildPollingGuidance } from '../polling-guidance.js'
-import { loadDynamicTraceEvidence } from '../dynamic-trace.js'
-import { createSampleFinalizationService } from '../sample-finalization.js'
-import { persistCanonicalEvidence } from '../analysis-evidence.js'
+import { loadDynamicTraceEvidence } from '../artifacts/dynamic-trace.js'
+import { createSampleFinalizationService } from '../sample/sample-finalization.js'
+import { persistCanonicalEvidence } from '../analysis/analysis-evidence.js'
 import {
   ANALYSIS_DIFF_DIGEST_ARTIFACT_TYPE,
   AnalysisDiffDigestSchema,

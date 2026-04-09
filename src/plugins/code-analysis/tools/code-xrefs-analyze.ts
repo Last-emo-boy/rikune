@@ -10,7 +10,7 @@ import {
   getGhidraDiagnostics,
   normalizeGhidraError,
   type CrossReferenceAnalysis,
-} from '../../../decompiler-worker.js'
+} from '../../../worker/decompiler-worker.js'
 import {
   XREF_ANALYSIS_ARTIFACT_TYPE,
   persistStringXrefJsonArtifact,

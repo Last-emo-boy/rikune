@@ -6,13 +6,13 @@ import type { DatabaseManager } from '../../../database.js'
 import type { CacheManager } from '../../../cache-manager.js'
 import { createCryptoIdentifyHandler } from './crypto-identify.js'
 import { createDynamicDependenciesHandler } from '../../dynamic/tools/dynamic-dependencies.js'
-import { loadDynamicTraceEvidence, type DynamicEvidenceScope, type DynamicTraceSummary } from '../../../dynamic-trace.js'
+import { loadDynamicTraceEvidence, type DynamicEvidenceScope, type DynamicTraceSummary } from '../../../artifacts/dynamic-trace.js'
 import {
   BreakpointCandidateSchema,
   buildBreakpointCandidates,
   summarizeBreakpointCandidates,
   type CryptoFinding,
-} from '../../../crypto-breakpoint-analysis.js'
+} from '../../../artifacts/crypto-breakpoint-analysis.js'
 import {
   loadCryptoPlanningArtifactSelection,
   persistCryptoPlanningJsonArtifact,

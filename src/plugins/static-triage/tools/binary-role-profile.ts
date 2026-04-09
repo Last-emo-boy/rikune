@@ -17,11 +17,11 @@ import {
   inspectSampleWorkspace,
   formatMissingOriginalError,
   resolvePrimarySamplePath,
-} from '../../../sample-workspace.js'
+} from '../../../sample/sample-workspace.js'
 import {
   buildDeferredToolResponse,
   shouldDeferLargeSample,
-} from '../../../nonblocking-analysis.js'
+} from '../../../analysis/nonblocking-analysis.js'
 import {
   AnalysisEvidenceStateSchema,
   buildDeferredEvidenceState,
@@ -30,7 +30,7 @@ import {
   buildEvidenceReuseWarnings,
   persistCanonicalEvidence,
   resolveCanonicalEvidenceOrCache,
-} from '../../../analysis-evidence.js'
+} from '../../../analysis/analysis-evidence.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
 
 const TOOL_NAME = 'binary.role.profile'

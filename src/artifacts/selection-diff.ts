@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ArtifactSelectionProvenanceSchema } from './analysis-provenance.js'
+import { ArtifactSelectionProvenanceSchema } from '../analysis/analysis-provenance.js'
 
 export const ArtifactSelectionDiffSchema = z.object({
   label: z.enum([

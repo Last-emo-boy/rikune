@@ -6,7 +6,7 @@ import type { CacheManager } from '../cache-manager.js'
 import { createCodeFunctionsSmartRecoverHandler } from '../plugins/code-analysis/tools/code-functions-smart-recover.js'
 import { createPESymbolsRecoverHandler } from '../plugins/pe-analysis/tools/pe-symbols-recover.js'
 import { createCodeFunctionsDefineHandler } from '../plugins/code-analysis/tools/code-functions-define.js'
-import { DecompilerWorker } from '../decompiler-worker.js'
+import { DecompilerWorker } from '../worker/decompiler-worker.js'
 
 const TOOL_NAME = 'workflow.function_index_recover'
 

@@ -24,10 +24,10 @@ import {
   DecompilerWorker,
   type FunctionSearchResult,
   type FunctionXrefSummary,
-} from '../../../decompiler-worker.js'
-import { findBestGhidraAnalysis } from '../../../ghidra-analysis-status.js'
-import { ghidraConfig } from '../../../ghidra-config.js'
-import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../../../dynamic-trace.js'
+} from '../../../worker/decompiler-worker.js'
+import { findBestGhidraAnalysis } from '../../../ghidra/ghidra-analysis-status.js'
+import { ghidraConfig } from '../../../ghidra/ghidra-config.js'
+import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../../../artifacts/dynamic-trace.js'
 import { getPackageRoot } from '../../../runtime-paths.js'
 import {
   correlateFunctionWithRuntimeEvidence,
@@ -43,12 +43,12 @@ import {
   type SemanticModuleReviewIndex,
   SEMANTIC_FUNCTION_EXPLANATIONS_ARTIFACT_TYPE,
   SEMANTIC_NAME_SUGGESTIONS_ARTIFACT_TYPE,
-} from '../../../semantic-name-suggestion-artifacts.js'
+} from '../../../artifacts/semantic-name-suggestion-artifacts.js'
 import {
   AnalysisProvenanceSchema,
   buildRuntimeArtifactProvenance,
   buildSemanticArtifactProvenance,
-} from '../../../analysis-provenance.js'
+} from '../../../analysis/analysis-provenance.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
 
 const TOOL_NAME = 'code.reconstruct.export'

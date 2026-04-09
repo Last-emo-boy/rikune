@@ -15,7 +15,7 @@ import type { JobQueue } from '../../../job-queue.js'
 import { generateCacheKey } from '../../../cache-manager.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import { formatCacheWarning } from '../../../tools/cache-observability.js'
-import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
+import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import {
   buildStaticWorkerRequest,
   callStaticWorker as callPooledStaticWorker,
@@ -31,9 +31,9 @@ import {
 import {
   buildDeferredToolResponse,
   shouldDeferLargeSample,
-} from '../../../nonblocking-analysis.js'
-import { classifySampleSizeTier } from '../../../analysis-coverage.js'
-import { persistChunkedArrayArtifacts } from '../../../chunked-analysis-evidence.js'
+} from '../../../analysis/nonblocking-analysis.js'
+import { classifySampleSizeTier } from '../../../analysis/analysis-coverage.js'
+import { persistChunkedArrayArtifacts } from '../../../analysis/chunked-analysis-evidence.js'
 import {
   AnalysisEvidenceStateSchema,
   buildDeferredEvidenceState,
@@ -42,7 +42,7 @@ import {
   buildEvidenceReuseWarnings,
   persistCanonicalEvidence,
   resolveCanonicalEvidenceOrCache,
-} from '../../../analysis-evidence.js'
+} from '../../../analysis/analysis-evidence.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 
 // ============================================================================

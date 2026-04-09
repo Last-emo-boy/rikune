@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { ArtifactRef } from '../../types.js'
 import type { DatabaseManager, DebugSession, Sample } from '../../database.js'
 import type { WorkspaceManager } from '../../workspace-manager.js'
-import { deriveArtifactSessionTag } from '../../artifact-inventory.js'
+import { deriveArtifactSessionTag } from '../../artifacts/artifact-inventory.js'
 import { sanitizePathSegment, matchesSessionTag } from '../../utils/shared-helpers.js'
 
 export const PACKED_STATE_VALUES = [

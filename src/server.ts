@@ -41,7 +41,7 @@ import type {
   PromptResult,
 } from './types.js'
 import { FileServer } from './api/file-server.js'
-import { createSampleFinalizationService } from './sample-finalization.js'
+import { createSampleFinalizationService } from './sample/sample-finalization.js'
 import {
   buildToolNameMappings,
   rewriteToolReferencesInText,

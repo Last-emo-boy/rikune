@@ -7,7 +7,7 @@ import {
   sanitizeSemanticName,
   type SemanticNameSuggestionArtifactPayload,
   SEMANTIC_NAME_SUGGESTIONS_ARTIFACT_TYPE,
-} from '../../../semantic-name-suggestion-artifacts.js'
+} from '../../../artifacts/semantic-name-suggestion-artifacts.js'
 
 const TOOL_NAME = 'code.function.rename.apply'
 

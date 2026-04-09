@@ -27,21 +27,21 @@ import {
   type ExternalExecutableResolution,
   type ToolchainBackendResolution,
 } from '../../../static-backend-discovery.js'
-import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
+import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import {
   buildEvidenceReuseWarnings,
   findCanonicalEvidence,
   persistCanonicalEvidence,
-} from '../../../analysis-evidence.js'
+} from '../../../analysis/analysis-evidence.js'
 import {
   buildRizinPreviewCompatibilityKey,
   getRuntimeWorkerPool,
-} from '../../../runtime-worker-pool.js'
+} from '../../../worker/runtime-worker-pool.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import {
   ExplanationConfidenceStateSchema,
   ExplanationSurfaceRoleSchema,
-} from '../../../explanation-graphs.js'
+} from '../../../artifacts/explanation-graphs.js'
 import { ToolSurfaceRoleSchema } from '../../../tool-surface-guidance.js'
 
 export {

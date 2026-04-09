@@ -6,7 +6,7 @@ import type { DatabaseManager } from '../../../database.js'
 import {
   buildCapabilityConfidenceSemantics,
   ConfidenceSemanticsSchema,
-} from '../../../confidence-semantics.js'
+} from '../../../analysis/confidence-semantics.js'
 import {
   buildStaticAnalysisRequiredUserInputs,
   buildStaticAnalysisSetupActions,
@@ -14,8 +14,8 @@ import {
 import {
   persistStaticAnalysisJsonArtifact,
   STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
-} from '../../../static-analysis-artifacts.js'
-import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
+} from '../../../artifacts/static-analysis-artifacts.js'
+import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import {
   buildStaticWorkerRequest,
   callStaticWorker,

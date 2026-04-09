@@ -6,14 +6,14 @@
 
 import { z } from 'zod'
 import type { DatabaseManager } from '../../../database.js'
-import { DecompilerWorker, getGhidraDiagnostics, normalizeGhidraError, type ControlFlowGraph } from '../../../decompiler-worker.js'
+import { DecompilerWorker, getGhidraDiagnostics, normalizeGhidraError, type ControlFlowGraph } from '../../../worker/decompiler-worker.js'
 import { logger } from '../../../logger.js'
 import type { ArtifactRef, ToolDefinition, WorkerResult } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import {
   ExplanationConfidenceStateSchema,
   ExplanationSurfaceRoleSchema,
-} from '../../../explanation-graphs.js'
+} from '../../../artifacts/explanation-graphs.js'
 import { ToolSurfaceRoleSchema } from '../../../tool-surface-guidance.js'
 import {
   buildCFGExport,

@@ -2,7 +2,7 @@
  * Unit tests for ELF/Mach-O cross-platform support
  */
 
-import { detectFileType } from '../../src/sample-finalization.js'
+import { detectFileType } from '../../src/sample/sample-finalization.js'
 
 describe('detectFileType', () => {
   it('detects PE (MZ header)', () => {

@@ -15,7 +15,7 @@ import { DatabaseManager } from '../../src/database';
 import { WorkspaceManager } from '../../src/workspace-manager';
 import { PolicyGuard } from '../../src/policy-guard';
 import { CacheManager } from '../../src/cache-manager';
-import { ghidraConfig } from '../../src/ghidra-config';
+import { ghidraConfig } from '../../src/ghidra/ghidra-config.js';
 import { loadConfig } from '../../src/config';
 
 // Get __dirname equivalent in ES modules

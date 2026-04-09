@@ -19,12 +19,12 @@ import { createDotNetReconstructExportHandler } from '../plugins/code-analysis/t
 import {
   findBestGhidraAnalysis,
   isGhidraCapabilityReady,
-} from '../ghidra-analysis-status.js'
-import { loadDynamicTraceEvidence } from '../dynamic-trace.js'
+} from '../ghidra/ghidra-analysis-status.js'
+import { loadDynamicTraceEvidence } from '../artifacts/dynamic-trace.js'
 import {
   loadSemanticFunctionExplanationIndex,
   loadSemanticNameSuggestionIndex,
-} from '../semantic-name-suggestion-artifacts.js'
+} from '../artifacts/semantic-name-suggestion-artifacts.js'
 import {
   BinaryRoleProfileDataSchema,
   createBinaryRoleProfileHandler,
@@ -46,15 +46,15 @@ import {
   AnalysisProvenanceSchema,
   buildRuntimeArtifactProvenance,
   buildSemanticArtifactProvenance,
-} from '../analysis-provenance.js'
+} from '../analysis/analysis-provenance.js'
 import {
   GhidraExecutionSummarySchema,
   buildGhidraExecutionSummary,
-} from '../ghidra-execution-summary.js'
+} from '../ghidra/ghidra-execution-summary.js'
 import {
   AnalysisSelectionDiffSchema,
   buildArtifactSelectionDiff,
-} from '../selection-diff.js'
+} from '../artifacts/selection-diff.js'
 import {
   RequiredUserInputSchema,
   SetupActionSchema,
@@ -78,7 +78,7 @@ import {
   classifySampleSizeTier,
   deriveAnalysisBudgetProfile,
   mergeCoverageEnvelope,
-} from '../analysis-coverage.js'
+} from '../analysis/analysis-coverage.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
 import { createAngrAnalyzeHandler } from '../plugins/docker-backends/tools/angr-analyze.js'
 import { createRetDecDecompileHandler } from '../plugins/docker-backends/tools/retdec-decompile.js'

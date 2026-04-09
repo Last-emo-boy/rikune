@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import type { ArtifactRef } from './types.js'
-import { dedupeStrings, dedupeArtifactRefs } from './utils/shared-helpers.js'
-import { GhidraExecutionSummarySchema } from './ghidra-execution-summary.js'
+import type { ArtifactRef } from '../types.js'
+import { dedupeStrings, dedupeArtifactRefs } from '../utils/shared-helpers.js'
+import { GhidraExecutionSummarySchema } from '../ghidra/ghidra-execution-summary.js'
 import { SUMMARY_STAGE_VALUES, type SummaryStage } from './summary-artifacts.js'
 import {
   CoverageEnvelopeSchema,
@@ -9,7 +9,7 @@ import {
   buildCoverageEnvelope,
   normalizeCoverageGaps,
   normalizeUpgradePaths,
-} from './analysis-coverage.js'
+} from '../analysis/analysis-coverage.js'
 import {
   ExplanationConfidenceStateSchema,
   ExplanationGraphTypeSchema,

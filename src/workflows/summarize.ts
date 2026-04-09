@@ -9,12 +9,12 @@ import type { MCPServer } from '../server.js'
 import {
   createReportSummarizeHandler,
 } from '../plugins/reporting/tools/report-summarize.js'
-import { loadSemanticFunctionExplanationIndex } from '../semantic-name-suggestion-artifacts.js'
+import { loadSemanticFunctionExplanationIndex } from '../artifacts/semantic-name-suggestion-artifacts.js'
 import {
   loadSummaryDigestArtifactSelection,
   persistSummaryDigestArtifact,
   type SummaryStage,
-} from '../summary-artifacts.js'
+} from '../artifacts/summary-artifacts.js'
 import {
   SummaryArtifactRefSchema,
   TriageStageDigestSchema,
@@ -29,19 +29,19 @@ import {
   buildFinalStageDigest,
   buildStaticStageDigest,
   buildTriageStageDigest,
-} from '../summary-digests.js'
+} from '../artifacts/summary-digests.js'
 import { dedupeArtifactRefs, dedupeStrings } from '../utils/shared-helpers.js'
-import { GhidraExecutionSummarySchema } from '../ghidra-execution-summary.js'
+import { GhidraExecutionSummarySchema } from '../ghidra/ghidra-execution-summary.js'
 import {
   CoverageEnvelopeSchema,
   buildCoverageEnvelope,
   classifySampleSizeTier,
   deriveAnalysisBudgetProfile,
-} from '../analysis-coverage.js'
+} from '../analysis/analysis-coverage.js'
 import {
   getAnalysisRunSummary,
   createOrReuseAnalysisRun,
-} from '../analysis-run-state.js'
+} from '../analysis/analysis-run-state.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
 
 const TOOL_NAME = 'workflow.summarize'

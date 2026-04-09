@@ -14,7 +14,7 @@ import type { CacheManager } from '../../../cache-manager.js'
 import { generateCacheKey } from '../../../cache-manager.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
-import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
+import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import {
   buildStaticWorkerRequest,
   callStaticWorker as callPooledStaticWorker,

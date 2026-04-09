@@ -1,9 +1,9 @@
 import fs from 'fs/promises'
 import path from 'path'
-import type { DatabaseManager } from './database.js'
-import type { WorkspaceManager } from './workspace-manager.js'
+import type { DatabaseManager } from '../database.js'
+import type { WorkspaceManager } from '../workspace-manager.js'
 import { deriveArtifactSessionTag } from './artifact-inventory.js'
-import { dedupeStrings, toStringArray } from './utils/shared-helpers.js'
+import { dedupeStrings, toStringArray } from '../utils/shared-helpers.js'
 
 export type DynamicTraceSourceFormat =
   | 'normalized'

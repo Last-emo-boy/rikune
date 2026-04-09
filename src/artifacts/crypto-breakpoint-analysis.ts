@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { clamp, dedupeStrings } from './utils/shared-helpers.js'
+import { clamp, dedupeStrings } from '../utils/shared-helpers.js'
 import type { DynamicTraceSummary } from './dynamic-trace.js'
 
 const CRYPTO_FAMILY_VALUES = [

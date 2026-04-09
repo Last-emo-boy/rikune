@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import type { Analysis } from './database.js'
-import { dedupe } from './utils/shared-helpers.js'
+import type { Analysis } from '../database.js'
+import { dedupe } from '../utils/shared-helpers.js'
 import {
   findBestGhidraAnalysis,
   getGhidraReadiness,

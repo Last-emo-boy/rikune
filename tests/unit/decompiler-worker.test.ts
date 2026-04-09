@@ -14,10 +14,10 @@ import {
   GhidraOutputParseError,
   normalizeGhidraError,
   type AnalysisResult,
-} from '../../src/decompiler-worker';
+} from '../../src/worker/decompiler-worker.js';
 import { DatabaseManager } from '../../src/database';
 import { WorkspaceManager } from '../../src/workspace-manager';
-import { ghidraConfig } from '../../src/ghidra-config';
+import { ghidraConfig } from '../../src/ghidra/ghidra-config.js';
 
 function createMinimalAmd64PdataPE(): Buffer {
   const dosHeader = Buffer.alloc(0x80, 0);

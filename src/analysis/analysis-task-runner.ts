@@ -3,24 +3,24 @@
  * Current scope: execute ghidra.analyze jobs with cancellation/timeouts and stale-job reaping.
  */
 
-import { DecompilerWorker, GhidraProcessError } from './decompiler-worker.js'
-import type { DatabaseManager } from './database.js'
-import type { WorkspaceManager } from './workspace-manager.js'
-import type { Job, JobQueue } from './job-queue.js'
-import type { CacheManager } from './cache-manager.js'
-import type { JobResult } from './types.js'
-import type { PolicyGuard } from './policy-guard.js'
-import { logger } from './logger.js'
-import { deepStaticWorkflow } from './workflows/deep-static.js'
-import { createReconstructWorkflowHandler } from './workflows/reconstruct.js'
-import { createSemanticNameReviewWorkflowHandler } from './workflows/semantic-name-review.js'
-import { createFunctionExplanationReviewWorkflowHandler } from './workflows/function-explanation-review.js'
-import { createModuleReconstructionReviewWorkflowHandler } from './workflows/module-reconstruction-review.js'
-import { createStringsExtractHandler } from './plugins/strings/tools/strings-extract.js'
-import { createStringsFlossDecodeHandler } from './plugins/strings/tools/strings-floss-decode.js'
-import { createBinaryRoleProfileHandler } from './plugins/static-triage/tools/binary-role-profile.js'
-import { createAnalysisContextLinkHandler } from './plugins/static-triage/tools/analysis-context-link.js'
-import { createCryptoIdentifyHandler } from './plugins/static-triage/tools/crypto-identify.js'
+import { DecompilerWorker, GhidraProcessError } from '../worker/decompiler-worker.js'
+import type { DatabaseManager } from '../database.js'
+import type { WorkspaceManager } from '../workspace-manager.js'
+import type { Job, JobQueue } from '../job-queue.js'
+import type { CacheManager } from '../cache-manager.js'
+import type { JobResult } from '../types.js'
+import type { PolicyGuard } from '../policy-guard.js'
+import { logger } from '../logger.js'
+import { deepStaticWorkflow } from '../workflows/deep-static.js'
+import { createReconstructWorkflowHandler } from '../workflows/reconstruct.js'
+import { createSemanticNameReviewWorkflowHandler } from '../workflows/semantic-name-review.js'
+import { createFunctionExplanationReviewWorkflowHandler } from '../workflows/function-explanation-review.js'
+import { createModuleReconstructionReviewWorkflowHandler } from '../workflows/module-reconstruction-review.js'
+import { createStringsExtractHandler } from '../plugins/strings/tools/strings-extract.js'
+import { createStringsFlossDecodeHandler } from '../plugins/strings/tools/strings-floss-decode.js'
+import { createBinaryRoleProfileHandler } from '../plugins/static-triage/tools/binary-role-profile.js'
+import { createAnalysisContextLinkHandler } from '../plugins/static-triage/tools/analysis-context-link.js'
+import { createCryptoIdentifyHandler } from '../plugins/static-triage/tools/crypto-identify.js'
 import {
   AnalysisBudgetScheduler,
   findWorkerReuseTelemetry,
@@ -30,7 +30,7 @@ import {
   ANALYSIS_STAGE_JOB_TOOL,
   createAnalyzePipelineStageContext,
   executeQueuedAnalysisStage,
-} from './workflows/analyze-pipeline.js'
+} from '../workflows/analyze-pipeline.js'
 
 export interface AnalysisTaskRunnerOptions {
   pollIntervalMs?: number

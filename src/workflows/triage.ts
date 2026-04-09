@@ -36,12 +36,12 @@ import {
   classifySampleSizeTier,
   deriveAnalysisBudgetProfile,
   mergeCoverageEnvelope,
-} from '../analysis-coverage.js'
+} from '../analysis/analysis-coverage.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
 import { createRizinAnalyzeHandler } from '../plugins/docker-backends/tools/rizin-analyze.js'
 import { createUPXInspectHandler } from '../plugins/docker-backends/tools/upx-inspect.js'
 import { createYaraXScanHandler } from '../plugins/docker-backends/tools/yara-x-scan.js'
-import { collectCryptoApiNames } from '../crypto-breakpoint-analysis.js'
+import { collectCryptoApiNames } from '../artifacts/crypto-breakpoint-analysis.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
 
 // ============================================================================

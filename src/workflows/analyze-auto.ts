@@ -20,7 +20,7 @@ import {
   classifySampleSizeTier,
   deriveAnalysisBudgetProfile,
   mergeCoverageEnvelope,
-} from '../analysis-coverage.js'
+} from '../analysis/analysis-coverage.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
 import { createDynamicDependenciesHandler } from '../plugins/dynamic/tools/dynamic-dependencies.js'
 import { createSandboxExecuteHandler } from '../plugins/dynamic/tools/sandbox-execute.js'

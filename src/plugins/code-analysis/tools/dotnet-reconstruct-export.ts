@@ -24,7 +24,7 @@ import {
   type DotNetMetadataType,
   type DotNetMetadataMethod,
 } from '../../static-triage/tools/dotnet-metadata-extract.js'
-import { findBestGhidraAnalysis } from '../../../ghidra-analysis-status.js'
+import { findBestGhidraAnalysis } from '../../../ghidra/ghidra-analysis-status.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
 
 const TOOL_NAME = 'dotnet.reconstruct.export'

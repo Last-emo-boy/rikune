@@ -16,7 +16,7 @@ import {
   summarizeDynamicTrace,
   type DynamicEvidenceKind,
   type DynamicTraceSourceFormat,
-} from '../../../dynamic-trace.js'
+} from '../../../artifacts/dynamic-trace.js'
 
 const TOOL_NAME = 'dynamic.trace.import'
 

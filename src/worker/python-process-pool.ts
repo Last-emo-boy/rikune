@@ -14,7 +14,7 @@
 
 import { spawn, type ChildProcess } from 'child_process'
 import os from 'os'
-import { logger } from './logger.js'
+import { logger } from '../logger.js'
 
 export interface PythonProcessPoolOptions {
   /** Maximum concurrent Python workers (default: min(cpuCount, 8)) */

@@ -11,7 +11,7 @@ import { PollingGuidanceSchema, buildPollingGuidance } from '../polling-guidance
 import { TOOL_DURATION_ESTIMATES } from '../job-queue.js'
 import { formatDuration } from '../async-tool-wrapper.js'
 import { ANALYSIS_STAGE_JOB_TOOL } from '../workflows/analyze-pipeline.js'
-import { getAnalysisRunSummary } from '../analysis-run-state.js'
+import { getAnalysisRunSummary } from '../analysis/analysis-run-state.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
 
 const TOOL_NAME = 'task.status'

@@ -1,8 +1,8 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { createHash } from 'crypto'
-import type { WorkspaceManager } from './workspace-manager.js'
-import type { DatabaseManager, Artifact } from './database.js'
+import type { WorkspaceManager } from '../workspace-manager.js'
+import type { DatabaseManager, Artifact } from '../database.js'
 
 export interface ArtifactInventoryItem extends Artifact {
   exists: boolean

@@ -14,12 +14,12 @@ import {
 import {
   buildToolchainConfidenceSemantics,
   ConfidenceSemanticsSchema,
-} from '../../../confidence-semantics.js'
+} from '../../../analysis/confidence-semantics.js'
 import {
   COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
   persistStaticAnalysisJsonArtifact,
-} from '../../../static-analysis-artifacts.js'
-import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
+} from '../../../artifacts/static-analysis-artifacts.js'
+import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 
 const TOOL_NAME = 'compiler.packer.detect'
 const execFileAsync = promisify(execFile)

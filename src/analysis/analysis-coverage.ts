@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { dedupeStrings } from './utils/shared-helpers.js'
+import { dedupeStrings } from '../utils/shared-helpers.js'
 
 export const CoverageLevelSchema = z.enum([
   'quick',

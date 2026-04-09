@@ -5,7 +5,7 @@ import type {
   AnalysisRunStage,
   DatabaseManager,
   Sample,
-} from './database.js'
+} from '../database.js'
 import {
   type AnalysisBudgetProfile,
   AnalysisBudgetProfileSchema,
@@ -14,14 +14,14 @@ import {
   SampleSizeTierSchema,
   deriveAnalysisBudgetProfile,
 } from './analysis-coverage.js'
-import type { ArtifactRef } from './types.js'
-import { dedupeArtifactRefs } from './utils/shared-helpers.js'
-import type { JobQueue } from './job-queue.js'
+import type { ArtifactRef } from '../types.js'
+import { dedupeArtifactRefs } from '../utils/shared-helpers.js'
+import type { JobQueue } from '../job-queue.js'
 import type {
   AnalysisIntentDepth,
   AnalysisIntentGoal,
   BackendPolicy,
-} from './intent-routing.js'
+} from '../intent-routing.js'
 import {
   AnalysisCostClassSchema,
   ExecutionBucketSchema,

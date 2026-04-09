@@ -1,12 +1,12 @@
 import { z } from 'zod'
-import type { DynamicEvidenceScope, DynamicTraceSummary } from './dynamic-trace.js'
-import type { StaticArtifactScope, StaticArtifactSelection } from './static-analysis-artifacts.js'
+import type { DynamicEvidenceScope, DynamicTraceSummary } from '../artifacts/dynamic-trace.js'
+import type { StaticArtifactScope, StaticArtifactSelection } from '../artifacts/static-analysis-artifacts.js'
 import type {
   SemanticArtifactScope,
   SemanticFunctionExplanationIndex,
   SemanticModuleReviewIndex,
   SemanticNameSuggestionIndex,
-} from './semantic-name-suggestion-artifacts.js'
+} from '../artifacts/semantic-name-suggestion-artifacts.js'
 
 export const ArtifactSelectionProvenanceSchema = z.object({
   scope: z.enum(['all', 'latest', 'session']),

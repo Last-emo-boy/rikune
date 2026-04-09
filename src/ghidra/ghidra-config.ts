@@ -6,16 +6,16 @@
 import fs from 'fs'
 import path from 'path'
 import { spawnSync } from 'child_process'
-import { getPythonCommand } from './utils/shared-helpers.js'
-import { CACHE_TTL_7_DAYS } from './constants/cache-ttl.js'
-import { logger } from './logger.js'
-import { buildRawCommandLine, decodeProcessStreams } from './process-output.js'
-import { resolvePackagePath } from './runtime-paths.js'
+import { getPythonCommand } from '../utils/shared-helpers.js'
+import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
+import { logger } from '../logger.js'
+import { buildRawCommandLine, decodeProcessStreams } from '../process-output.js'
+import { resolvePackagePath } from '../runtime-paths.js'
 import {
   config,
   getDefaultGhidraLogRoot,
   getDefaultGhidraProjectRoot,
-} from './config.js'
+} from '../config.js'
 
 export interface GhidraConfig {
   installDir: string

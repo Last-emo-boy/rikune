@@ -7,7 +7,7 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import { persistStaticAnalysisJsonArtifact } from '../../../static-analysis-artifacts.js'
+import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 
 const TOOL_NAME = 'unpack.guide'
 

@@ -13,7 +13,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { PolicyGuard } from '../../../policy-guard.js'
-import { normalizeDynamicTraceArtifactPayload } from '../../../dynamic-trace.js'
+import { normalizeDynamicTraceArtifactPayload } from '../../../artifacts/dynamic-trace.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 
 const TOOL_NAME = 'sandbox.execute'

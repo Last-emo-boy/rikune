@@ -8,7 +8,7 @@ import path from 'path'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import { persistStaticAnalysisJsonArtifact } from '../../../static-analysis-artifacts.js'
+import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import {
   extractRuleEvidence,
   buildStringRule,

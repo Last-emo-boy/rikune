@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'crypto'
 import type { ArtifactRef } from '../../types.js'
 import type { WorkspaceManager } from '../../workspace-manager.js'
 import type { DatabaseManager } from '../../database.js'
-import { deriveArtifactSessionTag } from '../../artifact-inventory.js'
+import { deriveArtifactSessionTag } from '../../artifacts/artifact-inventory.js'
 import { sanitizePathSegment, matchesSessionTag } from '../../utils/shared-helpers.js'
 
 export const ENRICHED_STRING_ANALYSIS_ARTIFACT_TYPE = 'enriched_string_analysis'

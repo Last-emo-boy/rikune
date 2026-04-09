@@ -2,7 +2,7 @@
  * Shared helpers for interpreting persisted Ghidra analysis states.
  */
 
-import type { Analysis } from './database.js'
+import type { Analysis } from '../database.js'
 
 export const GHIDRA_READY_STATUSES = new Set(['done', 'partial_success'])
 export const GHIDRA_STRICT_READY_STATUSES = new Set(['done'])

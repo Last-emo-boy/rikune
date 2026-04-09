@@ -17,7 +17,7 @@ import {
   checkGhidraHealth,
   detectGhidraInstallation,
   ghidraConfig,
-} from '../../src/ghidra-config.js'
+} from '../../src/ghidra/ghidra-config.js'
 import { resolvePackagePath } from '../../src/runtime-paths.js'
 
 describe('Ghidra Configuration', () => {

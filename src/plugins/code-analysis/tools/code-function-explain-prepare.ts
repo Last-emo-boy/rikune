@@ -7,7 +7,7 @@ import { createCodeFunctionsReconstructHandler } from './code-functions-reconstr
 import {
   persistSemanticExplanationPrepareBundleArtifact,
   SEMANTIC_EXPLANATION_PREPARE_BUNDLE_ARTIFACT_TYPE,
-} from '../../../semantic-name-suggestion-artifacts.js'
+} from '../../../artifacts/semantic-name-suggestion-artifacts.js'
 import { buildFunctionExplanationReviewPromptText } from '../../../prompts/function-explanation-review.js'
 
 const TOOL_NAME = 'code.function.explain.prepare'

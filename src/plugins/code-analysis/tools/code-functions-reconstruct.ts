@@ -18,13 +18,13 @@ import {
   type ControlFlowGraph,
   type FunctionXrefSummary,
   type FunctionRelationship,
-} from '../../../decompiler-worker.js'
-import { findBestGhidraAnalysis } from '../../../ghidra-analysis-status.js'
-import { ghidraConfig } from '../../../ghidra-config.js'
+} from '../../../worker/decompiler-worker.js'
+import { findBestGhidraAnalysis } from '../../../ghidra/ghidra-analysis-status.js'
+import { ghidraConfig } from '../../../ghidra/ghidra-config.js'
 import { generateCacheKey } from '../../../cache-manager.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
 import { runEntrypointFallbackDisasm, type EntrypointFallbackPayload } from '../../../tools/entrypoint-fallback-disasm.js'
-import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../../../dynamic-trace.js'
+import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../../../artifacts/dynamic-trace.js'
 import { createStringsExtractHandler } from '../../strings/tools/strings-extract.js'
 import {
   correlateFunctionWithRuntimeEvidence,
@@ -36,18 +36,18 @@ import {
   type LoadedSemanticNameSuggestion,
   type SemanticNameSuggestionIndex,
   SEMANTIC_NAME_SUGGESTIONS_ARTIFACT_TYPE,
-} from '../../../semantic-name-suggestion-artifacts.js'
+} from '../../../artifacts/semantic-name-suggestion-artifacts.js'
 import {
   ConfidenceSemanticsSchema,
   buildNamingConfidenceSemantics,
   buildReconstructionConfidenceSemantics,
   buildRuntimeConfidenceSemantics,
-} from '../../../confidence-semantics.js'
+} from '../../../analysis/confidence-semantics.js'
 import {
   AnalysisProvenanceSchema,
   buildRuntimeArtifactProvenance,
   buildSemanticArtifactProvenance,
-} from '../../../analysis-provenance.js'
+} from '../../../analysis/analysis-provenance.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
 
 const TOOL_NAME = 'code.functions.reconstruct'

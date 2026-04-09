@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
-import type { ArtifactRef } from './types.js'
-import type { AnalysisEvidence, DatabaseManager, Sample } from './database.js'
-import type { CacheHitLookup, CacheManager } from './cache-manager.js'
+import type { ArtifactRef } from '../types.js'
+import type { AnalysisEvidence, DatabaseManager, Sample } from '../database.js'
+import type { CacheHitLookup, CacheManager } from '../cache-manager.js'
 
 export const ANALYSIS_EVIDENCE_VERSION = 'analysis-runtime-convergence-v1'
 

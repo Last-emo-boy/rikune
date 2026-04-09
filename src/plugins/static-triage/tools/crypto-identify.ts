@@ -11,10 +11,10 @@ import { createStringsFlossDecodeHandler } from '../../strings/tools/strings-flo
 import { createAnalysisContextLinkHandler } from './analysis-context-link.js'
 import { createPEImportsExtractHandler } from '../../../plugins/pe-analysis/tools/pe-imports-extract.js'
 import { createStaticCapabilityTriageHandler } from './static-capability-triage.js'
-import { loadDynamicTraceEvidence, type DynamicEvidenceScope, type DynamicTraceSummary } from '../../../dynamic-trace.js'
-import { buildDeferredToolResponse, shouldDeferLargeSample } from '../../../nonblocking-analysis.js'
-import { classifySampleSizeTier } from '../../../analysis-coverage.js'
-import { persistChunkedArrayArtifacts } from '../../../chunked-analysis-evidence.js'
+import { loadDynamicTraceEvidence, type DynamicEvidenceScope, type DynamicTraceSummary } from '../../../artifacts/dynamic-trace.js'
+import { buildDeferredToolResponse, shouldDeferLargeSample } from '../../../analysis/nonblocking-analysis.js'
+import { classifySampleSizeTier } from '../../../analysis/analysis-coverage.js'
+import { persistChunkedArrayArtifacts } from '../../../analysis/chunked-analysis-evidence.js'
 import {
   AnalysisEvidenceStateSchema,
   buildDeferredEvidenceState,
@@ -23,7 +23,7 @@ import {
   buildResolvedEvidenceState,
   persistCanonicalEvidence,
   resolveCanonicalEvidenceOrCache,
-} from '../../../analysis-evidence.js'
+} from '../../../analysis/analysis-evidence.js'
 import {
   CryptoConstantCandidateSchema,
   CryptoFindingSchema,
@@ -32,7 +32,7 @@ import {
   summarizeCryptoFindings,
   type BasicStringRecord,
   type FunctionContextLike,
-} from '../../../crypto-breakpoint-analysis.js'
+} from '../../../artifacts/crypto-breakpoint-analysis.js'
 import {
   CRYPTO_IDENTIFICATION_ARTIFACT_TYPE,
   loadCryptoPlanningArtifactSelection,

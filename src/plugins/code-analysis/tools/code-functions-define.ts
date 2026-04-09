@@ -6,7 +6,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager, Function as DbFunction } from '../../../database.js'
 import { extractPdataFromPE } from '../../../pe-runtime-functions.js'
-import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
+import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 
 const TOOL_NAME = 'code.functions.define'
 
