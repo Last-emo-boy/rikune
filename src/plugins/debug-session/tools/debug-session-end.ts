@@ -1,11 +1,11 @@
 /**
- * debug.session.end MCP tool â€?end a debug session, persist trace artifact.
+ * debug.session.end MCP tool ï¿½?end a debug session, persist trace artifact.
  */
 
 import { z } from 'zod'
 import type { ToolDefinition, WorkerResult, ArtifactRef , PluginToolDeps} from '../../sdk.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../static-analysis-artifacts.js'
-import { getDebugSessionManager } from '../../../debug/debug-session-state.js'
+import { getDebugSessionManager } from '../debug/debug-session-state.js'
 
 const TOOL_NAME = 'debug.session.end'
 

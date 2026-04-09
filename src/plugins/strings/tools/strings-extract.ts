@@ -23,11 +23,11 @@ import {
 import {
   buildEnrichedStringBundle,
   EnrichedStringBundleSchema,
-} from '../../../string-xref-analysis.js'
+} from '../string-xref-analysis.js'
 import {
   ENRICHED_STRING_ANALYSIS_ARTIFACT_TYPE,
   persistStringXrefJsonArtifact,
-} from '../../../string-xref-artifacts.js'
+} from '../string-xref-artifacts.js'
 import {
   buildDeferredToolResponse,
   shouldDeferLargeSample,

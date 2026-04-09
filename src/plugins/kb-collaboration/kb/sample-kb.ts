@@ -4,7 +4,7 @@
  */
 
 import crypto from 'crypto'
-import type { DatabaseManager } from '../database.js'
+import type { DatabaseManager } from '../../../database.js'
 
 export interface LinkSampleToThreatData {
   sampleId: string

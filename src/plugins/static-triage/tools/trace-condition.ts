@@ -22,7 +22,7 @@ import {
   loadCryptoPlanningArtifactSelection,
   persistCryptoPlanningJsonArtifact,
   type CryptoPlanningArtifactScope,
-} from '../../../crypto-planning-artifacts.js'
+} from '../crypto-planning-artifacts.js'
 import { RequiredUserInputSchema, SetupActionSchema } from '../../../setup-guidance.js'
 
 const TOOL_NAME = 'trace.condition'

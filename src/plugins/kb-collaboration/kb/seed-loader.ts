@@ -6,8 +6,8 @@ import fs from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { randomUUID } from 'crypto'
-import type { DatabaseManager } from '../database.js'
-import { logger } from '../logger.js'
+import type { DatabaseManager } from '../../../database.js'
+import { logger } from '../../../logger.js'
 
 export interface ApiSeedEntry {
   api: string

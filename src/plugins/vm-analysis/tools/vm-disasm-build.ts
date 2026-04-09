@@ -8,7 +8,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../static-analysis-artifacts.js'
-import { buildDisassembler, disassemble, formatDisassembly } from '../../../vm/disassembler-builder.js'
+import { buildDisassembler, disassemble, formatDisassembly } from '../vm/disassembler-builder.js'
 import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
 
 const TOOL_NAME = 'vm.disasm.build'

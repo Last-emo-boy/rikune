@@ -16,12 +16,12 @@ import {
   extractSuspiciousApiCandidates,
   type EnrichedStringBundle,
   type XrefFunctionNode,
-} from '../../../string-xref-analysis.js'
+} from '../../strings/string-xref-analysis.js'
 import {
   CONTEXT_LINK_SUMMARY_ARTIFACT_TYPE,
   loadStringXrefArtifactSelection,
   persistStringXrefJsonArtifact,
-} from '../../../string-xref-artifacts.js'
+} from '../../strings/string-xref-artifacts.js'
 import { DecompilerWorker, type CrossReferenceAnalysis } from '../../../decompiler-worker.js'
 import {
   buildDeferredToolResponse,

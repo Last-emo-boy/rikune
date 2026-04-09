@@ -17,7 +17,7 @@ import {
   detectHandlerRegularity,
   detectOpcodeRange,
   type DecompiledFunc,
-} from '../../../vm/vm-detector.js'
+} from '../vm/vm-detector.js'
 
 const TOOL_NAME = 'vm.pattern.analyze'
 

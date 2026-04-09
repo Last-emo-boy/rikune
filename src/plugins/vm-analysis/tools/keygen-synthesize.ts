@@ -7,8 +7,8 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../static-analysis-artifacts.js'
-import { synthesizeKeygen } from '../../../constraint/keygen-synthesizer.js'
-import { extractConstraints } from '../../../constraint/constraint-extractor.js'
+import { synthesizeKeygen } from '../constraint/keygen-synthesizer.js'
+import { extractConstraints } from '../constraint/constraint-extractor.js'
 
 const TOOL_NAME = 'keygen.synthesize'
 

@@ -4,7 +4,7 @@
 
 import fs from 'fs/promises'
 import { randomUUID } from 'crypto'
-import type { DatabaseManager } from '../database.js'
+import type { DatabaseManager } from '../../../database.js'
 
 export type ConflictStrategy = 'skip' | 'overwrite' | 'merge'
 

@@ -1,10 +1,10 @@
 /**
- * debug.session.inspect MCP tool â€?inspect registers, memory, stack, disassembly.
+ * debug.session.inspect MCP tool ï¿½?inspect registers, memory, stack, disassembly.
  */
 
 import { z } from 'zod'
 import type { ToolDefinition, WorkerResult , PluginToolDeps} from '../../sdk.js'
-import { getDebugSessionManager } from '../../../debug/debug-session-state.js'
+import { getDebugSessionManager } from '../debug/debug-session-state.js'
 
 const TOOL_NAME = 'debug.session.inspect'
 

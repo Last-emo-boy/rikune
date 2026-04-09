@@ -6,7 +6,7 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import { parseExpression, simplify, exprToString } from '../../../constraint/mba-simplifier.js'
+import { parseExpression, simplify, exprToString } from '../constraint/mba-simplifier.js'
 
 const TOOL_NAME = 'mba.simplify'
 

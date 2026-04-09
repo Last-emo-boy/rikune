@@ -7,7 +7,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../static-analysis-artifacts.js'
-import { buildOpcodeTable } from '../../../vm/opcode-extractor.js'
+import { buildOpcodeTable } from '../vm/opcode-extractor.js'
 
 const TOOL_NAME = 'vm.opcode.extract'
 

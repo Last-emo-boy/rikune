@@ -1,11 +1,11 @@
 /**
- * debug.session.step MCP tool â€?single-step execution.
+ * debug.session.step MCP tool ï¿½?single-step execution.
  */
 
 import { z } from 'zod'
 import type { ToolDefinition, WorkerResult , PluginToolDeps} from '../../sdk.js'
-import { getDebugSessionManager } from '../../../debug/debug-session-state.js'
-import type { MiResponse } from '../../../debug/gdb-mi-client.js'
+import { getDebugSessionManager } from '../debug/debug-session-state.js'
+import type { MiResponse } from '../debug/gdb-mi-client.js'
 
 const TOOL_NAME = 'debug.session.step'
 

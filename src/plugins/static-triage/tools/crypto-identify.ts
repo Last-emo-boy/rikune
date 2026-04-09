@@ -38,7 +38,7 @@ import {
   loadCryptoPlanningArtifactSelection,
   persistCryptoPlanningJsonArtifact,
   type CryptoPlanningArtifactScope,
-} from '../../../crypto-planning-artifacts.js'
+} from '../crypto-planning-artifacts.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 
 const TOOL_NAME = 'crypto.identify'

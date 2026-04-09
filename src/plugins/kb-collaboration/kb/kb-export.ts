@@ -2,7 +2,7 @@
  * KB export — exports function_kb and sample_kb as JSONL.
  */
 
-import type { DatabaseManager } from '../database.js'
+import type { DatabaseManager } from '../../../database.js'
 
 export interface KbExportEntry {
   type: 'function_kb' | 'sample_kb'

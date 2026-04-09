@@ -28,7 +28,7 @@ import {
   type CFGRenderFormat,
   type GraphvizAvailability,
   type LocalCallGraph,
-} from '../../../cfg-visual-exports.js'
+} from '../cfg-visual-exports.js'
 
 const TOOL_NAME = 'code.function.cfg'
 

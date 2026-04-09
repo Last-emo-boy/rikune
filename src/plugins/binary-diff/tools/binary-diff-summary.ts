@@ -7,7 +7,7 @@ import fs from 'fs/promises'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import type { BinaryDiffResult } from '../../../binary-diff-engine.js'
+import type { BinaryDiffResult } from '../binary-diff-engine.js'
 
 // ============================================================================
 // Schemas

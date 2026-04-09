@@ -10,12 +10,12 @@ import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
 import { createHash, randomUUID } from 'crypto'
-import type { ArtifactRef } from './types.js'
-import type { WorkspaceManager } from './workspace-manager.js'
-import type { DatabaseManager } from './database.js'
+import type { ArtifactRef } from '../../types.js'
+import type { WorkspaceManager } from '../../workspace-manager.js'
+import type { DatabaseManager } from '../../database.js'
 import {
   resolveAnalysisBackends,
-} from './static-backend-discovery.js'
+} from '../../static-backend-discovery.js'
 
 const execFileAsync = promisify(execFile)
 

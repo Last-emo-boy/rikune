@@ -32,7 +32,7 @@ import { getPackageRoot } from '../../../runtime-paths.js'
 import {
   correlateFunctionWithRuntimeEvidence,
   modulesSuggestedByRuntimeStages,
-} from '../../../runtime-correlation.js'
+} from '../runtime-correlation.js'
 import {
   findSemanticFunctionExplanation,
   findSemanticModuleReview,

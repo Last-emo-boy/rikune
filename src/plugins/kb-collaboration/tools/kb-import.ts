@@ -6,7 +6,7 @@ import { z } from 'zod'
 import type { ToolDefinition, WorkerResult } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import { importFromJsonl, type ConflictStrategy } from '../../../kb/kb-import.js'
+import { importFromJsonl, type ConflictStrategy } from '../kb/kb-import.js'
 
 const TOOL_NAME = 'kb.import'
 

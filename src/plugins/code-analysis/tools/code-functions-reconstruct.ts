@@ -29,7 +29,7 @@ import { createStringsExtractHandler } from '../../strings/tools/strings-extract
 import {
   correlateFunctionWithRuntimeEvidence,
   extractSensitiveApisFromReasons,
-} from '../../../runtime-correlation.js'
+} from '../runtime-correlation.js'
 import {
   findSemanticNameSuggestion,
   loadSemanticNameSuggestionIndex,

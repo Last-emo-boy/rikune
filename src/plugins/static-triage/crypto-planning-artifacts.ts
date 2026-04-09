@@ -1,29 +1,29 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { createHash, randomUUID } from 'crypto'
-import type { ArtifactRef } from './types.js'
-import type { WorkspaceManager } from './workspace-manager.js'
-import type { DatabaseManager } from './database.js'
-import { deriveArtifactSessionTag } from './artifact-inventory.js'
-import { sanitizePathSegment, matchesSessionTag } from './utils/shared-helpers.js'
+import type { ArtifactRef } from '../../types.js'
+import type { WorkspaceManager } from '../../workspace-manager.js'
+import type { DatabaseManager } from '../../database.js'
+import { deriveArtifactSessionTag } from '../../artifact-inventory.js'
+import { sanitizePathSegment, matchesSessionTag } from '../../utils/shared-helpers.js'
 
-export const ENRICHED_STRING_ANALYSIS_ARTIFACT_TYPE = 'enriched_string_analysis'
-export const XREF_ANALYSIS_ARTIFACT_TYPE = 'xref_analysis'
-export const CONTEXT_LINK_SUMMARY_ARTIFACT_TYPE = 'context_link_summary'
+export const CRYPTO_IDENTIFICATION_ARTIFACT_TYPE = 'crypto_identification'
+export const SMART_BREAKPOINT_PLAN_ARTIFACT_TYPE = 'smart_breakpoint_plan'
+export const CONDITIONAL_TRACE_PLAN_ARTIFACT_TYPE = 'conditional_trace_plan'
 
-export type StringXrefArtifactType =
-  | typeof ENRICHED_STRING_ANALYSIS_ARTIFACT_TYPE
-  | typeof XREF_ANALYSIS_ARTIFACT_TYPE
-  | typeof CONTEXT_LINK_SUMMARY_ARTIFACT_TYPE
+export type CryptoPlanningArtifactType =
+  | typeof CRYPTO_IDENTIFICATION_ARTIFACT_TYPE
+  | typeof SMART_BREAKPOINT_PLAN_ARTIFACT_TYPE
+  | typeof CONDITIONAL_TRACE_PLAN_ARTIFACT_TYPE
 
-export type StringXrefArtifactScope = 'all' | 'latest' | 'session'
+export type CryptoPlanningArtifactScope = 'all' | 'latest' | 'session'
 
-export interface StringXrefArtifactSelectionOptions {
-  scope?: StringXrefArtifactScope
+export interface CryptoPlanningArtifactSelectionOptions {
+  scope?: CryptoPlanningArtifactScope
   sessionTag?: string
 }
 
-export interface StringXrefArtifactSelection<TPayload = unknown> {
+export interface CryptoPlanningArtifactSelection<TPayload = unknown> {
   artifacts: Array<{
     artifact: ArtifactRef
     created_at: string
@@ -42,22 +42,22 @@ export interface StringXrefArtifactSelection<TPayload = unknown> {
 const LATEST_ARTIFACT_WINDOW_MS = 10 * 1000
 
 
-function getArtifactRootSegment(artifactType: StringXrefArtifactType): string {
+function getArtifactRootSegment(artifactType: CryptoPlanningArtifactType): string {
   switch (artifactType) {
-    case ENRICHED_STRING_ANALYSIS_ARTIFACT_TYPE:
-      return 'strings'
-    case XREF_ANALYSIS_ARTIFACT_TYPE:
-      return 'xrefs'
-    case CONTEXT_LINK_SUMMARY_ARTIFACT_TYPE:
-      return 'context'
+    case CRYPTO_IDENTIFICATION_ARTIFACT_TYPE:
+      return 'crypto'
+    case SMART_BREAKPOINT_PLAN_ARTIFACT_TYPE:
+      return 'breakpoints'
+    case CONDITIONAL_TRACE_PLAN_ARTIFACT_TYPE:
+      return 'trace_plans'
   }
 }
 
-export async function persistStringXrefJsonArtifact(
+export async function persistCryptoPlanningJsonArtifact(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   sampleId: string,
-  artifactType: StringXrefArtifactType,
+  artifactType: CryptoPlanningArtifactType,
   filePrefix: string,
   payload: unknown,
   sessionTag?: string | null
@@ -100,16 +100,17 @@ export async function persistStringXrefJsonArtifact(
   }
 }
 
-export async function loadStringXrefArtifactSelection<TPayload>(
+export async function loadCryptoPlanningArtifactSelection<TPayload>(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   sampleId: string,
-  artifactType: StringXrefArtifactType,
-  options: StringXrefArtifactSelectionOptions = {}
-): Promise<StringXrefArtifactSelection<TPayload>> {
+  artifactType: CryptoPlanningArtifactType,
+  options: CryptoPlanningArtifactSelectionOptions = {}
+): Promise<CryptoPlanningArtifactSelection<TPayload>> {
   const scope = options.scope || 'latest'
   const sessionTag = options.sessionTag?.trim() || null
   const artifacts = database.findArtifactsByType(sampleId, artifactType)
+
   if (artifacts.length === 0) {
     return {
       artifacts: [],

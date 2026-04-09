@@ -19,7 +19,7 @@ import {
   CRYPTO_IDENTIFICATION_ARTIFACT_TYPE,
   SMART_BREAKPOINT_PLAN_ARTIFACT_TYPE,
   type CryptoPlanningArtifactScope,
-} from '../../../crypto-planning-artifacts.js'
+} from '../crypto-planning-artifacts.js'
 import { RequiredUserInputSchema, SetupActionSchema } from '../../../setup-guidance.js'
 
 const TOOL_NAME = 'breakpoint.smart'

@@ -7,7 +7,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../static-analysis-artifacts.js'
-import { diffOpcodeTables } from '../../../vm/semantic-diff.js'
+import { diffOpcodeTables } from '../vm/semantic-diff.js'
 
 const TOOL_NAME = 'vm.semantic.diff'
 

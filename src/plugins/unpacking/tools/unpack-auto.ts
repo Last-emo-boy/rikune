@@ -14,7 +14,7 @@ import {
   registerChildSample,
   type PackerDetectionResult,
   type UnpackBackend,
-} from '../../../unpack-strategy.js'
+} from '../unpack-strategy.js'
 
 const TOOL_NAME = 'unpack.auto'
 const MAX_UNPACK_LAYERS = 3

@@ -15,7 +15,7 @@ import {
   buildSummaryStats,
   type BinaryDiffResult,
   type AttackTechnique,
-} from '../../../binary-diff-engine.js'
+} from '../binary-diff-engine.js'
 
 // ============================================================================
 // Schemas

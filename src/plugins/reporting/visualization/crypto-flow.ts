@@ -3,8 +3,8 @@
  * Tasks: visualization-enhanced-reporting 3.1-3.5
  */
 
-import { ExplanationGraphDigestSchema, type ExplanationGraphDigest } from '../explanation-graphs.js'
-import { escapeDot, escapeMermaid } from '../utils/shared-helpers.js'
+import { ExplanationGraphDigestSchema, type ExplanationGraphDigest } from '../../../explanation-graphs.js'
+import { escapeDot, escapeMermaid } from '../../../utils/shared-helpers.js'
 
 export interface CryptoFlowNode {
   id: string

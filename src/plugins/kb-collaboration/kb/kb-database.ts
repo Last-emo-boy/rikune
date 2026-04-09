@@ -3,8 +3,8 @@
  * Tasks: collaborative-knowledge-base 1.1-1.5
  */
 
-import type { DatabaseManager } from '../database.js'
-import { logger } from '../logger.js'
+import type { DatabaseManager } from '../../../database.js'
+import { logger } from '../../../logger.js'
 
 /**
  * Function KB entry

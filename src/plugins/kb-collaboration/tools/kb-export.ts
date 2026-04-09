@@ -7,7 +7,7 @@ import fs from 'fs/promises'
 import type { ToolDefinition, WorkerResult } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import { exportToJsonl } from '../../../kb/kb-export.js'
+import { exportToJsonl } from '../kb/kb-export.js'
 
 const TOOL_NAME = 'kb.export'
 

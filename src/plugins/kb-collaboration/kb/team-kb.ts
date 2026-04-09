@@ -3,7 +3,7 @@
  * Tasks: collaborative-knowledge-base 6.1-6.5
  */
 
-import type { DatabaseManager } from '../database.js'
+import type { DatabaseManager } from '../../../database.js'
 import { searchFunctions, type SearchFunctionsQuery } from './search-kb.js'
 import { contributeFunction } from './function-kb.js'
 

@@ -3,7 +3,7 @@
  * Tasks: collaborative-knowledge-base 3.1-3.5
  */
 
-import type { DatabaseManager } from '../database.js'
+import type { DatabaseManager } from '../../../database.js'
 import type { FunctionKbEntry } from './kb-database.js'
 
 export interface SearchFunctionsQuery {

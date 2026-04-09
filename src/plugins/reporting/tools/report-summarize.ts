@@ -81,13 +81,13 @@ import {
   buildRuntimeStageExplanationGraph,
   persistExplanationGraphArtifact,
 } from '../../../explanation-graphs.js'
-import { generateCallGraph } from '../../../visualization/call-graph.js'
-import { generateDataFlow } from '../../../visualization/data-flow.js'
-import { generateCryptoFlow } from '../../../visualization/crypto-flow.js'
+import { generateCallGraph } from '../visualization/call-graph.js'
+import { generateDataFlow } from '../visualization/data-flow.js'
+import { generateCryptoFlow } from '../visualization/crypto-flow.js'
 import {
   CRYPTO_IDENTIFICATION_ARTIFACT_TYPE,
   loadCryptoPlanningArtifactSelection,
-} from '../../../crypto-planning-artifacts.js'
+} from '../../static-triage/crypto-planning-artifacts.js'
 import { CryptoFindingSchema } from '../../../crypto-breakpoint-analysis.js'
 import { ToolSurfaceRoleSchema } from '../../../tool-surface-guidance.js'
 import {
@@ -97,7 +97,7 @@ import {
   loadUnpackDebugArtifactSelection,
   PackedStateSchema,
   UnpackStateSchema,
-} from '../../../unpack-debug-runtime.js'
+} from '../../unpacking/unpack-debug-runtime.js'
 
 const TOOL_NAME = 'report.summarize'
 const REPORT_INLINE_PAYLOAD_BUDGET_CHARS = 180_000

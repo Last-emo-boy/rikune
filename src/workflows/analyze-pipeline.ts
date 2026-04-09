@@ -114,7 +114,7 @@ import {
   UnpackExecutionSchema,
   UnpackPlanSchema,
   UnpackStateSchema,
-} from '../unpack-debug-runtime.js'
+} from '../plugins/unpacking/unpack-debug-runtime.js'
 
 const TOOL_NAME_START = 'workflow.analyze.start'
 const TOOL_NAME_STATUS = 'workflow.analyze.status'

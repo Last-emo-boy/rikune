@@ -14,7 +14,7 @@ import {
   type RuleMeta,
   type RuleEvidence,
   type Strictness,
-} from '../../../yara-rule-builder.js'
+} from '../yara-rule-builder.js'
 
 // ============================================================================
 // Schemas

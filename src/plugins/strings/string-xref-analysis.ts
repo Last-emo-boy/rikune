@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { clamp } from './utils/shared-helpers.js'
+import { clamp } from '../../utils/shared-helpers.js'
 
 const IOC_CATEGORY_ORDER = [
   'suspicious_api',

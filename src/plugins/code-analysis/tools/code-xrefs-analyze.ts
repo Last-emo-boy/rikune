@@ -14,7 +14,7 @@ import {
 import {
   XREF_ANALYSIS_ARTIFACT_TYPE,
   persistStringXrefJsonArtifact,
-} from '../../../string-xref-artifacts.js'
+} from '../../strings/string-xref-artifacts.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 
 const TOOL_NAME = 'code.xrefs.analyze'

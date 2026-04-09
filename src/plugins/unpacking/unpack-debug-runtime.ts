@@ -2,11 +2,11 @@ import fs from 'fs/promises'
 import path from 'path'
 import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
-import type { ArtifactRef } from './types.js'
-import type { DatabaseManager, DebugSession, Sample } from './database.js'
-import type { WorkspaceManager } from './workspace-manager.js'
-import { deriveArtifactSessionTag } from './artifact-inventory.js'
-import { sanitizePathSegment, matchesSessionTag } from './utils/shared-helpers.js'
+import type { ArtifactRef } from '../../types.js'
+import type { DatabaseManager, DebugSession, Sample } from '../../database.js'
+import type { WorkspaceManager } from '../../workspace-manager.js'
+import { deriveArtifactSessionTag } from '../../artifact-inventory.js'
+import { sanitizePathSegment, matchesSessionTag } from '../../utils/shared-helpers.js'
 
 export const PACKED_STATE_VALUES = [
   'unknown',
