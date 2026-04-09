@@ -183,8 +183,15 @@ function processTemplate(template, requirements, pluginWorkerIds) {
   allEnv.delete('SANDBOX_PYTHON_PATH') // already in base block
 
   if (allEnv.size > 0) {
-    const envLines = [...allEnv.entries()].map(([k, v]) => `    ${k}=${v} \\`).join('\n') + '\n'
-    result = result.replace('{{RUNTIME_ENV_VARS}}', envLines)
+    const entries = [...allEnv.entries()]
+    const envLines = entries.map(([k, v], i) =>
+      i < entries.length - 1 ? `    ${k}=${v} \\` : `    ${k}=${v}`
+    ).join('\n') + '\n'
+    // Add trailing backslash to SANDBOX_PYTHON_PATH so ENV block continues
+    result = result.replace(
+      'SANDBOX_PYTHON_PATH=/usr/local/bin/python3\n{{RUNTIME_ENV_VARS}}',
+      'SANDBOX_PYTHON_PATH=/usr/local/bin/python3 \\\n' + envLines
+    )
   } else {
     result = result.replace('\n{{RUNTIME_ENV_VARS}}', '')
   }

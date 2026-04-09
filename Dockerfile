@@ -451,7 +451,7 @@ ENV NODE_ENV=production \
     AUDIT_LOG_PATH=/app/logs/audit.log \
     XDG_CONFIG_HOME=/app/logs/.config \
     XDG_CACHE_HOME=/app/cache/xdg \
-    SANDBOX_PYTHON_PATH=/usr/local/bin/python3
+    SANDBOX_PYTHON_PATH=/usr/local/bin/python3 \
     JADX_PATH=/opt/jadx/bin/jadx \
     ANGR_PYTHON=/opt/angr-venv/bin/python \
     GRAPHVIZ_DOT_PATH=/usr/bin/dot \
@@ -472,7 +472,7 @@ ENV NODE_ENV=production \
     VOLATILITY3_PATH=/usr/local/bin/vol \
     QILING_ROOTFS=/opt/qiling-rootfs \
     PANDA_PYTHON=/usr/local/bin/python3 \
-    YARAX_PYTHON=/usr/local/bin/python3 \
+    YARAX_PYTHON=/usr/local/bin/python3
 
 RUN mkdir -p /app/workspaces /app/data /app/cache /app/logs /samples /tmp /ghidra-projects /ghidra-logs /opt/qiling-rootfs && \
     chown -R appuser:appuser /app && \
