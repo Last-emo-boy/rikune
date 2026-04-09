@@ -25,10 +25,10 @@
 
 ### 3. 启动服务
 
-安装完成后，使用快速启动脚本：
+安装完成后，使用 Docker Compose 启动：
 
 ```powershell
-.\start-docker.ps1
+docker compose up -d mcp-server
 ```
 
 如果你在 MCP 客户端里使用已发布的 npm 包，推荐配置为：
@@ -157,22 +157,19 @@ curl -H "X-API-Key: your-api-key" \
 
 ---
 
-## 快速启动脚本参数
+## 启动服务
 
 ### 基本用法
 
 ```powershell
 # 使用默认配置启动
-.\start-docker.ps1
+docker compose up -d mcp-server
 
-# 指定数据根目录
-.\start-docker.ps1 -DataRoot "D:\Docker\rikune"
-
-# 使用 Docker Compose 模式
-.\start-docker.ps1 -Mode compose
+# 指定数据根目录（通过 .env 文件配置）
+# DATA_ROOT=D:\Docker\rikune docker compose up -d mcp-server
 
 # 交互模式（调试用）
-.\start-docker.ps1 -Mode interactive
+docker compose run --rm mcp-server bash
 ```
 
 ### 启动模式
@@ -522,7 +519,7 @@ foreach ($server in $servers) {
 
 ```powershell
 # 运行安装后测试
-.\start-docker.ps1 -Mode interactive -Command "
+docker compose run --rm mcp-server bash -c "
     node --version;
     python3 --version;
     java -version;

@@ -86,6 +86,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt ./requirements.txt
 COPY workers/ ./workers/
+# Plugin-specific workers (co-located with their plugins)
+COPY src/plugins/deep-unpack/workers/ ./src/plugins/deep-unpack/workers/
+COPY src/plugins/runtime-deobfuscate/workers/ ./src/plugins/runtime-deobfuscate/workers/
+COPY src/plugins/behavior-first/workers/ ./src/plugins/behavior-first/workers/
+COPY src/plugins/android/workers/ ./src/plugins/android/workers/
+COPY src/plugins/vm-analysis/workers/ ./src/plugins/vm-analysis/workers/
+COPY src/plugins/elf-macho/workers/ ./src/plugins/elf-macho/workers/
+COPY src/plugins/crackme/workers/ ./src/plugins/crackme/workers/
+COPY src/plugins/malware/workers/ ./src/plugins/malware/workers/
+COPY src/plugins/binary-diff/workers/ ./src/plugins/binary-diff/workers/
 
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
     pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
@@ -307,6 +317,16 @@ COPY src/api/dashboard/ ./dist/api/dashboard/
 COPY --from=python-base /usr/local/bin /usr/local/bin
 COPY --from=python-base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=python-base /app/workers ./workers
+# Plugin-specific workers (co-located with their plugins)
+COPY --from=python-base /app/src/plugins/deep-unpack/workers/ ./src/plugins/deep-unpack/workers/
+COPY --from=python-base /app/src/plugins/runtime-deobfuscate/workers/ ./src/plugins/runtime-deobfuscate/workers/
+COPY --from=python-base /app/src/plugins/behavior-first/workers/ ./src/plugins/behavior-first/workers/
+COPY --from=python-base /app/src/plugins/android/workers/ ./src/plugins/android/workers/
+COPY --from=python-base /app/src/plugins/vm-analysis/workers/ ./src/plugins/vm-analysis/workers/
+COPY --from=python-base /app/src/plugins/elf-macho/workers/ ./src/plugins/elf-macho/workers/
+COPY --from=python-base /app/src/plugins/crackme/workers/ ./src/plugins/crackme/workers/
+COPY --from=python-base /app/src/plugins/malware/workers/ ./src/plugins/malware/workers/
+COPY --from=python-base /app/src/plugins/binary-diff/workers/ ./src/plugins/binary-diff/workers/
 
 COPY --from=qiling-python /opt/qiling-venv /opt/qiling-venv
 COPY --from=dynamic-python /opt/angr-venv /opt/angr-venv

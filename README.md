@@ -496,7 +496,7 @@ See [`docs/EXAMPLES.md`](./docs/EXAMPLES.md#场景 -9-frida-运行时 instrument
 - Frida dynamic instrumentation (`frida.runtime.instrument`, `frida.script.inject`, `frida.trace.capture`)
 - HTTP File Server with REST API (port 18080) — sample upload, artifact CRUD, SSE events
 - **Web Dashboard** at `http://localhost:18080/dashboard` — real-time monitoring of tools, plugins, samples, config, system
-- **Plugin SDK** with 15 built-in plugins, hot-load/unload, third-party auto-discovery
+- **Plugin SDK** with 35 built-in plugins, hot-load/unload, third-party auto-discovery
 - **Production infrastructure**: Rate limiting, config validation, pagination, retry, batch analysis, SBOM generation
 - **SSE real-time events**: Server-Sent Events for live analysis progress streaming
 
@@ -506,31 +506,50 @@ When running in Docker (`docker-compose up -d`), the container exposes:
 
 | Service | Access | Description |
 |---------|--------|-------------|
-| MCP Server | stdio (`docker exec -i`) | 166 tools, 3 prompts, 16 resources for LLM clients |
+| MCP Server | stdio (`docker exec -i`) | 174 tools, 3 prompts, 16 resources for LLM clients |
 | HTTP API | `http://localhost:18080/api/v1/*` | REST API for samples, artifacts, uploads, health, SSE |
 | Web Dashboard | `http://localhost:18080/dashboard` | Real-time monitoring SPA (8 tabs, dark theme) |
 | SSE Events | `http://localhost:18080/api/v1/events` | Real-time event stream for analysis events |
 | Dashboard API | `http://localhost:18080/api/v1/dashboard/*` | 12 JSON endpoints powering the dashboard |
 
-### Built-in Plugins (15)
+### Built-in Plugins (35)
 
 | Plugin | ID | Tools | Description |
 |--------|----|-------|-------------|
 | Android / APK | `android` | 4 | APK manifest, DEX decompilation, packer detection |
-| Malware Analysis | `malware` | 4 | C2 extraction, config parsing, family classification, sandbox reports |
+| Batch Analysis | `batch` | 1 | Batch sample processing |
+| Behavior-First | `behavior-first` | 3 | Behavioral analysis prioritization |
+| Binary Diff | `binary-diff` | 2 | Binary comparison and patching |
+| Code Analysis | `code-analysis` | 19 | CFG, decompilation, cross-references, code patterns |
 | CrackMe Automation | `crackme` | 4 | Validation location, symbolic execution, patching, keygen |
-| Dynamic Analysis | `dynamic` | 3 | Auto Frida hooks, trace attribution, memory dumps |
-| Frida Instrumentation | `frida` | 3 | Runtime instrumentation, script injection, trace capture |
-| Ghidra Integration | `ghidra` | 2 | Headless Ghidra analysis and health checks |
 | Cross-Module Analysis | `cross-module` | 3 | Cross-binary comparison, call graphs, DLL dependency trees |
-| Visualization | `visualization` | 3 | HTML reports, behavior timelines, data-flow maps |
-| Knowledge Base | `kb-collaboration` | 2 | Function signature matching, analysis templates |
-| PE Analysis | `pe-analysis` | 6 | PE structure, imports, exports, fingerprint, pdata, symbol recovery |
-| Vulnerability Scanner | `vuln-scanner` | 2 | Vulnerability pattern scanning and summary |
-| Threat Intelligence | `threat-intel` | 2 | ATT&CK mapping and IOC export |
-| Debug Session | `debug-session` | 6 | GDB/LLDB debug session management |
+| Debug Session | `debug-session` | 9 | GDB/LLDB debug session management |
+| Deep Unpack | `deep-unpack` | 3 | Multi-layer unpacking with emulation |
+| Docker Backends | `docker-backends` | 10 | RetDec, Rizin, YARA-X, UPX, FLOSS backends |
+| .NET Reactor | `dotnet-reactor` | 4 | .NET obfuscation analysis and deobfuscation |
+| Dynamic Analysis | `dynamic` | 7 | Auto Frida hooks, trace attribution, memory dumps |
+| ELF/Mach-O | `elf-macho` | 4 | Cross-platform binary parsing |
+| Frida Instrumentation | `frida` | 4 | Runtime instrumentation, script injection, trace capture |
+| Ghidra Integration | `ghidra` | 2 | Headless Ghidra analysis and health checks |
+| Host Correlation | `host-correlation` | 1 | Host-level artifact correlation |
+| Knowledge Base | `kb-collaboration` | 8 | Function signature matching, analysis templates |
+| Malware Analysis | `malware` | 4 | C2 extraction, config parsing, family classification |
+| Managed Fake C2 | `managed-fake-c2` | 1 | Fake C2 server for controlled analysis |
+| Managed IL XRefs | `managed-il-xrefs` | 2 | .NET IL cross-reference analysis |
+| Managed Sandbox | `managed-sandbox` | 1 | Managed sandbox execution environment |
 | Memory Forensics | `memory-forensics` | 6 | Memory dump analysis, volatility integration |
 | Observability | `observability` | 1 | Tool call hook tracing and metrics |
+| PE Analysis | `pe-analysis` | 6 | PE structure, imports, exports, fingerprint, pdata, symbol recovery |
+| Reporting | `reporting` | 2 | Report generation and export |
+| Runtime Deobfuscate | `runtime-deobfuscate` | 4 | Runtime deobfuscation with emulation |
+| SBOM | `sbom` | 1 | Software Bill of Materials generation |
+| Static Triage | `static-triage` | 17 | Capability triage, PE structure, compiler/packer detection |
+| Strings | `strings` | 2 | Advanced string extraction and analysis |
+| Threat Intelligence | `threat-intel` | 3 | ATT&CK mapping and IOC export |
+| Unpacking | `unpacking` | 2 | Packer detection and unpacking |
+| Visualization | `visualization` | 3 | HTML reports, behavior timelines, data-flow maps |
+| VM Analysis | `vm-analysis` | 10 | VM/emulator detection and analysis |
+| Vulnerability Scanner | `vuln-scanner` | 2 | Vulnerability pattern scanning and summary |
 
 Plugins are controlled via the `PLUGINS` environment variable (`*` = all, `android,malware` = specific, `-dynamic` = exclude). See [`docs/PLUGINS.md`](./docs/PLUGINS.md).
 
@@ -593,12 +612,12 @@ This summary is surfaced through:
 ## Architecture
 
 The server uses a **centralised tool registry** (`src/tool-registry.ts`) that
-imports and wires 115 core MCP tools, 3 prompts, and 16 resources in one place.
-An additional 51 tools are registered by the 15 built-in plugins, bringing the
-total to 166 MCP tools.
+imports and wires 23 core MCP tools, 3 prompts, and 16 resources in one place.
+An additional 151 tools are registered by the 35 built-in plugins, bringing the
+total to 174 MCP tools.
 The entry point (`src/index.ts`) is kept under 90 lines.
 
-All 15 tool categories — from PE analysis and vulnerability scanning to Android,
+All 35 tool categories — from PE analysis and vulnerability scanning to Android,
 Malware, Frida, Ghidra, and debug sessions — are managed as **plugins** that
 can be toggled via the `PLUGINS` environment variable (default: all enabled).
 See [docs/PLUGINS.md](./docs/PLUGINS.md).
@@ -608,7 +627,7 @@ Other infrastructure:
 | Component | File | Purpose |
 |-----------|------|---------|
 | Safe command execution | `src/safe-command.ts` | Whitelist-validated, array-based command invocation — prevents shell injection |
-| Python process pool | `src/python-process-pool.ts` | Concurrency-limited worker pool (`MAX_PYTHON_WORKERS` env var) |
+| Python process pool | `src/worker/python-process-pool.ts` | Concurrency-limited worker pool (`MAX_PYTHON_WORKERS` env var) |
 | Streaming progress | `src/streaming-progress.ts` | MCP `notifications/progress` for long-running tools |
 | MCP resources | `src/tool-registry.ts` | 8 Frida + 8 Ghidra scripts discoverable via `resources/list` |
 | HTTP File Server | `src/api/file-server.ts` | REST API (port 18080) for sample upload, artifact CRUD, SSE events, and dashboard |
@@ -634,29 +653,56 @@ src/                         TypeScript MCP server source
   index.ts                   Entry point (~90 lines)
   server.ts                  MCPServer class (tools, prompts, resources)
   tool-registry.ts           Centralised tool/prompt/resource registration
-  plugins.ts                 Plugin framework (15 built-in + auto-discovery)
+  plugins.ts                 Plugin framework (35 built-in + auto-discovery)
   safe-command.ts            Command injection prevention
-  python-process-pool.ts     Concurrency-limited Python worker pool
-  streaming-progress.ts      MCP progress notification support
   config-validator.ts        Runtime config validation with diagnostics
   logger.ts                  Pino structured logging
-  tools/                     Individual tool definitions and handlers (~90 files)
-  plugins/
+  analysis/                  Analysis orchestration modules
+  artifacts/                 Artifact management and storage
+  constants/                 Shared constants
+  ghidra/                    Ghidra integration helpers
+  llm/                       LLM prompt and review modules
+  prompts/                   MCP prompt definitions
+  sample/                    Sample ingestion and management
+  storage/                   Storage layer abstractions
+  utils/                     Shared utility modules
+  worker/                    Python process pool and worker management
+  tools/                     Core tool definitions and handlers (23 files)
+  plugins/                   Plugin directory (35 built-in plugins)
     sdk.ts                   Plugin contract and shared types
     android/                 Android/APK analysis plugin
+    batch/                   Batch sample processing plugin
+    behavior-first/          Behavioral analysis plugin
+    binary-diff/             Binary comparison plugin
+    code-analysis/           CFG, decompilation, and code patterns plugin
     crackme/                 CrackMe automation plugin
     cross-module/            Cross-binary analysis plugin
     debug-session/           GDB/LLDB debug session plugin
+    deep-unpack/             Multi-layer unpacking plugin
+    docker-backends/         RetDec, Rizin, YARA-X backends plugin
+    dotnet-reactor/          .NET deobfuscation plugin
     dynamic/                 Dynamic analysis plugin
+    elf-macho/               Cross-platform binary parsing plugin
     frida/                   Frida instrumentation plugin
     ghidra/                  Ghidra integration plugin
+    host-correlation/        Host artifact correlation plugin
     kb-collaboration/        Knowledge base plugin
     malware/                 Malware analysis plugin
+    managed-fake-c2/         Fake C2 server plugin
+    managed-il-xrefs/        .NET IL cross-reference plugin
+    managed-sandbox/         Managed sandbox plugin
     memory-forensics/        Memory forensics plugin
     observability/           Tool call tracing plugin
     pe-analysis/             PE binary analysis plugin
+    reporting/               Report generation plugin
+    runtime-deobfuscate/     Runtime deobfuscation plugin
+    sbom/                    SBOM generation plugin
+    static-triage/           Static capability triage plugin
+    strings/                 String extraction plugin
     threat-intel/            Threat intelligence plugin
+    unpacking/               Packer detection and unpacking plugin
     visualization/           Reporting and visualization plugin
+    vm-analysis/             VM/emulator detection plugin
     vuln-scanner/            Vulnerability pattern detection plugin
   api/
     file-server.ts           HTTP API server (port 18080)
@@ -667,7 +713,7 @@ src/                         TypeScript MCP server source
     routes/
       health.ts              Health check endpoint
       dashboard-api.ts       Dashboard JSON API (12 endpoints)
-tests/                       unit and integration tests (207 test files)
+tests/                       unit and integration tests (212 test files)
 workers/                     Python workers, YARA rules, dynamic helpers
 packages/plugin-sdk/         Standalone Plugin SDK npm package
 docs/                        Documentation
@@ -841,15 +887,11 @@ In this deployment, host-side file uploads should use `sample.request_upload` an
 
 ### Local install helpers
 
-- Codex: [`install-to-codex.ps1`](./install-to-codex.ps1)
-- Claude Code: [`install-to-claude.ps1`](./install-to-claude.ps1)
-- GitHub Copilot: [`install-to-copilot.ps1`](./install-to-copilot.ps1)
+- GitHub Copilot: [`COPILOT_INSTALLATION.md`](./COPILOT_INSTALLATION.md)
 
 Related docs:
 
-- [`CODEX_INSTALLATION.md`](./CODEX_INSTALLATION.md)
 - [`COPILOT_INSTALLATION.md`](./COPILOT_INSTALLATION.md)
-- [`CLAUDE_INSTALLATION.md`](./CLAUDE_INSTALLATION.md)
 - [`docs/ANALYSIS-COVERAGE.md`](./docs/ANALYSIS-COVERAGE.md)
 
 ## Persistent storage

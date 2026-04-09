@@ -16,7 +16,7 @@
 - **HTTP 文件服务**：内嵌 HTTP API（端口 18080），支持样本上传、产物下载、上传会话管理，API Key 认证。
 - **Web 实时监控面板**：`http://localhost:18080/dashboard` — 暗色主题，8 个标签页，展示工具、插件、样本、分析历史、报告查看器、配置、系统资源和 SSE 事件流。支持实时日志流显示。
 - **SSE 实时事件**：`/api/v1/events` 实时推送分析进度、样本导入、服务器状态变更。
-- **插件 SDK**：15 个内置插件，热加载/卸载，第三方自动发现。
+- **插件 SDK**：35 个内置插件，热加载/卸载，第三方自动发现。
 - **高级分析工具**：节区级熵值分析、混淆检测（CFF、不透明谓词、字符串加密、.NET 混淆）、静态污点追踪、智能脱壳指引、自动生成 Frida hook 脚本、Sigma 检测规则生成。
 
 ## 本轮新增的静态初筛能力
@@ -420,7 +420,7 @@ pip install frida frida-tools
 - Frida 动态 Instrumentation (`frida.runtime.instrument`, `frida.script.inject`, `frida.trace.capture`)
 - HTTP 文件服务 REST API（端口 18080）— 样本上传、产物 CRUD、SSE 事件
 - **Web 监控面板** (`http://localhost:18080/dashboard`) — 工具、插件、样本、分析历史、报告查看器（Markdown/JSON/HTML/SVG）、配置、系统实时监控，支持服务器日志流
-- **插件 SDK**：15 个内置插件，热加载/卸载，第三方自动发现
+- **插件 SDK**：35 个内置插件，热加载/卸载，第三方自动发现
 - **生产基础设施**：限流、配置校验、分页、重试、批量分析、SBOM 生成
 - **SSE 实时事件**：Server-Sent Events 实时推送分析进度
 
@@ -430,31 +430,50 @@ Docker 部署时（`docker-compose up -d`），容器暴露：
 
 | 服务 | 访问方式 | 说明 |
 |------|----------|------|
-| MCP Server | stdio (`docker exec -i`) | 166 个工具、3 个 prompt、16 个 resource |
+| MCP Server | stdio (`docker exec -i`) | 174 个工具、3 个 prompt、16 个 resource |
 | HTTP API | `http://localhost:18080/api/v1/*` | 样本/产物/上传/健康检查 REST API |
 | Web 面板 | `http://localhost:18080/dashboard` | 实时监控 SPA（8 标签页，暗色主题） |
 | SSE 事件 | `http://localhost:18080/api/v1/events` | 分析事件实时推送 |
 | 面板 API | `http://localhost:18080/api/v1/dashboard/*` | 12 个 JSON 端点 |
 
-### 内置插件（15 个）
+### 内置插件（35 个）
 
 | 插件 | ID | 工具数 | 说明 |
 |------|----|--------|------|
 | Android / APK | `android` | 4 | APK 清单、DEX 反编译、加壳检测 |
-| 恶意软件分析 | `malware` | 4 | C2 提取、配置解析、家族分类、沙箱报告 |
+| 批量分析 | `batch` | 1 | 批量样本处理 |
+| 行为优先 | `behavior-first` | 3 | 行为分析优先级 |
+| 二进制 Diff | `binary-diff` | 2 | 二进制比较与补丁 |
+| 代码分析 | `code-analysis` | 19 | CFG、反编译、交叉引用、代码模式 |
 | CrackMe 自动化 | `crackme` | 4 | 验证定位、符号执行、补丁、注册机 |
-| 动态分析 | `dynamic` | 3 | 自动 Frida hook、trace 归因、内存转储 |
-| Frida Instrumentation | `frida` | 3 | 运行时 instrumentation、脚本注入、trace 采集 |
-| Ghidra 集成 | `ghidra` | 2 | 无头 Ghidra 分析与健康检查 |
 | 跨模块分析 | `cross-module` | 3 | 跨二进制比较、调用图、DLL 依赖树 |
-| 可视化 | `visualization` | 3 | HTML 报告、行为时间线、数据流图 |
-| 知识库 | `kb-collaboration` | 2 | 函数签名匹配、分析模板 |
-| PE 分析 | `pe-analysis` | 6 | PE 结构、导入、导出、指纹、pdata、符号恢复 |
-| 漏洞扫描 | `vuln-scanner` | 2 | 漏洞模式扫描与摘要 |
-| 威胁情报 | `threat-intel` | 2 | ATT&CK 映射与 IOC 导出 |
-| 调试会话 | `debug-session` | 6 | GDB/LLDB 调试会话管理 |
+| 调试会话 | `debug-session` | 9 | GDB/LLDB 调试会话管理 |
+| 深度脱壳 | `deep-unpack` | 3 | 多层脱壳与模拟 |
+| Docker 后端 | `docker-backends` | 10 | RetDec、Rizin、YARA-X、UPX、FLOSS 后端 |
+| .NET Reactor | `dotnet-reactor` | 4 | .NET 混淆分析与去混淆 |
+| 动态分析 | `dynamic` | 7 | 自动 Frida hook、trace 归因、内存转储 |
+| ELF/Mach-O | `elf-macho` | 4 | 跨平台二进制解析 |
+| Frida Instrumentation | `frida` | 4 | 运行时 instrumentation、脚本注入、trace 采集 |
+| Ghidra 集成 | `ghidra` | 2 | 无头 Ghidra 分析与健康检查 |
+| 主机关联 | `host-correlation` | 1 | 主机级产物关联 |
+| 知识库 | `kb-collaboration` | 8 | 函数签名匹配、分析模板 |
+| 恶意软件分析 | `malware` | 4 | C2 提取、配置解析、家族分类 |
+| 托管假 C2 | `managed-fake-c2` | 1 | 受控分析用假 C2 服务器 |
+| 托管 IL 交叉引用 | `managed-il-xrefs` | 2 | .NET IL 交叉引用分析 |
+| 托管沙箱 | `managed-sandbox` | 1 | 托管沙箱执行环境 |
 | 内存取证 | `memory-forensics` | 6 | 内存转储分析、volatility 集成 |
 | 可观测性 | `observability` | 1 | 工具调用 hook 追踪与指标 |
+| PE 分析 | `pe-analysis` | 6 | PE 结构、导入、导出、指纹、pdata、符号恢复 |
+| 报告 | `reporting` | 2 | 报告生成与导出 |
+| 运行时去混淆 | `runtime-deobfuscate` | 4 | 运行时去混淆与模拟 |
+| SBOM | `sbom` | 1 | 软件物料清单生成 |
+| 静态初筛 | `static-triage` | 17 | 能力初筛、PE 结构、编译器/壳检测 |
+| 字符串 | `strings` | 2 | 高级字符串提取与分析 |
+| 威胁情报 | `threat-intel` | 3 | ATT&CK 映射与 IOC 导出 |
+| 脱壳 | `unpacking` | 2 | 加壳检测与脱壳 |
+| 可视化 | `visualization` | 3 | HTML 报告、行为时间线、数据流图 |
+| VM 分析 | `vm-analysis` | 10 | VM/模拟器检测与分析 |
+| 漏洞扫描 | `vuln-scanner` | 2 | 漏洞模式扫描与摘要 |
 
 插件通过 `PLUGINS` 环境变量控制（`*` = 全部, `android,malware` = 指定, `-dynamic` = 排除）。详见 [`docs/PLUGINS.md`](./docs/PLUGINS.md)。
 
@@ -495,14 +514,22 @@ src/                         MCP Server 源码
   index.ts                   入口（~90 行）
   server.ts                  MCPServer 类
   tool-registry.ts           集中式工具/prompt/resource 注册
-  plugins.ts                 插件框架（15 个内置 + 自动发现）
+  plugins.ts                 插件框架（35 个内置 + 自动发现）
   safe-command.ts            命令注入防护
-  python-process-pool.ts     Python worker 并发池
-  streaming-progress.ts      MCP 进度通知
   config-validator.ts        运行时配置校验
   logger.ts                  Pino 结构化日志
-  tools/                     工具定义与处理器（~90 个文件）
-  plugins/                   插件目录（15 个内置插件）
+  analysis/                  分析编排模块
+  artifacts/                 产物管理与存储
+  constants/                 共享常量
+  ghidra/                    Ghidra 集成辅助
+  llm/                       LLM prompt 与 review 模块
+  prompts/                   MCP prompt 定义
+  sample/                    样本导入与管理
+  storage/                   存储层抽象
+  utils/                     共享工具模块
+  worker/                    Python 进程池与 worker 管理
+  tools/                     核心工具定义与处理器（23 个文件）
+  plugins/                   插件目录（35 个内置插件）
   api/
     file-server.ts           HTTP API（端口 18080）
     rate-limiter.ts          请求限流
@@ -510,7 +537,7 @@ src/                         MCP Server 源码
     dashboard/index.html     Web 监控面板
     routes/
       dashboard-api.ts       面板 JSON API（12 个端点）
-tests/                       单元与集成测试（207 个测试文件）
+tests/                       单元与集成测试（212 个测试文件）
 workers/                     Python worker、YARA 规则、动态分析辅助
 packages/plugin-sdk/         独立 Plugin SDK npm 包
 docs/                        文档
@@ -587,17 +614,13 @@ npm start
 }
 ```
 
-### 本地安装脚本
+### 本地安装
 
-- Codex: [`install-to-codex.ps1`](./install-to-codex.ps1)
-- Claude Code: [`install-to-claude.ps1`](./install-to-claude.ps1)
-- GitHub Copilot: [`install-to-copilot.ps1`](./install-to-copilot.ps1)
+- GitHub Copilot: [`COPILOT_INSTALLATION.md`](./COPILOT_INSTALLATION.md)
 
 相关文档：
 
-- [`CODEX_INSTALLATION.md`](./CODEX_INSTALLATION.md)
 - [`COPILOT_INSTALLATION.md`](./COPILOT_INSTALLATION.md)
-- [`CLAUDE_INSTALLATION.md`](./CLAUDE_INSTALLATION.md)
 
 ## 持久化存储
 
