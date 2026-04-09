@@ -42,6 +42,23 @@ function discoverPluginIds() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 1b. Auto-discover plugins that have Python workers/ directories
+// ─────────────────────────────────────────────────────────────────────────────
+
+function discoverPluginWorkerDirs() {
+  const srcPlugins = join(ROOT, 'src', 'plugins')
+  if (!existsSync(srcPlugins)) return []
+  return readdirSync(srcPlugins)
+    .filter(name => {
+      if (name === 'sdk.ts' || name.startsWith('.')) return false
+      const workersDir = join(srcPlugins, name, 'workers')
+      return existsSync(workersDir) && statSync(workersDir).isDirectory() &&
+        readdirSync(workersDir).some(f => f.endsWith('.py'))
+    })
+    .sort()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 2. Load systemDeps from compiled plugins
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -133,7 +150,7 @@ const FEATURE_DIRS = {
 // 5. Process Dockerfile.template
 // ─────────────────────────────────────────────────────────────────────────────
 
-function processTemplate(template, requirements) {
+function processTemplate(template, requirements, pluginWorkerIds) {
   const { features, aptPackages, envVars, validationCmds } = requirements
 
   // 5a. Conditional blocks
@@ -184,6 +201,22 @@ function processTemplate(template, requirements) {
   result = result.replace('{{EXTRA_DIRS}}', extraDirs.join(' '))
   result = result.replace('{{EXTRA_CHOWN}}', extraChown.length > 0
     ? extraChown.map(c => `    ${c} && \\`).join('\n') + '\n' : '')
+
+  // 5f. {{PLUGIN_WORKER_COPY}} / {{PLUGIN_WORKER_COPY_FROM}}
+  if (pluginWorkerIds.length > 0) {
+    const copyLines = pluginWorkerIds
+      .map(id => `COPY src/plugins/${id}/workers/ ./src/plugins/${id}/workers/`)
+      .join('\n')
+    result = result.replace('{{PLUGIN_WORKER_COPY}}', copyLines)
+
+    const copyFromLines = pluginWorkerIds
+      .map(id => `COPY --from=python-base /app/src/plugins/${id}/workers/ ./src/plugins/${id}/workers/`)
+      .join('\n')
+    result = result.replace('{{PLUGIN_WORKER_COPY_FROM}}', copyFromLines)
+  } else {
+    result = result.replace('{{PLUGIN_WORKER_COPY}}\n', '')
+    result = result.replace('{{PLUGIN_WORKER_COPY_FROM}}\n', '')
+  }
 
   return result.replace(/\n{3,}/g, '\n\n')
 }
@@ -387,7 +420,12 @@ Options:
     process.exit(1)
   }
 
-  const dockerfile = processTemplate(readFileSync(templatePath, 'utf-8'), req)
+  const pluginWorkerIds = discoverPluginWorkerDirs()
+  if (pluginWorkerIds.length > 0) {
+    console.log(`\n  Plugin workers (${pluginWorkerIds.length}): ${pluginWorkerIds.join(', ')}`)
+  }
+
+  const dockerfile = processTemplate(readFileSync(templatePath, 'utf-8'), req, pluginWorkerIds)
   const outputDir = flags.output ? join(ROOT, flags.output) : ROOT
   writeFileSync(join(outputDir, 'Dockerfile'), dockerfile, 'utf-8')
   console.log(`\n  ✓ Dockerfile (${dockerfile.split('\n').length} lines)`)
