@@ -25,6 +25,7 @@ const managedSandboxPlugin: Plugin = {
   ],
   systemDeps: [
     { type: 'binary', name: 'python3', target: '$SANDBOX_PYTHON_PATH', envVar: 'SANDBOX_PYTHON_PATH', versionFlag: '--version', dockerDefault: '/usr/local/bin/python3', required: true, description: 'Python 3 interpreter for sandbox worker' },
+    { type: 'binary', name: 'dotnet', target: '$DOTNET_PATH', envVar: 'DOTNET_PATH', versionFlag: '--info', dockerDefault: '/usr/bin/dotnet', required: false, description: '.NET runtime for managed assembly execution', dockerFeature: 'dotnet-runtime', dockerValidation: ['dotnet --info >/dev/null 2>&1'] },
   ],
   register(server, deps) {
     server.registerTool(safeRunToolDefinition, createSafeRunHandler(deps))

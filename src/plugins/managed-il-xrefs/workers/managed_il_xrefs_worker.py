@@ -105,8 +105,8 @@ def _get_method_name(pe: 'dnfile.dnPE', method_rid: int) -> str:
                                         and hasattr(td_table.rows[i + 1].MethodList, 'row_index')
                                         else len(md_table.rows) + 1)
                     if td_method_list <= method_rid < next_method_list:
-                        ns = str(td.Namespace) if td.Namespace else ''
-                        tn = str(td.Name) if td.Name else ''
+                        ns = str(getattr(td, 'TypeNamespace', getattr(td, 'Namespace', ''))) or ''
+                        tn = str(getattr(td, 'TypeName', getattr(td, 'Name', ''))) or ''
                         owner_type = f'{ns}.{tn}' if ns else tn
                         break
                 if owner_type:
@@ -123,8 +123,8 @@ def _get_type_name(pe: 'dnfile.dnPE', type_rid: int) -> str:
         td_table = pe.net.mdtables.TypeDef
         if td_table and 1 <= type_rid <= len(td_table.rows):
             row = td_table.rows[type_rid - 1]
-            ns = str(row.Namespace) if row.Namespace else ''
-            name = str(row.Name) if row.Name else f'Type_{type_rid}'
+            ns = str(getattr(row, 'TypeNamespace', getattr(row, 'Namespace', ''))) or ''
+            name = str(getattr(row, 'TypeName', getattr(row, 'Name', ''))) or f'Type_{type_rid}'
             return f'{ns}.{name}' if ns else name
     except Exception:
         pass

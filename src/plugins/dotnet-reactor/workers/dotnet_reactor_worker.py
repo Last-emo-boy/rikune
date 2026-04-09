@@ -55,8 +55,8 @@ def _get_method_name(pe: 'dnfile.dnPE', method_rid: int) -> str:
                                         and hasattr(td_table.rows[i + 1].MethodList, 'row_index')
                                         else len(md_table.rows) + 1)
                     if td_method_list <= method_rid < next_method_list:
-                        ns = str(td.Namespace) if td.Namespace else ''
-                        tn = str(td.Name) if td.Name else ''
+                        ns = str(getattr(td, 'TypeNamespace', getattr(td, 'Namespace', '')))
+                        tn = str(getattr(td, 'TypeName', getattr(td, 'Name', '')))
                         owner = f'{ns}.{tn}' if ns else tn
                         return f'{owner}::{method_name}'
             return method_name
@@ -70,8 +70,10 @@ def _get_type_name(pe: 'dnfile.dnPE', type_rid: int) -> str:
         td_table = pe.net.mdtables.TypeDef
         if td_table and 1 <= type_rid <= len(td_table.rows):
             row = td_table.rows[type_rid - 1]
-            ns = str(row.Namespace) if row.Namespace else ''
-            name = str(row.Name) if row.Name else f'Type_{type_rid}'
+            ns = str(getattr(row, 'TypeNamespace', getattr(row, 'Namespace', '')))
+            name = str(getattr(row, 'TypeName', getattr(row, 'Name', '')))
+            if not name:
+                name = f'Type_{type_rid}'
             return f'{ns}.{name}' if ns else name
     except Exception:
         pass
@@ -293,7 +295,7 @@ def handle_resource_export(request: Dict[str, Any]) -> Dict[str, Any]:
                 'name': name,
                 'token': _format_token(_make_token(0x28, rid)),
                 'offset': row.Offset if hasattr(row, 'Offset') else None,
-                'visibility': 'public' if (row.Flags & 0x07) == 0x01 else 'private',
+                'visibility': 'public' if (int(row.Flags) & 0x07) == 0x01 else 'private',
                 'implementation': None,
                 'size': None,
                 'sha256': None,
@@ -511,7 +513,7 @@ def handle_anti_tamper(request: Dict[str, Any]) -> Dict[str, Any]:
     td_table = pe.net.mdtables.TypeDef
     if td_table and md_table:
         for td_rid, td_row in enumerate(td_table.rows, start=1):
-            type_name = str(td_row.Name) if td_row.Name else ''
+            type_name = str(getattr(td_row, 'TypeName', getattr(td_row, 'Name', ''))) or ''
             if type_name == '<Module>':
                 # Find .cctor in this type's method range
                 start_rid = td_row.MethodList.row_index if hasattr(td_row.MethodList, 'row_index') else 0

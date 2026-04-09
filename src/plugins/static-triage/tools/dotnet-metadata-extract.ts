@@ -476,10 +476,15 @@ export function createDotNetMetadataExtractHandler(
         })
         const workerResponse = await callStaticWorker(workerRequest, { database })
         if (workerResponse.ok && workerResponse.data) {
+          // The Python handler returns {ok, data, warnings, metrics} which execute()
+          // wraps as WorkerResponse.data — unwrap the inner data layer
+          const innerResult = workerResponse.data as Record<string, unknown>
+          const actualData = (innerResult.data ?? innerResult) as Omit<DotNetMetadataData, 'dotnet_version'>
+          const innerWarnings = Array.isArray(innerResult.warnings) ? innerResult.warnings as string[] : []
           probeResult = {
             ok: true,
-            data: workerResponse.data as Omit<DotNetMetadataData, 'dotnet_version'>,
-            warnings: [...(workerResponse.warnings || []), 'Used Python/dnfile backend (dotnet CLI unavailable)'],
+            data: actualData,
+            warnings: [...innerWarnings, 'Used Python/dnfile backend (dotnet CLI unavailable)'],
           }
         } else {
           probeResult = {
