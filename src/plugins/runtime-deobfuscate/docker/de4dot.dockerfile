@@ -10,10 +10,10 @@ ENV HTTP_PROXY="${HTTP_PROXY}" \
 RUN apt-get update && apt-get install -y --no-install-recommends git && \
     git clone --depth 1 https://github.com/de4dot/de4dot.git /tmp/de4dot && \
     cd /tmp/de4dot && \
-    find . -name '*.csproj' -exec sed -i 's/netcoreapp3.1/net8.0/g' {} + && \
     dotnet restore de4dot.netcore.sln && \
-    dotnet publish de4dot/de4dot.csproj -c Release -f net8.0 -r linux-x64 \
-      --self-contained -o /opt/de4dot && \
+    dotnet publish de4dot/de4dot.csproj -c Release -f netcoreapp3.1 -r linux-x64 \
+      --self-contained -p:PublishSingleFile=false -o /opt/de4dot \
+      /nowarn:NETSDK1138 && \
     rm -rf /tmp/de4dot && \
     apt-get purge -y git && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
