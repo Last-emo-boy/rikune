@@ -35,7 +35,7 @@ async function callIlXrefsWorker(
   resolvePackagePath: PluginToolDeps['resolvePackagePath'],
 ): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const workerPath = resolvePackagePath!('workers', 'managed_il_xrefs_worker.py')
+    const workerPath = resolvePackagePath!('src', 'plugins', 'managed-il-xrefs', 'workers', 'managed_il_xrefs_worker.py')
     const proc = spawn(pythonCmd, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''

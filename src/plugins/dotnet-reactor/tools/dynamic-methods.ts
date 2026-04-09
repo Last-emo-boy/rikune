@@ -40,7 +40,7 @@ async function callReactorWorker(
   resolvePackagePath: PluginToolDeps['resolvePackagePath'],
 ): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const workerPath = resolvePackagePath!('workers', 'dotnet_reactor_worker.py')
+    const workerPath = resolvePackagePath!('src', 'plugins', 'dotnet-reactor', 'workers', 'dotnet_reactor_worker.py')
     const proc = spawn(pythonCmd, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''

@@ -86,7 +86,7 @@ export function createElfStructureAnalyzeHandler(
 
 async function callElfMachoWorker(request: Record<string, unknown>): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const workerPath = resolvePackagePath('workers', 'elf_macho_worker.py')
+    const workerPath = resolvePackagePath('src', 'plugins', 'elf-macho', 'workers', 'elf_macho_worker.py')
     const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
     const proc = spawn(pythonCommand, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'] })
 
