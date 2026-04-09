@@ -96,7 +96,7 @@ export function createDeepUnpackPipelineHandler(
 
       const workerScript = `
 import sys, json, importlib.util
-spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('workers', 'deep_unpack_worker.py').replace(/\\/g, '/')}")
+spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('src', 'plugins', 'deep-unpack', 'workers', 'deep_unpack_worker.py').replace(/\\/g, '/')}")
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 mod.main()

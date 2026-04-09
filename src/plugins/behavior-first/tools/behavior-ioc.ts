@@ -53,7 +53,7 @@ export function createBehaviorIocHandler(
 
       const workerScript = `
 import sys, json, importlib.util
-spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('workers', 'behavior_worker.py').replace(/\\/g, '/')}")
+spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('src', 'plugins', 'behavior-first', 'workers', 'behavior_worker.py').replace(/\\/g, '/')}")
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 mod.main()
