@@ -328,9 +328,8 @@ COPY --from=builder /app/package.json ./
 # Data files (API semantics, etc.)
 RUN mkdir -p ./data
 COPY data/windows-api-semantics.json ./data/windows-api-semantics.json
-# Plugin-specific data files (co-located)
-RUN mkdir -p ./src/plugins/vuln-scanner/data
-COPY src/plugins/vuln-scanner/data/vuln-patterns.json ./src/plugins/vuln-scanner/data/vuln-patterns.json
+# Plugin-specific data files (auto-generated from src/plugins/*/data/)
+{{PLUGIN_DATA_COPY}}
 
 # Dashboard static assets (not handled by tsc)
 COPY src/api/dashboard/ ./dist/api/dashboard/

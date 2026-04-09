@@ -56,8 +56,6 @@ export async function loadPatterns(configPath?: string): Promise<VulnPatternDB> 
 
   const defaultPath = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    'plugins',
-    'vuln-scanner',
     'data',
     'vuln-patterns.json'
   )

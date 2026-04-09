@@ -107,7 +107,6 @@ install-to-*.ps1
 logs/
 cache/
 data/
-!data/vuln-patterns.json
 !data/windows-api-semantics.json
 workspaces/
 ghidra-projects/

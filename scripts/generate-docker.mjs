@@ -59,6 +59,24 @@ function discoverPluginWorkerDirs() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 1c. Auto-discover plugins that have data/ directories with files
+// ─────────────────────────────────────────────────────────────────────────────
+
+function discoverPluginDataDirs() {
+  const srcPlugins = join(ROOT, 'src', 'plugins')
+  if (!existsSync(srcPlugins)) return []
+  const result = []
+  for (const name of readdirSync(srcPlugins)) {
+    if (name === 'sdk.ts' || name.startsWith('.')) continue
+    const dataDir = join(srcPlugins, name, 'data')
+    if (!existsSync(dataDir) || !statSync(dataDir).isDirectory()) continue
+    const files = readdirSync(dataDir).filter(f => !f.startsWith('.'))
+    if (files.length > 0) result.push({ plugin: name, files })
+  }
+  return result.sort((a, b) => a.plugin.localeCompare(b.plugin))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 2. Load systemDeps from compiled plugins
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -150,7 +168,7 @@ const FEATURE_DIRS = {
 // 5. Process Dockerfile.template
 // ─────────────────────────────────────────────────────────────────────────────
 
-function processTemplate(template, requirements, pluginWorkerIds) {
+function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntries) {
   const { features, aptPackages, envVars, validationCmds } = requirements
 
   // 5a. Conditional blocks
@@ -223,6 +241,20 @@ function processTemplate(template, requirements, pluginWorkerIds) {
   } else {
     result = result.replace('{{PLUGIN_WORKER_COPY}}\n', '')
     result = result.replace('{{PLUGIN_WORKER_COPY_FROM}}\n', '')
+  }
+
+  // 5g. {{PLUGIN_DATA_COPY}}
+  if (pluginDataEntries.length > 0) {
+    const lines = []
+    for (const { plugin, files } of pluginDataEntries) {
+      lines.push(`RUN mkdir -p ./src/plugins/${plugin}/data`)
+      for (const f of files) {
+        lines.push(`COPY src/plugins/${plugin}/data/${f} ./src/plugins/${plugin}/data/${f}`)
+      }
+    }
+    result = result.replace('{{PLUGIN_DATA_COPY}}', lines.join('\n'))
+  } else {
+    result = result.replace('{{PLUGIN_DATA_COPY}}\n', '')
   }
 
   return result.replace(/\n{3,}/g, '\n\n')
@@ -432,7 +464,12 @@ Options:
     console.log(`\n  Plugin workers (${pluginWorkerIds.length}): ${pluginWorkerIds.join(', ')}`)
   }
 
-  const dockerfile = processTemplate(readFileSync(templatePath, 'utf-8'), req, pluginWorkerIds)
+  const pluginDataEntries = discoverPluginDataDirs()
+  if (pluginDataEntries.length > 0) {
+    console.log(`  Plugin data: ${pluginDataEntries.map(e => `${e.plugin} (${e.files.join(', ')})`).join('; ')}`)
+  }
+
+  const dockerfile = processTemplate(readFileSync(templatePath, 'utf-8'), req, pluginWorkerIds, pluginDataEntries)
   const outputDir = flags.output ? join(ROOT, flags.output) : ROOT
   writeFileSync(join(outputDir, 'Dockerfile'), dockerfile, 'utf-8')
   console.log(`\n  ✓ Dockerfile (${dockerfile.split('\n').length} lines)`)

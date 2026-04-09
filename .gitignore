@@ -29,7 +29,7 @@ audit.log
 # Runtime state
 cache/
 .cache/
-data/
+/data/
 tmp/
 temp/
 workspaces/
