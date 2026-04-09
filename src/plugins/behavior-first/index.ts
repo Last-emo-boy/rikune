@@ -39,6 +39,7 @@ const behaviorFirstPlugin: Plugin = {
       dockerValidation: ['wine --version'],
     },
   ],
+  resources: { workers: 'workers' },
   register(server, deps) {
     const { workspaceManager: wm, database: db } = deps
     server.registerTool(behaviorCaptureToolDefinition, createBehaviorCaptureHandler(wm, db))

@@ -18,6 +18,7 @@ const vulnScannerPlugin: Plugin = {
   name: 'Vulnerability Scanner',
   description: 'CWE-based vulnerability pattern scanning on decompiled code',
   version: '1.0.0',
+  resources: { data: 'data' },
   register(server, deps) {
     server.registerTool(vulnPatternScanToolDefinition, createVulnPatternScanHandler(deps))
     server.registerTool(vulnPatternSummaryToolDefinition, createVulnPatternSummaryHandler(deps))

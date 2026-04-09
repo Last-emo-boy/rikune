@@ -15,7 +15,7 @@ import {
 import {
   fridaTraceCaptureToolDefinition, createFridaTraceCaptureHandler,
 } from './tools/frida-trace-capture.js'
-import { fridaScriptGenerateToolDefinition, createFridaScriptGenerateHandler } from '../../tools/frida-script-generate.js'
+import { fridaScriptGenerateToolDefinition, createFridaScriptGenerateHandler } from './tools/frida-script-generate.js'
 
 const fridaPlugin: Plugin = {
   id: 'frida',

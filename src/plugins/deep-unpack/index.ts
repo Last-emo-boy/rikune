@@ -30,6 +30,7 @@ const deepUnpackPlugin: Plugin = {
       description: 'UPX packer/unpacker for UPX-compressed binaries',
       dockerFeature: 'upx',
       dockerValidation: ['upx --version | head -1'],
+  
     },
     {
       type: 'python', name: 'speakeasy-emulator', importName: 'speakeasy', required: false,
@@ -54,6 +55,7 @@ const deepUnpackPlugin: Plugin = {
       description: 'PE file parser for PE reconstruction',
     },
   ],
+  resources: { workers: 'workers' },
   register(server, deps) {
     const { workspaceManager: wm, database: db } = deps
     server.registerTool(deepUnpackPipelineToolDefinition, createDeepUnpackPipelineHandler(wm, db))

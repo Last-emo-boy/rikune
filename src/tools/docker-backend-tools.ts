@@ -1,53 +1,54 @@
 /**
  * Docker Backend Tools — barrel re-export.
  *
- * All tool implementations have been split into individual files under
- * `src/tools/docker/`. This file re-exports tool definitions and handler
- * factories for backward compatibility so existing imports continue to work.
+ * All tool implementations have been moved to the docker-backends plugin at
+ * `src/plugins/docker-backends/tools/`. This file re-exports tool definitions
+ * and handler factories for backward compatibility so existing imports
+ * continue to work.
  */
 
 // Tool re-exports
 export {
   graphvizRenderInputSchema, graphvizRenderOutputSchema,
   graphvizRenderToolDefinition, createGraphvizRenderHandler,
-} from './docker/graphviz-render.js'
+} from '../plugins/docker-backends/tools/graphviz-render.js'
 
 export {
   rizinAnalyzeInputSchema, rizinAnalyzeOutputSchema,
   rizinAnalyzeToolDefinition, createRizinAnalyzeHandler,
-} from './docker/rizin-analyze.js'
+} from '../plugins/docker-backends/tools/rizin-analyze.js'
 
 export {
   yaraXScanInputSchema, yaraXScanOutputSchema,
   yaraXScanToolDefinition, createYaraXScanHandler,
-} from './docker/yara-x-scan.js'
+} from '../plugins/docker-backends/tools/yara-x-scan.js'
 
 export {
   upxInspectInputSchema, upxInspectOutputSchema,
   upxInspectToolDefinition, createUPXInspectHandler,
-} from './docker/upx-inspect.js'
+} from '../plugins/docker-backends/tools/upx-inspect.js'
 
 export {
   retdecDecompileInputSchema, retdecDecompileOutputSchema,
   retdecDecompileToolDefinition, createRetDecDecompileHandler,
-} from './docker/retdec-decompile.js'
+} from '../plugins/docker-backends/tools/retdec-decompile.js'
 
 export {
   angrAnalyzeInputSchema, angrAnalyzeOutputSchema,
   angrAnalyzeToolDefinition, createAngrAnalyzeHandler,
-} from './docker/angr-analyze.js'
+} from '../plugins/docker-backends/tools/angr-analyze.js'
 
 export {
   qilingInspectInputSchema, qilingInspectOutputSchema,
   qilingInspectToolDefinition, createQilingInspectHandler,
-} from './docker/qiling-inspect.js'
+} from '../plugins/docker-backends/tools/qiling-inspect.js'
 
 export {
   pandaInspectInputSchema, pandaInspectOutputSchema,
   pandaInspectToolDefinition, createPandaInspectHandler,
-} from './docker/panda-inspect.js'
+} from '../plugins/docker-backends/tools/panda-inspect.js'
 
 export {
   wineRunInputSchema, wineRunOutputSchema,
   wineRunToolDefinition, createWineRunHandler,
-} from './docker/wine-run.js'
+} from '../plugins/docker-backends/tools/wine-run.js'

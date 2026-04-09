@@ -113,7 +113,8 @@ export async function runRizinDiff(
 ): Promise<RizinDiffResult> {
   const workerScript = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    '..',
+    'plugins',
+    'binary-diff',
     'workers',
     'rizin_diff_worker.py'
   )

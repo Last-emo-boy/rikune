@@ -5,8 +5,8 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { unpackAutoToolDefinition, createUnpackAutoHandler } from '../../tools/unpack-auto.js'
-import { unpackGuideToolDefinition, createUnpackGuideHandler } from '../../tools/unpack-guide.js'
+import { unpackAutoToolDefinition, createUnpackAutoHandler } from './tools/unpack-auto.js'
+import { unpackGuideToolDefinition, createUnpackGuideHandler } from './tools/unpack-guide.js'
 
 const unpackingPlugin: Plugin = {
   id: 'unpacking',

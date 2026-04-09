@@ -33,6 +33,7 @@ const runtimeDeobfuscatePlugin: Plugin = {
       dockerInstall: 'pip install frida frida-tools',
       dockerFeature: 'frida',
       dockerValidation: ['frida-ps --help >/dev/null 2>&1'],
+  
     },
     {
       type: 'binary', name: 'de4dot', required: false,
@@ -48,6 +49,7 @@ const runtimeDeobfuscatePlugin: Plugin = {
       dockerFeature: 'wine',
     },
   ],
+  resources: { workers: 'workers' },
   register(server, deps) {
     const { workspaceManager: wm, database: db } = deps
     server.registerTool(deobfStringsToolDefinition, createDeobfStringsHandler(wm, db))

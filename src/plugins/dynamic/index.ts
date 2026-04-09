@@ -14,10 +14,10 @@ import {
 import {
   dynamicMemoryDumpToolDefinition, createDynamicMemoryDumpHandler,
 } from './tools/dynamic-memory-dump.js'
-import { dynamicDependenciesToolDefinition, createDynamicDependenciesHandler } from '../../tools/dynamic-dependencies.js'
-import { dynamicTraceImportToolDefinition, createDynamicTraceImportHandler } from '../../tools/dynamic-trace-import.js'
-import { dynamicMemoryImportToolDefinition, createDynamicMemoryImportHandler } from '../../tools/dynamic-memory-import.js'
-import { sandboxExecuteToolDefinition, createSandboxExecuteHandler } from '../../tools/sandbox-execute.js'
+import { dynamicDependenciesToolDefinition, createDynamicDependenciesHandler } from './tools/dynamic-dependencies.js'
+import { dynamicTraceImportToolDefinition, createDynamicTraceImportHandler } from './tools/dynamic-trace-import.js'
+import { dynamicMemoryImportToolDefinition, createDynamicMemoryImportHandler } from './tools/dynamic-memory-import.js'
+import { sandboxExecuteToolDefinition, createSandboxExecuteHandler } from './tools/sandbox-execute.js'
 
 const dynamicPlugin: Plugin = {
   id: 'dynamic',

@@ -16,11 +16,11 @@ import { createReconstructWorkflowHandler } from './workflows/reconstruct.js'
 import { createSemanticNameReviewWorkflowHandler } from './workflows/semantic-name-review.js'
 import { createFunctionExplanationReviewWorkflowHandler } from './workflows/function-explanation-review.js'
 import { createModuleReconstructionReviewWorkflowHandler } from './workflows/module-reconstruction-review.js'
-import { createStringsExtractHandler } from './tools/strings-extract.js'
-import { createStringsFlossDecodeHandler } from './tools/strings-floss-decode.js'
-import { createBinaryRoleProfileHandler } from './tools/binary-role-profile.js'
-import { createAnalysisContextLinkHandler } from './tools/analysis-context-link.js'
-import { createCryptoIdentifyHandler } from './tools/crypto-identify.js'
+import { createStringsExtractHandler } from './plugins/strings/tools/strings-extract.js'
+import { createStringsFlossDecodeHandler } from './plugins/strings/tools/strings-floss-decode.js'
+import { createBinaryRoleProfileHandler } from './plugins/static-triage/tools/binary-role-profile.js'
+import { createAnalysisContextLinkHandler } from './plugins/static-triage/tools/analysis-context-link.js'
+import { createCryptoIdentifyHandler } from './plugins/static-triage/tools/crypto-identify.js'
 import {
   AnalysisBudgetScheduler,
   findWorkerReuseTelemetry,

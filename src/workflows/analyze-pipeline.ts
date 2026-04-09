@@ -46,49 +46,49 @@ import { buildSchedulerExecutionPlan } from '../analysis-budget-scheduler.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
 import { AnalysisEvidenceStateSchema } from '../analysis-evidence.js'
 import { createPEFingerprintHandler } from '../plugins/pe-analysis/tools/pe-fingerprint.js'
-import { createRuntimeDetectHandler } from '../tools/runtime-detect.js'
+import { createRuntimeDetectHandler } from '../plugins/static-triage/tools/runtime-detect.js'
 import { createPEImportsExtractHandler } from '../plugins/pe-analysis/tools/pe-imports-extract.js'
-import { createStringsExtractHandler } from '../tools/strings-extract.js'
-import { createStringsFlossDecodeHandler } from '../tools/strings-floss-decode.js'
-import { createYaraScanHandler } from '../tools/yara-scan.js'
-import { createPackerDetectHandler } from '../tools/packer-detect.js'
-import { createCompilerPackerDetectHandler } from '../tools/compiler-packer-detect.js'
-import { createBinaryRoleProfileHandler } from '../tools/binary-role-profile.js'
-import { createStaticCapabilityTriageHandler } from '../tools/static-capability-triage.js'
+import { createStringsExtractHandler } from '../plugins/strings/tools/strings-extract.js'
+import { createStringsFlossDecodeHandler } from '../plugins/strings/tools/strings-floss-decode.js'
+import { createYaraScanHandler } from '../plugins/yara/tools/yara-scan.js'
+import { createPackerDetectHandler } from '../plugins/static-triage/tools/packer-detect.js'
+import { createCompilerPackerDetectHandler } from '../plugins/static-triage/tools/compiler-packer-detect.js'
+import { createBinaryRoleProfileHandler } from '../plugins/static-triage/tools/binary-role-profile.js'
+import { createStaticCapabilityTriageHandler } from '../plugins/static-triage/tools/static-capability-triage.js'
 import { createPEStructureAnalyzeHandler } from '../plugins/pe-analysis/tools/pe-structure-analyze.js'
-import { createElfStructureAnalyzeHandler } from '../tools/elf-structure-analyze.js'
-import { createMachoStructureAnalyzeHandler } from '../tools/macho-structure-analyze.js'
-import { createAnalysisContextLinkHandler } from '../tools/analysis-context-link.js'
-import { createCryptoIdentifyHandler } from '../tools/crypto-identify.js'
-import { createRustBinaryAnalyzeHandler } from '../tools/rust-binary-analyze.js'
-import { createDynamicDependenciesHandler } from '../tools/dynamic-dependencies.js'
-import { createBreakpointSmartHandler } from '../tools/breakpoint-smart.js'
-import { createTraceConditionHandler } from '../tools/trace-condition.js'
-import { createSandboxExecuteHandler } from '../tools/sandbox-execute.js'
+import { createElfStructureAnalyzeHandler } from '../plugins/elf-macho/tools/elf-structure-analyze.js'
+import { createMachoStructureAnalyzeHandler } from '../plugins/elf-macho/tools/macho-structure-analyze.js'
+import { createAnalysisContextLinkHandler } from '../plugins/static-triage/tools/analysis-context-link.js'
+import { createCryptoIdentifyHandler } from '../plugins/static-triage/tools/crypto-identify.js'
+import { createRustBinaryAnalyzeHandler } from '../plugins/static-triage/tools/rust-binary-analyze.js'
+import { createDynamicDependenciesHandler } from '../plugins/dynamic/tools/dynamic-dependencies.js'
+import { createBreakpointSmartHandler } from '../plugins/static-triage/tools/breakpoint-smart.js'
+import { createTraceConditionHandler } from '../plugins/static-triage/tools/trace-condition.js'
+import { createSandboxExecuteHandler } from '../plugins/dynamic/tools/sandbox-execute.js'
 import { createWorkflowSummarizeHandler } from './summarize.js'
 import { createReconstructWorkflowHandler } from './reconstruct.js'
 import { createGhidraAnalyzeHandler } from '../plugins/ghidra/tools/ghidra-analyze.js'
 import {
   createAngrAnalyzeHandler,
-} from '../tools/docker/angr-analyze.js'
+} from '../plugins/docker-backends/tools/angr-analyze.js'
 import {
   createRetDecDecompileHandler,
-} from '../tools/docker/retdec-decompile.js'
+} from '../plugins/docker-backends/tools/retdec-decompile.js'
 import {
   createRizinAnalyzeHandler,
-} from '../tools/docker/rizin-analyze.js'
+} from '../plugins/docker-backends/tools/rizin-analyze.js'
 import {
   createUPXInspectHandler,
-} from '../tools/docker/upx-inspect.js'
+} from '../plugins/docker-backends/tools/upx-inspect.js'
 import {
   createYaraXScanHandler,
-} from '../tools/docker/yara-x-scan.js'
+} from '../plugins/docker-backends/tools/yara-x-scan.js'
 import {
   createPandaInspectHandler,
-} from '../tools/docker/panda-inspect.js'
+} from '../plugins/docker-backends/tools/panda-inspect.js'
 import {
   createQilingInspectHandler,
-} from '../tools/docker/qiling-inspect.js'
+} from '../plugins/docker-backends/tools/qiling-inspect.js'
 import { buildPollingGuidance } from '../polling-guidance.js'
 import { loadDynamicTraceEvidence } from '../dynamic-trace.js'
 import { createSampleFinalizationService } from '../sample-finalization.js'

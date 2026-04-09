@@ -8,7 +8,7 @@ import type { CacheManager } from '../cache-manager.js'
 import type { MCPServer } from '../server.js'
 import {
   createReportSummarizeHandler,
-} from '../tools/report-summarize.js'
+} from '../plugins/reporting/tools/report-summarize.js'
 import { loadSemanticFunctionExplanationIndex } from '../semantic-name-suggestion-artifacts.js'
 import {
   loadSummaryDigestArtifactSelection,

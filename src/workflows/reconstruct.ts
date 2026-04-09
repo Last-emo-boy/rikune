@@ -12,10 +12,10 @@ import type { CacheManager } from '../cache-manager.js'
 import type { JobQueue } from '../job-queue.js'
 import { generateCacheKey } from '../cache-manager.js'
 import { lookupCachedResult, formatCacheWarning } from '../tools/cache-observability.js'
-import { createRuntimeDetectHandler } from '../tools/runtime-detect.js'
-import { createCodeReconstructPlanHandler } from '../tools/code-reconstruct-plan.js'
-import { createCodeReconstructExportHandler } from '../tools/code-reconstruct-export.js'
-import { createDotNetReconstructExportHandler } from '../tools/dotnet-reconstruct-export.js'
+import { createRuntimeDetectHandler } from '../plugins/static-triage/tools/runtime-detect.js'
+import { createCodeReconstructPlanHandler } from '../plugins/code-analysis/tools/code-reconstruct-plan.js'
+import { createCodeReconstructExportHandler } from '../plugins/code-analysis/tools/code-reconstruct-export.js'
+import { createDotNetReconstructExportHandler } from '../plugins/code-analysis/tools/dotnet-reconstruct-export.js'
 import {
   findBestGhidraAnalysis,
   isGhidraCapabilityReady,
@@ -28,19 +28,19 @@ import {
 import {
   BinaryRoleProfileDataSchema,
   createBinaryRoleProfileHandler,
-} from '../tools/binary-role-profile.js'
+} from '../plugins/static-triage/tools/binary-role-profile.js'
 import {
   ComRoleProfileDataSchema,
   createComRoleProfileHandler,
-} from '../tools/com-role-profile.js'
+} from '../plugins/static-triage/tools/com-role-profile.js'
 import {
   DllExportProfileDataSchema,
   createDllExportProfileHandler,
-} from '../tools/dll-export-profile.js'
+} from '../plugins/static-triage/tools/dll-export-profile.js'
 import {
   RustBinaryAnalyzeDataSchema,
   createRustBinaryAnalyzeHandler,
-} from '../tools/rust-binary-analyze.js'
+} from '../plugins/static-triage/tools/rust-binary-analyze.js'
 import { createFunctionIndexRecoverWorkflowHandler } from './function-index-recover.js'
 import {
   AnalysisProvenanceSchema,
@@ -80,9 +80,9 @@ import {
   mergeCoverageEnvelope,
 } from '../analysis-coverage.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
-import { createAngrAnalyzeHandler } from '../tools/docker/angr-analyze.js'
-import { createRetDecDecompileHandler } from '../tools/docker/retdec-decompile.js'
-import { createRizinAnalyzeHandler } from '../tools/docker/rizin-analyze.js'
+import { createAngrAnalyzeHandler } from '../plugins/docker-backends/tools/angr-analyze.js'
+import { createRetDecDecompileHandler } from '../plugins/docker-backends/tools/retdec-decompile.js'
+import { createRizinAnalyzeHandler } from '../plugins/docker-backends/tools/rizin-analyze.js'
 import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 
 const TOOL_NAME = 'workflow.reconstruct'

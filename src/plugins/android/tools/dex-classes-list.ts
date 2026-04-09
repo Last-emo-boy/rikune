@@ -39,7 +39,7 @@ async function callApkWorker(request: Record<string, unknown>, pythonCmd: string
 export function createDexClassesListHandler(deps: PluginToolDeps) {
   const { workspaceManager, database, config, resolvePrimarySamplePath, resolvePackagePath } = deps
   const pythonCmd = config.workers.static.pythonPath || (process.platform === 'win32' ? 'python' : 'python3')
-  const workerPath = resolvePackagePath('workers', 'apk_dex_worker.py')
+  const workerPath = resolvePackagePath('src', 'plugins', 'android', 'workers', 'apk_dex_worker.py')
   return async (args: z.infer<typeof DexClassesListInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()
     try {

@@ -5,16 +5,17 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { elfStructureAnalyzeToolDefinition, createElfStructureAnalyzeHandler } from '../../tools/elf-structure-analyze.js'
-import { machoStructureAnalyzeToolDefinition, createMachoStructureAnalyzeHandler } from '../../tools/macho-structure-analyze.js'
-import { elfImportsExtractToolDefinition, createElfImportsExtractHandler } from '../../tools/elf-imports-extract.js'
-import { elfExportsExtractToolDefinition, createElfExportsExtractHandler } from '../../tools/elf-exports-extract.js'
+import { elfStructureAnalyzeToolDefinition, createElfStructureAnalyzeHandler } from './tools/elf-structure-analyze.js'
+import { machoStructureAnalyzeToolDefinition, createMachoStructureAnalyzeHandler } from './tools/macho-structure-analyze.js'
+import { elfImportsExtractToolDefinition, createElfImportsExtractHandler } from './tools/elf-imports-extract.js'
+import { elfExportsExtractToolDefinition, createElfExportsExtractHandler } from './tools/elf-exports-extract.js'
 
 const elfMachoPlugin: Plugin = {
   id: 'elf-macho',
   name: 'ELF / Mach-O',
   description: 'Structure analysis and import/export extraction for Linux ELF and macOS Mach-O binaries',
   version: '1.0.0',
+  resources: { workers: 'workers' },
   register(server, deps) {
     const { workspaceManager: wm, database: db } = deps
 

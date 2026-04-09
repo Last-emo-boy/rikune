@@ -19,7 +19,7 @@ import {
   buildDynamicSetupRequired,
   resolveAnalysisBackends,
   type SharedBackendDependencies,
-} from '../../../tools/docker/docker-shared.js'
+} from '../../docker-backends/tools/docker-shared.js'
 
 const TOOL_NAME = 'deobf.strings'
 

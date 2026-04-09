@@ -28,7 +28,7 @@ export const keygenVerifyToolDefinition: ToolDefinition = {
 
 async function callVerifyWorker(request: Record<string, unknown>, pythonCmd: string, resolvePackagePath: (...segments: string[]) => string): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const workerPath = resolvePackagePath('workers', 'keygen_verify_worker.py')
+    const workerPath = resolvePackagePath('src', 'plugins', 'crackme', 'workers', 'keygen_verify_worker.py')
     const proc = spawn(pythonCmd, [workerPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: ((request.timeout_sec as number) ?? 30) * 1000 + 10000,
