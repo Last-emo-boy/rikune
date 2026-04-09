@@ -20,7 +20,7 @@ import {
   buildDynamicSetupRequired,
   resolveAnalysisBackends,
   type SharedBackendDependencies,
-} from '../../docker-backends/tools/docker-shared.js'
+} from '../../docker-shared.js'
 
 const TOOL_NAME = 'behavior.capture'
 

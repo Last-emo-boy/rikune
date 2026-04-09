@@ -1,5 +1,5 @@
 /**
- * YARA-X scan tool â€” scan a sample with YARA-X rules.
+ * YARA-X scan tool â€?scan a sample with YARA-X rules.
  */
 
 import { createHash } from 'crypto'
@@ -7,7 +7,7 @@ import { z } from 'zod'
 import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import type { SharedBackendDependencies } from './docker-shared.js'
+import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
   fs,
   ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
@@ -15,7 +15,7 @@ import {
   persistBackendArtifact, buildMetrics, buildStaticSetupRequired,
   findBackendPreviewEvidence, persistBackendPreviewEvidence, buildEvidenceReuseWarnings,
   resolveSampleFile, resolveAnalysisBackends,
-} from './docker-shared.js'
+} from '../../docker-shared.js'
 
 export const yaraXScanInputSchema = z
   .object({

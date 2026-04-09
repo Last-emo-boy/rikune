@@ -1,17 +1,17 @@
 /**
- * PANDA inspect tool â€” inspect PANDA/pandare runtime readiness.
+ * PANDA inspect tool â€?inspect PANDA/pandare runtime readiness.
  */
 
 import { z } from 'zod'
 import type { WorkerResult, ToolDefinition, ToolArgs } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import type { SharedBackendDependencies } from './docker-shared.js'
+import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
   BackendSchema, SharedMetricsSchema,
   ensureSampleExists, normalizeError, runPythonJson, buildMetrics, buildDynamicSetupRequired,
   resolveAnalysisBackends,
-} from './docker-shared.js'
+} from '../../docker-shared.js'
 
 export const pandaInspectInputSchema = z.object({
   sample_id: z

@@ -1,12 +1,12 @@
 /**
- * Rizin analyze tool â€” bounded Rizin inspection on a sample.
+ * Rizin analyze tool â€?bounded Rizin inspection on a sample.
  */
 
 import { z } from 'zod'
 import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import type { SharedBackendDependencies } from './docker-shared.js'
+import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
   randomUUID,
   ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
@@ -15,7 +15,7 @@ import {
   findBackendPreviewEvidence, persistBackendPreviewEvidence, buildEvidenceReuseWarnings,
   resolveSampleFile, resolveAnalysisBackends,
   getRuntimeWorkerPool, buildRizinPreviewCompatibilityKey, resolvePackagePath,
-} from './docker-shared.js'
+} from '../../docker-shared.js'
 
 export const rizinAnalyzeInputSchema = z.object({
   sample_id: z.string().describe('Target sample identifier.'),

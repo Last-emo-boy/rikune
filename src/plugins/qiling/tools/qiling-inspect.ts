@@ -1,19 +1,19 @@
 /**
- * Qiling inspect tool â€” inspect Qiling readiness and rootfs state.
+ * Qiling inspect tool â€?inspect Qiling readiness and rootfs state.
  */
 
 import { z } from 'zod'
 import type { WorkerResult, ToolDefinition, ToolArgs } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import type { SharedBackendDependencies } from './docker-shared.js'
+import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
   BackendSchema, SharedMetricsSchema,
   ensureSampleExists, normalizeError, runPythonJson, buildMetrics, buildDynamicSetupRequired,
   resolveAnalysisBackends,
   mergeSetupActions, mergeRequiredUserInputs,
   buildDynamicDependencySetupActions, buildDynamicDependencyRequiredUserInputs,
-} from './docker-shared.js'
+} from '../../docker-shared.js'
 
 export const qilingInspectInputSchema = z.object({
   sample_id: z.string().describe('Target sample identifier.'),

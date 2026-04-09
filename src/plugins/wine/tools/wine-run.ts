@@ -1,18 +1,18 @@
 /**
- * Wine run tool â€” preflight or run a sample under Wine or winedbg.
+ * Wine run tool â€?preflight or run a sample under Wine or winedbg.
  */
 
 import { z } from 'zod'
 import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import type { SharedBackendDependencies } from './docker-shared.js'
+import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
   ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
   executeCommand, truncateText, normalizeError,
   persistBackendArtifact, buildMetrics, buildDynamicSetupRequired,
   resolveSampleFile, resolveAnalysisBackends,
-} from './docker-shared.js'
+} from '../../docker-shared.js'
 
 export const wineRunInputSchema = z.object({
   sample_id: z.string().describe('Target sample identifier.'),

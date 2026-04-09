@@ -1,12 +1,12 @@
 /**
- * Graphviz render tool â€” renders DOT graph text into SVG or PNG artifacts.
+ * Graphviz render tool â€?renders DOT graph text into SVG or PNG artifacts.
  */
 
 import { z } from 'zod'
 import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import type { SharedBackendDependencies } from './docker-shared.js'
+import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
   fs, os, path,
   ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
@@ -15,7 +15,7 @@ import {
   persistBackendArtifact, buildMetrics,
   resolveAnalysisBackends,
   mergeSetupActions, buildCoreLinuxToolchainSetupActions, buildHeavyBackendSetupActions,
-} from './docker-shared.js'
+} from '../../docker-shared.js'
 
 export const graphvizRenderInputSchema = z.object({
   sample_id: z.string().describe('Sample identifier (sha256:<hex>) used for artifact persistence.'),

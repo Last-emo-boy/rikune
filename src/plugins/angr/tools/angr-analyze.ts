@@ -1,18 +1,18 @@
 /**
- * angr analyze tool â€” bounded angr static analysis against a sample.
+ * angr analyze tool â€?bounded angr static analysis against a sample.
  */
 
 import { z } from 'zod'
 import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import type { SharedBackendDependencies } from './docker-shared.js'
+import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
   ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
   normalizeError, runPythonJson,
   persistBackendArtifact, buildMetrics, buildDynamicSetupRequired,
   resolveSampleFile, resolveAnalysisBackends,
-} from './docker-shared.js'
+} from '../../docker-shared.js'
 
 export const angrAnalyzeInputSchema = z.object({
   sample_id: z.string().describe('Target sample identifier.'),

@@ -16,7 +16,7 @@ import {
   buildMetrics,
   ensureSampleExists,
   type SharedBackendDependencies,
-} from '../../docker-backends/tools/docker-shared.js'
+} from '../../docker-shared.js'
 
 const TOOL_NAME = 'behavior.ioc'
 

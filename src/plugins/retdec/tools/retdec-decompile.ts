@@ -1,19 +1,19 @@
 /**
- * RetDec decompile tool â€” decompile a sample with RetDec.
+ * RetDec decompile tool â€?decompile a sample with RetDec.
  */
 
 import { z } from 'zod'
 import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import type { SharedBackendDependencies } from './docker-shared.js'
+import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
   fs, os, path,
   ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
   executeCommand, truncateText, normalizeError,
   persistBackendArtifact, buildMetrics, buildStaticSetupRequired,
   resolveSampleFile, resolveAnalysisBackends,
-} from './docker-shared.js'
+} from '../../docker-shared.js'
 
 export const retdecDecompileInputSchema = z.object({
   sample_id: z.string().describe('Target sample identifier.'),

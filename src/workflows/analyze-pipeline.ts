@@ -70,25 +70,25 @@ import { createReconstructWorkflowHandler } from './reconstruct.js'
 import { createGhidraAnalyzeHandler } from '../plugins/ghidra/tools/ghidra-analyze.js'
 import {
   createAngrAnalyzeHandler,
-} from '../plugins/docker-backends/tools/angr-analyze.js'
+} from '../plugins/angr/tools/angr-analyze.js'
 import {
   createRetDecDecompileHandler,
-} from '../plugins/docker-backends/tools/retdec-decompile.js'
+} from '../plugins/retdec/tools/retdec-decompile.js'
 import {
   createRizinAnalyzeHandler,
-} from '../plugins/docker-backends/tools/rizin-analyze.js'
+} from '../plugins/rizin/tools/rizin-analyze.js'
 import {
   createUPXInspectHandler,
-} from '../plugins/docker-backends/tools/upx-inspect.js'
+} from '../plugins/upx/tools/upx-inspect.js'
 import {
   createYaraXScanHandler,
-} from '../plugins/docker-backends/tools/yara-x-scan.js'
+} from '../plugins/yara-x/tools/yara-x-scan.js'
 import {
   createPandaInspectHandler,
-} from '../plugins/docker-backends/tools/panda-inspect.js'
+} from '../plugins/panda/tools/panda-inspect.js'
 import {
   createQilingInspectHandler,
-} from '../plugins/docker-backends/tools/qiling-inspect.js'
+} from '../plugins/qiling/tools/qiling-inspect.js'
 import { buildPollingGuidance } from '../polling-guidance.js'
 import { loadDynamicTraceEvidence } from '../artifacts/dynamic-trace.js'
 import { createSampleFinalizationService } from '../sample/sample-finalization.js'

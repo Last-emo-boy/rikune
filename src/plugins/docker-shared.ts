@@ -11,9 +11,9 @@ import { execFile, spawn } from 'child_process'
 import { promisify } from 'util'
 import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
-import type { DatabaseManager, Sample } from '../../../database.js'
-import type { WorkspaceManager } from '../../../workspace-manager.js'
-import type { ArtifactRef, ToolArgs, ToolDefinition, WorkerResult } from '../../../types.js'
+import type { DatabaseManager, Sample } from '../database.js'
+import type { WorkspaceManager } from '../workspace-manager.js'
+import type { ArtifactRef, ToolArgs, ToolDefinition, WorkerResult } from '../types.js'
 import {
   buildCoreLinuxToolchainSetupActions,
   buildDynamicDependencyRequiredUserInputs,
@@ -21,28 +21,28 @@ import {
   buildHeavyBackendSetupActions,
   mergeRequiredUserInputs,
   mergeSetupActions,
-} from '../../../setup-guidance.js'
+} from '../setup-guidance.js'
 import {
   resolveAnalysisBackends,
   type ExternalExecutableResolution,
   type ToolchainBackendResolution,
-} from '../../../static-backend-discovery.js'
-import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
+} from '../static-backend-discovery.js'
+import { resolvePrimarySamplePath } from '../sample/sample-workspace.js'
 import {
   buildEvidenceReuseWarnings,
   findCanonicalEvidence,
   persistCanonicalEvidence,
-} from '../../../analysis/analysis-evidence.js'
+} from '../analysis/analysis-evidence.js'
 import {
   buildRizinPreviewCompatibilityKey,
   getRuntimeWorkerPool,
-} from '../../../worker/runtime-worker-pool.js'
-import { resolvePackagePath } from '../../../runtime-paths.js'
+} from '../worker/runtime-worker-pool.js'
+import { resolvePackagePath } from '../runtime-paths.js'
 import {
   ExplanationConfidenceStateSchema,
   ExplanationSurfaceRoleSchema,
-} from '../../../artifacts/explanation-graphs.js'
-import { ToolSurfaceRoleSchema } from '../../../tool-surface-guidance.js'
+} from '../artifacts/explanation-graphs.js'
+import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
 
 export {
   fs, os, path, z, randomUUID,
@@ -140,7 +140,7 @@ export function buildMetrics(startTime: number, tool: string) {
   }
 }
 
-import { normalizeError, sanitizePathSegment as sanitizeSegment } from '../../../utils/shared-helpers.js'
+import { normalizeError, sanitizePathSegment as sanitizeSegment } from '../utils/shared-helpers.js'
 export { normalizeError }
 
 export function stripAnsi(text: string): string {

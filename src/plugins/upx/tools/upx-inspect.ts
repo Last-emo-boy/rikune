@@ -1,12 +1,12 @@
 /**
- * UPX inspect tool â€” inspect or decompress a sample with UPX.
+ * UPX inspect tool â€?inspect or decompress a sample with UPX.
  */
 
 import { z } from 'zod'
 import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import type { SharedBackendDependencies } from './docker-shared.js'
+import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
   fs, os, path,
   ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
@@ -14,7 +14,7 @@ import {
   persistBackendArtifact, buildMetrics, buildStaticSetupRequired,
   findBackendPreviewEvidence, persistBackendPreviewEvidence, buildEvidenceReuseWarnings,
   resolveSampleFile, resolveAnalysisBackends,
-} from './docker-shared.js'
+} from '../../docker-shared.js'
 
 export const upxInspectInputSchema = z.object({
   sample_id: z.string().describe('Target sample identifier.'),
