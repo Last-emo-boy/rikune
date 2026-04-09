@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 // =============================================================================
-// generate-docker.mjs — Plugin-driven Dockerfile & docker-compose generator
+// generate-docker.mjs  Plugin-driven Dockerfile & docker-compose generator
 // =============================================================================
 //
 // Reads plugin systemDeps declarations from compiled dist/plugins/ and
-// automatically derives the Docker image contents.  No hardcoded mappings —
-// plugins are the single source of truth for their Docker requirements.
+// Dockerfile fragments from src/plugins/*/docker/*.dockerfile, then
+// automatically derives the Docker image contents.
+//
+// Zero hardcoded feature maps  plugins are the single source of truth
+// for env vars, build args, directories, volumes, and build stages.
 //
 // Usage:
 //   node scripts/generate-docker.mjs                         # all plugins
@@ -16,15 +19,15 @@
 // =============================================================================
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs'
-import { join, dirname } from 'path'
+import { join, dirname, basename } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // 1. Auto-discover plugins from dist/plugins/ (or src/plugins/ for names)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function discoverPluginIds() {
   for (const base of [join(ROOT, 'dist', 'plugins'), join(ROOT, 'src', 'plugins')]) {
@@ -37,13 +40,13 @@ function discoverPluginIds() {
       })
       .sort()
   }
-  console.error('  ✗ Neither dist/plugins/ nor src/plugins/ found.')
+  console.error('  x Neither dist/plugins/ nor src/plugins/ found.')
   process.exit(1)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // 1b. Auto-discover plugins that have Python workers/ directories
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function discoverPluginWorkerDirs() {
   const srcPlugins = join(ROOT, 'src', 'plugins')
@@ -58,9 +61,9 @@ function discoverPluginWorkerDirs() {
     .sort()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // 1c. Auto-discover plugins that have data/ directories with files
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 function discoverPluginDataDirs() {
   const srcPlugins = join(ROOT, 'src', 'plugins')
@@ -76,14 +79,66 @@ function discoverPluginDataDirs() {
   return result.sort((a, b) => a.plugin.localeCompare(b.plugin))
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// 1d. Auto-discover Docker fragment files from src/plugins/*/docker/*.dockerfile
+// -----------------------------------------------------------------------------
+
+function discoverDockerFragments() {
+  const srcPlugins = join(ROOT, 'src', 'plugins')
+  if (!existsSync(srcPlugins)) return new Map()
+
+  const fragments = new Map()
+
+  for (const pluginName of readdirSync(srcPlugins)) {
+    if (pluginName === 'sdk.ts' || pluginName.startsWith('.')) continue
+    const dockerDir = join(srcPlugins, pluginName, 'docker')
+    if (!existsSync(dockerDir) || !statSync(dockerDir).isDirectory()) continue
+
+    for (const file of readdirSync(dockerDir)) {
+      if (!file.endsWith('.dockerfile')) continue
+      const feature = basename(file, '.dockerfile')
+      const content = readFileSync(join(dockerDir, file), 'utf-8').replace(/\r\n/g, '\n')
+      const parsed = parseDockerFragment(content)
+      fragments.set(feature, { plugin: pluginName, ...parsed })
+    }
+  }
+  return fragments
+}
+
+/**
+ * Parse a Docker fragment file into sections.
+ * Sections are delimited by: #===== ARGS =====, #===== STAGE =====, #===== RUNTIME =====
+ */
+function parseDockerFragment(content) {
+  const sections = { args: '', stage: '', runtime: '' }
+  let current = null
+
+  for (const line of content.split('\n')) {
+    const marker = line.match(/^#=====\s*(ARGS|STAGE|RUNTIME)\s*=====\s*$/i)
+    if (marker) {
+      current = marker[1].toLowerCase()
+      continue
+    }
+    if (current && sections[current] !== undefined) {
+      sections[current] += line + '\n'
+    }
+  }
+
+  // Trim trailing newlines but keep content
+  for (const key of Object.keys(sections)) {
+    sections[key] = sections[key].replace(/\n+$/, '')
+  }
+  return sections
+}
+
+// -----------------------------------------------------------------------------
 // 2. Load systemDeps from compiled plugins
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 async function loadPluginDeps(pluginIds) {
   const distDir = join(ROOT, 'dist', 'plugins')
   if (!existsSync(distDir)) {
-    console.error('  ✗ dist/plugins/ not found. Run `npm run build` first.')
+    console.error('  x dist/plugins/ not found. Run `npm run build` first.')
     process.exit(1)
   }
 
@@ -110,14 +165,18 @@ async function loadPluginDeps(pluginIds) {
   return result
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 3. Collect Docker requirements from systemDeps (no hardcoded maps)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// 3. Collect Docker requirements from systemDeps (zero hardcoded maps)
+// -----------------------------------------------------------------------------
 
 function collectDockerRequirements(pluginDepMap) {
   const features = new Set()
   const aptPackages = new Set()
   const envVars = new Map()
+  const extraEnv = new Map()
+  const buildArgs = new Map()
+  const directories = []
+  const volumes = []
   const validationCmds = []
 
   for (const [, deps] of pluginDepMap) {
@@ -130,6 +189,23 @@ function collectDockerRequirements(pluginDepMap) {
           if (!validationCmds.includes(cmd)) validationCmds.push(cmd)
         }
       }
+      // New fields from extended PluginSystemDep
+      if (dep.extraEnv) {
+        for (const [k, v] of Object.entries(dep.extraEnv)) extraEnv.set(k, v)
+      }
+      if (dep.buildArgs) {
+        for (const [k, v] of Object.entries(dep.buildArgs)) buildArgs.set(k, v)
+      }
+      if (dep.directories) {
+        for (const d of dep.directories) {
+          if (!directories.some(x => x.path === d.path)) directories.push(d)
+        }
+      }
+      if (dep.volumes) {
+        for (const v of dep.volumes) {
+          if (!volumes.some(x => x.target === v.target)) volumes.push(v)
+        }
+      }
     }
   }
 
@@ -138,40 +214,26 @@ function collectDockerRequirements(pluginDepMap) {
     features.add('dynamic-python')
   }
 
-  return { features, aptPackages: [...aptPackages].sort(), envVars, validationCmds }
+  return {
+    features,
+    aptPackages: [...aptPackages].sort(),
+    envVars,
+    extraEnv,
+    buildArgs,
+    directories,
+    volumes,
+    validationCmds,
+  }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 4. Feature → structural Docker env/dirs
-//    (infrastructure concerns tied to build stages, not individual deps)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// 4. Process Dockerfile.template
+// -----------------------------------------------------------------------------
 
-const FEATURE_EXTRA_ENV = {
-  ghidra: { JAVA_HOME: '/opt/java/openjdk', JAVA_TOOL_OPTIONS: '""', GHIDRA_INSTALL_DIR: '/opt/ghidra', GHIDRA_PROJECT_ROOT: '/ghidra-projects', GHIDRA_LOG_ROOT: '/ghidra-logs' },
-  capa:   { CAPA_PATH: '/usr/local/bin/capa', CAPA_RULES_PATH: '/opt/capa-rules', DIE_PATH: '/usr/bin/diec' },
-  rizin:  { RIZIN_PATH: '/opt/rizin/bin/rizin' },
-  retdec: { RETDEC_PATH: '/opt/retdec/bin/retdec-decompiler', RETDEC_INSTALL_DIR: '/opt/retdec' },
-  upx:    { UPX_PATH: '/usr/local/bin/upx' },
-  jadx:   { JADX_PATH: '/opt/jadx/bin/jadx' },
-  vol3:   { VOLATILITY3_PATH: '/usr/local/bin/vol' },
-  qiling: { QILING_PYTHON: '/opt/qiling-venv/bin/python', QILING_ROOTFS: '/opt/qiling-rootfs' },
-  angr:   { ANGR_PYTHON: '/opt/angr-venv/bin/python' },
-  'dynamic-python': { PANDA_PYTHON: '/usr/local/bin/python3', YARAX_PYTHON: '/usr/local/bin/python3' },
-}
+function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntries, fragments) {
+  const { features, aptPackages, envVars, extraEnv, directories, validationCmds } = requirements
 
-const FEATURE_DIRS = {
-  ghidra: { dirs: ['/ghidra-projects', '/ghidra-logs'], chown: ['chown -R appuser:appuser /ghidra-projects', 'chown -R appuser:appuser /ghidra-logs'] },
-  qiling: { dirs: ['/opt/qiling-rootfs'], chown: ['chown -R appuser:appuser /opt/qiling-rootfs'] },
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 5. Process Dockerfile.template
-// ─────────────────────────────────────────────────────────────────────────────
-
-function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntries) {
-  const { features, aptPackages, envVars, validationCmds } = requirements
-
-  // 5a. Conditional blocks
+  // 4a. Conditional blocks (only dynamic-python remains in template)
   const lines = template.replace(/\r\n/g, '\n').split('\n')
   const output = []
   const stack = []
@@ -187,18 +249,40 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
 
   let result = output.join('\n')
 
-  // 5b. {{RUNTIME_APT_PACKAGES}}
+  // 4b. {{FEATURE_ARGS}} - global ARG declarations from fragments
+  const featureArgLines = []
+  for (const [feature, frag] of fragments) {
+    if (features.has(feature) && frag.args) featureArgLines.push(frag.args)
+  }
+  result = result.replace('{{FEATURE_ARGS}}', featureArgLines.join('\n') || '')
+
+  // 4c. {{BUILD_STAGES}} - build stages from fragments
+  const stageLines = []
+  for (const [feature, frag] of fragments) {
+    if (features.has(feature) && frag.stage) stageLines.push(frag.stage)
+  }
+  result = result.replace('{{BUILD_STAGES}}', stageLines.join('\n\n') || '')
+
+  // 4d. {{FEATURE_RUNTIME}} - runtime install/copy from fragments
+  const runtimeLines = []
+  for (const [feature, frag] of fragments) {
+    if (features.has(feature) && frag.runtime) runtimeLines.push(frag.runtime)
+  }
+  result = result.replace('{{FEATURE_RUNTIME}}', runtimeLines.join('\n\n') || '')
+
+  // 4e. {{RUNTIME_APT_PACKAGES}}
   const aptLines = aptPackages.length > 0
     ? aptPackages.map(p => `    ${p} \\`).join('\n') + '\n'
     : ''
   result = result.replace('{{RUNTIME_APT_PACKAGES}}', aptLines)
 
-  // 5c. {{RUNTIME_ENV_VARS}}
+  // 4f. {{RUNTIME_ENV_VARS}} - merged from envVars + extraEnv (plugin-driven)
   const allEnv = new Map(envVars)
-  for (const [feat, vars] of Object.entries(FEATURE_EXTRA_ENV)) {
-    if (features.has(feat)) for (const [k, v] of Object.entries(vars)) allEnv.set(k, v)
-  }
+  for (const [k, v] of extraEnv) allEnv.set(k, v)
   allEnv.delete('SANDBOX_PYTHON_PATH') // already in base block
+  // Remove vars that are set inline in fragment RUNTIME sections
+  allEnv.delete('JAVA_HOME')
+  allEnv.delete('JAVA_TOOL_OPTIONS')
 
   if (allEnv.size > 0) {
     const entries = [...allEnv.entries()]
@@ -214,20 +298,18 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
     result = result.replace('\n{{RUNTIME_ENV_VARS}}', '')
   }
 
-  // 5d. {{VALIDATION_COMMANDS}}
-  const allValidation = ['echo "[validate] Rikune Docker image"', ...validationCmds, 'echo "[validate] ✓ All checks passed"']
+  // 4g. {{VALIDATION_COMMANDS}}
+  const allValidation = ['echo "[validate] Rikune Docker image"', ...validationCmds, 'echo "[validate] All checks passed"']
   result = result.replace('{{VALIDATION_COMMANDS}}', `RUN ${allValidation.join(' && \\\n    ')}`)
 
-  // 5e. {{EXTRA_DIRS}} / {{EXTRA_CHOWN}}
-  const extraDirs = [], extraChown = []
-  for (const [feat, cfg] of Object.entries(FEATURE_DIRS)) {
-    if (features.has(feat)) { extraDirs.push(...cfg.dirs); extraChown.push(...cfg.chown) }
-  }
+  // 4h. {{EXTRA_DIRS}} / {{EXTRA_CHOWN}} - from plugin systemDeps directories
+  const extraDirs = directories.map(d => d.path)
+  const extraChown = directories.filter(d => d.chown).map(d => `chown -R ${d.chown} ${d.path}`)
   result = result.replace('{{EXTRA_DIRS}}', extraDirs.join(' '))
   result = result.replace('{{EXTRA_CHOWN}}', extraChown.length > 0
     ? extraChown.map(c => `    ${c} && \\`).join('\n') + '\n' : '')
 
-  // 5f. {{PLUGIN_WORKER_COPY}} / {{PLUGIN_WORKER_COPY_FROM}}
+  // 4i. {{PLUGIN_WORKER_COPY}} / {{PLUGIN_WORKER_COPY_FROM}}
   if (pluginWorkerIds.length > 0) {
     const copyLines = pluginWorkerIds
       .map(id => `COPY src/plugins/${id}/workers/ ./src/plugins/${id}/workers/`)
@@ -243,16 +325,16 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
     result = result.replace('{{PLUGIN_WORKER_COPY_FROM}}\n', '')
   }
 
-  // 5g. {{PLUGIN_DATA_COPY}}
+  // 4j. {{PLUGIN_DATA_COPY}}
   if (pluginDataEntries.length > 0) {
-    const lines = []
+    const dataLines = []
     for (const { plugin, files } of pluginDataEntries) {
-      lines.push(`RUN mkdir -p ./src/plugins/${plugin}/data`)
+      dataLines.push(`RUN mkdir -p ./src/plugins/${plugin}/data`)
       for (const f of files) {
-        lines.push(`COPY src/plugins/${plugin}/data/${f} ./src/plugins/${plugin}/data/${f}`)
+        dataLines.push(`COPY src/plugins/${plugin}/data/${f} ./src/plugins/${plugin}/data/${f}`)
       }
     }
-    result = result.replace('{{PLUGIN_DATA_COPY}}', lines.join('\n'))
+    result = result.replace('{{PLUGIN_DATA_COPY}}', dataLines.join('\n'))
   } else {
     result = result.replace('{{PLUGIN_DATA_COPY}}\n', '')
   }
@@ -260,21 +342,20 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
   return result.replace(/\n{3,}/g, '\n\n')
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 6. Generate docker-compose.yml
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// 5. Generate docker-compose.yml (all values from plugin systemDeps)
+// -----------------------------------------------------------------------------
 
 function generateDockerCompose(requirements, pluginIds) {
-  const { features, envVars } = requirements
+  const { features, envVars, extraEnv, buildArgs, volumes: pluginVolumes } = requirements
 
-  const buildArgs = []
-  if (features.has('capa'))   buildArgs.push('CAPA_RULES_VERSION: v9.3.1', 'CAPA_VERSION: "9.3.1"', 'DIE_VERSION: "3.10"', 'DIE_RELEASE_CHANNEL: "3.10"')
-  if (features.has('upx'))    buildArgs.push('UPX_VERSION: "5.1.1"')
-  if (features.has('rizin'))  buildArgs.push('RIZIN_VERSION: "0.8.2"')
-  if (features.has('retdec')) buildArgs.push('RETDEC_VERSION: "5.0"')
-  if (features.has('angr'))   buildArgs.push('ANGR_VERSION: "9.2.205"')
-  if (features.has('jadx'))   buildArgs.push('JADX_VERSION: "1.5.1"')
+  // Build args from plugins
+  const buildArgsYaml = buildArgs.size > 0
+    ? '\n' + [...buildArgs.entries()].sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `        ${k}: "${v}"`).join('\n')
+    : ''
 
+  // Environment: base + plugin-declared
   const allEnv = new Map([
     ['NODE_ENV', 'production'], ['PYTHONUNBUFFERED', '1'],
     ['WORKSPACE_ROOT', '/app/workspaces'], ['DB_PATH', '/app/data/database.db'],
@@ -283,37 +364,29 @@ function generateDockerCompose(requirements, pluginIds) {
     ['LOG_LEVEL', 'info'], ['SANDBOX_PYTHON_PATH', '/usr/local/bin/python3'],
   ])
   for (const [k, v] of envVars) allEnv.set(k, v)
-  for (const [feat, vars] of Object.entries(FEATURE_EXTRA_ENV)) {
-    if (features.has(feat)) {
-      for (const [k, v] of Object.entries(vars)) {
-        if (k === 'JAVA_TOOL_OPTIONS' || k === 'JAVA_HOME') continue
-        allEnv.set(k, v)
-      }
-    }
+  for (const [k, v] of extraEnv) {
+    if (k === 'JAVA_TOOL_OPTIONS' || k === 'JAVA_HOME') continue
+    allEnv.set(k, v)
   }
 
   const envLines = [...allEnv.entries()].map(([k, v]) => `      - ${k}=${v}`).join('\n')
-  const buildArgsYaml = buildArgs.length > 0
-    ? '\n' + buildArgs.map(a => `        ${a}`).join('\n') : ''
 
+  // Volumes: base + plugin-declared
   let volumeYaml = `      - ./samples:/samples:ro
       - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/workspaces:/app/workspaces:rw"
       - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/data:/app/data:rw"
       - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/cache:/app/cache:rw"
       - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/logs:/app/logs:rw"
       - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/storage:/app/storage:rw"`
-  if (features.has('ghidra')) volumeYaml += `
-      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-projects:/ghidra-projects:rw"
-      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-logs:/ghidra-logs:rw"`
-  if (features.has('qiling')) volumeYaml += `
-      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/qiling-rootfs:/opt/qiling-rootfs:ro"`
+  for (const vol of pluginVolumes) {
+    volumeYaml += `\n      - "${vol.source}:${vol.target}:${vol.mode || 'rw'}"`
+  }
   volumeYaml += `
       - type: volume
         source: root-config
         target: /root/.rikune`
 
-  let namedVol = `  root-config:\n    driver: local\n  storage:\n    driver: local`
-  if (features.has('ghidra')) namedVol += `\n  ghidra-projects:\n    driver: local\n  ghidra-logs:\n    driver: local`
+  const namedVol = `  root-config:\n    driver: local\n  storage:\n    driver: local`
 
   const featureList = [...features].sort().join(', ') || 'none'
 
@@ -383,9 +456,9 @@ ${namedVol}
 `
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 7. CLI
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// 6. CLI
+// -----------------------------------------------------------------------------
 
 async function main() {
   const args = process.argv.slice(2)
@@ -397,10 +470,11 @@ async function main() {
 
   if (flags.help) {
     console.log(`
-Rikune Docker Generator — builds Dockerfile + docker-compose.yml from plugin systemDeps
+Rikune Docker Generator - builds Dockerfile + docker-compose.yml from plugin systemDeps
 
 Plugins are the single source of truth.  The generator auto-discovers all
-plugins, reads their systemDeps declarations, and derives the Docker image.
+plugins, reads their systemDeps declarations and docker/*.dockerfile fragments,
+then derives the Docker image.  Zero hardcoded feature maps.
 
 Usage:
   node scripts/generate-docker.mjs                         # all plugins
@@ -418,7 +492,7 @@ Options:
     process.exit(0)
   }
 
-  console.log('─── Rikune Docker Generator ───')
+  console.log('--- Rikune Docker Generator ---')
 
   const allPlugins = discoverPluginIds()
   console.log(`  Discovered ${allPlugins.length} plugins`)
@@ -443,10 +517,25 @@ Options:
   const req = collectDockerRequirements(pluginDepMap)
   const featureList = [...req.features].sort()
   console.log(`\n  Features from plugins (${featureList.length}):`)
-  for (const f of featureList) console.log(`    ✓ ${f}`)
+  for (const f of featureList) console.log(`    + ${f}`)
   console.log(`  apt: ${req.aptPackages.join(', ') || '(none)'}`)
-  console.log(`  env: ${req.envVars.size} vars`)
+  console.log(`  env: ${req.envVars.size} + ${req.extraEnv.size} extra vars`)
+  console.log(`  buildArgs: ${req.buildArgs.size} (${[...req.buildArgs.keys()].join(', ') || 'none'})`)
+  console.log(`  directories: ${req.directories.length}`)
+  console.log(`  volumes: ${req.volumes.length}`)
   console.log(`  validation: ${req.validationCmds.length} commands`)
+
+  // Discover Docker fragments
+  const fragments = discoverDockerFragments()
+  const enabledFragments = [...fragments.entries()].filter(([f]) => req.features.has(f))
+  console.log(`\n  Docker fragments (${enabledFragments.length}/${fragments.size}):`)
+  for (const [feature, frag] of enabledFragments) {
+    const parts = []
+    if (frag.args) parts.push('args')
+    if (frag.stage) parts.push('stage')
+    if (frag.runtime) parts.push('runtime')
+    console.log(`    + ${feature} (${frag.plugin}) [${parts.join(', ')}]`)
+  }
 
   if (flags['dry-run']) {
     console.log('\n  [dry-run] No files written.')
@@ -455,7 +544,7 @@ Options:
 
   const templatePath = join(ROOT, 'docker', 'Dockerfile.template')
   if (!existsSync(templatePath)) {
-    console.error(`  ✗ Template not found: ${templatePath}`)
+    console.error(`  x Template not found: ${templatePath}`)
     process.exit(1)
   }
 
@@ -469,17 +558,17 @@ Options:
     console.log(`  Plugin data: ${pluginDataEntries.map(e => `${e.plugin} (${e.files.join(', ')})`).join('; ')}`)
   }
 
-  const dockerfile = processTemplate(readFileSync(templatePath, 'utf-8'), req, pluginWorkerIds, pluginDataEntries)
+  const dockerfile = processTemplate(readFileSync(templatePath, 'utf-8'), req, pluginWorkerIds, pluginDataEntries, fragments)
   const outputDir = flags.output ? join(ROOT, flags.output) : ROOT
   writeFileSync(join(outputDir, 'Dockerfile'), dockerfile, 'utf-8')
-  console.log(`\n  ✓ Dockerfile (${dockerfile.split('\n').length} lines)`)
+  console.log(`\n  OK Dockerfile (${dockerfile.split('\n').length} lines)`)
 
   const compose = generateDockerCompose(req, pluginIds)
   writeFileSync(join(outputDir, 'docker-compose.yml'), compose, 'utf-8')
-  console.log(`  ✓ docker-compose.yml (${compose.split('\n').length} lines)`)
+  console.log(`  OK docker-compose.yml (${compose.split('\n').length} lines)`)
 
-  console.log(`\n  ${pluginIds.length} plugins → ${featureList.length} features`)
-  console.log('─── Done ───\n')
+  console.log(`\n  ${pluginIds.length} plugins -> ${featureList.length} features`)
+  console.log('--- Done ---\n')
 }
 
 main().catch(err => { console.error('Fatal:', err); process.exit(1) })

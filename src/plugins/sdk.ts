@@ -265,6 +265,42 @@ export interface PluginSystemDep {
    * Merged into a single `RUN` validation step at the end of the build.
    */
   dockerValidation?: string[]
+
+  // ── Extended Docker metadata (replaces hardcoded maps in generator) ──
+
+  /**
+   * Additional Docker ENV vars beyond the primary `envVar`/`dockerDefault`.
+   * Merged across all enabled plugins into the runtime ENV block and
+   * docker-compose environment section.
+   *
+   * Example: `{ JAVA_HOME: '/opt/java/openjdk', GHIDRA_LOG_ROOT: '/ghidra-logs' }`
+   */
+  extraEnv?: Record<string, string>
+
+  /**
+   * Docker build ARG names and their default values.
+   * Merged across all plugins into global ARG declarations and
+   * docker-compose build args.
+   *
+   * Example: `{ GHIDRA_VERSION: '12.0.4' }`
+   */
+  buildArgs?: Record<string, string>
+
+  /**
+   * Directories to create and optionally chown in the runtime Docker image.
+   * Merged into the `mkdir` + `chown` block near the end of the Dockerfile.
+   *
+   * Example: `[{ path: '/ghidra-projects', chown: 'appuser:appuser' }]`
+   */
+  directories?: Array<{ path: string; chown?: string }>
+
+  /**
+   * docker-compose volume mounts this dependency requires.
+   * Merged into the volumes section of docker-compose.yml.
+   *
+   * Example: `[{ source: '${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-projects', target: '/ghidra-projects', mode: 'rw' }]`
+   */
+  volumes?: Array<{ source: string; target: string; mode?: 'ro' | 'rw' }>
 }
 
 /**

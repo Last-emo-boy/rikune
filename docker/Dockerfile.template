@@ -2,7 +2,8 @@
 # Rikune - Docker Analysis Stack (Plugin-Driven)
 # =============================================================================
 # Generated from docker/Dockerfile.template by: npm run docker:generate
-# Multi-stage build driven by plugin systemDeps declarations.
+# Multi-stage build driven by plugin systemDeps declarations and
+# per-feature docker/*.dockerfile fragments.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -13,30 +14,7 @@ ARG HTTPS_PROXY=""
 ARG http_proxy=""
 ARG https_proxy=""
 ARG NO_PROXY="localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com"
-# @if ghidra
-ARG GHIDRA_VERSION=12.0.4
-# @endif ghidra
-# @if capa
-ARG CAPA_RULES_VERSION=v9.3.1
-ARG CAPA_VERSION=9.3.1
-ARG DIE_VERSION=3.10
-ARG DIE_RELEASE_CHANNEL=3.10
-# @endif capa
-# @if upx
-ARG UPX_VERSION=5.1.1
-# @endif upx
-# @if rizin
-ARG RIZIN_VERSION=0.8.2
-# @endif rizin
-# @if retdec
-ARG RETDEC_VERSION=5.0
-# @endif retdec
-# @if angr
-ARG ANGR_VERSION=9.2.205
-# @endif angr
-# @if jadx
-ARG JADX_VERSION=1.5.1
-# @endif jadx
+{{FEATURE_ARGS}}
 
 # =============================================================================
 # Stage 1: TypeScript Builder (always)
@@ -113,174 +91,27 @@ RUN pip install --no-cache-dir -r workers/requirements-dynamic.txt
 # @endif dynamic-python
 
 RUN ls -la /app/workers/ && \
-    python3 -c "import sys; sys.path.insert(0, '/app/workers'); import static_worker; print('✓ static_worker.py loaded')" && \
+    python3 -c "import sys; sys.path.insert(0, '/app/workers'); import static_worker; print('static_worker.py loaded')" && \
     python3 -m py_compile /app/workers/static_worker.py && \
-    echo "✓ Python base validated"
+    echo "Python base validated"
 
 # @if dynamic-python
-RUN python3 -c "import yara_x, pandare, frida, psutil; import speakeasy; print('✓ global dynamic imports ready')" && \
+RUN python3 -c "import yara_x, pandare, frida, psutil; import speakeasy; print('global dynamic imports ready')" && \
     python3 -c "import importlib.metadata as m; print('frida-tools', m.version('frida-tools')); print('yara-x', m.version('yara-x'))" && \
-    echo "✓ Dynamic Python extras validated"
+    echo "Dynamic Python extras validated"
 # @endif dynamic-python
 
-# @if qiling
 # =============================================================================
-# Stage 3: Qiling Python (isolated unicorn>=2 runtime)
+# Feature Build Stages (auto-inserted from plugin docker/*.dockerfile fragments)
 # =============================================================================
-FROM python-base AS qiling-python
-
-RUN python3 -m venv /opt/qiling-venv && \
-    /opt/qiling-venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    /opt/qiling-venv/bin/pip install --no-cache-dir -r /app/workers/requirements-qiling.txt && \
-    /opt/qiling-venv/bin/python -c "import qiling; print('✓ qiling', getattr(qiling, '__version__', 'unknown'))"
-# @endif qiling
-
-# @if angr
-# =============================================================================
-# Stage 4: Dynamic Python (isolated angr runtime)
-# =============================================================================
-FROM python-base AS dynamic-python
-
-ARG ANGR_VERSION
-
-RUN python3 -m venv /opt/angr-venv && \
-    /opt/angr-venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    /opt/angr-venv/bin/pip install --no-cache-dir "angr==${ANGR_VERSION}" && \
-    /opt/angr-venv/bin/python -c "import angr; print('✓ angr', angr.__version__)"
-# @endif angr
-
-# @if rizin
-# =============================================================================
-# Stage 5: Core Linux Toolchain (Rizin)
-# =============================================================================
-FROM debian:bookworm-slim AS core-tools
-
-ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
-ARG RIZIN_VERSION
-
-ENV HTTP_PROXY="${HTTP_PROXY}" \
-    HTTPS_PROXY="${HTTPS_PROXY}" \
-    http_proxy="${http_proxy}" \
-    https_proxy="${https_proxy}" \
-    NO_PROXY="${NO_PROXY}"
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    xz-utils \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN set -eux; \
-    arch="$(dpkg --print-architecture)"; \
-    case "${arch}" in \
-      amd64) rizin_asset="rizin-v${RIZIN_VERSION}-static-x86_64.tar.xz" ;; \
-      *) echo "Unsupported architecture for bundled Rizin static release: ${arch}" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://github.com/rizinorg/rizin/releases/download/v${RIZIN_VERSION}/${rizin_asset}" -o /tmp/rizin.tar.xz; \
-    mkdir -p /opt/rizin; \
-    tar -xJf /tmp/rizin.tar.xz -C /opt/rizin; \
-    test -x /opt/rizin/bin/rizin; \
-    /opt/rizin/bin/rizin -v >/dev/null
-# @endif rizin
-
-# @if retdec
-# =============================================================================
-# Stage 6: Heavy Linux Toolchain (RetDec)
-# =============================================================================
-FROM debian:bookworm-slim AS heavy-tools
-
-ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
-ARG RETDEC_VERSION
-
-ENV HTTP_PROXY="${HTTP_PROXY}" \
-    HTTPS_PROXY="${HTTPS_PROXY}" \
-    http_proxy="${http_proxy}" \
-    https_proxy="${https_proxy}" \
-    NO_PROXY="${NO_PROXY}"
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    xz-utils \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN set -eux; \
-    curl -fsSL "https://github.com/avast/retdec/releases/download/v${RETDEC_VERSION}/RetDec-v${RETDEC_VERSION}-Linux-Release.tar.xz" -o /tmp/retdec.tar.xz; \
-    mkdir -p /opt/retdec; \
-    tar -xJf /tmp/retdec.tar.xz -C /opt/retdec; \
-    test -x /opt/retdec/bin/retdec-decompiler; \
-    /opt/retdec/bin/retdec-decompiler --help >/dev/null
-# @endif retdec
-
-# @if ghidra
-# =============================================================================
-# Stage 7: Ghidra
-# =============================================================================
-FROM eclipse-temurin:21-jdk AS ghidra-stage
-
-ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
-ARG GHIDRA_VERSION
-
-ENV HTTP_PROXY="${HTTP_PROXY}" \
-    HTTPS_PROXY="${HTTPS_PROXY}" \
-    http_proxy="${http_proxy}" \
-    https_proxy="${https_proxy}" \
-    NO_PROXY="${NO_PROXY}"
-
-RUN rm -f /etc/apt/sources.list.d/* && cat > /etc/apt/sources.list <<EOF
-deb https://mirrors.aliyun.com/ubuntu noble main restricted universe multiverse
-deb https://mirrors.aliyun.com/ubuntu noble-updates main restricted universe multiverse
-deb https://mirrors.aliyun.com/ubuntu noble-security main restricted universe multiverse
-deb https://mirrors.aliyun.com/ubuntu noble-backports main restricted universe multiverse
-EOF
-
-WORKDIR /opt
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    unzip \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN set -eux; \
-    GHIDRA_URL="https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VERSION}_build/ghidra_${GHIDRA_VERSION}_PUBLIC_20260303.zip"; \
-    echo "Downloading Ghidra ${GHIDRA_VERSION}..."; \
-    echo "URL: $GHIDRA_URL"; \
-    if curl -fsSL --connect-timeout 120 --retry 3 --retry-delay 10 -o ghidra.zip "$GHIDRA_URL"; then \
-        echo "Download successful"; \
-    else \
-        echo "ERROR: Failed to download Ghidra"; \
-        exit 1; \
-    fi && \
-    FILE_SIZE=$(wc -c < ghidra.zip); \
-    if [ "$FILE_SIZE" -lt 1000000 ]; then \
-        echo "ERROR: Ghidra archive too small"; \
-        exit 1; \
-    fi && \
-    unzip -q ghidra.zip && \
-    mv ghidra_* ghidra && \
-    rm ghidra.zip
-
-ENV GHIDRA_INSTALL_DIR=/opt/ghidra
-ENV JAVA_HOME=/opt/java/openjdk
-
-RUN test -f /opt/ghidra/support/analyzeHeadless
-# @endif ghidra
+{{BUILD_STAGES}}
 
 # =============================================================================
-# Stage 8: Runtime
+# Runtime
 # =============================================================================
 FROM python:3.11-slim-bookworm AS runtime
 
 ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
-# @if capa
-ARG CAPA_RULES_VERSION
-ARG CAPA_VERSION
-ARG DIE_VERSION
-ARG DIE_RELEASE_CHANNEL
-# @endif capa
-# @if upx
-ARG UPX_VERSION
-# @endif upx
 
 ENV HTTP_PROXY="${HTTP_PROXY}" \
     HTTPS_PROXY="${HTTPS_PROXY}" \
@@ -308,15 +139,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xz-utils \
 {{RUNTIME_APT_PACKAGES}}    && rm -rf /var/lib/apt/lists/*
 
-# @if ghidra
-ENV JAVA_HOME=/opt/java/openjdk
-ENV JAVA_TOOL_OPTIONS=
-ENV PATH="/opt/java/openjdk/bin:${PATH}"
-# @endif ghidra
-
 WORKDIR /app
 
-# ── Node.js artifacts (always) ──
+# -- Node.js artifacts (always) --
 COPY --from=builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=builder /usr/local/bin/npm /usr/local/bin/npm
 COPY --from=builder /usr/local/bin/npx /usr/local/bin/npx
@@ -334,128 +159,21 @@ COPY data/windows-api-semantics.json ./data/windows-api-semantics.json
 # Dashboard static assets (not handled by tsc)
 COPY src/api/dashboard/ ./dist/api/dashboard/
 
-# ── Python base (always) ──
+# -- Python base (always) --
 COPY --from=python-base /usr/local/bin /usr/local/bin
 COPY --from=python-base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=python-base /app/workers ./workers
 # Plugin-specific workers (auto-generated from src/plugins/*/workers/)
 {{PLUGIN_WORKER_COPY_FROM}}
 
-# @if qiling
-COPY --from=qiling-python /opt/qiling-venv /opt/qiling-venv
-# @endif qiling
-# @if angr
-COPY --from=dynamic-python /opt/angr-venv /opt/angr-venv
-# @endif angr
-# @if rizin
-COPY --from=core-tools /opt/rizin /opt/rizin
-# @endif rizin
-# @if retdec
-COPY --from=heavy-tools /opt/retdec /opt/retdec
-# @endif retdec
-
 RUN python3 -m py_compile ./workers/static_worker.py || echo "Python worker validation skipped"
 
-# @if capa
-# ── capa + DIE ──
-RUN set -eux; \
-    mkdir -p /opt/capa-rules /opt/capa-sigs /opt/downloads; \
-    curl -fsSL "https://github.com/mandiant/capa-rules/archive/refs/tags/${CAPA_RULES_VERSION}.tar.gz" -o /tmp/capa-rules.tar.gz; \
-    tar -xzf /tmp/capa-rules.tar.gz -C /opt/downloads; \
-    extracted_dir="$(find /opt/downloads -mindepth 1 -maxdepth 1 -type d -name 'capa-rules-*' | head -n 1)"; \
-    test -n "${extracted_dir}"; \
-    rm -rf /opt/capa-rules; \
-    mv "${extracted_dir}" /opt/capa-rules; \
-    curl -fsSL "https://github.com/mandiant/capa/archive/refs/tags/v${CAPA_VERSION}.tar.gz" -o /tmp/capa.tar.gz; \
-    tar -xzf /tmp/capa.tar.gz -C /opt/downloads; \
-    capa_dir="$(find /opt/downloads -mindepth 1 -maxdepth 1 -type d -name 'capa-*' | head -n 1)"; \
-    test -n "${capa_dir}"; \
-    cp -R "${capa_dir}/sigs/." /opt/capa-sigs/; \
-    rm -rf /opt/downloads /tmp/capa-rules.tar.gz /tmp/capa.tar.gz; \
-    curl -fsSL "https://github.com/horsicq/DIE-engine/releases/download/${DIE_RELEASE_CHANNEL}/die_${DIE_VERSION}_Debian_12_amd64.deb" -o /tmp/die.deb; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends /tmp/die.deb; \
-    rm -f /tmp/die.deb; \
-    rm -rf /var/lib/apt/lists/*; \
-    printf '%s\n' '#!/bin/sh' 'exec python3 -m capa.main -s /opt/capa-sigs "$@"' > /usr/local/bin/capa; \
-    chmod +x /usr/local/bin/capa; \
-    command -v diec >/dev/null 2>&1; \
-    test -d /opt/capa-rules; \
-    test -d /opt/capa-sigs
-# @endif capa
-
-# @if upx
-# ── UPX ──
-RUN set -eux; \
-    arch="$(dpkg --print-architecture)"; \
-    case "${arch}" in \
-      amd64) upx_asset="upx-${UPX_VERSION}-amd64_linux.tar.xz" ;; \
-      arm64) upx_asset="upx-${UPX_VERSION}-arm64_linux.tar.xz" ;; \
-      *) echo "Unsupported architecture for bundled UPX release: ${arch}" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/${upx_asset}" -o /tmp/upx.tar.xz; \
-    mkdir -p /opt/upx; \
-    tar -xJf /tmp/upx.tar.xz -C /opt/upx --strip-components=1; \
-    ln -sf /opt/upx/upx /usr/local/bin/upx; \
-    /usr/local/bin/upx --version >/dev/null
-# @endif upx
-
-# @if rizin
-# ── Rizin symlinks ──
-RUN ln -sf /opt/rizin/bin/rizin /usr/local/bin/rizin && \
-    ln -sf /opt/rizin/bin/rz-bin /usr/local/bin/rz-bin && \
-    ln -sf /opt/rizin/bin/rz-asm /usr/local/bin/rz-asm && \
-    ln -sf /opt/rizin/bin/rz-diff /usr/local/bin/rz-diff && \
-    ln -sf /opt/rizin/bin/rz-find /usr/local/bin/rz-find && \
-    ln -sf /opt/rizin/bin/rz-hash /usr/local/bin/rz-hash
-# @endif rizin
-
-# @if retdec
-# ── RetDec symlinks ──
-RUN ln -sf /opt/retdec/bin/retdec-decompiler /usr/local/bin/retdec-decompiler && \
-    ln -sf /opt/retdec/bin/retdec-fileinfo /usr/local/bin/retdec-fileinfo
-# @endif retdec
-
-# @if jadx
-# ── JADX ──
-ARG JADX_VERSION
-RUN set -eux; \
-    apt-get update && apt-get install -y --no-install-recommends unzip && \
-    curl -fsSL "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip" -o /tmp/jadx.zip && \
-    mkdir -p /opt/jadx && \
-    unzip -q /tmp/jadx.zip -d /opt/jadx && \
-    chmod +x /opt/jadx/bin/jadx /opt/jadx/bin/jadx-gui && \
-    ln -sf /opt/jadx/bin/jadx /usr/local/bin/jadx && \
-    rm -f /tmp/jadx.zip && \
-    rm -rf /var/lib/apt/lists/*
-# @endif jadx
-
-# @if ghidra
-# ── Ghidra ──
-COPY --from=ghidra-stage /opt/java/openjdk /opt/java/openjdk
-COPY --from=ghidra-stage /opt/ghidra /opt/ghidra
-COPY ghidra_scripts/ ./ghidra_scripts/
-# @endif ghidra
+# -- Feature-specific runtime (auto-inserted from plugin docker/*.dockerfile fragments) --
+{{FEATURE_RUNTIME}}
 
 COPY helpers/ ./helpers/
-# @if frida
-COPY frida_scripts/ ./frida_scripts/
-# Plugin-specific scripts (co-located with android plugin)
-COPY src/plugins/android/scripts/ ./src/plugins/android/scripts/
-# @endif frida
 
-# @if de4dot
-# ── de4dot (.NET deobfuscator) ──
-RUN apt-get update && apt-get install -y --no-install-recommends wget unzip && \
-    wget -q -O /tmp/de4dot.zip https://github.com/de4dot/de4dot/releases/latest/download/de4dot-net45.zip && \
-    unzip -q /tmp/de4dot.zip -d /opt/de4dot && \
-    ln -s /opt/de4dot/de4dot.exe /usr/local/bin/de4dot && \
-    rm /tmp/de4dot.zip && \
-    apt-get purge -y wget unzip && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
-ENV DE4DOT_PATH=/opt/de4dot/de4dot.exe
-# @endif de4dot
-
-# ── Validate installed tools ──
+# -- Validate installed tools --
 {{VALIDATION_COMMANDS}}
 
 RUN useradd -m -u 1000 -s /bin/bash appuser
