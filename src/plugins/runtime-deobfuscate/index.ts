@@ -41,7 +41,6 @@ const runtimeDeobfuscatePlugin: Plugin = {
       dockerDefault: '/opt/de4dot/de4dot',
       description: '.NET deobfuscator (de4dot) for ConfuserEx, .NET Reactor, etc.',
       dockerFeature: 'de4dot',
-      aptPackages: ['libicu72'],
       dockerValidation: ['de4dot --help >/dev/null 2>&1 || true'],
     },
     {
