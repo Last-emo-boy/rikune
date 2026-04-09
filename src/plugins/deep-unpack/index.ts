@@ -7,9 +7,9 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { deepUnpackPipelineToolDefinition, createDeepUnpackPipelineHandler } from '../../tools/docker/deep-unpack-pipeline.js'
-import { peReconstructToolDefinition, createPeReconstructHandler } from '../../tools/docker/deep-unpack-pe-reconstruct.js'
-import { dumpScanToolDefinition, createDumpScanHandler } from '../../tools/docker/deep-unpack-dump-scan.js'
+import { deepUnpackPipelineToolDefinition, createDeepUnpackPipelineHandler } from './tools/deep-unpack-pipeline.js'
+import { peReconstructToolDefinition, createPeReconstructHandler } from './tools/deep-unpack-pe-reconstruct.js'
+import { dumpScanToolDefinition, createDumpScanHandler } from './tools/deep-unpack-dump-scan.js'
 
 const deepUnpackPlugin: Plugin = {
   id: 'deep-unpack',

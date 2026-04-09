@@ -1,5 +1,5 @@
 /**
- * deobf.dotnet — .NET deobfuscation via de4dot.
+ * deobf.dotnet �?.NET deobfuscation via de4dot.
  *
  * Runs de4dot to deobfuscate .NET assemblies: string decryption,
  * control flow deobfuscation, delegate restoration.
@@ -7,16 +7,17 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../types.js'
-import type { WorkspaceManager } from '../../workspace-manager.js'
-import type { DatabaseManager } from '../../database.js'
+import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
+import type { WorkspaceManager } from '../../../workspace-manager.js'
+import type { DatabaseManager } from '../../../database.js'
+import { resolvePackagePath } from '../../../runtime-paths.js'
 import {
   resolveSampleFile,
   runPythonJson,
   persistBackendArtifact,
   buildMetrics,
   type SharedBackendDependencies,
-} from './docker-shared.js'
+} from '../../../tools/docker/docker-shared.js'
 
 const TOOL_NAME = 'deobf.dotnet'
 
@@ -57,13 +58,13 @@ export function createDeobfDotnetHandler(
         execSync('de4dot --help', { stdio: 'ignore', timeout: 5000 })
         de4dotAvailable = true
       } catch {
-        // de4dot not in PATH — acceptable, worker will report the error
+        // de4dot not in PATH �?acceptable, worker will report the error
       }
 
       const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
       const workerScript = `
 import sys, json, importlib.util
-spec = importlib.util.spec_from_file_location("worker", "${process.cwd().replace(/\\/g, '/')}/workers/deobfuscate_worker.py")
+spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('workers', 'deobfuscate_worker.py').replace(/\\/g, '/')}")
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 mod.main()

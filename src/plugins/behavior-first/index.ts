@@ -8,9 +8,9 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { behaviorCaptureToolDefinition, createBehaviorCaptureHandler } from '../../tools/docker/behavior-capture.js'
-import { behaviorIocToolDefinition, createBehaviorIocHandler } from '../../tools/docker/behavior-ioc.js'
-import { behaviorNetworkToolDefinition, createBehaviorNetworkHandler } from '../../tools/docker/behavior-network.js'
+import { behaviorCaptureToolDefinition, createBehaviorCaptureHandler } from './tools/behavior-capture.js'
+import { behaviorIocToolDefinition, createBehaviorIocHandler } from './tools/behavior-ioc.js'
+import { behaviorNetworkToolDefinition, createBehaviorNetworkHandler } from './tools/behavior-network.js'
 
 const behaviorFirstPlugin: Plugin = {
   id: 'behavior-first',

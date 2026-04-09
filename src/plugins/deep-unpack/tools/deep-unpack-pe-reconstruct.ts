@@ -1,21 +1,22 @@
 /**
- * deep.unpack.pe_reconstruct — Rebuild PE from memory dump.
+ * deep.unpack.pe_reconstruct �?Rebuild PE from memory dump.
  *
  * Fixes section alignment, rebuilds headers, reconstructs IAT from API trace,
  * recalculates checksum. Use after emulation-based unpacking to produce a valid PE.
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../types.js'
-import type { WorkspaceManager } from '../../workspace-manager.js'
-import type { DatabaseManager } from '../../database.js'
+import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
+import type { WorkspaceManager } from '../../../workspace-manager.js'
+import type { DatabaseManager } from '../../../database.js'
+import { resolvePackagePath } from '../../../runtime-paths.js'
 import {
   resolveSampleFile,
   runPythonJson,
   persistBackendArtifact,
   buildMetrics,
   type SharedBackendDependencies,
-} from './docker-shared.js'
+} from '../../../tools/docker/docker-shared.js'
 
 const TOOL_NAME = 'deep.unpack.pe_reconstruct'
 
@@ -73,7 +74,7 @@ export function createPeReconstructHandler(
 
       const workerScript = `
 import sys, json, importlib.util
-spec = importlib.util.spec_from_file_location("worker", "${process.cwd().replace(/\\/g, '/')}/workers/deep_unpack_worker.py")
+spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('workers', 'deep_unpack_worker.py').replace(/\\/g, '/')}")
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 mod.main()

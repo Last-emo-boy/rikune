@@ -7,10 +7,10 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { deobfStringsToolDefinition, createDeobfStringsHandler } from '../../tools/docker/deobf-strings.js'
-import { deobfApiResolveToolDefinition, createDeobfApiResolveHandler } from '../../tools/docker/deobf-api-resolve.js'
-import { deobfCfgTraceToolDefinition, createDeobfCfgTraceHandler } from '../../tools/docker/deobf-cfg-trace.js'
-import { deobfDotnetToolDefinition, createDeobfDotnetHandler } from '../../tools/docker/deobf-dotnet.js'
+import { deobfStringsToolDefinition, createDeobfStringsHandler } from './tools/deobf-strings.js'
+import { deobfApiResolveToolDefinition, createDeobfApiResolveHandler } from './tools/deobf-api-resolve.js'
+import { deobfCfgTraceToolDefinition, createDeobfCfgTraceHandler } from './tools/deobf-cfg-trace.js'
+import { deobfDotnetToolDefinition, createDeobfDotnetHandler } from './tools/deobf-dotnet.js'
 
 const runtimeDeobfuscatePlugin: Plugin = {
   id: 'runtime-deobfuscate',

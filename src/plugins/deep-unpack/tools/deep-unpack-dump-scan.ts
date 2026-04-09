@@ -1,21 +1,22 @@
 /**
- * deep.unpack.dump_scan — Scan memory dumps for embedded PE images.
+ * deep.unpack.dump_scan �?Scan memory dumps for embedded PE images.
  *
  * Scans arbitrary binary data for MZ/PE signatures, validates headers,
  * extracts and saves each PE image found, computes entropy.
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../types.js'
-import type { WorkspaceManager } from '../../workspace-manager.js'
-import type { DatabaseManager } from '../../database.js'
+import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
+import type { WorkspaceManager } from '../../../workspace-manager.js'
+import type { DatabaseManager } from '../../../database.js'
+import { resolvePackagePath } from '../../../runtime-paths.js'
 import {
   resolveSampleFile,
   runPythonJson,
   persistBackendArtifact,
   buildMetrics,
   type SharedBackendDependencies,
-} from './docker-shared.js'
+} from '../../../tools/docker/docker-shared.js'
 
 const TOOL_NAME = 'deep.unpack.dump_scan'
 
@@ -63,7 +64,7 @@ export function createDumpScanHandler(
 
       const workerScript = `
 import sys, json, importlib.util
-spec = importlib.util.spec_from_file_location("worker", "${process.cwd().replace(/\\/g, '/')}/workers/deep_unpack_worker.py")
+spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('workers', 'deep_unpack_worker.py').replace(/\\/g, '/')}")
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 mod.main()

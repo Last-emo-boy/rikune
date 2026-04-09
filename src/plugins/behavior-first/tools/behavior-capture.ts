@@ -1,15 +1,17 @@
 /**
- * deobf.strings — Runtime string decryption via Frida hooks.
+ * behavior.capture �?Full behavioral capture for opaque binaries.
  *
- * Hooks CryptDecrypt, XOR loops, and custom decryption routines,
- * captures decrypted strings at runtime as the binary executes.
- * Docker-priority: requires Frida + Wine for Windows binaries on Linux.
+ * Executes binary in Docker sandbox with comprehensive Frida instrumentation:
+ * file I/O, registry, network, process creation, API calls.
+ * Generates behavioral profile with risk classification.
+ * Use when static analysis and unpacking both fail.
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../types.js'
-import type { WorkspaceManager } from '../../workspace-manager.js'
-import type { DatabaseManager } from '../../database.js'
+import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
+import type { WorkspaceManager } from '../../../workspace-manager.js'
+import type { DatabaseManager } from '../../../database.js'
+import { resolvePackagePath } from '../../../runtime-paths.js'
 import {
   resolveSampleFile,
   runPythonJson,
@@ -18,38 +20,37 @@ import {
   buildDynamicSetupRequired,
   resolveAnalysisBackends,
   type SharedBackendDependencies,
-} from './docker-shared.js'
+} from '../../../tools/docker/docker-shared.js'
 
-const TOOL_NAME = 'deobf.strings'
+const TOOL_NAME = 'behavior.capture'
 
-export const deobfStringsInputSchema = z.object({
+export const behaviorCaptureInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
   timeout: z.number().int().min(5).max(120).default(60)
     .describe('Execution timeout in seconds'),
-  frida_script: z.string().optional()
-    .describe('Optional custom Frida script path for string decryption hooks'),
   persist_artifact: z.boolean().default(true),
   session_tag: z.string().optional(),
 })
 
-export const deobfStringsToolDefinition: ToolDefinition = {
+export const behaviorCaptureToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Runtime string decryption: hooks CryptDecrypt, XOR loops, VirtualAlloc, and custom ' +
-    'decryption routines via Frida. Captures decrypted strings as the binary executes. ' +
-    'Use when static FLOSS/string extraction returns only encrypted/obfuscated strings. ' +
-    'Requires Frida + Wine (Docker recommended).',
-  inputSchema: deobfStringsInputSchema,
+    'Full behavioral capture: execute binary in Docker sandbox with comprehensive Frida instrumentation. ' +
+    'Monitors file I/O, registry, network (DNS/HTTP/TCP), process creation, code injection, ' +
+    'and API calls. Generates behavioral profile with risk classification and tags ' +
+    '(persistence, process_injection, anti_debug, etc.). ' +
+    'Use when static analysis is impossible due to heavy obfuscation/packing.',
+  inputSchema: behaviorCaptureInputSchema,
 }
 
-export function createDeobfStringsHandler(
+export function createBehaviorCaptureHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   dependencies?: SharedBackendDependencies,
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
-    const input = deobfStringsInputSchema.parse(args)
+    const input = behaviorCaptureInputSchema.parse(args)
 
     try {
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
@@ -63,27 +64,20 @@ export function createDeobfStringsHandler(
       }
 
       const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
-
       const workerScript = `
 import sys, json, importlib.util
-spec = importlib.util.spec_from_file_location("worker", "${process.cwd().replace(/\\/g, '/')}/workers/deobfuscate_worker.py")
+spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('workers', 'behavior_worker.py').replace(/\\/g, '/')}")
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 mod.main()
 `.trim()
 
       const runPython = dependencies?.runPythonJson || runPythonJson
-      const result = await runPython(
-        pythonPath,
-        workerScript,
-        {
-          command: 'strings_runtime',
-          sample_path: samplePath,
-          timeout: input.timeout,
-          frida_script: input.frida_script,
-        },
-        (input.timeout + 10) * 1000,
-      )
+      const result = await runPython(pythonPath, workerScript, {
+        command: 'capture',
+        sample_path: samplePath,
+        timeout: input.timeout,
+      }, (input.timeout + 15) * 1000)
 
       const workerData = result.parsed
       const artifacts: ArtifactRef[] = []
@@ -92,14 +86,9 @@ mod.main()
         try {
           const artifact = await persistBackendArtifact(
             workspaceManager, database, input.sample_id,
-            'deobfuscate', 'runtime_strings',
+            'behavior', 'capture',
             JSON.stringify(workerData.data, null, 2),
-            {
-              extension: 'json',
-              mime: 'application/json',
-              sessionTag: input.session_tag,
-              metadata: { unique_strings: workerData.data.unique_strings },
-            },
+            { extension: 'json', mime: 'application/json', sessionTag: input.session_tag },
           )
           artifacts.push(artifact)
         } catch { /* best effort */ }
@@ -109,18 +98,14 @@ mod.main()
         ok: workerData.ok,
         data: {
           ...workerData.data,
-          recommended_next_tools: ['deobf.api_resolve', 'deobf.cfg_trace', 'deep.unpack.pipeline'],
+          recommended_next_tools: ['behavior.ioc', 'behavior.network', 'malware.classify', 'threat.map'],
         },
         errors: workerData.errors?.length ? workerData.errors : undefined,
         artifacts: artifacts.length > 0 ? artifacts : undefined,
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return {
-        ok: false,
-        errors: [(error as Error).message],
-        metrics: buildMetrics(startTime, TOOL_NAME),
-      }
+      return { ok: false, errors: [(error as Error).message], metrics: buildMetrics(startTime, TOOL_NAME) }
     }
   }
 }

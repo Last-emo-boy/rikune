@@ -1,16 +1,16 @@
 /**
- * behavior.capture — Full behavioral capture for opaque binaries.
+ * deobf.cfg_trace �?CFG recovery from execution trace.
  *
- * Executes binary in Docker sandbox with comprehensive Frida instrumentation:
- * file I/O, registry, network, process creation, API calls.
- * Generates behavioral profile with risk classification.
- * Use when static analysis and unpacking both fail.
+ * Uses Frida Stalker to trace all executed basic blocks,
+ * reconstructing the actual control flow graph from dynamic execution.
+ * Reveals the real CFG hidden behind control-flow flattening.
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../types.js'
-import type { WorkspaceManager } from '../../workspace-manager.js'
-import type { DatabaseManager } from '../../database.js'
+import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
+import type { WorkspaceManager } from '../../../workspace-manager.js'
+import type { DatabaseManager } from '../../../database.js'
+import { resolvePackagePath } from '../../../runtime-paths.js'
 import {
   resolveSampleFile,
   runPythonJson,
@@ -19,37 +19,37 @@ import {
   buildDynamicSetupRequired,
   resolveAnalysisBackends,
   type SharedBackendDependencies,
-} from './docker-shared.js'
+} from '../../../tools/docker/docker-shared.js'
 
-const TOOL_NAME = 'behavior.capture'
+const TOOL_NAME = 'deobf.cfg_trace'
 
-export const behaviorCaptureInputSchema = z.object({
+export const deobfCfgTraceInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  timeout: z.number().int().min(5).max(120).default(60)
-    .describe('Execution timeout in seconds'),
+  timeout: z.number().int().min(5).max(120).default(60),
+  max_blocks: z.number().int().min(100).max(100000).default(10000)
+    .describe('Maximum basic blocks to return'),
   persist_artifact: z.boolean().default(true),
   session_tag: z.string().optional(),
 })
 
-export const behaviorCaptureToolDefinition: ToolDefinition = {
+export const deobfCfgTraceToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Full behavioral capture: execute binary in Docker sandbox with comprehensive Frida instrumentation. ' +
-    'Monitors file I/O, registry, network (DNS/HTTP/TCP), process creation, code injection, ' +
-    'and API calls. Generates behavioral profile with risk classification and tags ' +
-    '(persistence, process_injection, anti_debug, etc.). ' +
-    'Use when static analysis is impossible due to heavy obfuscation/packing.',
-  inputSchema: behaviorCaptureInputSchema,
+    'CFG recovery from execution trace: uses Frida Stalker to instrument all branches, ' +
+    'records every executed basic block, and reconstructs the actual control flow graph. ' +
+    'Defeats control-flow flattening, opaque predicates, and bogus branches by showing ' +
+    'only paths that were actually taken during execution.',
+  inputSchema: deobfCfgTraceInputSchema,
 }
 
-export function createBehaviorCaptureHandler(
+export function createDeobfCfgTraceHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   dependencies?: SharedBackendDependencies,
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
-    const input = behaviorCaptureInputSchema.parse(args)
+    const input = deobfCfgTraceInputSchema.parse(args)
 
     try {
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
@@ -65,7 +65,7 @@ export function createBehaviorCaptureHandler(
       const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
       const workerScript = `
 import sys, json, importlib.util
-spec = importlib.util.spec_from_file_location("worker", "${process.cwd().replace(/\\/g, '/')}/workers/behavior_worker.py")
+spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('workers', 'deobfuscate_worker.py').replace(/\\/g, '/')}")
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 mod.main()
@@ -73,10 +73,11 @@ mod.main()
 
       const runPython = dependencies?.runPythonJson || runPythonJson
       const result = await runPython(pythonPath, workerScript, {
-        command: 'capture',
+        command: 'cfg_trace',
         sample_path: samplePath,
         timeout: input.timeout,
-      }, (input.timeout + 15) * 1000)
+        max_blocks: input.max_blocks,
+      }, (input.timeout + 10) * 1000)
 
       const workerData = result.parsed
       const artifacts: ArtifactRef[] = []
@@ -85,7 +86,7 @@ mod.main()
         try {
           const artifact = await persistBackendArtifact(
             workspaceManager, database, input.sample_id,
-            'behavior', 'capture',
+            'deobfuscate', 'cfg_trace',
             JSON.stringify(workerData.data, null, 2),
             { extension: 'json', mime: 'application/json', sessionTag: input.session_tag },
           )
@@ -97,7 +98,7 @@ mod.main()
         ok: workerData.ok,
         data: {
           ...workerData.data,
-          recommended_next_tools: ['behavior.ioc', 'behavior.network', 'malware.classify', 'threat.map'],
+          recommended_next_tools: ['graphviz.render', 'deobf.strings', 'deobf.api_resolve'],
         },
         errors: workerData.errors?.length ? workerData.errors : undefined,
         artifacts: artifacts.length > 0 ? artifacts : undefined,

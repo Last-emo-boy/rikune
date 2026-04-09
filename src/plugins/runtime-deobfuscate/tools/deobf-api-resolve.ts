@@ -1,5 +1,5 @@
 /**
- * deobf.api_resolve — Capture dynamically resolved APIs via Frida hooks.
+ * deobf.api_resolve �?Capture dynamically resolved APIs via Frida hooks.
  *
  * Hooks GetProcAddress, LdrGetProcedureAddress, LoadLibrary* to capture
  * all dynamically resolved API names and addresses. Builds an IAT map
@@ -7,9 +7,10 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../types.js'
-import type { WorkspaceManager } from '../../workspace-manager.js'
-import type { DatabaseManager } from '../../database.js'
+import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
+import type { WorkspaceManager } from '../../../workspace-manager.js'
+import type { DatabaseManager } from '../../../database.js'
+import { resolvePackagePath } from '../../../runtime-paths.js'
 import {
   resolveSampleFile,
   runPythonJson,
@@ -18,7 +19,7 @@ import {
   buildDynamicSetupRequired,
   resolveAnalysisBackends,
   type SharedBackendDependencies,
-} from './docker-shared.js'
+} from '../../../tools/docker/docker-shared.js'
 
 const TOOL_NAME = 'deobf.api_resolve'
 
@@ -62,7 +63,7 @@ export function createDeobfApiResolveHandler(
       const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
       const workerScript = `
 import sys, json, importlib.util
-spec = importlib.util.spec_from_file_location("worker", "${process.cwd().replace(/\\/g, '/')}/workers/deobfuscate_worker.py")
+spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('workers', 'deobfuscate_worker.py').replace(/\\/g, '/')}")
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 mod.main()

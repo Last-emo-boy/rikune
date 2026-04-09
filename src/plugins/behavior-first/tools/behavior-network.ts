@@ -1,50 +1,50 @@
 /**
- * behavior.ioc — Extract IOCs from behavioral capture data.
+ * behavior.network �?Deep network behavior analysis.
  *
- * Extracts network indicators (IPs, domains, URLs), file indicators (dropped/deleted files),
- * registry modifications, and process creation from behavioral capture results.
+ * Analyzes network operations from behavioral capture:
+ * connection patterns, DNS queries, HTTP requests, C2 detection heuristics.
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../types.js'
-import type { WorkspaceManager } from '../../workspace-manager.js'
-import type { DatabaseManager } from '../../database.js'
+import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
+import type { WorkspaceManager } from '../../../workspace-manager.js'
+import type { DatabaseManager } from '../../../database.js'
+import { resolvePackagePath } from '../../../runtime-paths.js'
 import {
   runPythonJson,
   persistBackendArtifact,
   buildMetrics,
   ensureSampleExists,
   type SharedBackendDependencies,
-} from './docker-shared.js'
+} from '../../../tools/docker/docker-shared.js'
 
-const TOOL_NAME = 'behavior.ioc'
+const TOOL_NAME = 'behavior.network'
 
-export const behaviorIocInputSchema = z.object({
+export const behaviorNetworkInputSchema = z.object({
   sample_id: z.string().describe('Sample ID for artifact association'),
-  behavior_data: z.record(z.any()).describe('Behavioral capture data from behavior.capture tool output'),
+  behavior_data: z.record(z.any()).describe('Behavioral capture data from behavior.capture'),
   persist_artifact: z.boolean().default(true),
   session_tag: z.string().optional(),
 })
 
-export const behaviorIocToolDefinition: ToolDefinition = {
+export const behaviorNetworkToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Extract IOCs (Indicators of Compromise) from behavioral capture data. ' +
-    'Parses file operations, registry modifications, network traffic, and process ' +
-    'creation events. Produces a structured IOC report with network indicators ' +
-    '(IPs, domains, URLs), file indicators (dropped/deleted files), registry keys, ' +
-    'and spawned processes. Feed behavior.capture output as behavior_data.',
-  inputSchema: behaviorIocInputSchema,
+    'Deep network behavior analysis from behavioral capture data. ' +
+    'Analyzes connection patterns, DNS resolution, HTTP requests, ' +
+    'and applies C2 detection heuristics (single-IP beaconing, suspicious ports). ' +
+    'Feed behavior.capture output as behavior_data.',
+  inputSchema: behaviorNetworkInputSchema,
 }
 
-export function createBehaviorIocHandler(
+export function createBehaviorNetworkHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   dependencies?: SharedBackendDependencies,
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
-    const input = behaviorIocInputSchema.parse(args)
+    const input = behaviorNetworkInputSchema.parse(args)
 
     try {
       ensureSampleExists(database, input.sample_id)
@@ -52,7 +52,7 @@ export function createBehaviorIocHandler(
 
       const workerScript = `
 import sys, json, importlib.util
-spec = importlib.util.spec_from_file_location("worker", "${process.cwd().replace(/\\/g, '/')}/workers/behavior_worker.py")
+spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('workers', 'behavior_worker.py').replace(/\\/g, '/')}")
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 mod.main()
@@ -60,7 +60,7 @@ mod.main()
 
       const runPython = dependencies?.runPythonJson || runPythonJson
       const result = await runPython(pythonPath, workerScript, {
-        command: 'ioc_extract',
+        command: 'network_analyze',
         behavior_data: input.behavior_data,
       }, 30_000)
 
@@ -71,7 +71,7 @@ mod.main()
         try {
           const artifact = await persistBackendArtifact(
             workspaceManager, database, input.sample_id,
-            'behavior', 'iocs',
+            'behavior', 'network_analysis',
             JSON.stringify(workerData.data, null, 2),
             { extension: 'json', mime: 'application/json', sessionTag: input.session_tag },
           )
@@ -83,7 +83,7 @@ mod.main()
         ok: workerData.ok,
         data: {
           ...workerData.data,
-          recommended_next_tools: ['threat.map', 'ioc.export', 'sigma.generate'],
+          recommended_next_tools: ['behavior.ioc', 'malware.c2_extract', 'threat.map'],
         },
         errors: workerData.errors?.length ? workerData.errors : undefined,
         artifacts: artifacts.length > 0 ? artifacts : undefined,

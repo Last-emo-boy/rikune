@@ -1,15 +1,16 @@
 /**
- * deep.unpack.pipeline — Multi-strategy deep unpacking pipeline.
+ * deep.unpack.pipeline �?Multi-strategy deep unpacking pipeline.
  *
- * Runs packed binaries through multiple unpacking strategies (UPX → Speakeasy → Qiling → memory carve),
+ * Runs packed binaries through multiple unpacking strategies (UPX �?Speakeasy �?Qiling �?memory carve),
  * supports unlimited multi-layer unpacking, and produces reconstructed PE binaries.
  * Docker-priority: best results in Docker container with all backends available.
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../types.js'
-import type { WorkspaceManager } from '../../workspace-manager.js'
-import type { DatabaseManager } from '../../database.js'
+import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
+import type { WorkspaceManager } from '../../../workspace-manager.js'
+import type { DatabaseManager } from '../../../database.js'
+import { resolvePackagePath } from '../../../runtime-paths.js'
 import {
   resolveSampleFile,
   runPythonJson,
@@ -18,14 +19,14 @@ import {
   buildDynamicSetupRequired,
   resolveAnalysisBackends,
   type SharedBackendDependencies,
-} from './docker-shared.js'
+} from '../../../tools/docker/docker-shared.js'
 
 const TOOL_NAME = 'deep.unpack.pipeline'
 
 export const deepUnpackPipelineInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
   max_layers: z.number().int().min(1).max(10).default(5)
-    .describe('Maximum unpack iterations — supports up to 10 layers for deeply nested packers'),
+    .describe('Maximum unpack iterations �?supports up to 10 layers for deeply nested packers'),
   strategies: z.array(z.enum(['upx', 'speakeasy', 'qiling', 'memory_carve']))
     .default(['upx', 'speakeasy', 'qiling', 'memory_carve'])
     .describe('Ordered list of unpacking strategies to try per layer'),
@@ -58,7 +59,7 @@ export const deepUnpackPipelineToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Deep unpacking pipeline for heavily packed/obfuscated binaries. ' +
-    'Tries multiple strategies in order (UPX → Speakeasy emulation → Qiling full emulation → memory carve), ' +
+    'Tries multiple strategies in order (UPX �?Speakeasy emulation �?Qiling full emulation �?memory carve), ' +
     'supports up to 10 unpacking layers, auto-detects when unpacking is complete via entropy analysis. ' +
     'Best results in Docker environment with all backends available. ' +
     'Use when standard unpack.auto fails on custom/layered packers.',
@@ -95,7 +96,7 @@ export function createDeepUnpackPipelineHandler(
 
       const workerScript = `
 import sys, json, importlib.util
-spec = importlib.util.spec_from_file_location("worker", "${process.cwd().replace(/\\/g, '/')}/workers/deep_unpack_worker.py")
+spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('workers', 'deep_unpack_worker.py').replace(/\\/g, '/')}")
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 mod.main()
