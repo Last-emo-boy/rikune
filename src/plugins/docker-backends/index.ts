@@ -6,15 +6,15 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { angrAnalyzeToolDefinition, createAngrAnalyzeHandler } from '../../tools/docker/angr-analyze.js'
-import { graphvizRenderToolDefinition, createGraphvizRenderHandler } from '../../tools/docker/graphviz-render.js'
-import { pandaInspectToolDefinition, createPandaInspectHandler } from '../../tools/docker/panda-inspect.js'
-import { qilingInspectToolDefinition, createQilingInspectHandler } from '../../tools/docker/qiling-inspect.js'
-import { retdecDecompileToolDefinition, createRetDecDecompileHandler } from '../../tools/docker/retdec-decompile.js'
-import { rizinAnalyzeToolDefinition, createRizinAnalyzeHandler } from '../../tools/docker/rizin-analyze.js'
-import { upxInspectToolDefinition, createUPXInspectHandler } from '../../tools/docker/upx-inspect.js'
-import { wineRunToolDefinition, createWineRunHandler } from '../../tools/docker/wine-run.js'
-import { yaraXScanToolDefinition, createYaraXScanHandler } from '../../tools/docker/yara-x-scan.js'
+import { angrAnalyzeToolDefinition, createAngrAnalyzeHandler } from './tools/angr-analyze.js'
+import { graphvizRenderToolDefinition, createGraphvizRenderHandler } from './tools/graphviz-render.js'
+import { pandaInspectToolDefinition, createPandaInspectHandler } from './tools/panda-inspect.js'
+import { qilingInspectToolDefinition, createQilingInspectHandler } from './tools/qiling-inspect.js'
+import { retdecDecompileToolDefinition, createRetDecDecompileHandler } from './tools/retdec-decompile.js'
+import { rizinAnalyzeToolDefinition, createRizinAnalyzeHandler } from './tools/rizin-analyze.js'
+import { upxInspectToolDefinition, createUPXInspectHandler } from './tools/upx-inspect.js'
+import { wineRunToolDefinition, createWineRunHandler } from './tools/wine-run.js'
+import { yaraXScanToolDefinition, createYaraXScanHandler } from './tools/yara-x-scan.js'
 
 const dockerBackendsPlugin: Plugin = {
   id: 'docker-backends',

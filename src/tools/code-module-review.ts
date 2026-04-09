@@ -11,8 +11,8 @@ import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
 import type { MCPServer } from '../server.js'
-import { createCodeModuleReviewPrepareHandler } from './code-module-review-prepare.js'
-import { createCodeModuleReviewApplyHandler } from './code-module-review-apply.js'
+import { createCodeModuleReviewPrepareHandler } from '../plugins/code-analysis/tools/code-module-review-prepare.js'
+import { createCodeModuleReviewApplyHandler } from '../plugins/code-analysis/tools/code-module-review-apply.js'
 
 const TOOL_NAME = 'code.module.review'
 

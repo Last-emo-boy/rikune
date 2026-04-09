@@ -41,7 +41,7 @@ function invokeWorker(
   return new Promise((resolve, reject) => {
     const workerPath = path.resolve(
       import.meta.dirname ?? '.',
-      '../../workers/constraint_solver_worker.py'
+      '../../src/plugins/vm-analysis/workers/constraint_solver_worker.py'
     )
 
     const proc = spawn('python', [workerPath], {

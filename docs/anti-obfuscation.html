@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anti-Obfuscation — Rikune</title>
+<meta name="description" content="Deep unpacking, runtime deobfuscation, and behavioral analysis plugins for heavily obfuscated binaries.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow bg-glow--1"></div>
+<div class="bg-glow bg-glow--2"></div>
+<canvas id="particles"></canvas>
+
+<!-- Navigation -->
+<nav class="nav" id="nav">
+  <div class="nav__inner">
+    <a href="index.html" class="nav__logo"><span class="nav__logo-icon">R</span> Rikune</a>
+    <ul class="nav__links" id="navLinks">
+      <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特性</a></li>
+      <li><a href="api-reference.html">API</a></li>
+      <li><a href="usage.html" data-lang-en>Usage</a><a href="usage.html" data-lang-zh>使用指南</a></li>
+      <li><a href="local-setup.html"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
+      <li><a href="docker.html">Docker</a></li>
+      <li><a href="examples.html" data-lang-en>Examples</a><a href="examples.html" data-lang-zh>示例</a></li>
+      <li><a href="plugins.html" data-lang-en>Plugins</a><a href="plugins.html" data-lang-zh>插件</a></li>
+      <li><a href="anti-obfuscation.html" class="active" data-lang-en>Anti-Obf</a><a href="anti-obfuscation.html" class="active" data-lang-zh>反混淆</a></li>
+      <li><a href="faq.html">FAQ</a></li>
+    </ul>
+    <div class="nav__right">
+      <button class="lang-toggle" id="lang-toggle">中文</button>
+      <a href="https://github.com/Last-emo-boy/rikune" class="nav__cta" target="_blank" rel="noopener">GitHub →</a>
+    </div>
+    <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+
+<!-- Hero -->
+<div class="page-hero">
+  <div class="container">
+    <div class="breadcrumb"><a href="index.html">Rikune</a> / <span data-lang-en>Anti-Obfuscation</span><span data-lang-zh>反混淆</span></div>
+    <h1><span data-lang-en>Anti-Obfuscation Plugins</span><span data-lang-zh>反混淆插件</span></h1>
+    <p>
+      <span data-lang-en>Dynamic-first analysis for heavily packed &amp; obfuscated binaries where static analysis fails. Docker-priority, SDK-based plugins.</span>
+      <span data-lang-zh>针对高度混淆加壳二进制文件的动态优先分析方案。静态分析失败时的终极手段。Docker优先，基于SDK插件。</span>
+    </p>
+  </div>
+</div>
+
+<main class="main container">
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- Problem Statement -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="doc-section">
+  <h2><span data-lang-en>The Problem</span><span data-lang-zh>问题</span></h2>
+  <div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+    <div class="card">
+      <h3>🔒 <span data-lang-en>Heavy Packing</span><span data-lang-zh>重度加壳</span></h3>
+      <p><span data-lang-en>Multi-layer packers (Themida, VMProtect, custom) encrypt code sections, making disassembly impossible.</span>
+         <span data-lang-zh>多层加壳器（Themida、VMProtect、自定义）加密代码段，使反汇编无法进行。</span></p>
+    </div>
+    <div class="card">
+      <h3>🌀 <span data-lang-en>Code Obfuscation</span><span data-lang-zh>代码混淆</span></h3>
+      <p><span data-lang-en>Control-flow flattening, opaque predicates, MBA transforms, dead code insertion destroy static CFG.</span>
+         <span data-lang-zh>控制流平坦化、不透明谓词、MBA变换、死代码插入破坏静态CFG。</span></p>
+    </div>
+    <div class="card">
+      <h3>🔑 <span data-lang-en>String Encryption</span><span data-lang-zh>字符串加密</span></h3>
+      <p><span data-lang-en>All meaningful strings encrypted, dynamically decrypted at runtime. FLOSS/static extraction finds nothing.</span>
+         <span data-lang-zh>所有有意义的字符串被加密，运行时动态解密。FLOSS/静态提取无法获取。</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- Architecture Overview -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="doc-section">
+  <h2><span data-lang-en>Architecture</span><span data-lang-zh>架构</span></h2>
+  <p><span data-lang-en>Three new plugins provide a <strong>dynamic-first analysis pipeline</strong> — when static analysis fails, fall back to runtime observation:</span>
+     <span data-lang-zh>三个新插件提供<strong>动态优先分析流水线</strong> — 当静态分析失败时，回退到运行时观察：</span></p>
+
+  <div class="code-block">
+    <pre><code>┌─────────────────┐     ┌──────────────────────┐     ┌────────────────────┐
+│  deep-unpack    │     │ runtime-deobfuscate  │     │  behavior-first    │
+│                 │     │                      │     │                    │
+│ deep.unpack     │     │ deobf.strings        │     │ behavior.capture   │
+│   .pipeline     │────▶│ deobf.api_resolve    │────▶│ behavior.ioc       │
+│ deep.unpack     │     │ deobf.cfg_trace      │     │ behavior.network   │
+│   .pe_reconstruct│    │ deobf.dotnet         │     │                    │
+│ deep.unpack     │     │                      │     │                    │
+│   .dump_scan    │     │                      │     │                    │
+└─────────────────┘     └──────────────────────┘     └────────────────────┘
+       ▲                         ▲                            ▲
+       │                         │                            │
+  ┌────┴────┐              ┌─────┴─────┐               ┌─────┴──────┐
+  │ Docker  │              │  Docker   │               │  Docker    │
+  │ UPX     │              │  Frida    │               │  Frida     │
+  │ Speakeasy│             │  Wine     │               │  Wine      │
+  │ Qiling  │              │  de4dot   │               │            │
+  │ Wine    │              │           │               │            │
+  └─────────┘              └───────────┘               └────────────┘</code></pre>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- Plugin 1: deep-unpack -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="doc-section" id="deep-unpack">
+  <h2>Plugin 1: deep-unpack</h2>
+  <p><span data-lang-en>Multi-strategy deep unpacking with PE reconstruction. Goes beyond basic <code>unpack.auto</code> (3-layer UPX/Speakeasy/Qiling) with unlimited layers, memory carving, and IAT fixing.</span>
+     <span data-lang-zh>多策略深度脱壳与PE重建。超越基础 <code>unpack.auto</code>（3层UPX/Speakeasy/Qiling），支持无限层、内存雕刻和IAT修复。</span></p>
+
+  <h3><span data-lang-en>Tools</span><span data-lang-zh>工具</span></h3>
+  <div class="table-responsive">
+    <table>
+      <thead><tr><th>Tool</th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th><th><span data-lang-en>Key Parameters</span><span data-lang-zh>关键参数</span></th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>deep.unpack.pipeline</code></td>
+          <td><span data-lang-en>Multi-strategy pipeline: UPX → Speakeasy → Qiling → memory carve. Auto-detects completion via entropy analysis.</span>
+              <span data-lang-zh>多策略流水线：UPX → Speakeasy → Qiling → 内存雕刻。通过熵分析自动检测完成。</span></td>
+          <td><code>max_layers</code> (1-10), <code>strategies</code>, <code>timeout</code></td>
+        </tr>
+        <tr>
+          <td><code>deep.unpack.pe_reconstruct</code></td>
+          <td><span data-lang-en>Rebuild PE from memory dump: fix sections, headers, IAT, checksum.</span>
+              <span data-lang-zh>从内存转储重建PE：修复段、头、IAT、校验和。</span></td>
+          <td><code>api_trace</code>, <code>image_base</code>, <code>oep_rva</code></td>
+        </tr>
+        <tr>
+          <td><code>deep.unpack.dump_scan</code></td>
+          <td><span data-lang-en>Scan memory dump for embedded PE images. Validates MZ/PE signatures, extracts PE images.</span>
+              <span data-lang-zh>扫描内存转储中的嵌入PE镜像。验证MZ/PE签名，提取PE镜像。</span></td>
+          <td><code>sample_id</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3><span data-lang-en>Unpacking Strategies</span><span data-lang-zh>脱壳策略</span></h3>
+  <div class="table-responsive">
+    <table>
+      <thead><tr><th><span data-lang-en>Strategy</span><span data-lang-zh>策略</span></th><th><span data-lang-en>Engine</span><span data-lang-zh>引擎</span></th><th><span data-lang-en>Best For</span><span data-lang-zh>最适合</span></th><th><span data-lang-en>Speed</span><span data-lang-zh>速度</span></th></tr></thead>
+      <tbody>
+        <tr><td><code>upx</code></td><td>UPX CLI</td><td><span data-lang-en>UPX-compressed binaries</span><span data-lang-zh>UPX压缩的二进制</span></td><td>⚡ <span data-lang-en>Fast</span><span data-lang-zh>快</span></td></tr>
+        <tr><td><code>speakeasy</code></td><td>Speakeasy</td><td><span data-lang-en>Custom PE packers, shellcode</span><span data-lang-zh>自定义PE加壳、Shellcode</span></td><td>🔶 <span data-lang-en>Medium</span><span data-lang-zh>中</span></td></tr>
+        <tr><td><code>qiling</code></td><td>Qiling Framework</td><td><span data-lang-en>Complex packers, anti-debug, multi-arch</span><span data-lang-zh>复杂加壳、反调试、多架构</span></td><td>🔴 <span data-lang-en>Slow</span><span data-lang-zh>慢</span></td></tr>
+        <tr><td><code>memory_carve</code></td><td>Wine + /proc</td><td><span data-lang-en>Process hollowing, RunPE, custom loaders</span><span data-lang-zh>进程镂空、RunPE、自定义加载器</span></td><td>🔶 <span data-lang-en>Medium</span><span data-lang-zh>中</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3><span data-lang-en>Example Usage</span><span data-lang-zh>使用示例</span></h3>
+  <div class="code-block">
+    <pre><code class="language-json">// Step 1: Deep unpack
+{
+  "tool": "deep.unpack.pipeline",
+  "args": {
+    "sample_id": "sha256:abc123...",
+    "max_layers": 5,
+    "strategies": ["upx", "speakeasy", "qiling", "memory_carve"],
+    "timeout": 120
+  }
+}
+
+// Step 2: Fix PE if needed
+{
+  "tool": "deep.unpack.pe_reconstruct",
+  "args": {
+    "sample_id": "sha256:def456...",
+    "api_trace": [
+      {"address": "0x7FFE1234", "name": "CreateFileW", "module": "kernel32.dll"},
+      {"address": "0x7FFE5678", "name": "RegOpenKeyExW", "module": "advapi32.dll"}
+    ],
+    "oep_rva": "0x1000"
+  }
+}
+
+// Step 3: Re-ingest unpacked binary
+{
+  "tool": "unpack.reingest",
+  "args": { "sample_id": "sha256:abc123...", "artifact_id": "..." }
+}</code></pre>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- Plugin 2: runtime-deobfuscate -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="doc-section" id="runtime-deobfuscate">
+  <h2>Plugin 2: runtime-deobfuscate</h2>
+  <p><span data-lang-en>Runtime deobfuscation via Frida instrumentation. When static analysis shows only encrypted strings and flattened control flow, execute the binary and observe what it actually does.</span>
+     <span data-lang-zh>通过Frida插桩进行运行时去混淆。当静态分析只能看到加密字符串和平坦化控制流时，执行二进制文件并观察其实际行为。</span></p>
+
+  <h3><span data-lang-en>Tools</span><span data-lang-zh>工具</span></h3>
+  <div class="table-responsive">
+    <table>
+      <thead><tr><th>Tool</th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th><th><span data-lang-en>Hooks</span><span data-lang-zh>Hook点</span></th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>deobf.strings</code></td>
+          <td><span data-lang-en>Runtime string decryption: hooks crypto APIs, XOR loops, VirtualAlloc. Captures decrypted strings as they appear.</span>
+              <span data-lang-zh>运行时字符串解密：Hook加密API、XOR循环、VirtualAlloc。捕获解密后的字符串。</span></td>
+          <td>CryptDecrypt, VirtualAlloc, WriteProcessMemory, XOR patterns</td>
+        </tr>
+        <tr>
+          <td><code>deobf.api_resolve</code></td>
+          <td><span data-lang-en>Capture dynamically resolved APIs. Builds IAT map for PE reconstruction.</span>
+              <span data-lang-zh>捕获动态解析的API。构建IAT映射用于PE重建。</span></td>
+          <td>GetProcAddress, LdrGetProcedureAddress, LoadLibrary*</td>
+        </tr>
+        <tr>
+          <td><code>deobf.cfg_trace</code></td>
+          <td><span data-lang-en>CFG recovery via Frida Stalker. Records all executed basic blocks, defeats control-flow flattening.</span>
+              <span data-lang-zh>通过Frida Stalker恢复CFG。记录所有执行的基本块，击败控制流平坦化。</span></td>
+          <td>Stalker (compile, block events)</td>
+        </tr>
+        <tr>
+          <td><code>deobf.dotnet</code></td>
+          <td><span data-lang-en>.NET deobfuscation via de4dot: string decryption, CF deobfuscation, delegate restoration.</span>
+              <span data-lang-zh>通过de4dot进行.NET去混淆：字符串解密、控制流去混淆、委托恢复。</span></td>
+          <td>ConfuserEx, .NET Reactor, Dotfuscator, Babel, Eazfuscator, SmartAssembly</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3><span data-lang-en>Example: String Decryption + API Resolution Pipeline</span><span data-lang-zh>示例：字符串解密 + API解析流水线</span></h3>
+  <div class="code-block">
+    <pre><code class="language-json">// 1. Capture decrypted strings
+{ "tool": "deobf.strings", "args": { "sample_id": "sha256:...", "timeout": 60 } }
+// → Returns: unique_strings: 142, strings: [{value: "http://c2.evil.com", ...}, ...]
+
+// 2. Capture resolved APIs
+{ "tool": "deobf.api_resolve", "args": { "sample_id": "sha256:...", "timeout": 60 } }
+// → Returns: iat_map: [{name: "CreateFileW", module: "kernel32.dll", ...}, ...]
+
+// 3. Recover actual CFG
+{ "tool": "deobf.cfg_trace", "args": { "sample_id": "sha256:...", "timeout": 60 } }
+// → Returns: unique_blocks: 847, edges: [{from: "0x1000", to: "0x1020"}, ...]
+
+// 4. Feed API trace into PE reconstruction
+{ "tool": "deep.unpack.pe_reconstruct", "args": {
+    "sample_id": "sha256:...",
+    "api_trace": [...iat_map from step 2...],
+    "oep_rva": "0x1000"
+  }
+}</code></pre>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- Plugin 3: behavior-first -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="doc-section" id="behavior-first">
+  <h2>Plugin 3: behavior-first</h2>
+  <p><span data-lang-en>When even unpacking and deobfuscation fail, observe <strong>what the binary does</strong> rather than what it is. Full behavioral capture with automated classification.</span>
+     <span data-lang-zh>当脱壳和去混淆都失败时，观察二进制文件的<strong>行为</strong>而非其本身。完整行为捕获与自动分类。</span></p>
+
+  <h3><span data-lang-en>Tools</span><span data-lang-zh>工具</span></h3>
+  <div class="table-responsive">
+    <table>
+      <thead><tr><th>Tool</th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th><th><span data-lang-en>Monitors</span><span data-lang-zh>监控项</span></th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>behavior.capture</code></td>
+          <td><span data-lang-en>Full behavioral capture in Docker sandbox. Generates behavioral profile with risk score.</span>
+              <span data-lang-zh>在Docker沙箱中进行完整行为捕获。生成带风险评分的行为画像。</span></td>
+          <td>CreateFile, RegOpenKey, connect, send, CreateProcess, VirtualAllocEx, NtCreateThreadEx</td>
+        </tr>
+        <tr>
+          <td><code>behavior.ioc</code></td>
+          <td><span data-lang-en>Extract IOCs from behavioral data: IPs, domains, URLs, dropped files, registry keys.</span>
+              <span data-lang-zh>从行为数据中提取IOC：IP、域名、URL、释放文件、注册表键。</span></td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td><code>behavior.network</code></td>
+          <td><span data-lang-en>Deep network analysis: connection patterns, DNS, HTTP, C2 detection heuristics.</span>
+              <span data-lang-zh>深度网络分析：连接模式、DNS、HTTP、C2检测启发式。</span></td>
+          <td>—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3><span data-lang-en>Behavioral Profile Tags</span><span data-lang-zh>行为画像标签</span></h3>
+  <div class="table-responsive">
+    <table>
+      <thead><tr><th>Tag</th><th><span data-lang-en>Meaning</span><span data-lang-zh>含义</span></th><th><span data-lang-en>Risk</span><span data-lang-zh>风险</span></th></tr></thead>
+      <tbody>
+        <tr><td><code>persistence</code></td><td><span data-lang-en>Writes to Run/RunOnce/Services registry keys</span><span data-lang-zh>写入Run/RunOnce/Services注册表键</span></td><td>+25</td></tr>
+        <tr><td><code>process_injection</code></td><td><span data-lang-en>VirtualAllocEx + WriteProcessMemory into remote process</span><span data-lang-zh>VirtualAllocEx + WriteProcessMemory到远程进程</span></td><td>+30</td></tr>
+        <tr><td><code>remote_thread_creation</code></td><td><span data-lang-en>NtCreateThreadEx in remote process</span><span data-lang-zh>在远程进程中NtCreateThreadEx</span></td><td>+30</td></tr>
+        <tr><td><code>anti_debug</code></td><td><span data-lang-en>IsDebuggerPresent / NtQueryInformationProcess</span><span data-lang-zh>IsDebuggerPresent / NtQueryInformationProcess</span></td><td>+15</td></tr>
+        <tr><td><code>network_connections</code></td><td><span data-lang-en>Outbound TCP connections</span><span data-lang-zh>出站TCP连接</span></td><td>+15</td></tr>
+        <tr><td><code>drops_files</code></td><td><span data-lang-en>Creates/writes files to disk</span><span data-lang-zh>创建/写入文件到磁盘</span></td><td>+10</td></tr>
+        <tr><td><code>http_communication</code></td><td><span data-lang-en>HTTP/HTTPS requests via WinINet</span><span data-lang-zh>通过WinINet发起HTTP/HTTPS请求</span></td><td>+10</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- Recommended Workflow -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="doc-section" id="workflow">
+  <h2><span data-lang-en>Recommended Workflow</span><span data-lang-zh>推荐工作流</span></h2>
+  <p><span data-lang-en>For a heavily packed/obfuscated binary, follow this escalation path:</span>
+     <span data-lang-zh>对于高度加壳/混淆的二进制文件，请遵循以下升级路径：</span></p>
+
+  <div class="code-block">
+    <pre><code><span data-lang-en>Step 1: Standard Analysis (may fail quickly)</span><span data-lang-zh>第1步：标准分析（可能快速失败）</span>
+  → packer.detect         <span data-lang-en>Identify packer/obfuscator</span><span data-lang-zh>识别加壳器/混淆器</span>
+  → pe.fingerprint        <span data-lang-en>Check entropy, imports</span><span data-lang-zh>检查熵值、导入表</span>
+  → strings.extract       <span data-lang-en>Try static strings (likely empty)</span><span data-lang-zh>尝试静态字符串（可能为空）</span>
+
+<span data-lang-en>Step 2: Deep Unpacking</span><span data-lang-zh>第2步：深度脱壳</span>
+  → deep.unpack.pipeline  <span data-lang-en>Multi-strategy, multi-layer unpack</span><span data-lang-zh>多策略、多层脱壳</span>
+  → deep.unpack.dump_scan <span data-lang-en>Find PE images in memory dumps</span><span data-lang-zh>在内存转储中查找PE镜像</span>
+  → deep.unpack.pe_reconstruct <span data-lang-en>Fix IAT, headers, alignment</span><span data-lang-zh>修复IAT、头、对齐</span>
+
+<span data-lang-en>Step 3: Runtime Deobfuscation</span><span data-lang-zh>第3步：运行时去混淆</span>
+  → deobf.strings         <span data-lang-en>Capture decrypted strings</span><span data-lang-zh>捕获解密字符串</span>
+  → deobf.api_resolve     <span data-lang-en>Capture resolved APIs → feed to pe_reconstruct</span><span data-lang-zh>捕获解析的API → 输入pe_reconstruct</span>
+  → deobf.cfg_trace       <span data-lang-en>Recover actual CFG</span><span data-lang-zh>恢复实际CFG</span>
+  → deobf.dotnet          <span data-lang-en>.NET specific (if applicable)</span><span data-lang-zh>.NET特定（如适用）</span>
+
+<span data-lang-en>Step 4: Behavioral Analysis (last resort)</span><span data-lang-zh>第4步：行为分析（最后手段）</span>
+  → behavior.capture      <span data-lang-en>What does it DO?</span><span data-lang-zh>它做了什么？</span>
+  → behavior.ioc          <span data-lang-en>Extract indicators</span><span data-lang-zh>提取指标</span>
+  → behavior.network      <span data-lang-en>Network behavior + C2 detection</span><span data-lang-zh>网络行为 + C2检测</span></code></pre>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- Docker Setup -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="doc-section" id="docker-setup">
+  <h2><span data-lang-en>Docker Setup</span><span data-lang-zh>Docker配置</span></h2>
+  <p><span data-lang-en>These plugins are <strong>Docker-priority</strong> — they work best in the Docker container with all backends pre-installed. The plugin <code>systemDeps</code> declarations drive automatic Docker image generation:</span>
+     <span data-lang-zh>这些插件是<strong>Docker优先</strong>的 — 在预装所有后端的Docker容器中效果最佳。插件 <code>systemDeps</code> 声明驱动自动Docker镜像生成：</span></p>
+
+  <div class="table-responsive">
+    <table>
+      <thead><tr><th><span data-lang-en>Dependency</span><span data-lang-zh>依赖</span></th><th>dockerFeature</th><th><span data-lang-en>Used By</span><span data-lang-zh>使用者</span></th><th><span data-lang-en>Docker Path</span><span data-lang-zh>Docker路径</span></th></tr></thead>
+      <tbody>
+        <tr><td>UPX 5.1.1</td><td><code>upx</code></td><td>deep-unpack</td><td><code>/usr/local/bin/upx</code></td></tr>
+        <tr><td>Speakeasy</td><td>—</td><td>deep-unpack</td><td><span data-lang-en>pip package</span><span data-lang-zh>pip包</span></td></tr>
+        <tr><td>Qiling 1.4.6</td><td><code>qiling</code></td><td>deep-unpack</td><td><code>/opt/qiling-venv/bin/python</code></td></tr>
+        <tr><td>Wine</td><td><code>wine</code></td><td>deep-unpack, runtime-deobfuscate, behavior-first</td><td><code>/usr/bin/wine</code></td></tr>
+        <tr><td>Frida 17.8.0</td><td><code>frida</code></td><td>runtime-deobfuscate, behavior-first</td><td><span data-lang-en>pip package</span><span data-lang-zh>pip包</span></td></tr>
+        <tr><td>de4dot</td><td><code>de4dot</code></td><td>runtime-deobfuscate</td><td><code>/opt/de4dot/de4dot.exe</code></td></tr>
+        <tr><td>pefile</td><td>—</td><td>deep-unpack</td><td><span data-lang-en>pip package</span><span data-lang-zh>pip包</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="code-block">
+    <pre><code class="language-bash"><span data-lang-en># Generate Docker image with all anti-obfuscation backends</span><span data-lang-zh># 生成包含所有反混淆后端的Docker镜像</span>
+npm run docker:generate
+
+<span data-lang-en># Or include specific plugins only</span><span data-lang-zh># 或仅包含特定插件</span>
+npm run docker:generate -- --include deep-unpack,runtime-deobfuscate,behavior-first
+
+<span data-lang-en># Build and start</span><span data-lang-zh># 构建并启动</span>
+docker compose build
+docker compose up -d</code></pre>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- Python Workers -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="doc-section" id="workers">
+  <h2><span data-lang-en>Python Workers</span><span data-lang-zh>Python Workers</span></h2>
+  <p><span data-lang-en>Each plugin delegates to dedicated Python workers via stdin/stdout JSON protocol:</span>
+     <span data-lang-zh>每个插件通过stdin/stdout JSON协议委托给专用Python worker：</span></p>
+
+  <div class="table-responsive">
+    <table>
+      <thead><tr><th>Worker</th><th><span data-lang-en>Commands</span><span data-lang-zh>命令</span></th><th><span data-lang-en>Key Dependencies</span><span data-lang-zh>关键依赖</span></th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>deep_unpack_worker.py</code></td>
+          <td><code>deep_unpack</code>, <code>pe_reconstruct</code>, <code>dump_scan</code></td>
+          <td>pefile, speakeasy, qiling, UPX CLI, Wine</td>
+        </tr>
+        <tr>
+          <td><code>deobfuscate_worker.py</code></td>
+          <td><code>strings_runtime</code>, <code>api_resolve</code>, <code>cfg_trace</code>, <code>dotnet_deobfuscate</code></td>
+          <td>frida, de4dot</td>
+        </tr>
+        <tr>
+          <td><code>behavior_worker.py</code></td>
+          <td><code>capture</code>, <code>ioc_extract</code>, <code>network_analyze</code></td>
+          <td>frida</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- Tool Reference -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="doc-section" id="reference">
+  <h2><span data-lang-en>Complete Tool Reference</span><span data-lang-zh>完整工具参考</span></h2>
+  <div class="table-responsive">
+    <table>
+      <thead><tr><th>Tool</th><th>Plugin</th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th><th><span data-lang-en>Docker Required</span><span data-lang-zh>需要Docker</span></th></tr></thead>
+      <tbody>
+        <tr><td><code>deep.unpack.pipeline</code></td><td>deep-unpack</td><td><span data-lang-en>Multi-strategy deep unpacking (up to 10 layers)</span><span data-lang-zh>多策略深度脱壳（最多10层）</span></td><td><span data-lang-en>Recommended</span><span data-lang-zh>推荐</span></td></tr>
+        <tr><td><code>deep.unpack.pe_reconstruct</code></td><td>deep-unpack</td><td><span data-lang-en>PE reconstruction from dump (IAT fix, header fix)</span><span data-lang-zh>从转储重建PE（IAT修复、头部修复）</span></td><td><span data-lang-en>No (needs pefile)</span><span data-lang-zh>否（需要pefile）</span></td></tr>
+        <tr><td><code>deep.unpack.dump_scan</code></td><td>deep-unpack</td><td><span data-lang-en>Scan dump for PE images</span><span data-lang-zh>扫描转储中的PE镜像</span></td><td><span data-lang-en>No (needs pefile)</span><span data-lang-zh>否（需要pefile）</span></td></tr>
+        <tr><td><code>deobf.strings</code></td><td>runtime-deobfuscate</td><td><span data-lang-en>Runtime string decryption via Frida</span><span data-lang-zh>通过Frida运行时字符串解密</span></td><td><span data-lang-en>Yes (Frida+Wine)</span><span data-lang-zh>是（Frida+Wine）</span></td></tr>
+        <tr><td><code>deobf.api_resolve</code></td><td>runtime-deobfuscate</td><td><span data-lang-en>Dynamic API resolution capture</span><span data-lang-zh>动态API解析捕获</span></td><td><span data-lang-en>Yes (Frida+Wine)</span><span data-lang-zh>是（Frida+Wine）</span></td></tr>
+        <tr><td><code>deobf.cfg_trace</code></td><td>runtime-deobfuscate</td><td><span data-lang-en>CFG recovery from Stalker trace</span><span data-lang-zh>从Stalker跟踪恢复CFG</span></td><td><span data-lang-en>Yes (Frida+Wine)</span><span data-lang-zh>是（Frida+Wine）</span></td></tr>
+        <tr><td><code>deobf.dotnet</code></td><td>runtime-deobfuscate</td><td><span data-lang-en>.NET deobfuscation via de4dot</span><span data-lang-zh>通过de4dot进行.NET去混淆</span></td><td><span data-lang-en>Recommended (mono+de4dot)</span><span data-lang-zh>推荐（mono+de4dot）</span></td></tr>
+        <tr><td><code>behavior.capture</code></td><td>behavior-first</td><td><span data-lang-en>Full behavioral capture</span><span data-lang-zh>完整行为捕获</span></td><td><span data-lang-en>Yes (Frida+Wine)</span><span data-lang-zh>是（Frida+Wine）</span></td></tr>
+        <tr><td><code>behavior.ioc</code></td><td>behavior-first</td><td><span data-lang-en>IOC extraction from behavior data</span><span data-lang-zh>从行为数据中提取IOC</span></td><td><span data-lang-en>No</span><span data-lang-zh>否</span></td></tr>
+        <tr><td><code>behavior.network</code></td><td>behavior-first</td><td><span data-lang-en>Network behavior + C2 detection</span><span data-lang-zh>网络行为 + C2检测</span></td><td><span data-lang-en>No</span><span data-lang-zh>否</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+</main>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="container footer__inner">
+    <div class="footer__brand"><span class="nav__logo-icon" style="font-size:.9rem">R</span> Rikune</div>
+    <ul class="footer__links">
+      <li><a href="api-reference.html">API</a></li>
+      <li><a href="local-setup.html"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
+      <li><a href="docker.html">Docker</a></li>
+      <li><a href="faq.html">FAQ</a></li>
+      <li><a href="examples.html"><span data-lang-en>Examples</span><span data-lang-zh>示例</span></a></li>
+      <li><a href="plugins.html"><span data-lang-en>Plugins</span><span data-lang-zh>插件</span></a></li>
+      <li><a href="anti-obfuscation.html"><span data-lang-en>Anti-Obf</span><span data-lang-zh>反混淆</span></a></li>
+    </ul>
+    <span class="footer__copy">MIT License · Built for the MCP ecosystem</span>
+  </div>
+</footer>
+
+<script src="assets/main.js"></script>
+</body>
+</html>

@@ -5,8 +5,8 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { stringsExtractToolDefinition, createStringsExtractHandler } from '../../tools/strings-extract.js'
-import { stringsFlossDecodeToolDefinition, createStringsFlossDecodeHandler } from '../../tools/strings-floss-decode.js'
+import { stringsExtractToolDefinition, createStringsExtractHandler } from './tools/strings-extract.js'
+import { stringsFlossDecodeToolDefinition, createStringsFlossDecodeHandler } from './tools/strings-floss-decode.js'
 
 const stringsPlugin: Plugin = {
   id: 'strings',

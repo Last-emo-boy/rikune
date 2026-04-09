@@ -11,7 +11,7 @@ import {
 import {
   iocExportToolDefinition, createIOCExportHandler,
 } from './tools/ioc-export.js'
-import { sigmaRuleGenerateToolDefinition, createSigmaRuleGenerateHandler } from '../../tools/sigma-rule-generate.js'
+import { sigmaRuleGenerateToolDefinition, createSigmaRuleGenerateHandler } from './tools/sigma-rule-generate.js'
 
 const threatIntelPlugin: Plugin = {
   id: 'threat-intel',

@@ -9,7 +9,7 @@ import {
   batchSubmitToolDefinition, createBatchSubmitHandler,
   batchStatusToolDefinition, createBatchStatusHandler,
   batchResultsToolDefinition, createBatchResultsHandler,
-} from '../../tools/batch-analysis.js'
+} from './tools/batch-analysis.js'
 
 const batchPlugin: Plugin = {
   id: 'batch',

@@ -242,9 +242,9 @@ const FRIDA_SCRIPTS: ScriptEntry[] = [
   { uri: 'script://frida/crypto_finder', name: 'Frida: Crypto Finder', description: 'Detect cryptographic operations at runtime', mimeType: 'application/javascript', filePath: 'frida_scripts/crypto_finder.js' },
   { uri: 'script://frida/file_registry_monitor', name: 'Frida: File/Registry Monitor', description: 'Monitor file and registry access', mimeType: 'application/javascript', filePath: 'frida_scripts/file_registry_monitor.js' },
   { uri: 'script://frida/string_decoder', name: 'Frida: String Decoder', description: 'Decode obfuscated strings at runtime', mimeType: 'application/javascript', filePath: 'frida_scripts/string_decoder.js' },
-  { uri: 'script://frida/android_crypto_trace', name: 'Frida: Android Crypto Trace', description: 'Trace Android crypto API calls', mimeType: 'application/javascript', filePath: 'frida_scripts/android_crypto_trace.js' },
-  { uri: 'script://frida/android_root_bypass', name: 'Frida: Android Root Bypass', description: 'Bypass Android root detection', mimeType: 'application/javascript', filePath: 'frida_scripts/android_root_bypass.js' },
-  { uri: 'script://frida/android_ssl_bypass', name: 'Frida: Android SSL Bypass', description: 'Bypass Android SSL pinning', mimeType: 'application/javascript', filePath: 'frida_scripts/android_ssl_bypass.js' },
+  { uri: 'script://frida/android_crypto_trace', name: 'Frida: Android Crypto Trace', description: 'Trace Android crypto API calls', mimeType: 'application/javascript', filePath: 'src/plugins/android/scripts/android_crypto_trace.js' },
+  { uri: 'script://frida/android_root_bypass', name: 'Frida: Android Root Bypass', description: 'Bypass Android root detection', mimeType: 'application/javascript', filePath: 'src/plugins/android/scripts/android_root_bypass.js' },
+  { uri: 'script://frida/android_ssl_bypass', name: 'Frida: Android SSL Bypass', description: 'Bypass Android SSL pinning', mimeType: 'application/javascript', filePath: 'src/plugins/android/scripts/android_ssl_bypass.js' },
 ]
 
 const GHIDRA_SCRIPTS: ScriptEntry[] = [

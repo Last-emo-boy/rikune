@@ -10,7 +10,7 @@ import { toStringArray } from '../../../utils/shared-helpers.js'
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef , PluginToolDeps} from '../../sdk.js'
 import { createTriageWorkflowHandler } from '../../../workflows/triage.js'
-import { createPackerDetectHandler } from '../../../tools/packer-detect.js'
+import { createPackerDetectHandler } from '../../static-triage/tools/packer-detect.js'
 import { mapIndicatorsToAttack, type AttackIndicators } from './attack-map.js'
 
 const TOOL_NAME = 'ioc.export'

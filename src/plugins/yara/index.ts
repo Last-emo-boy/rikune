@@ -5,9 +5,9 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { yaraScanToolDefinition, createYaraScanHandler } from '../../tools/yara-scan.js'
-import { yaraGenerateToolDefinition, createYaraGenerateHandler } from '../../tools/yara-generate.js'
-import { yaraGenerateBatchToolDefinition, createYaraGenerateBatchHandler } from '../../tools/yara-generate-batch.js'
+import { yaraScanToolDefinition, createYaraScanHandler } from './tools/yara-scan.js'
+import { yaraGenerateToolDefinition, createYaraGenerateHandler } from './tools/yara-generate.js'
+import { yaraGenerateBatchToolDefinition, createYaraGenerateBatchHandler } from './tools/yara-generate-batch.js'
 
 const yaraPlugin: Plugin = {
   id: 'yara',

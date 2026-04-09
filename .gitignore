@@ -92,3 +92,10 @@ docker-dist-temp/
 docker-dist-v2/
 docker-dist-hotfix/
 tmp-ghidra-cmd-*/
+
+# install-local.ps1 / install-local.sh generated files
+.env
+angr-venv/
+qiling-venv/
+workers/venv/
+install-info.json

@@ -306,6 +306,21 @@ export interface PluginStatus {
  *
  * A plugin is a self-contained module that lives in its own directory
  * under `src/plugins/<id>/`. It exports a default `Plugin` object.
+ *
+ * ## Standard directory layout
+ *
+ * ```
+ * src/plugins/<id>/
+ *   index.ts         — Plugin entry point (required)
+ *   tools/            — Co-located tool implementations
+ *   workers/          — Python worker scripts (plugin-specific)
+ *   scripts/          — Frida/Ghidra scripts (plugin-specific)
+ *   data/             — Data files (JSON patterns, rules, etc.)
+ * ```
+ *
+ * Tools, workers, scripts, and data files that are specific to a single
+ * plugin MUST live inside that plugin's directory. Only truly shared
+ * resources (used by 3+ plugins or by the core) remain in root-level dirs.
  */
 export interface Plugin {
   /** Unique kebab-case identifier, e.g. `'android'`, `'ghidra'`. */
@@ -327,6 +342,28 @@ export interface Plugin {
    * will auto-generate a check from these declarations.
    */
   systemDeps?: PluginSystemDep[]
+  /**
+   * Declares co-located resource directories relative to the plugin root.
+   * Used by the Docker generator and build tooling to discover plugin assets.
+   *
+   * Convention (all optional):
+   * - `workers` — Python worker scripts (default: `'workers'`)
+   * - `scripts` — Frida/Ghidra scripts (default: `'scripts'`)
+   * - `data`    — Data files (JSON, YARA rules, etc.) (default: `'data'`)
+   *
+   * Set a key to declare the resource exists. The value is the directory name
+   * relative to the plugin root (almost always the default).
+   *
+   * Example:
+   * ```ts
+   * resources: { workers: 'workers', scripts: 'scripts', data: 'data' }
+   * ```
+   */
+  resources?: {
+    workers?: string
+    scripts?: string
+    data?: string
+  }
   /** Optional lifecycle hooks. */
   hooks?: PluginHooks
   /** If true, hooks fire for ALL tool invocations, not just this plugin's tools. */

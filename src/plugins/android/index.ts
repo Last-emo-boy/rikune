@@ -30,6 +30,7 @@ const androidPlugin: Plugin = {
   systemDeps: [
     { type: 'file', name: 'JADX', target: '$JADX_PATH', envVar: 'JADX_PATH', dockerDefault: '/opt/jadx/bin/jadx', required: true, description: 'JADX DEX/APK decompiler', dockerInstall: 'Download jadx release to /opt/jadx', dockerFeature: 'jadx', dockerValidation: ['jadx --version >/dev/null 2>&1'] },
   ],
+  resources: { workers: 'workers', scripts: 'scripts' },
   check() {
     const jadx = process.env.JADX_PATH ?? '/opt/jadx/bin/jadx'
     try { accessSync(jadx); return true } catch { return false }

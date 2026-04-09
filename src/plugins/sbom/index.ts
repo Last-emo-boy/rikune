@@ -5,7 +5,7 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { sbomGenerateToolDefinition, createSbomGenerateHandler } from '../../tools/sbom-generate.js'
+import { sbomGenerateToolDefinition, createSbomGenerateHandler } from './tools/sbom-generate.js'
 
 const sbomPlugin: Plugin = {
   id: 'sbom',

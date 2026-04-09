@@ -1,11 +1,11 @@
 /**
- * debug.session.continue MCP tool â€?continue execution until breakpoint or signal.
+ * debug.session.continue MCP tool ï¿½?continue execution until breakpoint or signal.
  */
 
 import { z } from 'zod'
 import type { ToolDefinition, WorkerResult , PluginToolDeps} from '../../sdk.js'
-import { getDebugSessionManager } from '../../../debug/debug-session-state.js'
-import type { MiResponse } from '../../../debug/gdb-mi-client.js'
+import { getDebugSessionManager } from '../debug/debug-session-state.js'
+import type { MiResponse } from '../debug/gdb-mi-client.js'
 
 const TOOL_NAME = 'debug.session.continue'
 

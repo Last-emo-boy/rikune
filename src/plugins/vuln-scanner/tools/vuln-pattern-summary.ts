@@ -1,11 +1,11 @@
 /**
- * vuln.pattern.summary MCP tool â€?aggregate vulnerability scan findings into a concise summary.
+ * vuln.pattern.summary MCP tool ï¿½?aggregate vulnerability scan findings into a concise summary.
  */
 
 import { z } from 'zod'
 import fs from 'fs/promises'
 import type { ToolDefinition, ToolArgs, WorkerResult , PluginToolDeps} from '../../sdk.js'
-import type { VulnScanResult, VulnFinding } from '../../../vuln-patterns.js'
+import type { VulnScanResult, VulnFinding } from '../vuln-patterns.js'
 
 // ============================================================================
 // Schemas
