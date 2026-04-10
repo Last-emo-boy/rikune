@@ -392,7 +392,7 @@ pip install frida frida-tools
 - `FRIDA_SERVER_PATH` - Frida server 二进制文件路径，用于 USB/远程设备分析
 - `FRIDA_DEVICE` - 设备 ID 或 "usb" 用于 USB 设备选择（默认：本地 spawn）
 
-**内置脚本** 位于 `frida_scripts/`：
+**内置脚本** 位于 `src/plugins/frida/scripts/`：
 - `api_trace.js` - Windows API 追踪与参数日志
 - `string_decoder.js` - 运行时字符串解密
 - `anti_debug_bypass.js` - 反调试检测中和
@@ -498,7 +498,7 @@ Docker 部署时（`docker-compose up -d`），容器暴露：
 
 而不是只返回一个笼统的 `exit code 1`。
 
-内置的 `ghidra_scripts/` 目录现在会按安装包根目录或仓库根目录解析，
+内置的 `src/plugins/ghidra/scripts/` 目录现在会按安装包根目录或仓库根目录解析，
 而不是按当前工作目录解析。这样即使用户从别的目录启动 Server，也不会
 再因为找不到 `ExtractFunctions.py` / `ExtractFunctions.java` 而失败。
 
@@ -507,9 +507,6 @@ Docker 部署时（`docker-compose up -d`），容器暴露：
 ```text
 bin/                         npm CLI 入口
 dist/                        编译后的 TypeScript 输出
-ghidra_scripts/              Ghidra 辅助脚本
-frida_scripts/               Frida instrumentation 脚本（同时作为 MCP resource）
-helpers/DotNetMetadataProbe/ .NET 元数据辅助项目
 src/                         MCP Server 源码
   index.ts                   入口（~90 行）
   server.ts                  MCPServer 类
@@ -518,6 +515,10 @@ src/                         MCP Server 源码
   safe-command.ts            命令注入防护
   config-validator.ts        运行时配置校验
   logger.ts                  Pino 结构化日志
+  plugins/
+    frida/scripts/           Frida instrumentation 脚本（同时作为 MCP resource）
+    ghidra/scripts/          Ghidra 辅助脚本
+    static-triage/helpers/   .NET 元数据辅助项目（DotNetMetadataProbe）
   analysis/                  分析编排模块
   artifacts/                 产物管理与存储
   constants/                 共享常量
@@ -719,7 +720,7 @@ npm start
 
 - 贡献指南：[`CONTRIBUTING.md`](./CONTRIBUTING.md)
 - 质量评估说明：[`docs/QUALITY_EVALUATION.md`](./docs/QUALITY_EVALUATION.md)
-- 示例 benchmark corpus：[`examples/benchmark-corpus.example.json`](./examples/benchmark-corpus.example.json)
+- 示例 benchmark corpus：[`docs/examples/benchmark-corpus.example.json`](./docs/examples/benchmark-corpus.example.json)
 - 安全策略：[`SECURITY.md`](./SECURITY.md)
 
 ## 使用已发布的 npm 包

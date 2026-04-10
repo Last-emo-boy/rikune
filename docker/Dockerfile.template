@@ -152,7 +152,7 @@ COPY --from=builder /app/package.json ./
 
 # Data files (API semantics, etc.)
 RUN mkdir -p ./data
-COPY data/windows-api-semantics.json ./data/windows-api-semantics.json
+COPY src/plugins/kb-collaboration/data/windows-api-semantics.json ./src/plugins/kb-collaboration/data/windows-api-semantics.json
 # Plugin-specific data files (auto-generated from src/plugins/*/data/)
 {{PLUGIN_DATA_COPY}}
 
@@ -171,7 +171,7 @@ RUN python3 -m py_compile ./workers/static_worker.py || echo "Python worker vali
 # -- Feature-specific runtime (auto-inserted from plugin docker/*.dockerfile fragments) --
 {{FEATURE_RUNTIME}}
 
-COPY helpers/ ./helpers/
+COPY src/plugins/static-triage/helpers/ ./src/plugins/static-triage/helpers/
 
 # -- Validate installed tools --
 {{VALIDATION_COMMANDS}}

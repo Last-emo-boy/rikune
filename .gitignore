@@ -59,8 +59,8 @@ codex-mcp-config.toml
 Thumbs.db
 
 # .NET helper build artifacts
-helpers/**/bin/
-helpers/**/obj/
+src/plugins/**/helpers/**/bin/
+src/plugins/**/helpers/**/obj/
 
 # Generated validation / scratch outputs
 akasha_postlock_summary.json
@@ -96,6 +96,14 @@ docker-dist-hotfix/
 Dockerfile
 docker-compose.yml
 tmp-ghidra-cmd-*/
+
+# Test runtime artifacts
+test-compiler-packer-detect/
+test-data-sample-ingest/
+test-docker-backend-tools/
+
+# Runtime data directories
+samples/
 
 # install-local.ps1 / install-local.sh generated files
 .env

@@ -1,2 +1,2 @@
 #===== RUNTIME =====
-COPY frida_scripts/ ./frida_scripts/
+COPY src/plugins/frida/scripts/ ./src/plugins/frida/scripts/

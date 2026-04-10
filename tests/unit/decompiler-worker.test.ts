@@ -679,7 +679,7 @@ describe('DecompilerWorker', () => {
 
       ghidraConfig.installDir = 'C:\\ghidra'
       ghidraConfig.analyzeHeadlessPath = 'C:\\ghidra\\support\\analyzeHeadless.bat'
-      ghidraConfig.scriptsDir = path.join(process.cwd(), 'ghidra_scripts')
+      ghidraConfig.scriptsDir = path.join(process.cwd(), 'src', 'plugins', 'ghidra', 'scripts')
       ghidraConfig.isValid = true
 
       try {

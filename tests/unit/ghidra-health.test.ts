@@ -81,7 +81,7 @@ describe('ghidra.health tool', () => {
         checked_at: new Date().toISOString(),
         install_dir: 'C:/ghidra',
         analyze_headless_path: 'C:/ghidra/support/analyzeHeadless.bat',
-        scripts_dir: path.join(process.cwd(), 'ghidra_scripts'),
+        scripts_dir: path.join(process.cwd(), 'src', 'plugins', 'ghidra', 'scripts'),
         project_root: path.join(tempDir, 'ghidra-projects'),
         log_root: path.join(tempDir, 'ghidra-logs'),
         checks: {
@@ -141,7 +141,7 @@ describe('ghidra.health tool', () => {
         checked_at: new Date().toISOString(),
         install_dir: '',
         analyze_headless_path: '',
-        scripts_dir: path.join(process.cwd(), 'ghidra_scripts'),
+        scripts_dir: path.join(process.cwd(), 'src', 'plugins', 'ghidra', 'scripts'),
         project_root: path.join(tempDir, 'ghidra-projects'),
         log_root: path.join(tempDir, 'ghidra-logs'),
         checks: {

@@ -3,6 +3,7 @@ export default {
   testEnvironment: 'node',
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
+    '^uuid$': '<rootDir>/tests/mocks/uuid.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   transform: {

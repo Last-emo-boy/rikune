@@ -28,7 +28,6 @@ export async function loadSeedDataIfEmpty(db: DatabaseManager): Promise<{ loaded
   const seedPath = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     '..',
-    '..',
     'data',
     'windows-api-semantics.json'
   )

@@ -270,7 +270,7 @@ export async function runDotNetMetadataProbe(
   }
 ): Promise<DotNetMetadataProbeResult> {
   return new Promise((resolve) => {
-    const projectPath = resolvePackagePath('helpers', 'DotNetMetadataProbe', 'DotNetMetadataProbe.csproj')
+    const projectPath = resolvePackagePath('src', 'plugins', 'static-triage', 'helpers', 'DotNetMetadataProbe', 'DotNetMetadataProbe.csproj')
     const args = [
       'run',
       '--project',

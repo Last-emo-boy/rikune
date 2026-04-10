@@ -87,7 +87,7 @@ To add custom Ghidra scripts:
 
 ## Configuration
 
-The scripts directory path is configured in the Ghidra configuration module (`src/ghidra-config.ts`). By default, it uses `./ghidra_scripts` relative to the project root.
+The scripts directory path is configured in the Ghidra configuration module (`src/ghidra/ghidra-config.ts`). By default, it uses `./src/plugins/ghidra/scripts` relative to the project root.
 
 You can override this by:
 - Setting the `GHIDRA_SCRIPTS_DIR` environment variable

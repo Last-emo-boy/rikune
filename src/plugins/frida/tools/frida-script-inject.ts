@@ -326,7 +326,7 @@ export function createFridaScriptInjectHandler(
       return await fs.readFile(scriptPath, 'utf-8')
     } catch (e) {
       // Try relative to package
-      const packageRelativePath = resolvePackagePath!('frida_scripts', path.basename(scriptPath))
+      const packageRelativePath = resolvePackagePath!('src', 'plugins', 'frida', 'scripts', path.basename(scriptPath))
       try {
         return await fs.readFile(packageRelativePath, 'utf-8')
       } catch (e2) {

@@ -468,7 +468,7 @@ pip install frida frida-tools
 - `FRIDA_SERVER_PATH` - Path to Frida server binary for USB/remote device analysis
 - `FRIDA_DEVICE` - Device ID or "usb" for USB device selection (default: local spawn)
 
-**Pre-built Scripts** are included in `frida_scripts/`:
+**Pre-built Scripts** are included in `src/plugins/frida/scripts/`:
 - `api_trace.js` - Windows API tracing with argument logging
 - `string_decoder.js` - Runtime string decryption
 - `anti_debug_bypass.js` - Anti-debug detection neutralization
@@ -581,7 +581,7 @@ For Docker deployments, that means a Java 21+ JDK, not only a JRE. The container
 
 When Ghidra commands fail, the server now persists command logs and, when available, Ghidra runtime logs. Normalized diagnostics include Java exception summaries and remediation hints instead of only returning `exit code 1`.
 
-The bundled `ghidra_scripts/` directory is resolved from the installed package
+The bundled `src/plugins/ghidra/scripts/` directory is resolved from the installed package
 or repository root, not from the current working directory. This prevents
 `ExtractFunctions.py` / `ExtractFunctions.java` lookup failures when the server
 is launched from a different folder.
@@ -646,9 +646,6 @@ Full details: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
 ```text
 bin/                         npm CLI entrypoint
 dist/                        compiled TypeScript output
-ghidra_scripts/              Ghidra helper scripts used by the server
-frida_scripts/               Frida instrumentation scripts (also MCP resources)
-helpers/DotNetMetadataProbe/ .NET metadata helper project
 src/                         TypeScript MCP server source
   index.ts                   Entry point (~90 lines)
   server.ts                  MCPServer class (tools, prompts, resources)
@@ -658,6 +655,10 @@ src/                         TypeScript MCP server source
   config-validator.ts        Runtime config validation with diagnostics
   logger.ts                  Pino structured logging
   analysis/                  Analysis orchestration modules
+  plugins/
+    frida/scripts/           Frida instrumentation scripts (also MCP resources)
+    ghidra/scripts/          Ghidra helper scripts used by the server
+    static-triage/helpers/   .NET metadata helper project (DotNetMetadataProbe)
   artifacts/                 Artifact management and storage
   constants/                 Shared constants
   ghidra/                    Ghidra integration helpers
@@ -1022,7 +1023,7 @@ Current non-goals:
 - Architecture overview: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
 - Plugin development: [`docs/PLUGINS.md`](./docs/PLUGINS.md)
 - Quality evaluation notes: [`docs/QUALITY_EVALUATION.md`](./docs/QUALITY_EVALUATION.md)
-- Example benchmark corpus: [`examples/benchmark-corpus.example.json`](./examples/benchmark-corpus.example.json)
+- Example benchmark corpus: [`docs/examples/benchmark-corpus.example.json`](./docs/examples/benchmark-corpus.example.json)
 - Security policy: [`SECURITY.md`](./SECURITY.md)
 
 ## Using the published package

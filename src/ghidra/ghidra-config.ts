@@ -502,7 +502,7 @@ export function getGhidraVersion(installDir: string): string | null {
  * Ensure Ghidra scripts directory exists
  */
 export function ensureScriptsDirectory(baseDir?: string): string {
-  const scriptsDir = path.resolve(baseDir || resolvePackagePath('ghidra_scripts'))
+  const scriptsDir = path.resolve(baseDir || resolvePackagePath('src', 'plugins', 'ghidra', 'scripts'))
   
   if (!fs.existsSync(scriptsDir)) {
     fs.mkdirSync(scriptsDir, { recursive: true })

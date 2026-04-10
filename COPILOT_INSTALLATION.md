@@ -1,10 +1,12 @@
 # Install in GitHub Copilot
 
-This repository includes a helper script for local GitHub Copilot clients:
+Use the unified installer script, which includes a GitHub Copilot option:
 
 ```powershell
-.\install-to-copilot.ps1
+.\install-local.ps1
 ```
+
+Select **[2] GitHub Copilot** when prompted to write the MCP configuration.
 
 By default, the script writes a stable `WORKSPACE_ROOT` under your user profile:
 
@@ -23,7 +25,7 @@ Optional static-analysis inputs can also be provided through:
 - `CAPA_RULES_PATH`
 - `DIE_PATH`
 
-The server's bundled `ghidra_scripts/` directory is resolved from the installed
+The server's bundled `src/plugins/ghidra/scripts/` directory is resolved from the installed
 package or repository root, not from the shell's current working directory. You
 do not need to separately point Copilot at `ExtractFunctions.py`.
 
@@ -36,10 +38,12 @@ Build the project first:
 npm run build
 ```
 
-If Ghidra is not already configured in the environment, pass it explicitly:
+If Ghidra is not already configured in the environment, set `GHIDRA_INSTALL_DIR`
+before running the installer, or set it in your shell profile:
 
 ```powershell
-.\install-to-copilot.ps1 -GhidraPath "C:\tools\ghidra"
+$env:GHIDRA_INSTALL_DIR = "C:\tools\ghidra"
+.\install-local.ps1
 ```
 
 If you want to pin Ghidra projects and logs under a fixed location, set:
@@ -47,30 +51,10 @@ If you want to pin Ghidra projects and logs under a fixed location, set:
 - `GHIDRA_PROJECT_ROOT`
 - `GHIDRA_LOG_ROOT`
 
-If you want a different persistent workspace root:
-
-```powershell
-.\install-to-copilot.ps1 -WorkspaceRoot "D:\reverse-data\workspaces"
-```
-
 ## What the script updates
 
 - workspace config: `.vscode/mcp.json`
 - Copilot CLI config: `~/.copilot/mcp-config.json`
-
-You can target only one config:
-
-```powershell
-.\install-to-copilot.ps1 -SkipCopilotCliConfig
-.\install-to-copilot.ps1 -SkipWorkspaceConfig
-```
-
-If the `code` command is available and you also want to try the VS Code
-user-level profile route:
-
-```powershell
-.\install-to-copilot.ps1 -InstallVsCodeUserProfile
-```
 
 ## Verify
 

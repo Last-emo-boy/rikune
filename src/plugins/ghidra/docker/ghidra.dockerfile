@@ -61,4 +61,4 @@ ENV PATH="/opt/java/openjdk/bin:${PATH}"
 
 COPY --from=ghidra-stage /opt/java/openjdk /opt/java/openjdk
 COPY --from=ghidra-stage /opt/ghidra /opt/ghidra
-COPY ghidra_scripts/ ./ghidra_scripts/
+COPY src/plugins/ghidra/scripts/ ./src/plugins/ghidra/scripts/
