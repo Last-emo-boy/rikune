@@ -460,8 +460,14 @@ export function createDotNetMetadataExtractHandler(
         maxMethodsPerType: input.max_methods_per_type,
       })
 
-      // Fallback to Python/dnfile worker when dotnet CLI is unavailable
-      if (!probeResult.ok && probeResult.errors?.some(e => e.includes('not available in PATH') || e.includes('ENOENT'))) {
+      // Fallback to Python/dnfile worker when dotnet CLI is unavailable or SDK is missing
+      if (!probeResult.ok && probeResult.errors?.some(e =>
+        e.includes('not available in PATH') ||
+        e.includes('ENOENT') ||
+        e.includes('SDK') ||
+        e.includes('sdk') ||
+        e.includes('dotnet metadata probe failed')
+      )) {
         const workerRequest = buildStaticWorkerRequest({
           tool: TOOL_NAME,
           sampleId: input.sample_id,

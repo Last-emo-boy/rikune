@@ -295,7 +295,7 @@ def handle_resource_export(request: Dict[str, Any]) -> Dict[str, Any]:
                 'name': name,
                 'token': _format_token(_make_token(0x28, rid)),
                 'offset': row.Offset if hasattr(row, 'Offset') else None,
-                'visibility': 'public' if (int(row.Flags) & 0x07) == 0x01 else 'private',
+                'visibility': 'public' if (getattr(row.Flags, 'value', row.Flags) & 0x07) == 0x01 else 'private',
                 'implementation': None,
                 'size': None,
                 'sha256': None,
