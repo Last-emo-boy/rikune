@@ -6,7 +6,7 @@
  * and memory-resident malware detection from memory dumps.
  */
 
-import { execFile, execFileSync } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 import type { Plugin, ToolResult, PluginToolDeps } from '../sdk.js'
 
@@ -57,18 +57,8 @@ const memoryForensicsPlugin: Plugin = {
   ],
   systemDeps: [
     { type: 'binary', name: 'vol3', versionFlag: '--help', envVar: 'VOLATILITY3_PATH', dockerDefault: '/usr/local/bin/vol', required: true, description: 'Volatility 3 memory forensics framework', dockerInstall: 'pip install volatility3', dockerFeature: 'vol3', dockerValidation: ['python3 -c "import volatility3; print(\'✓ volatility3\')"'] },
-    { type: 'directory', name: 'vol3-symbols', target: '$VOL3_SYMBOL_PATH', envVar: 'VOL3_SYMBOL_PATH', required: false, description: 'Volatility 3 symbol tables' },
+    { type: 'directory', name: 'vol3-symbols', target: '$VOL3_SYMBOL_PATH', envVar: 'VOL3_SYMBOL_PATH', dockerDefault: '/opt/vol3-symbols', required: false, description: 'Volatility 3 symbol tables', dockerFeature: 'vol3', directories: [{ path: '/opt/vol3-symbols' }] },
   ],
-
-  check() {
-    const vol3 = getVolatilityPath()
-    try {
-      execFileSync(vol3, ['--help'], { timeout: 5000, stdio: 'pipe' })
-      return true
-    } catch {
-      return false
-    }
-  },
 
   register(server, deps): string[] {
     const tools: string[] = []

@@ -41,17 +41,8 @@ const debugSessionPlugin: Plugin = {
   description: 'Interactive debugging via GDB/LLDB — breakpoints, stepping, memory inspection',
   version: '1.0.0',
   systemDeps: [
-    { type: 'binary', name: 'gdb', versionFlag: '--version', required: true, description: 'GNU Debugger', dockerDefault: '/usr/bin/gdb', dockerInstall: 'apt-get install -y gdb', dockerFeature: 'gdb', aptPackages: ['gdb', 'ltrace', 'strace'] },
+    { type: 'binary', name: 'gdb', versionFlag: '--version', required: true, description: 'GNU Debugger', dockerDefault: '/usr/bin/gdb', dockerInstall: 'apt-get install -y gdb', dockerFeature: 'gdb', aptPackages: ['gdb', 'ltrace', 'strace'], dockerValidation: ['gdb --version >/dev/null 2>&1'] },
   ],
-  check() {
-    try {
-      const { execSync } = require('child_process')
-      execSync('gdb --version', { stdio: 'ignore' })
-      return true
-    } catch {
-      return false
-    }
-  },
   register(server, deps) {
     server.registerTool(debugSessionStartToolDefinition, createDebugSessionStartHandler(deps))
     server.registerTool(debugSessionBreakpointToolDefinition, createDebugSessionBreakpointHandler(deps))
