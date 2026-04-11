@@ -306,6 +306,7 @@ export interface JobStatus {
   id: string
   status: JobStatusType
   progress?: number
+  progressStage?: string
   startedAt?: string
   finishedAt?: string
   error?: string

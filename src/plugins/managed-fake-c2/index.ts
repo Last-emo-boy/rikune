@@ -14,6 +14,7 @@ import {
 const managedFakeC2Plugin: Plugin = {
   id: 'managed-fake-c2',
   name: 'Managed Fake C2',
+  surfaceRules: { tier: 2, activateOn: { findings: ['c2'] }, category: 'dynamic-analysis' },
   description:
     'Configurable fake C2 server — set custom responses for endpoints like /plugin, ' +
     '/ping, /gate to drive malware samples into deeper operational logic during sandbox execution',

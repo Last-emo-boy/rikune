@@ -139,13 +139,53 @@ export const ConfigSchema = z.object({
     maxFileSize: z.number().int().min(1).default(500 * 1024 * 1024), // 500MB
     storageRoot: z.string().default('/app/storage'),
     retentionDays: z.number().int().min(1).default(30),
+    maxTotalBytes: z.number().int().min(0).default(0),  // 0 = unlimited
   }).default({
     enabled: true,
     port: 18080,
     maxFileSize: 500 * 1024 * 1024,
     storageRoot: '/app/storage',
     retentionDays: 30,
+    maxTotalBytes: 0,
   }),
+}).superRefine((data, ctx) => {
+  // Cross-field validations
+
+  // PostgreSQL requires host + database
+  if (data.database.type === 'postgresql') {
+    if (!data.database.host) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['database', 'host'],
+        message: 'database.host is required when database.type is "postgresql"',
+      })
+    }
+    if (!data.database.database) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['database', 'database'],
+        message: 'database.database is required when database.type is "postgresql"',
+      })
+    }
+  }
+
+  // maxFileSize must be ≤ maxTotalBytes (if quota is set)
+  if (data.api.maxTotalBytes > 0 && data.api.maxFileSize > data.api.maxTotalBytes) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['api', 'maxFileSize'],
+      message: `api.maxFileSize (${data.api.maxFileSize}) must not exceed api.maxTotalBytes (${data.api.maxTotalBytes})`,
+    })
+  }
+
+  // server port ≠ api port
+  if (data.api.enabled && data.server.port === data.api.port) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['api', 'port'],
+      message: `api.port (${data.api.port}) must differ from server.port (${data.server.port})`,
+    })
+  }
 })
 
 export type Config = z.infer<typeof ConfigSchema>
@@ -382,6 +422,10 @@ export function loadConfigFromEnv(): Record<string, any> {
   if (process.env.API_RETENTION_DAYS) {
     if (!config.api) config.api = {}
     config.api.retentionDays = parseInt(process.env.API_RETENTION_DAYS, 10)
+  }
+  if (process.env.API_MAX_TOTAL_BYTES) {
+    if (!config.api) config.api = {}
+    config.api.maxTotalBytes = parseInt(process.env.API_MAX_TOTAL_BYTES, 10)
   }
 
   return config

@@ -11,6 +11,7 @@ import { binaryDiffSummaryToolDefinition, createBinaryDiffSummaryHandler } from 
 const binaryDiffPlugin: Plugin = {
   id: 'binary-diff',
   name: 'Binary Diff',
+  surfaceRules: { tier: 2, activateOn: { findings: ['packed'] }, category: 'reverse-engineering' },
   description: 'Binary comparison and structural diff summaries',
   version: '1.0.0',
   resources: { workers: 'workers' },

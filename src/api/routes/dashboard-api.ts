@@ -192,6 +192,7 @@ function handleOverview(res: ServerResponse): void {
       rss_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
       heap_used_mb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
       heap_total_mb: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+      system_total_mb: Math.round(os.totalmem() / 1024 / 1024),
     },
   })
 }

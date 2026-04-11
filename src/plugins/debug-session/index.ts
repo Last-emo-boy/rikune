@@ -37,6 +37,7 @@ import {
 const debugSessionPlugin: Plugin = {
   id: 'debug-session',
   name: 'Debug Session',
+  surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description: 'Interactive debugging via GDB/LLDB — breakpoints, stepping, memory inspection',
   version: '1.0.0',
   systemDeps: [

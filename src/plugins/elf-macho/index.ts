@@ -13,6 +13,7 @@ import { elfExportsExtractToolDefinition, createElfExportsExtractHandler } from 
 const elfMachoPlugin: Plugin = {
   id: 'elf-macho',
   name: 'ELF / Mach-O',
+  surfaceRules: { tier: 1, activateOn: { fileTypes: ['elf', 'macho'] }, category: 'static-analysis' },
   description: 'Structure analysis and import/export extraction for Linux ELF and macOS Mach-O binaries',
   version: '1.0.0',
   resources: { workers: 'workers' },

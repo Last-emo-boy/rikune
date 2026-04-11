@@ -21,6 +21,7 @@ export { MCPServer } from './server.js'
 export { loadConfig } from './config.js'
 export { WorkspaceManager } from './workspace-manager.js'
 export * from './types.js'
+export { RikuneError, ErrorCode, toRikuneError, isRikuneError } from './errors.js'
 
 async function main() {
   try {
@@ -37,9 +38,11 @@ async function main() {
       root: config.api.storageRoot,
       maxFileSize: config.api.maxFileSize,
       retentionDays: config.api.retentionDays,
+      maxTotalBytes: config.api.maxTotalBytes,
     })
     await storageManager.initialize()
     const jobQueue = new JobQueue(database)
+    jobQueue.restoreFromDatabase()
     const analysisTaskRunner = new AnalysisTaskRunner(jobQueue, database, workspaceManager, cacheManager, policyGuard)
     analysisTaskRunner.start()
 

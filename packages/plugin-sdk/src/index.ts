@@ -175,16 +175,32 @@ export interface PluginStatus {
   error?: string
 }
 
-/** Runtime metadata about a loaded (or skipped) plugin. */
-export interface PluginStatus {
-  id: string
-  name: string
-  description?: string
-  version?: string
-  status: 'loaded' | 'skipped-disabled' | 'skipped-check' | 'skipped-deps' | 'error'
-  tools: string[]
-  configFields?: PluginConfigField[]
-  error?: string
+// ═══════════════════════════════════════════════════════════════════════════
+// Narrowed Dependency Interfaces — typed APIs exposed to plugin authors
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Minimal database API available to plugins. */
+export interface PluginDatabaseApi {
+  findSampleById(sampleId: string): { id: string; sha256: string; size: number; file_type?: string; created_at: string } | undefined
+  findSampleBySha256(sha256: string): { id: string; sha256: string; size: number; file_type?: string; created_at: string } | undefined
+  findAnalysesBySample(sampleId: string, limit?: number): Array<{ id: string; stage: string; backend: string; status: string; started_at?: string; finished_at?: string }>
+  findArtifactsBySample(sampleId: string, type?: string): Array<{ id: string; type: string; path: string; mime?: string }>
+  insertArtifact(artifact: { id: string; sample_id: string; type: string; path: string; sha256: string; mime?: string; created_at: string }): void
+}
+
+/** Minimal workspace API available to plugins. */
+export interface PluginWorkspaceApi {
+  getSamplePath(sampleId: string): string | null
+  getWorkspacePath(): string
+  getArtifactDir(sampleId: string): string
+  ensureArtifactDir(sampleId: string): Promise<string>
+}
+
+/** Minimal cache API available to plugins. */
+export interface PluginCacheApi {
+  get(key: string): unknown | null
+  set(key: string, value: unknown, options?: { sampleSha256?: string }): void
+  delete(key: string): boolean
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -205,9 +221,8 @@ export function definePlugin(plugin: Plugin): Plugin {
  */
 export function pathExists(p: string): boolean {
   try {
-    // Use dynamic import avoidance — works because this is a type-level utility
-    const fs = require('fs')
-    fs.accessSync(p)
+    const { accessSync } = require('fs')
+    accessSync(p)
     return true
   } catch {
     return false
@@ -220,4 +235,41 @@ export function pathExists(p: string): boolean {
 export function envIsSet(varName: string): boolean {
   const val = process.env[varName]
   return val !== undefined && val.trim().length > 0
+}
+
+/**
+ * Helper to create a standard text-only ToolResult.
+ * Reduces boilerplate in plugin tool handlers.
+ */
+export function createToolResult(text: string, opts?: { isError?: boolean; structured?: unknown }): ToolResult {
+  return {
+    content: [{ type: 'text' as const, text }],
+    isError: opts?.isError,
+    structuredContent: opts?.structured,
+  }
+}
+
+/**
+ * Retry wrapper with exponential backoff.
+ * Useful for plugin tools that call external processes or network services.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  options?: { retries?: number; baseDelayMs?: number; shouldRetry?: (err: unknown) => boolean }
+): Promise<T> {
+  const retries = options?.retries ?? 3
+  const baseDelay = options?.baseDelayMs ?? 200
+  const shouldRetry = options?.shouldRetry ?? (() => true)
+
+  let lastError: unknown
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastError = err
+      if (attempt >= retries || !shouldRetry(err)) break
+      await new Promise(resolve => setTimeout(resolve, baseDelay * 2 ** attempt))
+    }
+  }
+  throw lastError
 }

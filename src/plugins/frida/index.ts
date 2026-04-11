@@ -20,6 +20,7 @@ import { fridaScriptGenerateToolDefinition, createFridaScriptGenerateHandler } f
 const fridaPlugin: Plugin = {
   id: 'frida',
   name: 'Frida Instrumentation',
+  surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description: 'Runtime instrumentation, script injection, and trace capture via Frida',
   version: '1.0.0',
   configSchema: [

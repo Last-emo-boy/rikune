@@ -114,7 +114,11 @@ import {
   pluginEnableToolDefinition, createPluginEnableHandler,
   pluginDisableToolDefinition, createPluginDisableHandler,
 } from './tools/plugin-list.js'
-
+// ─── Progressive tool discovery ──────────────────────────────────────
+import {
+  toolsDiscoverToolDefinition, createToolsDiscoverHandler,
+} from './tools/tools-discover.js'
+import { getToolSurfaceManager } from './tool-surface-manager.js'
 // ─── System diagnostics tools ─────────────────────────────────────────────
 import {
   configValidateToolDefinition, createConfigValidateHandler,
@@ -183,6 +187,13 @@ export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promi
   // ── Utilities ──────────────────────────────────────────────────────────
   server.registerTool(toolHelpToolDefinition, createToolHelpHandler(() => server.getToolDefinitions()))
 
+  // ── Progressive tool discovery (registered before plugins so it's a core tool) ──
+  server.registerTool(toolsDiscoverToolDefinition, createToolsDiscoverHandler(getPluginManager()))
+
+  // ── Snapshot core tool names for surface manager (before plugins load) ──
+  const coreToolNames = Array.from(server.getToolDefinitions()).map(d => d.name)
+  getToolSurfaceManager().registerCoreTools(coreToolNames)
+
   // ── Plugins ────────────────────────────────────────────────────────────
   const pluginDeps = {
     ...deps,
@@ -212,7 +223,15 @@ export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promi
   server.registerTool(pluginEnableToolDefinition, createPluginEnableHandler(server))
   server.registerTool(pluginDisableToolDefinition, createPluginDisableHandler(server))
 
-  // ── System diagnostics tools ───────────────────────────────────────────
+  // Also register post-plugin introspection tools as core (always visible)
+  getToolSurfaceManager().registerCoreTools([
+    pluginListToolDefinition.name,
+    pluginEnableToolDefinition.name,
+    pluginDisableToolDefinition.name,
+    configValidateToolDefinition.name,
+  ])
+
+  // ── System diagnostics tools ───────────────────────────────────────
   server.registerTool(configValidateToolDefinition, createConfigValidateHandler(server))
 
   // ══════════════════════════════════════════════════════════════════════════

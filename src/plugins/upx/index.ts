@@ -10,6 +10,7 @@ import { upxInspectToolDefinition, createUPXInspectHandler } from './tools/upx-i
 const upxPlugin: Plugin = {
   id: 'upx',
   name: 'UPX',
+  surfaceRules: { tier: 2, activateOn: { findings: ['packed', 'upx'] }, category: 'unpacking' },
   description: 'UPX packer/unpacker for executable compression analysis',
   version: '1.0.0',
   configSchema: [

@@ -10,6 +10,7 @@ import { angrAnalyzeToolDefinition, createAngrAnalyzeHandler } from './tools/ang
 const angrPlugin: Plugin = {
   id: 'angr',
   name: 'angr',
+  surfaceRules: { tier: 3, category: 'symbolic-execution' },
   description: 'Symbolic execution and binary analysis via angr',
   version: '1.0.0',
   configSchema: [

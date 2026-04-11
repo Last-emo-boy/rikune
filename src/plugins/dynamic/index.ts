@@ -22,6 +22,7 @@ import { sandboxExecuteToolDefinition, createSandboxExecuteHandler } from './too
 const dynamicPlugin: Plugin = {
   id: 'dynamic',
   name: 'Dynamic Analysis Automation',
+  surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description: 'Automated Frida hooking, trace attribution, memory dumping, dependency analysis, trace/memory import, and sandbox execution',
   version: '1.0.0',
   configSchema: [

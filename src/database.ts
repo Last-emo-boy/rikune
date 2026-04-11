@@ -8,6 +8,142 @@ import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { logger, logDebug } from './logger.js';
+import { DatabaseError, ErrorCode } from './errors.js';
+
+// ─── Lightweight query builder ────────────────────────────────────────────────
+
+export interface WhereClause {
+  column: string
+  op?: '=' | '!=' | '<' | '>' | '<=' | '>=' | 'IN' | 'LIKE' | 'IS NULL' | 'IS NOT NULL'
+  value?: unknown
+}
+
+/**
+ * Lightweight, safe query builder for SELECT queries.
+ * Uses parameterised queries exclusively — no string interpolation of values.
+ *
+ * Usage:
+ *   const rows = new QueryBuilder('samples')
+ *     .where({ column: 'sha256', value: sha })
+ *     .orderBy('created_at', 'DESC')
+ *     .limit(10)
+ *     .execute<Sample>(db)
+ */
+export class QueryBuilder {
+  private _table: string
+  private _columns: string = '*'
+  private _wheres: { sql: string; params: unknown[] }[] = []
+  private _orderBy: string | null = null
+  private _limit: number | null = null
+  private _offset: number | null = null
+
+  constructor(table: string) {
+    this._table = table
+  }
+
+  select(columns: string): this {
+    this._columns = columns
+    return this
+  }
+
+  where(clause: WhereClause): this {
+    const op = clause.op ?? '='
+    if (op === 'IS NULL' || op === 'IS NOT NULL') {
+      this._wheres.push({ sql: `${clause.column} ${op}`, params: [] })
+    } else if (op === 'IN') {
+      const arr = clause.value as unknown[]
+      if (!Array.isArray(arr) || arr.length === 0) {
+        // Matching nothing — add impossible condition
+        this._wheres.push({ sql: '0 = 1', params: [] })
+      } else {
+        const placeholders = arr.map(() => '?').join(', ')
+        this._wheres.push({ sql: `${clause.column} IN (${placeholders})`, params: arr })
+      }
+    } else {
+      this._wheres.push({ sql: `${clause.column} ${op} ?`, params: [clause.value] })
+    }
+    return this
+  }
+
+  orderBy(column: string, direction: 'ASC' | 'DESC' = 'ASC'): this {
+    this._orderBy = `${column} ${direction}`
+    return this
+  }
+
+  limit(n: number): this {
+    this._limit = n
+    return this
+  }
+
+  offset(n: number): this {
+    this._offset = n
+    return this
+  }
+
+  build(): { sql: string; params: unknown[] } {
+    let sql = `SELECT ${this._columns} FROM ${this._table}`
+    const params: unknown[] = []
+
+    if (this._wheres.length > 0) {
+      sql += ' WHERE ' + this._wheres.map(w => w.sql).join(' AND ')
+      for (const w of this._wheres) params.push(...w.params)
+    }
+
+    if (this._orderBy) {
+      sql += ` ORDER BY ${this._orderBy}`
+    }
+
+    if (this._limit != null) {
+      sql += ' LIMIT ?'
+      params.push(this._limit)
+    }
+
+    if (this._offset != null) {
+      sql += ' OFFSET ?'
+      params.push(this._offset)
+    }
+
+    return { sql, params }
+  }
+
+  execute<T>(db: Database.Database): T[] {
+    const { sql, params } = this.build()
+    const stmt = QueryBuilder.getCachedStatement(db, sql)
+    return (params.length > 0 ? stmt.all(...params) : stmt.all()) as T[]
+  }
+
+  executeOne<T>(db: Database.Database): T | undefined {
+    const { sql, params } = this.build()
+    const stmt = QueryBuilder.getCachedStatement(db, sql)
+    return (params.length > 0 ? stmt.get(...params) : stmt.get()) as T | undefined
+  }
+
+  // ── Prepared statement cache ────────────────────────────────────────────
+  private static stmtCache = new Map<string, Database.Statement>()
+  private static stmtCacheDb: Database.Database | null = null
+  private static readonly STMT_CACHE_MAX = 256
+
+  static getCachedStatement(db: Database.Database, sql: string): Database.Statement {
+    // Reset cache if DB instance changed (e.g. after reconnect)
+    if (QueryBuilder.stmtCacheDb !== db) {
+      QueryBuilder.stmtCache.clear()
+      QueryBuilder.stmtCacheDb = db
+    }
+    let stmt = QueryBuilder.stmtCache.get(sql)
+    if (!stmt) {
+      // Evict oldest if cache full
+      if (QueryBuilder.stmtCache.size >= QueryBuilder.STMT_CACHE_MAX) {
+        const oldest = QueryBuilder.stmtCache.keys().next().value
+        if (oldest) QueryBuilder.stmtCache.delete(oldest)
+      }
+      stmt = db.prepare(sql)
+      QueryBuilder.stmtCache.set(sql, stmt)
+    }
+    return stmt
+  }
+}
+
+// ─── End query builder ────────────────────────────────────────────────────────
 
 /**
  * Database schema SQL statements
@@ -661,6 +797,24 @@ export class DatabaseManager {
   transaction<T>(fn: () => T): T {
     const txn = this.db.transaction(fn);
     return txn();
+  }
+
+  /**
+   * Execute a function within a transaction with automatic rollback on error.
+   * The callback receives `this` (the DatabaseManager) for convenience.
+   * Nested calls are safe — SQLite uses savepoints automatically via better-sqlite3.
+   */
+  withTransaction<T>(fn: (db: DatabaseManager) => T): T {
+    const txn = this.db.transaction(() => fn(this))
+    try {
+      return txn()
+    } catch (err) {
+      throw new DatabaseError(
+        ErrorCode.E_DB_TRANSACTION,
+        `Transaction failed: ${(err as Error).message}`,
+        { cause: err },
+      )
+    }
   }
 
   // ==================== Sample Operations ====================
@@ -1924,8 +2078,9 @@ export class DatabaseManager {
         const stats = fs.statSync(dbPath);
         dbSizeBytes = stats.size;
       }
-    } catch {
-      // Ignore errors
+    } catch (e) {
+      // DB file size read is best-effort
+      logDebug?.('db_file_size_read_failed', { err: String(e) })
     }
 
     return {

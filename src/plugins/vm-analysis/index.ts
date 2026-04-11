@@ -21,6 +21,7 @@ import { mbaSimplifyToolDefinition, createMbaSimplifyHandler } from './tools/mba
 const vmAnalysisPlugin: Plugin = {
   id: 'vm-analysis',
   name: 'VM Analysis & Symbolic',
+  surfaceRules: { tier: 3, category: 'symbolic-execution' },
   description: 'Virtual-machine protection analysis, constraint extraction, SMT solving, keygen synthesis, and MBA simplification',
   version: '1.0.0',
   resources: { workers: 'workers' },

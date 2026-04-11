@@ -29,6 +29,7 @@ import { codeModuleReviewApplyToolDefinition, createCodeModuleReviewApplyHandler
 const codeAnalysisPlugin: Plugin = {
   id: 'code-analysis',
   name: 'Code Analysis',
+  surfaceRules: { tier: 0, category: 'reverse-engineering' },
   description: 'Function listing, decompilation, disassembly, CFG, cross-references, reconstruction, renaming, explanation, and module review',
   version: '1.0.0',
   register(server, deps) {

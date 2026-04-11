@@ -25,39 +25,61 @@ from the centralised tool registry.
 | Plugin ID | Name | Tools | Prerequisites |
 |-----------|------|-------|---------------|
 | `android` | Android / APK Analysis | `apk.structure.analyze`, `dex.decompile`, `dex.classes.list`, `apk.packer.detect` | jadx binary accessible |
-| `batch` | Batch Analysis | `batch.analyze` | None |
+| `angr` | angr | `angr.analyze` | `ANGR_PYTHON` |
+| `api-hash` | API Hash Resolution | `hash.resolve`, `hash.identify` | None |
+| `apk-smali` | APK Smali Analysis | `apk.disassemble`, `apk.manifest.parse`, `apk.resources.decode` | `JADX_PATH` |
+| `batch` | Batch Analysis | `batch.submit`, `batch.status`, `batch.results` | None |
 | `behavior-first` | Behavior-First Analysis | 3 tools | None |
 | `binary-diff` | Binary Diff | 2 tools | None |
+| `capstone` | Capstone Disassembly | `disasm.quick`, `shellcode.disasm` | None |
 | `code-analysis` | Code Analysis | 19 tools (CFG, decompile, xrefs, patterns) | None |
 | `crackme` | CrackMe Automation | `crackme.locate_validation`, `symbolic.explore`, `patch.generate`, `keygen.verify` | None (angr optional) |
 | `cross-module` | Cross-Module Analysis | `cross_binary.compare`, `call_graph.cross_module`, `dll.dependency_tree` | None |
 | `debug-session` | Debug Session | 9 tools | None |
-| `deep-unpack` | Deep Unpack | 3 tools | None |
-| `docker-backends` | Docker Backends | 10 tools (RetDec, Rizin, YARA-X, UPX, FLOSS) | Docker |
-| `dotnet-reactor` | .NET Reactor | 4 tools | .NET SDK |
+| `deep-unpack` | Deep Unpack | 3 tools | Speakeasy / Qiling / Wine optional |
+| `die` | Detect It Easy | `die.scan`, `die.identify` | `DIE_PATH` |
+| `dotnet-decompile` | .NET Decompile | `dotnet.decompile`, `dotnet.decompile.type` | None |
+| `dotnet-reactor` | .NET Reactor | 4 tools | python3 |
 | `dynamic` | Dynamic Analysis Automation | 7 tools | None |
 | `elf-macho` | ELF/Mach-O Analysis | 4 tools | None |
-| `frida` | Frida Instrumentation | `frida.runtime.instrument`, `frida.script.inject`, `frida.trace.capture`, + 1 | `frida --version` succeeds |
+| `firmware` | Firmware Analysis | 3 tools | None |
+| `frida` | Frida Instrumentation | `frida.runtime.instrument`, `frida.script.inject`, `frida.trace.capture`, `frida.script.generate` | `frida --version` succeeds |
 | `ghidra` | Ghidra Integration | `ghidra.analyze`, `ghidra.health` | `GHIDRA_INSTALL_DIR` set and accessible |
-| `host-correlation` | Host Correlation | 1 tool | None |
+| `go-analysis` | Go Analysis | `go.symbols.recover`, `go.types.list`, `go.binary.analyze` | None |
+| `graphviz` | Graphviz | `graphviz.render` | `GRAPHVIZ_DOT_PATH` |
+| `host-correlation` | Host Correlation | 1 tool | python3 |
 | `kb-collaboration` | Knowledge Base & Collaboration | 8 tools | None |
 | `malware` | Malware Analysis | `c2.extract`, `malware.config.extract`, `malware.classify`, `sandbox.report` | None |
-| `managed-fake-c2` | Managed Fake C2 | 1 tool | None |
-| `managed-il-xrefs` | Managed IL XRefs | 2 tools | .NET SDK |
-| `managed-sandbox` | Managed Sandbox | 1 tool | None |
-| `memory-forensics` | Memory Forensics | 6 tools | None |
+| `managed-fake-c2` | Managed Fake C2 | 1 tool | python3 |
+| `managed-il-xrefs` | Managed IL XRefs | 2 tools | python3 |
+| `managed-sandbox` | Managed Sandbox | 1 tool | python3 |
+| `memory-forensics` | Memory Forensics | 6 tools | `VOLATILITY3_PATH` |
+| `metadata` | File Metadata | `metadata.extract` | None |
 | `observability` | Observability | `observability.metrics` | None |
+| `office-analysis` | Office Analysis | `office.vba.extract`, `office.macro.detect`, `office.ole.analyze` | None |
+| `panda` | PANDA | `panda.inspect` | `PANDA_PATH` |
+| `pcap-analysis` | PCAP Analysis | `pcap.analyze`, `pcap.dns.list`, `pcap.extract.streams` | None |
 | `pe-analysis` | PE Analysis | 6 tools | None |
-| `reporting` | Reporting | 2 tools | None |
-| `runtime-deobfuscate` | Runtime Deobfuscation | 4 tools | None |
+| `pe-signature` | PE Authenticode Signature | `pe.signature.verify`, `pe.certificate.extract` | None |
+| `qiling` | Qiling | `qiling.inspect` | `QILING_PYTHON` |
+| `reporting` | Reporting | `report.summarize`, `report.generate`, `workflow.summarize` | None |
+| `retdec` | RetDec | `retdec.decompile` | `RETDEC_PATH` |
+| `rizin` | Rizin | `rizin.analyze` | `RIZIN_PATH` |
+| `runtime-deobfuscate` | Runtime Deobfuscation | 4 tools | de4dot optional |
 | `sbom` | SBOM | 1 tool | None |
+| `similarity` | Sample Similarity | `sample.similarity`, `sample.cluster.fuzzy` | py-tlsh optional |
+| `speakeasy` | Speakeasy Emulator | `speakeasy.emulate`, `speakeasy.shellcode`, `speakeasy.api_trace` | speakeasy-emulator |
 | `static-triage` | Static Triage | 17 tools | None |
-| `strings` | Strings | 2 tools | None |
-| `threat-intel` | Threat Intelligence | 3 tools | None |
+| `strings` | Strings | 2 tools | FLOSS optional |
+| `threat-intel` | Threat Intelligence | `attack.map`, `ioc.export`, `sigma.rule.generate` | None |
 | `unpacking` | Unpacking | 2 tools | None |
+| `upx` | UPX | `upx.inspect` | `UPX_PATH` |
 | `visualization` | Visualization & Reporting | `report.html.generate`, `behavior.timeline`, `data_flow.map` | None |
 | `vm-analysis` | VM Analysis | 10 tools | None |
 | `vuln-scanner` | Vulnerability Scanner | 2 tools | None |
+| `wine` | Wine | `wine.run` | `WINE_PATH` |
+| `yara` | YARA | `yara.scan`, `yara.generate`, `yara.generate.batch` | yara-python optional |
+| `yara-x` | YARA-X | `yaraX.scan` | `YARA_X_PATH` |
 
 ## Plugin introspection tools
 

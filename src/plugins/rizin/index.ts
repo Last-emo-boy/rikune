@@ -10,6 +10,7 @@ import { rizinAnalyzeToolDefinition, createRizinAnalyzeHandler } from './tools/r
 const rizinPlugin: Plugin = {
   id: 'rizin',
   name: 'Rizin',
+  surfaceRules: { tier: 3, category: 'reverse-engineering' },
   description: 'Rizin reverse engineering framework for binary analysis',
   version: '1.0.0',
   configSchema: [

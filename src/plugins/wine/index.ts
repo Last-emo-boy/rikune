@@ -10,6 +10,7 @@ import { wineRunToolDefinition, createWineRunHandler } from './tools/wine-run.js
 const winePlugin: Plugin = {
   id: 'wine',
   name: 'Wine',
+  surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description: 'Wine Windows compatibility layer for running Windows executables',
   version: '1.0.0',
   configSchema: [

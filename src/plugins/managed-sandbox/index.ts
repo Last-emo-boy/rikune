@@ -13,6 +13,7 @@ import {
 const managedSandboxPlugin: Plugin = {
   id: 'managed-sandbox',
   name: 'Managed Sandbox',
+  surfaceRules: { tier: 2, activateOn: { findings: ['dotnet'] }, category: 'dotnet-analysis' },
   description:
     'Execute .NET assemblies in an isolated sandbox with network sinkholing, ' +
     'CLR hooks (Assembly.Load, CreateDecryptor, MethodInfo.Invoke), and dynamic-load capture',

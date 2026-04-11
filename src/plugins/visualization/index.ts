@@ -12,6 +12,7 @@ import { dataFlowMapToolDefinition, createDataFlowMapHandler } from './tools/dat
 const visualizationPlugin: Plugin = {
   id: 'visualization',
   name: 'Visualization & Reporting',
+  surfaceRules: { tier: 0, category: 'static-analysis' },
   description: 'HTML report generation, behavior timelines, and data-flow maps',
   version: '1.0.0',
   register(server, deps) {

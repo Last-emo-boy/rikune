@@ -48,6 +48,7 @@ import {
   rewriteToolReferencesInValue,
   toTransportToolName,
 } from './tool-name-normalization.js'
+import { getToolSurfaceManager } from './tool-surface-manager.js'
 
 interface MCPServerDependencies {
   workspaceManager?: WorkspaceManager
@@ -103,7 +104,7 @@ export class MCPServer {
     // Initialize MCP SDK server
     this.server = new Server(
       {
-        name: 'binary-analysis-mcp-server',
+        name: 'rikune',
         version: '1.0.0-beta.3',
       },
       {
@@ -236,6 +237,14 @@ export class MCPServer {
    */
   public setPluginManager(mgr: PluginManager): void {
     this.pluginManager = mgr
+
+    // Wire progressive surface notification so clients refresh their tool list
+    const surface = getToolSurfaceManager()
+    surface.setNotifyCallback(() => {
+      try {
+        this.server.sendToolListChanged()
+      } catch (e) { this.logger.debug({ err: e }, 'Tool list change notification failed (best-effort)') }
+    })
   }
 
   public getProgressReporter(progressToken?: string | number): ProgressReporter {
@@ -308,8 +317,15 @@ export class MCPServer {
    */
   public async listTools(): Promise<Tool[]> {
     const tools: Tool[] = []
+    const surface = getToolSurfaceManager()
+    const visibleSet = surface.isEnabled() ? surface.getVisibleToolNames() : null
 
     for (const [name, definition] of this.tools.entries()) {
+      // Progressive surface filtering — skip tools not currently visible
+      const canonicalName = definition.canonicalName || definition.name
+      if (visibleSet && visibleSet.size > 0 && !visibleSet.has(canonicalName)) {
+        continue
+      }
       // Convert Zod schema to JSON Schema format for MCP protocol
       const inputSchema = this.zodToJsonSchema(definition.inputSchema)
       const outputSchema = definition.outputSchema
@@ -317,7 +333,6 @@ export class MCPServer {
         : undefined
 
       // Append prerequisite hint for tools that require a sample_id input
-      const canonicalName = definition.canonicalName || definition.name
       const needsHint =
         !MCPServer.SAMPLE_ENTRY_TOOLS.has(canonicalName) &&
         this.inputRequiresSampleId(definition.inputSchema)
@@ -548,7 +563,8 @@ export class MCPServer {
     let data: Record<string, unknown>
     try {
       data = JSON.parse(text)
-    } catch {
+    } catch (e) {
+      this.logger.debug({ err: e }, 'Result text is not valid JSON, applying hard truncation')
       return this.hardTruncateResult(result, text)
     }
 
@@ -611,11 +627,16 @@ export class MCPServer {
   private hardTruncateResult(original: CallToolResult, text: string): CallToolResult {
     const maxBytes = MCPServer.MAX_RESPONSE_BYTES
     // Binary-search a safe UTF-8 cut point
-    let truncated = text.slice(0, maxBytes)
-    // Avoid cutting in the middle of a multi-byte char
-    while (Buffer.byteLength(truncated, 'utf8') > maxBytes) {
-      truncated = truncated.slice(0, -100)
+    let lo = 0, hi = Math.min(text.length, maxBytes)
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >>> 1
+      if (Buffer.byteLength(text.slice(0, mid), 'utf8') <= maxBytes) {
+        lo = mid
+      } else {
+        hi = mid - 1
+      }
     }
+    const truncated = text.slice(0, lo)
     const suffix = '\n\n[TRUNCATED: response exceeded token budget. Use more specific queries or request individual stages.]'
     const finalText = truncated + suffix
     return {
@@ -869,6 +890,15 @@ export class MCPServer {
       if (this.pluginManager) {
         await this.pluginManager.fireHook('after', canonicalName, validatedArgs as Record<string, unknown>, { elapsedMs: elapsed })
       }
+
+      // Progressive surface — scan result for activation signals
+      try {
+        const surface = getToolSurfaceManager()
+        if (surface.isEnabled()) {
+          const workerData = 'content' in result ? undefined : result
+          if (workerData) surface.processToolResult(canonicalName, workerData)
+        }
+      } catch (e) { this.logger.debug({ err: e }, 'Surface expansion failed (best-effort)') }
       
       // Check if result is ToolResult or WorkerResult
       if ('content' in result) {
@@ -1205,6 +1235,10 @@ export class MCPServer {
     // Initialize dashboard API with server + database references
     const { initDashboard } = await import('./api/routes/dashboard-api.js')
     initDashboard({ server: this, database, workspaceManager })
+
+    // Wire health-check dependencies for /api/v1/ready
+    const { setHealthDependencies } = await import('./api/routes/health.js')
+    setHealthDependencies({ database, storageManager })
 
     await fileServer.start()
     this.httpFileServer = fileServer

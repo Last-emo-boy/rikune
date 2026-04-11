@@ -14,6 +14,7 @@ import {
 const hostCorrelationPlugin: Plugin = {
   id: 'host-correlation',
   name: 'Host Correlation',
+  surfaceRules: { tier: 2, activateOn: { findings: ['suspicious_imports'] }, category: 'malware-analysis' },
   description:
     'Auto-scan directory and system artifacts to correlate DLLs with host EXEs, ' +
     'scheduled tasks, services, startup entries, sideloading configs, and COM registration',

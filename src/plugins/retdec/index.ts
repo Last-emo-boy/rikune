@@ -10,6 +10,7 @@ import { retdecDecompileToolDefinition, createRetDecDecompileHandler } from './t
 const retdecPlugin: Plugin = {
   id: 'retdec',
   name: 'RetDec',
+  surfaceRules: { tier: 3, category: 'reverse-engineering' },
   description: 'RetDec decompiler for binary-to-C decompilation',
   version: '1.0.0',
   configSchema: [

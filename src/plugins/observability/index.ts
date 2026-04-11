@@ -158,6 +158,7 @@ function createMetricsHandler() {
 const plugin: Plugin = {
   id: 'observability',
   name: 'Observability',
+  surfaceRules: { tier: 0, category: 'static-analysis' },
   description: 'Tool invocation metrics and monitoring via lifecycle hooks',
   version: '1.0.0',
   hooks,

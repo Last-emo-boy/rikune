@@ -72,10 +72,12 @@ const LOG_LEVEL_LABELS: Record<number, string> = {
 class LogRingBuffer {
   private buffer: LogEntry[] = []
   private maxSize: number
+  private maxAgeMs: number
   private _onEntry: ((entry: LogEntry) => void) | null = null
 
-  constructor(maxSize = 500) {
+  constructor(maxSize = 500, maxAgeMs = 30 * 60 * 1000) { // 30 min default TTL
     this.maxSize = maxSize
+    this.maxAgeMs = maxAgeMs
   }
 
   push(raw: string): void {
@@ -86,12 +88,26 @@ class LogRingBuffer {
         levelLabel: LOG_LEVEL_LABELS[obj.level] || 'unknown',
       }
       this.buffer.push(entry)
+      // Evict by count
       if (this.buffer.length > this.maxSize) {
         this.buffer.shift()
+      }
+      // Periodic TTL pruning (every 50 entries to amortize cost)
+      if (this.buffer.length % 50 === 0) {
+        this.pruneExpired()
       }
       if (this._onEntry) this._onEntry(entry)
     } catch {
       // ignore malformed lines
+    }
+  }
+
+  /** Remove entries older than maxAgeMs. */
+  private pruneExpired(): void {
+    const cutoff = new Date(Date.now() - this.maxAgeMs).toISOString()
+    const firstValid = this.buffer.findIndex(e => e.time >= cutoff)
+    if (firstValid > 0) {
+      this.buffer.splice(0, firstValid)
     }
   }
 
@@ -126,8 +142,8 @@ export const logRingBuffer = new LogRingBuffer(500)
  */
 function createLogger() {
   // Create destination that writes to stderr (fd 2)
-  // Use sync mode to ensure logs are written immediately
-  const stderrDest = pino.destination({ dest: 2, sync: true });
+  // Use async mode to avoid blocking the event loop during high log throughput
+  const stderrDest = pino.destination({ dest: 2, sync: false, minLength: 4096 });
 
   // Create a writable stream that captures logs into the ring buffer
   const bufferStream = new Writable({
@@ -143,7 +159,7 @@ function createLogger() {
     { stream: bufferStream, level: 'debug' as pino.Level },
   ])
 
-  return pino({
+  const pinoInstance = pino({
     level: 'debug',  // Let multistream filter per-destination
     // Simple text format for MCP stdio compatibility
     messageKey: 'msg',
@@ -160,6 +176,13 @@ function createLogger() {
       error: pino.stdSerializers.err,
     },
   }, multiDest);
+
+  // Flush async buffer on process exit to prevent log loss
+  const onExit = () => { stderrDest.flushSync() }
+  process.once('beforeExit', onExit)
+  process.once('SIGTERM', onExit)
+
+  return pinoInstance
 }
 
 /**

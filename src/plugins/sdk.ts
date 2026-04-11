@@ -337,27 +337,159 @@ export interface PluginStatus {
   error?: string
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Progressive Tool Surface — visibility control
+// ═══════════════════════════════════════════════════════════════════════════
+
 /**
- * The contract every plugin must implement.
+ * Surface tier determines when a plugin's tools become visible to the AI.
  *
- * A plugin is a self-contained module that lives in its own directory
- * under `src/plugins/<id>/`. It exports a default `Plugin` object.
+ * - `0` (Gateway): Always visible. Entry-point tools for sample intake, triage,
+ *   task management, discovery, and reporting. Aim for ≤15 tools at this tier.
  *
- * ## Standard directory layout
+ * - `1` (Context-activated): Activated when a sample's file type or format
+ *   matches the plugin's declared `activateOn.fileTypes`. For example, PE analysis
+ *   tools appear only after a PE file is ingested.
  *
- * ```
- * src/plugins/<id>/
- *   index.ts         — Plugin entry point (required)
- *   tools/            — Co-located tool implementations
- *   workers/          — Python worker scripts (plugin-specific)
- *   scripts/          — Frida/Ghidra scripts (plugin-specific)
- *   data/             — Data files (JSON patterns, rules, etc.)
- * ```
+ * - `2` (Finding-activated): Activated when another tool's result contains
+ *   a matching finding/signal from `activateOn.findings`. For example, unpacking
+ *   tools activate when a packer is detected.
  *
- * Tools, workers, scripts, and data files that are specific to a single
- * plugin MUST live inside that plugin's directory. Only truly shared
- * resources (used by 3+ plugins or by the core) remain in root-level dirs.
+ * - `3` (Expert): Never auto-activated; only shown when the AI calls
+ *   `tools.discover` with the matching category. For heavyweight backends
+ *   (Ghidra, angr, PANDA, etc.) that require explicit intent.
  */
+export type SurfaceTier = 0 | 1 | 2 | 3
+
+/**
+ * Declarative visibility rules for a plugin's tools.
+ *
+ * The ToolSurfaceManager reads these at startup. No hardcoded lists in the core
+ * — every plugin self-describes when its tools should become visible.
+ *
+ * Examples:
+ * ```ts
+ * // Tier 0 — always visible
+ * surfaceRules: { tier: 0 }
+ *
+ * // Tier 1 — activated when a PE file is loaded
+ * surfaceRules: { tier: 1, activateOn: { fileTypes: ['pe32', 'pe64', 'dll'] } }
+ *
+ * // Tier 2 — activated when packing is detected
+ * surfaceRules: { tier: 2, activateOn: { findings: ['packed', 'upx'] } }
+ *
+ * // Tier 3 — expert tool, manual discovery only
+ * surfaceRules: { tier: 3, category: 'symbolic-execution' }
+ * ```
+ */
+export interface SurfaceRules {
+  /** Visibility tier (0 = always, 1 = file-type, 2 = finding, 3 = expert). */
+  tier: SurfaceTier
+
+  /** Conditions that trigger automatic activation (tier 1 and 2). */
+  activateOn?: {
+    /**
+     * File type / format tags that activate this plugin's tools.
+     * Matched against the `file_type` field from triage results.
+     *
+     * Standard tags: `pe32`, `pe64`, `dll`, `elf`, `macho`, `apk`, `dex`,
+     * `office`, `pdf`, `pcap`, `firmware`, `dotnet`, `go`, `jar`, `class`
+     */
+    fileTypes?: string[]
+
+    /**
+     * Finding / signal tags that activate this plugin's tools.
+     * Matched against `recommended_next_tools`, packer detections, and
+     * structured flags returned by other tools.
+     *
+     * Standard tags: `packed`, `upx`, `dotnet`, `go`, `signed`, `obfuscated`,
+     * `crypto`, `c2`, `shellcode`, `vba_macros`, `suspicious_imports`,
+     * `anti_debug`, `vm_detect`
+     */
+    findings?: string[]
+  }
+
+  /**
+   * Discovery category for `tools.discover` (primarily tier 3, but any tier
+   * can specify a category for discoverability).
+   *
+   * Standard categories: `reverse-engineering`, `dynamic-analysis`,
+   * `symbolic-execution`, `memory-forensics`, `network-analysis`,
+   * `malware-analysis`, `vulnerability-research`, `static-analysis`
+   */
+  category?: string
+
+  /**
+   * Declarative signal mapping: when a tool from this plugin produces output
+   * where `data[field]` is truthy, the corresponding signal tag(s) are emitted
+   * and can activate tier-2 plugins.
+   *
+   * All plugins' signalMaps are collected into a global lookup. When any tool
+   * result arrives, the surface manager checks every registered signalMap.
+   *
+   * Example:
+   * ```ts
+   * signalMap: {
+   *   'is_packed': 'packed',
+   *   'is_dotnet': 'dotnet',
+   *   'anti_debug': ['anti_debug', 'suspicious_imports'],
+   * }
+   * ```
+   */
+  signalMap?: Record<string, string | string[]>
+
+  /**
+   * Custom signal extractor for complex output structures (e.g., arrays of
+   * detections). Called after signalMap processing.
+   *
+   * The function receives the tool result's `data` object and should return
+   * an array of signal tags.
+   *
+   * Example:
+   * ```ts
+   * extractSignals: (data) => {
+   *   const signals: string[] = []
+   *   if (Array.isArray(data.detections)) {
+   *     for (const d of data.detections) {
+   *       if (String(d.type).includes('UPX')) signals.push('packed', 'upx')
+   *     }
+   *   }
+   *   return signals
+   * }
+   * ```
+   */
+  extractSignals?: (data: Record<string, unknown>) => string[]
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Shared vocabulary — file-type tag normalization
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Canonical mapping from raw `detectFileType()` output (lowercased) to the
+ * set of file-type tags that tier-1 plugins can match against.
+ *
+ * This is shared vocabulary — used by the ToolSurfaceManager to normalize
+ * file types before matching against plugins' `activateOn.fileTypes`.
+ *
+ * `detectFileType()` returns: `'PE'`, `'ELF'`, `'Mach-O'`, `'Mach-O-Fat'`,
+ * `'unknown'`. Plugins declare tag names from the expanded set below.
+ */
+export const SURFACE_FILE_TYPE_TAGS: Record<string, string[]> = {
+  pe:           ['pe', 'pe32', 'pe64', 'dll', 'exe', 'windows'],
+  elf:          ['elf', 'linux'],
+  'mach-o':     ['macho', 'mach-o', 'macos', 'ios'],
+  'mach-o-fat': ['macho', 'mach-o', 'mach-o-fat', 'macos', 'ios'],
+  apk:          ['apk', 'android', 'dex'],
+  dex:          ['dex', 'android'],
+  jar:          ['jar', 'java', 'class'],
+  class:        ['class', 'java'],
+  office:       ['office', 'doc', 'xls', 'ppt', 'docx', 'xlsx'],
+  pdf:          ['pdf'],
+  pcap:         ['pcap', 'pcapng', 'network'],
+}
+
+
 export interface Plugin {
   /** Unique kebab-case identifier, e.g. `'android'`, `'ghidra'`. */
   id: string
@@ -400,6 +532,13 @@ export interface Plugin {
     scripts?: string
     data?: string
   }
+  /**
+   * Progressive Tool Surface — controls when this plugin's tools are
+   * visible to the AI.  See {@link SurfaceRules} for full documentation.
+   *
+   * Omit to default to tier 0 (always visible) for backward compatibility.
+   */
+  surfaceRules?: SurfaceRules
   /** Optional lifecycle hooks. */
   hooks?: PluginHooks
   /** If true, hooks fire for ALL tool invocations, not just this plugin's tools. */

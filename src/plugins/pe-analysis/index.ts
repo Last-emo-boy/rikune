@@ -28,6 +28,15 @@ import {
 const peAnalysisPlugin: Plugin = {
   id: 'pe-analysis',
   name: 'PE Analysis',
+  surfaceRules: {
+    tier: 0,
+    category: 'static-analysis',
+    signalMap: {
+      'is_signed': 'signed',
+      'has_certificate': 'signed',
+      'suspicious_imports': 'suspicious_imports',
+    },
+  },
   description: 'Windows PE structure analysis, import/export extraction, fingerprinting, and symbol recovery',
   version: '1.0.0',
   register(server, deps) {

@@ -48,6 +48,7 @@ function tryParseJson(text: string): Record<string, unknown> {
 const memoryForensicsPlugin: Plugin = {
   id: 'memory-forensics',
   name: 'Memory Forensics (Volatility 3)',
+  surfaceRules: { tier: 3, category: 'memory-forensics' },
   description: 'Memory dump analysis using Volatility 3 — process listing, DLL extraction, registry analysis, and memory-resident malware detection.',
   version: '1.0.0',
   configSchema: [

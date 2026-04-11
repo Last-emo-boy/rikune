@@ -14,6 +14,7 @@ import {
 const batchPlugin: Plugin = {
   id: 'batch',
   name: 'Batch Analysis',
+  surfaceRules: { tier: 0, category: 'static-analysis' },
   description: 'Multi-sample batch submission, monitoring, and result retrieval',
   version: '1.0.0',
   register(server, deps) {

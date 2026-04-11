@@ -1,10 +1,11 @@
 /**
- * Job Queue - In-memory task queue with priority support
+ * Job Queue - Priority queue with DB persistence
  *
  * Implements requirements 21.1 and 21.2:
  * - Task enqueueing with unique job_id
  * - Priority-based task ordering
  * - Job status tracking and cancellation
+ * - DB-backed persistence — survives process restarts
  */
 
 import { randomUUID } from 'crypto';
@@ -17,6 +18,7 @@ import type {
   JobResult,
   RetryPolicy
 } from './types.js';
+import { logger } from './logger.js';
 
 // Re-export types for convenience
 export { JobPriority } from './types.js';
@@ -59,6 +61,7 @@ interface JobEntry {
   job: Job;
   status: JobStatusType;
   progress?: number;
+  progressStage?: string;
   startedAt?: string;
   finishedAt?: string;
   error?: string;
@@ -86,6 +89,86 @@ export class JobQueue extends EventEmitter {
 
   constructor(private readonly database?: DatabaseManager) {
     super();
+  }
+
+  /**
+   * Restore in-memory state from the database on startup.
+   *
+   * - `queued` jobs are re-added to the priority queue.
+   * - `running` jobs are marked as `interrupted` (they were orphaned by a crash).
+   * - `completed`/`failed`/`cancelled`/`interrupted` jobs are loaded for status lookup.
+   *
+   * Call this once during bootstrap, *before* the server starts accepting requests.
+   */
+  restoreFromDatabase(): { restored: number; interrupted: number } {
+    if (!this.database) {
+      return { restored: 0, interrupted: 0 }
+    }
+
+    let restored = 0
+    let interrupted = 0
+
+    // 1. Interrupt orphaned running jobs
+    const runningRows = this.database.findJobsByStatus('running')
+    for (const row of runningRows) {
+      const reason = 'E_TIMEOUT: job was running when server restarted'
+      this.database.markJobInterrupted(row.id, reason)
+      interrupted++
+    }
+
+    // 2. Restore all non-cleaned-up jobs into memory
+    const allRows = this.database.findJobsByStatuses(
+      ['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted'],
+      5000,
+    )
+
+    for (const row of allRows) {
+      const job: Job = {
+        id: row.id,
+        type: row.type,
+        tool: row.tool,
+        sampleId: row.sample_id,
+        args: typeof row.args_json === 'string' ? JSON.parse(row.args_json) : (row.args ?? {}),
+        priority: row.priority,
+        timeout: row.timeout,
+        createdAt: row.created_at,
+        estimatedDurationMs: row.estimated_duration_ms ?? undefined,
+        attempts: 0,
+        retryPolicy: this.defaultRetryPolicy,
+      }
+
+      // Determine the actual status (running ones were already interrupted above)
+      const status: JobStatusType = row.status === 'running' ? 'interrupted' : row.status
+
+      const entry: JobEntry = {
+        job,
+        status,
+        progress: row.progress ?? undefined,
+        startedAt: row.started_at ?? undefined,
+        finishedAt: row.finished_at ?? undefined,
+        error: row.error ?? undefined,
+        result: row.result_json
+          ? { jobId: row.id, ok: status === 'completed', data: JSON.parse(row.result_json), errors: [], warnings: [], artifacts: [], metrics: { elapsedMs: 0, peakRssMb: 0 } }
+          : undefined,
+      }
+
+      this.jobs.set(row.id, entry)
+
+      // Re-queue jobs that were waiting
+      if (status === 'queued') {
+        this.queue.push(job)
+      }
+
+      restored++
+    }
+
+    this.sortQueue()
+
+    if (restored > 0 || interrupted > 0) {
+      logger.info({ restored, interrupted }, 'Job queue restored from database')
+    }
+
+    return { restored, interrupted }
   }
 
   /**
@@ -146,6 +229,7 @@ export class JobQueue extends EventEmitter {
       id: jobId,
       status: entry.status,
       progress: entry.progress,
+      progressStage: entry.progressStage,
       startedAt: entry.startedAt,
       finishedAt: entry.finishedAt,
       error: entry.error
@@ -354,13 +438,17 @@ export class JobQueue extends EventEmitter {
    * 
    * @param jobId - Job identifier
    * @param progress - Progress percentage (0-100)
+   * @param stage - Optional named stage (e.g. 'decompiling', 'extracting strings')
    */
-  updateProgress(jobId: string, progress: number): void {
+  updateProgress(jobId: string, progress: number, stage?: string): void {
     const entry = this.jobs.get(jobId);
     if (entry && entry.status === 'running') {
       entry.progress = Math.max(0, Math.min(100, progress));
+      if (stage !== undefined) {
+        entry.progressStage = stage;
+      }
       this.database?.updateJobStatus(jobId, 'running', entry.progress);
-      this.emit('job:progress', jobId, entry.progress);
+      this.emit('job:progress', jobId, entry.progress, entry.progressStage);
     }
   }
 
@@ -388,6 +476,7 @@ export class JobQueue extends EventEmitter {
           id: jobId,
           status: entry.status,
           progress: entry.progress,
+          progressStage: entry.progressStage,
           startedAt: entry.startedAt,
           finishedAt: entry.finishedAt,
           error: entry.error

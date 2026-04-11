@@ -24,6 +24,8 @@ import {
 } from '../setup-guidance.js'
 import {
   resolveAnalysisBackends,
+  resolveExecutable,
+  resolvePythonModuleBackend,
   type ExternalExecutableResolution,
   type ToolchainBackendResolution,
 } from '../static-backend-discovery.js'
@@ -47,6 +49,8 @@ import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
 export {
   fs, os, path, z, randomUUID,
   resolveAnalysisBackends,
+  resolveExecutable,
+  resolvePythonModuleBackend,
   resolvePrimarySamplePath,
   buildEvidenceReuseWarnings,
   findCanonicalEvidence,

@@ -17,6 +17,7 @@ import { ruleLibraryToolDefinition, createRuleLibraryHandler } from './tools/rul
 const kbCollaborationPlugin: Plugin = {
   id: 'kb-collaboration',
   name: 'Knowledge Base & Collaboration',
+  surfaceRules: { tier: 0, category: 'static-analysis' },
   description: 'Function signature matching, analysis templates, and knowledge base import/export/management',
   version: '1.0.0',
   register(server, deps) {

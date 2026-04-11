@@ -16,6 +16,7 @@ import {
 const managedIlXrefsPlugin: Plugin = {
   id: 'managed-il-xrefs',
   name: 'Managed IL Cross-References',
+  surfaceRules: { tier: 2, activateOn: { findings: ['dotnet'] }, category: 'dotnet-analysis' },
   description:
     'IL-level cross-reference analysis — scan method bodies for stfld/ldfld/call sites, ' +
     'build bidirectional reference graphs, and resolve generic instantiation contexts',

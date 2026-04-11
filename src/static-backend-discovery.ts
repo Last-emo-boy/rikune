@@ -142,7 +142,7 @@ function probeVersion(binaryPath: string, versionArgSets: string[][]): string | 
   return null
 }
 
-function resolveExecutable(options: {
+export function resolveExecutable(options: {
   configuredPath?: string | null
   envPath?: string | null
   pathCandidates: string[]
@@ -294,7 +294,7 @@ sys.exit(0 if loaded else 1)
   }
 }
 
-function resolvePythonModuleBackend(options: {
+export function resolvePythonModuleBackend(options: {
   configuredPythonPath?: string | null
   envPythonPath?: string | null
   pathCandidates?: string[]

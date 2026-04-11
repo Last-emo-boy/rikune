@@ -24,7 +24,7 @@ streaming support, and MCP resource exposure.
 │                    │                                │
 │        ┌───────────┼────────────────┐               │
 │        ▼           ▼                ▼               │
-│  174 Tool      3 Prompt      16 Resource            │
+│  222 Tool      3 Prompt      16 Resource            │
 │  Handlers      Handlers      Handlers               │
 │        │           │                │               │
 │  ┌─────▼───┐ ┌─────▼───┐   ┌──────▼──────┐        │
@@ -83,7 +83,7 @@ interface ToolDeps {
 
 An `async` function that:
 
-1. Registers 23 core MCP tools plus 151 plugin tools (174 total), grouped by category:
+1. Registers 31 core MCP tools plus 191 plugin tools (222 total), grouped by category:
    - Core (ingest, profile, triage)
    - LLM-assisted review (naming, explanation, reconstruction)
    - PE analysis (structure, headers, sections, exports)
@@ -115,18 +115,21 @@ An `async` function that:
 
 **File:** `src/plugins.ts` — Full guide: [PLUGINS.md](./PLUGINS.md)
 
-Four tool categories are managed as plugins that can be enabled/disabled via the
-`PLUGINS` environment variable:
+All 56 plugin directories under `src/plugins/` are auto-discovered at startup.
+Each plugin exports a `register()` function that receives a `PluginContext` and
+calls `ctx.registerTool()` for every tool it provides. Plugins declare their
+system dependencies (binaries, Python packages, env vars) and are automatically
+disabled when required dependencies are missing.
 
-| Plugin ID  | Tools Registered |
-|------------|------------------|
-| `android`  | `apk.structure.analyze`, `dex.decompile`, `dex.classes.list`, `apk.packer.detect` |
-| `malware`  | `c2.extract`, `malware.config.extract`, `malware.classify`, `sandbox.report` |
-| `crackme`  | `crackme.locate_validation`, `symbolic.explore`, `patch.generate`, `keygen.verify` |
-| `dynamic`  | `dynamic.auto_hook`, `dynamic.trace_attribute`, `dynamic.memory_dump` |
+Plugins are controlled via the `PLUGINS` environment variable:
 
-By default all plugins are enabled (`PLUGINS=*`). See [PLUGINS.md](./PLUGINS.md)
-for selection syntax and custom plugin development.
+```bash
+PLUGINS=*                           # all (default)
+PLUGINS=pe-analysis,ghidra,yara     # specific
+PLUGINS=*,-docker-backends          # exclude
+```
+
+See [PLUGINS.md](./PLUGINS.md) for the full plugin list and custom plugin development.
 
 ## MCP Resources
 

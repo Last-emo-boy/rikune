@@ -1,5 +1,5 @@
 {
-  "name": "@anthropic/rikune-plugin-sdk",
+  "name": "@w33d/rikune-plugin-sdk",
   "version": "1.0.0-beta.3",
   "description": "Plugin SDK for rikune — types and utilities for third-party plugin authors.",
   "type": "module",

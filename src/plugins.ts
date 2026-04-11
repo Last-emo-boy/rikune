@@ -18,7 +18,8 @@
 
 import fs from 'fs/promises'
 import { accessSync, existsSync } from 'fs'
-import { execFileSync } from 'child_process'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import path from 'path'
 import { pathToFileURL, fileURLToPath } from 'url'
 import type { MCPServer } from './server.js'
@@ -43,6 +44,7 @@ export type {
 } from './plugins/sdk.js'
 
 import type { Plugin, PluginContext, PluginStatus, PluginToolDeps, PluginSystemDep, DepCheckResult } from './plugins/sdk.js'
+import { getToolSurfaceManager } from './tool-surface-manager.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Plugin Context Factory
@@ -103,7 +105,9 @@ function resolveDepTarget(dep: PluginSystemDep): string {
 /**
  * Check a single system dependency. Returns a structured result.
  */
-function checkOneDep(dep: PluginSystemDep): DepCheckResult {
+const execFileAsync = promisify(execFile)
+
+async function checkOneDep(dep: PluginSystemDep): Promise<DepCheckResult> {
   const result: DepCheckResult = { dep, available: false }
   try {
     switch (dep.type) {
@@ -111,17 +115,17 @@ function checkOneDep(dep: PluginSystemDep): DepCheckResult {
         const target = resolveDepTarget(dep)
         result.resolvedPath = target
         const vFlag = dep.versionFlag ?? '--version'
-        const out = execFileSync(target, [vFlag], { timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
-        result.version = out.toString().trim().split('\n')[0]?.slice(0, 120)
+        const { stdout } = await execFileAsync(target, [vFlag], { timeout: 5000 })
+        result.version = stdout.toString().trim().split('\n')[0]?.slice(0, 120)
         result.available = true
         break
       }
       case 'python': {
         const mod = dep.importName ?? dep.name
-        execFileSync(
+        await execFileAsync(
           process.platform === 'win32' ? 'python' : 'python3',
           ['-c', `import ${mod}; print(getattr(${mod}, '__version__', 'ok'))`],
-          { timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] },
+          { timeout: 10000 },
         )
         result.available = true
         break
@@ -130,8 +134,8 @@ function checkOneDep(dep: PluginSystemDep): DepCheckResult {
         const target = resolveDepTarget(dep)
         result.resolvedPath = target
         accessSync(target)
-        const out = execFileSync(target, ['--version'], { timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
-        result.version = out.toString().trim()
+        const { stdout } = await execFileAsync(target, ['--version'], { timeout: 5000 })
+        result.version = stdout.toString().trim()
         result.available = true
         break
       }
@@ -167,11 +171,11 @@ function checkOneDep(dep: PluginSystemDep): DepCheckResult {
  * Check all system dependencies declared by a plugin.
  * Returns an array of results + a boolean indicating whether all required deps passed.
  */
-function checkSystemDeps(plugin: Plugin): { results: DepCheckResult[]; allRequiredOk: boolean } {
+async function checkSystemDeps(plugin: Plugin): Promise<{ results: DepCheckResult[]; allRequiredOk: boolean }> {
   if (!plugin.systemDeps || plugin.systemDeps.length === 0) {
     return { results: [], allRequiredOk: true }
   }
-  const results = plugin.systemDeps.map(checkOneDep)
+  const results = await Promise.all(plugin.systemDeps.map(checkOneDep))
   const allRequiredOk = results.every(r => r.available || !r.dep.required)
   return { results, allRequiredOk }
 }
@@ -398,7 +402,7 @@ export class PluginManager {
 
     // Auto-check system dependencies (runs even if plugin has a manual check)
     if (plugin.systemDeps && plugin.systemDeps.length > 0) {
-      const { results, allRequiredOk } = checkSystemDeps(plugin)
+      const { results, allRequiredOk } = await checkSystemDeps(plugin)
       status.depChecks = results
 
       // Log each dependency result
@@ -447,6 +451,9 @@ export class PluginManager {
       for (const t of names) this.pluginToolMap.set(t, plugin.id)
       this.loadedPlugins.set(plugin.id, plugin)
       this.plugins.push(status)
+
+      // Register plugin with progressive surface manager
+      getToolSurfaceManager().registerPlugin(plugin, names)
 
       // Fire onActivate hook
       if (plugin.hooks?.onActivate) {

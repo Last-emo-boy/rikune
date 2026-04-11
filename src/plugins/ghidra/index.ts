@@ -16,6 +16,7 @@ import {
 const ghidraPlugin: Plugin = {
   id: 'ghidra',
   name: 'Ghidra Integration',
+  surfaceRules: { tier: 3, category: 'reverse-engineering' },
   description: 'Headless Ghidra analysis and health checks',
   version: '1.0.0',
   configSchema: [

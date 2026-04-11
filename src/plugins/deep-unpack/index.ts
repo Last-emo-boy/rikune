@@ -14,6 +14,7 @@ import { dumpScanToolDefinition, createDumpScanHandler } from './tools/deep-unpa
 const deepUnpackPlugin: Plugin = {
   id: 'deep-unpack',
   name: 'Deep Unpack',
+  surfaceRules: { tier: 2, activateOn: { findings: ['packed'] }, category: 'unpacking' },
   description:
     'Multi-strategy deep unpacking for heavily packed/obfuscated binaries. ' +
     'Tries UPX → Speakeasy → Qiling → memory carve in sequence, supports up to 10 layers, ' +

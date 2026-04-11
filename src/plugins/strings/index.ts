@@ -11,6 +11,7 @@ import { stringsFlossDecodeToolDefinition, createStringsFlossDecodeHandler } fro
 const stringsPlugin: Plugin = {
   id: 'strings',
   name: 'Strings Extraction',
+  surfaceRules: { tier: 0, category: 'static-analysis' },
   description: 'Extract printable strings and decode obfuscated strings via FLOSS',
   version: '1.0.0',
   register(server, deps) {

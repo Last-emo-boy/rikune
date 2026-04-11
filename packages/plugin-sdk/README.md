@@ -5,13 +5,13 @@ Type-safe SDK for building third-party plugins for `rikune`.
 ## Installation
 
 ```bash
-npm install @anthropic/rikune-plugin-sdk
+npm install @w33d/rikune-plugin-sdk
 ```
 
 ## Quick Start
 
 ```typescript
-import { definePlugin } from '@anthropic/rikune-plugin-sdk'
+import { definePlugin } from '@w33d/rikune-plugin-sdk'
 
 export default definePlugin({
   id: 'my-custom-tool',

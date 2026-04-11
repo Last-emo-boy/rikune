@@ -12,6 +12,7 @@ import { yaraGenerateBatchToolDefinition, createYaraGenerateBatchHandler } from 
 const yaraPlugin: Plugin = {
   id: 'yara',
   name: 'YARA',
+  surfaceRules: { tier: 0, category: 'malware-analysis' },
   description: 'YARA rule scanning and generation (single and batch)',
   version: '1.0.0',
   register(server, deps) {

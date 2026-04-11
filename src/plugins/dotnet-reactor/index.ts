@@ -23,6 +23,7 @@ import {
 const dotnetReactorPlugin: Plugin = {
   id: 'dotnet-reactor',
   name: '.NET Reactor Deobfuscation',
+  surfaceRules: { tier: 2, activateOn: { findings: ['dotnet', 'obfuscated'] }, category: 'dotnet-analysis' },
   description:
     'Analyze and deobfuscate .NET Reactor-protected assemblies — anti-tamper detection, ' +
     'string decryption, dynamic method recovery, and resource assembly export',

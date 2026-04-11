@@ -47,8 +47,11 @@ export class AnalysisTaskRunner {
   private readonly policyGuard: PolicyGuard
   private readonly scheduler: AnalysisBudgetScheduler
   private timer?: NodeJS.Timeout
-  private processing = false
-  private activeControllers = new Map<string, AbortController>()
+  private processingPromise: Promise<void> | null = null
+  private activeControllers = new Map<string, { controller: AbortController; startedAt: number }>()
+  private consecutiveIdleCycles = 0
+  private static readonly MAX_BACKOFF_MULTIPLIER = 16 // max 8s at 500ms base
+  private static readonly CONTROLLER_TTL_MS = 60 * 60 * 1000 // 1 hour
 
   constructor(
     private readonly jobQueue: JobQueue,
@@ -68,9 +71,9 @@ export class AnalysisTaskRunner {
     this.staleRunningMs = options.staleRunningMs
 
     this.jobQueue.on('job:cancelled', (jobId: string) => {
-      const controller = this.activeControllers.get(jobId)
-      if (controller) {
-        controller.abort()
+      const entry = this.activeControllers.get(jobId)
+      if (entry) {
+        entry.controller.abort()
       }
     })
   }
@@ -80,18 +83,26 @@ export class AnalysisTaskRunner {
       return
     }
 
-    this.timer = setInterval(() => {
+    const tick = () => {
       this.reapStaleRunning()
-      void this.processNext()
-    }, this.pollIntervalMs)
+      void this.processNext().then(() => {
+        const backoffMultiplier = this.consecutiveIdleCycles > 0
+          ? Math.min(2 ** this.consecutiveIdleCycles, AnalysisTaskRunner.MAX_BACKOFF_MULTIPLIER)
+          : 1
+        const delay = this.pollIntervalMs * backoffMultiplier
+        this.timer = setTimeout(tick, delay)
+      })
+    }
+
+    this.timer = setTimeout(tick, this.pollIntervalMs)
   }
 
   stop(): void {
     if (this.timer) {
-      clearInterval(this.timer)
+      clearTimeout(this.timer)
       this.timer = undefined
     }
-    for (const controller of this.activeControllers.values()) {
+    for (const { controller } of this.activeControllers.values()) {
       controller.abort()
     }
     this.activeControllers.clear()
@@ -115,9 +126,19 @@ export class AnalysisTaskRunner {
 
     const reaped = queue.reapStaleRunningJobs(this.staleRunningMs)
     for (const jobId of reaped) {
-      const controller = this.activeControllers.get(jobId)
-      if (controller) {
-        controller.abort()
+      const entry = this.activeControllers.get(jobId)
+      if (entry) {
+        entry.controller.abort()
+      }
+    }
+
+    // TTL cleanup: abort controllers stuck beyond the safety limit
+    const now = Date.now()
+    for (const [jobId, entry] of this.activeControllers) {
+      if (now - entry.startedAt > AnalysisTaskRunner.CONTROLLER_TTL_MS) {
+        logger.warn({ job_id: jobId, age_ms: now - entry.startedAt }, 'AbortController exceeded TTL — aborting')
+        entry.controller.abort()
+        this.activeControllers.delete(jobId)
       }
     }
 
@@ -134,23 +155,33 @@ export class AnalysisTaskRunner {
   }
 
   private async processNext(): Promise<void> {
-    if (this.processing) {
+    if (this.processingPromise) {
       return
     }
+    this.processingPromise = this._doProcessNext()
+    try {
+      await this.processingPromise
+    } finally {
+      this.processingPromise = null
+    }
+  }
 
+  private async _doProcessNext(): Promise<void> {
     const selection = this.scheduler.selectNextJob(this.jobQueue)
     if (!selection) {
+      this.consecutiveIdleCycles++
       return
     }
     const job = this.jobQueue.startQueuedJob(selection.job.id)
     if (!job) {
+      this.consecutiveIdleCycles++
       return
     }
 
-    this.processing = true
+    this.consecutiveIdleCycles = 0
     const startTime = Date.now()
     const controller = new AbortController()
-    this.activeControllers.set(job.id, controller)
+    this.activeControllers.set(job.id, { controller, startedAt: startTime })
 
     try {
       const result = await this.executeJob(job, controller.signal)
@@ -236,7 +267,6 @@ export class AnalysisTaskRunner {
       )
     } finally {
       this.activeControllers.delete(job.id)
-      this.processing = false
     }
   }
 
