@@ -49,7 +49,7 @@ const debugSessionPlugin: Plugin = {
       execSync('gdb --version', { stdio: 'ignore' })
       return true
     } catch {
-      throw new Error('GDB not found in PATH. Install GDB (e.g. via MSYS2: pacman -S mingw-w64-x86_64-gdb) or add it to PATH.')
+      return false
     }
   },
   register(server, deps) {
