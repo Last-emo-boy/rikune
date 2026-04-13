@@ -166,6 +166,9 @@ describe('sandbox.execute tool', () => {
 
     const preferredFixture = path.join(
       process.cwd(),
+      'src',
+      'plugins',
+      'static-triage',
       'helpers',
       'DotNetMetadataProbe',
       'bin',

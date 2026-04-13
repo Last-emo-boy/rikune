@@ -13,7 +13,7 @@ import {
   SEMANTIC_EXPLANATION_PREPARE_BUNDLE_ARTIFACT_TYPE,
   SEMANTIC_FUNCTION_EXPLANATIONS_ARTIFACT_TYPE,
   loadSemanticFunctionExplanationIndex,
-} from '../../src/semantic-name-suggestion-artifacts.js'
+} from '../../src/artifacts/semantic-name-suggestion-artifacts.js'
 import type { WorkerResult, ToolArgs } from '../../src/types.js'
 
 describe('code.function.explain.prepare tool', () => {

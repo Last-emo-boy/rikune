@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createMachoStructureAnalyzeHandler, MachoStructureAnalyzeInputSchema } from '../../src/tools/macho-structure-analyze.js'
+import { createMachoStructureAnalyzeHandler, MachoStructureAnalyzeInputSchema } from '../../src/plugins/elf-macho/tools/macho-structure-analyze.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 

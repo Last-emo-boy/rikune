@@ -6,205 +6,356 @@
 <title>Rikune Dashboard</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--border:#30363d;--text:#c9d1d9;--text2:#8b949e;--accent:#58a6ff;--accent2:#1f6feb;--green:#3fb950;--yellow:#d29922;--red:#f85149;--purple:#bc8cff;--radius:8px;--shadow:0 1px 3px rgba(0,0,0,.4)}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;min-height:100vh}
+
+/* ── Design Tokens ── */
+:root{
+  --bg:#09090b;--bg2:#18181b;--bg3:#27272a;--bg-hover:#303036;
+  --border:#2e2e33;--border-subtle:#222226;
+  --text:#fafafa;--text2:#a1a1aa;--text3:#71717a;
+  --accent:#818cf8;--accent-dim:#6366f1;--accent-bg:rgba(129,140,248,.1);
+  --green:#34d399;--green-bg:rgba(52,211,153,.12);
+  --yellow:#fbbf24;--yellow-bg:rgba(251,191,36,.12);
+  --red:#fb7185;--red-bg:rgba(251,113,133,.12);
+  --purple:#c084fc;--purple-bg:rgba(192,132,252,.12);
+  --radius:8px;--radius-lg:12px;
+  --shadow:0 1px 3px rgba(0,0,0,.4);
+  --sidebar-w:232px;--topbar-h:52px;
+  --font-mono:'SF Mono','JetBrains Mono',Consolas,monospace
+}
+
+/* ── Light Theme ── */
+[data-theme="light"]{
+  --bg:#fafafa;--bg2:#ffffff;--bg3:#f4f4f5;--bg-hover:#e9e9ec;
+  --border:#e4e4e7;--border-subtle:#f0f0f2;
+  --text:#18181b;--text2:#71717a;--text3:#a1a1aa;
+  --accent:#6366f1;--accent-dim:#4f46e5;--accent-bg:rgba(99,102,241,.07);
+  --green:#10b981;--green-bg:rgba(16,185,129,.08);
+  --yellow:#f59e0b;--yellow-bg:rgba(245,158,11,.08);
+  --red:#ef4444;--red-bg:rgba(239,68,68,.08);
+  --purple:#8b5cf6;--purple-bg:rgba(139,92,246,.07);
+  --shadow:0 1px 3px rgba(0,0,0,.08)
+}
+
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
 
-/* Layout */
-.header{background:var(--bg2);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100}
-.header h1{font-size:18px;font-weight:600;display:flex;align-items:center;gap:8px}
-.header h1 .icon{font-size:24px}
-.header .version{font-size:12px;background:var(--accent2);color:#fff;padding:2px 8px;border-radius:12px}
-.header .status-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-.header nav{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap}
-.header nav button{background:transparent;border:1px solid var(--border);color:var(--text2);padding:6px 14px;border-radius:var(--radius);cursor:pointer;font-size:13px;transition:all .15s}
-.header nav button:hover,.header nav button.active{background:var(--bg3);color:var(--text);border-color:var(--accent)}
+/* ── App Layout ── */
+.app-layout{display:flex;min-height:100vh}
 
-.main{max-width:1400px;margin:0 auto;padding:20px 24px}
+/* ── Sidebar ── */
+.sidebar{width:var(--sidebar-w);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100;transition:transform .25s cubic-bezier(.4,0,.2,1)}
+.sidebar-brand{padding:20px 20px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)}
+.sidebar-brand .logo{font-size:22px}
+.sidebar-brand h1{font-size:15px;font-weight:700;letter-spacing:-.02em}
+.sidebar-brand .version{font-size:10px;background:var(--accent-bg);color:var(--accent);padding:2px 7px;border-radius:10px;font-weight:600;margin-left:auto}
+.sidebar-nav{flex:1;padding:12px 8px;overflow-y:auto}
+.sidebar-nav .nav-group{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);padding:14px 14px 6px;font-weight:600}
+.sidebar-nav button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 14px;background:transparent;border:none;border-radius:var(--radius);color:var(--text2);font-size:13px;cursor:pointer;transition:all .15s;text-align:left;font-weight:500;position:relative}
+.sidebar-nav button:hover{background:var(--bg3);color:var(--text)}
+.sidebar-nav button.active{background:var(--accent-bg);color:var(--accent)}
+.sidebar-nav button.active::before{content:'';position:absolute;left:0;top:6px;bottom:6px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}
+.sidebar-nav button svg{flex-shrink:0;opacity:.7}
+.sidebar-nav button.active svg{opacity:1}
+.sidebar-footer{padding:12px 16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.sidebar-footer .status-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+.sidebar-footer .status-text{font-size:11px;color:var(--text3);flex:1}
+.theme-toggle{background:var(--bg3);border:1px solid var(--border);color:var(--text2);width:30px;height:30px;border-radius:var(--radius);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.theme-toggle:hover{border-color:var(--accent);color:var(--text)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
-/* Cards */
+/* ── App Main ── */
+.app-main{margin-left:var(--sidebar-w);flex:1;min-width:0;display:flex;flex-direction:column}
+
+/* ── Topbar ── */
+.topbar{height:var(--topbar-h);background:var(--bg2);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:90}
+.sidebar-collapse{display:none;background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer;padding:4px}
+.topbar-actions{margin-left:auto;display:flex;align-items:center;gap:10px}
+.search-trigger{display:inline-flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);color:var(--text3);padding:6px 14px;border-radius:var(--radius);cursor:pointer;font-size:12px;transition:all .15s}
+.search-trigger:hover{border-color:var(--accent);color:var(--text2)}
+.search-trigger kbd{font-family:inherit;font-size:10px;background:var(--bg);border:1px solid var(--border);padding:1px 5px;border-radius:4px;color:var(--text3)}
+.auto-refresh-label{font-size:11px;color:var(--text3);cursor:pointer;display:flex;align-items:center;gap:4px}
+.auto-refresh-label input{cursor:pointer}
+
+.main{max-width:1440px;margin:0 auto;padding:24px;width:100%}
+
+/* ── Cards & Grid ── */
 .grid{display:grid;gap:16px;margin-bottom:24px}
 .grid-4{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
 .grid-3{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
 .grid-2{grid-template-columns:repeat(auto-fill,minmax(440px,1fr))}
-.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
-.card h3{font-size:13px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
-.card .value{font-size:28px;font-weight:700;color:var(--text)}
-.card .sub{font-size:12px;color:var(--text2);margin-top:4px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px;box-shadow:var(--shadow);transition:border-color .15s}
+.card:hover{border-color:color-mix(in srgb,var(--border) 50%,var(--accent) 30%)}
+.card h3{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;font-weight:600}
+.card .value{font-size:30px;font-weight:700;color:var(--text);letter-spacing:-.03em;line-height:1.1}
+.card .sub{font-size:12px;color:var(--text3);margin-top:6px}
 
-/* Section */
+/* ── Section ── */
 .section{margin-bottom:32px}
-.section-title{font-size:16px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
-.section-title .badge{background:var(--bg3);color:var(--text2);font-size:12px;padding:2px 8px;border-radius:10px;font-weight:400}
+.section-title{font-size:15px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.section-title .badge{background:var(--bg3);color:var(--text3);font-size:11px;padding:2px 8px;border-radius:10px;font-weight:500}
 
-/* Table */
-.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius)}
+/* ── Table ── */
+.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-lg)}
 table{width:100%;border-collapse:collapse;font-size:13px}
-th{background:var(--bg3);padding:8px 12px;text-align:left;font-weight:600;color:var(--text2);position:sticky;top:0;white-space:nowrap}
-td{padding:8px 12px;border-top:1px solid var(--border);vertical-align:top}
-tr:hover td{background:rgba(88,166,255,.04)}
+th{background:var(--bg3);padding:10px 14px;text-align:left;font-weight:600;color:var(--text2);position:sticky;top:0;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+td{padding:10px 14px;border-top:1px solid var(--border);vertical-align:top}
+tr:hover td{background:var(--accent-bg)}
 tr.clickable{cursor:pointer}
-tr.clickable:hover td{background:rgba(88,166,255,.08)}
-.mono{font-family:'SFMono-Regular',Consolas,monospace;font-size:12px}
+tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 30%)}
+.mono{font-family:var(--font-mono);font-size:12px}
 
-/* Status badges */
-.badge-status{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
-.badge-loaded,.badge-done{background:rgba(63,185,80,.15);color:var(--green)}
-.badge-skipped,.badge-queued{background:rgba(210,153,34,.15);color:var(--yellow)}
-.badge-error,.badge-failed{background:rgba(248,81,73,.15);color:var(--red)}
-.badge-ok{background:rgba(63,185,80,.15);color:var(--green)}
-.badge-warn,.badge-running{background:rgba(210,153,34,.15);color:var(--yellow)}
-.badge-type{background:rgba(188,140,255,.15);color:var(--purple);display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+/* ── Badges ── */
+.badge-status{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-status::before{content:'';width:6px;height:6px;border-radius:50%}
+.badge-loaded,.badge-done,.badge-ok{background:var(--green-bg);color:var(--green)}
+.badge-loaded::before,.badge-done::before,.badge-ok::before{background:var(--green)}
+.badge-skipped,.badge-queued,.badge-warn,.badge-running{background:var(--yellow-bg);color:var(--yellow)}
+.badge-skipped::before,.badge-queued::before,.badge-warn::before,.badge-running::before{background:var(--yellow)}
+.badge-error,.badge-failed{background:var(--red-bg);color:var(--red)}
+.badge-error::before,.badge-failed::before{background:var(--red)}
+.badge-type{background:var(--purple-bg);color:var(--purple);display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
 
-/* Tool categories */
-.tool-category{margin-bottom:12px}
-.tool-category summary{cursor:pointer;padding:8px 12px;background:var(--bg3);border-radius:var(--radius);font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px;list-style:none}
+/* ── Tool categories ── */
+.tool-category{margin-bottom:8px}
+.tool-category summary{cursor:pointer;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px;list-style:none;transition:all .15s}
 .tool-category summary::-webkit-details-marker{display:none}
-.tool-category summary::before{content:'▸';font-size:12px;transition:transform .2s}
+.tool-category summary::before{content:'▸';font-size:11px;transition:transform .2s;color:var(--text3)}
 .tool-category[open] summary::before{transform:rotate(90deg)}
+.tool-category summary:hover{border-color:var(--accent);background:var(--bg3)}
 .tool-category .tool-list{padding:8px 0 4px 0}
-.tool-item{padding:4px 12px;font-size:13px;display:flex;gap:8px}
+.tool-item{padding:5px 14px;font-size:13px;display:flex;gap:12px}
+.tool-item:hover{background:var(--accent-bg);border-radius:var(--radius)}
 .tool-item .tool-name{color:var(--accent);font-family:monospace;min-width:280px;flex-shrink:0}
 .tool-item .tool-desc{color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-/* Config diagnostic */
-.diag-item{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:13px;border-bottom:1px solid var(--border)}
+/* ── Config diagnostic ── */
+.diag-item{display:flex;align-items:center;gap:8px;padding:7px 14px;font-size:13px;border-bottom:1px solid var(--border-subtle)}
 .diag-item:last-child{border-bottom:none}
 .diag-icon{width:16px;text-align:center}
 
-/* Tabs */
-.tab-content{display:none}
+/* ── Tabs ── */
+.tab-content{display:none;animation:fadeUp .3s ease}
 .tab-content.active{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
-/* Live indicator */
+/* ── Live indicator ── */
 .live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;margin-right:4px;animation:pulse 2s infinite}
 
-/* Search / Filter */
-.search-box{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;color:var(--text);font-size:13px;width:100%;max-width:360px;margin-bottom:12px;outline:none}
-.search-box:focus{border-color:var(--accent)}
-.search-box::placeholder{color:var(--text2)}
+/* ── Search / Filter ── */
+.search-box{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:9px 14px;color:var(--text);font-size:13px;width:100%;max-width:360px;margin-bottom:12px;outline:none;transition:border-color .15s}
+.search-box:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
+.search-box::placeholder{color:var(--text3)}
 .filter-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
-.filter-bar select{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;color:var(--text);font-size:13px;outline:none;cursor:pointer}
+.filter-bar select{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:7px 12px;color:var(--text);font-size:13px;outline:none;cursor:pointer}
 .filter-bar select:focus{border-color:var(--accent)}
 
-/* Progress bar */
-.progress-bar{height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-top:8px}
-.progress-bar .fill{height:100%;background:var(--accent);border-radius:2px;transition:width .3s}
+/* ── Progress bar ── */
+.progress-bar{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-top:8px}
+.progress-bar .fill{height:100%;border-radius:3px;transition:width .4s cubic-bezier(.4,0,.2,1)}
 
-/* Drawer/Panel */
-.drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:none;opacity:0;transition:opacity .2s}
+/* ── Drawer/Panel ── */
+.drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);z-index:200;display:none;opacity:0;transition:opacity .2s}
 .drawer-overlay.open{display:block;opacity:1}
-.drawer{position:fixed;top:0;right:0;bottom:0;width:min(720px,90vw);background:var(--bg);border-left:1px solid var(--border);z-index:201;transform:translateX(100%);transition:transform .25s ease;overflow-y:auto;padding:24px}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(720px,90vw);background:var(--bg);border-left:1px solid var(--border);z-index:201;transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);overflow-y:auto;padding:28px}
 .drawer.open{transform:translateX(0)}
-.drawer-close{position:absolute;top:16px;right:16px;background:var(--bg3);border:1px solid var(--border);color:var(--text);width:32px;height:32px;border-radius:var(--radius);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
-.drawer-close:hover{border-color:var(--accent)}
-.drawer h2{font-size:18px;font-weight:600;margin-bottom:16px;padding-right:48px}
+.drawer-close{position:absolute;top:16px;right:16px;background:var(--bg3);border:1px solid var(--border);color:var(--text);width:32px;height:32px;border-radius:var(--radius);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.drawer-close:hover{border-color:var(--accent);background:var(--accent-bg)}
+.drawer h2{font-size:18px;font-weight:600;margin-bottom:20px;padding-right:48px}
 .drawer .drawer-section{margin-bottom:24px}
-.drawer .drawer-section h3{font-size:14px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
-.drawer .meta-grid{display:grid;grid-template-columns:140px 1fr;gap:4px 12px;font-size:13px}
-.drawer .meta-grid .label{color:var(--text2)}
+.drawer .drawer-section h3{font-size:12px;font-weight:600;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em}
+.drawer .meta-grid{display:grid;grid-template-columns:140px 1fr;gap:6px 16px;font-size:13px}
+.drawer .meta-grid .label{color:var(--text3)}
 
-/* Report viewer */
-.report-viewer{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:20px;max-height:70vh;overflow-y:auto;font-size:14px;line-height:1.7}
-.report-viewer.markdown h1{font-size:20px;font-weight:700;margin:16px 0 8px;border-bottom:1px solid var(--border);padding-bottom:4px}
-.report-viewer.markdown h2{font-size:17px;font-weight:600;margin:14px 0 6px;border-bottom:1px solid var(--border);padding-bottom:3px}
-.report-viewer.markdown h3{font-size:15px;font-weight:600;margin:12px 0 4px}
-.report-viewer.markdown p{margin:6px 0}
-.report-viewer.markdown ul,.report-viewer.markdown ol{padding-left:24px;margin:6px 0}
-.report-viewer.markdown li{margin:2px 0}
-.report-viewer.markdown code{background:var(--bg3);padding:1px 5px;border-radius:3px;font-family:'SFMono-Regular',Consolas,monospace;font-size:12px}
-.report-viewer.markdown pre{background:var(--bg3);padding:12px;border-radius:var(--radius);overflow-x:auto;margin:8px 0}
+/* ── Report viewer ── */
+.report-viewer{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;max-height:70vh;overflow-y:auto;font-size:14px;line-height:1.7}
+.report-viewer.markdown h1{font-size:20px;font-weight:700;margin:20px 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px}
+.report-viewer.markdown h2{font-size:17px;font-weight:600;margin:16px 0 8px;border-bottom:1px solid var(--border);padding-bottom:4px}
+.report-viewer.markdown h3{font-size:15px;font-weight:600;margin:14px 0 6px}
+.report-viewer.markdown p{margin:8px 0}
+.report-viewer.markdown ul,.report-viewer.markdown ol{padding-left:24px;margin:8px 0}
+.report-viewer.markdown li{margin:3px 0}
+.report-viewer.markdown code{background:var(--bg3);padding:2px 6px;border-radius:4px;font-family:var(--font-mono);font-size:12px}
+.report-viewer.markdown pre{background:var(--bg3);padding:14px;border-radius:var(--radius);overflow-x:auto;margin:10px 0}
 .report-viewer.markdown pre code{background:none;padding:0}
-.report-viewer.markdown blockquote{border-left:3px solid var(--accent);padding-left:12px;color:var(--text2);margin:8px 0}
-.report-viewer.markdown table{border-collapse:collapse;margin:8px 0;width:100%}
-.report-viewer.markdown table th,.report-viewer.markdown table td{border:1px solid var(--border);padding:6px 10px;text-align:left;font-size:13px}
+.report-viewer.markdown blockquote{border-left:3px solid var(--accent);padding-left:14px;color:var(--text2);margin:10px 0}
+.report-viewer.markdown table{border-collapse:collapse;margin:10px 0;width:100%}
+.report-viewer.markdown table th,.report-viewer.markdown table td{border:1px solid var(--border);padding:8px 12px;text-align:left;font-size:13px}
 .report-viewer.markdown table th{background:var(--bg3)}
-.report-viewer.markdown hr{border:none;border-top:1px solid var(--border);margin:12px 0}
+.report-viewer.markdown hr{border:none;border-top:1px solid var(--border);margin:16px 0}
 .report-viewer.markdown a{color:var(--accent)}
 .report-viewer.markdown strong{font-weight:600}
 .report-viewer.markdown em{font-style:italic}
-.report-viewer.json{font-family:'SFMono-Regular',Consolas,monospace;font-size:12px;white-space:pre-wrap;word-break:break-all}
+.report-viewer.json{font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;word-break:break-all}
 .report-viewer.json .json-key{color:var(--accent)}
 .report-viewer.json .json-string{color:var(--green)}
 .report-viewer.json .json-number{color:var(--yellow)}
 .report-viewer.json .json-boolean{color:var(--purple)}
-.report-viewer.json .json-null{color:var(--text2)}
+.report-viewer.json .json-null{color:var(--text3)}
 .report-viewer.html iframe{width:100%;min-height:400px;border:none;background:#fff;border-radius:var(--radius)}
 
-/* Responsive */
-@media(max-width:768px){.grid-4{grid-template-columns:1fr 1fr}.grid-3,.grid-2{grid-template-columns:1fr}.header{flex-wrap:wrap}.header nav{width:100%;overflow-x:auto}.drawer{width:100%}}
-
-/* Loading */
+/* ── Loading ── */
 .spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.loading{text-align:center;padding:40px;color:var(--text2)}
+.loading{text-align:center;padding:40px;color:var(--text3)}
 
-/* Empty state */
-.empty-state{text-align:center;padding:40px 20px;color:var(--text2)}
-.empty-state .empty-icon{font-size:48px;margin-bottom:12px;opacity:.5}
+/* ── Empty state ── */
+.empty-state{text-align:center;padding:48px 20px;color:var(--text3)}
+.empty-state .empty-icon{font-size:48px;margin-bottom:12px;opacity:.4}
 .empty-state p{font-size:14px}
 
-/* Breadcrumb / back */
-.back-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 14px;border-radius:var(--radius);cursor:pointer;font-size:13px;margin-bottom:12px;display:inline-flex;align-items:center;gap:4px}
-.back-btn:hover{border-color:var(--accent)}
+/* ── Back / action button ── */
+.back-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:7px 14px;border-radius:var(--radius);cursor:pointer;font-size:13px;margin-bottom:12px;display:inline-flex;align-items:center;gap:4px;transition:all .15s}
+.back-btn:hover{border-color:var(--accent);color:var(--text);background:var(--accent-bg)}
+.back-btn:disabled{opacity:.4;cursor:not-allowed}
+.back-btn:disabled:hover{border-color:var(--border);color:var(--text2);background:var(--bg3)}
 
-/* Log viewer */
-.log-container{max-height:400px;overflow-y:auto;font-family:'SFMono-Regular',Consolas,monospace;font-size:12px;padding:12px}
-.log-line{margin-bottom:1px;padding:1px 4px;border-radius:2px}
+/* ── Log viewer ── */
+.log-container{max-height:400px;overflow-y:auto;font-family:var(--font-mono);font-size:12px;padding:12px}
+.log-line{margin-bottom:1px;padding:2px 6px;border-radius:3px}
 .log-line:hover{background:rgba(255,255,255,.03)}
-.log-time{color:var(--text2);margin-right:6px}
-.log-level{display:inline-block;width:44px;text-align:center;font-weight:600;font-size:10px;border-radius:3px;padding:1px 4px;margin-right:6px}
-.log-level-trace{background:rgba(139,148,158,.15);color:var(--text2)}
-.log-level-debug{background:rgba(139,148,158,.15);color:var(--text2)}
-.log-level-info{background:rgba(88,166,255,.15);color:var(--accent)}
-.log-level-warn{background:rgba(210,153,34,.15);color:var(--yellow)}
-.log-level-error{background:rgba(248,81,73,.15);color:var(--red)}
-.log-level-fatal{background:rgba(248,81,73,.3);color:var(--red)}
+.log-time{color:var(--text3);margin-right:8px}
+.log-level{display:inline-block;width:44px;text-align:center;font-weight:600;font-size:10px;border-radius:4px;padding:1px 4px;margin-right:6px}
+.log-level-trace,.log-level-debug{background:rgba(139,148,158,.12);color:var(--text3)}
+.log-level-info{background:var(--accent-bg);color:var(--accent)}
+.log-level-warn{background:var(--yellow-bg);color:var(--yellow)}
+.log-level-error,.log-level-fatal{background:var(--red-bg);color:var(--red)}
 
-/* Toast notifications */
+/* ── Toast ── */
 .toast-container{position:fixed;top:16px;right:16px;z-index:300;display:flex;flex-direction:column;gap:8px;pointer-events:none}
-.toast{pointer-events:auto;padding:10px 16px;border-radius:var(--radius);font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.3);animation:slideIn .25s ease;max-width:400px;display:flex;align-items:center;gap:8px}
-.toast-error{background:#3d1418;border:1px solid var(--red);color:var(--red)}
-.toast-warn{background:#3d2e0f;border:1px solid var(--yellow);color:var(--yellow)}
-.toast-info{background:#0d2137;border:1px solid var(--accent);color:var(--accent)}
-.toast-success{background:#0d2d16;border:1px solid var(--green);color:var(--green)}
+.toast{pointer-events:auto;padding:12px 18px;border-radius:var(--radius-lg);font-size:13px;box-shadow:var(--shadow);animation:slideIn .3s cubic-bezier(.4,0,.2,1);max-width:420px;display:flex;align-items:center;gap:10px;backdrop-filter:blur(8px)}
+.toast-error{background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red),transparent 60%);color:var(--red)}
+.toast-warn{background:var(--yellow-bg);border:1px solid color-mix(in srgb,var(--yellow),transparent 60%);color:var(--yellow)}
+.toast-info{background:var(--accent-bg);border:1px solid color-mix(in srgb,var(--accent),transparent 60%);color:var(--accent)}
+.toast-success{background:var(--green-bg);border:1px solid color-mix(in srgb,var(--green),transparent 60%);color:var(--green)}
 @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
 .toast .toast-close{margin-left:auto;background:none;border:none;color:inherit;cursor:pointer;font-size:16px;padding:0 4px;opacity:.7}
 .toast .toast-close:hover{opacity:1}
 
-/* Global search modal */
-.search-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:250;display:none;align-items:flex-start;justify-content:center;padding-top:15vh}
+/* ── Global search modal ── */
+.search-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:250;display:none;align-items:flex-start;justify-content:center;padding-top:12vh}
 .search-modal-overlay.open{display:flex}
-.search-modal{background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:min(600px,90vw);box-shadow:0 8px 32px rgba(0,0,0,.5)}
-.search-modal input{width:100%;padding:14px 16px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:15px;outline:none}
-.search-modal input::placeholder{color:var(--text2)}
+.search-modal{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);width:min(600px,90vw);box-shadow:0 20px 60px rgba(0,0,0,.4);overflow:hidden}
+.search-modal input{width:100%;padding:16px 20px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:15px;outline:none}
+.search-modal input::placeholder{color:var(--text3)}
 .search-modal-results{max-height:400px;overflow-y:auto;padding:8px 0}
-.search-result{padding:8px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px}
+.search-result{padding:10px 20px;display:flex;align-items:center;gap:12px;cursor:pointer;font-size:13px;transition:background .1s}
 .search-result:hover,.search-result.selected{background:var(--bg3)}
-.search-result .sr-type{font-size:11px;color:var(--text2);background:var(--bg3);padding:2px 6px;border-radius:4px;min-width:50px;text-align:center}
+.search-result .sr-type{font-size:10px;color:var(--text3);background:var(--bg3);padding:2px 8px;border-radius:4px;min-width:54px;text-align:center;text-transform:uppercase;font-weight:600}
 .search-result .sr-name{color:var(--accent);font-family:monospace}
-.search-result .sr-desc{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.search-hint{padding:12px 16px;color:var(--text2);font-size:12px;text-align:center}
+.search-result .sr-desc{color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search-hint{padding:16px 20px;color:var(--text3);font-size:13px;text-align:center}
 
-/* Pagination controls */
-.page-controls{margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.page-controls .page-jump{display:flex;gap:4px;align-items:center;font-size:13px;color:var(--text2)}
-.page-controls .page-jump input{width:50px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px;color:var(--text);font-size:13px;text-align:center}
-.page-controls select{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px;color:var(--text);font-size:13px}
+/* ── Pagination ── */
+.page-controls{margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.page-controls .page-jump{display:flex;gap:4px;align-items:center;font-size:13px;color:var(--text3)}
+.page-controls .page-jump input{width:50px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:5px 8px;color:var(--text);font-size:13px;text-align:center}
+.page-controls select{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:5px 10px;color:var(--text);font-size:13px}
 
-/* Export toolbar */
+/* ── Export ── */
 .export-bar{display:inline-flex;gap:4px;margin-left:auto}
-.export-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:var(--radius);cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:4px}
+.export-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text3);padding:5px 12px;border-radius:var(--radius);cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:4px;transition:all .15s}
 .export-btn:hover{border-color:var(--accent);color:var(--text)}
 
-/* Auto-refresh indicator */
-.refresh-indicator{font-size:11px;color:var(--text2);display:inline-flex;align-items:center;gap:4px;margin-left:8px}
+/* ── Auto-refresh ── */
+.refresh-indicator{font-size:11px;color:var(--text3);display:inline-flex;align-items:center;gap:4px;margin-left:8px}
 .refresh-indicator .live-dot{width:5px;height:5px}
+
+/* ── Donut Chart ── */
+.donut-card{display:flex;align-items:center;gap:14px}
+.donut-card .donut-svg{flex-shrink:0}
+.donut-card .donut-info{flex:1;min-width:0}
+.donut-card .donut-value{font-size:22px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+.donut-card .donut-label{font-size:11px;color:var(--text3);margin-top:3px}
+
+/* ── Sparkline ── */
+.sparkline-card{padding:14px 18px}
+.sparkline-card .sparkline-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
+.sparkline-card .spark-value{font-size:22px;font-weight:700;line-height:1.1}
+.spark-delta{font-size:10px;padding:2px 7px;border-radius:4px;font-weight:600}
+.spark-delta.up{background:var(--green-bg);color:var(--green)}
+.spark-delta.down{background:var(--red-bg);color:var(--red)}
+.spark-delta.flat{background:var(--bg3);color:var(--text3)}
+.sparkline-svg{width:100%;height:40px}
+.sparkline-svg polyline{fill:none;stroke:var(--accent);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.sparkline-svg .spark-area{fill:var(--accent-bg);stroke:none}
+
+/* ── Drag-Sort Cards ── */
+.card[draggable="true"]{cursor:grab}
+.card[draggable="true"]:active{cursor:grabbing}
+.card.drag-over{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-bg)}
+.card.dragging{opacity:.4;transform:scale(.96)}
+.drag-handle{color:var(--text3);font-size:11px;opacity:0;transition:opacity .15s;position:absolute;top:6px;right:8px}
+.card{position:relative}
+.card:hover .drag-handle{opacity:1}
+
+/* ── View Toggle ── */
+.view-toggle{display:inline-flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-left:auto}
+.view-toggle button{background:var(--bg3);border:none;color:var(--text3);padding:5px 12px;font-size:12px;cursor:pointer;transition:all .15s}
+.view-toggle button.active{background:var(--accent-bg);color:var(--accent)}
+.view-toggle button:hover:not(.active){color:var(--text2)}
+
+/* ── Timeline / Gantt ── */
+.timeline-container{position:relative;overflow-x:auto;padding:12px 0}
+.timeline-row{display:flex;align-items:center;margin-bottom:4px;font-size:12px;min-height:26px}
+.timeline-label{width:120px;flex-shrink:0;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:10px;text-align:right;font-family:var(--font-mono);font-size:11px}
+.timeline-track{flex:1;position:relative;height:22px;min-width:0;background:var(--bg3);border-radius:3px}
+.timeline-bar{position:absolute;height:18px;border-radius:3px;top:2px;display:flex;align-items:center;padding:0 6px;font-size:10px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;min-width:3px;transition:width .3s}
+.timeline-bar.done{background:var(--green)}
+.timeline-bar.running{background:var(--yellow);animation:barPulse 1.5s infinite}
+.timeline-bar.failed{background:var(--red)}
+.timeline-bar.queued{background:var(--bg-hover);color:var(--text3)}
+@keyframes barPulse{0%,100%{opacity:1}50%{opacity:.6}}
+.timeline-ruler{display:flex;justify-content:space-between;margin-left:120px;font-size:10px;color:var(--text3);margin-top:4px;padding:4px 0;border-top:1px solid var(--border-subtle)}
+
+/* ── Plugin Topology ── */
+.topology-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:10px}
+.topo-node{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;text-align:center;transition:all .2s;position:relative;cursor:pointer}
+.topo-node:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.15)}
+.topo-node.loaded{border-left:3px solid var(--green)}
+.topo-node.skipped{border-left:3px solid var(--yellow)}
+.topo-node.error{border-left:3px solid var(--red)}
+.topo-node .topo-name{font-size:11px;font-weight:600;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topo-node .topo-tools{font-size:22px;font-weight:700;color:var(--accent);margin:4px 0;line-height:1}
+.topo-node .topo-meta{font-size:10px;color:var(--text3)}
+
+/* ── Enhanced Artifact Viewer ── */
+.artifact-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.artifact-breadcrumb{display:flex;align-items:center;gap:2px;font-size:13px;color:var(--text3);flex:1;min-width:0;overflow:hidden}
+.artifact-breadcrumb .bc-sep{color:var(--border);margin:0 2px}
+.artifact-breadcrumb .bc-file{color:var(--accent);font-weight:600}
+.code-viewer{position:relative}
+.code-viewer .code-lines{display:flex;background:var(--bg3);border-radius:var(--radius);overflow:hidden}
+.code-viewer .line-numbers{flex-shrink:0;padding:14px 0;text-align:right;user-select:none;border-right:1px solid var(--border)}
+.code-viewer .line-numbers span{display:block;padding:0 10px 0 14px;color:var(--text3);font-family:var(--font-mono);font-size:12px;line-height:1.6}
+.code-viewer .code-content{flex:1;padding:14px;overflow-x:auto;font-family:var(--font-mono);font-size:12px;line-height:1.6;white-space:pre}
+.copy-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text3);padding:4px 10px;border-radius:var(--radius);cursor:pointer;font-size:11px;transition:all .15s;display:inline-flex;align-items:center;gap:4px}
+.copy-btn:hover{border-color:var(--accent);color:var(--text)}
+.copy-btn.copied{border-color:var(--green);color:var(--green)}
+.format-tabs{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.format-tabs button{background:transparent;border:none;color:var(--text3);padding:5px 12px;font-size:11px;cursor:pointer;transition:all .15s;border-right:1px solid var(--border)}
+.format-tabs button:last-child{border-right:none}
+.format-tabs button.active{background:var(--accent-bg);color:var(--accent)}
+.format-tabs button:hover:not(.active){background:var(--bg3);color:var(--text2)}
+
+/* ── Responsive ── */
+@media(max-width:900px){
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .app-main{margin-left:0}
+  .sidebar-collapse{display:block}
+  .grid-4{grid-template-columns:1fr 1fr}
+  .grid-3,.grid-2{grid-template-columns:1fr}
+  .drawer{width:100%}
+}
+@media(max-width:480px){
+  .grid-4{grid-template-columns:1fr}
+  .main{padding:16px}
+  .topbar{padding:0 16px}
+}
 </style>
 </head>
-<body>
+<body class="app-layout">
 <!-- Toast notification area -->
 <div class="toast-container" id="toastContainer"></div>
 
@@ -229,48 +380,89 @@ tr.clickable:hover td{background:rgba(88,166,255,.08)}
   </div>
 </div>
 
-<header class="header">
-  <h1><span class="icon">🔬</span> Rikune Dashboard</h1>
-  <span class="version" id="version">v1.0.0-beta.3</span>
-  <span class="status-dot" id="statusDot"></span>
-  <span style="font-size:12px;color:var(--text2)" id="uptimeText">—</span>
-  <nav>
-    <button class="active" data-tab="overview">Overview</button>
-    <button data-tab="tools">Tools</button>
-    <button data-tab="plugins">Plugins</button>
-    <button data-tab="samples">Samples</button>
-    <button data-tab="analyses">Analyses</button>
-    <button data-tab="reports">Reports</button>
-    <button data-tab="config">Config</button>
-    <button data-tab="system">System</button>
-  </nav>
-  <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
-    <button class="back-btn" onclick="document.getElementById('searchOverlay').style.display='flex';document.getElementById('globalSearchInput').focus()" style="font-size:11px;padding:3px 8px" title="Ctrl+K">🔍 Search</button>
-    <label class="refresh-indicator" style="cursor:pointer"><input type="checkbox" id="autoRefreshToggle" onchange="toggleAutoRefresh()" style="margin-right:4px" />Auto-refresh</label>
+<!-- ═══ Sidebar Navigation ═══ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <span class="logo">🔬</span>
+    <h1>Rikune</h1>
+    <span class="version" id="version">v1.0.0</span>
   </div>
-</header>
+  <nav class="sidebar-nav">
+    <div class="nav-group">Monitor</div>
+    <button class="active" data-tab="overview">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Overview
+    </button>
+    <button data-tab="system">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="18" r="1" fill="currentColor"/></svg>
+      System
+    </button>
+    <div class="nav-group">Registry</div>
+    <button data-tab="tools">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+      Tools
+    </button>
+    <button data-tab="plugins">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      Plugins
+    </button>
+    <div class="nav-group">Data</div>
+    <button data-tab="samples">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+      Samples
+    </button>
+    <button data-tab="analyses">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      Analyses
+    </button>
+    <button data-tab="reports">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+      Reports
+    </button>
+    <div class="nav-group">Settings</div>
+    <button data-tab="config">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+      Config
+    </button>
+  </nav>
+  <div class="sidebar-footer">
+    <span class="status-dot" id="statusDot"></span>
+    <span class="status-text" id="uptimeText">—</span>
+    <button class="theme-toggle" id="themeToggle" title="Toggle theme">🌙</button>
+  </div>
+</aside>
 
-<!-- Drawer overlay for detail views -->
-<div class="drawer-overlay" id="drawerOverlay"></div>
-<div class="drawer" id="drawer">
-  <button class="drawer-close" id="drawerClose">&times;</button>
-  <div id="drawerContent"></div>
-</div>
+<div class="app-main">
+  <!-- Top bar -->
+  <header class="topbar">
+    <button class="sidebar-collapse" id="sidebarToggle" title="Toggle sidebar">☰</button>
+    <div class="topbar-actions">
+      <button class="search-trigger" onclick="document.getElementById('searchOverlay').style.display='flex';document.getElementById('globalSearchInput').focus()" title="Ctrl+K">🔍 Search <kbd>⌘K</kbd></button>
+      <label class="auto-refresh-label"><input type="checkbox" id="autoRefreshToggle" onchange="toggleAutoRefresh()" /> Auto-refresh</label>
+    </div>
+  </header>
 
-<main class="main">
+  <!-- Drawer overlay for detail views -->
+  <div class="drawer-overlay" id="drawerOverlay"></div>
+  <div class="drawer" id="drawer">
+    <button class="drawer-close" id="drawerClose">&times;</button>
+    <div id="drawerContent"></div>
+  </div>
+
+  <main class="main">
   <!-- ═══════════ OVERVIEW TAB ═══════════ -->
   <div class="tab-content active" id="tab-overview">
     <div class="grid grid-4" id="overviewCards">
-      <div class="card"><h3>Tools</h3><div class="value" id="ov-tools">—</div><div class="sub">MCP tool definitions</div></div>
-      <div class="card"><h3>Plugins</h3><div class="value" id="ov-plugins">—</div><div class="sub" id="ov-plugins-sub">loaded / total</div></div>
-      <div class="card"><h3>Samples</h3><div class="value" id="ov-samples">—</div><div class="sub" id="ov-samples-sub">ingested binaries</div></div>
-      <div class="card"><h3>SSE Clients</h3><div class="value" id="ov-sse">—</div><div class="sub">live connections</div></div>
+      <div class="card" draggable="true" data-card="tools"><span class="drag-handle">⋮⋮</span><h3>Tools</h3><div class="value" id="ov-tools">—</div><div class="sub">MCP tool definitions</div></div>
+      <div class="card" draggable="true" data-card="plugins"><span class="drag-handle">⋮⋮</span><h3>Plugins</h3><div class="value" id="ov-plugins">—</div><div class="sub" id="ov-plugins-sub">loaded / total</div></div>
+      <div class="card" draggable="true" data-card="samples"><span class="drag-handle">⋮⋮</span><h3>Samples</h3><div class="value" id="ov-samples">—</div><div class="sub" id="ov-samples-sub">ingested binaries</div></div>
+      <div class="card" draggable="true" data-card="sse"><span class="drag-handle">⋮⋮</span><h3>SSE Clients</h3><div class="value" id="ov-sse">—</div><div class="sub">live connections</div></div>
     </div>
     <div class="grid grid-4">
-      <div class="card"><h3>Memory (RSS)</h3><div class="value" id="ov-rss">—</div><div class="sub">MB</div></div>
-      <div class="card"><h3>Heap Used</h3><div class="value" id="ov-heap">—</div><div class="sub">MB</div></div>
+      <div class="card donut-card"><div id="ov-mem-donut"></div><div class="donut-info"><h3>Memory (RSS)</h3><div class="donut-value" id="ov-rss">—</div><div class="donut-label" id="ov-rss-detail">MB</div></div></div>
+      <div class="card donut-card"><div id="ov-heap-donut"></div><div class="donut-info"><h3>Heap Used</h3><div class="donut-value" id="ov-heap">—</div><div class="donut-label" id="ov-heap-detail">MB</div></div></div>
       <div class="card"><h3>Uptime</h3><div class="value" id="ov-uptime">—</div><div class="sub" id="ov-started">—</div></div>
-      <div class="card"><h3>Recent (24h)</h3><div class="value" id="ov-recent">—</div><div class="sub">analyses</div></div>
+      <div class="card sparkline-card"><div class="sparkline-header"><div><h3>Analyses (24h)</h3><div class="spark-value" id="ov-recent">—</div></div><span class="spark-delta flat" id="ov-trend">—</span></div><svg class="sparkline-svg" id="ov-sparkline" viewBox="0 0 200 40" preserveAspectRatio="none"></svg></div>
     </div>
 
     <div class="section">
@@ -311,9 +503,12 @@ tr.clickable:hover td{background:rgba(88,166,255,.08)}
   <!-- ═══════════ PLUGINS TAB ═══════════ -->
   <div class="tab-content" id="tab-plugins">
     <div class="section">
-      <div class="section-title">Plugin System <span class="badge" id="pluginCount">0</span></div>
+      <div class="section-title">Plugin System <span class="badge" id="pluginCount">0</span>
+        <div class="view-toggle" id="pluginViewToggle"><button class="active" data-view="table">Table</button><button data-view="topology">Topology</button></div>
+      </div>
       <div class="grid grid-4" id="pluginSummary"></div>
-      <div class="table-wrap" style="margin-top:16px">
+      <div id="pluginTopology" class="topology-grid" style="display:none;margin-top:16px"></div>
+      <div class="table-wrap" id="pluginTableWrap" style="margin-top:16px">
         <table>
           <thead><tr><th>Plugin</th><th>Version</th><th>Status</th><th>Tools</th><th>Description</th></tr></thead>
           <tbody id="pluginTableBody"><tr><td colspan="5" class="loading"><div class="spinner"></div></td></tr></tbody>
@@ -348,9 +543,11 @@ tr.clickable:hover td{background:rgba(88,166,255,.08)}
   <div class="tab-content" id="tab-analyses">
     <div class="section">
       <div class="section-title">Analysis History <span class="badge" id="analysisCount">0</span>
+        <div class="view-toggle" id="analysisViewToggle"><button class="active" data-view="table">Table</button><button data-view="timeline">Timeline</button></div>
         <div class="export-bar"><button class="export-btn" onclick="exportData('analyses','csv')">📥 CSV</button><button class="export-btn" onclick="exportData('analyses','json')">📥 JSON</button></div>
       </div>
-      <div class="filter-bar">
+      <div id="analysisTimeline" class="timeline-container" style="display:none"></div>
+      <div class="filter-bar" id="analysisFilterBar">
         <select id="analysisStatusFilter">
           <option value="">All Statuses</option>
           <option value="done">Done</option>
@@ -405,6 +602,11 @@ tr.clickable:hover td{background:rgba(88,166,255,.08)}
       <button class="back-btn" id="reportBackBtn">← Back to list</button>
       <div class="section">
         <div class="section-title" id="reportViewTitle">Report Viewer</div>
+        <div class="artifact-toolbar">
+          <div class="artifact-breadcrumb" id="artifactBreadcrumb"></div>
+          <div class="format-tabs" id="artifactFormatTabs"></div>
+          <button class="copy-btn" id="artifactCopyBtn" onclick="copyArtifactContent()">📋 Copy</button>
+        </div>
         <div class="meta-grid" id="reportMeta" style="margin-bottom:16px"></div>
         <div class="report-viewer" id="reportViewer">
           <div class="loading"><div class="spinner"></div> Loading artifact content…</div>
@@ -451,6 +653,7 @@ tr.clickable:hover td{background:rgba(88,166,255,.08)}
     </div>
   </div>
 </main>
+</div><!-- /.app-main -->
 
 <script>
 // ══════════════════════════════════════════════════════════════════════════
@@ -461,9 +664,9 @@ const $=s=>document.querySelector(s)
 const $$=s=>document.querySelectorAll(s)
 
 // ── Tab switching ──────────────────────────────────────────────────────
-$$('.header nav button').forEach(btn => {
+$$('.sidebar-nav button').forEach(btn => {
   btn.addEventListener('click', () => {
-    $$('.header nav button').forEach(b => b.classList.remove('active'))
+    $$('.sidebar-nav button').forEach(b => b.classList.remove('active'))
     btn.classList.add('active')
     $$('.tab-content').forEach(t => t.classList.remove('active'))
     $(`#tab-${btn.dataset.tab}`).classList.add('active')
@@ -508,11 +711,32 @@ async function loadOverview() {
   $('#ov-sse').textContent = d.counts.sse_clients
   $('#ov-rss').textContent = d.memory.rss_mb
   $('#ov-heap').textContent = d.memory.heap_used_mb
+  $('#ov-rss-detail').textContent = `${d.memory.rss_mb} / ${d.memory.system_total_mb || '?'} MB`
+  $('#ov-heap-detail').textContent = `${d.memory.heap_used_mb} / ${d.memory.heap_total_mb} MB`
   $('#ov-uptime').textContent = d.server.uptime_human
   $('#ov-started').textContent = 'since ' + new Date(d.server.started_at).toLocaleString()
   $('#ov-recent').textContent = d.counts.recent_analyses_24h
   $('#version').textContent = 'v' + d.server.version
   $('#uptimeText').textContent = '⏱ ' + d.server.uptime_human
+
+  // Donut charts
+  const sysMem = d.memory.system_total_mb || d.memory.heap_total_mb || 1
+  const rssPercent = Math.min(Math.round(d.memory.rss_mb / sysMem * 100), 100)
+  const heapPercent = d.memory.heap_total_mb > 0 ? Math.min(Math.round(d.memory.heap_used_mb / d.memory.heap_total_mb * 100), 100) : 0
+  renderDonut('ov-mem-donut', rssPercent, 'var(--accent)')
+  renderDonut('ov-heap-donut', heapPercent, 'var(--green)')
+
+  // Sparkline
+  sparkHistory.push(d.counts.recent_analyses_24h || 0)
+  if (sparkHistory.length > 20) sparkHistory.shift()
+  renderSparkline('ov-sparkline', sparkHistory)
+  if (sparkHistory.length >= 2) {
+    const cur = sparkHistory[sparkHistory.length - 1], prev = sparkHistory[sparkHistory.length - 2]
+    const trend = $('#ov-trend')
+    if (cur > prev) { trend.textContent = '▲ +' + (cur - prev); trend.className = 'spark-delta up' }
+    else if (cur < prev) { trend.textContent = '▼ −' + (prev - cur); trend.className = 'spark-delta down' }
+    else { trend.textContent = '— stable'; trend.className = 'spark-delta flat' }
+  }
 }
 
 // ── Tools ──────────────────────────────────────────────────────────────
@@ -728,6 +952,8 @@ async function loadAnalyses() {
     </tr>`
   })
   $('#analysisTableBody').innerHTML = rows || '<tr><td colspan="8" style="color:var(--text2)">No analyses found</td></tr>'
+  analysesCache = d.analyses
+  if (analysisViewMode === 'timeline') renderAnalysisTimeline(d.analyses)
   const totalPages = Math.ceil(d.total / ANALYSIS_LIMIT) || 1
   const currentPage = Math.floor(analysisOffset / ANALYSIS_LIMIT) + 1
   $('#analysisPageInfo').textContent = `Page ${currentPage} / ${totalPages} (${d.total} total)`
@@ -797,8 +1023,8 @@ $('#artifactSearch').addEventListener('input', ()=>{ loadArtifacts() })
 // ── Artifact / Report Viewer ───────────────────────────────────────────
 async function viewArtifact(artifactId) {
   // Switch to reports tab
-  $$('.header nav button').forEach(b => b.classList.remove('active'))
-  $$('.header nav button').forEach(b => { if(b.dataset.tab==='reports') b.classList.add('active') })
+  $$('.sidebar-nav button').forEach(b => b.classList.remove('active'))
+  $$('.sidebar-nav button').forEach(b => { if(b.dataset.tab==='reports') b.classList.add('active') })
   $$('.tab-content').forEach(t => t.classList.remove('active'))
   $('#tab-reports').classList.add('active')
 
@@ -807,6 +1033,10 @@ async function viewArtifact(artifactId) {
   $('#reportViewer').innerHTML = '<div class="loading"><div class="spinner"></div> Loading artifact content…</div>'
   $('#reportMeta').innerHTML = ''
   $('#reportViewTitle').textContent = 'Report Viewer'
+  $('#artifactBreadcrumb').innerHTML = ''
+  $('#artifactFormatTabs').innerHTML = ''
+  currentArtifactContent = ''
+  currentArtifactData = null
 
   const d = await api(`/artifacts/${encodeURIComponent(artifactId)}/content`)
   if (!d) {
@@ -814,14 +1044,23 @@ async function viewArtifact(artifactId) {
     return
   }
 
+  currentArtifactContent = d.content || ''
+  currentArtifactData = d
+
+  // Breadcrumb + title
+  renderBreadcrumb(d.path)
+  $('#reportViewTitle').textContent = d.path ? d.path.split(/[/\\]/).pop() : 'Artifact'
+
   // Show metadata
-  $('#reportViewTitle').textContent = d.path || 'Artifact'
   $('#reportMeta').innerHTML = `
     <span class="label">Type</span><span class="badge-type">${esc(d.type)}</span>
     <span class="label">MIME</span><span>${esc(d.mime||'—')}</span>
     <span class="label">Size</span><span>${formatBytes(d.size)}</span>
     <span class="label">Format</span><span>${esc(d.format||'unknown')}</span>
   `
+
+  // Format tabs for markdown/json
+  setupFormatTabs(d)
 
   if (d.truncated) {
     $('#reportViewer').innerHTML = `<div class="empty-state"><div class="empty-icon">📦</div><p>${esc(d.error||'File too large')}</p></div>`
@@ -869,11 +1108,11 @@ async function viewArtifact(artifactId) {
       break
     case 'code':
       viewer.className = 'report-viewer'
-      viewer.innerHTML = `<pre><code>${esc(d.content)}</code></pre>`
+      viewer.innerHTML = renderCodeWithLineNumbers(d.content)
       break
     default:
       viewer.className = 'report-viewer'
-      viewer.innerHTML = `<pre>${esc(d.content)}</pre>`
+      viewer.innerHTML = renderCodeWithLineNumbers(d.content)
   }
 }
 
@@ -1246,7 +1485,7 @@ async function runGlobalSearch(query) {
         if (t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)) {
           results.push({ type: 'Tool', name: t.name, desc: t.description, action: () => {
             document.getElementById('searchOverlay').style.display = 'none'
-            $$('.header nav button').forEach(b => { b.classList.toggle('active', b.dataset.tab === 'tools') })
+            $$('.sidebar-nav button').forEach(b => { b.classList.toggle('active', b.dataset.tab === 'tools') })
             $$('.tab-content').forEach(t => t.classList.remove('active'))
             $('#tab-tools').classList.add('active')
             $('#toolSearch').value = q
@@ -1455,7 +1694,7 @@ function toggleAutoRefresh() {
   if (autoRefreshInterval) { clearInterval(autoRefreshInterval); autoRefreshInterval = null }
   if (on) {
     autoRefreshInterval = setInterval(() => {
-      const active = document.querySelector('.header nav button.active')
+      const active = document.querySelector('.sidebar-nav button.active')
       if (active) loadTab(active.dataset.tab)
     }, 10000)
     toast('info', 'Auto-refresh ON (10s)')
@@ -1470,6 +1709,279 @@ loadLogs()
 connectSSE()
 // Auto-refresh overview every 15s
 setInterval(loadOverview, 15000)
+
+// ── Theme Toggle ───────────────────────────────────────────────────────
+const themeToggleBtn = document.getElementById('themeToggle')
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme)
+  themeToggleBtn.textContent = theme === 'dark' ? '🌙' : '☀️'
+  try { localStorage.setItem('rikune-theme', theme) } catch {}
+}
+themeToggleBtn.addEventListener('click', () => {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark'
+  applyTheme(current === 'dark' ? 'light' : 'dark')
+})
+// Restore saved theme
+try { const saved = localStorage.getItem('rikune-theme'); if (saved) applyTheme(saved) } catch {}
+
+// ── Sidebar Toggle (mobile) ───────────────────────────────────────────
+const sidebarEl = document.getElementById('sidebar')
+document.getElementById('sidebarToggle').addEventListener('click', () => {
+  sidebarEl.classList.toggle('open')
+})
+// Close sidebar on navigation (mobile)
+$$('.sidebar-nav button').forEach(btn => {
+  btn.addEventListener('click', () => { if (window.innerWidth <= 900) sidebarEl.classList.remove('open') })
+})
+
+// ── Donut Chart Renderer ──────────────────────────────────────────────
+function renderDonut(containerId, percent, color, size = 56) {
+  const el = document.getElementById(containerId)
+  if (!el) return
+  const r = (size - 6) / 2
+  const circ = 2 * Math.PI * r
+  const filled = circ * (Math.min(percent, 100) / 100)
+  el.innerHTML = `<svg class="donut-svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--border)" stroke-width="5"/>
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="5"
+      stroke-dasharray="${filled} ${circ - filled}" stroke-dashoffset="${circ/4}" stroke-linecap="round"
+      style="transition:stroke-dasharray .6s ease"/>
+    <text x="${size/2}" y="${size/2}" text-anchor="middle" dominant-baseline="central"
+      fill="var(--text)" font-size="12" font-weight="700">${percent}%</text>
+  </svg>`
+}
+
+// ── Sparkline Renderer ────────────────────────────────────────────────
+const sparkHistory = []
+function renderSparkline(svgId, data) {
+  const svg = document.getElementById(svgId)
+  if (!svg || data.length < 2) return
+  const w = 200, h = 40
+  const max = Math.max(...data, 1)
+  const step = w / (data.length - 1)
+  const pts = data.map((v, i) => `${(i * step).toFixed(1)},${(h - (v / max) * (h - 4) - 2).toFixed(1)}`).join(' ')
+  svg.innerHTML = `<polyline class="spark-area" points="${pts} ${w},${h} 0,${h}"/><polyline points="${pts}"/>`
+}
+
+// ── Drag-Sort Overview Cards ──────────────────────────────────────────
+;(function initDragSort() {
+  const grid = document.getElementById('overviewCards')
+  if (!grid) return
+  let dragEl = null
+  try {
+    const saved = JSON.parse(localStorage.getItem('rikune-card-order'))
+    if (saved && Array.isArray(saved)) {
+      const cards = [...grid.children]
+      const ordered = saved.map(id => cards.find(c => c.dataset.card === id)).filter(Boolean)
+      const rest = cards.filter(c => !saved.includes(c.dataset.card))
+      ;[...ordered, ...rest].forEach(c => grid.appendChild(c))
+    }
+  } catch {}
+  grid.addEventListener('dragstart', e => {
+    const card = e.target.closest('[data-card]')
+    if (!card) return
+    dragEl = card
+    card.classList.add('dragging')
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', card.dataset.card)
+  })
+  grid.addEventListener('dragend', e => {
+    const card = e.target.closest('[data-card]')
+    if (card) card.classList.remove('dragging')
+    $$('#overviewCards .card').forEach(c => c.classList.remove('drag-over'))
+    dragEl = null
+  })
+  grid.addEventListener('dragover', e => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const card = e.target.closest('[data-card]')
+    if (card && card !== dragEl) {
+      $$('#overviewCards .card').forEach(c => c.classList.remove('drag-over'))
+      card.classList.add('drag-over')
+    }
+  })
+  grid.addEventListener('drop', e => {
+    e.preventDefault()
+    const target = e.target.closest('[data-card]')
+    if (!target || !dragEl || target === dragEl) return
+    const cards = [...grid.children]
+    const fromIdx = cards.indexOf(dragEl)
+    const toIdx = cards.indexOf(target)
+    if (fromIdx < toIdx) target.after(dragEl)
+    else target.before(dragEl)
+    const order = [...grid.children].map(c => c.dataset.card).filter(Boolean)
+    try { localStorage.setItem('rikune-card-order', JSON.stringify(order)) } catch {}
+  })
+})()
+
+// ── Analysis Timeline Renderer ────────────────────────────────────────
+let analysisViewMode = 'table'
+let analysesCache = []
+
+function renderAnalysisTimeline(analyses) {
+  const container = document.getElementById('analysisTimeline')
+  if (!container) return
+  if (!analyses || analyses.length === 0) {
+    container.innerHTML = '<div style="padding:20px;color:var(--text2);text-align:center">No analyses to display</div>'
+    return
+  }
+  const now = Date.now()
+  const items = analyses.map(a => ({
+    ...a,
+    t0: a.started_at ? new Date(a.started_at).getTime() : now,
+    t1: a.finished_at ? new Date(a.finished_at).getTime() : now
+  }))
+  const minT = Math.min(...items.map(t => t.t0))
+  const maxT = Math.max(...items.map(t => t.t1))
+  const range = maxT - minT || 1
+  let html = ''
+  for (const t of items) {
+    const left = ((t.t0 - minT) / range * 100).toFixed(1)
+    const width = Math.max(((t.t1 - t.t0) / range * 100), 0.5).toFixed(1)
+    const cls = t.status === 'done' ? 'done' : t.status === 'failed' ? 'failed' : t.status === 'running' ? 'running' : 'queued'
+    const dur = t.started_at && t.finished_at ? formatDuration((new Date(t.finished_at) - new Date(t.started_at)) / 1000) : ''
+    html += `<div class="timeline-row">
+      <div class="timeline-label" title="${esc(t.id)}">${esc(t.stage || t.id.substring(0, 8))}</div>
+      <div class="timeline-track"><div class="timeline-bar ${cls}" style="left:${left}%;width:${width}%" title="${esc(t.stage)} — ${esc(t.status)} ${dur}">${dur}</div></div>
+    </div>`
+  }
+  html += '<div class="timeline-ruler">'
+  for (let i = 0; i <= 5; i++) {
+    html += `<span>${new Date(minT + (range * i / 5)).toLocaleTimeString()}</span>`
+  }
+  html += '</div>'
+  container.innerHTML = html
+}
+
+document.getElementById('analysisViewToggle')?.addEventListener('click', e => {
+  const btn = e.target.closest('button[data-view]')
+  if (!btn) return
+  analysisViewMode = btn.dataset.view
+  $$('#analysisViewToggle button').forEach(b => b.classList.remove('active'))
+  btn.classList.add('active')
+  const table = document.querySelector('#tab-analyses .table-wrap')
+  const timeline = document.getElementById('analysisTimeline')
+  const filterBar = document.getElementById('analysisFilterBar')
+  const page = document.querySelector('#tab-analyses .page-controls')
+  if (analysisViewMode === 'timeline') {
+    if (table) table.style.display = 'none'
+    if (filterBar) filterBar.style.display = 'none'
+    if (page) page.style.display = 'none'
+    if (timeline) timeline.style.display = 'block'
+    renderAnalysisTimeline(analysesCache)
+  } else {
+    if (table) table.style.display = ''
+    if (filterBar) filterBar.style.display = ''
+    if (page) page.style.display = ''
+    if (timeline) timeline.style.display = 'none'
+  }
+})
+
+// ── Plugin Topology Renderer ──────────────────────────────────────────
+let pluginViewMode = 'table'
+
+function renderPluginTopology(plugins) {
+  const container = document.getElementById('pluginTopology')
+  if (!container) return
+  if (!plugins || plugins.length === 0) {
+    container.innerHTML = '<div style="padding:20px;color:var(--text2);text-align:center">No plugins found</div>'
+    return
+  }
+  let html = ''
+  for (const p of plugins) {
+    const cls = p.status === 'loaded' ? 'loaded' : p.status === 'error' ? 'error' : 'skipped'
+    html += `<div class="topo-node ${cls}" onclick="openPluginDetail('${esc(p.id)}')">
+      <div class="topo-name" title="${esc(p.name)}">${esc(p.name)}</div>
+      <div class="topo-tools">${p.tool_count}</div>
+      <div class="topo-meta">v${esc(p.version || '?')} · ${esc(p.status)}</div>
+    </div>`
+  }
+  container.innerHTML = html
+}
+
+document.getElementById('pluginViewToggle')?.addEventListener('click', e => {
+  const btn = e.target.closest('button[data-view]')
+  if (!btn) return
+  pluginViewMode = btn.dataset.view
+  $$('#pluginViewToggle button').forEach(b => b.classList.remove('active'))
+  btn.classList.add('active')
+  const tableWrap = document.getElementById('pluginTableWrap')
+  const topology = document.getElementById('pluginTopology')
+  if (pluginViewMode === 'topology') {
+    if (tableWrap) tableWrap.style.display = 'none'
+    if (topology) topology.style.display = 'grid'
+    renderPluginTopology(pluginsCache)
+  } else {
+    if (tableWrap) tableWrap.style.display = ''
+    if (topology) topology.style.display = 'none'
+  }
+})
+
+// ── Enhanced Artifact Viewer Helpers ──────────────────────────────────
+let currentArtifactContent = ''
+let currentArtifactData = null
+
+function renderBreadcrumb(path) {
+  const bc = document.getElementById('artifactBreadcrumb')
+  if (!bc || !path) return
+  const parts = path.replace(/\\/g, '/').split('/').filter(Boolean)
+  let html = ''
+  parts.forEach((p, i) => {
+    if (i > 0) html += '<span class="bc-sep">/</span>'
+    html += i === parts.length - 1 ? `<span class="bc-file">${esc(p)}</span>` : `<span>${esc(p)}</span>`
+  })
+  bc.innerHTML = html
+}
+
+function renderCodeWithLineNumbers(content) {
+  const lines = content.split('\n')
+  let numHtml = ''
+  lines.forEach((_, i) => { numHtml += `<span>${i + 1}</span>` })
+  return `<div class="code-viewer"><div class="code-lines"><div class="line-numbers">${numHtml}</div><div class="code-content">${esc(content)}</div></div></div>`
+}
+
+function copyArtifactContent() {
+  if (!currentArtifactContent) return
+  navigator.clipboard.writeText(currentArtifactContent).then(() => {
+    const btn = document.getElementById('artifactCopyBtn')
+    if (btn) {
+      btn.classList.add('copied')
+      btn.textContent = '✓ Copied'
+      setTimeout(() => { btn.classList.remove('copied'); btn.textContent = '📋 Copy' }, 2000)
+    }
+  }).catch(() => toast('Copy failed', 'error'))
+}
+
+function setupFormatTabs(data) {
+  const tabs = document.getElementById('artifactFormatTabs')
+  if (!tabs) return
+  if (data.format === 'markdown' || data.format === 'json') {
+    tabs.innerHTML = '<button class="active" data-fmt="rendered">Rendered</button><button data-fmt="raw">Raw</button>'
+    tabs.style.display = 'flex'
+    tabs.onclick = e => {
+      const btn = e.target.closest('button[data-fmt]')
+      if (!btn) return
+      $$('#artifactFormatTabs button').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      const viewer = document.getElementById('reportViewer')
+      if (btn.dataset.fmt === 'raw') {
+        viewer.className = 'report-viewer'
+        viewer.innerHTML = renderCodeWithLineNumbers(data.content)
+      } else {
+        if (data.format === 'markdown') {
+          viewer.className = 'report-viewer markdown'
+          viewer.innerHTML = renderMarkdown(data.content)
+        } else {
+          viewer.className = 'report-viewer json'
+          viewer.innerHTML = data.parsed_json ? renderJsonHtml(data.parsed_json) : esc(data.content)
+        }
+      }
+    }
+  } else {
+    tabs.innerHTML = ''
+    tabs.style.display = 'none'
+  }
+}
 </script>
 </body>
 </html>

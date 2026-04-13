@@ -1,10 +1,10 @@
 /**
- * debug.session.breakpoint MCP tool â€?manage breakpoints in a debug session.
+ * debug.session.breakpoint MCP tool ï¿½?manage breakpoints in a debug session.
  */
 
 import { z } from 'zod'
 import type { ToolDefinition, WorkerResult , PluginToolDeps} from '../../sdk.js'
-import { getDebugSessionManager } from '../../../debug/debug-session-state.js'
+import { getDebugSessionManager } from '../debug/debug-session-state.js'
 
 const TOOL_NAME = 'debug.session.breakpoint'
 

@@ -172,6 +172,148 @@ export interface PluginConfigField {
   defaultValue?: string
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// System Dependencies — declarative runtime requirement descriptors
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Describes a single runtime dependency a plugin requires.
+ *
+ * The plugin system uses these to:
+ *   1. Auto-generate `check()` when the plugin doesn't provide one
+ *   2. Produce a structured health report at startup
+ *   3. **Drive Docker image generation** — the generator scans all plugins,
+ *      collects their systemDeps, and only includes the build stages, apt
+ *      packages, env vars, and validation commands that are actually needed.
+ *   4. Generate documentation of per-plugin requirements
+ *
+ * Example:
+ * ```ts
+ * systemDeps: [
+ *   {
+ *     type: 'binary', name: 'frida', versionFlag: '--version',
+ *     envVar: 'FRIDA_PATH', required: true,
+ *     dockerFeature: 'frida',
+ *     aptPackages: [],
+ *     dockerValidation: ['frida-ps --help >/dev/null 2>&1'],
+ *   },
+ *   { type: 'python', name: 'dnfile', importName: 'dnfile', required: true },
+ * ]
+ * ```
+ */
+export interface PluginSystemDep {
+  /** Kind of dependency. */
+  type: 'binary' | 'python' | 'python-venv' | 'env-var' | 'directory' | 'file'
+
+  /** Human-readable name (e.g. `'frida'`, `'dnfile'`, `'Ghidra'`). */
+  name: string
+
+  /**
+   * For `binary`: the executable name or absolute path to test.
+   * For `python`: the pip package name.
+   * For `python-venv`: path to the venv's python binary.
+   * For `env-var`: the environment variable name.
+   * For `directory` / `file`: the path to check (may reference an env var via `$ENV_VAR`).
+   */
+  target?: string
+
+  /** For `python`: the importable module name if different from package name. */
+  importName?: string
+
+  /** For `binary`: flag to get version output (e.g. `'--version'`). */
+  versionFlag?: string
+
+  /** Environment variable that provides / overrides the path to this dependency. */
+  envVar?: string
+
+  /** Default path inside the Docker image (used for health reporting). */
+  dockerDefault?: string
+
+  /** Whether the dependency is required (true) or optional/nice-to-have (false). */
+  required: boolean
+
+  /** Short human-readable description shown in health reports. */
+  description?: string
+
+  /** Docker `RUN` instruction or package name that installs this dep. */
+  dockerInstall?: string
+
+  // ── Docker generation fields (drive Dockerfile output) ───────────────
+
+  /**
+   * Docker feature group ID that controls conditional blocks in the
+   * Dockerfile template.  Deps with the same `dockerFeature` share a
+   * build stage (e.g. `'ghidra'`, `'rizin'`, `'angr'`).
+   *
+   * When the generator scans plugins, it collects all unique
+   * `dockerFeature` values and enables the corresponding `# @if <feature>`
+   * blocks in the template.
+   *
+   * Leave undefined for deps that don't require a dedicated Docker stage
+   * (e.g. Python packages already in requirements.txt).
+   */
+  dockerFeature?: string
+
+  /**
+   * apt-get packages to install in the runtime Docker image.
+   * Merged across all enabled plugins into a single `apt-get install`.
+   */
+  aptPackages?: string[]
+
+  /**
+   * Shell commands to validate this dependency inside the Docker image.
+   * Merged into a single `RUN` validation step at the end of the build.
+   */
+  dockerValidation?: string[]
+
+  // ── Extended Docker metadata (replaces hardcoded maps in generator) ──
+
+  /**
+   * Additional Docker ENV vars beyond the primary `envVar`/`dockerDefault`.
+   * Merged across all enabled plugins into the runtime ENV block and
+   * docker-compose environment section.
+   *
+   * Example: `{ JAVA_HOME: '/opt/java/openjdk', GHIDRA_LOG_ROOT: '/ghidra-logs' }`
+   */
+  extraEnv?: Record<string, string>
+
+  /**
+   * Docker build ARG names and their default values.
+   * Merged across all plugins into global ARG declarations and
+   * docker-compose build args.
+   *
+   * Example: `{ GHIDRA_VERSION: '12.0.4' }`
+   */
+  buildArgs?: Record<string, string>
+
+  /**
+   * Directories to create and optionally chown in the runtime Docker image.
+   * Merged into the `mkdir` + `chown` block near the end of the Dockerfile.
+   *
+   * Example: `[{ path: '/ghidra-projects', chown: 'appuser:appuser' }]`
+   */
+  directories?: Array<{ path: string; chown?: string }>
+
+  /**
+   * docker-compose volume mounts this dependency requires.
+   * Merged into the volumes section of docker-compose.yml.
+   *
+   * Example: `[{ source: '${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-projects', target: '/ghidra-projects', mode: 'rw' }]`
+   */
+  volumes?: Array<{ source: string; target: string; mode?: 'ro' | 'rw' }>
+}
+
+/**
+ * Result of validating a single system dependency at runtime.
+ */
+export interface DepCheckResult {
+  dep: PluginSystemDep
+  available: boolean
+  resolvedPath?: string
+  version?: string
+  error?: string
+}
+
 /** Lifecycle hooks a plugin can implement. */
 export interface PluginHooks {
   onBeforeToolCall?: (toolName: string, args: Record<string, unknown>) => void | Promise<void>
@@ -190,15 +332,164 @@ export interface PluginStatus {
   status: 'loaded' | 'skipped-disabled' | 'skipped-check' | 'skipped-deps' | 'error'
   tools: string[]
   configFields?: PluginConfigField[]
+  /** Results of system dependency checks (populated at load time). */
+  depChecks?: DepCheckResult[]
   error?: string
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Progressive Tool Surface — visibility control
+// ═══════════════════════════════════════════════════════════════════════════
+
 /**
- * The contract every plugin must implement.
+ * Surface tier determines when a plugin's tools become visible to the AI.
  *
- * A plugin is a self-contained module that lives in its own directory
- * under `src/plugins/<id>/`. It exports a default `Plugin` object.
+ * - `0` (Gateway): Always visible. Entry-point tools for sample intake, triage,
+ *   task management, discovery, and reporting. Aim for ≤15 tools at this tier.
+ *
+ * - `1` (Context-activated): Activated when a sample's file type or format
+ *   matches the plugin's declared `activateOn.fileTypes`. For example, PE analysis
+ *   tools appear only after a PE file is ingested.
+ *
+ * - `2` (Finding-activated): Activated when another tool's result contains
+ *   a matching finding/signal from `activateOn.findings`. For example, unpacking
+ *   tools activate when a packer is detected.
+ *
+ * - `3` (Expert): Never auto-activated; only shown when the AI calls
+ *   `tools.discover` with the matching category. For heavyweight backends
+ *   (Ghidra, angr, PANDA, etc.) that require explicit intent.
  */
+export type SurfaceTier = 0 | 1 | 2 | 3
+
+/**
+ * Declarative visibility rules for a plugin's tools.
+ *
+ * The ToolSurfaceManager reads these at startup. No hardcoded lists in the core
+ * — every plugin self-describes when its tools should become visible.
+ *
+ * Examples:
+ * ```ts
+ * // Tier 0 — always visible
+ * surfaceRules: { tier: 0 }
+ *
+ * // Tier 1 — activated when a PE file is loaded
+ * surfaceRules: { tier: 1, activateOn: { fileTypes: ['pe32', 'pe64', 'dll'] } }
+ *
+ * // Tier 2 — activated when packing is detected
+ * surfaceRules: { tier: 2, activateOn: { findings: ['packed', 'upx'] } }
+ *
+ * // Tier 3 — expert tool, manual discovery only
+ * surfaceRules: { tier: 3, category: 'symbolic-execution' }
+ * ```
+ */
+export interface SurfaceRules {
+  /** Visibility tier (0 = always, 1 = file-type, 2 = finding, 3 = expert). */
+  tier: SurfaceTier
+
+  /** Conditions that trigger automatic activation (tier 1 and 2). */
+  activateOn?: {
+    /**
+     * File type / format tags that activate this plugin's tools.
+     * Matched against the `file_type` field from triage results.
+     *
+     * Standard tags: `pe32`, `pe64`, `dll`, `elf`, `macho`, `apk`, `dex`,
+     * `office`, `pdf`, `pcap`, `firmware`, `dotnet`, `go`, `jar`, `class`
+     */
+    fileTypes?: string[]
+
+    /**
+     * Finding / signal tags that activate this plugin's tools.
+     * Matched against `recommended_next_tools`, packer detections, and
+     * structured flags returned by other tools.
+     *
+     * Standard tags: `packed`, `upx`, `dotnet`, `go`, `signed`, `obfuscated`,
+     * `crypto`, `c2`, `shellcode`, `vba_macros`, `suspicious_imports`,
+     * `anti_debug`, `vm_detect`
+     */
+    findings?: string[]
+  }
+
+  /**
+   * Discovery category for `tools.discover` (primarily tier 3, but any tier
+   * can specify a category for discoverability).
+   *
+   * Standard categories: `reverse-engineering`, `dynamic-analysis`,
+   * `symbolic-execution`, `memory-forensics`, `network-analysis`,
+   * `malware-analysis`, `vulnerability-research`, `static-analysis`
+   */
+  category?: string
+
+  /**
+   * Declarative signal mapping: when a tool from this plugin produces output
+   * where `data[field]` is truthy, the corresponding signal tag(s) are emitted
+   * and can activate tier-2 plugins.
+   *
+   * All plugins' signalMaps are collected into a global lookup. When any tool
+   * result arrives, the surface manager checks every registered signalMap.
+   *
+   * Example:
+   * ```ts
+   * signalMap: {
+   *   'is_packed': 'packed',
+   *   'is_dotnet': 'dotnet',
+   *   'anti_debug': ['anti_debug', 'suspicious_imports'],
+   * }
+   * ```
+   */
+  signalMap?: Record<string, string | string[]>
+
+  /**
+   * Custom signal extractor for complex output structures (e.g., arrays of
+   * detections). Called after signalMap processing.
+   *
+   * The function receives the tool result's `data` object and should return
+   * an array of signal tags.
+   *
+   * Example:
+   * ```ts
+   * extractSignals: (data) => {
+   *   const signals: string[] = []
+   *   if (Array.isArray(data.detections)) {
+   *     for (const d of data.detections) {
+   *       if (String(d.type).includes('UPX')) signals.push('packed', 'upx')
+   *     }
+   *   }
+   *   return signals
+   * }
+   * ```
+   */
+  extractSignals?: (data: Record<string, unknown>) => string[]
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Shared vocabulary — file-type tag normalization
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Canonical mapping from raw `detectFileType()` output (lowercased) to the
+ * set of file-type tags that tier-1 plugins can match against.
+ *
+ * This is shared vocabulary — used by the ToolSurfaceManager to normalize
+ * file types before matching against plugins' `activateOn.fileTypes`.
+ *
+ * `detectFileType()` returns: `'PE'`, `'ELF'`, `'Mach-O'`, `'Mach-O-Fat'`,
+ * `'unknown'`. Plugins declare tag names from the expanded set below.
+ */
+export const SURFACE_FILE_TYPE_TAGS: Record<string, string[]> = {
+  pe:           ['pe', 'pe32', 'pe64', 'dll', 'exe', 'windows'],
+  elf:          ['elf', 'linux'],
+  'mach-o':     ['macho', 'mach-o', 'macos', 'ios'],
+  'mach-o-fat': ['macho', 'mach-o', 'mach-o-fat', 'macos', 'ios'],
+  apk:          ['apk', 'android', 'dex'],
+  dex:          ['dex', 'android'],
+  jar:          ['jar', 'java', 'class'],
+  class:        ['class', 'java'],
+  office:       ['office', 'doc', 'xls', 'ppt', 'docx', 'xlsx'],
+  pdf:          ['pdf'],
+  pcap:         ['pcap', 'pcapng', 'network'],
+}
+
+
 export interface Plugin {
   /** Unique kebab-case identifier, e.g. `'android'`, `'ghidra'`. */
   id: string
@@ -212,6 +503,42 @@ export interface Plugin {
   dependencies?: string[]
   /** Declarative config fields the plugin expects. */
   configSchema?: PluginConfigField[]
+  /**
+   * Declarative system dependencies this plugin requires at runtime.
+   * Used for auto-check, health reporting, and Docker validation.
+   * When provided and no explicit `check()` is defined, the plugin system
+   * will auto-generate a check from these declarations.
+   */
+  systemDeps?: PluginSystemDep[]
+  /**
+   * Declares co-located resource directories relative to the plugin root.
+   * Used by the Docker generator and build tooling to discover plugin assets.
+   *
+   * Convention (all optional):
+   * - `workers` — Python worker scripts (default: `'workers'`)
+   * - `scripts` — Frida/Ghidra scripts (default: `'scripts'`)
+   * - `data`    — Data files (JSON, YARA rules, etc.) (default: `'data'`)
+   *
+   * Set a key to declare the resource exists. The value is the directory name
+   * relative to the plugin root (almost always the default).
+   *
+   * Example:
+   * ```ts
+   * resources: { workers: 'workers', scripts: 'scripts', data: 'data' }
+   * ```
+   */
+  resources?: {
+    workers?: string
+    scripts?: string
+    data?: string
+  }
+  /**
+   * Progressive Tool Surface — controls when this plugin's tools are
+   * visible to the AI.  See {@link SurfaceRules} for full documentation.
+   *
+   * Omit to default to tier 0 (always visible) for backward compatibility.
+   */
+  surfaceRules?: SurfaceRules
   /** Optional lifecycle hooks. */
   hooks?: PluginHooks
   /** If true, hooks fire for ALL tool invocations, not just this plugin's tools. */

@@ -20,12 +20,12 @@ import {
   classifySampleSizeTier,
   deriveAnalysisBudgetProfile,
   mergeCoverageEnvelope,
-} from '../analysis-coverage.js'
+} from '../analysis/analysis-coverage.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
-import { createDynamicDependenciesHandler } from '../tools/dynamic-dependencies.js'
-import { createSandboxExecuteHandler } from '../tools/sandbox-execute.js'
-import { createQilingInspectHandler } from '../tools/docker/qiling-inspect.js'
-import { createPandaInspectHandler } from '../tools/docker/panda-inspect.js'
+import { createDynamicDependenciesHandler } from '../plugins/dynamic/tools/dynamic-dependencies.js'
+import { createSandboxExecuteHandler } from '../plugins/dynamic/tools/sandbox-execute.js'
+import { createQilingInspectHandler } from '../plugins/qiling/tools/qiling-inspect.js'
+import { createPandaInspectHandler } from '../plugins/panda/tools/panda-inspect.js'
 import { createTriageWorkflowHandler } from './triage.js'
 import { createDeepStaticWorkflowHandler } from './deep-static.js'
 import { createReconstructWorkflowHandler } from './reconstruct.js'

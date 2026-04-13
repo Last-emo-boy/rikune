@@ -11,7 +11,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef , PluginToolDe
 import { generateCacheKey } from '../../../cache-manager.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
-import { inspectSampleWorkspace, formatMissingOriginalError, resolvePrimarySamplePath } from '../../../sample-workspace.js'
+import { inspectSampleWorkspace, formatMissingOriginalError, resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import {
   buildStaticWorkerRequest,
   callStaticWorker as callPooledStaticWorker,

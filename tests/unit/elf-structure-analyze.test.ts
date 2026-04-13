@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createElfStructureAnalyzeHandler, ElfStructureAnalyzeInputSchema } from '../../src/tools/elf-structure-analyze.js'
+import { createElfStructureAnalyzeHandler, ElfStructureAnalyzeInputSchema } from '../../src/plugins/elf-macho/tools/elf-structure-analyze.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 

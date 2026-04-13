@@ -2,7 +2,7 @@
  * Unit tests for ELF/Mach-O cross-platform support
  */
 
-import { detectFileType } from '../../src/sample-finalization.js'
+import { detectFileType } from '../../src/sample/sample-finalization.js'
 
 describe('detectFileType', () => {
   it('detects PE (MZ header)', () => {
@@ -77,7 +77,7 @@ describe('detectFileType', () => {
 
 describe('elf-structure-analyze', () => {
   it('module exports tool definition and handler factory', async () => {
-    const mod = await import('../../src/tools/elf-structure-analyze.js')
+    const mod = await import('../../src/plugins/elf-macho/tools/elf-structure-analyze.js')
     expect(mod.elfStructureAnalyzeToolDefinition).toBeDefined()
     expect(mod.elfStructureAnalyzeToolDefinition.name).toBe('elf.structure.analyze')
     expect(typeof mod.createElfStructureAnalyzeHandler).toBe('function')
@@ -86,7 +86,7 @@ describe('elf-structure-analyze', () => {
 
 describe('macho-structure-analyze', () => {
   it('module exports tool definition and handler factory', async () => {
-    const mod = await import('../../src/tools/macho-structure-analyze.js')
+    const mod = await import('../../src/plugins/elf-macho/tools/macho-structure-analyze.js')
     expect(mod.machoStructureAnalyzeToolDefinition).toBeDefined()
     expect(mod.machoStructureAnalyzeToolDefinition.name).toBe('macho.structure.analyze')
     expect(typeof mod.createMachoStructureAnalyzeHandler).toBe('function')
@@ -95,7 +95,7 @@ describe('macho-structure-analyze', () => {
 
 describe('elf-imports-extract', () => {
   it('module exports tool definition and handler factory', async () => {
-    const mod = await import('../../src/tools/elf-imports-extract.js')
+    const mod = await import('../../src/plugins/elf-macho/tools/elf-imports-extract.js')
     expect(mod.elfImportsExtractToolDefinition).toBeDefined()
     expect(mod.elfImportsExtractToolDefinition.name).toBe('elf.imports.extract')
     expect(typeof mod.createElfImportsExtractHandler).toBe('function')
@@ -104,7 +104,7 @@ describe('elf-imports-extract', () => {
 
 describe('elf-exports-extract', () => {
   it('module exports tool definition and handler factory', async () => {
-    const mod = await import('../../src/tools/elf-exports-extract.js')
+    const mod = await import('../../src/plugins/elf-macho/tools/elf-exports-extract.js')
     expect(mod.elfExportsExtractToolDefinition).toBeDefined()
     expect(mod.elfExportsExtractToolDefinition.name).toBe('elf.exports.extract')
     expect(typeof mod.createElfExportsExtractHandler).toBe('function')

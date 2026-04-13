@@ -5,12 +5,13 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { stringsExtractToolDefinition, createStringsExtractHandler } from '../../tools/strings-extract.js'
-import { stringsFlossDecodeToolDefinition, createStringsFlossDecodeHandler } from '../../tools/strings-floss-decode.js'
+import { stringsExtractToolDefinition, createStringsExtractHandler } from './tools/strings-extract.js'
+import { stringsFlossDecodeToolDefinition, createStringsFlossDecodeHandler } from './tools/strings-floss-decode.js'
 
 const stringsPlugin: Plugin = {
   id: 'strings',
   name: 'Strings Extraction',
+  surfaceRules: { tier: 0, category: 'static-analysis' },
   description: 'Extract printable strings and decode obfuscated strings via FLOSS',
   version: '1.0.0',
   register(server, deps) {

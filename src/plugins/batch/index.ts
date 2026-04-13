@@ -9,11 +9,12 @@ import {
   batchSubmitToolDefinition, createBatchSubmitHandler,
   batchStatusToolDefinition, createBatchStatusHandler,
   batchResultsToolDefinition, createBatchResultsHandler,
-} from '../../tools/batch-analysis.js'
+} from './tools/batch-analysis.js'
 
 const batchPlugin: Plugin = {
   id: 'batch',
   name: 'Batch Analysis',
+  surfaceRules: { tier: 0, category: 'static-analysis' },
   description: 'Multi-sample batch submission, monitoring, and result retrieval',
   version: '1.0.0',
   register(server, deps) {

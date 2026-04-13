@@ -14,7 +14,7 @@ import { withLogging, logError, logWarning } from '../logger.js'
 import {
   MAX_SAMPLE_SIZE,
   createSampleFinalizationService,
-} from '../sample-finalization.js'
+} from '../sample/sample-finalization.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
 
 // ============================================================================

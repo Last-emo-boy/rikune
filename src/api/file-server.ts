@@ -8,15 +8,17 @@ import http, { type IncomingMessage, type ServerResponse } from 'http'
 import path from 'path'
 import { logger } from '../logger.js'
 import { AuthMiddleware } from './auth-middleware.js'
-import { handleHealthCheck } from './routes/health.js'
+import { handleHealthCheck, handleReadinessCheck, setHealthDependencies } from './routes/health.js'
 import { parseMultipart } from './multipart-parser.js'
 import type { StorageManager } from '../storage/storage-manager.js'
 import type { DatabaseManager, UploadSession } from '../database.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
-import type { SampleFinalizationService } from '../sample-finalization.js'
+import type { SampleFinalizationService } from '../sample/sample-finalization.js'
 import { RateLimiter } from './rate-limiter.js'
 import { handleSseConnection } from './sse-events.js'
 import { handleDashboardApi } from './routes/dashboard-api.js'
+import { isRikuneError } from '../errors.js'
+import { randomUUID } from 'crypto'
 
 export interface FileServerConfig {
   port: number
@@ -105,6 +107,10 @@ export class FileServer {
     const url = new URL(req.url || '/', `http://127.0.0.1:${this.effectivePort || this.config.port}`)
     const pathname = url.pathname
 
+    // ── Request ID (accept from client or generate) ─────────────────
+    const requestId = (req.headers['x-request-id'] as string) || randomUUID()
+    res.setHeader('X-Request-Id', requestId)
+
     // ── Security headers (applied to every response) ────────────────
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('X-Frame-Options', 'DENY')
@@ -152,6 +158,11 @@ export class FileServer {
 
       if (pathname === '/api/v1/health' && req.method === 'GET') {
         await handleHealthCheck(res, '1.0.0-beta.3')
+        return
+      }
+
+      if (pathname === '/api/v1/ready' && req.method === 'GET') {
+        await handleReadinessCheck(res, '1.0.0-beta.3')
         return
       }
 
@@ -220,10 +231,24 @@ export class FileServer {
         return
       }
 
-      logger.error({ err: error }, 'HTTP File Server request failed')
+      if (isRikuneError(error)) {
+        const status = error.code === 'E_NOT_FOUND' || error.code === 'E_SAMPLE_NOT_FOUND' || error.code === 'E_JOB_NOT_FOUND' ? 404
+          : error.code === 'E_INVALID_INPUT' || error.code === 'E_UPLOAD_INVALID' ? 400
+          : error.code === 'E_UNAUTHORIZED' ? 401
+          : error.code === 'E_RATE_LIMITED' ? 429
+          : error.code === 'E_QUOTA_EXCEEDED' || error.code === 'E_SAMPLE_TOO_LARGE' || error.code === 'E_STORAGE_FULL' ? 413
+          : 500
+        this.sendJson(res, status, error.toJSON())
+        return
+      }
+
+      logger.error({ err: error, requestId }, 'HTTP File Server request failed')
       this.sendJson(res, 500, {
-        error: 'Internal Server Error',
+        error: true,
+        code: 'E_INTERNAL',
         message: (error as Error).message,
+        recoverable: false,
+        requestId,
       })
     }
   }

@@ -15,7 +15,7 @@ import {
   loadSemanticNameSuggestionIndex,
   SEMANTIC_NAME_PREPARE_BUNDLE_ARTIFACT_TYPE,
   SEMANTIC_NAME_SUGGESTIONS_ARTIFACT_TYPE,
-} from '../../src/semantic-name-suggestion-artifacts.js'
+} from '../../src/artifacts/semantic-name-suggestion-artifacts.js'
 import type { WorkerResult, ToolArgs } from '../../src/types.js'
 
 describe('code.function.rename prepare/apply tools', () => {

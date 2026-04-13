@@ -122,7 +122,7 @@ echo '{"jsonrpc":"2.0","method":"initialize","params":{}}' | \
 
 All MCP tools are registered in `src/tool-registry.ts` (not `src/index.ts`).
 
-1. Create `src/tools/my-tool.ts` exporting a tool definition and handler factory.
+1. Create the tool in the appropriate plugin directory (e.g. `src/plugins/<plugin-id>/tools/my-tool.ts`) exporting a tool definition and handler factory.
 2. Import both in `src/tool-registry.ts`.
 3. Add `server.registerTool(definition, handler)` in the appropriate category section.
 4. Add `tests/unit/my-tool.test.ts`.

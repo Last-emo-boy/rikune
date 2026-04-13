@@ -7,16 +7,17 @@
 import type { Plugin } from '../sdk.js'
 import { kbFunctionMatchToolDefinition, createKbFunctionMatchHandler } from './tools/kb-function-match.js'
 import { analysisTemplateToolDefinition, createAnalysisTemplateHandler } from './tools/analysis-template.js'
-import { kbImportBulkToolDefinition, createKbImportBulkHandler } from '../../tools/kb-import-bulk.js'
-import { kbExportToolDefinition, createKbExportHandler } from '../../tools/kb-export.js'
-import { kbImportToolDefinition, createKbImportHandler } from '../../tools/kb-import.js'
-import { kbStatsToolDefinition, createKbStatsHandler } from '../../tools/kb-stats.js'
+import { kbImportBulkToolDefinition, createKbImportBulkHandler } from './tools/kb-import-bulk.js'
+import { kbExportToolDefinition, createKbExportHandler } from './tools/kb-export.js'
+import { kbImportToolDefinition, createKbImportHandler } from './tools/kb-import.js'
+import { kbStatsToolDefinition, createKbStatsHandler } from './tools/kb-stats.js'
 import { analysisNotesToolDefinition, createAnalysisNotesHandler } from './tools/analysis-notes.js'
 import { ruleLibraryToolDefinition, createRuleLibraryHandler } from './tools/rule-library.js'
 
 const kbCollaborationPlugin: Plugin = {
   id: 'kb-collaboration',
   name: 'Knowledge Base & Collaboration',
+  surfaceRules: { tier: 0, category: 'static-analysis' },
   description: 'Function signature matching, analysis templates, and knowledge base import/export/management',
   version: '1.0.0',
   register(server, deps) {

@@ -76,14 +76,10 @@ openspec/
 .kiro/
 
 # -----------------------------------------------------------------------------
-# Scripts and Helpers (not needed in runtime)
+# Scripts (not needed in runtime)
 # -----------------------------------------------------------------------------
 scripts/*
 !scripts/validate-docker-full-stack.sh
-run-tests.*
-test-*.js
-test-*.bat
-test-*.ps1
 
 # -----------------------------------------------------------------------------
 # Docker (don't include Docker files in build context)
@@ -95,9 +91,8 @@ docker-compose*.yml
 # docker-entrypoint.sh
 
 # -----------------------------------------------------------------------------
-# Installation Scripts (not needed in runtime)
+# Installation docs (not needed in runtime)
 # -----------------------------------------------------------------------------
-install-to-*.ps1
 *_INSTALLATION.md
 
 # -----------------------------------------------------------------------------
@@ -107,8 +102,7 @@ install-to-*.ps1
 logs/
 cache/
 data/
-!data/vuln-patterns.json
-!data/windows-api-semantics.json
+!src/plugins/kb-collaboration/data/windows-api-semantics.json
 workspaces/
 ghidra-projects/
 ghidra-logs/
@@ -132,14 +126,14 @@ LICENSE
 .prettierrc.json
 
 # -----------------------------------------------------------------------------
-# Examples (not needed in runtime)
+# Examples (in docs/, not needed in runtime)
 # -----------------------------------------------------------------------------
-examples/
+docs/examples/
 
 # -----------------------------------------------------------------------------
 # Frida Scripts (include in runtime, but exclude test files)
 # -----------------------------------------------------------------------------
-frida_scripts/*test*
+src/plugins/frida/scripts/*test*
 
 # -----------------------------------------------------------------------------
 # Workers (exclude test files, keep main workers)

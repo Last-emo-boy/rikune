@@ -7,11 +7,14 @@ import fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
 import { logger } from '../logger.js'
+import { StorageError, ErrorCode } from '../errors.js'
 
 export interface StorageConfig {
   root: string
   maxFileSize: number  // bytes
   retentionDays: number
+  /** Maximum total storage in bytes. 0 = unlimited. Default: 0. */
+  maxTotalBytes?: number
 }
 
 export interface StoredFile {
@@ -65,10 +68,15 @@ export class StorageManager {
   ): Promise<StoredFile> {
     // Check file size
     if (data.length > this.config.maxFileSize) {
-      throw new Error(
-        `File size ${data.length} exceeds limit ${this.config.maxFileSize}`
+      throw new StorageError(
+        ErrorCode.E_SAMPLE_TOO_LARGE,
+        `File size ${data.length} exceeds limit ${this.config.maxFileSize}`,
+        { recoverable: false, details: { size: data.length, limit: this.config.maxFileSize } },
       )
     }
+
+    // Check total storage quota
+    await this.enforceQuota(data.length)
 
     // Compute hash
     const sha256 = crypto.createHash('sha256').update(data).digest('hex')
@@ -103,10 +111,15 @@ export class StorageManager {
     filename: string
   ): Promise<StagedUpload> {
     if (data.length > this.config.maxFileSize) {
-      throw new Error(
-        `File size ${data.length} exceeds limit ${this.config.maxFileSize}`
+      throw new StorageError(
+        ErrorCode.E_SAMPLE_TOO_LARGE,
+        `File size ${data.length} exceeds limit ${this.config.maxFileSize}`,
+        { recoverable: false, details: { size: data.length, limit: this.config.maxFileSize } },
       )
     }
+
+    // Check total storage quota
+    await this.enforceQuota(data.length)
 
     const createdAt = new Date().toISOString()
     const safeFilename = this.sanitizeFilename(filename)
@@ -264,6 +277,24 @@ export class StorageManager {
       }
       logger.error('Error deleting artifact: ' + JSON.stringify(error))
       throw error
+    }
+  }
+
+  /**
+   * Enforce total storage quota.
+   * Throws E_QUOTA_EXCEEDED if adding `additionalBytes` would exceed the limit.
+   */
+  private async enforceQuota(additionalBytes: number): Promise<void> {
+    const maxTotal = this.config.maxTotalBytes
+    if (!maxTotal || maxTotal <= 0) return
+
+    const usedBytes = await this.calculateDirectorySize(this.config.root)
+    if (usedBytes + additionalBytes > maxTotal) {
+      throw new StorageError(
+        ErrorCode.E_QUOTA_EXCEEDED,
+        `Storage quota exceeded: used ${usedBytes} + new ${additionalBytes} > limit ${maxTotal}`,
+        { recoverable: true, details: { usedBytes, additionalBytes, maxTotalBytes: maxTotal } },
+      )
     }
   }
 

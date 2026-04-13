@@ -6,7 +6,7 @@
  * and memory-resident malware detection from memory dumps.
  */
 
-import { execFile, execFileSync } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 import type { Plugin, ToolResult, PluginToolDeps } from '../sdk.js'
 
@@ -48,22 +48,17 @@ function tryParseJson(text: string): Record<string, unknown> {
 const memoryForensicsPlugin: Plugin = {
   id: 'memory-forensics',
   name: 'Memory Forensics (Volatility 3)',
+  surfaceRules: { tier: 3, category: 'memory-forensics' },
   description: 'Memory dump analysis using Volatility 3 — process listing, DLL extraction, registry analysis, and memory-resident malware detection.',
   version: '1.0.0',
   configSchema: [
     { envVar: 'VOLATILITY3_PATH', description: 'Path to Volatility 3 (vol3) executable', required: true },
     { envVar: 'VOL3_SYMBOL_PATH', description: 'Path to Volatility 3 symbol tables', required: false },
   ],
-
-  check() {
-    const vol3 = getVolatilityPath()
-    try {
-      execFileSync(vol3, ['--help'], { timeout: 5000, stdio: 'pipe' })
-      return true
-    } catch {
-      throw new Error(`Volatility 3 (${vol3}) not found. Install with: pip install volatility3, or set VOLATILITY3_PATH env var.`)
-    }
-  },
+  systemDeps: [
+    { type: 'binary', name: 'vol3', versionFlag: '--help', envVar: 'VOLATILITY3_PATH', dockerDefault: '/usr/local/bin/vol', required: true, description: 'Volatility 3 memory forensics framework', dockerInstall: 'pip install volatility3', dockerFeature: 'vol3', dockerValidation: ['python3 -c "import volatility3; print(\'✓ volatility3\')"'] },
+    { type: 'directory', name: 'vol3-symbols', target: '$VOL3_SYMBOL_PATH', envVar: 'VOL3_SYMBOL_PATH', dockerDefault: '/opt/vol3-symbols', required: false, description: 'Volatility 3 symbol tables', dockerFeature: 'vol3', directories: [{ path: '/opt/vol3-symbols' }] },
+  ],
 
   register(server, deps): string[] {
     const tools: string[] = []

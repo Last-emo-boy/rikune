@@ -6,27 +6,51 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { analysisContextLinkToolDefinition, createAnalysisContextLinkHandler } from '../../tools/analysis-context-link.js'
-import { runtimeDetectToolDefinition, createRuntimeDetectHandler } from '../../tools/runtime-detect.js'
-import { dotNetMetadataExtractToolDefinition, createDotNetMetadataExtractHandler } from '../../tools/dotnet-metadata-extract.js'
-import { dotNetTypesListToolDefinition, createDotNetTypesListHandler } from '../../tools/dotnet-types-list.js'
-import { packerDetectToolDefinition, createPackerDetectHandler } from '../../tools/packer-detect.js'
-import { staticCapabilityTriageToolDefinition, createStaticCapabilityTriageHandler } from '../../tools/static-capability-triage.js'
-import { compilerPackerDetectToolDefinition, createCompilerPackerDetectHandler } from '../../tools/compiler-packer-detect.js'
-import { binaryRoleProfileToolDefinition, createBinaryRoleProfileHandler } from '../../tools/binary-role-profile.js'
-import { cryptoIdentifyToolDefinition, createCryptoIdentifyHandler } from '../../tools/crypto-identify.js'
-import { breakpointSmartToolDefinition, createBreakpointSmartHandler } from '../../tools/breakpoint-smart.js'
-import { traceConditionToolDefinition, createTraceConditionHandler } from '../../tools/trace-condition.js'
-import { dllExportProfileToolDefinition, createDllExportProfileHandler } from '../../tools/dll-export-profile.js'
-import { comRoleProfileToolDefinition, createComRoleProfileHandler } from '../../tools/com-role-profile.js'
-import { rustBinaryAnalyzeToolDefinition, createRustBinaryAnalyzeHandler } from '../../tools/rust-binary-analyze.js'
-import { entropyAnalyzeToolDefinition, createEntropyAnalyzeHandler } from '../../tools/entropy-analyze.js'
-import { obfuscationDetectToolDefinition, createObfuscationDetectHandler } from '../../tools/obfuscation-detect.js'
-import { taintTrackToolDefinition, createTaintTrackHandler } from '../../tools/taint-track.js'
+import { analysisContextLinkToolDefinition, createAnalysisContextLinkHandler } from './tools/analysis-context-link.js'
+import { runtimeDetectToolDefinition, createRuntimeDetectHandler } from './tools/runtime-detect.js'
+import { dotNetMetadataExtractToolDefinition, createDotNetMetadataExtractHandler } from './tools/dotnet-metadata-extract.js'
+import { dotNetTypesListToolDefinition, createDotNetTypesListHandler } from './tools/dotnet-types-list.js'
+import { packerDetectToolDefinition, createPackerDetectHandler } from './tools/packer-detect.js'
+import { staticCapabilityTriageToolDefinition, createStaticCapabilityTriageHandler } from './tools/static-capability-triage.js'
+import { compilerPackerDetectToolDefinition, createCompilerPackerDetectHandler } from './tools/compiler-packer-detect.js'
+import { binaryRoleProfileToolDefinition, createBinaryRoleProfileHandler } from './tools/binary-role-profile.js'
+import { cryptoIdentifyToolDefinition, createCryptoIdentifyHandler } from './tools/crypto-identify.js'
+import { breakpointSmartToolDefinition, createBreakpointSmartHandler } from './tools/breakpoint-smart.js'
+import { traceConditionToolDefinition, createTraceConditionHandler } from './tools/trace-condition.js'
+import { dllExportProfileToolDefinition, createDllExportProfileHandler } from './tools/dll-export-profile.js'
+import { comRoleProfileToolDefinition, createComRoleProfileHandler } from './tools/com-role-profile.js'
+import { rustBinaryAnalyzeToolDefinition, createRustBinaryAnalyzeHandler } from './tools/rust-binary-analyze.js'
+import { entropyAnalyzeToolDefinition, createEntropyAnalyzeHandler } from './tools/entropy-analyze.js'
+import { obfuscationDetectToolDefinition, createObfuscationDetectHandler } from './tools/obfuscation-detect.js'
+import { taintTrackToolDefinition, createTaintTrackHandler } from './tools/taint-track.js'
 
 const staticTriagePlugin: Plugin = {
   id: 'static-triage',
   name: 'Static Triage',
+  surfaceRules: {
+    tier: 0,
+    category: 'static-analysis',
+    signalMap: {
+      'is_packed': 'packed',
+      'packed': 'packed',
+      'packer': 'packed',
+      'is_dotnet': 'dotnet',
+      'dotnet': 'dotnet',
+      'is_go': 'go',
+      'go': 'go',
+      'is_signed': 'signed',
+      'has_certificate': 'signed',
+      'obfuscated': 'obfuscated',
+      'is_obfuscated': 'obfuscated',
+      'crypto_detected': 'crypto',
+      'suspicious_imports': 'suspicious_imports',
+      'anti_debug': ['anti_debug', 'suspicious_imports'],
+      'vm_detect': 'vm_detect',
+      'vm_detection': 'vm_detect',
+      'shellcode': 'shellcode',
+      'has_shellcode': 'shellcode',
+    },
+  },
   description: 'First-pass static analysis including runtime detection, packer ID, capability triage, binary profiling, crypto detection, entropy analysis, and obfuscation detection',
   version: '1.0.0',
   register(server, deps) {

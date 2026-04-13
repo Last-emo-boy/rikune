@@ -5,13 +5,13 @@ import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import { createReportSummarizeHandler } from '../../src/tools/report-summarize.js'
-import { persistSemanticFunctionExplanationsArtifact } from '../../src/semantic-name-suggestion-artifacts.js'
+import { persistSemanticFunctionExplanationsArtifact } from '../../src/artifacts/semantic-name-suggestion-artifacts.js'
 import {
   persistStaticAnalysisJsonArtifact,
   STATIC_CAPABILITY_TRIAGE_ARTIFACT_TYPE,
   PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
   COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
-} from '../../src/static-analysis-artifacts.js'
+} from '../../src/artifacts/static-analysis-artifacts.js'
 import type { WorkerResult, ToolArgs } from '../../src/types.js'
 
 describe('report.summarize runtime evidence integration', () => {

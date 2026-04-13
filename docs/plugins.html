@@ -25,9 +25,11 @@
       <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特性</a></li>
       <li><a href="api-reference.html">API</a></li>
       <li><a href="usage.html" data-lang-en>Usage</a><a href="usage.html" data-lang-zh>使用指南</a></li>
+      <li><a href="local-setup.html"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
       <li><a href="docker.html">Docker</a></li>
       <li><a href="examples.html" data-lang-en>Examples</a><a href="examples.html" data-lang-zh>示例</a></li>
       <li><a href="plugins.html" class="active" data-lang-en>Plugins</a><a href="plugins.html" class="active" data-lang-zh>插件</a></li>
+      <li><a href="anti-obfuscation.html" data-lang-en>Anti-Obf</a><a href="anti-obfuscation.html" data-lang-zh>反混淆</a></li>
       <li><a href="faq.html">FAQ</a></li>
     </ul>
     <div class="nav__right">
@@ -139,8 +141,8 @@
     <section id="bundled" class="reveal">
       <h2><span data-lang-en>Bundled Plugins</span><span data-lang-zh>随附插件</span></h2>
       <p>
-        <span data-lang-en>These 15 plugins ship with the repository under <code>src/plugins/</code>. They are auto-discovered at startup and provide <strong>47 MCP tools</strong> in total.</span>
-        <span data-lang-zh>这 15 个插件随仓库一起发布在 <code>src/plugins/</code> 下。启动时自动发现，共提供 <strong>47 个 MCP 工具</strong>。</span>
+        <span data-lang-en>These 56 plugins ship with the repository under <code>src/plugins/</code>. They are auto-discovered at startup and provide <strong>191 plugin tools</strong> (222 total with core).</span>
+        <span data-lang-zh>这 56 个插件随仓库一起发布在 <code>src/plugins/</code> 下。启动时自动发现，共提供 <strong>191 个插件工具</strong>（含核心共 222 个）。</span>
       </p>
       <table class="doc-table">
         <thead>
@@ -153,10 +155,124 @@
         </thead>
         <tbody>
           <tr>
-            <td><code>pe-analysis</code></td>
-            <td>6</td>
-            <td><code>pe.structure.analyze</code>, <code>pe.imports.extract</code>, <code>pe.exports.extract</code>, <code>pe.fingerprint</code>, <code>pe.pdata.extract</code>, <code>pe.symbols.recover</code></td>
+            <td><code>android</code></td>
+            <td>4</td>
+            <td><code>apk.structure.analyze</code>, <code>dex.decompile</code>, <code>dex.classes.list</code>, <code>apk.packer.detect</code></td>
+            <td><code>JADX_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>angr</code></td>
+            <td>1</td>
+            <td><code>angr.analyze</code></td>
+            <td><code>ANGR_PYTHON</code></td>
+          </tr>
+          <tr>
+            <td><code>api-hash</code></td>
+            <td>2</td>
+            <td><code>hash.resolve</code>, <code>hash.identify</code></td>
             <td>—</td>
+          </tr>
+          <tr>
+            <td><code>apk-smali</code></td>
+            <td>3</td>
+            <td><code>apk.disassemble</code>, <code>apk.manifest.parse</code>, <code>apk.resources.decode</code></td>
+            <td><code>JADX_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>batch</code></td>
+            <td>3</td>
+            <td><code>batch.submit</code>, <code>batch.status</code>, <code>batch.results</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>behavior-first</code></td>
+            <td>3</td>
+            <td><code>behavior.capture</code>, <code>behavior.ioc</code>, <code>behavior.network</code></td>
+            <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: <code>FRIDA_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>binary-diff</code></td>
+            <td>2</td>
+            <td><code>binary.diff</code>, <code>binary.diff.summary</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>capstone</code></td>
+            <td>2</td>
+            <td><code>disasm.quick</code>, <code>shellcode.disasm</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>code-analysis</code></td>
+            <td>19</td>
+            <td><code>code.functions.list</code>, <code>code.functions.rank</code>, <code>code.functions.smart.recover</code>, <code>code.functions.define</code>, <code>code.functions.search</code>, <code>code.xrefs.analyze</code>, <code>code.function.decompile</code>, <code>code.function.disassemble</code>, <code>code.function.cfg</code>, <code>code.functions.reconstruct</code>, <code>code.function.rename.prepare</code>, <code>code.function.rename.apply</code>, <code>code.function.explain.prepare</code>, <code>code.function.explain.apply</code>, <code>code.module.review.prepare</code>, <code>code.module.review.apply</code>, <code>code.reconstruct.export</code>, <code>dotnet.reconstruct.export</code>, <code>code.reconstruct.plan</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>crackme</code></td>
+            <td>4</td>
+            <td><code>crackme.locate_validation</code>, <code>symbolic.explore</code>, <code>patch.generate</code>, <code>keygen.verify</code></td>
+            <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: <code>ANGR_PYTHON</code></td>
+          </tr>
+          <tr>
+            <td><code>cross-module</code></td>
+            <td>3</td>
+            <td><code>cross_binary.compare</code>, <code>call_graph.cross_module</code>, <code>dll.dependency_tree</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>debug-session</code></td>
+            <td>9</td>
+            <td><code>debug.session.start</code>, <code>debug.session.breakpoint</code>, <code>debug.session.continue</code>, <code>debug.session.step</code>, <code>debug.session.inspect</code>, <code>debug.session.end</code>, <code>debug.session.smart_breakpoint</code>, <code>debug.session.snapshot</code>, <code>debug.session.watch</code></td>
+            <td>GDB</td>
+          </tr>
+          <tr>
+            <td><code>deep-unpack</code></td>
+            <td>3</td>
+            <td><code>deep.unpack.pipeline</code>, <code>deep.unpack.pe_reconstruct</code>, <code>deep.unpack.dump_scan</code></td>
+            <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: Speakeasy, Qiling, Wine</td>
+          </tr>
+          <tr>
+            <td><code>die</code></td>
+            <td>2</td>
+            <td><code>die.scan</code>, <code>die.identify</code></td>
+            <td><code>DIE_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>dotnet-decompile</code></td>
+            <td>2</td>
+            <td><code>dotnet.decompile</code>, <code>dotnet.decompile.type</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>dotnet-reactor</code></td>
+            <td>4</td>
+            <td><code>reactor.anti_tamper</code>, <code>reactor.string_decrypt</code>, <code>reactor.dynamic_methods</code>, <code>reactor.resource_export</code></td>
+            <td>python3</td>
+          </tr>
+          <tr>
+            <td><code>dynamic</code></td>
+            <td>7</td>
+            <td><code>dynamic.auto_hook</code>, <code>dynamic.trace_attribute</code>, <code>dynamic.memory_dump</code>, <code>dynamic.dependencies</code>, <code>dynamic.trace.import</code>, <code>dynamic.memory.import</code>, <code>sandbox.execute</code></td>
+            <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: <code>FRIDA_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>elf-macho</code></td>
+            <td>4</td>
+            <td><code>elf.structure.analyze</code>, <code>macho.structure.analyze</code>, <code>elf.imports.extract</code>, <code>elf.exports.extract</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>firmware</code></td>
+            <td>3</td>
+            <td><code>firmware.*</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>frida</code></td>
+            <td>4</td>
+            <td><code>frida.runtime.instrument</code>, <code>frida.script.inject</code>, <code>frida.trace.capture</code>, <code>frida.script.generate</code></td>
+            <td>frida CLI</td>
           </tr>
           <tr>
             <td><code>ghidra</code></td>
@@ -165,27 +281,189 @@
             <td><code>GHIDRA_INSTALL_DIR</code></td>
           </tr>
           <tr>
+            <td><code>go-analysis</code></td>
+            <td>3</td>
+            <td><code>go.symbols.recover</code>, <code>go.types.list</code>, <code>go.binary.analyze</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>graphviz</code></td>
+            <td>1</td>
+            <td><code>graphviz.render</code></td>
+            <td><code>GRAPHVIZ_DOT_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>host-correlation</code></td>
+            <td>1</td>
+            <td><code>host.correlate</code></td>
+            <td>python3</td>
+          </tr>
+          <tr>
+            <td><code>kb-collaboration</code></td>
+            <td>8</td>
+            <td><code>kb.function_match</code>, <code>analysis.template</code>, <code>kb.import.bulk</code>, <code>kb.export</code>, <code>kb.import</code>, <code>kb.stats</code>, <code>analysis.notes</code>, <code>rule.library</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
             <td><code>malware</code></td>
             <td>4</td>
             <td><code>c2.extract</code>, <code>malware.config.extract</code>, <code>malware.classify</code>, <code>sandbox.report</code></td>
             <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: <code>CAPA_RULES_PATH</code>, <code>YARA_RULES_PATH</code></td>
           </tr>
           <tr>
-            <td><code>dynamic</code></td>
-            <td>3</td>
-            <td><code>dynamic.auto_hook</code>, <code>dynamic.trace_attribute</code>, <code>dynamic.memory_dump</code></td>
-            <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: <code>FRIDA_PATH</code></td>
+            <td><code>managed-fake-c2</code></td>
+            <td>1</td>
+            <td><code>managed.fake_c2</code></td>
+            <td>python3</td>
           </tr>
           <tr>
-            <td><code>frida</code></td>
+            <td><code>managed-il-xrefs</code></td>
+            <td>2</td>
+            <td><code>managed.il_xrefs</code>, <code>managed.token_xrefs</code></td>
+            <td>python3</td>
+          </tr>
+          <tr>
+            <td><code>managed-sandbox</code></td>
+            <td>1</td>
+            <td><code>managed.safe_run</code></td>
+            <td>python3</td>
+          </tr>
+          <tr>
+            <td><code>memory-forensics</code></td>
+            <td>6</td>
+            <td><code>memory-forensics.pslist</code>, <code>memory-forensics.dlllist</code>, <code>memory-forensics.malfind</code>, <code>memory-forensics.netscan</code>, <code>memory-forensics.hivelist</code>, <code>memory-forensics.cmdline</code></td>
+            <td><code>VOLATILITY3_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>metadata</code></td>
+            <td>1</td>
+            <td><code>metadata.extract</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>observability</code></td>
+            <td>1</td>
+            <td><code>observability.metrics</code></td>
+            <td><span data-lang-en>— (uses global hooks)</span><span data-lang-zh>—（使用全局钩子）</span></td>
+          </tr>
+          <tr>
+            <td><code>office-analysis</code></td>
             <td>3</td>
-            <td><code>frida.runtime.instrument</code>, <code>frida.script.inject</code>, <code>frida.trace.capture</code></td>
-            <td>frida CLI</td>
+            <td><code>office.vba.extract</code>, <code>office.macro.detect</code>, <code>office.ole.analyze</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>panda</code></td>
+            <td>1</td>
+            <td><code>panda.inspect</code></td>
+            <td><code>PANDA_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>pcap-analysis</code></td>
+            <td>3</td>
+            <td><code>pcap.analyze</code>, <code>pcap.dns.list</code>, <code>pcap.extract.streams</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>pe-analysis</code></td>
+            <td>6</td>
+            <td><code>pe.structure.analyze</code>, <code>pe.imports.extract</code>, <code>pe.exports.extract</code>, <code>pe.fingerprint</code>, <code>pe.pdata.extract</code>, <code>pe.symbols.recover</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>pe-signature</code></td>
+            <td>2</td>
+            <td><code>pe.signature.verify</code>, <code>pe.certificate.extract</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>qiling</code></td>
+            <td>1</td>
+            <td><code>qiling.inspect</code></td>
+            <td><code>QILING_PYTHON</code></td>
+          </tr>
+          <tr>
+            <td><code>reporting</code></td>
+            <td>3</td>
+            <td><code>report.summarize</code>, <code>report.generate</code>, <code>workflow.summarize</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>retdec</code></td>
+            <td>1</td>
+            <td><code>retdec.decompile</code></td>
+            <td><code>RETDEC_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>rizin</code></td>
+            <td>1</td>
+            <td><code>rizin.analyze</code></td>
+            <td><code>RIZIN_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>runtime-deobfuscate</code></td>
+            <td>4</td>
+            <td><code>deobf.strings</code>, <code>deobf.api_resolve</code>, <code>deobf.cfg_trace</code>, <code>deobf.dotnet</code></td>
+            <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: de4dot</td>
+          </tr>
+          <tr>
+            <td><code>sbom</code></td>
+            <td>1</td>
+            <td><code>sbom.generate</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>similarity</code></td>
+            <td>2</td>
+            <td><code>sample.similarity</code>, <code>sample.cluster.fuzzy</code></td>
+            <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: py-tlsh</td>
+          </tr>
+          <tr>
+            <td><code>speakeasy</code></td>
+            <td>3</td>
+            <td><code>speakeasy.emulate</code>, <code>speakeasy.shellcode</code>, <code>speakeasy.api_trace</code></td>
+            <td>speakeasy-emulator</td>
+          </tr>
+          <tr>
+            <td><code>static-triage</code></td>
+            <td>17</td>
+            <td><code>analysis.context.link</code>, <code>runtime.detect</code>, <code>dotnet.metadata.extract</code>, <code>dotnet.types.list</code>, <code>packer.detect</code>, <code>static.capability.triage</code>, <code>compiler.packer.detect</code>, <code>binary.role.profile</code>, <code>crypto.identify</code>, <code>breakpoint.smart</code>, <code>trace.condition</code>, <code>dll.export.profile</code>, <code>com.role.profile</code>, <code>rust.binary.analyze</code>, <code>entropy.analyze</code>, <code>obfuscation.detect</code>, <code>taint.track</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>strings</code></td>
+            <td>2</td>
+            <td><code>strings.extract</code>, <code>strings.floss.decode</code></td>
+            <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: <code>FLOSS_PATH</code></td>
           </tr>
           <tr>
             <td><code>threat-intel</code></td>
+            <td>3</td>
+            <td><code>attack.map</code>, <code>ioc.export</code>, <code>sigma.rule.generate</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>unpacking</code></td>
             <td>2</td>
-            <td><code>attack.map</code>, <code>ioc.export</code></td>
+            <td><code>unpack.auto</code>, <code>unpack.guide</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>upx</code></td>
+            <td>1</td>
+            <td><code>upx.inspect</code></td>
+            <td><code>UPX_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>visualization</code></td>
+            <td>3</td>
+            <td><code>report.html.generate</code>, <code>behavior.timeline</code>, <code>data_flow.map</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>vm-analysis</code></td>
+            <td>10</td>
+            <td><code>vm.detect</code>, <code>vm.pattern.analyze</code>, <code>vm.opcode.extract</code>, <code>vm.disasm.build</code>, <code>vm.emulate</code>, <code>vm.semantic.diff</code>, <code>constraint.extract</code>, <code>smt.solve</code>, <code>keygen.synthesize</code>, <code>mba.simplify</code></td>
             <td>—</td>
           </tr>
           <tr>
@@ -195,52 +473,22 @@
             <td>—</td>
           </tr>
           <tr>
-            <td><code>memory-forensics</code></td>
-            <td>6</td>
-            <td><code>memory-forensics.pslist</code>, <code>memory-forensics.dlllist</code>, <code>memory-forensics.malfind</code>, <code>memory-forensics.netscan</code>, <code>memory-forensics.hivelist</code>, <code>memory-forensics.cmdline</code></td>
-            <td><code>VOLATILITY3_PATH</code></td>
-          </tr>
-          <tr>
-            <td><code>debug-session</code></td>
-            <td>6</td>
-            <td><code>debug.session.start</code>, <code>debug.session.breakpoint</code>, <code>debug.session.continue</code>, <code>debug.session.step</code>, <code>debug.session.inspect</code>, <code>debug.session.end</code></td>
-            <td>GDB</td>
-          </tr>
-          <tr>
-            <td><code>crackme</code></td>
-            <td>4</td>
-            <td><code>crackme.locate_validation</code>, <code>symbolic.explore</code>, <code>patch.generate</code>, <code>keygen.verify</code></td>
-            <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: <code>ANGR_AVAILABLE</code></td>
-          </tr>
-          <tr>
-            <td><code>android</code></td>
-            <td>4</td>
-            <td><code>apk.structure.analyze</code>, <code>dex.decompile</code>, <code>dex.classes.list</code>, <code>apk.packer.detect</code></td>
-            <td><code>JADX_PATH</code></td>
-          </tr>
-          <tr>
-            <td><code>cross-module</code></td>
-            <td>3</td>
-            <td><code>cross_binary.compare</code>, <code>call_graph.cross_module</code>, <code>dll.dependency_tree</code></td>
-            <td>—</td>
-          </tr>
-          <tr>
-            <td><code>visualization</code></td>
-            <td>3</td>
-            <td><code>report.html.generate</code>, <code>behavior.timeline</code>, <code>data_flow.map</code></td>
-            <td>—</td>
-          </tr>
-          <tr>
-            <td><code>kb-collaboration</code></td>
-            <td>2</td>
-            <td><code>kb.function_match</code>, <code>analysis.template</code></td>
-            <td>—</td>
-          </tr>
-          <tr>
-            <td><code>observability</code></td>
+            <td><code>wine</code></td>
             <td>1</td>
-            <td><code>observability.metrics</code></td>
-            <td><span data-lang-en>— (uses global hooks)</span><span data-lang-zh>—（使用全局钩子）</span></td>
+            <td><code>wine.run</code></td>
+            <td><code>WINE_PATH</code></td>
+          </tr>
+          <tr>
+            <td><code>yara</code></td>
+            <td>3</td>
+            <td><code>yara.scan</code>, <code>yara.generate</code>, <code>yara.generate.batch</code></td>
+            <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: yara-python</td>
+          </tr>
+          <tr>
+            <td><code>yara-x</code></td>
+            <td>1</td>
+            <td><code>yaraX.scan</code></td>
+            <td><code>YARA_X_PATH</code></td>
           </tr>
         </tbody>
       </table>
@@ -410,10 +658,12 @@ PLUGINS=*,-docker-backend</pre>
     <div class="footer__brand"><span class="nav__logo-icon" style="width:24px;height:24px;font-size:.65rem;border-radius:6px;">R</span> Rikune</div>
     <ul class="footer__links">
       <li><a href="api-reference.html">API</a></li>
+      <li><a href="local-setup.html"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
       <li><a href="docker.html">Docker</a></li>
       <li><a href="faq.html">FAQ</a></li>
       <li><a href="examples.html"><span data-lang-en>Examples</span><span data-lang-zh>示例</span></a></li>
       <li><a href="plugins.html"><span data-lang-en>Plugins</span><span data-lang-zh>插件</span></a></li>
+      <li><a href="anti-obfuscation.html"><span data-lang-en>Anti-Obf</span><span data-lang-zh>反混淆</span></a></li>
     </ul>
     <span class="footer__copy">MIT License · Built for the MCP ecosystem</span>
   </div>

@@ -4,7 +4,7 @@ import type { ToolArgs, ToolDefinition, WorkerResult , PluginToolDeps} from '../
 import {
   buildPeStructureConfidenceSemantics,
   ConfidenceSemanticsSchema,
-} from '../../../confidence-semantics.js'
+} from '../../../analysis/confidence-semantics.js'
 import {
   buildBaselinePythonSetupActions,
   buildStaticAnalysisRequiredUserInputs,
@@ -14,8 +14,8 @@ import {
 import {
   persistStaticAnalysisJsonArtifact,
   PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
-} from '../../../static-analysis-artifacts.js'
-import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
+} from '../../../artifacts/static-analysis-artifacts.js'
+import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import {
   buildStaticWorkerRequest,
   callStaticWorker,

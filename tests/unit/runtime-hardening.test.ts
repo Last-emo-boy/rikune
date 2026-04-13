@@ -8,7 +8,7 @@ import {
   createOrReuseAnalysisRun,
   getAnalysisRunSummary,
   upsertAnalysisRunStage,
-} from '../../src/analysis-run-state.js'
+} from '../../src/analysis/analysis-run-state.js'
 
 describe('runtime hardening', () => {
   test('reconciles orphaned queued and running stages into recoverable state', () => {

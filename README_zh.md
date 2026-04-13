@@ -16,7 +16,7 @@
 - **HTTP 文件服务**：内嵌 HTTP API（端口 18080），支持样本上传、产物下载、上传会话管理，API Key 认证。
 - **Web 实时监控面板**：`http://localhost:18080/dashboard` — 暗色主题，8 个标签页，展示工具、插件、样本、分析历史、报告查看器、配置、系统资源和 SSE 事件流。支持实时日志流显示。
 - **SSE 实时事件**：`/api/v1/events` 实时推送分析进度、样本导入、服务器状态变更。
-- **插件 SDK**：15 个内置插件，热加载/卸载，第三方自动发现。
+- **插件 SDK**：56 个内置插件，热加载/卸载，第三方自动发现。
 - **高级分析工具**：节区级熵值分析、混淆检测（CFF、不透明谓词、字符串加密、.NET 混淆）、静态污点追踪、智能脱壳指引、自动生成 Frida hook 脚本、Sigma 检测规则生成。
 
 ## 本轮新增的静态初筛能力
@@ -392,7 +392,7 @@ pip install frida frida-tools
 - `FRIDA_SERVER_PATH` - Frida server 二进制文件路径，用于 USB/远程设备分析
 - `FRIDA_DEVICE` - 设备 ID 或 "usb" 用于 USB 设备选择（默认：本地 spawn）
 
-**内置脚本** 位于 `frida_scripts/`：
+**内置脚本** 位于 `src/plugins/frida/scripts/`：
 - `api_trace.js` - Windows API 追踪与参数日志
 - `string_decoder.js` - 运行时字符串解密
 - `anti_debug_bypass.js` - 反调试检测中和
@@ -420,7 +420,7 @@ pip install frida frida-tools
 - Frida 动态 Instrumentation (`frida.runtime.instrument`, `frida.script.inject`, `frida.trace.capture`)
 - HTTP 文件服务 REST API（端口 18080）— 样本上传、产物 CRUD、SSE 事件
 - **Web 监控面板** (`http://localhost:18080/dashboard`) — 工具、插件、样本、分析历史、报告查看器（Markdown/JSON/HTML/SVG）、配置、系统实时监控，支持服务器日志流
-- **插件 SDK**：15 个内置插件，热加载/卸载，第三方自动发现
+- **插件 SDK**：56 个内置插件，热加载/卸载，第三方自动发现
 - **生产基础设施**：限流、配置校验、分页、重试、批量分析、SBOM 生成
 - **SSE 实时事件**：Server-Sent Events 实时推送分析进度
 
@@ -430,31 +430,72 @@ Docker 部署时（`docker-compose up -d`），容器暴露：
 
 | 服务 | 访问方式 | 说明 |
 |------|----------|------|
-| MCP Server | stdio (`docker exec -i`) | 166 个工具、3 个 prompt、16 个 resource |
+| MCP Server | stdio (`docker exec -i`) | 222 个工具、3 个 prompt、16 个 resource |
 | HTTP API | `http://localhost:18080/api/v1/*` | 样本/产物/上传/健康检查 REST API |
 | Web 面板 | `http://localhost:18080/dashboard` | 实时监控 SPA（8 标签页，暗色主题） |
 | SSE 事件 | `http://localhost:18080/api/v1/events` | 分析事件实时推送 |
 | 面板 API | `http://localhost:18080/api/v1/dashboard/*` | 12 个 JSON 端点 |
 
-### 内置插件（15 个）
+### 内置插件（56 个）
 
 | 插件 | ID | 工具数 | 说明 |
 |------|----|--------|------|
 | Android / APK | `android` | 4 | APK 清单、DEX 反编译、加壳检测 |
-| 恶意软件分析 | `malware` | 4 | C2 提取、配置解析、家族分类、沙箱报告 |
+| angr | `angr` | 1 | 符号执行引擎 |
+| API Hash | `api-hash` | 2 | Shellcode API 哈希解析 |
+| APK Smali | `apk-smali` | 3 | APK Smali 反汇编与分析 |
+| 批量分析 | `batch` | 3 | 批量样本处理 |
+| 行为优先 | `behavior-first` | 3 | 行为分析优先级 |
+| 二进制 Diff | `binary-diff` | 2 | 二进制比较与补丁 |
+| Capstone | `capstone` | 2 | 反汇编引擎集成 |
+| 代码分析 | `code-analysis` | 19 | CFG、反编译、交叉引用、代码模式 |
 | CrackMe 自动化 | `crackme` | 4 | 验证定位、符号执行、补丁、注册机 |
-| 动态分析 | `dynamic` | 3 | 自动 Frida hook、trace 归因、内存转储 |
-| Frida Instrumentation | `frida` | 3 | 运行时 instrumentation、脚本注入、trace 采集 |
-| Ghidra 集成 | `ghidra` | 2 | 无头 Ghidra 分析与健康检查 |
 | 跨模块分析 | `cross-module` | 3 | 跨二进制比较、调用图、DLL 依赖树 |
-| 可视化 | `visualization` | 3 | HTML 报告、行为时间线、数据流图 |
-| 知识库 | `kb-collaboration` | 2 | 函数签名匹配、分析模板 |
-| PE 分析 | `pe-analysis` | 6 | PE 结构、导入、导出、指纹、pdata、符号恢复 |
-| 漏洞扫描 | `vuln-scanner` | 2 | 漏洞模式扫描与摘要 |
-| 威胁情报 | `threat-intel` | 2 | ATT&CK 映射与 IOC 导出 |
-| 调试会话 | `debug-session` | 6 | GDB/LLDB 调试会话管理 |
-| 内存取证 | `memory-forensics` | 6 | 内存转储分析、volatility 集成 |
+| 调试会话 | `debug-session` | 9 | GDB/LLDB 调试会话管理 |
+| 深度脱壳 | `deep-unpack` | 3 | 多层脱壳与模拟 |
+| Detect It Easy | `die` | 2 | 编译器、加壳器、保护器检测 |
+| .NET 反编译 | `dotnet-decompile` | 2 | .NET 程序集反编译 |
+| .NET Reactor | `dotnet-reactor` | 4 | .NET 混淆分析与去混淆 |
+| 动态分析 | `dynamic` | 7 | 自动 Frida hook、trace 归因、内存转储 |
+| ELF/Mach-O | `elf-macho` | 4 | 跨平台二进制解析 |
+| 固件分析 | `firmware` | 3 | 固件提取与分析 |
+| Frida Instrumentation | `frida` | 4 | 运行时 instrumentation、脚本注入、trace 采集 |
+| Ghidra 集成 | `ghidra` | 2 | 无头 Ghidra 分析与健康检查 |
+| Go 分析 | `go-analysis` | 3 | Go 二进制分析与符号恢复 |
+| Graphviz | `graphviz` | 1 | DOT 图形可视化 |
+| 主机关联 | `host-correlation` | 1 | 主机级产物关联 |
+| 知识库 | `kb-collaboration` | 8 | 函数签名匹配、分析模板 |
+| 恶意软件分析 | `malware` | 4 | C2 提取、配置解析、家族分类 |
+| 托管假 C2 | `managed-fake-c2` | 1 | 受控分析用假 C2 服务器 |
+| 托管 IL 交叉引用 | `managed-il-xrefs` | 2 | .NET IL 交叉引用分析 |
+| 托管沙箱 | `managed-sandbox` | 1 | 托管沙箱执行环境 |
+| 内存取证 | `memory-forensics` | 6 | 内存转储分析、Volatility 集成 |
+| 元数据 | `metadata` | 1 | 二进制元数据提取 |
 | 可观测性 | `observability` | 1 | 工具调用 hook 追踪与指标 |
+| Office 分析 | `office-analysis` | 3 | Office 文档宏与 OLE 分析 |
+| PANDA | `panda` | 1 | PANDA 录制/重放分析 |
+| PCAP 分析 | `pcap-analysis` | 3 | 网络抓包分析 |
+| PE 分析 | `pe-analysis` | 6 | PE 结构、导入、导出、指纹、pdata、符号恢复 |
+| PE 签名 | `pe-signature` | 2 | PE 数字签名验证 |
+| Qiling | `qiling` | 1 | Qiling 二进制模拟 |
+| 报告 | `reporting` | 3 | 报告生成与导出 |
+| RetDec | `retdec` | 1 | RetDec 反编译后端 |
+| Rizin | `rizin` | 1 | Rizin 反汇编后端 |
+| 运行时去混淆 | `runtime-deobfuscate` | 4 | 运行时去混淆与模拟 |
+| SBOM | `sbom` | 1 | 软件物料清单生成 |
+| 相似度分析 | `similarity` | 2 | 二进制相似度匹配 |
+| Speakeasy | `speakeasy` | 3 | Speakeasy 模拟分析 |
+| 静态初筛 | `static-triage` | 17 | 能力初筛、PE 结构、编译器/壳检测 |
+| 字符串 | `strings` | 2 | 高级字符串提取与分析 |
+| 威胁情报 | `threat-intel` | 3 | ATT&CK 映射与 IOC 导出 |
+| 脱壳 | `unpacking` | 2 | 加壳检测与脱壳 |
+| UPX | `upx` | 1 | UPX 脱壳后端 |
+| 可视化 | `visualization` | 3 | HTML 报告、行为时间线、数据流图 |
+| VM 分析 | `vm-analysis` | 10 | VM/模拟器检测与分析 |
+| 漏洞扫描 | `vuln-scanner` | 2 | 漏洞模式扫描与摘要 |
+| Wine | `wine` | 1 | 通过 Wine 执行 Windows PE |
+| YARA | `yara` | 3 | YARA 规则扫描与生成 |
+| YARA-X | `yara-x` | 1 | YARA-X 新一代规则引擎 |
 
 插件通过 `PLUGINS` 环境变量控制（`*` = 全部, `android,malware` = 指定, `-dynamic` = 排除）。详见 [`docs/PLUGINS.md`](./docs/PLUGINS.md)。
 
@@ -479,7 +520,7 @@ Docker 部署时（`docker-compose up -d`），容器暴露：
 
 而不是只返回一个笼统的 `exit code 1`。
 
-内置的 `ghidra_scripts/` 目录现在会按安装包根目录或仓库根目录解析，
+内置的 `src/plugins/ghidra/scripts/` 目录现在会按安装包根目录或仓库根目录解析，
 而不是按当前工作目录解析。这样即使用户从别的目录启动 Server，也不会
 再因为找不到 `ExtractFunctions.py` / `ExtractFunctions.java` 而失败。
 
@@ -488,21 +529,30 @@ Docker 部署时（`docker-compose up -d`），容器暴露：
 ```text
 bin/                         npm CLI 入口
 dist/                        编译后的 TypeScript 输出
-ghidra_scripts/              Ghidra 辅助脚本
-frida_scripts/               Frida instrumentation 脚本（同时作为 MCP resource）
-helpers/DotNetMetadataProbe/ .NET 元数据辅助项目
 src/                         MCP Server 源码
   index.ts                   入口（~90 行）
   server.ts                  MCPServer 类
   tool-registry.ts           集中式工具/prompt/resource 注册
-  plugins.ts                 插件框架（15 个内置 + 自动发现）
+  plugins.ts                 插件框架（56 个内置 + 自动发现）
   safe-command.ts            命令注入防护
-  python-process-pool.ts     Python worker 并发池
-  streaming-progress.ts      MCP 进度通知
   config-validator.ts        运行时配置校验
   logger.ts                  Pino 结构化日志
-  tools/                     工具定义与处理器（~90 个文件）
-  plugins/                   插件目录（15 个内置插件）
+  plugins/
+    frida/scripts/           Frida instrumentation 脚本（同时作为 MCP resource）
+    ghidra/scripts/          Ghidra 辅助脚本
+    static-triage/helpers/   .NET 元数据辅助项目（DotNetMetadataProbe）
+  analysis/                  分析编排模块
+  artifacts/                 产物管理与存储
+  constants/                 共享常量
+  ghidra/                    Ghidra 集成辅助
+  llm/                       LLM prompt 与 review 模块
+  prompts/                   MCP prompt 定义
+  sample/                    样本导入与管理
+  storage/                   存储层抽象
+  utils/                     共享工具模块
+  worker/                    Python 进程池与 worker 管理
+  tools/                     核心工具定义与处理器（31 个文件）
+  plugins/                   插件目录（56 个内置插件）
   api/
     file-server.ts           HTTP API（端口 18080）
     rate-limiter.ts          请求限流
@@ -510,7 +560,7 @@ src/                         MCP Server 源码
     dashboard/index.html     Web 监控面板
     routes/
       dashboard-api.ts       面板 JSON API（12 个端点）
-tests/                       单元与集成测试（207 个测试文件）
+tests/                       单元与集成测试（212 个测试文件）
 workers/                     Python worker、YARA 规则、动态分析辅助
 packages/plugin-sdk/         独立 Plugin SDK npm 包
 docs/                        文档
@@ -587,17 +637,13 @@ npm start
 }
 ```
 
-### 本地安装脚本
+### 本地安装
 
-- Codex: [`install-to-codex.ps1`](./install-to-codex.ps1)
-- Claude Code: [`install-to-claude.ps1`](./install-to-claude.ps1)
-- GitHub Copilot: [`install-to-copilot.ps1`](./install-to-copilot.ps1)
+- GitHub Copilot: [`COPILOT_INSTALLATION.md`](./COPILOT_INSTALLATION.md)
 
 相关文档：
 
-- [`CODEX_INSTALLATION.md`](./CODEX_INSTALLATION.md)
 - [`COPILOT_INSTALLATION.md`](./COPILOT_INSTALLATION.md)
-- [`CLAUDE_INSTALLATION.md`](./CLAUDE_INSTALLATION.md)
 
 ## 持久化存储
 
@@ -696,7 +742,7 @@ npm start
 
 - 贡献指南：[`CONTRIBUTING.md`](./CONTRIBUTING.md)
 - 质量评估说明：[`docs/QUALITY_EVALUATION.md`](./docs/QUALITY_EVALUATION.md)
-- 示例 benchmark corpus：[`examples/benchmark-corpus.example.json`](./examples/benchmark-corpus.example.json)
+- 示例 benchmark corpus：[`docs/examples/benchmark-corpus.example.json`](./docs/examples/benchmark-corpus.example.json)
 - 安全策略：[`SECURITY.md`](./SECURITY.md)
 
 ## 使用已发布的 npm 包

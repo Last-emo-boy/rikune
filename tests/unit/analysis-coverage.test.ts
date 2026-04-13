@@ -6,7 +6,7 @@ import {
   deriveAnalysisBudgetProfile,
   normalizeCoverageGaps,
   normalizeUpgradePaths,
-} from '../../src/analysis-coverage.js'
+} from '../../src/analysis/analysis-coverage.js'
 
 describe('analysis coverage helpers', () => {
   test('should classify sample size tiers deterministically', () => {

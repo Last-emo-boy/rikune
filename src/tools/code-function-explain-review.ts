@@ -11,8 +11,8 @@ import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
 import type { MCPServer } from '../server.js'
-import { createCodeFunctionExplainPrepareHandler } from './code-function-explain-prepare.js'
-import { createCodeFunctionExplainApplyHandler } from './code-function-explain-apply.js'
+import { createCodeFunctionExplainPrepareHandler } from '../plugins/code-analysis/tools/code-function-explain-prepare.js'
+import { createCodeFunctionExplainApplyHandler } from '../plugins/code-analysis/tools/code-function-explain-apply.js'
 
 const TOOL_NAME = 'code.function.explain.review'
 

@@ -37,17 +37,12 @@ import {
 const debugSessionPlugin: Plugin = {
   id: 'debug-session',
   name: 'Debug Session',
+  surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description: 'Interactive debugging via GDB/LLDB — breakpoints, stepping, memory inspection',
   version: '1.0.0',
-  check() {
-    try {
-      const { execSync } = require('child_process')
-      execSync('gdb --version', { stdio: 'ignore' })
-      return true
-    } catch {
-      throw new Error('GDB not found in PATH. Install GDB (e.g. via MSYS2: pacman -S mingw-w64-x86_64-gdb) or add it to PATH.')
-    }
-  },
+  systemDeps: [
+    { type: 'binary', name: 'gdb', versionFlag: '--version', required: true, description: 'GNU Debugger', dockerDefault: '/usr/bin/gdb', dockerInstall: 'apt-get install -y gdb', dockerFeature: 'gdb', aptPackages: ['gdb', 'ltrace', 'strace'], dockerValidation: ['gdb --version >/dev/null 2>&1'] },
+  ],
   register(server, deps) {
     server.registerTool(debugSessionStartToolDefinition, createDebugSessionStartHandler(deps))
     server.registerTool(debugSessionBreakpointToolDefinition, createDebugSessionBreakpointHandler(deps))

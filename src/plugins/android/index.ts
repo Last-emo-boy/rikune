@@ -22,11 +22,16 @@ import {
 const androidPlugin: Plugin = {
   id: 'android',
   name: 'Android / APK Analysis',
+  surfaceRules: { tier: 1, activateOn: { fileTypes: ['apk', 'android', 'dex'] }, category: 'android-analysis' },
   description: 'APK manifest extraction, DEX decompilation, and packer detection',
   version: '1.0.0',
   configSchema: [
     { envVar: 'JADX_PATH', description: 'Path to jadx binary for DEX decompilation', required: false, defaultValue: '/opt/jadx/bin/jadx' },
   ],
+  systemDeps: [
+    { type: 'file', name: 'JADX', target: '$JADX_PATH', envVar: 'JADX_PATH', dockerDefault: '/opt/jadx/bin/jadx', required: true, description: 'JADX DEX/APK decompiler', dockerInstall: 'Download jadx release to /opt/jadx', dockerFeature: 'jadx', dockerValidation: ['jadx --version >/dev/null 2>&1'], buildArgs: { JADX_VERSION: '1.5.1' } },
+  ],
+  resources: { workers: 'workers', scripts: 'scripts' },
   check() {
     const jadx = process.env.JADX_PATH ?? '/opt/jadx/bin/jadx'
     try { accessSync(jadx); return true } catch { return false }

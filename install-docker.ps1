@@ -99,9 +99,10 @@ Write-Host "  1. Check Docker installation" -ForegroundColor $ColorInfo
 Write-Host "  2. Configure proxy (optional)" -ForegroundColor $ColorInfo
 Write-Host "  3. Select data storage location" -ForegroundColor $ColorInfo
 Write-Host "  4. Create directory structure" -ForegroundColor $ColorInfo
-Write-Host "  5. Build Docker image (~10-15 min)" -ForegroundColor $ColorInfo
-Write-Host "  6. Configure MCP clients" -ForegroundColor $ColorInfo
-Write-Host "  7. Test installation" -ForegroundColor $ColorInfo
+Write-Host "  5. Auto-detect plugins & generate Dockerfile" -ForegroundColor $ColorInfo
+Write-Host "  6. Build Docker image (~10-15 min)" -ForegroundColor $ColorInfo
+Write-Host "  7. Configure MCP clients" -ForegroundColor $ColorInfo
+Write-Host "  8. Test installation" -ForegroundColor $ColorInfo
 
 $continue = Read-Host "`nContinue? (Y/n)"
 if ($continue -eq 'n' -or $continue -eq 'N') {
@@ -363,6 +364,88 @@ foreach ($dir in $directories) {
 $dockerRuntimeEnvFile = Join-Path $ProjectRoot ".docker-runtime.env"
 "RIKUNE_DATA_ROOT=$($DataRoot -replace '\\', '/')" | Set-Content $dockerRuntimeEnvFile -Encoding UTF8
 Write-Success "Compose env file: $dockerRuntimeEnvFile"
+
+# =============================================================================
+# Auto-detect Plugins & Generate Dockerfile
+# =============================================================================
+Write-Step "Auto-detecting Plugins & Generating Dockerfile"
+
+Push-Location $ProjectRoot
+try {
+    # Check Node.js
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        Write-Error-Message "Node.js not found. Required to build and discover plugins."
+        Write-Host "Please install Node.js 22+: https://nodejs.org/" -ForegroundColor $ColorError
+        exit 1
+    }
+    $nodeVer = (node --version).Trim()
+    Write-Success "Node.js: $nodeVer"
+
+    # Install dependencies if needed
+    if (-not (Test-Path (Join-Path $ProjectRoot "node_modules"))) {
+        Write-Info "Installing npm dependencies..."
+        npm install --ignore-scripts 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error-Message "npm install failed"
+            exit 1
+        }
+        Write-Success "Dependencies installed"
+    }
+
+    # Build TypeScript to compile plugin systemDeps
+    Write-Info "Building project (compiling plugins)..."
+    npm run build 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error-Message "Build failed. Check TypeScript errors."
+        exit 1
+    }
+    Write-Success "Project built"
+
+    # Discover plugins
+    $pluginDirs = Get-ChildItem -Path (Join-Path $ProjectRoot "dist\plugins") -Directory | Where-Object { $_.Name -ne 'sdk' }
+    $pluginCount = $pluginDirs.Count
+    Write-Success "Discovered $pluginCount plugins"
+
+    if ($EnableVerbose) {
+        foreach ($dir in $pluginDirs) {
+            Write-Info "  - $($dir.Name)"
+        }
+    }
+
+    # Generate Dockerfile + docker-compose.yml from plugin systemDeps
+    Write-Info "Generating Dockerfile from plugin dependencies..."
+    $genOutput = node scripts/generate-docker.mjs 2>&1
+    $genExit = $LASTEXITCODE
+
+    # Show features discovered
+    $featureLines = $genOutput | Where-Object { $_ -match '^\s+[✓]' -or $_ -match 'Features from plugins' -or $_ -match '^\s+apt:' -or $_ -match 'Dockerfile \(' -or $_ -match 'docker-compose\.yml \(' }
+    foreach ($line in $featureLines) {
+        $lineStr = $line.ToString().Trim()
+        if ($lineStr) { Write-Info $lineStr }
+    }
+
+    # Verify outputs
+    $dockerfilePath = Join-Path $ProjectRoot "Dockerfile"
+    $composePath = Join-Path $ProjectRoot "docker-compose.yml"
+    if ((Test-Path $dockerfilePath) -and (Test-Path $composePath)) {
+        $dockerfileLines = (Get-Content $dockerfilePath).Count
+        $composeLines = (Get-Content $composePath).Count
+        $fromStages = (Select-String -Path $dockerfilePath -Pattern "^FROM ").Count
+        Write-Success "Dockerfile generated: $dockerfileLines lines, $fromStages stages"
+        Write-Success "docker-compose.yml generated: $composeLines lines"
+    } else {
+        Write-Error-Message "Docker file generation failed"
+        if ($EnableVerbose) {
+            foreach ($line in $genOutput) { Write-Info $line }
+        }
+        exit 1
+    }
+} catch {
+    Write-Error-Message "Plugin detection error: $($_.Exception.Message)"
+    exit 1
+} finally {
+    Pop-Location
+}
 
 Write-Step "Building Docker Image"
 

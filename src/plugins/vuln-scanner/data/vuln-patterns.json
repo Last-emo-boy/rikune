@@ -1,0 +1,186 @@
+{
+  "version": "1.0.0",
+  "description": "CWE vulnerability patterns for binary analysis",
+  "patterns": [
+    {
+      "id": "CWE-120-strcpy",
+      "cwe": "CWE-120",
+      "name": "Buffer Copy without Checking Size (strcpy)",
+      "patterns": ["\\bstrcpy\\s*\\(", "\\blstrcpyA\\s*\\(", "\\blstrcpyW\\s*\\("],
+      "severity": "high",
+      "confidence_default": 0.7,
+      "description": "Use of strcpy without bounds checking may lead to buffer overflow"
+    },
+    {
+      "id": "CWE-120-strcat",
+      "cwe": "CWE-120",
+      "name": "Buffer Copy without Checking Size (strcat)",
+      "patterns": ["\\bstrcat\\s*\\(", "\\blstrcatA\\s*\\(", "\\blstrcatW\\s*\\("],
+      "severity": "high",
+      "confidence_default": 0.7,
+      "description": "Use of strcat without bounds checking may lead to buffer overflow"
+    },
+    {
+      "id": "CWE-120-gets",
+      "cwe": "CWE-120",
+      "name": "Buffer Copy without Checking Size (gets)",
+      "patterns": ["\\bgets\\s*\\("],
+      "severity": "critical",
+      "confidence_default": 0.9,
+      "description": "Use of gets() is always vulnerable to buffer overflow"
+    },
+    {
+      "id": "CWE-120-sprintf",
+      "cwe": "CWE-120",
+      "name": "Buffer Copy without Checking Size (sprintf)",
+      "patterns": ["\\bsprintf\\s*\\(", "\\bwsprintfA\\s*\\(", "\\bwsprintfW\\s*\\("],
+      "severity": "high",
+      "confidence_default": 0.6,
+      "description": "Use of sprintf without bounds checking may lead to buffer overflow"
+    },
+    {
+      "id": "CWE-120-memcpy-nocheck",
+      "cwe": "CWE-120",
+      "name": "Unbounded memcpy",
+      "patterns": ["\\bmemcpy\\s*\\([^,]+,[^,]+,[^)]*\\bsizeof\\b"],
+      "severity": "medium",
+      "confidence_default": 0.4,
+      "description": "memcpy with sizeof operand — verify bounds are checked"
+    },
+    {
+      "id": "CWE-134-printf",
+      "cwe": "CWE-134",
+      "name": "Format String Vulnerability (printf)",
+      "patterns": ["\\bprintf\\s*\\(\\s*[a-zA-Z_]", "\\bfprintf\\s*\\([^,]+,\\s*[a-zA-Z_]"],
+      "severity": "high",
+      "confidence_default": 0.6,
+      "description": "printf-family called with user-controlled format string"
+    },
+    {
+      "id": "CWE-134-syslog",
+      "cwe": "CWE-134",
+      "name": "Format String Vulnerability (syslog)",
+      "patterns": ["\\bsyslog\\s*\\([^,]+,\\s*[a-zA-Z_]"],
+      "severity": "high",
+      "confidence_default": 0.6,
+      "description": "syslog called with user-controlled format string"
+    },
+    {
+      "id": "CWE-134-wprintf",
+      "cwe": "CWE-134",
+      "name": "Format String Vulnerability (wprintf)",
+      "patterns": ["\\bwprintf\\s*\\(\\s*[a-zA-Z_]", "\\bswprintf\\s*\\([^,]+,\\s*[a-zA-Z_]"],
+      "severity": "high",
+      "confidence_default": 0.6,
+      "description": "wprintf-family with potentially user-controlled format string"
+    },
+    {
+      "id": "CWE-190-alloc",
+      "cwe": "CWE-190",
+      "name": "Integer Overflow before Allocation",
+      "patterns": ["\\bmalloc\\s*\\([^)]*\\*[^)]*\\)", "\\bcalloc\\s*\\([^)]*\\*[^)]*\\)", "\\bHeapAlloc\\s*\\([^)]*\\*[^)]*\\)"],
+      "severity": "high",
+      "confidence_default": 0.5,
+      "description": "Arithmetic expression in allocation size may overflow"
+    },
+    {
+      "id": "CWE-190-add-alloc",
+      "cwe": "CWE-190",
+      "name": "Integer Overflow (Addition before Allocation)",
+      "patterns": ["\\bmalloc\\s*\\([^)]*\\+[^)]*\\)", "\\bVirtualAlloc\\s*\\([^)]*\\+[^)]*\\)"],
+      "severity": "medium",
+      "confidence_default": 0.4,
+      "description": "Addition in allocation size may wrap around"
+    },
+    {
+      "id": "CWE-416-free-use",
+      "cwe": "CWE-416",
+      "name": "Use After Free Hint",
+      "patterns": ["\\bfree\\s*\\([^)]+\\)[^}]*\\1", "\\bHeapFree\\s*\\([^)]+\\)[^}]*\\b\\w+\\s*->"],
+      "severity": "critical",
+      "confidence_default": 0.3,
+      "description": "Potential use-after-free: pointer used after free()"
+    },
+    {
+      "id": "CWE-416-double-free",
+      "cwe": "CWE-416",
+      "name": "Double Free Hint",
+      "patterns": ["\\bfree\\s*\\(([^)]+)\\)[^}]*\\bfree\\s*\\(\\1\\)"],
+      "severity": "critical",
+      "confidence_default": 0.4,
+      "description": "Same pointer may be freed twice"
+    },
+    {
+      "id": "CWE-78-system",
+      "cwe": "CWE-78",
+      "name": "OS Command Injection (system)",
+      "patterns": ["\\bsystem\\s*\\(", "\\b_wsystem\\s*\\("],
+      "severity": "critical",
+      "confidence_default": 0.7,
+      "description": "system() call may allow command injection"
+    },
+    {
+      "id": "CWE-78-winexec",
+      "cwe": "CWE-78",
+      "name": "OS Command Injection (WinExec)",
+      "patterns": ["\\bWinExec\\s*\\("],
+      "severity": "high",
+      "confidence_default": 0.7,
+      "description": "WinExec may allow command injection"
+    },
+    {
+      "id": "CWE-78-popen",
+      "cwe": "CWE-78",
+      "name": "OS Command Injection (popen)",
+      "patterns": ["\\bpopen\\s*\\(", "\\b_popen\\s*\\(", "\\b_wpopen\\s*\\("],
+      "severity": "high",
+      "confidence_default": 0.6,
+      "description": "popen may allow command injection if argument is user-controlled"
+    },
+    {
+      "id": "CWE-78-shellexecute",
+      "cwe": "CWE-78",
+      "name": "OS Command Injection (ShellExecute)",
+      "patterns": ["\\bShellExecuteA\\s*\\(", "\\bShellExecuteW\\s*\\(", "\\bShellExecuteExA\\s*\\(", "\\bShellExecuteExW\\s*\\("],
+      "severity": "high",
+      "confidence_default": 0.5,
+      "description": "ShellExecute with user-controlled parameters may allow command injection"
+    },
+    {
+      "id": "CWE-427-loadlibrary",
+      "cwe": "CWE-427",
+      "name": "DLL Hijacking (Relative LoadLibrary)",
+      "patterns": ["\\bLoadLibraryA\\s*\\(\\s*\"[^\\\\/:]+\"", "\\bLoadLibraryW\\s*\\(\\s*L?\"[^\\\\/:]+\""],
+      "severity": "high",
+      "confidence_default": 0.6,
+      "description": "LoadLibrary with relative path is vulnerable to DLL hijacking"
+    },
+    {
+      "id": "CWE-427-loadlibrary-var",
+      "cwe": "CWE-427",
+      "name": "DLL Hijacking (Variable LoadLibrary)",
+      "patterns": ["\\bLoadLibraryA\\s*\\(\\s*[a-zA-Z_]", "\\bLoadLibraryW\\s*\\(\\s*[a-zA-Z_]"],
+      "severity": "medium",
+      "confidence_default": 0.4,
+      "description": "LoadLibrary with variable argument may be vulnerable to DLL hijacking"
+    },
+    {
+      "id": "CWE-676-dangerous",
+      "cwe": "CWE-676",
+      "name": "Use of Potentially Dangerous Function",
+      "patterns": ["\\bstrtok\\s*\\(", "\\bscanf\\s*\\(", "\\bfscanf\\s*\\(", "\\bsscanf\\s*\\("],
+      "severity": "medium",
+      "confidence_default": 0.4,
+      "description": "Use of function known to have dangerous behaviors"
+    },
+    {
+      "id": "CWE-242-inherently-dangerous",
+      "cwe": "CWE-242",
+      "name": "Inherently Dangerous Function",
+      "patterns": ["\\bgets\\s*\\(", "\\b_getws\\s*\\("],
+      "severity": "critical",
+      "confidence_default": 0.95,
+      "description": "Function is inherently dangerous with no safe usage"
+    }
+  ]
+}

@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local Setup — Rikune</title>
+<meta name="description" content="Local (non-Docker) deployment guide for Rikune MCP Server — install everything on your own machine.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow bg-glow--1"></div>
+<div class="bg-glow bg-glow--2"></div>
+<canvas id="particles"></canvas>
+
+<!-- Navigation -->
+<nav class="nav" id="nav">
+  <div class="nav__inner">
+    <a href="index.html" class="nav__logo"><span class="nav__logo-icon">R</span> Rikune</a>
+    <ul class="nav__links" id="navLinks">
+      <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特性</a></li>
+      <li><a href="api-reference.html">API</a></li>
+      <li><a href="usage.html" data-lang-en>Usage</a><a href="usage.html" data-lang-zh>使用指南</a></li>
+      <li><a href="local-setup.html" class="active"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
+      <li><a href="docker.html">Docker</a></li>
+      <li><a href="examples.html" data-lang-en>Examples</a><a href="examples.html" data-lang-zh>示例</a></li>
+      <li><a href="plugins.html" data-lang-en>Plugins</a><a href="plugins.html" data-lang-zh>插件</a></li>
+      <li><a href="anti-obfuscation.html" data-lang-en>Anti-Obf</a><a href="anti-obfuscation.html" data-lang-zh>反混淆</a></li>
+      <li><a href="faq.html">FAQ</a></li>
+    </ul>
+    <div class="nav__right">
+      <button class="lang-toggle" id="lang-toggle">中文</button>
+      <a href="https://github.com/Last-emo-boy/rikune" class="nav__cta" target="_blank" rel="noopener">GitHub →</a>
+    </div>
+    <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+
+<!-- Hero -->
+<div class="page-hero">
+  <div class="container">
+    <div class="breadcrumb"><a href="index.html">Rikune</a> / <span data-lang-en>Local Setup</span><span data-lang-zh>本地部署</span></div>
+    <h1><span data-lang-en>Local Setup (No Docker)</span><span data-lang-zh>本地部署（无需 Docker）</span></h1>
+    <p>
+      <span data-lang-en>Run Rikune directly on your machine — install only the tools you need, add more later.</span>
+      <span data-lang-zh>直接在你的机器上运行 Rikune — 只安装需要的工具，后续随时添加。</span>
+    </p>
+  </div>
+</div>
+
+<!-- Content -->
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <div class="doc-sidebar__title"><span data-lang-en>On this page</span><span data-lang-zh>本页目录</span></div>
+    <a href="#overview"><span data-lang-en>Overview</span><span data-lang-zh>概览</span></a>
+    <a href="#prerequisites"><span data-lang-en>Prerequisites</span><span data-lang-zh>前置要求</span></a>
+    <a href="#auto-install"><span data-lang-en>Auto Install Script</span><span data-lang-zh>自动安装脚本</span></a>
+    <a href="#manual"><span data-lang-en>Manual Setup</span><span data-lang-zh>手动安装</span></a>
+    <a href="#optional-tools"><span data-lang-en>Optional Tools</span><span data-lang-zh>可选工具</span></a>
+    <a href="#env-config"><span data-lang-en>Environment Config</span><span data-lang-zh>环境配置</span></a>
+    <a href="#mcp-client"><span data-lang-en>MCP Client Config</span><span data-lang-zh>MCP 客户端配置</span></a>
+    <a href="#running"><span data-lang-en>Running</span><span data-lang-zh>运行</span></a>
+    <a href="#how-it-works"><span data-lang-en>How Auto-Detection Works</span><span data-lang-zh>自动检测原理</span></a>
+    <a href="#docker-vs-local"><span data-lang-en>Docker vs Local</span><span data-lang-zh>Docker 对比本地</span></a>
+  </aside>
+
+  <div class="doc-main">
+
+    <!-- Overview -->
+    <section id="overview" class="reveal">
+      <h2><span data-lang-en>Overview</span><span data-lang-zh>概览</span></h2>
+      <p>
+        <span data-lang-en>
+          Rikune can run <strong>without Docker</strong> — directly on Windows, Linux, or macOS.
+          The core engine (Node.js + Python workers) requires only Node.js and Python.
+          All external analysis tools (Ghidra, Rizin, capa, Frida, etc.) are <em>optional</em> —
+          Rikune auto-detects what is available at startup via the plugin <code>systemDeps</code> mechanism
+          and only enables the tools it finds.
+        </span>
+        <span data-lang-zh>
+          Rikune 可以<strong>不依赖 Docker</strong>运行 — 直接在 Windows、Linux 或 macOS 上运行。
+          核心引擎（Node.js + Python worker）只需要 Node.js 和 Python。
+          所有外部分析工具（Ghidra、Rizin、capa、Frida 等）都是<em>可选的</em> —
+          Rikune 启动时通过插件 <code>systemDeps</code> 机制自动检测可用工具，
+          只启用检测到的工具。
+        </span>
+      </p>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:24px 0;">
+        <div class="feature-card" style="padding:16px;text-align:center;">
+          <strong style="font-size:1.5rem;color:var(--green);">✓</strong><br>
+          <strong><span data-lang-en>Zero Lock-in</span><span data-lang-zh>零锁定</span></strong><br>
+          <span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Install only what you need</span><span data-lang-zh>只安装你需要的</span></span>
+        </div>
+        <div class="feature-card" style="padding:16px;text-align:center;">
+          <strong style="font-size:1.5rem;color:var(--accent);">⚡</strong><br>
+          <strong><span data-lang-en>No Overhead</span><span data-lang-zh>无额外开销</span></strong><br>
+          <span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Native performance, no container layer</span><span data-lang-zh>原生性能，无容器层</span></span>
+        </div>
+        <div class="feature-card" style="padding:16px;text-align:center;">
+          <strong style="font-size:1.5rem;color:var(--amber);">🔧</strong><br>
+          <strong><span data-lang-en>Add Later</span><span data-lang-zh>随时添加</span></strong><br>
+          <span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Install tools at any time, restart Rikune</span><span data-lang-zh>随时安装工具，重启即生效</span></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Prerequisites -->
+    <section id="prerequisites" class="reveal">
+      <h2><span data-lang-en>Prerequisites</span><span data-lang-zh>前置要求</span></h2>
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th><span data-lang-en>Requirement</span><span data-lang-zh>要求</span></th>
+            <th><span data-lang-en>Version</span><span data-lang-zh>版本</span></th>
+            <th><span data-lang-en>Notes</span><span data-lang-zh>备注</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Node.js</strong></td>
+            <td>22+</td>
+            <td><a href="https://nodejs.org/" target="_blank" rel="noopener">nodejs.org</a></td>
+          </tr>
+          <tr>
+            <td><strong>Python</strong></td>
+            <td>3.11+</td>
+            <td><a href="https://www.python.org/downloads/" target="_blank" rel="noopener">python.org</a> — <span data-lang-en>venv module required</span><span data-lang-zh>需要 venv 模块</span></td>
+          </tr>
+          <tr>
+            <td>npm</td>
+            <td><span data-lang-en>Bundled with Node.js</span><span data-lang-zh>随 Node.js 捆绑</span></td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>Git</td>
+            <td><span data-lang-en>Any</span><span data-lang-zh>任意</span></td>
+            <td><span data-lang-en>To clone the repository</span><span data-lang-zh>用于克隆仓库</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Auto Install Script -->
+    <section id="auto-install" class="reveal">
+      <h2><span data-lang-en>Auto Install Script</span><span data-lang-zh>自动安装脚本</span></h2>
+      <p>
+        <span data-lang-en>The easiest way to get started locally — the install script handles everything:</span>
+        <span data-lang-zh>本地上手最简单的方式 — 安装脚本自动处理一切：</span>
+      </p>
+
+      <h3>Windows (PowerShell)</h3>
+      <div class="code-block">
+        <div class="code-block__header"><span>PowerShell</span><button class="code-block__copy">Copy</button></div>
+        <pre>git clone https://github.com/Last-emo-boy/rikune.git
+cd rikune
+.\install-local.ps1</pre>
+      </div>
+
+      <h3>Linux / macOS (Bash)</h3>
+      <div class="code-block">
+        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
+        <pre>git clone https://github.com/Last-emo-boy/rikune.git
+cd rikune
+chmod +x install-local.sh
+./install-local.sh</pre>
+      </div>
+
+      <p><span data-lang-en>The script will:</span><span data-lang-zh>脚本会：</span></p>
+      <ol>
+        <li><span data-lang-en>Verify Node.js 22+ and Python 3.11+</span><span data-lang-zh>验证 Node.js 22+ 和 Python 3.11+</span></li>
+        <li><span data-lang-en>Run <code>npm install</code> + <code>npm run build</code></span><span data-lang-zh>运行 <code>npm install</code> + <code>npm run build</code></span></li>
+        <li><span data-lang-en>Create a Python venv and install worker dependencies</span><span data-lang-zh>创建 Python 虚拟环境并安装 worker 依赖</span></li>
+        <li><span data-lang-en>Optionally install dynamic analysis, Qiling, and angr packages</span><span data-lang-zh>可选安装动态分析、Qiling 和 angr 包</span></li>
+        <li><span data-lang-en>Create data directories</span><span data-lang-zh>创建数据目录</span></li>
+        <li><span data-lang-en>Check for optional tools (Ghidra, Rizin, capa, etc.)</span><span data-lang-zh>检查可选工具（Ghidra、Rizin、capa 等）</span></li>
+        <li><span data-lang-en>Generate a <code>.env</code> file</span><span data-lang-zh>生成 <code>.env</code> 文件</span></li>
+        <li><span data-lang-en>Configure your MCP client (Claude, Copilot, Codex)</span><span data-lang-zh>配置你的 MCP 客户端（Claude、Copilot、Codex）</span></li>
+      </ol>
+    </section>
+
+    <!-- Manual Setup -->
+    <section id="manual" class="reveal">
+      <h2><span data-lang-en>Manual Setup</span><span data-lang-zh>手动安装</span></h2>
+      <p>
+        <span data-lang-en>If you prefer to set up step by step:</span>
+        <span data-lang-zh>如果你更喜欢逐步安装：</span>
+      </p>
+
+      <h3><span data-lang-en>1. Clone & Build</span><span data-lang-zh>1. 克隆 & 构建</span></h3>
+      <div class="code-block">
+        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
+        <pre>git clone https://github.com/Last-emo-boy/rikune.git
+cd rikune
+npm install
+npm run build</pre>
+      </div>
+
+      <h3><span data-lang-en>2. Python Environment</span><span data-lang-zh>2. Python 环境</span></h3>
+      <div class="code-block">
+        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
+        <pre><span class="comment"># Create venv</span>
+cd workers
+python3 -m venv venv
+source venv/bin/activate   <span class="comment"># Linux/macOS</span>
+<span class="comment"># .\venv\Scripts\Activate.ps1  # Windows</span>
+
+<span class="comment"># Install base requirements</span>
+pip install -r ../requirements.txt
+pip install -r requirements.txt
+
+<span class="comment"># Optional: dynamic analysis (frida, speakeasy, pandare)</span>
+pip install -r requirements-dynamic.txt
+
+<span class="comment"># Optional: Qiling (isolated venv due to unicorn conflicts)</span>
+cd ..
+python3 -m venv qiling-venv
+./qiling-venv/bin/pip install -r workers/requirements-qiling.txt
+
+<span class="comment"># Optional: angr (isolated venv, large ~1.5 GB)</span>
+python3 -m venv angr-venv
+./angr-venv/bin/pip install angr</pre>
+      </div>
+
+      <h3><span data-lang-en>3. Create Data Directories</span><span data-lang-zh>3. 创建数据目录</span></h3>
+      <div class="code-block">
+        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
+        <pre>mkdir -p ~/.rikune/{workspaces,data,cache,ghidra-projects,ghidra-logs,logs,storage,samples}</pre>
+      </div>
+
+      <h3><span data-lang-en>4. Start</span><span data-lang-zh>4. 启动</span></h3>
+      <div class="code-block">
+        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
+        <pre>WORKSPACE_ROOT=~/.rikune/workspaces \
+DB_PATH=~/.rikune/data/database.db \
+CACHE_ROOT=~/.rikune/cache \
+SANDBOX_PYTHON_PATH=./workers/venv/bin/python \
+node dist/index.js</pre>
+      </div>
+    </section>
+
+    <!-- Optional Tools -->
+    <section id="optional-tools" class="reveal">
+      <h2><span data-lang-en>Optional Analysis Tools</span><span data-lang-zh>可选分析工具</span></h2>
+      <p>
+        <span data-lang-en>
+          Install any of these to unlock additional MCP tools.
+          Rikune auto-detects them at startup — just install the tool, set the environment variable if needed, and restart.
+        </span>
+        <span data-lang-zh>
+          安装以下任何工具以解锁更多 MCP 工具。
+          Rikune 启动时自动检测 — 只需安装工具，必要时设置环境变量，然后重启。
+        </span>
+      </p>
+
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th><span data-lang-en>Tool</span><span data-lang-zh>工具</span></th>
+            <th><span data-lang-en>Unlocks</span><span data-lang-zh>解锁能力</span></th>
+            <th><span data-lang-en>Env Var</span><span data-lang-zh>环境变量</span></th>
+            <th><span data-lang-en>Install</span><span data-lang-zh>安装方式</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Ghidra</strong></td>
+            <td><span data-lang-en>Decompilation, CFG, cross-references, function analysis</span><span data-lang-zh>反编译、CFG、交叉引用、函数分析</span></td>
+            <td><code>GHIDRA_INSTALL_DIR</code></td>
+            <td><a href="https://ghidra-sre.org/" target="_blank" rel="noopener"><span data-lang-en>Download ZIP</span><span data-lang-zh>下载 ZIP</span></a> + Java 21+</td>
+          </tr>
+          <tr>
+            <td><strong>Rizin</strong></td>
+            <td><span data-lang-en>Disassembly, binary diffing, preview</span><span data-lang-zh>反汇编、二进制diff、预览</span></td>
+            <td><code>RIZIN_PATH</code></td>
+            <td><code>brew install rizin</code> / <a href="https://rizin.re/" target="_blank" rel="noopener">rizin.re</a></td>
+          </tr>
+          <tr>
+            <td><strong>capa + rules</strong></td>
+            <td><span data-lang-en>Malware capability detection</span><span data-lang-zh>恶意软件能力检测</span></td>
+            <td><code>CAPA_PATH</code> <code>CAPA_RULES_PATH</code></td>
+            <td><a href="https://github.com/mandiant/capa/releases" target="_blank" rel="noopener">GitHub Releases</a></td>
+          </tr>
+          <tr>
+            <td><strong>Frida</strong></td>
+            <td><span data-lang-en>Dynamic instrumentation, hooking, tracing</span><span data-lang-zh>动态插桩、Hook、跟踪</span></td>
+            <td><code>FRIDA_PATH</code></td>
+            <td><code>pip install frida-tools</code></td>
+          </tr>
+          <tr>
+            <td><strong>angr</strong></td>
+            <td><span data-lang-en>Symbolic execution, constraint solving</span><span data-lang-zh>符号执行、约束求解</span></td>
+            <td><code>ANGR_PYTHON</code></td>
+            <td><span data-lang-en>Isolated venv</span><span data-lang-zh>隔离虚拟环境</span>: <code>pip install angr</code></td>
+          </tr>
+          <tr>
+            <td><strong>Qiling</strong></td>
+            <td><span data-lang-en>Binary emulation</span><span data-lang-zh>二进制仿真</span></td>
+            <td><code>QILING_PYTHON</code></td>
+            <td><span data-lang-en>Isolated venv</span><span data-lang-zh>隔离虚拟环境</span>: <code>pip install qiling</code></td>
+          </tr>
+          <tr>
+            <td><strong>UPX</strong></td>
+            <td><span data-lang-en>Executable unpacking</span><span data-lang-zh>可执行文件脱壳</span></td>
+            <td><code>UPX_PATH</code></td>
+            <td><code>apt install upx</code> / <a href="https://upx.github.io/" target="_blank" rel="noopener">upx.github.io</a></td>
+          </tr>
+          <tr>
+            <td><strong>RetDec</strong></td>
+            <td><span data-lang-en>Retargetable decompiler</span><span data-lang-zh>可重定目标反编译</span></td>
+            <td><code>RETDEC_PATH</code></td>
+            <td><a href="https://github.com/avast/retdec/releases" target="_blank" rel="noopener">GitHub Releases</a></td>
+          </tr>
+          <tr>
+            <td><strong>JADX</strong></td>
+            <td><span data-lang-en>Android APK/DEX decompilation</span><span data-lang-zh>Android APK/DEX 反编译</span></td>
+            <td><code>JADX_PATH</code></td>
+            <td><a href="https://github.com/skylot/jadx/releases" target="_blank" rel="noopener">GitHub Releases</a></td>
+          </tr>
+          <tr>
+            <td><strong>Graphviz</strong></td>
+            <td><span data-lang-en>CFG / call-graph visualization</span><span data-lang-zh>CFG / 调用图可视化</span></td>
+            <td><code>GRAPHVIZ_DOT_PATH</code></td>
+            <td><code>apt install graphviz</code> / <code>brew install graphviz</code></td>
+          </tr>
+          <tr>
+            <td><strong>Wine</strong></td>
+            <td><span data-lang-en>Windows PE execution on Linux</span><span data-lang-zh>Linux 上运行 Windows PE</span></td>
+            <td><code>WINE_PATH</code></td>
+            <td><code>apt install wine</code></td>
+          </tr>
+          <tr>
+            <td><strong>GDB</strong></td>
+            <td><span data-lang-en>Debug sessions (Linux)</span><span data-lang-zh>调试会话（Linux）</span></td>
+            <td>—</td>
+            <td><code>apt install gdb</code></td>
+          </tr>
+          <tr>
+            <td><strong>Volatility3</strong></td>
+            <td><span data-lang-en>Memory forensics</span><span data-lang-zh>内存取证</span></td>
+            <td><code>VOLATILITY3_PATH</code></td>
+            <td><code>pip install volatility3</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <blockquote>
+        <span data-lang-en>💡 <strong>Tip:</strong> You don't need to install all tools. Start with the basics and add tools as your workflow demands. Rikune gracefully disables tools whose dependencies are missing.</span>
+        <span data-lang-zh>💡 <strong>提示</strong>：不需要安装所有工具。从基础开始，按需添加。Rikune 会优雅地禁用缺少依赖的工具。</span>
+      </blockquote>
+    </section>
+
+    <!-- Environment Config -->
+    <section id="env-config" class="reveal">
+      <h2><span data-lang-en>Environment Configuration</span><span data-lang-zh>环境配置</span></h2>
+      <p>
+        <span data-lang-en>The install script generates a <code>.env</code> file in the project root. You can also create one manually:</span>
+        <span data-lang-zh>安装脚本会在项目根目录生成 <code>.env</code> 文件。你也可以手动创建：</span>
+      </p>
+      <div class="code-block">
+        <div class="code-block__header"><span>.env</span><button class="code-block__copy">Copy</button></div>
+        <pre><span class="comment"># Core (required)</span>
+WORKSPACE_ROOT=~/.rikune/workspaces
+DB_PATH=~/.rikune/data/database.db
+CACHE_ROOT=~/.rikune/cache
+SANDBOX_PYTHON_PATH=./workers/venv/bin/python
+LOG_LEVEL=info
+
+<span class="comment"># API File Server</span>
+API_ENABLED=true
+API_PORT=18080
+API_STORAGE_ROOT=~/.rikune/storage
+
+<span class="comment"># Ghidra (set if installed)</span>
+GHIDRA_INSTALL_DIR=/opt/ghidra
+GHIDRA_PROJECT_ROOT=~/.rikune/ghidra-projects
+GHIDRA_LOG_ROOT=~/.rikune/ghidra-logs
+
+<span class="comment"># Tool paths (set for tools you have installed)</span>
+RIZIN_PATH=/usr/bin/rizin
+CAPA_PATH=/usr/local/bin/capa
+CAPA_RULES_PATH=/opt/capa-rules
+UPX_PATH=/usr/local/bin/upx
+ANGR_PYTHON=./angr-venv/bin/python
+QILING_PYTHON=./qiling-venv/bin/python</pre>
+      </div>
+    </section>
+
+    <!-- MCP Client Config -->
+    <section id="mcp-client" class="reveal">
+      <h2><span data-lang-en>MCP Client Configuration</span><span data-lang-zh>MCP 客户端配置</span></h2>
+      <p>
+        <span data-lang-en>For local mode, the MCP client runs <code>node dist/index.js</code> directly (no Docker):</span>
+        <span data-lang-zh>本地模式下，MCP 客户端直接运行 <code>node dist/index.js</code>（无需 Docker）：</span>
+      </p>
+
+      <h3>Claude Desktop</h3>
+      <div class="code-block">
+        <div class="code-block__header"><span>%APPDATA%\Claude\claude_desktop_config.json</span><button class="code-block__copy">Copy</button></div>
+        <pre>{
+  <span class="str">"mcpServers"</span>: {
+    <span class="str">"rikune"</span>: {
+      <span class="str">"command"</span>: <span class="str">"node"</span>,
+      <span class="str">"args"</span>: [<span class="str">"C:/path/to/rikune/dist/index.js"</span>],
+      <span class="str">"env"</span>: {
+        <span class="str">"WORKSPACE_ROOT"</span>: <span class="str">"C:/Users/you/.rikune/workspaces"</span>,
+        <span class="str">"DB_PATH"</span>: <span class="str">"C:/Users/you/.rikune/data/database.db"</span>,
+        <span class="str">"CACHE_ROOT"</span>: <span class="str">"C:/Users/you/.rikune/cache"</span>,
+        <span class="str">"SANDBOX_PYTHON_PATH"</span>: <span class="str">"C:/path/to/rikune/workers/venv/Scripts/python.exe"</span>
+      }
+    }
+  }
+}</pre>
+      </div>
+
+      <h3>VS Code (GitHub Copilot)</h3>
+      <div class="code-block">
+        <div class="code-block__header"><span>.vscode/mcp.json</span><button class="code-block__copy">Copy</button></div>
+        <pre>{
+  <span class="str">"servers"</span>: {
+    <span class="str">"rikune"</span>: {
+      <span class="str">"command"</span>: <span class="str">"node"</span>,
+      <span class="str">"args"</span>: [<span class="str">"C:/path/to/rikune/dist/index.js"</span>],
+      <span class="str">"env"</span>: {
+        <span class="str">"WORKSPACE_ROOT"</span>: <span class="str">"C:/Users/you/.rikune/workspaces"</span>,
+        <span class="str">"DB_PATH"</span>: <span class="str">"C:/Users/you/.rikune/data/database.db"</span>,
+        <span class="str">"SANDBOX_PYTHON_PATH"</span>: <span class="str">"C:/path/to/rikune/workers/venv/Scripts/python.exe"</span>
+      }
+    }
+  }
+}</pre>
+      </div>
+
+      <blockquote>
+        <span data-lang-en>💡 <strong>Tip:</strong> The <code>install-local.ps1</code> script can auto-generate these configs for Claude, Copilot, or Codex.</span>
+        <span data-lang-zh>💡 <strong>提示</strong>：<code>install-local.ps1</code> 脚本可以为 Claude、Copilot 或 Codex 自动生成这些配置。</span>
+      </blockquote>
+    </section>
+
+    <!-- Running -->
+    <section id="running" class="reveal">
+      <h2><span data-lang-en>Running Rikune</span><span data-lang-zh>运行 Rikune</span></h2>
+
+      <h3><span data-lang-en>Production</span><span data-lang-zh>生产模式</span></h3>
+      <div class="code-block">
+        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
+        <pre><span class="comment"># Using npm script</span>
+npm start
+
+<span class="comment"># Or directly</span>
+node dist/index.js</pre>
+      </div>
+
+      <h3><span data-lang-en>Development (watch mode)</span><span data-lang-zh>开发模式（实时编译）</span></h3>
+      <div class="code-block">
+        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
+        <pre><span class="comment"># Auto-reload on source changes</span>
+npm run dev
+
+<span class="comment"># Run tests</span>
+npm test</pre>
+      </div>
+
+      <h3><span data-lang-en>Health Check</span><span data-lang-zh>健康检查</span></h3>
+      <p>
+        <span data-lang-en>At startup, Rikune logs a dependency health report showing which tools are available:</span>
+        <span data-lang-zh>启动时，Rikune 会输出依赖健康报告，显示哪些工具可用：</span>
+      </p>
+      <div class="code-block">
+        <div class="code-block__header"><span><span data-lang-en>startup output</span><span data-lang-zh>启动输出</span></span></div>
+        <pre>Plugin ghidra:  Ghidra ✓  java ✓
+Plugin frida:   frida ✓
+Plugin malware: capa ✓  capa-rules ✓
+Plugin crackme: angr ✗ (optional — skipped)
+Plugin dynamic: frida ✓
+...</pre>
+      </div>
+    </section>
+
+    <!-- How Auto-Detection Works -->
+    <section id="how-it-works" class="reveal">
+      <h2><span data-lang-en>How Auto-Detection Works</span><span data-lang-zh>自动检测原理</span></h2>
+      <p>
+        <span data-lang-en>
+          Every plugin can declare a <code>systemDeps</code> array describing the system tools it needs.
+          At startup, Rikune's plugin loader calls <code>checkSystemDeps()</code> for each plugin,
+          which probes each dependency:
+        </span>
+        <span data-lang-zh>
+          每个插件可以声明 <code>systemDeps</code> 数组描述其所需的系统工具。
+          启动时，Rikune 的插件加载器对每个插件调用 <code>checkSystemDeps()</code>，
+          逐个探测每个依赖：
+        </span>
+      </p>
+
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th><code>type</code></th>
+            <th><span data-lang-en>How it's checked</span><span data-lang-zh>检测方式</span></th>
+            <th><span data-lang-en>Example</span><span data-lang-zh>示例</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>binary</code></td>
+            <td><span data-lang-en>Runs <code>command --version</code></span><span data-lang-zh>运行 <code>command --version</code></span></td>
+            <td>rizin, capa, upx, frida, gdb</td>
+          </tr>
+          <tr>
+            <td><code>python</code></td>
+            <td><span data-lang-en>Runs <code>python -c "import module"</code></span><span data-lang-zh>运行 <code>python -c "import module"</code></span></td>
+            <td>pefile, dnfile, pandare</td>
+          </tr>
+          <tr>
+            <td><code>python-venv</code></td>
+            <td><span data-lang-en>Checks venv python binary exists</span><span data-lang-zh>检查 venv python 二进制是否存在</span></td>
+            <td>angr, qiling</td>
+          </tr>
+          <tr>
+            <td><code>directory</code></td>
+            <td><span data-lang-en>Checks path exists (<code>$ENV_VAR</code> resolved)</span><span data-lang-zh>检查路径是否存在（解析 <code>$ENV_VAR</code>）</span></td>
+            <td>Ghidra install dir, capa-rules</td>
+          </tr>
+          <tr>
+            <td><code>file</code></td>
+            <td><span data-lang-en>Checks file exists</span><span data-lang-zh>检查文件是否存在</span></td>
+            <td>JADX binary, RetDec binary</td>
+          </tr>
+          <tr>
+            <td><code>env-var</code></td>
+            <td><span data-lang-en>Checks environment variable is set and non-empty</span><span data-lang-zh>检查环境变量已设置且非空</span></td>
+            <td>API_KEY, custom configs</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>
+        <span data-lang-en>
+          If a <code>required</code> dependency is missing, the plugin's tools are disabled.
+          If an <code>optional</code> dependency is missing, the plugin still loads but with reduced functionality.
+          This means you can install tools incrementally and restart Rikune to pick them up.
+        </span>
+        <span data-lang-zh>
+          如果 <code>required</code> 依赖缺失，插件的工具会被禁用。
+          如果 <code>optional</code> 依赖缺失，插件仍会加载但功能减少。
+          这意味着你可以增量安装工具，重启 Rikune 即可生效。
+        </span>
+      </p>
+
+      <!-- Diagram -->
+      <div style="background:rgba(15,23,42,.6);border:1px solid var(--border);border-radius:12px;padding:24px 20px;margin:20px 0;font-family:var(--mono);font-size:.8rem;line-height:1.7;overflow-x:auto;">
+<pre style="margin:0;color:var(--text-muted);">
+<span style="color:var(--text-dim);">Startup Flow:</span>
+
+  <span style="color:var(--accent);">discover plugins</span>  →  <span style="color:var(--green);">checkSystemDeps()</span>  →  <span style="color:var(--amber);">enable / disable tools</span>
+         │                       │                          │
+   scan dist/plugins/      for each dep:             if all required deps OK:
+   load plugin modules       binary? → exec test       → register MCP tools ✓
+                              python? → import test    if required dep missing:
+                              venv? → file exists        → skip plugin tools ✗
+                              dir? → path exists       if optional dep missing:
+                                                         → load with reduced features ⚠
+</pre>
+      </div>
+    </section>
+
+    <!-- Docker vs Local -->
+    <section id="docker-vs-local" class="reveal">
+      <h2><span data-lang-en>Docker vs Local</span><span data-lang-zh>Docker 对比本地</span></h2>
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th><span data-lang-en>Docker</span><span data-lang-zh>Docker 方案</span></th>
+            <th><span data-lang-en>Local</span><span data-lang-zh>本地方案</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong><span data-lang-en>Setup</span><span data-lang-zh>安装</span></strong></td>
+            <td><code>install-docker.ps1</code> <span data-lang-en>— one command</span><span data-lang-zh>— 一条命令</span></td>
+            <td><code>install-local.ps1</code> / <code>.sh</code> <span data-lang-en>— interactive</span><span data-lang-zh>— 交互式</span></td>
+          </tr>
+          <tr>
+            <td><strong><span data-lang-en>Tools</span><span data-lang-zh>工具</span></strong></td>
+            <td><span data-lang-en>All pre-installed in image</span><span data-lang-zh>全部预装在镜像中</span></td>
+            <td><span data-lang-en>Install what you need</span><span data-lang-zh>按需安装</span></td>
+          </tr>
+          <tr>
+            <td><strong><span data-lang-en>Isolation</span><span data-lang-zh>隔离性</span></strong></td>
+            <td><span data-lang-en>Full container isolation</span><span data-lang-zh>完整容器隔离</span></td>
+            <td><span data-lang-en>Shares host environment</span><span data-lang-zh>共享宿主环境</span></td>
+          </tr>
+          <tr>
+            <td><strong><span data-lang-en>Performance</span><span data-lang-zh>性能</span></strong></td>
+            <td><span data-lang-en>Container overhead (~1-5%)</span><span data-lang-zh>容器开销（约 1-5%）</span></td>
+            <td><span data-lang-en>Native speed</span><span data-lang-zh>原生速度</span></td>
+          </tr>
+          <tr>
+            <td><strong><span data-lang-en>Disk</span><span data-lang-zh>磁盘</span></strong></td>
+            <td><span data-lang-en>~8-10 GB image</span><span data-lang-zh>约 8-10 GB 镜像</span></td>
+            <td><span data-lang-en>Only what you install</span><span data-lang-zh>仅安装的部分</span></td>
+          </tr>
+          <tr>
+            <td><strong><span data-lang-en>Cross-platform</span><span data-lang-zh>跨平台</span></strong></td>
+            <td><span data-lang-en>Identical everywhere</span><span data-lang-zh>各处一致</span></td>
+            <td><span data-lang-en>OS-dependent paths</span><span data-lang-zh>路径依赖 OS</span></td>
+          </tr>
+          <tr>
+            <td><strong><span data-lang-en>Best for</span><span data-lang-zh>适合场景</span></strong></td>
+            <td><span data-lang-en>Full-stack deployment, CI/CD</span><span data-lang-zh>全栈部署、CI/CD</span></td>
+            <td><span data-lang-en>Development, lightweight usage, custom setups</span><span data-lang-zh>开发、轻量使用、自定义环境</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+  </div>
+</div>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="container footer__inner">
+    <div class="footer__brand"><span class="nav__logo-icon" style="width:24px;height:24px;font-size:.65rem;border-radius:6px;">R</span> Rikune</div>
+    <ul class="footer__links">
+      <li><a href="api-reference.html">API</a></li>
+      <li><a href="local-setup.html"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
+      <li><a href="docker.html">Docker</a></li>
+      <li><a href="faq.html">FAQ</a></li>
+      <li><a href="examples.html"><span data-lang-en>Examples</span><span data-lang-zh>示例</span></a></li>
+      <li><a href="plugins.html"><span data-lang-en>Plugins</span><span data-lang-zh>插件</span></a></li>
+      <li><a href="anti-obfuscation.html"><span data-lang-en>Anti-Obf</span><span data-lang-zh>反混淆</span></a></li>
+    </ul>
+    <span class="footer__copy">MIT License · Built for the MCP ecosystem</span>
+  </div>
+</footer>
+
+<script src="assets/main.js"></script>
+</body>
+</html>

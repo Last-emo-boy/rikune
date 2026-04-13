@@ -15,15 +15,19 @@ import {
 import {
   fridaTraceCaptureToolDefinition, createFridaTraceCaptureHandler,
 } from './tools/frida-trace-capture.js'
-import { fridaScriptGenerateToolDefinition, createFridaScriptGenerateHandler } from '../../tools/frida-script-generate.js'
+import { fridaScriptGenerateToolDefinition, createFridaScriptGenerateHandler } from './tools/frida-script-generate.js'
 
 const fridaPlugin: Plugin = {
   id: 'frida',
   name: 'Frida Instrumentation',
+  surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description: 'Runtime instrumentation, script injection, and trace capture via Frida',
   version: '1.0.0',
   configSchema: [
     { envVar: 'FRIDA_PATH', description: 'Path to frida CLI binary', required: false },
+  ],
+  systemDeps: [
+    { type: 'binary', name: 'frida', versionFlag: '--version', envVar: 'FRIDA_PATH', required: true, description: 'Frida dynamic instrumentation toolkit', dockerInstall: 'pip install frida-tools', dockerFeature: 'frida', dockerValidation: ['frida-ps --help >/dev/null 2>&1'] },
   ],
   check() {
     try {

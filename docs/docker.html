@@ -25,9 +25,11 @@
       <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特性</a></li>
       <li><a href="api-reference.html">API</a></li>
       <li><a href="usage.html" data-lang-en>Usage</a><a href="usage.html" data-lang-zh>使用指南</a></li>
+      <li><a href="local-setup.html"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
       <li><a href="docker.html" class="active">Docker</a></li>
       <li><a href="examples.html" data-lang-en>Examples</a><a href="examples.html" data-lang-zh>示例</a></li>
       <li><a href="plugins.html" data-lang-en>Plugins</a><a href="plugins.html" data-lang-zh>插件</a></li>
+      <li><a href="anti-obfuscation.html" data-lang-en>Anti-Obf</a><a href="anti-obfuscation.html" data-lang-zh>反混淆</a></li>
       <li><a href="faq.html">FAQ</a></li>
     </ul>
     <div class="nav__right">
@@ -56,6 +58,7 @@
     <div class="doc-sidebar__title"><span data-lang-en>On this page</span><span data-lang-zh>本页目录</span></div>
     <a href="#prerequisites">Prerequisites</a>
     <a href="#quickstart">Quick Start</a>
+    <a href="#plugin-gen"><span data-lang-en>Plugin-Driven Generation</span><span data-lang-zh>插件驱动生成</span></a>
     <a href="#services">Services Overview</a>
     <a href="#production">Production Mode</a>
     <a href="#compose">Docker Compose</a>
@@ -99,6 +102,213 @@
       </div>
     </section>
 
+    <!-- Plugin-Driven Docker Generation -->
+    <section id="plugin-gen" class="reveal">
+      <h2><span data-lang-en>Plugin-Driven Docker Generation</span><span data-lang-zh>插件驱动的 Docker 生成</span></h2>
+      <p>
+        <span data-lang-en>
+          Rikune does <strong>not</strong> maintain a hand-written Dockerfile.
+          Instead, each plugin declares exactly what system-level dependencies it
+          needs, and a generator automatically produces the Dockerfile and
+          <code>docker-compose.yml</code> from those declarations.
+          Plugins are the <em>single source of truth</em>.
+        </span>
+        <span data-lang-zh>
+          Rikune <strong>不</strong>手动维护 Dockerfile。
+          每个插件在代码中声明自己所需的系统级依赖，
+          生成器自动读取所有插件声明并产出 Dockerfile 和 <code>docker-compose.yml</code>。
+          插件是<em>唯一真相源</em>。
+        </span>
+      </p>
+
+      <h3><span data-lang-en>How It Works</span><span data-lang-zh>工作原理</span></h3>
+
+      <!-- Architecture Diagram -->
+      <div style="background:rgba(15,23,42,.6);border:1px solid var(--border);border-radius:12px;padding:28px 24px;margin:20px 0 28px;font-family:var(--mono);font-size:.82rem;line-height:1.8;overflow-x:auto;">
+<pre style="margin:0;color:var(--text-muted);">
+<span style="color:var(--accent);">┌─────────────────────────────────────────────────────────────┐</span>
+<span style="color:var(--accent);">│</span>  <strong style="color:#fff;">Plugin SDK</strong>  <span style="color:var(--text-dim);">(src/plugins/sdk.ts)</span>                       <span style="color:var(--accent);">│</span>
+<span style="color:var(--accent);">│</span>                                                             <span style="color:var(--accent);">│</span>
+<span style="color:var(--accent);">│</span>  <span style="color:var(--green);">PluginSystemDep</span> {                                       <span style="color:var(--accent);">│</span>
+<span style="color:var(--accent);">│</span>    name, type, envVar, dockerDefault,                     <span style="color:var(--accent);">│</span>
+<span style="color:var(--accent);">│</span>    <strong style="color:var(--amber);">dockerFeature?</strong>     → controls # @if blocks          <span style="color:var(--accent);">│</span>
+<span style="color:var(--accent);">│</span>    <strong style="color:var(--amber);">aptPackages?</strong>       → merged into apt-get install    <span style="color:var(--accent);">│</span>
+<span style="color:var(--accent);">│</span>    <strong style="color:var(--amber);">dockerValidation?</strong>  → merged into validation step    <span style="color:var(--accent);">│</span>
+<span style="color:var(--accent);">│</span>  }                                                         <span style="color:var(--accent);">│</span>
+<span style="color:var(--accent);">└──────────────────────┬──────────────────────────────────────┘</span>
+                       │ <span style="color:var(--text-dim);">each plugin implements</span>
+                       ▼
+<span style="color:var(--green);">┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐</span>
+<span style="color:var(--green);">│</span> ghidra   <span style="color:var(--green);">│</span>  <span style="color:var(--green);">│</span> frida    <span style="color:var(--green);">│</span>  <span style="color:var(--green);">│</span> malware  <span style="color:var(--green);">│</span>  <span style="color:var(--green);">│</span> ...×32   <span style="color:var(--green);">│</span>
+<span style="color:var(--green);">│</span> systemDeps<span style="color:var(--green);">│</span>  <span style="color:var(--green);">│</span> systemDeps<span style="color:var(--green);">│</span>  <span style="color:var(--green);">│</span> systemDeps<span style="color:var(--green);">│</span>  <span style="color:var(--green);">│</span> systemDeps<span style="color:var(--green);">│</span>
+<span style="color:var(--green);">└─────┬────┘  └─────┬────┘  └─────┬────┘  └─────┬────┘</span>
+      │              │              │              │
+      └──────────────┴──────┬───────┴──────────────┘
+                            │ <span style="color:var(--text-dim);">dynamic import at build time</span>
+                            ▼
+<span style="color:var(--amber);">┌─────────────────────────────────────────────────────────────┐</span>
+<span style="color:var(--amber);">│</span>  <strong style="color:#fff;">Generator</strong>  <span style="color:var(--text-dim);">(scripts/generate-docker.mjs)</span>                  <span style="color:var(--amber);">│</span>
+<span style="color:var(--amber);">│</span>                                                             <span style="color:var(--amber);">│</span>
+<span style="color:var(--amber);">│</span>  1. discoverPluginIds()  → scan dist/plugins/               <span style="color:var(--amber);">│</span>
+<span style="color:var(--amber);">│</span>  2. loadPluginDeps()     → import &amp; read systemDeps          <span style="color:var(--amber);">│</span>
+<span style="color:var(--amber);">│</span>  3. collectRequirements() → features, apt, env, validation   <span style="color:var(--amber);">│</span>
+<span style="color:var(--amber);">│</span>  4. processTemplate()    → conditional Dockerfile             <span style="color:var(--amber);">│</span>
+<span style="color:var(--amber);">│</span>  5. generateCompose()    → docker-compose.yml                 <span style="color:var(--amber);">│</span>
+<span style="color:var(--amber);">└──────────────┬──────────────────────────────┬───────────────┘</span>
+               │                              │
+               ▼                              ▼
+  <span style="color:var(--accent);">📄 Dockerfile</span>                   <span style="color:var(--accent);">📄 docker-compose.yml</span>
+  <span style="color:var(--text-dim);">  (multi-stage, only</span>             <span style="color:var(--text-dim);">  (volumes, env, args</span>
+  <span style="color:var(--text-dim);">   needed stages)</span>                <span style="color:var(--text-dim);">   matching features)</span>
+</pre>
+      </div>
+
+      <h3><span data-lang-en>Step 1 — Plugin Declares Dependencies</span><span data-lang-zh>步骤 1 — 插件声明依赖</span></h3>
+      <p>
+        <span data-lang-en>Each plugin's <code>systemDeps</code> array describes what it needs. Three fields control Docker generation:</span>
+        <span data-lang-zh>每个插件的 <code>systemDeps</code> 数组描述其所需依赖，三个字段控制 Docker 生成：</span>
+      </p>
+      <div class="code-block">
+        <div class="code-block__header"><span>TypeScript — src/plugins/ghidra/index.ts</span><button class="code-block__copy">Copy</button></div>
+        <pre><span class="kw">systemDeps</span>: [
+  {
+    type: <span class="str">'binary'</span>,
+    name: <span class="str">'analyzeHeadless'</span>,
+    envVar: <span class="str">'GHIDRA_INSTALL_DIR'</span>,
+    dockerDefault: <span class="str">'/opt/ghidra'</span>,
+    <span class="comment">// ── Docker-specific fields ──</span>
+    <strong>dockerFeature: <span class="str">'ghidra'</span></strong>,        <span class="comment">// activates # @if ghidra blocks</span>
+    <strong>dockerValidation:</strong> [
+      <span class="str">'test -f /opt/ghidra/support/analyzeHeadless'</span>
+    ]
+  },
+  {
+    type: <span class="str">'binary'</span>,
+    name: <span class="str">'java'</span>,
+    dockerDefault: <span class="str">'/opt/java/openjdk/bin/java'</span>,
+    <strong>dockerFeature: <span class="str">'ghidra'</span></strong>,        <span class="comment">// same feature group</span>
+  }
+]</pre>
+      </div>
+
+      <div class="code-block" style="margin-top:16px">
+        <div class="code-block__header"><span>TypeScript — src/plugins/debug-session/index.ts</span><button class="code-block__copy">Copy</button></div>
+        <pre><span class="kw">systemDeps</span>: [
+  {
+    type: <span class="str">'binary'</span>,
+    name: <span class="str">'gdb'</span>,
+    <strong>dockerFeature: <span class="str">'gdb'</span></strong>,
+    <strong>aptPackages: [<span class="str">'gdb'</span>, <span class="str">'ltrace'</span>, <span class="str">'strace'</span>]</strong>,  <span class="comment">// merged into apt-get</span>
+  }
+]</pre>
+      </div>
+
+      <h3><span data-lang-en>Step 2 — Template Uses Conditionals</span><span data-lang-zh>步骤 2 — 模板使用条件块</span></h3>
+      <p>
+        <span data-lang-en>The Dockerfile template (<code>docker/Dockerfile.template</code>) wraps optional stages in <code># @if</code> / <code># @endif</code> markers:</span>
+        <span data-lang-zh>Dockerfile 模板（<code>docker/Dockerfile.template</code>）用 <code># @if</code> / <code># @endif</code> 标记包裹可选阶段：</span>
+      </p>
+      <div class="code-block">
+        <div class="code-block__header"><span>Dockerfile.template</span><button class="code-block__copy">Copy</button></div>
+        <pre><span class="comment"># @if ghidra</span>
+FROM eclipse-temurin:21-jdk AS ghidra-stage
+ARG GHIDRA_VERSION=11.3.2
+RUN curl -L ... | unzip ...
+<span class="comment"># @endif ghidra</span>
+
+<span class="comment"># @if angr</span>
+RUN python -m venv /opt/angr-venv &amp;&amp; \
+    /opt/angr-venv/bin/pip install angr
+<span class="comment"># @endif angr</span></pre>
+      </div>
+
+      <h3><span data-lang-en>Step 3 — Generator Reads Plugins & Produces Output</span><span data-lang-zh>步骤 3 — 生成器读取插件并输出</span></h3>
+      <p>
+        <span data-lang-en>The generator (<code>scripts/generate-docker.mjs</code>) performs 5 steps with <strong>zero hardcoded mappings</strong>:</span>
+        <span data-lang-zh>生成器（<code>scripts/generate-docker.mjs</code>）执行 5 个步骤，<strong>没有任何硬编码映射</strong>：</span>
+      </p>
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th><span data-lang-en>Step</span><span data-lang-zh>步骤</span></th>
+            <th><span data-lang-en>What it does</span><span data-lang-zh>做了什么</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge badge--blue">1</span></td>
+            <td><code>discoverPluginIds()</code></td>
+            <td><span data-lang-en>Scans <code>dist/plugins/</code> for all plugin directories</span><span data-lang-zh>扫描 <code>dist/plugins/</code> 中的所有插件目录</span></td>
+          </tr>
+          <tr>
+            <td><span class="badge badge--blue">2</span></td>
+            <td><code>loadPluginDeps()</code></td>
+            <td><span data-lang-en>Dynamic-imports each plugin and reads its <code>systemDeps</code></span><span data-lang-zh>动态导入每个插件并读取其 <code>systemDeps</code></span></td>
+          </tr>
+          <tr>
+            <td><span class="badge badge--blue">3</span></td>
+            <td><code>collectRequirements()</code></td>
+            <td><span data-lang-en>Merges all <code>dockerFeature</code>, <code>aptPackages</code>, <code>envVar</code>+<code>dockerDefault</code>, <code>dockerValidation</code></span><span data-lang-zh>合并所有 <code>dockerFeature</code>、<code>aptPackages</code>、<code>envVar</code>+<code>dockerDefault</code>、<code>dockerValidation</code></span></td>
+          </tr>
+          <tr>
+            <td><span class="badge badge--blue">4</span></td>
+            <td><code>processTemplate()</code></td>
+            <td><span data-lang-en>Evaluates <code># @if</code> blocks, substitutes <code>{{PLACEHOLDERS}}</code></span><span data-lang-zh>评估 <code># @if</code> 条件块，替换 <code>{{PLACEHOLDERS}}</code></span></td>
+          </tr>
+          <tr>
+            <td><span class="badge badge--blue">5</span></td>
+            <td><code>generateCompose()</code></td>
+            <td><span data-lang-en>Emits <code>docker-compose.yml</code> with matching volumes, env, build-args</span><span data-lang-zh>输出带有匹配卷、环境变量、构建参数的 <code>docker-compose.yml</code></span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3><span data-lang-en>CLI Usage</span><span data-lang-zh>CLI 用法</span></h3>
+      <div class="code-block">
+        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
+        <pre><span class="comment"># All plugins → full image (14 features, ~470 lines, 8 stages)</span>
+node scripts/generate-docker.mjs
+
+<span class="comment"># Exclude heavy tools → lighter image</span>
+node scripts/generate-docker.mjs --exclude=ghidra,docker-backends,memory-forensics
+
+<span class="comment"># Only specific plugins</span>
+node scripts/generate-docker.mjs --include=pe-analysis,malware,frida
+
+<span class="comment"># Preview without writing files</span>
+node scripts/generate-docker.mjs --dry-run</pre>
+      </div>
+
+      <blockquote>
+        <span data-lang-en>💡 <strong>Tip:</strong> <code>install-docker.ps1</code> runs the generator automatically before <code>docker build</code>. It discovers all plugins, generates the Dockerfile, then builds — no manual step needed.</span>
+        <span data-lang-zh>💡 <strong>提示</strong>：<code>install-docker.ps1</code> 在 <code>docker build</code> 之前自动运行生成器。它发现所有插件、生成 Dockerfile、然后构建 — 无需手动操作。</span>
+      </blockquote>
+
+      <h3><span data-lang-en>Adding Docker Support to a New Plugin</span><span data-lang-zh>为新插件添加 Docker 支持</span></h3>
+      <p>
+        <span data-lang-en>If your plugin needs a system tool in the Docker image, just add the Docker fields to its <code>systemDeps</code>:</span>
+        <span data-lang-zh>如果你的新插件需要 Docker 镜像中的系统工具，只需在其 <code>systemDeps</code> 中添加 Docker 字段：</span>
+      </p>
+      <div class="code-block">
+        <div class="code-block__header"><span>TypeScript — your-plugin/index.ts</span><button class="code-block__copy">Copy</button></div>
+        <pre>systemDeps: [{
+  type: <span class="str">'binary'</span>,
+  name: <span class="str">'mytool'</span>,
+  envVar: <span class="str">'MYTOOL_PATH'</span>,
+  dockerDefault: <span class="str">'/usr/bin/mytool'</span>,
+  <span class="comment">// Add these for Docker:</span>
+  <strong>dockerFeature: <span class="str">'mytool'</span></strong>,
+  <strong>aptPackages: [<span class="str">'mytool'</span>]</strong>,
+  <strong>dockerValidation: [<span class="str">'mytool --version'</span>]</strong>,
+}]</pre>
+      </div>
+      <p>
+        <span data-lang-en>Then add a corresponding <code># @if mytool</code> block in <code>docker/Dockerfile.template</code> if it needs a dedicated build stage. For simple apt packages, just the <code>aptPackages</code> field is enough — they are automatically merged into the runtime stage.</span>
+        <span data-lang-zh>然后如果需要独立构建阶段，在 <code>docker/Dockerfile.template</code> 中添加对应的 <code># @if mytool</code> 块。对于简单的 apt 包，只需 <code>aptPackages</code> 字段即可 — 它们会自动合并到运行时阶段。</span>
+      </p>
+    </section>
+
     <!-- Services Overview -->
     <section id="services" class="reveal">
       <h2><span data-lang-en>Services Overview</span><span data-lang-zh>服务概览</span></h2>
@@ -118,7 +328,7 @@
           <tr>
             <td><span class="badge badge--blue">MCP Server</span></td>
             <td>stdio</td>
-            <td><span data-lang-en>160+ tools, 3 prompts, 16 resources</span><span data-lang-zh>160+ 工具、3 个提示、16 个资源</span></td>
+            <td><span data-lang-en>220+ tools, 3 prompts, 16 resources</span><span data-lang-zh>220+ 工具、3 个提示、16 个资源</span></td>
           </tr>
           <tr>
             <td><span class="badge badge--green">HTTP API</span></td>
@@ -346,10 +556,12 @@ docker-compose down</pre>
     <div class="footer__brand"><span class="nav__logo-icon" style="width:24px;height:24px;font-size:.65rem;border-radius:6px;">R</span> Rikune</div>
     <ul class="footer__links">
       <li><a href="api-reference.html">API</a></li>
+      <li><a href="local-setup.html"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
       <li><a href="docker.html">Docker</a></li>
       <li><a href="faq.html">FAQ</a></li>
       <li><a href="examples.html"><span data-lang-en>Examples</span><span data-lang-zh>示例</span></a></li>
       <li><a href="plugins.html"><span data-lang-en>Plugins</span><span data-lang-zh>插件</span></a></li>
+      <li><a href="anti-obfuscation.html"><span data-lang-en>Anti-Obf</span><span data-lang-zh>反混淆</span></a></li>
     </ul>
     <span class="footer__copy">MIT License · Built for the MCP ecosystem</span>
   </div>

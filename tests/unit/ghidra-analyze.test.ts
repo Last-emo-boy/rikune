@@ -4,7 +4,7 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { createGhidraAnalyzeHandler } from '../../src/plugins/ghidra/tools/ghidra-analyze.js'
-import { DecompilerWorker } from '../../src/decompiler-worker.js'
+import { DecompilerWorker } from '../../src/worker/decompiler-worker.js'
 
 describe('ghidra.analyze tool', () => {
   let workspaceManager: WorkspaceManager

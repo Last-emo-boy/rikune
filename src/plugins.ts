@@ -17,6 +17,9 @@
  */
 
 import fs from 'fs/promises'
+import { accessSync, existsSync } from 'fs'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import path from 'path'
 import { pathToFileURL, fileURLToPath } from 'url'
 import type { MCPServer } from './server.js'
@@ -33,12 +36,15 @@ export type {
   PluginStatus,
   PluginServerInterface,
   PluginToolDeps,
+  PluginSystemDep,
+  DepCheckResult,
   ToolDefinition,
   WorkerResult,
   ArtifactRef,
 } from './plugins/sdk.js'
 
-import type { Plugin, PluginContext, PluginStatus, PluginToolDeps } from './plugins/sdk.js'
+import type { Plugin, PluginContext, PluginStatus, PluginToolDeps, PluginSystemDep, DepCheckResult } from './plugins/sdk.js'
+import { getToolSurfaceManager } from './tool-surface-manager.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Plugin Context Factory
@@ -77,6 +83,101 @@ function createPluginContext(plugin: Plugin): PluginContext {
     },
     dataDir: path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), 'data', 'plugins', plugin.id),
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// System Dependency Checker — auto-validates plugin runtime requirements
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Resolve the effective target path for a dependency, substituting `$ENV_VAR`
+ * references and falling back to dockerDefault or the bare name.
+ */
+function resolveDepTarget(dep: PluginSystemDep): string {
+  if (dep.envVar && process.env[dep.envVar]) return process.env[dep.envVar]!
+  if (dep.target) {
+    // Substitute $ENV_VAR references in target
+    return dep.target.replace(/\$([A-Z_][A-Z0-9_]*)/g, (_m, v) => process.env[v] ?? '')
+  }
+  return dep.dockerDefault ?? dep.name
+}
+
+/**
+ * Check a single system dependency. Returns a structured result.
+ */
+const execFileAsync = promisify(execFile)
+
+async function checkOneDep(dep: PluginSystemDep): Promise<DepCheckResult> {
+  const result: DepCheckResult = { dep, available: false }
+  try {
+    switch (dep.type) {
+      case 'binary': {
+        const target = resolveDepTarget(dep)
+        result.resolvedPath = target
+        const vFlag = dep.versionFlag ?? '--version'
+        const { stdout } = await execFileAsync(target, [vFlag], { timeout: 5000 })
+        result.version = stdout.toString().trim().split('\n')[0]?.slice(0, 120)
+        result.available = true
+        break
+      }
+      case 'python': {
+        const mod = dep.importName ?? dep.name
+        await execFileAsync(
+          process.platform === 'win32' ? 'python' : 'python3',
+          ['-c', `import ${mod}; print(getattr(${mod}, '__version__', 'ok'))`],
+          { timeout: 10000 },
+        )
+        result.available = true
+        break
+      }
+      case 'python-venv': {
+        const target = resolveDepTarget(dep)
+        result.resolvedPath = target
+        accessSync(target)
+        const { stdout } = await execFileAsync(target, ['--version'], { timeout: 5000 })
+        result.version = stdout.toString().trim()
+        result.available = true
+        break
+      }
+      case 'env-var': {
+        const envName = dep.envVar ?? dep.target ?? dep.name
+        const val = process.env[envName]
+        result.available = val !== undefined && val !== ''
+        if (val) result.resolvedPath = val
+        break
+      }
+      case 'directory': {
+        const target = resolveDepTarget(dep)
+        result.resolvedPath = target
+        accessSync(target)
+        result.available = true
+        break
+      }
+      case 'file': {
+        const target = resolveDepTarget(dep)
+        result.resolvedPath = target
+        accessSync(target)
+        result.available = true
+        break
+      }
+    }
+  } catch (err) {
+    result.error = err instanceof Error ? err.message : String(err)
+  }
+  return result
+}
+
+/**
+ * Check all system dependencies declared by a plugin.
+ * Returns an array of results + a boolean indicating whether all required deps passed.
+ */
+async function checkSystemDeps(plugin: Plugin): Promise<{ results: DepCheckResult[]; allRequiredOk: boolean }> {
+  if (!plugin.systemDeps || plugin.systemDeps.length === 0) {
+    return { results: [], allRequiredOk: true }
+  }
+  const results = await Promise.all(plugin.systemDeps.map(checkOneDep))
+  const allRequiredOk = results.every(r => r.available || !r.dep.required)
+  return { results, allRequiredOk }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -214,7 +315,46 @@ export class PluginManager {
       `Plugin discovery complete: ${this.loadedPlugins.size}/${uniquePlugins.length} plugins loaded`,
     )
 
+    // Log aggregated dependency health report
+    this.logDependencyHealth()
+
     return this.plugins
+  }
+
+  /**
+   * Log a structured dependency health report across all plugins.
+   */
+  private logDependencyHealth(): void {
+    const allChecks: Array<{ plugin: string; dep: string; type: string; required: boolean; available: boolean; path?: string; error?: string }> = []
+    for (const s of this.plugins) {
+      if (s.depChecks) {
+        for (const r of s.depChecks) {
+          allChecks.push({
+            plugin: s.id, dep: r.dep.name, type: r.dep.type,
+            required: r.dep.required, available: r.available,
+            path: r.resolvedPath, error: r.error,
+          })
+        }
+      }
+    }
+    if (allChecks.length === 0) return
+
+    const ok = allChecks.filter(c => c.available).length
+    const missing = allChecks.filter(c => !c.available && c.required)
+    const optional = allChecks.filter(c => !c.available && !c.required)
+
+    logger.info(
+      { total: allChecks.length, ok, missingRequired: missing.length, missingOptional: optional.length },
+      `System dependency health: ${ok}/${allChecks.length} available` +
+      (missing.length > 0 ? ` — ${missing.length} required deps MISSING` : '') +
+      (optional.length > 0 ? ` — ${optional.length} optional deps not found` : ''),
+    )
+
+    if (missing.length > 0) {
+      for (const m of missing) {
+        logger.warn({ plugin: m.plugin, dep: m.dep, type: m.type }, `  MISSING: ${m.dep} (required by ${m.plugin})`)
+      }
+    }
   }
 
   /**
@@ -260,6 +400,33 @@ export class PluginManager {
       }
     }
 
+    // Auto-check system dependencies (runs even if plugin has a manual check)
+    if (plugin.systemDeps && plugin.systemDeps.length > 0) {
+      const { results, allRequiredOk } = await checkSystemDeps(plugin)
+      status.depChecks = results
+
+      // Log each dependency result
+      for (const r of results) {
+        if (r.available) {
+          logger.debug({ plugin: plugin.id, dep: r.dep.name, path: r.resolvedPath, version: r.version }, `  ✓ ${r.dep.name}`)
+        } else if (r.dep.required) {
+          logger.warn({ plugin: plugin.id, dep: r.dep.name, error: r.error }, `  ✗ ${r.dep.name} (required, missing)`)
+        } else {
+          logger.debug({ plugin: plugin.id, dep: r.dep.name }, `  ○ ${r.dep.name} (optional, not found)`)
+        }
+      }
+
+      // If plugin has no manual check() and required deps are missing, skip it
+      if (!plugin.check && !allRequiredOk) {
+        const missing = results.filter(r => !r.available && r.dep.required).map(r => r.dep.name)
+        status.status = 'skipped-check'
+        status.error = `Missing required system deps: ${missing.join(', ')}`
+        this.plugins.push(status)
+        logger.info({ plugin: plugin.id, missing }, `Plugin skipped (system deps not met): ${plugin.name}`)
+        return status
+      }
+    }
+
     // Register tools
     try {
       // Create scoped PluginContext for this plugin
@@ -284,6 +451,9 @@ export class PluginManager {
       for (const t of names) this.pluginToolMap.set(t, plugin.id)
       this.loadedPlugins.set(plugin.id, plugin)
       this.plugins.push(status)
+
+      // Register plugin with progressive surface manager
+      getToolSurfaceManager().registerPlugin(plugin, names)
 
       // Fire onActivate hook
       if (plugin.hooks?.onActivate) {

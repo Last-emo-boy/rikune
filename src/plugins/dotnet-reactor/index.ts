@@ -23,12 +23,17 @@ import {
 const dotnetReactorPlugin: Plugin = {
   id: 'dotnet-reactor',
   name: '.NET Reactor Deobfuscation',
+  surfaceRules: { tier: 2, activateOn: { findings: ['dotnet', 'obfuscated'] }, category: 'dotnet-analysis' },
   description:
     'Analyze and deobfuscate .NET Reactor-protected assemblies — anti-tamper detection, ' +
     'string decryption, dynamic method recovery, and resource assembly export',
   version: '1.0.0',
   configSchema: [
     { envVar: 'REACTOR_SANDBOX_ENABLED', description: 'Allow sandbox execution for dynamic analysis (true/false)', required: false, defaultValue: 'false' },
+  ],
+  systemDeps: [
+    { type: 'binary', name: 'python3', versionFlag: '--version', dockerDefault: '/usr/local/bin/python3', required: true, description: 'Python 3 for .NET Reactor analysis workers' },
+    { type: 'python', name: 'dnfile', importName: 'dnfile', required: true, description: 'Python dnfile for .NET metadata analysis', dockerInstall: 'pip install dnfile' },
   ],
   register(server, deps) {
     server.registerTool(antiTamperToolDefinition, createAntiTamperHandler(deps))

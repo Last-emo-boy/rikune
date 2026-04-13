@@ -12,15 +12,15 @@ import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
 import { createPEFingerprintHandler } from '../plugins/pe-analysis/tools/pe-fingerprint.js'
-import { createRuntimeDetectHandler } from '../tools/runtime-detect.js'
+import { createRuntimeDetectHandler } from '../plugins/static-triage/tools/runtime-detect.js'
 import { createPEImportsExtractHandler } from '../plugins/pe-analysis/tools/pe-imports-extract.js'
-import { createStringsExtractHandler } from '../tools/strings-extract.js'
-import { createYaraScanHandler } from '../tools/yara-scan.js'
-import { createStaticCapabilityTriageHandler } from '../tools/static-capability-triage.js'
+import { createStringsExtractHandler } from '../plugins/strings/tools/strings-extract.js'
+import { createYaraScanHandler } from '../plugins/yara/tools/yara-scan.js'
+import { createStaticCapabilityTriageHandler } from '../plugins/static-triage/tools/static-capability-triage.js'
 import { createPEStructureAnalyzeHandler } from '../plugins/pe-analysis/tools/pe-structure-analyze.js'
 import { logger } from '../logger.js'
-import { createCompilerPackerDetectHandler } from '../tools/compiler-packer-detect.js'
-import { createAnalysisContextLinkHandler } from '../tools/analysis-context-link.js'
+import { createCompilerPackerDetectHandler } from '../plugins/static-triage/tools/compiler-packer-detect.js'
+import { createAnalysisContextLinkHandler } from '../plugins/static-triage/tools/analysis-context-link.js'
 import {
   AnalysisIntentDepthSchema,
   BackendPolicySchema,
@@ -36,12 +36,12 @@ import {
   classifySampleSizeTier,
   deriveAnalysisBudgetProfile,
   mergeCoverageEnvelope,
-} from '../analysis-coverage.js'
+} from '../analysis/analysis-coverage.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
-import { createRizinAnalyzeHandler } from '../tools/docker/rizin-analyze.js'
-import { createUPXInspectHandler } from '../tools/docker/upx-inspect.js'
-import { createYaraXScanHandler } from '../tools/docker/yara-x-scan.js'
-import { collectCryptoApiNames } from '../crypto-breakpoint-analysis.js'
+import { createRizinAnalyzeHandler } from '../plugins/rizin/tools/rizin-analyze.js'
+import { createUPXInspectHandler } from '../plugins/upx/tools/upx-inspect.js'
+import { createYaraXScanHandler } from '../plugins/yara-x/tools/yara-x-scan.js'
+import { collectCryptoApiNames } from '../artifacts/crypto-breakpoint-analysis.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
 
 // ============================================================================

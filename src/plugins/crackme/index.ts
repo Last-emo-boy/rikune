@@ -21,12 +21,17 @@ import {
 const crackmePlugin: Plugin = {
   id: 'crackme',
   name: 'CrackMe Automation',
+  surfaceRules: { tier: 3, category: 'reverse-engineering' },
   description: 'Validation routine location, symbolic execution, patching, and keygen verification',
   version: '1.0.0',
   dependencies: [],
   configSchema: [
     { envVar: 'ANGR_AVAILABLE', description: 'Whether angr is installed for symbolic execution', required: false },
   ],
+  systemDeps: [
+    { type: 'python-venv', name: 'angr', target: '$ANGR_PYTHON', envVar: 'ANGR_PYTHON', dockerDefault: '/opt/angr-venv/bin/python', required: false, description: 'angr symbolic execution framework', dockerInstall: 'python3 -m venv /opt/angr-venv && pip install angr', dockerFeature: 'angr', dockerValidation: ['/opt/angr-venv/bin/python -c "import angr; print(\'✓ angr\')"'] },
+  ],
+  resources: { workers: 'workers' },
   check() {
     return true
   },

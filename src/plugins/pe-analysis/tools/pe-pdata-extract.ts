@@ -3,7 +3,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult , PluginToolDeps} from '../
 import { generateCacheKey } from '../../../cache-manager.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
 import { extractPdataFromPE } from '../../../pe-runtime-functions.js'
-import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
+import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 
 const TOOL_NAME = 'pe.pdata.extract'

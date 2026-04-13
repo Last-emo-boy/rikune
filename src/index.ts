@@ -12,7 +12,7 @@ import { DatabaseManager } from './database.js'
 import { PolicyGuard } from './policy-guard.js'
 import { CacheManager } from './cache-manager.js'
 import { JobQueue } from './job-queue.js'
-import { AnalysisTaskRunner } from './analysis-task-runner.js'
+import { AnalysisTaskRunner } from './analysis/analysis-task-runner.js'
 import { StorageManager } from './storage/storage-manager.js'
 import { registerAllTools } from './tool-registry.js'
 
@@ -21,6 +21,7 @@ export { MCPServer } from './server.js'
 export { loadConfig } from './config.js'
 export { WorkspaceManager } from './workspace-manager.js'
 export * from './types.js'
+export { RikuneError, ErrorCode, toRikuneError, isRikuneError } from './errors.js'
 
 async function main() {
   try {
@@ -37,9 +38,11 @@ async function main() {
       root: config.api.storageRoot,
       maxFileSize: config.api.maxFileSize,
       retentionDays: config.api.retentionDays,
+      maxTotalBytes: config.api.maxTotalBytes,
     })
     await storageManager.initialize()
     const jobQueue = new JobQueue(database)
+    jobQueue.restoreFromDatabase()
     const analysisTaskRunner = new AnalysisTaskRunner(jobQueue, database, workspaceManager, cacheManager, policyGuard)
     analysisTaskRunner.start()
 

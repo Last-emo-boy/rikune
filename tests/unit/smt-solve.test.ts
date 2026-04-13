@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createSmtSolveHandler, smtSolveInputSchema } from '../../src/tools/smt-solve.js'
+import { createSmtSolveHandler, smtSolveInputSchema } from '../../src/plugins/vm-analysis/tools/smt-solve.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 

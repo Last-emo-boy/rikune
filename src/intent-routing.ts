@@ -3,7 +3,7 @@ import type { ToolchainBackendResolution } from './static-backend-discovery.js'
 import {
   AnalysisCostClassSchema,
   ExecutionBucketSchema,
-} from './analysis-budget-scheduler.js'
+} from './analysis/analysis-budget-scheduler.js'
 
 export const AnalysisIntentGoalSchema = z.enum(['triage', 'static', 'reverse', 'dynamic', 'report'])
 export const AnalysisIntentDepthSchema = z.enum(['safe', 'balanced', 'deep'])

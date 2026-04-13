@@ -15,7 +15,7 @@ function buildGhidraStatus(ok) {
     checked_at: new Date().toISOString(),
     install_dir: ok ? '/opt/ghidra' : '',
     analyze_headless_path: ok ? '/opt/ghidra/support/analyzeHeadless' : '',
-    scripts_dir: path.join(process.cwd(), 'ghidra_scripts'),
+    scripts_dir: path.join(process.cwd(), 'src', 'plugins', 'ghidra', 'scripts'),
     project_root: path.join(process.cwd(), 'ghidra-projects'),
     log_root: path.join(process.cwd(), 'ghidra-logs'),
     version: ok ? '12.0.4' : undefined,

@@ -9,7 +9,7 @@ import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import { createSystemHealthHandler, SystemHealthInputSchema } from '../../src/tools/system-health.js'
-import type { GhidraHealthStatus } from '../../src/ghidra-config.js'
+import type { GhidraHealthStatus } from '../../src/ghidra/ghidra-config.js'
 
 type StaticWorkerHealthData = {
   status?: string
@@ -25,7 +25,7 @@ function buildGhidraStatus(ok: boolean): GhidraHealthStatus {
     checked_at: new Date().toISOString(),
     install_dir: ok ? 'C:\\ghidra' : '',
     analyze_headless_path: ok ? 'C:\\ghidra\\support\\analyzeHeadless.bat' : '',
-    scripts_dir: path.join(process.cwd(), 'ghidra_scripts'),
+    scripts_dir: path.join(process.cwd(), 'src', 'plugins', 'ghidra', 'scripts'),
     project_root: path.join(process.cwd(), 'ghidra-projects'),
     log_root: path.join(process.cwd(), 'ghidra-logs'),
     version: ok ? '11.2' : undefined,

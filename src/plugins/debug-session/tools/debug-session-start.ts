@@ -1,12 +1,12 @@
 /**
- * debug.session.start MCP tool â€?start interactive GDB debug session.
+ * debug.session.start MCP tool ï¿½?start interactive GDB debug session.
  */
 
 import { z } from 'zod'
 import type { ToolDefinition, WorkerResult , PluginToolDeps} from '../../sdk.js'
-import { resolvePrimarySamplePath } from '../../../sample-workspace.js'
-import { detectFormat } from '../../../format-detect.js'
-import { getDebugSessionManager } from '../../../debug/debug-session-state.js'
+import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
+import { detectFormat } from '../../../sample/format-detect.js'
+import { getDebugSessionManager } from '../debug/debug-session-state.js'
 
 const TOOL_NAME = 'debug.session.start'
 

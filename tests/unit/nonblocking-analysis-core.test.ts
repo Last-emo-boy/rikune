@@ -12,8 +12,8 @@ import {
   buildStagePlan,
   ANALYSIS_PIPELINE_VERSION,
   createOrReuseAnalysisRun,
-} from '../../src/analysis-run-state.js'
-import type { AnalysisPipelineStage } from '../../src/analysis-run-state.js'
+} from '../../src/analysis/analysis-run-state.js'
+import type { AnalysisPipelineStage } from '../../src/analysis/analysis-run-state.js'
 import { DatabaseManager } from '../../src/database.js'
 
 describe('nonblocking analysis pipeline - core logic', () => {

@@ -12,6 +12,7 @@ import { dllDependencyTreeToolDefinition, createDllDependencyTreeHandler } from 
 const crossModulePlugin: Plugin = {
   id: 'cross-module',
   name: 'Cross-Module Analysis',
+  surfaceRules: { tier: 2, activateOn: { findings: ['suspicious_imports'] }, category: 'reverse-engineering' },
   description: 'Cross-binary comparison, cross-module call graphs, and DLL dependency trees',
   version: '1.0.0',
   register(server, deps) {

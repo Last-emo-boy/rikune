@@ -31,7 +31,7 @@ export const symbolicExploreToolDefinition: ToolDefinition = {
 
 async function callWorker(request: Record<string, unknown>, pythonCmd: string, resolvePackagePath: (...segments: string[]) => string): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const workerPath = resolvePackagePath('workers', 'symbolic_explorer_worker.py')
+    const workerPath = resolvePackagePath('src', 'plugins', 'crackme', 'workers', 'symbolic_explorer_worker.py')
     const proc = spawn(pythonCmd, [workerPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: ((request.timeout_sec as number) ?? 60) * 1000 + 10000,

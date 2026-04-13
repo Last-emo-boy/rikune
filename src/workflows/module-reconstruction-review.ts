@@ -12,10 +12,10 @@ import type { JobQueue } from '../job-queue.js'
 import type { MCPServer } from '../server.js'
 import { createCodeModuleReviewHandler } from '../tools/code-module-review.js'
 import { createReconstructWorkflowHandler } from './reconstruct.js'
-import { AnalysisProvenanceSchema } from '../analysis-provenance.js'
-import { AnalysisSelectionDiffSchema } from '../selection-diff.js'
-import { BinaryRoleProfileDataSchema } from '../tools/binary-role-profile.js'
-import { GhidraExecutionSummarySchema } from '../ghidra-execution-summary.js'
+import { AnalysisProvenanceSchema } from '../analysis/analysis-provenance.js'
+import { AnalysisSelectionDiffSchema } from '../artifacts/selection-diff.js'
+import { BinaryRoleProfileDataSchema } from '../plugins/static-triage/tools/binary-role-profile.js'
+import { GhidraExecutionSummarySchema } from '../ghidra/ghidra-execution-summary.js'
 import {
   RequiredUserInputSchema,
   SetupActionSchema,

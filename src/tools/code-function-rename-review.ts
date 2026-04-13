@@ -11,9 +11,9 @@ import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
 import type { MCPServer } from '../server.js'
-import { createCodeFunctionRenamePrepareHandler } from './code-function-rename-prepare.js'
-import { createCodeFunctionRenameApplyHandler } from './code-function-rename-apply.js'
-import { createCodeFunctionsReconstructHandler } from './code-functions-reconstruct.js'
+import { createCodeFunctionRenamePrepareHandler } from '../plugins/code-analysis/tools/code-function-rename-prepare.js'
+import { createCodeFunctionRenameApplyHandler } from '../plugins/code-analysis/tools/code-function-rename-apply.js'
+import { createCodeFunctionsReconstructHandler } from '../plugins/code-analysis/tools/code-functions-reconstruct.js'
 
 const TOOL_NAME = 'code.function.rename.review'
 

@@ -10,6 +10,7 @@ import path from 'path'
 import type { CacheKeyParams, CachedResult } from './types.js'
 import type { DatabaseManager } from './database.js'
 import { CACHE_TTL_30_DAYS } from './constants/cache-ttl.js'
+import { logDebug } from './logger.js'
 
 export type CacheTier = 'memory' | 'filesystem' | 'database' | 'unknown'
 
@@ -38,14 +39,30 @@ class LRUCache<T> {
     expiresAt?: string
     expiresAtMs?: number
     sampleSha256?: string
+    approxBytes: number
   }>
   private maxSize: number
   private ttlMs: number
+  private _totalBytes = 0
+  private static readonly MAX_BYTES = 50 * 1024 * 1024  // 50 MB memory ceiling
 
   constructor(maxSize: number, ttlMs: number) {
     this.cache = new Map()
     this.maxSize = maxSize
     this.ttlMs = ttlMs
+  }
+
+  /** Approximate byte cost of a cached value. */
+  private static estimateBytes(value: unknown): number {
+    if (value === null || value === undefined) return 8
+    if (typeof value === 'string') return value.length * 2
+    if (typeof value === 'number' || typeof value === 'boolean') return 8
+    // For objects/arrays, use a rough JSON length estimate (avoid full serialization)
+    try {
+      return JSON.stringify(value).length * 2
+    } catch {
+      return 1024 // fallback for circular refs etc.
+    }
   }
 
   getWithMeta(
@@ -58,12 +75,14 @@ class LRUCache<T> {
 
     // Check if expired
     if (now - entry.insertedAt > this.ttlMs) {
+      this._totalBytes -= entry.approxBytes
       this.cache.delete(key)
       return null
     }
 
     // Check absolute source expiration (if available)
     if (entry.expiresAtMs && now > entry.expiresAtMs) {
+      this._totalBytes -= entry.approxBytes
       this.cache.delete(key)
       return null
     }
@@ -94,13 +113,26 @@ class LRUCache<T> {
     options?: { createdAt?: string; expiresAt?: string; sampleSha256?: string }
   ): void {
     // Remove if exists (to update position)
-    this.cache.delete(key)
+    const existing = this.cache.get(key)
+    if (existing) {
+      this._totalBytes -= existing.approxBytes
+      this.cache.delete(key)
+    }
 
-    // Evict oldest if at capacity
-    if (this.cache.size >= this.maxSize) {
+    const approxBytes = LRUCache.estimateBytes(value)
+
+    // Evict oldest while over count limit OR memory ceiling
+    while (
+      this.cache.size >= this.maxSize ||
+      (this.cache.size > 0 && this._totalBytes + approxBytes > LRUCache.MAX_BYTES)
+    ) {
       const firstKey = this.cache.keys().next().value
       if (firstKey) {
+        const evicted = this.cache.get(firstKey)
+        if (evicted) this._totalBytes -= evicted.approxBytes
         this.cache.delete(firstKey)
+      } else {
+        break
       }
     }
 
@@ -115,11 +147,20 @@ class LRUCache<T> {
       expiresAt,
       expiresAtMs: Number.isNaN(expiresAtMs) ? undefined : expiresAtMs,
       sampleSha256: options?.sampleSha256,
+      approxBytes,
     })
+    this._totalBytes += approxBytes
   }
 
   clear(): void {
     this.cache.clear()
+    this._totalBytes = 0
+  }
+
+  delete(key: string): boolean {
+    const entry = this.cache.get(key)
+    if (entry) this._totalBytes -= entry.approxBytes
+    return this.cache.delete(key)
   }
 }
 
@@ -195,6 +236,11 @@ class FileSystemCache {
     } catch (error) {
       // Ignore write errors (cache is optional)
     }
+  }
+
+  async delete(key: string): Promise<void> {
+    const cachePath = this.getCachePath(key)
+    await fs.unlink(cachePath)
   }
 }
 
@@ -363,6 +409,65 @@ export class CacheManager {
   }
 
   /**
+   * Invalidate a specific cache key across all tiers.
+   * Use this when source data has changed and all cached copies must be removed.
+   */
+  async invalidate(key: string): Promise<void> {
+    // L1
+    this.memoryCache.delete(key)
+    // L2
+    try {
+      await this.fsCache.delete(key)
+    } catch (e) { logDebug?.('cache_invalidate_fs_failed', { key, err: String(e) }) }
+    // L3
+    if (this.db) {
+      try {
+        this.db.runSql('DELETE FROM cache WHERE key = ?', [key])
+      } catch (e) { logDebug?.('cache_invalidate_db_failed', { key, err: String(e) }) }
+    }
+  }
+
+  /**
+   * Invalidate all cached entries for a specific sample across all tiers.
+   */
+  async invalidateSample(sampleSha256: string): Promise<number> {
+    let deleted = 0
+
+    // L1: clear all (can't selectively clear by sample in LRU)
+    this.memoryCache.clear()
+
+    // L3: get keys then delete from L2 and L3
+    if (this.db) {
+      const entries = await this.db.getCacheEntriesBySample(sampleSha256)
+      for (const entry of entries) {
+        try { await this.fsCache.delete(entry.key) } catch (e) { logDebug?.('cache_invalidate_sample_fs_failed', { key: entry.key, err: String(e) }) }
+        deleted++
+      }
+      this.db.runSql('DELETE FROM cache WHERE sample_sha256 = ?', [sampleSha256])
+    }
+
+    return deleted
+  }
+
+  /**
+   * Clean up expired entries across all tiers.
+   * Should be called periodically (e.g. every hour).
+   */
+  async cleanExpired(): Promise<{ dbCleaned: number }> {
+    let dbCleaned = 0
+
+    // L3: clean expired from database
+    if (this.db) {
+      dbCleaned = this.db.cleanExpiredCache()
+    }
+
+    // L1: handled automatically by TTL check on access
+    // L2: expired entries are cleaned lazily on read access
+
+    return { dbCleaned }
+  }
+
+  /**
    * Prewarm cache by loading frequently accessed data into memory
    * 
    * Requirements: 26.1 (cache prewarming)
@@ -479,7 +584,7 @@ export class CacheManager {
  * @returns Cache key string in format "cache:<sha256>"
  */
 export function generateCacheKey(params: CacheKeyParams): string {
-  // Create normalized object with sorted keys
+  // Build canonical JSON in deterministic key order (already fixed)
   const normalized = {
     sampleSha256: params.sampleSha256,
     toolName: params.toolName,
@@ -488,18 +593,8 @@ export function generateCacheKey(params: CacheKeyParams): string {
     ...(params.rulesetVersion && { rulesetVersion: params.rulesetVersion })
   }
 
-  // Sort keys at top level to ensure deterministic order
-  const sortedKeys = Object.keys(normalized).sort()
-  const sortedNormalized = sortedKeys.reduce((acc, key) => {
-    acc[key] = normalized[key as keyof typeof normalized]
-    return acc
-  }, {} as Record<string, unknown>)
-
-  // Generate canonical JSON string
-  const keyString = JSON.stringify(sortedNormalized)
-
-  // Generate SHA256 hash
-  const hash = crypto.createHash('sha256').update(keyString).digest('hex')
+  // Generate SHA256 hash directly from canonical JSON
+  const hash = crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex')
 
   return `cache:${hash}`
 }

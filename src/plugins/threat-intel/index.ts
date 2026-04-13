@@ -11,11 +11,12 @@ import {
 import {
   iocExportToolDefinition, createIOCExportHandler,
 } from './tools/ioc-export.js'
-import { sigmaRuleGenerateToolDefinition, createSigmaRuleGenerateHandler } from '../../tools/sigma-rule-generate.js'
+import { sigmaRuleGenerateToolDefinition, createSigmaRuleGenerateHandler } from './tools/sigma-rule-generate.js'
 
 const threatIntelPlugin: Plugin = {
   id: 'threat-intel',
   name: 'Threat Intelligence',
+  surfaceRules: { tier: 0, category: 'malware-analysis' },
   description: 'MITRE ATT&CK technique mapping, IOC export (JSON, CSV, STIX2), and Sigma rule generation',
   version: '1.0.0',
   register(server, deps) {

@@ -4,8 +4,8 @@
 
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef , PluginToolDeps} from '../../sdk.js'
-import { persistStaticAnalysisJsonArtifact } from '../../../static-analysis-artifacts.js'
-import { loadPatterns, scanAllFunctions, type VulnScanResult } from '../../../vuln-patterns.js'
+import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
+import { loadPatterns, scanAllFunctions, type VulnScanResult } from '../vuln-patterns.js'
 
 // ============================================================================
 // Schemas
