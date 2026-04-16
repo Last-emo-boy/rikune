@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import type { Config } from './config.js'
+import type { Config } from './index.js'
 
 export interface ValidationResult {
   valid: boolean
