@@ -17,7 +17,10 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "lint": "echo 'No lint configured'",
+    "test": "echo 'No tests yet'"
   },
   "license": "MIT"
 }
