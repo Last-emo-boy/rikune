@@ -1,11 +1,11 @@
-import type { MCPServer } from '../server.js'
+import type { ToolRegistrar } from '../registrar.js'
 import type { ToolDeps } from '../tool-registry.js'
 import { artifactReadToolDefinition, createArtifactReadHandler } from '../../tools/artifact-read.js'
 import { artifactsListToolDefinition, createArtifactsListHandler } from '../../tools/artifacts-list.js'
 import { artifactsDiffToolDefinition, createArtifactsDiffHandler } from '../../tools/artifacts-diff.js'
 import { artifactDownloadToolDefinition, createArtifactDownloadHandler } from '../../tools/artifact-download.js'
 
-export function registerArtifactTools(server: MCPServer, deps: ToolDeps): void {
+export function registerArtifactTools(server: ToolRegistrar, deps: ToolDeps): void {
   const { workspaceManager, database, storageManager } = deps
   server.registerTool(artifactReadToolDefinition, createArtifactReadHandler(workspaceManager, database))
   server.registerTool(artifactsListToolDefinition, createArtifactsListHandler(workspaceManager, database))

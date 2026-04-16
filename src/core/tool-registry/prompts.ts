@@ -1,4 +1,4 @@
-import type { MCPServer } from '../server.js'
+import type { PromptRegistrar } from '../registrar.js'
 import {
   semanticNameReviewPromptDefinition,
   createSemanticNameReviewPromptHandler,
@@ -12,7 +12,7 @@ import {
   createModuleReconstructionReviewPromptHandler,
 } from '../../prompts/module-reconstruction-review.js'
 
-export function registerPrompts(server: MCPServer): void {
+export function registerPrompts(server: PromptRegistrar): void {
   server.registerPrompt(semanticNameReviewPromptDefinition, createSemanticNameReviewPromptHandler())
   server.registerPrompt(functionExplanationReviewPromptDefinition, createFunctionExplanationReviewPromptHandler())
   server.registerPrompt(moduleReconstructionReviewPromptDefinition, createModuleReconstructionReviewPromptHandler())

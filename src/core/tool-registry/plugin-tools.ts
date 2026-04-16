@@ -1,4 +1,4 @@
-import type { MCPServer } from '../server.js'
+import type { ToolRegistrar } from '../registrar.js'
 import { getPluginManager } from '../plugins.js'
 import {
   pluginListToolDefinition, createPluginListHandler,
@@ -6,7 +6,7 @@ import {
   pluginDisableToolDefinition, createPluginDisableHandler,
 } from '../../tools/plugin-list.js'
 
-export function registerPluginTools(server: MCPServer): void {
+export function registerPluginTools(server: ToolRegistrar): void {
   server.registerTool(pluginListToolDefinition, createPluginListHandler(server))
   server.registerTool(pluginEnableToolDefinition, createPluginEnableHandler(server))
   server.registerTool(pluginDisableToolDefinition, createPluginDisableHandler(server))

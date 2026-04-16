@@ -5,7 +5,6 @@
 
 import { z } from 'zod'
 import type { ToolDefinition, ToolResult } from '../types.js'
-import type { MCPServer } from '../server.js'
 import { validateConfig } from '../config-validator.js'
 import { config } from '../config.js'
 
@@ -20,7 +19,7 @@ export const configValidateToolDefinition: ToolDefinition = {
   inputSchema: inputSchema as any,
 }
 
-export function createConfigValidateHandler(_server: MCPServer) {
+export function createConfigValidateHandler() {
   return async (args: z.infer<typeof inputSchema>): Promise<ToolResult> => {
     const report = validateConfig(config)
 

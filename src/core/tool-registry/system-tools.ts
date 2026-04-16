@@ -1,4 +1,4 @@
-import type { MCPServer } from '../server.js'
+import type { ToolRegistrar } from '../registrar.js'
 import type { ToolDeps } from '../tool-registry.js'
 import { systemHealthToolDefinition, createSystemHealthHandler } from '../../tools/system-health.js'
 import { systemSetupGuideToolDefinition, createSystemSetupGuideHandler } from '../../tools/system-setup-guide.js'
@@ -9,7 +9,7 @@ export interface SystemToolHandlers {
   systemSetupGuideHandler: ReturnType<typeof createSystemSetupGuideHandler>
 }
 
-export function registerSystemTools(server: MCPServer, deps: ToolDeps): SystemToolHandlers {
+export function registerSystemTools(server: ToolRegistrar, deps: ToolDeps): SystemToolHandlers {
   const { workspaceManager, database, cacheManager } = deps
   const systemHealthHandler = createSystemHealthHandler(workspaceManager, database, { cacheManager, runtimeClient: deps.runtimeClient })
   const systemSetupGuideHandler = createSystemSetupGuideHandler()

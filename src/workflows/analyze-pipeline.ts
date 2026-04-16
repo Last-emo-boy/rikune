@@ -9,7 +9,7 @@ import type { CacheManager } from '../cache-manager.js'
 import type { JobQueue, JobResult } from '../job-queue.js'
 import { JobPriority } from '../job-queue.js'
 import type { PolicyGuard } from '../policy-guard.js'
-import type { MCPServer } from '../server.js'
+import type { SamplingClient } from '../core/registrar.js'
 import { dedupeStrings } from '../utils/shared-helpers.js'
 import {
   AnalysisIntentDepthSchema,
@@ -319,7 +319,7 @@ interface StageExecutionContext {
   database: DatabaseManager
   cacheManager: CacheManager
   policyGuard: PolicyGuard
-  server?: MCPServer
+  server?: SamplingClient
   dependencies: AnalyzePipelineDependencies
 }
 
@@ -812,7 +812,7 @@ function createDependencies(
   database: DatabaseManager,
   cacheManager: CacheManager,
   policyGuard: PolicyGuard,
-  server?: MCPServer,
+  server?: SamplingClient,
   dependencies: AnalyzePipelineDependencies = {},
   jobQueue?: JobQueue
 ): AnalyzePipelineDependencies {
@@ -2350,7 +2350,7 @@ export function createAnalyzeWorkflowStartHandler(
   database: DatabaseManager,
   cacheManager: CacheManager,
   policyGuard: PolicyGuard,
-  server?: MCPServer,
+  server?: SamplingClient,
   dependencies: AnalyzePipelineDependencies = {},
   jobQueue?: JobQueue
 ) {
@@ -2565,7 +2565,7 @@ export function createAnalyzeWorkflowPromoteHandler(
   database: DatabaseManager,
   cacheManager: CacheManager,
   policyGuard: PolicyGuard,
-  server?: MCPServer,
+  server?: SamplingClient,
   dependencies: AnalyzePipelineDependencies = {},
   jobQueue?: JobQueue
 ) {
@@ -2694,7 +2694,7 @@ export function createAnalyzePipelineStageContext(
   database: DatabaseManager,
   cacheManager: CacheManager,
   policyGuard: PolicyGuard,
-  server?: MCPServer,
+  server?: SamplingClient,
   dependencies: AnalyzePipelineDependencies = {},
   jobQueue?: JobQueue
 ): StageExecutionContext {

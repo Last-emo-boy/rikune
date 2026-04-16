@@ -8,7 +8,7 @@
 import { z } from 'zod'
 import type { ToolDefinition, ToolResult } from '../types.js'
 import { getPluginManager } from '../plugins.js'
-import type { MCPServer } from '../server.js'
+import type { ToolRegistrar } from '../core/registrar.js'
 
 // ── Schema ──────────────────────────────────────────────────────────────────
 
@@ -30,7 +30,7 @@ export const pluginListToolDefinition: ToolDefinition = {
 
 // ── Handler ─────────────────────────────────────────────────────────────────
 
-export function createPluginListHandler(_server: MCPServer) {
+export function createPluginListHandler(_server: ToolRegistrar) {
   return async (args: z.infer<typeof inputSchema>): Promise<ToolResult> => {
     const mgr = getPluginManager()
     let statuses = mgr.getStatuses()
@@ -95,7 +95,7 @@ export const pluginEnableToolDefinition: ToolDefinition = {
   inputSchema: enableSchema as any,
 }
 
-export function createPluginEnableHandler(server: MCPServer) {
+export function createPluginEnableHandler(server: ToolRegistrar) {
   return async (args: z.infer<typeof enableSchema>): Promise<ToolResult> => {
     const mgr = getPluginManager()
 
@@ -146,7 +146,7 @@ export const pluginDisableToolDefinition: ToolDefinition = {
 // Core plugins that cannot be disabled at runtime
 const CORE_PLUGIN_IDS = new Set<string>([])
 
-export function createPluginDisableHandler(server: MCPServer) {
+export function createPluginDisableHandler(server: ToolRegistrar) {
   return async (args: z.infer<typeof disableSchema>): Promise<ToolResult> => {
     if (CORE_PLUGIN_IDS.has(args.plugin_id)) {
       return {

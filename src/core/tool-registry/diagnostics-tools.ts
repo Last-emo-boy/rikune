@@ -1,8 +1,8 @@
-import type { MCPServer } from '../server.js'
+import type { ToolRegistrar } from '../registrar.js'
 import {
   configValidateToolDefinition, createConfigValidateHandler,
 } from '../../tools/config-validate.js'
 
-export function registerDiagnosticsTools(server: MCPServer): void {
-  server.registerTool(configValidateToolDefinition, createConfigValidateHandler(server))
+export function registerDiagnosticsTools(server: ToolRegistrar): void {
+  server.registerTool(configValidateToolDefinition, createConfigValidateHandler())
 }

@@ -9,7 +9,7 @@ import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
 import type { JobQueue } from '../job-queue.js'
-import type { MCPServer } from '../server.js'
+import type { SamplingClient } from '../core/registrar.js'
 import { createCodeFunctionRenameReviewHandler } from '../tools/code-function-rename-review.js'
 import { createReconstructWorkflowHandler } from './reconstruct.js'
 import { AnalysisProvenanceSchema } from '../analysis/analysis-provenance.js'
@@ -375,7 +375,7 @@ export function createSemanticNameReviewWorkflowHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   cacheManager: CacheManager,
-  mcpServer?: MCPServer,
+  mcpServer?: SamplingClient,
   dependencies?: SemanticNameReviewWorkflowDependencies,
   jobQueue?: JobQueue
 ) {

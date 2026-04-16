@@ -10,7 +10,7 @@ import { type SamplingResult, extractTextBlocks } from '../utils/sampling-helper
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
-import type { MCPServer } from '../server.js'
+import type { SamplingClient } from '../core/registrar.js'
 import { createCodeFunctionExplainPrepareHandler } from '../plugins/code-analysis/tools/code-function-explain-prepare.js'
 import { createCodeFunctionExplainApplyHandler } from '../plugins/code-analysis/tools/code-function-explain-apply.js'
 
@@ -299,7 +299,7 @@ export function createCodeFunctionExplainReviewHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   cacheManager: CacheManager,
-  mcpServer?: MCPServer,
+  mcpServer?: SamplingClient,
   dependencies?: CodeFunctionExplainReviewDependencies
 ) {
   const prepareHandler =

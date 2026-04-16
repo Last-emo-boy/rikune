@@ -4,7 +4,6 @@
  * Delegates to domain-specific registration modules under src/core/tool-registry/.
  */
 
-import type { MCPServer } from './server.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { PolicyGuard } from '../policy-guard.js'
@@ -12,6 +11,7 @@ import type { CacheManager } from '../cache-manager.js'
 import type { JobQueue } from '../job-queue.js'
 import type { StorageManager } from '../storage/storage-manager.js'
 import type { Config } from '../config.js'
+import type { ToolRegistrar, PromptRegistrar, ResourceRegistrar, SamplingClient, PluginManagerSetter } from './registrar.js'
 
 export interface ToolDeps {
   workspaceManager: WorkspaceManager
@@ -21,9 +21,10 @@ export interface ToolDeps {
   jobQueue: JobQueue
   storageManager: StorageManager
   config: Config
-  server: MCPServer
+  server: ToolRegistrar & PromptRegistrar & ResourceRegistrar & SamplingClient & PluginManagerSetter
   runtimeClient?: any
   sandboxDir?: string | null
+  resolvePrimarySamplePath?: any
 }
 
 import { resolvePrimarySamplePath } from '../sample/sample-workspace.js'
@@ -55,7 +56,10 @@ import { registerPluginTools } from './tool-registry/plugin-tools.js'
 import { registerDiagnosticsTools } from './tool-registry/diagnostics-tools.js'
 import { registerScriptResources } from './tool-registry/script-resources.js'
 
-export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promise<void> {
+export async function registerAllTools(
+  server: ToolRegistrar & PromptRegistrar & ResourceRegistrar & SamplingClient & PluginManagerSetter,
+  deps: ToolDeps
+): Promise<void> {
   registerPrompts(server)
   registerSampleTools(server, deps)
   registerArtifactTools(server, deps)
@@ -85,10 +89,10 @@ export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promi
     SetupActionSchema,
     RequiredUserInputSchema,
     logger: serverLogger,
-    runtimeClient: (deps as any).runtimeClient ?? null,
-    sandboxDir: (deps as any).sandboxDir ?? null,
+    runtimeClient: deps.runtimeClient ?? null,
+    sandboxDir: deps.sandboxDir ?? null,
   }
-  await loadPlugins(server, pluginDeps as any)
+  await loadPlugins(server, pluginDeps)
   server.setPluginManager(getPluginManager())
 
   registerPluginTools(server)

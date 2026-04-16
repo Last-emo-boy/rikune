@@ -16,6 +16,7 @@ import { AnalysisTaskRunner } from './analysis/analysis-task-runner.js'
 import { StorageManager } from './storage/storage-manager.js'
 import { registerAllTools } from './tool-registry.js'
 import { logger } from './logger.js'
+import { defaultApiBootstrapper } from './api/default-bootstrapper.js'
 import {
   isWindowsSandboxAvailable,
   createSandboxLauncher,
@@ -186,6 +187,7 @@ async function main() {
       database,
       policyGuard,
       storageManager,
+      apiBootstrapper: defaultApiBootstrapper,
     })
 
     // Register all tools & prompts via the centralised registry

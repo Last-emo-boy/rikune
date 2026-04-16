@@ -10,7 +10,7 @@ import { type SamplingResult, extractTextBlocks } from '../utils/sampling-helper
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
-import type { MCPServer } from '../server.js'
+import type { SamplingClient } from '../core/registrar.js'
 import { createCodeModuleReviewPrepareHandler } from '../plugins/code-analysis/tools/code-module-review-prepare.js'
 import { createCodeModuleReviewApplyHandler } from '../plugins/code-analysis/tools/code-module-review-apply.js'
 
@@ -303,7 +303,7 @@ export function createCodeModuleReviewHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   cacheManager: CacheManager,
-  mcpServer?: MCPServer,
+  mcpServer?: SamplingClient,
   dependencies?: CodeModuleReviewDependencies
 ) {
   const prepareHandler =

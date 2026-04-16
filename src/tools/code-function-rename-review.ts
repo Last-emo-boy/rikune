@@ -10,7 +10,7 @@ import { type SamplingResult, extractTextBlocks } from '../utils/sampling-helper
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
-import type { MCPServer } from '../server.js'
+import type { SamplingClient } from '../core/registrar.js'
 import { createCodeFunctionRenamePrepareHandler } from '../plugins/code-analysis/tools/code-function-rename-prepare.js'
 import { createCodeFunctionRenameApplyHandler } from '../plugins/code-analysis/tools/code-function-rename-apply.js'
 import { createCodeFunctionsReconstructHandler } from '../plugins/code-analysis/tools/code-functions-reconstruct.js'
@@ -386,7 +386,7 @@ export function createCodeFunctionRenameReviewHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   cacheManager: CacheManager,
-  mcpServer?: MCPServer,
+  mcpServer?: SamplingClient,
   dependencies?: CodeFunctionRenameReviewDependencies
 ) {
   const prepareHandler =

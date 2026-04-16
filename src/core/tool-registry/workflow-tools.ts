@@ -1,4 +1,4 @@
-import type { MCPServer } from '../server.js'
+import type { ToolRegistrar, SamplingClient } from '../registrar.js'
 import type { ToolDeps } from '../tool-registry.js'
 import { triageWorkflowToolDefinition, createTriageWorkflowHandler } from '../../workflows/triage.js'
 import { analyzeAutoWorkflowToolDefinition, createAnalyzeAutoWorkflowHandler } from '../../workflows/analyze-auto.js'
@@ -17,7 +17,7 @@ import { semanticNameReviewWorkflowToolDefinition, createSemanticNameReviewWorkf
 import { functionExplanationReviewWorkflowToolDefinition, createFunctionExplanationReviewWorkflowHandler } from '../../workflows/function-explanation-review.js'
 import { moduleReconstructionReviewWorkflowToolDefinition, createModuleReconstructionReviewWorkflowHandler } from '../../workflows/module-reconstruction-review.js'
 
-export function registerWorkflowTools(server: MCPServer, deps: ToolDeps): void {
+export function registerWorkflowTools(server: ToolRegistrar & SamplingClient, deps: ToolDeps): void {
   const { workspaceManager, database, cacheManager, policyGuard, jobQueue } = deps
   server.registerTool(triageWorkflowToolDefinition, createTriageWorkflowHandler(workspaceManager, database, cacheManager, {
     analyzeStart: createAnalyzeWorkflowStartHandler(workspaceManager, database, cacheManager, policyGuard, server, {}, jobQueue),

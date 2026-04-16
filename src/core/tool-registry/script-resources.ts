@@ -1,7 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import type { MCPServer } from '../server.js'
+import type { ResourceRegistrar } from '../registrar.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(__dirname, '../..')
@@ -36,7 +36,7 @@ const GHIDRA_SCRIPTS: ScriptEntry[] = [
   { uri: 'script://ghidra/ExtractFunctions_py', name: 'Ghidra: Extract Functions (Python)', description: 'List functions via Ghidra Python', mimeType: 'text/x-python', filePath: 'src/plugins/ghidra/scripts/ExtractFunctions.py' },
 ]
 
-export function registerScriptResources(server: MCPServer): void {
+export function registerScriptResources(server: ResourceRegistrar): void {
   for (const entry of [...FRIDA_SCRIPTS, ...GHIDRA_SCRIPTS]) {
     const absPath = path.join(PROJECT_ROOT, entry.filePath)
     server.registerResource(

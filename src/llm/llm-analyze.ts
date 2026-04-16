@@ -7,7 +7,7 @@
 import { z } from 'zod'
 import { logger } from '../logger.js'
 import type { ToolArgs, ToolDefinition, WorkerResult } from '../types.js'
-import type { MCPServer } from '../server.js'
+import type { SamplingClient } from '../core/registrar.js'
 import type { CreateMessageRequest } from '@modelcontextprotocol/sdk/types.js'
 import { estimateTokens } from '../performance-benchmark.js'
 
@@ -41,11 +41,11 @@ export const LlmAnalyzeOutputSchema = z.object({
 export type LlmAnalyzeInput = z.infer<typeof LlmAnalyzeInputSchema>
 
 interface LlmAnalyzeDependencies {
-  mcpServer?: MCPServer
+  mcpServer?: SamplingClient
 }
 
 export function createLlmAnalyzeHandler(
-  mcpServer?: MCPServer
+  mcpServer?: SamplingClient
 ): (args: ToolArgs) => Promise<WorkerResult> {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
