@@ -43,6 +43,9 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
+      - name: Build runtime-node package
+        run: cd packages/runtime-node && npm run build
+
       - name: Lint
         run: npm run lint
         continue-on-error: true
