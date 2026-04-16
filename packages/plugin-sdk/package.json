@@ -1,5 +1,5 @@
 {
-  "name": "@w33d/rikune-plugin-sdk",
+  "name": "@rikune/plugin-sdk",
   "version": "1.0.0-beta.3",
   "description": "Plugin SDK for rikune — types and utilities for third-party plugin authors.",
   "type": "module",
@@ -18,7 +18,11 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "test": "echo 'No tests yet'"
   },
   "keywords": [
     "mcp",

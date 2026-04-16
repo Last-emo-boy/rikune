@@ -1,82 +1,88 @@
 /**
- * Plugin SDK — Public types and utilities for third-party plugin authors.
+ * Plugin SDK — The public contract for all plugins.
  *
- * This package re-exports the core interfaces that plugin authors need
- * without depending on the full MCP server codebase.
+ * Every plugin imports types ONLY from this file (+ npm packages).
+ * No server internals, no cross-plugin imports.
  *
- * Plugins are self-contained modules that:
- *  - Live in their own directory under `src/plugins/<id>/`
- *  - Export a default `Plugin` object from `index.ts`
- *  - Are auto-discovered at server startup (no manual registration needed)
- *  - Have full lifecycle management (check → register → hooks → teardown)
+ * This file defines:
+ *   - Plugin interface — the contract every plugin implements
+ *   - PluginToolDeps — injected dependencies (server provides implementations)
+ *   - ToolDefinition / WorkerResult / ArtifactRef — standard return types
+ *   - PluginServerInterface — what the server exposes to plugins
  */
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Core Types
+// Result Types
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Declarative description of one config field a plugin needs. */
-export interface PluginConfigField {
-  /** Environment variable name, e.g. `'JADX_PATH'`. */
-  envVar: string
-  /** Human-readable description shown in setup guides. */
-  description: string
-  /** Whether the field is required for the plugin to load. */
-  required: boolean
-  /** Default value when the env var is unset. */
-  defaultValue?: string
+/** Reference to a persisted analysis artifact. */
+export interface ArtifactRef {
+  id: string
+  type: string
+  path: string
+  sha256: string
+  mime?: string
+  metadata?: Record<string, unknown>
 }
 
-/** Lifecycle hooks a plugin can implement. All are optional. */
-export interface PluginHooks {
-  /** Called just before a tool belonging to this plugin executes. */
-  onBeforeToolCall?: (toolName: string, args: Record<string, unknown>) => void | Promise<void>
-  /** Called just after a tool belonging to this plugin returns. */
-  onAfterToolCall?: (toolName: string, args: Record<string, unknown>, elapsedMs: number) => void | Promise<void>
-  /** Called when a tool belonging to this plugin throws. */
-  onToolError?: (toolName: string, error: unknown) => void | Promise<void>
-  /** Called once after the plugin is fully loaded and tools are registered. */
-  onActivate?: () => void | Promise<void>
-  /** Called just before the plugin is unloaded (before teardown). */
-  onDeactivate?: () => void | Promise<void>
+/** Standard tool result (MCP protocol). */
+export interface ToolResult {
+  content: Array<{ type: string; text: string }>
+  isError?: boolean
+  structuredContent?: Record<string, unknown>
 }
 
-/** JSON Schema type used by tool definitions. */
-export type JSONSchema = Record<string, unknown>
+/** Worker-style result used by most analysis tools. */
+export interface WorkerResult {
+  ok: boolean
+  data?: unknown
+  errors?: string[]
+  warnings?: string[]
+  setup_actions?: unknown[]
+  required_user_inputs?: unknown[]
+  artifacts?: ArtifactRef[]
+  metrics?: Record<string, unknown>
+}
 
-/** Minimal tool definition structure used by registerTool. */
+// ═══════════════════════════════════════════════════════════════════════════
+// Tool Definition
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Execution backend hint for the runtime node. */
+export interface RuntimeBackendHint {
+  type: 'python-worker' | 'spawn' | 'inline'
+  handler: string
+}
+
+/** Schema for a tool's inputs. */
 export interface ToolDefinition {
   name: string
+  canonicalName?: string
   description: string
-  inputSchema: JSONSchema
-  outputSchema?: JSONSchema
+  inputSchema: any
+  outputSchema?: any
+  /** Hint for the runtime node on how to execute this tool. */
+  runtimeBackendHint?: RuntimeBackendHint
 }
 
-/** Tool result content block. */
-export interface TextContent {
-  type: 'text'
-  text: string
-}
+/** Generic tool arguments (for tools that don't use Zod parsing). */
+export type ToolArgs = Record<string, unknown>
 
-/** Result returned from a tool handler. */
-export interface ToolResult {
-  content: TextContent[]
-  isError?: boolean
-  structuredContent?: unknown
-}
+// ═══════════════════════════════════════════════════════════════════════════
+// Server Interface (what plugins see)
+// ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Minimal interface for the MCP server that plugins interact with.
- * Plugins receive this in their `register()` function.
- */
+/** The server facade exposed to plugins during registration. */
 export interface PluginServerInterface {
-  registerTool(definition: ToolDefinition, handler: (...args: any[]) => Promise<ToolResult | unknown>): void
-  unregisterTool(canonicalName: string): boolean
+  registerTool(definition: ToolDefinition, handler: (args: any) => Promise<any>): void
+  unregisterTool(canonicalName: string): void
 }
 
-/**
- * Structured logging interface exposed to plugins via PluginContext.
- */
+// ═══════════════════════════════════════════════════════════════════════════
+// Plugin Context — scoped runtime context passed to plugins at registration
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Scoped logger interface for plugins. */
 export interface PluginLogger {
   info(msg: string, data?: Record<string, unknown>): void
   warn(msg: string, data?: Record<string, unknown>): void
@@ -85,82 +91,265 @@ export interface PluginLogger {
 }
 
 /**
- * Minimal interface for the standard tool dependencies.
- * Plugins receive this in their `register()` function.
- */
-export interface PluginToolDeps {
-  workspaceManager: unknown
-  database: unknown
-  config: unknown
-  policyGuard?: unknown
-  cacheManager?: unknown
-  jobQueue?: unknown
-  [key: string]: unknown
-}
-
-/**
- * Context object passed to plugins during lifecycle.
- * Provides logging, config access, and plugin metadata.
+ * Runtime context provided to each plugin during registration.
+ *
+ * Gives plugins a scoped logger (prefixed with plugin ID) and a type-safe
+ * config reader that validates against the plugin's declared configSchema.
  */
 export interface PluginContext {
-  /** Scoped logger prefixed with the plugin ID. */
+  /** The plugin's unique ID. */
+  pluginId: string
+  /** Scoped logger with plugin ID prefix. */
   logger: PluginLogger
-  /** Read an environment variable (respects plugin configSchema defaults). */
+  /** Read a config value declared in configSchema (resolved from env vars). */
   getConfig(envVar: string): string | undefined
   /** Read a required config value — throws if missing. */
   getRequiredConfig(envVar: string): string
-  /** The absolute path to the plugin's own directory. */
-  pluginDir: string
-  /** The plugin's unique ID. */
-  pluginId: string
   /** Data directory path for this plugin (for persistent state). */
   dataDir: string
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Dependency Injection
+// ═══════════════════════════════════════════════════════════════════════════
+
 /**
- * Optional manifest file (`plugin-manifest.json`) placed in the plugin directory.
- * When present, provides richer metadata for registry and documentation.
+ * Dependencies injected by the server into plugins.
+ *
+ * Core services (workspaceManager, database, config, etc.) are always available.
+ * Utility functions (resolvePrimarySamplePath, persistStaticAnalysisJsonArtifact, etc.)
+ * are provided so plugins never import server internals directly.
+ *
+ * Plugins should destructure what they need:
+ * ```ts
+ * register(server, deps) {
+ *   const { workspaceManager, database, config } = deps
+ * }
+ * ```
  */
-export interface PluginManifest {
-  id: string
-  name: string
-  version: string
-  description: string
-  author?: string
-  license?: string
-  homepage?: string
-  repository?: string
-  keywords?: string[]
-  configFields?: PluginConfigField[]
-  dependencies?: string[]
-  minServerVersion?: string
-  entryPoint?: string
+export interface PluginToolDeps {
+  // ── Core services ──────────────────────────────────────────────────────
+  workspaceManager: any
+  database: any
+  config?: any
+  policyGuard?: any
+  cacheManager?: any
+  jobQueue?: any
+  storageManager?: any
+  server?: any
+
+  // ── Utility functions ──────────────────────────────────────────────────
+  /** Resolve a sample_id to its primary file path on disk. */
+  resolvePrimarySamplePath?: (
+    wm: any,
+    sampleId: string
+  ) => Promise<{ samplePath: string; integrity?: any }>
+  /** Write a JSON analysis artifact to the workspace and register in DB. */
+  persistStaticAnalysisJsonArtifact?: (
+    wm: any,
+    db: any,
+    sampleId: string,
+    artifactType: string,
+    filePrefix: string,
+    payload: unknown,
+    sessionTag?: string | null
+  ) => Promise<ArtifactRef>
+  /** Resolve a path relative to the project root (e.g. for Python workers). */
+  resolvePackagePath?: (...segments: string[]) => string
+  /** Generate a deterministic cache key for a tool invocation. */
+  generateCacheKey?: (params: {
+    sampleSha256: string
+    toolName: string
+    toolVersion: string
+    args: Record<string, unknown>
+    rulesetVersion?: string
+  }) => string
+
+  // ── Logging ────────────────────────────────────────────────────────────
+  logger?: any
+
+  // ── Specialized (Ghidra, Frida, etc.) ──────────────────────────────────
+  /** DecompilerWorker class constructor (Ghidra plugins). */
+  DecompilerWorker?: any
+  getGhidraDiagnostics?: any
+  normalizeGhidraError?: any
+  findBestGhidraAnalysis?: any
+  getGhidraReadiness?: any
+  parseGhidraAnalysisMetadata?: any
+  buildPollingGuidance?: any
+  PollingGuidanceSchema?: any
+  SetupActionSchema?: any
+  RequiredUserInputSchema?: any
+
+  /** Allow additional properties for extensibility. */
+  [key: string]: any
 }
 
-/** The contract every plugin must implement. */
-export interface Plugin {
-  /** Unique kebab-case identifier, e.g. `'android'`, `'ghidra'`. */
-  id: string
-  /** Human-readable display name. */
+// ═══════════════════════════════════════════════════════════════════════════
+// Plugin Contract
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Declarative description of one config field a plugin needs. */
+export interface PluginConfigField {
+  envVar: string
+  description: string
+  required: boolean
+  defaultValue?: string
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// System Dependencies — declarative runtime requirement descriptors
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Describes a single runtime dependency a plugin requires.
+ *
+ * The plugin system uses these to:
+ *   1. Auto-generate `check()` when the plugin doesn't provide one
+ *   2. Produce a structured health report at startup
+ *   3. **Drive Docker image generation** — the generator scans all plugins,
+ *      collects their systemDeps, and only includes the build stages, apt
+ *      packages, env vars, and validation commands that are actually needed.
+ *   4. Generate documentation of per-plugin requirements
+ *
+ * Example:
+ * ```ts
+ * systemDeps: [
+ *   {
+ *     type: 'binary', name: 'frida', versionFlag: '--version',
+ *     envVar: 'FRIDA_PATH', required: true,
+ *     dockerFeature: 'frida',
+ *     aptPackages: [],
+ *     dockerValidation: ['frida-ps --help >/dev/null 2>&1'],
+ *   },
+ *   { type: 'python', name: 'dnfile', importName: 'dnfile', required: true },
+ * ]
+ * ```
+ */
+export interface PluginSystemDep {
+  /** Kind of dependency. */
+  type: 'binary' | 'python' | 'python-venv' | 'env-var' | 'directory' | 'file'
+
+  /** Human-readable name (e.g. `'frida'`, `'dnfile'`, `'Ghidra'`). */
   name: string
-  /** Short description of the plugin's capabilities. */
+
+  /**
+   * For `binary`: the executable name or absolute path to test.
+   * For `python`: the pip package name.
+   * For `python-venv`: path to the venv's python binary.
+   * For `env-var`: the environment variable name.
+   * For `directory` / `file`: the path to check (may reference an env var via `$ENV_VAR`).
+   */
+  target?: string
+
+  /** For `python`: the importable module name if different from package name. */
+  importName?: string
+
+  /** For `binary`: flag to get version output (e.g. `'--version'`). */
+  versionFlag?: string
+
+  /** Environment variable that provides / overrides the path to this dependency. */
+  envVar?: string
+
+  /** Default path inside the Docker image (used for health reporting). */
+  dockerDefault?: string
+
+  /** Whether the dependency is required (true) or optional/nice-to-have (false). */
+  required: boolean
+
+  /** Short human-readable description shown in health reports. */
   description?: string
-  /** Semantic version string, e.g. `'1.0.0'`. */
+
+  /** Docker `RUN` instruction or package name that installs this dep. */
+  dockerInstall?: string
+
+  // ── Docker generation fields (drive Dockerfile output) ───────────────
+
+  /**
+   * Docker feature group ID that controls conditional blocks in the
+   * Dockerfile template.  Deps with the same `dockerFeature` share a
+   * build stage (e.g. `'ghidra'`, `'rizin'`, `'angr'`).
+   *
+   * When the generator scans plugins, it collects all unique
+   * `dockerFeature` values and enables the corresponding `# @if <feature>`
+   * blocks in the template.
+   *
+   * Leave undefined for deps that don't require a dedicated Docker stage
+   * (e.g. Python packages already in requirements.txt).
+   */
+  dockerFeature?: string
+
+  /**
+   * apt-get packages to install in the runtime Docker image.
+   * Merged across all enabled plugins into a single `apt-get install`.
+   */
+  aptPackages?: string[]
+
+  /**
+   * Shell commands to validate this dependency inside the Docker image.
+   * Merged into a single `RUN` validation step at the end of the build.
+   */
+  dockerValidation?: string[]
+
+  // ── Extended Docker metadata (replaces hardcoded maps in generator) ──
+
+  /**
+   * Additional Docker ENV vars beyond the primary `envVar`/`dockerDefault`.
+   * Merged across all plugins into the runtime ENV block and
+   * docker-compose environment section.
+   *
+   * Example: `{ JAVA_HOME: '/opt/java/openjdk', GHIDRA_LOG_ROOT: '/ghidra-logs' }`
+   */
+  extraEnv?: Record<string, string>
+
+  /**
+   * Docker build ARG names and their default values.
+   * Merged across all plugins into global ARG declarations and
+   * docker-compose build args.
+   *
+   * Example: `{ GHIDRA_VERSION: '12.0.4' }`
+   */
+  buildArgs?: Record<string, string>
+
+  /**
+   * Directories to create and optionally chown in the runtime Docker image.
+   * Merged into the `mkdir` + `chown` block near the end of the Dockerfile.
+   *
+   * Example: `[{ path: '/ghidra-projects', chown: 'appuser:appuser' }]`
+   */
+  directories?: Array<{ path: string; chown?: string }>
+
+  /**
+   * docker-compose volume mounts this dependency requires.
+   * Merged into the volumes section of docker-compose.yml.
+   *
+   * Example: `[{ source: '${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-projects', target: '/ghidra-projects', mode: 'rw' }]`
+   */
+  volumes?: Array<{ source: string; target: string; mode?: 'ro' | 'rw' }>
+}
+
+/**
+ * Result of validating a single system dependency at runtime.
+ */
+export interface DepCheckResult {
+  dep: PluginSystemDep
+  available: boolean
+  resolvedPath?: string
   version?: string
-  /** IDs of plugins that must load before this one. */
-  dependencies?: string[]
-  /** Declarative config fields the plugin expects. */
-  configSchema?: PluginConfigField[]
-  /** Optional lifecycle hooks. */
-  hooks?: PluginHooks
-  /** If true, hooks fire for ALL tool invocations, not just this plugin's tools. */
-  globalHooks?: boolean
-  /** Optional prerequisite check; return false to skip loading. */
-  check?: () => boolean | Promise<boolean>
-  /** Register all tools belonging to this plugin. Return tool names registered. */
-  register: (server: PluginServerInterface, deps: PluginToolDeps, ctx?: PluginContext) => string[] | void
-  /** Optional cleanup when the plugin is unloaded at runtime. */
-  teardown?: () => void | Promise<void>
+  error?: string
+}
+
+/** Lifecycle hooks a plugin can implement. */
+export interface PluginHooks {
+  onBeforeToolCall?: (toolName: string, args: Record<string, unknown>) => void | Promise<void>
+  onAfterToolCall?: (
+    toolName: string,
+    args: Record<string, unknown>,
+    elapsedMs: number
+  ) => void | Promise<void>
+  onToolError?: (toolName: string, error: unknown) => void | Promise<void>
+  onActivate?: () => void | Promise<void>
+  onDeactivate?: () => void | Promise<void>
 }
 
 /** Runtime metadata about a loaded (or skipped) plugin. */
@@ -172,104 +361,231 @@ export interface PluginStatus {
   status: 'loaded' | 'skipped-disabled' | 'skipped-check' | 'skipped-deps' | 'error'
   tools: string[]
   configFields?: PluginConfigField[]
+  /** Results of system dependency checks (populated at load time). */
+  depChecks?: DepCheckResult[]
   error?: string
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Narrowed Dependency Interfaces — typed APIs exposed to plugin authors
-// ═══════════════════════════════════════════════════════════════════════════
-
-/** Minimal database API available to plugins. */
-export interface PluginDatabaseApi {
-  findSampleById(sampleId: string): { id: string; sha256: string; size: number; file_type?: string; created_at: string } | undefined
-  findSampleBySha256(sha256: string): { id: string; sha256: string; size: number; file_type?: string; created_at: string } | undefined
-  findAnalysesBySample(sampleId: string, limit?: number): Array<{ id: string; stage: string; backend: string; status: string; started_at?: string; finished_at?: string }>
-  findArtifactsBySample(sampleId: string, type?: string): Array<{ id: string; type: string; path: string; mime?: string }>
-  insertArtifact(artifact: { id: string; sample_id: string; type: string; path: string; sha256: string; mime?: string; created_at: string }): void
-}
-
-/** Minimal workspace API available to plugins. */
-export interface PluginWorkspaceApi {
-  getSamplePath(sampleId: string): string | null
-  getWorkspacePath(): string
-  getArtifactDir(sampleId: string): string
-  ensureArtifactDir(sampleId: string): Promise<string>
-}
-
-/** Minimal cache API available to plugins. */
-export interface PluginCacheApi {
-  get(key: string): unknown | null
-  set(key: string, value: unknown, options?: { sampleSha256?: string }): void
-  delete(key: string): boolean
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Utilities
+// Progressive Tool Surface — visibility control
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Helper to define a plugin with type inference.
- * Usage: `export default definePlugin({ id: 'my-plugin', ... })`
+ * Surface tier determines when a plugin's tools become visible to the AI.
+ *
+ * - `0` (Gateway): Always visible. Entry-point tools for sample intake, triage,
+ *   task management, discovery, and reporting. Aim for ≤15 tools at this tier.
+ *
+ * - `1` (Context-activated): Activated when a sample's file type or format
+ *   matches the plugin's declared `activateOn.fileTypes`. For example, PE analysis
+ *   tools appear only after a PE file is ingested.
+ *
+ * - `2` (Finding-activated): Activated when another tool's result contains
+ *   a matching finding/signal from `activateOn.findings`. For example, unpacking
+ *   tools activate when a packer is detected.
+ *
+ * - `3` (Expert): Never auto-activated; only shown when the AI calls
+ *   `tools.discover` with the matching category. For heavyweight backends
+ *   (Ghidra, angr, PANDA, etc.) that require explicit intent.
  */
-export function definePlugin(plugin: Plugin): Plugin {
-  return plugin
-}
+export type SurfaceTier = 0 | 1 | 2 | 3
 
 /**
- * Check whether a path exists on disk (synchronous).
- * Useful in plugin `check()` functions.
+ * Declarative visibility rules for a plugin's tools.
+ *
+ * The ToolSurfaceManager reads these at startup. No hardcoded lists in the core
+ * — every plugin self-describes when its tools should become visible.
+ *
+ * Examples:
+ * ```ts
+ * // Tier 0 — always visible
+ * surfaceRules: { tier: 0 }
+ *
+ * // Tier 1 — activated when a PE file is loaded
+ * surfaceRules: { tier: 1, activateOn: { fileTypes: ['pe32', 'pe64', 'dll'] } }
+ *
+ * // Tier 2 — activated when packing is detected
+ * surfaceRules: { tier: 2, activateOn: { findings: ['packed', 'upx'] } }
+ *
+ * // Tier 3 — expert tool, manual discovery only
+ * surfaceRules: { tier: 3, category: 'symbolic-execution' }
+ * ```
  */
-export function pathExists(p: string): boolean {
-  try {
-    const { accessSync } = require('fs')
-    accessSync(p)
-    return true
-  } catch {
-    return false
+export interface SurfaceRules {
+  /** Visibility tier (0 = always, 1 = file-type, 2 = finding, 3 = expert). */
+  tier: SurfaceTier
+
+  /** Conditions that trigger automatic activation (tier 1 and 2). */
+  activateOn?: {
+    /**
+     * File type / format tags that activate this plugin's tools.
+     * Matched against the `file_type` field from triage results.
+     *
+     * Standard tags: `pe32`, `pe64`, `dll`, `elf`, `macho`, `apk`, `dex`,
+     * `jar`, `office`, `pdf`, `pcap`, `firmware`, `dotnet`, `go`, `class`
+     */
+    fileTypes?: string[]
+
+    /**
+     * Finding / signal tags that activate this plugin's tools.
+     * Matched against `recommended_next_tools`, packer detections, and
+     * structured flags returned by other tools.
+     *
+     * Standard tags: `packed`, `upx`, `dotnet`, `go`, `signed`, `obfuscated`,
+     * `crypto`, `c2`, `shellcode`, `vba_macros`, `suspicious_imports`,
+     * `anti_debug`, `vm_detect`
+     */
+    findings?: string[]
   }
+
+  /**
+   * Discovery category for `tools.discover` (primarily tier 3, but any tier
+   * can specify a category for discoverability).
+   *
+   * Standard categories: `reverse-engineering`, `dynamic-analysis`,
+   * `symbolic-execution`, `memory-forensics`, `network-analysis`,
+   * `malware-analysis`, `vulnerability-research`, `static-analysis`
+   */
+  category?: string
+
+  /**
+   * Declarative signal mapping: when a tool from this plugin produces output
+   * where `data[field]` is truthy, the corresponding signal tag(s) are emitted
+   * and can activate tier-2 plugins.
+   *
+   * All plugins' signalMaps are collected into a global lookup. When any tool
+   * result arrives, the surface manager checks every registered signalMap.
+   *
+   * Example:
+   * ```ts
+   * signalMap: {
+   *   'is_packed': 'packed',
+   *   'is_dotnet': 'dotnet',
+   *   'anti_debug': ['anti_debug', 'suspicious_imports'],
+   * }
+   * ```
+   */
+  signalMap?: Record<string, string | string[]>
+
+  /**
+   * Custom signal extractor for complex output structures (e.g., arrays of
+   * detections). Called after signalMap processing.
+   *
+   * The function receives the tool result's `data` object and should return
+   * an array of signal tags.
+   *
+   * Example:
+   * ```ts
+   * extractSignals: (data) => {
+   *   const signals: string[] = []
+   *   if (Array.isArray(data.detections)) {
+   *     for (const d of data.detections) {
+   *       if (String(d.type).includes('UPX')) signals.push('packed', 'upx')
+   *     }
+   *   }
+   *   return signals
+   * }
+   * ```
+   */
+  extractSignals?: (data: Record<string, unknown>) => string[]
 }
 
-/**
- * Check whether an environment variable is set and non-empty.
- */
-export function envIsSet(varName: string): boolean {
-  const val = process.env[varName]
-  return val !== undefined && val.trim().length > 0
-}
+// ═══════════════════════════════════════════════════════════════════════════
+// Shared vocabulary — file-type tag normalization
+// ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Helper to create a standard text-only ToolResult.
- * Reduces boilerplate in plugin tool handlers.
+ * Canonical mapping from raw `detectFileType()` output (lowercased) to the
+ * set of file-type tags that tier-1 plugins can match against.
+ *
+ * This is shared vocabulary — used by the ToolSurfaceManager to normalize
+ * file types before matching against plugins' `activateOn.fileTypes`.
+ *
+ * `detectFileType()` returns: `'PE'`, `'ELF'`, `'Mach-O'`, `'Mach-O-Fat'`,
+ * `'unknown'`. Plugins declare tag names from the expanded set below.
  */
-export function createToolResult(text: string, opts?: { isError?: boolean; structured?: unknown }): ToolResult {
-  return {
-    content: [{ type: 'text' as const, text }],
-    isError: opts?.isError,
-    structuredContent: opts?.structured,
+export const SURFACE_FILE_TYPE_TAGS: Record<string, string[]> = {
+  pe: ['pe', 'pe32', 'pe64', 'dll', 'exe', 'windows'],
+  elf: ['elf', 'linux'],
+  'mach-o': ['macho', 'mach-o', 'macos', 'ios'],
+  'mach-o-fat': ['macho', 'mach-o', 'mach-o-fat', 'macos', 'ios'],
+  apk: ['apk', 'android', 'dex'],
+  dex: ['dex', 'android'],
+  jar: ['jar', 'java', 'class'],
+  class: ['class', 'java'],
+  office: ['office', 'doc', 'xls', 'ppt', 'docx', 'xlsx'],
+  pdf: ['pdf'],
+  pcap: ['pcap', 'pcapng', 'network'],
+}
+
+export interface Plugin {
+  /** Unique kebab-case identifier, e.g. `'android'`, `'ghidra'`. */
+  id: string
+  /** Human-readable display name. */
+  name: string
+  /** Short description of the plugin's capabilities. */
+  description?: string
+  /** Semantic version string, e.g. `'1.0.0'`. */
+  version?: string
+  /**
+   * Execution domain controls which node role may load this plugin.
+   * - `static` — loaded only on analyzer nodes (pure static analysis)
+   * - `dynamic` — loaded only on runtime nodes (executes sample code)
+   * - `both` (default) — loaded everywhere; backward compatible
+   */
+  executionDomain?: 'static' | 'dynamic' | 'both'
+  /** IDs of plugins that must load before this one. */
+  dependencies?: string[]
+  /** Declarative config fields the plugin expects. */
+  configSchema?: PluginConfigField[]
+  /**
+   * Declarative system dependencies this plugin requires at runtime.
+   * Used for auto-check, health reporting, and Docker validation.
+   * When provided and no explicit `check()` is defined, the plugin system
+   * will auto-generate a check from these declarations.
+   */
+  systemDeps?: PluginSystemDep[]
+  /**
+   * Declares co-located resource directories relative to the plugin root.
+   * Used by the Docker generator and build tooling to discover plugin assets.
+   *
+   * Convention (all optional):
+   * - `workers` — Python worker scripts (default: `'workers'`)
+   * - `scripts` — Frida/Ghidra scripts (default: `'scripts'`)
+   * - `data`    — Data files (JSON, YARA rules, etc.) (default: `'data'`)
+   *
+   * Set a key to declare the resource exists. The value is the directory name
+   * relative to the plugin root (almost always the default).
+   *
+   * Example:
+   * ```ts
+   * resources: { workers: 'workers', scripts: 'scripts', data: 'data' }
+   * ```
+   */
+  resources?: {
+    workers?: string
+    scripts?: string
+    data?: string
   }
-}
-
-/**
- * Retry wrapper with exponential backoff.
- * Useful for plugin tools that call external processes or network services.
- */
-export async function withRetry<T>(
-  fn: () => Promise<T>,
-  options?: { retries?: number; baseDelayMs?: number; shouldRetry?: (err: unknown) => boolean }
-): Promise<T> {
-  const retries = options?.retries ?? 3
-  const baseDelay = options?.baseDelayMs ?? 200
-  const shouldRetry = options?.shouldRetry ?? (() => true)
-
-  let lastError: unknown
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await fn()
-    } catch (err) {
-      lastError = err
-      if (attempt >= retries || !shouldRetry(err)) break
-      await new Promise(resolve => setTimeout(resolve, baseDelay * 2 ** attempt))
-    }
-  }
-  throw lastError
+  /**
+   * Progressive Tool Surface — controls when this plugin's tools are
+   * visible to the AI.  See {@link SurfaceRules} for full documentation.
+   *
+   * Omit to default to tier 0 (always visible) for backward compatibility.
+   */
+  surfaceRules?: SurfaceRules
+  /** Optional lifecycle hooks. */
+  hooks?: PluginHooks
+  /** If true, hooks fire for ALL tool invocations, not just this plugin's tools. */
+  globalHooks?: boolean
+  /** Optional prerequisite check; return false to skip loading. */
+  check?: () => boolean | Promise<boolean>
+  /** Register all tools belonging to this plugin. Return tool names registered. */
+  register: (
+    server: PluginServerInterface,
+    deps: PluginToolDeps,
+    ctx?: PluginContext
+  ) => string[] | void
+  /** Optional cleanup when the plugin is unloaded at runtime. */
+  teardown?: () => void | Promise<void>
 }
