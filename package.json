@@ -5,6 +5,9 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "bin": {
     "rikune": "./bin/rikune.js",
     "rikune-docker": "./bin/rikune-docker.js"
@@ -40,7 +43,8 @@
     "src/plugins/frida/scripts/README.md"
   ],
   "scripts": {
-    "build": "npm run clean && tsc && npm run copy-static",
+    "build": "npm run clean && npm run build:shared && tsc && npm run copy-static && npm run build:runtime && npm run build:host-agent",
+    "build:shared": "cd packages/shared && npm run build",
     "copy-static": "node -e \"const fs=require('fs'),p=require('path');const s='src/api/dashboard',d='dist/api/dashboard';fs.mkdirSync(d,{recursive:true});fs.readdirSync(s).forEach(f=>fs.copyFileSync(p.join(s,f),p.join(d,f)));\"",
     "clean": "node -e \"const fs=require('fs'); for (const p of ['dist']) { fs.rmSync(p,{recursive:true,force:true}); }\"",
     "dev": "tsx watch src/index.ts",
@@ -59,6 +63,8 @@
     "release:check": "npm run build && npm pack --dry-run",
     "docker:build": "docker build -t rikune:latest .",
     "docker:generate": "node scripts/generate-docker.mjs",
+    "build:runtime": "cd packages/runtime-node && npm run build",
+    "build:host-agent": "cd packages/windows-host-agent && npm run build",
     "docker:generate:minimal": "node scripts/generate-docker.mjs --exclude=ghidra,docker-backends,memory-forensics,dynamic",
     "docker:generate:full": "node scripts/generate-docker.mjs",
     "docs:api": "node scripts/generate-api-docs.js",
