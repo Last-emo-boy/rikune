@@ -28,7 +28,7 @@ describe('keygen.verify tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = KeygenVerifyInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = KeygenVerifyInputSchema.safeParse({ sample_id: 'sha256:abc123def456', serial: 'ABC-123-DEF' })
       expect(result.success).toBe(true)
     })
 
@@ -38,7 +38,7 @@ describe('keygen.verify tool', () => {
     })
 
     test('should reject invalid types', () => {
-      const result = KeygenVerifyInputSchema.safeParse({ sample_id: 123 })
+      const result = KeygenVerifyInputSchema.safeParse({ sample_id: 123, serial: 'test' })
       expect(result.success).toBe(false)
     })
   })
@@ -49,7 +49,7 @@ describe('keygen.verify tool', () => {
 
       mockDatabase.findSample.mockReturnValue(undefined)
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
+      const result = await handler({ sample_id: 'sha256:abc123def456', serial: 'ABC-123-DEF' })
 
       expect(result.ok).toBe(false)
       expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)

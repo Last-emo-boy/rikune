@@ -4,7 +4,7 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
-import { createCodeFunctionsSmartRecoverHandler } from '../../src/tools/code-functions-smart-recover.js'
+import { createCodeFunctionsSmartRecoverHandler } from '../../src/plugins/code-analysis/tools/code-functions-smart-recover.js'
 
 function createMinimalAmd64PdataPE(): Buffer {
   const dosHeader = Buffer.alloc(0x80, 0)

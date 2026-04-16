@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "ES2022",
+    "moduleResolution": "node",
+    "rootDir": ".",
+    "isolatedModules": false
+  },
+  "include": ["src/**/*", "tests/**/*"]
+}

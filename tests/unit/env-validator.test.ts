@@ -220,6 +220,9 @@ describe('Environment Validation', () => {
     })
 
     test('should fail validation when Ghidra is enabled but path is not configured', () => {
+      const savedGhidraPath = process.env.GHIDRA_PATH
+      delete process.env.GHIDRA_PATH
+      try {
       const config: Config = {
         server: { port: 3000, host: 'localhost' },
         database: { type: 'sqlite' },
@@ -238,6 +241,9 @@ describe('Environment Validation', () => {
 
       expect(result.valid).toBe(false)
       expect(result.errors).toContain('Ghidra worker is enabled but GHIDRA_PATH is not configured')
+      } finally {
+        if (savedGhidraPath !== undefined) process.env.GHIDRA_PATH = savedGhidraPath
+      }
     })
 
     test('should fail validation when Ghidra path does not exist', () => {
@@ -395,6 +401,9 @@ describe('Environment Validation', () => {
     })
 
     test('should accumulate multiple errors', () => {
+      const savedGhidraPath = process.env.GHIDRA_PATH
+      delete process.env.GHIDRA_PATH
+      try {
       const config: Config = {
         server: { port: 3000, host: 'localhost' },
         database: { type: 'postgresql' }, // Missing required fields
@@ -416,6 +425,9 @@ describe('Environment Validation', () => {
       expect(result.errors).toContain('PostgreSQL configuration requires host and database name')
       expect(result.errors).toContain('Ghidra worker is enabled but GHIDRA_PATH is not configured')
       expect(result.errors).toContain('.NET worker is enabled but ilspyPath is not configured')
+      } finally {
+        if (savedGhidraPath !== undefined) process.env.GHIDRA_PATH = savedGhidraPath
+      }
     })
 
     test('should include warnings for created directories', () => {

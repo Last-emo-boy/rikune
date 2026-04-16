@@ -28,20 +28,43 @@ function collectToolDefinitions(dirPath: string): Array<{ file: string; definiti
 describe('index.ts route coverage', () => {
   test('should register every exported tool definition', () => {
     const repoRoot = process.cwd()
-    const indexPath = path.join(repoRoot, 'src', 'index.ts')
-    const indexContent = fs.readFileSync(indexPath, 'utf-8')
+    const registryPath = path.join(repoRoot, 'src', 'tool-registry.ts')
+    const registryContent = fs.readFileSync(registryPath, 'utf-8')
     const registrations = new Set(
-      Array.from(indexContent.matchAll(/server\.registerTool\(\s*(\w+ToolDefinition)\s*,/g)).map(
+      Array.from(registryContent.matchAll(/server\.registerTool\(\s*(\w+ToolDefinition)\s*,/g)).map(
         (match) => match[1]
       )
     )
+
+    // Also scan plugin index files for registrations
+    const pluginsDir = path.join(repoRoot, 'src', 'plugins')
+    if (fs.existsSync(pluginsDir)) {
+      for (const pluginEntry of fs.readdirSync(pluginsDir, { withFileTypes: true })) {
+        if (!pluginEntry.isDirectory()) continue
+        const pluginIndex = path.join(pluginsDir, pluginEntry.name, 'index.ts')
+        if (!fs.existsSync(pluginIndex)) continue
+        const pluginContent = fs.readFileSync(pluginIndex, 'utf-8')
+        for (const m of pluginContent.matchAll(/server\.registerTool\(\s*(\w+ToolDefinition)\s*,/g)) {
+          registrations.add(m[1])
+        }
+      }
+    }
 
     const toolDefinitions = [
       ...collectToolDefinitions(path.join(repoRoot, 'src', 'tools')),
       ...collectToolDefinitions(path.join(repoRoot, 'src', 'workflows')),
     ]
 
-    const missing = toolDefinitions.filter((item) => !registrations.has(item.definition))
+    // Internal tools used only as helpers by workflow handlers, not exposed as MCP tools
+    const internalOnly = new Set([
+      'codeFunctionExplainReviewToolDefinition',
+      'codeFunctionRenameReviewToolDefinition',
+      'codeModuleReviewToolDefinition',
+    ])
+
+    const missing = toolDefinitions.filter(
+      (item) => !registrations.has(item.definition) && !internalOnly.has(item.definition)
+    )
 
     expect(missing).toEqual([])
   })

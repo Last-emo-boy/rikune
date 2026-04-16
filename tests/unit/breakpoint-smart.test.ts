@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals'
-import { createBreakpointSmartHandler } from '../../src/tools/breakpoint-smart.js'
+import { createBreakpointSmartHandler } from '../../src/plugins/static-triage/tools/breakpoint-smart.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 import type { CacheManager } from '../../src/cache-manager.js'

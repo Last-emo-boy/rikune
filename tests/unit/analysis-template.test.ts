@@ -24,7 +24,7 @@ describe('analysis.template tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = AnalysisTemplateInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = AnalysisTemplateInputSchema.safeParse({ sample_id: 'sha256:abc123def456', template: 'malware_triage' })
       expect(result.success).toBe(true)
     })
 
@@ -34,7 +34,7 @@ describe('analysis.template tool', () => {
     })
 
     test('should reject invalid types', () => {
-      const result = AnalysisTemplateInputSchema.safeParse({ sample_id: 123 })
+      const result = AnalysisTemplateInputSchema.safeParse({ sample_id: 123, template: 'malware_triage' })
       expect(result.success).toBe(false)
     })
   })
@@ -45,7 +45,7 @@ describe('analysis.template tool', () => {
 
       mockDatabase.findSample.mockReturnValue(undefined)
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
+      const result = await handler({ sample_id: 'sha256:abc123def456', template: 'malware_triage' })
 
       expect(result.ok).toBe(false)
       expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)

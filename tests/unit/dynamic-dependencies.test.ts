@@ -4,7 +4,7 @@ import path from 'path'
 import os from 'os'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
-import { createDynamicDependenciesHandler } from '../../src/tools/dynamic-dependencies.js'
+import { createDynamicDependenciesHandler } from '../../src/plugins/dynamic/tools/dynamic-dependencies.js'
 
 describe('dynamic.dependencies tool', () => {
   let tempDir: string

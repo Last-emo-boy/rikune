@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
-import { createReportGenerateHandler } from '../../src/tools/report-generate.js'
+import { createReportGenerateHandler } from '../../src/plugins/reporting/tools/report-generate.js'
 import { persistSemanticFunctionExplanationsArtifact } from '../../src/artifacts/semantic-name-suggestion-artifacts.js'
 import {
   persistStaticAnalysisJsonArtifact,

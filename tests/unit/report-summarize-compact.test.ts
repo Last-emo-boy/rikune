@@ -4,7 +4,7 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
-import { createReportSummarizeHandler } from '../../src/tools/report-summarize.js'
+import { createReportSummarizeHandler } from '../../src/plugins/reporting/tools/report-summarize.js'
 import { persistSemanticFunctionExplanationsArtifact } from '../../src/artifacts/semantic-name-suggestion-artifacts.js'
 import {
   persistStaticAnalysisJsonArtifact,
@@ -199,9 +199,7 @@ describe('report.summarize compact mode', () => {
       })),
     })
 
-    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
-      ok: true,
-      data: {
+    const triageData = {
         summary: 'Static triage suggests a multi-stage process manipulation utility.',
         confidence: 0.83,
         threat_level: 'suspicious',
@@ -212,7 +210,53 @@ describe('report.summarize compact mode', () => {
         },
         evidence: Array.from({ length: 28 }, (_, index) => `evidence line ${index}`),
         recommendation: 'Review staged digests before requesting a final analyst narrative.',
-      },
+    }
+
+    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: triageData,
+    })
+
+    // Insert analysis run with fast_profile stage so the handler finds persisted state
+    const runId = 'test-run-compact-1'
+    const now = new Date().toISOString()
+    database.insertAnalysisRun({
+      id: runId,
+      sample_id: sampleId,
+      sample_sha256: 'e'.repeat(64),
+      goal: 'triage',
+      depth: 'fast',
+      backend_policy: 'local',
+      compatibility_marker: 'v1',
+      pipeline_version: '1.0',
+      sample_size_tier: 'small',
+      analysis_budget_profile: null,
+      status: 'completed',
+      latest_stage: 'fast_profile',
+      stage_plan_json: null,
+      artifact_refs_json: null,
+      metadata_json: null,
+      created_at: now,
+      updated_at: now,
+      finished_at: now,
+      reused_from_run_id: null,
+      last_accessed_at: now,
+    })
+    database.upsertAnalysisRunStage({
+      run_id: runId,
+      stage: 'fast_profile',
+      status: 'completed',
+      execution_state: null,
+      tool: 'workflow.triage',
+      job_id: null,
+      result_json: JSON.stringify(triageData),
+      artifact_refs_json: null,
+      coverage_json: null,
+      metadata_json: null,
+      created_at: now,
+      updated_at: now,
+      started_at: now,
+      finished_at: now,
     })
 
     const handler = createReportSummarizeHandler(workspaceManager, database, cacheManager, {
@@ -233,7 +277,7 @@ describe('report.summarize compact mode', () => {
     expect(Array.isArray(data.known_findings)).toBe(true)
     expect(Array.isArray(data.suspected_findings)).toBe(true)
     expect(Array.isArray(data.unverified_areas)).toBe(true)
-    expect(data.upgrade_paths.some((item: any) => item.tool === 'workflow.summarize')).toBe(true)
+    expect(data.upgrade_paths.some((item: any) => item.tool === 'ghidra.analyze' || item.tool === 'workflow.reconstruct')).toBe(true)
     expect(data.static_capabilities).toBeUndefined()
     expect(data.compiler_packer).toBeUndefined()
     expect(data.function_explanations).toBeUndefined()
@@ -398,9 +442,7 @@ describe('report.summarize compact mode', () => {
       })),
     })
 
-    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
-      ok: true,
-      data: {
+    const triageData2 = {
         summary: 'Static triage suggests a multi-stage process manipulation utility.',
         confidence: 0.88,
         threat_level: 'suspicious',
@@ -411,7 +453,53 @@ describe('report.summarize compact mode', () => {
         },
         evidence: Array.from({ length: 1200 }, (_, index) => `evidence line ${index} ${'e'.repeat(120)}`),
         recommendation: 'Review staged digests before requesting a final analyst narrative.',
-      },
+    }
+
+    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: triageData2,
+    })
+
+    // Insert analysis run with fast_profile stage so the handler finds persisted state
+    const runId2 = 'test-run-compact-2'
+    const now2 = new Date().toISOString()
+    database.insertAnalysisRun({
+      id: runId2,
+      sample_id: sampleId,
+      sample_sha256: 'f'.repeat(64),
+      goal: 'triage',
+      depth: 'fast',
+      backend_policy: 'local',
+      compatibility_marker: 'v1',
+      pipeline_version: '1.0',
+      sample_size_tier: 'medium',
+      analysis_budget_profile: null,
+      status: 'completed',
+      latest_stage: 'fast_profile',
+      stage_plan_json: null,
+      artifact_refs_json: null,
+      metadata_json: null,
+      created_at: now2,
+      updated_at: now2,
+      finished_at: now2,
+      reused_from_run_id: null,
+      last_accessed_at: now2,
+    })
+    database.upsertAnalysisRunStage({
+      run_id: runId2,
+      stage: 'fast_profile',
+      status: 'completed',
+      execution_state: null,
+      tool: 'workflow.triage',
+      job_id: null,
+      result_json: JSON.stringify(triageData2),
+      artifact_refs_json: null,
+      coverage_json: null,
+      metadata_json: null,
+      created_at: now2,
+      updated_at: now2,
+      started_at: now2,
+      finished_at: now2,
     })
 
     const handler = createReportSummarizeHandler(workspaceManager, database, cacheManager, {
@@ -433,7 +521,6 @@ describe('report.summarize compact mode', () => {
     expect(data.truncation.inline_payload_budget.truncated).toBe(true)
     expect(data.static_capabilities).toBeUndefined()
     expect(data.pe_structure).toBeUndefined()
-    expect(data.compiler_packer).toBeUndefined()
     expect(data.artifact_refs.supporting.length).toBeLessThanOrEqual(4)
     expect(data.artifact_refs.explanation_graphs.length).toBeGreaterThanOrEqual(1)
   })

@@ -162,7 +162,11 @@ describe('WorkerPool', () => {
 
     test('should respect concurrency limits for decompile workers', (done) => {
       workerPool = new WorkerPool(jobQueue, {
-        maxDecompileWorkers: 2
+        maxDecompileWorkers: 2,
+        testExecutor: async (_job) => {
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          return { jobId: _job.id, ok: true, data: {}, errors: [], warnings: [], artifacts: [], metrics: { elapsedMs: 5000, peakRssMb: 0 } };
+        }
       });
 
       const jobIds: string[] = [];
@@ -203,7 +207,12 @@ describe('WorkerPool', () => {
     }, 15000);
 
     test('should enforce Ghidra concurrency limit of 4', (done) => {
-      workerPool = new WorkerPool(jobQueue); // Default has maxDecompileWorkers: 4
+      workerPool = new WorkerPool(jobQueue, {
+        testExecutor: async (_job) => {
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          return { jobId: _job.id, ok: true, data: {}, errors: [], warnings: [], artifacts: [], metrics: { elapsedMs: 5000, peakRssMb: 0 } };
+        }
+      }); // Default has maxDecompileWorkers: 4
 
       const startedJobs = new Set<string>();
 
@@ -407,10 +416,8 @@ describe('WorkerPool', () => {
         timeout: 30000
       });
 
-      workerPool.start();
-
       // Wait for first job to complete, then enqueue second
-      workerPool.on('worker:job:completed', () => {
+      workerPool.once('worker:job:completed', () => {
         // Enqueue second job
         jobQueue.enqueue({
           type: 'static',
@@ -427,6 +434,8 @@ describe('WorkerPool', () => {
           done();
         }, 200);
       });
+
+      workerPool.start();
     });
 
     test('should track worker heartbeats', () => {
@@ -493,7 +502,11 @@ describe('WorkerPool', () => {
 
     test('should track queue length', () => {
       workerPool = new WorkerPool(jobQueue, {
-        maxStaticWorkers: 1
+        maxStaticWorkers: 1,
+        testExecutor: async (_job) => {
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          return { jobId: _job.id, ok: true, data: {}, errors: [], warnings: [], artifacts: [], metrics: { elapsedMs: 5000, peakRssMb: 0 } };
+        }
       });
 
       // Enqueue multiple jobs
@@ -779,10 +792,13 @@ describe('WorkerPool', () => {
           // Check exponential backoff between retries
           const delay1 = retryTimes[1] - retryTimes[0];
           
-          // First retry: backoffMs * 2^0 = 100ms
-          // Second retry: backoffMs * 2^1 = 200ms
-          // Allow some tolerance for timing
-          expect(delay1).toBeGreaterThanOrEqual(150); // Should be ~200ms
+          // First retry fires after backoffMs * 2^0 = 100ms backoff
+          // Second retry fires after backoffMs * 2^1 = 200ms backoff from the first retry
+          // The gap between retrying events = second backoff (200ms) + execute time (~0ms)
+          // But the first gap is actually the first backoff (100ms) since:
+          //   retryTimes[0] = time of first retrying event (immediate after first error)
+          //   retryTimes[1] = retryTimes[0] + backoff(100ms) + execute(~0ms)
+          expect(delay1).toBeGreaterThanOrEqual(80); // ~100ms with tolerance
           expect(delay1).toBeLessThan(300);
           
           done();

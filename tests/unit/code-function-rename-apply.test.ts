@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createCodeFunctionRenameApplyHandler, codeFunctionRenameApplyInputSchema } from '../../src/tools/code-function-rename-apply.js'
+import { createCodeFunctionRenameApplyHandler, codeFunctionRenameApplyInputSchema } from '../../src/plugins/code-analysis/tools/code-function-rename-apply.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 
@@ -24,7 +24,7 @@ describe('code.function.rename.apply tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = codeFunctionRenameApplyInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = codeFunctionRenameApplyInputSchema.safeParse({ sample_id: 'sha256:abc123def456', suggestions: [{ address: '0x401000', candidate_name: 'main', confidence: 0.9, why: 'entry point' }] })
       expect(result.success).toBe(true)
     })
 

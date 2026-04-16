@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createCodeFunctionRenamePrepareHandler, codeFunctionRenamePrepareInputSchema } from '../../src/tools/code-function-rename-prepare.js'
+import { createCodeFunctionRenamePrepareHandler, codeFunctionRenamePrepareInputSchema } from '../../src/plugins/code-analysis/tools/code-function-rename-prepare.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 import type { CacheManager } from '../../src/cache-manager.js'

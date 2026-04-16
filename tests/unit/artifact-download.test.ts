@@ -12,13 +12,14 @@ describe('artifact.download tool', () => {
   beforeEach(() => {
     mockDatabase = {
       findSample: jest.fn(),
+      findArtifact: jest.fn(),
       getDb: jest.fn(),
     } as unknown as jest.Mocked<DatabaseManager>
   })
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = ArtifactDownloadInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = ArtifactDownloadInputSchema.safeParse({ artifact_id: 'artifact-abc123' })
       expect(result.success).toBe(true)
     })
 
@@ -28,7 +29,7 @@ describe('artifact.download tool', () => {
     })
 
     test('should reject invalid types', () => {
-      const result = ArtifactDownloadInputSchema.safeParse({ sample_id: 123 })
+      const result = ArtifactDownloadInputSchema.safeParse({ artifact_id: 123 })
       expect(result.success).toBe(false)
     })
   })
@@ -39,7 +40,7 @@ describe('artifact.download tool', () => {
 
       mockDatabase.findSample.mockReturnValue(undefined)
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
+      const result = await handler({ artifact_id: 'artifact-abc123' })
 
       expect(result.ok).toBe(false)
       expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)

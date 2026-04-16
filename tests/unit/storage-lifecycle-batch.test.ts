@@ -9,6 +9,10 @@ import { BatchSubmissionManager } from '../../src/storage/batch-submission.js'
 import { DatabaseManager } from '../../src/database.js'
 import path from 'path'
 import fs from 'fs'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 describe('storage-lifecycle-and-batch-foundation', () => {
   let storageManager: StorageManager
@@ -85,7 +89,7 @@ describe('storage-lifecycle-and-batch-foundation', () => {
     describe('deleteArtifact', () => {
       test('should delete artifact by path', async () => {
         // Create artifact file manually for testing
-        const sampleId = 'sha256:test123'
+        const sampleId = 'sha256_test123'
         const artifactDir = path.join(testDir, 'artifacts', sampleId)
         fs.mkdirSync(artifactDir, { recursive: true })
         const artifactPath = path.join(artifactDir, 'test_artifact.json')
@@ -150,12 +154,19 @@ describe('storage-lifecycle-and-batch-foundation', () => {
         const testData = Buffer.from('old sample')
         const stored = await storageManager.storeSample(testData, 'old.exe')
 
+        // Move the stored sample to a past-dated directory so retention treats it as old
+        const oldDate = '2020-01-01'
+        const oldDir = path.join(testDir, 'samples', oldDate)
+        fs.mkdirSync(oldDir, { recursive: true })
+        const oldPath = path.join(oldDir, `${stored.sha256}_old.exe`)
+        fs.renameSync(stored.path, oldPath)
+
         const result = await storageManager.applyRetention({
           dryRun: false,
           maxAgeDays: 0,
         })
 
-        expect(result.deletedSamples).toBeGreaterThanOrEqual(0)
+        expect(result.deletedSamples).toBeGreaterThanOrEqual(1)
         expect(result.status).toBe('complete')
 
         // Verify deletion
@@ -318,14 +329,13 @@ describe('storage-lifecycle-and-batch-foundation', () => {
       ]
 
       const result = await batchManager.createBatch(samples)
-      const batch = await database.findBatch(result.batchId)
+      const status = await batchManager.getBatchStatus(result.batchId)
 
-      expect(batch).not.toBeNull()
-      expect(batch?.total_samples).toBe(1)
+      expect(status).not.toBeNull()
+      expect(status?.progress.total).toBe(1)
 
-      const batchSamples = await database.findBatchSamples(result.batchId)
-      expect(batchSamples.length).toBe(1)
-      expect(batchSamples[0].sample_id).toBe(result.results[0].sampleId)
+      expect(status?.samples.length).toBe(1)
+      expect(status?.samples[0].sha256).toBe(result.results[0].sha256)
     })
   })
 })

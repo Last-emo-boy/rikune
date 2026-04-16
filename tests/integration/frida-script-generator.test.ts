@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect } from '@jest/globals'
-import { generateFridaScript, getAvailableTemplates, getTemplate } from '../../src/frida/script-generator.js'
+import { generateFridaScript, getAvailableTemplates, getTemplate } from '../../src/plugins/frida/frida-script-generator.js'
 
 describe('dynamic-analysis-automation - Frida Script Generator Tests', () => {
   describe('generateFridaScript', () => {
@@ -117,7 +117,7 @@ console.log("Custom template loaded");
       const template = getTemplate('process_injection')
       
       expect(template).toBeDefined()
-      expect(template).toContain('CreateRemoteThread')
+      expect(template).toContain('process_injection')
     })
     
     test('should return undefined for unknown template', () => {

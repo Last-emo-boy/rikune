@@ -40,23 +40,23 @@ import {
 import {
   stringsExtractToolDefinition,
   createStringsExtractHandler
-} from '../../src/tools/strings-extract.js'
+} from '../../src/plugins/strings/tools/strings-extract.js'
 import {
   yaraScanToolDefinition,
   createYaraScanHandler
-} from '../../src/tools/yara-scan.js'
+} from '../../src/plugins/yara/tools/yara-scan.js'
 import {
   runtimeDetectToolDefinition,
   createRuntimeDetectHandler
-} from '../../src/tools/runtime-detect.js'
+} from '../../src/plugins/static-triage/tools/runtime-detect.js'
 import {
   packerDetectToolDefinition,
   createPackerDetectHandler
-} from '../../src/tools/packer-detect.js'
+} from '../../src/plugins/static-triage/tools/packer-detect.js'
 import {
   reportSummarizeToolDefinition,
   createReportSummarizeHandler
-} from '../../src/tools/report-summarize.js'
+} from '../../src/plugins/reporting/tools/report-summarize.js'
 import { createTriageWorkflowHandler } from '../../src/workflows/triage.js'
 import fs from 'fs/promises'
 import path from 'path'
@@ -496,16 +496,16 @@ describe('V0.1 Acceptance Tests', () => {
       
       // Verify all required V0.1 tools are present
       const requiredTools = [
-        'sample.ingest',
-        'sample.profile.get',
-        'pe.fingerprint',
-        'pe.imports.extract',
-        'pe.exports.extract',
-        'strings.extract',
-        'yara.scan',
-        'runtime.detect',
-        'packer.detect',
-        'report.summarize',
+        'sample_ingest',
+        'sample_profile_get',
+        'pe_fingerprint',
+        'pe_imports_extract',
+        'pe_exports_extract',
+        'strings_extract',
+        'yara_scan',
+        'runtime_detect',
+        'packer_detect',
+        'report_summarize',
       ]
       
       for (const toolName of requiredTools) {

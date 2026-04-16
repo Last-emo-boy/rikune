@@ -20,36 +20,35 @@ describe('task.sweep tool', () => {
     mockJobQueue = {
       enqueue: jest.fn(),
       getStatus: jest.fn(),
+      clearOldJobs: jest.fn().mockReturnValue(0),
     } as unknown as jest.Mocked<JobQueue>
   })
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = taskSweepInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = taskSweepInputSchema.safeParse({ stale_running_ms: 5000 })
       expect(result.success).toBe(true)
     })
 
-    test('should reject empty input', () => {
+    test('should accept empty input (all optional)', () => {
       const result = taskSweepInputSchema.safeParse({})
-      expect(result.success).toBe(false)
+      expect(result.success).toBe(true)
     })
 
     test('should reject invalid types', () => {
-      const result = taskSweepInputSchema.safeParse({ sample_id: 123 })
+      const result = taskSweepInputSchema.safeParse({ stale_running_ms: 'abc' })
       expect(result.success).toBe(false)
     })
   })
 
   describe('Handler', () => {
     test('should return error for non-existent resource', async () => {
-      const handler = createTaskSweepHandler(mockDatabase, mockJobQueue)
+      const handler = createTaskSweepHandler(mockJobQueue, mockDatabase)
 
-      mockDatabase.findSample.mockReturnValue(undefined)
+      const result = await handler({})
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
-
-      expect(result.ok).toBe(false)
-      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)
+      const parsed = JSON.parse(result.content[0].text)
+      expect(parsed.ok).toBe(true)
     })
   })
 })

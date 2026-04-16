@@ -108,6 +108,14 @@ export const SystemHealthOutputSchema = z.object({
       preferred_primary_tools: z.array(z.string()),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
+      runtime_status: z.object({
+        status: z.enum(['healthy', 'degraded', 'unhealthy', 'unavailable']).optional(),
+        ok: z.boolean().optional(),
+        mode: z.string().optional(),
+        endpoint: z.string().optional(),
+        isolation: z.string().optional(),
+        dynamic_tools_ready: z.boolean().optional(),
+      }).optional(),
     })
     .optional(),
   warnings: z.array(z.string()).optional(),
@@ -161,6 +169,9 @@ interface SystemHealthDependencies {
   checkGhidra?: (timeoutMs: number) => GhidraHealthStatus
   probeStaticWorker?: (timeoutMs: number) => Promise<StaticWorkerHealthData>
   cacheManager?: CacheManager
+  runtimeClient?: {
+    health(): Promise<{ ok?: boolean; isolation?: string; role?: string } | null>
+  } | null
 }
 
 async function callStaticWorkerHealth(timeoutMs: number): Promise<StaticWorkerHealthData> {
@@ -285,6 +296,7 @@ export function createSystemHealthHandler(
   const runGhidraCheck = dependencies?.checkGhidra || checkGhidraHealth
   const runStaticWorkerProbe = dependencies?.probeStaticWorker || callStaticWorkerHealth
   const cacheManager = dependencies?.cacheManager
+  const runtimeClient = dependencies?.runtimeClient
 
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const input = SystemHealthInputSchema.parse(args)
@@ -693,11 +705,47 @@ export function createSystemHealthHandler(
         }
       }
 
+      let runtimeStatus: z.infer<typeof SystemHealthOutputSchema>['data']['runtime_status'] = {
+        status: 'unavailable',
+        ok: false,
+        dynamic_tools_ready: false,
+      }
+      if (runtimeClient) {
+        try {
+          const rtHealth = await runtimeClient.health()
+          if (rtHealth && rtHealth.ok) {
+            runtimeStatus = {
+              status: 'healthy',
+              ok: true,
+              isolation: rtHealth.isolation,
+              dynamic_tools_ready: true,
+            }
+            if (rtHealth.isolation === 'unverified') {
+              warnings.push(
+                'Runtime node reports unverified isolation. Ensure the runtime is running inside a virtual machine (Windows Sandbox / Hyper-V / VMware).'
+              )
+            }
+          } else {
+            runtimeStatus = {
+              status: 'degraded',
+              ok: false,
+              dynamic_tools_ready: false,
+            }
+          }
+        } catch (err) {
+          runtimeStatus = {
+            status: 'unhealthy',
+            ok: false,
+            dynamic_tools_ready: false,
+          }
+        }
+      }
+
       const essentialUnhealthy =
         workspaceComponent.status === 'unhealthy' || databaseComponent.status === 'unhealthy'
       const optionalIssues = [ghidraComponent, staticWorkerComponent, cacheComponent].some(
         (item) => item.status === 'degraded' || item.status === 'unhealthy'
-      )
+      ) || runtimeStatus?.status === 'degraded' || runtimeStatus?.status === 'unhealthy'
 
       const overallStatus: 'healthy' | 'degraded' | 'unhealthy' = essentialUnhealthy
         ? 'unhealthy'
@@ -736,6 +784,7 @@ export function createSystemHealthHandler(
             static_worker: staticWorkerComponent,
             cache: cacheComponent,
           },
+          runtime_status: runtimeStatus,
           cache_observability: cacheObservability,
           python_process_pool: pythonProcessPool.getStats(),
           recommendations,

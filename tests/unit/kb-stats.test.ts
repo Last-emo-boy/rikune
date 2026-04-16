@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createKbStatsHandler, KbStatsInputSchema } from '../../src/tools/kb-stats.js'
+import { createKbStatsHandler, KbStatsInputSchema } from '../../src/plugins/kb-collaboration/tools/kb-stats.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 
@@ -19,36 +19,35 @@ describe('kb.stats tool', () => {
     mockDatabase = {
       findSample: jest.fn(),
       getDb: jest.fn(),
+      querySql: jest.fn().mockReturnValue([]),
+      queryOneSql: jest.fn().mockReturnValue({ count: 0 }),
     } as unknown as jest.Mocked<DatabaseManager>
   })
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = KbStatsInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = KbStatsInputSchema.safeParse({ include_category_breakdown: true })
       expect(result.success).toBe(true)
     })
 
-    test('should reject empty input', () => {
+    test('should accept empty input (all optional)', () => {
       const result = KbStatsInputSchema.safeParse({})
-      expect(result.success).toBe(false)
+      expect(result.success).toBe(true)
     })
 
     test('should reject invalid types', () => {
-      const result = KbStatsInputSchema.safeParse({ sample_id: 123 })
+      const result = KbStatsInputSchema.safeParse({ include_category_breakdown: 'yes' })
       expect(result.success).toBe(false)
     })
   })
 
   describe('Handler', () => {
-    test('should return error for non-existent resource', async () => {
+    test('should return stats successfully', async () => {
       const handler = createKbStatsHandler(mockWorkspaceManager, mockDatabase)
 
-      mockDatabase.findSample.mockReturnValue(undefined)
+      const result = await handler({})
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
-
-      expect(result.ok).toBe(false)
-      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)
+      expect(result.ok).toBe(true)
     })
   })
 })

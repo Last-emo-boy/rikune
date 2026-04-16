@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createVmDetectHandler, vmDetectInputSchema } from '../../src/tools/vm-detect.js'
+import { createVmDetectHandler, vmDetectInputSchema } from '../../src/plugins/vm-analysis/tools/vm-detect.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 

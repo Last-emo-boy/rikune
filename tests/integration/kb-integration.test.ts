@@ -5,10 +5,10 @@
 
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import { DatabaseManager } from '../../src/database.js'
-import { initializeKnowledgeBase, getKbStats } from '../../src/kb/kb-database.js'
-import { contributeFunction } from '../../src/kb/function-kb.js'
-import { searchFunctions } from '../../src/kb/search-kb.js'
-import { linkSampleToThreat, getSampleThreatLinks } from '../../src/kb/sample-kb.js'
+import { initializeKnowledgeBase, getKbStats } from '../../src/plugins/kb-collaboration/kb/kb-database.js'
+import { contributeFunction } from '../../src/plugins/kb-collaboration/kb/function-kb.js'
+import { searchFunctions } from '../../src/plugins/kb-collaboration/kb/search-kb.js'
+import { linkSampleToThreat, getSampleThreatLinks } from '../../src/plugins/kb-collaboration/kb/sample-kb.js'
 
 describe('collaborative-knowledge-base - Integration Tests', () => {
   let db: DatabaseManager

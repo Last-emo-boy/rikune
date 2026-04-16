@@ -46,6 +46,10 @@ const REWRITABLE_FIELDS = new Set([
   'error',
   'warning',
   'info',
+  'data',
+  'metrics',
+  'tool',
+  'recommended_next_tools',
 ])
 
 export function toTransportToolName(name: string): string {

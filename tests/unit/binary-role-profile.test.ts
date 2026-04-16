@@ -5,7 +5,7 @@ import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import type { ToolArgs, WorkerResult } from '../../src/types.js'
-import { createBinaryRoleProfileHandler } from '../../src/tools/binary-role-profile.js'
+import { createBinaryRoleProfileHandler } from '../../src/plugins/static-triage/tools/binary-role-profile.js'
 
 describe('binary.role.profile tool', () => {
   let workspaceManager: WorkspaceManager

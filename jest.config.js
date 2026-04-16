@@ -11,6 +11,8 @@ export default {
       'ts-jest',
       {
         useESM: true,
+        tsconfig: 'tsconfig.jest.json',
+        diagnostics: false,
       },
     ],
   },
@@ -26,4 +28,5 @@ export default {
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
+  testTimeout: 15000,
 }

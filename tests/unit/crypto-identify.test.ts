@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals'
-import { createCryptoIdentifyHandler } from '../../src/tools/crypto-identify.js'
+import { createCryptoIdentifyHandler } from '../../src/plugins/static-triage/tools/crypto-identify.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 import type { CacheManager } from '../../src/cache-manager.js'
@@ -14,8 +14,14 @@ describe('crypto.identify tool', () => {
     mockDatabase = {
       findSample: jest.fn(),
       findArtifactsByType: jest.fn().mockReturnValue([]),
+      findLatestCompatibleAnalysisEvidence: jest.fn().mockReturnValue(null),
+      insertAnalysisEvidence: jest.fn(),
+      updateAnalysisEvidence: jest.fn(),
     } as unknown as jest.Mocked<DatabaseManager>
-    mockCacheManager = {} as unknown as jest.Mocked<CacheManager>
+    mockCacheManager = {
+      getCachedResultWithMetadata: jest.fn().mockResolvedValue(null),
+      setCachedResult: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<CacheManager>
   })
 
   test('should correlate static and runtime evidence into compact crypto findings', async () => {

@@ -32,7 +32,7 @@ function collectPromptDefinitions(dirPath: string): Array<{ file: string; defini
 describe('index.ts prompt coverage', () => {
   test('should register every exported prompt definition', () => {
     const repoRoot = process.cwd()
-    const indexPath = path.join(repoRoot, 'src', 'index.ts')
+    const indexPath = path.join(repoRoot, 'src', 'tool-registry.ts')
     const indexContent = fs.readFileSync(indexPath, 'utf-8')
     const registrations = new Set(
       Array.from(indexContent.matchAll(/server\.registerPrompt\(\s*(\w+PromptDefinition)\s*,/g)).map(

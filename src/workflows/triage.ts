@@ -2427,7 +2427,15 @@ export function createTriageWorkflowHandler(
     dependencies.rizinAnalyze || createRizinAnalyzeHandler(workspaceManager, database)
   
   return async (args: ToolArgs): Promise<WorkerResult> => {
-    const input = TriageWorkflowInputSchema.parse(args)
+    let input: z.infer<typeof TriageWorkflowInputSchema>
+    try {
+      input = TriageWorkflowInputSchema.parse(args)
+    } catch (err) {
+      return {
+        ok: false,
+        errors: [err instanceof Error ? err.message : String(err)],
+      }
+    }
     const startTime = Date.now()
     const warnings: string[] = []
     const errors: string[] = []

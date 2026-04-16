@@ -5,7 +5,7 @@
 import {
   selectUnpackStrategy,
   type PackerDetectionResult,
-} from '../../src/unpack-strategy.js'
+} from '../../src/plugins/unpacking/unpack-strategy.js'
 
 describe('unpack-strategy', () => {
   describe('selectUnpackStrategy', () => {

@@ -4,8 +4,8 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
-import { StorageManager } from '../../src/storage/storage-manager.js'
-import { DatabaseManager } from '../../src/database.js'
+import { StorageManager } from '../../../src/storage/storage-manager.js'
+import { DatabaseManager } from '../../../src/database.js'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -29,7 +29,6 @@ describe('api-file-server - Sample Upload', () => {
     await storageManager.initialize()
 
     database = new DatabaseManager(':memory:')
-    database.initialize()
   })
 
   afterEach(() => {
@@ -101,7 +100,7 @@ describe('api-file-server - Sample Upload', () => {
 
       // Step 2: Create database record
       const sampleId = `sha256:${stored.sha256}`
-      database.createSample({
+      database.insertSample({
         id: sampleId,
         sha256: stored.sha256,
         size: stored.size,

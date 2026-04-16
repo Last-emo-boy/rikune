@@ -4,7 +4,22 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { createGhidraAnalyzeHandler } from '../../src/plugins/ghidra/tools/ghidra-analyze.js'
-import { DecompilerWorker } from '../../src/worker/decompiler-worker.js'
+import { DecompilerWorker, getGhidraDiagnostics, normalizeGhidraError } from '../../src/worker/decompiler-worker.js'
+
+// Helper deps factory for ghidra analyze handler
+function makeGhidraDeps(overrides: Record<string, any> = {}) {
+  return {
+    getGhidraDiagnostics,
+    normalizeGhidraError,
+    DecompilerWorker,
+    findBestGhidraAnalysis: () => null,
+    getGhidraReadiness: () => ({}),
+    parseGhidraAnalysisMetadata: (output: any) => output,
+    buildPollingGuidance: () => ({ prefer_sleep: true, recommended_wait_seconds: 30 }),
+    logger: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
+    ...overrides,
+  }
+}
 
 describe('ghidra.analyze tool', () => {
   let workspaceManager: WorkspaceManager
@@ -80,7 +95,17 @@ describe('ghidra.analyze tool', () => {
     })
 
     const enqueue = jest.fn(async () => 'job-should-not-be-used')
-    const handler = createGhidraAnalyzeHandler({ workspaceManager, database, jobQueue: { enqueue } } as any)
+    const handler = createGhidraAnalyzeHandler({ workspaceManager, database, jobQueue: { enqueue }, ...makeGhidraDeps({
+      findBestGhidraAnalysis: (analyses: any[]) => analyses.find((a: any) => a.backend === 'ghidra'),
+      parseGhidraAnalysisMetadata: (outputJson: any) => {
+        try { return typeof outputJson === 'string' ? JSON.parse(outputJson) : outputJson || {} } catch { return {} }
+      },
+      getGhidraReadiness: () => ({
+        function_index: { available: true, status: 'ready' },
+        decompile: { available: true, status: 'ready' },
+        cfg: { available: true, status: 'ready' },
+      }),
+    }) } as any)
 
     const result = await handler({ sample_id: sampleId })
     const payload = JSON.parse(String(result.content[0]?.text || '{}'))
@@ -100,7 +125,7 @@ describe('ghidra.analyze tool', () => {
     insertSample(sampleId, '2')
 
     const enqueue = jest.fn(async () => 'job-123')
-    const handler = createGhidraAnalyzeHandler({ workspaceManager, database, jobQueue: { enqueue } } as any)
+    const handler = createGhidraAnalyzeHandler({ workspaceManager, database, jobQueue: { enqueue }, ...makeGhidraDeps() } as any)
 
     const result = await handler({
       sample_id: sampleId,
@@ -140,7 +165,7 @@ describe('ghidra.analyze tool', () => {
       })
 
     try {
-      const handler = createGhidraAnalyzeHandler({ workspaceManager, database } as any)
+      const handler = createGhidraAnalyzeHandler({ workspaceManager, database, ...makeGhidraDeps() } as any)
       const result = await handler({
         sample_id: sampleId,
         options: {

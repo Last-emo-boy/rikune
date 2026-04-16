@@ -24,7 +24,7 @@ describe('debug.session.end tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = DebugSessionEndInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = DebugSessionEndInputSchema.safeParse({ session_id: 'sess-abc123' })
       expect(result.success).toBe(true)
     })
 
@@ -34,7 +34,7 @@ describe('debug.session.end tool', () => {
     })
 
     test('should reject invalid types', () => {
-      const result = DebugSessionEndInputSchema.safeParse({ sample_id: 123 })
+      const result = DebugSessionEndInputSchema.safeParse({ session_id: 123 })
       expect(result.success).toBe(false)
     })
   })
@@ -45,7 +45,7 @@ describe('debug.session.end tool', () => {
 
       mockDatabase.findSample.mockReturnValue(undefined)
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
+      const result = await handler({ session_id: 'sha256:abc123def456' })
 
       expect(result.ok).toBe(false)
       expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)

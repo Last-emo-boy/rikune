@@ -6,7 +6,7 @@ import {
   buildCFGSummary,
   buildLocalCallGraphExport,
   buildLocalCallGraphPreview,
-} from '../../src/cfg-visual-exports.js'
+} from '../../src/plugins/code-analysis/cfg-visual-exports.js'
 
 const sampleCFG: ControlFlowGraph = {
   function: 'FUN_140001000',

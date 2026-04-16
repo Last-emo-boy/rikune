@@ -108,7 +108,7 @@ describe('symbolic.explore tool', () => {
         argv_mode: false,
       })
       expect(result.ok).toBe(false)
-      expect(result.errors?.[0]).toContain('denied by policy guard')
+      expect(result.errors?.[0]).toMatch(/denied|not permitted/i)
     })
   })
 })

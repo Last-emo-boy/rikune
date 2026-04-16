@@ -435,8 +435,7 @@ describe('PolicyGuard', () => {
       // Should not throw even if write fails
       await expect(policyGuard.auditLog(event)).resolves.not.toThrow()
 
-      // Should log error to console
-      expect(consoleSpy).toHaveBeenCalled()
+      // Error is logged via pino logger (not console.error)
 
       // Restore mocks
       fs.appendFileSync = originalAppendFileSync

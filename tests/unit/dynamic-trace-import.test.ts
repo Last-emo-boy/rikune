@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
-import { createDynamicTraceImportHandler } from '../../src/tools/dynamic-trace-import.js'
+import { createDynamicTraceImportHandler } from '../../src/plugins/dynamic/tools/dynamic-trace-import.js'
 
 describe('dynamic.trace.import tool', () => {
   let workspaceManager: WorkspaceManager

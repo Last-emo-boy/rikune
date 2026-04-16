@@ -2,7 +2,8 @@
  * Unit tests for KB bulk import and sharing
  */
 
-import { exportToJsonl, type KbExportEntry } from '../../src/kb/kb-export.js'
+import { jest } from '@jest/globals'
+import { exportToJsonl, type KbExportEntry } from '../../src/plugins/kb-collaboration/kb/kb-export.js'
 
 // Minimal DatabaseManager mock for KB tests
 function createMockDb(functionKbRows: Record<string, unknown>[] = [], sampleKbRows: Record<string, unknown>[] = []) {
@@ -65,14 +66,14 @@ describe('kb-export', () => {
 
 describe('capa-import', () => {
   it('module loads successfully', async () => {
-    const mod = await import('../../src/kb/capa-import.js')
+    const mod = await import('../../src/plugins/kb-collaboration/kb/capa-import.js')
     expect(typeof mod.parseCapaRules).toBe('function')
   })
 })
 
 describe('misp-import', () => {
   it('module loads successfully', async () => {
-    const mod = await import('../../src/kb/misp-import.js')
+    const mod = await import('../../src/plugins/kb-collaboration/kb/misp-import.js')
     expect(typeof mod.parseMispEvents).toBe('function')
   })
 })

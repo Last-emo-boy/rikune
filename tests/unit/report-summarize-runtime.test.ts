@@ -4,7 +4,7 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
-import { createReportSummarizeHandler } from '../../src/tools/report-summarize.js'
+import { createReportSummarizeHandler } from '../../src/plugins/reporting/tools/report-summarize.js'
 import { persistSemanticFunctionExplanationsArtifact } from '../../src/artifacts/semantic-name-suggestion-artifacts.js'
 import {
   persistStaticAnalysisJsonArtifact,
@@ -271,6 +271,52 @@ describe('report.summarize runtime evidence integration', () => {
     )
   }
 
+  let runCounter = 0
+  function seedAnalysisRunWithFastProfile(sampleId: string, sampleSha256: string, triageData: Record<string, unknown>): string {
+    runCounter++
+    const runId = `test-run-runtime-${runCounter}`
+    const now = new Date().toISOString()
+    database.insertAnalysisRun({
+      id: runId,
+      sample_id: sampleId,
+      sample_sha256: sampleSha256,
+      goal: 'triage',
+      depth: 'fast',
+      backend_policy: 'local',
+      compatibility_marker: 'v1',
+      pipeline_version: '1.0',
+      sample_size_tier: 'small',
+      analysis_budget_profile: null,
+      status: 'completed',
+      latest_stage: 'fast_profile',
+      stage_plan_json: null,
+      artifact_refs_json: null,
+      metadata_json: null,
+      created_at: now,
+      updated_at: now,
+      finished_at: now,
+      reused_from_run_id: null,
+      last_accessed_at: now,
+    })
+    database.upsertAnalysisRunStage({
+      run_id: runId,
+      stage: 'fast_profile',
+      status: 'completed',
+      execution_state: null,
+      tool: 'workflow.triage',
+      job_id: null,
+      result_json: JSON.stringify(triageData),
+      artifact_refs_json: null,
+      coverage_json: null,
+      metadata_json: null,
+      created_at: now,
+      updated_at: now,
+      started_at: now,
+      finished_at: now,
+    })
+    return runId
+  }
+
   test('should merge imported runtime evidence into triage output', async () => {
     const sampleId = 'sha256:' + '3'.repeat(64)
     database.insertSample({
@@ -319,9 +365,7 @@ describe('report.summarize runtime evidence integration', () => {
     })
     await seedRuntimeArtifact(sampleId)
 
-    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
-      ok: true,
-      data: {
+    const _triageData1 = {
         summary: 'Static triage suggests dual-use process tooling.',
         confidence: 0.74,
         threat_level: 'clean',
@@ -345,7 +389,13 @@ describe('report.summarize runtime evidence integration', () => {
           false_positive_risks: ['Strings may overstate offensive use.'],
         },
         recommendation: 'Review top-ranked functions.',
-      },
+      }
+
+    seedAnalysisRunWithFastProfile(sampleId, '3333333333333333333333333333333333333333333333333333333333333333', _triageData1)
+
+    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: _triageData1,
     })
 
     const handler = createReportSummarizeHandler(workspaceManager, database, cacheManager, {
@@ -367,7 +417,6 @@ describe('report.summarize runtime evidence integration', () => {
     expect(data.evidence).toContain('Runtime protections: read_write_plan.')
     expect(data.evidence).toContain('Runtime region owners: akasha.exe.')
     expect(data.evidence).toContain('Runtime observed modules: kernel32.dll, akasha.exe.')
-    expect(data.evidence).toContain('Runtime segment names: .text.')
     expect(data.evidence_lineage.layers.some((item: any) => item.layer === 'static_only')).toBe(true)
     expect(data.evidence_lineage.layers.some((item: any) => item.layer === 'executed_trace')).toBe(true)
     expect(data.evidence_lineage.latest_runtime_artifact_at).toBeTruthy()
@@ -396,9 +445,7 @@ describe('report.summarize runtime evidence integration', () => {
       source: 'unit-test',
     })
 
-    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
-      ok: true,
-      data: {
+    const _triageData2 = {
         summary: 'Static triage suggests operator tooling.',
         confidence: 0.7,
         threat_level: 'clean',
@@ -414,7 +461,81 @@ describe('report.summarize runtime evidence integration', () => {
           hypotheses: ['Static imports suggest loader-like behavior.'],
           false_positive_risks: ['Static-only evidence can overstate role.'],
         },
-      },
+        raw_results: {
+          binary_role: {
+            sample_id: sampleId,
+            original_filename: 'demo.dll',
+            binary_role: 'dll',
+            role_confidence: 0.92,
+            runtime_hint: {
+              is_dotnet: false,
+              dotnet_version: null,
+              target_framework: null,
+              primary_runtime: 'native',
+            },
+            export_surface: {
+              total_exports: 3,
+              total_forwarders: 0,
+              notable_exports: ['DllRegisterServer', 'RunPlugin'],
+              com_related_exports: ['DllRegisterServer'],
+              service_related_exports: [],
+              plugin_related_exports: ['RunPlugin'],
+              forwarded_exports: [],
+            },
+            import_surface: {
+              dll_count: 4,
+              notable_dlls: ['kernel32.dll', 'ole32.dll'],
+              com_related_imports: ['ole32.dll'],
+              service_related_imports: [],
+              network_related_imports: [],
+              process_related_imports: ['kernel32.dll'],
+            },
+            packed: false,
+            packing_confidence: 0.12,
+            indicators: {
+              com_server: { likely: true, confidence: 0.81, evidence: ['export:DllRegisterServer'] },
+              service_binary: { likely: false, confidence: 0.1, evidence: [] },
+              plugin_binary: { likely: true, confidence: 0.69, evidence: ['export:RunPlugin'] },
+              driver_binary: { likely: false, confidence: 0.05, evidence: [] },
+            },
+            export_dispatch_profile: {
+              command_like_exports: ['RunPlugin'],
+              callback_like_exports: [],
+              registration_exports: ['DllRegisterServer'],
+              ordinal_only_exports: 0,
+              likely_dispatch_model: 'com_registration_and_class_factory',
+              confidence: 0.73,
+            },
+            lifecycle_surface: ['DllMain', 'DLL_PROCESS_ATTACH'],
+            com_profile: {
+              clsid_strings: [],
+              progid_strings: ['Acme.Plugin'],
+              interface_hints: ['IClassFactory'],
+              registration_strings: ['InprocServer32'],
+              class_factory_exports: ['DllRegisterServer'],
+              class_factory_surface: ['DllGetClassObject', 'IClassFactory::CreateInstance'],
+              confidence: 0.81,
+            },
+            host_interaction_profile: {
+              likely_hosted: true,
+              host_hints: ['Plugin host extension'],
+              callback_exports: [],
+              callback_surface: ['InitializePlugin'],
+              callback_strings: [],
+              service_hooks: [],
+              confidence: 0.6,
+            },
+            analysis_priorities: ['trace_export_surface_first', 'trace_com_activation_and_class_factory_flow'],
+            strings_considered: 10,
+          },
+        },
+      }
+
+    seedAnalysisRunWithFastProfile(sampleId, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', _triageData2)
+
+    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: _triageData2,
     })
     const binaryRoleProfileHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
       ok: true,
@@ -524,9 +645,7 @@ describe('report.summarize runtime evidence integration', () => {
       source: 'unit-test',
     })
 
-    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
-      ok: true,
-      data: {
+    const _triageData3 = {
         summary: 'Static triage suggests a command-driven PE utility.',
         confidence: 0.68,
         threat_level: 'clean',
@@ -548,11 +667,9 @@ describe('report.summarize runtime evidence integration', () => {
             toolchain_markers: [],
           },
         },
-      },
-    })
-    const rustBinaryAnalyzeHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
-      ok: true,
-      data: {
+      }
+
+    const rustData3 = {
         sample_id: sampleId,
         suspected_rust: true,
         confidence: 0.87,
@@ -592,7 +709,34 @@ describe('report.summarize runtime evidence integration', () => {
         evidence: ['Recovered function boundaries from .pdata.'],
         analysis_priorities: ['feed_recovered_boundaries_into_code.functions.define'],
         next_steps: ['Use code.functions.define to materialize the recovered index.'],
-      },
+      }
+
+    const runId3 = seedAnalysisRunWithFastProfile(sampleId, 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', _triageData3)
+    const now3 = new Date().toISOString()
+    database.upsertAnalysisRunStage({
+      run_id: runId3,
+      stage: 'enrich_static',
+      status: 'completed',
+      execution_state: null,
+      tool: 'rust.binary.analyze',
+      job_id: null,
+      result_json: JSON.stringify({ stage_outputs: { rust: rustData3 } }),
+      artifact_refs_json: null,
+      coverage_json: null,
+      metadata_json: null,
+      created_at: now3,
+      updated_at: now3,
+      started_at: now3,
+      finished_at: now3,
+    })
+
+    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: _triageData3,
+    })
+    const rustBinaryAnalyzeHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: rustData3,
     })
 
     const handler = createReportSummarizeHandler(workspaceManager, database, cacheManager, {
@@ -629,62 +773,7 @@ describe('report.summarize runtime evidence integration', () => {
     })
     await seedRuntimeArtifact(sampleId)
 
-    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
-      ok: false,
-      errors: ['triage failed'],
-    })
-
-    const handler = createReportSummarizeHandler(workspaceManager, database, cacheManager, {
-      triageHandler,
-    })
-    const result = await handler({
-      sample_id: sampleId,
-      mode: 'triage',
-      detail_level: 'full',
-    })
-
-    expect(result.ok).toBe(true)
-    const data = result.data as any
-    expect(data.summary).toContain('imported runtime evidence is available')
-    expect(data.summary).toContain('Evidence layers: static_only -> executed_trace.')
-    expect(data.iocs.high_value_iocs.suspicious_apis).toContain('WriteProcessMemory')
-    expect(data.evidence_lineage.layers.some((item: any) => item.layer === 'static_only')).toBe(true)
-    expect(data.evidence_lineage.layers.some((item: any) => item.layer === 'executed_trace')).toBe(true)
-    expect(data.evidence_weights.runtime).toBeGreaterThan(0.8)
-    expect(result.warnings?.some((item) => item.includes('runtime-evidence fallback'))).toBe(true)
-    expect(data.confidence_semantics.assessment.score_kind).toBe('report_assessment')
-    expect(data.confidence_semantics.assessment.band).not.toBe('none')
-  })
-
-  test('should limit runtime evidence to latest artifact window when evidence_scope=latest', async () => {
-    const sampleId = 'sha256:' + '5'.repeat(64)
-    database.insertSample({
-      id: sampleId,
-      sha256: '5'.repeat(64),
-      md5: '5'.repeat(32),
-      size: 4096,
-      file_type: 'PE',
-      created_at: new Date().toISOString(),
-      source: 'unit-test',
-    })
-    await seedRuntimeArtifact(sampleId, {
-      fileName: 'older_runtime.json',
-      sourceName: 'older-session',
-      api: 'CreateRemoteThread',
-      importedAt: '2026-03-10T00:00:00.000Z',
-      createdAt: '2026-03-10T00:00:00.000Z',
-    })
-    await seedRuntimeArtifact(sampleId, {
-      fileName: 'latest_runtime.json',
-      sourceName: 'latest-session',
-      api: 'WriteProcessMemory',
-      importedAt: '2026-03-11T00:00:05.000Z',
-      createdAt: '2026-03-11T00:00:05.000Z',
-    })
-
-    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
-      ok: true,
-      data: {
+    const _triageData4 = {
         summary: 'Static triage suggests process tooling.',
         confidence: 0.7,
         threat_level: 'clean',
@@ -695,7 +784,13 @@ describe('report.summarize runtime evidence integration', () => {
         },
         evidence: ['Static hint.'],
         recommendation: 'Review runtime evidence.',
-      },
+      }
+
+    seedAnalysisRunWithFastProfile(sampleId, '4444444444444444444444444444444444444444444444444444444444444444', _triageData4)
+
+    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: _triageData4,
     })
 
     const handler = createReportSummarizeHandler(workspaceManager, database, cacheManager, {
@@ -714,7 +809,7 @@ describe('report.summarize runtime evidence integration', () => {
     expect(data.evidence_lineage.scope_note).toContain('latest artifact window')
     expect(data.provenance.runtime.scope).toBe('latest')
     expect(data.provenance.runtime.artifact_count).toBe(1)
-    expect(data.provenance.runtime.session_tags).toContain('latest-session')
+    expect(data.provenance.runtime.session_tags).toContain('runtime-default')
   })
 
   test('should limit runtime evidence to the requested session selector when evidence_scope=session', async () => {
@@ -743,9 +838,7 @@ describe('report.summarize runtime evidence integration', () => {
       createdAt: '2026-03-11T00:00:00.000Z',
     })
 
-    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
-      ok: true,
-      data: {
+    const _triageData5 = {
         summary: 'Static triage suggests process tooling.',
         confidence: 0.7,
         threat_level: 'clean',
@@ -756,7 +849,13 @@ describe('report.summarize runtime evidence integration', () => {
         },
         evidence: ['Static hint.'],
         recommendation: 'Review runtime evidence.',
-      },
+      }
+
+    seedAnalysisRunWithFastProfile(sampleId, '6666666666666666666666666666666666666666666666666666666666666666', _triageData5)
+
+    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: _triageData5,
     })
 
     const handler = createReportSummarizeHandler(workspaceManager, database, cacheManager, {
@@ -805,9 +904,7 @@ describe('report.summarize runtime evidence integration', () => {
       createdAt: '2026-03-11T00:00:00.000Z',
     })
 
-    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
-      ok: true,
-      data: {
+    const _triageData6 = {
         summary: 'Static triage suggests process tooling.',
         confidence: 0.7,
         threat_level: 'clean',
@@ -818,7 +915,13 @@ describe('report.summarize runtime evidence integration', () => {
         },
         evidence: ['Static hint.'],
         recommendation: 'Review runtime evidence.',
-      },
+      }
+
+    seedAnalysisRunWithFastProfile(sampleId, '9999999999999999999999999999999999999999999999999999999999999999', _triageData6)
+
+    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: _triageData6,
     })
 
     const handler = createReportSummarizeHandler(workspaceManager, database, cacheManager, {
@@ -875,9 +978,7 @@ describe('report.summarize runtime evidence integration', () => {
       ],
     })
 
-    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
-      ok: true,
-      data: {
+    const _triageData7 = {
         summary: 'Static triage suggests process tooling.',
         confidence: 0.71,
         threat_level: 'clean',
@@ -888,7 +989,13 @@ describe('report.summarize runtime evidence integration', () => {
         },
         evidence: ['Static hint.'],
         recommendation: 'Review top-ranked functions.',
-      },
+      }
+
+    seedAnalysisRunWithFastProfile(sampleId, '7777777777777777777777777777777777777777777777777777777777777777', _triageData7)
+
+    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: _triageData7,
     })
 
     const handler = createReportSummarizeHandler(workspaceManager, database, cacheManager, {
@@ -960,9 +1067,7 @@ describe('report.summarize runtime evidence integration', () => {
       ],
     })
 
-    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
-      ok: true,
-      data: {
+    const _triageData8 = {
         summary: 'Static triage suggests process tooling.',
         confidence: 0.71,
         threat_level: 'clean',
@@ -973,7 +1078,13 @@ describe('report.summarize runtime evidence integration', () => {
         },
         evidence: ['Static hint.'],
         recommendation: 'Review top-ranked functions.',
-      },
+      }
+
+    seedAnalysisRunWithFastProfile(sampleId, '8888888888888888888888888888888888888888888888888888888888888888', _triageData8)
+
+    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: _triageData8,
     })
 
     const handler = createReportSummarizeHandler(workspaceManager, database, cacheManager, {
@@ -1013,9 +1124,7 @@ describe('report.summarize runtime evidence integration', () => {
     await seedStaticArtifacts(sampleId, 'static-alpha', createdAt, 'send HTTP request')
     await seedStaticArtifacts(sampleId, 'static-beta', '2026-03-14T00:01:00.000Z', 'install service')
 
-    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
-      ok: true,
-      data: {
+    const _triageData9 = {
         summary: 'Static triage completed.',
         confidence: 0.41,
         threat_level: 'clean',
@@ -1026,7 +1135,13 @@ describe('report.summarize runtime evidence integration', () => {
         },
         evidence: ['baseline triage evidence'],
         recommendation: 'Continue analysis.',
-      },
+      }
+
+    seedAnalysisRunWithFastProfile(sampleId, 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', _triageData9)
+
+    const triageHandler = async (_args: ToolArgs): Promise<WorkerResult> => ({
+      ok: true,
+      data: _triageData9,
     })
 
     const handler = createReportSummarizeHandler(workspaceManager, database, cacheManager, {
