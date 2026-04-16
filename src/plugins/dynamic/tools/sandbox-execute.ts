@@ -4,6 +4,7 @@
  */
 
 import { spawn } from 'child_process'
+import { existsSync } from 'fs'
 import fs from 'fs/promises'
 import path from 'path'
 import { createHash, randomUUID } from 'crypto'
@@ -148,6 +149,7 @@ export const sandboxExecuteToolDefinition: ToolDefinition = {
     'Execute dynamic-analysis workflow in safe simulation mode (default), memory-guided mode, or Speakeasy user-mode emulation and return timeline/IOC/risk outputs.',
   inputSchema: SandboxExecuteInputSchema,
   outputSchema: SandboxExecuteOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeSandboxExecute' },
 }
 
 interface WorkerRequest {
@@ -305,6 +307,15 @@ export function createSandboxExecuteHandler(
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
+    // Backend gate
+    const workerPath = resolvePackagePath('workers', 'static_worker.py')
+    if (!existsSync(workerPath)) {
+      return {
+        ok: false,
+        errors: [`Sandbox worker not found: ${workerPath}`],
+        metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
+      }
+    }
 
     try {
       const input = SandboxExecuteInputSchema.parse(args)

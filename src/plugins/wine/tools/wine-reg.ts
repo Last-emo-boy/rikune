@@ -43,6 +43,7 @@ export const wineRegToolDefinition: ToolDefinition = {
     'Query, set, or export Wine registry keys in a prefix. ' +
     'Useful for pre-populating environment data (anti-VM bypass) or inspecting registry changes after execution.',
   inputSchema: inputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeWineReg' },
 }
 
 function getPrefixRoot(wm: WorkspaceManager): string {

@@ -48,6 +48,12 @@ export interface WorkerResult {
 // Tool Definition
 // ═══════════════════════════════════════════════════════════════════════════
 
+/** Execution backend hint for the runtime node. */
+export interface RuntimeBackendHint {
+  type: 'python-worker' | 'spawn' | 'inline'
+  handler: string
+}
+
 /** Schema for a tool's inputs. */
 export interface ToolDefinition {
   name: string
@@ -55,6 +61,8 @@ export interface ToolDefinition {
   description: string
   inputSchema: any
   outputSchema?: any
+  /** Hint for the runtime node on how to execute this tool. */
+  runtimeBackendHint?: RuntimeBackendHint
 }
 
 /** Generic tool arguments (for tools that don't use Zod parsing). */
@@ -499,6 +507,13 @@ export interface Plugin {
   description?: string
   /** Semantic version string, e.g. `'1.0.0'`. */
   version?: string
+  /**
+   * Execution domain controls which node role may load this plugin.
+   * - `static` — loaded only on analyzer nodes (pure static analysis)
+   * - `dynamic` — loaded only on runtime nodes (executes sample code)
+   * - `both` (default) — loaded everywhere; backward compatible
+   */
+  executionDomain?: 'static' | 'dynamic' | 'both'
   /** IDs of plugins that must load before this one. */
   dependencies?: string[]
   /** Declarative config fields the plugin expects. */

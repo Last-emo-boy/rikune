@@ -148,6 +148,19 @@ export const ConfigSchema = z.object({
     retentionDays: 30,
     maxTotalBytes: 0,
   }),
+  node: z.object({
+    role: z.enum(['analyzer', 'runtime', 'hybrid']).default('analyzer'),
+  }).default({}),
+  runtime: z.object({
+    mode: z.enum(['auto-sandbox', 'remote-sandbox', 'manual', 'disabled']).default('disabled'),
+    endpoint: z.string().optional(),
+    apiKey: z.string().optional(),
+    hostAgentEndpoint: z.string().optional(),
+    hostAgentApiKey: z.string().optional(),
+    sandboxWorkspace: z.string().default(getDefaultAppRoot()),
+    heartbeatIntervalMs: z.number().int().min(1000).default(30000),
+    healthCheckTimeoutMs: z.number().int().min(1000).default(60000),
+  }).default({}),
 }).superRefine((data, ctx) => {
   // Cross-field validations
 
@@ -185,6 +198,24 @@ export const ConfigSchema = z.object({
       path: ['api', 'port'],
       message: `api.port (${data.api.port}) must differ from server.port (${data.server.port})`,
     })
+  }
+
+  // runtime mode cross-field validation
+  if (data.node.role === 'analyzer' || data.node.role === 'hybrid') {
+    if (data.runtime.mode === 'manual' && !data.runtime.endpoint) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['runtime', 'endpoint'],
+        message: 'runtime.endpoint is required when runtime.mode is "manual"',
+      })
+    }
+    if (data.runtime.mode === 'remote-sandbox' && !data.runtime.hostAgentEndpoint) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['runtime', 'hostAgentEndpoint'],
+        message: 'runtime.hostAgentEndpoint is required when runtime.mode is "remote-sandbox"',
+      })
+    }
   }
 })
 
@@ -428,6 +459,38 @@ export function loadConfigFromEnv(): Record<string, any> {
     config.api.maxTotalBytes = parseInt(process.env.API_MAX_TOTAL_BYTES, 10)
   }
 
+  // Node role configuration
+  if (process.env.NODE_ROLE) {
+    if (!config.node) config.node = {}
+    config.node.role = process.env.NODE_ROLE as any
+  }
+
+  // Runtime configuration
+  if (process.env.RUNTIME_MODE) {
+    if (!config.runtime) config.runtime = {}
+    config.runtime.mode = process.env.RUNTIME_MODE as any
+  }
+  if (process.env.RUNTIME_ENDPOINT) {
+    if (!config.runtime) config.runtime = {}
+    config.runtime.endpoint = process.env.RUNTIME_ENDPOINT
+  }
+  if (process.env.RUNTIME_API_KEY) {
+    if (!config.runtime) config.runtime = {}
+    config.runtime.apiKey = process.env.RUNTIME_API_KEY
+  }
+  if (process.env.RUNTIME_SANDBOX_WORKSPACE) {
+    if (!config.runtime) config.runtime = {}
+    config.runtime.sandboxWorkspace = process.env.RUNTIME_SANDBOX_WORKSPACE
+  }
+  if (process.env.RUNTIME_HEARTBEAT_INTERVAL_MS) {
+    if (!config.runtime) config.runtime = {}
+    config.runtime.heartbeatIntervalMs = parseInt(process.env.RUNTIME_HEARTBEAT_INTERVAL_MS, 10)
+  }
+  if (process.env.RUNTIME_HEALTH_CHECK_TIMEOUT_MS) {
+    if (!config.runtime) config.runtime = {}
+    config.runtime.healthCheckTimeoutMs = parseInt(process.env.RUNTIME_HEALTH_CHECK_TIMEOUT_MS, 10)
+  }
+
   return config
 }
 
@@ -466,6 +529,27 @@ export function mergeConfigs(...configs: any[]): any {
 }
 
 /**
+ * Apply platform-aware defaults after parsing.
+ * - Windows: analyzer role + auto-sandbox runtime mode
+ * - Others: analyzer role + disabled runtime mode
+ */
+function applyPlatformDefaults(data: Config): Config {
+  const isWindows = process.platform === 'win32'
+  // Only apply defaults when the values come from schema defaults (not explicitly set by user)
+  // Zod defaults are already applied, so we check env vars to know if user explicitly set them.
+  const nodeRoleFromEnv = process.env.NODE_ROLE
+  const runtimeModeFromEnv = process.env.RUNTIME_MODE
+
+  if (!nodeRoleFromEnv) {
+    data.node.role = 'analyzer'
+  }
+  if (!runtimeModeFromEnv) {
+    data.runtime.mode = isWindows ? 'auto-sandbox' : 'disabled'
+  }
+  return data
+}
+
+/**
  * Load and validate configuration from all sources
  */
 export function loadConfig(configPath?: string): Config {
@@ -479,7 +563,7 @@ export function loadConfig(configPath?: string): Config {
     throw new Error(`Configuration validation failed: ${result.error.message}`)
   }
 
-  return result.data
+  return applyPlatformDefaults(result.data)
 }
 
 /**

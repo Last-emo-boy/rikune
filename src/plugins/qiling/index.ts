@@ -10,6 +10,7 @@ import { qilingInspectToolDefinition, createQilingInspectHandler } from './tools
 const qilingPlugin: Plugin = {
   id: 'qiling',
   name: 'Qiling',
+  executionDomain: 'dynamic',
   surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description: 'Qiling emulation framework for cross-platform binary emulation',
   version: '1.0.0',

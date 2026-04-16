@@ -37,6 +37,7 @@ export const debugSessionWatchToolDefinition: ToolDefinition = {
     'Actions: add (create watchpoint), remove (delete), list (show active), ' +
     'history (show value changes for a watch).',
   inputSchema: DebugSessionWatchInputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 export function createDebugSessionWatchHandler(deps: PluginToolDeps) {

@@ -22,6 +22,8 @@ export interface ToolDefinition {
   description: string
   inputSchema: JSONSchema
   outputSchema?: JSONSchema
+  /** Hint for the runtime node on how to execute this tool. */
+  runtimeBackendHint?: { type: 'python-worker' | 'spawn' | 'inline'; handler: string }
 }
 
 /**

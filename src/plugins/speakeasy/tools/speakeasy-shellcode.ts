@@ -11,7 +11,7 @@ import {
   ensureSampleExists, normalizeError, runPythonJson,
   persistBackendArtifact, buildMetrics,
   resolveSampleFile, resolvePythonModuleBackend,
-  buildStaticSetupRequired,
+  buildDynamicSetupRequired,
 } from '../../docker-shared.js'
 
 const TOOL_NAME = 'speakeasy.shellcode'
@@ -49,6 +49,7 @@ export const speakeasyShellcodeToolDefinition: ToolDefinition = {
     'Emulate raw shellcode bytes from a sample using Speakeasy. Specify architecture and optional offset.',
   inputSchema: speakeasyShellcodeInputSchema,
   outputSchema: speakeasyShellcodeOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeSpeakeasyShellcode' },
 }
 
 const SPEAKEASY_SHELLCODE_SCRIPT = `
@@ -106,7 +107,7 @@ export function createSpeakeasyShellcodeHandler(
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
       const backend = resolvePythonModuleBackend({ envPythonPath: process.env.SPEAKEASY_PYTHON, moduleNames: ['speakeasy'], distributionNames: ['speakeasy-emulator'] })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'speakeasy', available: false, error: 'speakeasy-emulator not installed' } as any, startTime, TOOL_NAME)
+        return buildDynamicSetupRequired(backend || { name: 'speakeasy', available: false, error: 'speakeasy-emulator not installed' } as any, startTime, TOOL_NAME)
       }
 
       const result = await runPythonJson(

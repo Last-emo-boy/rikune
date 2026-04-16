@@ -15,6 +15,8 @@
 import { z } from 'zod'
 import { spawn } from 'child_process'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import { resolveExecutable } from '../../../static-backend-discovery.js'
+import { buildDynamicSetupRequired } from '../../docker-shared.js'
 
 const TOOL_NAME = 'managed.safe_run'
 
@@ -44,6 +46,7 @@ export const safeRunToolDefinition: ToolDefinition = {
     'decryption calls, reflective invocations, and all outbound network requests. ' +
     'Supports configurable timeout, memory limit, and custom sinkhole responses.',
   inputSchema: SafeRunInputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeManagedSafeRun' },
 }
 
 /* ── Worker bridge ─────────────────────────────────────────────────────── */
@@ -85,6 +88,11 @@ export function createSafeRunHandler(deps: PluginToolDeps) {
 
   return async (args: z.infer<typeof SafeRunInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()
+    // Backend gate
+    const pythonBackend = resolveExecutable({ pathCandidates: [pythonCmd, 'python3', 'python'], versionArgSets: [['--version']] })
+    if (!pythonBackend.available) {
+      return buildDynamicSetupRequired(pythonBackend as any, t0, TOOL_NAME)
+    }
     try {
       const sample = database.findSample(args.sample_id)
       if (!sample) return { ok: false, errors: [`Sample not found: ${args.sample_id}`] }

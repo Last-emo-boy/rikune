@@ -11,7 +11,7 @@ import {
   ensureSampleExists, normalizeError, runPythonJson,
   persistBackendArtifact, buildMetrics,
   resolveSampleFile, resolvePythonModuleBackend,
-  buildStaticSetupRequired,
+  buildDynamicSetupRequired,
 } from '../../docker-shared.js'
 
 const TOOL_NAME = 'speakeasy.emulate'
@@ -52,6 +52,7 @@ export const speakeasyEmulateToolDefinition: ToolDefinition = {
     'Emulate a Windows PE file using Mandiant Speakeasy. Captures API calls, file/registry/network activity without native execution.',
   inputSchema: speakeasyEmulateInputSchema,
   outputSchema: speakeasyEmulateOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeSpeakeasyEmulate' },
 }
 
 const SPEAKEASY_EMULATE_SCRIPT = `
@@ -118,7 +119,7 @@ export function createSpeakeasyEmulateHandler(
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
       const backend = resolvePythonModuleBackend({ envPythonPath: process.env.SPEAKEASY_PYTHON, moduleNames: ['speakeasy'], distributionNames: ['speakeasy-emulator'] })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'speakeasy', available: false, error: 'speakeasy-emulator not installed' } as any, startTime, TOOL_NAME)
+        return buildDynamicSetupRequired(backend || { name: 'speakeasy', available: false, error: 'speakeasy-emulator not installed' } as any, startTime, TOOL_NAME)
       }
 
       const result = await runPythonJson(

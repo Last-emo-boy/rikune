@@ -29,6 +29,7 @@ export const debugSessionBreakpointToolDefinition: ToolDefinition = {
     'Manage breakpoints in a debug session: add (by address/symbol/condition), remove, or list all active breakpoints.',
   inputSchema: DebugSessionBreakpointInputSchema,
   outputSchema: DebugSessionBreakpointOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 export function createDebugSessionBreakpointHandler(deps: PluginToolDeps) {

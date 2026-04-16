@@ -34,6 +34,7 @@ export const debugSessionContinueToolDefinition: ToolDefinition = {
     'Continue execution in a debug session. Blocks until a breakpoint is hit, a signal is received, or timeout.',
   inputSchema: DebugSessionContinueInputSchema,
   outputSchema: DebugSessionContinueOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 export function createDebugSessionContinueHandler(deps: PluginToolDeps) {

@@ -31,6 +31,10 @@ export interface ToolDeps {
   storageManager: StorageManager
   config: Config
   server: MCPServer
+  /** Analyzer → Runtime RPC client (present in analyzer mode when runtime is connected). */
+  runtimeClient?: any
+  /** Host sandbox directory when auto-sandbox is active. */
+  sandboxDir?: string | null
 }
 
 // ─── Prompts ───────────────────────────────────────────────────────────────
@@ -175,7 +179,7 @@ export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promi
   server.registerTool(taskSweepToolDefinition, createTaskSweepHandler(jobQueue, database))
 
   // ── System health & setup ──────────────────────────────────────────────
-  const systemHealthHandler = createSystemHealthHandler(workspaceManager, database, { cacheManager })
+  const systemHealthHandler = createSystemHealthHandler(workspaceManager, database, { cacheManager, runtimeClient: deps.runtimeClient })
   const systemSetupGuideHandler = createSystemSetupGuideHandler()
   server.registerTool(systemHealthToolDefinition, systemHealthHandler)
   server.registerTool(systemSetupGuideToolDefinition, systemSetupGuideHandler)
@@ -212,6 +216,8 @@ export async function registerAllTools(server: MCPServer, deps: ToolDeps): Promi
     SetupActionSchema,
     RequiredUserInputSchema,
     logger: serverLogger,
+    runtimeClient: (deps as any).runtimeClient ?? null,
+    sandboxDir: (deps as any).sandboxDir ?? null,
   }
   await loadPlugins(server, pluginDeps as any)
 

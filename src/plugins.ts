@@ -25,6 +25,7 @@ import { pathToFileURL, fileURLToPath } from 'url'
 import type { MCPServer } from './server.js'
 import type { ToolDeps } from './tool-registry.js'
 import { logger } from './logger.js'
+import { config } from './config.js'
 
 // Re-export SDK types so existing consumers don't break
 export type {
@@ -45,6 +46,7 @@ export type {
 
 import type { Plugin, PluginContext, PluginStatus, PluginToolDeps, PluginSystemDep, DepCheckResult } from './plugins/sdk.js'
 import { getToolSurfaceManager } from './tool-surface-manager.js'
+import { createDelegatingServer } from './runtime-client/delegation-server.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Plugin Context Factory
@@ -226,6 +228,25 @@ export class PluginManager {
   }
 
   /**
+   * Filter plugins by executionDomain based on the current node role.
+   * - analyzer: skip executionDomain === 'dynamic'
+   * - runtime: skip executionDomain === 'static'
+   * - hybrid: keep all
+   */
+  resolvePluginsByRole(plugins: Plugin[]): Plugin[] {
+    const role = config.node.role
+    if (role === 'hybrid') return plugins
+    return plugins.filter(p => {
+      const domain = p.executionDomain ?? 'both'
+      if (domain === 'both') return true
+      // analyzer keeps dynamic plugins so we can register delegated handlers
+      if (role === 'analyzer' && domain === 'dynamic') return true
+      if (role === 'runtime' && domain === 'static') return false
+      return true
+    })
+  }
+
+  /**
    * Topologically sort plugins by their `dependencies` arrays.
    * Throws if a cycle is detected.
    */
@@ -291,8 +312,10 @@ export class PluginManager {
 
     this.discoveredPlugins = uniquePlugins
     const enabled = this.resolveEnabledPlugins(uniquePlugins)
+    const roleFiltered = this.resolvePluginsByRole(enabled)
     const enabledIds = new Set(enabled.map(p => p.id))
-    const sorted = this.topoSort(enabled)
+    const roleAllowedIds = new Set(roleFiltered.map(p => p.id))
+    const sorted = this.topoSort(roleFiltered)
 
     // Record disabled plugins
     for (const p of uniquePlugins) {
@@ -301,6 +324,13 @@ export class PluginManager {
           id: p.id, name: p.name, description: p.description,
           version: p.version, status: 'skipped-disabled', tools: [],
           configFields: p.configSchema,
+        })
+      } else if (!roleAllowedIds.has(p.id)) {
+        this.plugins.push({
+          id: p.id, name: p.name, description: p.description,
+          version: p.version, status: 'skipped-disabled', tools: [],
+          configFields: p.configSchema,
+          error: `Skipped because executionDomain ('${p.executionDomain ?? 'both'}') is incompatible with node role '${config.node.role}'`,
         })
       }
     }
@@ -361,6 +391,7 @@ export class PluginManager {
    * Load a single plugin. Used internally and for hot-load.
    */
   async loadOne(plugin: Plugin, server: MCPServer, deps: ToolDeps): Promise<PluginStatus> {
+    const isAnalyzerDynamic = config.node.role === 'analyzer' && plugin.executionDomain === 'dynamic'
     const status: PluginStatus = {
       id: plugin.id, name: plugin.name, description: plugin.description,
       version: plugin.version, status: 'loaded', tools: [],
@@ -385,18 +416,26 @@ export class PluginManager {
       try {
         const ok = await plugin.check()
         if (!ok) {
-          status.status = 'skipped-check'
-          status.error = 'Prerequisite check returned false'
-          this.plugins.push(status)
-          logger.info({ plugin: plugin.id }, `Plugin skipped (prerequisites not met): ${plugin.name}`)
-          return status
+          if (isAnalyzerDynamic) {
+            logger.debug({ plugin: plugin.id }, `Plugin check failed but loading anyway for delegation: ${plugin.name}`)
+          } else {
+            status.status = 'skipped-check'
+            status.error = 'Prerequisite check returned false'
+            this.plugins.push(status)
+            logger.info({ plugin: plugin.id }, `Plugin skipped (prerequisites not met): ${plugin.name}`)
+            return status
+          }
         }
       } catch (err) {
-        status.status = 'skipped-check'
-        status.error = `Prerequisite check threw: ${err}`
-        this.plugins.push(status)
-        logger.warn({ plugin: plugin.id, err }, `Plugin skipped (check error): ${plugin.name}`)
-        return status
+        if (isAnalyzerDynamic) {
+          logger.debug({ plugin: plugin.id, err }, `Plugin check error but loading anyway for delegation: ${plugin.name}`)
+        } else {
+          status.status = 'skipped-check'
+          status.error = `Prerequisite check threw: ${err}`
+          this.plugins.push(status)
+          logger.warn({ plugin: plugin.id, err }, `Plugin skipped (check error): ${plugin.name}`)
+          return status
+        }
       }
     }
 
@@ -417,7 +456,9 @@ export class PluginManager {
       }
 
       // If plugin has no manual check() and required deps are missing, skip it
-      if (!plugin.check && !allRequiredOk) {
+      // Exception: analyzer node loading dynamic plugins — we still register them
+      // so their tools can be delegated to the runtime sandbox.
+      if (!plugin.check && !allRequiredOk && !isAnalyzerDynamic) {
         const missing = results.filter(r => !r.available && r.dep.required).map(r => r.dep.name)
         status.status = 'skipped-check'
         status.error = `Missing required system deps: ${missing.join(', ')}`
@@ -445,7 +486,17 @@ export class PluginManager {
         }
       }
 
-      const toolNames = plugin.register(server, deps, ctx)
+      let targetServer: MCPServer = server
+      if (config.node.role === 'analyzer' && plugin.executionDomain === 'dynamic') {
+        const rtClient = (deps as any).runtimeClient
+        const sandboxDir = (deps as any).sandboxDir
+        const wm = (deps as any).workspaceManager
+        const db = (deps as any).database
+        const resolvePath = (deps as any).resolvePrimarySamplePath
+        targetServer = createDelegatingServer(server, plugin.id, rtClient, wm, db, resolvePath, sandboxDir) as any
+      }
+
+      const toolNames = plugin.register(targetServer, deps, ctx)
       const names: string[] = Array.isArray(toolNames) ? toolNames : []
       status.tools = names
       for (const t of names) this.pluginToolMap.set(t, plugin.id)

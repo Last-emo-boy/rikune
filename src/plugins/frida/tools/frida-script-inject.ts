@@ -543,4 +543,5 @@ export const fridaScriptInjectToolDefinition: ToolDefinition = {
   description:
     'Inject a custom or pre-built Frida JavaScript into a running process for dynamic analysis.',
   inputSchema: FridaScriptInjectInputSchema,
+  runtimeBackendHint: { type: 'python-worker', handler: 'frida_worker.py' },
 }

@@ -37,6 +37,7 @@ export const debugSessionSmartBreakpointToolDefinition: ToolDefinition = {
     '(break on IsDebuggerPresent/NtQueryInformationProcess), string_decrypt ' +
     '(break at XOR/RC4 decryption loops), auto (all applicable).',
   inputSchema: DebugSessionSmartBreakpointInputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 // ── Breakpoint strategy knowledge base ────────────────────────────────────

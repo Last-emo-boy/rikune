@@ -116,6 +116,7 @@ export const fridaTraceCaptureToolDefinition: ToolDefinition = {
     'Capture and normalize Frida traces with canonical schema, filtering, and aggregation.',
   inputSchema: FridaTraceCaptureInputSchema,
   outputSchema: FridaTraceCaptureOutputSchema,
+  runtimeBackendHint: { type: 'python-worker', handler: 'frida_worker.py' },
 }
 
 interface WorkerRequest {
@@ -368,6 +369,54 @@ export function createFridaTraceCaptureHandler(
     })
   }
 
+  function buildFridaSetupActions() {
+    return [
+      {
+        id: 'install_frida_runtime',
+        required: false,
+        kind: 'pip_install',
+        title: 'Install Frida runtime',
+        summary: 'Install the Frida runtime for dynamic instrumentation.',
+        command: 'python -m pip install frida',
+        examples: ['python -m pip install frida'],
+        applies_to: ['frida.trace.capture', 'system.health'],
+      },
+      {
+        id: 'install_frida_tools_package',
+        required: false,
+        kind: 'pip_install',
+        title: 'Install Frida tools package',
+        summary: 'Install frida-tools for additional CLI utilities.',
+        command: 'python -m pip install frida-tools',
+        examples: ['python -m pip install frida-tools'],
+        applies_to: ['frida.trace.capture', 'system.health'],
+      },
+      {
+        id: 'verify_frida_install',
+        required: false,
+        kind: 'verify_install',
+        title: 'Verify Frida installation',
+        summary: 'Confirm that Frida can be imported in Python.',
+        command: 'python -c "import frida; print(frida.__version__)"',
+        examples: ['python -c "import frida; print(frida.__version__)"'],
+        applies_to: ['frida.trace.capture', 'system.health'],
+      },
+    ]
+  }
+
+  function buildFridaRequiredUserInputs() {
+    return [
+      {
+        key: 'frida_path',
+        label: 'Frida server binary path',
+        summary: 'Optional: Provide the absolute path to the Frida server binary.',
+        required: false,
+        env_vars: ['FRIDA_PATH'],
+        examples: ['C:\\Program Files\\frida-server.exe'],
+      },
+    ]
+  }
+
   function buildFridaUnavailableResponse(
     input: FridaTraceCaptureInput,
     startTime: number,
@@ -388,6 +437,8 @@ export function createFridaTraceCaptureHandler(
         errors: [errorMessage],
       },
       warnings: [`Frida is not available: ${errorMessage}`],
+      setup_actions: buildFridaSetupActions(),
+      required_user_inputs: buildFridaRequiredUserInputs(),
       metrics: {
         elapsed_ms: Date.now() - startTime,
         tool: TOOL_NAME,

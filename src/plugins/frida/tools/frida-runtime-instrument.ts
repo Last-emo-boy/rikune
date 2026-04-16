@@ -26,7 +26,7 @@ export const FridaRuntimeInstrumentInputSchema = z.object({
     .optional()
     .describe('Process ID to attach to (required for attach mode)'),
   script_name: z
-    .enum(['api_trace', 'string_decoder', 'anti_debug_bypass', 'crypto_finder', 'file_registry_monitor', 'default'])
+    .enum(['api_trace', 'string_decoder', 'anti_debug_bypass', 'time_bypass', 'evasion_score', 'combo_evasion', 'crypto_finder', 'file_registry_monitor', 'default'])
     .optional()
     .default('api_trace')
     .describe('Pre-built Frida script to use'),
@@ -38,6 +38,14 @@ export const FridaRuntimeInstrumentInputSchema = z.object({
     .record(z.any())
     .optional()
     .describe('Parameters to pass to the Frida script'),
+  speed_factor: z
+    .number()
+    .int()
+    .min(1)
+    .max(10000)
+    .optional()
+    .default(100)
+    .describe('Time acceleration factor for time_bypass / combo_evasion scripts (e.g. 100 means 100x faster time/sleep)'),
   timeout_sec: z
     .number()
     .int()
@@ -385,7 +393,10 @@ export function createFridaRuntimeInstrumentHandler(
           pid: input.pid,
           script_name: input.script_name,
           script_content: input.script_content,
-          parameters: input.script_parameters,
+          parameters: {
+            ...(input.script_parameters || {}),
+            speed_factor: input.speed_factor,
+          },
           timeout_sec: input.timeout_sec,
         },
         context: {
@@ -521,4 +532,5 @@ export const fridaRuntimeInstrumentToolDefinition: ToolDefinition = {
   description:
     'Instrument a Windows PE sample at runtime using Frida for dynamic API tracing and behavior analysis. Supports spawn and attach modes with pre-built or custom scripts.',
   inputSchema: FridaRuntimeInstrumentInputSchema,
+  runtimeBackendHint: { type: 'python-worker', handler: 'frida_worker.py' },
 }

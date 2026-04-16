@@ -10,6 +10,7 @@ import { pandaInspectToolDefinition, createPandaInspectHandler } from './tools/p
 const pandaPlugin: Plugin = {
   id: 'panda',
   name: 'PANDA',
+  executionDomain: 'dynamic',
   surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description: 'PANDA record/replay analysis for dynamic binary inspection',
   version: '1.0.0',

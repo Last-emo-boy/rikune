@@ -11,7 +11,7 @@ import {
   ensureSampleExists, normalizeError, runPythonJson,
   persistBackendArtifact, buildMetrics,
   resolveSampleFile, resolvePythonModuleBackend,
-  buildStaticSetupRequired,
+  buildDynamicSetupRequired,
 } from '../../docker-shared.js'
 
 const TOOL_NAME = 'speakeasy.api_trace'
@@ -51,6 +51,7 @@ export const speakeasyApiTraceToolDefinition: ToolDefinition = {
     'Run Speakeasy emulation and extract a focused API call trace with optional module/API name filtering.',
   inputSchema: speakeasyApiTraceInputSchema,
   outputSchema: speakeasyApiTraceOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeSpeakeasyApiTrace' },
 }
 
 const SPEAKEASY_TRACE_SCRIPT = `
@@ -111,7 +112,7 @@ export function createSpeakeasyApiTraceHandler(
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
       const backend = resolvePythonModuleBackend({ envPythonPath: process.env.SPEAKEASY_PYTHON, moduleNames: ['speakeasy'], distributionNames: ['speakeasy-emulator'] })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'speakeasy', available: false, error: 'speakeasy-emulator not installed' } as any, startTime, TOOL_NAME)
+        return buildDynamicSetupRequired(backend || { name: 'speakeasy', available: false, error: 'speakeasy-emulator not installed' } as any, startTime, TOOL_NAME)
       }
 
       const result = await runPythonJson(

@@ -1,5 +1,5 @@
 /**
- * PANDA inspect tool â€?inspect PANDA/pandare runtime readiness.
+ * PANDA inspect tool ï¿½?inspect PANDA/pandare runtime readiness.
  */
 
 import { z } from 'zod'
@@ -47,6 +47,7 @@ export const pandaInspectToolDefinition: ToolDefinition = {
     'Inspect PANDA/pandare runtime readiness and record/replay caveats. Use this when you explicitly request PANDA-oriented dynamic analysis support from the MCP server.',
   inputSchema: pandaInspectInputSchema,
   outputSchema: pandaInspectOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executePandaInspect' },
 }
 
 const PANDA_INSPECT_SCRIPT = `
