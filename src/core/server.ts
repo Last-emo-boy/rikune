@@ -49,6 +49,8 @@ import {
   toTransportToolName,
 } from './tool-name-normalization.js'
 import { getToolSurfaceManager } from './tool-surface-manager.js'
+import { zodToJsonSchema, generateSchemaExample } from './zod-schema-converter.js'
+import { guardResponseSize } from './response-guard.js'
 
 interface MCPServerDependencies {
   workspaceManager?: WorkspaceManager
@@ -327,9 +329,9 @@ export class MCPServer {
         continue
       }
       // Convert Zod schema to JSON Schema format for MCP protocol
-      const inputSchema = this.zodToJsonSchema(definition.inputSchema)
+      const inputSchema = zodToJsonSchema(definition.inputSchema)
       const outputSchema = definition.outputSchema
-        ? this.zodToJsonSchema(definition.outputSchema)
+        ? zodToJsonSchema(definition.outputSchema)
         : undefined
 
       // Append prerequisite hint for tools that require a sample_id input
@@ -908,15 +910,15 @@ export class MCPServer {
           definition.outputSchema
         )
         this.logger.info({ tool: name, elapsed, isError: result.isError }, 'Tool execution completed')
-        return this.guardResponseSize({
+        return guardResponseSize({
           content: this.rewriteTextContentItems(result.content as TextContent[]) as any, // MCP SDK Content type
           structuredContent,
           isError: result.isError
-        })
+        }, this.logger)
       } else {
         // It's a WorkerResult - convert to ToolResult
         this.logger.info({ tool: name, elapsed, ok: result.ok }, 'Tool execution completed')
-        return this.guardResponseSize(this.workerResultToToolResult(result, definition.outputSchema))
+        return guardResponseSize(this.workerResultToToolResult(result, definition.outputSchema), this.logger)
       }
     } catch (error) {
       const elapsed = Date.now() - startTime
@@ -999,7 +1001,7 @@ export class MCPServer {
         })
 
         // Generate example based on schema
-        const example = this.generateSchemaExample(schema)
+        const example = generateSchemaExample(schema)
         const exampleStr = example ? `\n\nExample:\n${JSON.stringify(example, null, 2)}` : ''
 
         throw new Error(
@@ -1017,19 +1019,19 @@ export class MCPServer {
   private generateSchemaExample(schema: z.ZodTypeAny): Record<string, unknown> | null {
     try {
       if (schema instanceof z.ZodEffects) {
-        return this.generateSchemaExample(schema._def.schema)
+        return generateSchemaExample(schema._def.schema)
       }
       if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable || schema instanceof z.ZodCatch) {
-        return this.generateSchemaExample(schema._def.innerType)
+        return generateSchemaExample(schema._def.innerType)
       }
       if (schema instanceof z.ZodDefault) {
-        return this.generateSchemaExample(schema._def.innerType)
+        return generateSchemaExample(schema._def.innerType)
       }
       if (schema instanceof z.ZodBranded) {
-        return this.generateSchemaExample(schema._def.type)
+        return generateSchemaExample(schema._def.type)
       }
       if (schema instanceof z.ZodReadonly) {
-        return this.generateSchemaExample(schema._def.innerType)
+        return generateSchemaExample(schema._def.innerType)
       }
 
       // Handle ZodObject
