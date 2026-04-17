@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from '@jest/globals'
 import { createServer, type IncomingMessage, type ServerResponse } from 'http'
 import type { AddressInfo } from 'net'
 import { createRuntimeClient } from '../../../src/runtime-client/runtime-client.js'
+import { createLazyRemoteSandboxRuntimeClient } from '../../../src/runtime-client/lazy-remote-sandbox-client.js'
 import { createRuntimeRecovery } from '../../../src/runtime-client/recovery.js'
 
 const activeServers = new Set<ReturnType<typeof createServer>>()
@@ -39,6 +40,90 @@ afterEach(async () => {
 })
 
 describe('runtime-client capability negotiation', () => {
+  test('lazy remote-sandbox client does not start sandbox for passive health/status calls', async () => {
+    let sandboxStarts = 0
+    const { endpoint } = await startRuntimeServer((req, res) => {
+      if (req.method === 'POST' && req.url === '/sandbox/start') {
+        sandboxStarts += 1
+      }
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: false, error: 'should not be called' }))
+    })
+
+    const client = createLazyRemoteSandboxRuntimeClient({
+      runtime: {
+        mode: 'remote-sandbox',
+        hostAgentEndpoint: endpoint,
+        hostAgentApiKey: 'host-key',
+        healthCheckTimeoutMs: 1_000,
+        apiKey: 'runtime-key',
+      },
+    } as any)
+
+    await expect(client.health()).resolves.toBeNull()
+    expect(client.getEndpoint()).toBe('')
+    expect(sandboxStarts).toBe(0)
+  })
+
+  test('lazy remote-sandbox client starts sandbox on first runtime capability request', async () => {
+    let sandboxStarts = 0
+    let capabilityRequests = 0
+
+    const runtime = await startRuntimeServer((req, res) => {
+      if (req.method === 'GET' && req.url === '/capabilities') {
+        capabilityRequests += 1
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({
+          ok: true,
+          data: {
+            runtime_backends: [
+              {
+                type: 'inline',
+                handler: 'executeSandboxExecute',
+                description: 'Sandbox execute backend.',
+                requiresSample: true,
+              },
+            ],
+          },
+        }))
+        return
+      }
+      res.writeHead(404, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: false, error: 'Not found' }))
+    })
+
+    const hostAgent = await startRuntimeServer((req, res) => {
+      if (req.method === 'POST' && req.url === '/sandbox/start') {
+        sandboxStarts += 1
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, endpoint: runtime.endpoint, sandboxId: 'sandbox-1' }))
+        return
+      }
+      res.writeHead(404, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: false, error: 'Not found' }))
+    })
+
+    const client = createLazyRemoteSandboxRuntimeClient({
+      runtime: {
+        mode: 'remote-sandbox',
+        hostAgentEndpoint: hostAgent.endpoint,
+        hostAgentApiKey: 'host-key',
+        healthCheckTimeoutMs: 1_000,
+        apiKey: 'runtime-key',
+      },
+    } as any)
+
+    const capabilities = await client.getCapabilities()
+    expect(capabilities?.[0]?.handler).toBe('executeSandboxExecute')
+    expect(client.getEndpoint()).toBe(runtime.endpoint)
+    expect(sandboxStarts).toBe(1)
+    expect(capabilityRequests).toBe(1)
+
+    await client.getCapabilities()
+    expect(sandboxStarts).toBe(1)
+    expect(capabilityRequests).toBe(1)
+  })
+
   test('execute short-circuits unsupported runtime backend hints using runtime capabilities', async () => {
     let capabilityRequests = 0
     let executeRequests = 0

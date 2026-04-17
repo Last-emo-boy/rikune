@@ -34,6 +34,20 @@ start/stop, logs, health checks, status, and diagnostics.
 .\rikune.ps1 stop -Profile hybrid
 ```
 
+Windows menu choices:
+
+| Choice | Action |
+|--------|--------|
+| `1` | Install the `static` Docker analyzer |
+| `2` | Install `hybrid` on the same Windows host: Docker Desktop + Host Agent + Windows Sandbox |
+| `3` | Install the `full` Docker image |
+| `4` | Start the selected profile |
+| `5` | Show Compose status and HTTP/runtime health |
+| `6` | Show logs |
+| `7` | Stop the selected profile |
+| `8` | Run local diagnostics |
+| `9` | Check Windows Host Agent / runtime health |
+
 ```bash
 # Linux/macOS menu
 ./rikune.sh
@@ -78,6 +92,12 @@ The generated container uses:
 
 Hybrid mode keeps analysis in Docker but delegates real Windows execution to a
 Windows Host Agent, which can start Windows Sandbox on demand.
+
+The important distinction is that install/start prepares the runtime plane; it
+does not need to keep a Windows Sandbox window open. When an MCP tool requests a
+dynamic/sandbox execution lane, the analyzer calls the Host Agent, the Host
+Agent creates a fresh Sandbox session, the Runtime Node runs inside it, and the
+resulting traces/artifacts are returned to the analyzer.
 
 ### Windows Runtime Side
 
@@ -143,6 +163,69 @@ Hybrid environment contract:
 | `RUNTIME_HOST_AGENT_ENDPOINT` | Host Agent URL, usually `http://<windows-host>:18082` |
 | `RUNTIME_HOST_AGENT_API_KEY` | Analyzer -> Host Agent control-plane key |
 | `RUNTIME_API_KEY` | Analyzer -> Runtime Node key, only needed if the Runtime Node enforces separate auth |
+
+## MCP Client Configuration
+
+Docker deployments use a long-running analyzer container for the dashboard/API,
+then MCP clients start a separate stdio process inside that same container with
+`docker exec -i`. For `static` and `hybrid`, the container name is
+`rikune-analyzer`; for `full`, it is `rikune`.
+
+JSON-style clients:
+
+```json
+{
+  "mcpServers": {
+    "rikune": {
+      "command": "docker",
+      "args": [
+        "exec",
+        "-i",
+        "-e", "API_ENABLED=false",
+        "-e", "NODE_ENV=production",
+        "-e", "PYTHONUNBUFFERED=1",
+        "rikune-analyzer",
+        "node",
+        "dist/index.js"
+      ],
+      "env": {
+        "NODE_ENV": "production",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "timeout": 300000
+    }
+  }
+}
+```
+
+Codex TOML:
+
+```toml
+[mcp_servers.rikune]
+command = "docker"
+startup_timeout_sec = 180
+args = [
+  "exec",
+  "-i",
+  "-e", "API_ENABLED=false",
+  "-e", "NODE_ENV=production",
+  "-e", "PYTHONUNBUFFERED=1",
+  "rikune-analyzer",
+  "node",
+  "dist/index.js"
+]
+
+[mcp_servers.rikune.env]
+NODE_ENV = "production"
+PYTHONUNBUFFERED = "1"
+```
+
+`API_ENABLED=false` is intentional. It prevents the MCP stdio child process from
+trying to bind the dashboard port that is already owned by the daemon process.
+The dashboard remains available at `http://localhost:18080/dashboard`.
+`startup_timeout_sec` should be at least 180 for Docker profiles because the
+stdio child process loads the plugin graph and registers the full MCP surface on
+startup.
 
 ## Full Docker Image
 

@@ -724,14 +724,75 @@ QILING_PYTHON=./qiling-venv/bin/python</pre>
 }</pre>
           </div>
 
+          <h3>Codex</h3>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>%USERPROFILE%\.codex\config.toml</span
+              ><button class="code-block__copy">Copy</button>
+            </div>
+            <pre>[mcp_servers.rikune]
+command = "node"
+args = ["C:/path/to/rikune/dist/index.js"]
+
+[mcp_servers.rikune.env]
+NODE_ENV = "production"
+PYTHONUNBUFFERED = "1"
+WORKSPACE_ROOT = "C:/Users/you/.rikune/workspaces"
+DB_PATH = "C:/Users/you/.rikune/data/database.db"
+CACHE_ROOT = "C:/Users/you/.rikune/cache"
+GHIDRA_INSTALL_DIR = "C:/path/to/ghidra"</pre>
+          </div>
+
+          <h3>
+            <span data-lang-en>Docker-backed MCP</span
+            ><span data-lang-zh>基于 Docker 的 MCP</span>
+          </h3>
+          <p>
+            <span data-lang-en
+              >When Rikune is deployed with <code>static</code> or <code>hybrid</code>, connect MCP
+              clients through the running <code>rikune-analyzer</code> container instead of running
+              <code>node dist/index.js</code> on the host.</span
+            >
+            <span data-lang-zh
+              >当 Rikune 使用 <code>static</code> 或 <code>hybrid</code> 部署时，MCP 客户端应通过已运行的
+              <code>rikune-analyzer</code> 容器连接，而不是在宿主机上直接运行
+              <code>node dist/index.js</code>。</span
+            >
+          </p>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>Codex Docker TOML</span><button class="code-block__copy">Copy</button>
+            </div>
+            <pre>[mcp_servers.rikune]
+command = "docker"
+startup_timeout_sec = 180
+args = [
+  "exec",
+  "-i",
+  "-e", "API_ENABLED=false",
+  "-e", "NODE_ENV=production",
+  "-e", "PYTHONUNBUFFERED=1",
+  "rikune-analyzer",
+  "node",
+  "dist/index.js"
+]
+
+[mcp_servers.rikune.env]
+NODE_ENV = "production"
+PYTHONUNBUFFERED = "1"</pre>
+          </div>
+
           <blockquote>
             <span data-lang-en
               >💡 <strong>Tip:</strong> The <code>install-local.ps1</code> script can auto-generate
-              these configs for Claude, Copilot, or Codex.</span
+              native configs, and <code>install-docker.ps1 -ConfigureClient</code> can generate
+              Docker JSON configs. Codex users who keep MCP servers in
+              <code>config.toml</code> can copy the TOML form above.</span
             >
             <span data-lang-zh
-              >💡 <strong>提示</strong>：<code>install-local.ps1</code> 脚本可以为 Claude、Copilot
-              或 Codex 自动生成这些配置。</span
+              >💡 <strong>提示</strong>：<code>install-local.ps1</code> 可以生成原生运行配置，
+              <code>install-docker.ps1 -ConfigureClient</code> 可以生成 Docker JSON 配置。使用
+              <code>config.toml</code> 管理 MCP server 的 Codex 用户可以复制上面的 TOML 写法。</span
             >
           </blockquote>
         </section>

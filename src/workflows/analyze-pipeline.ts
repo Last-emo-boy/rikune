@@ -1844,12 +1844,26 @@ async function runDynamicExecuteStage(
     })
   }
 
-  const sandboxResult = await context.dependencies.sandboxExecute!({
-    sample_id: sampleId,
-    mode: unpackPlan?.packed_state && unpackPlan.packed_state !== 'not_packed' ? 'memory_guided' : 'safe_simulation',
-    approved: false,
-    persist_artifact: true,
-  })
+  const sandboxResult = executionPolicy.allowLiveExecution
+    ? await context.dependencies.sandboxExecute!({
+        sample_id: sampleId,
+        mode: unpackPlan?.packed_state && unpackPlan.packed_state !== 'not_packed' ? 'memory_guided' : 'safe_simulation',
+        approved: true,
+        persist_artifact: true,
+      })
+    : {
+        ok: false,
+        data: {
+          status: 'approval_gated',
+          failure_category: 'approval_required',
+          summary: 'Dynamic execution was not attempted because this run was not created with allow_live_execution=true.',
+          recommended_next_tools: ['workflow.analyze.start', 'workflow.analyze.status'],
+          next_actions: [
+            'Create a new dynamic run with allow_live_execution=true before promoting dynamic_execute.',
+          ],
+        },
+        warnings: ['Dynamic execution requires allow_live_execution=true on the analysis run.'],
+      } as WorkerResult
   artifacts.push(...collectArtifactsFromResult(sandboxResult))
   const afterDynamicEvidence = await loadDynamicTraceEvidence(
     context.workspaceManager,
@@ -1860,6 +1874,16 @@ async function runDynamicExecuteStage(
       sessionTag: undefined,
     }
   )
+  const sandboxData =
+    sandboxResult.data && typeof sandboxResult.data === 'object'
+      ? (sandboxResult.data as Record<string, unknown>)
+      : {}
+  const sandboxStatus = typeof sandboxData.status === 'string' ? sandboxData.status : null
+  const sandboxExecuted =
+    executionPolicy.allowLiveExecution &&
+    sandboxResult.ok &&
+    sandboxStatus !== 'setup_required' &&
+    sandboxStatus !== 'approval_gated'
   const dynamicDiff = buildDynamicBehaviorDiffDigest({
     sampleId,
     diffType: 'pre_vs_post_dynamic',
@@ -1967,16 +1991,18 @@ async function runDynamicExecuteStage(
     result: {
       stage: 'dynamic_execute',
       status:
-        unpackExecution?.unpack_state === 'unpacked' || afterDynamicEvidence
+        unpackExecution?.unpack_state === 'unpacked' || afterDynamicEvidence || sandboxExecuted
           ? 'ready'
           : 'partial',
       execution_state:
-        unpackExecution?.unpack_state === 'unpacked' || afterDynamicEvidence
+        unpackExecution?.unpack_state === 'unpacked' || afterDynamicEvidence || sandboxExecuted
           ? 'completed'
           : 'partial',
       summary:
         unpackedSampleId
           ? 'Dynamic execute completed a bounded unpack/debug pass, persisted an unpacked sample, and recorded compact pre/post diff artifacts.'
+          : sandboxExecuted
+            ? 'Dynamic execute ran sandbox.execute through the approved runtime path and persisted session-linked diff artifacts.'
           : 'Dynamic execute remained bounded to safe simulation and persisted session-linked diff artifacts; live backends remain approval-gated.',
       packed_state: unpackPlan?.packed_state || 'unknown',
       unpack_state: unpackExecution?.unpack_state || unpackPlan?.unpack_state || 'not_started',
@@ -2302,17 +2328,30 @@ function queueStage(
               ? FAST_PROFILE_TIMEOUT_MS
               : DYNAMIC_PLAN_TIMEOUT_MS
 
+  const run = database.findAnalysisRun(runId)
+  const executionPolicy = run
+    ? readExecutionPolicy(run)
+    : { allowTransformations: false, allowLiveExecution: false }
+  const sampleSizeTier = run?.sample_size_tier || null
+  const stageArgs = {
+    run_id: runId,
+    stage,
+    force_refresh: forceRefresh,
+    sample_size_tier: sampleSizeTier,
+    ...(stage === 'dynamic_execute'
+      ? {
+          allow_live_execution: executionPolicy.allowLiveExecution,
+          allow_transformations: executionPolicy.allowTransformations,
+          approved: executionPolicy.allowLiveExecution,
+        }
+      : {}),
+  }
+
   const jobId = jobQueue.enqueue({
     type: stage === 'function_map' || stage === 'reconstruct' ? 'decompile' : 'static',
     tool: ANALYSIS_STAGE_JOB_TOOL,
     sampleId,
-    args: {
-      run_id: runId,
-      stage,
-      force_refresh: forceRefresh,
-      sample_size_tier:
-        database.findAnalysisRun(runId)?.sample_size_tier || null,
-    },
+    args: stageArgs,
     priority:
       stage === 'function_map' || stage === 'reconstruct'
         ? JobPriority.HIGH
@@ -2322,10 +2361,7 @@ function queueStage(
 
   const executionPlan = buildSchedulerExecutionPlan({
     tool: ANALYSIS_STAGE_JOB_TOOL,
-    args: {
-      stage,
-      sample_size_tier: database.findAnalysisRun(runId)?.sample_size_tier || null,
-    },
+    args: stageArgs,
   })
 
   upsertAnalysisRunStage(database, {

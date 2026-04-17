@@ -234,6 +234,12 @@ function Configure-McpClient {
                 args = @(
                     "exec",
                     "-i",
+                    "-e",
+                    "API_ENABLED=false",
+                    "-e",
+                    "NODE_ENV=production",
+                    "-e",
+                    "PYTHONUNBUFFERED=1",
                     $ProfileConfig.Container,
                     "node",
                     "dist/index.js"

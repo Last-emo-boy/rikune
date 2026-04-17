@@ -771,36 +771,74 @@ docs/                        Documentation
   faq.html                   Common deployment and usage questions
 ```
 
-## Prerequisites
+## Deployment and startup
 
-### Option 1: Docker (Linux Analyzer)
+Rikune has two planes:
 
-Docker deployment is profile-based. The generator reads compiled plugin
-metadata from `dist/plugins` and writes the matching Dockerfile and Compose file.
-Use `static` for offline analysis, `hybrid` when a Windows Host Agent provides
-runtime execution, and `full` only when you intentionally want the heavy
-all-in-one Linux image.
+- **Analyzer plane**: the MCP server, dashboard, database, Ghidra/static tools, and workflow orchestration.
+- **Runtime plane**: optional real sample execution. In Docker deployments this is externalized to a Windows Host Agent / Windows Sandbox runtime instead of running directly inside the analyzer container.
+
+For most users, start from the top-level script and choose from the menu:
 
 ```powershell
-# Windows all-in-one menu; no flags required for normal users
 .\rikune.ps1
+```
 
-# Safe default: static-only analyzer, data under D:\Docker\rikune
+Docker profiles require Docker Desktop / Docker Engine, Node.js 22+, npm 10+,
+and enough disk space for the generated image. Hybrid on Windows also requires
+Windows 10/11 Pro or Enterprise with Windows Sandbox support enabled.
+
+The Windows menu exposes the normal lifecycle in one place:
+
+| Menu | What it does |
+|------|--------------|
+| `1` | Install `static`: Docker analyzer only, no real sample execution |
+| `2` | Install `hybrid`: Docker analyzer + local Windows Host Agent + Windows Sandbox |
+| `3` | Install `full`: heavier all-in-one Linux Docker image |
+| `4` to `9` | Start, status/health, logs, stop, doctor, and runtime status |
+
+Linux/macOS has the same top-level entry point:
+
+```bash
+./rikune.sh
+```
+
+### Deployment choices
+
+| Profile | Analyzer | Runtime | Dockerfile | Compose file | Container | Use this when |
+|---------|----------|---------|------------|--------------|-----------|---------------|
+| `static` | Linux Docker | none | `docker/Dockerfile.analyzer` | `docker-compose.analyzer.yml` | `rikune-analyzer` | You want safe static/offline analysis |
+| `hybrid` | Linux Docker | Windows Host Agent + Windows Sandbox | `docker/Dockerfile.analyzer` | `docker-compose.hybrid.yml` | `rikune-analyzer` | You want Docker analysis plus isolated Windows execution |
+| `full` | Linux Docker | none by default | `Dockerfile` | `docker-compose.yml` | `rikune` | You intentionally want the heavier Linux-side toolchain |
+| Windows native | Windows process | local Windows Sandbox | none | none | none | You want `RUNTIME_MODE=auto-sandbox` from a native Windows analyzer |
+
+Recommended commands:
+
+```powershell
+# Safe default. Persistent data defaults to D:\Docker\rikune.
 .\rikune.ps1 install -Profile static
 
-# Full Linux toolchain image
+# Single Windows host: Docker Desktop analyzer + Host Agent + Windows Sandbox.
+.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+
+# Heavy Linux toolchain image.
 .\rikune.ps1 install -Profile full
 
-# Single Windows host: Docker analyzer + Windows Host Agent + Sandbox
-.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+# Health, status, logs, and stop.
+.\rikune.ps1 health -Profile hybrid
+.\rikune.ps1 status -Profile hybrid
+.\rikune.ps1 logs -Profile hybrid -Follow
+.\rikune.ps1 stop -Profile hybrid
 ```
 
 ```bash
-# Linux/macOS all-in-one menu
-./rikune.sh
-
-# Linux analyzer + remote Windows Host Agent bootstrap
+# Linux analyzer + remote Windows Host Agent bootstrap.
 ./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user>
+
+# Status, logs, and stop.
+./rikune.sh status --profile hybrid
+./rikune.sh logs --profile hybrid --follow
+./rikune.sh stop --profile hybrid
 ```
 
 Manual profile generation is also available:
@@ -811,29 +849,21 @@ npm run docker:generate:all
 docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d analyzer
 ```
 
-Profile outputs:
+Runtime rules that matter:
 
-| Profile | Dockerfile | Compose file | Container | Runtime |
-|---------|------------|--------------|-----------|---------|
-| `static` | `docker/Dockerfile.analyzer` | `docker-compose.analyzer.yml` | `rikune-analyzer` | disabled |
-| `hybrid` | `docker/Dockerfile.analyzer` | `docker-compose.hybrid.yml` | `rikune-analyzer` | remote Windows Host Agent |
-| `full` | `Dockerfile` | `docker-compose.yml` | `rikune` | disabled |
-
-Important caveats:
-
-- `static` and `hybrid` do not install local dynamic execution dependencies such as Wine, Frida, Qiling, or GDB into the analyzer image.
-- `full` includes the heavy Linux-side toolchain and is the only profile intended for all-in-one Docker experimentation.
-- Docker or WSL analyzers cannot use `auto-sandbox`; that mode requires a Windows-native analyzer process.
-- For real sample execution from Linux Docker, use the `hybrid` profile and connect to a Windows Host Agent over the runtime HTTP API.
-- Use `RUNTIME_HOST_AGENT_API_KEY` only for Analyzer → Host Agent control requests, and `RUNTIME_API_KEY` only when the Windows Runtime Node itself requires a separate API key.
-- If you need single-host dynamic execution on Windows, run the analyzer natively on Windows and set `RUNTIME_MODE=auto-sandbox`.
+- `static` and `hybrid` use the analyzer image and do not install local dynamic execution dependencies such as Wine, Frida, Qiling, or GDB into the analyzer container.
+- `hybrid` sets `RUNTIME_MODE=remote-sandbox`; the analyzer talks to the Windows Host Agent, and the Host Agent starts Windows Sandbox on demand when a dynamic/sandbox tool actually needs execution.
+- The Windows Sandbox window may appear during dynamic analysis. That is expected; install/start does not need to keep a Sandbox GUI open.
+- Docker and WSL analyzers cannot use `auto-sandbox` directly. `auto-sandbox` is only for a Windows-native analyzer process.
+- Use `RUNTIME_HOST_AGENT_API_KEY` for Analyzer -> Host Agent control requests. Use `RUNTIME_API_KEY` only when the Windows Runtime Node itself enforces a separate key.
 - `Qiling` still needs an externally mounted Windows rootfs via `QILING_ROOTFS`.
 - `RetDec` is a heavy backend and should be consumed artifact-first instead of returning oversized inline payloads.
 
-See [`DEPLOYMENT.md`](./DEPLOYMENT.md) and [`docs/docker.html`](./docs/docker.html) for
-full deployment guidance.
+See [`DEPLOYMENT.md`](./DEPLOYMENT.md) and [`docs/docker.html`](./docs/docker.html) for full deployment guidance.
 
-### Option 2: Local Installation
+## Prerequisites
+
+### Local Installation
 
 Required:
 
@@ -929,12 +959,14 @@ npm start
 
 ### Docker Compose plus `docker exec`
 
-For the default static analyzer profile, start the daemon once and point the MCP
-client at the running container:
+For `static` and `hybrid`, start the analyzer daemon once and point the MCP
+client at the running `rikune-analyzer` container:
 
 ```bash
 docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d analyzer
 ```
+
+For Claude Desktop, VS Code MCP JSON, and other JSON-based clients:
 
 ```json
 {
@@ -944,6 +976,12 @@ docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up 
       "args": [
         "exec",
         "-i",
+        "-e",
+        "API_ENABLED=false",
+        "-e",
+        "NODE_ENV=production",
+        "-e",
+        "PYTHONUNBUFFERED=1",
         "rikune-analyzer",
         "node",
         "dist/index.js"
@@ -963,7 +1001,42 @@ docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up 
 }
 ```
 
-In this deployment, host-side file uploads should use `sample.request_upload` and the returned `http://localhost:18080/api/v1/uploads/<token>` URL instead of trying to pass a host filesystem path into the containerized worker.
+For Codex TOML (`%USERPROFILE%\.codex\config.toml` on Windows):
+
+```toml
+[mcp_servers.rikune]
+command = "docker"
+startup_timeout_sec = 180
+args = [
+  "exec",
+  "-i",
+  "-e", "API_ENABLED=false",
+  "-e", "NODE_ENV=production",
+  "-e", "PYTHONUNBUFFERED=1",
+  "rikune-analyzer",
+  "node",
+  "dist/index.js"
+]
+
+[mcp_servers.rikune.env]
+NODE_ENV = "production"
+PYTHONUNBUFFERED = "1"
+```
+
+`API_ENABLED=false` disables the HTTP dashboard/file server only for the short-lived
+stdio MCP child process. The already running Docker daemon process still serves
+the dashboard at `http://localhost:18080/dashboard`.
+
+The first MCP initialization can take more than 30 seconds because the child
+process loads the plugin graph and registers 200+ tools/resources, so Codex
+should use `startup_timeout_sec = 180` or higher.
+
+If you use the `full` profile, change the container name from `rikune-analyzer`
+to `rikune`.
+
+In Docker deployments, host-side file uploads should use `sample.request_upload`
+and the returned `http://localhost:18080/api/v1/uploads/<token>` URL instead of
+trying to pass a host filesystem path into the containerized worker.
 
 ### Local install helpers
 

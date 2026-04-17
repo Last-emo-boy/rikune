@@ -20,6 +20,7 @@ import {
   isWindowsSandboxAvailable,
   createSandboxLauncher,
   createRuntimeClient,
+  createLazyRemoteSandboxRuntimeClient,
   createRuntimeRecovery,
   type RuntimeConnection,
 } from './runtime-client/index.js'
@@ -52,13 +53,22 @@ async function main() {
     await storageManager.initialize()
     const jobQueue = new JobQueue(database)
     jobQueue.restoreFromDatabase()
-    const analysisTaskRunner = new AnalysisTaskRunner(jobQueue, database, workspaceManager, cacheManager, policyGuard)
-    analysisTaskRunner.start()
 
     // ── Runtime initialization (Analyzer mode) ──
     let runtimeConnection: RuntimeConnection | null = null
     let runtimeClient: ReturnType<typeof createRuntimeClient> | null = null
     let sandboxLauncher: ReturnType<typeof createSandboxLauncher> | null = null
+    const analysisTaskRunner = new AnalysisTaskRunner(
+      jobQueue,
+      database,
+      workspaceManager,
+      cacheManager,
+      policyGuard,
+      {
+        runtimeClientProvider: () => runtimeClient,
+        sandboxDirProvider: () => runtimeConnection?.sandboxDir ?? null,
+      },
+    )
 
     const recovery = createRuntimeRecovery({ config, runtimeClient, runtimeConnection, sandboxLauncher })
 
@@ -93,43 +103,17 @@ async function main() {
         return
       }
 
-      // remote-sandbox mode: ask a Windows Host Agent to launch a sandbox
+      // remote-sandbox mode: configure a lazy Windows Host Agent client.
+      // The sandbox is launched on the first delegated runtime operation, not
+      // when an MCP client connects or asks for health/status.
       if (config.runtime.mode === 'remote-sandbox') {
         if (!config.runtime.hostAgentEndpoint) {
           logger.warn('Runtime mode is remote-sandbox but no hostAgentEndpoint is configured; dynamic tools will be unavailable')
           return
         }
-        try {
-          const startRes = await fetch(`${config.runtime.hostAgentEndpoint}/sandbox/start`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...(config.runtime.hostAgentApiKey ? { Authorization: `Bearer ${config.runtime.hostAgentApiKey}` } : {}) },
-            body: JSON.stringify({
-              timeoutMs: config.runtime.healthCheckTimeoutMs,
-              runtimeApiKey: config.runtime.apiKey,
-            }),
-            signal: AbortSignal.timeout(60_000),
-          })
-          if (!startRes.ok) {
-            const body = await startRes.text().catch(() => '')
-            logger.warn({ status: startRes.status, body }, 'Host agent failed to start sandbox; dynamic tools will be unavailable')
-            return
-          }
-          const startData = (await startRes.json()) as { ok?: boolean; endpoint?: string; sandboxId?: string }
-          if (!startData.ok || !startData.endpoint) {
-            logger.warn({ startData }, 'Host agent returned an unsuccessful sandbox start; dynamic tools will be unavailable')
-            return
-          }
-          runtimeClient = createRuntimeClient({
-            endpoint: startData.endpoint,
-            apiKey: config.runtime.apiKey,
-          })
-          runtimeClient.recover = recovery.recover
-          recovery.setRuntimeClient(runtimeClient)
-          logger.info({ endpoint: startData.endpoint, sandboxId: startData.sandboxId }, 'Remote-sandbox runtime connected')
-          logger.warn('Dynamic analysis will execute actual samples inside the remote Windows Sandbox. Ensure the sandbox is properly isolated.')
-        } catch (err) {
-          logger.warn({ err, hostAgentEndpoint: config.runtime.hostAgentEndpoint }, 'Failed to connect to host agent; dynamic tools will be unavailable')
-        }
+        runtimeClient = createLazyRemoteSandboxRuntimeClient(config)
+        recovery.setRuntimeClient(runtimeClient)
+        logger.info({ hostAgentEndpoint: config.runtime.hostAgentEndpoint }, 'Remote-sandbox runtime configured for lazy launch')
         return
       }
 
@@ -183,6 +167,7 @@ async function main() {
     }
 
     await initializeRuntime()
+    analysisTaskRunner.start()
 
     // Custom bootstrapper that wires runtimeClient into health checks
     const apiBootstrapper: import('./api/api-bootstrapper.js').ApiBootstrapper = {

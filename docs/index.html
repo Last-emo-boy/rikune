@@ -1042,6 +1042,7 @@
         <div class="install__tabs reveal">
           <button class="install__tab active" data-tab="claude">Claude Desktop</button>
           <button class="install__tab" data-tab="copilot">VS Code Copilot</button>
+          <button class="install__tab" data-tab="codex">Codex</button>
           <button class="install__tab" data-tab="docker">Docker</button>
           <button class="install__tab" data-tab="npm">npm</button>
         </div>
@@ -1085,6 +1086,33 @@
     }
   }
 }</pre>
+          </div>
+        </div>
+
+        <div class="install__panel" data-panel="codex">
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>%USERPROFILE%\.codex\config.toml</span>
+              <button class="code-block__copy">Copy</button>
+            </div>
+            <pre><span class="comment"># Docker static/hybrid profile</span>
+[mcp_servers.rikune]
+command = "docker"
+startup_timeout_sec = 180
+args = [
+  "exec",
+  "-i",
+  "-e", "API_ENABLED=false",
+  "-e", "NODE_ENV=production",
+  "-e", "PYTHONUNBUFFERED=1",
+  "rikune-analyzer",
+  "node",
+  "dist/index.js"
+]
+
+[mcp_servers.rikune.env]
+NODE_ENV = "production"
+PYTHONUNBUFFERED = "1"</pre>
           </div>
         </div>
 

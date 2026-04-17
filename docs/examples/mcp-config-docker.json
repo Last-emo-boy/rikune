@@ -5,7 +5,13 @@
       "args": [
         "exec",
         "-i",
-        "rikune",
+        "-e",
+        "API_ENABLED=false",
+        "-e",
+        "NODE_ENV=production",
+        "-e",
+        "PYTHONUNBUFFERED=1",
+        "rikune-analyzer",
         "node",
         "dist/index.js"
       ],

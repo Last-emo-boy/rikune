@@ -111,6 +111,14 @@ function inferSampleTier(args: Record<string, unknown>): SampleSizeTier | null {
   return null
 }
 
+function hasExplicitExecutionApproval(args: Record<string, unknown>): boolean {
+  return (
+    args.approved === true ||
+    args.allow_live_execution === true ||
+    args.allowLiveExecution === true
+  )
+}
+
 const DEFAULT_MEMORY_LIMIT_MB = 8192
 const DEFAULT_CONTROL_PLANE_HEADROOM_MB = 1536
 const DEFAULT_PEAK_MEMORY_MARGIN_MB = 256
@@ -210,6 +218,9 @@ function estimateExpectedRssMb(plan: Omit<SchedulerExecutionPlan, 'expected_rss_
   }
   if (plan.worker_family === 'stage.dynamic_plan') {
     return scaleForSampleTier(768, plan.sample_size_tier)
+  }
+  if (plan.worker_family === 'stage.dynamic_execute') {
+    return scaleForSampleTier(1024, plan.sample_size_tier)
   }
   if (plan.worker_family === 'stage.summarize') {
     return scaleForSampleTier(256, plan.sample_size_tier)
@@ -328,15 +339,17 @@ export function buildSchedulerExecutionPlan(input: {
           stage,
           sample_size_tier: sampleSizeTier,
         })
-      case 'dynamic_execute':
+      case 'dynamic_execute': {
+        const executionApproved = hasExplicitExecutionApproval(args)
         return withExpectedRss({
           execution_bucket: 'dynamic-execute',
-          cost_class: 'manual-only',
+          cost_class: executionApproved ? 'expensive' : 'manual-only',
           worker_family: 'stage.dynamic_execute',
-          manual_only: true,
+          manual_only: !executionApproved,
           stage,
           sample_size_tier: sampleSizeTier,
         })
+      }
       case 'summarize':
         return withExpectedRss({
           execution_bucket: 'artifact-only',

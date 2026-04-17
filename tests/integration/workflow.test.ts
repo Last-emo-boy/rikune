@@ -324,7 +324,7 @@ describe('Workflow Integration', () => {
       depth: 'balanced',
       backend_policy: 'auto',
       allow_transformations: false,
-      allow_live_execution: false,
+      allow_live_execution: true,
       force_refresh: false,
     })
     expect(startResult.ok).toBe(true)

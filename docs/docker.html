@@ -108,9 +108,11 @@
         <a href="#services">Services Overview</a>
         <a href="#production">Production Mode</a>
         <a href="#compose">Docker Compose</a>
+        <a href="#mcp-client">MCP Client</a>
         <a href="#env-vars">Environment Variables</a>
         <a href="#dashboard">Web Dashboard</a>
         <a href="#bundled">Bundled Tools</a>
+        <a href="#troubleshooting">Troubleshooting</a>
       </aside>
 
       <div class="doc-main">
@@ -146,6 +148,60 @@
             </div>
             <pre>./rikune.sh</pre>
           </div>
+          <p>
+            <span data-lang-en
+              >The top-level scripts are the normal entry point. They install, start, stop, show
+              status, stream logs, run health checks, regenerate Docker files, and bootstrap the
+              Windows runtime when you choose the hybrid path.</span
+            >
+            <span data-lang-zh
+              >顶层脚本是普通用户的入口。它们负责安装、启动、停止、状态查询、日志、健康检查、
+              Docker 文件生成，以及在选择 hybrid 方案时初始化 Windows 运行时。</span
+            >
+          </p>
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th><span data-lang-en>Windows menu</span><span data-lang-zh>Windows 菜单</span></th>
+                <th><span data-lang-en>Meaning</span><span data-lang-zh>含义</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>1</code></td>
+                <td>
+                  <span data-lang-en>Install static Docker analyzer</span
+                  ><span data-lang-zh>安装纯静态 Docker analyzer</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>2</code></td>
+                <td>
+                  <span data-lang-en
+                    >Install Docker analyzer, Windows Host Agent, and Windows Sandbox support on
+                    the same host</span
+                  ><span data-lang-zh
+                    >在同一台 Windows 主机上安装 Docker analyzer、Windows Host Agent 和 Windows
+                    Sandbox 支持</span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td><code>3</code></td>
+                <td>
+                  <span data-lang-en>Install the full Linux Docker image</span
+                  ><span data-lang-zh>安装全量 Linux Docker 镜像</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>4</code>-<code>9</code></td>
+                <td>
+                  <span data-lang-en>Start, status/health, logs, stop, doctor, runtime status</span
+                  ><span data-lang-zh>启动、状态/健康检查、日志、停止、诊断、运行时状态</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
           <h3>
             <span data-lang-en>Static-only analyzer (safe default)</span
@@ -172,6 +228,21 @@
 <span class="comment"># Linux analyzer + remote Windows Host Agent</span>
 ./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt;</pre>
           </div>
+          <p>
+            <span data-lang-en
+              >In the single-host Windows hybrid path, the script installs or starts the Host
+              Agent, checks Windows Sandbox support, writes <code>.docker-runtime.env</code>, builds
+              the analyzer image, and starts <code>rikune-analyzer</code>. The Sandbox runtime is
+              launched on demand by dynamic/sandbox tools, not as a permanently open GUI during
+              installation.</span
+            >
+            <span data-lang-zh
+              >在单机 Windows hybrid 方案中，脚本会安装或启动 Host Agent、检查 Windows Sandbox
+              支持、写入 <code>.docker-runtime.env</code>、构建 analyzer 镜像并启动
+              <code>rikune-analyzer</code>。Sandbox 运行时由动态/沙箱工具按需启动，安装时不会要求
+              一直打开一个 Sandbox 窗口。</span
+            >
+          </p>
 
           <h3>
             <span data-lang-en>Full Linux toolchain image</span
@@ -763,6 +834,100 @@ docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml down<
           </blockquote>
         </section>
 
+        <!-- MCP Client -->
+        <section id="mcp-client" class="reveal">
+          <h2>
+            <span data-lang-en>MCP Client Configuration</span
+            ><span data-lang-zh>MCP 客户端配置</span>
+          </h2>
+          <p>
+            <span data-lang-en
+              >Docker profiles run a long-lived analyzer container for the dashboard and HTTP API.
+              MCP clients should start a separate stdio process inside that running container with
+              <code>docker exec -i</code>.</span
+            >
+            <span data-lang-zh
+              >Docker profile 会先运行一个长期存在的 analyzer 容器，用于 Dashboard 和 HTTP API。
+              MCP 客户端应通过 <code>docker exec -i</code> 在这个已运行容器中启动独立的 stdio
+              进程。</span
+            >
+          </p>
+
+          <h3>
+            <span data-lang-en>JSON clients</span><span data-lang-zh>JSON 客户端</span>
+          </h3>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>mcp.json</span><button class="code-block__copy">Copy</button>
+            </div>
+            <pre>{
+  <span class="str">"mcpServers"</span>: {
+    <span class="str">"rikune"</span>: {
+      <span class="str">"command"</span>: <span class="str">"docker"</span>,
+      <span class="str">"args"</span>: [
+        <span class="str">"exec"</span>,
+        <span class="str">"-i"</span>,
+        <span class="str">"-e"</span>, <span class="str">"API_ENABLED=false"</span>,
+        <span class="str">"-e"</span>, <span class="str">"NODE_ENV=production"</span>,
+        <span class="str">"-e"</span>, <span class="str">"PYTHONUNBUFFERED=1"</span>,
+        <span class="str">"rikune-analyzer"</span>,
+        <span class="str">"node"</span>,
+        <span class="str">"dist/index.js"</span>
+      ],
+      <span class="str">"env"</span>: {
+        <span class="str">"NODE_ENV"</span>: <span class="str">"production"</span>,
+        <span class="str">"PYTHONUNBUFFERED"</span>: <span class="str">"1"</span>
+      },
+      <span class="str">"timeout"</span>: 300000
+    }
+  }
+}</pre>
+          </div>
+
+          <h3>Codex</h3>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>%USERPROFILE%\.codex\config.toml</span
+              ><button class="code-block__copy">Copy</button>
+            </div>
+            <pre>[mcp_servers.rikune]
+command = "docker"
+startup_timeout_sec = 180
+args = [
+  "exec",
+  "-i",
+  "-e", "API_ENABLED=false",
+  "-e", "NODE_ENV=production",
+  "-e", "PYTHONUNBUFFERED=1",
+  "rikune-analyzer",
+  "node",
+  "dist/index.js"
+]
+
+[mcp_servers.rikune.env]
+NODE_ENV = "production"
+PYTHONUNBUFFERED = "1"</pre>
+          </div>
+
+          <blockquote>
+            <span data-lang-en
+              ><code>API_ENABLED=false</code> only applies to the short-lived MCP stdio child
+              process. The already running analyzer container still serves the dashboard at
+              <code>http://localhost:18080/dashboard</code>. For the <code>full</code> profile,
+              change the container name from <code>rikune-analyzer</code> to <code>rikune</code>.
+              Keep <code>startup_timeout_sec</code> at 180 or higher because the Docker MCP child
+              loads the plugin graph on startup.</span
+            >
+            <span data-lang-zh
+              ><code>API_ENABLED=false</code> 只作用于短生命周期的 MCP stdio 子进程。已经运行的
+              analyzer 容器仍然会在 <code>http://localhost:18080/dashboard</code> 提供 Dashboard。
+              如果使用 <code>full</code> profile，请把容器名从 <code>rikune-analyzer</code> 改为
+              <code>rikune</code>。请将 <code>startup_timeout_sec</code> 保持在 180 或更高，因为
+              Docker MCP 子进程启动时需要加载插件图。</span
+            >
+          </blockquote>
+        </section>
+
         <!-- Environment Variables -->
         <section id="env-vars" class="reveal">
           <h2><span data-lang-en>Environment Variables</span><span data-lang-zh>环境变量</span></h2>
@@ -877,10 +1042,11 @@ docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml down<
               </tr>
               <tr>
                 <td><code>QILING_ROOTFS</code></td>
-                <td><code>/opt/qiling-rootfs</code></td>
+                <td>—</td>
                 <td>
-                  <span data-lang-en>Qiling Windows rootfs mount</span
-                  ><span data-lang-zh>Qiling Windows rootfs 挂载点</span>
+                  <span data-lang-en
+                    >Optional Qiling Windows rootfs mount; set only when you provide one</span
+                  ><span data-lang-zh>可选 Qiling Windows rootfs 挂载点；仅在你提供 rootfs 时设置</span>
                 </td>
               </tr>
               <tr>
@@ -1191,6 +1357,38 @@ docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml down<
                   ><span data-lang-zh>验证挂载路径：<code>-v /绝对路径:/samples:ro</code></span>
                 </td>
               </tr>
+              <tr>
+                <td>
+                  <span data-lang-en>Dashboard opens, but script health check warns</span
+                  ><span data-lang-zh>Dashboard 可打开，但脚本健康检查警告</span>
+                </td>
+                <td>
+                  <span data-lang-en
+                    >Run <code>.\rikune.ps1 health -Profile hybrid</code>. If a system proxy is
+                    configured, local checks should bypass it with <code>--noproxy</code> /
+                    <code>-NoProxy</code>.</span
+                  ><span data-lang-zh
+                    >运行 <code>.\rikune.ps1 health -Profile hybrid</code>。如果系统配置了代理，本地
+                    健康检查应通过 <code>--noproxy</code> / <code>-NoProxy</code> 绕过代理。</span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span data-lang-en>Windows Sandbox feature name error</span
+                  ><span data-lang-zh>Windows Sandbox 功能名错误</span>
+                </td>
+                <td>
+                  <span data-lang-en
+                    >The Windows feature is <code>Containers-DisposableClientVM</code>. Enable
+                    Windows Sandbox and Virtual Machine Platform from Windows Features, then reboot
+                    if Windows asks.</span
+                  ><span data-lang-zh
+                    >Windows 功能名是 <code>Containers-DisposableClientVM</code>。请在 Windows
+                    功能中启用 Windows Sandbox 和 Virtual Machine Platform，并按系统提示重启。</span
+                  >
+                </td>
+              </tr>
             </tbody>
           </table>
 
@@ -1226,6 +1424,22 @@ docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml down<
                     >Set timeout to 300000ms; increase <code>--memory=8g --cpus=4</code></span
                   ><span data-lang-zh
                     >设置超时为 300000ms；增加 <code>--memory=8g --cpus=4</code></span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span data-lang-en>Port 18080 already in use when MCP starts</span
+                  ><span data-lang-zh>MCP 启动时提示 18080 已占用</span>
+                </td>
+                <td>
+                  <span data-lang-en
+                    >Add <code>-e API_ENABLED=false</code> to the <code>docker exec</code> MCP
+                    args. The daemon container keeps the dashboard running.</span
+                  ><span data-lang-zh
+                    >在 MCP 的 <code>docker exec</code> 参数中加入
+                    <code>-e API_ENABLED=false</code>。长期运行的 daemon 容器仍会提供
+                    Dashboard。</span
                   >
                 </td>
               </tr>

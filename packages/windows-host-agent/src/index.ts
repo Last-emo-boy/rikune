@@ -267,6 +267,23 @@ async function removePortProxy(listenPort: number): Promise<void> {
   })
 }
 
+async function removeSandboxDir(sandboxDir: string, reason: string): Promise<void> {
+  if (/^(1|true|yes|on)$/i.test(process.env.HOST_AGENT_KEEP_FAILED_SANDBOX || '')) {
+    logger.warn({ sandboxDir, reason }, 'Keeping failed sandbox workspace for diagnostics')
+    return
+  }
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await fs.rm(sandboxDir, { recursive: true, force: true })
+      return
+    } catch (err) {
+      logger.warn({ err, sandboxDir, attempt, reason }, 'Failed to remove sandbox workspace')
+      await new Promise((resolve) => setTimeout(resolve, 500 * attempt))
+    }
+  }
+}
+
 async function startSandbox(
   body: unknown
 ): Promise<{ ok: boolean; endpoint?: string; sandboxId?: string; error?: string }> {
@@ -323,6 +340,11 @@ async function startSandbox(
     windowsHide: true,
     stdio: 'ignore',
   })
+  let sandboxExit: { code: number | null; signal: NodeJS.Signals | null } | null = null
+  sandboxProcess.once('exit', (code, signal) => {
+    sandboxExit = { code, signal }
+    logger.warn({ sandboxDir, wsbPath, code, signal }, 'Windows Sandbox process exited before runtime readiness was confirmed')
+  })
 
   const ready = await waitForRuntimeReady(sandboxDir, timeoutMs)
   if (!ready || !ready.host) {
@@ -330,8 +352,16 @@ async function startSandbox(
       sandboxProcess.kill()
     } catch {}
     releaseListenPort(listenPort)
-    await fs.rm(sandboxDir, { recursive: true, force: true })
-    return { ok: false, error: 'Sandbox runtime did not become ready within timeout' }
+    await removeSandboxDir(sandboxDir, 'runtime_not_ready')
+    const exitDetail = sandboxExit
+      ? ` WindowsSandbox.exe exited with code=${sandboxExit.code ?? 'null'} signal=${sandboxExit.signal ?? 'null'}.`
+      : ''
+    return {
+      ok: false,
+      error:
+        `Sandbox runtime did not become ready within timeout.${exitDetail} ` +
+        `wsbPath=${wsbPath}`,
+    }
   }
 
   try {
@@ -376,7 +406,7 @@ async function stopSandbox(sandboxId: string): Promise<{ ok: boolean; error?: st
     await removePortProxy(box.listenPort)
   } catch {}
   try {
-    await fs.rm(box.sandboxDir, { recursive: true, force: true })
+    await removeSandboxDir(box.sandboxDir, 'stop_sandbox')
   } catch {}
   releaseListenPort(box.listenPort)
   activeSandboxes.delete(sandboxId)

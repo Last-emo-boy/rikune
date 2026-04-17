@@ -23,7 +23,11 @@ import pino from 'pino'
 import type { Plugin, SurfaceRules, SurfaceTier } from '../plugins/sdk.js'
 import { SURFACE_FILE_TYPE_TAGS } from '../plugins/sdk.js'
 
-const logger = pino({ name: 'tool-surface-manager', level: process.env.LOG_LEVEL || 'info' })
+// MCP stdio reserves stdout for JSON-RPC frames. Send surface logs to stderr.
+const logger = pino(
+  { name: 'tool-surface-manager', level: process.env.LOG_LEVEL || 'info' },
+  pino.destination({ dest: 2, sync: false }),
+)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // File-type normalization (delegates to SDK vocabulary)

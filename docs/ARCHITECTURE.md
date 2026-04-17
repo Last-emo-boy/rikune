@@ -54,6 +54,32 @@ streaming support, and MCP resource exposure.
 4. Calls `await registerAllTools(server, deps)` — the single point of tool/prompt/resource registration
 5. Starts the server and wires graceful shutdown handlers
 
+## Deployment planes
+
+Runtime deployment is intentionally split from the analyzer:
+
+| Plane | Responsibility | Typical process |
+|-------|----------------|-----------------|
+| Analyzer | MCP stdio server, dashboard/API, static analysis, database, Ghidra projects, artifacts | `node dist/index.js` or Docker `rikune-analyzer` |
+| Host Agent | Windows-side control plane for creating and supervising sandbox runtimes | `packages/windows-host-agent/dist/index.js` |
+| Runtime Node | In-sandbox execution API used by dynamic/sandbox tools | `packages/runtime-node/dist/index.js` inside Windows Sandbox |
+
+Docker profiles map onto these planes:
+
+- `static`: analyzer container only, `RUNTIME_MODE=disabled`.
+- `hybrid`: analyzer container with `RUNTIME_MODE=remote-sandbox`; runtime work is delegated to the Windows Host Agent, which starts Windows Sandbox on demand.
+- `full`: heavier Linux analyzer image for all-in-one toolchain experiments; real Windows Sandbox execution still belongs to Windows native / hybrid runtime paths.
+- Windows native `auto-sandbox`: analyzer runs directly on Windows and may launch local Windows Sandbox without Docker.
+
+MCP clients do not connect to the dashboard HTTP server. They use JSON-RPC over
+stdio. In Docker deployments, clients normally run the MCP child with
+`API_ENABLED=false` so it does not attempt to bind the dashboard port already
+owned by the daemon container:
+
+```bash
+docker exec -i -e API_ENABLED=false rikune-analyzer node dist/index.js
+```
+
 ## Tool Registry
 
 **File:** `src/tool-registry.ts`

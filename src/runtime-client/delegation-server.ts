@@ -47,6 +47,17 @@ export interface RuntimeClientLike {
   recover?(options?: { forceRefreshCapabilities?: boolean }): Promise<boolean>
 }
 
+export interface RuntimeDelegatedToolHandlerOptions {
+  definition: ToolDefinition
+  pluginId: string
+  runtimeClient: RuntimeClientLike | null | undefined
+  workspaceManager: any
+  database: any
+  resolvePrimarySamplePath: any
+  sandboxDir?: string | null
+  getProgressReporter?: (progressToken?: string | number) => ProgressReporter
+}
+
 interface PluginServerWithProgress extends PluginServerInterface {
   getProgressReporter?: (progressToken?: string | number) => ProgressReporter
 }
@@ -228,6 +239,56 @@ function buildRuntimeUnavailableResult(
   })
 }
 
+export function createRuntimeDelegatedToolHandler(
+  options: RuntimeDelegatedToolHandlerOptions,
+): (args: any) => Promise<CoreWorkerResult> {
+  let registeredHandler: ((args: any) => Promise<CoreWorkerResult>) | null = null
+  const server = {
+    registerTool(_definition: ToolDefinition, handler: (args: any) => Promise<CoreWorkerResult>) {
+      registeredHandler = handler
+    },
+    unregisterTool() {},
+    getToolDefinitions() {
+      return []
+    },
+    registerPrompt() {},
+    getPromptDefinitions() {
+      return []
+    },
+    registerResource() {},
+    getClientCapabilities() {
+      return undefined
+    },
+    getClientVersion() {
+      return undefined
+    },
+    async createMessage() {
+      throw new Error('Runtime delegation helper does not support sampling')
+    },
+    getProgressReporter: options.getProgressReporter,
+  } as unknown as PluginServerWithProgress
+
+  createDelegatingServer(
+    server,
+    options.pluginId,
+    options.runtimeClient,
+    options.workspaceManager,
+    options.database,
+    options.resolvePrimarySamplePath,
+    options.sandboxDir ?? null,
+  ).registerTool(options.definition, async () =>
+    buildRuntimeUnavailableResult(
+      options.definition,
+      options.runtimeClient?.getEndpoint?.() ?? null,
+    ),
+  )
+
+  if (!registeredHandler) {
+    throw new Error(`Failed to create runtime delegated handler for ${options.definition.name}`)
+  }
+  return registeredHandler
+}
+
 /**
  * Dynamic tools that do NOT require actual sample execution and can stay
  * on the Analyzer node (pure static planning / attribution).
@@ -322,7 +383,11 @@ export function createDelegatingServer(
           return baseResult
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err)
-          const isNetworkError = /ECONNREFUSED|ECONNRESET|socket hang up|502|503|timeout/i.test(errMsg)
+          const isHostAgentSandboxStartFailure =
+            err instanceof Error && err.name === 'HostAgentSandboxStartError'
+          const isNetworkError =
+            !isHostAgentSandboxStartFailure &&
+            /ECONNREFUSED|ECONNRESET|socket hang up|502|503|AbortError|TimeoutError|UND_ERR|fetch failed/i.test(errMsg)
 
           if (isNetworkError && runtimeClient.recover) {
             logger.warn({ pluginId, tool: definition.name, errMsg }, 'Runtime appears unreachable; attempting recovery')
@@ -374,9 +439,11 @@ export function createDelegatingServer(
 
           logger.error({ pluginId, tool: definition.name, err }, 'Delegated runtime execution failed')
           return buildRuntimeFailureResult(definition, isNetworkError ? 'runtime_recovery_failed' : 'tool_specific_execution_failed', {
-            summary: isNetworkError
-              ? `Runtime became unreachable while executing ${definition.name} and automatic recovery did not restore service.`
-              : `Delegated runtime execution failed for ${definition.name}.`,
+            summary: isHostAgentSandboxStartFailure
+              ? 'Windows Host Agent could not start the Windows Sandbox runtime.'
+              : isNetworkError
+                ? `Runtime became unreachable while executing ${definition.name} and automatic recovery did not restore service.`
+                : `Delegated runtime execution failed for ${definition.name}.`,
             errors: [`Runtime execution failed: ${errMsg}`],
             runtimeEndpoint,
           })

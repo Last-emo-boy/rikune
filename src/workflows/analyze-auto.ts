@@ -949,13 +949,27 @@ export function createAnalyzeAutoWorkflowHandler(
           ? 'speakeasy'
           : 'safe_simulation'
 
-      const sandboxResult = await sandboxExecuteHandler({
-        sample_id: input.sample_id,
-        mode: sandboxMode,
-        network: 'disabled',
-        approved: false,
-        persist_artifact: true,
-      })
+      const sandboxResult = input.allow_live_execution
+        ? await sandboxExecuteHandler({
+            sample_id: input.sample_id,
+            mode: sandboxMode,
+            network: 'disabled',
+            approved: true,
+            persist_artifact: true,
+          })
+        : {
+            ok: false,
+            data: {
+              status: 'approval_gated',
+              failure_category: 'approval_required',
+              summary: 'Dynamic sandbox execution was not attempted because allow_live_execution=false.',
+              recommended_next_tools: ['workflow.analyze.start', 'workflow.analyze.promote'],
+              next_actions: [
+                'Create or promote a dynamic run with allow_live_execution=true before requesting sandbox execution.',
+              ],
+            },
+            warnings: ['Dynamic sandbox execution requires allow_live_execution=true.'],
+          } as WorkerResult
 
       let qilingResult: WorkerResult | undefined
       let pandaResult: WorkerResult | undefined

@@ -192,6 +192,51 @@
         </div>
       </div>
 
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>How should Codex connect to a Docker deployment?</span>
+          <span data-lang-zh>Codex 应该如何连接 Docker 部署？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            Start the Docker profile first, then configure Codex to run
+            <code>docker exec -i -e API_ENABLED=false rikune-analyzer node dist/index.js</code>.
+            The <code>API_ENABLED=false</code> flag is important because the dashboard/API is
+            already owned by the long-running container process. Also set
+            <code>startup_timeout_sec = 180</code>; Docker startup loads the plugin graph and can
+            exceed Codex's 30-second default.
+          </p>
+          <p data-lang-zh>
+            先启动 Docker profile，然后让 Codex 执行
+            <code>docker exec -i -e API_ENABLED=false rikune-analyzer node dist/index.js</code>。
+            <code>API_ENABLED=false</code> 很重要，因为 Dashboard/API 已经由长期运行的容器进程占用。
+            同时设置 <code>startup_timeout_sec = 180</code>；Docker 启动时需要加载插件图，可能超过
+            Codex 默认的 30 秒。
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>Does the hybrid installer keep Windows Sandbox open?</span>
+          <span data-lang-zh>hybrid 安装器会一直打开 Windows Sandbox 吗？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            No. The installer prepares the Host Agent and Docker analyzer. Windows Sandbox is
+            launched on demand when a dynamic/sandbox MCP tool requests real sample execution. A
+            Sandbox window may appear during that task and close after the runtime session finishes.
+          </p>
+          <p data-lang-zh>
+            不会。安装器只负责准备 Host Agent 和 Docker analyzer。Windows Sandbox 会在动态/沙箱
+            MCP 工具请求真实样本执行时按需启动。执行任务期间可能看到 Sandbox 窗口，运行时会话结束后
+            会关闭。
+          </p>
+        </div>
+      </div>
+
       <h2 class="reveal"><span data-lang-en>Installation</span><span data-lang-zh>安装</span></h2>
 
       <div class="faq-item reveal">

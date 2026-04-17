@@ -28,13 +28,22 @@ import {
 } from './analysis-budget-scheduler.js'
 import {
   ANALYSIS_STAGE_JOB_TOOL,
+  type AnalyzePipelineDependencies,
   createAnalyzePipelineStageContext,
   executeQueuedAnalysisStage,
 } from '../workflows/analyze-pipeline.js'
+import { sandboxExecuteToolDefinition } from '../plugins/dynamic/tools/sandbox-execute.js'
+import {
+  createRuntimeDelegatedToolHandler,
+  type RuntimeClientLike,
+} from '../runtime-client/delegation-server.js'
+import { resolvePrimarySamplePath } from '../sample/sample-workspace.js'
 
 export interface AnalysisTaskRunnerOptions {
   pollIntervalMs?: number
   staleRunningMs?: number | null
+  runtimeClientProvider?: () => RuntimeClientLike | null | undefined
+  sandboxDirProvider?: () => string | null | undefined
 }
 
 type QueuedJobExecutor = (job: Job, abortSignal: AbortSignal) => Promise<JobResult>
@@ -49,6 +58,8 @@ export class AnalysisTaskRunner {
   private readonly policyGuard: PolicyGuard
   private readonly scheduler: AnalysisBudgetScheduler
   private readonly queuedExecutors: Map<string, QueuedJobExecutor>
+  private readonly runtimeClientProvider?: () => RuntimeClientLike | null | undefined
+  private readonly sandboxDirProvider?: () => string | null | undefined
   private timer?: NodeJS.Timeout
   private processingPromise: Promise<void> | null = null
   private activeControllers = new Map<string, { controller: AbortController; startedAt: number }>()
@@ -70,6 +81,8 @@ export class AnalysisTaskRunner {
     this.policyGuard = policyGuard
     this.scheduler = new AnalysisBudgetScheduler(database)
     this.decompilerWorker = new DecompilerWorker(database, workspaceManager)
+    this.runtimeClientProvider = options.runtimeClientProvider
+    this.sandboxDirProvider = options.sandboxDirProvider
     this.queuedExecutors = this.createQueuedExecutors()
     this.pollIntervalMs = options.pollIntervalMs ?? 500
     this.staleRunningMs = options.staleRunningMs
@@ -296,6 +309,24 @@ export class AnalysisTaskRunner {
     return this.cacheManager
   }
 
+  private createAnalyzePipelineDependencies(): AnalyzePipelineDependencies {
+    const runtimeClient = this.runtimeClientProvider?.()
+    if (!runtimeClient) {
+      return {}
+    }
+    return {
+      sandboxExecute: createRuntimeDelegatedToolHandler({
+        definition: sandboxExecuteToolDefinition,
+        pluginId: 'dynamic',
+        runtimeClient,
+        workspaceManager: this.workspaceManager,
+        database: this.database,
+        resolvePrimarySamplePath,
+        sandboxDir: this.sandboxDirProvider?.() ?? null,
+      }),
+    }
+  }
+
   private createQueuedExecutors(): Map<string, QueuedJobExecutor> {
     const executors = new Map<string, QueuedJobExecutor>()
 
@@ -355,7 +386,7 @@ export class AnalysisTaskRunner {
         cacheManager,
         this.policyGuard,
         undefined,
-        {},
+        this.createAnalyzePipelineDependencies(),
         this.jobQueue
       )
       const input = job.args as {

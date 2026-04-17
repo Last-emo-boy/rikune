@@ -22,6 +22,10 @@ export {
 } from './runtime-client.js'
 
 export {
+  createLazyRemoteSandboxRuntimeClient,
+} from './lazy-remote-sandbox-client.js'
+
+export {
   createDelegatingServer,
   type RuntimeClientLike,
 } from './delegation-server.js'
