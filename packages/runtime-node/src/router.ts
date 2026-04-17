@@ -551,8 +551,11 @@ async function getDeepHealthChecks(): Promise<DeepHealthChecks> {
 
   let workerOk = false
   try {
-    const workerPath = path.join(process.cwd(), 'workers', 'static_worker.py')
-    workerOk = fs.existsSync(workerPath)
+    const workerCandidates = [
+      path.join('C:\\rikune-workers', 'static_worker.py'),
+      path.join(process.cwd(), 'workers', 'static_worker.py'),
+    ]
+    workerOk = workerCandidates.some((workerPath) => fs.existsSync(workerPath))
   } catch {}
 
   return {

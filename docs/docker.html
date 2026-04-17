@@ -131,14 +131,31 @@
           <h2><span data-lang-en>Quick Start</span><span data-lang-zh>快速开始</span></h2>
 
           <h3>
+            <span data-lang-en>Guided installer</span
+            ><span data-lang-zh>向导式安装</span>
+          </h3>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>Terminal</span><button class="code-block__copy">Copy</button>
+            </div>
+            <pre>.\rikune.ps1</pre>
+          </div>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>bash</span><button class="code-block__copy">Copy</button>
+            </div>
+            <pre>./rikune.sh</pre>
+          </div>
+
+          <h3>
             <span data-lang-en>Static-only analyzer (safe default)</span
             ><span data-lang-zh>纯静态 analyzer（安全默认）</span>
           </h3>
           <div class="code-block">
             <div class="code-block__header">
-              <span>bash</span><button class="code-block__copy">Copy</button>
+              <span>Terminal</span><button class="code-block__copy">Copy</button>
             </div>
-            <pre>docker compose -f docker-compose.analyzer.yml up -d</pre>
+            <pre>.\rikune.ps1 install -Profile static -DataRoot "D:\Docker\rikune"</pre>
           </div>
 
           <h3>
@@ -147,9 +164,24 @@
           </h3>
           <div class="code-block">
             <div class="code-block__header">
-              <span>bash</span><button class="code-block__copy">Copy</button>
+              <span>Terminal</span><button class="code-block__copy">Copy</button>
             </div>
-            <pre>docker compose -f docker-compose.hybrid.yml up -d</pre>
+            <pre><span class="comment"># Single Windows host</span>
+.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+
+<span class="comment"># Linux analyzer + remote Windows Host Agent</span>
+./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt;</pre>
+          </div>
+
+          <h3>
+            <span data-lang-en>Full Linux toolchain image</span
+            ><span data-lang-zh>全量 Linux 工具链镜像</span>
+          </h3>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>Terminal</span><button class="code-block__copy">Copy</button>
+            </div>
+            <pre>.\rikune.ps1 install -Profile full -DataRoot "D:\Docker\rikune"</pre>
           </div>
 
           <h3>
@@ -160,7 +192,7 @@
             <div class="code-block__header">
               <span>PowerShell</span><button class="code-block__copy">Copy</button>
             </div>
-            <pre>.\install-runtime-windows.ps1 -Headless -Service</pre>
+            <pre>.\install-runtime-windows.ps1 -Headless -Service -ApiKey &lt;host-agent-key&gt;</pre>
           </div>
 
           <blockquote>
@@ -227,12 +259,28 @@
                   ><span data-lang-zh>Linux Docker analyzer</span>
                 </td>
                 <td>
-                  <span data-lang-en>Manual Windows Runtime Node or Windows Host Agent</span
-                  ><span data-lang-zh>手工 Windows Runtime Node 或 Windows Host Agent</span>
+                  <span data-lang-en>Windows Host Agent + Windows Sandbox</span
+                  ><span data-lang-zh>Windows Host Agent + Windows Sandbox</span>
                 </td>
                 <td>
                   <span data-lang-en>Split static analysis from real sample execution</span
                   ><span data-lang-zh>将静态分析与真实样本执行拆分</span>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <strong
+                    ><span data-lang-en>Full Docker</span
+                    ><span data-lang-zh>全量 Docker</span></strong
+                  >
+                </td>
+                <td>
+                  <code>docker-compose.yml</code> with <code>rikune</code>
+                </td>
+                <td><span data-lang-en>None by default</span><span data-lang-zh>默认无</span></td>
+                <td>
+                  <span data-lang-en>Heavy Linux-side toolchain experiments</span
+                  ><span data-lang-zh>需要完整 Linux 工具链的实验场景</span>
                 </td>
               </tr>
               <tr>
@@ -260,13 +308,13 @@
           <blockquote>
             <span data-lang-en
               ><strong>Important:</strong> Docker or WSL analyzers cannot use
-              <code>auto-sandbox</code>. For Linux-side analyzers, use <code>manual</code> or
-              <code>remote-sandbox</code> when you need a Windows runtime.</span
+              <code>auto-sandbox</code>. For Linux-side analyzers, use the <code>hybrid</code>
+              profile when you need a Windows runtime.</span
             >
             <span data-lang-zh
               ><strong>重要：</strong>Docker 或 WSL 中的 analyzer 不能使用
               <code>auto-sandbox</code>。如果 analyzer 在 Linux 一侧，需要 Windows 运行时时请使用
-              <code>manual</code> 或 <code>remote-sandbox</code>。</span
+              <code>hybrid</code> profile。</span
             >
           </blockquote>
         </section>
@@ -279,15 +327,16 @@
           </h2>
           <p>
             <span data-lang-en>
-              Rikune does <strong>not</strong> maintain a hand-written Dockerfile. Instead, each
-              plugin declares exactly what system-level dependencies it needs, and a generator
-              automatically produces the Dockerfile and <code>docker-compose.yml</code> from those
-              declarations. Plugins are the <em>single source of truth</em>.
+              Rikune does <strong>not</strong> maintain one hand-written Dockerfile. Each plugin
+              declares exactly what system-level dependencies it needs, and the generator produces
+              profile-specific outputs: <code>static</code>, <code>hybrid</code>, and
+              <code>full</code>. Plugins remain the <em>single source of truth</em>.
             </span>
             <span data-lang-zh>
-              Rikune <strong>不</strong>手动维护 Dockerfile。
+              Rikune <strong>不</strong>手动维护单一 Dockerfile。
               每个插件在代码中声明自己所需的系统级依赖， 生成器自动读取所有插件声明并产出 Dockerfile
-              和 <code>docker-compose.yml</code>。 插件是<em>唯一真相源</em>。
+              和 Compose 文件，并按 <code>static</code>、<code>hybrid</code>、<code>full</code>
+              三个 profile 分流。插件是<em>唯一真相源</em>。
             </span>
           </p>
 
@@ -332,14 +381,14 @@
 <span style="color:var(--amber);">│</span>  <strong style="color:#fff;">Generator</strong>  <span style="color:var(--text-dim);">(scripts/generate-docker.mjs)</span>                  <span style="color:var(--amber);">│</span>
 <span style="color:var(--amber);">│</span>                                                             <span style="color:var(--amber);">│</span>
 <span style="color:var(--amber);">│</span>  1. discoverPluginIds()  → scan dist/plugins/               <span style="color:var(--amber);">│</span>
-<span style="color:var(--amber);">│</span>  2. loadPluginDeps()     → import &amp; read systemDeps          <span style="color:var(--amber);">│</span>
+<span style="color:var(--amber);">│</span>  2. loadPluginMetadata() → import deps + execution domain      <span style="color:var(--amber);">│</span>
 <span style="color:var(--amber);">│</span>  3. collectRequirements() → features, apt, env, validation   <span style="color:var(--amber);">│</span>
 <span style="color:var(--amber);">│</span>  4. processTemplate()    → conditional Dockerfile             <span style="color:var(--amber);">│</span>
-<span style="color:var(--amber);">│</span>  5. generateCompose()    → docker-compose.yml                 <span style="color:var(--amber);">│</span>
+<span style="color:var(--amber);">│</span>  5. generateCompose()    → profile-specific Compose files      <span style="color:var(--amber);">│</span>
 <span style="color:var(--amber);">└──────────────┬──────────────────────────────┬───────────────┘</span>
                │                              │
                ▼                              ▼
-  <span style="color:var(--accent);">📄 Dockerfile</span>                   <span style="color:var(--accent);">📄 docker-compose.yml</span>
+  <span style="color:var(--accent);">📄 Dockerfile(s)</span>                 <span style="color:var(--accent);">📄 Compose file(s)</span>
   <span style="color:var(--text-dim);">  (multi-stage, only</span>             <span style="color:var(--text-dim);">  (volumes, env, args</span>
   <span style="color:var(--text-dim);">   needed stages)</span>                <span style="color:var(--text-dim);">   matching features)</span>
 </pre>
@@ -464,11 +513,12 @@ RUN python -m venv /opt/angr-venv &amp;&amp; \
               </tr>
               <tr>
                 <td><span class="badge badge--blue">2</span></td>
-                <td><code>loadPluginDeps()</code></td>
+                <td><code>loadPluginMetadata()</code></td>
                 <td>
                   <span data-lang-en
-                    >Dynamic-imports each plugin and reads its <code>systemDeps</code></span
-                  ><span data-lang-zh>动态导入每个插件并读取其 <code>systemDeps</code></span>
+                    >Dynamic-imports each plugin and reads its <code>systemDeps</code> plus runtime
+                    execution domain</span
+                  ><span data-lang-zh>动态导入每个插件并读取其 <code>systemDeps</code> 与运行域</span>
                 </td>
               </tr>
               <tr>
@@ -505,10 +555,10 @@ RUN python -m venv /opt/angr-venv &amp;&amp; \
                 <td><code>generateCompose()</code></td>
                 <td>
                   <span data-lang-en
-                    >Emits <code>docker-compose.yml</code> with matching volumes, env,
-                    build-args</span
+                    >Emits the selected profile's Compose file with matching volumes, env,
+                    build args, runtime mode, and plugin list</span
                   ><span data-lang-zh
-                    >输出带有匹配卷、环境变量、构建参数的 <code>docker-compose.yml</code></span
+                    >输出所选 profile 的 Compose 文件，包含匹配的卷、环境变量、构建参数、运行时模式和插件列表</span
                   >
                 </td>
               </tr>
@@ -520,29 +570,33 @@ RUN python -m venv /opt/angr-venv &amp;&amp; \
             <div class="code-block__header">
               <span>bash</span><button class="code-block__copy">Copy</button>
             </div>
-            <pre><span class="comment"># All plugins → full image (14 features, ~470 lines, 8 stages)</span>
-node scripts/generate-docker.mjs
+            <pre><span class="comment"># Full Linux image</span>
+node scripts/generate-docker.mjs --profile=full
 
-<span class="comment"># Exclude heavy tools → lighter image</span>
-node scripts/generate-docker.mjs --exclude=ghidra,docker-backends,memory-forensics
+<span class="comment"># Static-only analyzer image</span>
+node scripts/generate-docker.mjs --profile=static
 
-<span class="comment"># Only specific plugins</span>
-node scripts/generate-docker.mjs --include=pe-analysis,malware,frida
+<span class="comment"># Hybrid analyzer with remote Windows runtime</span>
+node scripts/generate-docker.mjs --profile=hybrid
+
+<span class="comment"># Generate all profiles</span>
+node scripts/generate-docker.mjs --all-profiles
 
 <span class="comment"># Preview without writing files</span>
-node scripts/generate-docker.mjs --dry-run</pre>
+node scripts/generate-docker.mjs --profile=static --dry-run</pre>
           </div>
 
           <blockquote>
             <span data-lang-en
-              >💡 <strong>Tip:</strong> <code>install-docker.ps1</code> runs the generator
-              automatically before <code>docker build</code>. It discovers all plugins, generates
-              the Dockerfile, then builds — no manual step needed.</span
+              >💡 <strong>Tip:</strong> <code>rikune.ps1</code>, <code>rikune.sh</code>, and
+              <code>install-docker.ps1</code> run the generator automatically before Compose
+              build. They discover all plugins, write the selected profile files, then build the
+              selected service — no manual step needed.</span
             >
             <span data-lang-zh
-              >💡 <strong>提示</strong>：<code>install-docker.ps1</code> 在
-              <code>docker build</code> 之前自动运行生成器。它发现所有插件、生成
-              Dockerfile、然后构建 — 无需手动操作。</span
+              >💡 <strong>提示</strong>：<code>rikune.ps1</code>、<code>rikune.sh</code> 和
+              <code>install-docker.ps1</code> 会在 Compose 构建前自动运行生成器。它们发现所有插件、写入所选
+              profile 文件、然后构建所选服务 — 无需手动操作。</span
             >
           </blockquote>
 
@@ -655,26 +709,16 @@ node scripts/generate-docker.mjs --dry-run</pre>
           <h2><span data-lang-en>Production Mode</span><span data-lang-zh>生产模式</span></h2>
           <div class="code-block">
             <div class="code-block__header">
-              <span>bash</span><button class="code-block__copy">Copy</button>
+              <span>Terminal</span><button class="code-block__copy">Copy</button>
             </div>
-            <pre>
-docker run --rm -i \
-  --network=none \
-  --read-only \
-  --tmpfs /tmp:rw,noexec,nosuid,size=512m \
-  --security-opt no-new-privileges:true \
-  --cap-drop=ALL \
-  --memory=8g \
-  --cpus=2 \
-  -v ~/.rikune/workspaces:/app/workspaces \
-  -v ~/.rikune/data:/app/data \
-  -v ~/.rikune/cache:/app/cache \
-  -v ~/.rikune/ghidra-projects:/ghidra-projects \
-  -v ~/.rikune/ghidra-logs:/ghidra-logs \
-  -e WORKSPACE_ROOT=/app/workspaces \
-  -e DB_PATH=/app/data/database.db \
-  -e GHIDRA_PROJECT_ROOT=/ghidra-projects \
-  rikune:latest</pre
+            <pre><span class="comment"># Recommended production default</span>
+.\rikune.ps1 install -Profile static -DataRoot "D:\Docker\rikune"
+
+<span class="comment"># Single Windows host hybrid</span>
+.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+
+<span class="comment"># Linux analyzer + remote Windows Host Agent</span>
+./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt;</pre
             >
           </div>
         </section>
@@ -686,33 +730,35 @@ docker run --rm -i \
             <div class="code-block__header">
               <span>bash</span><button class="code-block__copy">Copy</button>
             </div>
-            <pre><span class="comment"># Static-only Linux analyzer (safe default)</span>
- docker compose -f docker-compose.analyzer.yml up -d
+            <pre><span class="comment"># Generate all profile files</span>
+npm run docker:generate:all
+
+<span class="comment"># Static-only Linux analyzer (safe default)</span>
+docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
 
 <span class="comment"># Hybrid Linux analyzer + Windows runtime plane</span>
- docker compose -f docker-compose.hybrid.yml up -d
+docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml up -d --build analyzer
+
+<span class="comment"># Full Linux toolchain image</span>
+docker compose --env-file .docker-runtime.env -f docker-compose.yml up -d --build mcp-server
 
 <span class="comment"># View analyzer logs</span>
- docker compose -f docker-compose.hybrid.yml logs -f analyzer
+docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml logs -f analyzer
 
 <span class="comment"># Stop the selected stack</span>
- docker compose -f docker-compose.hybrid.yml down</pre>
+docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml down</pre>
           </div>
           <blockquote>
             <span data-lang-en
-              ><strong>Note:</strong> <code>docker-compose.analyzer.yml</code> now defaults to
-              <code>RUNTIME_MODE=disabled</code>. Switch to <code>manual</code> or
-              <code>remote-sandbox</code> only when you intentionally connect a Windows runtime
-              plane. Use <code>RUNTIME_HOST_AGENT_API_KEY</code> for Analyzer → Host Agent control
-              requests, and <code>RUNTIME_API_KEY</code> only when the Windows Runtime Node itself
-              requires a separate API key.</span
+              ><strong>Note:</strong> <code>static</code> and <code>hybrid</code> use the analyzer
+              Dockerfile and exclude local dynamic execution dependencies. Use
+              <code>full</code> only when you intentionally want the heavier all-in-one Linux
+              toolchain image.</span
             >
             <span data-lang-zh
-              ><strong>注意：</strong><code>docker-compose.analyzer.yml</code> 现在默认使用
-              <code>RUNTIME_MODE=disabled</code>。只有在你明确接入 Windows 运行时面时，才切换到
-              <code>manual</code> 或 <code>remote-sandbox</code>。Analyzer → Host Agent
-              的控制请求使用 <code>RUNTIME_HOST_AGENT_API_KEY</code>，只有当 Windows Runtime Node
-              自身需要单独鉴权时才配置 <code>RUNTIME_API_KEY</code>。</span
+              ><strong>注意：</strong><code>static</code> 和 <code>hybrid</code> 使用 analyzer
+              Dockerfile，不在本地安装动态执行依赖。只有在明确需要更重的全量 Linux 工具链时才使用
+              <code>full</code>。</span
             >
           </blockquote>
         </section>
@@ -785,11 +831,11 @@ docker run --rm -i \
                 <td><code>disabled</code></td>
                 <td>
                   <span data-lang-en
-                    ><code>disabled</code>, <code>manual</code>, or <code>remote-sandbox</code> for
-                    Docker analyzers</span
+                    ><code>disabled</code> for <code>static</code>/<code>full</code>,
+                    <code>remote-sandbox</code> for <code>hybrid</code></span
                   ><span data-lang-zh
-                    >Docker analyzer 使用 <code>disabled</code>、<code>manual</code> 或
-                    <code>remote-sandbox</code></span
+                    ><code>static</code>/<code>full</code> 使用 <code>disabled</code>，
+                    <code>hybrid</code> 使用 <code>remote-sandbox</code></span
                   >
                 </td>
               </tr>

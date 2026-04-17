@@ -76,6 +76,16 @@ ensure_dir() {
     fi
 }
 
+ensure_optional_dir() {
+    local dir_path=$1
+    local owner=${2:-appuser}
+
+    if ! ensure_dir "$dir_path" "$owner"; then
+        log_warn "Could not create optional directory: $dir_path"
+        return 0
+    fi
+}
+
 # =============================================================================
 # Step 1: Validate Environment Variables
 # =============================================================================
@@ -193,7 +203,11 @@ fi
 ensure_dir "/ghidra-projects" "appuser"
 ensure_dir "/ghidra-logs" "appuser"
 ensure_dir "/samples" "appuser"
-ensure_dir "${QILING_ROOTFS:-/opt/qiling-rootfs}" "appuser"
+if [ -n "${QILING_ROOTFS:-}" ]; then
+    ensure_optional_dir "$QILING_ROOTFS" "appuser"
+else
+    log_warn "QILING_ROOTFS is not set; skipping Qiling rootfs directory creation"
+fi
 ensure_dir "/tmp" "appuser"
 
 # Ensure database directory exists

@@ -19,6 +19,9 @@ param(
     [Parameter(HelpMessage="Host Agent HTTP port")]
     [int]$Port = 18082,
 
+    [Parameter(HelpMessage="Host Agent and Runtime API key. If omitted, a random key is generated.")]
+    [string]$ApiKey,
+
     [Parameter(HelpMessage="Project root directory")]
     [string]$ProjectRoot = $PSScriptRoot
 )
@@ -74,6 +77,21 @@ function Exit-WithError {
 
 function Test-IsAdmin {
     return ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
+}
+
+function Get-OptionalFeatureByName {
+    param([string[]]$Names)
+
+    foreach ($name in $Names) {
+        try {
+            $feature = Get-WindowsOptionalFeature -Online -FeatureName $name -ErrorAction Stop
+            if ($feature) { return $feature }
+        } catch {
+            Write-Info "Optional feature not available by name '$name'"
+        }
+    }
+
+    return $null
 }
 
 function Invoke-Request {
@@ -143,19 +161,25 @@ if ($osCaption -match "Home") {
     Exit-WithError "Windows Sandbox is not available on Windows Home. Use Windows 10/11 Pro or Enterprise."
 }
 
-# Check Windows Sandbox feature
-$sandboxFeature = Get-WindowsOptionalFeature -Online -FeatureName "Containers-DisposableClient" -ErrorAction SilentlyContinue
+# Check Windows Sandbox feature. The documented feature name is
+# Containers-DisposableClientVM; keep the old name as a compatibility fallback.
+$sandboxFeatureCandidates = @("Containers-DisposableClientVM", "Containers-DisposableClient")
+$sandboxFeature = Get-OptionalFeatureByName -Names $sandboxFeatureCandidates
 if (-not $sandboxFeature -or $sandboxFeature.State -ne "Enabled") {
     Write-Warning-Message "Windows Sandbox feature is not enabled"
+    if (-not $sandboxFeature) {
+        Exit-WithError "Windows Sandbox optional feature was not found. On supported Windows Pro/Enterprise builds the DISM feature name is 'Containers-DisposableClientVM'."
+    }
+
     if (Test-IsAdmin) {
-        Write-Info "Attempting to enable Windows Sandbox..."
-        $enableResult = Enable-WindowsOptionalFeature -Online -FeatureName "Containers-DisposableClient" -NoRestart -All -ErrorAction SilentlyContinue
+        Write-Info "Attempting to enable Windows Sandbox feature: $($sandboxFeature.FeatureName)"
+        $enableResult = Enable-WindowsOptionalFeature -Online -FeatureName $sandboxFeature.FeatureName -NoRestart -All -ErrorAction Stop
         if ($enableResult -and $enableResult.RestartNeeded -eq $true) {
             Exit-WithError "Windows Sandbox was enabled, but a system restart is required before continuing."
         }
-        $sandboxFeature = Get-WindowsOptionalFeature -Online -FeatureName "Containers-DisposableClient" -ErrorAction SilentlyContinue
+        $sandboxFeature = Get-OptionalFeatureByName -Names $sandboxFeatureCandidates
         if (-not $sandboxFeature -or $sandboxFeature.State -ne "Enabled") {
-            Exit-WithError "Failed to enable Windows Sandbox automatically. Please enable it manually via 'Turn Windows features on or off'."
+            Exit-WithError "Failed to enable Windows Sandbox automatically. Please enable 'Windows Sandbox' manually via 'Turn Windows features on or off'."
         }
         Write-Success "Windows Sandbox enabled"
     } else {
@@ -171,6 +195,13 @@ if ($hypervFeature -and $hypervFeature.State -eq "Enabled") {
     Write-Success "Hyper-V is enabled"
 } else {
     Write-Warning-Message "Hyper-V is not enabled. Windows Sandbox can still run on some systems without it, but performance may be reduced."
+}
+
+$vmPlatformFeature = Get-WindowsOptionalFeature -Online -FeatureName "VirtualMachinePlatform" -ErrorAction SilentlyContinue
+if ($vmPlatformFeature -and $vmPlatformFeature.State -eq "Enabled") {
+    Write-Success "Virtual Machine Platform is enabled"
+} else {
+    Write-Warning-Message "Virtual Machine Platform is not enabled. Docker Desktop may require it depending on backend configuration."
 }
 
 # =============================================================================
@@ -221,6 +252,18 @@ if (-not $pythonCmd) {
 }
 $pyVersion = (& $pythonCmd --version 2>&1).ToString().Trim()
 Write-Success "Python: $pyVersion (command: $pythonCmd)"
+
+$nodePath = (Get-Command node).Source
+try {
+    $pythonPath = (& $pythonCmd -c "import sys; print(sys.executable)" 2>$null).ToString().Trim()
+} catch {
+    $pythonPath = (Get-Command $pythonCmd).Source
+}
+if (-not $pythonPath -or -not (Test-Path $pythonPath)) {
+    $pythonPath = (Get-Command $pythonCmd).Source
+}
+Write-Info "Node path for Sandbox mapping: $nodePath"
+Write-Info "Python path for Sandbox mapping: $pythonPath"
 
 # =============================================================================
 # Step 3: Install npm Dependencies & Build
@@ -283,7 +326,7 @@ foreach ($dir in $directories) {
 # =============================================================================
 Write-Step "Generating Host Agent Configuration"
 
-$apiKey = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | ForEach-Object { [char]$_ })
+$apiKey = if ($ApiKey) { $ApiKey } else { -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | ForEach-Object { [char]$_ }) }
 $envFile = Join-Path $ProjectRoot ".env.runtime-windows"
 
 $envContent = @"
@@ -295,6 +338,8 @@ HOST_AGENT_PORT=$Port
 HOST_AGENT_API_KEY=$apiKey
 HOST_AGENT_RUNTIME_API_KEY=$apiKey
 HOST_AGENT_WORKSPACE=$WorkspaceRoot
+HOST_AGENT_NODE_PATH=$nodePath
+HOST_AGENT_PYTHON_PATH=$pythonPath
 
 # Optional: restrict CORS origin for Runtime Node (distributed mode)
 # RUNTIME_CORS_ORIGIN=http://your-linux-analyzer-ip:18080
@@ -322,19 +367,56 @@ $env:HOST_AGENT_PORT = "$Port"
 $env:HOST_AGENT_API_KEY = "$apiKey"
 $env:HOST_AGENT_RUNTIME_API_KEY = "$apiKey"
 $env:HOST_AGENT_WORKSPACE = "$WorkspaceRoot"
+$env:HOST_AGENT_NODE_PATH = "$nodePath"
+$env:HOST_AGENT_PYTHON_PATH = "$pythonPath"
 
 if ($Service) {
     Write-Info "Installing Host Agent as a background service..."
 
     # Prefer pm2
     $pm2 = Get-Command pm2 -ErrorAction SilentlyContinue
+    if (-not $pm2) {
+        Write-Info "pm2 not found; attempting to install pm2 globally..."
+        $pm2InstallOutput = & npm install -g pm2 2>&1
+        $pm2InstallExitCode = $LASTEXITCODE
+        if ($pm2InstallOutput) {
+            $pm2InstallOutput | ForEach-Object { Write-Info $_.ToString() }
+        }
+        if ($pm2InstallExitCode -eq 0) {
+            $pm2 = Get-Command pm2 -ErrorAction SilentlyContinue
+            if (-not $pm2) {
+                $npmPrefix = (& npm prefix -g 2>$null).ToString().Trim()
+                if ($npmPrefix -and (Test-Path $npmPrefix)) {
+                    $env:PATH = "$npmPrefix;$env:PATH"
+                    $pm2 = Get-Command pm2 -ErrorAction SilentlyContinue
+                }
+            }
+        }
+    }
+
     if ($pm2) {
         Write-Info "Using pm2 to manage service..."
-        & pm2 delete "rikune-host-agent" 2>&1 | Out-Null
-        & pm2 start "node" --name "rikune-host-agent" -- "$hostAgentEntry" --cwd "$ProjectRoot" 2>&1 | Out-Null
-        & pm2 save 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Exit-WithError "pm2 failed to start Host Agent. Check pm2 logs for details."
+        $pm2DeleteOutput = & pm2 delete "rikune-host-agent" 2>&1
+        if ($pm2DeleteOutput) {
+            $pm2DeleteOutput | ForEach-Object { Write-Info $_.ToString() }
+        }
+
+        $pm2StartOutput = & pm2 start "$hostAgentEntry" --name "rikune-host-agent" --cwd "$ProjectRoot" 2>&1
+        $pm2StartExitCode = $LASTEXITCODE
+        if ($pm2StartOutput) {
+            $pm2StartOutput | ForEach-Object { Write-Info $_.ToString() }
+        }
+        if ($pm2StartExitCode -ne 0) {
+            Exit-WithError "pm2 failed to start Host Agent. Check pm2 logs rikune-host-agent for details."
+        }
+
+        $pm2SaveOutput = & pm2 save 2>&1
+        $pm2SaveExitCode = $LASTEXITCODE
+        if ($pm2SaveOutput) {
+            $pm2SaveOutput | ForEach-Object { Write-Info $_.ToString() }
+        }
+        if ($pm2SaveExitCode -ne 0) {
+            Exit-WithError "pm2 failed to save process list."
         }
         Write-Success "Host Agent registered with pm2 (name: rikune-host-agent)"
         Write-Info "Manage with: pm2 logs rikune-host-agent"
@@ -344,29 +426,75 @@ if ($Service) {
         if (-not (Test-Path $nodeWindowsModule)) {
             Write-Info "Installing node-windows..."
             Push-Location $ProjectRoot
-            npm install node-windows 2>&1 | Out-Null
-            Pop-Location
+            try {
+                $nodeWindowsInstallOutput = & npm install node-windows 2>&1
+                $nodeWindowsInstallExitCode = $LASTEXITCODE
+            } finally {
+                Pop-Location
+            }
+            if ($nodeWindowsInstallOutput) {
+                $nodeWindowsInstallOutput | ForEach-Object { Write-Info $_.ToString() }
+            }
+            if ($nodeWindowsInstallExitCode -ne 0) {
+                Exit-WithError "node-windows installation failed with exit code $nodeWindowsInstallExitCode"
+            }
         }
         if (-not (Test-Path $nodeWindowsModule)) {
             Exit-WithError "node-windows installation failed"
         }
 
         $serviceScript = Join-Path $WorkspaceRoot "install-service.js"
+        $logsDir = Join-Path $WorkspaceRoot "workspace\logs"
+        $hostAgentEntryJs = $hostAgentEntry | ConvertTo-Json -Compress
+        $projectRootJs = $ProjectRoot | ConvertTo-Json -Compress
+        $workspaceRootJs = $WorkspaceRoot | ConvertTo-Json -Compress
+        $nodePathJs = $nodePath | ConvertTo-Json -Compress
+        $pythonPathJs = $pythonPath | ConvertTo-Json -Compress
+        $logsDirJs = $logsDir | ConvertTo-Json -Compress
         @"
 const Service = require('node-windows').Service;
 const svc = new Service({
   name: 'Rikune Windows Host Agent',
   description: 'Manages Windows Sandbox lifecycle for Rikune dynamic analysis.',
-  script: '$($hostAgentEntry -replace '\\', '\\\\')',
-  cwd: '$($ProjectRoot -replace '\\', '\\\\')',
+  script: $hostAgentEntryJs,
+  execPath: $nodePathJs,
+  workingdirectory: $projectRootJs,
+  logpath: $logsDirJs,
+  logmode: 'rotate',
+  stopparentfirst: true,
   env: [
     { name: 'HOST_AGENT_PORT', value: '$Port' },
     { name: 'HOST_AGENT_API_KEY', value: '$apiKey' },
     { name: 'HOST_AGENT_RUNTIME_API_KEY', value: '$apiKey' },
-    { name: 'HOST_AGENT_WORKSPACE', value: '$($WorkspaceRoot -replace '\\', '\\\\')' }
+    { name: 'HOST_AGENT_WORKSPACE', value: $workspaceRootJs },
+    { name: 'HOST_AGENT_NODE_PATH', value: $nodePathJs },
+    { name: 'HOST_AGENT_PYTHON_PATH', value: $pythonPathJs }
   ]
 });
-svc.on('install', () => { svc.start(); });
+svc.on('install', () => {
+  console.log('Windows service installed; starting it.');
+  svc.start();
+});
+svc.on('alreadyinstalled', () => {
+  console.log('Windows service is already installed; starting it.');
+  svc.start();
+});
+svc.on('start', () => {
+  console.log('Windows service started.');
+  process.exit(0);
+});
+svc.on('invalidinstallation', () => {
+  console.error('Existing Windows service installation is invalid. Remove it and retry.');
+  process.exit(1);
+});
+svc.on('error', err => {
+  console.error('node-windows error:', err && (err.stack || err.message || err));
+  process.exit(1);
+});
+setTimeout(() => {
+  console.error('Timed out waiting for node-windows service install/start.');
+  process.exit(1);
+}, 30000);
 svc.install();
 "@ | Set-Content $serviceScript -Encoding UTF8
 
@@ -374,9 +502,13 @@ svc.install();
         if (-not (Test-IsAdmin)) {
             Exit-WithError "Installing a Windows Service requires Administrator privileges."
         }
-        node "$serviceScript" 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Exit-WithError "Failed to install Windows Service via node-windows"
+        $serviceOutput = & node "$serviceScript" 2>&1
+        $serviceExitCode = $LASTEXITCODE
+        if ($serviceOutput) {
+            $serviceOutput | ForEach-Object { Write-Info $_.ToString() }
+        }
+        if ($serviceExitCode -ne 0) {
+            Exit-WithError "Failed to install Windows Service via node-windows. See output above and script: $serviceScript"
         }
         Write-Success "Windows Service installed and started"
     }

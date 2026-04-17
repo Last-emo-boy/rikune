@@ -26,15 +26,22 @@ describe('@rikune/shared', () => {
       readyFileSandbox: 'C:\\rikune-outbox\\ready.json',
       runtimeApiKey: 'sandbox-secret',
       setupDirHost: 'C:\\setup',
+      nodeDirHost: 'C:\\Program Files\\nodejs',
+      nodeFileName: 'node.exe',
+      pythonDirHost: 'C:\\Python312',
+      pythonFileName: 'python.exe',
     })
 
     expect(xml).toContain('<Configuration>')
     expect(xml).toContain('&amp;')
     expect(xml).toContain('<SandboxFolder>C:\\rikune-runtime</SandboxFolder>')
+    expect(xml).toContain('<SandboxFolder>C:\\rikune-node</SandboxFolder>')
+    expect(xml).toContain('<SandboxFolder>C:\\rikune-python</SandboxFolder>')
     expect(xml).toContain('<SandboxFolder>C:\\rikune-setup</SandboxFolder>')
     expect(xml).toContain('powershell -ExecutionPolicy Bypass -File C:\\rikune-setup\\setup-sandbox-env.ps1')
-    expect(xml).toContain('set \"RUNTIME_API_KEY=sandbox-secret\"')
-    expect(xml).toContain('node index.js --host 0.0.0.0 --port 18081')
+    expect(xml).toContain('set &quot;RUNTIME_API_KEY=sandbox-secret&quot;')
+    expect(xml).toContain('&quot;C:\\rikune-node\\node.exe&quot; &quot;index.js&quot; --host 0.0.0.0 --port 18081')
+    expect(xml).toContain('--python-path &quot;C:\\rikune-python\\python.exe&quot;')
     expect(xml).toContain('--ready-file C:\\rikune-outbox\\ready.json')
   })
 })

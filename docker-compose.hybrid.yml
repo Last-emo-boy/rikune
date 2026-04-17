@@ -1,30 +1,130 @@
+# =============================================================================
+# Docker Compose - Rikune (hybrid)
+# =============================================================================
+# Auto-generated from plugin systemDeps.
+# Profile: Hybrid Docker analyzer + Windows runtime
+# Build plugins: 45 | Runtime plugins: 56
+# Features: angr, binwalk, capa, die, dotnet-runtime, ghidra, goresym, graphviz, jadx, retdec, rizin, upx, vol3
+# Regenerate: npm run docker:generate -- --profile=hybrid
+# =============================================================================
+
 name: rikune-hybrid
+
 services:
   analyzer:
-    image: rikune:latest
+    image: rikune-analyzer:latest
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: docker/Dockerfile.analyzer
+      args:
+        ANGR_VERSION: "9.2.205"
+        CAPA_RULES_VERSION: "v9.3.1"
+        CAPA_VERSION: "9.3.1"
+        DIE_RELEASE_CHANNEL: "3.10"
+        DIE_VERSION: "3.10"
+        GHIDRA_VERSION: "12.0.4"
+        GORESYM_VERSION: "3.3"
+        http_proxy: "${RIKUNE_BUILD_HTTP_PROXY:-}"
+        HTTP_PROXY: "${RIKUNE_BUILD_HTTP_PROXY:-}"
+        https_proxy: "${RIKUNE_BUILD_HTTPS_PROXY:-}"
+        HTTPS_PROXY: "${RIKUNE_BUILD_HTTPS_PROXY:-}"
+        JADX_VERSION: "1.5.1"
+        NO_PROXY: "${RIKUNE_BUILD_NO_PROXY:-localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com}"
+        RETDEC_VERSION: "5.0"
+        RIZIN_VERSION: "0.8.2"
+        UPX_VERSION: "5.1.1"
     container_name: rikune-analyzer
-    env_file:
-      - .env
+    stdin_open: true
+    tty: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=512m
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '2'
+        reservations:
+          memory: 2G
     volumes:
       - ./samples:/samples:ro
-      - "${RIKUNE_DATA_ROOT:-~/.rikune}/workspaces:/app/workspaces:rw"
-      - "${RIKUNE_DATA_ROOT:-~/.rikune}/data:/app/data:rw"
-      - "${RIKUNE_DATA_ROOT:-~/.rikune}/cache:/app/cache:rw"
-      - "${RIKUNE_DATA_ROOT:-~/.rikune}/logs:/app/logs:rw"
-      - "${RIKUNE_DATA_ROOT:-~/.rikune}/storage:/app/storage:rw"
-      - "${RIKUNE_DATA_ROOT:-~/.rikune}/ghidra-projects:/ghidra-projects:rw"
-      - "${RIKUNE_DATA_ROOT:-~/.rikune}/ghidra-logs:/ghidra-logs:rw"
-    ports:
-      - "18080:18080"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
+      - "${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/workspaces:/app/workspaces:rw"
+      - "${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/data:/app/data:rw"
+      - "${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/cache:/app/cache:rw"
+      - "${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/logs:/app/logs:rw"
+      - "${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/storage:/app/storage:rw"
+      - "${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-projects:/ghidra-projects:rw"
+      - "${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-logs:/ghidra-logs:rw"
+      - type: volume
+        source: root-config
+        target: /root/.rikune
+    environment:
+      - NODE_ENV=production
+      - PYTHONUNBUFFERED=1
+      - NODE_ROLE=analyzer
+      - RUNTIME_MODE=remote-sandbox
+      - PLUGINS=android,angr,api-hash,apk-smali,batch,behavior-first,binary-diff,capstone,code-analysis,crackme,cross-module,debug-session,deep-unpack,die,dotnet-decompile,dotnet-reactor,dynamic,elf-macho,firmware,frida,ghidra,go-analysis,graphviz,host-correlation,kb-collaboration,malware,managed-fake-c2,managed-il-xrefs,managed-sandbox,memory-forensics,metadata,observability,office-analysis,panda,pcap-analysis,pe-analysis,pe-signature,qiling,reporting,retdec,rizin,runtime-deobfuscate,sbom,similarity,speakeasy,static-triage,strings,threat-intel,unpacking,upx,visualization,vm-analysis,vuln-scanner,wine,yara,yara-x
+      - WORKSPACE_ROOT=/app/workspaces
+      - DB_PATH=/app/data/database.db
+      - CACHE_ROOT=/app/cache
+      - AUDIT_LOG_PATH=/app/logs/audit.log
+      - XDG_CONFIG_HOME=/app/logs/.config
+      - XDG_CACHE_HOME=/app/cache/xdg
+      - LOG_LEVEL=info
+      - SANDBOX_PYTHON_PATH=/usr/local/bin/python3
+      - JADX_PATH=/opt/jadx/bin/jadx
+      - ANGR_PYTHON=/opt/angr-venv/bin/python
+      - APKTOOL_PATH=/usr/bin/apktool
+      - DIEC_PATH=/usr/local/bin/diec
+      - BINWALK_PATH=/usr/local/bin/binwalk
+      - GHIDRA_INSTALL_DIR=/opt/ghidra
+      - GORESYM_PATH=/usr/local/bin/GoReSym
+      - GRAPHVIZ_DOT_PATH=/usr/bin/dot
+      - CAPA_RULES_PATH=/opt/capa-rules
+      - VOLATILITY3_PATH=/usr/local/bin/vol
+      - VOL3_SYMBOL_PATH=/opt/vol3-symbols
+      - TSHARK_PATH=/usr/bin/tshark
+      - OSSLSIGNCODE_PATH=/usr/bin/osslsigncode
+      - RETDEC_PATH=/opt/retdec/bin/retdec-decompiler
+      - RIZIN_PATH=/opt/rizin/bin/rizin
+      - UPX_PATH=/usr/local/bin/upx
+      - GHIDRA_PROJECT_ROOT=/ghidra-projects
+      - GHIDRA_LOG_ROOT=/ghidra-logs
+      - CAPA_PATH=/usr/local/bin/capa
+      - DIE_PATH=/usr/bin/diec
+      - RETDEC_INSTALL_DIR=/opt/retdec
+      - RUNTIME_HOST_AGENT_ENDPOINT=${RUNTIME_HOST_AGENT_ENDPOINT:-}
+      - RUNTIME_HOST_AGENT_API_KEY=${RUNTIME_HOST_AGENT_API_KEY:-}
+      - RUNTIME_API_KEY=${RUNTIME_API_KEY:-}
+      # API File Server
+      - API_ENABLED=true
+      - API_PORT=18080
+      # - API_KEY=your-secret-key-here
+      - API_STORAGE_ROOT=/app/storage
+      - API_MAX_FILE_SIZE=524288000
+      - API_RETENTION_DAYS=30
     healthcheck:
       test: ["CMD", "node", "-e", "const http=require('http');const r=http.get('http://localhost:18080/api/v1/health',res=>{process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.setTimeout(5000,()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+    ports:
+      - "18080:18080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    labels:
+      - "app=rikune"
+      - "component=analyzer"
+      - "security.isolation=high"
+
+volumes:
+  root-config:
+    driver: local
+  storage:
+    driver: local

@@ -1,31 +1,54 @@
-# Rikune - Docker Install Script
-# Requires: PowerShell 7.5+, Docker Desktop, Administrator privileges
-# Encoding: UTF-8 without BOM
-
-#Requires -RunAsAdministrator
+# Rikune - Docker profile installer
+# Requires: PowerShell 7+, Docker Desktop / Docker Engine, Node.js 22+
 
 param(
-    [Parameter(HelpMessage="Data root directory")]
-    [string]$DataRoot,
-    
-    [Parameter(HelpMessage="Project root directory")]
+    [ValidateSet("static", "full", "hybrid")]
+    [string]$Profile = "static",
+
+    [Parameter(HelpMessage = "Persistent data root directory")]
+    [string]$DataRoot = "D:\Docker\rikune",
+
+    [Parameter(HelpMessage = "Project root directory")]
     [string]$ProjectRoot = $PSScriptRoot,
-    
-    [Parameter(HelpMessage="Skip Docker image build")]
+
+    [Parameter(HelpMessage = "Skip Docker image build")]
     [switch]$SkipBuild,
-    
-    [Parameter(HelpMessage="Enable verbose output")]
+
+    [Parameter(HelpMessage = "Skip starting the Compose service after build")]
+    [switch]$SkipStart,
+
+    [Parameter(HelpMessage = "Delete and recreate the data root before installing")]
+    [switch]$ResetData,
+
+    [Parameter(HelpMessage = "Enable verbose output")]
     [switch]$EnableVerbose,
-    
-    [Parameter(HelpMessage="HTTP Proxy URL")]
+
+    [Parameter(HelpMessage = "HTTP proxy URL for npm and Docker build")]
     [string]$HttpProxy,
-    
-    [Parameter(HelpMessage="HTTPS Proxy URL")]
+
+    [Parameter(HelpMessage = "HTTPS proxy URL for npm and Docker build")]
     [string]$HttpsProxy,
-    
-    [Parameter(HelpMessage="Use proxy")]
-    [switch]$UseProxy
+
+    [Parameter(HelpMessage = "Use Windows system proxy if available")]
+    [switch]$UseProxy,
+
+    [Parameter(HelpMessage = "Windows Host Agent endpoint for hybrid profile")]
+    [string]$HostAgentEndpoint,
+
+    [Parameter(HelpMessage = "Windows Host Agent API key for hybrid profile")]
+    [string]$HostAgentApiKey,
+
+    [Parameter(HelpMessage = "Windows Runtime Node API key for hybrid profile")]
+    [string]$RuntimeApiKey,
+
+    [ValidateSet("None", "Claude", "Copilot", "Codex", "Generic")]
+    [string]$ConfigureClient = "None",
+
+    [Parameter(HelpMessage = "Force guided prompts even when some parameters are provided")]
+    [switch]$Interactive
 )
+
+$ErrorActionPreference = "Stop"
 
 $ColorPrimary = "Cyan"
 $ColorSuccess = "Green"
@@ -33,35 +56,43 @@ $ColorWarning = "Yellow"
 $ColorError = "Red"
 $ColorInfo = "White"
 
+$DefaultNoProxy = "localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com"
+
+$Profiles = @{
+    static = @{
+        Generator = "static"
+        Compose = "docker-compose.analyzer.yml"
+        Service = "analyzer"
+        Image = "rikune-analyzer:latest"
+        Container = "rikune-analyzer"
+        RuntimeMode = "disabled"
+        Description = "Static-only Docker analyzer"
+    }
+    full = @{
+        Generator = "full"
+        Compose = "docker-compose.yml"
+        Service = "mcp-server"
+        Image = "rikune:latest"
+        Container = "rikune"
+        RuntimeMode = "disabled"
+        Description = "Full Linux Docker analysis stack"
+    }
+    hybrid = @{
+        Generator = "hybrid"
+        Compose = "docker-compose.hybrid.yml"
+        Service = "analyzer"
+        Image = "rikune-analyzer:latest"
+        Container = "rikune-analyzer"
+        RuntimeMode = "remote-sandbox"
+        Description = "Linux Docker analyzer with remote Windows Sandbox runtime"
+    }
+}
+
 function Write-Header {
     param([string]$Text)
     Write-Host "`n==================================================" -ForegroundColor $ColorPrimary
     Write-Host "  $Text" -ForegroundColor $ColorPrimary
     Write-Host "==================================================" -ForegroundColor $ColorPrimary
-    Write-Host "`n" -NoNewline
-}
-
-function Write-Success {
-    param([string]$Text)
-    Write-Host "[OK] " -ForegroundColor $ColorSuccess -NoNewline
-    Write-Host $Text -ForegroundColor $ColorSuccess
-}
-
-function Write-Error-Message {
-    param([string]$Text)
-    Write-Host "[ERROR] " -ForegroundColor $ColorError -NoNewline
-    Write-Host $Text -ForegroundColor $ColorError
-}
-
-function Write-Warning-Message {
-    param([string]$Text)
-    Write-Host "[WARN] " -ForegroundColor $ColorWarning -NoNewline
-    Write-Host $Text -ForegroundColor $ColorWarning
-}
-
-function Write-Info {
-    param([string]$Text)
-    Write-Host "  $Text" -ForegroundColor $ColorInfo
 }
 
 function Write-Step {
@@ -70,587 +101,510 @@ function Write-Step {
     Write-Host "-----------------------------------------" -ForegroundColor $ColorPrimary
 }
 
-function Resolve-ComposeCommand {
-    if ($script:ComposeCommand) {
-        return $script:ComposeCommand
-    }
+function Write-Info {
+    param([string]$Text)
+    Write-Host "  $Text" -ForegroundColor $ColorInfo
+}
 
+function Write-Success {
+    param([string]$Text)
+    Write-Host "[OK] " -ForegroundColor $ColorSuccess -NoNewline
+    Write-Host $Text -ForegroundColor $ColorSuccess
+}
+
+function Write-Warning-Message {
+    param([string]$Text)
+    Write-Host "[WARN] " -ForegroundColor $ColorWarning -NoNewline
+    Write-Host $Text -ForegroundColor $ColorWarning
+}
+
+function Write-Error-Message {
+    param([string]$Text)
+    Write-Host "[ERROR] " -ForegroundColor $ColorError -NoNewline
+    Write-Host $Text -ForegroundColor $ColorError
+}
+
+function Require-Command {
+    param(
+        [string]$Name,
+        [string]$InstallHint
+    )
+    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
+        Write-Error-Message "$Name not found"
+        if ($InstallHint) { Write-Host "  $InstallHint" -ForegroundColor $ColorError }
+        exit 1
+    }
+}
+
+function Resolve-ComposeCommand {
     try {
-        docker compose version | Out-Null
-        $script:ComposeCommand = "docker compose"
-        return $script:ComposeCommand
+        & docker compose version *> $null
+        if ($LASTEXITCODE -eq 0) {
+            return "docker"
+        }
     } catch {
     }
 
     if (Get-Command docker-compose -ErrorAction SilentlyContinue) {
-        $script:ComposeCommand = "docker-compose"
-        return $script:ComposeCommand
+        return "docker-compose"
     }
 
     return $null
 }
 
-# Main Script
-Clear-Host
-Write-Header "Rikune - Docker Installer"
+function Invoke-Compose {
+    param([string[]]$Arguments)
 
-Write-Host "This script will:" -ForegroundColor $ColorInfo
-Write-Host "  1. Check Docker installation" -ForegroundColor $ColorInfo
-Write-Host "  2. Configure proxy (optional)" -ForegroundColor $ColorInfo
-Write-Host "  3. Select data storage location" -ForegroundColor $ColorInfo
-Write-Host "  4. Create directory structure" -ForegroundColor $ColorInfo
-Write-Host "  5. Auto-detect plugins & generate Dockerfile" -ForegroundColor $ColorInfo
-Write-Host "  6. Build Docker image (~10-15 min)" -ForegroundColor $ColorInfo
-Write-Host "  7. Configure MCP clients" -ForegroundColor $ColorInfo
-Write-Host "  8. Test installation" -ForegroundColor $ColorInfo
-
-$continue = Read-Host "`nContinue? (Y/n)"
-if ($continue -eq 'n' -or $continue -eq 'N') {
-    Write-Warning-Message "Installation cancelled"
-    exit 0
+    if ($script:ComposeCommand -eq "docker") {
+        $cmdArgs = @("compose") + $Arguments
+        & docker @cmdArgs
+    } else {
+        & docker-compose @Arguments
+    }
 }
 
-Write-Step "Checking Docker"
-
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Write-Error-Message "Docker not found"
-    Write-Host "Please install Docker Desktop: https://www.docker.com/products/docker-desktop/" -ForegroundColor $ColorError
-    exit 1
+function Convert-ProxyForDocker {
+    param([string]$Proxy)
+    if ([string]::IsNullOrWhiteSpace($Proxy)) { return "" }
+    return ($Proxy -replace "://127\.0\.0\.1:", "://host.docker.internal:" -replace "://localhost:", "://host.docker.internal:")
 }
 
-try {
-    $dockerVersion = docker --version
-    Write-Success "Docker installed: $dockerVersion"
-} catch {
-    Write-Error-Message "Cannot run Docker"
-    exit 1
-}
+function Get-SystemProxy {
+    try {
+        $registryPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+        $proxyEnable = Get-ItemProperty -Path $registryPath -Name "ProxyEnable" -ErrorAction SilentlyContinue
+        if ($proxyEnable.ProxyEnable -ne 1) { return $null }
 
-try {
-    docker info | Out-Null
-    Write-Success "Docker is running"
-} catch {
-    Write-Error-Message "Docker is not running, please start Docker Desktop"
-    exit 1
-}
-
-$composeCommand = Resolve-ComposeCommand
-if ($composeCommand) {
-    Write-Success "Docker Compose available: $composeCommand"
-} else {
-    Write-Warning-Message "Docker Compose not found. Compose mode will require manual setup."
-}
-
-# =============================================================================
-# Proxy Configuration Step
-# =============================================================================
-Write-Step "Proxy Configuration (Optional)"
-
-Write-Host "`nIf you are in mainland China or other network-restricted regions," -ForegroundColor $ColorInfo
-Write-Host "it is recommended to use a proxy to accelerate downloads:" -ForegroundColor $ColorInfo
-Write-Host "  - Docker Hub image pull" -ForegroundColor $ColorInfo
-Write-Host "  - Ghidra download (about 600MB)" -ForegroundColor $ColorInfo
-Write-Host "  - Python/Node.js dependencies" -ForegroundColor $ColorInfo
-Write-Host "`nCommon proxy tools:" -ForegroundColor $ColorInfo
-Write-Host "  - Clash: http://127.0.0.1:7890" -ForegroundColor $ColorInfo
-Write-Host "  - V2Ray: http://127.0.0.1:10809" -ForegroundColor $ColorInfo
-Write-Host "  - Shadowsocks: http://127.0.0.1:1080" -ForegroundColor $ColorInfo
-
-# Check system proxy
-$systemProxy = $null
-try {
-    $registryPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
-    $proxyEnable = Get-ItemProperty -Path $registryPath -Name "ProxyEnable" -ErrorAction SilentlyContinue
-    if ($proxyEnable.ProxyEnable -eq 1) {
         $proxyServer = Get-ItemProperty -Path $registryPath -Name "ProxyServer" -ErrorAction SilentlyContinue
-        if ($proxyServer.ProxyServer) {
-            $systemProxy = $proxyServer.ProxyServer
-            Write-Info "Detected system proxy: $systemProxy"
+        if (-not $proxyServer.ProxyServer) { return $null }
+
+        $value = $proxyServer.ProxyServer.ToString()
+        if ($value -match "=") {
+            $http = ($value -split ";") | Where-Object { $_ -like "http=*" } | Select-Object -First 1
+            if ($http) { return ($http -replace "^http=", "") }
         }
-    }
-} catch {
-    # Ignore errors
-}
-
-# Ask if use proxy
-if (-not $UseProxy) {
-    Write-Host "`nDo you need to configure a proxy?" -ForegroundColor $ColorPrimary
-    if ($systemProxy) {
-        Write-Host "  [1] Use system proxy ($systemProxy) - Recommended" -ForegroundColor $ColorSuccess
-    } else {
-        Write-Host "  [1] Manual proxy configuration" -ForegroundColor $ColorInfo
-    }
-    Write-Host "  [2] No proxy (direct connection)" -ForegroundColor $ColorInfo
-    Write-Host "  [3] Skip (configure later in Docker)" -ForegroundColor $ColorInfo
-
-    $proxyChoice = Read-Host "`nSelect (default: 1)"
-    if ([string]::IsNullOrWhiteSpace($proxyChoice)) {
-        $proxyChoice = "1"
-    }
-
-    if ($proxyChoice -eq "1") {
-        if ($systemProxy) {
-            # Use system proxy
-            $HttpProxy = "http://$systemProxy"
-            $HttpsProxy = "http://$systemProxy"
-            Write-Success "Using system proxy: $HttpProxy"
-        } else {
-            # Manual configuration
-            Write-Host "`nEnter proxy address:" -ForegroundColor $ColorPrimary
-            Write-Host "Format: http://host:port or http://username:password@host:port" -ForegroundColor $ColorInfo
-
-            $manualProxy = Read-Host "Proxy address"
-            if (-not [string]::IsNullOrWhiteSpace($manualProxy)) {
-                $HttpProxy = $manualProxy
-                $HttpsProxy = $manualProxy
-                Write-Success "Proxy configured: $HttpProxy"
-            } else {
-                Write-Warning-Message "No proxy address entered, will use direct connection"
-            }
-        }
-    } elseif ($proxyChoice -eq "2") {
-        Write-Info "Will use direct connection (no proxy)"
-        # Explicitly set to null
-        $HttpProxy = $null
-        $HttpsProxy = $null
-        $proxyConfigured = $false
-    } else {
-        Write-Warning-Message "Skipped proxy configuration"
+        return $value
+    } catch {
+        return $null
     }
 }
 
-# Validate proxy settings
-$proxyConfigured = $false
-if (-not [string]::IsNullOrWhiteSpace($HttpProxy) -or -not [string]::IsNullOrWhiteSpace($HttpsProxy)) {
-    $proxyConfigured = $true
-    Write-Host "`nProxy Configuration:" -ForegroundColor $ColorPrimary
-    Write-Host "  HTTP_PROXY:  $HttpProxy" -ForegroundColor $ColorInfo
-    Write-Host "  HTTPS_PROXY: $HttpsProxy" -ForegroundColor $ColorInfo
+function Write-EnvFile {
+    param(
+        [string]$Path,
+        [string]$Root,
+        [hashtable]$ProfileConfig,
+        [string]$BuildHttpProxy,
+        [string]$BuildHttpsProxy,
+        [string]$HybridEndpoint,
+        [string]$HybridHostKey,
+        [string]$HybridRuntimeKey
+    )
 
-    # Check if Clash allows LAN connections
-    Write-Host "`nChecking Clash configuration..." -ForegroundColor $ColorInfo
-    try {
-        $netstatOutput = netstat -an | Select-String ":7890" | Select-String "LISTENING"
-        if ($netstatOutput) {
-            $listeningAddress = ($netstatOutput | Select-Object -First 1).ToString().Split()[1]
-            if ($listeningAddress -eq "0.0.0.0:7890" -or $listeningAddress -eq "*:7890" -or $listeningAddress -like "192.168.*:7890") {
-                Write-Success "Clash allows LAN connections ($listeningAddress)"
-            } elseif ($listeningAddress -eq "127.0.0.1:7890") {
-                Write-Warning-Message "Clash only listens on localhost (127.0.0.1:7890)"
-                Write-Host "`nNeed to modify Clash configuration:" -ForegroundColor $ColorPrimary
-                Write-Host "  1. Open Clash config file (config.yaml)" -ForegroundColor $ColorInfo
-                Write-Host "  2. Set: allow-lan: true" -ForegroundColor $ColorSuccess
-                Write-Host "  3. Restart Clash" -ForegroundColor $ColorInfo
-                Write-Host "`nOr enable 'Allow LAN' option in Clash for Windows" -ForegroundColor $ColorInfo
+    $rootForCompose = $Root -replace "\\", "/"
+    $lines = @(
+        "# Rikune Docker runtime environment - generated by install-docker.ps1",
+        "RIKUNE_DATA_ROOT=$rootForCompose",
+        "RIKUNE_BUILD_HTTP_PROXY=$BuildHttpProxy",
+        "RIKUNE_BUILD_HTTPS_PROXY=$BuildHttpsProxy",
+        "RIKUNE_BUILD_NO_PROXY=$DefaultNoProxy"
+    )
 
-                $continue = Read-Host "`nContinue installation? (y/N)"
-                if ($continue -ne 'y' -and $continue -ne 'Y') {
-                    exit 0
+    if ($ProfileConfig.RuntimeMode -eq "remote-sandbox") {
+        $lines += "RUNTIME_HOST_AGENT_ENDPOINT=$HybridEndpoint"
+        $lines += "RUNTIME_HOST_AGENT_API_KEY=$HybridHostKey"
+        $lines += "RUNTIME_API_KEY=$HybridRuntimeKey"
+    }
+
+    $lines | Set-Content -Path $Path -Encoding UTF8
+}
+
+function Configure-McpClient {
+    param(
+        [string]$Client,
+        [hashtable]$ProfileConfig
+    )
+
+    if ($Client -eq "None") { return }
+
+    $config = @{
+        mcpServers = @{
+            rikune = @{
+                command = "docker"
+                args = @(
+                    "exec",
+                    "-i",
+                    $ProfileConfig.Container,
+                    "node",
+                    "dist/index.js"
+                )
+                env = @{
+                    NODE_ENV = "production"
+                    PYTHONUNBUFFERED = "1"
+                    WORKSPACE_ROOT = "/app/workspaces"
+                    DB_PATH = "/app/data/database.db"
+                    CACHE_ROOT = "/app/cache"
+                    GHIDRA_PROJECT_ROOT = "/ghidra-projects"
+                    GHIDRA_LOG_ROOT = "/ghidra-logs"
                 }
+                timeout = 300000
             }
-        } else {
-            Write-Warning-Message "Clash not detected on port 7890"
         }
-    } catch {
-        Write-Warning-Message "Cannot check Clash configuration: $($_.Exception.Message)"
     }
 
-    # Convert proxy address: 127.0.0.1 -> host.docker.internal
-    $buildHttpProxy = $HttpProxy -replace 'http://127\.0\.0\.1:', 'http://host.docker.internal:'
-    $buildHttpsProxy = $HttpsProxy -replace 'http://127\.0\.0\.1:', 'http://host.docker.internal:'
+    switch ($Client) {
+        "Claude" {
+            $configDir = Join-Path $env:APPDATA "Claude"
+            $configFile = Join-Path $configDir "claude_desktop_config.json"
+        }
+        "Copilot" {
+            $configDir = Join-Path $env:APPDATA "GitHub Copilot"
+            $configFile = Join-Path $configDir "mcp.json"
+        }
+        "Codex" {
+            $configDir = Join-Path $env:USERPROFILE ".codex"
+            $configFile = Join-Path $configDir "mcp.json"
+        }
+        "Generic" {
+            $configDir = Join-Path $DataRoot "config"
+            $configFile = Join-Path $configDir "mcp-client-config.json"
+        }
+    }
 
-    Write-Host "`nProxy Address Conversion:" -ForegroundColor $ColorPrimary
-    Write-Host "  Original: $HttpProxy" -ForegroundColor $ColorInfo
-    Write-Host "  Build: $buildHttpProxy (for Docker container)" -ForegroundColor $ColorInfo
+    if (-not (Test-Path $configDir)) {
+        New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+    }
+    $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configFile -Encoding UTF8
+    Write-Success "MCP client config written: $configFile"
 }
 
-# Set environment variables (global, for subsequent use)
-if ($proxyConfigured) {
+function Read-DefaultString {
+    param(
+        [string]$Prompt,
+        [string]$DefaultValue
+    )
+
+    $value = Read-Host "$Prompt [$DefaultValue]"
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $DefaultValue
+    }
+    return $value
+}
+
+function Read-YesNo {
+    param(
+        [string]$Prompt,
+        [bool]$DefaultValue = $false
+    )
+
+    $suffix = if ($DefaultValue) { "Y/n" } else { "y/N" }
+    $value = Read-Host "$Prompt ($suffix)"
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $DefaultValue
+    }
+    return ($value -eq "y" -or $value -eq "Y")
+}
+
+function Read-Profile {
+    Write-Host ""
+    Write-Host "Select deployment profile:" -ForegroundColor $ColorPrimary
+    Write-Host "  [1] static  - safe default, static/offline analyzer only" -ForegroundColor $ColorInfo
+    Write-Host "  [2] hybrid  - Docker analyzer + Windows Host Agent / Sandbox" -ForegroundColor $ColorInfo
+    Write-Host "  [3] full    - heavier all-in-one Linux toolchain image" -ForegroundColor $ColorInfo
+    $choice = Read-Host "Select (default: 1)"
+    switch ($choice) {
+        "2" { return "hybrid" }
+        "3" { return "full" }
+        default { return "static" }
+    }
+}
+
+function Read-ClientChoice {
+    Write-Host ""
+    Write-Host "Configure an MCP client now?" -ForegroundColor $ColorPrimary
+    Write-Host "  [0] Skip" -ForegroundColor $ColorInfo
+    Write-Host "  [1] Claude Desktop" -ForegroundColor $ColorInfo
+    Write-Host "  [2] GitHub Copilot" -ForegroundColor $ColorInfo
+    Write-Host "  [3] Codex" -ForegroundColor $ColorInfo
+    Write-Host "  [4] Generic file under DataRoot/config" -ForegroundColor $ColorInfo
+    $choice = Read-Host "Select (default: 0)"
+    switch ($choice) {
+        "1" { return "Claude" }
+        "2" { return "Copilot" }
+        "3" { return "Codex" }
+        "4" { return "Generic" }
+        default { return "None" }
+    }
+}
+
+try { Clear-Host } catch { }
+Write-Header "Rikune Docker Installer"
+
+$ProjectRoot = (Resolve-Path $ProjectRoot).Path
+$PromptMode = $Interactive -or ($PSBoundParameters.Count -eq 0)
+
+if ($PromptMode) {
+    Write-Host "Guided mode is active. Press Enter to accept defaults." -ForegroundColor $ColorInfo
+    $Profile = Read-Profile
+    $DataRoot = Read-DefaultString "Persistent data root" $DataRoot
+    $ResetData = Read-YesNo "Delete and recreate the data root" $false
+
+    if (Read-YesNo "Configure build proxy" $false) {
+        $detectedProxy = Get-SystemProxy
+        if ($detectedProxy) {
+            if (-not ($detectedProxy -match "^\w+://")) { $detectedProxy = "http://$detectedProxy" }
+            Write-Info "Detected Windows proxy: $detectedProxy"
+            $HttpProxy = Read-DefaultString "HTTP proxy" $detectedProxy
+        } else {
+            $HttpProxy = Read-DefaultString "HTTP proxy" "http://127.0.0.1:7890"
+        }
+        $HttpsProxy = Read-DefaultString "HTTPS proxy" $HttpProxy
+    }
+
+    if ($Profile -eq "hybrid") {
+        $HostAgentEndpoint = Read-DefaultString "Windows Host Agent endpoint" "http://192.168.1.10:18082"
+        $HostAgentApiKey = Read-Host "Windows Host Agent API key"
+        $RuntimeApiKey = Read-DefaultString "Runtime Node API key" $HostAgentApiKey
+    }
+
+    $SkipBuild = Read-YesNo "Skip Docker image build" $false
+    $SkipStart = Read-YesNo "Skip starting the service" $false
+    $ConfigureClient = Read-ClientChoice
+}
+
+$profileConfig = $Profiles[$Profile]
+$composePath = Join-Path $ProjectRoot $profileConfig.Compose
+$envFile = Join-Path $ProjectRoot ".docker-runtime.env"
+
+Write-Info "Profile: $Profile - $($profileConfig.Description)"
+Write-Info "Project root: $ProjectRoot"
+Write-Info "Data root: $DataRoot"
+
+Write-Step "Checking prerequisites"
+Require-Command "docker" "Install Docker Desktop: https://www.docker.com/products/docker-desktop/"
+Require-Command "node" "Install Node.js 22+: https://nodejs.org/"
+Require-Command "npm" "Install npm with Node.js 22+"
+
+try {
+    & docker info *> $null
+    if ($LASTEXITCODE -ne 0) { throw "docker info failed" }
+    Write-Success "Docker daemon is running"
+} catch {
+    Write-Error-Message "Docker is not running. Start Docker Desktop and retry."
+    exit 1
+}
+
+$script:ComposeCommand = Resolve-ComposeCommand
+if (-not $script:ComposeCommand) {
+    Write-Error-Message "Docker Compose was not found"
+    exit 1
+}
+Write-Success "Docker Compose available: $(if ($script:ComposeCommand -eq 'docker') { 'docker compose' } else { 'docker-compose' })"
+Write-Success "Node.js: $((node --version).Trim())"
+Write-Success "npm: $((npm --version).Trim())"
+
+Write-Step "Resolving proxy and runtime settings"
+
+if ($UseProxy -and [string]::IsNullOrWhiteSpace($HttpProxy) -and [string]::IsNullOrWhiteSpace($HttpsProxy)) {
+    $systemProxy = Get-SystemProxy
+    if ($systemProxy) {
+        if (-not ($systemProxy -match "^\w+://")) { $systemProxy = "http://$systemProxy" }
+        $HttpProxy = $systemProxy
+        $HttpsProxy = $systemProxy
+        Write-Success "Using Windows system proxy: $systemProxy"
+    } else {
+        Write-Warning-Message "UseProxy was set, but no Windows system proxy was detected"
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($HttpsProxy)) { $HttpsProxy = $HttpProxy }
+$buildHttpProxy = Convert-ProxyForDocker $HttpProxy
+$buildHttpsProxy = Convert-ProxyForDocker $HttpsProxy
+
+if ([string]::IsNullOrWhiteSpace($buildHttpProxy) -and [string]::IsNullOrWhiteSpace($buildHttpsProxy)) {
+    Write-Info "Docker build proxy args will be cleared to avoid inherited localhost proxy failures"
+} else {
+    Write-Info "Docker build HTTP proxy: $buildHttpProxy"
+    Write-Info "Docker build HTTPS proxy: $buildHttpsProxy"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($HttpProxy) -or -not [string]::IsNullOrWhiteSpace($HttpsProxy)) {
+    if ([string]::IsNullOrWhiteSpace($HttpsProxy)) { $HttpsProxy = $HttpProxy }
+    if ([string]::IsNullOrWhiteSpace($HttpProxy)) { $HttpProxy = $HttpsProxy }
+
     $env:HTTP_PROXY = $HttpProxy
-    $env:HTTPS_PROXY = $HttpsProxy
     $env:http_proxy = $HttpProxy
+    $env:HTTPS_PROXY = $HttpsProxy
     $env:https_proxy = $HttpsProxy
-    Write-Info "Environment variables HTTP_PROXY and HTTPS_PROXY set"
+    $env:NO_PROXY = $DefaultNoProxy
+    $env:no_proxy = $DefaultNoProxy
+    Write-Info "Process proxy env set for npm and Docker CLI: $HttpsProxy"
 }
 
-Write-Step "Selecting Data Location"
+if ($Profile -eq "hybrid") {
+    if ([string]::IsNullOrWhiteSpace($HostAgentEndpoint)) { $HostAgentEndpoint = $env:RUNTIME_HOST_AGENT_ENDPOINT }
+    if ([string]::IsNullOrWhiteSpace($HostAgentApiKey)) { $HostAgentApiKey = $env:RUNTIME_HOST_AGENT_API_KEY }
+    if ([string]::IsNullOrWhiteSpace($HostAgentApiKey)) { $HostAgentApiKey = $env:HOST_AGENT_API_KEY }
+    if ([string]::IsNullOrWhiteSpace($RuntimeApiKey)) { $RuntimeApiKey = $env:RUNTIME_API_KEY }
+    if ([string]::IsNullOrWhiteSpace($RuntimeApiKey)) { $RuntimeApiKey = $HostAgentApiKey }
 
-# Always ask for data location
-Write-Host "`nMCP Server needs to store the following data:" -ForegroundColor $ColorInfo
-Write-Host "  - Sample files" -ForegroundColor $ColorInfo
-Write-Host "  - Workspaces (analysis results)" -ForegroundColor $ColorInfo
-Write-Host "  - SQLite database" -ForegroundColor $ColorInfo
-Write-Host "  - Cache files" -ForegroundColor $ColorInfo
-Write-Host "  - Ghidra projects (can be large)" -ForegroundColor $ColorInfo
-Write-Host "  - Ghidra logs" -ForegroundColor $ColorInfo
-Write-Host "`nRecommended: Store on a drive with sufficient space" -ForegroundColor $ColorInfo
-
-# Get available drives
-$disks = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Free -gt 10GB } | Sort-Object -Property Name
-
-$options = @()
-$optionIndex = 1
-
-# Default option (user profile)
-$defaultPath = "$env:USERPROFILE\.rikune"
-$options += @{
-    Index = 0
-    Path = $defaultPath
-    Description = "User profile (default)"
-    Free = "N/A"
-}
-
-# Add other drives
-foreach ($disk in $disks) {
-    if ($disk.Name -ne 'C') {
-        $path = "$($disk.Name):\Docker\rikune"
-        $freeGB = [math]::Round($disk.Free / 1GB, 1)
-        $options += @{
-            Index = $optionIndex
-            Path = $path
-            Description = "$($disk.Name): drive - ${freeGB}GB free"
-            Free = $freeGB
-        }
-        $optionIndex++
+    if ([string]::IsNullOrWhiteSpace($HostAgentEndpoint) -or [string]::IsNullOrWhiteSpace($HostAgentApiKey)) {
+        Write-Error-Message "Hybrid profile requires -HostAgentEndpoint and -HostAgentApiKey"
+        Write-Info "Example: .\install-docker.ps1 -Profile hybrid -HostAgentEndpoint http://192.168.1.10:18082 -HostAgentApiKey <key>"
+        exit 1
     }
+
+    Write-Success "Hybrid Host Agent endpoint: $HostAgentEndpoint"
 }
 
-# Display options
-Write-Host "`nAvailable options:" -ForegroundColor $ColorPrimary
-foreach ($opt in $options) {
-    if ($opt.Index -eq 0) {
-        Write-Host "  [$($opt.Index)] $($opt.Description)" -ForegroundColor $ColorInfo
-    } else {
-        Write-Host "  [$($opt.Index)] $($opt.Description)" -ForegroundColor $ColorSuccess
+Write-Step "Preparing persistent storage"
+
+if (-not [System.IO.Path]::IsPathRooted($DataRoot)) {
+    $DataRoot = Join-Path $ProjectRoot $DataRoot
+}
+
+if ($ResetData -and (Test-Path $DataRoot)) {
+    $resolvedDataRoot = (Resolve-Path $DataRoot).Path
+    $root = [System.IO.Path]::GetPathRoot($resolvedDataRoot)
+    if ($resolvedDataRoot -eq $root) {
+        Write-Error-Message "Refusing to delete drive root: $resolvedDataRoot"
+        exit 1
     }
+    Write-Warning-Message "Deleting data root because -ResetData was specified: $resolvedDataRoot"
+    Remove-Item -LiteralPath $resolvedDataRoot -Recurse -Force
 }
 
-# User selection
-$selection = Read-Host "`nEnter option number (default: 0)"
-if ([string]::IsNullOrWhiteSpace($selection)) {
-    $selection = 0
-}
-
-$selectedOption = $options | Where-Object { $_.Index -eq [int]$selection }
-if (-not $selectedOption) {
-    Write-Error-Message "Invalid selection"
-    exit 1
-}
-
-$DataRoot = $selectedOption.Path
-Write-Success "Selected: $DataRoot"
-
-# Custom path option
-$customPath = Read-Host "`nUse custom path? (leave empty to use selected)"
-if (-not [string]::IsNullOrWhiteSpace($customPath)) {
-    if (-not [System.IO.Path]::IsPathRooted($customPath)) {
-        $customPath = Join-Path $ProjectRoot $customPath
-    }
-    $DataRoot = $customPath
-    Write-Success "Using custom path: $DataRoot"
-}
-
-Write-Step "Creating Directories"
-
-$directories = @("samples", "workspaces", "data", "cache", "ghidra-projects", "ghidra-logs", "logs", "config", "storage", "qiling-rootfs")
+$directories = @("samples", "workspaces", "data", "cache", "logs", "storage", "ghidra-projects", "ghidra-logs", "qiling-rootfs", "config")
 foreach ($dir in $directories) {
-    $fullPath = Join-Path $DataRoot $dir
-    if (-not (Test-Path $fullPath)) {
-        New-Item -ItemType Directory -Path $fullPath -Force | Out-Null
-        Write-Success "Created: $fullPath"
+    $path = Join-Path $DataRoot $dir
+    if (-not (Test-Path $path)) {
+        New-Item -ItemType Directory -Path $path -Force | Out-Null
+        if ($EnableVerbose) { Write-Info "Created: $path" }
     }
 }
+Write-Success "Persistent directories ready"
 
-$dockerRuntimeEnvFile = Join-Path $ProjectRoot ".docker-runtime.env"
-"RIKUNE_DATA_ROOT=$($DataRoot -replace '\\', '/')" | Set-Content $dockerRuntimeEnvFile -Encoding UTF8
-Write-Success "Compose env file: $dockerRuntimeEnvFile"
+Write-EnvFile `
+    -Path $envFile `
+    -Root $DataRoot `
+    -ProfileConfig $profileConfig `
+    -BuildHttpProxy $buildHttpProxy `
+    -BuildHttpsProxy $buildHttpsProxy `
+    -HybridEndpoint $HostAgentEndpoint `
+    -HybridHostKey $HostAgentApiKey `
+    -HybridRuntimeKey $RuntimeApiKey
+Write-Success "Compose env file: $envFile"
 
-# =============================================================================
-# Auto-detect Plugins & Generate Dockerfile
-# =============================================================================
-Write-Step "Auto-detecting Plugins & Generating Dockerfile"
+Write-Step "Building project and generating Docker profile"
 
 Push-Location $ProjectRoot
 try {
-    # Check Node.js
-    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-        Write-Error-Message "Node.js not found. Required to build and discover plugins."
-        Write-Host "Please install Node.js 22+: https://nodejs.org/" -ForegroundColor $ColorError
-        exit 1
+    Write-Info "Installing npm dependencies..."
+    & npm install
+    if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
+
+    Write-Info "Building TypeScript and workspace packages..."
+    & npm run build
+    if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
+
+    Write-Info "Generating Docker files for profile '$Profile'..."
+    & node scripts/generate-docker.mjs "--profile=$($profileConfig.Generator)"
+    if ($LASTEXITCODE -ne 0) { throw "Docker profile generation failed" }
+
+    if (-not (Test-Path $composePath)) {
+        throw "Expected Compose file not found: $composePath"
     }
-    $nodeVer = (node --version).Trim()
-    Write-Success "Node.js: $nodeVer"
-
-    # Install dependencies if needed
-    if (-not (Test-Path (Join-Path $ProjectRoot "node_modules"))) {
-        Write-Info "Installing npm dependencies..."
-        npm install --ignore-scripts 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error-Message "npm install failed"
-            exit 1
-        }
-        Write-Success "Dependencies installed"
-    }
-
-    # Build TypeScript to compile plugin systemDeps
-    Write-Info "Building project (compiling plugins)..."
-    npm run build 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error-Message "Build failed. Check TypeScript errors."
-        exit 1
-    }
-    Write-Success "Project built"
-
-    # Discover plugins
-    $pluginDirs = Get-ChildItem -Path (Join-Path $ProjectRoot "dist\plugins") -Directory | Where-Object { $_.Name -ne 'sdk' }
-    $pluginCount = $pluginDirs.Count
-    Write-Success "Discovered $pluginCount plugins"
-
-    if ($EnableVerbose) {
-        foreach ($dir in $pluginDirs) {
-            Write-Info "  - $($dir.Name)"
-        }
-    }
-
-    # Generate Dockerfile + docker-compose.yml from plugin systemDeps
-    Write-Info "Generating Dockerfile from plugin dependencies..."
-    $genOutput = node scripts/generate-docker.mjs 2>&1
-    $genExit = $LASTEXITCODE
-
-    # Show features discovered
-    $featureLines = $genOutput | Where-Object { $_ -match '^\s+[✓]' -or $_ -match 'Features from plugins' -or $_ -match '^\s+apt:' -or $_ -match 'Dockerfile \(' -or $_ -match 'docker-compose\.yml \(' }
-    foreach ($line in $featureLines) {
-        $lineStr = $line.ToString().Trim()
-        if ($lineStr) { Write-Info $lineStr }
-    }
-
-    # Verify outputs
-    $dockerfilePath = Join-Path $ProjectRoot "Dockerfile"
-    $composePath = Join-Path $ProjectRoot "docker-compose.yml"
-    if ((Test-Path $dockerfilePath) -and (Test-Path $composePath)) {
-        $dockerfileLines = (Get-Content $dockerfilePath).Count
-        $composeLines = (Get-Content $composePath).Count
-        $fromStages = (Select-String -Path $dockerfilePath -Pattern "^FROM ").Count
-        Write-Success "Dockerfile generated: $dockerfileLines lines, $fromStages stages"
-        Write-Success "docker-compose.yml generated: $composeLines lines"
-    } else {
-        Write-Error-Message "Docker file generation failed"
-        if ($EnableVerbose) {
-            foreach ($line in $genOutput) { Write-Info $line }
-        }
-        exit 1
-    }
+    Write-Success "Generated $($profileConfig.Compose)"
 } catch {
-    Write-Error-Message "Plugin detection error: $($_.Exception.Message)"
+    Write-Error-Message $_.Exception.Message
     exit 1
 } finally {
     Pop-Location
 }
 
-Write-Step "Building Docker Image"
+Write-Step "Docker Compose"
 
 Push-Location $ProjectRoot
 try {
+    $baseArgs = @("--env-file", ".docker-runtime.env", "-f", $profileConfig.Compose)
+
     if ($SkipBuild) {
-        Write-Warning-Message "Skipping Docker image build (--SkipBuild)"
+        Write-Warning-Message "Skipping Docker build"
     } else {
-        $buildArgs = @("build", "-t", "rikune:latest", "--progress", "plain", ".")
+        Write-Info "Building image: $($profileConfig.Image)"
+        Invoke-Compose ($baseArgs + @("build", $profileConfig.Service))
+        if ($LASTEXITCODE -ne 0) { throw "Docker Compose build failed" }
+        Write-Success "Docker image built: $($profileConfig.Image)"
+    }
 
-        if ($EnableVerbose) {
-            $buildArgs += "--no-cache"
-        }
-
-        # Add proxy build arguments if configured
-        if ($proxyConfigured) {
-            Write-Info "Original proxy: $HttpProxy"
-            Write-Info "Build proxy: $buildHttpProxy (for Docker internal)"
-            
-            $buildArgs += @(
-                "--build-arg", "HTTP_PROXY=$buildHttpProxy"
-                "--build-arg", "HTTPS_PROXY=$buildHttpsProxy"
-                "--build-arg", "http_proxy=$buildHttpProxy"
-                "--build-arg", "https_proxy=$buildHttpsProxy"
-            )
-            
-            Write-Info "Added proxy build arguments"
-        }
-
-        Write-Info "Running: docker $($buildArgs -join ' ')"
-        & docker @buildArgs
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "Docker image built successfully"
-            docker images rikune:latest
-        } else {
-            Write-Error-Message "Docker build failed"
-            exit 1
-        }
+    if ($SkipStart) {
+        Write-Warning-Message "Skipping service start"
+    } else {
+        Write-Info "Starting service: $($profileConfig.Service)"
+        Invoke-Compose ($baseArgs + @("up", "-d", $profileConfig.Service))
+        if ($LASTEXITCODE -ne 0) { throw "Docker Compose up failed" }
+        Write-Success "Service started: $($profileConfig.Container)"
     }
 } catch {
-    Write-Error-Message "Build error: $($_.Exception.Message)"
+    Write-Error-Message $_.Exception.Message
     exit 1
 } finally {
     Pop-Location
 }
 
-Write-Step "Configuring MCP Clients"
+Write-Step "Health check"
 
-Write-Host "`nSelect MCP client to configure:" -ForegroundColor $ColorPrimary
-Write-Host "  [1] Claude Desktop" -ForegroundColor $ColorInfo
-Write-Host "  [2] GitHub Copilot" -ForegroundColor $ColorInfo
-Write-Host "  [3] Codex" -ForegroundColor $ColorInfo
-Write-Host "  [4] Qwen" -ForegroundColor $ColorInfo
-Write-Host "  [5] Generic config" -ForegroundColor $ColorInfo
-Write-Host "  [6] Skip" -ForegroundColor $ColorInfo
-
-$mcpClient = Read-Host "`nSelect (1-6)"
-
-$samplesPath = Join-Path $DataRoot "samples"
-$workspacesPath = Join-Path $DataRoot "workspaces"
-$dataPath = Join-Path $DataRoot "data"
-$cachePath = Join-Path $DataRoot "cache"
-$ghidraProjectsPath = Join-Path $DataRoot "ghidra-projects"
-$ghidraLogsPath = Join-Path $DataRoot "ghidra-logs"
-$logsPath = Join-Path $DataRoot "logs"
-$storagePath = Join-Path $DataRoot "storage"
-$qilingRootfsPath = Join-Path $DataRoot "qiling-rootfs"
-
-$dockerExecArgs = @(
-    "exec", "-i",
-    "rikune",
-    "node",
-    "dist/index.js"
-)
-
-$config = @{
-    mcpServers = @{
-        "rikune" = @{
-            command = "docker"
-            args = $dockerExecArgs
-            env = @{
-                NODE_ENV = "production"
-                PYTHONUNBUFFERED = "1"
-                WORKSPACE_ROOT = "/app/workspaces"
-                DB_PATH = "/app/data/database.db"
-                CACHE_ROOT = "/app/cache"
-                GHIDRA_PROJECT_ROOT = "/ghidra-projects"
-                GHIDRA_LOG_ROOT = "/ghidra-logs"
-            }
-        }
-    }
-}
-
-switch ($mcpClient) {
-    "1" {
-        $configDir = "$env:APPDATA\Claude"
-        $configFile = Join-Path $configDir "claude_desktop_config.json"
-        if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
-        $config | ConvertTo-Json -Depth 10 | Set-Content $configFile -Encoding UTF8
-        Write-Success "Claude Desktop config: $configFile"
-    }
-    "2" {
-        $configDir = "$env:APPDATA\GitHub Copilot"
-        $configFile = Join-Path $configDir "mcp.json"
-        if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
-        $config | ConvertTo-Json -Depth 10 | Set-Content $configFile -Encoding UTF8
-        Write-Success "GitHub Copilot config: $configFile"
-    }
-    "3" {
-        $configDir = "$env:USERPROFILE\.codex"
-        $configFile = Join-Path $configDir "mcp.json"
-        if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
-        $config | ConvertTo-Json -Depth 10 | Set-Content $configFile -Encoding UTF8
-        Write-Success "Codex config: $configFile"
-    }
-    "4" {
-        $configDir = "$env:APPDATA\Qwen"
-        $configFile = Join-Path $configDir "mcp.json"
-        if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
-        $config | ConvertTo-Json -Depth 10 | Set-Content $configFile -Encoding UTF8
-        Write-Success "Qwen config: $configFile"
-    }
-    "5" {
-        $configFile = Join-Path $DataRoot "config\mcp-client-config.json"
-        $config | ConvertTo-Json -Depth 10 | Set-Content $configFile -Encoding UTF8
-        Write-Success "Generic config: $configFile"
-    }
-    default {
-        Write-Warning-Message "Skipped MCP client configuration"
-    }
-}
-
-Write-Step "Testing Installation"
-
-Write-Host "`nTesting Docker image..." -ForegroundColor $ColorPrimary
-
-$tests = @(
-    @{ Name = "Node.js"; Cmd = @("run", "--rm", "--entrypoint", "node", "rikune:latest", "--version") },
-    @{ Name = "Python"; Cmd = @("run", "--rm", "--entrypoint", "python3", "rikune:latest", "--version") },
-    @{ Name = "Java"; Cmd = @("run", "--rm", "--entrypoint", "java", "rikune:latest", "-version") },
-    @{ Name = "Full Stack"; Cmd = @("run", "--rm", "--entrypoint", "/usr/local/bin/validate-docker-full-stack.sh", "rikune:latest") }
-)
-
-$passed = 0
-foreach ($test in $tests) {
-    Write-Host "  Testing $($test.Name)... " -NoNewline
+if ($SkipStart) {
+    Write-Warning-Message "Health check skipped because -SkipStart was specified"
+} else {
+    Start-Sleep -Seconds 3
     try {
-        $result = docker @($test.Cmd) 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            $version = ($result | Select-Object -First 1).ToString().Trim()
-            Write-Host "OK ($version)" -ForegroundColor $ColorSuccess
-            $passed++
+        $healthParams = @{
+            Uri = "http://localhost:18080/api/v1/health"
+            UseBasicParsing = $true
+            TimeoutSec = 10
+        }
+        if ((Get-Command Invoke-WebRequest).Parameters.ContainsKey("NoProxy")) {
+            $healthParams.NoProxy = $true
+        }
+        $response = Invoke-WebRequest @healthParams
+        if ($response.StatusCode -eq 200) {
+            Write-Success "HTTP API health check passed"
         } else {
-            Write-Host "FAILED" -ForegroundColor $ColorError
+            Write-Warning-Message "HTTP API returned status $($response.StatusCode)"
         }
     } catch {
-        Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor $ColorError
+        Write-Warning-Message "HTTP API health check failed: $($_.Exception.Message)"
+        Write-Info "Check logs with: docker logs $($profileConfig.Container)"
     }
 }
 
-Write-Host "`nResults: $passed/$($tests.Count) passed" -ForegroundColor $(if ($passed -eq $tests.Count) { $ColorSuccess } else { $ColorWarning })
-
-Write-Header "Installation Complete"
-
-Write-Host "Data Root: $DataRoot" -ForegroundColor $ColorSuccess
-Write-Host "Image: rikune:latest" -ForegroundColor $ColorSuccess
-
-Write-Host "`n========================================" -ForegroundColor $ColorPrimary
-Write-Host "  API File Server - AUTO-ENABLED" -ForegroundColor $ColorSuccess
-Write-Host "========================================" -ForegroundColor $ColorPrimary
-Write-Host ""
-Write-Host "The HTTP API server is enabled by default on port 18080." -ForegroundColor $ColorInfo
-Write-Host "An API key will be auto-generated on first startup." -ForegroundColor $ColorInfo
-Write-Host ""
-Write-Host "To get your API key after starting the container:" -ForegroundColor $ColorPrimary
-Write-Host "  docker logs rikune | grep 'API Key'" -ForegroundColor $ColorInfo
-Write-Host ""
-Write-Host "To upload a sample:" -ForegroundColor $ColorPrimary
-Write-Host "  curl -X POST http://localhost:18080/api/v1/samples \" -ForegroundColor $ColorInfo
-Write-Host "    -H 'X-API-Key: YOUR_KEY' \" -ForegroundColor $ColorInfo
-Write-Host "    -F 'file=@sample.exe'" -ForegroundColor $ColorInfo
-Write-Host ""
-Write-Host "To use a fixed API key (optional):" -ForegroundColor $ColorPrimary
-Write-Host "  Set API_KEY environment variable in docker-compose.yml" -ForegroundColor $ColorInfo
-Write-Host ""
-
-Write-Host "`nBasic Usage:" -ForegroundColor $ColorPrimary
-Write-Host "  docker run --rm -i -v ${samplesPath}:/samples:ro rikune:latest"
-Write-Host ""
-Write-Host "Or use Docker Compose (recommended):" -ForegroundColor $ColorPrimary
-Write-Host "  $(if ($composeCommand) { $composeCommand } else { 'docker compose' }) --env-file .docker-runtime.env up -d mcp-server"
-Write-Host ""
+Configure-McpClient -Client $ConfigureClient -ProfileConfig $profileConfig
 
 $installInfo = @{
     InstallDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Profile = $Profile
     DataRoot = $DataRoot
-    DockerImage = "rikune:latest"
-    TestsPassed = $passed
-    APIEnabled = $true
-    APIPort = 18080
-    StorageRoot = $storagePath
-    QilingRootfs = $qilingRootfsPath
-    ComposeCommand = $composeCommand
-    ComposeEnvFile = $dockerRuntimeEnvFile
+    ProjectRoot = $ProjectRoot
+    ComposeFile = $profileConfig.Compose
+    Service = $profileConfig.Service
+    Container = $profileConfig.Container
+    Image = $profileConfig.Image
+    RuntimeMode = $profileConfig.RuntimeMode
+    ComposeEnvFile = $envFile
 }
-$installInfo | ConvertTo-Json | Set-Content (Join-Path $DataRoot "install-info.json") -Encoding UTF8
-Write-Info "Install info saved"
+$installInfo | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $DataRoot "install-info.json") -Encoding UTF8
+
+Write-Header "Docker Install Complete"
+Write-Host "Profile:      $Profile" -ForegroundColor $ColorSuccess
+Write-Host "Image:        $($profileConfig.Image)" -ForegroundColor $ColorSuccess
+Write-Host "Container:    $($profileConfig.Container)" -ForegroundColor $ColorSuccess
+Write-Host "Compose file: $($profileConfig.Compose)" -ForegroundColor $ColorSuccess
+Write-Host "Data root:    $DataRoot" -ForegroundColor $ColorSuccess
+Write-Host ""
+Write-Host "Useful commands:" -ForegroundColor $ColorPrimary
+Write-Host "  docker compose --env-file .docker-runtime.env -f $($profileConfig.Compose) ps"
+Write-Host "  docker compose --env-file .docker-runtime.env -f $($profileConfig.Compose) logs -f $($profileConfig.Service)"
+Write-Host "  docker compose --env-file .docker-runtime.env -f $($profileConfig.Compose) down"
+Write-Host ""
+Write-Host "Dashboard: http://localhost:18080/dashboard" -ForegroundColor $ColorPrimary

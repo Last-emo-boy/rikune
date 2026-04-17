@@ -108,6 +108,7 @@ samples/
 
 # install-local.ps1 / install-local.sh generated files
 .env
+.env.runtime-windows
 angr-venv/
 qiling-venv/
 workers/venv/

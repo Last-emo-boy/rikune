@@ -12,6 +12,10 @@ param(
     [Parameter(HelpMessage="Skip optional tools check")]
     [switch]$SkipOptional,
 
+    [Parameter(HelpMessage="Runtime execution mode")]
+    [ValidateSet("disabled", "auto-sandbox", "manual", "remote-sandbox")]
+    [string]$RuntimeMode = "disabled",
+
     [Parameter(HelpMessage="Enable verbose output")]
     [switch]$EnableVerbose
 )
@@ -62,7 +66,7 @@ function Write-Step {
 # ─────────────────────────────────────────────────────────────────────────────
 # Main Script
 # ─────────────────────────────────────────────────────────────────────────────
-Clear-Host
+try { Clear-Host } catch { }
 Write-Header "Rikune — Local Install (No Docker)"
 
 Write-Host "This script will:" -ForegroundColor $ColorInfo
@@ -73,6 +77,8 @@ Write-Host "  4. Create data directories" -ForegroundColor $ColorInfo
 Write-Host "  5. Check optional analysis tools" -ForegroundColor $ColorInfo
 Write-Host "  6. Configure MCP clients" -ForegroundColor $ColorInfo
 Write-Host "  7. Run health check" -ForegroundColor $ColorInfo
+Write-Host "" -ForegroundColor $ColorInfo
+Write-Host "Runtime mode: $RuntimeMode" -ForegroundColor $ColorInfo
 
 $continue = Read-Host "`nContinue? (Y/n)"
 if ($continue -eq 'n' -or $continue -eq 'N') {
@@ -105,6 +111,23 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     exit 1
 }
 Write-Success "npm: $((npm --version).Trim())"
+
+if ($RuntimeMode -eq "auto-sandbox") {
+    if (-not [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
+        Write-Error-Message "RUNTIME_MODE=auto-sandbox requires a Windows-native analyzer"
+        exit 1
+    }
+    try {
+        $sandboxFeature = (Get-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClient -ErrorAction SilentlyContinue).State
+        if ($sandboxFeature -ne "Enabled") {
+            Write-Warning-Message "Windows Sandbox is not enabled. Enable Containers-DisposableClient before running dynamic tools."
+        } else {
+            Write-Success "Windows Sandbox feature enabled"
+        }
+    } catch {
+        Write-Warning-Message "Could not check Windows Sandbox feature: $($_.Exception.Message)"
+    }
+}
 
 # Python
 $pythonCmd = $null
@@ -390,6 +413,8 @@ $envContent = @"
 # Adjust paths to match your local tool installations.
 
 # Core paths
+NODE_ROLE=analyzer
+RUNTIME_MODE=$RuntimeMode
 WORKSPACE_ROOT=$((Join-Path $DataRoot "workspaces") -replace '\\', '/')
 DB_PATH=$((Join-Path $DataRoot "data/database.db") -replace '\\', '/')
 CACHE_ROOT=$((Join-Path $DataRoot "cache") -replace '\\', '/')
@@ -452,6 +477,8 @@ $config = @{
             args = @($distIndex)
             env = @{
                 NODE_ENV = "production"
+                NODE_ROLE = "analyzer"
+                RUNTIME_MODE = $RuntimeMode
                 WORKSPACE_ROOT = (Join-Path $DataRoot "workspaces") -replace '\\', '/'
                 DB_PATH = (Join-Path $DataRoot "data/database.db") -replace '\\', '/'
                 CACHE_ROOT = (Join-Path $DataRoot "cache") -replace '\\', '/'
@@ -505,6 +532,8 @@ Write-Step "Running Health Check"
 Write-Host "`nStarting Rikune in health-check mode..." -ForegroundColor $ColorPrimary
 
 $healthEnv = @{
+    NODE_ROLE = "analyzer"
+    RUNTIME_MODE = $RuntimeMode
     WORKSPACE_ROOT = Join-Path $DataRoot "workspaces"
     DB_PATH = Join-Path $DataRoot "data/database.db"
     CACHE_ROOT = Join-Path $DataRoot "cache"
@@ -562,6 +591,7 @@ Write-Host ""
 $installInfo = @{
     InstallDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Mode = "local"
+    RuntimeMode = $RuntimeMode
     DataRoot = $DataRoot
     ProjectRoot = $ProjectRoot
     PythonVenv = $venvDir

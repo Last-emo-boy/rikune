@@ -97,6 +97,42 @@ function getPrimaryIp(): string | null {
   return null
 }
 
+function existingExecutablePath(rawPath?: string): string | null {
+  if (!rawPath || rawPath.trim().length === 0) {
+    return null
+  }
+  const candidate = rawPath.trim().replace(/^"|"$/g, '')
+  return existsSync(candidate) ? candidate : null
+}
+
+function findExecutableOnPath(command: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile('where.exe', [command], { windowsHide: true }, (err, stdout) => {
+      if (err) {
+        resolve(null)
+        return
+      }
+      const found = stdout
+        .toString()
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .filter((line) => !line.toLowerCase().includes('\\windowsapps\\'))
+        .find((line) => existsSync(line))
+      resolve(found || null)
+    })
+  })
+}
+
+async function resolveHostPythonPath(): Promise<string | null> {
+  return (
+    existingExecutablePath(process.env.HOST_AGENT_PYTHON_PATH) ||
+    existingExecutablePath(process.env.RUNTIME_PYTHON_PATH) ||
+    await findExecutableOnPath('python') ||
+    await findExecutableOnPath('py')
+  )
+}
+
 function requireAuth(req: IncomingMessage, res: ServerResponse): boolean {
   if (!API_KEY) return true
   const auth = req.headers.authorization || ''
@@ -144,7 +180,15 @@ async function writeWsbConfig(
   const runtimeDirHost = path.dirname(runtimeEntryHost)
   const runtimeFileName = path.basename(runtimeEntryHost)
   const workersDirHost = path.join(projectRoot, 'workers')
-  const readyFileSandbox = 'C:\rikune-outbox\runtime.ready.json'
+  const readyFileSandbox = 'C:\\rikune-outbox\\runtime.ready.json'
+  const hostNodePath = existingExecutablePath(process.env.HOST_AGENT_NODE_PATH) || process.execPath
+  const hostPythonPath = await resolveHostPythonPath()
+
+  if (!hostPythonPath) {
+    logger.warn(
+      'No host Python executable found for Windows Sandbox mapping. Runtime health checks and Python-backed dynamic tools may fail. Set HOST_AGENT_PYTHON_PATH to a real python.exe.'
+    )
+  }
 
   const wsb = buildWsbXml({
     runtimeDirHost,
@@ -154,6 +198,10 @@ async function writeWsbConfig(
     outboxDir,
     readyFileSandbox,
     runtimeApiKey,
+    nodeDirHost: path.dirname(hostNodePath),
+    nodeFileName: path.basename(hostNodePath),
+    pythonDirHost: hostPythonPath ? path.dirname(hostPythonPath) : undefined,
+    pythonFileName: hostPythonPath ? path.basename(hostPythonPath) : undefined,
   })
   await fs.writeFile(wsbPath, wsb, 'utf-8')
 }

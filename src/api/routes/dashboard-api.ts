@@ -31,15 +31,24 @@ import type { PluginStatus } from '../../plugins/sdk.js'
 import type { RuntimeSseEvent } from '../../runtime-client/index.js'
 import type { JobQueue } from '../../job-queue.js'
 import {
-  RUNTIME_TASK_LIFECYCLE,
-  type TaskStatus as RuntimeTaskStatus,
-} from '../../../packages/runtime-node/src/task-store.js'
-import {
   normalizeJobQueueStatus,
   normalizeRuntimeEventStatus,
 } from '../../analysis/analysis-run-state.js'
 
 const SERVER_START_TIME = Date.now()
+const TASK_TTL_MS = 30 * 60 * 1000
+
+type RuntimeTaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+const RUNTIME_TASK_LIFECYCLE = {
+  persistenceFileName: '.runtime-task-store.json',
+  persistenceScope: 'runtime-outbox',
+  terminalTaskTtlMs: TASK_TTL_MS,
+  cleanupBehavior: 'terminal-tasks-purge-outbox-and-state',
+  recoveryBehavior: 'queued-and-running-marked-failed-on-restart',
+  terminalStatuses: ['completed', 'failed', 'cancelled'] as const,
+  persistedStatuses: ['queued', 'running', 'completed', 'failed', 'cancelled'] as const,
+} as const
 
 export interface DashboardDeps {
   server: MCPServer | null

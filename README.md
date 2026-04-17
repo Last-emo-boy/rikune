@@ -12,7 +12,7 @@ An MCP server for Windows reverse engineering. It exposes PE triage, Ghidra-back
 - Runtime-aware reconstruction: static evidence, trace imports, memory snapshots, and semantic review artifacts can all be correlated back into reconstruct and report workflows.
 - LLM-assisted review layers: function naming, function explanation, and module reconstruction review are exposed as structured MCP flows instead of ad hoc prompts.
 - Queue-friendly orchestration: persisted staged runs are the primary workflow model, while low-level queued jobs remain available for raw execution inspection.
-- Full Linux analysis image: the Docker distribution now bundles Graphviz, Rizin, YARA-X, UPX, Wine/winedbg, Frida CLI, Qiling, angr, PANDA bindings, and RetDec in addition to the baseline Ghidra/capa/DIE/FLOSS stack.
+- Profiled Docker deployments: `static` is the safe default analyzer image, `full` keeps the all-in-one Linux toolchain, and `hybrid` connects a Linux analyzer to a Windows Host Agent / Windows Sandbox runtime.
 - **Staged nonblocking pipeline**: analysis is organized into explicit stages (`fast_profile`, `enrich_static`, `function_map`, `reconstruct`, `dynamic_plan`, `dynamic_execute`, `summarize`), with preview-first tool contracts and persisted run state for reuse.
 - **HTTP File Server**: Embedded HTTP API on port 18080 for direct sample uploads, artifact downloads, and upload session management with API key authentication.
 - **Web Dashboard**: Dark-themed real-time monitoring dashboard at `http://localhost:18080/dashboard` — shows all tools, plugins, samples, config diagnostics, system resources, and SSE event stream.
@@ -502,7 +502,7 @@ See [`docs/EXAMPLES.md`](./docs/EXAMPLES.md#场景 -9-frida-运行时 instrument
 
 ### Full Service Inventory (Docker)
 
-When running in Docker (`docker-compose up -d`), the container exposes:
+When running any Docker profile (`static`, `hybrid`, or `full`), the container exposes:
 
 | Service | Access | Description |
 |---------|--------|-------------|
@@ -775,48 +775,63 @@ docs/                        Documentation
 
 ### Option 1: Docker (Linux Analyzer)
 
-The easiest way to run Rikune with a prebuilt Linux analysis stack. Use this when
-you want static or offline analysis in Docker and optionally delegate real sample
-execution to a separate Windows runtime.
+Docker deployment is profile-based. The generator reads compiled plugin
+metadata from `dist/plugins` and writes the matching Dockerfile and Compose file.
+Use `static` for offline analysis, `hybrid` when a Windows Host Agent provides
+runtime execution, and `full` only when you intentionally want the heavy
+all-in-one Linux image.
 
-```bash
-# Static-only analyzer (safe default, no runtime connection required)
-docker compose -f docker-compose.analyzer.yml up -d
+```powershell
+# Windows all-in-one menu; no flags required for normal users
+.\rikune.ps1
 
-# Hybrid analyzer that delegates runtime work to a Windows Runtime node / Host Agent
-docker compose -f docker-compose.hybrid.yml up -d
+# Safe default: static-only analyzer, data under D:\Docker\rikune
+.\rikune.ps1 install -Profile static
 
-# Or run the Linux analysis image directly over stdio
-docker build -t rikune:latest .
-docker run --rm -i \
-  --network=none \
-  -v ./samples:/samples:ro \
-  -v ~/.rikune/workspaces:/app/workspaces \
-  -v ~/.rikune/data:/app/data \
-  -v ~/.rikune/cache:/app/cache \
-  rikune:latest
+# Full Linux toolchain image
+.\rikune.ps1 install -Profile full
+
+# Single Windows host: Docker analyzer + Windows Host Agent + Sandbox
+.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
 ```
 
-See [`DEPLOYMENT.md`](./DEPLOYMENT.md) and [`docs/docker.html`](./docs/docker.html) for
-full deployment guidance.
+```bash
+# Linux/macOS all-in-one menu
+./rikune.sh
 
-The default Docker image is now a full Linux-side analysis stack. In addition to
-the baseline `Ghidra`, `capa`, `Detect It Easy`, `FLOSS`, `legacy YARA`, and
-`Speakeasy` components, it also bundles:
+# Linux analyzer + remote Windows Host Agent bootstrap
+./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user>
+```
 
-- `Graphviz`, `Rizin`, `YARA-X`, `UPX`, `RetDec`
-- `frida-tools`, `Wine`, `winedbg`, `Qiling`（隔离解释器）, `angr`, `pandare`
+Manual profile generation is also available:
+
+```bash
+npm run build
+npm run docker:generate:all
+docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d analyzer
+```
+
+Profile outputs:
+
+| Profile | Dockerfile | Compose file | Container | Runtime |
+|---------|------------|--------------|-----------|---------|
+| `static` | `docker/Dockerfile.analyzer` | `docker-compose.analyzer.yml` | `rikune-analyzer` | disabled |
+| `hybrid` | `docker/Dockerfile.analyzer` | `docker-compose.hybrid.yml` | `rikune-analyzer` | remote Windows Host Agent |
+| `full` | `Dockerfile` | `docker-compose.yml` | `rikune` | disabled |
 
 Important caveats:
 
-- `docker-compose.analyzer.yml` now defaults to `RUNTIME_MODE=disabled`, making it a true static-only Linux analyzer unless you explicitly switch to `manual` or `remote-sandbox`.
+- `static` and `hybrid` do not install local dynamic execution dependencies such as Wine, Frida, Qiling, or GDB into the analyzer image.
+- `full` includes the heavy Linux-side toolchain and is the only profile intended for all-in-one Docker experimentation.
 - Docker or WSL analyzers cannot use `auto-sandbox`; that mode requires a Windows-native analyzer process.
-- For real sample execution from Linux Docker, use `RUNTIME_MODE=manual` or `RUNTIME_MODE=remote-sandbox` and connect to a Windows Runtime node or Windows Host Agent over the runtime HTTP API.
+- For real sample execution from Linux Docker, use the `hybrid` profile and connect to a Windows Host Agent over the runtime HTTP API.
 - Use `RUNTIME_HOST_AGENT_API_KEY` only for Analyzer → Host Agent control requests, and `RUNTIME_API_KEY` only when the Windows Runtime Node itself requires a separate API key.
 - If you need single-host dynamic execution on Windows, run the analyzer natively on Windows and set `RUNTIME_MODE=auto-sandbox`.
 - `Qiling` still needs an externally mounted Windows rootfs via `QILING_ROOTFS`.
-- `Wine` and `winedbg` are useful Linux-hosted user-mode helpers, not full Windows desktop debugging replacements.
 - `RetDec` is a heavy backend and should be consumed artifact-first instead of returning oversized inline payloads.
+
+See [`DEPLOYMENT.md`](./DEPLOYMENT.md) and [`docs/docker.html`](./docs/docker.html) for
+full deployment guidance.
 
 ### Option 2: Local Installation
 
@@ -839,8 +854,14 @@ Optional but strongly recommended:
 ### Option 1: Docker Development (Recommended)
 
 ```bash
-# Build image
+# Build the full profile
 npm run docker:build
+
+# Build the static analyzer profile
+npm run docker:build:static
+
+# Start the static analyzer profile
+npm run docker:up:static
 
 # Test toolchain
 npm run docker:test
@@ -908,7 +929,12 @@ npm start
 
 ### Docker Compose plus `docker exec`
 
-For the single-container deployment model, start the daemon once with `docker compose up -d mcp-server` and point the MCP client at the running container:
+For the default static analyzer profile, start the daemon once and point the MCP
+client at the running container:
+
+```bash
+docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d analyzer
+```
 
 ```json
 {
@@ -918,7 +944,7 @@ For the single-container deployment model, start the daemon once with `docker co
       "args": [
         "exec",
         "-i",
-        "rikune",
+        "rikune-analyzer",
         "node",
         "dist/index.js"
       ],
@@ -1081,10 +1107,12 @@ Current non-goals:
 
 ## Using the published package
 
-The published npm package is now best treated as a thin MCP launcher, while Docker carries the heavy reverse-engineering runtime. That keeps npm and Docker separate, but intentionally strong-bound:
+The published npm package is best treated as a thin MCP launcher, while Docker
+carries the persistent analyzer service. The recommended daemon is the static
+analyzer profile unless you intentionally deploy `full` or `hybrid`.
 
 - `npm` / `npx` provides the client-facing executable and versioned launcher
-- `docker compose up -d mcp-server` provides the persistent runtime, storage, upload API, and toolchain
+- `docker compose -f docker-compose.analyzer.yml up -d analyzer` provides the persistent analyzer, storage, upload API, and static toolchain
 
 This does **not** remove the existing source checkout or direct Docker client paths. If you are running from a cloned repo, `node dist/index.js` and direct `docker exec ... node dist/index.js` still work.
 
@@ -1093,7 +1121,9 @@ Recommended published-package flow:
 1. Start the daemon runtime once:
 
 ```bash
-docker compose up -d mcp-server
+npm run build
+npm run docker:generate:static
+docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d analyzer
 ```
 
 2. Point the MCP client at the npm launcher:

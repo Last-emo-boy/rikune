@@ -65,7 +65,7 @@ export interface ExecuteResult {
   artifactRefs?: { name: string; path: string }[]
 }
 
-const pythonCommand = getPythonCommand()
+const pythonCommand = getPythonCommand(process.platform, config.runtime.pythonPath)
 
 export async function executeTask(
   task: ExecuteTask,

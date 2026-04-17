@@ -250,7 +250,10 @@
             <pre>
 git clone https://github.com/Last-emo-boy/rikune.git
 cd rikune
-.\install-local.ps1</pre
+.\install-local.ps1
+
+<span class="comment"># Windows-native analyzer with local Windows Sandbox execution</span>
+.\install-local.ps1 -RuntimeMode auto-sandbox</pre
             >
           </div>
 
@@ -263,7 +266,10 @@ cd rikune
 git clone https://github.com/Last-emo-boy/rikune.git
 cd rikune
 chmod +x install-local.sh
-./install-local.sh</pre
+./install-local.sh
+
+<span class="comment"># Split analyzer/runtime configuration</span>
+./install-local.sh -r remote-sandbox</pre
             >
           </div>
 
@@ -927,7 +933,7 @@ Plugin dynamic: frida ✓
                   <strong><span data-lang-en>Setup</span><span data-lang-zh>安装</span></strong>
                 </td>
                 <td>
-                  <code>install-docker.ps1</code> <span data-lang-en>— one command</span
+                  <code>rikune.ps1</code> / <code>rikune.sh</code> <span data-lang-en>— one command</span
                   ><span data-lang-zh>— 一条命令</span>
                 </td>
                 <td>
@@ -940,8 +946,8 @@ Plugin dynamic: frida ✓
                   <strong><span data-lang-en>Tools</span><span data-lang-zh>工具</span></strong>
                 </td>
                 <td>
-                  <span data-lang-en>All pre-installed in image</span
-                  ><span data-lang-zh>全部预装在镜像中</span>
+                  <span data-lang-en>Profile-based: static, hybrid, or full</span
+                  ><span data-lang-zh>按 profile 选择：static、hybrid 或 full</span>
                 </td>
                 <td>
                   <span data-lang-en>Install what you need</span><span data-lang-zh>按需安装</span>

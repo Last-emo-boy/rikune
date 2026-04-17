@@ -34,16 +34,20 @@ ENV HTTP_PROXY="${HTTP_PROXY}" \
     https_proxy="${https_proxy}" \
     NO_PROXY="${NO_PROXY}"
 
-RUN npm config set registry https://registry.npmmirror.com
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm config set audit false && \
+    npm config set fund false
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --legacy-peer-deps || npm ci
+COPY turbo.json ./
+COPY tsconfig*.json ./
+COPY packages/ ./packages/
+RUN npm ci --legacy-peer-deps --no-audit --no-fund
 
-COPY tsconfig.json ./
 COPY src/ ./src/
-RUN npx tsc --noEmit --skipLibCheck --noUnusedLocals false --noUnusedParameters false || true
-RUN npm run build -- --skipLibCheck || echo "Build completed with type warnings"
+RUN npm run build
+RUN test -f /app/dist/index.js
 
 # =============================================================================
 # Stage 2: Python Base (baseline + global packages)
@@ -147,6 +151,7 @@ COPY --from=builder /usr/local/bin/npm /usr/local/bin/npm
 COPY --from=builder /usr/local/bin/npx /usr/local/bin/npx
 COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./
 

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# =============================================================================
-# Rikune — Hybrid Deployment Script (Linux Analyzer + Windows Sandbox Runtime)
-# Run this on the Linux host to orchestrate both sides.
-# =============================================================================
+# Rikune hybrid deployment: Linux Docker analyzer + Windows Host Agent runtime.
+
 set -euo pipefail
 
 C_RESET="\033[0m"
@@ -11,250 +9,241 @@ C_GREEN="\033[32m"
 C_YELLOW="\033[33m"
 C_RED="\033[31m"
 
-header()  { printf "\n${C_CYAN}==================================================${C_RESET}\n  ${C_CYAN}%s${C_RESET}\n${C_CYAN}==================================================${C_RESET}\n\n" "$1"; }
-step()    { printf "\n${C_CYAN}[STEP] %s${C_RESET}\n${C_CYAN}-----------------------------------------${C_RESET}\n" "$1"; }
-ok()      { printf "${C_GREEN}[OK]${C_RESET} %s\n" "$1"; }
-warn()    { printf "${C_YELLOW}[WARN]${C_RESET} %s\n" "$1"; }
-err()     { printf "${C_RED}[ERROR]${C_RESET} %s\n" "$1"; }
-info()    { printf "  %s\n" "$1"; }
+header() { printf "\n${C_CYAN}==================================================${C_RESET}\n  ${C_CYAN}%s${C_RESET}\n${C_CYAN}==================================================${C_RESET}\n\n" "$1"; }
+step() { printf "\n${C_CYAN}[STEP] %s${C_RESET}\n${C_CYAN}-----------------------------------------${C_RESET}\n" "$1"; }
+ok() { printf "${C_GREEN}[OK]${C_RESET} %s\n" "$1"; }
+warn() { printf "${C_YELLOW}[WARN]${C_RESET} %s\n" "$1"; }
+err() { printf "${C_RED}[ERROR]${C_RESET} %s\n" "$1"; }
+info() { printf "  %s\n" "$1"; }
 
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 WINDOWS_HOST=""
 WINDOWS_USER="${WINDOWS_USER:-Administrator}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
-SKIP_WINDOWS_SETUP=false
 DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}"
+HOST_AGENT_PORT="${HOST_AGENT_PORT:-18082}"
+HOST_AGENT_ENDPOINT="${RUNTIME_HOST_AGENT_ENDPOINT:-}"
+HOST_AGENT_API_KEY="${RUNTIME_HOST_AGENT_API_KEY:-}"
+RUNTIME_API_KEY="${RUNTIME_API_KEY:-}"
+SKIP_WINDOWS_SETUP=false
 
 usage() {
   cat <<EOF
 Usage: $0 -w <windows-host> [options]
 
 Options:
-  -w HOST    Windows host IP or hostname (required)
-  -u USER    Windows SSH user (default: $WINDOWS_USER)
-  -k KEY     SSH private key path (default: $SSH_KEY)
-  -d DIR     Linux data root (default: $DATA_ROOT)
-  -s         Skip Windows setup (only configure Linux side)
-  -h         Show this help
+  -w HOST      Windows host IP or hostname
+  -u USER      Windows SSH user (default: $WINDOWS_USER)
+  -k KEY       SSH private key path (default: $SSH_KEY)
+  -d DIR       Linux data root (default: $DATA_ROOT)
+  -p PORT      Windows Host Agent port (default: $HOST_AGENT_PORT)
+  -e URL       Windows Host Agent endpoint (default: http://HOST:PORT)
+  -a KEY       Host Agent API key; passed to Windows installer when setup is not skipped
+  -r KEY       Runtime Node API key; defaults to the Host Agent key
+  -s           Skip Windows setup and only configure/start the Linux analyzer
+  -h           Show this help
 
-Example:
+Examples:
   $0 -w 192.168.1.100 -u admin
+  $0 -w 192.168.1.100 -s -a existing-host-agent-key
 EOF
   exit 1
 }
 
-while getopts ":w:u:k:d:sh" opt; do
-  case $opt in
+while getopts ":w:u:k:d:p:e:a:r:sh" opt; do
+  case "$opt" in
     w) WINDOWS_HOST="$OPTARG" ;;
     u) WINDOWS_USER="$OPTARG" ;;
     k) SSH_KEY="$OPTARG" ;;
     d) DATA_ROOT="$OPTARG" ;;
+    p) HOST_AGENT_PORT="$OPTARG" ;;
+    e) HOST_AGENT_ENDPOINT="$OPTARG" ;;
+    a) HOST_AGENT_API_KEY="$OPTARG" ;;
+    r) RUNTIME_API_KEY="$OPTARG" ;;
     s) SKIP_WINDOWS_SETUP=true ;;
     h|*) usage ;;
   esac
 done
 
-[ -n "$WINDOWS_HOST" ] || { err "Windows host is required (-w)"; usage; }
-
-header "Rikune — Hybrid Deployment"
-info "Windows Host: $WINDOWS_HOST"
-info "Windows User: $WINDOWS_USER"
-info "Linux Data Root: $DATA_ROOT"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. Pre-checks on Linux side
-# ─────────────────────────────────────────────────────────────────────────────
-step "Checking Linux Analyzer Prerequisites"
-
-command -v docker >/dev/null 2>&1 || { err "Docker not found"; exit 1; }
-ok "Docker: $(docker --version | awk '{print $3}' | tr -d ',')"
-
-command -v node >/dev/null 2>&1 || { err "Node.js not found (22+ required)"; exit 1; }
-ok "Node.js: $(node --version)"
-
-command -v ssh >/dev/null 2>&1 || { err "ssh client not found"; exit 1; }
-ok "SSH client available"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. Deploy Windows Runtime side
-# ─────────────────────────────────────────────────────────────────────────────
-step "Deploying Windows Runtime"
-
-if [ "$SKIP_WINDOWS_SETUP" = true ]; then
-  warn "Skipping Windows setup (-s). Assuming Host Agent is already running."
-else
-  info "Testing SSH connectivity to $WINDOWS_HOST..."
-  if ! ssh -o BatchMode=yes -o ConnectTimeout=5 -i "$SSH_KEY" "${WINDOWS_USER}@${WINDOWS_HOST}" "echo ok" >/dev/null 2>&1; then
-    err "Cannot SSH to ${WINDOWS_USER}@${WINDOWS_HOST} with key $SSH_KEY"
-    info "Ensure the Windows host has OpenSSH Server installed and your public key is in authorized_keys."
-    exit 1
-  fi
-  ok "SSH connectivity verified"
-
-  info "Uploading / syncing project to Windows host..."
-  # Use rsync if available, otherwise fall back to tar+ssh
-  if command -v rsync >/dev/null 2>&1; then
-    rsync -az --exclude 'node_modules' --exclude '.git' --exclude 'dist' \
-      -e "ssh -i $SSH_KEY" "$PROJECT_ROOT/" "${WINDOWS_USER}@${WINDOWS_HOST}:/C:/rikune/" 2>&1 || true
-    ok "Project synced via rsync"
-  else
-    warn "rsync not found; falling back to tar over ssh (slower)"
-    tar czf - --exclude='node_modules' --exclude='.git' --exclude='dist' -C "$PROJECT_ROOT" . | \
-      ssh -i "$SSH_KEY" "${WINDOWS_USER}@${WINDOWS_HOST}" "mkdir -p C:/rikune && tar xzf - -C C:/rikune" 2>&1
-    ok "Project transferred via tar+ssh"
-  fi
-
-  info "Running install-runtime-windows.ps1 on Windows host..."
-  ssh -i "$SSH_KEY" "${WINDOWS_USER}@${WINDOWS_HOST}" \
-    "powershell -ExecutionPolicy Bypass -File C:/rikune/install-runtime-windows.ps1 -ProjectRoot C:/rikune -Headless -Service -WorkspaceRoot C:/rikune-runtime" 2>&1
-  ok "Windows Runtime setup completed"
+if [ -z "$WINDOWS_HOST" ] && [ -z "$HOST_AGENT_ENDPOINT" ]; then
+  err "Provide -w <windows-host> or -e <host-agent-endpoint>"
+  usage
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. Discover Windows endpoint & API key
-# ─────────────────────────────────────────────────────────────────────────────
-step "Discovering Windows Host Agent Endpoint"
+if [ -z "$HOST_AGENT_ENDPOINT" ]; then
+  HOST_AGENT_ENDPOINT="http://${WINDOWS_HOST}:${HOST_AGENT_PORT}"
+fi
 
-# Try to read the generated env file from Windows
-REMOTE_ENV=$(ssh -i "$SSH_KEY" "${WINDOWS_USER}@${WINDOWS_HOST}" "powershell -Command Get-Content C:/rikune/.env.runtime-windows" 2>/dev/null || true)
-if [ -z "$REMOTE_ENV" ]; then
-  err "Could not retrieve .env.runtime-windows from Windows host"
+if [ -n "$HOST_AGENT_API_KEY" ] && printf "%s" "$HOST_AGENT_API_KEY" | grep -q "'"; then
+  err "Host Agent API key must not contain a single quote for SSH bootstrap"
   exit 1
 fi
 
-API_KEY=$(echo "$REMOTE_ENV" | grep '^HOST_AGENT_API_KEY=' | cut -d'=' -f2-)
-HOST_AGENT_PORT=$(echo "$REMOTE_ENV" | grep '^HOST_AGENT_PORT=' | cut -d'=' -f2-)
-[ -n "$API_KEY" ] || { err "API_KEY not found in remote .env"; exit 1; }
-[ -n "$HOST_AGENT_PORT" ] || HOST_AGENT_PORT=18082
+header "Rikune Hybrid Deployment"
+info "Project root: $PROJECT_ROOT"
+info "Linux data root: $DATA_ROOT"
+info "Windows host: ${WINDOWS_HOST:-from endpoint}"
+info "Host Agent endpoint: $HOST_AGENT_ENDPOINT"
 
-ENDPOINT="http://${WINDOWS_HOST}:${HOST_AGENT_PORT}"
-ok "Host Agent endpoint: $ENDPOINT"
+step "Checking Linux prerequisites"
+command -v docker >/dev/null 2>&1 || { err "Docker not found"; exit 1; }
+docker info >/dev/null 2>&1 || { err "Docker daemon is not running"; exit 1; }
+ok "Docker: $(docker --version | awk '{print $3}' | tr -d ',')"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. Write Linux Analyzer configuration
-# ─────────────────────────────────────────────────────────────────────────────
-step "Configuring Linux Analyzer"
+docker compose version >/dev/null 2>&1 || { err "Docker Compose plugin not found"; exit 1; }
+ok "Docker Compose plugin available"
 
-mkdir -p "$DATA_ROOT"/{workspaces,data,cache,logs,storage,ghidra-projects,ghidra-logs}
+command -v node >/dev/null 2>&1 || { err "Node.js 22+ not found"; exit 1; }
+command -v npm >/dev/null 2>&1 || { err "npm not found"; exit 1; }
+ok "Node.js: $(node --version)"
+ok "npm: $(npm --version)"
 
-ENV_FILE="$PROJECT_ROOT/.env"
-cat > "$ENV_FILE" <<EOF
-# Rikune Analyzer Environment — generated by deploy-hybrid.sh
-NODE_ENV=production
-NODE_ROLE=analyzer
-RUNTIME_MODE=remote-sandbox
-RUNTIME_HOST_AGENT_ENDPOINT=$ENDPOINT
-RUNTIME_API_KEY=$API_KEY
+if [ -n "$WINDOWS_HOST" ]; then
+  command -v ssh >/dev/null 2>&1 || { err "ssh client not found"; exit 1; }
+  ok "SSH client available"
+fi
 
-WORKSPACE_ROOT=$DATA_ROOT/workspaces
-DB_PATH=$DATA_ROOT/data/database.db
-CACHE_ROOT=$DATA_ROOT/cache
-AUDIT_LOG_PATH=$DATA_ROOT/logs/audit.log
-LOG_LEVEL=info
+ssh_win() {
+  ssh -o BatchMode=yes -o ConnectTimeout=10 -i "$SSH_KEY" "${WINDOWS_USER}@${WINDOWS_HOST}" "$@"
+}
 
-API_ENABLED=true
-API_PORT=18080
-API_STORAGE_ROOT=$DATA_ROOT/storage
-EOF
-ok "Analyzer .env written: $ENV_FILE"
+step "Preparing Windows runtime"
 
-# Render docker-compose.hybrid.yml
-COMPOSE_FILE="$PROJECT_ROOT/docker-compose.hybrid.yml"
-cat > "$COMPOSE_FILE" <<EOF
-name: rikune-hybrid
-services:
-  analyzer:
-    image: rikune:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: rikune-analyzer
-    env_file:
-      - .env
-    volumes:
-      - ./samples:/samples:ro
-      - "$DATA_ROOT/workspaces:/app/workspaces:rw"
-      - "$DATA_ROOT/data:/app/data:rw"
-      - "$DATA_ROOT/cache:/app/cache:rw"
-      - "$DATA_ROOT/logs:/app/logs:rw"
-      - "$DATA_ROOT/storage:/app/storage:rw"
-      - "$DATA_ROOT/ghidra-projects:/ghidra-projects:rw"
-      - "$DATA_ROOT/ghidra-logs:/ghidra-logs:rw"
-    ports:
-      - "18080:18080"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "node", "-e", "const http=require('http');const r=http.get('http://localhost:18080/api/v1/health',res=>{process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.setTimeout(5000,()=>process.exit(1))"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-EOF
-ok "Docker Compose file written: $COMPOSE_FILE"
+if [ "$SKIP_WINDOWS_SETUP" = true ]; then
+  warn "Skipping Windows setup. The Host Agent must already be running."
+else
+  [ -n "$WINDOWS_HOST" ] || { err "-w <windows-host> is required unless -s is used"; exit 1; }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. Build & start Analyzer
-# ─────────────────────────────────────────────────────────────────────────────
-step "Building & Starting Linux Analyzer"
+  info "Testing SSH connectivity to ${WINDOWS_USER}@${WINDOWS_HOST}..."
+  ssh_win "echo ok" >/dev/null
+  ok "SSH connectivity verified"
+
+  info "Creating C:/rikune on Windows..."
+  ssh_win "powershell -NoProfile -Command \"New-Item -ItemType Directory -Path C:/rikune -Force | Out-Null\"" >/dev/null
+
+  info "Syncing project to Windows host..."
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -az \
+      --exclude node_modules \
+      --exclude .git \
+      --exclude dist \
+      --exclude .docker-runtime.env \
+      -e "ssh -i $SSH_KEY" \
+      "$PROJECT_ROOT/" "${WINDOWS_USER}@${WINDOWS_HOST}:/C:/rikune/"
+    ok "Project synced with rsync"
+  else
+    warn "rsync not found; using tar over ssh"
+    tar czf - \
+      --exclude=node_modules \
+      --exclude=.git \
+      --exclude=dist \
+      --exclude=.docker-runtime.env \
+      -C "$PROJECT_ROOT" . | ssh -i "$SSH_KEY" "${WINDOWS_USER}@${WINDOWS_HOST}" \
+        "powershell -NoProfile -Command \"tar -xzf - -C C:/rikune\""
+    ok "Project synced with tar"
+  fi
+
+  remote_install="powershell -ExecutionPolicy Bypass -File C:/rikune/install-runtime-windows.ps1 -ProjectRoot C:/rikune -Headless -Service -WorkspaceRoot C:/rikune-runtime"
+  if [ -n "$HOST_AGENT_API_KEY" ]; then
+    remote_install="$remote_install -ApiKey '$HOST_AGENT_API_KEY'"
+  fi
+
+  info "Installing Windows Runtime Host Agent..."
+  ssh_win "$remote_install"
+  ok "Windows Runtime Host Agent installed"
+fi
+
+step "Resolving Host Agent credentials"
+
+if [ -n "$WINDOWS_HOST" ]; then
+  remote_env="$(ssh_win "powershell -NoProfile -Command \"Get-Content -Path C:/rikune/.env.runtime-windows -ErrorAction SilentlyContinue\"" 2>/dev/null || true)"
+else
+  remote_env=""
+fi
+
+if [ -z "$HOST_AGENT_API_KEY" ] && [ -n "$remote_env" ]; then
+  HOST_AGENT_API_KEY="$(printf "%s\n" "$remote_env" | awk -F= '/^HOST_AGENT_API_KEY=/{print substr($0, index($0,$2))}' | tail -n 1)"
+fi
+
+if [ -n "$remote_env" ]; then
+  remote_port="$(printf "%s\n" "$remote_env" | awk -F= '/^HOST_AGENT_PORT=/{print $2}' | tail -n 1)"
+  if [ -n "$remote_port" ]; then
+    HOST_AGENT_PORT="$remote_port"
+    if [ -z "${RUNTIME_HOST_AGENT_ENDPOINT:-}" ]; then
+      HOST_AGENT_ENDPOINT="http://${WINDOWS_HOST}:${HOST_AGENT_PORT}"
+    fi
+  fi
+fi
+
+if [ -z "$HOST_AGENT_API_KEY" ]; then
+  err "Host Agent API key is missing. Pass -a KEY or run Windows setup so .env.runtime-windows can be read."
+  exit 1
+fi
+
+if [ -z "$RUNTIME_API_KEY" ]; then
+  RUNTIME_API_KEY="$HOST_AGENT_API_KEY"
+fi
+
+ok "Host Agent endpoint: $HOST_AGENT_ENDPOINT"
+ok "Host Agent API key resolved"
+
+step "Preparing Linux analyzer profile"
+
+mkdir -p "$DATA_ROOT"/{samples,workspaces,data,cache,logs,storage,ghidra-projects,ghidra-logs,qiling-rootfs,config}
+ok "Data directories ready"
 
 cd "$PROJECT_ROOT"
-info "Building Docker image..."
-docker build -t rikune:latest . 2>&1
-ok "Docker image built"
+info "Installing npm dependencies..."
+npm install
+ok "npm dependencies installed"
 
-info "Starting Analyzer container..."
-docker compose -f "$COMPOSE_FILE" up -d 2>&1
+info "Building project..."
+npm run build
+ok "Project built"
+
+info "Generating hybrid Docker files..."
+node scripts/generate-docker.mjs --profile=hybrid
+ok "Generated docker-compose.hybrid.yml and docker/Dockerfile.analyzer"
+
+ENV_FILE="$PROJECT_ROOT/.docker-runtime.env"
+cat > "$ENV_FILE" <<EOF
+# Rikune hybrid Docker runtime environment - generated by deploy-hybrid.sh
+RIKUNE_DATA_ROOT=$DATA_ROOT
+RIKUNE_BUILD_HTTP_PROXY=${RIKUNE_BUILD_HTTP_PROXY:-}
+RIKUNE_BUILD_HTTPS_PROXY=${RIKUNE_BUILD_HTTPS_PROXY:-}
+RIKUNE_BUILD_NO_PROXY=${RIKUNE_BUILD_NO_PROXY:-localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com}
+RUNTIME_HOST_AGENT_ENDPOINT=$HOST_AGENT_ENDPOINT
+RUNTIME_HOST_AGENT_API_KEY=$HOST_AGENT_API_KEY
+RUNTIME_API_KEY=$RUNTIME_API_KEY
+EOF
+ok "Compose env file written: $ENV_FILE"
+
+step "Building and starting Linux analyzer"
+docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml up -d --build analyzer
 ok "Analyzer container started"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. Connectivity test
-# ─────────────────────────────────────────────────────────────────────────────
-step "Running Connectivity Tests"
+step "Connectivity tests"
 
-info "Testing Analyzer API health..."
-sleep 3
-ANALYZER_HEALTH=$(docker compose -f "$COMPOSE_FILE" exec -T analyzer node -e "const http=require('http'); const r=http.get('http://localhost:18080/api/v1/health',res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{console.log(d);process.exit(0)})}); r.on('error',e=>{console.error(e);process.exit(1)})" 2>/dev/null || true)
-if echo "$ANALYZER_HEALTH" | grep -q '"ok":true'; then
-  ok "Analyzer API is healthy"
+if curl -sf http://localhost:18080/api/v1/health >/dev/null 2>&1; then
+  ok "Analyzer API responds on localhost:18080"
 else
-  warn "Analyzer API health check returned unexpected result"
-  info "$ANALYZER_HEALTH"
+  warn "Analyzer API health check failed. Check: docker logs rikune-analyzer"
 fi
 
-info "Testing Host Agent reachability from Linux..."
-if curl -sf -H "Authorization: Bearer $API_KEY" "${ENDPOINT}/sandbox/health" >/dev/null 2>&1; then
-  ok "Host Agent is reachable"
+if curl -sf -H "Authorization: Bearer $HOST_AGENT_API_KEY" "$HOST_AGENT_ENDPOINT/sandbox/health" >/dev/null 2>&1; then
+  ok "Windows Host Agent responds"
 else
-  warn "Host Agent did not respond. Check Windows firewall rules for port $HOST_AGENT_PORT"
+  warn "Windows Host Agent did not respond. Check firewall, endpoint, and API key."
 fi
 
-info "Testing Host Agent -> Sandbox start (dry-run)..."
-SANDBOX_RESULT=$(curl -sf -X POST -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" -d '{"timeoutMs":30000}' "${ENDPOINT}/sandbox/start" 2>/dev/null || true)
-if echo "$SANDBOX_RESULT" | grep -q '"ok":true'; then
-  SANDBOX_ID=$(echo "$SANDBOX_RESULT" | grep -o '"sandboxId":"[^"]*"' | cut -d'"' -f4)
-  ok "Sandbox started successfully (sandboxId: $SANDBOX_ID)"
-  info "Stopping test sandbox..."
-  curl -sf -X POST -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" -d "{\"sandboxId\":\"$SANDBOX_ID\"}" "${ENDPOINT}/sandbox/stop" >/dev/null 2>&1 || true
-  ok "Test sandbox stopped"
-else
-  warn "Sandbox start test failed or timed out"
-  info "Response: $SANDBOX_RESULT"
-fi
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Summary
-# ─────────────────────────────────────────────────────────────────────────────
-header "Deployment Complete"
-
-echo "  Windows Runtime:  $ENDPOINT"
-echo "  Linux Analyzer:   http://localhost:18080"
-echo "  Data Root:        $DATA_ROOT"
-echo "  Env File:         $ENV_FILE"
+header "Hybrid Deployment Complete"
+echo "  Analyzer API:       http://localhost:18080"
+echo "  Dashboard:          http://localhost:18080/dashboard"
+echo "  Windows Host Agent: $HOST_AGENT_ENDPOINT"
+echo "  Data root:          $DATA_ROOT"
 echo ""
-echo "  Next steps:"
-echo "    1. Configure your MCP client to point to the Analyzer container"
-echo "    2. Submit a sample for analysis — the Windows Sandbox will start automatically"
-echo "    3. If anything goes wrong, run: ./diagnose-hybrid.sh -w $WINDOWS_HOST"
+echo "  Logs:"
+echo "    docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml logs -f analyzer"
 echo ""
+echo "  Diagnostics:"
+echo "    ./diagnose-hybrid.sh -w ${WINDOWS_HOST:-<windows-host>} -u $WINDOWS_USER"

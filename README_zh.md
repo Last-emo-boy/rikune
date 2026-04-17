@@ -426,7 +426,7 @@ pip install frida frida-tools
 
 ### 服务全景（Docker）
 
-Docker 部署时（`docker-compose up -d`），容器暴露：
+Docker 现在按 profile 部署：`static` 是默认纯静态 analyzer，`hybrid` 是 Linux analyzer + Windows Host Agent，`full` 是全量 Linux 工具链镜像。三种 profile 都暴露同一组服务入口：
 
 | 服务 | 访问方式 | 说明 |
 |------|----------|------|
@@ -570,9 +570,9 @@ docs/                        文档
 
 必须：
 
-- Node.js 18+
-- npm 9+
-- Python 3.9+
+- Node.js 22+
+- npm 10+
+- Python 3.11+
 
 强烈建议：
 
@@ -582,6 +582,53 @@ docs/                        文档
 - Clang，用于 reconstruct export 编译验证
 - [`requirements.txt`](./requirements.txt) 中的 Python 依赖
 - [`workers/requirements.txt`](./workers/requirements.txt) 中的 worker 依赖
+
+## 部署方式
+
+当前部署代码已经统一到 profile 模型：
+
+| 模式 | Dockerfile | Compose 文件 | 容器 | 运行时 |
+|------|------------|--------------|------|--------|
+| `static` | `docker/Dockerfile.analyzer` | `docker-compose.analyzer.yml` | `rikune-analyzer` | 禁用动态执行 |
+| `hybrid` | `docker/Dockerfile.analyzer` | `docker-compose.hybrid.yml` | `rikune-analyzer` | 远程 Windows Host Agent / Windows Sandbox |
+| `full` | `Dockerfile` | `docker-compose.yml` | `rikune` | Linux 全量工具链，默认不接沙箱 |
+
+推荐默认安装：
+
+```powershell
+.\rikune.ps1
+
+# 自动化时也可以显式指定
+.\rikune.ps1 install -Profile static -DataRoot "D:\Docker\rikune"
+```
+
+如果是单台 Windows 机器同时跑 Docker Desktop、Windows Host Agent 和 Windows Sandbox：
+
+```powershell
+.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+```
+
+Linux/macOS 侧也有同级入口：
+
+```bash
+./rikune.sh
+
+# Linux analyzer + 远程 Windows Host Agent
+./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user>
+```
+
+也可以手工生成全部 Docker 文件：
+
+```bash
+npm run build
+npm run docker:generate:all
+```
+
+关键边界：
+
+- `static` 和 `hybrid` 的 analyzer 镜像不再安装本地动态执行依赖，动态执行由 Windows 运行时面承担。
+- Docker/WSL analyzer 不能使用 `auto-sandbox`；`auto-sandbox` 只适用于 Windows 原生 analyzer。
+- `RUNTIME_HOST_AGENT_API_KEY` 用于 Analyzer -> Host Agent 控制面，`RUNTIME_API_KEY` 只在 Runtime Node 自身需要鉴权时使用。
 
 ## 本地开发
 
@@ -747,10 +794,12 @@ npm start
 
 ## 使用已发布的 npm 包
 
-先启动 Docker runtime：
+先启动默认的 static Docker analyzer：
 
 ```powershell
-docker compose up -d mcp-server
+npm run build
+npm run docker:generate:static
+docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d analyzer
 ```
 
 然后在 MCP 客户端中使用已发布的 npm launcher：
@@ -773,7 +822,7 @@ docker compose up -d mcp-server
 发布态的职责划分是：
 
 - `npm/npx` 只负责启动 MCP launcher
-- Docker Compose 容器负责真实分析 runtime
+- Docker Compose 容器负责持久化 analyzer、HTTP API、上传存储和静态工具链
 
 现有源码直跑方式和直接 `docker exec` 方式仍然可用。
 

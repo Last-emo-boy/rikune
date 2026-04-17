@@ -103,9 +103,9 @@
             Rikune supports <strong>Linux</strong>, <strong>macOS</strong>, and
             <strong>Windows</strong>, but the recommended shape depends on what you need. Use
             <strong>static-only Linux Docker</strong> with <code>RUNTIME_MODE=disabled</code> when
-            you do not want to execute samples, use <strong>manual</strong> or
-            <strong>remote-sandbox</strong> to connect a Linux analyzer to a separate Windows
-            Runtime Node / Host Agent, and use a <strong>Windows-native analyzer</strong> with
+            you do not want to execute samples, use the <strong>hybrid Docker profile</strong> to
+            connect a Linux analyzer to a Windows Host Agent / Windows Sandbox runtime, and use a
+            <strong>Windows-native analyzer</strong> with
             <code>auto-sandbox</code> when you want single-host Windows Sandbox execution. Docker or
             WSL analyzers cannot use <code>auto-sandbox</code> directly.
           </p>
@@ -113,8 +113,8 @@
             Rikune 支持 <strong>Linux</strong>、<strong>macOS</strong> 和
             <strong>Windows</strong>，但推荐部署方式取决于你的目标。若你不想执行样本，请使用带有
             <code>RUNTIME_MODE=disabled</code> 的<strong>纯静态 Linux Docker</strong>；若要让 Linux
-            analyzer 连接独立的 Windows Runtime Node / Host Agent，请使用 <strong>manual</strong> 或
-            <strong>remote-sandbox</strong>；若要在单机 Windows 上通过 Windows Sandbox
+            analyzer 连接 Windows Host Agent / Windows Sandbox 运行时，请使用
+            <strong>hybrid Docker profile</strong>；若要在单机 Windows 上通过 Windows Sandbox
             执行真实样本，请使用带有 <code>auto-sandbox</code> 的<strong
               >Windows 原生 analyzer</strong
             >。Docker 或 WSL 中的 analyzer 不能直接使用 <code>auto-sandbox</code>。
@@ -326,13 +326,15 @@ pip install yara-python</pre>
         </div>
         <div class="faq-item__a">
           <p data-lang-en>
-            The full image is approximately <strong>8-10 GB</strong> due to the bundled toolchain
-            (Ghidra, Rizin, angr, RetDec, etc.). Ensure at least 10 GB of free disk space before
-            building.
+            It depends on the profile. <code>static</code> and <code>hybrid</code> use the leaner
+            analyzer image, while <code>full</code> includes the heavier Linux-side toolchain
+            (Ghidra, Rizin, angr, RetDec, etc.). Keep at least 10 GB free for static/hybrid and more
+            headroom for full builds and Ghidra projects.
           </p>
           <p data-lang-zh>
-            由于包含完整工具链（Ghidra、Rizin、angr、RetDec 等），完整镜像约
-            <strong>8-10 GB</strong>。构建前请确保至少 10 GB 可用磁盘空间。
+            取决于 profile。<code>static</code> 和 <code>hybrid</code> 使用较轻的 analyzer 镜像；
+            <code>full</code> 才包含更重的 Linux 侧工具链（Ghidra、Rizin、angr、RetDec 等）。
+            static/hybrid 至少预留 10 GB，full 构建和 Ghidra 项目需要更多空间。
           </p>
         </div>
       </div>

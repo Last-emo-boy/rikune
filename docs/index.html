@@ -1025,19 +1025,17 @@
         >
           <p style="margin: 0">
             <span data-lang-en
-              ><strong>Best-practice runtime split:</strong> use
-              <code>docker-compose.analyzer.yml</code> for static-only Linux analysis with
-              <code>RUNTIME_MODE=disabled</code>, switch to <code>manual</code> or
-              <code>remote-sandbox</code> only when you intentionally connect a Windows Runtime Node
-              / Host Agent, and reserve <code>auto-sandbox</code> for Windows-native analyzers.
-              Docker or WSL analyzers cannot use <code>auto-sandbox</code> directly.</span
+              ><strong>Best-practice runtime split:</strong> install the <code>static</code>
+              Docker profile for safe offline analysis, use <code>hybrid</code> when a Windows Host
+              Agent / Windows Sandbox runtime is ready, and reserve <code>auto-sandbox</code> for
+              Windows-native analyzers. Docker or WSL analyzers cannot use
+              <code>auto-sandbox</code> directly.</span
             >
             <span data-lang-zh
-              ><strong>推荐实践：</strong>使用 <code>docker-compose.analyzer.yml</code> 和
-              <code>RUNTIME_MODE=disabled</code> 进行纯静态 Linux 分析；只有在你明确接入 Windows
-              Runtime Node / Host Agent 时，才切换到 <code>manual</code> 或
-              <code>remote-sandbox</code>；<code>auto-sandbox</code> 仅适用于 Windows 原生
-              analyzer。Docker 或 WSL 中的 analyzer 不能直接使用 <code>auto-sandbox</code>。</span
+              ><strong>推荐实践：</strong>使用 <code>static</code> Docker profile 进行安全离线分析；
+              只有在 Windows Host Agent / Windows Sandbox 运行时就绪时才使用 <code>hybrid</code>；
+              <code>auto-sandbox</code> 仅适用于 Windows 原生 analyzer。Docker 或 WSL 中的 analyzer
+              不能直接使用 <code>auto-sandbox</code>。</span
             >
           </p>
         </div>
@@ -1093,17 +1091,23 @@
         <div class="install__panel" data-panel="docker">
           <div class="code-block">
             <div class="code-block__header">
-              <span>PowerShell</span>
+              <span>Terminal</span>
               <button class="code-block__copy">Copy</button>
             </div>
             <pre><span class="comment"># Static-only Linux analyzer (safe default)</span>
-docker compose -f docker-compose.analyzer.yml up -d
+.\rikune.ps1
 
-<span class="comment"># Hybrid Linux analyzer + Windows runtime plane</span>
-docker compose -f docker-compose.hybrid.yml up -d
+<span class="comment"># Automation-friendly explicit static profile</span>
+.\rikune.ps1 install -Profile static -DataRoot "D:\Docker\rikune"
 
-<span class="comment"># Optional bootstrap for Windows hosts</span>
-.\install-docker.ps1</pre>
+<span class="comment"># Single Windows host hybrid</span>
+.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+
+<span class="comment"># Linux analyzer + remote Windows Host Agent</span>
+./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt;
+
+<span class="comment"># Full Linux toolchain image</span>
+.\rikune.ps1 install -Profile full</pre>
           </div>
         </div>
 

@@ -29,5 +29,7 @@ describe('@rikune/windows-host-agent package', () => {
     expect(source).toContain("url.pathname === '/sandbox/health'")
     expect(source).toContain('function requireAuth')
     expect(source).toContain('buildWsbXml')
+    expect(source).toContain('HOST_AGENT_NODE_PATH')
+    expect(source).toContain('HOST_AGENT_PYTHON_PATH')
   })
 })
