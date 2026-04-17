@@ -20,9 +20,9 @@
     "build": "tsc -p tsconfig.json",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "eslint src --ext .ts",
-    "lint:fix": "eslint src --ext .ts --fix",
-    "test": "echo 'No tests yet'"
+    "lint": "cmd /d /s /c \"pushd ..\\.. && eslint packages/plugin-sdk/src --ext .ts && popd\"",
+    "lint:fix": "cmd /d /s /c \"pushd ..\\.. && eslint packages/plugin-sdk/src --ext .ts --fix && popd\"",
+    "test": "cmd /d /s /c \"pushd ..\\.. && node --experimental-vm-modules node_modules\\jest\\bin\\jest.js --runInBand tests\\unit\\packages\\plugin-sdk.test.ts && popd\""
   },
   "keywords": [
     "mcp",

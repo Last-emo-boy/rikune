@@ -18,7 +18,7 @@ This document covers three ways to deploy Rikune, from a single Windows machine 
 
 | Topology | Analyzer | Runtime | Complexity | Best For |
 |----------|----------|---------|------------|----------|
-| **A** | Windows native / WSL | Windows Sandbox on same host | Low | Local development, quick tests |
+| **A** | Windows native | Windows Sandbox on same host | Low | Local development, quick tests |
 | **B** | Linux Docker | Manual Windows VM/Sandbox | Medium | Air-gapped labs, custom VM images |
 | **C** | Linux Docker | Windows Host Agent auto-starts Sandbox | Low-Medium | **Production & daily use** |
 
@@ -212,7 +212,9 @@ This script will:
    # Edit .env:
    # RUNTIME_MODE=remote-sandbox
    # RUNTIME_HOST_AGENT_ENDPOINT=http://<windows-ip>:18082
-   # RUNTIME_API_KEY=<api-key-from-step-4>
+   # RUNTIME_HOST_AGENT_API_KEY=<host-agent-api-key-from-step-4>
+   # Optional if the Sandbox Runtime Node also requires its own key:
+   # RUNTIME_API_KEY=<runtime-api-key>
    ```
 
 6. **Start the Analyzer**:
@@ -238,9 +240,10 @@ This script will:
 | `RUNTIME_MODE` | All | `disabled` \| `auto-sandbox` \| `manual` \| `remote-sandbox` |
 | `RUNTIME_ENDPOINT` | B, manual | Direct URL to Runtime Node (`http://vm:18081`) |
 | `RUNTIME_HOST_AGENT_ENDPOINT` | C | URL to Windows Host Agent (`http://win:18082`) |
-| `RUNTIME_API_KEY` | B, C | Shared secret for Runtime/Host-Agent authentication |
+| `RUNTIME_HOST_AGENT_API_KEY` | C | API key used by Analyzer → Host Agent control requests |
+| `RUNTIME_API_KEY` | B, C | API key used by Analyzer → Runtime Node requests (optional if runtime auth is disabled/shared) |
 | `HOST_AGENT_PORT` | C | Port the Host Agent listens on (default: 18082) |
-| `HOST_AGENT_API_KEY` | C | API key the Host Agent requires |
+| `HOST_AGENT_API_KEY` | C | API key the Host Agent itself requires on the Windows host |
 
 ### Common Commands
 

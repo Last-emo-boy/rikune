@@ -9,6 +9,19 @@ import path from 'path'
 import { logger } from '../logger.js'
 import type { WorkerResult, ArtifactRef, RuntimeBackendHint } from '../plugins/sdk.js'
 
+export interface RuntimeBackendCapability {
+  type: RuntimeBackendHint['type']
+  handler: string
+  description: string
+  requiresSample: boolean
+}
+
+export interface RuntimeBackendHintValidationResult {
+  supported: boolean | null
+  capability?: RuntimeBackendCapability
+  capabilities?: RuntimeBackendCapability[]
+}
+
 export interface RuntimeExecuteRequest {
   taskId: string
   sampleId: string
@@ -26,6 +39,7 @@ export interface RuntimeExecuteResponse {
   artifactRefs?: { name: string; path: string }[]
   logs?: string[]
   errors?: string[]
+  capabilities?: RuntimeBackendCapability[]
 }
 
 export interface RuntimeHealthResponse {
@@ -36,18 +50,93 @@ export interface RuntimeHealthResponse {
   pid: number
 }
 
+export interface RuntimeSseEvent {
+  event: string
+  id?: string
+  data: unknown
+}
+
+export interface RuntimeEventSubscription {
+  close(): void
+}
+
+export interface RuntimeEventStreamOptions {
+  taskId?: string
+  onOpen?: () => void
+  onEvent: (event: RuntimeSseEvent) => void
+  onError?: (error: Error) => void
+}
+
 export interface RuntimeClientOptions {
   endpoint: string
   apiKey?: string
   healthCheckTimeoutMs?: number
 }
 
+function cloneRuntimeBackendCapabilities(capabilities: RuntimeBackendCapability[]): RuntimeBackendCapability[] {
+  return capabilities.map((capability) => ({ ...capability }))
+}
+
+function parseRuntimeBackendCapabilities(body: string): RuntimeBackendCapability[] | null {
+  try {
+    const payload = JSON.parse(body) as {
+      data?: {
+        runtime_backends?: unknown
+      }
+    }
+    const entries = payload?.data?.runtime_backends
+    if (!Array.isArray(entries)) {
+      return null
+    }
+
+    const capabilities: RuntimeBackendCapability[] = []
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') {
+        continue
+      }
+      const candidate = entry as Partial<RuntimeBackendCapability>
+      if (
+        (candidate.type === 'python-worker' || candidate.type === 'spawn' || candidate.type === 'inline')
+        && typeof candidate.handler === 'string'
+        && typeof candidate.description === 'string'
+        && typeof candidate.requiresSample === 'boolean'
+      ) {
+        capabilities.push({
+          type: candidate.type,
+          handler: candidate.handler,
+          description: candidate.description,
+          requiresSample: candidate.requiresSample,
+        })
+      }
+    }
+
+    return capabilities
+  } catch (err) {
+    logger.debug({ err }, 'Runtime capabilities response parsing failed')
+    return null
+  }
+}
+
 export function createRuntimeClient(options: RuntimeClientOptions) {
   let endpoint = options.endpoint
   const apiKey = options.apiKey
+  let capabilitiesCache: RuntimeBackendCapability[] | null = null
+
+  function replaceCapabilitiesCache(capabilities: RuntimeBackendCapability[] | null) {
+    capabilitiesCache = capabilities ? cloneRuntimeBackendCapabilities(capabilities) : null
+  }
+
+  function invalidateCapabilitiesCache() {
+    replaceCapabilitiesCache(null)
+  }
 
   function setEndpoint(newEndpoint: string) {
     endpoint = newEndpoint
+    invalidateCapabilitiesCache()
+  }
+
+  function getEndpoint(): string {
+    return endpoint
   }
 
   async function health(): Promise<RuntimeHealthResponse | null> {
@@ -61,17 +150,87 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     }
   }
 
+  async function getCapabilities(options: { forceRefresh?: boolean } = {}): Promise<RuntimeBackendCapability[] | null> {
+    if (!options.forceRefresh && capabilitiesCache) {
+      return cloneRuntimeBackendCapabilities(capabilitiesCache)
+    }
+
+    try {
+      const res = await get('/capabilities')
+      if (res.statusCode !== 200) {
+        invalidateCapabilitiesCache()
+        return null
+      }
+      const capabilities = parseRuntimeBackendCapabilities(res.body)
+      if (!capabilities) {
+        invalidateCapabilitiesCache()
+        return null
+      }
+      replaceCapabilitiesCache(capabilities)
+      return cloneRuntimeBackendCapabilities(capabilities)
+    } catch (err) {
+      invalidateCapabilitiesCache()
+      logger.debug({ err }, 'Runtime capability discovery failed')
+      return null
+    }
+  }
+
+  async function validateRuntimeBackendHint(
+    hint: RuntimeBackendHint,
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<RuntimeBackendHintValidationResult> {
+    const capabilities = await getCapabilities(options)
+    if (!capabilities) {
+      return { supported: null }
+    }
+
+    const capability = capabilities.find((entry) => entry.type === hint.type && entry.handler === hint.handler)
+    return {
+      supported: capability !== undefined,
+      capability,
+      capabilities,
+    }
+  }
+
   async function execute(
     req: RuntimeExecuteRequest,
     opts?: { onProgress?: (progress: number, message?: string) => void },
   ): Promise<RuntimeExecuteResponse> {
+    if (req.runtimeBackendHint) {
+      const validation = await validateRuntimeBackendHint(req.runtimeBackendHint)
+      if (validation.supported === false) {
+        if (validation.capabilities) {
+          replaceCapabilitiesCache(validation.capabilities)
+        }
+        return {
+          ok: false,
+          taskId: req.taskId,
+          errors: [`Unsupported runtime backend hint: ${req.runtimeBackendHint.type}/${req.runtimeBackendHint.handler}`],
+          capabilities: validation.capabilities,
+        }
+      }
+    }
+
     const submitRes = await post('/execute', req)
-    const submitBody = JSON.parse(submitRes.body) as { ok?: boolean; taskId?: string; status?: string; error?: string }
+    const submitBody = JSON.parse(submitRes.body) as {
+      ok?: boolean
+      taskId?: string
+      status?: string
+      error?: string
+      capabilities?: RuntimeBackendCapability[]
+    }
     if (submitRes.statusCode !== 202 || !submitBody.ok) {
+      const responseCapabilities = Array.isArray(submitBody.capabilities) ? submitBody.capabilities : null
+      if (responseCapabilities) {
+        replaceCapabilitiesCache(responseCapabilities)
+      } else if (typeof submitBody.error === 'string' && submitBody.error.startsWith('Unsupported runtime backend hint:')) {
+        invalidateCapabilitiesCache()
+      }
       return {
         ok: false,
         taskId: req.taskId,
         errors: [submitBody.error || `Task submission failed: HTTP ${submitRes.statusCode}`],
+        capabilities: responseCapabilities || undefined,
       }
     }
 
@@ -241,6 +400,140 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     return request('GET', path)
   }
 
+  function subscribeEvents(options: RuntimeEventStreamOptions): RuntimeEventSubscription {
+    const url = new URL('/events', endpoint)
+    if (options.taskId) {
+      url.searchParams.set('taskId', options.taskId)
+    }
+
+    let closed = false
+    let buffer = ''
+    let currentEvent = 'message'
+    let currentId: string | undefined
+    let dataLines: string[] = []
+
+    const dispatchEvent = () => {
+      if (dataLines.length === 0) {
+        currentEvent = 'message'
+        currentId = undefined
+        return
+      }
+
+      const payloadText = dataLines.join('\n')
+      let payload: unknown = payloadText
+      try {
+        payload = JSON.parse(payloadText)
+      } catch {
+        payload = payloadText
+      }
+
+      options.onEvent({
+        event: currentEvent,
+        id: currentId,
+        data: payload,
+      })
+
+      currentEvent = 'message'
+      currentId = undefined
+      dataLines = []
+    }
+
+    const processBuffer = () => {
+      while (true) {
+        const newlineIndex = buffer.indexOf('\n')
+        if (newlineIndex < 0) {
+          return
+        }
+
+        let line = buffer.slice(0, newlineIndex)
+        buffer = buffer.slice(newlineIndex + 1)
+        if (line.endsWith('\r')) {
+          line = line.slice(0, -1)
+        }
+
+        if (!line) {
+          dispatchEvent()
+          continue
+        }
+
+        if (line.startsWith(':')) {
+          continue
+        }
+
+        if (line.startsWith('event:')) {
+          currentEvent = line.slice('event:'.length).trim() || 'message'
+          continue
+        }
+
+        if (line.startsWith('id:')) {
+          currentId = line.slice('id:'.length).trim() || undefined
+          continue
+        }
+
+        if (line.startsWith('data:')) {
+          dataLines.push(line.slice('data:'.length).trimStart())
+        }
+      }
+    }
+
+    const req = http.request(
+      {
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: url.pathname + url.search,
+        method: 'GET',
+        headers: {
+          Accept: 'text/event-stream',
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        },
+        timeout: 30000,
+      },
+      (res) => {
+        if (res.statusCode !== 200) {
+          const err = new Error(`Runtime events subscription failed: HTTP ${res.statusCode}`)
+          res.resume()
+          options.onError?.(err)
+          return
+        }
+
+        options.onOpen?.()
+        res.setEncoding('utf8')
+        res.on('data', (chunk: string) => {
+          buffer += chunk
+          processBuffer()
+        })
+        res.on('end', () => {
+          if (!closed) {
+            dispatchEvent()
+            options.onError?.(new Error('Runtime events stream ended unexpectedly'))
+          }
+        })
+        res.on('error', (error) => {
+          if (!closed) {
+            options.onError?.(error instanceof Error ? error : new Error(String(error)))
+          }
+        })
+      },
+    )
+
+    req.on('error', (error) => {
+      if (!closed) {
+        options.onError?.(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
+    req.on('timeout', () => {
+      req.destroy(new Error('Runtime events subscription timed out'))
+    })
+    req.end()
+
+    return {
+      close() {
+        closed = true
+        req.destroy()
+      },
+    }
+  }
+
   function post(path: string, body: unknown): Promise<{ statusCode: number; body: string }> {
     return request('POST', path, body)
   }
@@ -293,5 +586,17 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     })
   }
 
-  return { health, execute, uploadSample, downloadArtifacts, setEndpoint, recover: undefined as (() => Promise<boolean>) | undefined }
+  return {
+    health,
+    getCapabilities,
+    validateRuntimeBackendHint,
+    execute,
+    uploadSample,
+    downloadArtifacts,
+    invalidateCapabilitiesCache,
+    setEndpoint,
+    getEndpoint,
+    subscribeEvents,
+    recover: undefined as (() => Promise<boolean>) | undefined,
+  }
 }

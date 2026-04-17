@@ -2,7 +2,7 @@
  * Unit tests for runtime-node executor backend pre-flight checks
  */
 
-import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals'
+import { describe, test, expect, beforeAll, beforeEach, afterEach, jest } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -13,42 +13,86 @@ const testOutbox = path.join(os.tmpdir(), 'rikune-test-outbox')
 process.env.RUNTIME_INBOX = testInbox
 process.env.RUNTIME_OUTBOX = testOutbox
 
+const spawnMock = jest.fn()
+
 jest.unstable_mockModule('child_process', () => ({
-  spawn: jest.fn(),
+  spawn: spawnMock,
 }))
 
-const { spawn } = await import('child_process')
-const {
-  executeTask,
-  executeDynamicMemoryDump,
-  executeWineRun,
-  executeSpeakeasyEmulate,
-  executeManagedSafeRun,
-} = await import('../../../packages/runtime-node/src/executor.js')
+let executeTask: typeof import('../../../packages/runtime-node/src/executor.js').executeTask
+let executeDynamicMemoryDump: typeof import('../../../packages/runtime-node/src/executor.js').executeDynamicMemoryDump
+let executeWineRun: typeof import('../../../packages/runtime-node/src/executor.js').executeWineRun
+let executeSpeakeasyEmulate: typeof import('../../../packages/runtime-node/src/executor.js').executeSpeakeasyEmulate
+let executeManagedSafeRun: typeof import('../../../packages/runtime-node/src/executor.js').executeManagedSafeRun
+let setSpawnImplementationForTests: typeof import('../../../packages/runtime-node/src/executor.js').setSpawnImplementationForTests
+let listRuntimeBackendCapabilities: typeof import('../../../packages/runtime-node/src/executor.js').listRuntimeBackendCapabilities
+let getRuntimeBackendCapability: typeof import('../../../packages/runtime-node/src/executor.js').getRuntimeBackendCapability
 
-function makeSpawnMock(sequence: Array<{ cmd: string; args: string[]; code: number }>) {
-  let callIndex = 0
-  return jest.fn().mockImplementation((cmd: string, args: string[]) => {
-    const match = sequence.find((s) => s.cmd === cmd && JSON.stringify(s.args) === JSON.stringify(args))
-      || sequence[callIndex++]
+beforeAll(async () => {
+  const executorModule = await import('../../../packages/runtime-node/src/executor.js')
+  executeTask = executorModule.executeTask
+  executeDynamicMemoryDump = executorModule.executeDynamicMemoryDump
+  executeWineRun = executorModule.executeWineRun
+  executeSpeakeasyEmulate = executorModule.executeSpeakeasyEmulate
+  executeManagedSafeRun = executorModule.executeManagedSafeRun
+  setSpawnImplementationForTests = executorModule.setSpawnImplementationForTests
+  listRuntimeBackendCapabilities = executorModule.listRuntimeBackendCapabilities
+  getRuntimeBackendCapability = executorModule.getRuntimeBackendCapability
+})
+
+function makeSpawnMock(sequence: Array<{ cmd: string; args: string[]; code: number; stdout?: string; stderr?: string }>) {
+  let nextIndex = 0
+  return (cmd: string, args: string[]) => {
+    const matchedIndex = sequence.findIndex((entry, index) => {
+      if (index < nextIndex) return false
+      return entry.cmd === cmd && JSON.stringify(entry.args) === JSON.stringify(args)
+    })
+    const match = matchedIndex >= 0 ? sequence[matchedIndex] : sequence[nextIndex]
+    if (matchedIndex < 0) {
+      nextIndex += 1
+    } else {
+      nextIndex = matchedIndex + 1
+    }
+
     const code = match ? match.code : 0
+    const stdoutHandlers: Array<(chunk: Buffer) => void> = []
+    const stderrHandlers: Array<(chunk: Buffer) => void> = []
     const mockProc = {
-      stdout: { on: jest.fn() },
-      stderr: { on: jest.fn() },
+      stdout: {
+        on: jest.fn().mockImplementation((event: string, cb: (chunk: Buffer) => void) => {
+          if (event === 'data') stdoutHandlers.push(cb)
+        }),
+      },
+      stderr: {
+        on: jest.fn().mockImplementation((event: string, cb: (chunk: Buffer) => void) => {
+          if (event === 'data') stderrHandlers.push(cb)
+        }),
+      },
       stdin: { write: jest.fn(), end: jest.fn() },
       on: jest.fn().mockImplementation((event: string, cb: any) => {
-        if (event === 'close') setTimeout(() => cb(code), 0)
-        if (event === 'error') {
-          // only call error if code indicates failure and we want to simulate error
+        if (event === 'close') {
+          setTimeout(() => {
+            if (match?.stdout) {
+              for (const handler of stdoutHandlers) handler(Buffer.from(match.stdout))
+            }
+            if (match?.stderr) {
+              for (const handler of stderrHandlers) handler(Buffer.from(match.stderr))
+            }
+            cb(code, null)
+          }, 0)
+        }
+      }),
+      once: jest.fn().mockImplementation((event: string, cb: any) => {
+        if (event === 'close') {
+          setTimeout(() => cb(code, null), 0)
         }
       }),
     }
     return mockProc
-  })
+  }
 }
 
 describe('runtime-node executor backend pre-flight checks', () => {
-  const mockedSpawn = spawn as jest.MockedFunction<typeof spawn>
   let samplePath: string
 
   beforeEach(() => {
@@ -56,12 +100,39 @@ describe('runtime-node executor backend pre-flight checks', () => {
     fs.mkdirSync(testOutbox, { recursive: true })
     samplePath = path.join(testInbox, 'task-sample.sample')
     fs.writeFileSync(samplePath, Buffer.from('MZ'))
-    mockedSpawn.mockClear()
+    spawnMock.mockReset()
+    setSpawnImplementationForTests(spawnMock as any)
   })
 
   afterEach(() => {
+    setSpawnImplementationForTests()
     try { fs.rmSync(testInbox, { recursive: true, force: true }) } catch {}
     try { fs.rmSync(testOutbox, { recursive: true, force: true }) } catch {}
+  })
+
+  describe('runtime backend capability registry', () => {
+    test('returns normalized capability entries and lookup by hint', () => {
+      const capabilities = listRuntimeBackendCapabilities()
+      expect(capabilities).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'spawn',
+          handler: 'native.sample.execute',
+          requiresSample: true,
+        }),
+        expect.objectContaining({
+          type: 'inline',
+          handler: 'executeSandboxExecute',
+          requiresSample: true,
+        }),
+      ]))
+
+      expect(getRuntimeBackendCapability({ type: 'spawn', handler: 'native.sample.execute' })).toMatchObject({
+        type: 'spawn',
+        handler: 'native.sample.execute',
+        requiresSample: true,
+      })
+      expect(getRuntimeBackendCapability({ type: 'spawn', handler: 'missing.handler' })).toBeUndefined()
+    })
   })
 
   describe('resolveBackendHint via executeTask', () => {
@@ -84,7 +155,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
     })
 
     test('should fallback to frida prefix heuristic when no hint', async () => {
-      mockedSpawn.mockImplementation(() => {
+      spawnMock.mockImplementation(() => {
         const mockProc: any = {
           stdout: { on: jest.fn(), pipe: jest.fn() },
           stderr: { on: jest.fn() },
@@ -130,7 +201,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
 
   describe('executeDynamicMemoryDump', () => {
     test('should return error when frida python module is missing', async () => {
-      mockedSpawn.mockImplementation(makeSpawnMock([
+      spawnMock.mockImplementation(makeSpawnMock([
         { cmd: process.platform === 'win32' ? 'python' : 'python3', args: ['--version'], code: 0 },
         { cmd: process.platform === 'win32' ? 'python' : 'python3', args: ['-c', 'import frida'], code: 1 },
       ]))
@@ -153,7 +224,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
         expect(true).toBe(true)
         return
       }
-      mockedSpawn.mockImplementation(makeSpawnMock([
+      spawnMock.mockImplementation(makeSpawnMock([
         { cmd: 'wine', args: ['--version'], code: 1 },
       ]))
 
@@ -170,7 +241,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
 
   describe('executeSpeakeasyEmulate', () => {
     test('should return error when speakeasy python module is missing', async () => {
-      mockedSpawn.mockImplementation(makeSpawnMock([
+      spawnMock.mockImplementation(makeSpawnMock([
         { cmd: process.platform === 'win32' ? 'python' : 'python3', args: ['--version'], code: 0 },
         { cmd: process.platform === 'win32' ? 'python' : 'python3', args: ['-c', 'import speakeasy'], code: 1 },
       ]))
@@ -186,13 +257,53 @@ describe('runtime-node executor backend pre-flight checks', () => {
     })
   })
 
+  describe('spawn backend execution', () => {
+    test('should execute registered spawn backend and parse structured stdout', async () => {
+      const structuredStdout = `${JSON.stringify({ ok: true, data: { backend: 'native.sample.execute', exit: 'ok' } })}\n`
+      spawnMock.mockImplementation(makeSpawnMock([
+        {
+          cmd: samplePath,
+          args: ['--flag', 'value'],
+          code: 0,
+          stdout: structuredStdout,
+        },
+      ]))
+
+      const result = await executeTask(
+        {
+          taskId: 'task-sample',
+          sampleId: 's1',
+          tool: 'dynamic.spawn.native',
+          args: { arguments: ['--flag', 'value'] },
+          timeoutMs: 1000,
+          runtimeBackendHint: { type: 'spawn', handler: 'native.sample.execute' },
+        },
+        () => {},
+        () => {},
+      )
+
+      expect(result.ok).toBe(true)
+      expect(result.result?.ok).toBe(true)
+      expect(result.result?.data).toMatchObject({ backend: 'native.sample.execute', exit: 'ok' })
+      expect(spawnMock).toHaveBeenCalledWith(
+        samplePath,
+        ['--flag', 'value'],
+        expect.objectContaining({
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 1000,
+          windowsHide: true,
+        }),
+      )
+    })
+  })
+
   describe('executeManagedSafeRun', () => {
     test('should return error when dotnet is missing on non-Windows', async () => {
       if (process.platform === 'win32') {
         expect(true).toBe(true)
         return
       }
-      mockedSpawn.mockImplementation(makeSpawnMock([
+      spawnMock.mockImplementation(makeSpawnMock([
         { cmd: 'dotnet', args: ['--version'], code: 1 },
       ]))
 

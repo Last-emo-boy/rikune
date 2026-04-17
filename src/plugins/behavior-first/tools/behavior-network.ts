@@ -11,6 +11,7 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import {
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
   runPythonJson,
   persistBackendArtifact,
   buildMetrics,
@@ -48,7 +49,7 @@ export function createBehaviorNetworkHandler(
 
     try {
       ensureSampleExists(database, input.sample_id)
-      const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
+      const pythonPath = getPythonCommand()
 
       const workerScript = `
 import sys, json, importlib.util

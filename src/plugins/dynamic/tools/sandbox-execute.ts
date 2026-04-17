@@ -10,12 +10,13 @@ import path from 'path'
 import { createHash, randomUUID } from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
+import { RuntimeDelegationFailureResultSchema, type ToolDefinition, type ToolArgs, type WorkerResult, type ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { PolicyGuard } from '../../../policy-guard.js'
 import { normalizeDynamicTraceArtifactPayload } from '../../../artifacts/dynamic-trace.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'sandbox.execute'
 const TOOL_VERSION = '0.1.0'
@@ -98,7 +99,7 @@ const ExecutionHypothesisSchema = z.object({
   indicators: z.array(z.string()),
 })
 
-export const SandboxExecuteOutputSchema = z.object({
+const SandboxExecuteSuccessResultSchema = z.object({
   ok: z.boolean(),
   data: z
     .object({
@@ -142,6 +143,11 @@ export const SandboxExecuteOutputSchema = z.object({
     })
     .optional(),
 })
+
+export const SandboxExecuteOutputSchema = z.union([
+  SandboxExecuteSuccessResultSchema,
+  RuntimeDelegationFailureResultSchema,
+])
 
 export const sandboxExecuteToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
@@ -244,7 +250,7 @@ interface SandboxPayload {
 async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse> {
   return new Promise((resolve, reject) => {
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
-    const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+    const pythonCommand = getPythonCommand()
     const child = spawn(pythonCommand, [workerPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
     })

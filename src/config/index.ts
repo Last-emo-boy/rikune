@@ -216,6 +216,13 @@ export const ConfigSchema = z.object({
         message: 'runtime.hostAgentEndpoint is required when runtime.mode is "remote-sandbox"',
       })
     }
+    if (data.runtime.mode === 'remote-sandbox' && !data.runtime.hostAgentApiKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['runtime', 'hostAgentApiKey'],
+        message: 'runtime.hostAgentApiKey is required when runtime.mode is "remote-sandbox"',
+      })
+    }
   }
 })
 
@@ -477,6 +484,15 @@ export function loadConfigFromEnv(): Record<string, any> {
   if (process.env.RUNTIME_API_KEY) {
     if (!config.runtime) config.runtime = {}
     config.runtime.apiKey = process.env.RUNTIME_API_KEY
+  }
+  if (process.env.RUNTIME_HOST_AGENT_ENDPOINT) {
+    if (!config.runtime) config.runtime = {}
+    config.runtime.hostAgentEndpoint = process.env.RUNTIME_HOST_AGENT_ENDPOINT
+  }
+  const hostAgentApiKey = process.env.RUNTIME_HOST_AGENT_API_KEY || process.env.RUNTIME_API_KEY
+  if (hostAgentApiKey) {
+    if (!config.runtime) config.runtime = {}
+    config.runtime.hostAgentApiKey = hostAgentApiKey
   }
   if (process.env.RUNTIME_SANDBOX_WORKSPACE) {
     if (!config.runtime) config.runtime = {}

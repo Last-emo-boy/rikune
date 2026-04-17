@@ -16,7 +16,7 @@ export interface RecoveryContext {
 }
 
 export interface RuntimeRecovery {
-  recover(): Promise<boolean>
+  recover(options?: { forceRefreshCapabilities?: boolean }): Promise<boolean>
   setRuntimeClient(client: ReturnType<typeof createRuntimeClient> | null): void
   setRuntimeConnection(connection: RuntimeConnection | null): void
   setSandboxLauncher(launcher: SandboxLauncher | null): void
@@ -25,7 +25,18 @@ export interface RuntimeRecovery {
 export function createRuntimeRecovery(ctx: RecoveryContext): RuntimeRecovery {
   let { config, runtimeClient, runtimeConnection, sandboxLauncher } = ctx
 
-  async function recoverRemoteSandbox(): Promise<boolean> {
+  async function refreshRuntimeCapabilitiesIfRequested(options?: { forceRefreshCapabilities?: boolean }) {
+    if (!options?.forceRefreshCapabilities || !runtimeClient?.getCapabilities) {
+      return
+    }
+    try {
+      await runtimeClient.getCapabilities({ forceRefresh: true })
+    } catch (err) {
+      logger.debug({ err }, 'Runtime capability refresh after recovery failed')
+    }
+  }
+
+  async function recoverRemoteSandbox(options?: { forceRefreshCapabilities?: boolean }): Promise<boolean> {
     if (config.runtime.mode === 'remote-sandbox' && config.runtime.hostAgentEndpoint) {
       try {
         const startRes = await fetch(`${config.runtime.hostAgentEndpoint}/sandbox/start`, {
@@ -44,7 +55,9 @@ export function createRuntimeRecovery(ctx: RecoveryContext): RuntimeRecovery {
           runtimeClient = createRuntimeClient({ endpoint: startData.endpoint, apiKey: config.runtime.apiKey })
         } else {
           runtimeClient.setEndpoint(startData.endpoint)
+          runtimeClient.invalidateCapabilitiesCache?.()
         }
+        await refreshRuntimeCapabilitiesIfRequested(options)
         logger.info({ endpoint: startData.endpoint, sandboxId: startData.sandboxId }, 'Remote-sandbox runtime recovered')
         return true
       } catch (err) {
@@ -62,7 +75,9 @@ export function createRuntimeRecovery(ctx: RecoveryContext): RuntimeRecovery {
             runtimeClient = createRuntimeClient({ endpoint: newConnection.endpoint, apiKey: config.runtime.apiKey })
           } else {
             runtimeClient.setEndpoint(newConnection.endpoint)
+            runtimeClient.invalidateCapabilitiesCache?.()
           }
+          await refreshRuntimeCapabilitiesIfRequested(options)
           logger.info({ endpoint: newConnection.endpoint }, 'Auto-sandbox runtime recovered')
           return true
         }

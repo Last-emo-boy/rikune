@@ -16,7 +16,6 @@ import { AnalysisTaskRunner } from './analysis/analysis-task-runner.js'
 import { StorageManager } from './storage/storage-manager.js'
 import { registerAllTools } from './tool-registry.js'
 import { logger } from './logger.js'
-import { defaultApiBootstrapper } from './api/default-bootstrapper.js'
 import {
   isWindowsSandboxAvailable,
   createSandboxLauncher,
@@ -24,6 +23,7 @@ import {
   createRuntimeRecovery,
   type RuntimeConnection,
 } from './runtime-client/index.js'
+import { getPluginManager } from './plugins.js'
 
 // Export public API
 export { MCPServer } from './server.js'
@@ -103,7 +103,10 @@ async function main() {
           const startRes = await fetch(`${config.runtime.hostAgentEndpoint}/sandbox/start`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...(config.runtime.hostAgentApiKey ? { Authorization: `Bearer ${config.runtime.hostAgentApiKey}` } : {}) },
-            body: JSON.stringify({ timeoutMs: config.runtime.healthCheckTimeoutMs }),
+            body: JSON.stringify({
+              timeoutMs: config.runtime.healthCheckTimeoutMs,
+              runtimeApiKey: config.runtime.apiKey,
+            }),
             signal: AbortSignal.timeout(60_000),
           })
           if (!startRes.ok) {
@@ -181,13 +184,37 @@ async function main() {
 
     await initializeRuntime()
 
+    // Custom bootstrapper that wires runtimeClient into health checks
+    const apiBootstrapper: import('./api/api-bootstrapper.js').ApiBootstrapper = {
+      async bootstrap({ server, database, workspaceManager, storageManager }) {
+        const { initDashboard } = await import('./api/routes/dashboard-api.js')
+        initDashboard({
+          server,
+          database,
+          workspaceManager,
+          runtimeClient,
+          jobQueue,
+          getPluginStatuses: () => {
+            try {
+              return getPluginManager().getStatuses()
+            } catch {
+              return []
+            }
+          },
+        })
+
+        const { setHealthDependencies } = await import('./api/routes/health.js')
+        setHealthDependencies({ database, storageManager, jobQueue, runtimeClient })
+      },
+    }
+
     // Create and start MCP server
     const server = new MCPServer(config, {
       workspaceManager,
       database,
       policyGuard,
       storageManager,
-      apiBootstrapper: defaultApiBootstrapper,
+      apiBootstrapper,
     })
 
     // Register all tools & prompts via the centralised registry

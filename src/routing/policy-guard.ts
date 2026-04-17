@@ -4,6 +4,7 @@
  * Requirements: 18.1, 18.2, 18.3, 18.4
  */
 
+import { randomUUID } from 'crypto'
 import fs from 'fs'
 import { logger } from '../logger.js'
 import path from 'path'
@@ -41,6 +42,8 @@ export interface PolicyContext {
   timestamp?: string
 }
 
+export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired'
+
 /**
  * Policy decision result
  */
@@ -48,6 +51,8 @@ export interface PolicyDecision {
   allowed: boolean
   reason?: string
   requiresApproval?: boolean
+  approvalToken?: string
+  approvalStatus?: ApprovalStatus
 }
 
 /**
@@ -58,6 +63,30 @@ export interface DangerousOperation {
   description: string
   risks: string[]
   sampleId: string
+  tool?: string
+  requestedBy?: string
+  approvalToken?: string
+}
+
+export interface ApprovalRecord {
+  token: string
+  status: ApprovalStatus
+  operation: DangerousOperation
+  requestedAt: string
+  expiresAt: string
+  decidedAt?: string
+  decidedBy?: string
+  reason?: string
+  operationKey: string
+}
+
+export interface ApprovalDecisionOptions {
+  decidedBy?: string
+  reason?: string
+}
+
+export interface PolicyGuardOptions {
+  approvalTtlMs?: number
 }
 
 /**
@@ -139,6 +168,8 @@ export const POLICY_RULES: Record<string, PolicyRule> = {
   },
 }
 
+const DEFAULT_APPROVAL_TTL_MS = 15 * 60 * 1000
+
 // ============================================================================
 // Policy Guard Implementation
 // ============================================================================
@@ -148,9 +179,12 @@ export const POLICY_RULES: Record<string, PolicyRule> = {
  */
 export class PolicyGuard {
   private auditLogPath: string
+  private readonly approvalTtlMs: number
+  private readonly approvals = new Map<string, ApprovalRecord>()
 
-  constructor(auditLogPath: string = './audit.log') {
+  constructor(auditLogPath: string = './audit.log', options: PolicyGuardOptions = {}) {
     this.auditLogPath = auditLogPath
+    this.approvalTtlMs = options.approvalTtlMs ?? DEFAULT_APPROVAL_TTL_MS
     this.ensureAuditLogExists()
   }
 
@@ -173,8 +207,10 @@ export class PolicyGuard {
    */
   async checkPermission(
     operation: Operation,
-    _context: PolicyContext
+    context: PolicyContext
   ): Promise<PolicyDecision> {
+    this.pruneExpiredApprovals()
+
     // Detect dangerous operations
     const dangerousType = this.detectDangerousOperation(operation)
 
@@ -203,21 +239,36 @@ export class PolicyGuard {
 
     // Check if operation requires approval
     if (rule.requiresApproval) {
-      // Check if approval was explicitly provided
-      const hasApproval = this.checkApprovalProvided(operation)
+      const directApproval = this.checkApprovalProvided(operation)
+      const dangerousOperation = this.toDangerousOperation(operation, context, dangerousType)
+      const resolvedApproval = this.resolveApproval(operation, dangerousOperation)
 
-      if (!hasApproval) {
+      if (directApproval || resolvedApproval.status === 'approved') {
         return {
-          allowed: false,
-          reason: `Operation '${operation.type}' requires explicit approval`,
-          requiresApproval: true,
+          allowed: true,
+          reason: 'Approved by user',
+          approvalToken: resolvedApproval.token,
+          approvalStatus: directApproval ? 'approved' : resolvedApproval.status,
         }
+      }
+
+      const approvalRequest =
+        resolvedApproval.token && resolvedApproval.status === 'pending'
+          ? this.approvals.get(resolvedApproval.token)!
+          : await this.createApprovalRequest(dangerousOperation)
+
+      return {
+        allowed: false,
+        reason: `Operation '${dangerousType}' requires explicit approval (approval_token=${approvalRequest.token})`,
+        requiresApproval: true,
+        approvalToken: approvalRequest.token,
+        approvalStatus: approvalRequest.status,
       }
     }
 
     // Operation is allowed
     return {
-      allowed: rule.defaultAllow || this.checkApprovalProvided(operation),
+      allowed: rule.defaultAllow,
       reason: rule.defaultAllow ? undefined : 'Approved by user',
     }
   }
@@ -250,17 +301,17 @@ export class PolicyGuard {
       if (typeof operation.args.count === 'number' && operation.args.count > 100) {
         return 'bulk_decompile'
       }
-      
+
       // Check topk parameter
       if (typeof operation.args.topk === 'number' && operation.args.topk > 100) {
         return 'bulk_decompile'
       }
-      
+
       // Check addresses array
       if (Array.isArray(operation.args.addresses) && operation.args.addresses.length > 100) {
         return 'bulk_decompile'
       }
-      
+
       // Check functions array
       if (Array.isArray(operation.args.functions) && operation.args.functions.length > 100) {
         return 'bulk_decompile'
@@ -294,6 +345,260 @@ export class PolicyGuard {
     return false
   }
 
+  private getApprovalTokenFromArgs(operation: Operation): string | null {
+    const token = operation.args.approval_token ?? operation.args.approvalToken
+    return typeof token === 'string' && token.trim().length > 0 ? token.trim() : null
+  }
+
+  private resolveApproval(
+    operation: Operation,
+    dangerousOperation: DangerousOperation
+  ): { token?: string; status?: ApprovalStatus } {
+    const token = this.getApprovalTokenFromArgs(operation)
+    if (!token) {
+      return {}
+    }
+
+    const approval = this.approvals.get(token)
+    if (!approval) {
+      return { token, status: 'denied' }
+    }
+
+    if (approval.status === 'expired') {
+      return { token, status: 'expired' }
+    }
+
+    const requestedKey = this.buildOperationKey(dangerousOperation)
+    if (approval.operationKey !== requestedKey) {
+      return { token, status: 'denied' }
+    }
+
+    return { token, status: approval.status }
+  }
+
+  private toDangerousOperation(
+    operation: Operation,
+    context: PolicyContext,
+    dangerousType: string
+  ): DangerousOperation {
+    const sampleId =
+      (typeof operation.args.sample_id === 'string' && operation.args.sample_id) ||
+      context.sampleId ||
+      'unknown'
+
+    return {
+      type: dangerousType,
+      description: `${operation.tool} requested for sample ${sampleId}`,
+      risks: this.inferRisks(dangerousType, operation),
+      sampleId,
+      tool: operation.tool,
+      requestedBy: context.user,
+      approvalToken: this.getApprovalTokenFromArgs(operation) ?? undefined,
+    }
+  }
+
+  private inferRisks(dangerousType: string, operation: Operation): string[] {
+    const risks = new Set<string>()
+
+    switch (dangerousType) {
+      case 'dynamic_execution':
+        risks.add('Executes untrusted sample code')
+        risks.add('May modify filesystem or processes inside isolated runtime')
+        break
+      case 'external_upload':
+        risks.add('Transfers sample material to external systems')
+        risks.add('May disclose sensitive binary or telemetry data')
+        break
+      case 'bulk_decompile':
+        risks.add('High resource consumption')
+        risks.add('May generate large volumes of derived code artifacts')
+        break
+      case 'network_access':
+        risks.add('Permits outbound communication during execution')
+        risks.add('May contact attacker-controlled infrastructure')
+        break
+      default:
+        risks.add(`Operation '${dangerousType}' requires elevated review`)
+        break
+    }
+
+    if (operation.args.network === 'enabled' || operation.args.network === 'fake') {
+      risks.add('Network behavior requested')
+    }
+    if (operation.args.external === true || operation.args.backend === 'online_sandbox') {
+      risks.add('External service interaction requested')
+    }
+
+    return [...risks]
+  }
+
+  private buildOperationKey(operation: DangerousOperation): string {
+    return JSON.stringify({
+      type: operation.type,
+      sampleId: operation.sampleId,
+      tool: operation.tool || '',
+      description: operation.description,
+      risks: [...operation.risks].sort(),
+      requestedBy: operation.requestedBy || '',
+    })
+  }
+
+  private pruneExpiredApprovals(nowMs: number = Date.now()): void {
+    for (const approval of this.approvals.values()) {
+      if (approval.status === 'pending' && Date.parse(approval.expiresAt) <= nowMs) {
+        approval.status = 'expired'
+        approval.reason = approval.reason || 'Approval request expired'
+        approval.decidedAt = new Date(nowMs).toISOString()
+      }
+    }
+  }
+
+  async createApprovalRequest(operation: DangerousOperation): Promise<ApprovalRecord> {
+    this.pruneExpiredApprovals()
+
+    const now = new Date()
+    const record: ApprovalRecord = {
+      token: randomUUID(),
+      status: 'pending',
+      operation,
+      requestedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + this.approvalTtlMs).toISOString(),
+      operationKey: this.buildOperationKey(operation),
+    }
+
+    this.approvals.set(record.token, record)
+
+    await this.auditLog({
+      timestamp: record.requestedAt,
+      operation: operation.tool || operation.type,
+      user: operation.requestedBy,
+      sampleId: operation.sampleId,
+      decision: 'deny',
+      reason: `Approval required (token=${record.token})`,
+      metadata: {
+        approval_status: record.status,
+        approval_token: record.token,
+        approval_expires_at: record.expiresAt,
+        risks: operation.risks,
+      },
+    })
+
+    return record
+  }
+
+  async approveOperation(
+    approvalToken: string,
+    options: ApprovalDecisionOptions = {}
+  ): Promise<ApprovalRecord> {
+    this.pruneExpiredApprovals()
+    const record = this.approvals.get(approvalToken)
+    if (!record) {
+      throw new Error(`Approval token not found: ${approvalToken}`)
+    }
+    if (record.status === 'expired') {
+      throw new Error(`Approval token expired: ${approvalToken}`)
+    }
+
+    record.status = 'approved'
+    record.decidedAt = new Date().toISOString()
+    record.decidedBy = options.decidedBy
+    record.reason = options.reason || 'Approved by user'
+
+    await this.auditLog({
+      timestamp: record.decidedAt,
+      operation: record.operation.tool || record.operation.type,
+      user: options.decidedBy,
+      sampleId: record.operation.sampleId,
+      decision: 'allow',
+      reason: record.reason,
+      metadata: {
+        approval_status: record.status,
+        approval_token: record.token,
+        requested_at: record.requestedAt,
+      },
+    })
+
+    return record
+  }
+
+  async denyOperation(
+    approvalToken: string,
+    options: ApprovalDecisionOptions = {}
+  ): Promise<ApprovalRecord> {
+    this.pruneExpiredApprovals()
+    const record = this.approvals.get(approvalToken)
+    if (!record) {
+      throw new Error(`Approval token not found: ${approvalToken}`)
+    }
+    if (record.status === 'expired') {
+      throw new Error(`Approval token expired: ${approvalToken}`)
+    }
+
+    record.status = 'denied'
+    record.decidedAt = new Date().toISOString()
+    record.decidedBy = options.decidedBy
+    record.reason = options.reason || 'Denied by user'
+
+    await this.auditLog({
+      timestamp: record.decidedAt,
+      operation: record.operation.tool || record.operation.type,
+      user: options.decidedBy,
+      sampleId: record.operation.sampleId,
+      decision: 'deny',
+      reason: record.reason,
+      metadata: {
+        approval_status: record.status,
+        approval_token: record.token,
+        requested_at: record.requestedAt,
+      },
+    })
+
+    return record
+  }
+
+  getApprovalStatus(approvalToken: string): ApprovalRecord | undefined {
+    this.pruneExpiredApprovals()
+    const record = this.approvals.get(approvalToken)
+    return record ? { ...record, operation: { ...record.operation, risks: [...record.operation.risks] } } : undefined
+  }
+
+  listApprovalRequests(status?: ApprovalStatus): ApprovalRecord[] {
+    this.pruneExpiredApprovals()
+    return [...this.approvals.values()]
+      .filter((record) => !status || record.status === status)
+      .map((record) => ({
+        ...record,
+        operation: {
+          ...record.operation,
+          risks: [...record.operation.risks],
+        },
+      }))
+  }
+
+  /**
+   * Require user approval for dangerous operation
+   * Requirements: 18.1
+   */
+  async requireUserApproval(
+    operation: DangerousOperation
+  ): Promise<boolean> {
+    this.pruneExpiredApprovals()
+
+    const approvalToken = operation.approvalToken?.trim()
+    if (approvalToken) {
+      const record = this.approvals.get(approvalToken)
+      if (record && record.operationKey === this.buildOperationKey({ ...operation, approvalToken: undefined })) {
+        return record.status === 'approved'
+      }
+    }
+
+    await this.createApprovalRequest({
+      ...operation,
+      approvalToken: undefined,
+    })
+    return false
+  }
+
   /**
    * Check if operation exceeds limit
    */
@@ -317,19 +622,6 @@ export class PolicyGuard {
       return operation.args.functions.length > maxLimit
     }
 
-    return false
-  }
-
-  /**
-   * Require user approval for dangerous operation (placeholder)
-   * Requirements: 18.1
-   * Note: This is a placeholder for V0.5 when human-in-the-loop is implemented
-   */
-  async requireUserApproval(
-    _operation: DangerousOperation
-  ): Promise<boolean> {
-    // Placeholder implementation - always returns false
-    // In V0.5, this will implement actual human approval mechanism
     return false
   }
 

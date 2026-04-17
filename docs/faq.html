@@ -64,8 +64,8 @@
       <span class="faq-item__arrow">▾</span>
     </div>
     <div class="faq-item__a">
-      <p data-lang-en>Rikune runs on <strong>Linux</strong>, <strong>macOS</strong>, and <strong>Windows</strong>. The Docker image provides the most complete toolchain and is recommended for production use. Native mode works on all three platforms with reduced backend coverage.</p>
-      <p data-lang-zh>Rikune 支持 <strong>Linux</strong>、<strong>macOS</strong> 和 <strong>Windows</strong>。Docker 镜像提供最完整的工具链，推荐用于生产环境。原生模式在三个平台上都可以运行，但后端覆盖范围较少。</p>
+      <p data-lang-en>Rikune supports <strong>Linux</strong>, <strong>macOS</strong>, and <strong>Windows</strong>, but the recommended shape depends on what you need. Use <strong>static-only Linux Docker</strong> with <code>RUNTIME_MODE=disabled</code> when you do not want to execute samples, use <strong>manual</strong> or <strong>remote-sandbox</strong> to connect a Linux analyzer to a separate Windows Runtime Node / Host Agent, and use a <strong>Windows-native analyzer</strong> with <code>auto-sandbox</code> when you want single-host Windows Sandbox execution. Docker or WSL analyzers cannot use <code>auto-sandbox</code> directly.</p>
+      <p data-lang-zh>Rikune 支持 <strong>Linux</strong>、<strong>macOS</strong> 和 <strong>Windows</strong>，但推荐部署方式取决于你的目标。若你不想执行样本，请使用带有 <code>RUNTIME_MODE=disabled</code> 的<strong>纯静态 Linux Docker</strong>；若要让 Linux analyzer 连接独立的 Windows Runtime Node / Host Agent，请使用 <strong>manual</strong> 或 <strong>remote-sandbox</strong>；若要在单机 Windows 上通过 Windows Sandbox 执行真实样本，请使用带有 <code>auto-sandbox</code> 的<strong>Windows 原生 analyzer</strong>。Docker 或 WSL 中的 analyzer 不能直接使用 <code>auto-sandbox</code>。</p>
     </div>
   </div>
 

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Docker Setup — Rikune</title>
-<meta name="description" content="Docker deployment guide for Rikune MCP Server with full analysis toolchain.">
+<meta name="description" content="Docker deployment guide for Rikune analyzer/runtime split deployments, static-only Linux analyzers, and hybrid Windows runtime setups.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -46,8 +46,8 @@
     <div class="breadcrumb"><a href="index.html">Rikune</a> / Docker</div>
     <h1><span data-lang-en>Docker Deployment</span><span data-lang-zh>Docker 部署</span></h1>
     <p>
-      <span data-lang-en>Full analysis toolchain in a single container — Ghidra, Rizin, YARA-X, capa, Frida, angr, RetDec and more.</span>
-      <span data-lang-zh>单容器全栈分析工具链 — Ghidra、Rizin、YARA-X、capa、Frida、angr、RetDec 等全部集成。</span>
+      <span data-lang-en>Run Rikune as a Linux analyzer plane in Docker, then keep real sample execution on a separate Windows runtime when you intentionally opt in.</span>
+      <span data-lang-zh>将 Rikune 作为 Linux 分析面运行在 Docker 中，并在你明确开启时把真实样本执行交给独立的 Windows 运行时面。</span>
     </p>
   </div>
 </div>
@@ -58,6 +58,7 @@
     <div class="doc-sidebar__title"><span data-lang-en>On this page</span><span data-lang-zh>本页目录</span></div>
     <a href="#prerequisites">Prerequisites</a>
     <a href="#quickstart">Quick Start</a>
+    <a href="#topologies"><span data-lang-en>Deployment Topologies</span><span data-lang-zh>部署拓扑</span></a>
     <a href="#plugin-gen"><span data-lang-en>Plugin-Driven Generation</span><span data-lang-zh>插件驱动生成</span></a>
     <a href="#services">Services Overview</a>
     <a href="#production">Production Mode</a>
@@ -100,6 +101,48 @@
         <div class="code-block__header"><span>PowerShell</span><button class="code-block__copy">Copy</button></div>
         <pre>.\install-docker.ps1</pre>
       </div>
+    </section>
+
+    <section id="topologies" class="reveal">
+      <h2><span data-lang-en>Deployment Topologies</span><span data-lang-zh>部署拓扑</span></h2>
+      <p>
+        <span data-lang-en>Rikune now supports a split analyzer/runtime model. Pick the deployment shape that matches your safety and automation goals:</span>
+        <span data-lang-zh>Rikune 现在支持 analyzer/runtime 拆分模型。请根据你的安全目标和自动化需求选择部署方式：</span>
+      </p>
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th><span data-lang-en>Topology</span><span data-lang-zh>拓扑</span></th>
+            <th><span data-lang-en>Analyzer Plane</span><span data-lang-zh>分析面</span></th>
+            <th><span data-lang-en>Runtime Plane</span><span data-lang-zh>运行时面</span></th>
+            <th><span data-lang-en>Recommended Use</span><span data-lang-zh>推荐用途</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong><span data-lang-en>Static-only Docker</span><span data-lang-zh>纯静态 Docker</span></strong></td>
+            <td><code>docker-compose.analyzer.yml</code> with <code>RUNTIME_MODE=disabled</code></td>
+            <td><span data-lang-en>None</span><span data-lang-zh>无</span></td>
+            <td><span data-lang-en>Safe Linux analysis without executing samples</span><span data-lang-zh>不运行样本的安全 Linux 分析</span></td>
+          </tr>
+          <tr>
+            <td><strong><span data-lang-en>Hybrid Docker + Windows Runtime</span><span data-lang-zh>混合 Docker + Windows Runtime</span></strong></td>
+            <td><span data-lang-en>Linux Docker analyzer</span><span data-lang-zh>Linux Docker analyzer</span></td>
+            <td><span data-lang-en>Manual Windows Runtime Node or Windows Host Agent</span><span data-lang-zh>手工 Windows Runtime Node 或 Windows Host Agent</span></td>
+            <td><span data-lang-en>Split static analysis from real sample execution</span><span data-lang-zh>将静态分析与真实样本执行拆分</span></td>
+          </tr>
+          <tr>
+            <td><strong><span data-lang-en>Windows Native + Auto Sandbox</span><span data-lang-zh>Windows 原生 + Auto Sandbox</span></strong></td>
+            <td><span data-lang-en>Windows-native analyzer</span><span data-lang-zh>Windows 原生 analyzer</span></td>
+            <td><span data-lang-en>Local Windows Sandbox</span><span data-lang-zh>本机 Windows Sandbox</span></td>
+            <td><span data-lang-en>Single-host dynamic execution with explicit sandboxing</span><span data-lang-zh>单机显式沙箱动态执行</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <blockquote>
+        <span data-lang-en><strong>Important:</strong> Docker or WSL analyzers cannot use <code>auto-sandbox</code>. For Linux-side analyzers, use <code>manual</code> or <code>remote-sandbox</code> when you need a Windows runtime.</span>
+        <span data-lang-zh><strong>重要：</strong>Docker 或 WSL 中的 analyzer 不能使用 <code>auto-sandbox</code>。如果 analyzer 在 Linux 一侧，需要 Windows 运行时时请使用 <code>manual</code> 或 <code>remote-sandbox</code>。</span>
+      </blockquote>
     </section>
 
     <!-- Plugin-Driven Docker Generation -->
@@ -313,8 +356,8 @@ node scripts/generate-docker.mjs --dry-run</pre>
     <section id="services" class="reveal">
       <h2><span data-lang-en>Services Overview</span><span data-lang-zh>服务概览</span></h2>
       <p>
-        <span data-lang-en>The container runs multiple services in a single Node.js process:</span>
-        <span data-lang-zh>容器在单个 Node.js 进程中运行多个服务：</span>
+        <span data-lang-en>The analyzer container runs the control-plane services. When you configure a Windows Runtime Node or Host Agent, real sample execution is delegated over HTTP instead of happening inside the Linux analyzer container.</span>
+        <span data-lang-zh>analyzer 容器运行控制面服务。配置 Windows Runtime Node 或 Host Agent 后，真实样本执行会通过 HTTP 委派出去，而不是在 Linux analyzer 容器内进行。</span>
       </p>
       <table class="doc-table">
         <thead>
@@ -379,21 +422,21 @@ node scripts/generate-docker.mjs --dry-run</pre>
       <h2>Docker Compose</h2>
       <div class="code-block">
         <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
-        <pre><span class="comment"># Start the service</span>
-docker-compose up -d mcp-server
+        <pre><span class="comment"># Static-only Linux analyzer (safe default)</span>
+ docker compose -f docker-compose.analyzer.yml up -d
 
-<span class="comment"># View logs</span>
-docker-compose logs -f mcp-server
+<span class="comment"># Hybrid Linux analyzer + Windows runtime plane</span>
+ docker compose -f docker-compose.hybrid.yml up -d
 
-<span class="comment"># Enter the container</span>
-docker-compose exec mcp-server bash
+<span class="comment"># View analyzer logs</span>
+ docker compose -f docker-compose.hybrid.yml logs -f analyzer
 
-<span class="comment"># Stop</span>
-docker-compose down</pre>
+<span class="comment"># Stop the selected stack</span>
+ docker compose -f docker-compose.hybrid.yml down</pre>
       </div>
       <blockquote>
-        <span data-lang-en><strong>Note:</strong> Docker Compose is ideal for persistent volumes and the HTTP upload API. For MCP stdio connections, use a separate <code>docker run -i</code> invocation.</span>
-        <span data-lang-zh><strong>注意</strong>：Docker Compose 适合持久卷和 HTTP 上传 API。MCP stdio 连接请使用单独的 <code>docker run -i</code>。</span>
+        <span data-lang-en><strong>Note:</strong> <code>docker-compose.analyzer.yml</code> now defaults to <code>RUNTIME_MODE=disabled</code>. Switch to <code>manual</code> or <code>remote-sandbox</code> only when you intentionally connect a Windows runtime plane. Use <code>RUNTIME_HOST_AGENT_API_KEY</code> for Analyzer → Host Agent control requests, and <code>RUNTIME_API_KEY</code> only when the Windows Runtime Node itself requires a separate API key.</span>
+        <span data-lang-zh><strong>注意：</strong><code>docker-compose.analyzer.yml</code> 现在默认使用 <code>RUNTIME_MODE=disabled</code>。只有在你明确接入 Windows 运行时面时，才切换到 <code>manual</code> 或 <code>remote-sandbox</code>。Analyzer → Host Agent 的控制请求使用 <code>RUNTIME_HOST_AGENT_API_KEY</code>，只有当 Windows Runtime Node 自身需要单独鉴权时才配置 <code>RUNTIME_API_KEY</code>。</span>
       </blockquote>
     </section>
 
@@ -415,7 +458,12 @@ docker-compose down</pre>
           <tr><td><code>GHIDRA_PROJECT_ROOT</code></td><td><code>/ghidra-projects</code></td><td><span data-lang-en>Ghidra project root</span><span data-lang-zh>Ghidra 项目根目录</span></td></tr>
           <tr><td><code>LOG_LEVEL</code></td><td><code>info</code></td><td>trace / debug / info / warn / error</td></tr>
           <tr><td><code>API_PORT</code></td><td><code>18080</code></td><td><span data-lang-en>HTTP API port</span><span data-lang-zh>HTTP API 端口</span></td></tr>
-          <tr><td><code>API_KEY</code></td><td>—</td><td><span data-lang-en>API key for authentication (optional)</span><span data-lang-zh>API 认证密钥（可选）</span></td></tr>
+          <tr><td><code>API_KEY</code></td><td>—</td><td><span data-lang-en>API key for the HTTP file server / dashboard (optional)</span><span data-lang-zh>HTTP 文件服务 / Dashboard 的 API 密钥（可选）</span></td></tr>
+          <tr><td><code>RUNTIME_MODE</code></td><td><code>disabled</code></td><td><span data-lang-en><code>disabled</code>, <code>manual</code>, or <code>remote-sandbox</code> for Docker analyzers</span><span data-lang-zh>Docker analyzer 使用 <code>disabled</code>、<code>manual</code> 或 <code>remote-sandbox</code></span></td></tr>
+          <tr><td><code>RUNTIME_ENDPOINT</code></td><td>—</td><td><span data-lang-en>Manual Runtime Node endpoint for split deployments</span><span data-lang-zh>拆分部署时的手工 Runtime Node 地址</span></td></tr>
+          <tr><td><code>RUNTIME_HOST_AGENT_ENDPOINT</code></td><td>—</td><td><span data-lang-en>Windows Host Agent endpoint for <code>remote-sandbox</code></span><span data-lang-zh><code>remote-sandbox</code> 使用的 Windows Host Agent 地址</span></td></tr>
+          <tr><td><code>RUNTIME_HOST_AGENT_API_KEY</code></td><td>—</td><td><span data-lang-en>Analyzer → Host Agent control-plane API key</span><span data-lang-zh>Analyzer → Host Agent 控制面 API 密钥</span></td></tr>
+          <tr><td><code>RUNTIME_API_KEY</code></td><td>—</td><td><span data-lang-en>Analyzer → Runtime Node API key when runtime auth is enabled</span><span data-lang-zh>启用运行时鉴权时的 Analyzer → Runtime Node API 密钥</span></td></tr>
           <tr><td><code>QILING_ROOTFS</code></td><td><code>/opt/qiling-rootfs</code></td><td><span data-lang-en>Qiling Windows rootfs mount</span><span data-lang-zh>Qiling Windows rootfs 挂载点</span></td></tr>
           <tr><td><code>ANGR_PYTHON</code></td><td><code>/opt/angr-venv/bin/python</code></td><td><span data-lang-en>Isolated angr interpreter</span><span data-lang-zh>隔离的 angr 解释器</span></td></tr>
           <tr><td><code>RETDEC_PATH</code></td><td><code>/opt/retdec/bin/retdec-decompiler</code></td><td><span data-lang-en>RetDec decompiler path</span><span data-lang-zh>RetDec 反编译器路径</span></td></tr>

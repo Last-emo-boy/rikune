@@ -61,8 +61,8 @@ export class PluginOrchestrator {
 
   /**
    * Filter plugins by executionDomain based on the current node role.
-   * - analyzer: skip executionDomain === 'dynamic'
-   * - runtime: skip executionDomain === 'static'
+   * - analyzer: keep all (static runs locally, dynamic gets delegated)
+   * - runtime: keep only dynamic and both (static analysis does not run on runtime)
    * - hybrid: keep all
    */
   resolvePluginsByRole(plugins: Plugin[]): Plugin[] {
@@ -71,9 +71,14 @@ export class PluginOrchestrator {
     return plugins.filter(p => {
       const domain = p.executionDomain ?? 'both'
       if (domain === 'both') return true
-      // analyzer keeps dynamic plugins so we can register delegated handlers
-      if (role === 'analyzer' && domain === 'dynamic') return true
-      if (role === 'runtime' && domain === 'static') return false
+      if (role === 'analyzer') {
+        // analyzer runs static locally and delegates dynamic to runtime
+        return true
+      }
+      if (role === 'runtime') {
+        // runtime only executes dynamic analysis inside the sandbox
+        return domain === 'dynamic'
+      }
       return true
     })
   }
@@ -156,12 +161,18 @@ export class PluginOrchestrator {
           id: p.id, name: p.name, description: p.description,
           version: p.version, status: 'skipped-disabled', tools: [],
           configFields: p.configSchema,
+          reasonCode: 'disabled-by-config',
+          statusDetail: 'Plugin disabled by PLUGINS selection',
+          controlPlaneStatus: 'cancelled',
         })
       } else if (!roleAllowedIds.has(p.id)) {
         this.plugins.push({
           id: p.id, name: p.name, description: p.description,
           version: p.version, status: 'skipped-disabled', tools: [],
           configFields: p.configSchema,
+          reasonCode: 'role-incompatible',
+          statusDetail: `Plugin executionDomain '${p.executionDomain ?? 'both'}' is incompatible with node role '${config.node.role}'`,
+          controlPlaneStatus: 'cancelled',
           error: `Skipped because executionDomain ('${p.executionDomain ?? 'both'}') is incompatible with node role '${config.node.role}'`,
         })
       }
@@ -228,6 +239,8 @@ export class PluginOrchestrator {
       id: plugin.id, name: plugin.name, description: plugin.description,
       version: plugin.version, status: 'loaded', tools: [],
       configFields: plugin.configSchema,
+      controlPlaneStatus: 'completed',
+      statusDetail: 'Plugin loaded successfully',
     }
 
     // Check dependencies are loaded
@@ -235,6 +248,9 @@ export class PluginOrchestrator {
       for (const dep of plugin.dependencies) {
         if (!this.loadedPlugins.has(dep)) {
           status.status = 'skipped-deps'
+          status.reasonCode = 'missing-dependency'
+          status.controlPlaneStatus = 'failed'
+          status.statusDetail = `Required dependency '${dep}' is not loaded`
           status.error = `Required dependency '${dep}' is not loaded`
           this.plugins.push(status)
           logger.info({ plugin: plugin.id, dep }, `Plugin skipped (dependency not loaded): ${plugin.name}`)
@@ -252,6 +268,9 @@ export class PluginOrchestrator {
             logger.debug({ plugin: plugin.id }, `Plugin check failed but loading anyway for delegation: ${plugin.name}`)
           } else {
             status.status = 'skipped-check'
+            status.reasonCode = 'prerequisite-check-failed'
+            status.controlPlaneStatus = 'failed'
+            status.statusDetail = 'Prerequisite check returned false'
             status.error = 'Prerequisite check returned false'
             this.plugins.push(status)
             logger.info({ plugin: plugin.id }, `Plugin skipped (prerequisites not met): ${plugin.name}`)
@@ -263,6 +282,9 @@ export class PluginOrchestrator {
           logger.debug({ plugin: plugin.id, err }, `Plugin check error but loading anyway for delegation: ${plugin.name}`)
         } else {
           status.status = 'skipped-check'
+          status.reasonCode = 'prerequisite-check-failed'
+          status.controlPlaneStatus = 'failed'
+          status.statusDetail = `Prerequisite check threw: ${err}`
           status.error = `Prerequisite check threw: ${err}`
           this.plugins.push(status)
           logger.warn({ plugin: plugin.id, err }, `Plugin skipped (check error): ${plugin.name}`)
@@ -293,6 +315,9 @@ export class PluginOrchestrator {
       if (!plugin.check && !allRequiredOk && !isAnalyzerDynamic) {
         const missing = results.filter(r => !r.available && r.dep.required).map(r => r.dep.name)
         status.status = 'skipped-check'
+        status.reasonCode = 'system-deps-missing'
+        status.controlPlaneStatus = 'failed'
+        status.statusDetail = `Missing required system deps: ${missing.join(', ')}`
         status.error = `Missing required system deps: ${missing.join(', ')}`
         this.plugins.push(status)
         logger.info({ plugin: plugin.id, missing }, `Plugin skipped (system deps not met): ${plugin.name}`)
@@ -324,6 +349,10 @@ export class PluginOrchestrator {
       const toolNames = plugin.register(targetServer, deps, ctx)
       const names: string[] = Array.isArray(toolNames) ? toolNames : []
       status.tools = names
+      status.controlPlaneStatus = 'completed'
+      status.statusDetail = names.length > 0
+        ? `Plugin loaded with ${names.length} tool${names.length === 1 ? '' : 's'}`
+        : 'Plugin loaded without registering tools'
       for (const t of names) this.pluginToolMap.set(t, plugin.id)
       this.loadedPlugins.set(plugin.id, plugin)
       this.plugins.push(status)
@@ -341,6 +370,9 @@ export class PluginOrchestrator {
       logger.info({ plugin: plugin.id, tools: names.length }, `Plugin loaded: ${plugin.name}`)
     } catch (err) {
       status.status = 'error'
+      status.reasonCode = 'registration-failed'
+      status.controlPlaneStatus = 'failed'
+      status.statusDetail = `Registration failed: ${err}`
       status.error = `Registration failed: ${err}`
       this.plugins.push(status)
       logger.error({ plugin: plugin.id, err }, `Plugin failed to load: ${plugin.name}`)
@@ -387,6 +419,9 @@ export class PluginOrchestrator {
         this.pluginToolMap.delete(toolName)
       }
       status.status = 'skipped-disabled'
+      status.reasonCode = 'manually-unloaded'
+      status.controlPlaneStatus = 'cancelled'
+      status.statusDetail = 'Plugin unloaded at runtime'
       status.tools = []
     }
 

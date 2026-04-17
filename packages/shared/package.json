@@ -19,8 +19,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "lint": "echo 'No lint configured'",
-    "test": "echo 'No tests yet'"
+    "lint": "cmd /d /s /c \"pushd ..\\.. && eslint packages/shared/src --ext .ts && popd\"",
+    "test": "cmd /d /s /c \"pushd ..\\.. && node --experimental-vm-modules node_modules\\jest\\bin\\jest.js --runInBand tests\\unit\\packages\\shared.test.ts && popd\""
   },
   "license": "MIT"
 }

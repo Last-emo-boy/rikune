@@ -10,6 +10,7 @@ import { peCertificateExtractToolDefinition, createPeCertificateExtractHandler }
 const peSignaturePlugin: Plugin = {
   id: 'pe-signature',
   name: 'PE Authenticode Signature',
+  executionDomain: 'static',
   surfaceRules: { tier: 2, activateOn: { findings: ['signed'] }, category: 'static-analysis' },
   description: 'Verify PE Authenticode signatures and extract embedded certificates via osslsigncode.',
   version: '1.0.0',

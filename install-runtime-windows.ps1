@@ -293,6 +293,7 @@ $envContent = @"
 # Host Agent settings
 HOST_AGENT_PORT=$Port
 HOST_AGENT_API_KEY=$apiKey
+HOST_AGENT_RUNTIME_API_KEY=$apiKey
 HOST_AGENT_WORKSPACE=$WorkspaceRoot
 
 # Optional: restrict CORS origin for Runtime Node (distributed mode)
@@ -319,6 +320,7 @@ if (-not (Test-Path $hostAgentEntry)) {
 # Load env for current process
 $env:HOST_AGENT_PORT = "$Port"
 $env:HOST_AGENT_API_KEY = "$apiKey"
+$env:HOST_AGENT_RUNTIME_API_KEY = "$apiKey"
 $env:HOST_AGENT_WORKSPACE = "$WorkspaceRoot"
 
 if ($Service) {
@@ -360,6 +362,7 @@ const svc = new Service({
   env: [
     { name: 'HOST_AGENT_PORT', value: '$Port' },
     { name: 'HOST_AGENT_API_KEY', value: '$apiKey' },
+    { name: 'HOST_AGENT_RUNTIME_API_KEY', value: '$apiKey' },
     { name: 'HOST_AGENT_WORKSPACE', value: '$($WorkspaceRoot -replace '\\', '\\\\')' }
   ]
 });
@@ -443,7 +446,9 @@ Write-Host "    1. Ensure this Windows machine is reachable from your Linux Anal
 Write-Host "    2. On the Linux Analyzer, set:" -ForegroundColor $ColorInfo
 Write-Host "       RUNTIME_MODE=remote-sandbox" -ForegroundColor $ColorInfo
 Write-Host "       RUNTIME_HOST_AGENT_ENDPOINT=http://<this-windows-ip>:$Port" -ForegroundColor $ColorInfo
-Write-Host "       RUNTIME_API_KEY=$apiKey" -ForegroundColor $ColorInfo
+Write-Host "       RUNTIME_HOST_AGENT_API_KEY=$apiKey" -ForegroundColor $ColorInfo
+Write-Host "       # Optional if Runtime Node auth should be separate:" -ForegroundColor $ColorInfo
+Write-Host "       # RUNTIME_API_KEY=$apiKey" -ForegroundColor $ColorInfo
 Write-Host "`n  Managing the Host Agent:" -ForegroundColor $ColorPrimary
 if ($Service) {
     if ($pm2) {

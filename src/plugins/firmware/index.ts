@@ -12,6 +12,7 @@ import { firmwareEntropyToolDefinition, createFirmwareEntropyHandler } from './t
 const firmwarePlugin: Plugin = {
   id: 'firmware',
   name: 'Firmware Analysis',
+  executionDomain: 'static',
   surfaceRules: {
     tier: 1,
     activateOn: { fileTypes: ['firmware'] },

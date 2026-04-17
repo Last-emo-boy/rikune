@@ -321,6 +321,14 @@
         </p>
       </div>
       <div class="feature-card reveal">
+        <div class="feature-card__icon feature-card__icon--purple">🪟</div>
+        <h3><span data-lang-en>Split Analyzer / Runtime</span><span data-lang-zh>分析面 / 运行时面拆分</span></h3>
+        <p>
+          <span data-lang-en>Keep static analysis in Linux Docker, then delegate real sample execution to a Windows Runtime Node or Host Agent when you explicitly opt in.</span>
+          <span data-lang-zh>将静态分析保留在 Linux Docker 中，并在你显式开启时把真实样本执行委派给 Windows Runtime Node 或 Host Agent。</span>
+        </p>
+      </div>
+      <div class="feature-card reveal">
         <div class="feature-card__icon feature-card__icon--green">🔄</div>
         <h3><span data-lang-en>Staged Pipeline</span><span data-lang-zh>分阶段流水线</span></h3>
         <p>
@@ -386,6 +394,17 @@
           <span class="arch__chip">HTTP File Server</span>
           <span class="arch__chip">SSE Events</span>
           <span class="arch__chip">Web Dashboard</span>
+        </div>
+      </div>
+      <div class="arch__arrow">↕</div>
+      <div class="arch__layer">
+        <span class="arch__layer-title">Execution Surfaces</span>
+        <div class="arch__items">
+          <span class="arch__chip">Linux Analyzer (static-only)</span>
+          <span class="arch__chip">Windows-native Analyzer</span>
+          <span class="arch__chip">Windows Runtime Node</span>
+          <span class="arch__chip">Windows Host Agent</span>
+          <span class="arch__chip">Windows Sandbox</span>
         </div>
       </div>
       <div class="arch__arrow">↕</div>
@@ -519,8 +538,8 @@
   <div class="container install">
     <h2 class="reveal"><span data-lang-en>Get Started</span><span data-lang-zh>开始使用</span></h2>
     <p class="install__sub reveal">
-      <span data-lang-en>Choose your MCP client and start analyzing binaries in minutes.</span>
-      <span data-lang-zh>选择你的 MCP 客户端，几分钟内开始分析二进制文件。</span>
+      <span data-lang-en>Choose the deployment shape that matches your risk model: static-only Linux Docker, Windows-native auto-sandbox, or split analyzer/runtime.</span>
+      <span data-lang-zh>根据你的风险模型选择部署形态：纯静态 Linux Docker、Windows 原生 auto-sandbox，或拆分式 analyzer/runtime。</span>
     </p>
     <div class="install__tabs reveal">
       <button class="install__tab active" data-tab="claude">Claude Desktop</button>
@@ -577,10 +596,13 @@
           <span>PowerShell</span>
           <button class="code-block__copy">Copy</button>
         </div>
-        <pre><span class="comment"># Pull and run the full analysis image</span>
-docker compose up -d
+        <pre><span class="comment"># Static-only Linux analyzer (safe default)</span>
+docker compose -f docker-compose.analyzer.yml up -d
 
-<span class="comment"># Or use the install script</span>
+<span class="comment"># Hybrid Linux analyzer + Windows runtime plane</span>
+docker compose -f docker-compose.hybrid.yml up -d
+
+<span class="comment"># Optional bootstrap for Windows hosts</span>
 .\install-docker.ps1</pre>
       </div>
     </div>

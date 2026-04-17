@@ -11,6 +11,7 @@ import { unpackGuideToolDefinition, createUnpackGuideHandler } from './tools/unp
 const unpackingPlugin: Plugin = {
   id: 'unpacking',
   name: 'Unpacking',
+  executionDomain: 'static',
   surfaceRules: { tier: 2, activateOn: { findings: ['packed'] }, category: 'unpacking' },
   description: 'Automated unpacking and packer-specific unpacking guidance',
   version: '1.0.0',

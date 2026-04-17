@@ -10,6 +10,7 @@ import { hashIdentifyToolDefinition, createHashIdentifyHandler } from './tools/h
 const apiHashPlugin: Plugin = {
   id: 'api-hash',
   name: 'API Hash Resolution',
+  executionDomain: 'static',
   surfaceRules: { tier: 2, activateOn: { findings: ['obfuscated', 'shellcode', 'suspicious_imports'] }, category: 'reverse-engineering' },
   description: 'Resolve shellcode API hashes (ROR13, CRC32, DJB2, etc.) against known hash databases.',
   version: '1.0.0',

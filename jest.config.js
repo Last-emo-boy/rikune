@@ -4,6 +4,8 @@ export default {
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
     '^uuid$': '<rootDir>/tests/mocks/uuid.ts',
+    '^@rikune/shared$': '<rootDir>/packages/shared/src/index.ts',
+    '^@rikune/plugin-sdk$': '<rootDir>/packages/plugin-sdk/src/index.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   transform: {

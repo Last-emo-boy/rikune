@@ -16,6 +16,7 @@ import { sigmaRuleGenerateToolDefinition, createSigmaRuleGenerateHandler } from 
 const threatIntelPlugin: Plugin = {
   id: 'threat-intel',
   name: 'Threat Intelligence',
+  executionDomain: 'static',
   surfaceRules: { tier: 0, category: 'malware-analysis' },
   description: 'MITRE ATT&CK technique mapping, IOC export (JSON, CSV, STIX2), and Sigma rule generation',
   version: '1.0.0',

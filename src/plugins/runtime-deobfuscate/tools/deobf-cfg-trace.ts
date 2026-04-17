@@ -12,6 +12,7 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import {
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
   resolveSampleFile,
   runPythonJson,
   persistBackendArtifact,
@@ -62,7 +63,7 @@ export function createDeobfCfgTraceHandler(
         )
       }
 
-      const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
+      const pythonPath = getPythonCommand()
       const workerScript = `
 import sys, json, importlib.util
 spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('src', 'plugins', 'runtime-deobfuscate', 'workers', 'deobfuscate_worker.py').replace(/\\/g, '/')}")

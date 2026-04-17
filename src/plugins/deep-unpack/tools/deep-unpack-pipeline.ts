@@ -12,6 +12,7 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import {
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
   resolveSampleFile,
   runPythonJson,
   persistBackendArtifact,
@@ -92,7 +93,7 @@ export function createDeepUnpackPipelineHandler(
       // Resolve Python path for worker
       const pythonPath = backends.qiling?.path
         ? backends.qiling.path  // Qiling venv has pefile
-        : process.platform === 'win32' ? 'python' : 'python3'
+        : getPythonCommand()
 
       const workerScript = `
 import sys, json, importlib.util

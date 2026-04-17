@@ -21,6 +21,7 @@ import {
 const crackmePlugin: Plugin = {
   id: 'crackme',
   name: 'CrackMe Automation',
+  executionDomain: 'static',
   surfaceRules: { tier: 3, category: 'reverse-engineering' },
   description: 'Validation routine location, symbolic execution, patching, and keygen verification',
   version: '1.0.0',

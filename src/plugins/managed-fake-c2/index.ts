@@ -14,6 +14,7 @@ import {
 const managedFakeC2Plugin: Plugin = {
   id: 'managed-fake-c2',
   name: 'Managed Fake C2',
+  executionDomain: 'dynamic',
   surfaceRules: { tier: 2, activateOn: { findings: ['c2'] }, category: 'dynamic-analysis' },
   description:
     'Configurable fake C2 server — set custom responses for endpoints like /plugin, ' +

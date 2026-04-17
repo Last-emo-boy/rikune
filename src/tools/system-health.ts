@@ -20,6 +20,7 @@ import { resolvePackagePath } from '../runtime-paths.js'
 import { lookupCachedResult } from './cache-observability.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
 import {
+import { getPythonCommand } from '../utils/shared-helpers.js'
   RequiredUserInputSchema,
   SetupActionSchema,
   buildBaselinePythonSetupActions,
@@ -177,7 +178,7 @@ interface SystemHealthDependencies {
 async function callStaticWorkerHealth(timeoutMs: number): Promise<StaticWorkerHealthData> {
   return new Promise((resolve, reject) => {
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
-    const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+    const pythonCommand = getPythonCommand()
     const processTimeoutMs = Math.max(timeoutMs, 2000)
 
     const pythonProcess = spawn(pythonCommand, [workerPath], {

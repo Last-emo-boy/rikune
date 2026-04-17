@@ -10,6 +10,7 @@
 import { z } from 'zod'
 import { spawn } from 'child_process'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'reactor.dynamic_methods'
 
@@ -65,7 +66,7 @@ export function createDynamicMethodsHandler(deps: PluginToolDeps) {
     workspaceManager, database, config, cacheManager, generateCacheKey,
     resolvePrimarySamplePath, persistStaticAnalysisJsonArtifact, resolvePackagePath,
   } = deps
-  const pythonCmd = config?.workers?.static?.pythonPath || (process.platform === 'win32' ? 'python' : 'python3')
+  const pythonCmd = getPythonCommand(undefined, config?.workers?.static?.pythonPath)
 
   return async (args: z.infer<typeof DynamicMethodsInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()

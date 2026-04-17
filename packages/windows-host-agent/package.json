@@ -14,8 +14,8 @@
     "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist',{recursive:true,force:true});\"",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "lint": "echo 'No lint configured'",
-    "test": "echo 'No tests yet'"
+    "lint": "cmd /d /s /c \"pushd ..\\.. && eslint packages/windows-host-agent/src --ext .ts && popd\"",
+    "test": "cmd /d /s /c \"pushd ..\\.. && node --experimental-vm-modules node_modules\\jest\\bin\\jest.js --runInBand tests\\unit\\packages\\windows-host-agent.test.ts && popd\""
   },
   "dependencies": {
     "@rikune/shared": "1.0.0-beta.3",

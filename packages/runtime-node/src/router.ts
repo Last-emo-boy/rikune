@@ -7,18 +7,78 @@ import { URL } from 'url'
 import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
+import { z } from 'zod'
 import { logger } from './logger.js'
 import { config } from './config.js'
 import { isIsolatedEnvironment } from './isolation.js'
-import { submitTask, getTask, cancelTask, getLogs } from './task-store.js'
+import type { ExecuteTask, RuntimeBackendCapability, RuntimeBackendHint } from './executor.js'
+import { submitTask, getTask, cancelTask, getLogs, listTasks, subscribeTaskEvents } from './task-store.js'
 
 export interface Router {
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>
 }
 
-const MAX_UPLOAD_BYTES = 500 * 1024 * 1024 // 500MB
+interface TaskSnapshot {
+  taskId: string
+  status: string
+  submittedAt: number
+  startedAt?: number
+  completedAt?: number
+  progressPercent?: number
+  lastMessage?: string
+  result?: unknown
+}
 
-export function createRuntimeRouter(): Router {
+const MAX_UPLOAD_BYTES = 500 * 1024 * 1024 // 500MB
+const TASK_ID_PATTERN = /^[a-zA-Z0-9_-]+$/
+
+const RuntimeBackendHintSchema = z.object({
+  type: z.enum(['python-worker', 'spawn', 'inline']),
+  handler: z.string().min(1),
+})
+
+const ExecutePayloadSchema = z.object({
+  taskId: z.string().regex(TASK_ID_PATTERN, 'taskId must contain only letters, numbers, underscores, or dashes'),
+  sampleId: z.string().min(1, 'sampleId is required'),
+  tool: z.string().min(1, 'tool is required'),
+  args: z.record(z.string(), z.unknown()).default({}),
+  timeoutMs: z.number().int().min(1).max(30 * 60 * 1000).default(120_000),
+  runtimeBackendHint: RuntimeBackendHintSchema.optional(),
+})
+
+type ExecutePayload = z.infer<typeof ExecutePayloadSchema>
+
+type RuntimeErrorCode =
+  | 'invalid_json'
+  | 'payload_too_large'
+  | 'schema_validation_failed'
+  | 'unsupported_runtime_backend_hint'
+  | 'insufficient_disk_space'
+
+interface RuntimeErrorResponse {
+  ok: false
+  error: string
+  code: RuntimeErrorCode
+  details?: unknown
+  capabilities?: RuntimeBackendCapability[]
+}
+
+interface RuntimeBackendSupport {
+  listRuntimeBackendCapabilities(): RuntimeBackendCapability[]
+  isRuntimeBackendHintSupported(hint: RuntimeBackendHint): boolean
+  getRuntimeBackendCapability?(hint: RuntimeBackendHint): RuntimeBackendCapability | undefined
+}
+
+async function defaultLoadRuntimeBackendSupport(): Promise<RuntimeBackendSupport> {
+  return import('./executor.js')
+}
+
+export function createRuntimeRouter(
+  options: {
+    loadRuntimeBackendSupport?: () => Promise<RuntimeBackendSupport>
+  } = {},
+): Router {
+  const loadRuntimeBackendSupport = options.loadRuntimeBackendSupport ?? defaultLoadRuntimeBackendSupport
   return {
     async handle(req, res) {
       const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
@@ -53,6 +113,18 @@ export function createRuntimeRouter(): Router {
       }
 
       // Routes
+      if (method === 'GET' && pathname === '/capabilities') {
+        const { listRuntimeBackendCapabilities } = await loadRuntimeBackendSupport()
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({
+          ok: true,
+          data: {
+            runtime_backends: listRuntimeBackendCapabilities(),
+          },
+        }))
+        return
+      }
+
       if (method === 'GET' && pathname === '/health') {
         const isolated = await isIsolatedEnvironment()
         const healthDetails = await getDeepHealthChecks()
@@ -152,18 +224,71 @@ export function createRuntimeRouter(): Router {
         try {
           const freeBytes = getDiskFreeBytes(config.runtime.inbox)
           if (freeBytes !== null && freeBytes < config.runtime.minDiskSpaceBytes) {
-            res.writeHead(503, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ ok: false, error: `Insufficient disk space on inbox volume (${Math.round(freeBytes / 1024 / 1024)}MB free, ${Math.round(config.runtime.minDiskSpaceBytes / 1024 / 1024)}MB required)` }))
+            writeJson(res, 503, {
+              ok: false,
+              code: 'insufficient_disk_space',
+              error: `Insufficient disk space on inbox volume (${Math.round(freeBytes / 1024 / 1024)}MB free, ${Math.round(config.runtime.minDiskSpaceBytes / 1024 / 1024)}MB required)`,
+              details: {
+                freeBytes,
+                requiredBytes: config.runtime.minDiskSpaceBytes,
+              },
+            })
             return
           }
-          const payload = await readJsonBody(req) as { taskId: string; sampleId: string; tool: string; args: Record<string, unknown>; timeoutMs: number; runtimeBackendHint?: { type: string; handler: string } }
-          const { taskId, sampleId, tool, args, timeoutMs = 120_000, runtimeBackendHint } = payload
-          const result = submitTask({ taskId, sampleId, tool, args, timeoutMs, runtimeBackendHint })
-          res.writeHead(202, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: true, taskId: result.taskId, status: result.status }))
+          const rawBody = await readJsonBody(req)
+          const payloadResult = ExecutePayloadSchema.safeParse(rawBody)
+          if (!payloadResult.success) {
+            writeJson(res, 400, {
+              ok: false,
+              code: 'schema_validation_failed',
+              error: 'Execute payload validation failed',
+              details: payloadResult.error.flatten(),
+            })
+            return
+          }
+          const payload = payloadResult.data
+          const { isRuntimeBackendHintSupported, listRuntimeBackendCapabilities, getRuntimeBackendCapability } = await loadRuntimeBackendSupport()
+          const runtimeBackendHint = payload.runtimeBackendHint as RuntimeBackendHint | undefined
+          if (runtimeBackendHint && !isRuntimeBackendHintSupported(runtimeBackendHint)) {
+            writeJson(res, 400, {
+              ok: false,
+              code: 'unsupported_runtime_backend_hint',
+              error: `Unsupported runtime backend hint: ${payload.runtimeBackendHint.type}/${payload.runtimeBackendHint.handler}`,
+              capabilities: listRuntimeBackendCapabilities(),
+            })
+            return
+          }
+          const executeTaskPayload: ExecuteTask = {
+            taskId: payload.taskId,
+            sampleId: payload.sampleId,
+            tool: payload.tool,
+            args: payload.args,
+            timeoutMs: payload.timeoutMs,
+            runtimeBackendHint,
+          }
+          const result = submitTask(executeTaskPayload)
+          writeJson(res, 202, {
+            ok: true,
+            taskId: result.taskId,
+            status: result.status,
+            runtimeBackend: runtimeBackendHint
+              ? (getRuntimeBackendCapability?.(runtimeBackendHint) ?? runtimeBackendHint)
+              : null,
+          })
         } catch (e) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: false, error: String(e) }))
+          if (e instanceof RequestBodyReadError) {
+            writeJson(res, e.statusCode, {
+              ok: false,
+              code: e.code,
+              error: e.message,
+            })
+            return
+          }
+          writeJson(res, 400, {
+            ok: false,
+            code: 'invalid_json',
+            error: e instanceof Error ? e.message : String(e),
+          })
         }
         return
       }
@@ -223,14 +348,87 @@ export function createRuntimeRouter(): Router {
       }
 
       if (method === 'GET' && pathname === '/events') {
-        res.writeHead(501, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: false, error: 'SSE events endpoint is not implemented. Use GET /tasks/:taskId for polling.' }))
+        const taskIdFilter = url.searchParams.get('taskId') || undefined
+        if (taskIdFilter && !TASK_ID_PATTERN.test(taskIdFilter)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: 'Missing or invalid taskId query parameter' }))
+          return
+        }
+
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        })
+        res.flushHeaders?.()
+
+        let closed = false
+        let unsubscribe = () => {}
+        let heartbeat: NodeJS.Timeout | undefined
+        const writeEvent = (eventName: string, payload: unknown, eventId?: number) => {
+          if (closed || res.destroyed || res.writableEnded) return
+          res.write(formatSseEvent(eventName, payload, eventId))
+        }
+        const cleanup = () => {
+          if (closed) return
+          closed = true
+          if (heartbeat) {
+            clearInterval(heartbeat)
+          }
+          unsubscribe()
+        }
+
+        writeEvent('connected', {
+          ok: true,
+          subscribedAt: Date.now(),
+          taskId: taskIdFilter ?? null,
+        })
+        writeEvent('snapshot', {
+          tasks: listTasks()
+            .filter((state) => !taskIdFilter || state.taskId === taskIdFilter)
+            .map(toTaskSnapshot),
+        })
+
+        unsubscribe = subscribeTaskEvents((event) => {
+          if (taskIdFilter && event.taskId !== taskIdFilter) {
+            return
+          }
+          try {
+            writeEvent(event.type, event, event.id)
+          } catch (err) {
+            logger.debug({ err, taskIdFilter }, 'Failed to write SSE event to runtime client')
+            cleanup()
+          }
+        })
+
+        heartbeat = setInterval(() => {
+          if (!closed && !res.destroyed && !res.writableEnded) {
+            res.write(': keep-alive\n\n')
+            return
+          }
+          cleanup()
+        }, 15_000)
+
+        req.on('close', cleanup)
+        req.on('aborted', cleanup)
+        res.on('close', cleanup)
         return
       }
 
       res.writeHead(404, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ ok: false, error: 'Not found' }))
     },
+  }
+}
+
+class RequestBodyReadError extends Error {
+  constructor(
+    message: string,
+    readonly code: Extract<RuntimeErrorCode, 'invalid_json' | 'payload_too_large'>,
+    readonly statusCode: number,
+  ) {
+    super(message)
   }
 }
 
@@ -242,7 +440,7 @@ async function readJsonBody(req: IncomingMessage, maxBytes = 10 * 1024 * 1024): 
       received += chunk.length
       if (received > maxBytes) {
         req.destroy()
-        reject(new Error('Payload too large'))
+        reject(new RequestBodyReadError('Payload too large', 'payload_too_large', 413))
         return
       }
       chunks.push(chunk)
@@ -251,12 +449,43 @@ async function readJsonBody(req: IncomingMessage, maxBytes = 10 * 1024 * 1024): 
       try {
         const raw = Buffer.concat(chunks).toString('utf-8')
         resolve(raw ? JSON.parse(raw) : {})
-      } catch (e) {
-        reject(e)
+      } catch {
+        reject(new RequestBodyReadError('Request body must be valid JSON', 'invalid_json', 400))
       }
     })
     req.on('error', reject)
   })
+}
+
+function writeJson(res: ServerResponse, statusCode: number, payload: RuntimeErrorResponse | Record<string, unknown>): void {
+  res.writeHead(statusCode, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify(payload))
+}
+
+function toTaskSnapshot(state: TaskSnapshot): TaskSnapshot {
+  return {
+    taskId: state.taskId,
+    status: state.status,
+    submittedAt: state.submittedAt,
+    startedAt: state.startedAt,
+    completedAt: state.completedAt,
+    progressPercent: state.progressPercent,
+    lastMessage: state.lastMessage,
+    result: state.result,
+  }
+}
+
+function formatSseEvent(eventName: string, payload: unknown, eventId?: number): string {
+  const lines: string[] = []
+  if (typeof eventId === 'number') {
+    lines.push(`id: ${eventId}`)
+  }
+  lines.push(`event: ${eventName}`)
+  const json = JSON.stringify(payload)
+  for (const line of json.split(/\r?\n/)) {
+    lines.push(`data: ${line}`)
+  }
+  return `${lines.join('\n')}\n\n`
 }
 
 function getDiskFreeBytes(dir: string): number | null {

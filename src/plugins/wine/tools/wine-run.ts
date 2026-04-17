@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod'
-import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../../types.js'
+import { RuntimeDelegationFailureResultSchema, type WorkerResult, type ToolDefinition, type ToolArgs, type ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { SharedBackendDependencies } from '../../docker-shared.js'
@@ -33,7 +33,7 @@ export const wineRunInputSchema = z.object({
   session_tag: z.string().optional().describe('Optional artifact session tag.'),
 })
 
-export const wineRunOutputSchema = z.object({
+const wineRunSuccessOutputSchema = z.object({
   ok: z.boolean(),
   data: z
     .object({
@@ -66,6 +66,11 @@ export const wineRunOutputSchema = z.object({
   required_user_inputs: z.array(z.any()).optional(),
   metrics: SharedMetricsSchema.optional(),
 })
+
+export const wineRunOutputSchema = z.union([
+  wineRunSuccessOutputSchema,
+  RuntimeDelegationFailureResultSchema,
+])
 
 export const wineRunToolDefinition: ToolDefinition = {
   name: 'wine.run',

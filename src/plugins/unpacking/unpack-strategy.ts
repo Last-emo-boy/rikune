@@ -14,6 +14,7 @@ import type { ArtifactRef } from '../../types.js'
 import type { WorkspaceManager } from '../../workspace-manager.js'
 import type { DatabaseManager } from '../../database.js'
 import {
+import { getPythonCommand } from '../../utils/shared-helpers.js'
   resolveAnalysisBackends,
 } from '../../static-backend-discovery.js'
 
@@ -222,7 +223,7 @@ export async function executeSpeakeasyDump(samplePath: string): Promise<UnpackRe
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'speakeasy-dump-'))
   const dumpPath = path.join(tempDir, 'memory_dump.bin')
-  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3'
+  const pythonCmd = getPythonCommand()
 
   const script = `
 import sys, json, os
@@ -308,7 +309,7 @@ export async function executeQilingDump(samplePath: string): Promise<UnpackResul
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'qiling-dump-'))
   const dumpPath = path.join(tempDir, 'oep_dump.bin')
-  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3'
+  const pythonCmd = getPythonCommand()
 
   const script = `
 import sys, json, os

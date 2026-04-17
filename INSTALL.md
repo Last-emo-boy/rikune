@@ -534,8 +534,9 @@ docker compose run --rm mcp-server bash -c "
 - [Docker 官方文档](https://docs.docker.com/)
 - [Docker Desktop for Windows](https://docs.docker.com/desktop/windows/)
 - [WSL2 安装指南](https://docs.microsoft.com/windows/wsl/install)
-- [项目 Docker 文档](./docs/DOCKER.md)
-- [故障排除指南](./docs/DOCKER-TROUBLESHOOTING.md)
+- [部署指南](./DEPLOYMENT.md)
+- [Docker 部署页面](./docs/docker.html)
+- [故障排除指南](./TROUBLESHOOTING.md)
 
 ---
 

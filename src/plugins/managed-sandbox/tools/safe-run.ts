@@ -13,10 +13,12 @@
  */
 
 import { z } from 'zod'
+import { RuntimeDelegationFailureResultSchema } from '../../../types.js'
 import { spawn } from 'child_process'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
 import { resolveExecutable } from '../../../static-backend-discovery.js'
 import { buildDynamicSetupRequired } from '../../docker-shared.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'managed.safe_run'
 
@@ -38,6 +40,20 @@ export const SafeRunInputSchema = z.object({
   dump_loaded_assemblies: z.boolean().default(true).describe('Dump dynamically loaded assemblies to workspace'),
 })
 
+export const SafeRunSuccessOutputSchema = z.object({
+  ok: z.boolean(),
+  data: z.record(z.unknown()).optional(),
+  warnings: z.array(z.string()).optional(),
+  errors: z.array(z.string()).optional(),
+  artifacts: z.array(z.any()).optional(),
+  metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),
+})
+
+export const SafeRunOutputSchema = z.union([
+  SafeRunSuccessOutputSchema,
+  RuntimeDelegationFailureResultSchema,
+])
+
 export const safeRunToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -46,6 +62,7 @@ export const safeRunToolDefinition: ToolDefinition = {
     'decryption calls, reflective invocations, and all outbound network requests. ' +
     'Supports configurable timeout, memory limit, and custom sinkhole responses.',
   inputSchema: SafeRunInputSchema,
+  outputSchema: SafeRunOutputSchema,
   runtimeBackendHint: { type: 'inline', handler: 'executeManagedSafeRun' },
 }
 
@@ -84,7 +101,7 @@ export function createSafeRunHandler(deps: PluginToolDeps) {
     workspaceManager, database, config, cacheManager, generateCacheKey,
     resolvePrimarySamplePath, persistStaticAnalysisJsonArtifact, resolvePackagePath,
   } = deps
-  const pythonCmd = config?.workers?.static?.pythonPath || (process.platform === 'win32' ? 'python' : 'python3')
+  const pythonCmd = getPythonCommand(undefined, config?.workers?.static?.pythonPath)
 
   return async (args: z.infer<typeof SafeRunInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()

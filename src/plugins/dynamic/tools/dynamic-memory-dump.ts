@@ -9,6 +9,7 @@ import path from 'path'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
 import { resolveExecutable } from '../../../static-backend-discovery.js'
 import { buildDynamicSetupRequired } from '../../docker-shared.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'dynamic.memory.dump'
 
@@ -114,7 +115,7 @@ export function createDynamicMemoryDumpHandler(
   deps: PluginToolDeps
 ) {
   const { workspaceManager, database, config, policyGuard, resolvePrimarySamplePath, persistStaticAnalysisJsonArtifact, resolvePackagePath } = deps
-  const pythonCmd = config?.workers?.frida?.path || config?.workers?.static?.pythonPath || (process.platform === 'win32' ? 'python' : 'python3')
+  const pythonCmd = config?.workers?.frida?.path || getPythonCommand(undefined, config?.workers?.static?.pythonPath)
   return async (args: z.infer<typeof DynamicMemoryDumpInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()
     const warnings: string[] = []

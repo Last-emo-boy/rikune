@@ -36,6 +36,11 @@ interface ActiveSandbox {
   listenPort: number
 }
 
+interface StartSandboxRequest {
+  timeoutMs?: number
+  runtimeApiKey?: string
+}
+
 const activeSandboxes = new Map<string, ActiveSandbox>()
 const usedListenPorts = new Set<number>()
 
@@ -132,6 +137,7 @@ async function writeWsbConfig(
   wsbPath: string,
   sandboxDir: string,
   runtimeEntryHost: string,
+  runtimeApiKey?: string,
 ): Promise<void> {
   const inboxDir = path.join(sandboxDir, 'inbox')
   const outboxDir = path.join(sandboxDir, 'outbox')
@@ -147,11 +153,15 @@ async function writeWsbConfig(
     inboxDir,
     outboxDir,
     readyFileSandbox,
+    runtimeApiKey,
   })
   await fs.writeFile(wsbPath, wsb, 'utf-8')
 }
 
-async function waitForRuntimeReady(sandboxDir: string, timeoutMs: number): Promise<{ endpoint?: string; host?: string } | null> {
+async function waitForRuntimeReady(
+  sandboxDir: string,
+  timeoutMs: number
+): Promise<{ endpoint?: string; host?: string } | null> {
   const readyFile = path.join(sandboxDir, 'outbox', 'runtime.ready.json')
   const started = Date.now()
   const interval = 1000
@@ -174,32 +184,62 @@ async function waitForRuntimeReady(sandboxDir: string, timeoutMs: number): Promi
 async function addPortProxy(sandboxIp: string, listenPort: number): Promise<void> {
   logger.warn('netsh portproxy is binding to all interfaces. Consider restricting network access.')
   return new Promise((resolve, reject) => {
-    execFile('netsh', ['interface', 'portproxy', 'delete', 'v4tov4', `listenport=${listenPort}`], () => {
-      execFile('netsh', ['interface', 'portproxy', 'add', 'v4tov4', `listenport=${listenPort}`, `connectaddress=${sandboxIp}`, `connectport=${RUNTIME_INTERNAL_PORT}`], (err) => {
-        if (err) return reject(err)
-        resolve()
-      })
-    })
+    execFile(
+      'netsh',
+      ['interface', 'portproxy', 'delete', 'v4tov4', `listenport=${listenPort}`],
+      () => {
+        execFile(
+          'netsh',
+          [
+            'interface',
+            'portproxy',
+            'add',
+            'v4tov4',
+            `listenport=${listenPort}`,
+            `connectaddress=${sandboxIp}`,
+            `connectport=${RUNTIME_INTERNAL_PORT}`,
+          ],
+          (err) => {
+            if (err) return reject(err)
+            resolve()
+          }
+        )
+      }
+    )
   })
 }
 
 async function removePortProxy(listenPort: number): Promise<void> {
   return new Promise((resolve) => {
-    execFile('netsh', ['interface', 'portproxy', 'delete', 'v4tov4', `listenport=${listenPort}`], () => resolve())
+    execFile(
+      'netsh',
+      ['interface', 'portproxy', 'delete', 'v4tov4', `listenport=${listenPort}`],
+      () => resolve()
+    )
   })
 }
 
-async function startSandbox(_body: unknown): Promise<{ ok: boolean; endpoint?: string; sandboxId?: string; error?: string }> {
+async function startSandbox(
+  body: unknown
+): Promise<{ ok: boolean; endpoint?: string; sandboxId?: string; error?: string }> {
   if (process.platform !== 'win32') {
     return { ok: false, error: 'Windows Host Agent requires Windows platform' }
   }
 
+  const request = (body && typeof body === 'object' ? body : {}) as StartSandboxRequest
+  const timeoutMs = typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs)
+    ? Math.max(1000, request.timeoutMs)
+    : 60000
+  const runtimeApiKey = typeof request.runtimeApiKey === 'string' && request.runtimeApiKey.trim().length > 0
+    ? request.runtimeApiKey.trim()
+    : process.env.HOST_AGENT_RUNTIME_API_KEY || process.env.RUNTIME_API_KEY || API_KEY || undefined
   const listenPort = await allocateListenPort()
   if (listenPort === null) {
     return { ok: false, error: 'No available listen port for new Sandbox runtime' }
   }
 
-  const workspaceRoot = process.env.HOST_AGENT_WORKSPACE || path.join(os.tmpdir(), 'rikune-host-agent')
+  const workspaceRoot =
+    process.env.HOST_AGENT_WORKSPACE || path.join(os.tmpdir(), 'rikune-host-agent')
   const sandboxDir = path.join(workspaceRoot, 'sandbox', randomUUID())
   await fs.mkdir(path.join(sandboxDir, 'inbox'), { recursive: true })
   await fs.mkdir(path.join(sandboxDir, 'outbox'), { recursive: true })
@@ -220,10 +260,12 @@ async function startSandbox(_body: unknown): Promise<{ ok: boolean; endpoint?: s
   }
 
   const wsbPath = path.join(sandboxDir, 'runtime.wsb')
-  await writeWsbConfig(wsbPath, sandboxDir, runtimeEntryHost)
+  await writeWsbConfig(wsbPath, sandboxDir, runtimeEntryHost, runtimeApiKey)
 
   if (process.env.NODE_ENV === 'production' && !API_KEY) {
-    logger.warn('HOST_AGENT_API_KEY is not set. The sandbox runtime is exposed to all network interfaces.')
+    logger.warn(
+      'HOST_AGENT_API_KEY is not set. The sandbox runtime is exposed to all network interfaces.'
+    )
   }
 
   logger.info({ sandboxDir, wsbPath, listenPort }, 'Launching Windows Sandbox via Host Agent')
@@ -234,9 +276,11 @@ async function startSandbox(_body: unknown): Promise<{ ok: boolean; endpoint?: s
     stdio: 'ignore',
   })
 
-  const ready = await waitForRuntimeReady(sandboxDir, 60000)
+  const ready = await waitForRuntimeReady(sandboxDir, timeoutMs)
   if (!ready || !ready.host) {
-    try { sandboxProcess.kill() } catch {}
+    try {
+      sandboxProcess.kill()
+    } catch {}
     releaseListenPort(listenPort)
     await fs.rm(sandboxDir, { recursive: true, force: true })
     return { ok: false, error: 'Sandbox runtime did not become ready within timeout' }
@@ -245,7 +289,10 @@ async function startSandbox(_body: unknown): Promise<{ ok: boolean; endpoint?: s
   try {
     await addPortProxy(ready.host, listenPort)
   } catch (err) {
-    logger.warn({ err, listenPort }, 'Failed to add portproxy; external Analyzer may not reach the runtime')
+    logger.warn(
+      { err, listenPort },
+      'Failed to add portproxy; external Analyzer may not reach the runtime'
+    )
   }
 
   const hostIp = getPrimaryIp() || '127.0.0.1'
@@ -262,7 +309,10 @@ async function startSandbox(_body: unknown): Promise<{ ok: boolean; endpoint?: s
     listenPort,
   })
 
-  logger.info({ sandboxId, endpoint, runtimeHost: ready.host, listenPort }, 'Sandbox started and portproxied')
+  logger.info(
+    { sandboxId, endpoint, runtimeHost: ready.host, listenPort },
+    'Sandbox started and portproxied'
+  )
   return { ok: true, endpoint, sandboxId }
 }
 
@@ -271,9 +321,15 @@ async function stopSandbox(sandboxId: string): Promise<{ ok: boolean; error?: st
   if (!box) {
     return { ok: false, error: 'Sandbox not found' }
   }
-  try { box.process.kill() } catch {}
-  try { await removePortProxy(box.listenPort) } catch {}
-  try { await fs.rm(box.sandboxDir, { recursive: true, force: true }) } catch {}
+  try {
+    box.process.kill()
+  } catch {}
+  try {
+    await removePortProxy(box.listenPort)
+  } catch {}
+  try {
+    await fs.rm(box.sandboxDir, { recursive: true, force: true })
+  } catch {}
   releaseListenPort(box.listenPort)
   activeSandboxes.delete(sandboxId)
   logger.info({ sandboxId, listenPort: box.listenPort }, 'Sandbox stopped and cleaned up')
@@ -307,14 +363,16 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/sandbox/health') {
       if (!requireAuth(req, res)) return
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({
-        ok: true,
-        sandboxes: Array.from(activeSandboxes.values()).map((b) => ({
-          sandboxId: b.sandboxId,
-          endpoint: b.endpoint,
-          runtimeHost: b.runtimeHost,
-        })),
-      }))
+      res.end(
+        JSON.stringify({
+          ok: true,
+          sandboxes: Array.from(activeSandboxes.values()).map((b) => ({
+            sandboxId: b.sandboxId,
+            endpoint: b.endpoint,
+            runtimeHost: b.runtimeHost,
+          })),
+        })
+      )
       return
     }
 
@@ -335,15 +393,14 @@ server.listen(PORT, () => {
 
 process.on('SIGTERM', async () => {
   logger.info('Shutting down Windows Host Agent...')
-  for (const [id, box] of activeSandboxes) {
+  for (const [id] of activeSandboxes) {
     await stopSandbox(id).catch(() => {})
   }
   server.close(() => process.exit(0))
 })
 process.on('SIGINT', async () => {
-  for (const [id, box] of activeSandboxes) {
+  for (const [id] of activeSandboxes) {
     await stopSandbox(id).catch(() => {})
   }
   server.close(() => process.exit(0))
 })
-

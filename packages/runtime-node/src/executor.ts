@@ -8,13 +8,26 @@
 import { spawn } from 'child_process'
 import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import { logger } from './logger.js'
 import { config } from './config.js'
 import { registerProcess } from './process-registry.js'
+import { getPythonCommand } from '@rikune/shared'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+const originalSpawn = spawn
+let spawnProcess: typeof spawn = originalSpawn
+
+export function setSpawnImplementationForTests(mockSpawn?: typeof spawn): void {
+  spawnProcess = mockSpawn ?? originalSpawn
+}
+
+const moduleDirname = typeof __dirname === 'string' ? __dirname : process.cwd()
+
+export type RuntimeBackendType = 'python-worker' | 'spawn' | 'inline'
+
+export interface RuntimeBackendHint {
+  type: RuntimeBackendType
+  handler: string
+}
 
 export interface ExecuteTask {
   taskId: string
@@ -22,10 +35,10 @@ export interface ExecuteTask {
   tool: string
   args: Record<string, unknown>
   timeoutMs: number
-  runtimeBackendHint?: { type: string; handler: string }
+  runtimeBackendHint?: RuntimeBackendHint
 }
 
-function resolveBackendHint(task: ExecuteTask): { type: string; handler: string } | undefined {
+function resolveBackendHint(task: ExecuteTask): RuntimeBackendHint | undefined {
   if (task.runtimeBackendHint) {
     return task.runtimeBackendHint
   }
@@ -52,7 +65,7 @@ export interface ExecuteResult {
   artifactRefs?: { name: string; path: string }[]
 }
 
-const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+const pythonCommand = getPythonCommand()
 
 export async function executeTask(
   task: ExecuteTask,
@@ -94,17 +107,12 @@ export async function executeTask(
       return handler(task, log, logs, onProgress)
     }
     case 'spawn':
-      return {
-        ok: false,
-        taskId: task.taskId,
-        errors: [`Spawn backend for '${spec.handler}' is not yet wired.`],
-        logs,
-      }
+      return executeSpawnBackend(task, spec.handler, log, logs, onProgress)
     default:
       return {
         ok: false,
         taskId: task.taskId,
-        errors: [`Unrecognized execution type: ${(spec as any).type}`],
+        errors: [`Unrecognized execution type: ${String(spec.type)}`],
         logs,
       }
   }
@@ -247,12 +255,322 @@ const inlineHandlers: Record<string, (task: ExecuteTask, log: (msg: string) => v
   executeDebugSession,
 }
 
+const pythonWorkerHandlers: Record<string, { description: string }> = {
+  'frida_worker.py': {
+    description: 'Execute Frida-backed runtime instrumentation through the Python worker bridge.',
+  },
+}
+
+const inlineHandlerDescriptions: Record<string, string> = {
+  executeSandboxExecute: 'Run the sandbox.execute dynamic workflow inline inside the runtime node.',
+  executeSpeakeasyEmulate: 'Run Speakeasy user-mode emulation inline inside the runtime node.',
+  executeSpeakeasyShellcode: 'Run Speakeasy shellcode emulation inline inside the runtime node.',
+  executeSpeakeasyApiTrace: 'Collect API traces from Speakeasy inline execution.',
+  executeWineRun: 'Run or preflight Wine execution inline inside the runtime node.',
+  executeWineEnv: 'Inspect or prepare Wine environment state inline inside the runtime node.',
+  executeWineDllOverrides: 'Configure Wine DLL override behavior inline inside the runtime node.',
+  executeWineReg: 'Read or write Wine registry values inline inside the runtime node.',
+  executeDynamicMemoryDump: 'Capture dynamic memory dumps inline inside the runtime node.',
+  executeQilingInspect: 'Run Qiling-backed inspection inline inside the runtime node.',
+  executePandaInspect: 'Run PANDA-backed inspection inline inside the runtime node.',
+  executeManagedSafeRun: 'Run managed sandbox analysis inline inside the runtime node.',
+  executeDebugSession: 'Handle debug-session lifecycle and inspection requests inline inside the runtime node.',
+}
+
+interface SpawnExecutionPlan {
+  command: string
+  args: string[]
+  cwd?: string
+  env?: NodeJS.ProcessEnv
+}
+
+interface SpawnBackendHandler {
+  description: string
+  requiresSample?: boolean
+  preflight?: () => Promise<string | undefined>
+  buildPlan: (task: ExecuteTask, samplePath?: string) => SpawnExecutionPlan
+}
+
+const spawnHandlers: Record<string, SpawnBackendHandler> = {
+  'native.sample.execute': {
+    description: 'Execute the uploaded sample directly as a child process.',
+    requiresSample: true,
+    buildPlan(task, samplePath) {
+      return {
+        command: samplePath!,
+        args: readStringArrayArg(task.args, 'arguments', 'args'),
+      }
+    },
+  },
+  'wine.sample.run': {
+    description: 'Execute the uploaded sample under Wine as a spawned process.',
+    requiresSample: true,
+    preflight: async () => {
+      if (await checkCommandAvailable('wine')) return undefined
+      return 'Wine is not available in the runtime environment.'
+    },
+    buildPlan(task, samplePath) {
+      return {
+        command: 'wine',
+        args: [samplePath!, ...readStringArrayArg(task.args, 'arguments', 'args')],
+      }
+    },
+  },
+  'winedbg.sample.run': {
+    description: 'Execute the uploaded sample under winedbg as a spawned process.',
+    requiresSample: true,
+    preflight: async () => {
+      if (await checkCommandAvailable('winedbg')) return undefined
+      return 'winedbg is not available in the runtime environment.'
+    },
+    buildPlan(task, samplePath) {
+      return {
+        command: 'winedbg',
+        args: [samplePath!, ...readStringArrayArg(task.args, 'arguments', 'args')],
+      }
+    },
+  },
+  'dotnet.sample.run': {
+    description: 'Execute the uploaded sample through dotnet as a spawned process.',
+    requiresSample: true,
+    preflight: async () => {
+      if (await checkCommandAvailable('dotnet')) return undefined
+      return 'dotnet CLI is not available in the runtime environment.'
+    },
+    buildPlan(task, samplePath) {
+      return {
+        command: 'dotnet',
+        args: [samplePath!, ...readStringArrayArg(task.args, 'arguments', 'args')],
+      }
+    },
+  },
+}
+
+export interface RuntimeBackendCapability {
+  type: RuntimeBackendType
+  handler: string
+  description: string
+  requiresSample: boolean
+}
+
+interface RuntimeBackendCapabilityDetails extends RuntimeBackendCapability {
+  key: string
+}
+
+function getRuntimeBackendCapabilityKey(type: RuntimeBackendType, handler: string): string {
+  return `${type}:${handler}`
+}
+
+const runtimeBackendCapabilityRegistry: RuntimeBackendCapabilityDetails[] = [
+  ...Object.entries(pythonWorkerHandlers).map(([handler, definition]) => ({
+    key: getRuntimeBackendCapabilityKey('python-worker', handler),
+    type: 'python-worker' as const,
+    handler,
+    description: definition.description,
+    requiresSample: true,
+  })),
+  ...Object.entries(spawnHandlers).map(([handler, definition]) => ({
+    key: getRuntimeBackendCapabilityKey('spawn', handler),
+    type: 'spawn' as const,
+    handler,
+    description: definition.description,
+    requiresSample: definition.requiresSample !== false,
+  })),
+  ...Object.entries(inlineHandlerDescriptions).map(([handler, description]) => ({
+    key: getRuntimeBackendCapabilityKey('inline', handler),
+    type: 'inline' as const,
+    handler,
+    description,
+    requiresSample: true,
+  })),
+]
+
+const runtimeBackendCapabilityIndex = new Map(
+  runtimeBackendCapabilityRegistry.map((entry) => [entry.key, entry] satisfies [string, RuntimeBackendCapabilityDetails]),
+)
+
+export function listRuntimeBackendCapabilities(): RuntimeBackendCapability[] {
+  return runtimeBackendCapabilityRegistry.map(({ key: _key, ...capability }) => ({ ...capability }))
+}
+
+export function getRuntimeBackendCapability(hint: RuntimeBackendHint): RuntimeBackendCapability | undefined {
+  const capability = runtimeBackendCapabilityIndex.get(getRuntimeBackendCapabilityKey(hint.type, hint.handler))
+  if (!capability) {
+    return undefined
+  }
+  const { key: _key, ...result } = capability
+  return { ...result }
+}
+
+export function isRuntimeBackendHintSupported(hint: RuntimeBackendHint): boolean {
+  return getRuntimeBackendCapability(hint) !== undefined
+}
+
+function readStringArrayArg(args: Record<string, unknown>, ...keys: string[]): string[] {
+  for (const key of keys) {
+    const value = args[key]
+    if (Array.isArray(value) && value.every((entry) => typeof entry === 'string')) {
+      return [...value]
+    }
+  }
+  return []
+}
+
+function tryParseStructuredSpawnResult(stdout: string): ExecuteResult['result'] | undefined {
+  const trimmed = stdout.trim()
+  if (!trimmed) {
+    return undefined
+  }
+
+  const candidates = [trimmed, trimmed.split(/\r?\n/).filter(Boolean).slice(-1)[0]].filter(Boolean) as string[]
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate)
+      if (!parsed || typeof parsed !== 'object') {
+        continue
+      }
+      const payload = parsed as Record<string, unknown>
+      return {
+        ok: typeof payload.ok === 'boolean' ? payload.ok : true,
+        data: 'data' in payload ? payload.data : payload,
+        errors: Array.isArray(payload.errors) ? payload.errors.filter((entry): entry is string => typeof entry === 'string') : undefined,
+        warnings: Array.isArray(payload.warnings) ? payload.warnings.filter((entry): entry is string => typeof entry === 'string') : undefined,
+        artifacts: Array.isArray(payload.artifacts) ? payload.artifacts : undefined,
+        metrics: payload.metrics && typeof payload.metrics === 'object' ? payload.metrics as Record<string, unknown> : undefined,
+      }
+    } catch {
+      // fall through and keep treating stdout as plain text
+    }
+  }
+
+  return undefined
+}
+
+async function executeSpawnBackend(
+  task: ExecuteTask,
+  handlerName: string,
+  log: (msg: string) => void,
+  logs: string[],
+  onProgress?: (progress: number, message?: string) => void,
+): Promise<ExecuteResult> {
+  const handler = spawnHandlers[handlerName]
+  if (!handler) {
+    return {
+      ok: false,
+      taskId: task.taskId,
+      errors: [`Spawn handler '${handlerName}' is not registered.`],
+      logs,
+    }
+  }
+
+  const samplePath = handler.requiresSample === false
+    ? undefined
+    : path.join(config.runtime.inbox, `${task.taskId}.sample`)
+
+  if (samplePath && !fs.existsSync(samplePath)) {
+    return {
+      ok: false,
+      taskId: task.taskId,
+      errors: [`Sample file not found in runtime inbox: ${samplePath}`],
+      logs,
+    }
+  }
+
+  const preflightError = await handler.preflight?.()
+  if (preflightError) {
+    return {
+      ok: false,
+      taskId: task.taskId,
+      errors: [preflightError],
+      logs,
+    }
+  }
+
+  const plan = handler.buildPlan(task, samplePath)
+  log(`Spawning command backend '${handlerName}': ${plan.command} ${plan.args.join(' ')}`.trim())
+  onProgress?.(0.05, `Spawn backend '${handlerName}' started`)
+
+  return new Promise<ExecuteResult>((resolve) => {
+    const child = spawnProcess(plan.command, plan.args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: task.timeoutMs,
+      cwd: plan.cwd,
+      env: {
+        ...process.env,
+        ...plan.env,
+      },
+      windowsHide: true,
+    })
+    registerProcess(task.taskId, child)
+
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout.on('data', (data) => {
+      stdout += data.toString()
+    })
+
+    child.stderr.on('data', (data) => {
+      stderr += data.toString()
+    })
+
+    child.on('error', (error) => {
+      resolve({
+        ok: false,
+        taskId: task.taskId,
+        errors: [`Failed to spawn backend '${handlerName}': ${error.message}`],
+        logs: [...logs, stderr].filter(Boolean),
+      })
+    })
+
+    child.on('close', (code, signal) => {
+      onProgress?.(1, code === 0 ? `Spawn backend '${handlerName}' completed` : `Spawn backend '${handlerName}' failed`)
+
+      const parsedResult = tryParseStructuredSpawnResult(stdout)
+      const stagedArtifacts = stageArtifactsToOutbox(task.taskId, parsedResult?.artifacts, log)
+      const defaultData = {
+        backend: handlerName,
+        command: plan.command,
+        args: plan.args,
+        exitCode: code,
+        signal: signal ?? null,
+        stdout,
+        stderr,
+        samplePath,
+      }
+      const result = parsedResult
+        ? {
+            ...parsedResult,
+            data: parsedResult.data ?? defaultData,
+            artifacts: parsedResult.artifacts,
+          }
+        : {
+            ok: code === 0,
+            data: defaultData,
+            errors: code === 0 ? undefined : [`Spawn backend '${handlerName}' exited with code ${code}${signal ? ` (signal ${signal})` : ''}.`],
+            warnings: undefined,
+            artifacts: undefined,
+            metrics: undefined,
+          }
+
+      resolve({
+        ok: code === 0 && (parsedResult?.ok ?? true),
+        taskId: task.taskId,
+        result,
+        logs: [...logs, stderr].filter(Boolean),
+        errors: code === 0 ? undefined : [`Spawn backend '${handlerName}' exited with code ${code}${signal ? ` (signal ${signal})` : ''}.`],
+        artifactRefs: stagedArtifacts,
+      })
+    })
+  })
+}
+
 function resolveWorkerPath(workerName: string): string | null {
   const mappedWorkersDir = 'C:\\rikune-workers'
   const candidates = [
     path.join(mappedWorkersDir, workerName),
-    path.join(__dirname, '..', '..', '..', 'workers', workerName),
-    path.join(__dirname, '..', '..', '..', '..', 'workers', workerName),
+    path.join(moduleDirname, '..', '..', '..', 'workers', workerName),
+    path.join(moduleDirname, '..', '..', '..', '..', 'workers', workerName),
   ]
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
@@ -298,7 +616,7 @@ function stageArtifactsToOutbox(
 
 async function checkPythonAvailable(): Promise<boolean> {
   try {
-    const pythonCheck = spawn(pythonCommand, ['--version'], { stdio: 'ignore' })
+    const pythonCheck = spawnProcess(pythonCommand, ['--version'], { stdio: 'ignore' })
     await new Promise<void>((resolve, reject) => {
       pythonCheck.on('close', (code) => (code === 0 ? resolve() : reject(new Error('Python not available'))))
       pythonCheck.on('error', reject)
@@ -311,7 +629,7 @@ async function checkPythonAvailable(): Promise<boolean> {
 
 async function checkPythonModuleAvailable(moduleName: string): Promise<boolean> {
   try {
-    const check = spawn(pythonCommand, ['-c', `import ${moduleName}`], { stdio: 'ignore' })
+    const check = spawnProcess(pythonCommand, ['-c', `import ${moduleName}`], { stdio: 'ignore' })
     await new Promise<void>((resolve, reject) => {
       check.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`Module ${moduleName} not available`))))
       check.on('error', reject)
@@ -324,7 +642,7 @@ async function checkPythonModuleAvailable(moduleName: string): Promise<boolean> 
 
 async function checkCommandAvailable(cmd: string): Promise<boolean> {
   try {
-    const check = spawn(cmd, ['--version'], { stdio: 'ignore' })
+    const check = spawnProcess(cmd, ['--version'], { stdio: 'ignore' })
     await new Promise<void>((resolve, reject) => {
       check.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} not available`))))
       check.on('error', reject)
@@ -392,7 +710,7 @@ export async function executePythonWorker(
   log(`Spawning worker: ${workerPath} for tool ${task.tool}`)
 
   return new Promise<ExecuteResult>((resolve) => {
-    const child = spawn(pythonCommand, [workerPath], {
+    const child = spawnProcess(pythonCommand, [workerPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: task.timeoutMs,
     })
@@ -518,7 +836,7 @@ async function runPythonInline(
   }
 
   return new Promise<ExecuteResult>((resolve) => {
-    const child = spawn(pythonCommand, ['-c', script, ...args], {
+    const child = spawnProcess(pythonCommand, ['-c', script, ...args], {
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: task.timeoutMs + 10000,
     })
@@ -839,7 +1157,7 @@ print(json.dumps(result))
 
   log(`Spawning sandbox.execute directly for ${samplePath}`)
   return new Promise<ExecuteResult>((resolve) => {
-    const child = spawn(samplePath, [String(task.args.command_line_args || '')], {
+    const child = spawnProcess(samplePath, [String(task.args.command_line_args || '')], {
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: timeoutMs,
       windowsHide: true,
@@ -1060,7 +1378,7 @@ export async function executeWineRun(
   log(`Spawning wine run: ${wineCmd} ${wineArgs.join(' ')}`)
 
   return new Promise<ExecuteResult>((resolve) => {
-    const child = spawn(wineCmd, wineArgs, {
+    const child = spawnProcess(wineCmd, wineArgs, {
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: task.timeoutMs,
       windowsHide: true,
@@ -1124,7 +1442,7 @@ export async function executeWineEnv(
   const wineArgs = process.platform === 'win32' ? ['/c', 'set'] : ['cmd', '/c', 'set']
   log(`Querying wine environment`)
   return new Promise<ExecuteResult>((resolve) => {
-    const child = spawn(wineCmd, wineArgs, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, windowsHide: true })
+    const child = spawnProcess(wineCmd, wineArgs, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, windowsHide: true })
     registerProcess(task.taskId, child)
     let stdout = ''
     let stderr = ''
@@ -1164,7 +1482,7 @@ export async function executeWineDllOverrides(
   const env = { ...process.env, WINEDLLOVERRIDES: Object.entries(overrides || {}).map(([k, v]) => `${k}=${v}`).join(';') }
   log(`Setting WINEDLLOVERRIDES`)
   return new Promise<ExecuteResult>((resolve) => {
-    const child = spawn(wineCmd, ['regedit', '/?'], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env, windowsHide: true })
+    const child = spawnProcess(wineCmd, ['regedit', '/?'], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env, windowsHide: true })
     registerProcess(task.taskId, child)
     let stdout = ''
     child.stdout.on('data', (d) => { stdout += d.toString() })
@@ -1209,7 +1527,7 @@ export async function executeWineReg(
 
   log(`Spawning wine reg: ${wineCmd} ${wineArgs.join(' ')}`)
   return new Promise<ExecuteResult>((resolve) => {
-    const child = spawn(wineCmd, wineArgs, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, windowsHide: true })
+    const child = spawnProcess(wineCmd, wineArgs, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, windowsHide: true })
     registerProcess(task.taskId, child)
     let stdout = ''
     let stderr = ''
@@ -1474,7 +1792,7 @@ export async function executeDebugSession(
   log(`Spawning debug session tool=${task.tool} with cdb`)
 
   return new Promise<ExecuteResult>((resolve) => {
-    const child = spawn(cdbPath, cdbArgs, { stdio: ['ignore', 'pipe', 'pipe'], timeout: task.timeoutMs, windowsHide: true })
+    const child = spawnProcess(cdbPath, cdbArgs, { stdio: ['ignore', 'pipe', 'pipe'], timeout: task.timeoutMs, windowsHide: true })
     registerProcess(task.taskId, child)
     let stdout = ''
     let stderr = ''

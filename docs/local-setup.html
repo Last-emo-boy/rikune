@@ -352,6 +352,10 @@ node dist/index.js</pre>
         <span data-lang-en>💡 <strong>Tip:</strong> You don't need to install all tools. Start with the basics and add tools as your workflow demands. Rikune gracefully disables tools whose dependencies are missing.</span>
         <span data-lang-zh>💡 <strong>提示</strong>：不需要安装所有工具。从基础开始，按需添加。Rikune 会优雅地禁用缺少依赖的工具。</span>
       </blockquote>
+      <blockquote>
+        <span data-lang-en><strong>Runtime note:</strong> For local static-only work, keep <code>RUNTIME_MODE=disabled</code>. If you run the analyzer natively on Windows, you can opt into <code>auto-sandbox</code> to launch Windows Sandbox for real sample execution. Linux or WSL analyzers must use <code>manual</code> or <code>remote-sandbox</code> to reach a separate Windows Runtime Node / Host Agent.</span>
+        <span data-lang-zh><strong>运行时说明：</strong>如果只是本地静态分析，请保持 <code>RUNTIME_MODE=disabled</code>。如果 analyzer 原生运行在 Windows 上，可以开启 <code>auto-sandbox</code>，通过 Windows Sandbox 执行真实样本。Linux 或 WSL 中的 analyzer 必须使用 <code>manual</code> 或 <code>remote-sandbox</code> 连接独立的 Windows Runtime Node / Host Agent。</span>
+      </blockquote>
     </section>
 
     <!-- Environment Config -->
@@ -374,6 +378,19 @@ LOG_LEVEL=info
 API_ENABLED=true
 API_PORT=18080
 API_STORAGE_ROOT=~/.rikune/storage
+
+<span class="comment"># Runtime mode (pick one shape)</span>
+RUNTIME_MODE=disabled
+# Windows-native single-host execution:
+# RUNTIME_MODE=auto-sandbox
+# Split analyzer/runtime deployment:
+# RUNTIME_MODE=manual
+# RUNTIME_ENDPOINT=http://windows-vm-ip:18081
+# RUNTIME_MODE=remote-sandbox
+# RUNTIME_HOST_AGENT_ENDPOINT=http://windows-host-ip:18082
+# RUNTIME_HOST_AGENT_API_KEY=change-me
+# Optional if the Windows Runtime Node also requires its own key:
+# RUNTIME_API_KEY=change-me
 
 <span class="comment"># Ghidra (set if installed)</span>
 GHIDRA_INSTALL_DIR=/opt/ghidra

@@ -23,6 +23,7 @@ import {
   mergeRequiredUserInputs,
 } from '../../../setup-guidance.js'
 import { resolveAnalysisBackends } from '../../../static-backend-discovery.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'dynamic.dependencies'
 const TOOL_VERSION = '0.1.0'
@@ -188,7 +189,7 @@ function buildBootstrapFallback(startTime: number, errorMessage: string): Worker
 async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse> {
   return new Promise((resolve, reject) => {
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
-    const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+    const pythonCommand = getPythonCommand()
     const pythonProcess = spawn(pythonCommand, [workerPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
     })

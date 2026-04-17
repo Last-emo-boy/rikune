@@ -363,6 +363,19 @@ export interface PluginStatus {
   configFields?: PluginConfigField[]
   /** Results of system dependency checks (populated at load time). */
   depChecks?: DepCheckResult[]
+  /** Short machine-friendly reason code for skips/errors exposed to control-plane views. */
+  reasonCode?:
+    | 'disabled-by-config'
+    | 'role-incompatible'
+    | 'missing-dependency'
+    | 'prerequisite-check-failed'
+    | 'system-deps-missing'
+    | 'registration-failed'
+    | 'manually-unloaded'
+  /** Human-readable explanation of the current status or skip/error outcome. */
+  statusDetail?: string
+  /** Unified control-plane status used by dashboard/ops surfaces. */
+  controlPlaneStatus?: 'pending' | 'active' | 'completed' | 'failed' | 'cancelled' | 'recoverable'
   error?: string
 }
 

@@ -10,6 +10,7 @@ import { graphvizRenderToolDefinition, createGraphvizRenderHandler } from './too
 const graphvizPlugin: Plugin = {
   id: 'graphviz',
   name: 'Graphviz',
+  executionDomain: 'static',
   surfaceRules: { tier: 0, category: 'static-analysis' },
   description: 'Graph rendering via Graphviz dot',
   version: '1.0.0',

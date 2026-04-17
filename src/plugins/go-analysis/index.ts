@@ -12,6 +12,7 @@ import { goBinaryAnalyzeToolDefinition, createGoBinaryAnalyzeHandler } from './t
 const goAnalysisPlugin: Plugin = {
   id: 'go-analysis',
   name: 'Go Analysis',
+  executionDomain: 'static',
   surfaceRules: { tier: 2, activateOn: { findings: ['go'] }, category: 'go-analysis' },
   description: 'Go binary symbol and type recovery using Mandiant GoReSym',
   version: '1.0.0',

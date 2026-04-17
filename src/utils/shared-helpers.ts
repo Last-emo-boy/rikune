@@ -103,8 +103,13 @@ export function escapeMermaid(text: string): string {
   return text.replace(/"/g, "'").replace(/\n/g, ' ')
 }
 
-export function getPythonCommand(platform: NodeJS.Platform = process.platform): string {
-  return platform === 'win32' ? 'python' : 'python3'
+export function getPythonCommand(platform: NodeJS.Platform = process.platform, overridePath?: string): string {
+  if (overridePath) return overridePath
+  if (platform === 'win32') {
+    // Prefer Windows Python Launcher if available; fallback to bare 'python'
+    return 'python'
+  }
+  return 'python3'
 }
 
 export function extractJsonCandidates(rawText: string): string[] {

@@ -20,6 +20,7 @@ import {
   callStaticWorker as callPooledStaticWorker,
 } from '../../../tools/static-worker-client.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 // ============================================================================
 // Constants
@@ -142,7 +143,7 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
     
     // Spawn Python process
-    const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+    const pythonCommand = getPythonCommand()
     const pythonProcess = spawn(pythonCommand, [workerPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
     })

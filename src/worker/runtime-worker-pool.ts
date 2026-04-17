@@ -4,6 +4,7 @@ import type { DatabaseManager } from '../database.js'
 import { config } from '../config.js'
 import { logger } from '../logger.js'
 import { resolvePackagePath } from '../runtime-paths.js'
+import { getPythonCommand } from '../utils/shared-helpers.js'
 
 export interface RuntimeWorkerPoolLeaseMetadata {
   family: string
@@ -75,7 +76,7 @@ export function buildStaticWorkerCompatibilityKey(request: StaticWorkerRequestLi
       request.args?.mode ||
       request.args?.analysis_mode ||
       'default',
-    python: config.workers.static.pythonPath || (process.platform === 'win32' ? 'python' : 'python3'),
+    python: getPythonCommand(undefined, config.workers.static.pythonPath),
     worker_path: resolvePackagePath('workers', 'static_worker.py'),
   })
   return createHash('sha256').update(payload).digest('hex')
@@ -117,8 +118,7 @@ export class RuntimeWorkerPool {
       compatibilityKey: options.compatibilityKey || buildStaticWorkerCompatibilityKey(request),
       spawnConfig: {
         command:
-          config.workers.static.pythonPath ||
-          (process.platform === 'win32' ? 'python' : 'python3'),
+          getPythonCommand(undefined, config.workers.static.pythonPath),
         args: [resolvePackagePath('workers', 'static_worker.py')],
       },
     })

@@ -8,6 +8,7 @@ import { accessSync } from 'fs'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import type { PluginSystemDep, DepCheckResult } from '../../plugins/sdk.js'
+import { getPythonCommand } from '../../utils/shared-helpers.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -43,7 +44,7 @@ export async function checkOneDep(dep: PluginSystemDep): Promise<DepCheckResult>
       case 'python': {
         const mod = dep.importName ?? dep.name
         await execFileAsync(
-          process.platform === 'win32' ? 'python' : 'python3',
+          getPythonCommand(),
           ['-c', `import ${mod}; print(getattr(${mod}, '__version__', 'ok'))`],
           { timeout: 10000 },
         )

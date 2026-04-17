@@ -764,37 +764,41 @@ packages/plugin-sdk/         Standalone Plugin SDK npm package
 docs/                        Documentation
   ARCHITECTURE.md            Internal architecture guide
   PLUGINS.md                 Plugin system guide
-  DOCKER.md                  Docker deployment guide (with service inventory)
-  API-FILE-SERVER.md         HTTP API usage guide
-  API-REFERENCE.md           Complete API reference
-  QUALITY_EVALUATION.md      Evaluation checklist for release readiness
+  index.html                 Documentation landing page
+  docker.html                Docker deployment guide
+  local-setup.html           Local installation guide
+  api-reference.html         HTTP and MCP API reference
+  faq.html                   Common deployment and usage questions
 ```
 
 ## Prerequisites
 
-### Option 1: Docker (Recommended - Zero Configuration)
+### Option 1: Docker (Linux Analyzer)
 
-The easiest way to run the MCP server with all dependencies pre-installed:
+The easiest way to run Rikune with a prebuilt Linux analysis stack. Use this when
+you want static or offline analysis in Docker and optionally delegate real sample
+execution to a separate Windows runtime.
 
 ```bash
-# Build the Docker image (10-15 minutes, ~2.5GB)
+# Static-only analyzer (safe default, no runtime connection required)
+docker compose -f docker-compose.analyzer.yml up -d
+
+# Hybrid analyzer that delegates runtime work to a Windows Runtime node / Host Agent
+docker compose -f docker-compose.hybrid.yml up -d
+
+# Or run the Linux analysis image directly over stdio
 docker build -t rikune:latest .
-
-# Or pull from registry (when published)
-# docker pull ghcr.io/last-emo-boy/rikune:latest
-
-# Run with Docker Compose
-docker-compose up -d mcp-server
-
-# Or run directly
 docker run --rm -i \
   --network=none \
   -v ./samples:/samples:ro \
   -v ~/.rikune/workspaces:/app/workspaces \
+  -v ~/.rikune/data:/app/data \
+  -v ~/.rikune/cache:/app/cache \
   rikune:latest
 ```
 
-See [`docs/DOCKER.md`](./docs/DOCKER.md) for complete Docker documentation.
+See [`DEPLOYMENT.md`](./DEPLOYMENT.md) and [`docs/docker.html`](./docs/docker.html) for
+full deployment guidance.
 
 The default Docker image is now a full Linux-side analysis stack. In addition to
 the baseline `Ghidra`, `capa`, `Detect It Easy`, `FLOSS`, `legacy YARA`, and
@@ -805,6 +809,10 @@ the baseline `Ghidra`, `capa`, `Detect It Easy`, `FLOSS`, `legacy YARA`, and
 
 Important caveats:
 
+- `docker-compose.analyzer.yml` now defaults to `RUNTIME_MODE=disabled`, making it a true static-only Linux analyzer unless you explicitly switch to `manual` or `remote-sandbox`.
+- Docker or WSL analyzers cannot use `auto-sandbox`; that mode requires a Windows-native analyzer process.
+- For real sample execution from Linux Docker, use `RUNTIME_MODE=manual` or `RUNTIME_MODE=remote-sandbox` and connect to a Windows Runtime node or Windows Host Agent.
+- If you need single-host dynamic execution on Windows, run the analyzer natively on Windows and set `RUNTIME_MODE=auto-sandbox`.
 - `Qiling` still needs an externally mounted Windows rootfs via `QILING_ROOTFS`.
 - `Wine` and `winedbg` are useful Linux-hosted user-mode helpers, not full Windows desktop debugging replacements.
 - `RetDec` is a heavy backend and should be consumed artifact-first instead of returning oversized inline payloads.
@@ -813,9 +821,9 @@ Important caveats:
 
 Required:
 
-- Node.js 18+
-- npm 9+
-- Python 3.9+
+- Node.js 22+
+- npm 10+
+- Python 3.11+
 
 Optional but strongly recommended:
 

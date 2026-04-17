@@ -10,6 +10,7 @@
 import { z } from 'zod'
 import { spawn } from 'child_process'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'managed.fake_c2'
 
@@ -83,7 +84,7 @@ export function createFakeC2Handler(deps: PluginToolDeps) {
     workspaceManager, database, config,
     resolvePrimarySamplePath, persistStaticAnalysisJsonArtifact, resolvePackagePath,
   } = deps
-  const pythonCmd = config?.workers?.static?.pythonPath || (process.platform === 'win32' ? 'python' : 'python3')
+  const pythonCmd = getPythonCommand(undefined, config?.workers?.static?.pythonPath)
 
   return async (args: z.infer<typeof FakeC2InputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()

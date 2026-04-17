@@ -13,7 +13,12 @@ export {
   type RuntimeClientOptions,
   type RuntimeExecuteRequest,
   type RuntimeExecuteResponse,
+  type RuntimeBackendCapability,
+  type RuntimeBackendHintValidationResult,
   type RuntimeHealthResponse,
+  type RuntimeSseEvent,
+  type RuntimeEventSubscription,
+  type RuntimeEventStreamOptions,
 } from './runtime-client.js'
 
 export {

@@ -4,10 +4,14 @@
  * GET /api/v1/ready    — readiness probe (checks all dependencies)
  */
 
+import { spawn } from 'child_process'
+import fs from 'fs'
 import type { ServerResponse } from 'http'
 import type { DatabaseManager } from '../../database.js'
 import type { StorageManager } from '../../storage/storage-manager.js'
 import type { JobQueue } from '../../job-queue.js'
+import { config } from '../../config.js'
+import type { RuntimeClientOptions } from '../../runtime-client/runtime-client.js'
 
 export interface HealthResponse {
   status: string
@@ -34,6 +38,7 @@ export interface HealthDependencies {
   database?: DatabaseManager
   storageManager?: StorageManager
   jobQueue?: JobQueue
+  runtimeClient?: { health(): Promise<{ ok: boolean } | null> } | null
 }
 
 /** Singleton holder — set once during server init. */
@@ -41,6 +46,73 @@ let _deps: HealthDependencies = {}
 
 export function setHealthDependencies(deps: HealthDependencies): void {
   _deps = deps
+}
+
+async function runCommandCheck(cmd: string, args: string[], timeoutMs = 5000): Promise<{ ok: boolean; message?: string }> {
+  return new Promise((resolve) => {
+    const proc = spawn(cmd, args, { stdio: 'ignore', timeout: timeoutMs })
+    let killed = false
+    const timer = setTimeout(() => {
+      killed = true
+      proc.kill()
+      resolve({ ok: false, message: 'timeout' })
+    }, timeoutMs)
+    proc.on('error', () => {
+      clearTimeout(timer)
+      if (!killed) resolve({ ok: false, message: 'not found' })
+    })
+    proc.on('close', (code) => {
+      clearTimeout(timer)
+      if (!killed) resolve({ ok: code === 0 })
+    })
+  })
+}
+
+async function checkGhidra(): Promise<ComponentCheck> {
+  const ghidraDir = process.env.GHIDRA_INSTALL_DIR
+  if (!ghidraDir || !fs.existsSync(ghidraDir)) {
+    return { status: 'fail', message: `GHIDRA_INSTALL_DIR not found: ${ghidraDir || 'unset'}` }
+  }
+  const analyzeHeadless = `${ghidraDir}/support/analyzeHeadless`
+  if (!fs.existsSync(analyzeHeadless)) {
+    return { status: 'fail', message: 'analyzeHeadless missing' }
+  }
+  const javaRes = await runCommandCheck('java', ['-version'], 3000)
+  if (!javaRes.ok) {
+    return { status: 'fail', message: `Java unavailable: ${javaRes.message}` }
+  }
+  return { status: 'ok' }
+}
+
+async function checkPython(): Promise<ComponentCheck> {
+  const res = await runCommandCheck('python3', ['--version'], 3000)
+  if (!res.ok) {
+    const fallback = await runCommandCheck('python', ['--version'], 3000)
+    if (!fallback.ok) return { status: 'fail', message: 'Python not found' }
+  }
+  return { status: 'ok' }
+}
+
+async function checkExternalBackend(name: string, cmd: string, args: string[]): Promise<ComponentCheck> {
+  const res = await runCommandCheck(cmd, args, 3000)
+  return res.ok ? { status: 'ok' } : { status: 'fail', message: `${name} unavailable: ${res.message}` }
+}
+
+async function checkRuntimeConnection(): Promise<ComponentCheck> {
+  if (config.runtime.mode === 'disabled') {
+    return { status: 'ok', message: 'runtime disabled' }
+  }
+  const client = _deps.runtimeClient
+  if (!client) {
+    return { status: 'degraded', message: `runtime mode=${config.runtime.mode} but no runtime client connected` }
+  }
+  try {
+    const health = await client.health()
+    if (health?.ok) return { status: 'ok' }
+    return { status: 'degraded', message: 'runtime node unhealthy' }
+  } catch (err) {
+    return { status: 'degraded', message: `runtime health check failed: ${(err as Error).message}` }
+  }
 }
 
 /**
@@ -92,6 +164,17 @@ export async function handleReadinessCheck(
       message: `queue=${_deps.jobQueue.getQueueLength()} total=${_deps.jobQueue.getTotalJobs()}`,
     }
   }
+
+  // Analyzer-specific backend checks
+  if (config.node.role === 'analyzer' || config.node.role === 'hybrid') {
+    checks.ghidra = await checkGhidra()
+    checks.python = await checkPython()
+    checks.rizin = await checkExternalBackend('rizin', 'rizin', ['-v'])
+    checks.capa = await checkExternalBackend('capa', 'capa', ['--version'])
+  }
+
+  // Runtime connection check
+  checks.runtime = await checkRuntimeConnection()
 
   // Determine overall status
   const allChecks = Object.values(checks)
