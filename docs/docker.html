@@ -1,174 +1,313 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Docker Setup — Rikune</title>
-<meta name="description" content="Docker deployment guide for Rikune analyzer/runtime split deployments, static-only Linux analyzers, and hybrid Windows runtime setups.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/style.css">
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Docker Setup — Rikune</title>
+    <meta
+      name="description"
+      content="Docker deployment guide for Rikune analyzer/runtime split deployments, static-only Linux analyzers, and hybrid Windows runtime setups."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/style.css" />
+  </head>
+  <body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow--1"></div>
+    <div class="bg-glow bg-glow--2"></div>
+    <canvas id="particles"></canvas>
 
-<div class="bg-grid"></div>
-<div class="bg-glow bg-glow--1"></div>
-<div class="bg-glow bg-glow--2"></div>
-<canvas id="particles"></canvas>
+    <!-- Navigation -->
+    <nav class="nav" id="nav">
+      <div class="nav__inner">
+        <a href="index.html" class="nav__logo"><span class="nav__logo-icon">R</span> Rikune</a>
+        <ul class="nav__links" id="navLinks">
+          <li>
+            <a href="index.html#features" data-lang-en>Features</a
+            ><a href="index.html#features" data-lang-zh>功能特性</a>
+          </li>
+          <li><a href="api-reference.html">API</a></li>
+          <li>
+            <a href="usage.html" data-lang-en>Usage</a
+            ><a href="usage.html" data-lang-zh>使用指南</a>
+          </li>
+          <li>
+            <a href="local-setup.html"
+              ><span data-lang-en>Local</span><span data-lang-zh>本地</span></a
+            >
+          </li>
+          <li><a href="docker.html" class="active">Docker</a></li>
+          <li>
+            <a href="examples.html" data-lang-en>Examples</a
+            ><a href="examples.html" data-lang-zh>示例</a>
+          </li>
+          <li>
+            <a href="plugins.html" data-lang-en>Plugins</a
+            ><a href="plugins.html" data-lang-zh>插件</a>
+          </li>
+          <li>
+            <a href="anti-obfuscation.html" data-lang-en>Anti-Obf</a
+            ><a href="anti-obfuscation.html" data-lang-zh>反混淆</a>
+          </li>
+          <li><a href="faq.html">FAQ</a></li>
+        </ul>
+        <div class="nav__right">
+          <button class="lang-toggle" id="lang-toggle">中文</button>
+          <a
+            href="https://github.com/Last-emo-boy/rikune"
+            class="nav__cta"
+            target="_blank"
+            rel="noopener"
+            >GitHub →</a
+          >
+        </div>
+        <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </nav>
 
-<!-- Navigation -->
-<nav class="nav" id="nav">
-  <div class="nav__inner">
-    <a href="index.html" class="nav__logo"><span class="nav__logo-icon">R</span> Rikune</a>
-    <ul class="nav__links" id="navLinks">
-      <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特性</a></li>
-      <li><a href="api-reference.html">API</a></li>
-      <li><a href="usage.html" data-lang-en>Usage</a><a href="usage.html" data-lang-zh>使用指南</a></li>
-      <li><a href="local-setup.html"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
-      <li><a href="docker.html" class="active">Docker</a></li>
-      <li><a href="examples.html" data-lang-en>Examples</a><a href="examples.html" data-lang-zh>示例</a></li>
-      <li><a href="plugins.html" data-lang-en>Plugins</a><a href="plugins.html" data-lang-zh>插件</a></li>
-      <li><a href="anti-obfuscation.html" data-lang-en>Anti-Obf</a><a href="anti-obfuscation.html" data-lang-zh>反混淆</a></li>
-      <li><a href="faq.html">FAQ</a></li>
-    </ul>
-    <div class="nav__right">
-      <button class="lang-toggle" id="lang-toggle">中文</button>
-      <a href="https://github.com/Last-emo-boy/rikune" class="nav__cta" target="_blank" rel="noopener">GitHub →</a>
+    <!-- Hero -->
+    <div class="page-hero">
+      <div class="container">
+        <div class="breadcrumb"><a href="index.html">Rikune</a> / Docker</div>
+        <h1><span data-lang-en>Docker Deployment</span><span data-lang-zh>Docker 部署</span></h1>
+        <p>
+          <span data-lang-en
+            >Run Rikune as a Linux analyzer plane in Docker, then keep real sample execution on a
+            separate Windows runtime when you intentionally opt in.</span
+          >
+          <span data-lang-zh
+            >将 Rikune 作为 Linux 分析面运行在 Docker 中，并在你明确开启时把真实样本执行交给独立的
+            Windows 运行时面。</span
+          >
+        </p>
+      </div>
     </div>
-    <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu"><span></span><span></span><span></span></button>
-  </div>
-</nav>
 
-<!-- Hero -->
-<div class="page-hero">
-  <div class="container">
-    <div class="breadcrumb"><a href="index.html">Rikune</a> / Docker</div>
-    <h1><span data-lang-en>Docker Deployment</span><span data-lang-zh>Docker 部署</span></h1>
-    <p>
-      <span data-lang-en>Run Rikune as a Linux analyzer plane in Docker, then keep real sample execution on a separate Windows runtime when you intentionally opt in.</span>
-      <span data-lang-zh>将 Rikune 作为 Linux 分析面运行在 Docker 中，并在你明确开启时把真实样本执行交给独立的 Windows 运行时面。</span>
-    </p>
-  </div>
-</div>
+    <!-- Content -->
+    <div class="doc-layout">
+      <aside class="doc-sidebar">
+        <div class="doc-sidebar__title">
+          <span data-lang-en>On this page</span><span data-lang-zh>本页目录</span>
+        </div>
+        <a href="#prerequisites">Prerequisites</a>
+        <a href="#quickstart">Quick Start</a>
+        <a href="#topologies"
+          ><span data-lang-en>Deployment Topologies</span><span data-lang-zh>部署拓扑</span></a
+        >
+        <a href="#plugin-gen"
+          ><span data-lang-en>Plugin-Driven Generation</span
+          ><span data-lang-zh>插件驱动生成</span></a
+        >
+        <a href="#services">Services Overview</a>
+        <a href="#production">Production Mode</a>
+        <a href="#compose">Docker Compose</a>
+        <a href="#env-vars">Environment Variables</a>
+        <a href="#dashboard">Web Dashboard</a>
+        <a href="#bundled">Bundled Tools</a>
+      </aside>
 
-<!-- Content -->
-<div class="doc-layout">
-  <aside class="doc-sidebar">
-    <div class="doc-sidebar__title"><span data-lang-en>On this page</span><span data-lang-zh>本页目录</span></div>
-    <a href="#prerequisites">Prerequisites</a>
-    <a href="#quickstart">Quick Start</a>
-    <a href="#topologies"><span data-lang-en>Deployment Topologies</span><span data-lang-zh>部署拓扑</span></a>
-    <a href="#plugin-gen"><span data-lang-en>Plugin-Driven Generation</span><span data-lang-zh>插件驱动生成</span></a>
-    <a href="#services">Services Overview</a>
-    <a href="#production">Production Mode</a>
-    <a href="#compose">Docker Compose</a>
-    <a href="#env-vars">Environment Variables</a>
-    <a href="#dashboard">Web Dashboard</a>
-    <a href="#bundled">Bundled Tools</a>
-  </aside>
+      <div class="doc-main">
+        <!-- Prerequisites -->
+        <section id="prerequisites" class="reveal">
+          <h2><span data-lang-en>Prerequisites</span><span data-lang-zh>前置要求</span></h2>
+          <ul>
+            <li>Docker 20.10+</li>
+            <li data-lang-en>At least 10 GB free disk space</li>
+            <li data-lang-zh>至少 10 GB 可用磁盘空间</li>
+            <li data-lang-en>8 GB+ RAM recommended</li>
+            <li data-lang-zh>建议 8 GB+ 内存</li>
+          </ul>
+        </section>
 
-  <div class="doc-main">
+        <!-- Quick Start -->
+        <section id="quickstart" class="reveal">
+          <h2><span data-lang-en>Quick Start</span><span data-lang-zh>快速开始</span></h2>
 
-    <!-- Prerequisites -->
-    <section id="prerequisites" class="reveal">
-      <h2><span data-lang-en>Prerequisites</span><span data-lang-zh>前置要求</span></h2>
-      <ul>
-        <li>Docker 20.10+</li>
-        <li data-lang-en>At least 10 GB free disk space</li><li data-lang-zh>至少 10 GB 可用磁盘空间</li>
-        <li data-lang-en>8 GB+ RAM recommended</li><li data-lang-zh>建议 8 GB+ 内存</li>
-      </ul>
-    </section>
+          <h3>
+            <span data-lang-en>Static-only analyzer (safe default)</span
+            ><span data-lang-zh>纯静态 analyzer（安全默认）</span>
+          </h3>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>bash</span><button class="code-block__copy">Copy</button>
+            </div>
+            <pre>docker compose -f docker-compose.analyzer.yml up -d</pre>
+          </div>
 
-    <!-- Quick Start -->
-    <section id="quickstart" class="reveal">
-      <h2><span data-lang-en>Quick Start</span><span data-lang-zh>快速开始</span></h2>
+          <h3>
+            <span data-lang-en>Hybrid analyzer + Windows runtime plane</span
+            ><span data-lang-zh>混合 analyzer + Windows 运行时面</span>
+          </h3>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>bash</span><button class="code-block__copy">Copy</button>
+            </div>
+            <pre>docker compose -f docker-compose.hybrid.yml up -d</pre>
+          </div>
 
-      <h3><span data-lang-en>Build the image</span><span data-lang-zh>构建镜像</span></h3>
-      <div class="code-block">
-        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
-        <pre>docker build -t rikune:latest .</pre>
-      </div>
+          <h3>
+            <span data-lang-en>Windows runtime bootstrap</span
+            ><span data-lang-zh>Windows 运行时面初始化</span>
+          </h3>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>PowerShell</span><button class="code-block__copy">Copy</button>
+            </div>
+            <pre>.\install-runtime-windows.ps1 -Headless -Service</pre>
+          </div>
 
-      <h3><span data-lang-en>Verify the build</span><span data-lang-zh>验证构建</span></h3>
-      <div class="code-block">
-        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
-        <pre>docker run --rm rikune:latest node -e <span class="str">"console.log('ok')"</span></pre>
-      </div>
+          <blockquote>
+            <span data-lang-en
+              ><strong>Auth split:</strong> use <code>RUNTIME_HOST_AGENT_API_KEY</code> for Analyzer
+              → Host Agent control requests, and use <code>RUNTIME_API_KEY</code> only when the
+              Windows Runtime Node itself requires a separate API key.</span
+            >
+            <span data-lang-zh
+              ><strong>鉴权分层：</strong><code>RUNTIME_HOST_AGENT_API_KEY</code> 仅用于 Analyzer →
+              Host Agent 控制请求；<code>RUNTIME_API_KEY</code> 仅在 Windows Runtime Node
+              自身需要单独鉴权时使用。</span
+            >
+          </blockquote>
+        </section>
 
-      <h3><span data-lang-en>Install script (Windows)</span><span data-lang-zh>安装脚本（Windows）</span></h3>
-      <div class="code-block">
-        <div class="code-block__header"><span>PowerShell</span><button class="code-block__copy">Copy</button></div>
-        <pre>.\install-docker.ps1</pre>
-      </div>
-    </section>
+        <section id="topologies" class="reveal">
+          <h2><span data-lang-en>Deployment Topologies</span><span data-lang-zh>部署拓扑</span></h2>
+          <p>
+            <span data-lang-en
+              >Rikune now supports a split analyzer/runtime model. Pick the deployment shape that
+              matches your safety and automation goals:</span
+            >
+            <span data-lang-zh
+              >Rikune 现在支持 analyzer/runtime
+              拆分模型。请根据你的安全目标和自动化需求选择部署方式：</span
+            >
+          </p>
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th><span data-lang-en>Topology</span><span data-lang-zh>拓扑</span></th>
+                <th><span data-lang-en>Analyzer Plane</span><span data-lang-zh>分析面</span></th>
+                <th><span data-lang-en>Runtime Plane</span><span data-lang-zh>运行时面</span></th>
+                <th><span data-lang-en>Recommended Use</span><span data-lang-zh>推荐用途</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <strong
+                    ><span data-lang-en>Static-only Docker</span
+                    ><span data-lang-zh>纯静态 Docker</span></strong
+                  >
+                </td>
+                <td>
+                  <code>docker-compose.analyzer.yml</code> with <code>RUNTIME_MODE=disabled</code>
+                </td>
+                <td><span data-lang-en>None</span><span data-lang-zh>无</span></td>
+                <td>
+                  <span data-lang-en>Safe Linux analysis without executing samples</span
+                  ><span data-lang-zh>不运行样本的安全 Linux 分析</span>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <strong
+                    ><span data-lang-en>Hybrid Docker + Windows Runtime</span
+                    ><span data-lang-zh>混合 Docker + Windows Runtime</span></strong
+                  >
+                </td>
+                <td>
+                  <span data-lang-en>Linux Docker analyzer</span
+                  ><span data-lang-zh>Linux Docker analyzer</span>
+                </td>
+                <td>
+                  <span data-lang-en>Manual Windows Runtime Node or Windows Host Agent</span
+                  ><span data-lang-zh>手工 Windows Runtime Node 或 Windows Host Agent</span>
+                </td>
+                <td>
+                  <span data-lang-en>Split static analysis from real sample execution</span
+                  ><span data-lang-zh>将静态分析与真实样本执行拆分</span>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <strong
+                    ><span data-lang-en>Windows Native + Auto Sandbox</span
+                    ><span data-lang-zh>Windows 原生 + Auto Sandbox</span></strong
+                  >
+                </td>
+                <td>
+                  <span data-lang-en>Windows-native analyzer</span
+                  ><span data-lang-zh>Windows 原生 analyzer</span>
+                </td>
+                <td>
+                  <span data-lang-en>Local Windows Sandbox</span
+                  ><span data-lang-zh>本机 Windows Sandbox</span>
+                </td>
+                <td>
+                  <span data-lang-en>Single-host dynamic execution with explicit sandboxing</span
+                  ><span data-lang-zh>单机显式沙箱动态执行</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <blockquote>
+            <span data-lang-en
+              ><strong>Important:</strong> Docker or WSL analyzers cannot use
+              <code>auto-sandbox</code>. For Linux-side analyzers, use <code>manual</code> or
+              <code>remote-sandbox</code> when you need a Windows runtime.</span
+            >
+            <span data-lang-zh
+              ><strong>重要：</strong>Docker 或 WSL 中的 analyzer 不能使用
+              <code>auto-sandbox</code>。如果 analyzer 在 Linux 一侧，需要 Windows 运行时时请使用
+              <code>manual</code> 或 <code>remote-sandbox</code>。</span
+            >
+          </blockquote>
+        </section>
 
-    <section id="topologies" class="reveal">
-      <h2><span data-lang-en>Deployment Topologies</span><span data-lang-zh>部署拓扑</span></h2>
-      <p>
-        <span data-lang-en>Rikune now supports a split analyzer/runtime model. Pick the deployment shape that matches your safety and automation goals:</span>
-        <span data-lang-zh>Rikune 现在支持 analyzer/runtime 拆分模型。请根据你的安全目标和自动化需求选择部署方式：</span>
-      </p>
-      <table class="doc-table">
-        <thead>
-          <tr>
-            <th><span data-lang-en>Topology</span><span data-lang-zh>拓扑</span></th>
-            <th><span data-lang-en>Analyzer Plane</span><span data-lang-zh>分析面</span></th>
-            <th><span data-lang-en>Runtime Plane</span><span data-lang-zh>运行时面</span></th>
-            <th><span data-lang-en>Recommended Use</span><span data-lang-zh>推荐用途</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong><span data-lang-en>Static-only Docker</span><span data-lang-zh>纯静态 Docker</span></strong></td>
-            <td><code>docker-compose.analyzer.yml</code> with <code>RUNTIME_MODE=disabled</code></td>
-            <td><span data-lang-en>None</span><span data-lang-zh>无</span></td>
-            <td><span data-lang-en>Safe Linux analysis without executing samples</span><span data-lang-zh>不运行样本的安全 Linux 分析</span></td>
-          </tr>
-          <tr>
-            <td><strong><span data-lang-en>Hybrid Docker + Windows Runtime</span><span data-lang-zh>混合 Docker + Windows Runtime</span></strong></td>
-            <td><span data-lang-en>Linux Docker analyzer</span><span data-lang-zh>Linux Docker analyzer</span></td>
-            <td><span data-lang-en>Manual Windows Runtime Node or Windows Host Agent</span><span data-lang-zh>手工 Windows Runtime Node 或 Windows Host Agent</span></td>
-            <td><span data-lang-en>Split static analysis from real sample execution</span><span data-lang-zh>将静态分析与真实样本执行拆分</span></td>
-          </tr>
-          <tr>
-            <td><strong><span data-lang-en>Windows Native + Auto Sandbox</span><span data-lang-zh>Windows 原生 + Auto Sandbox</span></strong></td>
-            <td><span data-lang-en>Windows-native analyzer</span><span data-lang-zh>Windows 原生 analyzer</span></td>
-            <td><span data-lang-en>Local Windows Sandbox</span><span data-lang-zh>本机 Windows Sandbox</span></td>
-            <td><span data-lang-en>Single-host dynamic execution with explicit sandboxing</span><span data-lang-zh>单机显式沙箱动态执行</span></td>
-          </tr>
-        </tbody>
-      </table>
-      <blockquote>
-        <span data-lang-en><strong>Important:</strong> Docker or WSL analyzers cannot use <code>auto-sandbox</code>. For Linux-side analyzers, use <code>manual</code> or <code>remote-sandbox</code> when you need a Windows runtime.</span>
-        <span data-lang-zh><strong>重要：</strong>Docker 或 WSL 中的 analyzer 不能使用 <code>auto-sandbox</code>。如果 analyzer 在 Linux 一侧，需要 Windows 运行时时请使用 <code>manual</code> 或 <code>remote-sandbox</code>。</span>
-      </blockquote>
-    </section>
+        <!-- Plugin-Driven Docker Generation -->
+        <section id="plugin-gen" class="reveal">
+          <h2>
+            <span data-lang-en>Plugin-Driven Docker Generation</span
+            ><span data-lang-zh>插件驱动的 Docker 生成</span>
+          </h2>
+          <p>
+            <span data-lang-en>
+              Rikune does <strong>not</strong> maintain a hand-written Dockerfile. Instead, each
+              plugin declares exactly what system-level dependencies it needs, and a generator
+              automatically produces the Dockerfile and <code>docker-compose.yml</code> from those
+              declarations. Plugins are the <em>single source of truth</em>.
+            </span>
+            <span data-lang-zh>
+              Rikune <strong>不</strong>手动维护 Dockerfile。
+              每个插件在代码中声明自己所需的系统级依赖， 生成器自动读取所有插件声明并产出 Dockerfile
+              和 <code>docker-compose.yml</code>。 插件是<em>唯一真相源</em>。
+            </span>
+          </p>
 
-    <!-- Plugin-Driven Docker Generation -->
-    <section id="plugin-gen" class="reveal">
-      <h2><span data-lang-en>Plugin-Driven Docker Generation</span><span data-lang-zh>插件驱动的 Docker 生成</span></h2>
-      <p>
-        <span data-lang-en>
-          Rikune does <strong>not</strong> maintain a hand-written Dockerfile.
-          Instead, each plugin declares exactly what system-level dependencies it
-          needs, and a generator automatically produces the Dockerfile and
-          <code>docker-compose.yml</code> from those declarations.
-          Plugins are the <em>single source of truth</em>.
-        </span>
-        <span data-lang-zh>
-          Rikune <strong>不</strong>手动维护 Dockerfile。
-          每个插件在代码中声明自己所需的系统级依赖，
-          生成器自动读取所有插件声明并产出 Dockerfile 和 <code>docker-compose.yml</code>。
-          插件是<em>唯一真相源</em>。
-        </span>
-      </p>
+          <h3><span data-lang-en>How It Works</span><span data-lang-zh>工作原理</span></h3>
 
-      <h3><span data-lang-en>How It Works</span><span data-lang-zh>工作原理</span></h3>
-
-      <!-- Architecture Diagram -->
-      <div style="background:rgba(15,23,42,.6);border:1px solid var(--border);border-radius:12px;padding:28px 24px;margin:20px 0 28px;font-family:var(--mono);font-size:.82rem;line-height:1.8;overflow-x:auto;">
-<pre style="margin:0;color:var(--text-muted);">
+          <!-- Architecture Diagram -->
+          <div
+            style="
+              background: rgba(15, 23, 42, 0.6);
+              border: 1px solid var(--border);
+              border-radius: 12px;
+              padding: 28px 24px;
+              margin: 20px 0 28px;
+              font-family: var(--mono);
+              font-size: 0.82rem;
+              line-height: 1.8;
+              overflow-x: auto;
+            "
+          >
+            <pre style="margin: 0; color: var(--text-muted)">
 <span style="color:var(--accent);">┌─────────────────────────────────────────────────────────────┐</span>
 <span style="color:var(--accent);">│</span>  <strong style="color:#fff;">Plugin SDK</strong>  <span style="color:var(--text-dim);">(src/plugins/sdk.ts)</span>                       <span style="color:var(--accent);">│</span>
 <span style="color:var(--accent);">│</span>                                                             <span style="color:var(--accent);">│</span>
@@ -204,16 +343,28 @@
   <span style="color:var(--text-dim);">  (multi-stage, only</span>             <span style="color:var(--text-dim);">  (volumes, env, args</span>
   <span style="color:var(--text-dim);">   needed stages)</span>                <span style="color:var(--text-dim);">   matching features)</span>
 </pre>
-      </div>
+          </div>
 
-      <h3><span data-lang-en>Step 1 — Plugin Declares Dependencies</span><span data-lang-zh>步骤 1 — 插件声明依赖</span></h3>
-      <p>
-        <span data-lang-en>Each plugin's <code>systemDeps</code> array describes what it needs. Three fields control Docker generation:</span>
-        <span data-lang-zh>每个插件的 <code>systemDeps</code> 数组描述其所需依赖，三个字段控制 Docker 生成：</span>
-      </p>
-      <div class="code-block">
-        <div class="code-block__header"><span>TypeScript — src/plugins/ghidra/index.ts</span><button class="code-block__copy">Copy</button></div>
-        <pre><span class="kw">systemDeps</span>: [
+          <h3>
+            <span data-lang-en>Step 1 — Plugin Declares Dependencies</span
+            ><span data-lang-zh>步骤 1 — 插件声明依赖</span>
+          </h3>
+          <p>
+            <span data-lang-en
+              >Each plugin's <code>systemDeps</code> array describes what it needs. Three fields
+              control Docker generation:</span
+            >
+            <span data-lang-zh
+              >每个插件的 <code>systemDeps</code> 数组描述其所需依赖，三个字段控制 Docker
+              生成：</span
+            >
+          </p>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>TypeScript — src/plugins/ghidra/index.ts</span
+              ><button class="code-block__copy">Copy</button>
+            </div>
+            <pre><span class="kw">systemDeps</span>: [
   {
     type: <span class="str">'binary'</span>,
     name: <span class="str">'analyzeHeadless'</span>,
@@ -232,11 +383,14 @@
     <strong>dockerFeature: <span class="str">'ghidra'</span></strong>,        <span class="comment">// same feature group</span>
   }
 ]</pre>
-      </div>
+          </div>
 
-      <div class="code-block" style="margin-top:16px">
-        <div class="code-block__header"><span>TypeScript — src/plugins/debug-session/index.ts</span><button class="code-block__copy">Copy</button></div>
-        <pre><span class="kw">systemDeps</span>: [
+          <div class="code-block" style="margin-top: 16px">
+            <div class="code-block__header">
+              <span>TypeScript — src/plugins/debug-session/index.ts</span
+              ><button class="code-block__copy">Copy</button>
+            </div>
+            <pre><span class="kw">systemDeps</span>: [
   {
     type: <span class="str">'binary'</span>,
     name: <span class="str">'gdb'</span>,
@@ -244,16 +398,27 @@
     <strong>aptPackages: [<span class="str">'gdb'</span>, <span class="str">'ltrace'</span>, <span class="str">'strace'</span>]</strong>,  <span class="comment">// merged into apt-get</span>
   }
 ]</pre>
-      </div>
+          </div>
 
-      <h3><span data-lang-en>Step 2 — Template Uses Conditionals</span><span data-lang-zh>步骤 2 — 模板使用条件块</span></h3>
-      <p>
-        <span data-lang-en>The Dockerfile template (<code>docker/Dockerfile.template</code>) wraps optional stages in <code># @if</code> / <code># @endif</code> markers:</span>
-        <span data-lang-zh>Dockerfile 模板（<code>docker/Dockerfile.template</code>）用 <code># @if</code> / <code># @endif</code> 标记包裹可选阶段：</span>
-      </p>
-      <div class="code-block">
-        <div class="code-block__header"><span>Dockerfile.template</span><button class="code-block__copy">Copy</button></div>
-        <pre><span class="comment"># @if ghidra</span>
+          <h3>
+            <span data-lang-en>Step 2 — Template Uses Conditionals</span
+            ><span data-lang-zh>步骤 2 — 模板使用条件块</span>
+          </h3>
+          <p>
+            <span data-lang-en
+              >The Dockerfile template (<code>docker/Dockerfile.template</code>) wraps optional
+              stages in <code># @if</code> / <code># @endif</code> markers:</span
+            >
+            <span data-lang-zh
+              >Dockerfile 模板（<code>docker/Dockerfile.template</code>）用 <code># @if</code> /
+              <code># @endif</code> 标记包裹可选阶段：</span
+            >
+          </p>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>Dockerfile.template</span><button class="code-block__copy">Copy</button>
+            </div>
+            <pre><span class="comment"># @if ghidra</span>
 FROM eclipse-temurin:21-jdk AS ghidra-stage
 ARG GHIDRA_VERSION=11.3.2
 RUN curl -L ... | unzip ...
@@ -263,54 +428,99 @@ RUN curl -L ... | unzip ...
 RUN python -m venv /opt/angr-venv &amp;&amp; \
     /opt/angr-venv/bin/pip install angr
 <span class="comment"># @endif angr</span></pre>
-      </div>
+          </div>
 
-      <h3><span data-lang-en>Step 3 — Generator Reads Plugins & Produces Output</span><span data-lang-zh>步骤 3 — 生成器读取插件并输出</span></h3>
-      <p>
-        <span data-lang-en>The generator (<code>scripts/generate-docker.mjs</code>) performs 5 steps with <strong>zero hardcoded mappings</strong>:</span>
-        <span data-lang-zh>生成器（<code>scripts/generate-docker.mjs</code>）执行 5 个步骤，<strong>没有任何硬编码映射</strong>：</span>
-      </p>
-      <table class="doc-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th><span data-lang-en>Step</span><span data-lang-zh>步骤</span></th>
-            <th><span data-lang-en>What it does</span><span data-lang-zh>做了什么</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><span class="badge badge--blue">1</span></td>
-            <td><code>discoverPluginIds()</code></td>
-            <td><span data-lang-en>Scans <code>dist/plugins/</code> for all plugin directories</span><span data-lang-zh>扫描 <code>dist/plugins/</code> 中的所有插件目录</span></td>
-          </tr>
-          <tr>
-            <td><span class="badge badge--blue">2</span></td>
-            <td><code>loadPluginDeps()</code></td>
-            <td><span data-lang-en>Dynamic-imports each plugin and reads its <code>systemDeps</code></span><span data-lang-zh>动态导入每个插件并读取其 <code>systemDeps</code></span></td>
-          </tr>
-          <tr>
-            <td><span class="badge badge--blue">3</span></td>
-            <td><code>collectRequirements()</code></td>
-            <td><span data-lang-en>Merges all <code>dockerFeature</code>, <code>aptPackages</code>, <code>envVar</code>+<code>dockerDefault</code>, <code>dockerValidation</code></span><span data-lang-zh>合并所有 <code>dockerFeature</code>、<code>aptPackages</code>、<code>envVar</code>+<code>dockerDefault</code>、<code>dockerValidation</code></span></td>
-          </tr>
-          <tr>
-            <td><span class="badge badge--blue">4</span></td>
-            <td><code>processTemplate()</code></td>
-            <td><span data-lang-en>Evaluates <code># @if</code> blocks, substitutes <code>{{PLACEHOLDERS}}</code></span><span data-lang-zh>评估 <code># @if</code> 条件块，替换 <code>{{PLACEHOLDERS}}</code></span></td>
-          </tr>
-          <tr>
-            <td><span class="badge badge--blue">5</span></td>
-            <td><code>generateCompose()</code></td>
-            <td><span data-lang-en>Emits <code>docker-compose.yml</code> with matching volumes, env, build-args</span><span data-lang-zh>输出带有匹配卷、环境变量、构建参数的 <code>docker-compose.yml</code></span></td>
-          </tr>
-        </tbody>
-      </table>
+          <h3>
+            <span data-lang-en>Step 3 — Generator Reads Plugins & Produces Output</span
+            ><span data-lang-zh>步骤 3 — 生成器读取插件并输出</span>
+          </h3>
+          <p>
+            <span data-lang-en
+              >The generator (<code>scripts/generate-docker.mjs</code>) performs 5 steps with
+              <strong>zero hardcoded mappings</strong>:</span
+            >
+            <span data-lang-zh
+              >生成器（<code>scripts/generate-docker.mjs</code>）执行 5
+              个步骤，<strong>没有任何硬编码映射</strong>：</span
+            >
+          </p>
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th><span data-lang-en>Step</span><span data-lang-zh>步骤</span></th>
+                <th><span data-lang-en>What it does</span><span data-lang-zh>做了什么</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="badge badge--blue">1</span></td>
+                <td><code>discoverPluginIds()</code></td>
+                <td>
+                  <span data-lang-en
+                    >Scans <code>dist/plugins/</code> for all plugin directories</span
+                  ><span data-lang-zh>扫描 <code>dist/plugins/</code> 中的所有插件目录</span>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge badge--blue">2</span></td>
+                <td><code>loadPluginDeps()</code></td>
+                <td>
+                  <span data-lang-en
+                    >Dynamic-imports each plugin and reads its <code>systemDeps</code></span
+                  ><span data-lang-zh>动态导入每个插件并读取其 <code>systemDeps</code></span>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge badge--blue">3</span></td>
+                <td><code>collectRequirements()</code></td>
+                <td>
+                  <span data-lang-en
+                    >Merges all <code>dockerFeature</code>, <code>aptPackages</code>,
+                    <code>envVar</code>+<code>dockerDefault</code>,
+                    <code>dockerValidation</code></span
+                  ><span data-lang-zh
+                    >合并所有
+                    <code>dockerFeature</code
+                    >、<code>aptPackages</code>、<code>envVar</code>+<code>dockerDefault</code>、<code
+                      >dockerValidation</code
+                    ></span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge badge--blue">4</span></td>
+                <td><code>processTemplate()</code></td>
+                <td>
+                  <span data-lang-en
+                    >Evaluates <code># @if</code> blocks, substitutes
+                    <code>{{PLACEHOLDERS}}</code></span
+                  ><span data-lang-zh
+                    >评估 <code># @if</code> 条件块，替换 <code>{{PLACEHOLDERS}}</code></span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge badge--blue">5</span></td>
+                <td><code>generateCompose()</code></td>
+                <td>
+                  <span data-lang-en
+                    >Emits <code>docker-compose.yml</code> with matching volumes, env,
+                    build-args</span
+                  ><span data-lang-zh
+                    >输出带有匹配卷、环境变量、构建参数的 <code>docker-compose.yml</code></span
+                  >
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
-      <h3><span data-lang-en>CLI Usage</span><span data-lang-zh>CLI 用法</span></h3>
-      <div class="code-block">
-        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
-        <pre><span class="comment"># All plugins → full image (14 features, ~470 lines, 8 stages)</span>
+          <h3><span data-lang-en>CLI Usage</span><span data-lang-zh>CLI 用法</span></h3>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>bash</span><button class="code-block__copy">Copy</button>
+            </div>
+            <pre><span class="comment"># All plugins → full image (14 features, ~470 lines, 8 stages)</span>
 node scripts/generate-docker.mjs
 
 <span class="comment"># Exclude heavy tools → lighter image</span>
@@ -321,21 +531,41 @@ node scripts/generate-docker.mjs --include=pe-analysis,malware,frida
 
 <span class="comment"># Preview without writing files</span>
 node scripts/generate-docker.mjs --dry-run</pre>
-      </div>
+          </div>
 
-      <blockquote>
-        <span data-lang-en>💡 <strong>Tip:</strong> <code>install-docker.ps1</code> runs the generator automatically before <code>docker build</code>. It discovers all plugins, generates the Dockerfile, then builds — no manual step needed.</span>
-        <span data-lang-zh>💡 <strong>提示</strong>：<code>install-docker.ps1</code> 在 <code>docker build</code> 之前自动运行生成器。它发现所有插件、生成 Dockerfile、然后构建 — 无需手动操作。</span>
-      </blockquote>
+          <blockquote>
+            <span data-lang-en
+              >💡 <strong>Tip:</strong> <code>install-docker.ps1</code> runs the generator
+              automatically before <code>docker build</code>. It discovers all plugins, generates
+              the Dockerfile, then builds — no manual step needed.</span
+            >
+            <span data-lang-zh
+              >💡 <strong>提示</strong>：<code>install-docker.ps1</code> 在
+              <code>docker build</code> 之前自动运行生成器。它发现所有插件、生成
+              Dockerfile、然后构建 — 无需手动操作。</span
+            >
+          </blockquote>
 
-      <h3><span data-lang-en>Adding Docker Support to a New Plugin</span><span data-lang-zh>为新插件添加 Docker 支持</span></h3>
-      <p>
-        <span data-lang-en>If your plugin needs a system tool in the Docker image, just add the Docker fields to its <code>systemDeps</code>:</span>
-        <span data-lang-zh>如果你的新插件需要 Docker 镜像中的系统工具，只需在其 <code>systemDeps</code> 中添加 Docker 字段：</span>
-      </p>
-      <div class="code-block">
-        <div class="code-block__header"><span>TypeScript — your-plugin/index.ts</span><button class="code-block__copy">Copy</button></div>
-        <pre>systemDeps: [{
+          <h3>
+            <span data-lang-en>Adding Docker Support to a New Plugin</span
+            ><span data-lang-zh>为新插件添加 Docker 支持</span>
+          </h3>
+          <p>
+            <span data-lang-en
+              >If your plugin needs a system tool in the Docker image, just add the Docker fields to
+              its <code>systemDeps</code>:</span
+            >
+            <span data-lang-zh
+              >如果你的新插件需要 Docker 镜像中的系统工具，只需在其 <code>systemDeps</code> 中添加
+              Docker 字段：</span
+            >
+          </p>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>TypeScript — your-plugin/index.ts</span
+              ><button class="code-block__copy">Copy</button>
+            </div>
+            <pre>systemDeps: [{
   type: <span class="str">'binary'</span>,
   name: <span class="str">'mytool'</span>,
   envVar: <span class="str">'MYTOOL_PATH'</span>,
@@ -345,59 +575,90 @@ node scripts/generate-docker.mjs --dry-run</pre>
   <strong>aptPackages: [<span class="str">'mytool'</span>]</strong>,
   <strong>dockerValidation: [<span class="str">'mytool --version'</span>]</strong>,
 }]</pre>
-      </div>
-      <p>
-        <span data-lang-en>Then add a corresponding <code># @if mytool</code> block in <code>docker/Dockerfile.template</code> if it needs a dedicated build stage. For simple apt packages, just the <code>aptPackages</code> field is enough — they are automatically merged into the runtime stage.</span>
-        <span data-lang-zh>然后如果需要独立构建阶段，在 <code>docker/Dockerfile.template</code> 中添加对应的 <code># @if mytool</code> 块。对于简单的 apt 包，只需 <code>aptPackages</code> 字段即可 — 它们会自动合并到运行时阶段。</span>
-      </p>
-    </section>
+          </div>
+          <p>
+            <span data-lang-en
+              >Then add a corresponding <code># @if mytool</code> block in
+              <code>docker/Dockerfile.template</code> if it needs a dedicated build stage. For
+              simple apt packages, just the <code>aptPackages</code> field is enough — they are
+              automatically merged into the runtime stage.</span
+            >
+            <span data-lang-zh
+              >然后如果需要独立构建阶段，在 <code>docker/Dockerfile.template</code> 中添加对应的
+              <code># @if mytool</code> 块。对于简单的 apt 包，只需
+              <code>aptPackages</code> 字段即可 — 它们会自动合并到运行时阶段。</span
+            >
+          </p>
+        </section>
 
-    <!-- Services Overview -->
-    <section id="services" class="reveal">
-      <h2><span data-lang-en>Services Overview</span><span data-lang-zh>服务概览</span></h2>
-      <p>
-        <span data-lang-en>The analyzer container runs the control-plane services. When you configure a Windows Runtime Node or Host Agent, real sample execution is delegated over HTTP instead of happening inside the Linux analyzer container.</span>
-        <span data-lang-zh>analyzer 容器运行控制面服务。配置 Windows Runtime Node 或 Host Agent 后，真实样本执行会通过 HTTP 委派出去，而不是在 Linux analyzer 容器内进行。</span>
-      </p>
-      <table class="doc-table">
-        <thead>
-          <tr>
-            <th><span data-lang-en>Service</span><span data-lang-zh>服务</span></th>
-            <th><span data-lang-en>Protocol</span><span data-lang-zh>协议</span></th>
-            <th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><span class="badge badge--blue">MCP Server</span></td>
-            <td>stdio</td>
-            <td><span data-lang-en>220+ tools, 3 prompts, 16 resources</span><span data-lang-zh>220+ 工具、3 个提示、16 个资源</span></td>
-          </tr>
-          <tr>
-            <td><span class="badge badge--green">HTTP API</span></td>
-            <td>:18080</td>
-            <td><span data-lang-en>Sample upload, artifact download, health check, SSE</span><span data-lang-zh>样本上传、产物下载、健康检查、SSE 推送</span></td>
-          </tr>
-          <tr>
-            <td><span class="badge badge--purple">Dashboard</span></td>
-            <td>:18080/dashboard</td>
-            <td><span data-lang-en>Dark-theme web UI — tools, plugins, samples, config</span><span data-lang-zh>暗色主题看板 — 工具、插件、样本、配置</span></td>
-          </tr>
-          <tr>
-            <td><span class="badge badge--amber">Task Runner</span></td>
-            <td><span data-lang-en>Internal</span><span data-lang-zh>内部</span></td>
-            <td><span data-lang-en>Background async job queue with Python worker pool</span><span data-lang-zh>后台异步任务队列与 Python 工作进程池</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
+        <!-- Services Overview -->
+        <section id="services" class="reveal">
+          <h2><span data-lang-en>Services Overview</span><span data-lang-zh>服务概览</span></h2>
+          <p>
+            <span data-lang-en
+              >The analyzer container runs the control-plane services. When you configure a Windows
+              Runtime Node or Host Agent, real sample execution is delegated over HTTP instead of
+              happening inside the Linux analyzer container.</span
+            >
+            <span data-lang-zh
+              >analyzer 容器运行控制面服务。配置 Windows Runtime Node 或 Host Agent
+              后，真实样本执行会通过 HTTP 委派出去，而不是在 Linux analyzer 容器内进行。</span
+            >
+          </p>
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th><span data-lang-en>Service</span><span data-lang-zh>服务</span></th>
+                <th><span data-lang-en>Protocol</span><span data-lang-zh>协议</span></th>
+                <th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="badge badge--blue">MCP Server</span></td>
+                <td>stdio</td>
+                <td>
+                  <span data-lang-en>220+ tools, 3 prompts, 16 resources</span
+                  ><span data-lang-zh>220+ 工具、3 个提示、16 个资源</span>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge badge--green">HTTP API</span></td>
+                <td>:18080</td>
+                <td>
+                  <span data-lang-en>Sample upload, artifact download, health check, SSE</span
+                  ><span data-lang-zh>样本上传、产物下载、健康检查、SSE 推送</span>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge badge--purple">Dashboard</span></td>
+                <td>:18080/dashboard</td>
+                <td>
+                  <span data-lang-en>Dark-theme web UI — tools, plugins, samples, config</span
+                  ><span data-lang-zh>暗色主题看板 — 工具、插件、样本、配置</span>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge badge--amber">Task Runner</span></td>
+                <td><span data-lang-en>Internal</span><span data-lang-zh>内部</span></td>
+                <td>
+                  <span data-lang-en>Background async job queue with Python worker pool</span
+                  ><span data-lang-zh>后台异步任务队列与 Python 工作进程池</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
 
-    <!-- Production Mode -->
-    <section id="production" class="reveal">
-      <h2><span data-lang-en>Production Mode</span><span data-lang-zh>生产模式</span></h2>
-      <div class="code-block">
-        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
-        <pre>docker run --rm -i \
+        <!-- Production Mode -->
+        <section id="production" class="reveal">
+          <h2><span data-lang-en>Production Mode</span><span data-lang-zh>生产模式</span></h2>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>bash</span><button class="code-block__copy">Copy</button>
+            </div>
+            <pre>
+docker run --rm -i \
   --network=none \
   --read-only \
   --tmpfs /tmp:rw,noexec,nosuid,size=512m \
@@ -413,16 +674,19 @@ node scripts/generate-docker.mjs --dry-run</pre>
   -e WORKSPACE_ROOT=/app/workspaces \
   -e DB_PATH=/app/data/database.db \
   -e GHIDRA_PROJECT_ROOT=/ghidra-projects \
-  rikune:latest</pre>
-      </div>
-    </section>
+  rikune:latest</pre
+            >
+          </div>
+        </section>
 
-    <!-- Docker Compose -->
-    <section id="compose" class="reveal">
-      <h2>Docker Compose</h2>
-      <div class="code-block">
-        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
-        <pre><span class="comment"># Static-only Linux analyzer (safe default)</span>
+        <!-- Docker Compose -->
+        <section id="compose" class="reveal">
+          <h2>Docker Compose</h2>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>bash</span><button class="code-block__copy">Copy</button>
+            </div>
+            <pre><span class="comment"># Static-only Linux analyzer (safe default)</span>
  docker compose -f docker-compose.analyzer.yml up -d
 
 <span class="comment"># Hybrid Linux analyzer + Windows runtime plane</span>
@@ -433,188 +697,571 @@ node scripts/generate-docker.mjs --dry-run</pre>
 
 <span class="comment"># Stop the selected stack</span>
  docker compose -f docker-compose.hybrid.yml down</pre>
+          </div>
+          <blockquote>
+            <span data-lang-en
+              ><strong>Note:</strong> <code>docker-compose.analyzer.yml</code> now defaults to
+              <code>RUNTIME_MODE=disabled</code>. Switch to <code>manual</code> or
+              <code>remote-sandbox</code> only when you intentionally connect a Windows runtime
+              plane. Use <code>RUNTIME_HOST_AGENT_API_KEY</code> for Analyzer → Host Agent control
+              requests, and <code>RUNTIME_API_KEY</code> only when the Windows Runtime Node itself
+              requires a separate API key.</span
+            >
+            <span data-lang-zh
+              ><strong>注意：</strong><code>docker-compose.analyzer.yml</code> 现在默认使用
+              <code>RUNTIME_MODE=disabled</code>。只有在你明确接入 Windows 运行时面时，才切换到
+              <code>manual</code> 或 <code>remote-sandbox</code>。Analyzer → Host Agent
+              的控制请求使用 <code>RUNTIME_HOST_AGENT_API_KEY</code>，只有当 Windows Runtime Node
+              自身需要单独鉴权时才配置 <code>RUNTIME_API_KEY</code>。</span
+            >
+          </blockquote>
+        </section>
+
+        <!-- Environment Variables -->
+        <section id="env-vars" class="reveal">
+          <h2><span data-lang-en>Environment Variables</span><span data-lang-zh>环境变量</span></h2>
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th><span data-lang-en>Variable</span><span data-lang-zh>变量名</span></th>
+                <th><span data-lang-en>Default</span><span data-lang-zh>默认值</span></th>
+                <th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>WORKSPACE_ROOT</code></td>
+                <td><code>/app/workspaces</code></td>
+                <td>
+                  <span data-lang-en>Workspace root directory</span
+                  ><span data-lang-zh>工作空间根目录</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>DB_PATH</code></td>
+                <td><code>/app/data/database.db</code></td>
+                <td>
+                  <span data-lang-en>SQLite database path</span
+                  ><span data-lang-zh>SQLite 数据库路径</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>CACHE_ROOT</code></td>
+                <td><code>/app/cache</code></td>
+                <td>
+                  <span data-lang-en>Cache root directory</span><span data-lang-zh>缓存根目录</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>GHIDRA_PROJECT_ROOT</code></td>
+                <td><code>/ghidra-projects</code></td>
+                <td>
+                  <span data-lang-en>Ghidra project root</span
+                  ><span data-lang-zh>Ghidra 项目根目录</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>LOG_LEVEL</code></td>
+                <td><code>info</code></td>
+                <td>trace / debug / info / warn / error</td>
+              </tr>
+              <tr>
+                <td><code>API_PORT</code></td>
+                <td><code>18080</code></td>
+                <td>
+                  <span data-lang-en>HTTP API port</span><span data-lang-zh>HTTP API 端口</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>API_KEY</code></td>
+                <td>—</td>
+                <td>
+                  <span data-lang-en>API key for the HTTP file server / dashboard (optional)</span
+                  ><span data-lang-zh>HTTP 文件服务 / Dashboard 的 API 密钥（可选）</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>RUNTIME_MODE</code></td>
+                <td><code>disabled</code></td>
+                <td>
+                  <span data-lang-en
+                    ><code>disabled</code>, <code>manual</code>, or <code>remote-sandbox</code> for
+                    Docker analyzers</span
+                  ><span data-lang-zh
+                    >Docker analyzer 使用 <code>disabled</code>、<code>manual</code> 或
+                    <code>remote-sandbox</code></span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td><code>RUNTIME_ENDPOINT</code></td>
+                <td>—</td>
+                <td>
+                  <span data-lang-en>Manual Runtime Node endpoint for split deployments</span
+                  ><span data-lang-zh>拆分部署时的手工 Runtime Node 地址</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>RUNTIME_HOST_AGENT_ENDPOINT</code></td>
+                <td>—</td>
+                <td>
+                  <span data-lang-en
+                    >Windows Host Agent endpoint for <code>remote-sandbox</code></span
+                  ><span data-lang-zh
+                    ><code>remote-sandbox</code> 使用的 Windows Host Agent 地址</span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td><code>RUNTIME_HOST_AGENT_API_KEY</code></td>
+                <td>—</td>
+                <td>
+                  <span data-lang-en>Analyzer → Host Agent control-plane API key</span
+                  ><span data-lang-zh>Analyzer → Host Agent 控制面 API 密钥</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>RUNTIME_API_KEY</code></td>
+                <td>—</td>
+                <td>
+                  <span data-lang-en
+                    >Analyzer → Runtime Node API key when runtime auth is enabled</span
+                  ><span data-lang-zh>启用运行时鉴权时的 Analyzer → Runtime Node API 密钥</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>QILING_ROOTFS</code></td>
+                <td><code>/opt/qiling-rootfs</code></td>
+                <td>
+                  <span data-lang-en>Qiling Windows rootfs mount</span
+                  ><span data-lang-zh>Qiling Windows rootfs 挂载点</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>ANGR_PYTHON</code></td>
+                <td><code>/opt/angr-venv/bin/python</code></td>
+                <td>
+                  <span data-lang-en>Isolated angr interpreter</span
+                  ><span data-lang-zh>隔离的 angr 解释器</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>RETDEC_PATH</code></td>
+                <td><code>/opt/retdec/bin/retdec-decompiler</code></td>
+                <td>
+                  <span data-lang-en>RetDec decompiler path</span
+                  ><span data-lang-zh>RetDec 反编译器路径</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>GHIDRA_INSTALL_DIR</code></td>
+                <td><code>/opt/ghidra</code></td>
+                <td>
+                  <span data-lang-en>Ghidra installation directory</span
+                  ><span data-lang-zh>Ghidra 安装目录</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>JAVA_HOME</code></td>
+                <td><code>/usr/lib/jvm/java-21-openjdk-amd64</code></td>
+                <td>
+                  <span data-lang-en>Java runtime for Ghidra</span
+                  ><span data-lang-zh>Ghidra 用 Java 运行时</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>CAPA_PATH</code></td>
+                <td><code>/opt/capa/capa</code></td>
+                <td>
+                  <span data-lang-en>capa binary path</span
+                  ><span data-lang-zh>capa 二进制路径</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>DIE_PATH</code></td>
+                <td><code>/opt/die/diec</code></td>
+                <td>
+                  <span data-lang-en>Detect It Easy CLI path</span
+                  ><span data-lang-zh>Detect It Easy CLI 路径</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>RIZIN_PATH</code></td>
+                <td><code>/usr/bin/rizin</code></td>
+                <td>
+                  <span data-lang-en>Rizin binary path</span
+                  ><span data-lang-zh>Rizin 二进制路径</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>UPX_PATH</code></td>
+                <td><code>/usr/bin/upx</code></td>
+                <td>
+                  <span data-lang-en>UPX binary path</span><span data-lang-zh>UPX 二进制路径</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>WINE_PATH</code></td>
+                <td><code>/usr/bin/wine</code></td>
+                <td>
+                  <span data-lang-en>Wine executable path</span
+                  ><span data-lang-zh>Wine 可执行路径</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>GRAPHVIZ_DOT_PATH</code></td>
+                <td><code>/usr/bin/dot</code></td>
+                <td>
+                  <span data-lang-en>Graphviz dot binary</span
+                  ><span data-lang-zh>Graphviz dot 二进制</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>QILING_PYTHON</code></td>
+                <td><code>/opt/qiling-venv/bin/python</code></td>
+                <td>
+                  <span data-lang-en>Isolated Qiling interpreter</span
+                  ><span data-lang-zh>隔离的 Qiling 解释器</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>MAX_PYTHON_WORKERS</code></td>
+                <td><code>4</code></td>
+                <td>
+                  <span data-lang-en>Concurrent Python worker limit</span
+                  ><span data-lang-zh>并发 Python 工作进程限制</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>PLUGINS</code></td>
+                <td>—</td>
+                <td>
+                  <span data-lang-en>Comma-separated plugin names to enable</span
+                  ><span data-lang-zh>逗号分隔的启用插件名</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <!-- Web Dashboard -->
+        <section id="dashboard" class="reveal">
+          <h2>Web Dashboard</h2>
+          <p>
+            <span data-lang-en>After starting the container, open your browser to:</span>
+            <span data-lang-zh>容器启动后，在浏览器中访问：</span>
+          </p>
+          <div class="code-block">
+            <div class="code-block__header"><span>URL</span></div>
+            <pre>http://localhost:18080/dashboard</pre>
+          </div>
+          <p>
+            <span data-lang-en
+              >The dashboard provides 6 tabs: <strong>Overview</strong>, <strong>Tools</strong>,
+              <strong>Plugins</strong>, <strong>Samples</strong>, <strong>Config</strong>, and
+              <strong>System</strong>, with SSE real-time event stream and auto-refresh.</span
+            >
+            <span data-lang-zh
+              >看板提供 6
+              个选项卡：<strong>Overview</strong>、<strong>Tools</strong>、<strong>Plugins</strong>、<strong>Samples</strong>、<strong
+                >Config</strong
+              >
+              和 <strong>System</strong>，支持 SSE 实时事件流和自动刷新。</span
+            >
+          </p>
+        </section>
+
+        <!-- Bundled Tools -->
+        <section id="bundled" class="reveal">
+          <h2><span data-lang-en>Bundled Toolchain</span><span data-lang-zh>内置工具链</span></h2>
+          <p>
+            <span data-lang-en>The Docker image ships with all of these pre-installed:</span>
+            <span data-lang-zh>Docker 镜像预装了以下所有工具：</span>
+          </p>
+          <div
+            style="
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+              gap: 12px;
+              margin: 24px 0;
+            "
+          >
+            <div class="feature-card" style="padding: 16px">
+              <strong>Ghidra 12.0.4</strong><br /><span
+                style="color: var(--text-dim); font-size: 0.82rem"
+                ><span data-lang-en>Decompilation &amp; analysis</span
+                ><span data-lang-zh>反编译分析</span></span
+              >
+            </div>
+            <div class="feature-card" style="padding: 16px">
+              <strong>Rizin</strong><br /><span style="color: var(--text-dim); font-size: 0.82rem"
+                ><span data-lang-en>Binary analysis</span><span data-lang-zh>二进制分析</span></span
+              >
+            </div>
+            <div class="feature-card" style="padding: 16px">
+              <strong>YARA-X</strong><br /><span style="color: var(--text-dim); font-size: 0.82rem"
+                ><span data-lang-en>Pattern matching</span><span data-lang-zh>模式匹配</span></span
+              >
+            </div>
+            <div class="feature-card" style="padding: 16px">
+              <strong>capa + rules</strong><br /><span
+                style="color: var(--text-dim); font-size: 0.82rem"
+                ><span data-lang-en>Capability detection</span
+                ><span data-lang-zh>能力检测</span></span
+              >
+            </div>
+            <div class="feature-card" style="padding: 16px">
+              <strong>FLOSS</strong><br /><span style="color: var(--text-dim); font-size: 0.82rem"
+                ><span data-lang-en>String extraction</span
+                ><span data-lang-zh>字符串提取</span></span
+              >
+            </div>
+            <div class="feature-card" style="padding: 16px">
+              <strong>Frida</strong><br /><span style="color: var(--text-dim); font-size: 0.82rem"
+                ><span data-lang-en>Dynamic instrumentation</span
+                ><span data-lang-zh>动态插桩</span></span
+              >
+            </div>
+            <div class="feature-card" style="padding: 16px">
+              <strong>angr</strong><br /><span style="color: var(--text-dim); font-size: 0.82rem"
+                ><span data-lang-en>Symbolic execution</span
+                ><span data-lang-zh>符号执行</span></span
+              >
+            </div>
+            <div class="feature-card" style="padding: 16px">
+              <strong>Qiling</strong><br /><span style="color: var(--text-dim); font-size: 0.82rem"
+                ><span data-lang-en>Emulation framework</span
+                ><span data-lang-zh>仿真框架</span></span
+              >
+            </div>
+            <div class="feature-card" style="padding: 16px">
+              <strong>RetDec</strong><br /><span style="color: var(--text-dim); font-size: 0.82rem"
+                ><span data-lang-en>Retargetable decompiler</span
+                ><span data-lang-zh>可重定目标反编译</span></span
+              >
+            </div>
+            <div class="feature-card" style="padding: 16px">
+              <strong>Wine</strong><br /><span style="color: var(--text-dim); font-size: 0.82rem"
+                ><span data-lang-en>Windows compat layer</span
+                ><span data-lang-zh>Windows 兼容层</span></span
+              >
+            </div>
+            <div class="feature-card" style="padding: 16px">
+              <strong>UPX</strong><br /><span style="color: var(--text-dim); font-size: 0.82rem"
+                ><span data-lang-en>Unpacking</span><span data-lang-zh>脱壳</span></span
+              >
+            </div>
+            <div class="feature-card" style="padding: 16px">
+              <strong>DIE</strong><br /><span style="color: var(--text-dim); font-size: 0.82rem"
+                ><span data-lang-en>Compiler/packer detection</span
+                ><span data-lang-zh>编译器/加壳检测</span></span
+              >
+            </div>
+          </div>
+        </section>
+
+        <!-- Troubleshooting -->
+        <section id="troubleshooting" class="reveal">
+          <h2><span data-lang-en>Troubleshooting</span><span data-lang-zh>故障排除</span></h2>
+
+          <h3><span data-lang-en>Build Problems</span><span data-lang-zh>构建问题</span></h3>
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th><span data-lang-en>Symptom</span><span data-lang-zh>症状</span></th>
+                <th><span data-lang-en>Solution</span><span data-lang-zh>解决方案</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <span data-lang-en>BuildKit cache corruption / download failure</span
+                  ><span data-lang-zh>BuildKit 缓存损坏 / 下载失败</span>
+                </td>
+                <td>
+                  <code>docker builder prune -a</code> <span data-lang-en>then rebuild with</span
+                  ><span data-lang-zh>然后使用</span> <code>--no-cache</code>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span data-lang-en>Ghidra download fails (DNS / network)</span
+                  ><span data-lang-zh>Ghidra 下载失败（DNS / 网络）</span>
+                </td>
+                <td>
+                  <span data-lang-en
+                    >Download manually and pass via <code>--build-arg GHIDRA_ZIP_PATH</code></span
+                  ><span data-lang-zh
+                    >手动下载并通过 <code>--build-arg GHIDRA_ZIP_PATH</code> 传入</span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span data-lang-en>No space left on device</span
+                  ><span data-lang-zh>磁盘空间不足</span>
+                </td>
+                <td><code>docker system prune -a --volumes</code></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3><span data-lang-en>Runtime Issues</span><span data-lang-zh>运行时问题</span></h3>
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th><span data-lang-en>Symptom</span><span data-lang-zh>症状</span></th>
+                <th><span data-lang-en>Solution</span><span data-lang-zh>解决方案</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GHIDRA_INSTALL_DIR is not set</code></td>
+                <td>
+                  <span data-lang-en
+                    >Set explicitly via <code>-e GHIDRA_INSTALL_DIR=/opt/ghidra</code> or use
+                    <code>--env-file</code></span
+                  ><span data-lang-zh
+                    >通过 <code>-e GHIDRA_INSTALL_DIR=/opt/ghidra</code> 显式设置或使用
+                    <code>--env-file</code></span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span data-lang-en>Permission denied on mounted volumes</span
+                  ><span data-lang-zh>挂载卷权限被拒</span>
+                </td>
+                <td><code>sudo chown -R 1000:1000 ~/.rikune/</code></td>
+              </tr>
+              <tr>
+                <td>
+                  <span data-lang-en>Sample file not found</span
+                  ><span data-lang-zh>样本文件未找到</span>
+                </td>
+                <td>
+                  <span data-lang-en
+                    >Verify mount path: <code>-v /absolute/path:/samples:ro</code></span
+                  ><span data-lang-zh>验证挂载路径：<code>-v /绝对路径:/samples:ro</code></span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3><span data-lang-en>MCP Communication</span><span data-lang-zh>MCP 通信</span></h3>
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th><span data-lang-en>Symptom</span><span data-lang-zh>症状</span></th>
+                <th><span data-lang-en>Solution</span><span data-lang-zh>解决方案</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <code>write EPIPE</code> / <span data-lang-en>stdio broken</span
+                  ><span data-lang-zh>stdio 中断</span>
+                </td>
+                <td>
+                  <span data-lang-en
+                    >Use <code>-i</code> (not <code>-it</code>) — TTY mode breaks stdio</span
+                  ><span data-lang-zh
+                    >使用 <code>-i</code>（而非 <code>-it</code>）— TTY 模式会干扰 stdio</span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span data-lang-en>MCP client cannot connect / timeout</span
+                  ><span data-lang-zh>MCP 客户端无法连接 / 超时</span>
+                </td>
+                <td>
+                  <span data-lang-en
+                    >Set timeout to 300000ms; increase <code>--memory=8g --cpus=4</code></span
+                  ><span data-lang-zh
+                    >设置超时为 300000ms；增加 <code>--memory=8g --cpus=4</code></span
+                  >
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3><span data-lang-en>Ghidra Analysis</span><span data-lang-zh>Ghidra 分析</span></h3>
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th><span data-lang-en>Symptom</span><span data-lang-zh>症状</span></th>
+                <th><span data-lang-en>Solution</span><span data-lang-zh>解决方案</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>OutOfMemoryError</code></td>
+                <td>
+                  <span data-lang-en
+                    >Increase Java heap: <code>-e JAVA_OPTS="-Xmx4g"</code> and container
+                    memory</span
+                  ><span data-lang-zh
+                    >增加 Java 堆：<code>-e JAVA_OPTS="-Xmx4g"</code> 并增加容器内存</span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span data-lang-en>Lock file conflict</span><span data-lang-zh>锁文件冲突</span>
+                </td>
+                <td>
+                  <span data-lang-en
+                    >Remove stale locks: <code>rm -f /ghidra-projects/*.lock</code></span
+                  ><span data-lang-zh>删除过期锁：<code>rm -f /ghidra-projects/*.lock</code></span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
       </div>
-      <blockquote>
-        <span data-lang-en><strong>Note:</strong> <code>docker-compose.analyzer.yml</code> now defaults to <code>RUNTIME_MODE=disabled</code>. Switch to <code>manual</code> or <code>remote-sandbox</code> only when you intentionally connect a Windows runtime plane. Use <code>RUNTIME_HOST_AGENT_API_KEY</code> for Analyzer → Host Agent control requests, and <code>RUNTIME_API_KEY</code> only when the Windows Runtime Node itself requires a separate API key.</span>
-        <span data-lang-zh><strong>注意：</strong><code>docker-compose.analyzer.yml</code> 现在默认使用 <code>RUNTIME_MODE=disabled</code>。只有在你明确接入 Windows 运行时面时，才切换到 <code>manual</code> 或 <code>remote-sandbox</code>。Analyzer → Host Agent 的控制请求使用 <code>RUNTIME_HOST_AGENT_API_KEY</code>，只有当 Windows Runtime Node 自身需要单独鉴权时才配置 <code>RUNTIME_API_KEY</code>。</span>
-      </blockquote>
-    </section>
+    </div>
 
-    <!-- Environment Variables -->
-    <section id="env-vars" class="reveal">
-      <h2><span data-lang-en>Environment Variables</span><span data-lang-zh>环境变量</span></h2>
-      <table class="doc-table">
-        <thead>
-          <tr>
-            <th><span data-lang-en>Variable</span><span data-lang-zh>变量名</span></th>
-            <th><span data-lang-en>Default</span><span data-lang-zh>默认值</span></th>
-            <th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td><code>WORKSPACE_ROOT</code></td><td><code>/app/workspaces</code></td><td><span data-lang-en>Workspace root directory</span><span data-lang-zh>工作空间根目录</span></td></tr>
-          <tr><td><code>DB_PATH</code></td><td><code>/app/data/database.db</code></td><td><span data-lang-en>SQLite database path</span><span data-lang-zh>SQLite 数据库路径</span></td></tr>
-          <tr><td><code>CACHE_ROOT</code></td><td><code>/app/cache</code></td><td><span data-lang-en>Cache root directory</span><span data-lang-zh>缓存根目录</span></td></tr>
-          <tr><td><code>GHIDRA_PROJECT_ROOT</code></td><td><code>/ghidra-projects</code></td><td><span data-lang-en>Ghidra project root</span><span data-lang-zh>Ghidra 项目根目录</span></td></tr>
-          <tr><td><code>LOG_LEVEL</code></td><td><code>info</code></td><td>trace / debug / info / warn / error</td></tr>
-          <tr><td><code>API_PORT</code></td><td><code>18080</code></td><td><span data-lang-en>HTTP API port</span><span data-lang-zh>HTTP API 端口</span></td></tr>
-          <tr><td><code>API_KEY</code></td><td>—</td><td><span data-lang-en>API key for the HTTP file server / dashboard (optional)</span><span data-lang-zh>HTTP 文件服务 / Dashboard 的 API 密钥（可选）</span></td></tr>
-          <tr><td><code>RUNTIME_MODE</code></td><td><code>disabled</code></td><td><span data-lang-en><code>disabled</code>, <code>manual</code>, or <code>remote-sandbox</code> for Docker analyzers</span><span data-lang-zh>Docker analyzer 使用 <code>disabled</code>、<code>manual</code> 或 <code>remote-sandbox</code></span></td></tr>
-          <tr><td><code>RUNTIME_ENDPOINT</code></td><td>—</td><td><span data-lang-en>Manual Runtime Node endpoint for split deployments</span><span data-lang-zh>拆分部署时的手工 Runtime Node 地址</span></td></tr>
-          <tr><td><code>RUNTIME_HOST_AGENT_ENDPOINT</code></td><td>—</td><td><span data-lang-en>Windows Host Agent endpoint for <code>remote-sandbox</code></span><span data-lang-zh><code>remote-sandbox</code> 使用的 Windows Host Agent 地址</span></td></tr>
-          <tr><td><code>RUNTIME_HOST_AGENT_API_KEY</code></td><td>—</td><td><span data-lang-en>Analyzer → Host Agent control-plane API key</span><span data-lang-zh>Analyzer → Host Agent 控制面 API 密钥</span></td></tr>
-          <tr><td><code>RUNTIME_API_KEY</code></td><td>—</td><td><span data-lang-en>Analyzer → Runtime Node API key when runtime auth is enabled</span><span data-lang-zh>启用运行时鉴权时的 Analyzer → Runtime Node API 密钥</span></td></tr>
-          <tr><td><code>QILING_ROOTFS</code></td><td><code>/opt/qiling-rootfs</code></td><td><span data-lang-en>Qiling Windows rootfs mount</span><span data-lang-zh>Qiling Windows rootfs 挂载点</span></td></tr>
-          <tr><td><code>ANGR_PYTHON</code></td><td><code>/opt/angr-venv/bin/python</code></td><td><span data-lang-en>Isolated angr interpreter</span><span data-lang-zh>隔离的 angr 解释器</span></td></tr>
-          <tr><td><code>RETDEC_PATH</code></td><td><code>/opt/retdec/bin/retdec-decompiler</code></td><td><span data-lang-en>RetDec decompiler path</span><span data-lang-zh>RetDec 反编译器路径</span></td></tr>
-          <tr><td><code>GHIDRA_INSTALL_DIR</code></td><td><code>/opt/ghidra</code></td><td><span data-lang-en>Ghidra installation directory</span><span data-lang-zh>Ghidra 安装目录</span></td></tr>
-          <tr><td><code>JAVA_HOME</code></td><td><code>/usr/lib/jvm/java-21-openjdk-amd64</code></td><td><span data-lang-en>Java runtime for Ghidra</span><span data-lang-zh>Ghidra 用 Java 运行时</span></td></tr>
-          <tr><td><code>CAPA_PATH</code></td><td><code>/opt/capa/capa</code></td><td><span data-lang-en>capa binary path</span><span data-lang-zh>capa 二进制路径</span></td></tr>
-          <tr><td><code>DIE_PATH</code></td><td><code>/opt/die/diec</code></td><td><span data-lang-en>Detect It Easy CLI path</span><span data-lang-zh>Detect It Easy CLI 路径</span></td></tr>
-          <tr><td><code>RIZIN_PATH</code></td><td><code>/usr/bin/rizin</code></td><td><span data-lang-en>Rizin binary path</span><span data-lang-zh>Rizin 二进制路径</span></td></tr>
-          <tr><td><code>UPX_PATH</code></td><td><code>/usr/bin/upx</code></td><td><span data-lang-en>UPX binary path</span><span data-lang-zh>UPX 二进制路径</span></td></tr>
-          <tr><td><code>WINE_PATH</code></td><td><code>/usr/bin/wine</code></td><td><span data-lang-en>Wine executable path</span><span data-lang-zh>Wine 可执行路径</span></td></tr>
-          <tr><td><code>GRAPHVIZ_DOT_PATH</code></td><td><code>/usr/bin/dot</code></td><td><span data-lang-en>Graphviz dot binary</span><span data-lang-zh>Graphviz dot 二进制</span></td></tr>
-          <tr><td><code>QILING_PYTHON</code></td><td><code>/opt/qiling-venv/bin/python</code></td><td><span data-lang-en>Isolated Qiling interpreter</span><span data-lang-zh>隔离的 Qiling 解释器</span></td></tr>
-          <tr><td><code>MAX_PYTHON_WORKERS</code></td><td><code>4</code></td><td><span data-lang-en>Concurrent Python worker limit</span><span data-lang-zh>并发 Python 工作进程限制</span></td></tr>
-          <tr><td><code>PLUGINS</code></td><td>—</td><td><span data-lang-en>Comma-separated plugin names to enable</span><span data-lang-zh>逗号分隔的启用插件名</span></td></tr>
-        </tbody>
-      </table>
-    </section>
-
-    <!-- Web Dashboard -->
-    <section id="dashboard" class="reveal">
-      <h2>Web Dashboard</h2>
-      <p>
-        <span data-lang-en>After starting the container, open your browser to:</span>
-        <span data-lang-zh>容器启动后，在浏览器中访问：</span>
-      </p>
-      <div class="code-block">
-        <div class="code-block__header"><span>URL</span></div>
-        <pre>http://localhost:18080/dashboard</pre>
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="container footer__inner">
+        <div class="footer__brand">
+          <span
+            class="nav__logo-icon"
+            style="width: 24px; height: 24px; font-size: 0.65rem; border-radius: 6px"
+            >R</span
+          >
+          Rikune
+        </div>
+        <ul class="footer__links">
+          <li><a href="api-reference.html">API</a></li>
+          <li>
+            <a href="local-setup.html"
+              ><span data-lang-en>Local</span><span data-lang-zh>本地</span></a
+            >
+          </li>
+          <li><a href="docker.html">Docker</a></li>
+          <li><a href="faq.html">FAQ</a></li>
+          <li>
+            <a href="examples.html"
+              ><span data-lang-en>Examples</span><span data-lang-zh>示例</span></a
+            >
+          </li>
+          <li>
+            <a href="plugins.html"
+              ><span data-lang-en>Plugins</span><span data-lang-zh>插件</span></a
+            >
+          </li>
+          <li>
+            <a href="anti-obfuscation.html"
+              ><span data-lang-en>Anti-Obf</span><span data-lang-zh>反混淆</span></a
+            >
+          </li>
+        </ul>
+        <span class="footer__copy">MIT License · Built for the MCP ecosystem</span>
       </div>
-      <p>
-        <span data-lang-en>The dashboard provides 6 tabs: <strong>Overview</strong>, <strong>Tools</strong>, <strong>Plugins</strong>, <strong>Samples</strong>, <strong>Config</strong>, and <strong>System</strong>, with SSE real-time event stream and auto-refresh.</span>
-        <span data-lang-zh>看板提供 6 个选项卡：<strong>Overview</strong>、<strong>Tools</strong>、<strong>Plugins</strong>、<strong>Samples</strong>、<strong>Config</strong> 和 <strong>System</strong>，支持 SSE 实时事件流和自动刷新。</span>
-      </p>
-    </section>
+    </footer>
 
-    <!-- Bundled Tools -->
-    <section id="bundled" class="reveal">
-      <h2><span data-lang-en>Bundled Toolchain</span><span data-lang-zh>内置工具链</span></h2>
-      <p>
-        <span data-lang-en>The Docker image ships with all of these pre-installed:</span>
-        <span data-lang-zh>Docker 镜像预装了以下所有工具：</span>
-      </p>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:24px 0;">
-        <div class="feature-card" style="padding:16px"><strong>Ghidra 12.0.4</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Decompilation &amp; analysis</span><span data-lang-zh>反编译分析</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>Rizin</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Binary analysis</span><span data-lang-zh>二进制分析</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>YARA-X</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Pattern matching</span><span data-lang-zh>模式匹配</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>capa + rules</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Capability detection</span><span data-lang-zh>能力检测</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>FLOSS</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>String extraction</span><span data-lang-zh>字符串提取</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>Frida</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Dynamic instrumentation</span><span data-lang-zh>动态插桩</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>angr</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Symbolic execution</span><span data-lang-zh>符号执行</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>Qiling</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Emulation framework</span><span data-lang-zh>仿真框架</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>RetDec</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Retargetable decompiler</span><span data-lang-zh>可重定目标反编译</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>Wine</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Windows compat layer</span><span data-lang-zh>Windows 兼容层</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>UPX</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Unpacking</span><span data-lang-zh>脱壳</span></span></div>
-        <div class="feature-card" style="padding:16px"><strong>DIE</strong><br><span style="color:var(--text-dim);font-size:.82rem"><span data-lang-en>Compiler/packer detection</span><span data-lang-zh>编译器/加壳检测</span></span></div>
-      </div>
-    </section>
-
-    <!-- Troubleshooting -->
-    <section id="troubleshooting" class="reveal">
-      <h2><span data-lang-en>Troubleshooting</span><span data-lang-zh>故障排除</span></h2>
-
-      <h3><span data-lang-en>Build Problems</span><span data-lang-zh>构建问题</span></h3>
-      <table class="doc-table">
-        <thead><tr><th><span data-lang-en>Symptom</span><span data-lang-zh>症状</span></th><th><span data-lang-en>Solution</span><span data-lang-zh>解决方案</span></th></tr></thead>
-        <tbody>
-          <tr>
-            <td><span data-lang-en>BuildKit cache corruption / download failure</span><span data-lang-zh>BuildKit 缓存损坏 / 下载失败</span></td>
-            <td><code>docker builder prune -a</code> <span data-lang-en>then rebuild with</span><span data-lang-zh>然后使用</span> <code>--no-cache</code></td>
-          </tr>
-          <tr>
-            <td><span data-lang-en>Ghidra download fails (DNS / network)</span><span data-lang-zh>Ghidra 下载失败（DNS / 网络）</span></td>
-            <td><span data-lang-en>Download manually and pass via <code>--build-arg GHIDRA_ZIP_PATH</code></span><span data-lang-zh>手动下载并通过 <code>--build-arg GHIDRA_ZIP_PATH</code> 传入</span></td>
-          </tr>
-          <tr>
-            <td><span data-lang-en>No space left on device</span><span data-lang-zh>磁盘空间不足</span></td>
-            <td><code>docker system prune -a --volumes</code></td>
-          </tr>
-        </tbody>
-      </table>
-
-      <h3><span data-lang-en>Runtime Issues</span><span data-lang-zh>运行时问题</span></h3>
-      <table class="doc-table">
-        <thead><tr><th><span data-lang-en>Symptom</span><span data-lang-zh>症状</span></th><th><span data-lang-en>Solution</span><span data-lang-zh>解决方案</span></th></tr></thead>
-        <tbody>
-          <tr>
-            <td><code>GHIDRA_INSTALL_DIR is not set</code></td>
-            <td><span data-lang-en>Set explicitly via <code>-e GHIDRA_INSTALL_DIR=/opt/ghidra</code> or use <code>--env-file</code></span><span data-lang-zh>通过 <code>-e GHIDRA_INSTALL_DIR=/opt/ghidra</code> 显式设置或使用 <code>--env-file</code></span></td>
-          </tr>
-          <tr>
-            <td><span data-lang-en>Permission denied on mounted volumes</span><span data-lang-zh>挂载卷权限被拒</span></td>
-            <td><code>sudo chown -R 1000:1000 ~/.rikune/</code></td>
-          </tr>
-          <tr>
-            <td><span data-lang-en>Sample file not found</span><span data-lang-zh>样本文件未找到</span></td>
-            <td><span data-lang-en>Verify mount path: <code>-v /absolute/path:/samples:ro</code></span><span data-lang-zh>验证挂载路径：<code>-v /绝对路径:/samples:ro</code></span></td>
-          </tr>
-        </tbody>
-      </table>
-
-      <h3><span data-lang-en>MCP Communication</span><span data-lang-zh>MCP 通信</span></h3>
-      <table class="doc-table">
-        <thead><tr><th><span data-lang-en>Symptom</span><span data-lang-zh>症状</span></th><th><span data-lang-en>Solution</span><span data-lang-zh>解决方案</span></th></tr></thead>
-        <tbody>
-          <tr>
-            <td><code>write EPIPE</code> / <span data-lang-en>stdio broken</span><span data-lang-zh>stdio 中断</span></td>
-            <td><span data-lang-en>Use <code>-i</code> (not <code>-it</code>) — TTY mode breaks stdio</span><span data-lang-zh>使用 <code>-i</code>（而非 <code>-it</code>）— TTY 模式会干扰 stdio</span></td>
-          </tr>
-          <tr>
-            <td><span data-lang-en>MCP client cannot connect / timeout</span><span data-lang-zh>MCP 客户端无法连接 / 超时</span></td>
-            <td><span data-lang-en>Set timeout to 300000ms; increase <code>--memory=8g --cpus=4</code></span><span data-lang-zh>设置超时为 300000ms；增加 <code>--memory=8g --cpus=4</code></span></td>
-          </tr>
-        </tbody>
-      </table>
-
-      <h3><span data-lang-en>Ghidra Analysis</span><span data-lang-zh>Ghidra 分析</span></h3>
-      <table class="doc-table">
-        <thead><tr><th><span data-lang-en>Symptom</span><span data-lang-zh>症状</span></th><th><span data-lang-en>Solution</span><span data-lang-zh>解决方案</span></th></tr></thead>
-        <tbody>
-          <tr>
-            <td><code>OutOfMemoryError</code></td>
-            <td><span data-lang-en>Increase Java heap: <code>-e JAVA_OPTS="-Xmx4g"</code> and container memory</span><span data-lang-zh>增加 Java 堆：<code>-e JAVA_OPTS="-Xmx4g"</code> 并增加容器内存</span></td>
-          </tr>
-          <tr>
-            <td><span data-lang-en>Lock file conflict</span><span data-lang-zh>锁文件冲突</span></td>
-            <td><span data-lang-en>Remove stale locks: <code>rm -f /ghidra-projects/*.lock</code></span><span data-lang-zh>删除过期锁：<code>rm -f /ghidra-projects/*.lock</code></span></td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-
-  </div>
-</div>
-
-<!-- Footer -->
-<footer class="footer">
-  <div class="container footer__inner">
-    <div class="footer__brand"><span class="nav__logo-icon" style="width:24px;height:24px;font-size:.65rem;border-radius:6px;">R</span> Rikune</div>
-    <ul class="footer__links">
-      <li><a href="api-reference.html">API</a></li>
-      <li><a href="local-setup.html"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
-      <li><a href="docker.html">Docker</a></li>
-      <li><a href="faq.html">FAQ</a></li>
-      <li><a href="examples.html"><span data-lang-en>Examples</span><span data-lang-zh>示例</span></a></li>
-      <li><a href="plugins.html"><span data-lang-en>Plugins</span><span data-lang-zh>插件</span></a></li>
-      <li><a href="anti-obfuscation.html"><span data-lang-en>Anti-Obf</span><span data-lang-zh>反混淆</span></a></li>
-    </ul>
-    <span class="footer__copy">MIT License · Built for the MCP ecosystem</span>
-  </div>
-</footer>
-
-<script src="assets/main.js"></script>
-</body>
+    <script src="assets/main.js"></script>
+  </body>
 </html>

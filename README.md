@@ -811,7 +811,8 @@ Important caveats:
 
 - `docker-compose.analyzer.yml` now defaults to `RUNTIME_MODE=disabled`, making it a true static-only Linux analyzer unless you explicitly switch to `manual` or `remote-sandbox`.
 - Docker or WSL analyzers cannot use `auto-sandbox`; that mode requires a Windows-native analyzer process.
-- For real sample execution from Linux Docker, use `RUNTIME_MODE=manual` or `RUNTIME_MODE=remote-sandbox` and connect to a Windows Runtime node or Windows Host Agent.
+- For real sample execution from Linux Docker, use `RUNTIME_MODE=manual` or `RUNTIME_MODE=remote-sandbox` and connect to a Windows Runtime node or Windows Host Agent over the runtime HTTP API.
+- Use `RUNTIME_HOST_AGENT_API_KEY` only for Analyzer → Host Agent control requests, and `RUNTIME_API_KEY` only when the Windows Runtime Node itself requires a separate API key.
 - If you need single-host dynamic execution on Windows, run the analyzer natively on Windows and set `RUNTIME_MODE=auto-sandbox`.
 - `Qiling` still needs an externally mounted Windows rootfs via `QILING_ROOTFS`.
 - `Wine` and `winedbg` are useful Linux-hosted user-mode helpers, not full Windows desktop debugging replacements.

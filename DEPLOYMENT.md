@@ -90,11 +90,17 @@ When you call a dynamic-analysis tool (e.g. `sandbox.execute`), Rikune will auto
 2. Start the Runtime Node **inside** Windows Sandbox (or your isolated VM):
    ```powershell
    $env:ALLOW_UNSAFE_RUNTIME="true"   # only if NOT in Sandbox
-   node packages/runtime-node/dist/index.js --host 0.0.0.0 --port 18081 --inbox C:\rikune-inbox --outbox C:\rikune-outbox
+   node packages/runtime-node/dist/index.js `
+     --host 0.0.0.0 `
+     --port 18081 `
+     --inbox C:\rikune-inbox `
+     --outbox C:\rikune-outbox `
+     --ready-file C:\rikune-outbox\runtime.ready.json
    ```
 
-   > **Security warning:** If you run the Runtime Node directly on a Windows physical machine (not inside a VM/Sandbox), set `ALLOW_UNSAFE_RUNTIME=true` only for temporary development. In production, the Runtime must always be inside a virtual machine.
+   > Runtime Node accepts both CLI flags and environment variables. For split deployments, prefer explicit CLI flags (CLI > env > defaults). Add `--api-key <value>` if the runtime plane should require authenticated analyzer requests.
 
+   > **Security warning:** If you run the Runtime Node directly on a Windows physical machine (not inside a VM/Sandbox), set `ALLOW_UNSAFE_RUNTIME=true` only for temporary development. In production, the Runtime must always be inside a virtual machine.
 3. Note the VM's IP address:
    ```powershell
    (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { !$_.InterfaceAlias.Contains("Loopback") }).IPAddress
@@ -192,7 +198,7 @@ This script will:
    The installer will:
    - Check Windows Sandbox availability
    - Build `runtime-node` and `windows-host-agent`
-   - Generate `.env.runtime-windows` with a random API key
+   - Generate `.env.runtime-windows` with a Host Agent API key plus a sandbox-runtime fallback key
    - Start the Host Agent (as a Windows Service via `pm2` or `node-windows`)
    - Verify health
 
@@ -202,7 +208,7 @@ This script will:
    netsh advfirewall firewall add rule name="RikuneHostAgent" dir=in action=allow protocol=tcp localport=18082
    ```
 
-4. **Note the Windows IP address** and the API key from `.env.runtime-windows`.
+4. **Note the Windows IP address**, the Host Agent API key, and (if separately configured) the Runtime Node API key from `.env.runtime-windows`.
 
 #### On the Linux host
 
@@ -243,7 +249,8 @@ This script will:
 | `RUNTIME_HOST_AGENT_API_KEY` | C | API key used by Analyzer → Host Agent control requests |
 | `RUNTIME_API_KEY` | B, C | API key used by Analyzer → Runtime Node requests (optional if runtime auth is disabled/shared) |
 | `HOST_AGENT_PORT` | C | Port the Host Agent listens on (default: 18082) |
-| `HOST_AGENT_API_KEY` | C | API key the Host Agent itself requires on the Windows host |
+| `HOST_AGENT_API_KEY` | C | API key the Host Agent HTTP service requires on the Windows host |
+| `HOST_AGENT_RUNTIME_API_KEY` | C | Runtime API key that the Host Agent can inject into Windows Sandbox when Analyzer does not pass one explicitly |
 
 ### Common Commands
 
