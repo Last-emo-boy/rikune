@@ -37,6 +37,7 @@ export const wineDllOverridesToolDefinition: ToolDefinition = {
     'Configure DLL load-order overrides in a Wine prefix. ' +
     'Set native/builtin/disabled per DLL — useful for hooking, anti-analysis bypass, or forcing specific API implementations.',
   inputSchema: inputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeWineDllOverrides' },
 }
 
 function getPrefixRoot(wm: WorkspaceManager): string {

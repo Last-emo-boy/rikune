@@ -6,6 +6,7 @@
 import { z } from 'zod'
 import { spawn } from 'child_process'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'keygen.verify'
 
@@ -54,7 +55,7 @@ async function callVerifyWorker(request: Record<string, unknown>, pythonCmd: str
 export function createKeygenVerifyHandler(deps: PluginToolDeps) {
   const { workspaceManager, database, config, policyGuard, resolvePrimarySamplePath, persistStaticAnalysisJsonArtifact, resolvePackagePath } = deps
 
-  const pythonCmd = config?.workers?.sandbox?.qilingPythonPath || config?.workers?.static?.pythonPath || (process.platform === 'win32' ? 'python' : 'python3')
+  const pythonCmd = config?.workers?.sandbox?.qilingPythonPath || getPythonCommand(undefined, config?.workers?.static?.pythonPath)
   return async (args: z.infer<typeof KeygenVerifyInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()
     try {

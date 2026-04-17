@@ -1,265 +1,472 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FAQ — Rikune</title>
-<meta name="description" content="Frequently asked questions about Rikune MCP Server installation, configuration and usage.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/style.css">
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FAQ — Rikune</title>
+    <meta
+      name="description"
+      content="Frequently asked questions about Rikune MCP Server installation, configuration and usage."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/style.css" />
+  </head>
+  <body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow--1"></div>
+    <div class="bg-glow bg-glow--2"></div>
+    <canvas id="particles"></canvas>
 
-<div class="bg-grid"></div>
-<div class="bg-glow bg-glow--1"></div>
-<div class="bg-glow bg-glow--2"></div>
-<canvas id="particles"></canvas>
+    <!-- Navigation -->
+    <nav class="nav" id="nav">
+      <div class="nav__inner">
+        <a href="index.html" class="nav__logo"><span class="nav__logo-icon">R</span> Rikune</a>
+        <ul class="nav__links" id="navLinks">
+          <li>
+            <a href="index.html#features" data-lang-en>Features</a
+            ><a href="index.html#features" data-lang-zh>功能特性</a>
+          </li>
+          <li><a href="api-reference.html">API</a></li>
+          <li>
+            <a href="usage.html" data-lang-en>Usage</a
+            ><a href="usage.html" data-lang-zh>使用指南</a>
+          </li>
+          <li>
+            <a href="local-setup.html"
+              ><span data-lang-en>Local</span><span data-lang-zh>本地</span></a
+            >
+          </li>
+          <li><a href="docker.html">Docker</a></li>
+          <li>
+            <a href="examples.html" data-lang-en>Examples</a
+            ><a href="examples.html" data-lang-zh>示例</a>
+          </li>
+          <li>
+            <a href="plugins.html" data-lang-en>Plugins</a
+            ><a href="plugins.html" data-lang-zh>插件</a>
+          </li>
+          <li>
+            <a href="anti-obfuscation.html" data-lang-en>Anti-Obf</a
+            ><a href="anti-obfuscation.html" data-lang-zh>反混淆</a>
+          </li>
+          <li><a href="faq.html" class="active">FAQ</a></li>
+        </ul>
+        <div class="nav__right">
+          <button class="lang-toggle" id="lang-toggle">中文</button>
+          <a
+            href="https://github.com/Last-emo-boy/rikune"
+            class="nav__cta"
+            target="_blank"
+            rel="noopener"
+            >GitHub →</a
+          >
+        </div>
+        <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </nav>
 
-<!-- Navigation -->
-<nav class="nav" id="nav">
-  <div class="nav__inner">
-    <a href="index.html" class="nav__logo"><span class="nav__logo-icon">R</span> Rikune</a>
-    <ul class="nav__links" id="navLinks">
-      <li><a href="index.html#features" data-lang-en>Features</a><a href="index.html#features" data-lang-zh>功能特性</a></li>
-      <li><a href="api-reference.html">API</a></li>
-      <li><a href="usage.html" data-lang-en>Usage</a><a href="usage.html" data-lang-zh>使用指南</a></li>
-      <li><a href="local-setup.html"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
-      <li><a href="docker.html">Docker</a></li>
-      <li><a href="examples.html" data-lang-en>Examples</a><a href="examples.html" data-lang-zh>示例</a></li>
-      <li><a href="plugins.html" data-lang-en>Plugins</a><a href="plugins.html" data-lang-zh>插件</a></li>
-      <li><a href="anti-obfuscation.html" data-lang-en>Anti-Obf</a><a href="anti-obfuscation.html" data-lang-zh>反混淆</a></li>
-      <li><a href="faq.html" class="active">FAQ</a></li>
-    </ul>
-    <div class="nav__right">
-      <button class="lang-toggle" id="lang-toggle">中文</button>
-      <a href="https://github.com/Last-emo-boy/rikune" class="nav__cta" target="_blank" rel="noopener">GitHub →</a>
+    <!-- Hero -->
+    <div class="page-hero">
+      <div class="container">
+        <div class="breadcrumb"><a href="index.html">Rikune</a> / FAQ</div>
+        <h1>
+          <span data-lang-en>Frequently Asked Questions</span><span data-lang-zh>常见问题</span>
+        </h1>
+        <p>
+          <span data-lang-en
+            >Common questions about installation, configuration, and troubleshooting.</span
+          >
+          <span data-lang-zh>关于安装、配置和问题排查的常见问题。</span>
+        </p>
+      </div>
     </div>
-    <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu"><span></span><span></span><span></span></button>
-  </div>
-</nav>
 
-<!-- Hero -->
-<div class="page-hero">
-  <div class="container">
-    <div class="breadcrumb"><a href="index.html">Rikune</a> / FAQ</div>
-    <h1><span data-lang-en>Frequently Asked Questions</span><span data-lang-zh>常见问题</span></h1>
-    <p>
-      <span data-lang-en>Common questions about installation, configuration, and troubleshooting.</span>
-      <span data-lang-zh>关于安装、配置和问题排查的常见问题。</span>
-    </p>
-  </div>
-</div>
+    <!-- FAQ Content -->
+    <div class="doc-content">
+      <h2 class="reveal"><span data-lang-en>General</span><span data-lang-zh>通用</span></h2>
 
-<!-- FAQ Content -->
-<div class="doc-content">
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>Which operating systems are supported?</span>
+          <span data-lang-zh>支持哪些操作系统？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            Rikune supports <strong>Linux</strong>, <strong>macOS</strong>, and
+            <strong>Windows</strong>, but the recommended shape depends on what you need. Use
+            <strong>static-only Linux Docker</strong> with <code>RUNTIME_MODE=disabled</code> when
+            you do not want to execute samples, use <strong>manual</strong> or
+            <strong>remote-sandbox</strong> to connect a Linux analyzer to a separate Windows
+            Runtime Node / Host Agent, and use a <strong>Windows-native analyzer</strong> with
+            <code>auto-sandbox</code> when you want single-host Windows Sandbox execution. Docker or
+            WSL analyzers cannot use <code>auto-sandbox</code> directly.
+          </p>
+          <p data-lang-zh>
+            Rikune 支持 <strong>Linux</strong>、<strong>macOS</strong> 和
+            <strong>Windows</strong>，但推荐部署方式取决于你的目标。若你不想执行样本，请使用带有
+            <code>RUNTIME_MODE=disabled</code> 的<strong>纯静态 Linux Docker</strong>；若要让 Linux
+            analyzer 连接独立的 Windows Runtime Node / Host Agent，请使用 <strong>manual</strong> 或
+            <strong>remote-sandbox</strong>；若要在单机 Windows 上通过 Windows Sandbox
+            执行真实样本，请使用带有 <code>auto-sandbox</code> 的<strong
+              >Windows 原生 analyzer</strong
+            >。Docker 或 WSL 中的 analyzer 不能直接使用 <code>auto-sandbox</code>。
+          </p>
+        </div>
+      </div>
 
-  <h2 class="reveal"><span data-lang-en>General</span><span data-lang-zh>通用</span></h2>
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en
+            >What is the difference between <code>RUNTIME_HOST_AGENT_API_KEY</code> and
+            <code>RUNTIME_API_KEY</code>?</span
+          >
+          <span data-lang-zh
+            ><code>RUNTIME_HOST_AGENT_API_KEY</code> 和
+            <code>RUNTIME_API_KEY</code> 有什么区别？</span
+          >
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            <code>RUNTIME_HOST_AGENT_API_KEY</code> is the control-plane key used by the analyzer
+            when it asks the Windows Host Agent to start or stop Windows Sandbox.
+            <code>RUNTIME_API_KEY</code> is the data-plane key used by the analyzer when it talks
+            directly to a Windows Runtime Node. Keep them separate unless you intentionally reuse
+            the same value for both.
+          </p>
+          <p data-lang-zh>
+            <code>RUNTIME_HOST_AGENT_API_KEY</code> 是控制面密钥，用于 analyzer 请求 Windows Host
+            Agent 启动或停止 Windows Sandbox。<code>RUNTIME_API_KEY</code> 是数据面密钥，用于
+            analyzer 直接访问 Windows Runtime
+            Node。除非你明确决定复用同一个值，否则请将它们分开配置。
+          </p>
+        </div>
+      </div>
 
-  <div class="faq-item reveal">
-    <div class="faq-item__q">
-      <span data-lang-en>Which operating systems are supported?</span>
-      <span data-lang-zh>支持哪些操作系统？</span>
-      <span class="faq-item__arrow">▾</span>
-    </div>
-    <div class="faq-item__a">
-      <p data-lang-en>Rikune runs on <strong>Linux</strong>, <strong>macOS</strong>, and <strong>Windows</strong>. The Docker image provides the most complete toolchain and is recommended for production use. Native mode works on all three platforms with reduced backend coverage.</p>
-      <p data-lang-zh>Rikune 支持 <strong>Linux</strong>、<strong>macOS</strong> 和 <strong>Windows</strong>。Docker 镜像提供最完整的工具链，推荐用于生产环境。原生模式在三个平台上都可以运行，但后端覆盖范围较少。</p>
-    </div>
-  </div>
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>Do I need Ghidra installed locally?</span>
+          <span data-lang-zh>需要本地安装 Ghidra 吗？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            For native mode, yes — set <code>GHIDRA_INSTALL_DIR</code> to your Ghidra installation
+            path. With Docker, Ghidra is pre-installed in the container image.
+          </p>
+          <p data-lang-zh>
+            原生模式下需要 — 将 <code>GHIDRA_INSTALL_DIR</code> 设为你的 Ghidra 安装路径。使用
+            Docker 时，Ghidra 已预装在容器镜像中。
+          </p>
+        </div>
+      </div>
 
-  <div class="faq-item reveal">
-    <div class="faq-item__q">
-      <span data-lang-en>Do I need Ghidra installed locally?</span>
-      <span data-lang-zh>需要本地安装 Ghidra 吗？</span>
-      <span class="faq-item__arrow">▾</span>
-    </div>
-    <div class="faq-item__a">
-      <p data-lang-en>For native mode, yes — set <code>GHIDRA_INSTALL_DIR</code> to your Ghidra installation path. With Docker, Ghidra is pre-installed in the container image.</p>
-      <p data-lang-zh>原生模式下需要 — 将 <code>GHIDRA_INSTALL_DIR</code> 设为你的 Ghidra 安装路径。使用 Docker 时，Ghidra 已预装在容器镜像中。</p>
-    </div>
-  </div>
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>What MCP clients are supported?</span>
+          <span data-lang-zh>支持哪些 MCP 客户端？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            Any MCP-compatible client works. We provide install scripts for
+            <strong>Claude Desktop</strong>, <strong>VS Code Copilot</strong>, and
+            <strong>Codex CLI</strong>. Other clients (Qwen, etc.) can connect via standard MCP
+            configuration.
+          </p>
+          <p data-lang-zh>
+            任何 MCP 兼容客户端均可使用。我们提供了 <strong>Claude Desktop</strong>、<strong
+              >VS Code Copilot</strong
+            >
+            和 <strong>Codex CLI</strong> 的安装脚本。其他客户端（通义千问等）可通过标准 MCP
+            配置连接。
+          </p>
+        </div>
+      </div>
 
-  <div class="faq-item reveal">
-    <div class="faq-item__q">
-      <span data-lang-en>What MCP clients are supported?</span>
-      <span data-lang-zh>支持哪些 MCP 客户端？</span>
-      <span class="faq-item__arrow">▾</span>
-    </div>
-    <div class="faq-item__a">
-      <p data-lang-en>Any MCP-compatible client works. We provide install scripts for <strong>Claude Desktop</strong>, <strong>VS Code Copilot</strong>, and <strong>Codex CLI</strong>. Other clients (Qwen, etc.) can connect via standard MCP configuration.</p>
-      <p data-lang-zh>任何 MCP 兼容客户端均可使用。我们提供了 <strong>Claude Desktop</strong>、<strong>VS Code Copilot</strong> 和 <strong>Codex CLI</strong> 的安装脚本。其他客户端（通义千问等）可通过标准 MCP 配置连接。</p>
-    </div>
-  </div>
+      <h2 class="reveal"><span data-lang-en>Installation</span><span data-lang-zh>安装</span></h2>
 
-  <h2 class="reveal"><span data-lang-en>Installation</span><span data-lang-zh>安装</span></h2>
-
-  <div class="faq-item reveal">
-    <div class="faq-item__q">
-      <span data-lang-en>Python dependency installation fails — what should I do?</span>
-      <span data-lang-zh>Python 依赖安装失败怎么办？</span>
-      <span class="faq-item__arrow">▾</span>
-    </div>
-    <div class="faq-item__a">
-      <p data-lang-en>Common Python packages like <code>pefile</code>, <code>lief</code>, and <code>yara-python</code> may fail on some platforms. Try:</p>
-      <p data-lang-zh>像 <code>pefile</code>、<code>lief</code>、<code>yara-python</code> 这样的 Python 包在某些平台上可能安装失败。尝试：</p>
-      <div class="code-block">
-        <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>
-        <pre><span class="comment"># Install with specific versions</span>
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>Python dependency installation fails — what should I do?</span>
+          <span data-lang-zh>Python 依赖安装失败怎么办？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            Common Python packages like <code>pefile</code>, <code>lief</code>, and
+            <code>yara-python</code> may fail on some platforms. Try:
+          </p>
+          <p data-lang-zh>
+            像 <code>pefile</code>、<code>lief</code>、<code>yara-python</code> 这样的 Python
+            包在某些平台上可能安装失败。尝试：
+          </p>
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>bash</span><button class="code-block__copy">Copy</button>
+            </div>
+            <pre><span class="comment"># Install with specific versions</span>
 pip install pefile==2024.8.26
 pip install lief==0.15.1
 
 <span class="comment"># For YARA, use yara-python binary wheels</span>
 pip install yara-python</pre>
+          </div>
+          <p>
+            <span data-lang-en
+              >If you're on Windows without a C compiler, use the Docker image instead.</span
+            >
+            <span data-lang-zh>如果你在 Windows 上没有 C 编译器，建议使用 Docker 镜像。</span>
+          </p>
+        </div>
       </div>
-      <p>
-        <span data-lang-en>If you're on Windows without a C compiler, use the Docker image instead.</span>
-        <span data-lang-zh>如果你在 Windows 上没有 C 编译器，建议使用 Docker 镜像。</span>
-      </p>
-    </div>
-  </div>
 
-  <div class="faq-item reveal">
-    <div class="faq-item__q">
-      <span data-lang-en>Where does Rikune store its database?</span>
-      <span data-lang-zh>Rikune 的数据库存储在哪里？</span>
-      <span class="faq-item__arrow">▾</span>
-    </div>
-    <div class="faq-item__a">
-      <p data-lang-en>By default, the SQLite database is stored at <code>DB_PATH</code> (defaults to <code>./data/database.db</code> in native mode, <code>/app/data/database.db</code> in Docker). You can override this with the <code>DB_PATH</code> environment variable.</p>
-      <p data-lang-zh>默认情况下，SQLite 数据库存储在 <code>DB_PATH</code>（原生模式默认 <code>./data/database.db</code>，Docker 中默认 <code>/app/data/database.db</code>）。你可以通过 <code>DB_PATH</code> 环境变量覆盖。</p>
-    </div>
-  </div>
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>Where does Rikune store its database?</span>
+          <span data-lang-zh>Rikune 的数据库存储在哪里？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            By default, the SQLite database is stored at <code>DB_PATH</code> (defaults to
+            <code>./data/database.db</code> in native mode, <code>/app/data/database.db</code> in
+            Docker). You can override this with the <code>DB_PATH</code> environment variable.
+          </p>
+          <p data-lang-zh>
+            默认情况下，SQLite 数据库存储在 <code>DB_PATH</code>（原生模式默认
+            <code>./data/database.db</code>，Docker 中默认
+            <code>/app/data/database.db</code>）。你可以通过 <code>DB_PATH</code> 环境变量覆盖。
+          </p>
+        </div>
+      </div>
 
-  <h2 class="reveal"><span data-lang-en>Analysis</span><span data-lang-zh>分析</span></h2>
+      <h2 class="reveal"><span data-lang-en>Analysis</span><span data-lang-zh>分析</span></h2>
 
-  <div class="faq-item reveal">
-    <div class="faq-item__q">
-      <span data-lang-en>Where should I put custom YARA rules?</span>
-      <span data-lang-zh>自定义 YARA 规则应该放在哪里？</span>
-      <span class="faq-item__arrow">▾</span>
-    </div>
-    <div class="faq-item__a">
-      <p data-lang-en>Place your rules under the <code>yara_rules/</code> directory in your workspace root. The directory structure is:</p>
-      <p data-lang-zh>将规则放在工作空间根目录的 <code>yara_rules/</code> 目录下。目录结构为：</p>
-      <div class="code-block">
-        <div class="code-block__header"><span>Structure</span></div>
-        <pre>yara_rules/
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>Where should I put custom YARA rules?</span>
+          <span data-lang-zh>自定义 YARA 规则应该放在哪里？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            Place your rules under the <code>yara_rules/</code> directory in your workspace root.
+            The directory structure is:
+          </p>
+          <p data-lang-zh>
+            将规则放在工作空间根目录的 <code>yara_rules/</code> 目录下。目录结构为：
+          </p>
+          <div class="code-block">
+            <div class="code-block__header"><span>Structure</span></div>
+            <pre>yara_rules/
 ├── custom/          <span class="comment"># Your custom rules</span>
 ├── community/       <span class="comment"># Community rule sets</span>
 └── index.yar        <span class="comment"># Auto-generated index</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>Why does Ghidra analysis take so long?</span>
+          <span data-lang-zh>为什么 Ghidra 分析需要这么长时间？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            Ghidra's headless analyzer performs deep binary analysis including decompilation, which
+            is CPU-intensive. The staged pipeline runs it asynchronously to avoid MCP timeouts.
+            Large binaries (50MB+) may take several minutes. Use
+            <code>workflow.stage.preview</code> to check estimated time before running.
+          </p>
+          <p data-lang-zh>
+            Ghidra 的无头分析器执行深度二进制分析（包括反编译），是 CPU
+            密集型操作。分阶段流水线异步执行以避免 MCP
+            超时。大型二进制文件（50MB+）可能需要几分钟。使用
+            <code>workflow.stage.preview</code> 在运行前检查预计时间。
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>Can I analyze .NET assemblies?</span>
+          <span data-lang-zh>可以分析 .NET 程序集吗？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            Yes. Rikune auto-detects .NET assemblies and uses specialized profiling paths. The
+            <code>dotnet.metadata</code> tool extracts CLR metadata, type definitions, and method
+            signatures without Ghidra.
+          </p>
+          <p data-lang-zh>
+            支持。Rikune 自动检测 .NET 程序集并使用专用分析路径。<code>dotnet.metadata</code>
+            工具可提取 CLR 元数据、类型定义和方法签名，无需 Ghidra。
+          </p>
+        </div>
+      </div>
+
+      <h2 class="reveal"><span data-lang-en>Docker</span><span data-lang-zh>Docker</span></h2>
+
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>How much disk space does the Docker image need?</span>
+          <span data-lang-zh>Docker 镜像需要多少磁盘空间？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            The full image is approximately <strong>8-10 GB</strong> due to the bundled toolchain
+            (Ghidra, Rizin, angr, RetDec, etc.). Ensure at least 10 GB of free disk space before
+            building.
+          </p>
+          <p data-lang-zh>
+            由于包含完整工具链（Ghidra、Rizin、angr、RetDec 等），完整镜像约
+            <strong>8-10 GB</strong>。构建前请确保至少 10 GB 可用磁盘空间。
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>How do I pass samples to the Docker container?</span>
+          <span data-lang-zh>如何将样本传递给 Docker 容器？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            Mount a local directory as a volume with <code>-v ./samples:/samples:ro</code>, or use
+            the HTTP API at <code>POST /api/v1/samples</code> to upload files directly.
+          </p>
+          <p data-lang-zh>
+            通过 <code>-v ./samples:/samples:ro</code> 挂载本地目录，或使用 HTTP API
+            <code>POST /api/v1/samples</code> 直接上传文件。
+          </p>
+        </div>
+      </div>
+
+      <h2 class="reveal" style="margin-top: 48px">
+        <span data-lang-en>Performance</span><span data-lang-zh>性能</span>
+      </h2>
+
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>How can I speed up repeated analysis of the same sample?</span>
+          <span data-lang-zh>如何加速对同一样本的重复分析？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            Rikune uses <strong>cache prewarming</strong> — the L1 (memory) and L2 (filesystem)
+            caches automatically persist results. On restart, the cache manager can prewarm with the
+            most recently accessed entries, reducing cache misses by 60-80% and improving response
+            time 2-5x for common operations.
+          </p>
+          <p data-lang-zh>
+            Rikune 使用<strong>缓存预热</strong> — L1（内存）和
+            L2（文件系统）缓存自动持久化结果。重启时缓存管理器可以预热最近访问的条目，缓存未命中率降低
+            60-80%，常见操作响应时间提升 2-5 倍。
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>How do I optimize batch analysis performance?</span>
+          <span data-lang-zh>如何优化批量分析性能？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            Use <strong>budget lanes</strong> to control concurrency. Increase
+            <code>MAX_PYTHON_WORKERS</code> for parallel Python tasks. The runtime reuses warm
+            compatible workers instead of cold-starting — static Python helpers and Rizin preview
+            paths are pooled, while Ghidra remains scheduler-governed for isolation. Database batch
+            inserts are 10-50x faster than individual operations.
+          </p>
+          <p data-lang-zh>
+            使用<strong>预算通道</strong>控制并发。增加 <code>MAX_PYTHON_WORKERS</code> 以并行化
+            Python 任务。运行时复用兼容的热工作进程而非冷启动 — 静态 Python 辅助程序和 Rizin
+            预览路径使用池化，Ghidra 保持调度隔离。数据库批量插入比逐条操作快 10-50 倍。
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>What does "bounded" or "partial" coverage mean?</span>
+          <span data-lang-zh>"bounded" 或 "partial" 覆盖是什么意思？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            Large samples may receive intentionally limited analysis depth. Check the
+            <code>coverage_level</code> and <code>completion_state</code> fields in results. A
+            <strong>bounded</strong> state means the result is intentionally partial — use the
+            returned <code>upgrade_paths</code> to deepen analysis safely. See the
+            <a href="usage.html#coverage">Analysis Coverage</a> docs for full details.
+          </p>
+          <p data-lang-zh>
+            大型样本可能会获得有意限制的分析深度。检查结果中的 <code>coverage_level</code> 和
+            <code>completion_state</code> 字段。<strong>bounded</strong>
+            状态表示结果是有意的部分结果 — 使用返回的
+            <code>upgrade_paths</code> 安全加深分析。详见<a href="usage.html#coverage">分析覆盖</a
+            >文档。
+          </p>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="faq-item reveal">
-    <div class="faq-item__q">
-      <span data-lang-en>Why does Ghidra analysis take so long?</span>
-      <span data-lang-zh>为什么 Ghidra 分析需要这么长时间？</span>
-      <span class="faq-item__arrow">▾</span>
-    </div>
-    <div class="faq-item__a">
-      <p data-lang-en>Ghidra's headless analyzer performs deep binary analysis including decompilation, which is CPU-intensive. The staged pipeline runs it asynchronously to avoid MCP timeouts. Large binaries (50MB+) may take several minutes. Use <code>workflow.stage.preview</code> to check estimated time before running.</p>
-      <p data-lang-zh>Ghidra 的无头分析器执行深度二进制分析（包括反编译），是 CPU 密集型操作。分阶段流水线异步执行以避免 MCP 超时。大型二进制文件（50MB+）可能需要几分钟。使用 <code>workflow.stage.preview</code> 在运行前检查预计时间。</p>
-    </div>
-  </div>
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="container footer__inner">
+        <div class="footer__brand">
+          <span
+            class="nav__logo-icon"
+            style="width: 24px; height: 24px; font-size: 0.65rem; border-radius: 6px"
+            >R</span
+          >
+          Rikune
+        </div>
+        <ul class="footer__links">
+          <li><a href="api-reference.html">API</a></li>
+          <li>
+            <a href="local-setup.html"
+              ><span data-lang-en>Local</span><span data-lang-zh>本地</span></a
+            >
+          </li>
+          <li><a href="docker.html">Docker</a></li>
+          <li><a href="faq.html">FAQ</a></li>
+          <li>
+            <a href="examples.html"
+              ><span data-lang-en>Examples</span><span data-lang-zh>示例</span></a
+            >
+          </li>
+          <li>
+            <a href="plugins.html"
+              ><span data-lang-en>Plugins</span><span data-lang-zh>插件</span></a
+            >
+          </li>
+          <li>
+            <a href="anti-obfuscation.html"
+              ><span data-lang-en>Anti-Obf</span><span data-lang-zh>反混淆</span></a
+            >
+          </li>
+        </ul>
+        <span class="footer__copy">MIT License · Built for the MCP ecosystem</span>
+      </div>
+    </footer>
 
-  <div class="faq-item reveal">
-    <div class="faq-item__q">
-      <span data-lang-en>Can I analyze .NET assemblies?</span>
-      <span data-lang-zh>可以分析 .NET 程序集吗？</span>
-      <span class="faq-item__arrow">▾</span>
-    </div>
-    <div class="faq-item__a">
-      <p data-lang-en>Yes. Rikune auto-detects .NET assemblies and uses specialized profiling paths. The <code>dotnet.metadata</code> tool extracts CLR metadata, type definitions, and method signatures without Ghidra.</p>
-      <p data-lang-zh>支持。Rikune 自动检测 .NET 程序集并使用专用分析路径。<code>dotnet.metadata</code> 工具可提取 CLR 元数据、类型定义和方法签名，无需 Ghidra。</p>
-    </div>
-  </div>
-
-  <h2 class="reveal"><span data-lang-en>Docker</span><span data-lang-zh>Docker</span></h2>
-
-  <div class="faq-item reveal">
-    <div class="faq-item__q">
-      <span data-lang-en>How much disk space does the Docker image need?</span>
-      <span data-lang-zh>Docker 镜像需要多少磁盘空间？</span>
-      <span class="faq-item__arrow">▾</span>
-    </div>
-    <div class="faq-item__a">
-      <p data-lang-en>The full image is approximately <strong>8-10 GB</strong> due to the bundled toolchain (Ghidra, Rizin, angr, RetDec, etc.). Ensure at least 10 GB of free disk space before building.</p>
-      <p data-lang-zh>由于包含完整工具链（Ghidra、Rizin、angr、RetDec 等），完整镜像约 <strong>8-10 GB</strong>。构建前请确保至少 10 GB 可用磁盘空间。</p>
-    </div>
-  </div>
-
-  <div class="faq-item reveal">
-    <div class="faq-item__q">
-      <span data-lang-en>How do I pass samples to the Docker container?</span>
-      <span data-lang-zh>如何将样本传递给 Docker 容器？</span>
-      <span class="faq-item__arrow">▾</span>
-    </div>
-    <div class="faq-item__a">
-      <p data-lang-en>Mount a local directory as a volume with <code>-v ./samples:/samples:ro</code>, or use the HTTP API at <code>POST /api/v1/samples</code> to upload files directly.</p>
-      <p data-lang-zh>通过 <code>-v ./samples:/samples:ro</code> 挂载本地目录，或使用 HTTP API <code>POST /api/v1/samples</code> 直接上传文件。</p>
-    </div>
-  </div>
-
-  <h2 class="reveal" style="margin-top:48px"><span data-lang-en>Performance</span><span data-lang-zh>性能</span></h2>
-
-  <div class="faq-item reveal">
-    <div class="faq-item__q">
-      <span data-lang-en>How can I speed up repeated analysis of the same sample?</span>
-      <span data-lang-zh>如何加速对同一样本的重复分析？</span>
-      <span class="faq-item__arrow">▾</span>
-    </div>
-    <div class="faq-item__a">
-      <p data-lang-en>Rikune uses <strong>cache prewarming</strong> — the L1 (memory) and L2 (filesystem) caches automatically persist results. On restart, the cache manager can prewarm with the most recently accessed entries, reducing cache misses by 60-80% and improving response time 2-5x for common operations.</p>
-      <p data-lang-zh>Rikune 使用<strong>缓存预热</strong> — L1（内存）和 L2（文件系统）缓存自动持久化结果。重启时缓存管理器可以预热最近访问的条目，缓存未命中率降低 60-80%，常见操作响应时间提升 2-5 倍。</p>
-    </div>
-  </div>
-
-  <div class="faq-item reveal">
-    <div class="faq-item__q">
-      <span data-lang-en>How do I optimize batch analysis performance?</span>
-      <span data-lang-zh>如何优化批量分析性能？</span>
-      <span class="faq-item__arrow">▾</span>
-    </div>
-    <div class="faq-item__a">
-      <p data-lang-en>Use <strong>budget lanes</strong> to control concurrency. Increase <code>MAX_PYTHON_WORKERS</code> for parallel Python tasks. The runtime reuses warm compatible workers instead of cold-starting — static Python helpers and Rizin preview paths are pooled, while Ghidra remains scheduler-governed for isolation. Database batch inserts are 10-50x faster than individual operations.</p>
-      <p data-lang-zh>使用<strong>预算通道</strong>控制并发。增加 <code>MAX_PYTHON_WORKERS</code> 以并行化 Python 任务。运行时复用兼容的热工作进程而非冷启动 — 静态 Python 辅助程序和 Rizin 预览路径使用池化，Ghidra 保持调度隔离。数据库批量插入比逐条操作快 10-50 倍。</p>
-    </div>
-  </div>
-
-  <div class="faq-item reveal">
-    <div class="faq-item__q">
-      <span data-lang-en>What does "bounded" or "partial" coverage mean?</span>
-      <span data-lang-zh>"bounded" 或 "partial" 覆盖是什么意思？</span>
-      <span class="faq-item__arrow">▾</span>
-    </div>
-    <div class="faq-item__a">
-      <p data-lang-en>Large samples may receive intentionally limited analysis depth. Check the <code>coverage_level</code> and <code>completion_state</code> fields in results. A <strong>bounded</strong> state means the result is intentionally partial — use the returned <code>upgrade_paths</code> to deepen analysis safely. See the <a href="usage.html#coverage">Analysis Coverage</a> docs for full details.</p>
-      <p data-lang-zh>大型样本可能会获得有意限制的分析深度。检查结果中的 <code>coverage_level</code> 和 <code>completion_state</code> 字段。<strong>bounded</strong> 状态表示结果是有意的部分结果 — 使用返回的 <code>upgrade_paths</code> 安全加深分析。详见<a href="usage.html#coverage">分析覆盖</a>文档。</p>
-    </div>
-  </div>
-
-</div>
-
-<!-- Footer -->
-<footer class="footer">
-  <div class="container footer__inner">
-    <div class="footer__brand"><span class="nav__logo-icon" style="width:24px;height:24px;font-size:.65rem;border-radius:6px;">R</span> Rikune</div>
-    <ul class="footer__links">
-      <li><a href="api-reference.html">API</a></li>
-      <li><a href="local-setup.html"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
-      <li><a href="docker.html">Docker</a></li>
-      <li><a href="faq.html">FAQ</a></li>
-      <li><a href="examples.html"><span data-lang-en>Examples</span><span data-lang-zh>示例</span></a></li>
-      <li><a href="plugins.html"><span data-lang-en>Plugins</span><span data-lang-zh>插件</span></a></li>
-      <li><a href="anti-obfuscation.html"><span data-lang-en>Anti-Obf</span><span data-lang-zh>反混淆</span></a></li>
-    </ul>
-    <span class="footer__copy">MIT License · Built for the MCP ecosystem</span>
-  </div>
-</footer>
-
-<script src="assets/main.js"></script>
-</body>
+    <script src="assets/main.js"></script>
+  </body>
 </html>

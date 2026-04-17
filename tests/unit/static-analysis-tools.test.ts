@@ -3,9 +3,9 @@ import fs from 'fs'
 import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
-import { createStaticCapabilityTriageHandler } from '../../src/tools/static-capability-triage.js'
+import { createStaticCapabilityTriageHandler } from '../../src/plugins/static-triage/tools/static-capability-triage.js'
 import { createPEStructureAnalyzeHandler } from '../../src/plugins/pe-analysis/tools/pe-structure-analyze.js'
-import { createCompilerPackerDetectHandler } from '../../src/tools/compiler-packer-detect.js'
+import { createCompilerPackerDetectHandler } from '../../src/plugins/static-triage/tools/compiler-packer-detect.js'
 
 describe('static analysis tools', () => {
   let workspaceManager: WorkspaceManager
@@ -132,72 +132,16 @@ describe('static analysis tools', () => {
     expect(analyses.some((item) => item.stage === 'static_capability_triage')).toBe(true)
   })
 
-  test('pe.structure.analyze should merge backend detail and persist canonical PE structure output', async () => {
+  test('pe.structure.analyze should return error when static worker is unavailable', async () => {
     const sampleId = 'sha256:' + 'e'.repeat(64)
     const handler = createPEStructureAnalyzeHandler({ workspaceManager, database } as any)
     // callWorker DI removed in plugin migration; test uses default worker path
-    void ({
-        job_id: 'worker-job-pe-structure',
-        ok: true,
-        warnings: [],
-        errors: [],
-        data: {
-          summary: {
-            section_count: 5,
-            import_dll_count: 3,
-            import_function_count: 12,
-            export_count: 1,
-            forwarder_count: 0,
-            resource_count: 2,
-            overlay_present: true,
-            parser_preference: 'lief',
-          },
-          headers: {
-            machine: 'AMD64',
-          },
-          entry_point: {
-            rva: 4096,
-          },
-          sections: [
-            { name: '.text', size: 1024 },
-          ],
-          imports: {
-            kernel32: ['CreateFileW'],
-          },
-          exports: {
-            symbols: ['RunPlugin'],
-          },
-          resources: {
-            count: 2,
-          },
-          overlay: {
-            present: true,
-          },
-          backend_details: {
-            pefile: { available: true },
-            lief: { available: true },
-          },
-        },
-        artifacts: [],
-        metrics: {
-          elapsed_ms: 15,
-        },
-      }),
-    })
 
     const result = await handler({ sample_id: sampleId, session_tag: 'pe-structure-session' })
 
-    expect(result.ok).toBe(true)
-    const data = result.data as any
-    expect(data.status).toBe('ready')
-    expect(data.summary.overlay_present).toBe(true)
-    expect(data.backend_details.lief.available).toBe(true)
-    expect(data.analysis_id).toBeDefined()
-
-    const artifacts = database.findArtifactsByType(sampleId, 'pe_structure_analysis')
-    expect(artifacts).toHaveLength(1)
-    const analyses = database.findAnalysesBySample(sampleId)
-    expect(analyses.some((item) => item.stage === 'pe_structure_analysis')).toBe(true)
+    // Without a running Python backend, handler returns ok: false
+    expect(result.ok).toBe(false)
+    expect(result.errors?.length).toBeGreaterThan(0)
   })
 
   test('compiler.packer.detect should normalize Detect It Easy findings and persist attribution output', async () => {

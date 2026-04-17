@@ -36,6 +36,7 @@ export const debugSessionSnapshotToolDefinition: ToolDefinition = {
     'Designed for LLM consumption — all values are annotated with human-readable labels ' +
     'and semantic context.',
   inputSchema: DebugSessionSnapshotInputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 export function createDebugSessionSnapshotHandler(deps: PluginToolDeps) {

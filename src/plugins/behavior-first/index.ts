@@ -15,6 +15,7 @@ import { behaviorNetworkToolDefinition, createBehaviorNetworkHandler } from './t
 const behaviorFirstPlugin: Plugin = {
   id: 'behavior-first',
   name: 'Behavior-First Analysis',
+  executionDomain: 'dynamic',
   surfaceRules: { tier: 2, activateOn: { findings: ['c2', 'suspicious_imports', 'anti_debug'] }, category: 'dynamic-analysis' },
   description:
     'Behavioral-first analysis for opaque binaries: full behavioral capture ' +

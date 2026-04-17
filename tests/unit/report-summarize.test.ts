@@ -9,7 +9,7 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
-import { createReportSummarizeHandler } from '../../src/tools/report-summarize.js'
+import { createReportSummarizeHandler } from '../../src/plugins/reporting/tools/report-summarize.js'
 
 describe('report.summarize tool', () => {
   let workspaceManager: WorkspaceManager

@@ -7,7 +7,7 @@ import {
   createGraphvizRenderHandler,
   createRizinAnalyzeHandler,
   createWineRunHandler,
-} from '../../src/tools/docker-backend-tools.js'
+} from '../../src/plugins/dynamic/tools/docker-backend-tools.js'
 
 describe('docker backend MCP tools', () => {
   const testRoot = path.join(process.cwd(), 'test-docker-backend-tools')

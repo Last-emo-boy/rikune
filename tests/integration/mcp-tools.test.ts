@@ -33,23 +33,23 @@ import {
 import {
   stringsExtractToolDefinition,
   createStringsExtractHandler
-} from '../../src/tools/strings-extract.js'
+} from '../../src/plugins/strings/tools/strings-extract.js'
 import {
   stringsFlossDecodeToolDefinition,
   createStringsFlossDecodeHandler
-} from '../../src/tools/strings-floss-decode.js'
+} from '../../src/plugins/strings/tools/strings-floss-decode.js'
 import {
   yaraScanToolDefinition,
   createYaraScanHandler
-} from '../../src/tools/yara-scan.js'
+} from '../../src/plugins/yara/tools/yara-scan.js'
 import {
   runtimeDetectToolDefinition,
   createRuntimeDetectHandler
-} from '../../src/tools/runtime-detect.js'
+} from '../../src/plugins/static-triage/tools/runtime-detect.js'
 import {
   packerDetectToolDefinition,
   createPackerDetectHandler
-} from '../../src/tools/packer-detect.js'
+} from '../../src/plugins/static-triage/tools/packer-detect.js'
 import fs from 'fs'
 import path from 'path'
 
@@ -185,16 +185,16 @@ describe('MCP Tools Integration Tests', () => {
 
       // Verify all expected tools are registered
       const toolNames = tools.map(t => t.name)
-      expect(toolNames).toContain('sample.ingest')
-      expect(toolNames).toContain('sample.profile.get')
-      expect(toolNames).toContain('pe.fingerprint')
-      expect(toolNames).toContain('pe.imports.extract')
-      expect(toolNames).toContain('pe.exports.extract')
-      expect(toolNames).toContain('strings.extract')
-      expect(toolNames).toContain('strings.floss.decode')
-      expect(toolNames).toContain('yara.scan')
-      expect(toolNames).toContain('runtime.detect')
-      expect(toolNames).toContain('packer.detect')
+      expect(toolNames).toContain('sample_ingest')
+      expect(toolNames).toContain('sample_profile_get')
+      expect(toolNames).toContain('pe_fingerprint')
+      expect(toolNames).toContain('pe_imports_extract')
+      expect(toolNames).toContain('pe_exports_extract')
+      expect(toolNames).toContain('strings_extract')
+      expect(toolNames).toContain('strings_floss_decode')
+      expect(toolNames).toContain('yara_scan')
+      expect(toolNames).toContain('runtime_detect')
+      expect(toolNames).toContain('packer_detect')
     })
 
     test('should have valid schema for each tool', async () => {

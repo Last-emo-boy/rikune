@@ -22,6 +22,7 @@ import {
 const androidPlugin: Plugin = {
   id: 'android',
   name: 'Android / APK Analysis',
+  executionDomain: 'static',
   surfaceRules: { tier: 1, activateOn: { fileTypes: ['apk', 'android', 'dex'] }, category: 'android-analysis' },
   description: 'APK manifest extraction, DEX decompilation, and packer detection',
   version: '1.0.0',

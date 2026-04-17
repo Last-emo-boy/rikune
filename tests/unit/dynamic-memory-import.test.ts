@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
-import { createDynamicMemoryImportHandler } from '../../src/tools/dynamic-memory-import.js'
+import { createDynamicMemoryImportHandler } from '../../src/plugins/dynamic/tools/dynamic-memory-import.js'
 
 describe('dynamic.memory.import tool', () => {
   let workspaceManager: WorkspaceManager

@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createCodeFunctionDecompileHandler, codeFunctionDecompileInputSchema } from '../../src/tools/code-function-decompile.js'
+import { createCodeFunctionDecompileHandler, codeFunctionDecompileInputSchema } from '../../src/plugins/code-analysis/tools/code-function-decompile.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 
@@ -24,7 +24,7 @@ describe('code.function.decompile tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = codeFunctionDecompileInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = codeFunctionDecompileInputSchema.safeParse({ sample_id: 'sha256:abc123def456', address: '0x401000' })
       expect(result.success).toBe(true)
     })
 
@@ -45,10 +45,11 @@ describe('code.function.decompile tool', () => {
 
       mockDatabase.findSample.mockReturnValue(undefined)
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
+      const result = await handler({ sample_id: 'sha256:abc123def456', address: '0x401000' })
 
-      expect(result.ok).toBe(false)
-      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)
+      const parsed = JSON.parse(result.content[0].text)
+      expect(parsed.ok).toBe(false)
+      expect(parsed.errors?.[0]).toMatch(/not found|unknown|invalid/i)
     })
   })
 })

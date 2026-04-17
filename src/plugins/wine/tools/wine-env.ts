@@ -37,6 +37,7 @@ export const wineEnvToolDefinition: ToolDefinition = {
     'Manage Wine prefixes — create isolated environments, inspect existing ones, list all, or remove. ' +
     'Each prefix is a separate Windows filesystem for clean analysis.',
   inputSchema: inputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeWineEnv' },
 }
 
 function getPrefixRoot(wm: WorkspaceManager): string {

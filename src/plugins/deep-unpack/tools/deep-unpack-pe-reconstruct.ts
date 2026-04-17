@@ -10,6 +10,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 import {
   resolveSampleFile,
   runPythonJson,
@@ -70,7 +71,7 @@ export function createPeReconstructHandler(
 
     try {
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
+      const pythonPath = getPythonCommand()
 
       const workerScript = `
 import sys, json, importlib.util

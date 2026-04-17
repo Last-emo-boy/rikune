@@ -27,6 +27,7 @@ import { taintTrackToolDefinition, createTaintTrackHandler } from './tools/taint
 const staticTriagePlugin: Plugin = {
   id: 'static-triage',
   name: 'Static Triage',
+  executionDomain: 'static',
   surfaceRules: {
     tier: 0,
     category: 'static-analysis',

@@ -13,6 +13,7 @@ import { officeOleAnalyzeToolDefinition, createOfficeOleAnalyzeHandler } from '.
 const officeAnalysisPlugin: Plugin = {
   id: 'office-analysis',
   name: 'Office Analysis',
+  executionDomain: 'static',
   surfaceRules: {
     tier: 1,
     activateOn: { fileTypes: ['office', 'doc', 'xls'] },

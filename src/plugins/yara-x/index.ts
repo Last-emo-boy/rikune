@@ -10,6 +10,7 @@ import { yaraXScanToolDefinition, createYaraXScanHandler } from './tools/yara-x-
 const yaraXPlugin: Plugin = {
   id: 'yara-x',
   name: 'YARA-X',
+  executionDomain: 'static',
   surfaceRules: { tier: 2, activateOn: { findings: ['packed', 'obfuscated'] }, category: 'malware-analysis' },
   description: 'YARA-X next-gen pattern matching for malware detection',
   version: '1.0.0',

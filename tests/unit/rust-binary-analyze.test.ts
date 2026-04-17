@@ -5,7 +5,7 @@ import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import type { ToolArgs, WorkerResult } from '../../src/types.js'
-import { createRustBinaryAnalyzeHandler } from '../../src/tools/rust-binary-analyze.js'
+import { createRustBinaryAnalyzeHandler } from '../../src/plugins/static-triage/tools/rust-binary-analyze.js'
 
 describe('rust_binary.analyze tool', () => {
   let workspaceManager: WorkspaceManager

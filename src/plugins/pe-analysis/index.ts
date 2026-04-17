@@ -28,6 +28,7 @@ import {
 const peAnalysisPlugin: Plugin = {
   id: 'pe-analysis',
   name: 'PE Analysis',
+  executionDomain: 'static',
   surfaceRules: {
     tier: 0,
     category: 'static-analysis',

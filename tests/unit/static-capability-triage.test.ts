@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createStaticCapabilityTriageHandler, staticCapabilityTriageInputSchema } from '../../src/tools/static-capability-triage.js'
+import { createStaticCapabilityTriageHandler, staticCapabilityTriageInputSchema } from '../../src/plugins/static-triage/tools/static-capability-triage.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 

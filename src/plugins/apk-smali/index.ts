@@ -11,6 +11,7 @@ import { apkManifestParseToolDefinition, createApkManifestParseHandler } from '.
 const apkSmaliPlugin: Plugin = {
   id: 'apk-smali',
   name: 'APK Smali Analysis',
+  executionDomain: 'static',
   surfaceRules: { tier: 1, activateOn: { fileTypes: ['apk', 'android'] }, category: 'android-analysis' },
   description: 'APK disassembly to Smali bytecode, resource decoding, and manifest parsing via apktool.',
   version: '1.0.0',

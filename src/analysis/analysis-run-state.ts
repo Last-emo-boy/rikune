@@ -14,7 +14,7 @@ import {
   SampleSizeTierSchema,
   deriveAnalysisBudgetProfile,
 } from './analysis-coverage.js'
-import type { ArtifactRef } from '../types.js'
+import type { ArtifactRef, JobStatusType } from '../types.js'
 import { dedupeArtifactRefs } from '../utils/shared-helpers.js'
 import type { JobQueue } from '../job-queue.js'
 import type {
@@ -167,6 +167,117 @@ export type AnalysisStageStatus = z.infer<typeof AnalysisStageStatusSchema>
 export type AnalysisExecutionState = z.infer<typeof AnalysisExecutionStateSchema>
 export type AnalysisRecoveryState = z.infer<typeof AnalysisRecoveryStateSchema>
 export type AnalysisRunSummary = z.infer<typeof AnalysisRunSummarySchema>
+
+export const ControlPlaneStatusSchema = z.enum([
+  'pending',
+  'active',
+  'completed',
+  'failed',
+  'cancelled',
+  'recoverable',
+])
+
+export type ControlPlaneStatus = z.infer<typeof ControlPlaneStatusSchema>
+
+export function isTerminalControlPlaneStatus(status: ControlPlaneStatus): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled'
+}
+
+export function normalizeAnalysisRunStatus(status: AnalysisRunStatus): ControlPlaneStatus {
+  switch (status) {
+    case 'created':
+    case 'queued':
+      return 'pending'
+    case 'running':
+    case 'partial':
+      return 'active'
+    case 'recoverable':
+      return 'recoverable'
+    case 'completed':
+      return 'completed'
+    case 'failed':
+      return 'failed'
+  }
+}
+
+export function normalizeAnalysisStageStatus(status: AnalysisStageStatus): ControlPlaneStatus {
+  switch (status) {
+    case 'pending':
+    case 'queued':
+    case 'skipped':
+      return 'pending'
+    case 'running':
+    case 'partial':
+      return 'active'
+    case 'recoverable':
+    case 'interrupted':
+      return 'recoverable'
+    case 'completed':
+      return 'completed'
+    case 'failed':
+      return 'failed'
+  }
+}
+
+export function normalizeJobQueueStatus(status: JobStatusType | string): ControlPlaneStatus {
+  switch (status) {
+    case 'queued':
+      return 'pending'
+    case 'running':
+      return 'active'
+    case 'completed':
+      return 'completed'
+    case 'failed':
+      return 'failed'
+    case 'cancelled':
+      return 'cancelled'
+    case 'interrupted':
+      return 'recoverable'
+    default:
+      return 'pending'
+  }
+}
+
+export function normalizeRuntimeTaskStatus(status: string): ControlPlaneStatus {
+  switch (status) {
+    case 'queued':
+      return 'pending'
+    case 'running':
+      return 'active'
+    case 'completed':
+      return 'completed'
+    case 'failed':
+      return 'failed'
+    case 'cancelled':
+      return 'cancelled'
+    default:
+      return 'pending'
+  }
+}
+
+export function normalizeRuntimeEventStatus(eventType: string, runtimeStatus?: string | null): ControlPlaneStatus {
+  if (runtimeStatus) {
+    return normalizeRuntimeTaskStatus(runtimeStatus)
+  }
+  switch (eventType) {
+    case 'submitted':
+    case 'snapshot':
+      return 'pending'
+    case 'started':
+    case 'progress':
+    case 'log':
+    case 'connected':
+      return 'active'
+    case 'completed':
+      return 'completed'
+    case 'failed':
+      return 'failed'
+    case 'cancelled':
+      return 'cancelled'
+    default:
+      return 'pending'
+  }
+}
 
 export interface CreateOrReuseAnalysisRunOptions {
   sample: Sample

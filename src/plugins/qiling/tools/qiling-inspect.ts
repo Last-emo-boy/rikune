@@ -1,5 +1,5 @@
 /**
- * Qiling inspect tool â€?inspect Qiling readiness and rootfs state.
+ * Qiling inspect tool ï¿½?inspect Qiling readiness and rootfs state.
  */
 
 import { z } from 'zod'
@@ -54,6 +54,7 @@ export const qilingInspectToolDefinition: ToolDefinition = {
     'Inspect Qiling readiness, configured rootfs state, and emulation prerequisites for a sample. Use this when you explicitly request Qiling-backed automation or need to verify rootfs prerequisites before emulation.',
   inputSchema: qilingInspectInputSchema,
   outputSchema: qilingInspectOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeQilingInspect' },
 }
 
 const QILING_INSPECT_SCRIPT = `

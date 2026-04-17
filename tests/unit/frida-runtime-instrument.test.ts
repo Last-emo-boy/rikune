@@ -103,7 +103,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
   })
 
   test('should return error for missing sample', async () => {
-    const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database, {
+    const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any, {
       callWorker: async () => {
         throw new Error('Should not be called')
       },
@@ -131,7 +131,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
 
     await workspaceManager.createWorkspace(sampleId)
 
-    const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database, {
+    const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -201,7 +201,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database, {
+    const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any, {
       callWorker: async () => {
         throw new Error('Worker connection failed')
       },
@@ -233,7 +233,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database, {
+    const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any, {
       callWorker: async () => {
         throw new Error('ModuleNotFoundError: No module named frida')
       },
@@ -269,7 +269,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database, {
+    const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -329,7 +329,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database, {
+    const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -379,7 +379,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database, {
+    const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: false,
@@ -419,7 +419,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database, {
+    const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -476,7 +476,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database, {
+    const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -524,7 +524,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database, {
+    const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,

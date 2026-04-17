@@ -16,6 +16,7 @@ import {
 const vulnScannerPlugin: Plugin = {
   id: 'vuln-scanner',
   name: 'Vulnerability Scanner',
+  executionDomain: 'static',
   surfaceRules: { tier: 2, activateOn: { findings: ['suspicious_imports'] }, category: 'vulnerability-research' },
   description: 'CWE-based vulnerability pattern scanning on decompiled code',
   version: '1.0.0',

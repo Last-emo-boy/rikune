@@ -1,541 +1,1060 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rikune — MCP Server for Windows Reverse Engineering</title>
-<meta name="description" content="An MCP server exposing PE triage, Ghidra-backed inspection, DLL/COM profiling, runtime evidence ingestion, and LLM-assisted review as reusable tools for any tool-calling LLM.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/style.css">
-<style>
-/* === Index-specific styles === */
-.hero {
-  min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  text-align: center; padding-top: 64px; position: relative;
-}
-.hero__badge {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 6px 16px; border-radius: 999px; font-size: .8rem; font-weight: 500;
-  background: rgba(56,189,248,.08); border: 1px solid rgba(56,189,248,.2);
-  color: var(--accent); margin-bottom: 28px;
-  animation: badge-pulse 3s ease-in-out infinite;
-}
-@keyframes badge-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(56,189,248,.15); }
-  50% { box-shadow: 0 0 20px 4px rgba(56,189,248,.1); }
-}
-.hero__badge-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--green); animation: dot-blink 2s infinite;
-}
-@keyframes dot-blink { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
-.hero h1 {
-  font-size: clamp(2.8rem, 6vw, 5rem); font-weight: 900; line-height: 1.08;
-  letter-spacing: -.03em; margin-bottom: 24px;
-  background: linear-gradient(135deg, #fff 0%, var(--text) 40%, var(--accent) 80%, var(--accent2) 100%);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-}
-.hero__sub {
-  font-size: clamp(1.05rem, 1.8vw, 1.25rem); color: var(--text-muted);
-  max-width: 680px; margin: 0 auto 40px; line-height: 1.7; font-weight: 400;
-}
-.hero__actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
-.hero__terminal { margin-top: 56px; max-width: 700px; margin-left: auto; margin-right: auto; text-align: left; }
-/* Stats */
-.stats { padding: 48px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-.stats__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; text-align: center; }
-.stat__value {
-  font-size: 2.5rem; font-weight: 800; font-family: var(--mono);
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-}
-.stat__label { font-size: .875rem; color: var(--text-dim); margin-top: 4px; }
-/* Features */
-.features__header { text-align: center; margin-bottom: 64px; }
-.features__header h2 { font-size: clamp(1.8rem, 3vw, 2.5rem); font-weight: 800; margin-bottom: 16px; }
-.features__header p { color: var(--text-muted); max-width: 560px; margin: 0 auto; }
-.features__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-/* Architecture */
-.arch { text-align: center; }
-.arch h2 { font-size: clamp(1.8rem, 3vw, 2.5rem); font-weight: 800; margin-bottom: 16px; }
-.arch__sub { color: var(--text-muted); max-width: 560px; margin: 0 auto 48px; }
-.arch__diagram {
-  max-width: 900px; margin: 0 auto; background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 40px; box-shadow: var(--glow);
-  font-family: var(--mono); font-size: .82rem; display: flex; flex-direction: column; gap: 24px;
-}
-.arch__layer {
-  border: 1px solid var(--border-glow); border-radius: var(--radius-sm);
-  padding: 20px 24px; position: relative; transition: border-color .3s;
-}
-.arch__layer:hover { border-color: var(--accent); }
-.arch__layer-title {
-  position: absolute; top: -10px; left: 20px; background: var(--bg-card); padding: 0 10px;
-  font-size: .7rem; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: .1em;
-}
-.arch__items { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-.arch__chip {
-  padding: 6px 14px; border-radius: 6px; font-size: .75rem;
-  background: rgba(255,255,255,.03); border: 1px solid var(--border);
-  color: var(--text-muted); transition: .2s;
-}
-.arch__chip:hover { border-color: var(--accent); color: var(--text); background: rgba(56,189,248,.06); }
-.arch__arrow { color: var(--text-dim); font-size: 1.2rem; }
-/* Pipeline */
-.pipeline h2 { font-size: clamp(1.8rem, 3vw, 2.5rem); font-weight: 800; text-align: center; margin-bottom: 16px; }
-.pipeline__sub { color: var(--text-muted); text-align: center; max-width: 560px; margin: 0 auto 48px; }
-.pipeline__timeline {
-  position: relative; max-width: 840px; margin: 0 auto; padding: 20px 0;
-}
-/* Central vertical line */
-.pipeline__timeline::before {
-  content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px;
-  background: linear-gradient(180deg, transparent, var(--accent) 10%, var(--accent2) 90%, transparent);
-  transform: translateX(-50%); opacity: .35;
-}
-.pipeline__item {
-  display: flex; align-items: flex-start; position: relative;
-  margin-bottom: 36px; width: 100%;
-}
-.pipeline__item:last-child { margin-bottom: 0; }
-/* Alternating layout */
-.pipeline__item:nth-child(odd) { justify-content: flex-start; padding-right: calc(50% + 28px); }
-.pipeline__item:nth-child(even) { justify-content: flex-end; padding-left: calc(50% + 28px); }
-/* Node dot on the line */
-.pipeline__node {
-  position: absolute; left: 50%; top: 18px; width: 14px; height: 14px;
-  background: var(--bg); border: 2px solid var(--accent); border-radius: 50%;
-  transform: translateX(-50%); z-index: 2; transition: .3s;
-  box-shadow: 0 0 8px rgba(56,189,248,.2);
-}
-.pipeline__item:hover .pipeline__node {
-  background: var(--accent); box-shadow: 0 0 16px rgba(56,189,248,.5); transform: translateX(-50%) scale(1.3);
-}
-.pipeline__card {
-  position: relative; background: var(--bg-card);
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
-  padding: 20px 22px; width: 100%; transition: border-color .3s, transform .2s;
-}
-.pipeline__item:hover .pipeline__card { border-color: var(--accent); transform: translateY(-3px); }
-/* Arrow connector from card to node */
-.pipeline__card::after {
-  content: ''; position: absolute; top: 20px; width: 20px; height: 2px;
-  background: linear-gradient(90deg, var(--border), var(--accent));
-  opacity: .4;
-}
-.pipeline__item:nth-child(odd) .pipeline__card::after { right: -22px; }
-.pipeline__item:nth-child(even) .pipeline__card::after { left: -22px; background: linear-gradient(90deg, var(--accent), var(--border)); }
-.pipeline__stage-num { font-family: var(--mono); font-size: .7rem; color: var(--accent); margin-bottom: 6px; font-weight: 600; letter-spacing: .05em; }
-.pipeline__stage-name { font-size: .95rem; font-weight: 700; margin-bottom: 4px; }
-.pipeline__stage-desc { font-size: .8rem; color: var(--text-dim); line-height: 1.5; }
-/* Stack */
-.stack h2 { font-size: clamp(1.8rem, 3vw, 2.5rem); font-weight: 800; text-align: center; margin-bottom: 48px; }
-.stack__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; }
-.stack__item {
-  display: flex; align-items: center; gap: 12px; padding: 16px 20px;
-  border-radius: var(--radius-sm); background: var(--bg-card); border: 1px solid var(--border);
-  font-size: .9rem; font-weight: 500; transition: border-color .2s, transform .15s;
-}
-.stack__item:hover { border-color: var(--accent); transform: translateY(-2px); }
-.stack__item-icon { font-size: 1.4rem; flex-shrink: 0; }
-/* Install */
-.install h2 { font-size: clamp(1.8rem, 3vw, 2.5rem); font-weight: 800; text-align: center; margin-bottom: 16px; }
-.install__sub { color: var(--text-muted); text-align: center; max-width: 560px; margin: 0 auto 48px; }
-.install__tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 32px; flex-wrap: wrap; }
-.install__tab {
-  padding: 10px 24px; border-radius: var(--radius-sm); font-size: .875rem;
-  font-weight: 600; cursor: pointer; border: 1px solid var(--border);
-  background: transparent; color: var(--text-muted); transition: .2s;
-}
-.install__tab:hover { border-color: var(--text-dim); color: var(--text); }
-.install__tab.active { background: rgba(56,189,248,.1); border-color: var(--accent); color: var(--accent); }
-.install__panel { display: none; max-width: 700px; margin: 0 auto; }
-.install__panel.active { display: block; }
-/* CTA */
-.cta-section { text-align: center; padding: 120px 0; position: relative; }
-.cta-section::before {
-  content: ''; position: absolute; inset: 0; z-index: -1;
-  background: radial-gradient(ellipse at center, rgba(56,189,248,.04) 0%, transparent 70%);
-}
-.cta-section h2 { font-size: clamp(2rem, 3.5vw, 3rem); font-weight: 900; margin-bottom: 16px; }
-.cta-section p { color: var(--text-muted); max-width: 480px; margin: 0 auto 36px; }
-/* Media tweaks for index */
-@media (max-width: 900px) {
-  .features__grid { grid-template-columns: repeat(2, 1fr); }
-  .pipeline__timeline::before { left: 20px; }
-  .pipeline__item:nth-child(odd),
-  .pipeline__item:nth-child(even) { padding-left: 52px; padding-right: 0; justify-content: flex-start; }
-  .pipeline__node { left: 20px; }
-  .pipeline__item:nth-child(odd) .pipeline__card::after,
-  .pipeline__item:nth-child(even) .pipeline__card::after { left: -22px; right: auto; background: linear-gradient(90deg, var(--accent), var(--border)); }
-}
-@media (max-width: 640px) {
-  .features__grid { grid-template-columns: 1fr; }
-  .hero h1 { font-size: 2.4rem; }
-  .arch__diagram { padding: 20px; }
-  .stack__grid { grid-template-columns: repeat(2, 1fr); }
-}
-</style>
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rikune — MCP Server for Windows Reverse Engineering</title>
+    <meta
+      name="description"
+      content="An MCP server exposing PE triage, Ghidra-backed inspection, DLL/COM profiling, runtime evidence ingestion, and LLM-assisted review as reusable tools for any tool-calling LLM."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/style.css" />
+    <style>
+      /* === Index-specific styles === */
+      .hero {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding-top: 64px;
+        position: relative;
+      }
+      .hero__badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 16px;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        background: rgba(56, 189, 248, 0.08);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        color: var(--accent);
+        margin-bottom: 28px;
+        animation: badge-pulse 3s ease-in-out infinite;
+      }
+      @keyframes badge-pulse {
+        0%,
+        100% {
+          box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.15);
+        }
+        50% {
+          box-shadow: 0 0 20px 4px rgba(56, 189, 248, 0.1);
+        }
+      }
+      .hero__badge-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--green);
+        animation: dot-blink 2s infinite;
+      }
+      @keyframes dot-blink {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.3;
+        }
+      }
+      .hero h1 {
+        font-size: clamp(2.8rem, 6vw, 5rem);
+        font-weight: 900;
+        line-height: 1.08;
+        letter-spacing: -0.03em;
+        margin-bottom: 24px;
+        background: linear-gradient(
+          135deg,
+          #fff 0%,
+          var(--text) 40%,
+          var(--accent) 80%,
+          var(--accent2) 100%
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .hero__sub {
+        font-size: clamp(1.05rem, 1.8vw, 1.25rem);
+        color: var(--text-muted);
+        max-width: 680px;
+        margin: 0 auto 40px;
+        line-height: 1.7;
+        font-weight: 400;
+      }
+      .hero__actions {
+        display: flex;
+        gap: 16px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .hero__terminal {
+        margin-top: 56px;
+        max-width: 700px;
+        margin-left: auto;
+        margin-right: auto;
+        text-align: left;
+      }
+      /* Stats */
+      .stats {
+        padding: 48px 0;
+        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+      }
+      .stats__grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 32px;
+        text-align: center;
+      }
+      .stat__value {
+        font-size: 2.5rem;
+        font-weight: 800;
+        font-family: var(--mono);
+        background: linear-gradient(135deg, var(--accent), var(--accent2));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .stat__label {
+        font-size: 0.875rem;
+        color: var(--text-dim);
+        margin-top: 4px;
+      }
+      /* Features */
+      .features__header {
+        text-align: center;
+        margin-bottom: 64px;
+      }
+      .features__header h2 {
+        font-size: clamp(1.8rem, 3vw, 2.5rem);
+        font-weight: 800;
+        margin-bottom: 16px;
+      }
+      .features__header p {
+        color: var(--text-muted);
+        max-width: 560px;
+        margin: 0 auto;
+      }
+      .features__grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+      }
+      /* Architecture */
+      .arch {
+        text-align: center;
+      }
+      .arch h2 {
+        font-size: clamp(1.8rem, 3vw, 2.5rem);
+        font-weight: 800;
+        margin-bottom: 16px;
+      }
+      .arch__sub {
+        color: var(--text-muted);
+        max-width: 560px;
+        margin: 0 auto 48px;
+      }
+      .arch__diagram {
+        max-width: 900px;
+        margin: 0 auto;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 40px;
+        box-shadow: var(--glow);
+        font-family: var(--mono);
+        font-size: 0.82rem;
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+      .arch__layer {
+        border: 1px solid var(--border-glow);
+        border-radius: var(--radius-sm);
+        padding: 20px 24px;
+        position: relative;
+        transition: border-color 0.3s;
+      }
+      .arch__layer:hover {
+        border-color: var(--accent);
+      }
+      .arch__layer-title {
+        position: absolute;
+        top: -10px;
+        left: 20px;
+        background: var(--bg-card);
+        padding: 0 10px;
+        font-size: 0.7rem;
+        color: var(--accent);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      .arch__items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+      }
+      .arch__chip {
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        transition: 0.2s;
+      }
+      .arch__chip:hover {
+        border-color: var(--accent);
+        color: var(--text);
+        background: rgba(56, 189, 248, 0.06);
+      }
+      .arch__arrow {
+        color: var(--text-dim);
+        font-size: 1.2rem;
+      }
+      /* Pipeline */
+      .pipeline h2 {
+        font-size: clamp(1.8rem, 3vw, 2.5rem);
+        font-weight: 800;
+        text-align: center;
+        margin-bottom: 16px;
+      }
+      .pipeline__sub {
+        color: var(--text-muted);
+        text-align: center;
+        max-width: 560px;
+        margin: 0 auto 48px;
+      }
+      .pipeline__timeline {
+        position: relative;
+        max-width: 840px;
+        margin: 0 auto;
+        padding: 20px 0;
+      }
+      /* Central vertical line */
+      .pipeline__timeline::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: linear-gradient(
+          180deg,
+          transparent,
+          var(--accent) 10%,
+          var(--accent2) 90%,
+          transparent
+        );
+        transform: translateX(-50%);
+        opacity: 0.35;
+      }
+      .pipeline__item {
+        display: flex;
+        align-items: flex-start;
+        position: relative;
+        margin-bottom: 36px;
+        width: 100%;
+      }
+      .pipeline__item:last-child {
+        margin-bottom: 0;
+      }
+      /* Alternating layout */
+      .pipeline__item:nth-child(odd) {
+        justify-content: flex-start;
+        padding-right: calc(50% + 28px);
+      }
+      .pipeline__item:nth-child(even) {
+        justify-content: flex-end;
+        padding-left: calc(50% + 28px);
+      }
+      /* Node dot on the line */
+      .pipeline__node {
+        position: absolute;
+        left: 50%;
+        top: 18px;
+        width: 14px;
+        height: 14px;
+        background: var(--bg);
+        border: 2px solid var(--accent);
+        border-radius: 50%;
+        transform: translateX(-50%);
+        z-index: 2;
+        transition: 0.3s;
+        box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
+      }
+      .pipeline__item:hover .pipeline__node {
+        background: var(--accent);
+        box-shadow: 0 0 16px rgba(56, 189, 248, 0.5);
+        transform: translateX(-50%) scale(1.3);
+      }
+      .pipeline__card {
+        position: relative;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 20px 22px;
+        width: 100%;
+        transition:
+          border-color 0.3s,
+          transform 0.2s;
+      }
+      .pipeline__item:hover .pipeline__card {
+        border-color: var(--accent);
+        transform: translateY(-3px);
+      }
+      /* Arrow connector from card to node */
+      .pipeline__card::after {
+        content: '';
+        position: absolute;
+        top: 20px;
+        width: 20px;
+        height: 2px;
+        background: linear-gradient(90deg, var(--border), var(--accent));
+        opacity: 0.4;
+      }
+      .pipeline__item:nth-child(odd) .pipeline__card::after {
+        right: -22px;
+      }
+      .pipeline__item:nth-child(even) .pipeline__card::after {
+        left: -22px;
+        background: linear-gradient(90deg, var(--accent), var(--border));
+      }
+      .pipeline__stage-num {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        color: var(--accent);
+        margin-bottom: 6px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+      }
+      .pipeline__stage-name {
+        font-size: 0.95rem;
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+      .pipeline__stage-desc {
+        font-size: 0.8rem;
+        color: var(--text-dim);
+        line-height: 1.5;
+      }
+      /* Stack */
+      .stack h2 {
+        font-size: clamp(1.8rem, 3vw, 2.5rem);
+        font-weight: 800;
+        text-align: center;
+        margin-bottom: 48px;
+      }
+      .stack__grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 16px;
+      }
+      .stack__item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 20px;
+        border-radius: var(--radius-sm);
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        font-size: 0.9rem;
+        font-weight: 500;
+        transition:
+          border-color 0.2s,
+          transform 0.15s;
+      }
+      .stack__item:hover {
+        border-color: var(--accent);
+        transform: translateY(-2px);
+      }
+      .stack__item-icon {
+        font-size: 1.4rem;
+        flex-shrink: 0;
+      }
+      /* Install */
+      .install h2 {
+        font-size: clamp(1.8rem, 3vw, 2.5rem);
+        font-weight: 800;
+        text-align: center;
+        margin-bottom: 16px;
+      }
+      .install__sub {
+        color: var(--text-muted);
+        text-align: center;
+        max-width: 560px;
+        margin: 0 auto 48px;
+      }
+      .install__tabs {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-bottom: 32px;
+        flex-wrap: wrap;
+      }
+      .install__tab {
+        padding: 10px 24px;
+        border-radius: var(--radius-sm);
+        font-size: 0.875rem;
+        font-weight: 600;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text-muted);
+        transition: 0.2s;
+      }
+      .install__tab:hover {
+        border-color: var(--text-dim);
+        color: var(--text);
+      }
+      .install__tab.active {
+        background: rgba(56, 189, 248, 0.1);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .install__panel {
+        display: none;
+        max-width: 700px;
+        margin: 0 auto;
+      }
+      .install__panel.active {
+        display: block;
+      }
+      /* CTA */
+      .cta-section {
+        text-align: center;
+        padding: 120px 0;
+        position: relative;
+      }
+      .cta-section::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        background: radial-gradient(
+          ellipse at center,
+          rgba(56, 189, 248, 0.04) 0%,
+          transparent 70%
+        );
+      }
+      .cta-section h2 {
+        font-size: clamp(2rem, 3.5vw, 3rem);
+        font-weight: 900;
+        margin-bottom: 16px;
+      }
+      .cta-section p {
+        color: var(--text-muted);
+        max-width: 480px;
+        margin: 0 auto 36px;
+      }
+      /* Media tweaks for index */
+      @media (max-width: 900px) {
+        .features__grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .pipeline__timeline::before {
+          left: 20px;
+        }
+        .pipeline__item:nth-child(odd),
+        .pipeline__item:nth-child(even) {
+          padding-left: 52px;
+          padding-right: 0;
+          justify-content: flex-start;
+        }
+        .pipeline__node {
+          left: 20px;
+        }
+        .pipeline__item:nth-child(odd) .pipeline__card::after,
+        .pipeline__item:nth-child(even) .pipeline__card::after {
+          left: -22px;
+          right: auto;
+          background: linear-gradient(90deg, var(--accent), var(--border));
+        }
+      }
+      @media (max-width: 640px) {
+        .features__grid {
+          grid-template-columns: 1fr;
+        }
+        .hero h1 {
+          font-size: 2.4rem;
+        }
+        .arch__diagram {
+          padding: 20px;
+        }
+        .stack__grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Background effects -->
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow--1"></div>
+    <div class="bg-glow bg-glow--2"></div>
+    <div class="bg-glow bg-glow--3"></div>
+    <canvas id="particles"></canvas>
 
-<!-- Background effects -->
-<div class="bg-grid"></div>
-<div class="bg-glow bg-glow--1"></div>
-<div class="bg-glow bg-glow--2"></div>
-<div class="bg-glow bg-glow--3"></div>
-<canvas id="particles"></canvas>
-
-<!-- Navigation -->
-<nav class="nav" id="nav">
-  <div class="nav__inner">
-    <a href="index.html" class="nav__logo">
-      <span class="nav__logo-icon">R</span>
-      Rikune
-    </a>
-    <ul class="nav__links" id="navLinks">
-      <li><a href="#features" data-lang-en>Features</a><a href="#features" data-lang-zh>功能特性</a></li>
-      <li><a href="api-reference.html">API</a></li>
-      <li><a href="usage.html" data-lang-en>Usage</a><a href="usage.html" data-lang-zh>使用指南</a></li>
-      <li><a href="local-setup.html"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
-      <li><a href="docker.html">Docker</a></li>
-      <li><a href="examples.html" data-lang-en>Examples</a><a href="examples.html" data-lang-zh>示例</a></li>
-      <li><a href="plugins.html" data-lang-en>Plugins</a><a href="plugins.html" data-lang-zh>插件</a></li>
-      <li><a href="anti-obfuscation.html" data-lang-en>Anti-Obf</a><a href="anti-obfuscation.html" data-lang-zh>反混淆</a></li>
-      <li><a href="faq.html">FAQ</a></li>
-    </ul>
-    <div class="nav__right">
-      <button class="lang-toggle" id="lang-toggle">中文</button>
-      <a href="https://github.com/Last-emo-boy/rikune" class="nav__cta" target="_blank" rel="noopener">GitHub →</a>
-    </div>
-    <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu">
-      <span></span><span></span><span></span>
-    </button>
-  </div>
-</nav>
-
-<!-- Hero -->
-<section class="hero">
-  <div class="container">
-    <div class="hero__badge">
-      <span class="hero__badge-dot"></span>
-      v1.0.0-beta.3 · Model Context Protocol
-    </div>
-    <h1>
-      <span data-lang-en>Reverse Engineering<br>Meets AI Agents</span>
-      <span data-lang-zh>逆向工程<br>遇见 AI 智能体</span>
-    </h1>
-    <p class="hero__sub">
-      <span data-lang-en>An MCP server that exposes PE triage, Ghidra-backed decompilation,
-      DLL/COM profiling, runtime evidence, and LLM-assisted analysis as
-      reusable tools for any tool-calling LLM.</span>
-      <span data-lang-zh>一个 MCP 服务器，将 PE 分诊、Ghidra 反编译、DLL/COM 分析、运行时证据采集
-      和 LLM 辅助审查作为可复用工具，提供给任何支持工具调用的大语言模型。</span>
-    </p>
-    <div class="hero__actions">
-      <a href="#install" class="btn btn--primary">
-        <span>⚡</span>
-        <span data-lang-en>Quick Start</span>
-        <span data-lang-zh>快速开始</span>
-      </a>
-      <a href="#features" class="btn btn--ghost">
-        <span data-lang-en>Explore →</span>
-        <span data-lang-zh>探索 →</span>
-      </a>
-    </div>
-    <div class="hero__terminal">
-      <div class="terminal">
-        <div class="terminal__bar">
-          <span class="terminal__dot terminal__dot--r"></span>
-          <span class="terminal__dot terminal__dot--y"></span>
-          <span class="terminal__dot terminal__dot--g"></span>
-          <span class="terminal__title">PowerShell</span>
+    <!-- Navigation -->
+    <nav class="nav" id="nav">
+      <div class="nav__inner">
+        <a href="index.html" class="nav__logo">
+          <span class="nav__logo-icon">R</span>
+          Rikune
+        </a>
+        <ul class="nav__links" id="navLinks">
+          <li>
+            <a href="#features" data-lang-en>Features</a
+            ><a href="#features" data-lang-zh>功能特性</a>
+          </li>
+          <li><a href="api-reference.html">API</a></li>
+          <li>
+            <a href="usage.html" data-lang-en>Usage</a
+            ><a href="usage.html" data-lang-zh>使用指南</a>
+          </li>
+          <li>
+            <a href="local-setup.html"
+              ><span data-lang-en>Local</span><span data-lang-zh>本地</span></a
+            >
+          </li>
+          <li><a href="docker.html">Docker</a></li>
+          <li>
+            <a href="examples.html" data-lang-en>Examples</a
+            ><a href="examples.html" data-lang-zh>示例</a>
+          </li>
+          <li>
+            <a href="plugins.html" data-lang-en>Plugins</a
+            ><a href="plugins.html" data-lang-zh>插件</a>
+          </li>
+          <li>
+            <a href="anti-obfuscation.html" data-lang-en>Anti-Obf</a
+            ><a href="anti-obfuscation.html" data-lang-zh>反混淆</a>
+          </li>
+          <li><a href="faq.html">FAQ</a></li>
+        </ul>
+        <div class="nav__right">
+          <button class="lang-toggle" id="lang-toggle">中文</button>
+          <a
+            href="https://github.com/Last-emo-boy/rikune"
+            class="nav__cta"
+            target="_blank"
+            rel="noopener"
+            >GitHub →</a
+          >
         </div>
-        <div class="terminal__body"><span class="comment"># Ingest a PE sample and run staged analysis</span>
-<span class="prompt">❯</span> <span class="cmd">sample.ingest</span> <span class="flag">--path</span> "C:\samples\target.exe"
-<span class="output">  ✓ sha256:a1b2c3…  ingested  (PE32+, 1.2 MB)</span>
+        <button class="nav__hamburger" id="hamburger" aria-label="Toggle menu">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </nav>
 
-<span class="prompt">❯</span> <span class="cmd">workflow.analyze.start</span> <span class="flag">--sample_id</span> sha256:a1b2c3… <span class="flag">--goal</span> reverse
-<span class="output">  ✓ run_id: run_0042  fast_profile completed
-  ⧗ enrich_static → function_map → reconstruct  queued</span>
-
-<span class="prompt">❯</span> <span class="cmd">workflow.summarize</span> <span class="flag">--sample_id</span> sha256:a1b2c3…
-<span class="output">  ✓ 148 functions recovered · 12 crypto APIs flagged
-    3 C2 indicators extracted · confidence 0.87</span></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Stats -->
-<div class="stats">
-  <div class="container">
-    <div class="stats__grid reveal">
-      <div>
-        <div class="stat__value" data-count="220" data-suffix="+">0</div>
-        <div class="stat__label"><span data-lang-en>MCP Tools</span><span data-lang-zh>MCP 工具</span></div>
-      </div>
-      <div>
-        <div class="stat__value" data-count="56">0</div>
-        <div class="stat__label"><span data-lang-en>Plugins</span><span data-lang-zh>插件</span></div>
-      </div>
-      <div>
-        <div class="stat__value" data-count="7">0</div>
-        <div class="stat__label"><span data-lang-en>Analysis Stages</span><span data-lang-zh>分析阶段</span></div>
-      </div>
-      <div>
-        <div class="stat__value" data-count="14">0</div>
-        <div class="stat__label"><span data-lang-en>Docker Backends</span><span data-lang-zh>Docker 后端</span></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Features -->
-<section class="section" id="features">
-  <div class="container">
-    <div class="features__header reveal">
-      <h2><span data-lang-en>Built for Depth</span><span data-lang-zh>为深度分析而生</span></h2>
-      <p>
-        <span data-lang-en>Every tool is designed to be composable, observable, and reusable by any MCP-compatible AI agent.</span>
-        <span data-lang-zh>每一个工具都被设计为可组合、可观测、可复用的，适配任何 MCP 兼容的 AI 智能体。</span>
-      </p>
-    </div>
-    <div class="features__grid">
-      <div class="feature-card reveal">
-        <div class="feature-card__icon">🔬</div>
-        <h3><span data-lang-en>Universal PE Coverage</span><span data-lang-zh>全格式 PE 覆盖</span></h3>
-        <p>
-          <span data-lang-en>EXE, DLL, COM libraries, Rust binaries, .NET assemblies, APK/DEX — all with dedicated profiling paths and automatic format detection.</span>
-          <span data-lang-zh>EXE、DLL、COM 库、Rust 二进制、.NET 程序集、APK/DEX — 全部支持专用分析路径和自动格式检测。</span>
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container">
+        <div class="hero__badge">
+          <span class="hero__badge-dot"></span>
+          v1.0.0-beta.3 · Model Context Protocol
+        </div>
+        <h1>
+          <span data-lang-en>Reverse Engineering<br />Meets AI Agents</span>
+          <span data-lang-zh>逆向工程<br />遇见 AI 智能体</span>
+        </h1>
+        <p class="hero__sub">
+          <span data-lang-en
+            >An MCP server that exposes PE triage, Ghidra-backed decompilation, DLL/COM profiling,
+            runtime evidence, and LLM-assisted analysis as reusable tools for any tool-calling
+            LLM.</span
+          >
+          <span data-lang-zh
+            >一个 MCP 服务器，将 PE 分诊、Ghidra 反编译、DLL/COM 分析、运行时证据采集 和 LLM
+            辅助审查作为可复用工具，提供给任何支持工具调用的大语言模型。</span
+          >
         </p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-card__icon feature-card__icon--purple">🧠</div>
-        <h3><span data-lang-en>LLM-Assisted Review</span><span data-lang-zh>LLM 辅助审查</span></h3>
-        <p>
-          <span data-lang-en>Function naming, explanation, and module reconstruction review exposed as structured MCP flows — not ad-hoc prompt chains.</span>
-          <span data-lang-zh>函数命名、解释和模块重建审查作为结构化 MCP 流程暴露 — 而不是临时的提示链。</span>
-        </p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-card__icon feature-card__icon--green">🔄</div>
-        <h3><span data-lang-en>Staged Pipeline</span><span data-lang-zh>分阶段流水线</span></h3>
-        <p>
-          <span data-lang-en>Seven analysis stages with preview-first contracts, nonblocking execution, and persisted run state. No more MCP timeouts on large samples.</span>
-          <span data-lang-zh>七个分析阶段，预览优先，非阻塞执行，持久化运行状态。大样本不再超时。</span>
-        </p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-card__icon feature-card__icon--pink">🛡️</div>
-        <h3><span data-lang-en>Malware Intelligence</span><span data-lang-zh>恶意软件情报</span></h3>
-        <p>
-          <span data-lang-en>C2 extraction, family classification, config recovery, YARA/Sigma rule generation, and IOC export — all from static and dynamic evidence.</span>
-          <span data-lang-zh>C2 提取、家族分类、配置恢复、YARA/Sigma 规则生成和 IOC 导出 — 全部基于静态和动态证据。</span>
-        </p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-card__icon feature-card__icon--amber">⚡</div>
-        <h3><span data-lang-en>Recover-First Design</span><span data-lang-zh>恢复优先设计</span></h3>
-        <p>
-          <span data-lang-en>When Ghidra extraction fails, the server falls back to .pdata parsing, boundary recovery, symbol recovery, and imported function definitions.</span>
-          <span data-lang-zh>当 Ghidra 提取失败时，服务器会退回到 .pdata 解析、边界恢复、符号恢复和导入函数定义。</span>
-        </p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-card__icon">🐳</div>
-        <h3><span data-lang-en>Full Docker Image</span><span data-lang-zh>全栈 Docker 镜像</span></h3>
-        <p>
-          <span data-lang-en>Ghidra, Rizin, YARA-X, UPX, Wine, Frida, Qiling, angr, PANDA, RetDec, capa, DIE, FLOSS — everything bundled for instant deployment.</span>
-          <span data-lang-zh>Ghidra、Rizin、YARA-X、UPX、Wine、Frida、Qiling、angr、PANDA、RetDec、capa、DIE、FLOSS — 一键部署。</span>
-        </p>
-      </div>
-    </div>
-  </div>
-</section>
+        <div class="hero__actions">
+          <a href="#install" class="btn btn--primary">
+            <span>⚡</span>
+            <span data-lang-en>Quick Start</span>
+            <span data-lang-zh>快速开始</span>
+          </a>
+          <a href="#features" class="btn btn--ghost">
+            <span data-lang-en>Explore →</span>
+            <span data-lang-zh>探索 →</span>
+          </a>
+        </div>
+        <div class="hero__terminal">
+          <div class="terminal">
+            <div class="terminal__bar">
+              <span class="terminal__dot terminal__dot--r"></span>
+              <span class="terminal__dot terminal__dot--y"></span>
+              <span class="terminal__dot terminal__dot--g"></span>
+              <span class="terminal__title">PowerShell</span>
+            </div>
+            <div class="terminal__body">
+              <span class="comment"># Ingest a PE sample and run staged analysis</span>
+              <span class="prompt">❯</span> <span class="cmd">sample.ingest</span>
+              <span class="flag">--path</span> "C:\samples\target.exe"
+              <span class="output"> ✓ sha256:a1b2c3… ingested (PE32+, 1.2 MB)</span>
 
-<!-- Architecture -->
-<section class="section" id="architecture">
-  <div class="container arch">
-    <h2 class="reveal"><span data-lang-en>Architecture</span><span data-lang-zh>系统架构</span></h2>
-    <p class="arch__sub reveal">
-      <span data-lang-en>Layered design from MCP transport to native tooling, with observable intermediaries at every level.</span>
-      <span data-lang-zh>从 MCP 传输到原生工具的分层设计，每一层都具备可观测性。</span>
-    </p>
-    <div class="arch__diagram reveal">
-      <div class="arch__layer">
-        <span class="arch__layer-title">MCP Client Layer</span>
-        <div class="arch__items">
-          <span class="arch__chip">Claude Desktop</span>
-          <span class="arch__chip">VS Code Copilot</span>
-          <span class="arch__chip">Codex CLI</span>
-          <span class="arch__chip">Any MCP Client</span>
+              <span class="prompt">❯</span> <span class="cmd">workflow.analyze.start</span>
+              <span class="flag">--sample_id</span> sha256:a1b2c3…
+              <span class="flag">--goal</span> reverse
+              <span class="output">
+                ✓ run_id: run_0042 fast_profile completed ⧗ enrich_static → function_map →
+                reconstruct queued</span
+              >
+
+              <span class="prompt">❯</span> <span class="cmd">workflow.summarize</span>
+              <span class="flag">--sample_id</span> sha256:a1b2c3…
+              <span class="output">
+                ✓ 148 functions recovered · 12 crypto APIs flagged 3 C2 indicators extracted ·
+                confidence 0.87</span
+              >
+            </div>
+          </div>
         </div>
       </div>
-      <div class="arch__arrow">↕</div>
-      <div class="arch__layer">
-        <span class="arch__layer-title">Rikune MCP Server</span>
-        <div class="arch__items">
-          <span class="arch__chip">Tool Registry</span>
-          <span class="arch__chip">Plugin System (27)</span>
-          <span class="arch__chip">Job Queue</span>
-          <span class="arch__chip">Cache Manager</span>
-          <span class="arch__chip">Workspace Manager</span>
-          <span class="arch__chip">HTTP File Server</span>
-          <span class="arch__chip">SSE Events</span>
-          <span class="arch__chip">Web Dashboard</span>
-        </div>
-      </div>
-      <div class="arch__arrow">↕</div>
-      <div class="arch__layer">
-        <span class="arch__layer-title">Analysis Backends</span>
-        <div class="arch__items">
-          <span class="arch__chip">Ghidra</span>
-          <span class="arch__chip">Rizin</span>
-          <span class="arch__chip">angr</span>
-          <span class="arch__chip">RetDec</span>
-          <span class="arch__chip">Qiling</span>
-          <span class="arch__chip">PANDA</span>
-          <span class="arch__chip">Frida</span>
-          <span class="arch__chip">Wine</span>
-          <span class="arch__chip">YARA-X</span>
-          <span class="arch__chip">UPX</span>
-          <span class="arch__chip">capa</span>
-          <span class="arch__chip">DIE</span>
-          <span class="arch__chip">FLOSS</span>
-          <span class="arch__chip">Graphviz</span>
-        </div>
-      </div>
-      <div class="arch__arrow">↕</div>
-      <div class="arch__layer">
-        <span class="arch__layer-title">Storage &amp; State</span>
-        <div class="arch__items">
-          <span class="arch__chip">SQLite Database</span>
-          <span class="arch__chip">Artifact Store</span>
-          <span class="arch__chip">Analysis Runs</span>
-          <span class="arch__chip">Evidence Cache</span>
+    </section>
+
+    <!-- Stats -->
+    <div class="stats">
+      <div class="container">
+        <div class="stats__grid reveal">
+          <div>
+            <div class="stat__value" data-count="220" data-suffix="+">0</div>
+            <div class="stat__label">
+              <span data-lang-en>MCP Tools</span><span data-lang-zh>MCP 工具</span>
+            </div>
+          </div>
+          <div>
+            <div class="stat__value" data-count="56">0</div>
+            <div class="stat__label">
+              <span data-lang-en>Plugins</span><span data-lang-zh>插件</span>
+            </div>
+          </div>
+          <div>
+            <div class="stat__value" data-count="7">0</div>
+            <div class="stat__label">
+              <span data-lang-en>Analysis Stages</span><span data-lang-zh>分析阶段</span>
+            </div>
+          </div>
+          <div>
+            <div class="stat__value" data-count="14">0</div>
+            <div class="stat__label">
+              <span data-lang-en>Docker Backends</span><span data-lang-zh>Docker 后端</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-  </div>
-</section>
 
-<!-- Pipeline -->
-<section class="section" id="pipeline">
-  <div class="container pipeline">
-    <h2 class="reveal"><span data-lang-en>Staged Analysis Pipeline</span><span data-lang-zh>分阶段分析流水线</span></h2>
-    <p class="pipeline__sub reveal">
-      <span data-lang-en>Nonblocking execution with seven stages. Preview-first, queue-friendly, no timeouts.</span>
-      <span data-lang-zh>七阶段非阻塞执行。预览优先，队列友好，无超时。</span>
-    </p>
-    <div class="pipeline__timeline reveal">
-      <div class="pipeline__item">
-        <div class="pipeline__node"></div>
-        <div class="pipeline__card">
-          <div class="pipeline__stage-num">01</div>
-          <div class="pipeline__stage-name"><span data-lang-en>Fast Profile</span><span data-lang-zh>快速画像</span></div>
-          <div class="pipeline__stage-desc"><span data-lang-en>PE headers, imports, heuristics</span><span data-lang-zh>PE 头、导入表、启发式</span></div>
+    <!-- Features -->
+    <section class="section" id="features">
+      <div class="container">
+        <div class="features__header reveal">
+          <h2><span data-lang-en>Built for Depth</span><span data-lang-zh>为深度分析而生</span></h2>
+          <p>
+            <span data-lang-en
+              >Every tool is designed to be composable, observable, and reusable by any
+              MCP-compatible AI agent.</span
+            >
+            <span data-lang-zh
+              >每一个工具都被设计为可组合、可观测、可复用的，适配任何 MCP 兼容的 AI 智能体。</span
+            >
+          </p>
+        </div>
+        <div class="features__grid">
+          <div class="feature-card reveal">
+            <div class="feature-card__icon">🔬</div>
+            <h3>
+              <span data-lang-en>Universal PE Coverage</span
+              ><span data-lang-zh>全格式 PE 覆盖</span>
+            </h3>
+            <p>
+              <span data-lang-en
+                >EXE, DLL, COM libraries, Rust binaries, .NET assemblies, APK/DEX — all with
+                dedicated profiling paths and automatic format detection.</span
+              >
+              <span data-lang-zh
+                >EXE、DLL、COM 库、Rust 二进制、.NET 程序集、APK/DEX —
+                全部支持专用分析路径和自动格式检测。</span
+              >
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-card__icon feature-card__icon--purple">🧠</div>
+            <h3>
+              <span data-lang-en>LLM-Assisted Review</span><span data-lang-zh>LLM 辅助审查</span>
+            </h3>
+            <p>
+              <span data-lang-en
+                >Function naming, explanation, and module reconstruction review exposed as
+                structured MCP flows — not ad-hoc prompt chains.</span
+              >
+              <span data-lang-zh
+                >函数命名、解释和模块重建审查作为结构化 MCP 流程暴露 — 而不是临时的提示链。</span
+              >
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-card__icon feature-card__icon--purple">🪟</div>
+            <h3>
+              <span data-lang-en>Split Analyzer / Runtime</span
+              ><span data-lang-zh>分析面 / 运行时面拆分</span>
+            </h3>
+            <p>
+              <span data-lang-en
+                >Keep static analysis in Linux Docker, then delegate real sample execution to a
+                Windows Runtime Node or Host Agent when you explicitly opt in.</span
+              >
+              <span data-lang-zh
+                >将静态分析保留在 Linux Docker 中，并在你显式开启时把真实样本执行委派给 Windows
+                Runtime Node 或 Host Agent。</span
+              >
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-card__icon feature-card__icon--green">🔄</div>
+            <h3><span data-lang-en>Staged Pipeline</span><span data-lang-zh>分阶段流水线</span></h3>
+            <p>
+              <span data-lang-en
+                >Seven analysis stages with preview-first contracts, nonblocking execution, and
+                persisted run state. No more MCP timeouts on large samples.</span
+              >
+              <span data-lang-zh
+                >七个分析阶段，预览优先，非阻塞执行，持久化运行状态。大样本不再超时。</span
+              >
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-card__icon feature-card__icon--pink">🛡️</div>
+            <h3>
+              <span data-lang-en>Malware Intelligence</span><span data-lang-zh>恶意软件情报</span>
+            </h3>
+            <p>
+              <span data-lang-en
+                >C2 extraction, family classification, config recovery, YARA/Sigma rule generation,
+                and IOC export — all from static and dynamic evidence.</span
+              >
+              <span data-lang-zh
+                >C2 提取、家族分类、配置恢复、YARA/Sigma 规则生成和 IOC 导出 —
+                全部基于静态和动态证据。</span
+              >
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-card__icon feature-card__icon--amber">⚡</div>
+            <h3>
+              <span data-lang-en>Recover-First Design</span><span data-lang-zh>恢复优先设计</span>
+            </h3>
+            <p>
+              <span data-lang-en
+                >When Ghidra extraction fails, the server falls back to .pdata parsing, boundary
+                recovery, symbol recovery, and imported function definitions.</span
+              >
+              <span data-lang-zh
+                >当 Ghidra 提取失败时，服务器会退回到 .pdata
+                解析、边界恢复、符号恢复和导入函数定义。</span
+              >
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-card__icon">🐳</div>
+            <h3>
+              <span data-lang-en>Full Docker Image</span><span data-lang-zh>全栈 Docker 镜像</span>
+            </h3>
+            <p>
+              <span data-lang-en
+                >Ghidra, Rizin, YARA-X, UPX, Wine, Frida, Qiling, angr, PANDA, RetDec, capa, DIE,
+                FLOSS — everything bundled for instant deployment.</span
+              >
+              <span data-lang-zh
+                >Ghidra、Rizin、YARA-X、UPX、Wine、Frida、Qiling、angr、PANDA、RetDec、capa、DIE、FLOSS
+                — 一键部署。</span
+              >
+            </p>
+          </div>
         </div>
       </div>
-      <div class="pipeline__item">
-        <div class="pipeline__node"></div>
-        <div class="pipeline__card">
-          <div class="pipeline__stage-num">02</div>
-          <div class="pipeline__stage-name"><span data-lang-en>Enrich Static</span><span data-lang-zh>静态增强</span></div>
-          <div class="pipeline__stage-desc"><span data-lang-en>capa, strings, entropy, YARA</span><span data-lang-zh>capa、字符串、熵值、YARA</span></div>
-        </div>
-      </div>
-      <div class="pipeline__item">
-        <div class="pipeline__node"></div>
-        <div class="pipeline__card">
-          <div class="pipeline__stage-num">03</div>
-          <div class="pipeline__stage-name"><span data-lang-en>Function Map</span><span data-lang-zh>函数映射</span></div>
-          <div class="pipeline__stage-desc"><span data-lang-en>Ghidra decompile + recovery</span><span data-lang-zh>Ghidra 反编译 + 恢复</span></div>
-        </div>
-      </div>
-      <div class="pipeline__item">
-        <div class="pipeline__node"></div>
-        <div class="pipeline__card">
-          <div class="pipeline__stage-num">04</div>
-          <div class="pipeline__stage-name"><span data-lang-en>Reconstruct</span><span data-lang-zh>重建</span></div>
-          <div class="pipeline__stage-desc"><span data-lang-en>Source-like code export</span><span data-lang-zh>类源码导出</span></div>
-        </div>
-      </div>
-      <div class="pipeline__item">
-        <div class="pipeline__node"></div>
-        <div class="pipeline__card">
-          <div class="pipeline__stage-num">05</div>
-          <div class="pipeline__stage-name"><span data-lang-en>Dynamic Plan</span><span data-lang-zh>动态规划</span></div>
-          <div class="pipeline__stage-desc"><span data-lang-en>Hook scripts, breakpoints</span><span data-lang-zh>Hook 脚本、断点</span></div>
-        </div>
-      </div>
-      <div class="pipeline__item">
-        <div class="pipeline__node"></div>
-        <div class="pipeline__card">
-          <div class="pipeline__stage-num">06</div>
-          <div class="pipeline__stage-name"><span data-lang-en>Dynamic Exec</span><span data-lang-zh>动态执行</span></div>
-          <div class="pipeline__stage-desc"><span data-lang-en>Traces, memory, sandbox</span><span data-lang-zh>追踪、内存、沙箱</span></div>
-        </div>
-      </div>
-      <div class="pipeline__item">
-        <div class="pipeline__node"></div>
-        <div class="pipeline__card">
-          <div class="pipeline__stage-num">07</div>
-          <div class="pipeline__stage-name"><span data-lang-en>Summarize</span><span data-lang-zh>总结</span></div>
-          <div class="pipeline__stage-desc"><span data-lang-en>Report, IOC, YARA/Sigma</span><span data-lang-zh>报告、IOC、YARA/Sigma</span></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
+    </section>
 
-<!-- Tech Stack -->
-<section class="section" id="stack">
-  <div class="container stack">
-    <h2 class="reveal"><span data-lang-en>Powered By</span><span data-lang-zh>技术栈</span></h2>
-    <div class="stack__grid reveal">
-      <div class="stack__item"><span class="stack__item-icon">🦎</span> Ghidra</div>
-      <div class="stack__item"><span class="stack__item-icon">🔧</span> Rizin</div>
-      <div class="stack__item"><span class="stack__item-icon">🐍</span> angr</div>
-      <div class="stack__item"><span class="stack__item-icon">🔄</span> RetDec</div>
-      <div class="stack__item"><span class="stack__item-icon">🐉</span> Qiling</div>
-      <div class="stack__item"><span class="stack__item-icon">🐼</span> PANDA</div>
-      <div class="stack__item"><span class="stack__item-icon">🪝</span> Frida</div>
-      <div class="stack__item"><span class="stack__item-icon">🍷</span> Wine</div>
-      <div class="stack__item"><span class="stack__item-icon">🛡️</span> YARA-X</div>
-      <div class="stack__item"><span class="stack__item-icon">📦</span> UPX</div>
-      <div class="stack__item"><span class="stack__item-icon">🔍</span> capa</div>
-      <div class="stack__item"><span class="stack__item-icon">🧬</span> FLOSS</div>
-      <div class="stack__item"><span class="stack__item-icon">🐳</span> Docker</div>
-      <div class="stack__item"><span class="stack__item-icon">📐</span> Graphviz</div>
-    </div>
-  </div>
-</section>
-
-<!-- Install -->
-<section class="section" id="install">
-  <div class="container install">
-    <h2 class="reveal"><span data-lang-en>Get Started</span><span data-lang-zh>开始使用</span></h2>
-    <p class="install__sub reveal">
-      <span data-lang-en>Choose your MCP client and start analyzing binaries in minutes.</span>
-      <span data-lang-zh>选择你的 MCP 客户端，几分钟内开始分析二进制文件。</span>
-    </p>
-    <div class="install__tabs reveal">
-      <button class="install__tab active" data-tab="claude">Claude Desktop</button>
-      <button class="install__tab" data-tab="copilot">VS Code Copilot</button>
-      <button class="install__tab" data-tab="docker">Docker</button>
-      <button class="install__tab" data-tab="npm">npm</button>
-    </div>
-
-    <div class="install__panel active" data-panel="claude">
-      <div class="code-block">
-        <div class="code-block__header">
-          <span>claude_desktop_config.json</span>
-          <button class="code-block__copy">Copy</button>
+    <!-- Architecture -->
+    <section class="section" id="architecture">
+      <div class="container arch">
+        <h2 class="reveal">
+          <span data-lang-en>Architecture</span><span data-lang-zh>系统架构</span>
+        </h2>
+        <p class="arch__sub reveal">
+          <span data-lang-en
+            >Layered design from MCP transport to native tooling, with observable intermediaries at
+            every level.</span
+          >
+          <span data-lang-zh>从 MCP 传输到原生工具的分层设计，每一层都具备可观测性。</span>
+        </p>
+        <div class="arch__diagram reveal">
+          <div class="arch__layer">
+            <span class="arch__layer-title">MCP Client Layer</span>
+            <div class="arch__items">
+              <span class="arch__chip">Claude Desktop</span>
+              <span class="arch__chip">VS Code Copilot</span>
+              <span class="arch__chip">Codex CLI</span>
+              <span class="arch__chip">Any MCP Client</span>
+            </div>
+          </div>
+          <div class="arch__arrow">↕</div>
+          <div class="arch__layer">
+            <span class="arch__layer-title">Rikune MCP Server</span>
+            <div class="arch__items">
+              <span class="arch__chip">Tool Registry</span>
+              <span class="arch__chip">Plugin System (27)</span>
+              <span class="arch__chip">Job Queue</span>
+              <span class="arch__chip">Cache Manager</span>
+              <span class="arch__chip">Workspace Manager</span>
+              <span class="arch__chip">HTTP File Server</span>
+              <span class="arch__chip">SSE Events</span>
+              <span class="arch__chip">Web Dashboard</span>
+            </div>
+          </div>
+          <div class="arch__arrow">↕</div>
+          <div class="arch__layer">
+            <span class="arch__layer-title">Execution Surfaces</span>
+            <div class="arch__items">
+              <span class="arch__chip">Linux Analyzer (static-only)</span>
+              <span class="arch__chip">Windows-native Analyzer</span>
+              <span class="arch__chip">Windows Runtime Node</span>
+              <span class="arch__chip">Windows Host Agent</span>
+              <span class="arch__chip">Windows Sandbox</span>
+            </div>
+          </div>
+          <div class="arch__arrow">↕</div>
+          <div class="arch__layer">
+            <span class="arch__layer-title">Analysis Backends</span>
+            <div class="arch__items">
+              <span class="arch__chip">Ghidra</span>
+              <span class="arch__chip">Rizin</span>
+              <span class="arch__chip">angr</span>
+              <span class="arch__chip">RetDec</span>
+              <span class="arch__chip">Qiling</span>
+              <span class="arch__chip">PANDA</span>
+              <span class="arch__chip">Frida</span>
+              <span class="arch__chip">Wine</span>
+              <span class="arch__chip">YARA-X</span>
+              <span class="arch__chip">UPX</span>
+              <span class="arch__chip">capa</span>
+              <span class="arch__chip">DIE</span>
+              <span class="arch__chip">FLOSS</span>
+              <span class="arch__chip">Graphviz</span>
+            </div>
+          </div>
+          <div class="arch__arrow">↕</div>
+          <div class="arch__layer">
+            <span class="arch__layer-title">Storage &amp; State</span>
+            <div class="arch__items">
+              <span class="arch__chip">SQLite Database</span>
+              <span class="arch__chip">Artifact Store</span>
+              <span class="arch__chip">Analysis Runs</span>
+              <span class="arch__chip">Evidence Cache</span>
+            </div>
+          </div>
         </div>
-        <pre>{
+      </div>
+    </section>
+
+    <!-- Pipeline -->
+    <section class="section" id="pipeline">
+      <div class="container pipeline">
+        <h2 class="reveal">
+          <span data-lang-en>Staged Analysis Pipeline</span
+          ><span data-lang-zh>分阶段分析流水线</span>
+        </h2>
+        <p class="pipeline__sub reveal">
+          <span data-lang-en
+            >Nonblocking execution with seven stages. Preview-first, queue-friendly, no
+            timeouts.</span
+          >
+          <span data-lang-zh>七阶段非阻塞执行。预览优先，队列友好，无超时。</span>
+        </p>
+        <div class="pipeline__timeline reveal">
+          <div class="pipeline__item">
+            <div class="pipeline__node"></div>
+            <div class="pipeline__card">
+              <div class="pipeline__stage-num">01</div>
+              <div class="pipeline__stage-name">
+                <span data-lang-en>Fast Profile</span><span data-lang-zh>快速画像</span>
+              </div>
+              <div class="pipeline__stage-desc">
+                <span data-lang-en>PE headers, imports, heuristics</span
+                ><span data-lang-zh>PE 头、导入表、启发式</span>
+              </div>
+            </div>
+          </div>
+          <div class="pipeline__item">
+            <div class="pipeline__node"></div>
+            <div class="pipeline__card">
+              <div class="pipeline__stage-num">02</div>
+              <div class="pipeline__stage-name">
+                <span data-lang-en>Enrich Static</span><span data-lang-zh>静态增强</span>
+              </div>
+              <div class="pipeline__stage-desc">
+                <span data-lang-en>capa, strings, entropy, YARA</span
+                ><span data-lang-zh>capa、字符串、熵值、YARA</span>
+              </div>
+            </div>
+          </div>
+          <div class="pipeline__item">
+            <div class="pipeline__node"></div>
+            <div class="pipeline__card">
+              <div class="pipeline__stage-num">03</div>
+              <div class="pipeline__stage-name">
+                <span data-lang-en>Function Map</span><span data-lang-zh>函数映射</span>
+              </div>
+              <div class="pipeline__stage-desc">
+                <span data-lang-en>Ghidra decompile + recovery</span
+                ><span data-lang-zh>Ghidra 反编译 + 恢复</span>
+              </div>
+            </div>
+          </div>
+          <div class="pipeline__item">
+            <div class="pipeline__node"></div>
+            <div class="pipeline__card">
+              <div class="pipeline__stage-num">04</div>
+              <div class="pipeline__stage-name">
+                <span data-lang-en>Reconstruct</span><span data-lang-zh>重建</span>
+              </div>
+              <div class="pipeline__stage-desc">
+                <span data-lang-en>Source-like code export</span
+                ><span data-lang-zh>类源码导出</span>
+              </div>
+            </div>
+          </div>
+          <div class="pipeline__item">
+            <div class="pipeline__node"></div>
+            <div class="pipeline__card">
+              <div class="pipeline__stage-num">05</div>
+              <div class="pipeline__stage-name">
+                <span data-lang-en>Dynamic Plan</span><span data-lang-zh>动态规划</span>
+              </div>
+              <div class="pipeline__stage-desc">
+                <span data-lang-en>Hook scripts, breakpoints</span
+                ><span data-lang-zh>Hook 脚本、断点</span>
+              </div>
+            </div>
+          </div>
+          <div class="pipeline__item">
+            <div class="pipeline__node"></div>
+            <div class="pipeline__card">
+              <div class="pipeline__stage-num">06</div>
+              <div class="pipeline__stage-name">
+                <span data-lang-en>Dynamic Exec</span><span data-lang-zh>动态执行</span>
+              </div>
+              <div class="pipeline__stage-desc">
+                <span data-lang-en>Traces, memory, sandbox</span
+                ><span data-lang-zh>追踪、内存、沙箱</span>
+              </div>
+            </div>
+          </div>
+          <div class="pipeline__item">
+            <div class="pipeline__node"></div>
+            <div class="pipeline__card">
+              <div class="pipeline__stage-num">07</div>
+              <div class="pipeline__stage-name">
+                <span data-lang-en>Summarize</span><span data-lang-zh>总结</span>
+              </div>
+              <div class="pipeline__stage-desc">
+                <span data-lang-en>Report, IOC, YARA/Sigma</span
+                ><span data-lang-zh>报告、IOC、YARA/Sigma</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tech Stack -->
+    <section class="section" id="stack">
+      <div class="container stack">
+        <h2 class="reveal"><span data-lang-en>Powered By</span><span data-lang-zh>技术栈</span></h2>
+        <div class="stack__grid reveal">
+          <div class="stack__item"><span class="stack__item-icon">🦎</span> Ghidra</div>
+          <div class="stack__item"><span class="stack__item-icon">🔧</span> Rizin</div>
+          <div class="stack__item"><span class="stack__item-icon">🐍</span> angr</div>
+          <div class="stack__item"><span class="stack__item-icon">🔄</span> RetDec</div>
+          <div class="stack__item"><span class="stack__item-icon">🐉</span> Qiling</div>
+          <div class="stack__item"><span class="stack__item-icon">🐼</span> PANDA</div>
+          <div class="stack__item"><span class="stack__item-icon">🪝</span> Frida</div>
+          <div class="stack__item"><span class="stack__item-icon">🍷</span> Wine</div>
+          <div class="stack__item"><span class="stack__item-icon">🛡️</span> YARA-X</div>
+          <div class="stack__item"><span class="stack__item-icon">📦</span> UPX</div>
+          <div class="stack__item"><span class="stack__item-icon">🔍</span> capa</div>
+          <div class="stack__item"><span class="stack__item-icon">🧬</span> FLOSS</div>
+          <div class="stack__item"><span class="stack__item-icon">🐳</span> Docker</div>
+          <div class="stack__item"><span class="stack__item-icon">📐</span> Graphviz</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Install -->
+    <section class="section" id="install">
+      <div class="container install">
+        <h2 class="reveal">
+          <span data-lang-en>Get Started</span><span data-lang-zh>开始使用</span>
+        </h2>
+        <p class="install__sub reveal">
+          <span data-lang-en
+            >Choose the deployment shape that matches your risk model: static-only Linux Docker,
+            Windows-native auto-sandbox, or split analyzer/runtime.</span
+          >
+          <span data-lang-zh
+            >根据你的风险模型选择部署形态：纯静态 Linux Docker、Windows 原生 auto-sandbox，或拆分式
+            analyzer/runtime。</span
+          >
+        </p>
+        <div
+          class="feature-card reveal"
+          style="max-width: 860px; margin: 0 auto 32px; text-align: left"
+        >
+          <p style="margin: 0">
+            <span data-lang-en
+              ><strong>Best-practice runtime split:</strong> use
+              <code>docker-compose.analyzer.yml</code> for static-only Linux analysis with
+              <code>RUNTIME_MODE=disabled</code>, switch to <code>manual</code> or
+              <code>remote-sandbox</code> only when you intentionally connect a Windows Runtime Node
+              / Host Agent, and reserve <code>auto-sandbox</code> for Windows-native analyzers.
+              Docker or WSL analyzers cannot use <code>auto-sandbox</code> directly.</span
+            >
+            <span data-lang-zh
+              ><strong>推荐实践：</strong>使用 <code>docker-compose.analyzer.yml</code> 和
+              <code>RUNTIME_MODE=disabled</code> 进行纯静态 Linux 分析；只有在你明确接入 Windows
+              Runtime Node / Host Agent 时，才切换到 <code>manual</code> 或
+              <code>remote-sandbox</code>；<code>auto-sandbox</code> 仅适用于 Windows 原生
+              analyzer。Docker 或 WSL 中的 analyzer 不能直接使用 <code>auto-sandbox</code>。</span
+            >
+          </p>
+        </div>
+        <div class="install__tabs reveal">
+          <button class="install__tab active" data-tab="claude">Claude Desktop</button>
+          <button class="install__tab" data-tab="copilot">VS Code Copilot</button>
+          <button class="install__tab" data-tab="docker">Docker</button>
+          <button class="install__tab" data-tab="npm">npm</button>
+        </div>
+
+        <div class="install__panel active" data-panel="claude">
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>claude_desktop_config.json</span>
+              <button class="code-block__copy">Copy</button>
+            </div>
+            <pre>{
   <span class="key">"mcpServers"</span>: {
     <span class="key">"rikune"</span>: {
       <span class="key">"command"</span>: <span class="str">"npx"</span>,
@@ -547,16 +1066,16 @@
     }
   }
 }</pre>
-      </div>
-    </div>
-
-    <div class="install__panel" data-panel="copilot">
-      <div class="code-block">
-        <div class="code-block__header">
-          <span>.vscode/mcp.json</span>
-          <button class="code-block__copy">Copy</button>
+          </div>
         </div>
-        <pre>{
+
+        <div class="install__panel" data-panel="copilot">
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>.vscode/mcp.json</span>
+              <button class="code-block__copy">Copy</button>
+            </div>
+            <pre>{
   <span class="key">"servers"</span>: {
     <span class="key">"rikune"</span>: {
       <span class="key">"command"</span>: <span class="str">"npx"</span>,
@@ -568,109 +1087,150 @@
     }
   }
 }</pre>
-      </div>
-    </div>
-
-    <div class="install__panel" data-panel="docker">
-      <div class="code-block">
-        <div class="code-block__header">
-          <span>PowerShell</span>
-          <button class="code-block__copy">Copy</button>
+          </div>
         </div>
-        <pre><span class="comment"># Pull and run the full analysis image</span>
-docker compose up -d
 
-<span class="comment"># Or use the install script</span>
+        <div class="install__panel" data-panel="docker">
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>PowerShell</span>
+              <button class="code-block__copy">Copy</button>
+            </div>
+            <pre><span class="comment"># Static-only Linux analyzer (safe default)</span>
+docker compose -f docker-compose.analyzer.yml up -d
+
+<span class="comment"># Hybrid Linux analyzer + Windows runtime plane</span>
+docker compose -f docker-compose.hybrid.yml up -d
+
+<span class="comment"># Optional bootstrap for Windows hosts</span>
 .\install-docker.ps1</pre>
-      </div>
-    </div>
-
-    <div class="install__panel" data-panel="npm">
-      <div class="code-block">
-        <div class="code-block__header">
-          <span>Terminal</span>
-          <button class="code-block__copy">Copy</button>
+          </div>
         </div>
-        <pre><span class="comment"># Install globally</span>
+
+        <div class="install__panel" data-panel="npm">
+          <div class="code-block">
+            <div class="code-block__header">
+              <span>Terminal</span>
+              <button class="code-block__copy">Copy</button>
+            </div>
+            <pre><span class="comment"># Install globally</span>
 npm install -g rikune
 
 <span class="comment"># Or run directly with npx</span>
 npx -y rikune</pre>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
-</section>
+    </section>
 
-<!-- CTA -->
-<section class="cta-section">
-  <div class="container reveal">
-    <h2><span data-lang-en>Ready to Reverse?</span><span data-lang-zh>准备好逆向了吗？</span></h2>
-    <p>
-      <span data-lang-en>Start analyzing Windows binaries with the power of AI agents and professional reverse engineering tools.</span>
-      <span data-lang-zh>借助 AI 智能体和专业逆向工程工具的力量，开始分析 Windows 二进制文件。</span>
-    </p>
-    <div class="hero__actions">
-      <a href="https://github.com/Last-emo-boy/rikune" class="btn btn--primary" target="_blank" rel="noopener">
-        <span>⭐</span> Star on GitHub
-      </a>
-      <a href="usage.html" class="btn btn--ghost">
-        <span data-lang-en>Read the Docs →</span>
-        <span data-lang-zh>阅读文档 →</span>
-      </a>
-    </div>
-  </div>
-</section>
+    <!-- CTA -->
+    <section class="cta-section">
+      <div class="container reveal">
+        <h2>
+          <span data-lang-en>Ready to Reverse?</span><span data-lang-zh>准备好逆向了吗？</span>
+        </h2>
+        <p>
+          <span data-lang-en
+            >Start analyzing Windows binaries with the power of AI agents and professional reverse
+            engineering tools.</span
+          >
+          <span data-lang-zh
+            >借助 AI 智能体和专业逆向工程工具的力量，开始分析 Windows 二进制文件。</span
+          >
+        </p>
+        <div class="hero__actions">
+          <a
+            href="https://github.com/Last-emo-boy/rikune"
+            class="btn btn--primary"
+            target="_blank"
+            rel="noopener"
+          >
+            <span>⭐</span> Star on GitHub
+          </a>
+          <a href="usage.html" class="btn btn--ghost">
+            <span data-lang-en>Read the Docs →</span>
+            <span data-lang-zh>阅读文档 →</span>
+          </a>
+        </div>
+      </div>
+    </section>
 
-<!-- Footer -->
-<footer class="footer">
-  <div class="container footer__inner">
-    <div class="footer__brand">
-      <span class="nav__logo-icon" style="width:24px;height:24px;font-size:.65rem;border-radius:6px;">R</span>
-      Rikune
-    </div>
-    <ul class="footer__links">
-      <li><a href="api-reference.html">API</a></li>
-      <li><a href="local-setup.html"><span data-lang-en>Local</span><span data-lang-zh>本地</span></a></li>
-      <li><a href="docker.html">Docker</a></li>
-      <li><a href="faq.html">FAQ</a></li>
-      <li><a href="examples.html"><span data-lang-en>Examples</span><span data-lang-zh>示例</span></a></li>
-      <li><a href="plugins.html"><span data-lang-en>Plugins</span><span data-lang-zh>插件</span></a></li>
-      <li><a href="anti-obfuscation.html"><span data-lang-en>Anti-Obf</span><span data-lang-zh>反混淆</span></a></li>
-    </ul>
-    <span class="footer__copy">MIT License · Built for the MCP ecosystem</span>
-  </div>
-</footer>
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="container footer__inner">
+        <div class="footer__brand">
+          <span
+            class="nav__logo-icon"
+            style="width: 24px; height: 24px; font-size: 0.65rem; border-radius: 6px"
+            >R</span
+          >
+          Rikune
+        </div>
+        <ul class="footer__links">
+          <li><a href="api-reference.html">API</a></li>
+          <li>
+            <a href="local-setup.html"
+              ><span data-lang-en>Local</span><span data-lang-zh>本地</span></a
+            >
+          </li>
+          <li><a href="docker.html">Docker</a></li>
+          <li><a href="faq.html">FAQ</a></li>
+          <li>
+            <a href="examples.html"
+              ><span data-lang-en>Examples</span><span data-lang-zh>示例</span></a
+            >
+          </li>
+          <li>
+            <a href="plugins.html"
+              ><span data-lang-en>Plugins</span><span data-lang-zh>插件</span></a
+            >
+          </li>
+          <li>
+            <a href="anti-obfuscation.html"
+              ><span data-lang-en>Anti-Obf</span><span data-lang-zh>反混淆</span></a
+            >
+          </li>
+        </ul>
+        <span class="footer__copy">MIT License · Built for the MCP ecosystem</span>
+      </div>
+    </footer>
 
-<script src="assets/main.js"></script>
-<script>
-/* Index-specific: install tabs */
-document.querySelectorAll('.install__tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.install__tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.install__panel').forEach(p => p.classList.remove('active'));
-    tab.classList.add('active');
-    document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
-  });
-});
-/* Counter animation */
-const counterObs = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
-    if (!entry.isIntersecting) return;
-    entry.target.querySelectorAll('[data-count]').forEach(el => {
-      const target = parseInt(el.dataset.count);
-      const suffix = el.dataset.suffix || '';
-      let cur = 0;
-      const step = Math.max(1, Math.floor(target / 40));
-      const timer = setInterval(() => {
-        cur += step;
-        if (cur >= target) { cur = target; clearInterval(timer); }
-        el.textContent = cur + suffix;
-      }, 30);
-    });
-    counterObs.unobserve(entry.target);
-  });
-}, { threshold: 0.3 });
-document.querySelectorAll('.stats__grid').forEach(el => counterObs.observe(el));
-</script>
-</body>
+    <script src="assets/main.js"></script>
+    <script>
+      /* Index-specific: install tabs */
+      document.querySelectorAll('.install__tab').forEach((tab) => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.install__tab').forEach((t) => t.classList.remove('active'))
+          document.querySelectorAll('.install__panel').forEach((p) => p.classList.remove('active'))
+          tab.classList.add('active')
+          document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active')
+        })
+      })
+      /* Counter animation */
+      const counterObs = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return
+            entry.target.querySelectorAll('[data-count]').forEach((el) => {
+              const target = parseInt(el.dataset.count)
+              const suffix = el.dataset.suffix || ''
+              let cur = 0
+              const step = Math.max(1, Math.floor(target / 40))
+              const timer = setInterval(() => {
+                cur += step
+                if (cur >= target) {
+                  cur = target
+                  clearInterval(timer)
+                }
+                el.textContent = cur + suffix
+              }, 30)
+            })
+            counterObs.unobserve(entry.target)
+          })
+        },
+        { threshold: 0.3 }
+      )
+      document.querySelectorAll('.stats__grid').forEach((el) => counterObs.observe(el))
+    </script>
+  </body>
 </html>

@@ -29,16 +29,32 @@ function collectPromptDefinitions(dirPath: string): Array<{ file: string; defini
   return results
 }
 
+function collectRegistrationsFromFile(filePath: string): string[] {
+  if (!fs.existsSync(filePath)) return []
+  const content = fs.readFileSync(filePath, 'utf-8')
+  return Array.from(content.matchAll(/server\.registerPrompt\(\s*(\w+PromptDefinition)\s*,/g)).map(
+    (match) => match[1]
+  )
+}
+
+function collectRegistrationsFromDir(dirPath: string): string[] {
+  const results: string[] = []
+  if (!fs.existsSync(dirPath)) return results
+  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.ts')) continue
+    results.push(...collectRegistrationsFromFile(path.join(dirPath, entry.name)))
+  }
+  return results
+}
+
 describe('index.ts prompt coverage', () => {
   test('should register every exported prompt definition', () => {
     const repoRoot = process.cwd()
-    const indexPath = path.join(repoRoot, 'src', 'index.ts')
-    const indexContent = fs.readFileSync(indexPath, 'utf-8')
-    const registrations = new Set(
-      Array.from(indexContent.matchAll(/server\.registerPrompt\(\s*(\w+PromptDefinition)\s*,/g)).map(
-        (match) => match[1]
-      )
-    )
+    const registrations = new Set<string>([
+      ...collectRegistrationsFromFile(path.join(repoRoot, 'src', 'tool-registry.ts')),
+      ...collectRegistrationsFromFile(path.join(repoRoot, 'src', 'core', 'tool-registry.ts')),
+      ...collectRegistrationsFromDir(path.join(repoRoot, 'src', 'core', 'tool-registry')),
+    ])
 
     const promptDefinitions = collectPromptDefinitions(path.join(repoRoot, 'src', 'prompts'))
     const missing = promptDefinitions.filter((item) => !registrations.has(item.definition))

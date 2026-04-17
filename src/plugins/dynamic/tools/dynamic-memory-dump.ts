@@ -7,6 +7,9 @@ import { z } from 'zod'
 import { spawn } from 'child_process'
 import path from 'path'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import { resolveExecutable } from '../../../static-backend-discovery.js'
+import { buildDynamicSetupRequired } from '../../docker-shared.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'dynamic.memory.dump'
 
@@ -27,6 +30,7 @@ export const dynamicMemoryDumpToolDefinition: ToolDefinition = {
     '(RWX allocation, W→RX protection changes) and auto-dump memory regions at strategic moments. ' +
     'Useful for extracting unpacked code from packed/encrypted binaries.',
   inputSchema: DynamicMemoryDumpInputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeDynamicMemoryDump' },
 }
 
 const FRIDA_DUMP_SCRIPT = `
@@ -111,10 +115,15 @@ export function createDynamicMemoryDumpHandler(
   deps: PluginToolDeps
 ) {
   const { workspaceManager, database, config, policyGuard, resolvePrimarySamplePath, persistStaticAnalysisJsonArtifact, resolvePackagePath } = deps
-  const pythonCmd = config?.workers?.frida?.path || config?.workers?.static?.pythonPath || (process.platform === 'win32' ? 'python' : 'python3')
+  const pythonCmd = config?.workers?.frida?.path || getPythonCommand(undefined, config?.workers?.static?.pythonPath)
   return async (args: z.infer<typeof DynamicMemoryDumpInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()
     const warnings: string[] = []
+    // Backend gate
+    const fridaBackend = resolveExecutable({ pathCandidates: ['frida', 'frida-ps'], versionArgSets: [['--version'], ['--help']] })
+    if (!fridaBackend.available) {
+      return buildDynamicSetupRequired(fridaBackend as any, t0, TOOL_NAME)
+    }
 
     try {
       const sample = database.findSample(args.sample_id)

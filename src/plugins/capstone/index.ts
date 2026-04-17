@@ -12,6 +12,7 @@ import { shellcodeDisasmToolDefinition, createShellcodeDisasmHandler } from './t
 const capstonePlugin: Plugin = {
   id: 'capstone',
   name: 'Capstone Disassembly',
+  executionDomain: 'static',
   surfaceRules: { tier: 2, activateOn: { findings: ['shellcode', 'suspicious_imports'] }, category: 'reverse-engineering' },
   description: 'Lightweight multi-architecture disassembly for quick analysis of code snippets and shellcode',
   version: '1.0.0',

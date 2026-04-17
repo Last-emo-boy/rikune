@@ -6,6 +6,7 @@
 import { z } from 'zod'
 import { spawn } from 'child_process'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'symbolic.explore'
 
@@ -57,7 +58,7 @@ async function callWorker(request: Record<string, unknown>, pythonCmd: string, r
 export function createSymbolicExploreHandler(deps: PluginToolDeps) {
   const { workspaceManager, database, config, policyGuard, resolvePrimarySamplePath, persistStaticAnalysisJsonArtifact, resolvePackagePath } = deps
 
-  const pythonCmd = config?.workers?.sandbox?.angrPythonPath || (process.platform === 'win32' ? 'python' : 'python3')
+  const pythonCmd = getPythonCommand(undefined, config?.workers?.sandbox?.angrPythonPath)
   return async (args: z.infer<typeof SymbolicExploreInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()
     try {

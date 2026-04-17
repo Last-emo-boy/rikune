@@ -9,7 +9,7 @@ import {
   callGraphToDot,
   callGraphToMermaid,
   type CallGraphOptions,
-} from '../../src/visualization/call-graph.js'
+} from '../../src/plugins/reporting/visualization/call-graph.js'
 
 describe('visualization-enhanced-reporting - Call Graph Generator', () => {
   const sampleFunctions = [

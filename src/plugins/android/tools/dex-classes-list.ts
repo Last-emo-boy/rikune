@@ -5,6 +5,7 @@
 import { z } from 'zod'
 import { spawn } from 'child_process'
 import type { ToolDefinition, WorkerResult, PluginToolDeps } from '../../sdk.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'dex.classes.list'
 
@@ -38,7 +39,7 @@ async function callApkWorker(request: Record<string, unknown>, pythonCmd: string
 
 export function createDexClassesListHandler(deps: PluginToolDeps) {
   const { workspaceManager, database, config, resolvePrimarySamplePath, resolvePackagePath } = deps
-  const pythonCmd = config.workers.static.pythonPath || (process.platform === 'win32' ? 'python' : 'python3')
+  const pythonCmd = getPythonCommand(undefined, config.workers.static.pythonPath)
   const workerPath = resolvePackagePath('src', 'plugins', 'android', 'workers', 'apk_dex_worker.py')
   return async (args: z.infer<typeof DexClassesListInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()

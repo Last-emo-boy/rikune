@@ -6,8 +6,8 @@ import crypto from 'crypto'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { PolicyGuard } from '../../src/policy-guard.js'
-import { createSandboxExecuteHandler } from '../../src/tools/sandbox-execute.js'
-import { createDynamicDependenciesHandler } from '../../src/tools/dynamic-dependencies.js'
+import { createSandboxExecuteHandler } from '../../src/plugins/dynamic/tools/sandbox-execute.js'
+import { createDynamicDependenciesHandler } from '../../src/plugins/dynamic/tools/dynamic-dependencies.js'
 
 describe('sandbox.execute tool', () => {
   let tempDir: string

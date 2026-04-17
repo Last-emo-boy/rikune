@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod'
+import { RuntimeDelegationFailureResultSchema } from '../../../types.js'
 import type { ToolDefinition, WorkerResult , PluginToolDeps} from '../../sdk.js'
 import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import { detectFormat } from '../../../sample/format-detect.js'
@@ -15,12 +16,23 @@ export const DebugSessionStartInputSchema = z.object({
   gdb_path: z.string().optional().describe('Custom GDB path (default: gdb)'),
 })
 
-export const DebugSessionStartOutputSchema = z.object({
+const DebugSessionStartSuccessOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.any().optional(),
+  data: z.object({
+    session_id: z.string(),
+    sample_id: z.string(),
+    binary_format: z.string(),
+    use_wine: z.boolean(),
+    active_sessions: z.number(),
+  }).optional(),
   errors: z.array(z.string()).optional(),
   metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),
 })
+
+export const DebugSessionStartOutputSchema = z.union([
+  DebugSessionStartSuccessOutputSchema,
+  RuntimeDelegationFailureResultSchema,
+])
 
 export const debugSessionStartToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
@@ -28,6 +40,7 @@ export const debugSessionStartToolDefinition: ToolDefinition = {
     'Start an interactive GDB debug session for a sample. Supports ELF (direct GDB) and PE (via wine+GDB). Returns a session_id for subsequent debug commands.',
   inputSchema: DebugSessionStartInputSchema,
   outputSchema: DebugSessionStartOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 export function createDebugSessionStartHandler(deps: PluginToolDeps) {

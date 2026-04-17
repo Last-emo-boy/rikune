@@ -1,9 +1,9 @@
 /**
- * Wine run tool â€?preflight or run a sample under Wine or winedbg.
+ * Wine run tool ï¿½?preflight or run a sample under Wine or winedbg.
  */
 
 import { z } from 'zod'
-import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../../types.js'
+import { RuntimeDelegationFailureResultSchema, type WorkerResult, type ToolDefinition, type ToolArgs, type ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { SharedBackendDependencies } from '../../docker-shared.js'
@@ -33,7 +33,7 @@ export const wineRunInputSchema = z.object({
   session_tag: z.string().optional().describe('Optional artifact session tag.'),
 })
 
-export const wineRunOutputSchema = z.object({
+const wineRunSuccessOutputSchema = z.object({
   ok: z.boolean(),
   data: z
     .object({
@@ -67,12 +67,18 @@ export const wineRunOutputSchema = z.object({
   metrics: SharedMetricsSchema.optional(),
 })
 
+export const wineRunOutputSchema = z.union([
+  wineRunSuccessOutputSchema,
+  RuntimeDelegationFailureResultSchema,
+])
+
 export const wineRunToolDefinition: ToolDefinition = {
   name: 'wine.run',
   description:
     'Preflight or run a sample under Wine or winedbg. Use this only when you explicitly request Linux-hosted Wine debugging or execution; run/debug modes require approved=true.',
   inputSchema: wineRunInputSchema,
   outputSchema: wineRunOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeWineRun' },
 }
 
 export function createWineRunHandler(

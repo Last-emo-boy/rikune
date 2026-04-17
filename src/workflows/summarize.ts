@@ -5,7 +5,7 @@ import type { ArtifactRef, ToolArgs, ToolDefinition, WorkerResult } from '../typ
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager, Artifact, Function as DbFunction } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
-import type { MCPServer } from '../server.js'
+import type { SamplingClient } from '../core/registrar.js'
 import {
   createReportSummarizeHandler,
 } from '../plugins/reporting/tools/report-summarize.js'
@@ -393,7 +393,7 @@ export function createWorkflowSummarizeHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   cacheManager: CacheManager,
-  mcpServer?: MCPServer,
+  mcpServer?: SamplingClient,
   deps?: WorkflowSummarizeDependencies
 ) {
   const reportSummarizeHandler =

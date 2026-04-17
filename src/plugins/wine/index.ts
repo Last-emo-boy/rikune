@@ -15,6 +15,7 @@ import { wineRegToolDefinition, createWineRegHandler } from './tools/wine-reg.js
 const winePlugin: Plugin = {
   id: 'wine',
   name: 'Wine',
+  executionDomain: 'dynamic',
   surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description: 'Wine Windows compatibility layer — prefix management, DLL overrides, registry manipulation, and supervised execution of PE binaries',
   version: '2.0.0',

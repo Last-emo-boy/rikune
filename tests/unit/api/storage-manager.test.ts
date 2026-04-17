@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
-import { StorageManager } from '../../src/storage/storage-manager.js'
+import { StorageManager } from '../../../src/storage/storage-manager.js'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'

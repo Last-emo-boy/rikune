@@ -34,6 +34,7 @@ import {
 } from '../../../analysis/nonblocking-analysis.js'
 import { classifySampleSizeTier } from '../../../analysis/analysis-coverage.js'
 import { persistChunkedArrayArtifacts } from '../../../analysis/chunked-analysis-evidence.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 import {
   AnalysisEvidenceStateSchema,
   buildDeferredEvidenceState,
@@ -268,7 +269,7 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
     
     // Spawn Python process
-    const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+    const pythonCommand = getPythonCommand()
     const pythonProcess = spawn(pythonCommand, [workerPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
     })

@@ -62,7 +62,7 @@ describe('Full Pipeline E2E', () => {
 
     // Step 1: Ingest
     const ingestHandler = createSampleIngestHandler(workspaceManager, database, policyGuard)
-    const ingestResult = await ingestHandler({ file_path: samplePath })
+    const ingestResult = await ingestHandler({ path: samplePath })
 
     expect(ingestResult.ok).toBe(true)
     expect(ingestResult.data).toBeDefined()
@@ -86,7 +86,7 @@ describe('Full Pipeline E2E', () => {
 
   test('ingest with invalid file returns error', async () => {
     const ingestHandler = createSampleIngestHandler(workspaceManager, database, policyGuard)
-    const result = await ingestHandler({ file_path: '/nonexistent/file.exe' })
+    const result = await ingestHandler({ path: '/nonexistent/file.exe' })
 
     expect(result.ok).toBe(false)
     expect(result.errors).toBeDefined()

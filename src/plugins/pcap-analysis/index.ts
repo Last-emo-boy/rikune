@@ -12,6 +12,7 @@ import { pcapExtractStreamsToolDefinition, createPcapExtractStreamsHandler } fro
 const pcapAnalysisPlugin: Plugin = {
   id: 'pcap-analysis',
   name: 'PCAP Analysis',
+  executionDomain: 'static',
   surfaceRules: { tier: 1, activateOn: { fileTypes: ['pcap', 'pcapng', 'network'] }, category: 'network-analysis' },
   description: 'Network packet capture analysis and stream extraction using tshark',
   version: '1.0.0',

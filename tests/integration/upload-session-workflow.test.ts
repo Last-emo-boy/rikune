@@ -85,7 +85,6 @@ describe('upload session workflow', () => {
       {
         port,
         maxFileSize: 500 * 1024 * 1024,
-        storageRoot,
       },
       {
         storageManager,

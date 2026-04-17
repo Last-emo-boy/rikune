@@ -12,7 +12,7 @@ import type { ToolArgs, WorkerResult } from '../../src/types.js'
 import {
   createDotNetReconstructExportHandler,
   DotNetReconstructExportInputSchema,
-} from '../../src/tools/dotnet-reconstruct-export.js'
+} from '../../src/plugins/code-analysis/tools/dotnet-reconstruct-export.js'
 
 describe('dotnet.reconstruct.export tool', () => {
   let workspaceManager: WorkspaceManager

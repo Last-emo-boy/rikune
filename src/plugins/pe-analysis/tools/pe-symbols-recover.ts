@@ -254,8 +254,8 @@ function recoverSymbolName(options: {
 
 export function createPESymbolsRecoverHandler(deps: PluginToolDeps) {
   const { workspaceManager, database, cacheManager } = deps
-  const stringsHandler = createStringsExtractHandler(workspaceManager, database, cacheManager)
-  const runtimeHandler = createRuntimeDetectHandler(workspaceManager, database, cacheManager)
+  const stringsHandler = (deps.stringsHandler as ((args: ToolArgs) => Promise<WorkerResult>) | undefined) || createStringsExtractHandler(workspaceManager, database, cacheManager)
+  const runtimeHandler = (deps.runtimeHandler as ((args: ToolArgs) => Promise<WorkerResult>) | undefined) || createRuntimeDetectHandler(workspaceManager, database, cacheManager)
 
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const input = peSymbolsRecoverInputSchema.parse(args)

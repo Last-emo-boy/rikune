@@ -15,6 +15,7 @@ import { deobfDotnetToolDefinition, createDeobfDotnetHandler } from './tools/deo
 const runtimeDeobfuscatePlugin: Plugin = {
   id: 'runtime-deobfuscate',
   name: 'Runtime Deobfuscation',
+  executionDomain: 'dynamic',
   surfaceRules: { tier: 2, activateOn: { findings: ['obfuscated', 'packed'] }, category: 'dynamic-analysis' },
   description:
     'Dynamic deobfuscation: runtime string decryption via Frida hooks, ' +

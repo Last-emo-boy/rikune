@@ -8,6 +8,7 @@ import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
 import { normalizeError } from '../../../utils/shared-helpers.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'frida.script.inject'
 const TOOL_VERSION = '0.1.0'
@@ -221,7 +222,7 @@ export function createFridaScriptInjectHandler(
   async function callFridaWorker(request: WorkerRequest): Promise<WorkerResponse> {
     return new Promise((resolve, reject) => {
       const workerPath = resolvePackagePath!('workers', 'frida_worker.py')
-      const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+      const pythonCommand = getPythonCommand()
       const pythonProcess = spawn(pythonCommand, [workerPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
       })
@@ -543,4 +544,5 @@ export const fridaScriptInjectToolDefinition: ToolDefinition = {
   description:
     'Inject a custom or pre-built Frida JavaScript into a running process for dynamic analysis.',
   inputSchema: FridaScriptInjectInputSchema,
+  runtimeBackendHint: { type: 'python-worker', handler: 'frida_worker.py' },
 }

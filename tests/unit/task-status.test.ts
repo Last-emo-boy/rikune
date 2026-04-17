@@ -25,31 +25,29 @@ describe('task.status tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = taskStatusInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = taskStatusInputSchema.safeParse({ job_id: 'job-abc123' })
       expect(result.success).toBe(true)
     })
 
-    test('should reject empty input', () => {
+    test('should accept empty input (all optional)', () => {
       const result = taskStatusInputSchema.safeParse({})
-      expect(result.success).toBe(false)
+      expect(result.success).toBe(true)
     })
 
     test('should reject invalid types', () => {
-      const result = taskStatusInputSchema.safeParse({ sample_id: 123 })
+      const result = taskStatusInputSchema.safeParse({ job_id: 123 })
       expect(result.success).toBe(false)
     })
   })
 
   describe('Handler', () => {
     test('should return error for non-existent resource', async () => {
-      const handler = createTaskStatusHandler(mockDatabase, mockJobQueue)
+      const handler = createTaskStatusHandler(mockJobQueue, mockDatabase)
 
-      mockDatabase.findSample.mockReturnValue(undefined)
+      const result = await handler({ job_id: 'nonexistent-job' })
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
-
-      expect(result.ok).toBe(false)
-      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)
+      const parsed = JSON.parse(result.content[0].text)
+      expect(parsed.ok).toBe(false) // returns error for unknown job
     })
   })
 })

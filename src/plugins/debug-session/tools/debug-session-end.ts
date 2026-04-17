@@ -27,6 +27,7 @@ export const debugSessionEndToolDefinition: ToolDefinition = {
     'End a debug session: kill GDB, persist session trace as an artifact (breakpoint hits, register snapshots, history).',
   inputSchema: DebugSessionEndInputSchema,
   outputSchema: DebugSessionEndOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 export function createDebugSessionEndHandler(deps: PluginToolDeps) {

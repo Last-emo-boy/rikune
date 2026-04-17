@@ -1,0 +1,30 @@
+name: rikune-hybrid
+services:
+  analyzer:
+    image: rikune:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rikune-analyzer
+    env_file:
+      - .env
+    volumes:
+      - ./samples:/samples:ro
+      - "${RIKUNE_DATA_ROOT:-~/.rikune}/workspaces:/app/workspaces:rw"
+      - "${RIKUNE_DATA_ROOT:-~/.rikune}/data:/app/data:rw"
+      - "${RIKUNE_DATA_ROOT:-~/.rikune}/cache:/app/cache:rw"
+      - "${RIKUNE_DATA_ROOT:-~/.rikune}/logs:/app/logs:rw"
+      - "${RIKUNE_DATA_ROOT:-~/.rikune}/storage:/app/storage:rw"
+      - "${RIKUNE_DATA_ROOT:-~/.rikune}/ghidra-projects:/ghidra-projects:rw"
+      - "${RIKUNE_DATA_ROOT:-~/.rikune}/ghidra-logs:/ghidra-logs:rw"
+    ports:
+      - "18080:18080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http=require('http');const r=http.get('http://localhost:18080/api/v1/health',res=>{process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.setTimeout(5000,()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

@@ -12,6 +12,7 @@ import { dieIdentifyToolDefinition, createDieIdentifyHandler } from './tools/die
 const diePlugin: Plugin = {
   id: 'die',
   name: 'Detect It Easy',
+  executionDomain: 'static',
   surfaceRules: {
     tier: 0,
     category: 'static-analysis',

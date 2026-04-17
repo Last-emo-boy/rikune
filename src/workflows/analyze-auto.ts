@@ -35,7 +35,7 @@ import {
   createAnalyzeWorkflowStartHandler,
 } from './analyze-pipeline.js'
 import type { PolicyGuard } from '../policy-guard.js'
-import type { MCPServer } from '../server.js'
+import type { SamplingClient } from '../core/registrar.js'
 
 const TOOL_NAME = 'workflow.analyze.auto'
 
@@ -219,7 +219,7 @@ export function createAnalyzeAutoWorkflowHandler(
   database: DatabaseManager,
   cacheManager: CacheManager,
   policyGuard: PolicyGuard,
-  server?: MCPServer,
+  server?: SamplingClient,
   dependencies: AnalyzeAutoWorkflowDependencies = {},
   jobQueue?: JobQueue
 ) {

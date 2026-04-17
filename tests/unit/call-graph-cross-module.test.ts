@@ -24,7 +24,7 @@ describe('call.graph.cross.module tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = CallGraphCrossModuleInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = CallGraphCrossModuleInputSchema.safeParse({ sample_ids: ['sha256:abc123', 'sha256:def456'] })
       expect(result.success).toBe(true)
     })
 
@@ -34,7 +34,7 @@ describe('call.graph.cross.module tool', () => {
     })
 
     test('should reject invalid types', () => {
-      const result = CallGraphCrossModuleInputSchema.safeParse({ sample_id: 123 })
+      const result = CallGraphCrossModuleInputSchema.safeParse({ sample_ids: [123, 456] })
       expect(result.success).toBe(false)
     })
   })
@@ -45,10 +45,10 @@ describe('call.graph.cross.module tool', () => {
 
       mockDatabase.findSample.mockReturnValue(undefined)
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
+      const result = await handler({ sample_ids: ['sha256:abc123def456'] })
 
       expect(result.ok).toBe(false)
-      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)
+      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid|at least 2/i)
     })
   })
 })

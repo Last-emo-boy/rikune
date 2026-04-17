@@ -11,6 +11,7 @@ import { dotnetDecompileTypeToolDefinition, createDotnetDecompileTypeHandler } f
 const dotnetDecompilePlugin: Plugin = {
   id: 'dotnet-decompile',
   name: '.NET Decompile',
+  executionDomain: 'static',
   surfaceRules: { tier: 2, activateOn: { findings: ['dotnet'] }, category: 'dotnet-analysis' },
   description: 'Full C# source code recovery from .NET assemblies using ILSpy CLI',
   version: '1.0.0',

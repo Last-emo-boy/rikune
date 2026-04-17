@@ -16,7 +16,7 @@ import {
   parseDatabaseDebugSession,
   persistUnpackDebugJsonArtifact,
   toDatabaseDebugSession,
-} from '../../src/unpack-debug-runtime.js'
+} from '../../src/plugins/unpacking/unpack-debug-runtime.js'
 
 describe('unpack-debug runtime helpers', () => {
   test('builds a bounded UPX unpack plan for packed samples', () => {

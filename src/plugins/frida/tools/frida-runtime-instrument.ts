@@ -6,8 +6,10 @@
 import { spawn } from 'child_process'
 import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
+import { RuntimeDelegationFailureResultSchema } from '../../../types.js'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
 import { normalizeError } from '../../../utils/shared-helpers.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'frida.runtime.instrument'
 const TOOL_VERSION = '0.1.0'
@@ -26,7 +28,7 @@ export const FridaRuntimeInstrumentInputSchema = z.object({
     .optional()
     .describe('Process ID to attach to (required for attach mode)'),
   script_name: z
-    .enum(['api_trace', 'string_decoder', 'anti_debug_bypass', 'crypto_finder', 'file_registry_monitor', 'default'])
+    .enum(['api_trace', 'string_decoder', 'anti_debug_bypass', 'time_bypass', 'evasion_score', 'combo_evasion', 'crypto_finder', 'file_registry_monitor', 'default'])
     .optional()
     .default('api_trace')
     .describe('Pre-built Frida script to use'),
@@ -38,6 +40,14 @@ export const FridaRuntimeInstrumentInputSchema = z.object({
     .record(z.any())
     .optional()
     .describe('Parameters to pass to the Frida script'),
+  speed_factor: z
+    .number()
+    .int()
+    .min(1)
+    .max(10000)
+    .optional()
+    .default(100)
+    .describe('Time acceleration factor for time_bypass / combo_evasion scripts (e.g. 100 means 100x faster time/sleep)'),
   timeout_sec: z
     .number()
     .int()
@@ -186,44 +196,49 @@ function buildFridaRequiredUserInputs() {
   ]
 }
 
+const FridaRuntimeInstrumentSuccessOutputSchema = z.object({
+  ok: z.boolean(),
+  data: z
+    .object({
+      session_id: z.string().nullable(),
+      pid: z.number().nullable(),
+      mode: z.string(),
+      script_name: z.string(),
+      status: z.enum(['completed', 'failed', 'timeout', 'error']),
+      trace_summary: TraceSummarySchema,
+      traces: z.array(TraceEntrySchema),
+      warnings: z.array(z.string()),
+      errors: z.array(z.string()),
+      setup_actions: z.array(z.any()).optional(),
+      required_user_inputs: z.array(z.any()).optional(),
+    })
+    .optional(),
+  warnings: z.array(z.string()).optional(),
+  errors: z.array(z.string()).optional(),
+  artifacts: z.array(z.any()).optional(),
+  metrics: z
+    .object({
+      elapsed_ms: z.number(),
+      tool: z.string(),
+    })
+    .optional(),
+})
+
+export const FridaRuntimeInstrumentOutputSchema = z.union([
+  FridaRuntimeInstrumentSuccessOutputSchema,
+  RuntimeDelegationFailureResultSchema,
+])
+
 export function createFridaRuntimeInstrumentHandler(
   deps: PluginToolDeps,
   dependencies?: FridaRuntimeInstrumentDependencies
 ) {
-  const { workspaceManager, database, resolvePackagePath, SetupActionSchema, RequiredUserInputSchema } = deps
-
-  const FridaRuntimeInstrumentOutputSchema = z.object({
-    ok: z.boolean(),
-    data: z
-      .object({
-        session_id: z.string(),
-        pid: z.number().nullable(),
-        mode: z.string(),
-        script_name: z.string(),
-        status: z.enum(['completed', 'failed', 'timeout', 'error']),
-        trace_summary: TraceSummarySchema,
-        traces: z.array(TraceEntrySchema),
-        warnings: z.array(z.string()),
-        errors: z.array(z.string()),
-        setup_actions: SetupActionSchema ? z.array(SetupActionSchema).optional() : z.array(z.any()).optional(),
-        required_user_inputs: RequiredUserInputSchema ? z.array(RequiredUserInputSchema).optional() : z.array(z.any()).optional(),
-      })
-      .optional(),
-    warnings: z.array(z.string()).optional(),
-    errors: z.array(z.string()).optional(),
-    artifacts: z.array(z.any()).optional(),
-    metrics: z
-      .object({
-        elapsed_ms: z.number(),
-        tool: z.string(),
-      })
-      .optional(),
-  })
+  const { workspaceManager, database, resolvePackagePath } = deps
 
   async function callFridaWorker(request: WorkerRequest): Promise<WorkerResponse> {
     return new Promise((resolve, reject) => {
       const workerPath = resolvePackagePath!('workers', 'frida_worker.py')
-      const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+      const pythonCommand = getPythonCommand()
       const pythonProcess = spawn(pythonCommand, [workerPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
       })
@@ -385,7 +400,10 @@ export function createFridaRuntimeInstrumentHandler(
           pid: input.pid,
           script_name: input.script_name,
           script_content: input.script_content,
-          parameters: input.script_parameters,
+          parameters: {
+            ...(input.script_parameters || {}),
+            speed_factor: input.speed_factor,
+          },
           timeout_sec: input.timeout_sec,
         },
         context: {
@@ -521,4 +539,6 @@ export const fridaRuntimeInstrumentToolDefinition: ToolDefinition = {
   description:
     'Instrument a Windows PE sample at runtime using Frida for dynamic API tracing and behavior analysis. Supports spawn and attach modes with pre-built or custom scripts.',
   inputSchema: FridaRuntimeInstrumentInputSchema,
+  outputSchema: FridaRuntimeInstrumentOutputSchema,
+  runtimeBackendHint: { type: 'python-worker', handler: 'frida_worker.py' },
 }

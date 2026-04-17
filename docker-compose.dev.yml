@@ -34,6 +34,8 @@ services:
 
     environment:
       - NODE_ENV=development
+      - NODE_ROLE=analyzer
+      - RUNTIME_MODE=disabled
       - LOG_LEVEL=debug
 
     # Expose dashboard port for browser access

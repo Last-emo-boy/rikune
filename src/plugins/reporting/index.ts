@@ -12,6 +12,7 @@ import { workflowSummarizeToolDefinition, createWorkflowSummarizeHandler } from 
 const reportingPlugin: Plugin = {
   id: 'reporting',
   name: 'Reporting',
+  executionDomain: 'both',
   surfaceRules: { tier: 0, category: 'static-analysis' },
   description: 'Report summarization, generation, and workflow summaries',
   version: '1.0.0',

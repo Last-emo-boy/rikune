@@ -7,8 +7,8 @@ import { CacheManager } from '../../src/cache-manager.js'
 import {
   createCodeFunctionExplainPrepareHandler,
   codeFunctionExplainPrepareInputSchema,
-} from '../../src/tools/code-function-explain-prepare.js'
-import { createCodeFunctionExplainApplyHandler } from '../../src/tools/code-function-explain-apply.js'
+} from '../../src/plugins/code-analysis/tools/code-function-explain-prepare.js'
+import { createCodeFunctionExplainApplyHandler } from '../../src/plugins/code-analysis/tools/code-function-explain-apply.js'
 import {
   SEMANTIC_EXPLANATION_PREPARE_BUNDLE_ARTIFACT_TYPE,
   SEMANTIC_FUNCTION_EXPLANATIONS_ARTIFACT_TYPE,

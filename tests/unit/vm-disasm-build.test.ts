@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createVmDisasmBuildHandler, vmDisasmBuildInputSchema } from '../../src/tools/vm-disasm-build.js'
+import { createVmDisasmBuildHandler, vmDisasmBuildInputSchema } from '../../src/plugins/vm-analysis/tools/vm-disasm-build.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 

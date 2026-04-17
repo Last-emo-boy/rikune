@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createMbaSimplifyHandler, mbaSimplifyInputSchema } from '../../src/tools/mba-simplify.js'
+import { createMbaSimplifyHandler, mbaSimplifyInputSchema } from '../../src/plugins/vm-analysis/tools/mba-simplify.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 
@@ -24,31 +24,29 @@ describe('mba.simplify tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = mbaSimplifyInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = mbaSimplifyInputSchema.safeParse({ expressions: ['x ^ (x & y)'] })
       expect(result.success).toBe(true)
     })
 
     test('should reject empty input', () => {
-      const result = mbaSimplifyInputSchema.safeParse({})
+      const result = mbaSimplifyInputSchema.safeParse({ expressions: [] })
       expect(result.success).toBe(false)
     })
 
     test('should reject invalid types', () => {
-      const result = mbaSimplifyInputSchema.safeParse({ sample_id: 123 })
+      const result = mbaSimplifyInputSchema.safeParse({ expressions: 123 })
       expect(result.success).toBe(false)
     })
   })
 
   describe('Handler', () => {
-    test('should return error for non-existent resource', async () => {
+    test('should process expressions successfully', async () => {
       const handler = createMbaSimplifyHandler(mockWorkspaceManager, mockDatabase)
 
-      mockDatabase.findSample.mockReturnValue(undefined)
+      const result = await handler({ expressions: ['x ^ (x & y)'] })
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
-
-      expect(result.ok).toBe(false)
-      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)
+      expect(result.ok).toBe(true)
+      expect(result.data).toBeDefined()
     })
   })
 })

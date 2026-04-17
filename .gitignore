@@ -101,6 +101,7 @@ tmp-ghidra-cmd-*/
 test-compiler-packer-detect/
 test-data-sample-ingest/
 test-docker-backend-tools/
+tests/temp/
 
 # Runtime data directories
 samples/

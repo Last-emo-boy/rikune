@@ -8,7 +8,7 @@ import type { DatabaseManager } from '../database.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { Job, JobQueue } from '../job-queue.js'
 import type { CacheManager } from '../cache-manager.js'
-import type { JobResult } from '../types.js'
+import type { JobResult, WorkerResult } from '../types.js'
 import type { PolicyGuard } from '../policy-guard.js'
 import { logger } from '../logger.js'
 import { deepStaticWorkflow } from '../workflows/deep-static.js'
@@ -37,6 +37,8 @@ export interface AnalysisTaskRunnerOptions {
   staleRunningMs?: number | null
 }
 
+type QueuedJobExecutor = (job: Job, abortSignal: AbortSignal) => Promise<JobResult>
+
 export class AnalysisTaskRunner {
   private readonly decompilerWorker: DecompilerWorker
   private readonly pollIntervalMs: number
@@ -46,6 +48,7 @@ export class AnalysisTaskRunner {
   private readonly cacheManager?: CacheManager
   private readonly policyGuard: PolicyGuard
   private readonly scheduler: AnalysisBudgetScheduler
+  private readonly queuedExecutors: Map<string, QueuedJobExecutor>
   private timer?: NodeJS.Timeout
   private processingPromise: Promise<void> | null = null
   private activeControllers = new Map<string, { controller: AbortController; startedAt: number }>()
@@ -67,6 +70,7 @@ export class AnalysisTaskRunner {
     this.policyGuard = policyGuard
     this.scheduler = new AnalysisBudgetScheduler(database)
     this.decompilerWorker = new DecompilerWorker(database, workspaceManager)
+    this.queuedExecutors = this.createQueuedExecutors()
     this.pollIntervalMs = options.pollIntervalMs ?? 500
     this.staleRunningMs = options.staleRunningMs
 
@@ -270,6 +274,210 @@ export class AnalysisTaskRunner {
     }
   }
 
+  private normalizeWorkerResult(jobId: string, result: WorkerResult): JobResult {
+    return {
+      jobId,
+      ok: result.ok,
+      data: result.data,
+      errors: result.errors || [],
+      warnings: result.warnings || [],
+      artifacts: result.artifacts || [],
+      metrics: {
+        elapsedMs: typeof result.metrics?.elapsed_ms === 'number' ? result.metrics.elapsed_ms : 0,
+        peakRssMb: 0,
+      },
+    }
+  }
+
+  private requireCacheManager(tool: string): CacheManager {
+    if (!this.cacheManager) {
+      throw new Error(`${tool} requires cache manager for queued execution`)
+    }
+    return this.cacheManager
+  }
+
+  private createQueuedExecutors(): Map<string, QueuedJobExecutor> {
+    const executors = new Map<string, QueuedJobExecutor>()
+
+    executors.set('workflow.deep_static', async (job) => {
+      const cacheManager = this.requireCacheManager('workflow.deep_static')
+      const options = (job.args?.options || {}) as {
+        top_functions?: number
+        ghidra_timeout?: number
+        include_cfg?: boolean
+      }
+
+      const result = await deepStaticWorkflow(
+        job.sampleId,
+        this.workspaceManager,
+        this.database,
+        cacheManager,
+        options,
+        {
+          onProgress: (progress) => {
+            this.jobQueue.updateProgress(job.id, progress)
+          },
+        }
+      )
+
+      return {
+        jobId: job.id,
+        ok: result.ok,
+        data: result.data,
+        errors: result.errors || [],
+        warnings: result.warnings || [],
+        artifacts: [],
+        metrics: {
+          elapsedMs: 0,
+          peakRssMb: 0,
+        },
+      }
+    })
+
+    executors.set('workflow.reconstruct', async (job) => {
+      const cacheManager = this.requireCacheManager('workflow.reconstruct')
+      this.jobQueue.updateProgress(job.id, 5)
+      const handler = createReconstructWorkflowHandler(
+        this.workspaceManager,
+        this.database,
+        cacheManager
+      )
+      const result = await handler(job.args || {})
+      this.jobQueue.updateProgress(job.id, 100)
+      return this.normalizeWorkerResult(job.id, result)
+    })
+
+    executors.set(ANALYSIS_STAGE_JOB_TOOL, async (job) => {
+      const cacheManager = this.requireCacheManager('workflow.analyze.stage')
+      const stageContext = createAnalyzePipelineStageContext(
+        this.workspaceManager,
+        this.database,
+        cacheManager,
+        this.policyGuard,
+        undefined,
+        {},
+        this.jobQueue
+      )
+      const input = job.args as {
+        run_id: string
+        stage:
+          | 'fast_profile'
+          | 'enrich_static'
+          | 'function_map'
+          | 'reconstruct'
+          | 'dynamic_plan'
+          | 'dynamic_execute'
+          | 'summarize'
+        force_refresh?: boolean
+      }
+      return executeQueuedAnalysisStage(stageContext, input)
+    })
+
+    executors.set('strings.extract', async (job) => {
+      const cacheManager = this.requireCacheManager('strings.extract')
+      const handler = createStringsExtractHandler(
+        this.workspaceManager,
+        this.database,
+        cacheManager,
+        this.jobQueue,
+        { allowDeferred: false }
+      )
+      return this.normalizeWorkerResult(job.id, await handler(job.args || {}))
+    })
+
+    executors.set('strings.floss.decode', async (job) => {
+      const cacheManager = this.requireCacheManager('strings.floss.decode')
+      const handler = createStringsFlossDecodeHandler(
+        this.workspaceManager,
+        this.database,
+        cacheManager,
+        this.jobQueue,
+        { allowDeferred: false }
+      )
+      return this.normalizeWorkerResult(job.id, await handler(job.args || {}))
+    })
+
+    executors.set('binary.role.profile', async (job) => {
+      const cacheManager = this.requireCacheManager('binary.role.profile')
+      const handler = createBinaryRoleProfileHandler(
+        this.workspaceManager,
+        this.database,
+        cacheManager,
+        undefined,
+        this.jobQueue,
+        { allowDeferred: false }
+      )
+      return this.normalizeWorkerResult(job.id, await handler(job.args || {}))
+    })
+
+    executors.set('analysis.context.link', async (job) => {
+      const cacheManager = this.requireCacheManager('analysis.context.link')
+      const handler = createAnalysisContextLinkHandler(
+        this.workspaceManager,
+        this.database,
+        cacheManager,
+        {},
+        this.jobQueue,
+        { allowDeferred: false }
+      )
+      return this.normalizeWorkerResult(job.id, await handler(job.args || {}))
+    })
+
+    executors.set('crypto.identify', async (job) => {
+      const cacheManager = this.requireCacheManager('crypto.identify')
+      const handler = createCryptoIdentifyHandler(
+        this.workspaceManager,
+        this.database,
+        cacheManager,
+        {},
+        this.jobQueue,
+        { allowDeferred: false }
+      )
+      return this.normalizeWorkerResult(job.id, await handler(job.args || {}))
+    })
+
+    executors.set('workflow.semantic_name_review', async (job) => {
+      const cacheManager = this.requireCacheManager('workflow.semantic_name_review')
+      this.jobQueue.updateProgress(job.id, 5)
+      const handler = createSemanticNameReviewWorkflowHandler(
+        this.workspaceManager,
+        this.database,
+        cacheManager
+      )
+      const result = await handler(job.args || {})
+      this.jobQueue.updateProgress(job.id, 100)
+      return this.normalizeWorkerResult(job.id, result)
+    })
+
+    executors.set('workflow.function_explanation_review', async (job) => {
+      const cacheManager = this.requireCacheManager('workflow.function_explanation_review')
+      this.jobQueue.updateProgress(job.id, 5)
+      const handler = createFunctionExplanationReviewWorkflowHandler(
+        this.workspaceManager,
+        this.database,
+        cacheManager
+      )
+      const result = await handler(job.args || {})
+      this.jobQueue.updateProgress(job.id, 100)
+      return this.normalizeWorkerResult(job.id, result)
+    })
+
+    executors.set('workflow.module_reconstruction_review', async (job) => {
+      const cacheManager = this.requireCacheManager('workflow.module_reconstruction_review')
+      this.jobQueue.updateProgress(job.id, 5)
+      const handler = createModuleReconstructionReviewWorkflowHandler(
+        this.workspaceManager,
+        this.database,
+        cacheManager
+      )
+      const result = await handler(job.args || {})
+      this.jobQueue.updateProgress(job.id, 100)
+      return this.normalizeWorkerResult(job.id, result)
+    })
+
+    return executors
+  }
+
   private async executeJob(job: Job, abortSignal: AbortSignal): Promise<JobResult> {
     if (job.tool === 'ghidra.analyze') {
       const options = (job.args?.options || {}) as {
@@ -306,315 +514,91 @@ export class AnalysisTaskRunner {
     }
 
     if (job.tool === 'workflow.deep_static') {
-      if (!this.cacheManager) {
-        throw new Error('workflow.deep_static requires cache manager for queued execution')
+      const executor = this.queuedExecutors.get(job.tool)
+      if (!executor) {
+        throw new Error(`Unsupported queued tool: ${job.tool}`)
       }
-
-      const options = (job.args?.options || {}) as {
-        top_functions?: number
-        ghidra_timeout?: number
-        include_cfg?: boolean
-      }
-
-      const result = await deepStaticWorkflow(
-        job.sampleId,
-        this.workspaceManager,
-        this.database,
-        this.cacheManager,
-        options,
-        {
-          onProgress: (progress) => {
-            this.jobQueue.updateProgress(job.id, progress)
-          },
-        }
-      )
-
-      return {
-        jobId: job.id,
-        ok: result.ok,
-        data: result.data,
-        errors: result.errors || [],
-        warnings: result.warnings || [],
-        artifacts: [],
-        metrics: {
-          elapsedMs: 0,
-          peakRssMb: 0,
-        },
-      }
+      return executor(job, abortSignal)
     }
 
     if (job.tool === 'workflow.reconstruct') {
-      if (!this.cacheManager) {
-        throw new Error('workflow.reconstruct requires cache manager for queued execution')
+      const executor = this.queuedExecutors.get(job.tool)
+      if (!executor) {
+        throw new Error(`Unsupported queued tool: ${job.tool}`)
       }
-
-      this.jobQueue.updateProgress(job.id, 5)
-      const handler = createReconstructWorkflowHandler(
-        this.workspaceManager,
-        this.database,
-        this.cacheManager
-      )
-      const result = await handler(job.args || {})
-      this.jobQueue.updateProgress(job.id, 100)
-
-      return {
-        jobId: job.id,
-        ok: result.ok,
-        data: result.data,
-        errors: result.errors || [],
-        warnings: result.warnings || [],
-        artifacts: result.artifacts || [],
-        metrics: {
-          elapsedMs:
-            typeof result.metrics?.elapsed_ms === 'number' ? result.metrics.elapsed_ms : 0,
-          peakRssMb: 0,
-        },
-      }
+      return executor(job, abortSignal)
     }
 
     if (job.tool === ANALYSIS_STAGE_JOB_TOOL) {
-      if (!this.cacheManager) {
-        throw new Error('workflow.analyze.stage requires cache manager for queued execution')
+      const executor = this.queuedExecutors.get(job.tool)
+      if (!executor) {
+        throw new Error(`Unsupported queued tool: ${job.tool}`)
       }
-      const stageContext = createAnalyzePipelineStageContext(
-        this.workspaceManager,
-        this.database,
-        this.cacheManager,
-        this.policyGuard,
-        undefined,
-        {},
-        this.jobQueue
-      )
-      const input = job.args as {
-        run_id: string
-        stage: 'fast_profile' | 'enrich_static' | 'function_map' | 'reconstruct' | 'dynamic_plan' | 'dynamic_execute' | 'summarize'
-        force_refresh?: boolean
-      }
-      return executeQueuedAnalysisStage(stageContext, input)
+      return executor(job, abortSignal)
     }
 
     if (job.tool === 'strings.extract') {
-      if (!this.cacheManager) {
-        throw new Error('strings.extract requires cache manager for queued execution')
+      const executor = this.queuedExecutors.get(job.tool)
+      if (!executor) {
+        throw new Error(`Unsupported queued tool: ${job.tool}`)
       }
-      const handler = createStringsExtractHandler(
-        this.workspaceManager,
-        this.database,
-        this.cacheManager,
-        this.jobQueue,
-        { allowDeferred: false }
-      )
-      const result = await handler(job.args || {})
-      return {
-        jobId: job.id,
-        ok: result.ok,
-        data: result.data,
-        errors: result.errors || [],
-        warnings: result.warnings || [],
-        artifacts: result.artifacts || [],
-        metrics: {
-          elapsedMs: typeof result.metrics?.elapsed_ms === 'number' ? result.metrics.elapsed_ms : 0,
-          peakRssMb: 0,
-        },
-      }
+      return executor(job, abortSignal)
     }
 
     if (job.tool === 'strings.floss.decode') {
-      if (!this.cacheManager) {
-        throw new Error('strings.floss.decode requires cache manager for queued execution')
+      const executor = this.queuedExecutors.get(job.tool)
+      if (!executor) {
+        throw new Error(`Unsupported queued tool: ${job.tool}`)
       }
-      const handler = createStringsFlossDecodeHandler(
-        this.workspaceManager,
-        this.database,
-        this.cacheManager,
-        this.jobQueue,
-        { allowDeferred: false }
-      )
-      const result = await handler(job.args || {})
-      return {
-        jobId: job.id,
-        ok: result.ok,
-        data: result.data,
-        errors: result.errors || [],
-        warnings: result.warnings || [],
-        artifacts: result.artifacts || [],
-        metrics: {
-          elapsedMs: typeof result.metrics?.elapsed_ms === 'number' ? result.metrics.elapsed_ms : 0,
-          peakRssMb: 0,
-        },
-      }
+      return executor(job, abortSignal)
     }
 
     if (job.tool === 'binary.role.profile') {
-      if (!this.cacheManager) {
-        throw new Error('binary.role.profile requires cache manager for queued execution')
+      const executor = this.queuedExecutors.get(job.tool)
+      if (!executor) {
+        throw new Error(`Unsupported queued tool: ${job.tool}`)
       }
-      const handler = createBinaryRoleProfileHandler(
-        this.workspaceManager,
-        this.database,
-        this.cacheManager,
-        undefined,
-        this.jobQueue,
-        { allowDeferred: false }
-      )
-      const result = await handler(job.args || {})
-      return {
-        jobId: job.id,
-        ok: result.ok,
-        data: result.data,
-        errors: result.errors || [],
-        warnings: result.warnings || [],
-        artifacts: result.artifacts || [],
-        metrics: {
-          elapsedMs: typeof result.metrics?.elapsed_ms === 'number' ? result.metrics.elapsed_ms : 0,
-          peakRssMb: 0,
-        },
-      }
+      return executor(job, abortSignal)
     }
 
     if (job.tool === 'analysis.context.link') {
-      if (!this.cacheManager) {
-        throw new Error('analysis.context.link requires cache manager for queued execution')
+      const executor = this.queuedExecutors.get(job.tool)
+      if (!executor) {
+        throw new Error(`Unsupported queued tool: ${job.tool}`)
       }
-      const handler = createAnalysisContextLinkHandler(
-        this.workspaceManager,
-        this.database,
-        this.cacheManager,
-        {},
-        this.jobQueue,
-        { allowDeferred: false }
-      )
-      const result = await handler(job.args || {})
-      return {
-        jobId: job.id,
-        ok: result.ok,
-        data: result.data,
-        errors: result.errors || [],
-        warnings: result.warnings || [],
-        artifacts: result.artifacts || [],
-        metrics: {
-          elapsedMs: typeof result.metrics?.elapsed_ms === 'number' ? result.metrics.elapsed_ms : 0,
-          peakRssMb: 0,
-        },
-      }
+      return executor(job, abortSignal)
     }
 
     if (job.tool === 'crypto.identify') {
-      if (!this.cacheManager) {
-        throw new Error('crypto.identify requires cache manager for queued execution')
+      const executor = this.queuedExecutors.get(job.tool)
+      if (!executor) {
+        throw new Error(`Unsupported queued tool: ${job.tool}`)
       }
-      const handler = createCryptoIdentifyHandler(
-        this.workspaceManager,
-        this.database,
-        this.cacheManager,
-        {},
-        this.jobQueue,
-        { allowDeferred: false }
-      )
-      const result = await handler(job.args || {})
-      return {
-        jobId: job.id,
-        ok: result.ok,
-        data: result.data,
-        errors: result.errors || [],
-        warnings: result.warnings || [],
-        artifacts: result.artifacts || [],
-        metrics: {
-          elapsedMs: typeof result.metrics?.elapsed_ms === 'number' ? result.metrics.elapsed_ms : 0,
-          peakRssMb: 0,
-        },
-      }
+      return executor(job, abortSignal)
     }
 
     if (job.tool === 'workflow.semantic_name_review') {
-      if (!this.cacheManager) {
-        throw new Error('workflow.semantic_name_review requires cache manager for queued execution')
+      const executor = this.queuedExecutors.get(job.tool)
+      if (!executor) {
+        throw new Error(`Unsupported queued tool: ${job.tool}`)
       }
-
-      this.jobQueue.updateProgress(job.id, 5)
-      const handler = createSemanticNameReviewWorkflowHandler(
-        this.workspaceManager,
-        this.database,
-        this.cacheManager
-      )
-      const result = await handler(job.args || {})
-      this.jobQueue.updateProgress(job.id, 100)
-
-      return {
-        jobId: job.id,
-        ok: result.ok,
-        data: result.data,
-        errors: result.errors || [],
-        warnings: result.warnings || [],
-        artifacts: result.artifacts || [],
-        metrics: {
-          elapsedMs:
-            typeof result.metrics?.elapsed_ms === 'number' ? result.metrics.elapsed_ms : 0,
-          peakRssMb: 0,
-        },
-      }
+      return executor(job, abortSignal)
     }
 
     if (job.tool === 'workflow.function_explanation_review') {
-      if (!this.cacheManager) {
-        throw new Error(
-          'workflow.function_explanation_review requires cache manager for queued execution'
-        )
+      const executor = this.queuedExecutors.get(job.tool)
+      if (!executor) {
+        throw new Error(`Unsupported queued tool: ${job.tool}`)
       }
-
-      this.jobQueue.updateProgress(job.id, 5)
-      const handler = createFunctionExplanationReviewWorkflowHandler(
-        this.workspaceManager,
-        this.database,
-        this.cacheManager
-      )
-      const result = await handler(job.args || {})
-      this.jobQueue.updateProgress(job.id, 100)
-
-      return {
-        jobId: job.id,
-        ok: result.ok,
-        data: result.data,
-        errors: result.errors || [],
-        warnings: result.warnings || [],
-        artifacts: result.artifacts || [],
-        metrics: {
-          elapsedMs:
-            typeof result.metrics?.elapsed_ms === 'number' ? result.metrics.elapsed_ms : 0,
-          peakRssMb: 0,
-        },
-      }
+      return executor(job, abortSignal)
     }
 
     if (job.tool === 'workflow.module_reconstruction_review') {
-      if (!this.cacheManager) {
-        throw new Error(
-          'workflow.module_reconstruction_review requires cache manager for queued execution'
-        )
+      const executor = this.queuedExecutors.get(job.tool)
+      if (!executor) {
+        throw new Error(`Unsupported queued tool: ${job.tool}`)
       }
-
-      this.jobQueue.updateProgress(job.id, 5)
-      const handler = createModuleReconstructionReviewWorkflowHandler(
-        this.workspaceManager,
-        this.database,
-        this.cacheManager
-      )
-      const result = await handler(job.args || {})
-      this.jobQueue.updateProgress(job.id, 100)
-
-      return {
-        jobId: job.id,
-        ok: result.ok,
-        data: result.data,
-        errors: result.errors || [],
-        warnings: result.warnings || [],
-        artifacts: result.artifacts || [],
-        metrics: {
-          elapsedMs:
-            typeof result.metrics?.elapsed_ms === 'number' ? result.metrics.elapsed_ms : 0,
-          peakRssMb: 0,
-        },
-      }
+      return executor(job, abortSignal)
     }
 
     throw new Error(`Unsupported queued tool: ${job.tool}`)

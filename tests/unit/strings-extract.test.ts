@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createStringsExtractHandler, StringsExtractInputSchema } from '../../src/tools/strings-extract.js'
+import { createStringsExtractHandler, StringsExtractInputSchema } from '../../src/plugins/strings/tools/strings-extract.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 import type { CacheManager } from '../../src/cache-manager.js'
@@ -23,12 +23,16 @@ describe('strings.extract tool', () => {
     // Create mock database
     mockDatabase = {
       findSample: jest.fn(),
+      findLatestCompatibleAnalysisEvidence: jest.fn().mockReturnValue(null),
+      insertAnalysisEvidence: jest.fn(),
+      updateAnalysisEvidence: jest.fn(),
     } as unknown as jest.Mocked<DatabaseManager>
 
     // Create mock cache manager
     mockCacheManager = {
       getCachedResult: jest.fn(),
-      setCachedResult: jest.fn(),
+      getCachedResultWithMetadata: jest.fn().mockResolvedValue(null),
+      setCachedResult: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<CacheManager>
   })
 
@@ -170,7 +174,16 @@ describe('strings.extract tool', () => {
       }
 
       mockDatabase.findSample.mockReturnValue(mockSample)
-      mockCacheManager.getCachedResult.mockResolvedValue(mockCachedData)
+      ;(mockCacheManager as any).getCachedResultWithMetadata.mockResolvedValue({
+        data: mockCachedData,
+        metadata: {
+          key: 'test-cache-key',
+          tier: 'default',
+          createdAt: '2024-01-01T00:00:00Z',
+          expiresAt: '2024-02-01T00:00:00Z',
+          fetchedAt: '2024-01-15T00:00:00Z',
+        },
+      })
 
       const result = await handler({
         sample_id: 'sha256:abc123',
@@ -183,7 +196,7 @@ describe('strings.extract tool', () => {
       expect((result.data as any).enriched).toBeDefined()
       expect((result.data as any).enriched.top_iocs.length).toBeGreaterThanOrEqual(0)
       expect(result.warnings).toContain('Result from cache')
-      expect(mockCacheManager.getCachedResult).toHaveBeenCalled()
+      expect((mockCacheManager as any).getCachedResultWithMetadata).toHaveBeenCalled()
     })
 
     test('should validate min_len parameter', () => {

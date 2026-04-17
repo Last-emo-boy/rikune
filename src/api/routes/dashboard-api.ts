@@ -23,11 +23,21 @@ import os from 'os'
 import type { DatabaseManager } from '../../database.js'
 import type { MCPServer } from '../../server.js'
 import type { WorkspaceManager } from '../../workspace-manager.js'
-import { getPluginManager } from '../../plugins.js'
 import { validateConfig, type ValidationReport } from '../../config-validator.js'
 import { config } from '../../config.js'
 import { getActiveSseClients, eventBus } from '../sse-events.js'
 import { logger, logRingBuffer, type LogEntry } from '../../logger.js'
+import type { PluginStatus } from '../../plugins/sdk.js'
+import type { RuntimeSseEvent } from '../../runtime-client/index.js'
+import type { JobQueue } from '../../job-queue.js'
+import {
+  RUNTIME_TASK_LIFECYCLE,
+  type TaskStatus as RuntimeTaskStatus,
+} from '../../../packages/runtime-node/src/task-store.js'
+import {
+  normalizeJobQueueStatus,
+  normalizeRuntimeEventStatus,
+} from '../../analysis/analysis-run-state.js'
 
 const SERVER_START_TIME = Date.now()
 
@@ -35,12 +45,90 @@ export interface DashboardDeps {
   server: MCPServer | null
   database: DatabaseManager
   workspaceManager?: WorkspaceManager
+  runtimeClient?: {
+    health(): Promise<{ ok: boolean; role: string; isolation: string; mode: string; pid: number } | null>
+    getEndpoint?(): string
+    subscribeEvents?: (options: {
+      taskId?: string
+      onOpen?: () => void
+      onEvent: (event: RuntimeSseEvent) => void
+      onError?: (error: Error) => void
+    }) => { close(): void }
+  } | null
+  jobQueue?: Pick<JobQueue, 'getQueueLength' | 'listStatuses'>
+  getPluginStatuses?: () => PluginStatus[]
 }
 
+interface RuntimeEventSnapshot {
+  connected: boolean
+  lastEventAt: string | null
+  lastEvent: RuntimeSseEvent | null
+  recentEvents: RuntimeSseEvent[]
+  lastError: string | null
+  endpoint: string | null
+}
+
+interface RuntimeEventView extends RuntimeSseEvent {
+  normalized_status: ReturnType<typeof normalizeRuntimeEventStatus>
+}
+
+const RUNTIME_EVENT_HISTORY_LIMIT = 25
+
 let _deps: DashboardDeps | null = null
+let runtimeEventSubscription: { close(): void } | null = null
+const runtimeEventSnapshot: RuntimeEventSnapshot = {
+  connected: false,
+  lastEventAt: null,
+  lastEvent: null,
+  recentEvents: [],
+  lastError: null,
+  endpoint: null,
+}
 
 export function initDashboard(deps: DashboardDeps): void {
   _deps = deps
+
+  runtimeEventSubscription?.close()
+  runtimeEventSubscription = null
+  runtimeEventSnapshot.connected = false
+  runtimeEventSnapshot.lastEventAt = null
+  runtimeEventSnapshot.lastEvent = null
+  runtimeEventSnapshot.recentEvents = []
+  runtimeEventSnapshot.lastError = null
+  runtimeEventSnapshot.endpoint = deps.runtimeClient?.getEndpoint?.() ?? null
+
+  if (deps.runtimeClient?.subscribeEvents) {
+    runtimeEventSubscription = deps.runtimeClient.subscribeEvents({
+      onOpen: () => {
+        runtimeEventSnapshot.connected = true
+        runtimeEventSnapshot.lastError = null
+        runtimeEventSnapshot.endpoint = deps.runtimeClient?.getEndpoint?.() ?? runtimeEventSnapshot.endpoint
+      },
+      onEvent: (event) => {
+        runtimeEventSnapshot.connected = true
+        runtimeEventSnapshot.lastError = null
+        runtimeEventSnapshot.lastEventAt = new Date().toISOString()
+        runtimeEventSnapshot.lastEvent = event
+        runtimeEventSnapshot.endpoint = deps.runtimeClient?.getEndpoint?.() ?? runtimeEventSnapshot.endpoint
+        runtimeEventSnapshot.recentEvents = [...runtimeEventSnapshot.recentEvents, event].slice(-RUNTIME_EVENT_HISTORY_LIMIT)
+        eventBus.publish('runtime-events', 'status', {
+          event: event.event,
+          id: event.id ?? null,
+          data: event.data,
+          received_at: runtimeEventSnapshot.lastEventAt,
+        })
+      },
+      onError: (error) => {
+        runtimeEventSnapshot.connected = false
+        runtimeEventSnapshot.lastError = error.message
+        eventBus.publish('runtime-events', 'error', {
+          message: error.message,
+          endpoint: deps.runtimeClient?.getEndpoint?.() ?? runtimeEventSnapshot.endpoint,
+          timestamp: new Date().toISOString(),
+        })
+      },
+    })
+  }
 
   // Forward new log entries to SSE stream so the dashboard can display them in real time
   logRingBuffer.onEntry((entry: LogEntry) => {
@@ -149,9 +237,10 @@ export function handleDashboardApi(
 function handleOverview(res: ServerResponse): void {
   const tools = _deps?.server?.getToolDefinitions() ?? []
   const prompts = _deps?.server?.getPromptDefinitions() ?? []
-  let pluginMgr: ReturnType<typeof getPluginManager> | null = null
-  try { pluginMgr = getPluginManager() } catch { /* not initialized */ }
-  const pluginStatuses = pluginMgr?.getStatuses() ?? []
+  let pluginStatuses: PluginStatus[] = []
+  try {
+    pluginStatuses = safeGetPluginStatuses()
+  } catch { /* not initialized */ }
 
   const loaded = pluginStatuses.filter(p => p.status === 'loaded').length
   const sseClients = getActiveSseClients()
@@ -217,10 +306,7 @@ function handleTools(res: ServerResponse, req?: IncomingMessage): void {
 }
 
 function handlePlugins(res: ServerResponse, req?: IncomingMessage): void {
-  let pluginMgr: ReturnType<typeof getPluginManager> | null = null
-  try { pluginMgr = getPluginManager() } catch { /* not initialized */ }
-
-  const statuses = pluginMgr?.getStatuses() ?? []
+  const statuses = safeGetPluginStatuses()
 
   const data = {
     total: statuses.length,
@@ -233,9 +319,21 @@ function handlePlugins(res: ServerResponse, req?: IncomingMessage): void {
       version: s.version ?? null,
       description: s.description ?? null,
       status: s.status,
+      normalized_status: s.controlPlaneStatus ?? normalizePluginControlPlaneStatus(s.status),
+      reason_code: s.reasonCode ?? null,
+      status_detail: s.statusDetail ?? s.error ?? null,
       tool_count: s.tools.length,
       tools: s.tools,
       error: s.error ?? null,
+      dependency_checks: s.depChecks?.map((dep) => ({
+        name: dep.dep.name,
+        type: dep.dep.type,
+        required: dep.dep.required,
+        available: dep.available,
+        resolved_path: dep.resolvedPath ?? null,
+        version: dep.version ?? null,
+        error: dep.error ?? null,
+      })) ?? [],
     })),
   }
   sendJson(res, 200, data, req, 15)
@@ -261,11 +359,43 @@ function handleSamples(res: ServerResponse, params: URLSearchParams): void {
 }
 
 function handleWorkers(res: ServerResponse): void {
-  // Worker stats are not directly accessible from here, but we can expose what we have
+  const jobs = _deps?.jobQueue?.listStatuses?.() ?? []
+  const normalizedJobs = jobs.map((job) => ({
+    ...job,
+    normalized_status: normalizeJobQueueStatus(job.status),
+  }))
+  const queuedJobs = normalizedJobs.filter((job) => job.normalized_status === 'pending')
+  const runningJobs = normalizedJobs.filter((job) => job.normalized_status === 'active')
+  const terminalJobs = normalizedJobs.filter((job) => ['completed', 'failed', 'cancelled', 'recoverable'].includes(job.normalized_status))
+  const pluginStatuses = safeGetPluginStatuses()
+  const pluginCounts = summarizePluginStatuses(pluginStatuses)
+  const runtimeLastEvent = toRuntimeEventView(runtimeEventSnapshot.lastEvent)
+  const runtimeRecentEvents = runtimeEventSnapshot.recentEvents.map((event) => toRuntimeEventView(event))
+
   sendJson(res, 200, {
-    pool: {
-      note: 'Worker pool statistics are available when the pool is running',
+    runtime: {
+      connected: runtimeEventSnapshot.connected,
+      endpoint: runtimeEventSnapshot.endpoint,
+      lifecycle: RUNTIME_TASK_LIFECYCLE,
+      last_event_at: runtimeEventSnapshot.lastEventAt,
+      last_error: runtimeEventSnapshot.lastError,
+      last_event: runtimeLastEvent,
+      recent_events: runtimeRecentEvents,
+      normalized_status: runtimeLastEvent?.normalized_status ?? (runtimeEventSnapshot.connected ? 'active' : 'pending'),
     },
+    jobs: {
+      total: normalizedJobs.length,
+      queue_depth: _deps?.jobQueue?.getQueueLength?.() ?? queuedJobs.length,
+      queued: queuedJobs.length,
+      running: runningJobs.length,
+      terminal: terminalJobs.length,
+      by_status: normalizedJobs.reduce<Record<string, number>>((acc, job) => {
+        acc[job.normalized_status] = (acc[job.normalized_status] ?? 0) + 1
+        return acc
+      }, {}),
+      recent: normalizedJobs.slice(0, 10),
+    },
+    plugins: pluginCounts,
     process: {
       pid: process.pid,
       uptime_seconds: Math.floor(process.uptime()),
@@ -306,6 +436,61 @@ function handleConfig(res: ServerResponse, req?: IncomingMessage): void {
     },
   }
   sendJson(res, 200, data, req, 30)
+}
+
+function safeGetPluginStatuses(): PluginStatus[] {
+  try {
+    return _deps?.getPluginStatuses?.() ?? []
+  } catch {
+    return []
+  }
+}
+
+function summarizePluginStatuses(statuses: PluginStatus[]): Record<string, number> {
+  return statuses.reduce<Record<string, number>>((acc, status) => {
+    const normalized = status.controlPlaneStatus ?? normalizePluginControlPlaneStatus(status.status)
+    acc[status.status] = (acc[status.status] ?? 0) + 1
+    acc[normalized] = (acc[normalized] ?? 0) + 1
+    if (status.reasonCode) {
+      const reasonKey = `reason:${status.reasonCode}`
+      acc[reasonKey] = (acc[reasonKey] ?? 0) + 1
+    }
+    return acc
+  }, {})
+}
+
+function normalizePluginControlPlaneStatus(status: PluginStatus['status']): 'completed' | 'cancelled' | 'failed' {
+  switch (status) {
+    case 'loaded':
+      return 'completed'
+    case 'skipped-disabled':
+      return 'cancelled'
+    case 'skipped-check':
+    case 'skipped-deps':
+    case 'error':
+      return 'failed'
+  }
+}
+
+function extractRuntimeStatusFromEvent(event: RuntimeSseEvent): RuntimeTaskStatus | undefined {
+  const status = (event.data as { status?: unknown } | undefined)?.status
+  if (typeof status !== 'string') {
+    return undefined
+  }
+  if (status === 'queued' || status === 'running' || status === 'completed' || status === 'failed' || status === 'cancelled') {
+    return status
+  }
+  return undefined
+}
+
+function toRuntimeEventView(event: RuntimeSseEvent | null): RuntimeEventView | null {
+  if (!event) {
+    return null
+  }
+  return {
+    ...event,
+    normalized_status: normalizeRuntimeEventStatus(event.event, extractRuntimeStatusFromEvent(event) ?? null),
+  }
 }
 
 // ── Logs ────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals'
-import { createTraceConditionHandler, traceConditionInputSchema } from '../../src/tools/trace-condition.js'
+import { createTraceConditionHandler, traceConditionInputSchema } from '../../src/plugins/static-triage/tools/trace-condition.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 import type { CacheManager } from '../../src/cache-manager.js'

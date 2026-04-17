@@ -10,6 +10,7 @@ import { metadataExtractToolDefinition, createMetadataExtractHandler } from './t
 const metadataPlugin: Plugin = {
   id: 'metadata',
   name: 'File Metadata',
+  executionDomain: 'static',
   surfaceRules: { tier: 0, category: 'static-analysis' },
   description: 'Universal file metadata extraction using exiftool (works on PE, Office, PDF, images, and more)',
   version: '1.0.0',
