@@ -10,8 +10,8 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
-import {
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
+import {
   resolveSampleFile,
   runPythonJson,
   persistBackendArtifact,

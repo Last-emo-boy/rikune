@@ -72,7 +72,6 @@ const metricsInputSchema = z.object({
 
 const metricsToolDefinition: ToolDefinition = {
   name: 'observability.metrics',
-  executionDomain: 'static',
   description: 'Query tool invocation metrics — call counts, latencies, error rates. Powered by the plugin hook system.',
   inputSchema: metricsInputSchema,
 }

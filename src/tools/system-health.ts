@@ -10,17 +10,16 @@ import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
-import { normalizeError } from '../utils/shared-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
-import { pythonProcessPool } from '../worker/python-process-pool.js'
-import { checkGhidraHealth, type GhidraHealthStatus } from '../ghidra/ghidra-config.js'
 import { resolvePackagePath } from '../runtime-paths.js'
 import { lookupCachedResult } from './cache-observability.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
+import { getPythonCommand, normalizeError } from '../utils/shared-helpers.js'
+import { pythonProcessPool } from '../worker/python-process-pool.js'
+import { checkGhidraHealth, type GhidraHealthStatus } from '../ghidra/ghidra-config.js'
 import {
-import { getPythonCommand } from '../utils/shared-helpers.js'
   RequiredUserInputSchema,
   SetupActionSchema,
   buildBaselinePythonSetupActions,

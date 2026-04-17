@@ -3,7 +3,7 @@
  * remote Runtime RPC calls when running in analyzer mode.
  */
 
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import type { PluginServerInterface, ToolDefinition, WorkerResult, ArtifactRef, RuntimeBackendHint } from '../plugins/sdk.js'
 import {
   RuntimeDelegationFailureDataSchema,

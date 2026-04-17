@@ -13,8 +13,8 @@ import { createHash, randomUUID } from 'crypto'
 import type { ArtifactRef } from '../../types.js'
 import type { WorkspaceManager } from '../../workspace-manager.js'
 import type { DatabaseManager } from '../../database.js'
-import {
 import { getPythonCommand } from '../../utils/shared-helpers.js'
+import {
   resolveAnalysisBackends,
 } from '../../static-backend-discovery.js'
 
