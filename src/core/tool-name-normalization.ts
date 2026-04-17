@@ -17,7 +17,7 @@ export const TOOL_NAMESPACES: ReadonlySet<string> = new Set([
 // Build the regex dynamically from the namespace set (sorted longest-first to avoid partial matches)
 const sortedNamespaces = Array.from(TOOL_NAMESPACES).sort((a, b) => b.length - a.length)
 const TOOL_NAME_PREFIX_PATTERN = new RegExp(
-  `\\b(?:${sortedNamespaces.map(n => n.replace(/_/g, '_')).join('|')})(?:\\.[A-Za-z0-9_-]+)+\\b`,
+  `\\b(?:${sortedNamespaces.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(?:\\.[A-Za-z0-9_-]+)+\\b`,
   'g',
 )
 
