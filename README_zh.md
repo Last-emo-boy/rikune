@@ -16,7 +16,7 @@
 - **HTTP 文件服务**：内嵌 HTTP API（端口 18080），支持样本上传、产物下载、上传会话管理，API Key 认证。
 - **Web 实时监控面板**：`http://localhost:18080/dashboard` — 暗色主题，8 个标签页，展示工具、插件、样本、分析历史、报告查看器、配置、系统资源和 SSE 事件流。支持实时日志流显示。
 - **SSE 实时事件**：`/api/v1/events` 实时推送分析进度、样本导入、服务器状态变更。
-- **插件 SDK**：56 个内置插件，热加载/卸载，第三方自动发现。
+- **插件 SDK**：55 个内置插件，热加载/卸载，第三方自动发现。
 - **高级分析工具**：节区级熵值分析、行为分类、混淆检测（CFF、不透明谓词、字符串加密、.NET 混淆）、静态污点追踪、child sample handoff、智能脱壳指引、自动生成 Frida hook 脚本、Sigma 检测规则生成。
 
 ## 本轮新增的静态初筛能力
@@ -448,7 +448,7 @@ pip install frida frida-tools
 - Frida 动态 Instrumentation (`frida.runtime.instrument`, `frida.script.inject`, `frida.trace.capture`)
 - HTTP 文件服务 REST API（端口 18080）— 样本上传、产物 CRUD、SSE 事件
 - **Web 监控面板** (`http://localhost:18080/dashboard`) — 工具、插件、样本、分析历史、报告查看器（Markdown/JSON/HTML/SVG）、配置、系统实时监控，支持服务器日志流
-- **插件 SDK**：56 个内置插件，热加载/卸载，第三方自动发现
+- **插件 SDK**：55 个内置插件，热加载/卸载，第三方自动发现
 - **生产基础设施**：限流、配置校验、分页、重试、批量分析、SBOM 生成
 - **SSE 实时事件**：Server-Sent Events 实时推送分析进度
 
@@ -458,13 +458,13 @@ Docker 现在按 profile 部署：`static` 是默认纯静态 analyzer，`hybrid
 
 | 服务 | 访问方式 | 说明 |
 |------|----------|------|
-| MCP Server | stdio (`docker exec -i`) | 241 个工具、3 个 prompt、16 个 resource |
+| MCP Server | stdio (`docker exec -i`) | 243 个工具、3 个 prompt、16 个 resource |
 | HTTP API | `http://localhost:18080/api/v1/*` | 样本/产物/上传/健康检查 REST API |
 | Web 面板 | `http://localhost:18080/dashboard` | 实时监控 SPA（8 标签页，暗色主题） |
 | SSE 事件 | `http://localhost:18080/api/v1/events` | 分析事件实时推送 |
 | 面板 API | `http://localhost:18080/api/v1/dashboard/*` | 12 个 JSON 端点 |
 
-### 内置插件（56 个）
+### 内置插件（55 个）
 
 | 插件 | ID | 工具数 | 说明 |
 |------|----|--------|------|
@@ -567,7 +567,7 @@ src/                         MCP Server 源码
   index.ts                   入口（~90 行）
   server.ts                  MCPServer 类
   tool-registry.ts           集中式工具/prompt/resource 注册
-  plugins.ts                 插件框架（56 个内置 + 自动发现）
+  plugins.ts                 插件框架（55 个内置 + 自动发现）
   safe-command.ts            命令注入防护
   config-validator.ts        运行时配置校验
   logger.ts                  Pino 结构化日志
@@ -586,7 +586,7 @@ src/                         MCP Server 源码
   utils/                     共享工具模块
   worker/                    Python 进程池与 worker 管理
   tools/                     核心工具定义与处理器（31 个文件）
-  plugins/                   插件目录（56 个内置插件）
+  plugins/                   插件目录（55 个内置插件）
   api/
     file-server.ts           HTTP API（端口 18080）
     rate-limiter.ts          请求限流
@@ -672,7 +672,7 @@ npm run docker:generate:all
 关键边界：
 
 - `static` 和 `hybrid` 的 analyzer 镜像不再安装本地动态执行依赖，动态执行由 Windows 运行时面承担。
-- 默认 `windows-sandbox` 后端要求 Host Agent 跑在已登录的 Windows 用户会话里，不能作为传统 Windows Service 运行。
+- 默认 `windows-sandbox` 后端要求 Host Agent 跑在已登录的 Windows 用户会话里，不能作为传统 Windows Service 运行。Docker/WSL analyzer 需要通过 `host.docker.internal:18082` 访问 Host Agent，所以安装脚本默认让 Host Agent 绑定 `0.0.0.0`，并 best-effort 创建 Hyper-V firewall 规则放行 Host Agent 和 runtime portproxy 端口；控制面仍依赖 `RUNTIME_HOST_AGENT_API_KEY` 鉴权。
 - `hyperv-vm` 后端适合调试和无人值守风格实验：Host Agent 会启动 VM、可选恢复 checkpoint，然后等待 VM 内 Runtime Node 健康后把 endpoint 返回给 analyzer。
 - Hyper-V 运行时会话可以选择释放策略：`runtime.debug.session.start` 里使用 `hyperv_retention_policy='clean_rollback'` 会在释放后恢复 checkpoint，`stop_only` 会关机并保留磁盘状态，`preserve_dirty` 会保留 VM 现场供人工检查。安装参数 `-HyperVRestoreOnRelease` 会设置 Host Agent 默认策略。
 - 运行时会话是显式的：如果希望走 staged workflow，先用 `workflow.analyze.promote(dynamic_plan)` 自动运行 `static.behavior.classify`、生成证据感知的 `dynamic.deep_plan`，并保持 live execution 显式门控；也可以手动调用 `dynamic.runtime.status` 检查 Runtime Node 和 Host Agent 就绪状态，用 `dynamic.toolkit.status` 查看 runtime 内调试器、遥测、dump、手动 GUI 工具库存，用 `dynamic.deep_plan` 选择受限的动态分析方案，需要网络实验、.NET runtime 或 GUI 交接细节时再用 `debug.network.plan`、`debug.managed.plan`、`debug.gui.handoff`，用 `dynamic.persona.plan` 生成只规划不启动的 Sandbox/Hyper-V persona 清单；需要 Hyper-V 状态、checkpoint 创建/恢复或停止时调用 `runtime.hyperv.control`，再调用 `runtime.debug.session.start` 创建或附着 Windows runtime，然后用 `runtime.debug.command` 分发 `debug.session.*`、`sandbox.execute`、`dynamic.behavior.capture`、遥测、ProcDump、managed safe-run 或内存转储类任务，再用 `dynamic.behavior.diff`、`analysis.evidence.graph` 和 `crypto.lifecycle.graph` 把运行时观察关联回静态预期，最后用 `runtime.debug.session.stop` 释放。

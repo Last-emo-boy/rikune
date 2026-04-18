@@ -21,6 +21,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const PORT = parseInt(process.env.HOST_AGENT_PORT || '18082', 10)
+const BIND_HOST = process.env.HOST_AGENT_BIND_HOST || process.env.HOST_AGENT_HOST || '0.0.0.0'
 const API_KEY = process.env.HOST_AGENT_API_KEY || ''
 const RUNTIME_INTERNAL_PORT = 18081
 const LISTEN_PORT_MIN = 18081
@@ -1307,8 +1308,8 @@ const server = createServer(async (req, res) => {
   }
 })
 
-server.listen(PORT, () => {
-  logger.info({ port: PORT, apiKeyConfigured: !!API_KEY }, 'Windows Host Agent listening')
+server.listen(PORT, BIND_HOST, () => {
+  logger.info({ host: BIND_HOST, port: PORT, apiKeyConfigured: !!API_KEY }, 'Windows Host Agent listening')
 })
 
 process.on('SIGTERM', async () => {

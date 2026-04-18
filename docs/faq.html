@@ -235,8 +235,12 @@
             <code>dynamic.behavior.diff</code>, <code>analysis.evidence.graph</code>, and
             <code>crypto.lifecycle.graph</code> only read persisted artifacts. The
             Host Agent must run in a logged-on Windows user session; do not run the Sandbox backend
-            as a traditional Windows Service. A Sandbox window may appear during that task and close
-            after the runtime session finishes.
+            as a traditional Windows Service. In Docker/WSL deployments the Host Agent must be
+            reachable through <code>host.docker.internal:18082</code>, so the installer binds it to
+            <code>0.0.0.0</code>, adds best-effort Hyper-V firewall rules for the Host Agent/runtime
+            ports, and keeps API-key authentication enabled. A Sandbox window may appear
+            during that task and close after the runtime session finishes; some automation paths expose
+            only the backing VM/runtime endpoint instead of a visible interactive window.
           </p>
           <p data-lang-zh>
             不会。安装器只负责准备 Host Agent 和 Docker analyzer。Windows Sandbox 会在动态/沙箱
@@ -244,8 +248,9 @@
             或 <code>sandbox.execute</code>。<code>dynamic.runtime.status</code>、
             <code>dynamic.toolkit.status</code>、<code>dynamic.deep_plan</code>、<code>dynamic.persona.plan</code> 这类只读探测，以及 <code>debug.network.plan</code>、<code>debug.managed.plan</code>、<code>debug.gui.handoff</code> 这类规划工具不会启动它；<code>dynamic.behavior.diff</code>、
             <code>analysis.evidence.graph</code> 和 <code>crypto.lifecycle.graph</code> 只读取已持久化 artifact。Host Agent 必须运行在已登录的 Windows
-            用户会话里；不要把 Sandbox 后端作为传统 Windows Service 运行。执行任务期间可能看到
-            Sandbox 窗口，运行时会话结束后会关闭。
+            用户会话里；不要把 Sandbox 后端作为传统 Windows Service 运行。Docker/WSL 部署需要通过
+            <code>host.docker.internal:18082</code> 访问 Host Agent，所以安装器会绑定
+            <code>0.0.0.0</code>，best-effort 添加 Host Agent/runtime 端口的 Hyper-V firewall 规则，并保持 API Key 鉴权。执行任务期间可能看到 Sandbox 窗口，运行时会话结束后会关闭；某些自动化路径只暴露后台 VM/runtime endpoint，不一定出现交互窗口。
           </p>
         </div>
       </div>

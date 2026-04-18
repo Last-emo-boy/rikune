@@ -243,13 +243,17 @@
               builds the analyzer image, and starts <code>rikune-analyzer</code>. The runtime is
               launched on demand by dynamic/sandbox tools, not as a permanently open GUI during
               installation. The default Windows Sandbox backend must run from a logged-on user
-              session; the Hyper-V VM backend can be used for checkpoint-based debugging.</span
+              session; the Host Agent binds to <code>0.0.0.0</code> by default and the installer adds
+              best-effort Hyper-V firewall rules so Docker can reach it through
+              <code>host.docker.internal:18082</code> and the runtime portproxy range; the Hyper-V VM backend can be used for checkpoint-based debugging.</span
             >
             <span data-lang-zh
               >在单机 Windows hybrid 方案中，脚本会安装或启动 Host Agent、检查所选运行时后端、写入
               <code>.docker-runtime.env</code>、构建 analyzer 镜像并启动
               <code>rikune-analyzer</code>。运行时由动态/沙箱工具按需启动，安装时不会要求一直打开一个
-              Sandbox 窗口。默认 Windows Sandbox 后端必须运行在已登录用户会话里；Hyper-V VM
+              Sandbox 窗口。默认 Windows Sandbox 后端必须运行在已登录用户会话里；Host Agent
+              默认绑定 <code>0.0.0.0</code>，并 best-effort 添加 Hyper-V firewall 规则，让 Docker 可以通过 <code>host.docker.internal:18082</code>
+              和 runtime portproxy 端口访问；Hyper-V VM
               后端可用于基于 checkpoint 的调试，并可选择退出时回滚、关机保留或保留脏现场。</span
             >
           </p>
@@ -796,8 +800,8 @@ node scripts/generate-docker.mjs --profile=static --dry-run</pre>
                 <td><span class="badge badge--blue">MCP Server</span></td>
                 <td>stdio</td>
                 <td>
-                  <span data-lang-en>241 tools, 3 prompts, 16 resources</span
-                  ><span data-lang-zh>241 个工具、3 个提示、16 个资源</span>
+                  <span data-lang-en>243 tools, 3 prompts, 16 resources</span
+                  ><span data-lang-zh>243 个工具、3 个提示、16 个资源</span>
                 </td>
               </tr>
               <tr>

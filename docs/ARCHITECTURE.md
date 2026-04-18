@@ -73,7 +73,7 @@ Docker profiles map onto these planes:
 
 Host Agent runtime backends:
 
-- `windows-sandbox` (default): starts Windows Sandbox from a logged-on Windows user session. This backend must not run as a traditional Windows Service because Windows Sandbox requires an interactive desktop session for the runtime startup command to execute.
+- `windows-sandbox` (default): starts Windows Sandbox from a logged-on Windows user session. This backend must not run as a traditional Windows Service because Windows Sandbox requires an interactive desktop session for the runtime startup command to execute. In Docker/WSL deployments, the Host Agent binds to `0.0.0.0` by default and the installer creates best-effort Hyper-V firewall rules so the analyzer can reach it through `host.docker.internal:18082` and the runtime portproxy range; the API key remains required.
 - `hyperv-vm`: starts a pre-provisioned Hyper-V VM, optionally restores a named checkpoint, waits for the Runtime Node endpoint to become healthy, and returns that endpoint to the analyzer. This is useful for debugging, snapshot rollback, and unattended-style runtime experiments.
 
 Runtime execution is explicit at the tool level. `dynamic.runtime.status` and
@@ -124,7 +124,7 @@ interface ToolDeps {
 
 An `async` function that:
 
-1. Registers 31 core MCP tools plus 210 plugin tools (241 total), grouped by category:
+1. Registers 31 core MCP tools plus 212 plugin tools (243 total), grouped by category:
    - Core (ingest, profile, triage)
    - LLM-assisted review (naming, explanation, reconstruction)
    - PE analysis (structure, headers, sections, exports)

@@ -19,6 +19,12 @@ param(
     [Parameter(HelpMessage="Host Agent HTTP port")]
     [int]$Port = 18082,
 
+    [Parameter(HelpMessage="Host Agent bind address. Use 0.0.0.0 for Docker/WSL analyzers to reach the agent through host.docker.internal.")]
+    [string]$BindHost = "0.0.0.0",
+
+    [Parameter(HelpMessage="Skip best-effort Hyper-V firewall rules that allow WSL/Docker analyzers to reach Host Agent/runtime ports.")]
+    [switch]$SkipHyperVFirewallRules,
+
     [Parameter(HelpMessage="Host Agent and Runtime API key. If omitted, a random key is generated.")]
     [string]$ApiKey,
 
@@ -96,6 +102,36 @@ function Exit-WithError {
 
 function Test-IsAdmin {
     return ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
+}
+
+function Ensure-HyperVFirewallRule {
+    param(
+        [string]$Name,
+        [string]$DisplayName,
+        [string]$RemotePorts
+    )
+
+    if (-not (Get-Command New-NetFirewallHyperVRule -ErrorAction SilentlyContinue)) {
+        Write-Warning-Message "Hyper-V firewall cmdlets are not available; skipping rule $Name"
+        return
+    }
+
+    $vmCreatorId = "{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}" # WSL/Docker Desktop VM creator id on Windows 11 Hyper-V firewall.
+    try {
+        Get-NetFirewallHyperVRule -Name $Name -ErrorAction SilentlyContinue | Remove-NetFirewallHyperVRule -ErrorAction SilentlyContinue
+        New-NetFirewallHyperVRule `
+            -Name $Name `
+            -DisplayName $DisplayName `
+            -Direction Outbound `
+            -VMCreatorId $vmCreatorId `
+            -Protocol TCP `
+            -RemotePorts $RemotePorts `
+            -Action Allow `
+            -Enabled True | Out-Null
+        Write-Success "Hyper-V firewall rule ensured: $DisplayName ($RemotePorts)"
+    } catch {
+        Write-Warning-Message "Could not create Hyper-V firewall rule $Name. Run this installer as Administrator or allow TCP $RemotePorts from WSL/Docker manually. $($_.Exception.Message)"
+    }
 }
 
 function Get-OptionalFeatureByName {
@@ -239,6 +275,20 @@ if ($vmPlatformFeature -and $vmPlatformFeature.State -eq "Enabled") {
     Write-Warning-Message "Virtual Machine Platform is not enabled. Docker Desktop may require it depending on backend configuration."
 }
 
+if (-not $SkipHyperVFirewallRules) {
+    Write-Step "Configuring WSL/Docker Hyper-V Firewall"
+    Ensure-HyperVFirewallRule `
+        -Name "Rikune-WSL-Docker-Out-HostAgent" `
+        -DisplayName "Rikune WSL/Docker outbound to Windows Host Agent" `
+        -RemotePorts "$Port"
+    Ensure-HyperVFirewallRule `
+        -Name "Rikune-WSL-Docker-Out-Runtime" `
+        -DisplayName "Rikune WSL/Docker outbound to Windows Runtime portproxy" `
+        -RemotePorts "18081-19000"
+} else {
+    Write-Info "Skipping Hyper-V firewall rules because -SkipHyperVFirewallRules was provided"
+}
+
 # =============================================================================
 # Step 2: Check Required Tools
 # =============================================================================
@@ -370,6 +420,7 @@ $envContent = @"
 
 # Host Agent settings
 HOST_AGENT_PORT=$Port
+HOST_AGENT_BIND_HOST=$BindHost
 HOST_AGENT_API_KEY=$apiKey
 HOST_AGENT_RUNTIME_API_KEY=$apiKey
 HOST_AGENT_WORKSPACE=$WorkspaceRoot
@@ -407,6 +458,7 @@ if (-not (Test-Path $hostAgentEntry)) {
 
 # Load env for current process
 $env:HOST_AGENT_PORT = "$Port"
+$env:HOST_AGENT_BIND_HOST = "$BindHost"
 $env:HOST_AGENT_API_KEY = "$apiKey"
 $env:HOST_AGENT_RUNTIME_API_KEY = "$apiKey"
 $env:HOST_AGENT_WORKSPACE = "$WorkspaceRoot"
@@ -531,7 +583,7 @@ Write-Header "Installation Complete"
 
 Write-Host "  Project Root:   $ProjectRoot" -ForegroundColor $ColorSuccess
 Write-Host "  Workspace:      $WorkspaceRoot" -ForegroundColor $ColorSuccess
-Write-Host "  Host Agent:     http://127.0.0.1:$Port" -ForegroundColor $ColorSuccess
+Write-Host "  Host Agent:     http://127.0.0.1:$Port (bind: $BindHost)" -ForegroundColor $ColorSuccess
 Write-Host "  Backend:        $RuntimeBackend" -ForegroundColor $ColorSuccess
 if ($RuntimeBackend -eq "hyperv-vm") {
     Write-Host "  Hyper-V VM:     $HyperVVmName" -ForegroundColor $ColorSuccess
