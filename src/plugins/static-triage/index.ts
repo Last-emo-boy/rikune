@@ -23,6 +23,9 @@ import { rustBinaryAnalyzeToolDefinition, createRustBinaryAnalyzeHandler } from 
 import { entropyAnalyzeToolDefinition, createEntropyAnalyzeHandler } from './tools/entropy-analyze.js'
 import { obfuscationDetectToolDefinition, createObfuscationDetectHandler } from './tools/obfuscation-detect.js'
 import { taintTrackToolDefinition, createTaintTrackHandler } from './tools/taint-track.js'
+import { staticResourceGraphToolDefinition, createStaticResourceGraphHandler } from './tools/static-resource-graph.js'
+import { staticConfigCarverToolDefinition, createStaticConfigCarverHandler } from './tools/static-config-carver.js'
+import { staticBehaviorClassifyToolDefinition, createStaticBehaviorClassifyHandler } from './tools/static-behavior-classify.js'
 
 const staticTriagePlugin: Plugin = {
   id: 'static-triage',
@@ -52,7 +55,7 @@ const staticTriagePlugin: Plugin = {
       'has_shellcode': 'shellcode',
     },
   },
-  description: 'First-pass static analysis including runtime detection, packer ID, capability triage, binary profiling, crypto detection, entropy analysis, and obfuscation detection',
+  description: 'First-pass static analysis including runtime detection, packer ID, capability triage, binary profiling, resource graphing, config carving, behavior classification, crypto detection, entropy analysis, and obfuscation detection',
   version: '1.0.0',
   register(server, deps) {
     const { workspaceManager: wm, database: db, cacheManager: cm, jobQueue: jq } = deps
@@ -74,6 +77,9 @@ const staticTriagePlugin: Plugin = {
     server.registerTool(entropyAnalyzeToolDefinition, createEntropyAnalyzeHandler(wm, db, cm))
     server.registerTool(obfuscationDetectToolDefinition, createObfuscationDetectHandler(wm, db, cm))
     server.registerTool(taintTrackToolDefinition, createTaintTrackHandler(wm, db, cm))
+    server.registerTool(staticResourceGraphToolDefinition, createStaticResourceGraphHandler(wm, db))
+    server.registerTool(staticConfigCarverToolDefinition, createStaticConfigCarverHandler(wm, db))
+    server.registerTool(staticBehaviorClassifyToolDefinition, createStaticBehaviorClassifyHandler(wm, db))
 
     return [
       'analysis.context.link', 'runtime.detect',
@@ -83,6 +89,7 @@ const staticTriagePlugin: Plugin = {
       'breakpoint.smart', 'trace.condition',
       'dll.export.profile', 'com.role.profile', 'rust.binary.analyze',
       'entropy.analyze', 'obfuscation.detect', 'taint.track',
+      'static.resource.graph', 'static.config.carver', 'static.behavior.classify',
     ]
   },
 }

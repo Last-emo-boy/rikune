@@ -17,7 +17,7 @@
 - **Web 实时监控面板**：`http://localhost:18080/dashboard` — 暗色主题，8 个标签页，展示工具、插件、样本、分析历史、报告查看器、配置、系统资源和 SSE 事件流。支持实时日志流显示。
 - **SSE 实时事件**：`/api/v1/events` 实时推送分析进度、样本导入、服务器状态变更。
 - **插件 SDK**：56 个内置插件，热加载/卸载，第三方自动发现。
-- **高级分析工具**：节区级熵值分析、混淆检测（CFF、不透明谓词、字符串加密、.NET 混淆）、静态污点追踪、智能脱壳指引、自动生成 Frida hook 脚本、Sigma 检测规则生成。
+- **高级分析工具**：节区级熵值分析、行为分类、混淆检测（CFF、不透明谓词、字符串加密、.NET 混淆）、静态污点追踪、child sample handoff、智能脱壳指引、自动生成 Frida hook 脚本、Sigma 检测规则生成。
 
 ## 本轮新增的静态初筛能力
 
@@ -26,6 +26,7 @@
 - `static.capability.triage`：用 `capa` 风格的能力识别回答“样本可能具备什么行为能力”，而不只是展示字符串或导入表。
 - `pe.structure.analyze`：把 `pefile` 和 `LIEF` 风格的 PE 结构解析合并成一个统一输出，同时保留后端细节块。
 - `compiler.packer.detect`：补上编译器、保护器和壳归因，并在 Detect It Easy 缺失时优雅降级成 setup guidance。
+- `static.resource.graph`、`static.config.carver`、`static.behavior.classify` 和 `unpack.child.handoff`：在真实运行前补齐 payload、配置、持久化/注入和 child sample handoff 证据。
 - `workflow.triage`、`report.summarize` 和 `report.generate` 现在会直接消费这三类结果，并支持 static artifact 的 provenance、scope 和 compare/baseline。
 
 ## 典型使用路径
@@ -74,6 +75,9 @@
 - `sample.ingest`
 - `sample.profile.get`
 - `static.capability.triage`
+- `static.resource.graph`
+- `static.config.carver`
+- `static.behavior.classify`
 - `pe.structure.analyze`
 - `compiler.packer.detect`
 - `pe.fingerprint`
@@ -119,11 +123,28 @@
 ### 运行时证据与报告
 
 - `dynamic.dependencies`
+- `dynamic.runtime.status`
+- `dynamic.toolkit.status` - 只读查询 Runtime Node 内的 CDB、ProcDump、ProcMon、Sysmon、TTD、x64dbg、dnSpyEx、Frida、dotnet、FakeNet 风格工具库存，不启动、不执行样本
+- `dynamic.deep_plan` - 生成显式的深度动态分析计划，覆盖行为捕获、调试器、内存、遥测、网络、.NET、反逃逸、TTD 和手动 GUI 调试方案
+- `debug.cdb.plan` - 生成只规划不执行的 CDB 命令批次，覆盖 API 断点、异常跟踪、模块加载停止和 dump-on-break 模板
+- `debug.procdump.plan` - 生成只规划不执行的 ProcDump 捕获模板，覆盖崩溃、first-chance 异常、超时和 PID 快照 dump
+- `debug.telemetry.plan` - 生成只规划不执行的 ProcMon、Sysmon、ETW 和事件日志采集方案，并包含清理/回滚要求
+- `debug.network.plan` - 生成只规划不执行的 proxy sinkhole、ETW DNS 和 FakeNet 风格网络实验方案
+- `debug.managed.plan` - 生成只规划不执行的 .NET safe-run、SOS/CDB、ProcDump、资源复核和 dnSpy handoff 方案
+- `debug.gui.handoff` - 生成面向可见 Sandbox/Hyper-V runtime 的 x64dbg、WinDbg 和 dnSpyEx 手动交接记录
+- `dynamic.persona.plan` - 生成只规划不启动的 Windows runtime persona 清单，用于 Sandbox/Hyper-V 用户态环境准备
+- `dynamic.behavior.diff` - 对比静态预期和运行时观察，输出已确认、未触发和意外行为
+- `analysis.evidence.graph` - 把静态 artifact、运行时观察和相互印证边组织成紧凑证据图
+- `crypto.lifecycle.graph` - 把 crypto 发现、候选常量、运行时 API、阶段和内存区域线索串成生命周期图
+- `runtime.hyperv.control`
 - `sandbox.execute`
+- `dynamic.behavior.capture`
 - `dynamic.trace.import`
 - `dynamic.memory.import`
 - `dynamic.auto_hook` - 基于静态证据自动生成 Frida hook
 - `dynamic.memory_dump` - 运行时内存转储与模式扫描
+- `runtime.debug.session.start` / `runtime.debug.session.status` / `runtime.debug.session.stop` - 显式创建、查询和释放 Windows Sandbox 或 Hyper-V VM 运行时会话
+- `runtime.debug.command` - 在已启动的运行时调试会话中分发受支持的 Runtime Node 命令
 - `attack.map`
 - `ioc.export`
 - `report.summarize`
@@ -158,15 +179,22 @@
 - `rizin.diff` - 二进制差异比较（函数/基本块级别）
 - `cfg.visualize` - 控制流图可视化（DOT/SVG/JSON）
 - `timeline.correlate` - 多源事件时间线关联
+- `analysis.evidence.graph` - 带相互印证边的静态/运行时证据图
+- `crypto.lifecycle.graph` - 带静态/运行时相互印证的 crypto 生命周期图
 - `cross_module.xref` - 跨模块交叉引用分析
 - `kb.search` - 知识库语义搜索
 
 ### 高级分析
 
 - `entropy.analyze` - 节区级 Shannon 熵值分析，加壳/加密分类
+- `static.resource.graph` - PE 资源和嵌入 payload 图谱，包含熵值、magic、hash 和资源字符串预览
+- `static.config.carver` - 通用配置候选提取：URL、域名、IP、注册表路径、mutex、HTTP client 字符串和编码 blob
+- `static.behavior.classify` - 持久化、服务、计划任务、WMI、进程注入、DLL 注入、APC 和 hollowing 分类器
+- `hash.resolver.plan` - 静态 API hash resolver 规划，给出 hash family 线索和断点 handoff 建议
 - `obfuscation.detect` - 混淆检测：控制流平坦化、不透明谓词、字符串加密、导入混淆、反反汇编、.NET 混淆
 - `taint.track` - 静态污点追踪：源/汇 API 映射、污点路径枚举、风险分级
 - `unpack.guide` - 智能脱壳指引：UPX、Themida、VMProtect、.NET Reactor、ConfuserEx、ASPack、PECompact
+- `unpack.child.handoff` - 提取嵌入 payload 候选，并以带 provenance 的 child sample 形式注册
 - `frida.script.generate` - 基于分析证据自动生成 Frida hook 脚本（加密、网络、文件、注册表、进程、反调试、内存）
 - `sigma.rule.generate` - 基于样本证据自动生成 Sigma 检测规则（进程创建、文件事件、注册表、网络、DNS、镜像加载）
 
@@ -430,7 +458,7 @@ Docker 现在按 profile 部署：`static` 是默认纯静态 analyzer，`hybrid
 
 | 服务 | 访问方式 | 说明 |
 |------|----------|------|
-| MCP Server | stdio (`docker exec -i`) | 222 个工具、3 个 prompt、16 个 resource |
+| MCP Server | stdio (`docker exec -i`) | 241 个工具、3 个 prompt、16 个 resource |
 | HTTP API | `http://localhost:18080/api/v1/*` | 样本/产物/上传/健康检查 REST API |
 | Web 面板 | `http://localhost:18080/dashboard` | 实时监控 SPA（8 标签页，暗色主题） |
 | SSE 事件 | `http://localhost:18080/api/v1/events` | 分析事件实时推送 |
@@ -442,7 +470,7 @@ Docker 现在按 profile 部署：`static` 是默认纯静态 analyzer，`hybrid
 |------|----|--------|------|
 | Android / APK | `android` | 4 | APK 清单、DEX 反编译、加壳检测 |
 | angr | `angr` | 1 | 符号执行引擎 |
-| API Hash | `api-hash` | 2 | Shellcode API 哈希解析 |
+| API Hash | `api-hash` | 3 | Shellcode API 哈希解析与 resolver 规划 |
 | APK Smali | `apk-smali` | 3 | APK Smali 反汇编与分析 |
 | 批量分析 | `batch` | 3 | 批量样本处理 |
 | 行为优先 | `behavior-first` | 3 | 行为分析优先级 |
@@ -456,7 +484,7 @@ Docker 现在按 profile 部署：`static` 是默认纯静态 analyzer，`hybrid
 | Detect It Easy | `die` | 2 | 编译器、加壳器、保护器检测 |
 | .NET 反编译 | `dotnet-decompile` | 2 | .NET 程序集反编译 |
 | .NET Reactor | `dotnet-reactor` | 4 | .NET 混淆分析与去混淆 |
-| 动态分析 | `dynamic` | 7 | 自动 Frida hook、trace 归因、内存转储 |
+| 动态分析 | `dynamic` | 24 | 运行时状态、runtime 工具库存、深度动态计划、CDB、ProcDump、telemetry、网络实验、托管运行时和 GUI handoff 规划、runtime persona 规划、行为差异对比、Hyper-V 控制、行为捕获、自动 Frida hook、trace 归因、内存转储、运行时调试会话控制 |
 | ELF/Mach-O | `elf-macho` | 4 | 跨平台二进制解析 |
 | 固件分析 | `firmware` | 3 | 固件提取与分析 |
 | Frida Instrumentation | `frida` | 4 | 运行时 instrumentation、脚本注入、trace 采集 |
@@ -485,12 +513,12 @@ Docker 现在按 profile 部署：`static` 是默认纯静态 analyzer，`hybrid
 | SBOM | `sbom` | 1 | 软件物料清单生成 |
 | 相似度分析 | `similarity` | 2 | 二进制相似度匹配 |
 | Speakeasy | `speakeasy` | 3 | Speakeasy 模拟分析 |
-| 静态初筛 | `static-triage` | 17 | 能力初筛、PE 结构、编译器/壳检测 |
+| 静态初筛 | `static-triage` | 20 | 能力初筛、资源图谱、配置提取、行为分类、编译器/壳检测 |
 | 字符串 | `strings` | 2 | 高级字符串提取与分析 |
 | 威胁情报 | `threat-intel` | 3 | ATT&CK 映射与 IOC 导出 |
-| 脱壳 | `unpacking` | 2 | 加壳检测与脱壳 |
+| 脱壳 | `unpacking` | 3 | 加壳检测、脱壳与 child sample handoff |
 | UPX | `upx` | 1 | UPX 脱壳后端 |
-| 可视化 | `visualization` | 3 | HTML 报告、行为时间线、数据流图 |
+| 可视化 | `visualization` | 5 | HTML 报告、行为时间线、数据流图、证据图、crypto 生命周期图 |
 | VM 分析 | `vm-analysis` | 10 | VM/模拟器检测与分析 |
 | 漏洞扫描 | `vuln-scanner` | 2 | 漏洞模式扫描与摘要 |
 | Wine | `wine` | 1 | 通过 Wine 执行 Windows PE |
@@ -500,6 +528,12 @@ Docker 现在按 profile 部署：`static` 是默认纯静态 analyzer，`hybrid
 插件通过 `PLUGINS` 环境变量控制（`*` = 全部, `android,malware` = 指定, `-dynamic` = 排除）。详见 [`docs/PLUGINS.md`](./docs/PLUGINS.md)。
 
 ### 开发中（beta 后续迭代）
+
+完整动态运行时迭代计划记录在
+[`docs/DYNAMIC-RUNTIME-ROADMAP.md`](./docs/DYNAMIC-RUNTIME-ROADMAP.md)。它覆盖
+runtime session 持久化、能力驱动分发、运行时产物自动回收、Sandbox 诊断、长生命周期
+Windows 调试会话、Hyper-V VM 调试后端、Frida 运行态执行、行为捕获、内存转储
+workflow、分阶段 workflow 集成、Dashboard Runtime 页，以及统一 backend interface。
 
 对于新的静态初筛能力，最常见的可选依赖是：
 
@@ -590,7 +624,7 @@ docs/                        文档
 | 模式 | Dockerfile | Compose 文件 | 容器 | 运行时 |
 |------|------------|--------------|------|--------|
 | `static` | `docker/Dockerfile.analyzer` | `docker-compose.analyzer.yml` | `rikune-analyzer` | 禁用动态执行 |
-| `hybrid` | `docker/Dockerfile.analyzer` | `docker-compose.hybrid.yml` | `rikune-analyzer` | 远程 Windows Host Agent / Windows Sandbox |
+| `hybrid` | `docker/Dockerfile.analyzer` | `docker-compose.hybrid.yml` | `rikune-analyzer` | 远程 Windows Host Agent / Windows Sandbox 或 Hyper-V VM |
 | `full` | `Dockerfile` | `docker-compose.yml` | `rikune` | Linux 全量工具链，默认不接沙箱 |
 
 推荐默认安装：
@@ -605,7 +639,18 @@ docs/                        文档
 如果是单台 Windows 机器同时跑 Docker Desktop、Windows Host Agent 和 Windows Sandbox：
 
 ```powershell
-.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+.\rikune.ps1 install -Profile hybrid -InstallRuntime
+```
+
+如果要用 Hyper-V VM 作为调试/动态执行运行时，先在 VM 内启动 Rikune Runtime Node，然后安装 hybrid 时指定 VM 后端：
+
+```powershell
+.\rikune.ps1 install -Profile hybrid -InstallRuntime `
+  -RuntimeBackend hyperv-vm `
+  -HyperVVmName "rikune-runtime" `
+  -HyperVSnapshotName "clean-runtime" `
+  -HyperVRuntimeEndpoint "http://192.168.1.50:18081" `
+  -HyperVRestoreOnRelease
 ```
 
 Linux/macOS 侧也有同级入口：
@@ -627,6 +672,11 @@ npm run docker:generate:all
 关键边界：
 
 - `static` 和 `hybrid` 的 analyzer 镜像不再安装本地动态执行依赖，动态执行由 Windows 运行时面承担。
+- 默认 `windows-sandbox` 后端要求 Host Agent 跑在已登录的 Windows 用户会话里，不能作为传统 Windows Service 运行。
+- `hyperv-vm` 后端适合调试和无人值守风格实验：Host Agent 会启动 VM、可选恢复 checkpoint，然后等待 VM 内 Runtime Node 健康后把 endpoint 返回给 analyzer。
+- Hyper-V 运行时会话可以选择释放策略：`runtime.debug.session.start` 里使用 `hyperv_retention_policy='clean_rollback'` 会在释放后恢复 checkpoint，`stop_only` 会关机并保留磁盘状态，`preserve_dirty` 会保留 VM 现场供人工检查。安装参数 `-HyperVRestoreOnRelease` 会设置 Host Agent 默认策略。
+- 运行时会话是显式的：如果希望走 staged workflow，先用 `workflow.analyze.promote(dynamic_plan)` 自动运行 `static.behavior.classify`、生成证据感知的 `dynamic.deep_plan`，并保持 live execution 显式门控；也可以手动调用 `dynamic.runtime.status` 检查 Runtime Node 和 Host Agent 就绪状态，用 `dynamic.toolkit.status` 查看 runtime 内调试器、遥测、dump、手动 GUI 工具库存，用 `dynamic.deep_plan` 选择受限的动态分析方案，需要网络实验、.NET runtime 或 GUI 交接细节时再用 `debug.network.plan`、`debug.managed.plan`、`debug.gui.handoff`，用 `dynamic.persona.plan` 生成只规划不启动的 Sandbox/Hyper-V persona 清单；需要 Hyper-V 状态、checkpoint 创建/恢复或停止时调用 `runtime.hyperv.control`，再调用 `runtime.debug.session.start` 创建或附着 Windows runtime，然后用 `runtime.debug.command` 分发 `debug.session.*`、`sandbox.execute`、`dynamic.behavior.capture`、遥测、ProcDump、managed safe-run 或内存转储类任务，再用 `dynamic.behavior.diff`、`analysis.evidence.graph` 和 `crypto.lifecycle.graph` 把运行时观察关联回静态预期，最后用 `runtime.debug.session.stop` 释放。
+- Runtime 工具缓存查询是只读的，可使用 `RUNTIME_TOOL_DIRS`、`RUNTIME_TOOL_CACHE_DIR`、`RIKUNE_RUNTIME_TOOLS` 或默认 `C:\rikune-tools` 挂载。需要更深动态方案时，把 Windows Debugging Tools 的 `cdb.exe`、Sysinternals ProcDump/ProcMon/Sysmon、TTD helper、x64dbg、dnSpyEx、Frida、dotnet 或 FakeNet 风格 harness 放到这里。
 - Docker/WSL analyzer 不能使用 `auto-sandbox`；`auto-sandbox` 只适用于 Windows 原生 analyzer。
 - `RUNTIME_HOST_AGENT_API_KEY` 用于 Analyzer -> Host Agent 控制面，`RUNTIME_API_KEY` 只在 Runtime Node 自身需要鉴权时使用。
 

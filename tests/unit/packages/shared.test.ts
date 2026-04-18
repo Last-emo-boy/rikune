@@ -28,6 +28,7 @@ describe('@rikune/shared', () => {
       setupDirHost: 'C:\\setup',
       nodeDirHost: 'C:\\Program Files\\nodejs',
       nodeFileName: 'node.exe',
+      nodeModulesDirHost: 'C:\\project\\node_modules',
       pythonDirHost: 'C:\\Python312',
       pythonFileName: 'python.exe',
     })
@@ -36,12 +37,25 @@ describe('@rikune/shared', () => {
     expect(xml).toContain('&amp;')
     expect(xml).toContain('<SandboxFolder>C:\\rikune-runtime</SandboxFolder>')
     expect(xml).toContain('<SandboxFolder>C:\\rikune-node</SandboxFolder>')
+    expect(xml).toContain('<SandboxFolder>C:\\node_modules</SandboxFolder>')
     expect(xml).toContain('<SandboxFolder>C:\\rikune-python</SandboxFolder>')
     expect(xml).toContain('<SandboxFolder>C:\\rikune-setup</SandboxFolder>')
-    expect(xml).toContain('powershell -ExecutionPolicy Bypass -File C:\\rikune-setup\\setup-sandbox-env.ps1')
-    expect(xml).toContain('set &quot;RUNTIME_API_KEY=sandbox-secret&quot;')
-    expect(xml).toContain('&quot;C:\\rikune-node\\node.exe&quot; &quot;index.js&quot; --host 0.0.0.0 --port 18081')
-    expect(xml).toContain('--python-path &quot;C:\\rikune-python\\python.exe&quot;')
-    expect(xml).toContain('--ready-file C:\\rikune-outbox\\ready.json')
+    expect(xml).toContain('powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand')
+    expect(xml).not.toContain('cmd /c')
+
+    const encoded = xml.match(/-EncodedCommand ([A-Za-z0-9+/=]+)/)?.[1]
+    expect(encoded).toBeTruthy()
+    const script = Buffer.from(encoded || '', 'base64').toString('utf16le')
+    expect(script).toContain("& 'C:\\rikune-setup\\setup-sandbox-env.ps1'")
+    expect(script).toContain("$env:RUNTIME_API_KEY = 'sandbox-secret'")
+    expect(script).toContain("$env:RUNTIME_PYTHON_PATH = 'C:\\rikune-python\\python.exe'")
+    expect(script).toContain("$startupLog = 'C:\\rikune-outbox\\runtime-startup.log'")
+    expect(script).toContain("$defenderExclusionPaths = @('C:\\rikune-runtime', 'C:\\rikune-workers', 'C:\\rikune-inbox', 'C:\\rikune-outbox')")
+    expect(script).toContain('Add-MpPreference -ExclusionPath $defenderPath')
+    expect(script).toContain("Set-Location -LiteralPath 'C:\\rikune-runtime'")
+    expect(script).toContain("Start-Process -FilePath 'C:\\rikune-node\\node.exe'")
+    expect(script).toContain("'index.js', '--host', '0.0.0.0', '--port', '18081'")
+    expect(script).toContain("'--python-path', 'C:\\rikune-python\\python.exe'")
+    expect(script).toContain("'--ready-file', 'C:\\rikune-outbox\\ready.json'")
   })
 })

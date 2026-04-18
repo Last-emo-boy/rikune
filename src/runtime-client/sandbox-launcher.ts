@@ -139,11 +139,14 @@ async function writeWsbConfig(
   sandboxDir: string,
   runtimeEntryHost: string,
 ): Promise<void> {
+  const projectRoot = process.cwd()
+  const stagedRuntimeEntryHost = await stageRuntimeBundle(projectRoot, sandboxDir, runtimeEntryHost)
   const inboxDir = path.join(sandboxDir, 'inbox')
   const outboxDir = path.join(sandboxDir, 'outbox')
-  const runtimeDirHost = path.dirname(runtimeEntryHost)
-  const runtimeFileName = path.basename(runtimeEntryHost)
-  const workersDirHost = path.resolve(process.cwd(), 'workers')
+  const runtimeDirHost = path.dirname(stagedRuntimeEntryHost)
+  const runtimeFileName = path.basename(stagedRuntimeEntryHost)
+  const workersDirHost = path.resolve(projectRoot, 'workers')
+  const nodeModulesDirHost = path.resolve(projectRoot, 'node_modules')
 
   // B1.2 / B1.3: registry and filesystem decoys
   const setupDirHost = path.join(sandboxDir, 'setup')
@@ -164,7 +167,7 @@ foreach ($f in $folders) {
 `.trim()
   await fs.writeFile(setupScriptHost, setupScriptContent, 'utf-8')
 
-  const readyFileSandbox = 'C:\rikune-outbox\runtime.ready.json'
+  const readyFileSandbox = 'C:\\rikune-outbox\\runtime.ready.json'
 
   const wsb = buildWsbXml({
     runtimeDirHost,
@@ -174,8 +177,38 @@ foreach ($f in $folders) {
     outboxDir,
     readyFileSandbox,
     setupDirHost,
+    nodeModulesDirHost,
   })
   await fs.writeFile(wsbPath, wsb, 'utf-8')
+}
+
+async function stageRuntimeBundle(
+  projectRoot: string,
+  sandboxDir: string,
+  runtimeEntryHost: string
+): Promise<string> {
+  const runtimeStageDir = path.join(sandboxDir, 'runtime')
+  const sharedSourceDir = path.join(projectRoot, 'packages', 'shared')
+  const sharedStageDir = path.join(runtimeStageDir, 'node_modules', '@rikune', 'shared')
+
+  await fs.rm(runtimeStageDir, { recursive: true, force: true })
+  await fs.mkdir(runtimeStageDir, { recursive: true })
+  await fs.cp(path.dirname(runtimeEntryHost), runtimeStageDir, { recursive: true })
+  await fs.writeFile(
+    path.join(runtimeStageDir, 'package.json'),
+    `${JSON.stringify({ type: 'module' }, null, 2)}\n`,
+    'utf-8'
+  )
+  await fs.mkdir(path.dirname(sharedStageDir), { recursive: true })
+  await fs.cp(path.join(sharedSourceDir, 'dist'), path.join(sharedStageDir, 'dist'), {
+    recursive: true,
+  })
+  await fs.copyFile(
+    path.join(sharedSourceDir, 'package.json'),
+    path.join(sharedStageDir, 'package.json')
+  )
+
+  return path.join(runtimeStageDir, path.basename(runtimeEntryHost))
 }
 
 async function waitForRuntimeReady(sandboxDir: string, timeoutMs: number): Promise<string | null> {
@@ -197,4 +230,3 @@ async function waitForRuntimeReady(sandboxDir: string, timeoutMs: number): Promi
   }
   return null
 }
-

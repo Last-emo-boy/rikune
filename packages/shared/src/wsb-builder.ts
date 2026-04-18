@@ -9,6 +9,7 @@ export interface WsbConfig {
   setupDirHost?: string
   nodeDirHost?: string
   nodeFileName?: string
+  nodeModulesDirHost?: string
   pythonDirHost?: string
   pythonFileName?: string
 }
@@ -22,8 +23,16 @@ export function escapeXml(str: string): string {
     .replace(/'/g, '&apos;')
 }
 
-function quoteCmdArg(str: string): string {
-  return `"${str.replace(/"/g, '')}"`
+function quotePowerShellString(str: string): string {
+  return `'${str.replace(/'/g, "''")}'`
+}
+
+function buildPowerShellArray(values: string[]): string {
+  return `@(${values.map(quotePowerShellString).join(', ')})`
+}
+
+function buildEncodedPowerShellCommand(script: string): string {
+  return Buffer.from(script, 'utf16le').toString('base64')
 }
 
 export function buildWsbXml(cfg: WsbConfig): string {
@@ -39,12 +48,12 @@ export function buildWsbXml(cfg: WsbConfig): string {
     : undefined
 
   const runtimeEnvCommands = [
-    cfg.runtimeApiKey ? `set "RUNTIME_API_KEY=${cfg.runtimeApiKey}"` : undefined,
-    pythonPathSandbox ? `set "RUNTIME_PYTHON_PATH=${pythonPathSandbox}"` : undefined,
+    cfg.runtimeApiKey ? `$env:RUNTIME_API_KEY = ${quotePowerShellString(cfg.runtimeApiKey)}` : undefined,
+    pythonPathSandbox ? `$env:RUNTIME_PYTHON_PATH = ${quotePowerShellString(pythonPathSandbox)}` : undefined,
   ].filter(Boolean)
 
   const runtimeArgs = [
-    quoteCmdArg(cfg.runtimeFileName),
+    cfg.runtimeFileName,
     '--host',
     '0.0.0.0',
     '--port',
@@ -57,16 +66,52 @@ export function buildWsbXml(cfg: WsbConfig): string {
     cfg.readyFileSandbox,
   ]
   if (pythonPathSandbox) {
-    runtimeArgs.push('--python-path', quoteCmdArg(pythonPathSandbox))
+    runtimeArgs.push('--python-path', pythonPathSandbox)
   }
 
-  const runtimeCommand = [
+  const setupCommand = cfg.setupDirHost
+    ? [
+        `if (Test-Path -LiteralPath 'C:\\rikune-setup\\setup-sandbox-env.ps1') {`,
+        `  & 'C:\\rikune-setup\\setup-sandbox-env.ps1'`,
+        `}`,
+      ]
+    : []
+  const defenderExclusionCommand = [
+    `$defenderService = Get-Service -Name WinDefend -ErrorAction SilentlyContinue`,
+    `if (-not $defenderService -or $defenderService.Status -ne 'Running') {`,
+    `  "Defender service is not running; exclusion setup skipped" | Add-Content -Path $startupLog`,
+    `} else {`,
+    `  $defenderExclusionPaths = @('C:\\rikune-runtime', 'C:\\rikune-workers', 'C:\\rikune-inbox', 'C:\\rikune-outbox')`,
+    `  foreach ($defenderPath in $defenderExclusionPaths) {`,
+    `    if (Test-Path -LiteralPath $defenderPath) {`,
+    `      try {`,
+    `        Add-MpPreference -ExclusionPath $defenderPath -ErrorAction Stop`,
+    `        "Defender exclusion added: $defenderPath" | Add-Content -Path $startupLog`,
+    `      } catch {`,
+    `        "Defender exclusion failed: $defenderPath :: $($_.Exception.Message)" | Add-Content -Path $startupLog`,
+    `      }`,
+    `    }`,
+    `  }`,
+    `}`,
+  ]
+  const runtimeScript = [
+    `$ErrorActionPreference = 'Continue'`,
+    `$startupLog = 'C:\\rikune-outbox\\runtime-startup.log'`,
+    `"Rikune runtime startup: $(Get-Date -Format o)" | Out-File -FilePath $startupLog -Encoding utf8`,
+    ...defenderExclusionCommand,
+    ...setupCommand,
+    `Set-Location -LiteralPath 'C:\\rikune-runtime'`,
     ...runtimeEnvCommands,
-    `start "" /b ${quoteCmdArg(nodePathSandbox)} ${runtimeArgs.join(' ')}`,
-  ].join(' && ')
-  const logonCommand = cfg.setupDirHost
-    ? `powershell -ExecutionPolicy Bypass -File C:\\rikune-setup\\setup-sandbox-env.ps1 && cmd /c "cd /d C:\\rikune-runtime && ${runtimeCommand}"`
-    : `cmd /c "cd /d C:\\rikune-runtime && ${runtimeCommand}"`
+    `$runtimeArgs = ${buildPowerShellArray(runtimeArgs)}`,
+    `try {`,
+    `  $runtimeProcess = Start-Process -FilePath ${quotePowerShellString(nodePathSandbox)} -ArgumentList $runtimeArgs -WorkingDirectory 'C:\\rikune-runtime' -WindowStyle Hidden -RedirectStandardOutput 'C:\\rikune-outbox\\runtime.stdout.log' -RedirectStandardError 'C:\\rikune-outbox\\runtime.stderr.log' -PassThru`,
+    `  "Runtime process started: pid=$($runtimeProcess.Id)" | Add-Content -Path $startupLog`,
+    `} catch {`,
+    `  "Runtime process failed: $($_.Exception.Message)" | Add-Content -Path $startupLog`,
+    `  $_ | Out-String | Add-Content -Path 'C:\\rikune-outbox\\runtime.stderr.log'`,
+    `}`,
+  ].join('\r\n')
+  const logonCommand = `powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${buildEncodedPowerShellCommand(runtimeScript)}`
 
   const mappedFolders = [
     `    <MappedFolder>\n      <HostFolder>${escapeXml(cfg.runtimeDirHost)}</HostFolder>\n      <SandboxFolder>C:\\rikune-runtime</SandboxFolder>\n      <ReadOnly>true</ReadOnly>\n    </MappedFolder>`,
@@ -78,6 +123,12 @@ export function buildWsbXml(cfg: WsbConfig): string {
   if (cfg.nodeDirHost) {
     mappedFolders.push(
       `    <MappedFolder>\n      <HostFolder>${escapeXml(cfg.nodeDirHost)}</HostFolder>\n      <SandboxFolder>C:\\rikune-node</SandboxFolder>\n      <ReadOnly>true</ReadOnly>\n    </MappedFolder>`
+    )
+  }
+
+  if (cfg.nodeModulesDirHost) {
+    mappedFolders.push(
+      `    <MappedFolder>\n      <HostFolder>${escapeXml(cfg.nodeModulesDirHost)}</HostFolder>\n      <SandboxFolder>C:\\node_modules</SandboxFolder>\n      <ReadOnly>true</ReadOnly>\n    </MappedFolder>`
     )
   }
 

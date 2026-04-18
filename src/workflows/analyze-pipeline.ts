@@ -62,8 +62,10 @@ import { createAnalysisContextLinkHandler } from '../plugins/static-triage/tools
 import { createCryptoIdentifyHandler } from '../plugins/static-triage/tools/crypto-identify.js'
 import { createRustBinaryAnalyzeHandler } from '../plugins/static-triage/tools/rust-binary-analyze.js'
 import { createDynamicDependenciesHandler } from '../plugins/dynamic/tools/dynamic-dependencies.js'
+import { createDynamicDeepPlanHandler } from '../plugins/dynamic/tools/dynamic-deep-plan.js'
 import { createBreakpointSmartHandler } from '../plugins/static-triage/tools/breakpoint-smart.js'
 import { createTraceConditionHandler } from '../plugins/static-triage/tools/trace-condition.js'
+import { createStaticBehaviorClassifyHandler } from '../plugins/static-triage/tools/static-behavior-classify.js'
 import { createSandboxExecuteHandler } from '../plugins/dynamic/tools/sandbox-execute.js'
 import { createWorkflowSummarizeHandler } from './summarize.js'
 import { createReconstructWorkflowHandler } from './reconstruct.js'
@@ -90,6 +92,17 @@ import {
   createQilingInspectHandler,
 } from '../plugins/qiling/tools/qiling-inspect.js'
 import { buildPollingGuidance } from '../polling-guidance.js'
+import { logger } from '../logger.js'
+import {
+  DecompilerWorker,
+  getGhidraDiagnostics,
+  normalizeGhidraError,
+} from '../worker/decompiler-worker.js'
+import {
+  findBestGhidraAnalysis,
+  getGhidraReadiness,
+  parseGhidraAnalysisMetadata,
+} from '../ghidra/ghidra-analysis-status.js'
 import { loadDynamicTraceEvidence } from '../artifacts/dynamic-trace.js'
 import { createSampleFinalizationService } from '../sample/sample-finalization.js'
 import { persistCanonicalEvidence } from '../analysis/analysis-evidence.js'
@@ -222,6 +235,36 @@ const UnpackDebugEnvelopeSchema = z.object({
   diff_digests: z.array(AnalysisDiffDigestSchema).optional(),
 })
 
+const RuntimeSessionSnapshotSchema = z.object({
+  session_id: z.string(),
+  sample_id: z.string(),
+  status: z.string(),
+  debug_state: z.string(),
+  backend: z.string().nullable().optional(),
+  current_phase: z.string().nullable().optional(),
+  endpoint: z.string().nullable().optional(),
+  sandbox_id: z.string().nullable().optional(),
+  last_task_id: z.string().nullable().optional(),
+  artifact_count: z.number().int().nonnegative(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  finished_at: z.string().nullable().optional(),
+})
+
+const RuntimeControlEnvelopeSchema = z.object({
+  runtime_sessions: z.array(RuntimeSessionSnapshotSchema).optional(),
+  runtime_readiness: z.object({
+    session_count: z.number().int().nonnegative(),
+    active_session_count: z.number().int().nonnegative(),
+    latest_session_id: z.string().nullable(),
+    latest_endpoint: z.string().nullable(),
+    artifact_count: z.number().int().nonnegative(),
+    capabilities: z.array(z.any()).optional(),
+    recommended_next_tools: z.array(z.string()),
+    next_actions: z.array(z.string()),
+  }).optional(),
+})
+
 const runEnvelopeSchema = z.object({
   run_id: z.string(),
   reused: z.boolean(),
@@ -237,7 +280,7 @@ const runEnvelopeSchema = z.object({
   deferred_jobs: DeferredJobArraySchema,
   recommended_next_tools: z.array(z.string()),
   next_actions: z.array(z.string()),
-}).merge(UnpackDebugEnvelopeSchema)
+}).merge(UnpackDebugEnvelopeSchema).merge(RuntimeControlEnvelopeSchema)
 
 export const analyzeWorkflowStartOutputSchema = z.object({
   ok: z.boolean(),
@@ -298,6 +341,8 @@ export interface AnalyzePipelineDependencies {
   cryptoIdentify?: (args: ToolArgs) => Promise<WorkerResult>
   rustBinaryAnalyze?: (args: ToolArgs) => Promise<WorkerResult>
   dynamicDependencies?: (args: ToolArgs) => Promise<WorkerResult>
+  dynamicDeepPlan?: (args: ToolArgs) => Promise<WorkerResult>
+  staticBehaviorClassify?: (args: ToolArgs) => Promise<WorkerResult>
   breakpointSmart?: (args: ToolArgs) => Promise<WorkerResult>
   traceCondition?: (args: ToolArgs) => Promise<WorkerResult>
   sandboxExecute?: (args: ToolArgs) => Promise<WorkerResult>
@@ -868,6 +913,12 @@ function createDependencies(
     dynamicDependencies:
       dependencies.dynamicDependencies ||
       createDynamicDependenciesHandler(workspaceManager, database),
+    dynamicDeepPlan:
+      dependencies.dynamicDeepPlan ||
+      createDynamicDeepPlanHandler({ workspaceManager, database } as any),
+    staticBehaviorClassify:
+      dependencies.staticBehaviorClassify ||
+      createStaticBehaviorClassifyHandler(workspaceManager, database),
     breakpointSmart:
       dependencies.breakpointSmart ||
       createBreakpointSmartHandler(workspaceManager, database, cacheManager),
@@ -885,7 +936,19 @@ function createDependencies(
       createReconstructWorkflowHandler(workspaceManager, database, cacheManager),
     ghidraAnalyze:
       dependencies.ghidraAnalyze ||
-      (createGhidraAnalyzeHandler({ workspaceManager, database } as any) as any),
+      (createGhidraAnalyzeHandler({
+        workspaceManager,
+        database,
+        jobQueue,
+        logger,
+        DecompilerWorker,
+        getGhidraDiagnostics,
+        normalizeGhidraError,
+        findBestGhidraAnalysis,
+        getGhidraReadiness,
+        parseGhidraAnalysisMetadata,
+        buildPollingGuidance,
+      } as any) as any),
     rizinAnalyze:
       dependencies.rizinAnalyze ||
       createRizinAnalyzeHandler(workspaceManager, database),
@@ -1426,12 +1489,25 @@ async function runDynamicPlanStage(
   )
   const unpackPlan = unpackSelection.latest_payload
 
+  const behaviorClassifierResult = await context.dependencies.staticBehaviorClassify!({
+    sample_id: sampleId,
+    static_artifact_scope: 'latest',
+    include_dynamic_evidence: false,
+    session_tag: `analysis/${runId}`,
+  })
   const [dependenciesResult, qilingResult, pandaResult, breakpointResult] = await Promise.all([
     context.dependencies.dynamicDependencies!({ sample_id: sampleId }),
     context.dependencies.qilingInspect!({ sample_id: sampleId, operation: 'preflight' }),
     context.dependencies.pandaInspect!({ sample_id: sampleId }),
     context.dependencies.breakpointSmart!({ sample_id: sampleId, session_tag: debugSessionTag }),
   ])
+  const deepPlanResult = await context.dependencies.dynamicDeepPlan!({
+    sample_id: sampleId,
+    goals: ['all'],
+    static_artifact_scope: 'session',
+    static_artifact_session_tag: `analysis/${runId}`,
+    runtime_preference: 'auto',
+  })
   const tracePlanResult = await context.dependencies.traceCondition!({
     sample_id: sampleId,
     reuse_cached: true,
@@ -1439,18 +1515,38 @@ async function runDynamicPlanStage(
     session_tag: debugSessionTag,
   })
   const artifacts = [
+    ...collectArtifactsFromResult(behaviorClassifierResult),
     ...collectArtifactsFromResult(dependenciesResult),
     ...collectArtifactsFromResult(qilingResult),
     ...collectArtifactsFromResult(pandaResult),
     ...collectArtifactsFromResult(breakpointResult),
+    ...collectArtifactsFromResult(deepPlanResult),
     ...collectArtifactsFromResult(tracePlanResult),
   ]
+  const deepPlanData = deepPlanResult.data && typeof deepPlanResult.data === 'object'
+    ? (deepPlanResult.data as Record<string, unknown>)
+    : {}
+  const deepPlanRecommendedTools = Array.isArray(deepPlanData.recommended_next_tools)
+    ? deepPlanData.recommended_next_tools.filter((item): item is string => typeof item === 'string')
+    : []
+  const deepPlanNextActions = Array.isArray(deepPlanData.next_actions)
+    ? deepPlanData.next_actions.filter((item): item is string => typeof item === 'string')
+    : []
   const withheldReasons = !executionPolicy.allowLiveExecution
     ? ['Live debug backends remain approval-gated until allow_live_execution=true is present on the run.']
     : []
   const sessionGuidance = {
-    recommended_next_tools: ['workflow.analyze.promote', 'workflow.analyze.status', 'sandbox.execute'],
+    recommended_next_tools: dedupeStrings([
+      'dynamic.runtime.status',
+      'dynamic.deep_plan',
+      'workflow.analyze.promote',
+      'workflow.analyze.status',
+      ...deepPlanRecommendedTools,
+      ...(executionPolicy.allowLiveExecution ? ['dynamic.behavior.capture', 'sandbox.execute'] : ['runtime.debug.session.start']),
+    ]),
     next_actions: [
+      ...deepPlanNextActions,
+      'Call dynamic.runtime.status to confirm Host Agent and Runtime Node capabilities before selecting a live backend.',
       'Use dynamic_execute to continue through the persisted debug session instead of chaining loose one-off tools.',
       ...(unpackPlan?.packed_state && unpackPlan.packed_state !== 'not_packed'
         ? ['This sample still appears packed; prefer safe dump-oriented steps before deep static reconstruction.']
@@ -1472,6 +1568,11 @@ async function runDynamicPlanStage(
       unpack_strategy: unpackPlan?.strategy || null,
       packed_state: unpackPlan?.packed_state || 'unknown',
       approval_gated: !executionPolicy.allowLiveExecution,
+      static_behavior_artifact_ids: collectArtifactsFromResult(behaviorClassifierResult).map((artifact) => artifact.id),
+      deep_plan_static_behavior_artifact_ids:
+        Array.isArray((deepPlanData.static_behavior_context as { artifact_ids?: unknown })?.artifact_ids)
+          ? ((deepPlanData.static_behavior_context as { artifact_ids?: unknown[] }).artifact_ids || []).filter((item): item is string => typeof item === 'string')
+          : [],
     },
   })
   const debugSessionArtifact = await persistUnpackDebugJsonArtifact(
@@ -1497,7 +1598,15 @@ async function runDynamicPlanStage(
       backend: debugSession.backend,
     },
     provenance: {
-      sources: ['dynamic.dependencies', 'qiling.inspect', 'panda.inspect', 'breakpoint.smart', 'trace.condition'],
+      sources: [
+        'static.behavior.classify',
+        'dynamic.deep_plan',
+        'dynamic.dependencies',
+        'qiling.inspect',
+        'panda.inspect',
+        'breakpoint.smart',
+        'trace.condition',
+      ],
     },
   })
   return {
@@ -1514,6 +1623,8 @@ async function runDynamicPlanStage(
       debug_state: debugSession.debug_state,
       debug_session: debugSession,
       stage_outputs: {
+        behavior_classifier: behaviorClassifierResult.data || null,
+        deep_plan: deepPlanResult.data || null,
         dependencies: dependenciesResult.data || null,
         qiling: qilingResult.data || null,
         panda: pandaResult.data || null,
@@ -2181,7 +2292,8 @@ function buildRunEnvelope(
   coverage: z.infer<typeof CoverageEnvelopeSchema>,
   routing: z.infer<typeof BackendRoutingMetadataSchema>,
   reused: boolean,
-  executionState: 'inline' | 'queued' | 'reused' | 'partial' | 'completed'
+  executionState: 'inline' | 'queued' | 'reused' | 'partial' | 'completed',
+  runtimeControl?: z.infer<typeof RuntimeControlEnvelopeSchema>
 ) {
   const evidenceState = uniqueEvidenceStates(
     collectEvidenceStatesFromPayload([
@@ -2292,6 +2404,7 @@ function buildRunEnvelope(
         runtime_explanation_graph: ExplanationGraphDigestSchema.parse(runtimeExplanationGraph),
         deferred_jobs: runSummary.deferred_jobs,
         ...unpackDebugEnvelope,
+        ...(runtimeControl || {}),
         recommended_next_tools:
           executionState === 'queued'
             ? queuedPreferredTools
@@ -2379,6 +2492,95 @@ function queueStage(
     },
   })
   return jobId
+}
+
+function parseRuntimeArtifactRefs(value: string | null | undefined): ArtifactRef[] {
+  const parsed = parseJsonRecord<unknown>(value, [])
+  if (!Array.isArray(parsed)) {
+    return []
+  }
+  return parsed.filter((entry): entry is ArtifactRef =>
+    entry &&
+    typeof entry === 'object' &&
+    typeof (entry as ArtifactRef).id === 'string' &&
+    typeof (entry as ArtifactRef).type === 'string' &&
+    typeof (entry as ArtifactRef).path === 'string' &&
+    typeof (entry as ArtifactRef).sha256 === 'string'
+  )
+}
+
+function buildRuntimeControlEnvelope(database: DatabaseManager, sampleId: string): z.infer<typeof RuntimeControlEnvelopeSchema> {
+  const rows = typeof database.findDebugSessionsBySample === 'function'
+    ? database.findDebugSessionsBySample(sampleId, 20)
+    : []
+  const runtimeSessions = rows.map((row) => {
+    const metadata = parseJsonRecord<Record<string, unknown>>(row.metadata_json, {})
+    const artifactRefs = parseRuntimeArtifactRefs(row.artifact_refs_json)
+    return RuntimeSessionSnapshotSchema.parse({
+      session_id: row.id,
+      sample_id: row.sample_id,
+      status: row.status,
+      debug_state: row.debug_state,
+      backend: row.backend,
+      current_phase: row.current_phase,
+      endpoint: typeof metadata.endpoint === 'string' ? metadata.endpoint : null,
+      sandbox_id: typeof metadata.sandbox_id === 'string' ? metadata.sandbox_id : null,
+      last_task_id: typeof metadata.last_task_id === 'string' ? metadata.last_task_id : null,
+      artifact_count: artifactRefs.length,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      finished_at: row.finished_at,
+    })
+  })
+  const latest = rows[0]
+  const latestMetadata = latest
+    ? parseJsonRecord<Record<string, unknown>>(latest.metadata_json, {})
+    : {}
+  const latestEndpoint = typeof latestMetadata.endpoint === 'string'
+    ? latestMetadata.endpoint
+    : null
+  const activeSessionCount = runtimeSessions.filter((session) =>
+    ['planned', 'armed', 'capturing', 'approval_gated'].includes(session.debug_state)
+  ).length
+  const artifactCount = runtimeSessions.reduce((sum, session) => sum + session.artifact_count, 0)
+  const capabilities = Array.isArray(latestMetadata.capabilities)
+    ? latestMetadata.capabilities
+    : undefined
+  const supportsRuntimeHandler = (handler: string) =>
+    Array.isArray(capabilities) &&
+    capabilities.some((entry: any) => entry?.type === 'inline' && entry?.handler === handler)
+  const readyTools = [
+    'dynamic.runtime.status',
+    'runtime.debug.session.status',
+    'runtime.debug.command',
+    ...(supportsRuntimeHandler('executeBehaviorCapture') ? ['dynamic.behavior.capture'] : []),
+    ...(supportsRuntimeHandler('executeSandboxExecute') ? ['sandbox.execute'] : []),
+    'workflow.analyze.promote',
+  ]
+
+  return {
+    runtime_sessions: runtimeSessions,
+    runtime_readiness: {
+      session_count: runtimeSessions.length,
+      active_session_count: activeSessionCount,
+      latest_session_id: latest?.id || null,
+      latest_endpoint: latestEndpoint,
+      artifact_count: artifactCount,
+      capabilities,
+      recommended_next_tools: latestEndpoint
+        ? readyTools
+        : ['dynamic.runtime.status', 'runtime.debug.session.start', 'dynamic.dependencies', 'workflow.analyze.promote'],
+      next_actions: latestEndpoint
+        ? [
+            'Call dynamic.runtime.status or runtime.debug.session.status before dispatching more runtime work.',
+            'Use runtime.debug.command, dynamic.behavior.capture, or sandbox.execute only when the needed Runtime Node capability is advertised.',
+          ]
+        : [
+            'Start a runtime debug session when live Sandbox or Hyper-V execution is required.',
+            'Promote dynamic_plan first when you only need planning and readiness without live execution.',
+          ],
+    },
+  }
 }
 
 export function createAnalyzeWorkflowStartHandler(
@@ -2498,7 +2700,8 @@ export function createAnalyzeWorkflowStartHandler(
           coverage,
           routing,
           runState.reused,
-          runState.reused ? 'reused' : 'completed'
+          runState.reused ? 'reused' : 'completed',
+          buildRuntimeControlEnvelope(database, runSummary.sample_id)
         ),
         metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME_START },
       }
@@ -2582,7 +2785,8 @@ export function createAnalyzeWorkflowStatusHandler(
             ? 'queued'
             : runSummary.recovery_state !== 'none'
               ? 'partial'
-              : 'completed'
+              : 'completed',
+          buildRuntimeControlEnvelope(database, runSummary.sample_id)
         ),
         metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME_STATUS },
       }
@@ -2707,7 +2911,8 @@ export function createAnalyzeWorkflowPromoteHandler(
           coverage,
           routing,
           runSummary.reused,
-          'queued'
+          'queued',
+          buildRuntimeControlEnvelope(database, runSummary.sample_id)
         ),
         warnings:
           queuedStages.length === 0

@@ -116,13 +116,21 @@ describe('createDelegatingServer', () => {
     },
   ]
 
-  test('should register local dynamic tools directly on inner server', () => {
+  test.each([
+    'dynamic.auto_hook',
+    'runtime.debug.session.start',
+    'runtime.debug.session.status',
+    'runtime.debug.session.stop',
+    'runtime.debug.command',
+  ])('should register local control tool %s directly on inner server', (toolName) => {
     const server = createServer(runtimeClient)
     const handler = async () => ({ ok: true } as WorkerResult)
+    const tool = { ...localDynamicTool, name: toolName }
 
-    server.registerTool(localDynamicTool, handler)
+    server.registerTool(tool, handler)
 
-    expect(inner.registerTool).toHaveBeenCalledWith(localDynamicTool, handler)
+    expect(inner.registerTool).toHaveBeenCalledWith(tool, handler)
+    expect(runtimeClient.execute).not.toHaveBeenCalled()
   })
 
   test('should wrap remote dynamic tools and forward runtimeBackendHint', async () => {

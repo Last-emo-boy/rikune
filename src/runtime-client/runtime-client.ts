@@ -8,6 +8,7 @@ import os from 'os'
 import path from 'path'
 import { logger } from '../logger.js'
 import type { WorkerResult, ArtifactRef, RuntimeBackendHint } from '../plugins/sdk.js'
+import type { RuntimeSidecarUpload } from './sidecar-staging.js'
 
 export interface RuntimeBackendCapability {
   type: RuntimeBackendHint['type']
@@ -32,6 +33,11 @@ export interface RuntimeExecuteRequest {
   runtimeBackendHint?: RuntimeBackendHint
 }
 
+export interface RuntimeUploadOptions {
+  sidecars?: RuntimeSidecarUpload[]
+  preserveFilename?: boolean
+}
+
 export interface RuntimeExecuteResponse {
   ok: boolean
   taskId: string
@@ -48,6 +54,12 @@ export interface RuntimeHealthResponse {
   isolation: string
   mode: string
   pid: number
+  features?: {
+    taskUploadManifest?: boolean
+    sidecarUpload?: boolean
+    runtimeBackendCapabilities?: boolean
+    taskEvents?: boolean
+  }
 }
 
 export interface RuntimeSseEvent {
@@ -291,17 +303,84 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     return u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.hostname === '::1' || u.hostname === '[::1]'
   }
 
-  async function uploadSample(taskId: string, localSamplePath: string, inboxHostDir: string): Promise<void> {
+  function sanitizeRuntimeUploadName(value: string, fallback: string): string {
+    const basename = path
+      .basename((value || fallback).replace(/\\/g, '/'))
+      .replace(/[<>:"|?*\x00-\x1f]/g, '_')
+      .replace(/^\.+$/, '')
+      .slice(0, 160)
+    return basename || fallback
+  }
+
+  async function uploadSample(
+    taskId: string,
+    localSamplePath: string,
+    inboxHostDir: string,
+    options: RuntimeUploadOptions = {},
+  ): Promise<void> {
+    const sidecars = options.sidecars || []
+    const primaryFilename = options.preserveFilename === false
+      ? `${taskId}.sample`
+      : path.basename(localSamplePath) || `${taskId}.sample`
     if (isLocalhost(endpoint)) {
-      const destDir = inboxHostDir
+      const destDir = path.join(inboxHostDir, taskId)
       await fs.promises.mkdir(destDir, { recursive: true })
-      const destPath = path.join(destDir, `${taskId}.sample`)
+      const destPath = path.join(destDir, sanitizeRuntimeUploadName(primaryFilename, `${taskId}.sample`))
       await fs.promises.copyFile(localSamplePath, destPath)
+      const legacyPath = path.join(inboxHostDir, `${taskId}.sample`)
+      await fs.promises.copyFile(localSamplePath, legacyPath)
+      const manifestFiles: Array<{ name: string; role: 'primary' | 'sidecar'; size: number; uploadedAt: string }> = [{
+        name: path.basename(destPath),
+        role: 'primary',
+        size: (await fs.promises.stat(destPath)).size,
+        uploadedAt: new Date().toISOString(),
+      }]
+      for (const sidecar of sidecars) {
+        const name = sanitizeRuntimeUploadName(sidecar.name || path.basename(sidecar.path), 'sidecar.bin')
+        const sidecarDest = path.join(destDir, name)
+        await fs.promises.copyFile(sidecar.path, sidecarDest)
+        manifestFiles.push({
+          name,
+          role: 'sidecar',
+          size: (await fs.promises.stat(sidecarDest)).size,
+          uploadedAt: new Date().toISOString(),
+        })
+      }
+      await fs.promises.writeFile(
+        path.join(destDir, 'upload-manifest.json'),
+        JSON.stringify({
+          schema: 'rikune.runtime_upload_manifest.v1',
+          taskId,
+          primary: path.basename(destPath),
+          files: manifestFiles,
+        }, null, 2),
+        'utf8',
+      )
       return
     }
-    const url = new URL(`/upload?taskId=${encodeURIComponent(taskId)}`, endpoint)
-    const stat = fs.statSync(localSamplePath)
-    const stream = fs.createReadStream(localSamplePath)
+    await uploadRuntimeFile(taskId, localSamplePath, primaryFilename, 'primary')
+    if (sidecars.length === 0) {
+      return
+    }
+
+    const runtimeHealth = await health()
+    if (runtimeHealth?.features?.sidecarUpload !== true) {
+      logger.warn({ taskId, endpoint, sidecarCount: sidecars.length }, 'Runtime node does not advertise sidecar upload support; skipping sidecars')
+      return
+    }
+
+    for (const sidecar of sidecars) {
+      await uploadRuntimeFile(taskId, sidecar.path, sidecar.name || path.basename(sidecar.path), 'sidecar')
+    }
+  }
+
+  async function uploadRuntimeFile(taskId: string, localPath: string, filename: string, role: 'primary' | 'sidecar'): Promise<void> {
+    const url = new URL('/upload', endpoint)
+    url.searchParams.set('taskId', taskId)
+    url.searchParams.set('filename', sanitizeRuntimeUploadName(filename, role === 'primary' ? `${taskId}.sample` : 'sidecar.bin'))
+    url.searchParams.set('role', role)
+    const stat = fs.statSync(localPath)
+    const stream = fs.createReadStream(localPath)
     await new Promise<void>((resolve, reject) => {
       const req = http.request(
         {

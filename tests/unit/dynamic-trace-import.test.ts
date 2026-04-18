@@ -173,4 +173,52 @@ describe('dynamic.trace.import tool', () => {
     expect(data.summary.high_signal_apis).toContain('GetProcAddress')
     expect(data.summary.memory_regions).toContain('dynamic_api_table')
   })
+
+  test('should auto-normalize behavior capture artifacts through embedded normalized trace', async () => {
+    const sampleId = 'sha256:' + '3'.repeat(64)
+    database.insertSample({
+      id: sampleId,
+      sha256: '3'.repeat(64),
+      md5: '3'.repeat(32),
+      size: 4096,
+      file_type: 'PE',
+      created_at: new Date().toISOString(),
+      source: 'unit-test',
+    })
+
+    const handler = createDynamicTraceImportHandler(workspaceManager, database)
+    const result = await handler({
+      sample_id: sampleId,
+      format: 'auto',
+      trace_json: {
+        schema: 'rikune.behavior_capture.v1',
+        task_id: 'behavior-task-1',
+        status: 'completed',
+        normalized_trace: {
+          schema_version: '0.1.0',
+          source_format: 'sandbox_trace',
+          evidence_kind: 'trace',
+          source_name: 'behavior-task-1',
+          source_mode: 'live_behavior_capture',
+          imported_at: new Date().toISOString(),
+          executed: true,
+          raw_event_count: 2,
+          api_calls: [],
+          memory_regions: [],
+          modules: ['sample.exe', 'kernel32.dll'],
+          strings: ['C:\\Users\\WDAGUtilityAccount\\AppData\\Local\\Temp\\drop.tmp'],
+          stages: ['process_execution', 'file_operations'],
+          risk_hints: [],
+          notes: ['coarse behavior capture'],
+        },
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.format).toBe('sandbox_trace')
+    expect(data.executed).toBe(true)
+    expect(data.summary.stages).toContain('process_execution')
+    expect(data.summary.observed_modules).toContain('kernel32.dll')
+  })
 })

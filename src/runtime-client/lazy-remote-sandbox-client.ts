@@ -17,6 +17,7 @@ import {
   type RuntimeExecuteRequest,
   type RuntimeExecuteResponse,
   type RuntimeHealthResponse,
+  type RuntimeUploadOptions,
 } from './runtime-client.js'
 
 type RuntimeClient = ReturnType<typeof createRuntimeClient>
@@ -134,8 +135,13 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
       return (await startSandbox()).execute(req, opts)
     },
 
-    async uploadSample(taskId: string, localSamplePath: string, inboxHostDir: string): Promise<void> {
-      return (await startSandbox()).uploadSample(taskId, localSamplePath, inboxHostDir)
+    async uploadSample(
+      taskId: string,
+      localSamplePath: string,
+      inboxHostDir: string,
+      options?: RuntimeUploadOptions,
+    ): Promise<void> {
+      return (await startSandbox()).uploadSample(taskId, localSamplePath, inboxHostDir, options)
     },
 
     async downloadArtifacts(taskId: string, outboxHostDir: string, artifactNames: string[]): Promise<string[]> {

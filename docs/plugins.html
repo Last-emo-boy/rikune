@@ -105,8 +105,8 @@
           </tr>
           <tr>
             <td><code>dynamic</code></td>
-            <td>10</td>
-            <td><span data-lang-en>Frida, Qiling, angr, Wine, PANDA integration</span><span data-lang-zh>Frida、Qiling、angr、Wine、PANDA 集成</span></td>
+            <td>24</td>
+            <td><span data-lang-en>Runtime status, runtime toolkit inventory, deep dynamic planning, CDB, ProcDump, telemetry, network lab, managed runtime, and GUI handoff planning, runtime persona planning, behavior diffing, Hyper-V control, Sandbox/Hyper-V behavior capture, Frida, Qiling, angr, Wine, PANDA integration</span><span data-lang-zh>运行时状态、runtime 工具库存、深度动态计划、CDB、ProcDump、telemetry、网络实验、托管运行时和 GUI handoff 规划、runtime persona 规划、行为差异对比、Hyper-V 控制、Sandbox/Hyper-V 行为捕获、Frida、Qiling、angr、Wine、PANDA 集成</span></td>
           </tr>
           <tr>
             <td><code>intel</code></td>
@@ -141,8 +141,8 @@
     <section id="bundled" class="reveal">
       <h2><span data-lang-en>Bundled Plugins</span><span data-lang-zh>随附插件</span></h2>
       <p>
-        <span data-lang-en>These 56 plugins ship with the repository under <code>src/plugins/</code>. They are auto-discovered at startup and provide <strong>191 plugin tools</strong> (222 total with core).</span>
-        <span data-lang-zh>这 56 个插件随仓库一起发布在 <code>src/plugins/</code> 下。启动时自动发现，共提供 <strong>191 个插件工具</strong>（含核心共 222 个）。</span>
+        <span data-lang-en>These 56 plugins ship with the repository under <code>src/plugins/</code>. They are auto-discovered at startup and provide <strong>210 plugin tools</strong> (241 total with core).</span>
+        <span data-lang-zh>这 56 个插件随仓库一起发布在 <code>src/plugins/</code> 下。启动时自动发现，共提供 <strong>210 个插件工具</strong>（含核心共 241 个）。</span>
       </p>
       <table class="doc-table">
         <thead>
@@ -168,8 +168,8 @@
           </tr>
           <tr>
             <td><code>api-hash</code></td>
-            <td>2</td>
-            <td><code>hash.resolve</code>, <code>hash.identify</code></td>
+            <td>3</td>
+            <td><code>hash.resolve</code>, <code>hash.identify</code>, <code>hash.resolver.plan</code></td>
             <td>—</td>
           </tr>
           <tr>
@@ -252,8 +252,8 @@
           </tr>
           <tr>
             <td><code>dynamic</code></td>
-            <td>7</td>
-            <td><code>dynamic.auto_hook</code>, <code>dynamic.trace_attribute</code>, <code>dynamic.memory_dump</code>, <code>dynamic.dependencies</code>, <code>dynamic.trace.import</code>, <code>dynamic.memory.import</code>, <code>sandbox.execute</code></td>
+            <td>24</td>
+            <td><code>dynamic.auto_hook</code>, <code>dynamic.trace_attribute</code>, <code>dynamic.memory_dump</code>, <code>dynamic.behavior.capture</code>, <code>dynamic.behavior.diff</code>, <code>dynamic.dependencies</code>, <code>dynamic.trace.import</code>, <code>dynamic.memory.import</code>, <code>sandbox.execute</code>, <code>runtime.debug.session.start</code>, <code>runtime.debug.session.status</code>, <code>runtime.debug.session.stop</code>, <code>runtime.debug.command</code>, <code>dynamic.runtime.status</code>, <code>dynamic.toolkit.status</code>, <code>dynamic.deep_plan</code>, <code>debug.cdb.plan</code>, <code>debug.procdump.plan</code>, <code>debug.telemetry.plan</code>, <code>debug.network.plan</code>, <code>debug.managed.plan</code>, <code>debug.gui.handoff</code>, <code>dynamic.persona.plan</code>, <code>runtime.hyperv.control</code></td>
             <td><span data-lang-en>Optional</span><span data-lang-zh>可选</span>: <code>FRIDA_PATH</code></td>
           </tr>
           <tr>
@@ -426,8 +426,8 @@
           </tr>
           <tr>
             <td><code>static-triage</code></td>
-            <td>17</td>
-            <td><code>analysis.context.link</code>, <code>runtime.detect</code>, <code>dotnet.metadata.extract</code>, <code>dotnet.types.list</code>, <code>packer.detect</code>, <code>static.capability.triage</code>, <code>compiler.packer.detect</code>, <code>binary.role.profile</code>, <code>crypto.identify</code>, <code>breakpoint.smart</code>, <code>trace.condition</code>, <code>dll.export.profile</code>, <code>com.role.profile</code>, <code>rust.binary.analyze</code>, <code>entropy.analyze</code>, <code>obfuscation.detect</code>, <code>taint.track</code></td>
+            <td>20</td>
+            <td><code>analysis.context.link</code>, <code>runtime.detect</code>, <code>dotnet.metadata.extract</code>, <code>dotnet.types.list</code>, <code>packer.detect</code>, <code>static.capability.triage</code>, <code>compiler.packer.detect</code>, <code>binary.role.profile</code>, <code>crypto.identify</code>, <code>breakpoint.smart</code>, <code>trace.condition</code>, <code>dll.export.profile</code>, <code>com.role.profile</code>, <code>rust.binary.analyze</code>, <code>entropy.analyze</code>, <code>obfuscation.detect</code>, <code>taint.track</code>, <code>static.resource.graph</code>, <code>static.config.carver</code>, <code>static.behavior.classify</code></td>
             <td>—</td>
           </tr>
           <tr>
@@ -444,8 +444,8 @@
           </tr>
           <tr>
             <td><code>unpacking</code></td>
-            <td>2</td>
-            <td><code>unpack.auto</code>, <code>unpack.guide</code></td>
+            <td>3</td>
+            <td><code>unpack.auto</code>, <code>unpack.guide</code>, <code>unpack.child.handoff</code></td>
             <td>—</td>
           </tr>
           <tr>
@@ -456,8 +456,8 @@
           </tr>
           <tr>
             <td><code>visualization</code></td>
-            <td>3</td>
-            <td><code>report.html.generate</code>, <code>behavior.timeline</code>, <code>data_flow.map</code></td>
+            <td>5</td>
+            <td><code>report.html.generate</code>, <code>behavior.timeline</code>, <code>data_flow.map</code>, <code>analysis.evidence.graph</code>, <code>crypto.lifecycle.graph</code></td>
             <td>—</td>
           </tr>
           <tr>

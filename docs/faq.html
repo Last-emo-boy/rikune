@@ -104,7 +104,7 @@
             <strong>Windows</strong>, but the recommended shape depends on what you need. Use
             <strong>static-only Linux Docker</strong> with <code>RUNTIME_MODE=disabled</code> when
             you do not want to execute samples, use the <strong>hybrid Docker profile</strong> to
-            connect a Linux analyzer to a Windows Host Agent / Windows Sandbox runtime, and use a
+            connect a Linux analyzer to a Windows Host Agent / Windows Sandbox or Hyper-V VM runtime, and use a
             <strong>Windows-native analyzer</strong> with
             <code>auto-sandbox</code> when you want single-host Windows Sandbox execution. Docker or
             WSL analyzers cannot use <code>auto-sandbox</code> directly.
@@ -113,7 +113,7 @@
             Rikune 支持 <strong>Linux</strong>、<strong>macOS</strong> 和
             <strong>Windows</strong>，但推荐部署方式取决于你的目标。若你不想执行样本，请使用带有
             <code>RUNTIME_MODE=disabled</code> 的<strong>纯静态 Linux Docker</strong>；若要让 Linux
-            analyzer 连接 Windows Host Agent / Windows Sandbox 运行时，请使用
+            analyzer 连接 Windows Host Agent / Windows Sandbox 或 Hyper-V VM 运行时，请使用
             <strong>hybrid Docker profile</strong>；若要在单机 Windows 上通过 Windows Sandbox
             执行真实样本，请使用带有 <code>auto-sandbox</code> 的<strong
               >Windows 原生 analyzer</strong
@@ -226,13 +226,50 @@
         <div class="faq-item__a">
           <p data-lang-en>
             No. The installer prepares the Host Agent and Docker analyzer. Windows Sandbox is
-            launched on demand when a dynamic/sandbox MCP tool requests real sample execution. A
-            Sandbox window may appear during that task and close after the runtime session finishes.
+            launched on demand when a dynamic/sandbox MCP tool requests real sample execution,
+            such as <code>runtime.debug.session.start</code> or <code>sandbox.execute</code>.
+            Read-only probes such as <code>dynamic.runtime.status</code>,
+            <code>dynamic.toolkit.status</code>, <code>dynamic.deep_plan</code>, and
+            <code>dynamic.persona.plan</code>, plus planners such as <code>debug.network.plan</code>,
+            <code>debug.managed.plan</code>, and <code>debug.gui.handoff</code>, do not launch it. Correlation tools such as
+            <code>dynamic.behavior.diff</code>, <code>analysis.evidence.graph</code>, and
+            <code>crypto.lifecycle.graph</code> only read persisted artifacts. The
+            Host Agent must run in a logged-on Windows user session; do not run the Sandbox backend
+            as a traditional Windows Service. A Sandbox window may appear during that task and close
+            after the runtime session finishes.
           </p>
           <p data-lang-zh>
             不会。安装器只负责准备 Host Agent 和 Docker analyzer。Windows Sandbox 会在动态/沙箱
-            MCP 工具请求真实样本执行时按需启动。执行任务期间可能看到 Sandbox 窗口，运行时会话结束后
-            会关闭。
+            MCP 工具请求真实样本执行时按需启动，例如 <code>runtime.debug.session.start</code>
+            或 <code>sandbox.execute</code>。<code>dynamic.runtime.status</code>、
+            <code>dynamic.toolkit.status</code>、<code>dynamic.deep_plan</code>、<code>dynamic.persona.plan</code> 这类只读探测，以及 <code>debug.network.plan</code>、<code>debug.managed.plan</code>、<code>debug.gui.handoff</code> 这类规划工具不会启动它；<code>dynamic.behavior.diff</code>、
+            <code>analysis.evidence.graph</code> 和 <code>crypto.lifecycle.graph</code> 只读取已持久化 artifact。Host Agent 必须运行在已登录的 Windows
+            用户会话里；不要把 Sandbox 后端作为传统 Windows Service 运行。执行任务期间可能看到
+            Sandbox 窗口，运行时会话结束后会关闭。
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-item__q">
+          <span data-lang-en>Can I use a Hyper-V VM instead of Windows Sandbox?</span>
+          <span data-lang-zh>可以用 Hyper-V VM 代替 Windows Sandbox 吗？</span>
+          <span class="faq-item__arrow">▾</span>
+        </div>
+        <div class="faq-item__a">
+          <p data-lang-en>
+            Yes. Use the Host Agent <code>hyperv-vm</code> backend when you want checkpoint
+            rollback, longer debugging sessions, or unattended-style runtime experiments. The VM
+            must already run the Rikune Runtime Node and expose its HTTP endpoint to the analyzer or
+            Host Agent network. Per session, choose <code>hyperv_retention_policy</code> as
+            <code>clean_rollback</code>, <code>stop_only</code>, or <code>preserve_dirty</code>.
+          </p>
+          <p data-lang-zh>
+            可以。需要 checkpoint 回滚、长时间调试会话或无人值守风格实验时，可以使用 Host Agent
+            的 <code>hyperv-vm</code> 后端。VM 内需要提前运行 Rikune Runtime Node，并让 analyzer
+            或 Host Agent 所在网络能够访问它的 HTTP endpoint。每次会话可用
+            <code>hyperv_retention_policy</code> 选择 <code>clean_rollback</code>、<code>stop_only</code>
+            或 <code>preserve_dirty</code>。
           </p>
         </div>
       </div>

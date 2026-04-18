@@ -6,6 +6,7 @@
 
 import { z } from 'zod'
 import fs from 'fs'
+import path from 'path'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
@@ -16,6 +17,7 @@ import {
   createSampleFinalizationService,
 } from '../sample/sample-finalization.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
+import { resolveRuntimeSidecarUploads } from '../runtime-client/sidecar-staging.js'
 
 // ============================================================================
 // Input/Output Schemas
@@ -51,6 +53,18 @@ export const SampleIngestInputSchema = z
       .describe('Legacy compatibility field. Not required for daemon-backed upload-session lookup.'),
     filename: z.string().optional().describe('Optional display/original filename'),
     source: z.string().optional().describe('Optional source tag, e.g. upload/email/sandbox'),
+    sidecar_paths: z
+      .array(z.string())
+      .optional()
+      .default([])
+      .describe('Optional local sidecar files, such as DLLs or config files, copied into the sample workspace/original directory.'),
+    auto_stage_sidecars: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe('When path is provided, copy common sidecar files from the same directory into workspace/original.'),
+    max_sidecars: z.number().int().min(0).max(256).optional().default(32),
+    sidecar_max_total_bytes: z.number().int().min(0).max(1024 * 1024 * 1024).optional().default(128 * 1024 * 1024),
   })
   .superRefine((value, ctx) => {
     const hasPath = typeof value.path === 'string' && value.path.length > 0
@@ -80,6 +94,8 @@ export const SampleIngestOutputSchema = z.object({
     size: z.number(),
     file_type: z.string().optional(),
     existed: z.boolean().optional(),
+    sidecars_staged: z.number().optional(),
+    sidecar_warnings: z.array(z.string()).optional(),
     result_mode: z.literal('sample_registered'),
     tool_surface_role: ToolSurfaceRoleSchema,
     preferred_primary_tools: z.array(z.string()),
@@ -140,6 +156,41 @@ function extractUploadToken(uploadUrl: string): string | null {
   }
 
   return parts[parts.length - 1] || null
+}
+
+async function stageSidecarsIntoWorkspace(
+  workspaceManager: WorkspaceManager,
+  sampleId: string,
+  primaryPathForScan: string,
+  input: SampleIngestInput,
+): Promise<{ count: number; warnings: string[] }> {
+  const resolved = await resolveRuntimeSidecarUploads(primaryPathForScan, {
+    sidecarPaths: input.sidecar_paths,
+    autoStageSidecars: input.auto_stage_sidecars && Boolean(input.path),
+    maxSidecars: input.max_sidecars,
+    maxTotalBytes: input.sidecar_max_total_bytes,
+  })
+  if (resolved.sidecars.length === 0) {
+    return { count: 0, warnings: resolved.warnings }
+  }
+
+  const workspace = await workspaceManager.createWorkspace(sampleId)
+  let staged = 0
+  const warnings = [...resolved.warnings]
+  for (const sidecar of resolved.sidecars) {
+    const basename = path.basename(sidecar.name || sidecar.path)
+    const destPath = path.join(workspace.original, basename)
+    try {
+      if (path.resolve(sidecar.path) === path.resolve(destPath)) {
+        continue
+      }
+      fs.copyFileSync(sidecar.path, destPath)
+      staged += 1
+    } catch (err) {
+      warnings.push(`Failed to stage sidecar ${sidecar.path}: ${(err as Error).message}`)
+    }
+  }
+  return { count: staged, warnings }
 }
 
 // ============================================================================
@@ -236,6 +287,23 @@ export function createSampleIngestHandler(
 
             if (session.status === 'registered' && session.sample_id) {
               const existingSample = database.findSample(session.sample_id)
+              let sidecarStage = { count: 0, warnings: [] as string[] }
+              try {
+                const workspaceForSidecars = await workspaceManager.createWorkspace(session.sample_id)
+                const primaryFile = fs.readdirSync(workspaceForSidecars.original).find((entry) =>
+                  fs.statSync(path.join(workspaceForSidecars.original, entry)).isFile()
+                )
+                if (primaryFile) {
+                  sidecarStage = await stageSidecarsIntoWorkspace(
+                    workspaceManager,
+                    session.sample_id,
+                    path.join(workspaceForSidecars.original, primaryFile),
+                    { ...input, auto_stage_sidecars: false },
+                  )
+                }
+              } catch (error) {
+                sidecarStage = { count: 0, warnings: [`Failed to stage sidecars for existing upload session: ${(error as Error).message}`] }
+              }
               return {
                 ok: true,
                 data: {
@@ -243,6 +311,8 @@ export function createSampleIngestHandler(
                   size: existingSample?.size || session.size || 0,
                   file_type: existingSample?.file_type || undefined,
                   existed: true,
+                  sidecars_staged: sidecarStage.count,
+                  sidecar_warnings: sidecarStage.warnings.length > 0 ? sidecarStage.warnings : undefined,
                   result_mode: 'sample_registered',
                   tool_surface_role: 'primary',
                   preferred_primary_tools: ['workflow.analyze.start', 'workflow.analyze.status', 'workflow.analyze.promote'],
@@ -280,6 +350,13 @@ export function createSampleIngestHandler(
                 source: input.source || session.source || 'api_upload',
                 auditOperation: 'sample.ingest',
               })
+              const workspaceForSidecars = await workspaceManager.createWorkspace(finalized.sample_id)
+              const sidecarStage = await stageSidecarsIntoWorkspace(
+                workspaceManager,
+                finalized.sample_id,
+                path.join(workspaceForSidecars.original, originalFilename),
+                input,
+              )
 
               database.markUploadSessionRegistered(token, {
                 sample_id: finalized.sample_id,
@@ -302,6 +379,8 @@ export function createSampleIngestHandler(
                   size: finalized.size,
                   file_type: finalized.file_type,
                   existed: finalized.existed,
+                  sidecars_staged: sidecarStage.count,
+                  sidecar_warnings: sidecarStage.warnings.length > 0 ? sidecarStage.warnings : undefined,
                   result_mode: 'sample_registered',
                   tool_surface_role: 'primary',
                   preferred_primary_tools: ['workflow.analyze.start', 'workflow.analyze.status', 'workflow.analyze.promote'],
@@ -373,6 +452,13 @@ export function createSampleIngestHandler(
             source: input.source || 'upload',
             auditOperation: 'sample.ingest',
           })
+          const workspaceForSidecars = await workspaceManager.createWorkspace(finalized.sample_id)
+          const sidecarStage = await stageSidecarsIntoWorkspace(
+            workspaceManager,
+            finalized.sample_id,
+            input.path || path.join(workspaceForSidecars.original, originalFilename),
+            input,
+          )
 
           return {
             ok: true,
@@ -381,6 +467,8 @@ export function createSampleIngestHandler(
               size: finalized.size,
               file_type: finalized.file_type,
               existed: finalized.existed,
+              sidecars_staged: sidecarStage.count,
+              sidecar_warnings: sidecarStage.warnings.length > 0 ? sidecarStage.warnings : undefined,
               result_mode: 'sample_registered',
               tool_surface_role: 'primary',
               preferred_primary_tools: ['workflow.analyze.start', 'workflow.analyze.status', 'workflow.analyze.promote'],

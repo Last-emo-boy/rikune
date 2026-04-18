@@ -16,6 +16,13 @@ param(
     [string]$HostAgentApiKey,
     [string]$RuntimeApiKey,
     [int]$HostAgentPort = 18082,
+    [ValidateSet("windows-sandbox", "hyperv-vm")]
+    [string]$RuntimeBackend = "windows-sandbox",
+    [string]$HyperVVmName,
+    [string]$HyperVSnapshotName,
+    [string]$HyperVRuntimeEndpoint,
+    [switch]$HyperVRestoreOnRelease,
+    [switch]$HyperVStopOnRelease,
 
     [switch]$InstallRuntime,
     [switch]$Service,
@@ -344,8 +351,20 @@ function Install-Runtime {
         "-ProjectRoot", $ProjectRoot,
         "-WorkspaceRoot", $workspaceRoot,
         "-Port", "$HostAgentPort",
+        "-RuntimeBackend", $RuntimeBackend,
         "-Headless"
     )
+    if (-not [string]::IsNullOrWhiteSpace($HyperVVmName)) {
+        $args += @("-HyperVVmName", $HyperVVmName)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($HyperVSnapshotName)) {
+        $args += @("-HyperVSnapshotName", $HyperVSnapshotName)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($HyperVRuntimeEndpoint)) {
+        $args += @("-HyperVRuntimeEndpoint", $HyperVRuntimeEndpoint)
+    }
+    if ($HyperVRestoreOnRelease) { $args += "-HyperVRestoreOnRelease" }
+    if ($HyperVStopOnRelease) { $args += "-HyperVStopOnRelease" }
     if ($Service) { $args += "-Service" }
     if ($SkipBuild) { $args += "-SkipBuild" }
     if (-not [string]::IsNullOrWhiteSpace($ExistingKey)) {
@@ -354,6 +373,9 @@ function Install-Runtime {
 
     Write-Step "Installing Windows Host Agent runtime"
     Write-Info "Workspace root: $workspaceRoot"
+    if ($Service) {
+        Write-Warn "Sandbox launch requires a logged-on desktop session; -Service uses PM2 only, not a Windows Service."
+    }
     Invoke-ChildPowerShell $args
     Write-Ok "Windows Host Agent installer completed"
 }
@@ -561,10 +583,31 @@ function Show-Doctor {
     }
 
     if ($ProfileName -eq "hybrid") {
-        if (Get-Command WindowsSandbox.exe -ErrorAction SilentlyContinue) {
-            Write-Ok "WindowsSandbox.exe found"
+        if ($RuntimeBackend -eq "hyperv-vm") {
+            if (Get-Command Get-VM -ErrorAction SilentlyContinue) {
+                Write-Ok "Hyper-V PowerShell module found"
+            } else {
+                Write-Warn "Hyper-V PowerShell module not found"
+            }
+            if (-not [string]::IsNullOrWhiteSpace($HyperVVmName)) {
+                Write-Info "Hyper-V VM: $HyperVVmName"
+            }
+            if (-not [string]::IsNullOrWhiteSpace($HyperVRuntimeEndpoint)) {
+                Write-Info "Hyper-V Runtime Node: $HyperVRuntimeEndpoint"
+            }
+            if ($HyperVRestoreOnRelease) {
+                Write-Info "Hyper-V release policy: restore checkpoint on release"
+            } elseif ($HyperVStopOnRelease) {
+                Write-Info "Hyper-V release policy: stop VM on release"
+            } else {
+                Write-Info "Hyper-V release policy: preserve dirty VM state"
+            }
         } else {
-            Write-Warn "WindowsSandbox.exe not found in PATH"
+            if (Get-Command WindowsSandbox.exe -ErrorAction SilentlyContinue) {
+                Write-Ok "WindowsSandbox.exe found"
+            } else {
+                Write-Warn "WindowsSandbox.exe not found in PATH"
+            }
         }
 
         foreach ($svc in @("hns", "vmcompute")) {
@@ -646,7 +689,23 @@ function Show-Menu {
         }
         "2" {
             $script:DataRoot = Read-DefaultString "Data root" $DataRoot
-            $script:Service = Read-YesNo "Install Host Agent as background service when possible" $true
+            $script:RuntimeBackend = Read-DefaultString "Runtime backend (windows-sandbox/hyperv-vm)" $RuntimeBackend
+            if ($script:RuntimeBackend -ne "windows-sandbox" -and $script:RuntimeBackend -ne "hyperv-vm") {
+                Write-Warn "Unknown runtime backend; using windows-sandbox"
+                $script:RuntimeBackend = "windows-sandbox"
+            }
+            if ($script:RuntimeBackend -eq "hyperv-vm") {
+                $script:HyperVVmName = Read-DefaultString "Hyper-V VM name" $HyperVVmName
+                $script:HyperVSnapshotName = Read-DefaultString "Hyper-V checkpoint name (optional)" $HyperVSnapshotName
+                $script:HyperVRuntimeEndpoint = Read-DefaultString "Hyper-V Runtime Node endpoint" $HyperVRuntimeEndpoint
+                $script:HyperVRestoreOnRelease = Read-YesNo "Restore checkpoint when runtime session is released" $false
+                if (-not $script:HyperVRestoreOnRelease) {
+                    $script:HyperVStopOnRelease = Read-YesNo "Stop Hyper-V VM when runtime session is released" $false
+                } else {
+                    $script:HyperVStopOnRelease = $true
+                }
+            }
+            $script:Service = Read-YesNo "Run Host Agent under PM2 in this logged-on user session" $false
             $script:InstallRuntime = $true
             Install-Stack -ProfileName "hybrid"
         }

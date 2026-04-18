@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { logger } from './logger.js'
 import { config } from './config.js'
 import { isIsolatedEnvironment } from './isolation.js'
-import type { ExecuteTask, RuntimeBackendCapability, RuntimeBackendHint } from './executor.js'
+import type { ExecuteTask, RuntimeBackendCapability, RuntimeBackendHint, RuntimeToolInventory } from './executor.js'
 import { submitTask, getTask, cancelTask, getLogs, listTasks, subscribeTaskEvents } from './task-store.js'
 
 export interface Router {
@@ -31,6 +31,21 @@ interface TaskSnapshot {
 
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024 // 500MB
 const TASK_ID_PATTERN = /^[a-zA-Z0-9_-]+$/
+const TASK_UPLOAD_MANIFEST = 'upload-manifest.json'
+
+type UploadRole = 'primary' | 'sidecar'
+
+interface TaskUploadManifest {
+  schema: 'rikune.runtime_upload_manifest.v1'
+  taskId: string
+  primary: string | null
+  files: Array<{
+    name: string
+    role: UploadRole
+    size: number
+    uploadedAt: string
+  }>
+}
 
 const RuntimeBackendHintSchema = z.object({
   type: z.enum(['python-worker', 'spawn', 'inline']),
@@ -67,6 +82,7 @@ interface RuntimeBackendSupport {
   listRuntimeBackendCapabilities(): RuntimeBackendCapability[]
   isRuntimeBackendHintSupported(hint: RuntimeBackendHint): boolean
   getRuntimeBackendCapability?(hint: RuntimeBackendHint): RuntimeBackendCapability | undefined
+  buildRuntimeToolInventory?(): RuntimeToolInventory
 }
 
 async function defaultLoadRuntimeBackendSupport(): Promise<RuntimeBackendSupport> {
@@ -125,6 +141,24 @@ export function createRuntimeRouter(
         return
       }
 
+      if (method === 'GET' && pathname === '/toolkit') {
+        const { buildRuntimeToolInventory } = await loadRuntimeBackendSupport()
+        if (!buildRuntimeToolInventory) {
+          res.writeHead(501, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            ok: false,
+            error: 'Runtime tool inventory probe is not available in this Runtime Node build.',
+          }))
+          return
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({
+          ok: true,
+          data: buildRuntimeToolInventory(),
+        }))
+        return
+      }
+
       if (method === 'GET' && pathname === '/health') {
         const isolated = await isIsolatedEnvironment()
         const healthDetails = await getDeepHealthChecks()
@@ -136,6 +170,13 @@ export function createRuntimeRouter(
           isolation: isolated ? 'verified' : 'unverified',
           mode: config.runtime.mode,
           pid: process.pid,
+          features: {
+            runtimeBackendCapabilities: true,
+            runtimeToolInventory: true,
+            taskUploadManifest: true,
+            sidecarUpload: true,
+            taskEvents: true,
+          },
           checks: healthDetails,
         }))
         return
@@ -153,7 +194,14 @@ export function createRuntimeRouter(
         if (!fs.existsSync(inboxDir)) {
           fs.mkdirSync(inboxDir, { recursive: true })
         }
-        const destPath = path.join(inboxDir, `${taskId}.sample`)
+        const role = parseUploadRole(url)
+        const filename = sanitizeUploadFilename(
+          url.searchParams.get('filename') || url.searchParams.get('name') || '',
+          role === 'primary' ? `${taskId}.sample` : 'sidecar.bin',
+        )
+        const taskInboxDir = path.join(inboxDir, taskId)
+        fs.mkdirSync(taskInboxDir, { recursive: true })
+        const destPath = path.join(taskInboxDir, filename)
         const contentLength = parseInt(req.headers['content-length'] || '0', 10)
         if (contentLength > MAX_UPLOAD_BYTES) {
           res.writeHead(413, { 'Content-Type': 'application/json' })
@@ -174,12 +222,25 @@ export function createRuntimeRouter(
           })
           req.pipe(writeStream)
           await new Promise<void>((resolve, reject) => {
-            writeStream.on('finish', resolve)
+            writeStream.on('close', resolve)
             writeStream.on('error', reject)
             req.on('error', reject)
           })
+          const stat = fs.statSync(destPath)
+          const legacyPath = role === 'primary' ? path.join(inboxDir, `${taskId}.sample`) : null
+          if (legacyPath && path.resolve(legacyPath) !== path.resolve(destPath)) {
+            fs.copyFileSync(destPath, legacyPath)
+          }
+          const manifest = updateTaskUploadManifest(taskId, filename, role, stat.size)
           res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: true, inboxPath: destPath }))
+          res.end(JSON.stringify({
+            ok: true,
+            role,
+            name: filename,
+            inboxPath: destPath,
+            legacyPath,
+            manifest,
+          }))
         } catch (err) {
           try { fs.unlinkSync(destPath) } catch {}
           res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -420,6 +481,82 @@ export function createRuntimeRouter(
       res.end(JSON.stringify({ ok: false, error: 'Not found' }))
     },
   }
+}
+
+function parseUploadRole(url: URL): UploadRole {
+  const rawRole = (url.searchParams.get('role') || '').toLowerCase()
+  if (rawRole === 'sidecar' || url.searchParams.get('sidecar') === '1' || url.searchParams.get('sidecar') === 'true') {
+    return 'sidecar'
+  }
+  return 'primary'
+}
+
+function sanitizeUploadFilename(value: string, fallback: string): string {
+  const raw = value.trim() || fallback
+  const basename = path
+    .basename(raw.replace(/\\/g, '/'))
+    .replace(/[<>:"|?*\x00-\x1f]/g, '_')
+    .replace(/^\.+$/, '')
+    .slice(0, 160)
+  return basename || fallback
+}
+
+function readTaskUploadManifest(taskId: string): TaskUploadManifest {
+  const manifestPath = path.join(config.runtime.inbox, taskId, TASK_UPLOAD_MANIFEST)
+  try {
+    const parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as Partial<TaskUploadManifest>
+    return {
+      schema: 'rikune.runtime_upload_manifest.v1',
+      taskId,
+      primary: typeof parsed.primary === 'string' ? sanitizeUploadFilename(parsed.primary, `${taskId}.sample`) : null,
+      files: Array.isArray(parsed.files)
+        ? parsed.files
+            .filter((entry): entry is TaskUploadManifest['files'][number] =>
+              entry &&
+              typeof entry === 'object' &&
+              typeof entry.name === 'string' &&
+              (entry.role === 'primary' || entry.role === 'sidecar') &&
+              typeof entry.size === 'number' &&
+              typeof entry.uploadedAt === 'string'
+            )
+            .map((entry) => ({
+              ...entry,
+              name: sanitizeUploadFilename(entry.name, entry.role === 'primary' ? `${taskId}.sample` : 'sidecar.bin'),
+            }))
+        : [],
+    }
+  } catch {
+    return {
+      schema: 'rikune.runtime_upload_manifest.v1',
+      taskId,
+      primary: null,
+      files: [],
+    }
+  }
+}
+
+function updateTaskUploadManifest(taskId: string, name: string, role: UploadRole, size: number): TaskUploadManifest {
+  const taskInboxDir = path.join(config.runtime.inbox, taskId)
+  fs.mkdirSync(taskInboxDir, { recursive: true })
+  const manifest = readTaskUploadManifest(taskId)
+  const now = new Date().toISOString()
+  const filtered = manifest.files.filter((entry) => !(entry.name === name && entry.role === role))
+  const next: TaskUploadManifest = {
+    schema: 'rikune.runtime_upload_manifest.v1',
+    taskId,
+    primary: role === 'primary' ? name : manifest.primary,
+    files: [
+      ...filtered,
+      {
+        name,
+        role,
+        size,
+        uploadedAt: now,
+      },
+    ].sort((a, b) => a.name.localeCompare(b.name)),
+  }
+  fs.writeFileSync(path.join(taskInboxDir, TASK_UPLOAD_MANIFEST), JSON.stringify(next, null, 2), 'utf8')
+  return next
 }
 
 class RequestBodyReadError extends Error {

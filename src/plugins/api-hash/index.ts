@@ -6,6 +6,7 @@ import type { Plugin } from '../sdk.js'
 
 import { hashResolveToolDefinition, createHashResolveHandler } from './tools/hash-resolve.js'
 import { hashIdentifyToolDefinition, createHashIdentifyHandler } from './tools/hash-identify.js'
+import { hashResolverPlanToolDefinition, createHashResolverPlanHandler } from './tools/hash-resolver-plan.js'
 
 const apiHashPlugin: Plugin = {
   id: 'api-hash',
@@ -30,8 +31,9 @@ const apiHashPlugin: Plugin = {
 
     server.registerTool(hashResolveToolDefinition, createHashResolveHandler(wm, db))
     server.registerTool(hashIdentifyToolDefinition, createHashIdentifyHandler(wm, db))
+    server.registerTool(hashResolverPlanToolDefinition, createHashResolverPlanHandler(wm, db))
 
-    return ['hash.resolve', 'hash.identify']
+    return ['hash.resolve', 'hash.identify', 'hash.resolver.plan']
   },
 }
 

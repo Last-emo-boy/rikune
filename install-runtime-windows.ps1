@@ -7,7 +7,7 @@ param(
     [Parameter(HelpMessage="Run Host Agent in headless mode (no interactive prompts)")]
     [switch]$Headless,
 
-    [Parameter(HelpMessage="Register Host Agent as a Windows Service via pm2 or node-windows")]
+    [Parameter(HelpMessage="Run Host Agent under PM2 in the current logged-on user session. Windows Service mode is not supported for Windows Sandbox launch.")]
     [switch]$Service,
 
     [Parameter(HelpMessage="Skip npm build step")]
@@ -21,6 +21,25 @@ param(
 
     [Parameter(HelpMessage="Host Agent and Runtime API key. If omitted, a random key is generated.")]
     [string]$ApiKey,
+
+    [Parameter(HelpMessage="Runtime backend controlled by the Host Agent")]
+    [ValidateSet("windows-sandbox", "hyperv-vm")]
+    [string]$RuntimeBackend = "windows-sandbox",
+
+    [Parameter(HelpMessage="Hyper-V VM name for the hyperv-vm runtime backend")]
+    [string]$HyperVVmName,
+
+    [Parameter(HelpMessage="Hyper-V checkpoint/snapshot name to restore before each runtime session")]
+    [string]$HyperVSnapshotName,
+
+    [Parameter(HelpMessage="Runtime Node endpoint inside the Hyper-V VM, for example http://192.168.1.50:18081")]
+    [string]$HyperVRuntimeEndpoint,
+
+    [Parameter(HelpMessage="Restore the configured Hyper-V checkpoint when the runtime session is released")]
+    [switch]$HyperVRestoreOnRelease,
+
+    [Parameter(HelpMessage="Stop the Hyper-V VM when the runtime session is released")]
+    [switch]$HyperVStopOnRelease,
 
     [Parameter(HelpMessage="Project root directory")]
     [string]$ProjectRoot = $PSScriptRoot
@@ -126,12 +145,12 @@ if (-not $Headless) { Clear-Host }
 Write-Header "Rikune — Windows Runtime Install"
 
 Write-Host "This script will:" -ForegroundColor $ColorInfo
-Write-Host "  1. Check Windows version & Windows Sandbox feature" -ForegroundColor $ColorInfo
+Write-Host "  1. Check Windows version and selected runtime backend" -ForegroundColor $ColorInfo
 Write-Host "  2. Check Node.js, npm, and Python" -ForegroundColor $ColorInfo
 Write-Host "  3. Build Runtime Node and Windows Host Agent" -ForegroundColor $ColorInfo
 Write-Host "  4. Create workspace, inbox/outbox directories" -ForegroundColor $ColorInfo
 Write-Host "  5. Generate Host Agent configuration (.env.runtime-windows)" -ForegroundColor $ColorInfo
-Write-Host "  6. Start the Host Agent (foreground or service)" -ForegroundColor $ColorInfo
+Write-Host "  6. Start the Host Agent in the selected user-session mode" -ForegroundColor $ColorInfo
 Write-Host "  7. Verify connectivity" -ForegroundColor $ColorInfo
 
 if (-not $Headless) {
@@ -161,40 +180,56 @@ if ($osCaption -match "Home") {
     Exit-WithError "Windows Sandbox is not available on Windows Home. Use Windows 10/11 Pro or Enterprise."
 }
 
-# Check Windows Sandbox feature. The documented feature name is
-# Containers-DisposableClientVM; keep the old name as a compatibility fallback.
-$sandboxFeatureCandidates = @("Containers-DisposableClientVM", "Containers-DisposableClient")
-$sandboxFeature = Get-OptionalFeatureByName -Names $sandboxFeatureCandidates
-if (-not $sandboxFeature -or $sandboxFeature.State -ne "Enabled") {
-    Write-Warning-Message "Windows Sandbox feature is not enabled"
-    if (-not $sandboxFeature) {
-        Exit-WithError "Windows Sandbox optional feature was not found. On supported Windows Pro/Enterprise builds the DISM feature name is 'Containers-DisposableClientVM'."
-    }
-
-    if (Test-IsAdmin) {
-        Write-Info "Attempting to enable Windows Sandbox feature: $($sandboxFeature.FeatureName)"
-        $enableResult = Enable-WindowsOptionalFeature -Online -FeatureName $sandboxFeature.FeatureName -NoRestart -All -ErrorAction Stop
-        if ($enableResult -and $enableResult.RestartNeeded -eq $true) {
-            Exit-WithError "Windows Sandbox was enabled, but a system restart is required before continuing."
-        }
-        $sandboxFeature = Get-OptionalFeatureByName -Names $sandboxFeatureCandidates
-        if (-not $sandboxFeature -or $sandboxFeature.State -ne "Enabled") {
-            Exit-WithError "Failed to enable Windows Sandbox automatically. Please enable 'Windows Sandbox' manually via 'Turn Windows features on or off'."
-        }
-        Write-Success "Windows Sandbox enabled"
-    } else {
-        Exit-WithError "Windows Sandbox is not enabled. Please run as Administrator to auto-enable, or enable it manually via 'Turn Windows features on or off'."
-    }
-} else {
-    Write-Success "Windows Sandbox feature is enabled"
-}
-
-# Check Hyper-V (optional but recommended)
+# Check Hyper-V (required for hyperv-vm, optional for Windows Sandbox)
 $hypervFeature = Get-WindowsOptionalFeature -Online -FeatureName "Microsoft-Hyper-V-All" -ErrorAction SilentlyContinue
 if ($hypervFeature -and $hypervFeature.State -eq "Enabled") {
     Write-Success "Hyper-V is enabled"
 } else {
+    if ($RuntimeBackend -eq "hyperv-vm") {
+        Exit-WithError "Hyper-V is required for RuntimeBackend=hyperv-vm. Enable Hyper-V and reboot before continuing."
+    }
     Write-Warning-Message "Hyper-V is not enabled. Windows Sandbox can still run on some systems without it, but performance may be reduced."
+}
+
+if ($RuntimeBackend -eq "windows-sandbox") {
+    # Check Windows Sandbox feature. The documented feature name is
+    # Containers-DisposableClientVM; keep the old name as a compatibility fallback.
+    $sandboxFeatureCandidates = @("Containers-DisposableClientVM", "Containers-DisposableClient")
+    $sandboxFeature = Get-OptionalFeatureByName -Names $sandboxFeatureCandidates
+    if (-not $sandboxFeature -or $sandboxFeature.State -ne "Enabled") {
+        Write-Warning-Message "Windows Sandbox feature is not enabled"
+        if (-not $sandboxFeature) {
+            Exit-WithError "Windows Sandbox optional feature was not found. On supported Windows Pro/Enterprise builds the DISM feature name is 'Containers-DisposableClientVM'."
+        }
+
+        if (Test-IsAdmin) {
+            Write-Info "Attempting to enable Windows Sandbox feature: $($sandboxFeature.FeatureName)"
+            $enableResult = Enable-WindowsOptionalFeature -Online -FeatureName $sandboxFeature.FeatureName -NoRestart -All -ErrorAction Stop
+            if ($enableResult -and $enableResult.RestartNeeded -eq $true) {
+                Exit-WithError "Windows Sandbox was enabled, but a system restart is required before continuing."
+            }
+            $sandboxFeature = Get-OptionalFeatureByName -Names $sandboxFeatureCandidates
+            if (-not $sandboxFeature -or $sandboxFeature.State -ne "Enabled") {
+                Exit-WithError "Failed to enable Windows Sandbox automatically. Please enable 'Windows Sandbox' manually via 'Turn Windows features on or off'."
+            }
+            Write-Success "Windows Sandbox enabled"
+        } else {
+            Exit-WithError "Windows Sandbox is not enabled. Please run as Administrator to auto-enable, or enable it manually via 'Turn Windows features on or off'."
+        }
+    } else {
+        Write-Success "Windows Sandbox feature is enabled"
+    }
+} else {
+    if ([string]::IsNullOrWhiteSpace($HyperVVmName)) {
+        Exit-WithError "-HyperVVmName is required when -RuntimeBackend hyperv-vm is selected."
+    }
+    if ([string]::IsNullOrWhiteSpace($HyperVRuntimeEndpoint)) {
+        Exit-WithError "-HyperVRuntimeEndpoint is required when -RuntimeBackend hyperv-vm is selected."
+    }
+    if ($HyperVRestoreOnRelease -and [string]::IsNullOrWhiteSpace($HyperVSnapshotName)) {
+        Exit-WithError "-HyperVSnapshotName is required when -HyperVRestoreOnRelease is selected."
+    }
+    Write-Success "Hyper-V backend selected: VM=$HyperVVmName endpoint=$HyperVRuntimeEndpoint"
 }
 
 $vmPlatformFeature = Get-WindowsOptionalFeature -Online -FeatureName "VirtualMachinePlatform" -ErrorAction SilentlyContinue
@@ -340,6 +375,14 @@ HOST_AGENT_RUNTIME_API_KEY=$apiKey
 HOST_AGENT_WORKSPACE=$WorkspaceRoot
 HOST_AGENT_NODE_PATH=$nodePath
 HOST_AGENT_PYTHON_PATH=$pythonPath
+HOST_AGENT_BACKEND=$RuntimeBackend
+
+# Hyper-V backend settings. Used only when HOST_AGENT_BACKEND=hyperv-vm.
+HOST_AGENT_HYPERV_VM_NAME=$HyperVVmName
+HOST_AGENT_HYPERV_SNAPSHOT_NAME=$HyperVSnapshotName
+HOST_AGENT_HYPERV_RUNTIME_ENDPOINT=$HyperVRuntimeEndpoint
+HOST_AGENT_HYPERV_RESTORE_ON_RELEASE=$($HyperVRestoreOnRelease.IsPresent.ToString().ToLowerInvariant())
+HOST_AGENT_HYPERV_STOP_ON_RELEASE=$($HyperVStopOnRelease.IsPresent.ToString().ToLowerInvariant())
 
 # Optional: restrict CORS origin for Runtime Node (distributed mode)
 # RUNTIME_CORS_ORIGIN=http://your-linux-analyzer-ip:18080
@@ -369,9 +412,17 @@ $env:HOST_AGENT_RUNTIME_API_KEY = "$apiKey"
 $env:HOST_AGENT_WORKSPACE = "$WorkspaceRoot"
 $env:HOST_AGENT_NODE_PATH = "$nodePath"
 $env:HOST_AGENT_PYTHON_PATH = "$pythonPath"
+$env:HOST_AGENT_BACKEND = "$RuntimeBackend"
+$env:HOST_AGENT_HYPERV_VM_NAME = "$HyperVVmName"
+$env:HOST_AGENT_HYPERV_SNAPSHOT_NAME = "$HyperVSnapshotName"
+$env:HOST_AGENT_HYPERV_RUNTIME_ENDPOINT = "$HyperVRuntimeEndpoint"
+$env:HOST_AGENT_HYPERV_RESTORE_ON_RELEASE = "$($HyperVRestoreOnRelease.IsPresent.ToString().ToLowerInvariant())"
+$env:HOST_AGENT_HYPERV_STOP_ON_RELEASE = "$($HyperVStopOnRelease.IsPresent.ToString().ToLowerInvariant())"
 
 if ($Service) {
-    Write-Info "Installing Host Agent as a background service..."
+    Write-Warning-Message "Windows Sandbox must be launched from a logged-on interactive user session."
+    Write-Warning-Message "This mode uses PM2 in the current user session only; node-windows / Windows Service mode is intentionally disabled."
+    Write-Info "Starting Host Agent under PM2..."
 
     # Prefer pm2
     $pm2 = Get-Command pm2 -ErrorAction SilentlyContinue
@@ -421,100 +472,11 @@ if ($Service) {
         Write-Success "Host Agent registered with pm2 (name: rikune-host-agent)"
         Write-Info "Manage with: pm2 logs rikune-host-agent"
     } else {
-        # Fallback: node-windows (nsm)
-        $nodeWindowsModule = Join-Path $ProjectRoot "node_modules\node-windows"
-        if (-not (Test-Path $nodeWindowsModule)) {
-            Write-Info "Installing node-windows..."
-            Push-Location $ProjectRoot
-            try {
-                $nodeWindowsInstallOutput = & npm install node-windows 2>&1
-                $nodeWindowsInstallExitCode = $LASTEXITCODE
-            } finally {
-                Pop-Location
-            }
-            if ($nodeWindowsInstallOutput) {
-                $nodeWindowsInstallOutput | ForEach-Object { Write-Info $_.ToString() }
-            }
-            if ($nodeWindowsInstallExitCode -ne 0) {
-                Exit-WithError "node-windows installation failed with exit code $nodeWindowsInstallExitCode"
-            }
-        }
-        if (-not (Test-Path $nodeWindowsModule)) {
-            Exit-WithError "node-windows installation failed"
-        }
-
-        $serviceScript = Join-Path $WorkspaceRoot "install-service.js"
-        $logsDir = Join-Path $WorkspaceRoot "workspace\logs"
-        $hostAgentEntryJs = $hostAgentEntry | ConvertTo-Json -Compress
-        $projectRootJs = $ProjectRoot | ConvertTo-Json -Compress
-        $workspaceRootJs = $WorkspaceRoot | ConvertTo-Json -Compress
-        $nodePathJs = $nodePath | ConvertTo-Json -Compress
-        $pythonPathJs = $pythonPath | ConvertTo-Json -Compress
-        $logsDirJs = $logsDir | ConvertTo-Json -Compress
-        @"
-const Service = require('node-windows').Service;
-const svc = new Service({
-  name: 'Rikune Windows Host Agent',
-  description: 'Manages Windows Sandbox lifecycle for Rikune dynamic analysis.',
-  script: $hostAgentEntryJs,
-  execPath: $nodePathJs,
-  workingdirectory: $projectRootJs,
-  logpath: $logsDirJs,
-  logmode: 'rotate',
-  stopparentfirst: true,
-  env: [
-    { name: 'HOST_AGENT_PORT', value: '$Port' },
-    { name: 'HOST_AGENT_API_KEY', value: '$apiKey' },
-    { name: 'HOST_AGENT_RUNTIME_API_KEY', value: '$apiKey' },
-    { name: 'HOST_AGENT_WORKSPACE', value: $workspaceRootJs },
-    { name: 'HOST_AGENT_NODE_PATH', value: $nodePathJs },
-    { name: 'HOST_AGENT_PYTHON_PATH', value: $pythonPathJs }
-  ]
-});
-svc.on('install', () => {
-  console.log('Windows service installed; starting it.');
-  svc.start();
-});
-svc.on('alreadyinstalled', () => {
-  console.log('Windows service is already installed; starting it.');
-  svc.start();
-});
-svc.on('start', () => {
-  console.log('Windows service started.');
-  process.exit(0);
-});
-svc.on('invalidinstallation', () => {
-  console.error('Existing Windows service installation is invalid. Remove it and retry.');
-  process.exit(1);
-});
-svc.on('error', err => {
-  console.error('node-windows error:', err && (err.stack || err.message || err));
-  process.exit(1);
-});
-setTimeout(() => {
-  console.error('Timed out waiting for node-windows service install/start.');
-  process.exit(1);
-}, 30000);
-svc.install();
-"@ | Set-Content $serviceScript -Encoding UTF8
-
-        Write-Info "Creating Windows Service (requires Administrator)..."
-        if (-not (Test-IsAdmin)) {
-            Exit-WithError "Installing a Windows Service requires Administrator privileges."
-        }
-        $serviceOutput = & node "$serviceScript" 2>&1
-        $serviceExitCode = $LASTEXITCODE
-        if ($serviceOutput) {
-            $serviceOutput | ForEach-Object { Write-Info $_.ToString() }
-        }
-        if ($serviceExitCode -ne 0) {
-            Exit-WithError "Failed to install Windows Service via node-windows. See output above and script: $serviceScript"
-        }
-        Write-Success "Windows Service installed and started"
+        Exit-WithError "PM2 is unavailable. Rerun without -Service to start Host Agent as a background process in this user session. Windows Service mode cannot launch Windows Sandbox."
     }
 } else {
-    Write-Info "Starting Host Agent in foreground..."
-    Write-Info "Press Ctrl+C to stop"
+    Write-Info "Starting Host Agent in the current user session..."
+    Write-Info "Keep this Windows user logged in while using Windows Sandbox dynamic execution."
     Write-Host ""
 
     # If headless, start detached process and return
@@ -525,7 +487,7 @@ svc.install();
         Write-Info "Logs: $logFile"
         Start-Sleep -Seconds 2
     } else {
-        # Foreground interactive: we start it, then verify, then tell user how to restart
+        # Interactive user-session process: required for Windows Sandbox launch.
         $logFile = Join-Path $WorkspaceRoot "workspace\logs\host-agent.log"
         $proc = Start-Process -FilePath "node" -ArgumentList "`"$hostAgentEntry`"" -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $logFile -RedirectStandardError $logFile
         Write-Success "Host Agent started as background process (PID: $($proc.Id))"
@@ -570,6 +532,18 @@ Write-Header "Installation Complete"
 Write-Host "  Project Root:   $ProjectRoot" -ForegroundColor $ColorSuccess
 Write-Host "  Workspace:      $WorkspaceRoot" -ForegroundColor $ColorSuccess
 Write-Host "  Host Agent:     http://127.0.0.1:$Port" -ForegroundColor $ColorSuccess
+Write-Host "  Backend:        $RuntimeBackend" -ForegroundColor $ColorSuccess
+if ($RuntimeBackend -eq "hyperv-vm") {
+    Write-Host "  Hyper-V VM:     $HyperVVmName" -ForegroundColor $ColorSuccess
+    Write-Host "  Runtime Node:   $HyperVRuntimeEndpoint" -ForegroundColor $ColorSuccess
+    if ($HyperVRestoreOnRelease) {
+        Write-Host "  Release Policy: restore checkpoint on release" -ForegroundColor $ColorSuccess
+    } elseif ($HyperVStopOnRelease) {
+        Write-Host "  Release Policy: stop VM on release" -ForegroundColor $ColorSuccess
+    } else {
+        Write-Host "  Release Policy: preserve dirty VM state" -ForegroundColor $ColorSuccess
+    }
+}
 Write-Host "  API Key:        $apiKey" -ForegroundColor $ColorSuccess
 Write-Host "  Env File:       $envFile" -ForegroundColor $ColorSuccess
 
@@ -583,12 +557,8 @@ Write-Host "       # Optional if Runtime Node auth should be separate:" -Foregro
 Write-Host "       # RUNTIME_API_KEY=$apiKey" -ForegroundColor $ColorInfo
 Write-Host "`n  Managing the Host Agent:" -ForegroundColor $ColorPrimary
 if ($Service) {
-    if ($pm2) {
-        Write-Host "    pm2 logs rikune-host-agent" -ForegroundColor $ColorInfo
-        Write-Host "    pm2 stop rikune-host-agent" -ForegroundColor $ColorInfo
-    } else {
-        Write-Host "    services.msc -> 'Rikune Windows Host Agent'" -ForegroundColor $ColorInfo
-    }
+    Write-Host "    pm2 logs rikune-host-agent" -ForegroundColor $ColorInfo
+    Write-Host "    pm2 stop rikune-host-agent" -ForegroundColor $ColorInfo
 } else {
     Write-Host "    Logs: $(Join-Path $WorkspaceRoot "workspace\logs\host-agent.log")" -ForegroundColor $ColorInfo
     Write-Host "    Stop: taskkill /F /IM node.exe   (or find PID in Resource Monitor)" -ForegroundColor $ColorInfo
@@ -600,6 +570,12 @@ $installInfo = @{
     ProjectRoot = $ProjectRoot
     WorkspaceRoot = $WorkspaceRoot
     Port = $Port
+    RuntimeBackend = $RuntimeBackend
+    HyperVVmName = $HyperVVmName
+    HyperVSnapshotName = $HyperVSnapshotName
+    HyperVRuntimeEndpoint = $HyperVRuntimeEndpoint
+    HyperVRestoreOnRelease = [bool]$HyperVRestoreOnRelease
+    HyperVStopOnRelease = [bool]$HyperVStopOnRelease
     NodeVersion = $nodeVersion
     PythonVersion = $pyVersion
     ServiceMode = [bool]$Service

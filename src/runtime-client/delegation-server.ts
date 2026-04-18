@@ -13,6 +13,7 @@ import {
 import type { RuntimeBackendCapability, RuntimeBackendHintValidationResult } from './runtime-client.js'
 import type { ProgressReporter } from '../streaming-progress.js'
 import { logger } from '../logger.js'
+import { resolveRuntimeSidecarUploads, type RuntimeSidecarUpload } from './sidecar-staging.js'
 import fs from 'fs/promises'
 import path from 'path'
 import {
@@ -36,7 +37,12 @@ export interface RuntimeClientLike {
     },
     opts?: { onProgress?: (progress: number, message?: string) => void },
   ): Promise<any>
-  uploadSample(taskId: string, localSamplePath: string, inboxHostDir: string): Promise<void>
+  uploadSample(
+    taskId: string,
+    localSamplePath: string,
+    inboxHostDir: string,
+    options?: { sidecars?: RuntimeSidecarUpload[]; preserveFilename?: boolean },
+  ): Promise<void>
   downloadArtifacts(taskId: string, outboxHostDir: string, artifactNames: string[]): Promise<string[]>
   getCapabilities?(options?: { forceRefresh?: boolean }): Promise<RuntimeBackendCapability[] | null>
   validateRuntimeBackendHint?(
@@ -299,8 +305,43 @@ const LOCAL_DYNAMIC_TOOLS = new Set([
   'dynamic.dependencies',
   'dynamic.trace.import',
   'dynamic.memory.import',
+  'runtime.debug.session.start',
+  'runtime.debug.session.status',
+  'runtime.debug.session.stop',
+  'runtime.debug.command',
+  'dynamic.runtime.status',
+  'runtime.hyperv.control',
   'frida.script.generate',
 ])
+
+function readBooleanArg(args: any, key: string, defaultValue: boolean): boolean {
+  if (!args || typeof args !== 'object' || !(key in args)) {
+    return defaultValue
+  }
+  return args[key] !== false
+}
+
+function readNumberArg(args: any, key: string, defaultValue: number): number {
+  if (!args || typeof args !== 'object') {
+    return defaultValue
+  }
+  const value = Number(args[key])
+  return Number.isFinite(value) && value > 0 ? value : defaultValue
+}
+
+async function buildRuntimeUploadOptions(
+  definition: ToolDefinition,
+  args: any,
+  samplePath: string,
+): Promise<{ sidecars: RuntimeSidecarUpload[]; warnings: string[] }> {
+  const autoDefault = definition.name === 'dynamic.behavior.capture' || definition.name === 'sandbox.execute'
+  return resolveRuntimeSidecarUploads(samplePath, {
+    sidecarPaths: args?.sidecar_paths,
+    autoStageSidecars: readBooleanArg(args, 'auto_stage_sidecars', autoDefault),
+    maxSidecars: readNumberArg(args, 'max_sidecars', 32),
+    maxTotalBytes: readNumberArg(args, 'sidecar_max_total_bytes', 128 * 1024 * 1024),
+  })
+}
 
 export function createDelegatingServer(
   inner: PluginServerWithProgress,
@@ -329,6 +370,11 @@ export function createDelegatingServer(
         const progressToken = args?._meta?.progressToken as string | number | undefined
         const progressReporter = inner.getProgressReporter?.(progressToken)
         const runtimeBackendHint = definition.runtimeBackendHint
+        let stagedUpload: {
+          samplePath: string
+          inboxHostDir: string
+          sidecars: RuntimeSidecarUpload[]
+        } | null = null
 
         try {
           if (runtimeBackendHint && runtimeClient.validateRuntimeBackendHint) {
@@ -341,7 +387,19 @@ export function createDelegatingServer(
           if (sampleId && resolvePrimarySamplePath) {
             const resolved = await resolvePrimarySamplePath(workspaceManager, sampleId)
             const inboxHostDir = sandboxDir ? path.join(sandboxDir, 'inbox') : ''
-            await runtimeClient.uploadSample(taskId, resolved.samplePath, inboxHostDir)
+            const uploadOptions = await buildRuntimeUploadOptions(definition, args, resolved.samplePath)
+            for (const warning of uploadOptions.warnings) {
+              logger.warn({ pluginId, tool: definition.name, warning }, 'Runtime sidecar staging warning')
+            }
+            stagedUpload = {
+              samplePath: resolved.samplePath,
+              inboxHostDir,
+              sidecars: uploadOptions.sidecars,
+            }
+            await runtimeClient.uploadSample(taskId, resolved.samplePath, inboxHostDir, {
+              preserveFilename: true,
+              sidecars: uploadOptions.sidecars,
+            })
           }
 
           const result = await runtimeClient.execute(
@@ -396,6 +454,12 @@ export function createDelegatingServer(
               if (recovered) {
                 const recoveredRuntimeEndpoint = runtimeClient.getEndpoint?.() ?? runtimeEndpoint
                 logger.info({ pluginId, tool: definition.name, endpoint: recoveredRuntimeEndpoint }, 'Runtime recovered; retrying execution')
+                if (stagedUpload) {
+                  await runtimeClient.uploadSample(taskId, stagedUpload.samplePath, stagedUpload.inboxHostDir, {
+                    preserveFilename: true,
+                    sidecars: stagedUpload.sidecars,
+                  })
+                }
                 const retryResult = await runtimeClient.execute(
                   {
                     taskId,
@@ -488,11 +552,12 @@ async function persistRuntimeArtifacts(
         const artifactId = randomUUID()
         const createdAt = new Date().toISOString()
         const mime = guessMime(basename)
+        const artifactType = inferRuntimeArtifactType(toolName, basename)
 
         database.insertArtifact({
           id: artifactId,
           sample_id: sampleId,
-          type: 'runtime_analysis',
+          type: artifactType,
           path: relativePath,
           sha256,
           mime,
@@ -501,7 +566,7 @@ async function persistRuntimeArtifacts(
 
         persisted.push({
           id: artifactId,
-          type: 'runtime_analysis',
+          type: artifactType,
           path: relativePath,
           sha256,
           mime,
@@ -520,6 +585,17 @@ async function persistRuntimeArtifacts(
 
 function sanitizePathSegment(segment: string): string {
   return segment.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64)
+}
+
+function inferRuntimeArtifactType(toolName: string, filename: string): string {
+  const lowerName = filename.toLowerCase()
+  if (toolName === 'dynamic.behavior.capture' && lowerName.endsWith('.json')) {
+    return 'dynamic_trace_json'
+  }
+  if (toolName === 'sandbox.execute' && lowerName.endsWith('.json')) {
+    return 'sandbox_trace_json'
+  }
+  return 'runtime_analysis'
 }
 
 function guessMime(filename: string): string {

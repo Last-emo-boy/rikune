@@ -71,6 +71,26 @@ describe('Workflow Integration', () => {
     fs.rmSync(testDir, { recursive: true, force: true })
   })
 
+  test('builds the default Ghidra stage handler with complete plugin dependencies', async () => {
+    const stageContext = createAnalyzePipelineStageContext(
+      workspaceManager,
+      database,
+      cacheManager,
+      policyGuard,
+      undefined,
+      { resolveBackends: () => makeUnavailableBackendResolution() },
+      jobQueue
+    )
+
+    const result = await stageContext.dependencies.ghidraAnalyze!({
+      sample_id: `sha256:${'c'.repeat(64)}`,
+    })
+    const payload = JSON.parse(String((result as any).content?.[0]?.text || '{}'))
+
+    expect(payload.ok).toBe(false)
+    expect(payload.errors[0]).toContain(`Sample not found: sha256:${'c'.repeat(64)}`)
+  })
+
   test('starts, reuses, and promotes a persisted staged analysis run', async () => {
     const sharedDependencies = {
       peFingerprint: async () => ({

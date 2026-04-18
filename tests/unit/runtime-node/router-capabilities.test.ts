@@ -5,6 +5,8 @@
 import { afterEach, describe, expect, test } from '@jest/globals'
 import { createServer, request } from 'http'
 import type { AddressInfo } from 'net'
+import fs from 'fs'
+import path from 'path'
 import type { RuntimeBackendCapability, RuntimeBackendHint } from '../../../packages/runtime-node/src/executor.js'
 import { createRuntimeRouter } from '../../../packages/runtime-node/src/router.js'
 
@@ -43,6 +45,49 @@ const runtimeSupport = {
   getRuntimeBackendCapability(hint: RuntimeBackendHint): RuntimeBackendCapability | undefined {
     return runtimeCapabilities.find((capability) => capability.type === hint.type && capability.handler === hint.handler)
   },
+  buildRuntimeToolInventory() {
+    return {
+      schema: 'rikune.runtime_tool_inventory.v1' as const,
+      generatedAt: new Date().toISOString(),
+      runtime: {
+        platform: process.platform,
+        mode: 'sandbox',
+        toolSearchRoots: ['C:\\rikune-tools'],
+        pathEntries: [],
+      },
+      tools: [
+        {
+          id: 'cdb',
+          displayName: 'CDB / Windows Debugger',
+          category: 'debugger' as const,
+          role: 'Automated breakpoints.',
+          available: true,
+          path: 'C:\\rikune-tools\\debuggers\\x64\\cdb.exe',
+          source: 'C:\\rikune-tools',
+          installHint: 'Install Windows Debugging Tools.',
+          profiles: ['debugger_cdb'],
+        },
+      ],
+      profiles: [
+        {
+          id: 'debugger_cdb',
+          status: 'ready' as const,
+          requiredTools: ['cdb'],
+          optionalTools: [],
+          availableTools: ['cdb'],
+          missingTools: [],
+          recommendedTools: ['runtime.debug.command'],
+        },
+      ],
+      summary: {
+        availableToolCount: 1,
+        missingToolCount: 0,
+        readyProfiles: ['debugger_cdb'],
+        partialProfiles: [],
+        missingProfiles: [],
+      },
+    }
+  },
 }
 
 const activeServers = new Set<ReturnType<typeof createServer>>()
@@ -80,7 +125,40 @@ afterEach(async () => {
     ),
   )
   activeServers.clear()
+  fs.rmSync(process.env.RUNTIME_INBOX!, { recursive: true, force: true })
+  fs.rmSync(process.env.RUNTIME_OUTBOX!, { recursive: true, force: true })
 })
+
+function postUpload(port: number, taskId: string, filename: string, role: 'primary' | 'sidecar', body: string) {
+  return new Promise<{ statusCode?: number; body: string }>((resolve, reject) => {
+    const req = request(
+      {
+        host: '127.0.0.1',
+        port,
+        path: `/upload?taskId=${encodeURIComponent(taskId)}&filename=${encodeURIComponent(filename)}&role=${role}`,
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer runtime-test-key',
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': Buffer.byteLength(body).toString(),
+        },
+      },
+      (res) => {
+        let responseBody = ''
+        res.setEncoding('utf8')
+        res.on('data', (chunk) => {
+          responseBody += chunk
+        })
+        res.on('end', () => resolve({ statusCode: res.statusCode, body: responseBody }))
+        res.on('error', reject)
+      },
+    )
+
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}
 
 describe('runtime-node router capability and execute contract', () => {
   test('exposes runtime backend capabilities', async () => {
@@ -114,6 +192,60 @@ describe('runtime-node router capability and execute contract', () => {
     expect(response.body).toContain('native.sample.execute')
     expect(response.body).toContain('dotnet.sample.run')
     expect(response.body).toContain('executeSandboxExecute')
+  })
+
+  test('exposes runtime toolkit inventory without submitting an execution task', async () => {
+    const { port } = await startRuntimeServer()
+
+    const response = await new Promise<{ statusCode?: number; body: string }>((resolve, reject) => {
+      const req = request(
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/toolkit',
+          method: 'GET',
+          headers: { Authorization: 'Bearer runtime-test-key' },
+        },
+        (res) => {
+          let body = ''
+          res.setEncoding('utf8')
+          res.on('data', (chunk) => {
+            body += chunk
+          })
+          res.on('end', () => resolve({ statusCode: res.statusCode, body }))
+          res.on('error', reject)
+        },
+      )
+
+      req.on('error', reject)
+      req.end()
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toContain('rikune.runtime_tool_inventory.v1')
+    expect(response.body).toContain('debugger_cdb')
+    expect(response.body).toContain('cdb')
+  })
+
+  test('stages primary uploads and sidecars into a per-task manifest', async () => {
+    const { port } = await startRuntimeServer()
+
+    const primary = await postUpload(port, 'sidecar-task', 'app.exe', 'primary', 'MZ')
+    const sidecar = await postUpload(port, 'sidecar-task', 'zg__kYYzqVe.dll', 'sidecar', 'DLL')
+
+    expect(primary.statusCode).toBe(200)
+    expect(sidecar.statusCode).toBe(200)
+    const primaryBody = JSON.parse(primary.body)
+    const taskDir = path.dirname(primaryBody.inboxPath)
+    expect(fs.existsSync(path.join(taskDir, 'app.exe'))).toBe(true)
+    expect(fs.existsSync(path.join(taskDir, 'zg__kYYzqVe.dll'))).toBe(true)
+    expect(fs.existsSync(primaryBody.legacyPath)).toBe(true)
+    const manifest = JSON.parse(fs.readFileSync(path.join(taskDir, 'upload-manifest.json'), 'utf8'))
+    expect(manifest.primary).toBe('app.exe')
+    expect(manifest.files).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'app.exe', role: 'primary' }),
+      expect.objectContaining({ name: 'zg__kYYzqVe.dll', role: 'sidecar' }),
+    ]))
   })
 
   test('returns normalized runtime backend details for accepted execute requests', async () => {
@@ -370,4 +502,3 @@ describe('runtime-node router capability and execute contract', () => {
     expect(response.body).toContain('"runtimeBackend":null')
   })
 })
-

@@ -52,8 +52,12 @@ export function matchesSessionTag(sessionTags: string[], selector?: string | nul
   if (!selector || !selector.trim()) {
     return false
   }
-  const normalized = selector.trim()
-  return sessionTags.some((tag) => tag === normalized)
+  const normalized = selector.trim().toLowerCase()
+  return sessionTags.some((tag) => {
+    const candidate = tag.trim().toLowerCase()
+    const lastSegment = candidate.split('/').filter((item) => item.length > 0).pop()
+    return candidate === normalized || candidate.endsWith(`/${normalized}`) || lastSegment === normalized
+  })
 }
 
 export function toStringArray(value: unknown): string[] {

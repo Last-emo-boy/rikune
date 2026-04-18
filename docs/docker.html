@@ -223,7 +223,15 @@
               <span>Terminal</span><button class="code-block__copy">Copy</button>
             </div>
             <pre><span class="comment"># Single Windows host</span>
-.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+.\rikune.ps1 install -Profile hybrid -InstallRuntime
+
+<span class="comment"># Hyper-V VM runtime backend for debugging</span>
+.\rikune.ps1 install -Profile hybrid -InstallRuntime `
+  -RuntimeBackend hyperv-vm `
+  -HyperVVmName "rikune-runtime" `
+  -HyperVSnapshotName "clean-runtime" `
+  -HyperVRuntimeEndpoint "http://192.168.1.50:18081" `
+  -HyperVRestoreOnRelease
 
 <span class="comment"># Linux analyzer + remote Windows Host Agent</span>
 ./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt;</pre>
@@ -231,16 +239,18 @@
           <p>
             <span data-lang-en
               >In the single-host Windows hybrid path, the script installs or starts the Host
-              Agent, checks Windows Sandbox support, writes <code>.docker-runtime.env</code>, builds
-              the analyzer image, and starts <code>rikune-analyzer</code>. The Sandbox runtime is
+              Agent, checks the selected runtime backend, writes <code>.docker-runtime.env</code>,
+              builds the analyzer image, and starts <code>rikune-analyzer</code>. The runtime is
               launched on demand by dynamic/sandbox tools, not as a permanently open GUI during
-              installation.</span
+              installation. The default Windows Sandbox backend must run from a logged-on user
+              session; the Hyper-V VM backend can be used for checkpoint-based debugging.</span
             >
             <span data-lang-zh
-              >在单机 Windows hybrid 方案中，脚本会安装或启动 Host Agent、检查 Windows Sandbox
-              支持、写入 <code>.docker-runtime.env</code>、构建 analyzer 镜像并启动
-              <code>rikune-analyzer</code>。Sandbox 运行时由动态/沙箱工具按需启动，安装时不会要求
-              一直打开一个 Sandbox 窗口。</span
+              >在单机 Windows hybrid 方案中，脚本会安装或启动 Host Agent、检查所选运行时后端、写入
+              <code>.docker-runtime.env</code>、构建 analyzer 镜像并启动
+              <code>rikune-analyzer</code>。运行时由动态/沙箱工具按需启动，安装时不会要求一直打开一个
+              Sandbox 窗口。默认 Windows Sandbox 后端必须运行在已登录用户会话里；Hyper-V VM
+              后端可用于基于 checkpoint 的调试，并可选择退出时回滚、关机保留或保留脏现场。</span
             >
           </p>
 
@@ -263,7 +273,15 @@
             <div class="code-block__header">
               <span>PowerShell</span><button class="code-block__copy">Copy</button>
             </div>
-            <pre>.\install-runtime-windows.ps1 -Headless -Service -ApiKey &lt;host-agent-key&gt;</pre>
+            <pre>.\install-runtime-windows.ps1 -Headless -ApiKey &lt;host-agent-key&gt;
+
+<span class="comment"># Hyper-V VM backend</span>
+.\install-runtime-windows.ps1 -Headless -ApiKey &lt;host-agent-key&gt; `
+  -RuntimeBackend hyperv-vm `
+  -HyperVVmName "rikune-runtime" `
+  -HyperVSnapshotName "clean-runtime" `
+  -HyperVRuntimeEndpoint "http://192.168.1.50:18081" `
+  -HyperVRestoreOnRelease</pre>
           </div>
 
           <blockquote>
@@ -276,6 +294,41 @@
               ><strong>鉴权分层：</strong><code>RUNTIME_HOST_AGENT_API_KEY</code> 仅用于 Analyzer →
               Host Agent 控制请求；<code>RUNTIME_API_KEY</code> 仅在 Windows Runtime Node
               自身需要单独鉴权时使用。</span
+            >
+          </blockquote>
+          <blockquote>
+            <span data-lang-en
+              ><strong>Runtime debug flow:</strong> MCP clients should call
+              <code>dynamic.runtime.status</code> first to inspect configured Runtime Node and Host Agent capabilities,
+              <code>dynamic.toolkit.status</code> to inspect runtime-side CDB/ProcDump/ProcMon/Sysmon/TTD/x64dbg/dnSpy/Frida/dotnet readiness,
+              <code>dynamic.deep_plan</code> to pick a bounded behavior/debugger/memory/network/.NET profile,
+              <code>debug.network.plan</code>, <code>debug.managed.plan</code>, and <code>debug.gui.handoff</code> for network lab, .NET runtime, and manual GUI handoff detail,
+              <code>dynamic.persona.plan</code> to prepare a planning-only Sandbox/Hyper-V persona checklist,
+              <code>dynamic.behavior.diff</code>, <code>analysis.evidence.graph</code>, and
+              <code>crypto.lifecycle.graph</code> to correlate runtime observations with static expectations,
+              <code>runtime.hyperv.control</code> when a Hyper-V VM checkpoint must be listed, created, restored, or stopped,
+              <code>runtime.debug.session.start</code> to start or attach a Windows runtime and choose
+              <code>hyperv_retention_policy</code> as <code>clean_rollback</code>, <code>stop_only</code>, or <code>preserve_dirty</code>,
+              <code>runtime.debug.command</code> to dispatch <code>debug.session.*</code>,
+              <code>sandbox.execute</code>, <code>dynamic.behavior.capture</code>, telemetry, ProcDump, managed safe-run, or dump work, then
+              <code>runtime.debug.session.stop</code> to release the backend.</span
+            >
+            <span data-lang-zh
+              ><strong>运行时调试流程：</strong>MCP 客户端应先调用
+              <code>dynamic.runtime.status</code> 检查 Runtime Node 和 Host Agent 能力，用
+              <code>dynamic.toolkit.status</code> 查询 runtime 内 CDB/ProcDump/ProcMon/Sysmon/TTD/x64dbg/dnSpy/Frida/dotnet 就绪状态，用
+              <code>dynamic.deep_plan</code> 选择受限的行为、调试器、内存、网络或 .NET profile，用
+              <code>debug.network.plan</code>、<code>debug.managed.plan</code> 和 <code>debug.gui.handoff</code> 查看网络实验、.NET runtime 和手动 GUI handoff 细节，用
+              <code>dynamic.persona.plan</code> 准备只规划不启动的 Sandbox/Hyper-V persona 清单，用
+              <code>dynamic.behavior.diff</code>、<code>analysis.evidence.graph</code> 和
+              <code>crypto.lifecycle.graph</code> 把运行时观察关联回静态预期，再调用
+              <code>runtime.hyperv.control</code> 列出、创建、恢复或停止 Hyper-V VM checkpoint，然后调用
+              <code>runtime.debug.session.start</code> 启动或附着 Windows runtime，并用
+              <code>hyperv_retention_policy</code> 选择 <code>clean_rollback</code>、<code>stop_only</code> 或
+              <code>preserve_dirty</code>，再用
+              <code>runtime.debug.command</code> 分发 <code>debug.session.*</code>、
+              <code>sandbox.execute</code>、<code>dynamic.behavior.capture</code>、遥测、ProcDump、managed safe-run 或转储任务，最后用
+              <code>runtime.debug.session.stop</code> 释放后端。</span
             >
           </blockquote>
         </section>
@@ -743,8 +796,8 @@ node scripts/generate-docker.mjs --profile=static --dry-run</pre>
                 <td><span class="badge badge--blue">MCP Server</span></td>
                 <td>stdio</td>
                 <td>
-                  <span data-lang-en>220+ tools, 3 prompts, 16 resources</span
-                  ><span data-lang-zh>220+ 工具、3 个提示、16 个资源</span>
+                  <span data-lang-en>241 tools, 3 prompts, 16 resources</span
+                  ><span data-lang-zh>241 个工具、3 个提示、16 个资源</span>
                 </td>
               </tr>
               <tr>
@@ -786,7 +839,15 @@ node scripts/generate-docker.mjs --profile=static --dry-run</pre>
 .\rikune.ps1 install -Profile static -DataRoot "D:\Docker\rikune"
 
 <span class="comment"># Single Windows host hybrid</span>
-.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+.\rikune.ps1 install -Profile hybrid -InstallRuntime
+
+<span class="comment"># Hybrid with Hyper-V VM runtime backend</span>
+.\rikune.ps1 install -Profile hybrid -InstallRuntime `
+  -RuntimeBackend hyperv-vm `
+  -HyperVVmName "rikune-runtime" `
+  -HyperVSnapshotName "clean-runtime" `
+  -HyperVRuntimeEndpoint "http://192.168.1.50:18081" `
+  -HyperVRestoreOnRelease
 
 <span class="comment"># Linux analyzer + remote Windows Host Agent</span>
 ./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt;</pre

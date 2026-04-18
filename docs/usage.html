@@ -46,8 +46,8 @@
     <div class="breadcrumb"><a href="index.html">Rikune</a> / <span data-lang-en>Usage</span><span data-lang-zh>使用指南</span></div>
     <h1><span data-lang-en>Usage Guide</span><span data-lang-zh>使用指南</span></h1>
     <p>
-      <span data-lang-en>Learn how to ingest samples, launch analysis workflows, and use the 220+ MCP tools.</span>
-      <span data-lang-zh>了解如何导入样本、启动分析工作流以及使用 220+ MCP 工具。</span>
+      <span data-lang-en>Learn how to ingest samples, launch analysis workflows, and use the 241 MCP tools.</span>
+      <span data-lang-zh>了解如何导入样本、启动分析工作流以及使用 241 个 MCP 工具。</span>
     </p>
   </div>
 </div>
@@ -129,6 +129,9 @@
           <tr><td><code>pe.exports</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Extract export table</span><span data-lang-zh>提取导出表</span></td></tr>
           <tr><td><code>pe.sections</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Section table with entropy</span><span data-lang-zh>带熵值的节表</span></td></tr>
           <tr><td><code>pe.resources</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Resource directory tree</span><span data-lang-zh>资源目录树</span></td></tr>
+          <tr><td><code>static.resource.graph</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Build a PE resource and embedded-payload graph with entropy, magic, hashes, and string previews</span><span data-lang-zh>生成 PE 资源和嵌入 payload 图谱，包含熵值、magic、hash 和字符串预览</span></td></tr>
+          <tr><td><code>static.config.carver</code></td><td><span class="badge badge--green">Static</span></td><td><span data-lang-en>Carve URLs, hosts, registry paths, mutexes, HTTP client strings, and encoded blobs from raw bytes</span><span data-lang-zh>从原始字节提取 URL、主机、注册表路径、mutex、HTTP client 字符串和编码 blob</span></td></tr>
+          <tr><td><code>static.behavior.classify</code></td><td><span class="badge badge--green">Static</span></td><td><span data-lang-en>Classify persistence, service install, scheduled task, WMI, process injection, DLL injection, APC, and hollowing indicators</span><span data-lang-zh>分类持久化、服务安装、计划任务、WMI、进程注入、DLL 注入、APC 和 hollowing 线索</span></td></tr>
           <tr><td><code>pe.strings</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Extract printable strings</span><span data-lang-zh>提取可打印字符串</span></td></tr>
           <tr><td><code>detect.compiler</code></td><td><span class="badge badge--green">Detect</span></td><td><span data-lang-en>Compiler &amp; packer detection (DIE)</span><span data-lang-zh>编译器和加壳检测（DIE）</span></td></tr>
           <tr><td><code>yara.scan</code></td><td><span class="badge badge--purple">YARA</span></td><td><span data-lang-en>Scan with YARA rules</span><span data-lang-zh>使用 YARA 规则扫描</span></td></tr>
@@ -183,11 +186,30 @@
           <tr><th><span data-lang-en>Tool</span><span data-lang-zh>工具</span></th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th></tr>
         </thead>
         <tbody>
-          <tr><td><code>frida.hook</code></td><td><span data-lang-en>Generate Frida hook scripts</span><span data-lang-zh>生成 Frida Hook 脚本</span></td></tr>
-          <tr><td><code>frida.trace</code></td><td><span data-lang-en>API tracing with Frida</span><span data-lang-zh>使用 Frida 进行 API 追踪</span></td></tr>
-          <tr><td><code>qiling.emulate</code></td><td><span data-lang-en>Emulate binary with Qiling</span><span data-lang-zh>使用 Qiling 模拟二进制</span></td></tr>
-          <tr><td><code>angr.symbolic</code></td><td><span data-lang-en>Symbolic execution with angr</span><span data-lang-zh>使用 angr 进行符号执行</span></td></tr>
-          <tr><td><code>wine.debug</code></td><td><span data-lang-en>Debug with Wine/winedbg</span><span data-lang-zh>使用 Wine/winedbg 调试</span></td></tr>
+          <tr><td><code>dynamic.auto_hook</code></td><td><span data-lang-en>Generate Frida hook plans from static evidence</span><span data-lang-zh>基于静态证据生成 Frida Hook 方案</span></td></tr>
+          <tr><td><code>dynamic.runtime.status</code></td><td><span data-lang-en>Read Runtime Node, Host Agent, Sandbox, Hyper-V, capability, and persisted session status without launching a backend</span><span data-lang-zh>读取 Runtime Node、Host Agent、Sandbox、Hyper-V、能力和持久化会话状态，不主动启动后端</span></td></tr>
+          <tr><td><code>dynamic.toolkit.status</code></td><td><span data-lang-en>Read Runtime Node debugger, dump, telemetry, network, .NET, and manual GUI tool inventory without launching or executing anything</span><span data-lang-zh>只读查询 Runtime Node 内调试器、dump、遥测、网络、.NET、手动 GUI 工具库存，不启动、不执行样本</span></td></tr>
+          <tr><td><code>dynamic.deep_plan</code></td><td><span data-lang-en>Build an explicit deep dynamic plan for behavior, CDB breakpoints, memory dumps, ProcMon/Sysmon/ETW-style telemetry, FakeNet-style labs, .NET, anti-evasion, TTD, x64dbg, and dnSpy profiles</span><span data-lang-zh>生成显式深度动态计划，覆盖行为、CDB 断点、内存 dump、ProcMon/Sysmon/ETW 风格遥测、FakeNet 风格网络实验、.NET、反逃逸、TTD、x64dbg 和 dnSpy 方案</span></td></tr>
+          <tr><td><code>debug.cdb.plan</code></td><td><span data-lang-en>Build planning-only CDB command batches and runtime.debug.command templates for API breakpoints, exception tracing, module-load stops, and dumps</span><span data-lang-zh>生成只规划不执行的 CDB 命令批次和 runtime.debug.command 模板，用于 API 断点、异常跟踪、模块加载停止和 dump</span></td></tr>
+          <tr><td><code>debug.procdump.plan</code></td><td><span data-lang-en>Build planning-only ProcDump runtime.debug.command templates for crash, first-chance exception, timeout, and PID snapshot dumps</span><span data-lang-zh>生成只规划不执行的 ProcDump runtime.debug.command 模板，用于崩溃、first-chance 异常、超时和 PID 快照 dump</span></td></tr>
+          <tr><td><code>debug.telemetry.plan</code></td><td><span data-lang-en>Build planning-only ProcMon, Sysmon, ETW, and event-log capture plans with cleanup and rollback guidance</span><span data-lang-zh>生成只规划不执行的 ProcMon、Sysmon、ETW 和事件日志采集方案，并包含清理和回滚要求</span></td></tr>
+          <tr><td><code>debug.network.plan</code></td><td><span data-lang-en>Build planning-only proxy sinkhole, ETW DNS, and FakeNet-style network lab profiles with runtime.debug.command templates</span><span data-lang-zh>生成只规划不执行的 proxy sinkhole、ETW DNS 和 FakeNet 风格网络实验方案，并包含 runtime.debug.command 模板</span></td></tr>
+          <tr><td><code>debug.managed.plan</code></td><td><span data-lang-en>Build planning-only .NET safe-run, SOS/CDB, ProcDump, resource review, and dnSpy handoff profiles</span><span data-lang-zh>生成只规划不执行的 .NET safe-run、SOS/CDB、ProcDump、资源复核和 dnSpy handoff 方案</span></td></tr>
+          <tr><td><code>debug.gui.handoff</code></td><td><span data-lang-en>Build artifact-backed x64dbg, WinDbg, and dnSpyEx manual GUI handoff notes for visible Sandbox/Hyper-V runtimes</span><span data-lang-zh>生成面向可见 Sandbox/Hyper-V runtime 的 x64dbg、WinDbg 和 dnSpyEx 手动 GUI 交接记录</span></td></tr>
+          <tr><td><code>dynamic.persona.plan</code></td><td><span data-lang-en>Build a planning-only Sandbox/Hyper-V persona checklist for user files, RecentDocs, Office traces, locale, network persona, and interaction timing</span><span data-lang-zh>生成只规划不启动的 Sandbox/Hyper-V persona 清单，覆盖用户文件、RecentDocs、Office 痕迹、区域设置、网络画像和交互节奏</span></td></tr>
+          <tr><td><code>dynamic.behavior.diff</code></td><td><span data-lang-en>Compare static behavior expectations against runtime observations and report confirmed, dormant, and unexpected behavior</span><span data-lang-zh>对比静态行为预期和运行时观察，报告已确认、未触发和意外行为</span></td></tr>
+          <tr><td><code>analysis.evidence.graph</code></td><td><span data-lang-en>Link static artifacts, runtime observations, and corroboration edges into a compact evidence graph</span><span data-lang-zh>把静态 artifact、运行时观察和相互印证边组织成紧凑证据图</span></td></tr>
+          <tr><td><code>hash.resolver.plan</code></td><td><span data-lang-en>Plan API hash resolver recovery from static strings and hash-like constants without executing the sample</span><span data-lang-zh>从静态字符串和疑似 hash 常量规划 API hash resolver 恢复，不执行样本</span></td></tr>
+          <tr><td><code>crypto.lifecycle.graph</code></td><td><span data-lang-en>Connect crypto findings, constants, runtime APIs, stages, and memory-region hints into a lifecycle graph</span><span data-lang-zh>把 crypto 发现、常量、运行时 API、阶段和内存区域线索连接成生命周期图</span></td></tr>
+          <tr><td><code>unpack.child.handoff</code></td><td><span data-lang-en>Carve resource, raw-sample, or raw-dump payload candidates and register bounded child samples with provenance</span><span data-lang-zh>从资源、原始样本或 raw dump 中提取 payload 候选，并注册带 provenance 的 child sample</span></td></tr>
+          <tr><td><code>runtime.hyperv.control</code></td><td><span data-lang-en>Query Hyper-V status, list/create/restore checkpoints, or stop the configured runtime VM through Host Agent</span><span data-lang-zh>通过 Host Agent 查询 Hyper-V 状态、列出/创建/恢复 checkpoint 或停止配置的运行时 VM</span></td></tr>
+          <tr><td><code>dynamic.behavior.capture</code></td><td><span data-lang-en>Run bounded behavior capture inside the active Runtime Node and persist process/module/file/TCP evidence</span><span data-lang-zh>在活动 Runtime Node 中执行受限行为捕获，并持久化进程、模块、文件、TCP 证据</span></td></tr>
+          <tr><td><code>dynamic.memory_dump</code></td><td><span data-lang-en>Capture and scan runtime memory through the active runtime backend</span><span data-lang-zh>通过活动运行时后端采集并扫描内存</span></td></tr>
+          <tr><td><code>sandbox.execute</code></td><td><span data-lang-en>Run bounded sandbox execution through the selected runtime backend</span><span data-lang-zh>通过所选运行时后端执行受限沙箱任务</span></td></tr>
+          <tr><td><code>runtime.debug.session.start</code></td><td><span data-lang-en>Start or attach to a Windows Sandbox or Hyper-V VM runtime session; Hyper-V sessions accept <code>hyperv_retention_policy</code> values <code>clean_rollback</code>, <code>stop_only</code>, or <code>preserve_dirty</code></span><span data-lang-zh>启动或附着 Windows Sandbox / Hyper-V VM 运行时会话；Hyper-V 会话可用 <code>hyperv_retention_policy</code> 选择 <code>clean_rollback</code>、<code>stop_only</code> 或 <code>preserve_dirty</code></span></td></tr>
+          <tr><td><code>runtime.debug.session.status</code></td><td><span data-lang-en>Inspect Host Agent and Runtime Node health for tracked sessions</span><span data-lang-zh>查询 Host Agent、Runtime Node 和会话健康状态</span></td></tr>
+          <tr><td><code>runtime.debug.command</code></td><td><span data-lang-en>Dispatch debug.session.*, sandbox.execute, behavior capture, telemetry, ProcDump, managed safe-run, or dump commands inside an active runtime session</span><span data-lang-zh>在活动运行时会话中分发 debug.session.*、sandbox.execute、行为捕获、遥测、ProcDump、managed safe-run 或转储命令</span></td></tr>
+          <tr><td><code>runtime.debug.session.stop</code></td><td><span data-lang-en>Release the runtime session and stop the selected backend when configured</span><span data-lang-zh>释放运行时会话，并按配置停止所选后端</span></td></tr>
         </tbody>
       </table>
     </section>
@@ -232,7 +254,7 @@ workflow.analyze.promote → Queue deeper stages without rerunning compatible wo
           <tr><td><code>enrich_static</code></td><td><span data-lang-en>Full strings, FLOSS, capability triage, PE structure, crypto, Rust profile</span><span data-lang-zh>完整字符串、FLOSS、能力分类、PE 结构、加密、Rust 分析</span></td></tr>
           <tr><td><code>function_map</code></td><td><span data-lang-en>Ghidra deep attribution + bounded Rizin corroboration</span><span data-lang-zh>Ghidra 深度归因 + 有界 Rizin 校验</span></td></tr>
           <tr><td><code>reconstruct</code></td><td><span data-lang-en>Reconstruct workflow + targeted RetDec and angr artifacts</span><span data-lang-zh>重建工作流 + 定向 RetDec 和 angr 产物</span></td></tr>
-          <tr><td><code>dynamic_plan</code></td><td><span data-lang-en>Readiness probes, breakpoint planning, Qiling, PANDA</span><span data-lang-zh>就绪探测、断点规划、Qiling、PANDA</span></td></tr>
+          <tr><td><code>dynamic_plan</code></td><td><span data-lang-en>Static behavior classification, evidence-aware deep dynamic plan, readiness probes, breakpoint planning, Qiling, PANDA</span><span data-lang-zh>静态行为分类、证据感知深度动态计划、就绪探测、断点规划、Qiling、PANDA</span></td></tr>
           <tr><td><code>dynamic_execute</code></td><td><span data-lang-en>Safe simulation first, approval-gated execution paths</span><span data-lang-zh>安全模拟优先、审批门控执行路径</span></td></tr>
           <tr><td><code>summarize</code></td><td><span data-lang-en>Persisted summary digests and report views</span><span data-lang-zh>持久化摘要和报告视图</span></td></tr>
         </tbody>

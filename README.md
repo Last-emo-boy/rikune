@@ -17,7 +17,7 @@ An MCP server for Windows reverse engineering. It exposes PE triage, Ghidra-back
 - **HTTP File Server**: Embedded HTTP API on port 18080 for direct sample uploads, artifact downloads, and upload session management with API key authentication.
 - **Web Dashboard**: Dark-themed real-time monitoring dashboard at `http://localhost:18080/dashboard` — shows all tools, plugins, samples, config diagnostics, system resources, and SSE event stream.
 - **Server-Sent Events (SSE)**: Real-time event streaming at `/api/v1/events` for analysis progress, sample ingestion, and server state changes.
-- **Advanced analysis tools**: Section-level entropy analysis, obfuscation detection (CFF, opaque predicates, string encryption, .NET-specific), static taint tracking, intelligent unpacking guidance, auto-generated Frida hook scripts, and Sigma detection rule generation.
+- **Advanced analysis tools**: Section-level entropy analysis, behavior classification, obfuscation detection (CFF, opaque predicates, string encryption, .NET-specific), static taint tracking, child-sample handoff, intelligent unpacking guidance, auto-generated Frida hook scripts, and Sigma detection rule generation.
 
 ## New in the staged analysis pipeline
 
@@ -111,6 +111,10 @@ reverse engineering:
   into one canonical PE summary with backend-specific detail blocks.
 - `compiler.packer.detect` adds compiler, protector, and packer attribution
   with setup-aware degradation when Detect It Easy is unavailable.
+- `static.resource.graph`, `static.config.carver`,
+  `static.behavior.classify`, and `unpack.child.handoff` add composable
+  payload, configuration, persistence/injection, and child-sample handoff
+  evidence before live execution.
 - `workflow.triage`, `report.summarize`, and `report.generate` now consume
   these results directly, including artifact provenance, static scope selection,
   and compare/baseline support.
@@ -161,6 +165,8 @@ It is designed to help MCP clients:
 - `sample.ingest`
 - `sample.profile.get`
 - `static.capability.triage`
+- `static.resource.graph`
+- `static.config.carver`
 - `pe.structure.analyze`
 - `compiler.packer.detect`
 - `pe.fingerprint`
@@ -206,11 +212,28 @@ It is designed to help MCP clients:
 ### Runtime evidence and reporting
 
 - `dynamic.dependencies`
+- `dynamic.runtime.status`
+- `dynamic.toolkit.status` - Read Runtime Node tool inventory for CDB, ProcDump, ProcMon, Sysmon, TTD, x64dbg, dnSpyEx, Frida, dotnet, and FakeNet-style helpers without launching or executing anything
+- `dynamic.deep_plan` - Build an explicit deep dynamic analysis plan across behavior capture, debugger, memory, telemetry, network, .NET, anti-evasion, TTD, and manual GUI profiles
+- `debug.cdb.plan` - Build planning-only CDB command batches for API breakpoints, exception tracing, module-load stops, and dump-on-break templates
+- `debug.procdump.plan` - Build planning-only ProcDump capture templates for crash, first-chance exception, timeout, and PID snapshot dumps
+- `debug.telemetry.plan` - Build planning-only ProcMon, Sysmon, ETW, and event-log capture plans with cleanup and rollback guidance
+- `debug.network.plan` - Build planning-only proxy sinkhole, ETW DNS, and FakeNet-style network lab profiles
+- `debug.managed.plan` - Build planning-only .NET safe-run, SOS/CDB, ProcDump, resource review, and dnSpy handoff profiles
+- `debug.gui.handoff` - Build artifact-backed x64dbg, WinDbg, and dnSpyEx manual handoff notes for visible Sandbox/Hyper-V runtimes
+- `dynamic.persona.plan` - Build a planning-only Windows runtime persona checklist for Sandbox/Hyper-V without launching or modifying a runtime
+- `dynamic.behavior.diff` - Compare static expectations against runtime observations and report confirmed, dormant, and unexpected behavior
+- `analysis.evidence.graph` - Link static artifacts, runtime observations, and corroboration edges into a compact evidence graph
+- `crypto.lifecycle.graph` - Link crypto findings, candidate constants, runtime APIs, stages, and memory-region hints into a lifecycle graph
+- `runtime.hyperv.control`
 - `sandbox.execute`
+- `dynamic.behavior.capture`
 - `dynamic.trace.import`
 - `dynamic.memory.import`
 - `dynamic.auto_hook` - Automated Frida hook generation from static evidence
 - `dynamic.memory_dump` - Runtime memory dump with pattern scanning
+- `runtime.debug.session.start` / `runtime.debug.session.status` / `runtime.debug.session.stop` - Explicit Windows runtime session lifecycle for Windows Sandbox or Hyper-V VM backends
+- `runtime.debug.command` - Dispatch an approved Runtime Node command inside an active runtime debug session
 - `attack.map`
 - `ioc.export`
 - `report.summarize`
@@ -245,15 +268,22 @@ It is designed to help MCP clients:
 - `rizin.diff` - Binary diffing (function/basic-block level)
 - `cfg.visualize` - Control flow graph visualization (DOT/SVG/JSON)
 - `timeline.correlate` - Multi-source event timeline correlation
+- `analysis.evidence.graph` - Static/runtime evidence graph with corroboration edges
+- `crypto.lifecycle.graph` - Crypto lifecycle graph with static/runtime corroboration
 - `cross_module.xref` - Cross-module cross-reference analysis
 - `kb.search` - Knowledge base semantic search
 
 ### Advanced analysis
 
 - `entropy.analyze` - Section-level Shannon entropy with packing/crypto classification
+- `static.resource.graph` - PE resource and embedded-payload graphing with entropy, magic, hashes, and resource string previews
+- `static.config.carver` - Generic config candidate carving for URLs, hosts, registry paths, mutexes, HTTP client strings, and encoded blobs
+- `static.behavior.classify` - Persistence, service, scheduled task, WMI, process injection, DLL injection, APC, and hollowing classifier
+- `hash.resolver.plan` - Static API hash resolver planning with hash-family hints and breakpoint handoff guidance
 - `obfuscation.detect` - Detect CFF, opaque predicates, string encryption, import obfuscation, anti-disassembly, .NET obfuscation
 - `taint.track` - Static taint tracking: source/sink API mapping, taint path enumeration, risk classification
 - `unpack.guide` - Intelligent unpacking guidance for UPX, Themida, VMProtect, .NET Reactor, ConfuserEx, ASPack, PECompact
+- `unpack.child.handoff` - Carve embedded payload candidates and register bounded child samples with provenance
 - `frida.script.generate` - Auto-generate Frida hook scripts from analysis evidence (crypto, network, file I/O, registry, process, anti-debug, memory)
 - `sigma.rule.generate` - Auto-generate Sigma detection rules from sample evidence (process creation, file events, registry, network, DNS, image load)
 
@@ -506,7 +536,7 @@ When running any Docker profile (`static`, `hybrid`, or `full`), the container e
 
 | Service | Access | Description |
 |---------|--------|-------------|
-| MCP Server | stdio (`docker exec -i`) | 222 tools, 3 prompts, 16 resources for LLM clients |
+| MCP Server | stdio (`docker exec -i`) | 241 tools, 3 prompts, 16 resources for LLM clients |
 | HTTP API | `http://localhost:18080/api/v1/*` | REST API for samples, artifacts, uploads, health, SSE |
 | Web Dashboard | `http://localhost:18080/dashboard` | Real-time monitoring SPA (8 tabs, dark theme) |
 | SSE Events | `http://localhost:18080/api/v1/events` | Real-time event stream for analysis events |
@@ -518,7 +548,7 @@ When running any Docker profile (`static`, `hybrid`, or `full`), the container e
 |--------|----|-------|-------------|
 | Android / APK | `android` | 4 | APK manifest, DEX decompilation, packer detection |
 | angr | `angr` | 1 | Symbolic execution engine |
-| API Hash | `api-hash` | 2 | Shellcode API hash resolution |
+| API Hash | `api-hash` | 3 | Shellcode API hash resolution and resolver planning |
 | APK Smali | `apk-smali` | 3 | APK Smali disassembly and analysis |
 | Batch Analysis | `batch` | 3 | Batch sample processing |
 | Behavior-First | `behavior-first` | 3 | Behavioral analysis prioritization |
@@ -532,7 +562,7 @@ When running any Docker profile (`static`, `hybrid`, or `full`), the container e
 | Detect It Easy | `die` | 2 | Compiler, packer, and protector detection |
 | .NET Decompile | `dotnet-decompile` | 2 | .NET assembly decompilation |
 | .NET Reactor | `dotnet-reactor` | 4 | .NET obfuscation analysis and deobfuscation |
-| Dynamic Analysis | `dynamic` | 7 | Auto Frida hooks, trace attribution, memory dumps |
+| Dynamic Analysis | `dynamic` | 24 | Runtime status, runtime toolkit inventory, deep dynamic planning, CDB, ProcDump, telemetry, network lab, managed runtime, and GUI handoff planning, runtime persona planning, behavior diffing, Hyper-V control, behavior capture, auto Frida hooks, trace attribution, memory dumps, runtime debug-session control |
 | ELF/Mach-O | `elf-macho` | 4 | Cross-platform binary parsing |
 | Firmware | `firmware` | 3 | Firmware extraction and analysis |
 | Frida Instrumentation | `frida` | 4 | Runtime instrumentation, script injection, trace capture |
@@ -561,12 +591,12 @@ When running any Docker profile (`static`, `hybrid`, or `full`), the container e
 | SBOM | `sbom` | 1 | Software Bill of Materials generation |
 | Similarity | `similarity` | 2 | Binary similarity and matching |
 | Speakeasy | `speakeasy` | 3 | Emulation-based analysis with Speakeasy |
-| Static Triage | `static-triage` | 17 | Capability triage, PE structure, compiler/packer detection |
+| Static Triage | `static-triage` | 20 | Capability triage, resource graphing, config carving, behavior classification, compiler/packer detection |
 | Strings | `strings` | 2 | Advanced string extraction and analysis |
 | Threat Intelligence | `threat-intel` | 3 | ATT&CK mapping and IOC export |
-| Unpacking | `unpacking` | 2 | Packer detection and unpacking |
+| Unpacking | `unpacking` | 3 | Packer detection, unpacking, and child-sample handoff |
 | UPX | `upx` | 1 | UPX unpacking backend |
-| Visualization | `visualization` | 3 | HTML reports, behavior timelines, data-flow maps |
+| Visualization | `visualization` | 5 | HTML reports, behavior timelines, data-flow maps, evidence graphs, crypto lifecycle graphs |
 | VM Analysis | `vm-analysis` | 10 | VM/emulator detection and analysis |
 | Vulnerability Scanner | `vuln-scanner` | 2 | Vulnerability pattern scanning and summary |
 | Wine | `wine` | 1 | Windows PE execution via Wine |
@@ -576,6 +606,13 @@ When running any Docker profile (`static`, `hybrid`, or `full`), the container e
 Plugins are controlled via the `PLUGINS` environment variable (`*` = all, `android,malware` = specific, `-dynamic` = exclude). See [`docs/PLUGINS.md`](./docs/PLUGINS.md).
 
 ### In Development (Post-beta roadmap)
+
+The full dynamic runtime iteration plan is tracked in
+[`docs/DYNAMIC-RUNTIME-ROADMAP.md`](./docs/DYNAMIC-RUNTIME-ROADMAP.md). It
+covers runtime session persistence, capability-driven dispatch, artifact
+auto-import, Sandbox diagnostics, long-lived Windows debug sessions, Hyper-V VM
+debugging, Frida execution, behavior capture, memory dump workflows, staged
+workflow integration, dashboard runtime views, and unified backend interfaces.
 
 For the new static triage foundation, the most common optional requirements are:
 
@@ -635,8 +672,8 @@ This summary is surfaced through:
 
 The server uses a **centralised tool registry** (`src/tool-registry.ts`) that
 imports and wires 31 core MCP tools, 3 prompts, and 16 resources in one place.
-An additional 191 tools are registered by the 56 built-in plugins, bringing the
-total to 222 MCP tools.
+An additional 210 tools are registered by the 56 built-in plugins, bringing the
+total to 241 MCP tools.
 The entry point (`src/index.ts`) is kept under 90 lines.
 
 All 56 tool categories — from PE analysis and vulnerability scanning to Android,
@@ -786,14 +823,16 @@ For most users, start from the top-level script and choose from the menu:
 
 Docker profiles require Docker Desktop / Docker Engine, Node.js 22+, npm 10+,
 and enough disk space for the generated image. Hybrid on Windows also requires
-Windows 10/11 Pro or Enterprise with Windows Sandbox support enabled.
+Windows 10/11 Pro or Enterprise. The default runtime backend uses Windows
+Sandbox from a logged-on user session; the optional `hyperv-vm` backend uses a
+pre-provisioned Hyper-V VM that already runs the Rikune Runtime Node.
 
 The Windows menu exposes the normal lifecycle in one place:
 
 | Menu | What it does |
 |------|--------------|
 | `1` | Install `static`: Docker analyzer only, no real sample execution |
-| `2` | Install `hybrid`: Docker analyzer + local Windows Host Agent + Windows Sandbox |
+| `2` | Install `hybrid`: Docker analyzer + local Windows Host Agent + Windows Sandbox or Hyper-V VM runtime |
 | `3` | Install `full`: heavier all-in-one Linux Docker image |
 | `4` to `9` | Start, status/health, logs, stop, doctor, and runtime status |
 
@@ -808,7 +847,7 @@ Linux/macOS has the same top-level entry point:
 | Profile | Analyzer | Runtime | Dockerfile | Compose file | Container | Use this when |
 |---------|----------|---------|------------|--------------|-----------|---------------|
 | `static` | Linux Docker | none | `docker/Dockerfile.analyzer` | `docker-compose.analyzer.yml` | `rikune-analyzer` | You want safe static/offline analysis |
-| `hybrid` | Linux Docker | Windows Host Agent + Windows Sandbox | `docker/Dockerfile.analyzer` | `docker-compose.hybrid.yml` | `rikune-analyzer` | You want Docker analysis plus isolated Windows execution |
+| `hybrid` | Linux Docker | Windows Host Agent + Windows Sandbox or Hyper-V VM | `docker/Dockerfile.analyzer` | `docker-compose.hybrid.yml` | `rikune-analyzer` | You want Docker analysis plus isolated Windows execution |
 | `full` | Linux Docker | none by default | `Dockerfile` | `docker-compose.yml` | `rikune` | You intentionally want the heavier Linux-side toolchain |
 | Windows native | Windows process | local Windows Sandbox | none | none | none | You want `RUNTIME_MODE=auto-sandbox` from a native Windows analyzer |
 
@@ -819,7 +858,15 @@ Recommended commands:
 .\rikune.ps1 install -Profile static
 
 # Single Windows host: Docker Desktop analyzer + Host Agent + Windows Sandbox.
-.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+.\rikune.ps1 install -Profile hybrid -InstallRuntime
+
+# Debug/runtime backend using a pre-provisioned Hyper-V VM.
+.\rikune.ps1 install -Profile hybrid -InstallRuntime `
+  -RuntimeBackend hyperv-vm `
+  -HyperVVmName "rikune-runtime" `
+  -HyperVSnapshotName "clean-runtime" `
+  -HyperVRuntimeEndpoint "http://192.168.1.50:18081" `
+  -HyperVRestoreOnRelease
 
 # Heavy Linux toolchain image.
 .\rikune.ps1 install -Profile full
@@ -852,7 +899,12 @@ docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up 
 Runtime rules that matter:
 
 - `static` and `hybrid` use the analyzer image and do not install local dynamic execution dependencies such as Wine, Frida, Qiling, or GDB into the analyzer container.
-- `hybrid` sets `RUNTIME_MODE=remote-sandbox`; the analyzer talks to the Windows Host Agent, and the Host Agent starts Windows Sandbox on demand when a dynamic/sandbox tool actually needs execution.
+- `hybrid` sets `RUNTIME_MODE=remote-sandbox`; the analyzer talks to the Windows Host Agent, and the Host Agent starts the selected runtime backend only when a dynamic/sandbox tool actually needs execution.
+- The default `windows-sandbox` Host Agent backend must run in a logged-on Windows user session. Do not install it as a Windows Service; use the top-level script, PM2 in the user session, or a scheduled task configured to run only when the user is logged on.
+- The `hyperv-vm` backend is for debugging and unattended-style runtime experiments. The VM must already contain a reachable Runtime Node, and an optional checkpoint can be restored before each runtime session.
+- Hyper-V runtime sessions can choose a release policy. Use `hyperv_retention_policy='clean_rollback'` on `runtime.debug.session.start` to restore the checkpoint after release, `stop_only` to power off and keep disk state, or `preserve_dirty` to leave the VM available for manual inspection. The installer flag `-HyperVRestoreOnRelease` sets the Host Agent default.
+- Runtime sessions are explicit. Use `workflow.analyze.promote(dynamic_plan)` when you want the staged workflow to run `static.behavior.classify`, build an evidence-aware `dynamic.deep_plan`, and keep live execution gated. Use `dynamic.runtime.status` to inspect Runtime Node and Host Agent readiness, `dynamic.toolkit.status` to inspect runtime-side debugger/telemetry/dump/manual-GUI tool inventory, `dynamic.deep_plan` to choose a bounded live-analysis profile, `debug.network.plan`, `debug.managed.plan`, and `debug.gui.handoff` when you need network lab, .NET runtime, or manual GUI handoff detail, `dynamic.persona.plan` to prepare a planning-only Sandbox/Hyper-V persona checklist, `runtime.hyperv.control` when you need Hyper-V status/checkpoint create/restore/stop operations, `runtime.debug.session.start` to create or attach to a Windows runtime, `runtime.debug.command` to dispatch `debug.session.*`, `sandbox.execute`, `dynamic.behavior.capture`, telemetry, ProcDump, managed safe-run, or memory-dump work inside it, then use `dynamic.behavior.diff`, `analysis.evidence.graph`, and `crypto.lifecycle.graph` to correlate runtime observations back to static expectations before `runtime.debug.session.stop` releases the backend.
+- Runtime tool cache lookup is read-only and can use `RUNTIME_TOOL_DIRS`, `RUNTIME_TOOL_CACHE_DIR`, `RIKUNE_RUNTIME_TOOLS`, or the default `C:\rikune-tools` mount. Put optional tools such as Windows Debugging Tools `cdb.exe`, Sysinternals ProcDump/ProcMon/Sysmon, TTD helpers, x64dbg, dnSpyEx, Frida, dotnet, or FakeNet-style harnesses there when you want deeper dynamic profiles.
 - The Windows Sandbox window may appear during dynamic analysis. That is expected; install/start does not need to keep a Sandbox GUI open.
 - Docker and WSL analyzers cannot use `auto-sandbox` directly. `auto-sandbox` is only for a Windows-native analyzer process.
 - Use `RUNTIME_HOST_AGENT_API_KEY` for Analyzer -> Host Agent control requests. Use `RUNTIME_API_KEY` only when the Windows Runtime Node itself enforces a separate key.

@@ -24,7 +24,7 @@ streaming support, and MCP resource exposure.
 │                    │                                │
 │        ┌───────────┼────────────────┐               │
 │        ▼           ▼                ▼               │
-│  222 Tool      3 Prompt      16 Resource            │
+│  226 Tool      3 Prompt      16 Resource            │
 │  Handlers      Handlers      Handlers               │
 │        │           │                │               │
 │  ┌─────▼───┐ ┌─────▼───┐   ┌──────▼──────┐        │
@@ -61,15 +61,30 @@ Runtime deployment is intentionally split from the analyzer:
 | Plane | Responsibility | Typical process |
 |-------|----------------|-----------------|
 | Analyzer | MCP stdio server, dashboard/API, static analysis, database, Ghidra projects, artifacts | `node dist/index.js` or Docker `rikune-analyzer` |
-| Host Agent | Windows-side control plane for creating and supervising sandbox runtimes | `packages/windows-host-agent/dist/index.js` |
-| Runtime Node | In-sandbox execution API used by dynamic/sandbox tools | `packages/runtime-node/dist/index.js` inside Windows Sandbox |
+| Host Agent | Windows-side control plane for creating and supervising runtime backends | `packages/windows-host-agent/dist/index.js` |
+| Runtime Node | Execution API used by dynamic/sandbox tools | `packages/runtime-node/dist/index.js` inside Windows Sandbox or a managed VM |
 
 Docker profiles map onto these planes:
 
 - `static`: analyzer container only, `RUNTIME_MODE=disabled`.
-- `hybrid`: analyzer container with `RUNTIME_MODE=remote-sandbox`; runtime work is delegated to the Windows Host Agent, which starts Windows Sandbox on demand.
+- `hybrid`: analyzer container with `RUNTIME_MODE=remote-sandbox`; runtime work is delegated to the Windows Host Agent, which starts the selected backend on demand.
 - `full`: heavier Linux analyzer image for all-in-one toolchain experiments; real Windows Sandbox execution still belongs to Windows native / hybrid runtime paths.
 - Windows native `auto-sandbox`: analyzer runs directly on Windows and may launch local Windows Sandbox without Docker.
+
+Host Agent runtime backends:
+
+- `windows-sandbox` (default): starts Windows Sandbox from a logged-on Windows user session. This backend must not run as a traditional Windows Service because Windows Sandbox requires an interactive desktop session for the runtime startup command to execute.
+- `hyperv-vm`: starts a pre-provisioned Hyper-V VM, optionally restores a named checkpoint, waits for the Runtime Node endpoint to become healthy, and returns that endpoint to the analyzer. This is useful for debugging, snapshot rollback, and unattended-style runtime experiments.
+
+Runtime execution is explicit at the tool level. `dynamic.runtime.status` and
+`dynamic.toolkit.status` are read-only probes, `dynamic.deep_plan` builds a
+planning-only profile, `debug.network.plan`, `debug.managed.plan`, and
+`debug.gui.handoff` refine network, .NET, and manual GUI paths, `runtime.debug.session.start`
+creates or attaches a Windows runtime session, `runtime.debug.command`
+dispatches approved Runtime Node commands such as `debug.session.*`,
+`sandbox.execute`, `dynamic.behavior.capture`, telemetry, ProcDump, managed
+safe-run, or `dynamic.memory_dump`, and `runtime.debug.session.stop` releases
+the backend.
 
 MCP clients do not connect to the dashboard HTTP server. They use JSON-RPC over
 stdio. In Docker deployments, clients normally run the MCP child with
@@ -109,7 +124,7 @@ interface ToolDeps {
 
 An `async` function that:
 
-1. Registers 31 core MCP tools plus 191 plugin tools (222 total), grouped by category:
+1. Registers 31 core MCP tools plus 210 plugin tools (241 total), grouped by category:
    - Core (ingest, profile, triage)
    - LLM-assisted review (naming, explanation, reconstruction)
    - PE analysis (structure, headers, sections, exports)

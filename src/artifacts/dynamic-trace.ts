@@ -517,6 +517,21 @@ export function normalizeDynamicTraceArtifactPayload(raw: unknown): NormalizedDy
     return raw as NormalizedDynamicTrace
   }
 
+  if (
+    record.schema === 'rikune.behavior_capture.v1' &&
+    record.normalized_trace &&
+    typeof record.normalized_trace === 'object'
+  ) {
+    const normalized = record.normalized_trace as Record<string, unknown>
+    if (
+      normalized.schema_version === '0.1.0' &&
+      typeof normalized.source_format === 'string' &&
+      Array.isArray(normalized.api_calls)
+    ) {
+      return normalized as unknown as NormalizedDynamicTrace
+    }
+  }
+
   if (typeof record.run_id === 'string' && (Array.isArray(record.timeline) || Array.isArray(record.api_resolution))) {
     const apiResolution = Array.isArray(record.api_resolution) ? record.api_resolution : []
     const memoryRegions = Array.isArray(record.memory_regions) ? record.memory_regions : []
