@@ -623,6 +623,7 @@ async function getHyperVRuntimeStatus(): Promise<Record<string, unknown> | null>
     const result = await runPowerShell(script, 30_000)
     return JSON.parse(result.stdout) as Record<string, unknown>
   } catch (err) {
+    logger.warn('Failed to get Hyper-V runtime status', err)
     return {
       configured: true,
       vmName,
@@ -632,7 +633,7 @@ async function getHyperVRuntimeStatus(): Promise<Record<string, unknown> | null>
       restoreOnRelease,
       stopOnRelease,
       state: null,
-      error: err instanceof Error ? err.message : String(err),
+      error: 'Failed to retrieve Hyper-V runtime status',
     }
   }
 }
