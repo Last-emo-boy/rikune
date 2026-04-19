@@ -137,7 +137,7 @@
     "ts-jest": "^29.4.6",
     "tsx": "^4.21.0",
     "turbo": "^2.9.6",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   },
   "engines": {
     "node": ">=22.0.0"
