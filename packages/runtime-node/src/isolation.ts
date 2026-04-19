@@ -13,7 +13,13 @@ export async function isIsolatedEnvironment(): Promise<boolean> {
 
   const checks: (() => number)[] = [
     // Windows Sandbox uses WDAGUtilityAccount as the default user (strong signal)
-    () => (os.userInfo().username === 'WDAGUtilityAccount' ? 2 : 0),
+    () => {
+      try {
+        return os.userInfo().username === 'WDAGUtilityAccount' ? 2 : 0
+      } catch {
+        return 0
+      }
+    },
     // Windows Sandbox desktop path contains specific markers (strong signal)
     () => {
       try {
