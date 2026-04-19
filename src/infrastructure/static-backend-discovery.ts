@@ -120,7 +120,10 @@ function probeVersion(binaryPath: string, versionArgSets: string[][]): string | 
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       })
-      const line = output.split(/\r?\n/).map((item) => item.trim()).find((item) => item.length > 0)
+      const line = output
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .find((item) => item.length > 0)
       if (line) {
         return line
       }
@@ -128,7 +131,9 @@ function probeVersion(binaryPath: string, versionArgSets: string[][]): string | 
       const stderr = (error as { stderr?: string | Buffer | null }).stderr
       const stdout = (error as { stdout?: string | Buffer | null }).stdout
       const combined = [stdout, stderr]
-        .map((item) => (typeof item === 'string' ? item : Buffer.isBuffer(item) ? item.toString('utf8') : ''))
+        .map((item) =>
+          typeof item === 'string' ? item : Buffer.isBuffer(item) ? item.toString('utf8') : ''
+        )
         .join('\n')
       const line = combined
         .split(/\r?\n/)
@@ -223,9 +228,10 @@ function probePythonModule(options: {
   moduleNames: string[]
   distributionNames?: string[]
 }): { available: boolean; version: string | null; error: string | null } {
-  const distributions = options.distributionNames && options.distributionNames.length > 0
-    ? options.distributionNames
-    : options.moduleNames
+  const distributions =
+    options.distributionNames && options.distributionNames.length > 0
+      ? options.distributionNames
+      : options.moduleNames
 
   const script = `
 import importlib, importlib.metadata, json, sys
@@ -269,14 +275,22 @@ sys.exit(0 if loaded else 1)
     const stdout = (error as { stdout?: string | Buffer | null }).stdout
     const stderr = (error as { stderr?: string | Buffer | null }).stderr
     const combined = [stdout, stderr]
-      .map((item) => (typeof item === 'string' ? item : Buffer.isBuffer(item) ? item.toString('utf8') : ''))
+      .map((item) =>
+        typeof item === 'string' ? item : Buffer.isBuffer(item) ? item.toString('utf8') : ''
+      )
       .join('\n')
       .trim()
-    const line = combined.split(/\r?\n/).map((item) => item.trim()).filter(Boolean).pop()
+    const line = combined
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .pop()
     if (line) {
       try {
         const parsed = JSON.parse(line)
-        const errorText = Array.isArray(parsed.errors) ? parsed.errors.join('; ') : 'Module import failed'
+        const errorText = Array.isArray(parsed.errors)
+          ? parsed.errors.join('; ')
+          : 'Module import failed'
         return {
           available: false,
           version: parsed.version || null,
@@ -302,7 +316,10 @@ export function resolvePythonModuleBackend(options: {
   distributionNames?: string[]
 }): ExternalExecutableResolution {
   const checkedCandidates: string[] = []
-  const candidates = options.pathCandidates && options.pathCandidates.length > 0 ? options.pathCandidates : ['python3', 'python']
+  const candidates =
+    options.pathCandidates && options.pathCandidates.length > 0
+      ? options.pathCandidates
+      : ['python3', 'python']
 
   const configuredPath = options.configuredPythonPath?.trim()
   if (configuredPath) {
@@ -384,7 +401,8 @@ export function resolvePythonModuleBackend(options: {
     path: null,
     version: null,
     checked_candidates: uniquePreserve(checkedCandidates),
-    error: 'Python interpreter for module probe was not found in config, environment variables, or PATH.',
+    error:
+      'Python interpreter for module probe was not found in config, environment variables, or PATH.',
   }
 }
 
@@ -451,7 +469,9 @@ export function resolveDieCli(currentConfig: Config = config): ExternalExecutabl
   })
 }
 
-export function resolveAnalysisBackends(currentConfig: Config = config): ToolchainBackendResolution {
+export function resolveAnalysisBackends(
+  currentConfig: Config = config
+): ToolchainBackendResolution {
   return {
     capa_cli: resolveCapaCli(currentConfig),
     capa_rules: resolveCapaRulesPath(currentConfig),

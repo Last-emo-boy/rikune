@@ -92,10 +92,7 @@ export const codeModuleReviewPrepareInputSchema = z
       .max(20)
       .default(2)
       .describe('Modules with fewer functions than this threshold are merged into core'),
-    include_imports: z
-      .boolean()
-      .default(true)
-      .describe('Use import features for module hints'),
+    include_imports: z.boolean().default(true).describe('Use import features for module hints'),
     include_strings: z
       .boolean()
       .default(true)
@@ -107,11 +104,15 @@ export const codeModuleReviewPrepareInputSchema = z
       .default(
         'Review reconstructed modules, refine their role labels, and propose evidence-grounded rewrite guidance.'
       )
-      .describe('Human-readable analysis goal injected into the prompt contract for any external LLM'),
+      .describe(
+        'Human-readable analysis goal injected into the prompt contract for any external LLM'
+      ),
     persist_artifact: z
       .boolean()
       .default(true)
-      .describe('Persist the prepared module review bundle as a JSON artifact for later review and provenance'),
+      .describe(
+        'Persist the prepared module review bundle as a JSON artifact for later review and provenance'
+      ),
     session_tag: z
       .string()
       .optional()
@@ -119,25 +120,35 @@ export const codeModuleReviewPrepareInputSchema = z
     evidence_scope: z
       .enum(['all', 'latest', 'session'])
       .default('all')
-      .describe('Runtime evidence scope forwarded to code.reconstruct.export for module review preparation'),
+      .describe(
+        'Runtime evidence scope forwarded to code.reconstruct.export for module review preparation'
+      ),
     evidence_session_tag: z
       .string()
       .optional()
-      .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
+      .describe(
+        'Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'
+      ),
     semantic_scope: z
       .enum(['all', 'latest', 'session'])
       .default('all')
-      .describe('Semantic artifact scope forwarded to code.reconstruct.export for module review preparation'),
+      .describe(
+        'Semantic artifact scope forwarded to code.reconstruct.export for module review preparation'
+      ),
     semantic_session_tag: z
       .string()
       .optional()
-      .describe('Optional semantic artifact session selector used when semantic_scope=session or to narrow all/latest results'),
+      .describe(
+        'Optional semantic artifact session selector used when semantic_scope=session or to narrow all/latest results'
+      ),
     role_target: z
       .string()
       .min(1)
       .max(64)
       .optional()
-      .describe('Optional high-level binary role hint such as native_rust_executable, dll_library, or com_server'),
+      .describe(
+        'Optional high-level binary role hint such as native_rust_executable, dll_library, or com_server'
+      ),
     role_focus_areas: z
       .array(z.string().min(1).max(96))
       .max(16)
@@ -149,14 +160,20 @@ export const codeModuleReviewPrepareInputSchema = z
       .default([])
       .describe('Optional role-aware priority-order hints forwarded to code.reconstruct.export'),
   })
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
-  })
-  .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
-    message: 'semantic_session_tag is required when semantic_scope=session',
-    path: ['semantic_session_tag'],
-  })
+  .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()),
+    {
+      message: 'semantic_session_tag is required when semantic_scope=session',
+      path: ['semantic_session_tag'],
+    }
+  )
 
 export const codeModuleReviewPrepareOutputSchema = z.object({
   ok: z.boolean(),

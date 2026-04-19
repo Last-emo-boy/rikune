@@ -18,7 +18,10 @@ import {
   persistStaticAnalysisJsonArtifact,
   type StaticArtifactScope,
 } from '../../../artifacts/static-analysis-artifacts.js'
-import { loadDynamicTraceEvidence, type DynamicEvidenceScope } from '../../../artifacts/dynamic-trace.js'
+import {
+  loadDynamicTraceEvidence,
+  type DynamicEvidenceScope,
+} from '../../../artifacts/dynamic-trace.js'
 import { dedupeStrings } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'static.behavior.classify'
@@ -86,9 +89,13 @@ const RULES: BehaviorRule[] = [
     severity: 'high',
     baseConfidence: 0.72,
     apiPatterns: [/^Reg(Open|Create|Set|Query)Key/i, /^RegSetValueEx/i],
-    stringPatterns: [/\\Software\\Microsoft\\Windows\\CurrentVersion\\Run(?:Once)?/i, /HKEY_(CURRENT_USER|LOCAL_MACHINE).*\\Run/i],
+    stringPatterns: [
+      /\\Software\\Microsoft\\Windows\\CurrentVersion\\Run(?:Once)?/i,
+      /HKEY_(CURRENT_USER|LOCAL_MACHINE).*\\Run/i,
+    ],
     configKinds: ['registry_path'],
-    rationale: 'Registry autostart locations and registry write APIs indicate possible Run key persistence.',
+    rationale:
+      'Registry autostart locations and registry write APIs indicate possible Run key persistence.',
     nextTools: ['dynamic.behavior.capture', 'dynamic.behavior.diff', 'analysis.evidence.graph'],
   },
   {
@@ -99,7 +106,8 @@ const RULES: BehaviorRule[] = [
     baseConfidence: 0.7,
     apiPatterns: [/^OpenSCManager/i, /^CreateService/i, /^StartService/i, /^ChangeServiceConfig/i],
     stringPatterns: [/\bSERVICE_AUTO_START\b/i, /\bsc\.exe\s+create\b/i, /\bCreateService[AW]?\b/i],
-    rationale: 'Service-control APIs and service-install strings indicate durable service persistence.',
+    rationale:
+      'Service-control APIs and service-install strings indicate durable service persistence.',
     nextTools: ['dynamic.behavior.capture', 'dynamic.deep_plan', 'runtime.debug.session.start'],
   },
   {
@@ -109,8 +117,14 @@ const RULES: BehaviorRule[] = [
     severity: 'medium',
     baseConfidence: 0.66,
     apiPatterns: [/^CoCreateInstance/i],
-    stringPatterns: [/\bschtasks(?:\.exe)?\b/i, /\bTaskScheduler\b/i, /\bITaskService\b/i, /\\Microsoft\\Windows\\TaskScheduler/i],
-    rationale: 'Task Scheduler COM strings or schtasks usage indicate scheduled execution persistence.',
+    stringPatterns: [
+      /\bschtasks(?:\.exe)?\b/i,
+      /\bTaskScheduler\b/i,
+      /\bITaskService\b/i,
+      /\\Microsoft\\Windows\\TaskScheduler/i,
+    ],
+    rationale:
+      'Task Scheduler COM strings or schtasks usage indicate scheduled execution persistence.',
     nextTools: ['dynamic.persona.plan', 'dynamic.behavior.capture'],
   },
   {
@@ -120,7 +134,13 @@ const RULES: BehaviorRule[] = [
     severity: 'high',
     baseConfidence: 0.68,
     apiPatterns: [/^CoCreateInstance/i],
-    stringPatterns: [/\bIWbemServices\b/i, /\b__EventFilter\b/i, /\bCommandLineEventConsumer\b/i, /\bWin32_StartupCommand\b/i, /\broot\\subscription\b/i],
+    stringPatterns: [
+      /\bIWbemServices\b/i,
+      /\b__EventFilter\b/i,
+      /\bCommandLineEventConsumer\b/i,
+      /\bWin32_StartupCommand\b/i,
+      /\broot\\subscription\b/i,
+    ],
     rationale: 'WMI subscription strings indicate possible event-consumer persistence.',
     nextTools: ['dynamic.behavior.capture', 'dynamic.deep_plan'],
   },
@@ -131,7 +151,11 @@ const RULES: BehaviorRule[] = [
     severity: 'medium',
     baseConfidence: 0.62,
     apiPatterns: [/^SHGetFolderPath/i, /^SHGetKnownFolderPath/i, /^CreateFile/i, /^CopyFile/i],
-    stringPatterns: [/\\Start Menu\\Programs\\Startup/i, /\bStartup\\[^\\]+\.lnk\b/i, /\bCSIDL_STARTUP\b/i],
+    stringPatterns: [
+      /\\Start Menu\\Programs\\Startup/i,
+      /\bStartup\\[^\\]+\.lnk\b/i,
+      /\bCSIDL_STARTUP\b/i,
+    ],
     rationale: 'Startup-folder paths and file-copy APIs indicate possible user-logon persistence.',
     nextTools: ['dynamic.persona.plan', 'dynamic.behavior.capture'],
   },
@@ -144,7 +168,8 @@ const RULES: BehaviorRule[] = [
     apiPatterns: [/^RegSetValueEx/i],
     stringPatterns: [/Image File Execution Options/i, /\\Debugger\b/i, /\\SilentProcessExit/i],
     configKinds: ['registry_path'],
-    rationale: 'IFEO Debugger/SilentProcessExit registry paths are common persistence and execution hijack locations.',
+    rationale:
+      'IFEO Debugger/SilentProcessExit registry paths are common persistence and execution hijack locations.',
     nextTools: ['static.config.carver', 'dynamic.behavior.capture'],
   },
   {
@@ -153,10 +178,27 @@ const RULES: BehaviorRule[] = [
     technique: 'Remote thread process injection',
     severity: 'critical',
     baseConfidence: 0.76,
-    apiPatterns: [/^OpenProcess$/i, /^VirtualAllocEx$/i, /^WriteProcessMemory$/i, /^CreateRemoteThread$/i, /^NtCreateThreadEx$/i],
-    stringPatterns: [/\bVirtualAllocEx\b/i, /\bWriteProcessMemory\b/i, /\bCreateRemoteThread\b/i, /\bNtCreateThreadEx\b/i],
-    rationale: 'OpenProcess, remote allocation/write, and remote thread APIs indicate classic process injection.',
-    nextTools: ['breakpoint.smart', 'trace.condition', 'runtime.debug.session.start', 'dynamic.behavior.capture'],
+    apiPatterns: [
+      /^OpenProcess$/i,
+      /^VirtualAllocEx$/i,
+      /^WriteProcessMemory$/i,
+      /^CreateRemoteThread$/i,
+      /^NtCreateThreadEx$/i,
+    ],
+    stringPatterns: [
+      /\bVirtualAllocEx\b/i,
+      /\bWriteProcessMemory\b/i,
+      /\bCreateRemoteThread\b/i,
+      /\bNtCreateThreadEx\b/i,
+    ],
+    rationale:
+      'OpenProcess, remote allocation/write, and remote thread APIs indicate classic process injection.',
+    nextTools: [
+      'breakpoint.smart',
+      'trace.condition',
+      'runtime.debug.session.start',
+      'dynamic.behavior.capture',
+    ],
   },
   {
     id: 'injection.process_hollowing',
@@ -164,9 +206,21 @@ const RULES: BehaviorRule[] = [
     technique: 'Process hollowing',
     severity: 'critical',
     baseConfidence: 0.78,
-    apiPatterns: [/^CreateProcess[AW]?$/i, /^Zw?UnmapViewOfSection$/i, /^SetThreadContext$/i, /^ResumeThread$/i, /^WriteProcessMemory$/i],
-    stringPatterns: [/\bCREATE_SUSPENDED\b/i, /\bUnmapViewOfSection\b/i, /\bSetThreadContext\b/i, /\bResumeThread\b/i],
-    rationale: 'Suspended process creation, section unmapping, context writes, and resume APIs indicate process hollowing.',
+    apiPatterns: [
+      /^CreateProcess[AW]?$/i,
+      /^Zw?UnmapViewOfSection$/i,
+      /^SetThreadContext$/i,
+      /^ResumeThread$/i,
+      /^WriteProcessMemory$/i,
+    ],
+    stringPatterns: [
+      /\bCREATE_SUSPENDED\b/i,
+      /\bUnmapViewOfSection\b/i,
+      /\bSetThreadContext\b/i,
+      /\bResumeThread\b/i,
+    ],
+    rationale:
+      'Suspended process creation, section unmapping, context writes, and resume APIs indicate process hollowing.',
     nextTools: ['dynamic.deep_plan', 'runtime.debug.session.start', 'dynamic.behavior.capture'],
   },
   {
@@ -186,7 +240,12 @@ const RULES: BehaviorRule[] = [
     technique: 'DLL injection through remote LoadLibrary',
     severity: 'high',
     baseConfidence: 0.68,
-    apiPatterns: [/^LoadLibrary[AW]?$/i, /^GetProcAddress$/i, /^CreateRemoteThread$/i, /^WriteProcessMemory$/i],
+    apiPatterns: [
+      /^LoadLibrary[AW]?$/i,
+      /^GetProcAddress$/i,
+      /^CreateRemoteThread$/i,
+      /^WriteProcessMemory$/i,
+    ],
     stringPatterns: [/\bLoadLibrary[AW]?\b/i, /\.dll\b/i, /\bCreateRemoteThread\b/i],
     rationale: 'LoadLibrary plus remote thread/write APIs can indicate DLL injection.',
     nextTools: ['hash.resolver.plan', 'breakpoint.smart', 'dynamic.behavior.capture'],
@@ -197,7 +256,12 @@ const RULES: BehaviorRule[] = [
     technique: 'Thread context hijacking',
     severity: 'high',
     baseConfidence: 0.7,
-    apiPatterns: [/^SuspendThread$/i, /^GetThreadContext$/i, /^SetThreadContext$/i, /^ResumeThread$/i],
+    apiPatterns: [
+      /^SuspendThread$/i,
+      /^GetThreadContext$/i,
+      /^SetThreadContext$/i,
+      /^ResumeThread$/i,
+    ],
     stringPatterns: [/\bSuspendThread\b/i, /\bGetThreadContext\b/i, /\bSetThreadContext\b/i],
     rationale: 'Thread suspend/context APIs indicate thread hijacking or hollowing support.',
     nextTools: ['runtime.debug.session.start', 'trace.condition'],
@@ -208,21 +272,39 @@ const RULES: BehaviorRule[] = [
     technique: 'Debugger and environment checks',
     severity: 'medium',
     baseConfidence: 0.6,
-    apiPatterns: [/^IsDebuggerPresent$/i, /^CheckRemoteDebuggerPresent$/i, /^NtQueryInformationProcess$/i, /^NtQuerySystemInformation$/i],
-    stringPatterns: [/\bIsDebuggerPresent\b/i, /\bCheckRemoteDebuggerPresent\b/i, /\bNtQueryInformationProcess\b/i],
-    rationale: 'Debugger and system-query APIs can affect runtime behavior and require a persona/debug plan.',
+    apiPatterns: [
+      /^IsDebuggerPresent$/i,
+      /^CheckRemoteDebuggerPresent$/i,
+      /^NtQueryInformationProcess$/i,
+      /^NtQuerySystemInformation$/i,
+    ],
+    stringPatterns: [
+      /\bIsDebuggerPresent\b/i,
+      /\bCheckRemoteDebuggerPresent\b/i,
+      /\bNtQueryInformationProcess\b/i,
+    ],
+    rationale:
+      'Debugger and system-query APIs can affect runtime behavior and require a persona/debug plan.',
     nextTools: ['dynamic.persona.plan', 'dynamic.deep_plan'],
   },
 ]
 
-function extractAsciiStrings(buffer: Buffer, minLength: number, maxStrings: number): ExtractedString[] {
+function extractAsciiStrings(
+  buffer: Buffer,
+  minLength: number,
+  maxStrings: number
+): ExtractedString[] {
   const strings: ExtractedString[] = []
   let start = -1
   let chars: number[] = []
 
   function flush(endOffset: number) {
     if (chars.length >= minLength && strings.length < maxStrings) {
-      strings.push({ value: Buffer.from(chars).toString('ascii'), offset: start, encoding: 'ascii' })
+      strings.push({
+        value: Buffer.from(chars).toString('ascii'),
+        offset: start,
+        encoding: 'ascii',
+      })
     }
     start = -1
     chars = []
@@ -242,7 +324,11 @@ function extractAsciiStrings(buffer: Buffer, minLength: number, maxStrings: numb
   return strings
 }
 
-function extractUtf16Strings(buffer: Buffer, minLength: number, maxStrings: number): ExtractedString[] {
+function extractUtf16Strings(
+  buffer: Buffer,
+  minLength: number,
+  maxStrings: number
+): ExtractedString[] {
   const strings: ExtractedString[] = []
   let start = -1
   let value = ''
@@ -308,7 +394,11 @@ function collectStringEvidence(rule: BehaviorRule, strings: ExtractedString[]): 
   return evidence.slice(0, 16)
 }
 
-function collectApiEvidence(rule: BehaviorRule, apis: string[], source: EvidenceSource): BehaviorEvidence[] {
+function collectApiEvidence(
+  rule: BehaviorRule,
+  apis: string[],
+  source: EvidenceSource
+): BehaviorEvidence[] {
   const evidence: BehaviorEvidence[] = []
   for (const api of apis) {
     const normalized = normalizeApi(api)
@@ -324,7 +414,10 @@ function collectApiEvidence(rule: BehaviorRule, apis: string[], source: Evidence
   return evidence
 }
 
-function collectConfigEvidence(rule: BehaviorRule, payloads: StaticConfigCarverPayload[]): BehaviorEvidence[] {
+function collectConfigEvidence(
+  rule: BehaviorRule,
+  payloads: StaticConfigCarverPayload[]
+): BehaviorEvidence[] {
   const acceptedKinds = new Set(rule.configKinds || [])
   const evidence: BehaviorEvidence[] = []
   for (const payload of payloads) {
@@ -350,7 +443,12 @@ function scoreFinding(rule: BehaviorRule, evidence: BehaviorEvidence[]): number 
   const sourceCount = new Set(evidence.map((item) => item.source)).size
   const apiCount = evidence.filter((item) => item.kind === 'api_match').length
   const dynamicBoost = evidence.some((item) => item.source === 'dynamic_trace') ? 0.12 : 0
-  const score = rule.baseConfidence + Math.min(0.18, evidence.length * 0.035) + Math.min(0.1, apiCount * 0.02) + sourceCount * 0.025 + dynamicBoost
+  const score =
+    rule.baseConfidence +
+    Math.min(0.18, evidence.length * 0.035) +
+    Math.min(0.1, apiCount * 0.02) +
+    sourceCount * 0.025 +
+    dynamicBoost
   return Number(Math.min(0.98, score).toFixed(3))
 }
 
@@ -358,7 +456,9 @@ function severityRank(value: BehaviorRule['severity']): number {
   return { low: 1, medium: 2, high: 3, critical: 4 }[value]
 }
 
-function summarizeFindings(findings: Array<{ category: BehaviorCategory; severity: string; confidence: number }>) {
+function summarizeFindings(
+  findings: Array<{ category: BehaviorCategory; severity: string; confidence: number }>
+) {
   const byCategory: Record<string, number> = {}
   const bySeverity: Record<string, number> = {}
   for (const finding of findings) {
@@ -367,7 +467,9 @@ function summarizeFindings(findings: Array<{ category: BehaviorCategory; severit
   }
   return {
     finding_count: findings.length,
-    high_or_critical_count: findings.filter((item) => item.severity === 'high' || item.severity === 'critical').length,
+    high_or_critical_count: findings.filter(
+      (item) => item.severity === 'high' || item.severity === 'critical'
+    ).length,
     by_category: byCategory,
     by_severity: bySeverity,
     max_confidence: findings.reduce((max, item) => Math.max(max, item.confidence), 0),
@@ -433,7 +535,12 @@ export function createStaticBehaviorClassifyHandler(
           ...collectApiEvidence(rule, dynamicSummary?.observed_apis || [], 'dynamic_trace'),
         ]
         const dedupedEvidence = Array.from(
-          new Map(evidence.map((item) => [`${item.source}:${item.kind}:${item.value}:${item.location || ''}`, item])).values()
+          new Map(
+            evidence.map((item) => [
+              `${item.source}:${item.kind}:${item.value}:${item.location || ''}`,
+              item,
+            ])
+          ).values()
         )
         if (dedupedEvidence.length === 0) {
           return null
@@ -444,7 +551,9 @@ export function createStaticBehaviorClassifyHandler(
           technique: rule.technique,
           severity: rule.severity,
           confidence: scoreFinding(rule, dedupedEvidence),
-          evidence: dedupedEvidence.sort((left, right) => right.confidence - left.confidence).slice(0, 20),
+          evidence: dedupedEvidence
+            .sort((left, right) => right.confidence - left.confidence)
+            .slice(0, 20),
           rationale: rule.rationale,
           recommended_next_tools: rule.nextTools,
         }
@@ -455,15 +564,20 @@ export function createStaticBehaviorClassifyHandler(
           return severityDiff !== 0 ? severityDiff : right.confidence - left.confidence
         })
 
-      const recommendedTools = dedupeStrings([
-        ...findings.flatMap((finding) => finding.recommended_next_tools),
-        'dynamic.behavior.diff',
-        'analysis.evidence.graph',
-        'dynamic.deep_plan',
-      ], 12)
+      const recommendedTools = dedupeStrings(
+        [
+          ...findings.flatMap((finding) => finding.recommended_next_tools),
+          'dynamic.behavior.diff',
+          'analysis.evidence.graph',
+          'dynamic.deep_plan',
+        ],
+        12
+      )
       const warnings: string[] = []
       if (configSelection.artifacts.length === 0) {
-        warnings.push('No static_config_carver artifacts were selected; run static.config.carver for richer registry/config evidence.')
+        warnings.push(
+          'No static_config_carver artifacts were selected; run static.config.carver for richer registry/config evidence.'
+        )
       }
       if (input.include_dynamic_evidence && !dynamicSummary) {
         warnings.push('No dynamic trace evidence was selected; classification is static-only.')
@@ -495,29 +609,32 @@ export function createStaticBehaviorClassifyHandler(
             }
           : null,
         recommended_next_tools: recommendedTools,
-        next_actions: findings.length > 0
-          ? [
-              'Use dynamic.deep_plan to choose a bounded behavior/debugger profile for high-risk persistence or injection findings.',
-              'Use breakpoint.smart and trace.condition for injection or API-resolution findings that need runtime capture.',
-              'Use dynamic.behavior.diff after runtime import to compare these static expectations with observed behavior.',
-            ]
-          : [
-              'No persistence or injection indicators were found in the selected evidence. Continue with workflow.analyze.promote or broader string extraction if suspicion remains.',
-            ],
+        next_actions:
+          findings.length > 0
+            ? [
+                'Use dynamic.deep_plan to choose a bounded behavior/debugger profile for high-risk persistence or injection findings.',
+                'Use breakpoint.smart and trace.condition for injection or API-resolution findings that need runtime capture.',
+                'Use dynamic.behavior.diff after runtime import to compare these static expectations with observed behavior.',
+              ]
+            : [
+                'No persistence or injection indicators were found in the selected evidence. Continue with workflow.analyze.promote or broader string extraction if suspicion remains.',
+              ],
         warnings,
       }
 
       const artifacts: ArtifactRef[] = []
       if (input.persist_artifact) {
-        artifacts.push(await persistStaticAnalysisJsonArtifact(
-          workspaceManager,
-          database,
-          input.sample_id,
-          'static_behavior_classifier',
-          'behavior_classifier',
-          data,
-          input.session_tag
-        ))
+        artifacts.push(
+          await persistStaticAnalysisJsonArtifact(
+            workspaceManager,
+            database,
+            input.sample_id,
+            'static_behavior_classifier',
+            'behavior_classifier',
+            data,
+            input.session_tag
+          )
+        )
       }
 
       return {

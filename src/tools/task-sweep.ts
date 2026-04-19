@@ -17,14 +17,18 @@ export const taskSweepInputSchema = z.object({
     .min(1000)
     .nullable()
     .optional()
-    .describe('Optional stale-running threshold in milliseconds. Omit or null to disable automatic reaping.'),
+    .describe(
+      'Optional stale-running threshold in milliseconds. Omit or null to disable automatic reaping.'
+    ),
   clear_finished_older_ms: z
     .number()
     .int()
     .min(60 * 1000)
     .optional()
     .default(24 * 60 * 60 * 1000)
-    .describe('Clear completed/failed/cancelled jobs older than this threshold (default: 24 hours)'),
+    .describe(
+      'Clear completed/failed/cancelled jobs older than this threshold (default: 24 hours)'
+    ),
 })
 
 export type TaskSweepInput = z.infer<typeof taskSweepInputSchema>
@@ -46,7 +50,8 @@ export function createTaskSweepHandler(
         reapStaleRunningJobs?: (maxRuntimeMs: number, nowMs?: number) => string[]
       }
       const reaped =
-        typeof input.stale_running_ms === 'number' && typeof reaper.reapStaleRunningJobs === 'function'
+        typeof input.stale_running_ms === 'number' &&
+        typeof reaper.reapStaleRunningJobs === 'function'
           ? reaper.reapStaleRunningJobs(input.stale_running_ms)
           : []
       const reapedAnalyses = database

@@ -39,14 +39,23 @@ export function createEvidenceGraphHandler(deps: PluginToolDeps) {
       const input = EvidenceGraphInputSchema.parse(args || {})
       const sample = deps.database.findSample(input.sample_id)
       if (!sample) {
-        return { ok: false, errors: [`Sample not found: ${input.sample_id}`], metrics: { elapsed_ms: Date.now() - started, tool: TOOL_NAME } }
+        return {
+          ok: false,
+          errors: [`Sample not found: ${input.sample_id}`],
+          metrics: { elapsed_ms: Date.now() - started, tool: TOOL_NAME },
+        }
       }
 
-      const bundle = await loadCorrelationEvidence(deps.workspaceManager, deps.database, input.sample_id, {
-        evidenceScope: input.evidence_scope,
-        sessionTag: input.evidence_session_tag,
-        maxStaticArtifacts: input.max_static_artifacts,
-      })
+      const bundle = await loadCorrelationEvidence(
+        deps.workspaceManager,
+        deps.database,
+        input.sample_id,
+        {
+          evidenceScope: input.evidence_scope,
+          sessionTag: input.evidence_session_tag,
+          maxStaticArtifacts: input.max_static_artifacts,
+        }
+      )
       const graph = buildEvidenceGraph(bundle)
       const data = {
         schema: 'rikune.analysis_evidence_graph.v1',
@@ -62,7 +71,8 @@ export function createEvidenceGraphHandler(deps: PluginToolDeps) {
           observation_count: bundle.observations.length,
           node_count: graph.nodes.length,
           edge_count: graph.edges.length,
-          corroboration_edge_count: graph.edges.filter((edge) => edge.label === 'corroborated_by').length,
+          corroboration_edge_count: graph.edges.filter((edge) => edge.label === 'corroborated_by')
+            .length,
         },
         graph,
         warnings: bundle.warnings,
@@ -77,15 +87,17 @@ export function createEvidenceGraphHandler(deps: PluginToolDeps) {
 
       const artifacts: ArtifactRef[] = []
       if (input.persist_artifact) {
-        artifacts.push(await persistStaticAnalysisJsonArtifact(
-          deps.workspaceManager,
-          deps.database,
-          input.sample_id,
-          'analysis_evidence_graph',
-          'evidence_graph',
-          data,
-          input.session_tag
-        ))
+        artifacts.push(
+          await persistStaticAnalysisJsonArtifact(
+            deps.workspaceManager,
+            deps.database,
+            input.sample_id,
+            'analysis_evidence_graph',
+            'evidence_graph',
+            data,
+            input.session_tag
+          )
+        )
       }
 
       return {

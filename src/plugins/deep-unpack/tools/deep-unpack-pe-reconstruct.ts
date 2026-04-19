@@ -23,11 +23,16 @@ const TOOL_NAME = 'deep.unpack.pe_reconstruct'
 
 export const peReconstructInputSchema = z.object({
   sample_id: z.string().describe('Sample ID of the memory dump or unpacked binary'),
-  api_trace: z.array(z.object({
-    address: z.string(),
-    name: z.string(),
-    module: z.string().default(''),
-  })).optional().describe('API trace from emulation for IAT reconstruction'),
+  api_trace: z
+    .array(
+      z.object({
+        address: z.string(),
+        name: z.string(),
+        module: z.string().default(''),
+      })
+    )
+    .optional()
+    .describe('API trace from emulation for IAT reconstruction'),
   image_base: z.string().optional().describe('Image base address (hex, e.g. "0x400000")'),
   oep_rva: z.string().optional().describe('Original Entry Point RVA (hex, e.g. "0x1000")'),
   timeout: z.number().int().min(5).max(120).default(30),
@@ -37,13 +42,15 @@ export const peReconstructInputSchema = z.object({
 
 export const peReconstructOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    reconstructed_sha256: z.string().optional(),
-    size: z.number().optional(),
-    fixes_applied: z.array(z.string()).optional(),
-    iat_entries: z.array(z.any()).optional(),
-    sections: z.array(z.any()).optional(),
-  }).optional(),
+  data: z
+    .object({
+      reconstructed_sha256: z.string().optional(),
+      size: z.number().optional(),
+      fixes_applied: z.array(z.string()).optional(),
+      iat_entries: z.array(z.any()).optional(),
+      sections: z.array(z.any()).optional(),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(z.any()).optional(),
   metrics: z.any().optional(),
@@ -63,7 +70,7 @@ export const peReconstructToolDefinition: ToolDefinition = {
 export function createPeReconstructHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
-  dependencies?: SharedBackendDependencies,
+  dependencies?: SharedBackendDependencies
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -92,7 +99,7 @@ mod.main()
           image_base: input.image_base,
           oep_rva: input.oep_rva,
         },
-        input.timeout * 1000,
+        input.timeout * 1000
       )
 
       const workerData = result.parsed
@@ -103,15 +110,18 @@ mod.main()
           const fs = await import('fs/promises')
           const content = await fs.readFile(workerData.reconstructed_path)
           const artifact = await persistBackendArtifact(
-            workspaceManager, database, input.sample_id,
-            'deep_unpack', 'pe_reconstructed',
+            workspaceManager,
+            database,
+            input.sample_id,
+            'deep_unpack',
+            'pe_reconstructed',
             content,
             {
               extension: 'exe',
               mime: 'application/vnd.microsoft.portable-executable',
               sessionTag: input.session_tag,
               metadata: { fixes: workerData.fixes_applied },
-            },
+            }
           )
           artifacts.push(artifact)
         } catch {

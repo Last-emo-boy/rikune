@@ -5,20 +5,53 @@ import type { ToolDefinition } from '../types.js'
  * Add entries here instead of editing a regex when new plugins are added.
  */
 export const TOOL_NAMESPACES: ReadonlySet<string> = new Set([
-  'sample', 'workflow', 'report', 'task', 'tool', 'system',
-  'ghidra', 'graphviz', 'rizin', 'yara', 'yara_x', 'upx',
-  'retdec', 'angr', 'qiling', 'panda', 'wine', 'code',
-  'analysis', 'strings', 'binary', 'crypto', 'breakpoint',
-  'trace', 'dynamic', 'runtime', 'sandbox', 'dll', 'com', 'pe',
-  'compiler', 'static', 'rust_binary', 'dotnet', 'artifact',
-  'artifacts', 'ioc', 'attack', 'llm', 'packer',
+  'sample',
+  'workflow',
+  'report',
+  'task',
+  'tool',
+  'system',
+  'ghidra',
+  'graphviz',
+  'rizin',
+  'yara',
+  'yara_x',
+  'upx',
+  'retdec',
+  'angr',
+  'qiling',
+  'panda',
+  'wine',
+  'code',
+  'analysis',
+  'strings',
+  'binary',
+  'crypto',
+  'breakpoint',
+  'trace',
+  'dynamic',
+  'runtime',
+  'sandbox',
+  'dll',
+  'com',
+  'pe',
+  'compiler',
+  'static',
+  'rust_binary',
+  'dotnet',
+  'artifact',
+  'artifacts',
+  'ioc',
+  'attack',
+  'llm',
+  'packer',
 ])
 
 // Build the regex dynamically from the namespace set (sorted longest-first to avoid partial matches)
 const sortedNamespaces = Array.from(TOOL_NAMESPACES).sort((a, b) => b.length - a.length)
 const TOOL_NAME_PREFIX_PATTERN = new RegExp(
-  `\\b(?:${sortedNamespaces.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(?:\\.[A-Za-z0-9_-]+)+\\b`,
-  'g',
+  `\\b(?:${sortedNamespaces.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(?:\\.[A-Za-z0-9_-]+)+\\b`,
+  'g'
 )
 
 /**
@@ -86,14 +119,14 @@ let reverseMapSource: ReadonlyArray<readonly [string, string]> | null = null
  */
 export function fromTransportToolName(
   transportName: string,
-  mappings: ReadonlyArray<readonly [string, string]>,
+  mappings: ReadonlyArray<readonly [string, string]>
 ): string {
   // Rebuild reverse map only when the mappings reference changes
   if (reverseMapSource !== mappings) {
     reverseMap = new Map(mappings.map(([canonical, transport]) => [transport, canonical]))
     reverseMapSource = mappings
   }
-  return reverseMap!.get(transportName) ?? transportName
+  return reverseMap.get(transportName) ?? transportName
 }
 
 export function rewriteToolReferencesInText(
@@ -111,7 +144,7 @@ export function rewriteToolReferencesInText(
 export function rewriteToolReferencesInValue<T>(
   value: T,
   mappings: ReadonlyArray<readonly [string, string]>,
-  _fieldName?: string,
+  _fieldName?: string
 ): T {
   if (typeof value === 'string') {
     return rewriteToolReferencesInText(value, mappings) as T

@@ -103,9 +103,10 @@ export class AnalysisTaskRunner {
     const tick = () => {
       this.reapStaleRunning()
       void this.processNext().then(() => {
-        const backoffMultiplier = this.consecutiveIdleCycles > 0
-          ? Math.min(2 ** this.consecutiveIdleCycles, AnalysisTaskRunner.MAX_BACKOFF_MULTIPLIER)
-          : 1
+        const backoffMultiplier =
+          this.consecutiveIdleCycles > 0
+            ? Math.min(2 ** this.consecutiveIdleCycles, AnalysisTaskRunner.MAX_BACKOFF_MULTIPLIER)
+            : 1
         const delay = this.pollIntervalMs * backoffMultiplier
         this.timer = setTimeout(tick, delay)
       })
@@ -153,7 +154,10 @@ export class AnalysisTaskRunner {
     const now = Date.now()
     for (const [jobId, entry] of this.activeControllers) {
       if (now - entry.startedAt > AnalysisTaskRunner.CONTROLLER_TTL_MS) {
-        logger.warn({ job_id: jobId, age_ms: now - entry.startedAt }, 'AbortController exceeded TTL — aborting')
+        logger.warn(
+          { job_id: jobId, age_ms: now - entry.startedAt },
+          'AbortController exceeded TTL — aborting'
+        )
         entry.controller.abort()
         this.activeControllers.delete(jobId)
       }
@@ -237,12 +241,11 @@ export class AnalysisTaskRunner {
       const elapsedMs = Date.now() - startTime
       const message = error instanceof Error ? error.message : String(error)
       const currentRssMb = getRuntimeMemoryUsageMb()
-      const interruptionCause =
-        /oom|out of memory|memory|allocation|killed/i.test(message)
-          ? 'memory_pressure'
-          : /cancelled|aborted/i.test(message)
-            ? 'cancelled'
-            : 'tool_error'
+      const interruptionCause = /oom|out of memory|memory|allocation|killed/i.test(message)
+        ? 'memory_pressure'
+        : /cancelled|aborted/i.test(message)
+          ? 'cancelled'
+          : 'tool_error'
       logger.error(
         {
           job_id: job.id,
@@ -276,8 +279,7 @@ export class AnalysisTaskRunner {
         latencyMs: elapsedMs,
       })
 
-      const normalizedError =
-        error instanceof Error ? error : new Error(message)
+      const normalizedError = error instanceof Error ? error : new Error(message)
       this.jobQueue.complete(
         job.id,
         this.decompilerWorker.createErrorJobResult(job.id, normalizedError, elapsedMs)

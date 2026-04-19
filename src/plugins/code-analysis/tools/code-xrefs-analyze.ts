@@ -183,17 +183,14 @@ function buildAnalysisMarker(database: DatabaseManager, sampleId: string): strin
     return 'no_ghidra_analysis'
   }
 
-  return [
-    latest.id,
-    latest.status,
-    latest.finished_at || latest.started_at || 'unknown',
-  ].join(':')
+  return [latest.id, latest.status, latest.finished_at || latest.started_at || 'unknown'].join(':')
 }
 
 function buildSummary(result: CrossReferenceAnalysis): string {
   const inboundCount = result.inbound.length
   const outboundCount = result.outbound.length
-  const targetLabel = result.target.resolved_name || result.target.resolved_address || result.target.query
+  const targetLabel =
+    result.target.resolved_name || result.target.resolved_address || result.target.query
 
   if (result.target_type === 'function') {
     return `Resolved function target ${targetLabel} with ${inboundCount} inbound and ${outboundCount} outbound relationship(s).`

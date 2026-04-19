@@ -16,10 +16,19 @@ const TOOL_VERSION = '0.1.0'
 const GuiToolSchema = z.enum(['x64dbg', 'windbg', 'dnspy', 'all'])
 
 export const DebugGuiHandoffInputSchema = z.object({
-  sample_id: z.string().optional().describe('Optional sample ID to bind handoff notes and runtime session templates.'),
+  sample_id: z
+    .string()
+    .optional()
+    .describe('Optional sample ID to bind handoff notes and runtime session templates.'),
   tools: z.array(GuiToolSchema).optional().default(['x64dbg', 'windbg']),
-  runtime_backend: z.enum(['auto', 'windows-sandbox', 'hyperv-vm', 'manual-runtime']).optional().default('hyperv-vm'),
-  retention_policy: z.enum(['clean_rollback', 'stop_only', 'preserve_dirty']).optional().default('preserve_dirty'),
+  runtime_backend: z
+    .enum(['auto', 'windows-sandbox', 'hyperv-vm', 'manual-runtime'])
+    .optional()
+    .default('hyperv-vm'),
+  retention_policy: z
+    .enum(['clean_rollback', 'stop_only', 'preserve_dirty'])
+    .optional()
+    .default('preserve_dirty'),
   include_managed_hints: z.boolean().optional().default(true),
   include_native_hints: z.boolean().optional().default(true),
   persist_artifact: z.boolean().optional().default(true),
@@ -61,7 +70,9 @@ function expandTools(tools: string[]): string[] {
   return dedupe(tools)
 }
 
-function sessionStartTemplate(input: z.infer<typeof DebugGuiHandoffInputSchema>): Record<string, unknown> {
+function sessionStartTemplate(
+  input: z.infer<typeof DebugGuiHandoffInputSchema>
+): Record<string, unknown> {
   return {
     tool: 'runtime.debug.session.start',
     args: {
@@ -79,15 +90,24 @@ function buildToolHandoff(tool: string, input: z.infer<typeof DebugGuiHandoffInp
     return {
       id: 'dnspy_manual_review',
       tool: 'dnSpyEx',
-      best_backend: input.runtime_backend === 'windows-sandbox' ? 'windows-sandbox-visible' : 'hyperv-vm-preserve_dirty',
+      best_backend:
+        input.runtime_backend === 'windows-sandbox'
+          ? 'windows-sandbox-visible'
+          : 'hyperv-vm-preserve_dirty',
       required_runtime_tools: ['dnSpy.exe'],
-      sample_staging: input.sample_id ? 'Stage sample with runtime.debug.command sidecar upload before manual review.' : 'Provide sample_id before staging into the visible runtime.',
+      sample_staging: input.sample_id
+        ? 'Stage sample with runtime.debug.command sidecar upload before manual review.'
+        : 'Provide sample_id before staging into the visible runtime.',
       checklist: [
         'Open the sample assembly in dnSpyEx inside the visible runtime.',
         'Review entry point, resources, embedded configs, and suspicious static constructors.',
         'If a runtime-generated assembly appears, export it and re-ingest as a child sample.',
       ],
-      artifact_expectations: ['debug_gui_handoff', 'manual_notes', 'exported child sample candidates'],
+      artifact_expectations: [
+        'debug_gui_handoff',
+        'manual_notes',
+        'exported child sample candidates',
+      ],
     }
   }
   if (tool === 'windbg') {
@@ -96,13 +116,19 @@ function buildToolHandoff(tool: string, input: z.infer<typeof DebugGuiHandoffInp
       tool: 'WinDbg',
       best_backend: 'hyperv-vm-preserve_dirty',
       required_runtime_tools: ['windbg.exe or WinDbgX.exe'],
-      sample_staging: input.sample_id ? 'Upload sample to the Runtime Node inbox/outbox workspace and open it from the visible desktop.' : 'Provide sample_id before staging into WinDbg.',
+      sample_staging: input.sample_id
+        ? 'Upload sample to the Runtime Node inbox/outbox workspace and open it from the visible desktop.'
+        : 'Provide sample_id before staging into WinDbg.',
       checklist: [
         'Open executable or produced dump in WinDbg inside the runtime user session.',
         'Set breakpoints from debug.cdb.plan or inspect ProcDump outputs.',
         'Save dump, command log, and notes to a mapped outbox folder before releasing the runtime.',
       ],
-      artifact_expectations: ['debug_session_trace.json', 'procdump_capture.json', 'manual dump/log artifacts'],
+      artifact_expectations: [
+        'debug_session_trace.json',
+        'procdump_capture.json',
+        'manual dump/log artifacts',
+      ],
     }
   }
   return {
@@ -110,19 +136,28 @@ function buildToolHandoff(tool: string, input: z.infer<typeof DebugGuiHandoffInp
     tool: 'x64dbg',
     best_backend: 'hyperv-vm-preserve_dirty',
     required_runtime_tools: ['x64dbg.exe'],
-    sample_staging: input.sample_id ? 'Upload sample to the Runtime Node workspace and open it from x64dbg in the visible desktop.' : 'Provide sample_id before staging into x64dbg.',
+    sample_staging: input.sample_id
+      ? 'Upload sample to the Runtime Node workspace and open it from x64dbg in the visible desktop.'
+      : 'Provide sample_id before staging into x64dbg.',
     checklist: [
       'Start from static behavior classifier APIs and CDB plan breakpoints.',
       'Use Hyper-V dirty retention when unpacking or manual patching is expected.',
       'Export memory dumps or unpacked files to the runtime outbox for import.',
     ],
-    artifact_expectations: ['manual dump/log artifacts', 'dynamic.memory.import inputs', 'unpack.child.handoff inputs'],
+    artifact_expectations: [
+      'manual dump/log artifacts',
+      'dynamic.memory.import inputs',
+      'unpack.child.handoff inputs',
+    ],
   }
 }
 
 function buildGuidance(input: z.infer<typeof DebugGuiHandoffInputSchema>, selectedTools: string[]) {
   const needsManaged = selectedTools.includes('dnspy') || input.include_managed_hints
-  const needsNative = selectedTools.includes('x64dbg') || selectedTools.includes('windbg') || input.include_native_hints
+  const needsNative =
+    selectedTools.includes('x64dbg') ||
+    selectedTools.includes('windbg') ||
+    input.include_native_hints
   return {
     recommended_preflight_tools: [
       'dynamic.runtime.status',
@@ -175,16 +210,23 @@ export function createDebugGuiHandoffHandler(deps: PluginToolDeps) {
         ],
       }
       const artifacts: ArtifactRef[] = []
-      if (input.persist_artifact && input.sample_id && deps.workspaceManager && deps.database?.findSample?.(input.sample_id)) {
-        artifacts.push(await persistStaticAnalysisJsonArtifact(
-          deps.workspaceManager,
-          deps.database,
-          input.sample_id,
-          'debug_gui_handoff',
-          'debug_gui_handoff',
-          data,
-          input.session_tag
-        ))
+      if (
+        input.persist_artifact &&
+        input.sample_id &&
+        deps.workspaceManager &&
+        deps.database?.findSample?.(input.sample_id)
+      ) {
+        artifacts.push(
+          await persistStaticAnalysisJsonArtifact(
+            deps.workspaceManager,
+            deps.database,
+            input.sample_id,
+            'debug_gui_handoff',
+            'debug_gui_handoff',
+            data,
+            input.session_tag
+          )
+        )
       }
       return {
         ok: true,

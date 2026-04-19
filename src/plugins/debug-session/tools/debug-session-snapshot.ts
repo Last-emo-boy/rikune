@@ -18,14 +18,23 @@ export const DebugSessionSnapshotInputSchema = z.object({
   include_memory_map: z.boolean().default(true).describe('Include memory region map'),
   include_modules: z.boolean().default(true).describe('Include loaded modules list'),
   include_disasm: z.boolean().default(true).describe('Include disassembly around current IP'),
-  disasm_context_lines: z.number().int().min(5).max(100).default(20)
+  disasm_context_lines: z
+    .number()
+    .int()
+    .min(5)
+    .max(100)
+    .default(20)
     .describe('Lines of disassembly before/after current IP'),
-  stack_depth: z.number().int().min(1).max(50).default(10)
-    .describe('Maximum stack frame depth'),
-  memory_dump_regions: z.array(z.object({
-    address: z.string().describe('Start address (hex)'),
-    size: z.number().int().min(1).max(4096).describe('Bytes to dump'),
-  })).optional().describe('Additional memory regions to dump'),
+  stack_depth: z.number().int().min(1).max(50).default(10).describe('Maximum stack frame depth'),
+  memory_dump_regions: z
+    .array(
+      z.object({
+        address: z.string().describe('Start address (hex)'),
+        size: z.number().int().min(1).max(4096).describe('Bytes to dump'),
+      })
+    )
+    .optional()
+    .describe('Additional memory regions to dump'),
 })
 
 export const debugSessionSnapshotToolDefinition: ToolDefinition = {
@@ -78,7 +87,12 @@ export function createDebugSessionSnapshotHandler(deps: PluginToolDeps) {
           flags: {
             value: null,
             decoded: {
-              CF: null, ZF: null, SF: null, OF: null, DF: null, PF: null,
+              CF: null,
+              ZF: null,
+              SF: null,
+              OF: null,
+              DF: null,
+              PF: null,
             },
           },
           segments: { cs: null, ds: null, es: null, fs: null, gs: null, ss: null },
@@ -124,7 +138,7 @@ export function createDebugSessionSnapshotHandler(deps: PluginToolDeps) {
       if (input.memory_dump_regions && input.memory_dump_regions.length > 0) {
         snapshot.memory_dumps = {
           _description: 'Requested memory region dumps',
-          regions: input.memory_dump_regions.map(r => ({
+          regions: input.memory_dump_regions.map((r) => ({
             address: r.address,
             size: r.size,
             hex_dump: null,

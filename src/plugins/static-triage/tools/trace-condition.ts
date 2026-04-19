@@ -36,17 +36,20 @@ export const traceConditionInputSchema = z.object({
     .max(31)
     .optional()
     .default(0)
-    .describe('Zero-based index into the latest smart breakpoint artifact when breakpoint is omitted'),
-  breakpoint: BreakpointCandidateSchema
-    .optional()
-    .describe('Optional explicit breakpoint candidate override; when omitted the latest smart breakpoint plan is used'),
-  condition: TraceConditionGroupSchema
-    .optional()
+    .describe(
+      'Zero-based index into the latest smart breakpoint artifact when breakpoint is omitted'
+    ),
+  breakpoint: BreakpointCandidateSchema.optional().describe(
+    'Optional explicit breakpoint candidate override; when omitted the latest smart breakpoint plan is used'
+  ),
+  condition: TraceConditionGroupSchema.optional()
     .default({ logic: 'all', predicates: [] })
-    .describe('Bounded condition block over registers, arguments, hit counts, or module/function identity'),
-  capture: TraceCapturePlanSchema
-    .optional()
-    .describe('Optional capture overrides for registers, arguments, return value, stack bytes, and bounded memory slices'),
+    .describe(
+      'Bounded condition block over registers, arguments, hit counts, or module/function identity'
+    ),
+  capture: TraceCapturePlanSchema.optional().describe(
+    'Optional capture overrides for registers, arguments, return value, stack bytes, and bounded memory slices'
+  ),
   max_hits: z
     .number()
     .int()
@@ -149,47 +152,55 @@ interface TraceConditionDependencies {
 }
 
 function buildRuntimeReadiness(result: WorkerResult | undefined) {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
-  const components = data.components && typeof data.components === 'object'
-    ? (data.components as Record<string, unknown>)
-    : {}
-  const fridaAvailable = Boolean((components.frida as Record<string, unknown> | undefined)?.available)
-  const workerAvailable = Boolean((components.worker as Record<string, unknown> | undefined)?.available)
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const components =
+    data.components && typeof data.components === 'object'
+      ? (data.components as Record<string, unknown>)
+      : {}
+  const fridaAvailable = Boolean(
+    (components.frida as Record<string, unknown> | undefined)?.available
+  )
+  const workerAvailable = Boolean(
+    (components.worker as Record<string, unknown> | undefined)?.available
+  )
   const ready = fridaAvailable && workerAvailable
   const availableComponents = Array.isArray(data.available_components)
     ? data.available_components.map((item) => String(item))
     : []
   return {
-    status: ready
-      ? 'ready'
-      : availableComponents.length > 0
-        ? 'partial'
-        : 'setup_required',
+    status: ready ? 'ready' : availableComponents.length > 0 ? 'partial' : 'setup_required',
     ready,
     available_components: availableComponents,
     summary: ready
       ? 'Frida runtime instrumentation prerequisites are available for this plan.'
       : 'Frida runtime instrumentation is not fully ready; keep this as a planning artifact until setup is complete.',
     setup_actions: Array.isArray(data.setup_actions) ? data.setup_actions : undefined,
-    required_user_inputs: Array.isArray(data.required_user_inputs) ? data.required_user_inputs : undefined,
+    required_user_inputs: Array.isArray(data.required_user_inputs)
+      ? data.required_user_inputs
+      : undefined,
   }
 }
 
 function parseBreakpointCandidates(result: WorkerResult | undefined) {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   return Array.isArray(data.recommended_breakpoints)
     ? data.recommended_breakpoints.filter((item) => item && typeof item === 'object')
     : []
 }
 
-function applyMemoryCap(
+function applyMemoryCap(plan: z.infer<typeof NormalizedTracePlanSchema>): {
   plan: z.infer<typeof NormalizedTracePlanSchema>
-): { plan: z.infer<typeof NormalizedTracePlanSchema>; warnings: string[] } {
+  warnings: string[]
+} {
   const warnings: string[] = []
   let remaining = plan.limits.max_memory_bytes
   let stackBytes = plan.capture.stack_bytes
   if (stackBytes > remaining) {
-    warnings.push(`Stack capture reduced from ${stackBytes}B to ${remaining}B to honor max_memory_bytes.`)
+    warnings.push(
+      `Stack capture reduced from ${stackBytes}B to ${remaining}B to honor max_memory_bytes.`
+    )
     stackBytes = remaining
   }
   remaining -= stackBytes
@@ -197,12 +208,16 @@ function applyMemoryCap(
   const memorySlices = []
   for (const slice of plan.capture.memory_slices) {
     if (remaining <= 0) {
-      warnings.push(`Dropped memory slice ${slice.label || slice.source} because max_memory_bytes was exhausted.`)
+      warnings.push(
+        `Dropped memory slice ${slice.label || slice.source} because max_memory_bytes was exhausted.`
+      )
       continue
     }
     const maxBytes = Math.min(slice.max_bytes, remaining)
     if (maxBytes < slice.max_bytes) {
-      warnings.push(`Memory slice ${slice.label || slice.source} reduced from ${slice.max_bytes}B to ${maxBytes}B.`)
+      warnings.push(
+        `Memory slice ${slice.label || slice.source} reduced from ${slice.max_bytes}B to ${maxBytes}B.`
+      )
     }
     remaining -= maxBytes
     memorySlices.push({
@@ -231,7 +246,8 @@ export function createTraceConditionHandler(
   dependencies: TraceConditionDependencies = {}
 ) {
   const breakpointSmartHandler =
-    dependencies.breakpointSmart || createBreakpointSmartHandler(workspaceManager, database, cacheManager)
+    dependencies.breakpointSmart ||
+    createBreakpointSmartHandler(workspaceManager, database, cacheManager)
   const dynamicDependenciesHandler =
     dependencies.dynamicDependencies || createDynamicDependenciesHandler(workspaceManager, database)
 
@@ -278,16 +294,12 @@ export function createTraceConditionHandler(
       let selectedBreakpoint = input.breakpoint
 
       if (!selectedBreakpoint && input.reuse_cached && !input.force_refresh) {
-        const breakpointSelection = await loadCryptoPlanningArtifactSelection<Record<string, unknown>>(
-          workspaceManager,
-          database,
-          input.sample_id,
-          SMART_BREAKPOINT_PLAN_ARTIFACT_TYPE,
-          {
-            scope: input.artifact_scope as CryptoPlanningArtifactScope,
-            sessionTag: input.session_tag,
-          }
-        )
+        const breakpointSelection = await loadCryptoPlanningArtifactSelection<
+          Record<string, unknown>
+        >(workspaceManager, database, input.sample_id, SMART_BREAKPOINT_PLAN_ARTIFACT_TYPE, {
+          scope: input.artifact_scope as CryptoPlanningArtifactScope,
+          sessionTag: input.session_tag,
+        })
         if (breakpointSelection.latest_payload) {
           sourceResult = {
             ok: true,
@@ -310,13 +322,17 @@ export function createTraceConditionHandler(
 
       if (!selectedBreakpoint) {
         const candidates = parseBreakpointCandidates(sourceResult)
-        selectedBreakpoint = candidates[input.breakpoint_index] as z.infer<typeof BreakpointCandidateSchema> | undefined
+        selectedBreakpoint = candidates[input.breakpoint_index] as
+          | z.infer<typeof BreakpointCandidateSchema>
+          | undefined
       }
 
       if (!selectedBreakpoint) {
         return {
           ok: false,
-          errors: ['No breakpoint candidate was available. Run breakpoint.smart first or provide breakpoint explicitly.'],
+          errors: [
+            'No breakpoint candidate was available. Run breakpoint.smart first or provide breakpoint explicitly.',
+          ],
           metrics: {
             elapsed_ms: Date.now() - startTime,
             tool: TOOL_NAME,
@@ -345,7 +361,7 @@ export function createTraceConditionHandler(
       const captureSummary = summarizeCapturePlan(plan.capture)
       const summary = summarizeNormalizedTracePlan(plan)
       const outputData = {
-        status: (runtimeReadiness.ready ? 'ready' : 'setup_required') as 'ready' | 'setup_required',
+        status: runtimeReadiness.ready ? 'ready' : 'setup_required',
         sample_id: input.sample_id,
         selected_breakpoint: BreakpointCandidateSchema.parse(selectedBreakpoint),
         normalized_plan: plan,

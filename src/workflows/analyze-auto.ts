@@ -41,23 +41,27 @@ const TOOL_NAME = 'workflow.analyze.auto'
 
 export const analyzeAutoWorkflowInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  goal: AnalysisIntentGoalSchema
-    .default('triage')
-    .describe('Analyst intent. The server routes to an appropriate workflow or safe dynamic path.'),
-  depth: AnalysisIntentDepthSchema
-    .default('balanced')
-    .describe('Controls how aggressively the server selects safe corroborating backends. Prefer safe/balanced first for medium or larger samples; reserve deep for smaller or already-triaged samples.'),
-  backend_policy: BackendPolicySchema
-    .default('auto')
-    .describe('Controls whether newer installed backends are preferred, suppressed, or only used when needed.'),
+  goal: AnalysisIntentGoalSchema.default('triage').describe(
+    'Analyst intent. The server routes to an appropriate workflow or safe dynamic path.'
+  ),
+  depth: AnalysisIntentDepthSchema.default('balanced').describe(
+    'Controls how aggressively the server selects safe corroborating backends. Prefer safe/balanced first for medium or larger samples; reserve deep for smaller or already-triaged samples.'
+  ),
+  backend_policy: BackendPolicySchema.default('auto').describe(
+    'Controls whether newer installed backends are preferred, suppressed, or only used when needed.'
+  ),
   allow_transformations: z
     .boolean()
     .default(false)
-    .describe('Keep false for routine analysis. True only permits later explicit transform-capable follow-ups; it does not auto-run them.'),
+    .describe(
+      'Keep false for routine analysis. True only permits later explicit transform-capable follow-ups; it does not auto-run them.'
+    ),
   allow_live_execution: z
     .boolean()
     .default(false)
-    .describe('Dynamic routing still defaults to readiness and safe simulation first. Wine/live execution stays manual-only even when this flag is true.'),
+    .describe(
+      'Dynamic routing still defaults to readiness and safe simulation first. Wine/live execution stays manual-only even when this flag is true.'
+    ),
   force_refresh: z
     .boolean()
     .default(false)
@@ -65,7 +69,9 @@ export const analyzeAutoWorkflowInputSchema = z.object({
   raw_result_mode: z
     .enum(['compact', 'full'])
     .default('compact')
-    .describe('Forwarded to workflow.triage when goal=triage. Keep compact for normal and large-sample use; full is mainly for targeted debugging on smaller samples.'),
+    .describe(
+      'Forwarded to workflow.triage when goal=triage. Keep compact for normal and large-sample use; full is mainly for targeted debugging on smaller samples.'
+    ),
   include_cfg: z
     .boolean()
     .default(false)
@@ -148,7 +154,7 @@ function normalizeToolLikeResult(result: WorkerResult | ToolResult): WorkerResul
 
   const structured = result.structuredContent
   if (structured && typeof structured === 'object') {
-    const payload = structured as Record<string, unknown>
+    const payload = structured
     return {
       ok: Boolean(payload.ok ?? !result.isError),
       data: payload.data,
@@ -202,9 +208,7 @@ function extractRoutingMetadata(
   return parsed.success ? parsed.data : null
 }
 
-function extractCoverageEnvelope(
-  payload: unknown
-): z.infer<typeof CoverageEnvelopeSchema> | null {
+function extractCoverageEnvelope(payload: unknown): z.infer<typeof CoverageEnvelopeSchema> | null {
   if (!payload || typeof payload !== 'object') {
     return null
   }
@@ -212,7 +216,6 @@ function extractCoverageEnvelope(
   const parsed = CoverageEnvelopeSchema.safeParse(payload)
   return parsed.success ? parsed.data : null
 }
-
 
 export function createAnalyzeAutoWorkflowHandler(
   workspaceManager: WorkspaceManager,
@@ -224,7 +227,8 @@ export function createAnalyzeAutoWorkflowHandler(
   jobQueue?: JobQueue
 ) {
   const triageHandler =
-    dependencies.triageHandler || createTriageWorkflowHandler(workspaceManager, database, cacheManager)
+    dependencies.triageHandler ||
+    createTriageWorkflowHandler(workspaceManager, database, cacheManager)
   const deepStaticHandler =
     dependencies.deepStaticHandler ||
     createDeepStaticWorkflowHandler(workspaceManager, database, cacheManager, jobQueue)
@@ -351,17 +355,14 @@ export function createAnalyzeAutoWorkflowHandler(
                 backend_policy: input.backend_policy,
                 routed_tool: 'workflow.analyze.start',
                 routed_result: startPayload.stage_result,
-                result_mode:
-                  startPayload.execution_state === 'queued' ? 'queued' : 'completed',
-                recommended_next_tools:
-                  (startPayload.recommended_next_tools as string[]) || [
-                    'workflow.analyze.promote',
-                    'workflow.analyze.status',
-                  ],
-                next_actions:
-                  (startPayload.next_actions as string[]) || [
-                    'Promote the persisted run instead of repeating fast-profile analysis when you need deeper stages.',
-                  ],
+                result_mode: startPayload.execution_state === 'queued' ? 'queued' : 'completed',
+                recommended_next_tools: (startPayload.recommended_next_tools as string[]) || [
+                  'workflow.analyze.promote',
+                  'workflow.analyze.status',
+                ],
+                next_actions: (startPayload.next_actions as string[]) || [
+                  'Promote the persisted run instead of repeating fast-profile analysis when you need deeper stages.',
+                ],
               },
               startCoverage
             ),
@@ -410,8 +411,7 @@ export function createAnalyzeAutoWorkflowHandler(
           ? (promoteDelegated.data as Record<string, unknown>)
           : {}
       const promoteRouting = extractRoutingMetadata(promoteDelegated.data) || startRouting
-      const promoteCoverage =
-        extractCoverageEnvelope(promoteDelegated.data) || startCoverage
+      const promoteCoverage = extractCoverageEnvelope(promoteDelegated.data) || startCoverage
 
       return {
         ok: true,
@@ -425,17 +425,14 @@ export function createAnalyzeAutoWorkflowHandler(
               backend_policy: input.backend_policy,
               routed_tool: 'workflow.analyze.promote',
               routed_result: promotePayload.stage_result || promotePayload,
-              result_mode:
-                promotePayload.execution_state === 'queued' ? 'queued' : 'completed',
-              recommended_next_tools:
-                (promotePayload.recommended_next_tools as string[]) || [
-                  'workflow.analyze.status',
-                  'workflow.analyze.promote',
-                ],
-              next_actions:
-                (promotePayload.next_actions as string[]) || [
-                  'Use workflow.analyze.status to monitor the persisted run instead of rerunning heavyweight workflows.',
-                ],
+              result_mode: promotePayload.execution_state === 'queued' ? 'queued' : 'completed',
+              recommended_next_tools: (promotePayload.recommended_next_tools as string[]) || [
+                'workflow.analyze.status',
+                'workflow.analyze.promote',
+              ],
+              next_actions: (promotePayload.next_actions as string[]) || [
+                'Use workflow.analyze.status to monitor the persisted run instead of rerunning heavyweight workflows.',
+              ],
             },
             promoteCoverage
           ),
@@ -482,7 +479,9 @@ export function createAnalyzeAutoWorkflowHandler(
               },
             ],
             knownFindings: [
-              (triageResult.data as Record<string, unknown> | undefined)?.summary as string | undefined,
+              (triageResult.data as Record<string, unknown> | undefined)?.summary as
+                | string
+                | undefined,
             ],
             unverifiedAreas: ['Function-level attribution remains unverified after quick triage.'],
             upgradePaths: [
@@ -490,7 +489,8 @@ export function createAnalyzeAutoWorkflowHandler(
                 tool: 'ghidra.analyze',
                 purpose: 'Recover function-level attribution.',
                 closes_gaps: ['ghidra_analysis'],
-                expected_coverage_gain: 'Adds decompiler-backed function discovery and addresses-to-behavior context.',
+                expected_coverage_gain:
+                  'Adds decompiler-backed function discovery and addresses-to-behavior context.',
                 cost_tier: 'high',
               },
               {
@@ -509,20 +509,20 @@ export function createAnalyzeAutoWorkflowHandler(
             ? mergeRoutingMetadata(
                 mergeCoverageEnvelope(
                   {
-                  sample_id: input.sample_id,
-                  goal: input.goal,
-                  depth: input.depth,
-                  backend_policy: input.backend_policy,
-                  routed_tool: 'workflow.triage',
-                  routed_result: triageResult.data,
-                  result_mode: 'completed',
-                  recommended_next_tools:
-                    (triageResult.data as Record<string, unknown>)?.recommended_next_tools as string[] || [
+                    sample_id: input.sample_id,
+                    goal: input.goal,
+                    depth: input.depth,
+                    backend_policy: input.backend_policy,
+                    routed_tool: 'workflow.triage',
+                    routed_result: triageResult.data,
+                    result_mode: 'completed',
+                    recommended_next_tools: ((triageResult.data as Record<string, unknown>)
+                      ?.recommended_next_tools as string[]) || [
                       'ghidra.analyze',
                       'workflow.reconstruct',
                     ],
-                  next_actions:
-                    (triageResult.data as Record<string, unknown>)?.next_actions as string[] || [
+                    next_actions: ((triageResult.data as Record<string, unknown>)
+                      ?.next_actions as string[]) || [
                       'Continue with the recommended follow-up workflow.',
                     ],
                   },
@@ -582,7 +582,8 @@ export function createAnalyzeAutoWorkflowHandler(
                 ? {
                     domain: 'decompilation',
                     status: 'queued',
-                    reason: 'Deep static analysis is queued and has not produced decompiled output yet.',
+                    reason:
+                      'Deep static analysis is queued and has not produced decompiled output yet.',
                   }
                 : null,
               analysisBudgetProfile !== 'deep'
@@ -613,7 +614,8 @@ export function createAnalyzeAutoWorkflowHandler(
             ],
             upgradePaths: [
               {
-                tool: delegatedData.result_mode === 'queued' ? 'task.status' : 'workflow.reconstruct',
+                tool:
+                  delegatedData.result_mode === 'queued' ? 'task.status' : 'workflow.reconstruct',
                 purpose:
                   delegatedData.result_mode === 'queued'
                     ? 'Wait for queued deep static completion.'
@@ -642,20 +644,22 @@ export function createAnalyzeAutoWorkflowHandler(
                     depth: input.depth,
                     backend_policy: input.backend_policy,
                     routed_tool: 'workflow.deep_static',
-                    status: typeof delegatedData.status === 'string' ? delegatedData.status : undefined,
-                    job_id: typeof delegatedData.job_id === 'string' ? delegatedData.job_id : undefined,
+                    status:
+                      typeof delegatedData.status === 'string' ? delegatedData.status : undefined,
+                    job_id:
+                      typeof delegatedData.job_id === 'string' ? delegatedData.job_id : undefined,
                     polling_guidance: delegatedData.polling_guidance,
                     routed_result: delegated.data,
-                    result_mode:
-                      delegatedData.result_mode === 'queued' ? 'queued' : 'completed',
-                    recommended_next_tools:
-                      (delegatedData.recommended_next_tools as string[]) || ['task.status', 'workflow.reconstruct'],
-                    next_actions:
-                      (delegatedData.next_actions as string[]) || [
-                        delegatedData.result_mode === 'queued'
-                          ? 'Poll task.status until workflow.deep_static completes.'
-                          : 'Continue with workflow.reconstruct if you need source-like export.',
-                      ],
+                    result_mode: delegatedData.result_mode === 'queued' ? 'queued' : 'completed',
+                    recommended_next_tools: (delegatedData.recommended_next_tools as string[]) || [
+                      'task.status',
+                      'workflow.reconstruct',
+                    ],
+                    next_actions: (delegatedData.next_actions as string[]) || [
+                      delegatedData.result_mode === 'queued'
+                        ? 'Poll task.status until workflow.deep_static completes.'
+                        : 'Continue with workflow.reconstruct if you need source-like export.',
+                    ],
                   },
                   coverageEnvelope
                 ),
@@ -689,7 +693,10 @@ export function createAnalyzeAutoWorkflowHandler(
           include_preflight: true,
           include_plan: analysisBudgetProfile !== 'quick',
           validate_build: analysisBudgetProfile === 'deep',
-          run_harness: analysisBudgetProfile === 'deep' && sampleSizeTier !== 'large' && sampleSizeTier !== 'oversized',
+          run_harness:
+            analysisBudgetProfile === 'deep' &&
+            sampleSizeTier !== 'large' &&
+            sampleSizeTier !== 'oversized',
           allow_partial: true,
         })
         const routingMetadata = extractRoutingMetadata(reconstructResult.data) || fallbackRouting
@@ -724,7 +731,8 @@ export function createAnalyzeAutoWorkflowHandler(
                 ? {
                     domain: 'build_validation',
                     status: 'skipped',
-                    reason: 'Build and harness validation were bounded to control reconstruction cost.',
+                    reason:
+                      'Build and harness validation were bounded to control reconstruction cost.',
                   }
                 : null,
               delegatedData.degraded
@@ -741,7 +749,9 @@ export function createAnalyzeAutoWorkflowHandler(
                 : null,
             ],
             suspectedFindings: [
-              delegatedData.degraded ? 'Primary reconstruction path may have required degraded fallback behavior.' : null,
+              delegatedData.degraded
+                ? 'Primary reconstruction path may have required degraded fallback behavior.'
+                : null,
             ],
             unverifiedAreas: [
               analysisBudgetProfile !== 'deep'
@@ -774,21 +784,23 @@ export function createAnalyzeAutoWorkflowHandler(
             ? mergeRoutingMetadata(
                 mergeCoverageEnvelope(
                   {
-                  sample_id: input.sample_id,
-                  goal: input.goal,
-                  depth: input.depth,
-                  backend_policy: input.backend_policy,
-                  routed_tool: 'workflow.reconstruct',
-                  status: typeof delegatedData.status === 'string' ? delegatedData.status : undefined,
-                  job_id: typeof delegatedData.job_id === 'string' ? delegatedData.job_id : undefined,
-                  polling_guidance: delegatedData.polling_guidance,
-                  routed_result: reconstructResult.data,
-                  result_mode:
-                    delegatedData.result_mode === 'queued' ? 'queued' : 'completed',
-                  recommended_next_tools:
-                    (delegatedData.recommended_next_tools as string[]) || ['task.status', 'artifact.read'],
-                  next_actions:
-                    (delegatedData.next_actions as string[]) || [
+                    sample_id: input.sample_id,
+                    goal: input.goal,
+                    depth: input.depth,
+                    backend_policy: input.backend_policy,
+                    routed_tool: 'workflow.reconstruct',
+                    status:
+                      typeof delegatedData.status === 'string' ? delegatedData.status : undefined,
+                    job_id:
+                      typeof delegatedData.job_id === 'string' ? delegatedData.job_id : undefined,
+                    polling_guidance: delegatedData.polling_guidance,
+                    routed_result: reconstructResult.data,
+                    result_mode: delegatedData.result_mode === 'queued' ? 'queued' : 'completed',
+                    recommended_next_tools: (delegatedData.recommended_next_tools as string[]) || [
+                      'task.status',
+                      'artifact.read',
+                    ],
+                    next_actions: (delegatedData.next_actions as string[]) || [
                       delegatedData.result_mode === 'queued'
                         ? 'Poll task.status until workflow.reconstruct completes.'
                         : 'Inspect exported artifacts and corroborating backend results before moving to semantic review.',
@@ -851,7 +863,8 @@ export function createAnalyzeAutoWorkflowHandler(
                     {
                       domain: 'summary_synthesis',
                       status: 'skipped',
-                      reason: 'Final synthesis was intentionally bounded before the full final stage.',
+                      reason:
+                        'Final synthesis was intentionally bounded before the full final stage.',
                     },
                   ],
             knownFindings: [
@@ -862,7 +875,9 @@ export function createAnalyzeAutoWorkflowHandler(
             unverifiedAreas:
               analysisBudgetProfile === 'deep'
                 ? []
-                : ['Final staged synthesis remains bounded until workflow.summarize runs through final.'],
+                : [
+                    'Final staged synthesis remains bounded until workflow.summarize runs through final.',
+                  ],
             upgradePaths:
               analysisBudgetProfile === 'deep'
                 ? []
@@ -871,7 +886,8 @@ export function createAnalyzeAutoWorkflowHandler(
                       tool: 'workflow.summarize',
                       purpose: 'Continue staged synthesis through the final summary stage.',
                       closes_gaps: ['summary_synthesis'],
-                      expected_coverage_gain: 'Restates known, suspected, and unverified findings from the full staged summary path.',
+                      expected_coverage_gain:
+                        'Restates known, suspected, and unverified findings from the full staged summary path.',
                       cost_tier: 'medium',
                     },
                   ],
@@ -883,20 +899,17 @@ export function createAnalyzeAutoWorkflowHandler(
             ? mergeRoutingMetadata(
                 mergeCoverageEnvelope(
                   {
-                  sample_id: input.sample_id,
-                  goal: input.goal,
-                  depth: input.depth,
-                  backend_policy: input.backend_policy,
-                  routed_tool: 'workflow.summarize',
-                  routed_result: summarizeResult.data,
-                  result_mode: 'completed',
-                  recommended_next_tools:
-                    (summarizeResult.data as Record<string, unknown>)?.recommended_next_tools as string[] || [
-                      'artifact.read',
-                      'artifacts.list',
-                    ],
-                  next_actions:
-                    (summarizeResult.data as Record<string, unknown>)?.next_actions as string[] || [
+                    sample_id: input.sample_id,
+                    goal: input.goal,
+                    depth: input.depth,
+                    backend_policy: input.backend_policy,
+                    routed_tool: 'workflow.summarize',
+                    routed_result: summarizeResult.data,
+                    result_mode: 'completed',
+                    recommended_next_tools: ((summarizeResult.data as Record<string, unknown>)
+                      ?.recommended_next_tools as string[]) || ['artifact.read', 'artifacts.list'],
+                    next_actions: ((summarizeResult.data as Record<string, unknown>)
+                      ?.next_actions as string[]) || [
                       'Read the staged summary artifacts when you need more detail than the compact summary.',
                     ],
                   },
@@ -922,7 +935,10 @@ export function createAnalyzeAutoWorkflowHandler(
         dynamicPreflight.data &&
         typeof dynamicPreflight.data === 'object' &&
         typeof (dynamicPreflight.data as Record<string, unknown>).components === 'object'
-          ? ((dynamicPreflight.data as Record<string, unknown>).components as Record<string, unknown>)
+          ? ((dynamicPreflight.data as Record<string, unknown>).components as Record<
+              string,
+              unknown
+            >)
           : {}
 
       const qilingReady =
@@ -945,7 +961,8 @@ export function createAnalyzeAutoWorkflowHandler(
       })
 
       const sandboxMode =
-        input.depth === 'deep' && Boolean((dynamicComponents.speakeasy as Record<string, unknown> | undefined)?.available)
+        input.depth === 'deep' &&
+        Boolean((dynamicComponents.speakeasy as Record<string, unknown> | undefined)?.available)
           ? 'speakeasy'
           : 'safe_simulation'
 
@@ -957,19 +974,20 @@ export function createAnalyzeAutoWorkflowHandler(
             approved: true,
             persist_artifact: true,
           })
-        : {
+        : ({
             ok: false,
             data: {
               status: 'approval_gated',
               failure_category: 'approval_required',
-              summary: 'Dynamic sandbox execution was not attempted because allow_live_execution=false.',
+              summary:
+                'Dynamic sandbox execution was not attempted because allow_live_execution=false.',
               recommended_next_tools: ['workflow.analyze.start', 'workflow.analyze.promote'],
               next_actions: [
                 'Create or promote a dynamic run with allow_live_execution=true before requesting sandbox execution.',
               ],
             },
             warnings: ['Dynamic sandbox execution requires allow_live_execution=true.'],
-          } as WorkerResult
+          } as WorkerResult)
 
       let qilingResult: WorkerResult | undefined
       let pandaResult: WorkerResult | undefined
@@ -1006,33 +1024,35 @@ export function createAnalyzeAutoWorkflowHandler(
             ? mergeRoutingMetadata(
                 mergeCoverageEnvelope(
                   {
-                  sample_id: input.sample_id,
-                  goal: input.goal,
-                  depth: input.depth,
-                  backend_policy: input.backend_policy,
-                  routed_tool: 'dynamic.dependencies+sandbox.execute',
-                  status: sandboxResult.ok ? 'completed' : 'partial',
-                  dynamic_preflight: dynamicPreflight.data,
-                  sandbox: sandboxResult.data,
-                  backend_enrichments: {
-                    ...(qilingResult?.ok && qilingResult.data ? { qiling: qilingResult.data } : {}),
-                    ...(pandaResult?.ok && pandaResult.data ? { panda: pandaResult.data } : {}),
-                  },
-                  result_mode: 'completed',
-                  recommended_next_tools: dedupeStrings([
-                    'dynamic.dependencies',
-                    'sandbox.execute',
-                    qilingResult?.ok ? 'qiling.inspect' : undefined,
-                    pandaResult?.ok ? 'panda.inspect' : undefined,
-                    'wine.run',
-                  ]),
-                  next_actions: dedupeStrings([
-                    'Start with the returned dynamic preflight and sandbox summary before considering any live execution path.',
-                    qilingReady
-                      ? 'Qiling readiness is available if you later add a Qiling-backed execution workflow.'
-                      : 'Configure QILING_ROOTFS before expecting useful Qiling-backed emulation.',
-                    'wine.run remains manual-only and still requires approved=true for run or debug modes.',
-                  ]),
+                    sample_id: input.sample_id,
+                    goal: input.goal,
+                    depth: input.depth,
+                    backend_policy: input.backend_policy,
+                    routed_tool: 'dynamic.dependencies+sandbox.execute',
+                    status: sandboxResult.ok ? 'completed' : 'partial',
+                    dynamic_preflight: dynamicPreflight.data,
+                    sandbox: sandboxResult.data,
+                    backend_enrichments: {
+                      ...(qilingResult?.ok && qilingResult.data
+                        ? { qiling: qilingResult.data }
+                        : {}),
+                      ...(pandaResult?.ok && pandaResult.data ? { panda: pandaResult.data } : {}),
+                    },
+                    result_mode: 'completed',
+                    recommended_next_tools: dedupeStrings([
+                      'dynamic.dependencies',
+                      'sandbox.execute',
+                      qilingResult?.ok ? 'qiling.inspect' : undefined,
+                      pandaResult?.ok ? 'panda.inspect' : undefined,
+                      'wine.run',
+                    ]),
+                    next_actions: dedupeStrings([
+                      'Start with the returned dynamic preflight and sandbox summary before considering any live execution path.',
+                      qilingReady
+                        ? 'Qiling readiness is available if you later add a Qiling-backed execution workflow.'
+                        : 'Configure QILING_ROOTFS before expecting useful Qiling-backed emulation.',
+                      'wine.run remains manual-only and still requires approved=true for run or debug modes.',
+                    ]),
                   },
                   buildCoverageEnvelope({
                     coverageLevel: 'dynamic_verified',
@@ -1054,18 +1074,25 @@ export function createAnalyzeAutoWorkflowHandler(
                       },
                     ],
                     knownFindings: [
-                      sandboxResult.ok ? 'Safe simulation or bounded sandbox execution completed.' : null,
+                      sandboxResult.ok
+                        ? 'Safe simulation or bounded sandbox execution completed.'
+                        : null,
                     ],
                     suspectedFindings: [
-                      qilingReady ? 'Qiling-backed emulation could deepen dynamic confirmation.' : null,
+                      qilingReady
+                        ? 'Qiling-backed emulation could deepen dynamic confirmation.'
+                        : null,
                     ],
-                    unverifiedAreas: ['Live process execution and full runtime verification were not performed automatically.'],
+                    unverifiedAreas: [
+                      'Live process execution and full runtime verification were not performed automatically.',
+                    ],
                     upgradePaths: [
                       {
                         tool: qilingReady ? 'qiling.inspect' : 'dynamic.dependencies',
                         purpose: 'Check whether a deeper dynamic path is ready.',
                         closes_gaps: ['dynamic_behavior'],
-                        expected_coverage_gain: 'Clarifies whether emulation-oriented dynamic upgrades are immediately available.',
+                        expected_coverage_gain:
+                          'Clarifies whether emulation-oriented dynamic upgrades are immediately available.',
                         cost_tier: 'medium',
                         availability: qilingReady ? 'ready' : 'blocked',
                         blockers: qilingReady ? [] : ['QILING_ROOTFS is missing or incomplete.'],
@@ -1074,7 +1101,8 @@ export function createAnalyzeAutoWorkflowHandler(
                         tool: 'wine.run',
                         purpose: 'Launch the sample under an explicit live-execution path.',
                         closes_gaps: ['dynamic_behavior'],
-                        expected_coverage_gain: 'Provides live-execution observations that safe simulation cannot confirm.',
+                        expected_coverage_gain:
+                          'Provides live-execution observations that safe simulation cannot confirm.',
                         cost_tier: 'high',
                         availability: 'manual_only',
                         requires_approval: true,

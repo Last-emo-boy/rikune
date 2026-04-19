@@ -8,7 +8,10 @@
 
 import type { Plugin } from '../sdk.js'
 import { deobfStringsToolDefinition, createDeobfStringsHandler } from './tools/deobf-strings.js'
-import { deobfApiResolveToolDefinition, createDeobfApiResolveHandler } from './tools/deobf-api-resolve.js'
+import {
+  deobfApiResolveToolDefinition,
+  createDeobfApiResolveHandler,
+} from './tools/deobf-api-resolve.js'
 import { deobfCfgTraceToolDefinition, createDeobfCfgTraceHandler } from './tools/deobf-cfg-trace.js'
 import { deobfDotnetToolDefinition, createDeobfDotnetHandler } from './tools/deobf-dotnet.js'
 
@@ -16,7 +19,11 @@ const runtimeDeobfuscatePlugin: Plugin = {
   id: 'runtime-deobfuscate',
   name: 'Runtime Deobfuscation',
   executionDomain: 'dynamic',
-  surfaceRules: { tier: 2, activateOn: { findings: ['obfuscated', 'packed'] }, category: 'dynamic-analysis' },
+  surfaceRules: {
+    tier: 2,
+    activateOn: { findings: ['obfuscated', 'packed'] },
+    category: 'dynamic-analysis',
+  },
   description:
     'Dynamic deobfuscation: runtime string decryption via Frida hooks, ' +
     'dynamic API resolution capture, CFG recovery from execution traces, ' +
@@ -25,20 +32,29 @@ const runtimeDeobfuscatePlugin: Plugin = {
   configSchema: [
     { envVar: 'FRIDA_PATH', description: 'Path to Frida CLI', required: false },
     { envVar: 'DE4DOT_PATH', description: 'Path to de4dot binary', required: false },
-    { envVar: 'DEOBF_TIMEOUT', description: 'Default deobfuscation timeout in seconds', required: false, defaultValue: '60' },
+    {
+      envVar: 'DEOBF_TIMEOUT',
+      description: 'Default deobfuscation timeout in seconds',
+      required: false,
+      defaultValue: '60',
+    },
   ],
   systemDeps: [
     {
-      type: 'binary', name: 'frida', versionFlag: '--version',
-      envVar: 'FRIDA_PATH', required: false,
+      type: 'binary',
+      name: 'frida',
+      versionFlag: '--version',
+      envVar: 'FRIDA_PATH',
+      required: false,
       description: 'Frida dynamic instrumentation toolkit for runtime hooks',
       dockerInstall: 'pip install frida frida-tools',
       dockerFeature: 'frida',
       dockerValidation: ['frida-ps --help >/dev/null 2>&1'],
-  
     },
     {
-      type: 'binary', name: 'de4dot', required: false,
+      type: 'binary',
+      name: 'de4dot',
+      required: false,
       envVar: 'DE4DOT_PATH',
       dockerDefault: '/opt/de4dot/de4dot',
       description: '.NET deobfuscator (de4dot) for ConfuserEx, .NET Reactor, etc.',
@@ -46,7 +62,10 @@ const runtimeDeobfuscatePlugin: Plugin = {
       dockerValidation: ['de4dot --help >/dev/null 2>&1 || true'],
     },
     {
-      type: 'binary', name: 'wine', versionFlag: '--version', required: false,
+      type: 'binary',
+      name: 'wine',
+      versionFlag: '--version',
+      required: false,
       description: 'Wine for Windows binary execution on Linux',
       dockerFeature: 'wine',
     },

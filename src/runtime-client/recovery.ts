@@ -25,7 +25,9 @@ export interface RuntimeRecovery {
 export function createRuntimeRecovery(ctx: RecoveryContext): RuntimeRecovery {
   let { config, runtimeClient, runtimeConnection, sandboxLauncher } = ctx
 
-  async function refreshRuntimeCapabilitiesIfRequested(options?: { forceRefreshCapabilities?: boolean }) {
+  async function refreshRuntimeCapabilitiesIfRequested(options?: {
+    forceRefreshCapabilities?: boolean
+  }) {
     if (!options?.forceRefreshCapabilities || !runtimeClient?.getCapabilities) {
       return
     }
@@ -36,29 +38,43 @@ export function createRuntimeRecovery(ctx: RecoveryContext): RuntimeRecovery {
     }
   }
 
-  async function recoverRemoteSandbox(options?: { forceRefreshCapabilities?: boolean }): Promise<boolean> {
+  async function recoverRemoteSandbox(options?: {
+    forceRefreshCapabilities?: boolean
+  }): Promise<boolean> {
     if (config.runtime.mode === 'remote-sandbox' && config.runtime.hostAgentEndpoint) {
       try {
         const startRes = await fetch(`${config.runtime.hostAgentEndpoint}/sandbox/start`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(config.runtime.hostAgentApiKey ? { Authorization: `Bearer ${config.runtime.hostAgentApiKey}` } : {}),
+            ...(config.runtime.hostAgentApiKey
+              ? { Authorization: `Bearer ${config.runtime.hostAgentApiKey}` }
+              : {}),
           },
           body: JSON.stringify({ timeoutMs: config.runtime.healthCheckTimeoutMs }),
           signal: AbortSignal.timeout(60_000),
         })
         if (!startRes.ok) return false
-        const startData = (await startRes.json()) as { ok?: boolean; endpoint?: string; sandboxId?: string }
+        const startData = (await startRes.json()) as {
+          ok?: boolean
+          endpoint?: string
+          sandboxId?: string
+        }
         if (!startData.ok || !startData.endpoint) return false
         if (!runtimeClient) {
-          runtimeClient = createRuntimeClient({ endpoint: startData.endpoint, apiKey: config.runtime.apiKey })
+          runtimeClient = createRuntimeClient({
+            endpoint: startData.endpoint,
+            apiKey: config.runtime.apiKey,
+          })
         } else {
           runtimeClient.setEndpoint(startData.endpoint)
           runtimeClient.invalidateCapabilitiesCache?.()
         }
         await refreshRuntimeCapabilitiesIfRequested(options)
-        logger.info({ endpoint: startData.endpoint, sandboxId: startData.sandboxId }, 'Remote-sandbox runtime recovered')
+        logger.info(
+          { endpoint: startData.endpoint, sandboxId: startData.sandboxId },
+          'Remote-sandbox runtime recovered'
+        )
         return true
       } catch (err) {
         logger.warn({ err }, 'Remote-sandbox recovery attempt failed')
@@ -72,7 +88,10 @@ export function createRuntimeRecovery(ctx: RecoveryContext): RuntimeRecovery {
         if (newConnection) {
           runtimeConnection = newConnection
           if (!runtimeClient) {
-            runtimeClient = createRuntimeClient({ endpoint: newConnection.endpoint, apiKey: config.runtime.apiKey })
+            runtimeClient = createRuntimeClient({
+              endpoint: newConnection.endpoint,
+              apiKey: config.runtime.apiKey,
+            })
           } else {
             runtimeClient.setEndpoint(newConnection.endpoint)
             runtimeClient.invalidateCapabilitiesCache?.()

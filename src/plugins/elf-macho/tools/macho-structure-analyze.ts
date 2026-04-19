@@ -86,17 +86,29 @@ export function createMachoStructureAnalyzeHandler(
   }
 }
 
-async function callElfMachoWorker(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function callElfMachoWorker(
+  request: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const workerPath = resolvePackagePath('src', 'plugins', 'elf-macho', 'workers', 'elf_macho_worker.py')
+    const workerPath = resolvePackagePath(
+      'src',
+      'plugins',
+      'elf-macho',
+      'workers',
+      'elf_macho_worker.py'
+    )
     const pythonCommand = getPythonCommand()
     const proc = spawn(pythonCommand, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'] })
 
     let stdout = ''
     let stderr = ''
 
-    proc.stdout.on('data', (d) => { stdout += d.toString() })
-    proc.stderr.on('data', (d) => { stderr += d.toString() })
+    proc.stdout.on('data', (d) => {
+      stdout += d.toString()
+    })
+    proc.stderr.on('data', (d) => {
+      stderr += d.toString()
+    })
 
     proc.on('close', (code) => {
       if (code !== 0) {

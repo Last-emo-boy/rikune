@@ -24,14 +24,27 @@ const ProcDumpModeSchema = z.enum([
 ])
 
 export const DebugProcDumpPlanInputSchema = z.object({
-  sample_id: z.string().optional().describe('Optional sample ID used to render launch-mode runtime.debug.command templates.'),
+  sample_id: z
+    .string()
+    .optional()
+    .describe('Optional sample ID used to render launch-mode runtime.debug.command templates.'),
   modes: z.array(ProcDumpModeSchema).optional().default(['launch_crash']),
   dump_type: z.enum(['full', 'mini']).optional().default('full'),
   seconds: z.number().int().min(1).max(3600).optional().default(30),
   max_dumps: z.number().int().min(1).max(64).optional().default(1),
   pid: z.number().int().min(1).optional().describe('PID for pid_snapshot mode.'),
-  arguments: z.array(z.string()).optional().default([]).describe('Optional sample arguments for launch modes.'),
-  timeout_ms: z.number().int().min(1000).max(30 * 60 * 1000).optional().default(180_000),
+  arguments: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe('Optional sample arguments for launch modes.'),
+  timeout_ms: z
+    .number()
+    .int()
+    .min(1000)
+    .max(30 * 60 * 1000)
+    .optional()
+    .default(180_000),
   use_static_behavior_artifacts: z.boolean().optional().default(true),
   static_artifact_scope: z.enum(['all', 'latest', 'session']).optional().default('latest'),
   static_artifact_session_tag: z.string().optional(),
@@ -123,7 +136,12 @@ function buildRuntimeTemplate(
 async function loadStaticBehaviorHint(
   deps: PluginToolDeps,
   input: z.infer<typeof DebugProcDumpPlanInputSchema>
-): Promise<{ artifact_ids: string[]; scope_note: string | null; suggested_modes: string[]; warnings: string[] }> {
+): Promise<{
+  artifact_ids: string[]
+  scope_note: string | null
+  suggested_modes: string[]
+  warnings: string[]
+}> {
   if (!input.use_static_behavior_artifacts || !input.sample_id) {
     return { artifact_ids: [], scope_note: null, suggested_modes: [], warnings: [] }
   }
@@ -148,10 +166,11 @@ async function loadStaticBehaviorHint(
       }
     )
     const findings = selection.artifacts.flatMap((artifact) => artifact.payload.findings || [])
-    const highSignal = findings.filter((finding) =>
-      finding.severity === 'critical' ||
-      finding.severity === 'high' ||
-      (finding.confidence || 0) >= 0.75
+    const highSignal = findings.filter(
+      (finding) =>
+        finding.severity === 'critical' ||
+        finding.severity === 'high' ||
+        (finding.confidence || 0) >= 0.75
     )
     const suggested = [
       highSignal.some((finding) => finding.category === 'injection') ? 'launch_first_chance' : null,
@@ -169,25 +188,34 @@ async function loadStaticBehaviorHint(
       artifact_ids: [],
       scope_note: null,
       suggested_modes: [],
-      warnings: [`Failed to load static behavior artifacts: ${error instanceof Error ? error.message : String(error)}`],
+      warnings: [
+        `Failed to load static behavior artifacts: ${error instanceof Error ? error.message : String(error)}`,
+      ],
     }
   }
 }
 
-function buildPlans(input: z.infer<typeof DebugProcDumpPlanInputSchema>, modes: string[]): ProcDumpCapturePlan[] {
+function buildPlans(
+  input: z.infer<typeof DebugProcDumpPlanInputSchema>,
+  modes: string[]
+): ProcDumpCapturePlan[] {
   return modes.map((mode): ProcDumpCapturePlan => {
-    const title = {
-      launch_crash: 'ProcDump crash-triggered launch capture',
-      launch_first_chance: 'ProcDump first-chance exception launch capture',
-      launch_timeout: 'ProcDump timeout/interval launch capture',
-      pid_snapshot: 'ProcDump existing-process snapshot capture',
-    }[mode] || 'ProcDump capture'
-    const purpose = {
-      launch_crash: 'Launch the sample under ProcDump and capture a dump on unhandled exception.',
-      launch_first_chance: 'Launch the sample under ProcDump and capture first-chance exception behavior for anti-debug or unpacking triage.',
-      launch_timeout: 'Launch the sample under ProcDump and capture time-based dumps when it does not crash deterministically.',
-      pid_snapshot: 'Capture a full dump from an already-running process ID inside the runtime.',
-    }[mode] || 'Capture a runtime dump with ProcDump.'
+    const title =
+      {
+        launch_crash: 'ProcDump crash-triggered launch capture',
+        launch_first_chance: 'ProcDump first-chance exception launch capture',
+        launch_timeout: 'ProcDump timeout/interval launch capture',
+        pid_snapshot: 'ProcDump existing-process snapshot capture',
+      }[mode] || 'ProcDump capture'
+    const purpose =
+      {
+        launch_crash: 'Launch the sample under ProcDump and capture a dump on unhandled exception.',
+        launch_first_chance:
+          'Launch the sample under ProcDump and capture first-chance exception behavior for anti-debug or unpacking triage.',
+        launch_timeout:
+          'Launch the sample under ProcDump and capture time-based dumps when it does not crash deterministically.',
+        pid_snapshot: 'Capture a full dump from an already-running process ID inside the runtime.',
+      }[mode] || 'Capture a runtime dump with ProcDump.'
     return {
       id: `procdump_${mode}`,
       mode,

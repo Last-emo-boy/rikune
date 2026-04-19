@@ -58,7 +58,7 @@ function getAllowedExtensions(extensions?: string[]): Set<string> {
     extensions
       .map((entry) => entry.trim().toLowerCase())
       .filter(Boolean)
-      .map((entry) => entry.startsWith('.') ? entry : `.${entry}`),
+      .map((entry) => (entry.startsWith('.') ? entry : `.${entry}`))
   )
 }
 
@@ -72,7 +72,7 @@ async function collectExplicitSidecars(
     maxTotalBytes: number
     sidecars: RuntimeSidecarUpload[]
     warnings: string[]
-  },
+  }
 ): Promise<void> {
   const sampleResolved = path.resolve(samplePath)
   for (const sidecarPath of sidecarPaths) {
@@ -84,7 +84,9 @@ async function collectExplicitSidecars(
       continue
     }
     if (state.sidecars.length >= state.maxSidecars) {
-      state.warnings.push(`Skipped sidecar ${sidecarPath}: max sidecar count ${state.maxSidecars} reached.`)
+      state.warnings.push(
+        `Skipped sidecar ${sidecarPath}: max sidecar count ${state.maxSidecars} reached.`
+      )
       continue
     }
 
@@ -122,7 +124,7 @@ async function collectAutoSidecars(
     maxTotalBytes: number
     sidecars: RuntimeSidecarUpload[]
     warnings: string[]
-  },
+  }
 ): Promise<void> {
   const sampleResolved = path.resolve(samplePath)
   const sampleDir = path.dirname(sampleResolved)
@@ -150,7 +152,9 @@ async function collectAutoSidecars(
       continue
     }
     if (state.sidecars.length >= state.maxSidecars) {
-      state.warnings.push(`Auto sidecar scan stopped: max sidecar count ${state.maxSidecars} reached.`)
+      state.warnings.push(
+        `Auto sidecar scan stopped: max sidecar count ${state.maxSidecars} reached.`
+      )
       return
     }
 
@@ -179,10 +183,13 @@ async function collectAutoSidecars(
 
 export async function resolveRuntimeSidecarUploads(
   samplePath: string,
-  options: RuntimeSidecarResolveOptions = {},
+  options: RuntimeSidecarResolveOptions = {}
 ): Promise<RuntimeSidecarResolveResult> {
   const maxSidecars = Math.max(0, Math.min(options.maxSidecars ?? DEFAULT_MAX_SIDECARS, 256))
-  const maxTotalBytes = Math.max(0, Math.min(options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES, 1024 * 1024 * 1024))
+  const maxTotalBytes = Math.max(
+    0,
+    Math.min(options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES, 1024 * 1024 * 1024)
+  )
   const state = {
     seen: new Set<string>(),
     totalBytes: 0,
@@ -195,7 +202,7 @@ export async function resolveRuntimeSidecarUploads(
   await collectExplicitSidecars(
     samplePath,
     normalizeExplicitSidecarPaths(options.sidecarPaths),
-    state,
+    state
   )
 
   if (options.autoStageSidecars && state.sidecars.length < maxSidecars) {

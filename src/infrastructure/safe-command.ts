@@ -20,7 +20,7 @@ export function validateCommandName(command: string): string {
   if (!command || !SAFE_COMMAND_NAME_RE.test(command)) {
     throw new Error(
       `Unsafe command name rejected: "${command.slice(0, 80)}". ` +
-      'Command names must contain only alphanumeric characters, dots, hyphens, underscores, slashes, and colons.'
+        'Command names must contain only alphanumeric characters, dots, hyphens, underscores, slashes, and colons.'
     )
   }
   return command

@@ -220,7 +220,9 @@ export function createStaticCapabilityTriageHandler(
       if (!workerResponse.ok || !workerResponse.data || typeof workerResponse.data !== 'object') {
         return {
           ok: false,
-          errors: workerResponse.errors?.length ? workerResponse.errors : ['Static capability triage failed.'],
+          errors: workerResponse.errors?.length
+            ? workerResponse.errors
+            : ['Static capability triage failed.'],
           warnings: workerResponse.warnings,
           metrics: {
             elapsed_ms: Date.now() - startTime,
@@ -241,10 +243,9 @@ export function createStaticCapabilityTriageHandler(
       const capabilityGroups =
         workerData.capability_groups && typeof workerData.capability_groups === 'object'
           ? Object.fromEntries(
-              Object.entries(workerData.capability_groups as Record<string, unknown>).map(([key, value]) => [
-                key,
-                Number(value) || 0,
-              ])
+              Object.entries(workerData.capability_groups as Record<string, unknown>).map(
+                ([key, value]) => [key, Number(value) || 0]
+              )
             )
           : {}
       const backend = normalizeBackend(workerData.backend)

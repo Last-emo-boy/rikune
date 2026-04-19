@@ -1,11 +1,6 @@
 import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
-import type {
-  AnalysisRun,
-  AnalysisRunStage,
-  DatabaseManager,
-  Sample,
-} from '../database.js'
+import type { AnalysisRun, AnalysisRunStage, DatabaseManager, Sample } from '../database.js'
 import {
   type AnalysisBudgetProfile,
   AnalysisBudgetProfileSchema,
@@ -17,15 +12,8 @@ import {
 import type { ArtifactRef, JobStatusType } from '../types.js'
 import { dedupeArtifactRefs } from '../utils/shared-helpers.js'
 import type { JobQueue } from '../job-queue.js'
-import type {
-  AnalysisIntentDepth,
-  AnalysisIntentGoal,
-  BackendPolicy,
-} from '../intent-routing.js'
-import {
-  AnalysisCostClassSchema,
-  ExecutionBucketSchema,
-} from './analysis-budget-scheduler.js'
+import type { AnalysisIntentDepth, AnalysisIntentGoal, BackendPolicy } from '../intent-routing.js'
+import { AnalysisCostClassSchema, ExecutionBucketSchema } from './analysis-budget-scheduler.js'
 
 export const ANALYSIS_PIPELINE_VERSION = 'nonblocking-unified-analysis-pipeline-v1'
 
@@ -69,11 +57,7 @@ export const AnalysisExecutionStateSchema = z.enum([
   'completed',
 ])
 
-export const AnalysisRecoveryStateSchema = z.enum([
-  'none',
-  'interrupted',
-  'recoverable',
-])
+export const AnalysisRecoveryStateSchema = z.enum(['none', 'interrupted', 'recoverable'])
 
 export const DeferredJobSchema = z.object({
   stage: AnalysisPipelineStageSchema,
@@ -255,7 +239,10 @@ export function normalizeRuntimeTaskStatus(status: string): ControlPlaneStatus {
   }
 }
 
-export function normalizeRuntimeEventStatus(eventType: string, runtimeStatus?: string | null): ControlPlaneStatus {
+export function normalizeRuntimeEventStatus(
+  eventType: string,
+  runtimeStatus?: string | null
+): ControlPlaneStatus {
   if (runtimeStatus) {
     return normalizeRuntimeTaskStatus(runtimeStatus)
   }
@@ -319,7 +306,10 @@ function parseJsonRecord<T>(value: string | null | undefined, fallback: T): T {
   }
 }
 
-function extractRecoveryState(metadata: Record<string, unknown>, rowStatus: string): AnalysisRecoveryState {
+function extractRecoveryState(
+  metadata: Record<string, unknown>,
+  rowStatus: string
+): AnalysisRecoveryState {
   if (rowStatus === 'interrupted') {
     return 'interrupted'
   }
@@ -332,7 +322,9 @@ function extractRecoveryState(metadata: Record<string, unknown>, rowStatus: stri
   return 'none'
 }
 
-function parseSchedulerMetadata(event: { metadata_json?: string | null } | null): Record<string, unknown> {
+function parseSchedulerMetadata(
+  event: { metadata_json?: string | null } | null
+): Record<string, unknown> {
   return parseJsonRecord<Record<string, unknown>>(event?.metadata_json, {})
 }
 
@@ -411,10 +403,7 @@ export function createOrReuseAnalysisRun(
         sampleSizeTier,
         analysisBudgetProfile,
         compatibilityMarker,
-        stagePlan: parseJsonRecord<AnalysisPipelineStage[]>(
-          existing.stage_plan_json,
-          stagePlan
-        ),
+        stagePlan: parseJsonRecord<AnalysisPipelineStage[]>(existing.stage_plan_json, stagePlan),
       }
     }
   }
@@ -490,10 +479,10 @@ export function upsertAnalysisRunStage(
     tool: options.tool || null,
     job_id: options.jobId || null,
     result_json:
-      options.result !== undefined
-        ? JSON.stringify(options.result)
-        : existing?.result_json || null,
-    artifact_refs_json: JSON.stringify(options.artifactRefs || parseJsonRecord(existing?.artifact_refs_json, [])),
+      options.result !== undefined ? JSON.stringify(options.result) : existing?.result_json || null,
+    artifact_refs_json: JSON.stringify(
+      options.artifactRefs || parseJsonRecord(existing?.artifact_refs_json, [])
+    ),
     coverage_json:
       options.coverage !== undefined
         ? JSON.stringify(options.coverage)
@@ -504,14 +493,9 @@ export function upsertAnalysisRunStage(
         : existing?.metadata_json || null,
     created_at: createdAt,
     updated_at: updatedAt,
-    started_at:
-      options.startedAt !== undefined
-        ? options.startedAt
-        : existing?.started_at || null,
+    started_at: options.startedAt !== undefined ? options.startedAt : existing?.started_at || null,
     finished_at:
-      options.finishedAt !== undefined
-        ? options.finishedAt
-        : existing?.finished_at || null,
+      options.finishedAt !== undefined ? options.finishedAt : existing?.finished_at || null,
   }
   database.upsertAnalysisRunStage(stage)
 
@@ -523,11 +507,11 @@ export function upsertAnalysisRunStage(
         ? 'failed'
         : stage.status === 'interrupted' || stage.status === 'recoverable'
           ? 'recoverable'
-        : stage.status === 'completed'
-          ? 'running'
-          : stage.status === 'queued'
-            ? 'queued'
-            : 'partial',
+          : stage.status === 'completed'
+            ? 'running'
+            : stage.status === 'queued'
+              ? 'queued'
+              : 'partial',
     updated_at: updatedAt,
     finished_at: finishedAt,
   })
@@ -560,9 +544,7 @@ function toStageView(
     typeof schedulerEvent.reason === 'string' &&
     schedulerEvent.reason.includes('memory_headroom_guard')
   const recoveryState =
-    memoryDeferred && status === 'queued'
-      ? 'recoverable'
-      : extractRecoveryState(metadata, status)
+    memoryDeferred && status === 'queued' ? 'recoverable' : extractRecoveryState(metadata, status)
   return {
     stage: row.stage as AnalysisPipelineStage,
     status,
@@ -576,23 +558,19 @@ function toStageView(
           : null,
     tool: row.tool,
     job_id: row.job_id,
-    execution_bucket: (schedulerEvent?.execution_bucket || null) as
-      | z.infer<typeof ExecutionBucketSchema>
-      | null,
-    cost_class: (schedulerEvent?.cost_class || null) as
-      | z.infer<typeof AnalysisCostClassSchema>
-      | null,
+    execution_bucket: (schedulerEvent?.execution_bucket || null) as z.infer<
+      typeof ExecutionBucketSchema
+    > | null,
+    cost_class: (schedulerEvent?.cost_class || null) as z.infer<
+      typeof AnalysisCostClassSchema
+    > | null,
     worker_family: schedulerEvent?.worker_family || null,
     budget_deferral_reason: schedulerEvent?.decision === 'deferred' ? schedulerEvent.reason : null,
     scheduler_decision: schedulerEvent?.decision || null,
     warm_reuse:
-      typeof schedulerEvent?.warm_reuse === 'number'
-        ? schedulerEvent.warm_reuse === 1
-        : undefined,
+      typeof schedulerEvent?.warm_reuse === 'number' ? schedulerEvent.warm_reuse === 1 : undefined,
     cold_start:
-      typeof schedulerEvent?.cold_start === 'number'
-        ? schedulerEvent.cold_start === 1
-        : undefined,
+      typeof schedulerEvent?.cold_start === 'number' ? schedulerEvent.cold_start === 1 : undefined,
     expected_rss_mb:
       typeof schedulerMetadata.expected_rss_mb === 'number'
         ? schedulerMetadata.expected_rss_mb
@@ -602,9 +580,7 @@ function toStageView(
         ? schedulerMetadata.current_rss_mb
         : null,
     peak_rss_mb:
-      typeof schedulerMetadata.peak_rss_mb === 'number'
-        ? schedulerMetadata.peak_rss_mb
-        : null,
+      typeof schedulerMetadata.peak_rss_mb === 'number' ? schedulerMetadata.peak_rss_mb : null,
     memory_limit_mb:
       typeof schedulerMetadata.memory_limit_mb === 'number'
         ? schedulerMetadata.memory_limit_mb
@@ -618,9 +594,7 @@ function toStageView(
         ? schedulerMetadata.active_expected_rss_mb
         : null,
     latency_ms:
-      typeof schedulerMetadata.latency_ms === 'number'
-        ? schedulerMetadata.latency_ms
-        : null,
+      typeof schedulerMetadata.latency_ms === 'number' ? schedulerMetadata.latency_ms : null,
     interruption_cause:
       typeof schedulerMetadata.interruption_cause === 'string'
         ? schedulerMetadata.interruption_cause
@@ -640,11 +614,15 @@ function toStageView(
   }
 }
 
-function deriveRunStatus(stageViews: Array<z.infer<typeof AnalysisRunStageViewSchema>>): AnalysisRunStatus {
+function deriveRunStatus(
+  stageViews: Array<z.infer<typeof AnalysisRunStageViewSchema>>
+): AnalysisRunStatus {
   if (stageViews.some((stage) => stage.status === 'failed')) {
     return 'failed'
   }
-  if (stageViews.some((stage) => stage.status === 'interrupted' || stage.status === 'recoverable')) {
+  if (
+    stageViews.some((stage) => stage.status === 'interrupted' || stage.status === 'recoverable')
+  ) {
     return 'recoverable'
   }
   if (stageViews.some((stage) => stage.status === 'running')) {
@@ -653,7 +631,10 @@ function deriveRunStatus(stageViews: Array<z.infer<typeof AnalysisRunStageViewSc
   if (stageViews.some((stage) => stage.status === 'queued')) {
     return 'queued'
   }
-  if (stageViews.length > 0 && stageViews.every((stage) => stage.status === 'completed' || stage.status === 'skipped')) {
+  if (
+    stageViews.length > 0 &&
+    stageViews.every((stage) => stage.status === 'completed' || stage.status === 'skipped')
+  ) {
     return 'completed'
   }
   if (stageViews.some((stage) => stage.status === 'completed' || stage.status === 'partial')) {
@@ -683,11 +664,7 @@ export function reconcileAnalysisRunRuntime(
     const persistedJob = row.job_id ? database.findJob(row.job_id) : null
     const persistedStatus =
       persistedJob && typeof persistedJob.status === 'string' ? String(persistedJob.status) : null
-    if (
-      persistedStatus &&
-      persistedStatus !== 'queued' &&
-      persistedStatus !== 'running'
-    ) {
+    if (persistedStatus && persistedStatus !== 'queued' && persistedStatus !== 'running') {
       continue
     }
 
@@ -747,14 +724,16 @@ export function getAnalysisRunSummary(
     run.stage_plan_json,
     buildStagePlan(run.goal as AnalysisIntentGoal)
   )
-  const stages = database.findAnalysisRunStages(runId).map((stage) => toStageView(stage, database, jobQueue))
+  const stages = database
+    .findAnalysisRunStages(runId)
+    .map((stage) => toStageView(stage, database, jobQueue))
   const deferredJobs = stages
     .filter((stage) => stage.job_id && (stage.status === 'queued' || stage.status === 'running'))
     .map((stage) => {
       const jobStatus = stage.job_id ? jobQueue?.getStatus(stage.job_id) : undefined
       return {
         stage: stage.stage,
-        job_id: stage.job_id!,
+        job_id: stage.job_id,
         status: jobStatus?.status || stage.status,
         ...(jobStatus?.progress !== undefined ? { progress: jobStatus.progress } : {}),
         tool: stage.tool || null,
@@ -764,10 +743,16 @@ export function getAnalysisRunSummary(
         budget_deferral_reason: stage.budget_deferral_reason || null,
         ...(typeof stage.warm_reuse === 'boolean' ? { warm_reuse: stage.warm_reuse } : {}),
         ...(typeof stage.cold_start === 'boolean' ? { cold_start: stage.cold_start } : {}),
-        ...(typeof stage.expected_rss_mb === 'number' ? { expected_rss_mb: stage.expected_rss_mb } : {}),
-        ...(typeof stage.current_rss_mb === 'number' ? { current_rss_mb: stage.current_rss_mb } : {}),
+        ...(typeof stage.expected_rss_mb === 'number'
+          ? { expected_rss_mb: stage.expected_rss_mb }
+          : {}),
+        ...(typeof stage.current_rss_mb === 'number'
+          ? { current_rss_mb: stage.current_rss_mb }
+          : {}),
         ...(typeof stage.peak_rss_mb === 'number' ? { peak_rss_mb: stage.peak_rss_mb } : {}),
-        ...(typeof stage.memory_limit_mb === 'number' ? { memory_limit_mb: stage.memory_limit_mb } : {}),
+        ...(typeof stage.memory_limit_mb === 'number'
+          ? { memory_limit_mb: stage.memory_limit_mb }
+          : {}),
         ...(typeof stage.control_plane_headroom_mb === 'number'
           ? { control_plane_headroom_mb: stage.control_plane_headroom_mb }
           : {}),
@@ -814,10 +799,10 @@ export function getAnalysisRunSummary(
     compatibility_marker: run.compatibility_marker,
     status,
     sample_size_tier: (run.sample_size_tier || classifySampleSizeTier(0)) as SampleSizeTier,
-    analysis_budget_profile:
-      (run.analysis_budget_profile || 'quick') as AnalysisBudgetProfile,
+    analysis_budget_profile: (run.analysis_budget_profile || 'quick') as AnalysisBudgetProfile,
     latest_stage: run.latest_stage,
-    reused: Boolean(run.reused_from_run_id) || stages.some((stage) => stage.execution_state === 'reused'),
+    reused:
+      Boolean(run.reused_from_run_id) || stages.some((stage) => stage.execution_state === 'reused'),
     created_at: run.created_at,
     updated_at: run.updated_at,
     finished_at: run.finished_at,

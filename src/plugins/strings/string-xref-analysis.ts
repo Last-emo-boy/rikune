@@ -213,7 +213,11 @@ function classifyLabels(
     rationale.push('matches generic runtime marker')
   }
 
-  if (BASE64ISH_REGEX.test(normalized) || HEXISH_REGEX.test(normalized) || /\\x[0-9a-f]{2}/i.test(normalized)) {
+  if (
+    BASE64ISH_REGEX.test(normalized) ||
+    HEXISH_REGEX.test(normalized) ||
+    /\\x[0-9a-f]{2}/i.test(normalized)
+  ) {
     labels.add('encoded_candidate')
     rationale.push('resembles encoded or packed text')
   }
@@ -242,7 +246,11 @@ function classifyLabels(
   }
 }
 
-function computeConfidence(categories: string[], labels: string[], sources: EnrichedStringSource[]): number {
+function computeConfidence(
+  categories: string[],
+  labels: string[],
+  sources: EnrichedStringSource[]
+): number {
   let confidence = 0.32
   confidence += Math.min(categories.length * 0.1, 0.25)
   if (labels.includes('runtime_noise')) {
@@ -266,7 +274,12 @@ function computeConfidence(categories: string[], labels: string[], sources: Enri
   return Number(clamp(confidence, 0.2, 0.95).toFixed(2))
 }
 
-function computeScore(categories: string[], labels: string[], sources: EnrichedStringSource[], value: string): number {
+function computeScore(
+  categories: string[],
+  labels: string[],
+  sources: EnrichedStringSource[],
+  value: string
+): number {
   let score = categories.length * 9
   if (labels.includes('decoded_signal')) {
     score += 6
@@ -289,11 +302,7 @@ function computeScore(categories: string[], labels: string[], sources: EnrichedS
 
 function dedupeStrings(values: string[]): string[] {
   return Array.from(
-    new Set(
-      values
-        .map((item) => normalizeStringValue(item))
-        .filter((item) => item.length > 0)
-    )
+    new Set(values.map((item) => normalizeStringValue(item)).filter((item) => item.length > 0))
   )
 }
 
@@ -314,7 +323,10 @@ function buildRecord(input: BaseRecordInput): EnrichedStringRecord {
   }
 }
 
-function mergeRecord(left: EnrichedStringRecord, right: EnrichedStringRecord): EnrichedStringRecord {
+function mergeRecord(
+  left: EnrichedStringRecord,
+  right: EnrichedStringRecord
+): EnrichedStringRecord {
   const mergedSources = [...left.sources]
   for (const source of right.sources) {
     const exists = mergedSources.some(
@@ -345,11 +357,16 @@ function mergeRecord(left: EnrichedStringRecord, right: EnrichedStringRecord): E
     score: computeScore(categories, labels, mergedSources, value),
     rationale,
     sources: mergedSources,
-    function_refs: dedupeFunctionRefs([...(left.function_refs || []), ...(right.function_refs || [])]),
+    function_refs: dedupeFunctionRefs([
+      ...(left.function_refs || []),
+      ...(right.function_refs || []),
+    ]),
   }
 }
 
-function dedupeFunctionRefs(values: Array<z.infer<typeof StringFunctionReferenceSchema>>): Array<z.infer<typeof StringFunctionReferenceSchema>> {
+function dedupeFunctionRefs(
+  values: Array<z.infer<typeof StringFunctionReferenceSchema>>
+): Array<z.infer<typeof StringFunctionReferenceSchema>> {
   const seen = new Set<string>()
   const ordered: Array<z.infer<typeof StringFunctionReferenceSchema>> = []
   for (const item of values) {
@@ -363,7 +380,9 @@ function dedupeFunctionRefs(values: Array<z.infer<typeof StringFunctionReference
   return ordered
 }
 
-function buildHighlight(record: EnrichedStringRecord): z.infer<typeof EnrichedStringHighlightSchema> {
+function buildHighlight(
+  record: EnrichedStringRecord
+): z.infer<typeof EnrichedStringHighlightSchema> {
   return {
     value: record.value,
     offset: record.primary_offset,
@@ -379,7 +398,10 @@ function buildHighlight(record: EnrichedStringRecord): z.infer<typeof EnrichedSt
   }
 }
 
-function buildFallbackContextWindows(records: EnrichedStringRecord[], maxWindows: number): unknown[] {
+function buildFallbackContextWindows(
+  records: EnrichedStringRecord[],
+  maxWindows: number
+): unknown[] {
   const ordered = [...records]
     .filter((item) => Number.isFinite(item.primary_offset))
     .sort((left, right) => left.primary_offset - right.primary_offset)
@@ -449,7 +471,9 @@ function annotateContextWindows(
           return {
             offset: stringEntry.offset ?? record?.primary_offset ?? null,
             string: value,
-            categories: record?.categories || (Array.isArray(stringEntry.categories) ? stringEntry.categories : []),
+            categories:
+              record?.categories ||
+              (Array.isArray(stringEntry.categories) ? stringEntry.categories : []),
             labels: record?.labels || [],
             confidence: record?.confidence ?? null,
           }
@@ -534,8 +558,9 @@ export function buildEnrichedStringBundle(
   const topSuspicious = keptRecords
     .filter(
       (item) =>
-        item.categories.some((category) => IOC_CATEGORY_ORDER.includes(category as (typeof IOC_CATEGORY_ORDER)[number])) ||
-        item.labels.includes('encoded_candidate')
+        item.categories.some((category) =>
+          IOC_CATEGORY_ORDER.includes(category as (typeof IOC_CATEGORY_ORDER)[number])
+        ) || item.labels.includes('encoded_candidate')
     )
     .slice(0, maxHighlights)
     .map(buildHighlight)
@@ -543,7 +568,9 @@ export function buildEnrichedStringBundle(
   const topIocs = keptRecords
     .filter((item) =>
       item.categories.some((category) =>
-        ['url', 'network', 'ipc', 'command', 'registry', 'file_path', 'suspicious_api'].includes(category)
+        ['url', 'network', 'ipc', 'command', 'registry', 'file_path', 'suspicious_api'].includes(
+          category
+        )
       )
     )
     .slice(0, maxHighlights)
@@ -563,9 +590,11 @@ export function buildEnrichedStringBundle(
     status: decodedStrings.length > 0 && extractedStrings.length === 0 ? 'partial' : 'ready',
     total_records: allRecords.length,
     kept_records: keptRecords.length,
-    analyst_relevant_count: allRecords.filter((item) => item.labels.includes('analyst_relevant')).length,
+    analyst_relevant_count: allRecords.filter((item) => item.labels.includes('analyst_relevant'))
+      .length,
     runtime_noise_count: allRecords.filter((item) => item.labels.includes('runtime_noise')).length,
-    encoded_candidate_count: allRecords.filter((item) => item.labels.includes('encoded_candidate')).length,
+    encoded_candidate_count: allRecords.filter((item) => item.labels.includes('encoded_candidate'))
+      .length,
     merged_sources: extractedStrings.length > 0 && decodedStrings.length > 0,
     truncated: allRecords.length > keptRecords.length,
     records: keptRecords,
@@ -679,25 +708,46 @@ export function buildFunctionContextSummaries(
     for (const node of inbound) {
       const summary = ensureSummary(node)
       summary.score += 8 - Math.min(node.depth, 4)
-      summary.inbound_refs = dedupeStrings([...summary.inbound_refs, ...node.reference_types]).slice(0, 8)
-      summary.rationale = dedupeStrings([...summary.rationale, `${result.target_type}:${result.query}`]).slice(0, 10)
+      summary.inbound_refs = dedupeStrings([
+        ...summary.inbound_refs,
+        ...node.reference_types,
+      ]).slice(0, 8)
+      summary.rationale = dedupeStrings([
+        ...summary.rationale,
+        `${result.target_type}:${result.query}`,
+      ]).slice(0, 10)
       if (result.target_type === 'api') {
-        summary.sensitive_apis = dedupeStrings([...summary.sensitive_apis, result.query]).slice(0, 8)
+        summary.sensitive_apis = dedupeStrings([...summary.sensitive_apis, result.query]).slice(
+          0,
+          8
+        )
         summary.score += 4
       } else {
-        summary.top_strings = dedupeStrings([...summary.top_strings, result.query]).slice(0, maxStringsPerFunction)
+        summary.top_strings = dedupeStrings([...summary.top_strings, result.query]).slice(
+          0,
+          maxStringsPerFunction
+        )
       }
       const bundleRecord = bundleRecordByKey.get(buildStringKey(result.query))
       if (bundleRecord) {
-        summary.top_categories = dedupeStrings([...summary.top_categories, ...bundleRecord.categories]).slice(0, 8)
+        summary.top_categories = dedupeStrings([
+          ...summary.top_categories,
+          ...bundleRecord.categories,
+        ]).slice(0, 8)
       }
     }
 
     for (const node of outbound) {
       const summary = ensureSummary(node)
       summary.score += 4 - Math.min(node.depth, 3)
-      summary.outbound_refs = dedupeStrings([...summary.outbound_refs, ...node.reference_types]).slice(0, 8)
-      summary.rationale = dedupeStrings([...summary.rationale, `outbound:${result.query}`]).slice(0, 10)
+      summary.outbound_refs = dedupeStrings([
+        ...summary.outbound_refs,
+        ...node.reference_types,
+      ]).slice(0, 8)
+      summary.rationale = dedupeStrings([...summary.rationale, `outbound:${result.query}`]).slice(
+        0,
+        10
+      )
     }
   }
 
@@ -720,6 +770,8 @@ export function compactStringBundleForContext(bundle: EnrichedStringBundle) {
     top_iocs: bundle.top_iocs.slice(0, 8),
     top_runtime_noise: bundle.top_runtime_noise.slice(0, 6),
     top_decoded: bundle.top_decoded.slice(0, 6),
-    context_windows: Array.isArray(bundle.context_windows) ? bundle.context_windows.slice(0, 4) : [],
+    context_windows: Array.isArray(bundle.context_windows)
+      ? bundle.context_windows.slice(0, 4)
+      : [],
   }
 }

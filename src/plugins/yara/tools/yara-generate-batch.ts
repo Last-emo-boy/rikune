@@ -120,7 +120,10 @@ export function createYaraGenerateBatchHandler(
       const combined: Record<string, unknown> = {}
       if (Array.isArray(evidence)) {
         for (const entry of evidence) {
-          const data = typeof entry.result_json === 'string' ? JSON.parse(entry.result_json) : entry.result_json
+          const data =
+            typeof entry.result_json === 'string'
+              ? JSON.parse(entry.result_json)
+              : entry.result_json
           if (data && typeof data === 'object') Object.assign(combined, data)
         }
       }

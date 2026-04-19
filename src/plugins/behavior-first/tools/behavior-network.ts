@@ -41,7 +41,7 @@ export const behaviorNetworkToolDefinition: ToolDefinition = {
 export function createBehaviorNetworkHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
-  dependencies?: SharedBackendDependencies,
+  dependencies?: SharedBackendDependencies
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -60,10 +60,15 @@ mod.main()
 `.trim()
 
       const runPython = dependencies?.runPythonJson || runPythonJson
-      const result = await runPython(pythonPath, workerScript, {
-        command: 'network_analyze',
-        behavior_data: input.behavior_data,
-      }, 30_000)
+      const result = await runPython(
+        pythonPath,
+        workerScript,
+        {
+          command: 'network_analyze',
+          behavior_data: input.behavior_data,
+        },
+        30_000
+      )
 
       const workerData = result.parsed
       const artifacts: ArtifactRef[] = []
@@ -71,13 +76,18 @@ mod.main()
       if (workerData.ok && workerData.data && input.persist_artifact) {
         try {
           const artifact = await persistBackendArtifact(
-            workspaceManager, database, input.sample_id,
-            'behavior', 'network_analysis',
+            workspaceManager,
+            database,
+            input.sample_id,
+            'behavior',
+            'network_analysis',
             JSON.stringify(workerData.data, null, 2),
-            { extension: 'json', mime: 'application/json', sessionTag: input.session_tag },
+            { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
           )
           artifacts.push(artifact)
-        } catch { /* best effort */ }
+        } catch {
+          /* best effort */
+        }
       }
 
       return {
@@ -91,7 +101,11 @@ mod.main()
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [(error as Error).message], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [(error as Error).message],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

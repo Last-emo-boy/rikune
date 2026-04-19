@@ -5,9 +5,15 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { goSymbolsRecoverToolDefinition, createGoSymbolsRecoverHandler } from './tools/go-symbols-recover.js'
+import {
+  goSymbolsRecoverToolDefinition,
+  createGoSymbolsRecoverHandler,
+} from './tools/go-symbols-recover.js'
 import { goTypesListToolDefinition, createGoTypesListHandler } from './tools/go-types-list.js'
-import { goBinaryAnalyzeToolDefinition, createGoBinaryAnalyzeHandler } from './tools/go-binary-analyze.js'
+import {
+  goBinaryAnalyzeToolDefinition,
+  createGoBinaryAnalyzeHandler,
+} from './tools/go-binary-analyze.js'
 
 const goAnalysisPlugin: Plugin = {
   id: 'go-analysis',
@@ -17,7 +23,12 @@ const goAnalysisPlugin: Plugin = {
   description: 'Go binary symbol and type recovery using Mandiant GoReSym',
   version: '1.0.0',
   configSchema: [
-    { envVar: 'GORESYM_PATH', description: 'Path to GoReSym binary', required: false, defaultValue: '/usr/local/bin/GoReSym' },
+    {
+      envVar: 'GORESYM_PATH',
+      description: 'Path to GoReSym binary',
+      required: false,
+      defaultValue: '/usr/local/bin/GoReSym',
+    },
   ],
   systemDeps: [
     {
@@ -27,6 +38,7 @@ const goAnalysisPlugin: Plugin = {
       envVar: 'GORESYM_PATH',
       dockerDefault: '/usr/local/bin/GoReSym',
       required: false,
+      versionFlag: '-h',
       description: 'Mandiant GoReSym — Go binary symbol recovery',
       dockerInstall: 'Download GoReSym release to /usr/local/bin',
       dockerFeature: 'goresym',

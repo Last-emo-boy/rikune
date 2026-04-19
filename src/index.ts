@@ -67,10 +67,15 @@ async function main() {
       {
         runtimeClientProvider: () => runtimeClient,
         sandboxDirProvider: () => runtimeConnection?.sandboxDir ?? null,
-      },
+      }
     )
 
-    const recovery = createRuntimeRecovery({ config, runtimeClient, runtimeConnection, sandboxLauncher })
+    const recovery = createRuntimeRecovery({
+      config,
+      runtimeClient,
+      runtimeConnection,
+      sandboxLauncher,
+    })
 
     async function initializeRuntime(): Promise<void> {
       if (config.node.role !== 'analyzer' || config.runtime.mode === 'disabled') {
@@ -80,13 +85,20 @@ async function main() {
       // manual mode: connect to a user-managed runtime endpoint (cross-platform)
       if (config.runtime.mode === 'manual') {
         if (!config.runtime.endpoint) {
-          logger.warn('Runtime mode is manual but no endpoint is configured; dynamic tools will be unavailable')
+          logger.warn(
+            'Runtime mode is manual but no endpoint is configured; dynamic tools will be unavailable'
+          )
           return
         }
         try {
-          const healthRes = await fetch(`${config.runtime.endpoint}/health`, { signal: AbortSignal.timeout(10_000) })
+          const healthRes = await fetch(`${config.runtime.endpoint}/health`, {
+            signal: AbortSignal.timeout(10_000),
+          })
           if (!healthRes.ok) {
-            logger.warn({ endpoint: config.runtime.endpoint }, 'Configured manual runtime endpoint is not healthy; dynamic tools will be unavailable')
+            logger.warn(
+              { endpoint: config.runtime.endpoint },
+              'Configured manual runtime endpoint is not healthy; dynamic tools will be unavailable'
+            )
             return
           }
           runtimeClient = createRuntimeClient({
@@ -96,9 +108,14 @@ async function main() {
           runtimeClient.recover = async () => false // manual mode cannot auto-recover
           recovery.setRuntimeClient(runtimeClient)
           logger.info({ endpoint: config.runtime.endpoint }, 'Manual runtime connected')
-          logger.warn('Dynamic analysis will execute actual samples. Ensure the runtime endpoint is running in an isolated environment.')
+          logger.warn(
+            'Dynamic analysis will execute actual samples. Ensure the runtime endpoint is running in an isolated environment.'
+          )
         } catch (err) {
-          logger.warn({ err, endpoint: config.runtime.endpoint }, 'Failed to connect to manual runtime endpoint; dynamic tools will be unavailable')
+          logger.warn(
+            { err, endpoint: config.runtime.endpoint },
+            'Failed to connect to manual runtime endpoint; dynamic tools will be unavailable'
+          )
         }
         return
       }
@@ -108,19 +125,26 @@ async function main() {
       // when an MCP client connects or asks for health/status.
       if (config.runtime.mode === 'remote-sandbox') {
         if (!config.runtime.hostAgentEndpoint) {
-          logger.warn('Runtime mode is remote-sandbox but no hostAgentEndpoint is configured; dynamic tools will be unavailable')
+          logger.warn(
+            'Runtime mode is remote-sandbox but no hostAgentEndpoint is configured; dynamic tools will be unavailable'
+          )
           return
         }
         runtimeClient = createLazyRemoteSandboxRuntimeClient(config)
         recovery.setRuntimeClient(runtimeClient)
-        logger.info({ hostAgentEndpoint: config.runtime.hostAgentEndpoint }, 'Remote-sandbox runtime configured for lazy launch')
+        logger.info(
+          { hostAgentEndpoint: config.runtime.hostAgentEndpoint },
+          'Remote-sandbox runtime configured for lazy launch'
+        )
         return
       }
 
       // auto-sandbox mode: only possible on Windows host directly
       if (config.runtime.mode === 'auto-sandbox') {
         if (process.platform !== 'win32') {
-          logger.warn('Auto-sandbox mode requires Windows host; dynamic tools will be unavailable on this platform')
+          logger.warn(
+            'Auto-sandbox mode requires Windows host; dynamic tools will be unavailable on this platform'
+          )
           return
         }
         try {
@@ -148,7 +172,9 @@ async function main() {
             runtimeClient.recover = recovery.recover
             recovery.setRuntimeClient(runtimeClient)
             logger.info({ endpoint: connection.endpoint }, 'Auto-sandbox runtime connected')
-            logger.warn('Dynamic analysis will execute actual samples inside Windows Sandbox. Ensure the sandbox is properly isolated.')
+            logger.warn(
+              'Dynamic analysis will execute actual samples inside Windows Sandbox. Ensure the sandbox is properly isolated.'
+            )
             sandboxLauncher.startHealthCheck({
               intervalMs: 30_000,
               unhealthyThreshold: 3,

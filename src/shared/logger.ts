@@ -1,56 +1,56 @@
 /**
  * 结构化日志模块
- * 
+ *
  * 使用 pino 库实现结构化日志记录，支持：
  * - 操作日志
  * - 错误日志（包含完整堆栈）
  * - 性能指标日志
  * - 审计日志
- * 
+ *
  * 验收标准：
  * - 需求 30.4: 使用 pino 库记录结构化日志
  * - 需求 30.5: 记录完整的错误堆栈和上下文信息
  */
 
-import pino from 'pino';
-import { Writable } from 'stream';
-import { config } from '../config.js';
+import pino from 'pino'
+import { Writable } from 'stream'
+import { config } from '../config.js'
 
 /**
  * 日志级别
  */
-export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
 
 /**
  * 性能指标
  */
 export interface PerformanceMetrics {
-  elapsedMs: number;
-  peakRssMb?: number;
-  cpuPercent?: number;
+  elapsedMs: number
+  peakRssMb?: number
+  cpuPercent?: number
 }
 
 /**
  * 操作上下文
  */
 export interface OperationContext {
-  operation: string;
-  sampleId?: string;
-  toolName?: string;
-  userId?: string;
-  [key: string]: unknown;
+  operation: string
+  sampleId?: string
+  toolName?: string
+  userId?: string
+  [key: string]: unknown
 }
 
 /**
  * 审计事件
  */
 export interface AuditEvent {
-  operation: string;
-  user?: string;
-  sampleId?: string;
-  decision: 'allow' | 'deny' | 'partial';
-  reason?: string;
-  metadata?: Record<string, unknown>;
+  operation: string
+  user?: string
+  sampleId?: string
+  decision: 'allow' | 'deny' | 'partial'
+  reason?: string
+  metadata?: Record<string, unknown>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -66,7 +66,12 @@ export interface LogEntry {
 }
 
 const LOG_LEVEL_LABELS: Record<number, string> = {
-  10: 'trace', 20: 'debug', 30: 'info', 40: 'warn', 50: 'error', 60: 'fatal',
+  10: 'trace',
+  20: 'debug',
+  30: 'info',
+  40: 'warn',
+  50: 'error',
+  60: 'fatal',
 }
 
 class LogRingBuffer {
@@ -75,7 +80,8 @@ class LogRingBuffer {
   private maxAgeMs: number
   private _onEntry: ((entry: LogEntry) => void) | null = null
 
-  constructor(maxSize = 500, maxAgeMs = 30 * 60 * 1000) { // 30 min default TTL
+  constructor(maxSize = 500, maxAgeMs = 30 * 60 * 1000) {
+    // 30 min default TTL
     this.maxSize = maxSize
     this.maxAgeMs = maxAgeMs
   }
@@ -105,7 +111,7 @@ class LogRingBuffer {
   /** Remove entries older than maxAgeMs. */
   private pruneExpired(): void {
     const cutoff = new Date(Date.now() - this.maxAgeMs).toISOString()
-    const firstValid = this.buffer.findIndex(e => e.time >= cutoff)
+    const firstValid = this.buffer.findIndex((e) => e.time >= cutoff)
     if (firstValid > 0) {
       this.buffer.splice(0, firstValid)
     }
@@ -114,7 +120,7 @@ class LogRingBuffer {
   getRecent(limit = 100, minLevel?: number): LogEntry[] {
     let entries = this.buffer
     if (minLevel != null) {
-      entries = entries.filter(e => e.level >= minLevel)
+      entries = entries.filter((e) => e.level >= minLevel)
     }
     return entries.slice(-limit)
   }
@@ -143,7 +149,7 @@ export const logRingBuffer = new LogRingBuffer(500)
 function createLogger() {
   // Create destination that writes to stderr (fd 2)
   // Use async mode to avoid blocking the event loop during high log throughput
-  const stderrDest = pino.destination({ dest: 2, sync: false, minLength: 4096 });
+  const stderrDest = pino.destination({ dest: 2, sync: false, minLength: 4096 })
 
   // Create a writable stream that captures logs into the ring buffer
   const bufferStream = new Writable({
@@ -159,26 +165,31 @@ function createLogger() {
     { stream: bufferStream, level: 'debug' as pino.Level },
   ])
 
-  const pinoInstance = pino({
-    level: 'debug',  // Let multistream filter per-destination
-    // Simple text format for MCP stdio compatibility
-    messageKey: 'msg',
-    // 基础字段
-    base: {
-      pid: process.pid,
-      hostname: undefined,
+  const pinoInstance = pino(
+    {
+      level: 'debug', // Let multistream filter per-destination
+      // Simple text format for MCP stdio compatibility
+      messageKey: 'msg',
+      // 基础字段
+      base: {
+        pid: process.pid,
+        hostname: undefined,
+      },
+      // 时间戳
+      timestamp: pino.stdTimeFunctions.isoTime,
+      // 序列化错误对象
+      serializers: {
+        err: pino.stdSerializers.err,
+        error: pino.stdSerializers.err,
+      },
     },
-    // 时间戳
-    timestamp: pino.stdTimeFunctions.isoTime,
-    // 序列化错误对象
-    serializers: {
-      err: pino.stdSerializers.err,
-      error: pino.stdSerializers.err,
-    },
-  }, multiDest);
+    multiDest
+  )
 
   // Flush async buffer on process exit to prevent log loss
-  const onExit = () => { stderrDest.flushSync() }
+  const onExit = () => {
+    stderrDest.flushSync()
+  }
   process.once('beforeExit', onExit)
   process.once('SIGTERM', onExit)
 
@@ -188,33 +199,30 @@ function createLogger() {
 /**
  * 全局 logger 实例
  */
-export const logger = createLogger();
+export const logger = createLogger()
 
 /**
  * 创建子 logger（带上下文）
  */
 export function createChildLogger(context: Record<string, unknown>) {
-  return logger.child(context);
+  return logger.child(context)
 }
 
 /**
  * 记录操作开始
  */
 export function logOperationStart(context: OperationContext): void {
-  logger.info(context, `Operation started: ${context.operation}`);
+  logger.info(context, `Operation started: ${context.operation}`)
 }
 
 /**
  * 记录操作完成
  */
-export function logOperationComplete(
-  context: OperationContext,
-  metrics: PerformanceMetrics
-): void {
+export function logOperationComplete(context: OperationContext, metrics: PerformanceMetrics): void {
   logger.info(
     { ...context, metrics },
     `Operation completed: ${context.operation} (${metrics.elapsedMs}ms)`
-  );
+  )
 }
 
 /**
@@ -236,7 +244,7 @@ export function logOperationError(
       errorMessage: error.message,
     },
     `Operation failed: ${context.operation} - ${error.message}`
-  );
+  )
 }
 
 /**
@@ -249,7 +257,7 @@ export function logAudit(event: AuditEvent): void {
       ...event,
     },
     `Audit: ${event.operation} - ${event.decision}`
-  );
+  )
 }
 
 /**
@@ -268,21 +276,21 @@ export function logMetrics(
       ...context,
     },
     `Metrics: ${operation} - ${metrics.elapsedMs}ms`
-  );
+  )
 }
 
 /**
  * 记录警告
  */
 export function logWarning(message: string, context?: Record<string, unknown>): void {
-  logger.warn(context, message);
+  logger.warn(context, message)
 }
 
 /**
  * 记录调试信息
  */
 export function logDebug(message: string, context?: Record<string, unknown>): void {
-  logger.debug(context, message);
+  logger.debug(context, message)
 }
 
 /**
@@ -298,73 +306,67 @@ export function logError(error: Error, context?: Record<string, unknown>): void 
       errorMessage: error.message,
     },
     error.message
-  );
+  )
 }
 
 /**
  * 创建性能计时器
  */
 export function createTimer() {
-  const startTime = Date.now();
+  const startTime = Date.now()
 
   return {
     /**
      * 结束计时并返回性能指标
      */
     end(): PerformanceMetrics {
-      const endTime = Date.now();
-      const endMemory = process.memoryUsage();
+      const endTime = Date.now()
+      const endMemory = process.memoryUsage()
 
       return {
         elapsedMs: endTime - startTime,
         peakRssMb: Math.round(endMemory.rss / 1024 / 1024),
-      };
+      }
     },
-  };
+  }
 }
 
 /**
  * 包装异步操作，自动记录日志和性能指标
  */
-export async function withLogging<T>(
-  context: OperationContext,
-  fn: () => Promise<T>
-): Promise<T> {
-  const timer = createTimer();
-  logOperationStart(context);
+export async function withLogging<T>(context: OperationContext, fn: () => Promise<T>): Promise<T> {
+  const timer = createTimer()
+  logOperationStart(context)
 
   try {
-    const result = await fn();
-    const metrics = timer.end();
-    logOperationComplete(context, metrics);
-    return result;
+    const result = await fn()
+    const metrics = timer.end()
+    logOperationComplete(context, metrics)
+    return result
   } catch (error) {
-    const metrics = timer.end();
-    logOperationError(context, error as Error, metrics);
-    throw error;
+    const metrics = timer.end()
+    logOperationError(context, error as Error, metrics)
+    throw error
   }
 }
 
 /**
  * 包装同步操作，自动记录日志和性能指标
  */
-export function withLoggingSync<T>(
-  context: OperationContext,
-  fn: () => T
-): T {
-  const timer = createTimer();
-  logOperationStart(context);
+export function withLoggingSync<T>(context: OperationContext, fn: () => T): T {
+  const timer = createTimer()
+  logOperationStart(context)
 
   try {
-    const result = fn();
-    const metrics = timer.end();
-    logOperationComplete(context, metrics);
-    return result;
+    const result = fn()
+    const metrics = timer.end()
+    logOperationComplete(context, metrics)
+    return result
   } catch (error) {
-    const metrics = timer.end();
-    logOperationError(context, error as Error, metrics);
-    throw error;
+    const metrics = timer.end()
+    logOperationError(context, error as Error, metrics)
+    throw error
   }
 }
 
-export default logger;
+export default logger

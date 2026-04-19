@@ -13,7 +13,7 @@ import type { WorkspacePath } from '../types.js'
 /**
  * WorkspaceManager handles creation and management of sample workspaces
  * Each workspace is organized in a bucketed directory structure based on SHA256
- * 
+ *
  * Performance optimizations (Requirement 26.3):
  * - Async file operations where possible
  * - Cached workspace path lookups
@@ -41,20 +41,20 @@ export class WorkspaceManager {
   /**
    * Create workspace directory structure for a sample
    * Uses SHA256-based bucketing: workspaces/ab/cd/<sha256>/
-   * 
+   *
    * Requirements: 19.1, 19.2, 26.3 (file I/O optimization)
-   * 
+   *
    * Optimizations:
    * - Async directory creation
    * - Cached workspace paths
    * - Batch subdirectory creation
-   * 
+   *
    * @param sampleId - Sample ID in format "sha256:<hex>"
    * @returns WorkspacePath with all subdirectory paths
    */
   public async createWorkspace(sampleId: string): Promise<WorkspacePath> {
     const sha256 = this.extractSha256(sampleId)
-    
+
     // Check cache first (Requirement 26.3)
     const cachedPath = this.workspacePathCache.get(sha256)
     if (cachedPath && fs.existsSync(cachedPath.root)) {
@@ -65,13 +65,13 @@ export class WorkspaceManager {
 
     // Create directory structure asynchronously
     const subdirs = ['original', 'cache', 'ghidra', 'dotnet', 'reports']
-    
+
     // Create root workspace directory
     await fsPromises.mkdir(workspacePath.root, { recursive: true })
 
     // Create all subdirectories in parallel (Requirement 26.3)
     await Promise.all(
-      subdirs.map(subdir => 
+      subdirs.map((subdir) =>
         fsPromises.mkdir(path.join(workspacePath.root, subdir), { recursive: true })
       )
     )
@@ -84,15 +84,15 @@ export class WorkspaceManager {
 
   /**
    * Get workspace path for an existing sample
-   * 
+   *
    * Requirements: 26.3 (file I/O optimization - cached lookups)
-   * 
+   *
    * @param sampleId - Sample ID in format "sha256:<hex>"
    * @returns WorkspacePath with all subdirectory paths
    */
   public async getWorkspace(sampleId: string): Promise<WorkspacePath> {
     const sha256 = this.extractSha256(sampleId)
-    
+
     // Check cache first (Requirement 26.3)
     const cachedPath = this.workspacePathCache.get(sha256)
     if (cachedPath) {
@@ -115,9 +115,9 @@ export class WorkspaceManager {
   /**
    * Cache workspace path for faster lookups
    * Implements LRU eviction when cache size limit is reached
-   * 
+   *
    * Requirements: 26.3 (file I/O optimization)
-   * 
+   *
    * @param sha256 - SHA256 hash
    * @param workspacePath - Workspace path to cache
    */
@@ -143,7 +143,7 @@ export class WorkspaceManager {
 
   /**
    * Extract SHA256 hash from sample ID
-   * 
+   *
    * @param sampleId - Sample ID in format "sha256:<hex>"
    * @returns SHA256 hash string
    */
@@ -153,7 +153,7 @@ export class WorkspaceManager {
     }
 
     const sha256 = sampleId.substring(7)
-    
+
     // Validate SHA256 format (64 hex characters)
     if (!/^[a-f0-9]{64}$/i.test(sha256)) {
       throw new Error(`Invalid SHA256 hash: ${sha256}`)
@@ -165,7 +165,7 @@ export class WorkspaceManager {
   /**
    * Generate bucketed workspace path from SHA256
    * Structure: workspaces/ab/cd/<sha256>/
-   * 
+   *
    * @param sha256 - SHA256 hash string
    * @returns WorkspacePath object with all subdirectory paths
    */
@@ -188,9 +188,9 @@ export class WorkspaceManager {
   /**
    * Normalize and validate a path is within workspace boundaries
    * Prevents path traversal attacks
-   * 
+   *
    * Requirement: 29.5
-   * 
+   *
    * @param workspacePath - Base workspace path
    * @param relativePath - Relative path to validate
    * @returns Normalized absolute path
@@ -203,12 +203,12 @@ export class WorkspaceManager {
 
     // Check if path is within workspace boundaries
     const workspaceAbsolute = path.resolve(workspacePath)
-    
-    if (!normalizedPath.startsWith(workspaceAbsolute + path.sep) && 
-        normalizedPath !== workspaceAbsolute) {
-      throw new Error(
-        `Path traversal detected: ${relativePath} is outside workspace boundaries`
-      )
+
+    if (
+      !normalizedPath.startsWith(workspaceAbsolute + path.sep) &&
+      normalizedPath !== workspaceAbsolute
+    ) {
+      throw new Error(`Path traversal detected: ${relativePath} is outside workspace boundaries`)
     }
 
     return normalizedPath
@@ -216,9 +216,9 @@ export class WorkspaceManager {
 
   /**
    * Check if a path is within workspace boundaries
-   * 
+   *
    * Requirement: 29.5
-   * 
+   *
    * @param workspacePath - Base workspace path
    * @param targetPath - Path to check
    * @returns true if path is within boundaries
@@ -242,9 +242,9 @@ export class WorkspaceManager {
   /**
    * Clean up workspace for a sample
    * Deletes all subdirectories and files
-   * 
+   *
    * Requirements: 19.6, 26.3 (file I/O optimization)
-   * 
+   *
    * @param sampleId - Sample ID in format "sha256:<hex>"
    */
   public async cleanup(sampleId: string): Promise<void> {
@@ -267,19 +267,19 @@ export class WorkspaceManager {
   /**
    * Clean up old workspaces based on retention policy
    * Deletes workspaces older than the specified number of days
-   * 
+   *
    * Requirements: 操作约束 6 (30-day retention policy), 26.3 (file I/O optimization)
-   * 
+   *
    * Optimizations:
    * - Async file operations
    * - Parallel directory scanning
    * - Batch deletion
-   * 
+   *
    * @param retentionDays - Number of days to retain workspaces (default: 30)
    * @returns Number of workspaces cleaned up
    */
   public async cleanupOldWorkspaces(retentionDays: number = 30): Promise<number> {
-    const cutoffTime = Date.now() - (retentionDays * 24 * 60 * 60 * 1000)
+    const cutoffTime = Date.now() - retentionDays * 24 * 60 * 60 * 1000
     let cleanedCount = 0
 
     // Traverse the bucketed directory structure
@@ -288,13 +288,13 @@ export class WorkspaceManager {
     }
 
     const bucket1Dirs = await fsPromises.readdir(this.workspaceRoot)
-    
+
     // Process bucket1 directories in parallel (Requirement 26.3)
     const cleanupPromises: Promise<number>[] = []
 
     for (const bucket1 of bucket1Dirs) {
       const bucket1Path = path.join(this.workspaceRoot, bucket1)
-      
+
       cleanupPromises.push(
         (async () => {
           let localCleanedCount = 0
@@ -307,10 +307,10 @@ export class WorkspaceManager {
             }
 
             const bucket2Dirs = await fsPromises.readdir(bucket1Path)
-            
+
             for (const bucket2 of bucket2Dirs) {
               const bucket2Path = path.join(bucket1Path, bucket2)
-              
+
               try {
                 // Skip if not a directory
                 const bucket2Stats = await fsPromises.stat(bucket2Path)
@@ -319,10 +319,10 @@ export class WorkspaceManager {
                 }
 
                 const workspaceDirs = await fsPromises.readdir(bucket2Path)
-                
+
                 for (const workspaceDir of workspaceDirs) {
                   const workspacePath = path.join(bucket2Path, workspaceDir)
-                  
+
                   try {
                     // Skip if not a directory
                     const workspaceStats = await fsPromises.stat(workspacePath)
@@ -335,7 +335,7 @@ export class WorkspaceManager {
                       // Delete old workspace
                       await fsPromises.rm(workspacePath, { recursive: true, force: true })
                       localCleanedCount++
-                      
+
                       // Remove from cache if present
                       this.workspacePathCache.delete(workspaceDir)
                     }
@@ -380,13 +380,13 @@ export class WorkspaceManager {
   /**
    * Get workspace statistics for monitoring
    * Requirements: 26.3 (file I/O optimization)
-   * 
+   *
    * @returns Object with workspace statistics
    */
   public async getWorkspaceStats(): Promise<{
-    totalWorkspaces: number;
-    totalSizeBytes: number;
-    oldestWorkspaceAge: number;
+    totalWorkspaces: number
+    totalSizeBytes: number
+    oldestWorkspaceAge: number
   }> {
     let totalWorkspaces = 0
     let totalSizeBytes = 0
@@ -400,7 +400,7 @@ export class WorkspaceManager {
 
     for (const bucket1 of bucket1Dirs) {
       const bucket1Path = path.join(this.workspaceRoot, bucket1)
-      
+
       try {
         const bucket1Stats = await fsPromises.stat(bucket1Path)
         if (!bucket1Stats.isDirectory()) {
@@ -408,10 +408,10 @@ export class WorkspaceManager {
         }
 
         const bucket2Dirs = await fsPromises.readdir(bucket1Path)
-        
+
         for (const bucket2 of bucket2Dirs) {
           const bucket2Path = path.join(bucket1Path, bucket2)
-          
+
           try {
             const bucket2Stats = await fsPromises.stat(bucket2Path)
             if (!bucket2Stats.isDirectory()) {
@@ -419,10 +419,10 @@ export class WorkspaceManager {
             }
 
             const workspaceDirs = await fsPromises.readdir(bucket2Path)
-            
+
             for (const workspaceDir of workspaceDirs) {
               const workspacePath = path.join(bucket2Path, workspaceDir)
-              
+
               try {
                 const workspaceStats = await fsPromises.stat(workspacePath)
                 if (!workspaceStats.isDirectory()) {
@@ -430,7 +430,7 @@ export class WorkspaceManager {
                 }
 
                 totalWorkspaces++
-                
+
                 // Get directory size (approximate)
                 const size = await this.getDirectorySize(workspacePath)
                 totalSizeBytes += size
@@ -457,7 +457,7 @@ export class WorkspaceManager {
     return {
       totalWorkspaces,
       totalSizeBytes,
-      oldestWorkspaceAge
+      oldestWorkspaceAge,
     }
   }
 

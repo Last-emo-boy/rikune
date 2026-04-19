@@ -16,11 +16,7 @@ export const BehaviorTimelineInputSchema = z.object({
     .optional()
     .default(1000)
     .describe('Time bucket size in milliseconds for grouping events'),
-  max_events: z
-    .number()
-    .optional()
-    .default(2000)
-    .describe('Maximum events to process'),
+  max_events: z.number().optional().default(2000).describe('Maximum events to process'),
 })
 
 export const behaviorTimelineToolDefinition: ToolDefinition = {
@@ -33,15 +29,36 @@ export const behaviorTimelineToolDefinition: ToolDefinition = {
 }
 
 const PHASE_KEYWORDS: Record<string, string[]> = {
-  initialization: ['LoadLibrary', 'GetProcAddress', 'GetModuleHandle', 'VirtualAlloc', 'HeapCreate'],
+  initialization: [
+    'LoadLibrary',
+    'GetProcAddress',
+    'GetModuleHandle',
+    'VirtualAlloc',
+    'HeapCreate',
+  ],
   file_activity: ['CreateFile', 'WriteFile', 'ReadFile', 'DeleteFile', 'MoveFile', 'CopyFile'],
   registry: ['RegOpenKey', 'RegSetValue', 'RegQueryValue', 'RegCreateKey', 'RegDeleteKey'],
-  network: ['WSAStartup', 'connect', 'send', 'recv', 'InternetOpen', 'HttpSendRequest', 'InternetConnect', 'URLDownloadToFile'],
+  network: [
+    'WSAStartup',
+    'connect',
+    'send',
+    'recv',
+    'InternetOpen',
+    'HttpSendRequest',
+    'InternetConnect',
+    'URLDownloadToFile',
+  ],
   process: ['CreateProcess', 'OpenProcess', 'TerminateProcess', 'ShellExecute'],
   injection: ['VirtualAllocEx', 'WriteProcessMemory', 'CreateRemoteThread', 'NtMapViewOfSection'],
   persistence: ['CreateService', 'RegSetValue', 'schtasks', 'startup'],
   crypto: ['CryptEncrypt', 'CryptDecrypt', 'CryptHashData', 'BCryptEncrypt'],
-  anti_analysis: ['IsDebuggerPresent', 'CheckRemoteDebugger', 'NtQueryInformationProcess', 'GetTickCount', 'Sleep'],
+  anti_analysis: [
+    'IsDebuggerPresent',
+    'CheckRemoteDebugger',
+    'NtQueryInformationProcess',
+    'GetTickCount',
+    'Sleep',
+  ],
 }
 
 function classifyApi(api: string): string {
@@ -75,14 +92,29 @@ export function createBehaviorTimelineHandler(deps: PluginToolDeps) {
       if (Array.isArray(evidence)) {
         for (const entry of evidence) {
           const family = entry.evidence_family ?? ''
-          if (!['dynamic_trace', 'frida_trace', 'sandbox_execution', 'speakeasy_trace', 'runtime_trace'].includes(family)) continue
+          if (
+            ![
+              'dynamic_trace',
+              'frida_trace',
+              'sandbox_execution',
+              'speakeasy_trace',
+              'runtime_trace',
+            ].includes(family)
+          )
+            continue
 
           try {
             const data =
               typeof entry.result_json === 'string'
                 ? JSON.parse(entry.result_json)
                 : entry.result_json
-            const rawEvents = data?.data?.events ?? data?.events ?? data?.data?.trace ?? data?.trace ?? data?.data?.api_calls ?? []
+            const rawEvents =
+              data?.data?.events ??
+              data?.events ??
+              data?.data?.trace ??
+              data?.trace ??
+              data?.data?.api_calls ??
+              []
 
             for (let i = 0; i < rawEvents.length && events.length < args.max_events; i++) {
               const ev = rawEvents[i]
@@ -95,7 +127,9 @@ export function createBehaviorTimelineHandler(deps: PluginToolDeps) {
                 args: ev.args ?? ev.params,
               })
             }
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
       }
 
@@ -156,7 +190,12 @@ export function createBehaviorTimelineHandler(deps: PluginToolDeps) {
       flushBucket()
 
       // Phase transition detection
-      const phaseSequence: Array<{ phase: string; start_ms: number; end_ms: number; event_count: number }> = []
+      const phaseSequence: Array<{
+        phase: string
+        start_ms: number
+        end_ms: number
+        event_count: number
+      }> = []
       let currentPhase = ''
       let phaseStart = minTs
       let phaseCount = 0
@@ -217,11 +256,17 @@ export function createBehaviorTimelineHandler(deps: PluginToolDeps) {
       const artifacts: ArtifactRef[] = []
       try {
         const artRef = await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, args.sample_id,
-          'behavior_timeline', 'behavior-timeline', resultData
+          workspaceManager,
+          database,
+          args.sample_id,
+          'behavior_timeline',
+          'behavior-timeline',
+          resultData
         )
         if (artRef) artifacts.push(artRef)
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
       return {
         ok: true,

@@ -109,10 +109,12 @@ export class RateLimiter {
     res.setHeader('X-RateLimit-Limit', this.config.maxRequestsPerWindow)
     res.setHeader('X-RateLimit-Remaining', 0)
     res.writeHead(429, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({
-      error: 'Too Many Requests',
-      message: `Rate limit exceeded (${scope}). Retry after ${retryAfter}s.`,
-    }))
+    res.end(
+      JSON.stringify({
+        error: 'Too Many Requests',
+        message: `Rate limit exceeded (${scope}). Retry after ${retryAfter}s.`,
+      })
+    )
   }
 
   private extractIp(req: IncomingMessage): string {

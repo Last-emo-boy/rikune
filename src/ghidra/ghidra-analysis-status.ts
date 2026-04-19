@@ -83,15 +83,10 @@ function normalizeCapabilityStatus(
   const candidate = raw as Record<string, unknown>
   const statusRaw = String(candidate.status || fallback.status || 'missing').toLowerCase()
   const status: GhidraCapabilityState =
-    statusRaw === 'ready'
-      ? 'ready'
-      : statusRaw === 'degraded'
-        ? 'degraded'
-        : 'missing'
+    statusRaw === 'ready' ? 'ready' : statusRaw === 'degraded' ? 'degraded' : 'missing'
 
   return {
-    available:
-      typeof candidate.available === 'boolean' ? candidate.available : status === 'ready',
+    available: typeof candidate.available === 'boolean' ? candidate.available : status === 'ready',
     status,
     reason:
       typeof candidate.reason === 'string'
@@ -103,13 +98,8 @@ function normalizeCapabilityStatus(
       ? candidate.warnings.filter((item): item is string => typeof item === 'string')
       : fallback.warnings,
     checked_at:
-      typeof candidate.checked_at === 'string'
-        ? candidate.checked_at
-        : fallback.checked_at,
-    target:
-      typeof candidate.target === 'string'
-        ? candidate.target
-        : fallback.target,
+      typeof candidate.checked_at === 'string' ? candidate.checked_at : fallback.checked_at,
+    target: typeof candidate.target === 'string' ? candidate.target : fallback.target,
     details:
       candidate.details && typeof candidate.details === 'object'
         ? (candidate.details as Record<string, unknown>)
@@ -123,10 +113,7 @@ function buildLegacyCapabilityFallback(
   metadata: GhidraAnalysisMetadata
 ): GhidraCapabilityStatus {
   const hasProject = Boolean(metadata.project_path && metadata.project_key)
-  const functionCount =
-    typeof metadata.function_count === 'number'
-      ? metadata.function_count
-      : 0
+  const functionCount = typeof metadata.function_count === 'number' ? metadata.function_count : 0
   const extractionStatus = String(metadata.function_extraction?.status || '').toLowerCase()
   const extractionWarnings = Array.isArray(metadata.function_extraction?.warnings)
     ? metadata.function_extraction?.warnings

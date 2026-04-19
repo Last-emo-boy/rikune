@@ -28,7 +28,10 @@ const DynamicDeepGoalSchema = z.enum([
 ])
 
 export const DynamicDeepPlanInputSchema = z.object({
-  sample_id: z.string().optional().describe('Optional sample ID used to render sample-bound command examples.'),
+  sample_id: z
+    .string()
+    .optional()
+    .describe('Optional sample ID used to render sample-bound command examples.'),
   goals: z.array(DynamicDeepGoalSchema).optional().default(['all']),
   runtime_preference: z
     .enum(['auto', 'sandbox', 'hyperv-vm', 'manual-runtime', 'wine-local'])
@@ -125,7 +128,12 @@ function buildProfiles(sampleId: string | undefined): DynamicPlanProfile[] {
       goals: ['behavior'],
       runtimeFit: ['sandbox', 'hyperv-vm', 'manual-runtime'],
       setupTools: ['dynamic.runtime.status', 'dynamic.toolkit.status'],
-      executionTools: ['dynamic.persona.plan', 'dynamic.behavior.capture', 'dynamic.trace.import', 'dynamic.behavior.diff'],
+      executionTools: [
+        'dynamic.persona.plan',
+        'dynamic.behavior.capture',
+        'dynamic.trace.import',
+        'dynamic.behavior.diff',
+      ],
       artifacts: ['behavior_capture.json', 'dynamic_trace_json', 'dynamic_behavior_diff'],
       notes: [
         'Use first for process/module/file/TCP/stdout/stderr evidence.',
@@ -165,7 +173,13 @@ function buildProfiles(sampleId: string | undefined): DynamicPlanProfile[] {
       runtimeFit: ['hyperv-vm', 'manual-runtime', 'sandbox'],
       setupTools: ['dynamic.toolkit.status', 'debug.telemetry.plan'],
       executionTools: ['debug.telemetry.plan', 'runtime.debug.command', 'dynamic.behavior.capture'],
-      artifacts: ['procmon_capture.pml', 'eventlog_snapshot.json', 'etw_process.etl', 'etw_dns.etl', 'telemetry_capture.json'],
+      artifacts: [
+        'procmon_capture.pml',
+        'eventlog_snapshot.json',
+        'etw_process.etl',
+        'etw_dns.etl',
+        'telemetry_capture.json',
+      ],
       notes: [
         'ProcMon and Sysmon are optional runtime tools; ETW and PowerShell event-log snapshots provide lower-friction fallbacks.',
         'Hyper-V is the preferred backend for service-backed telemetry because it can retain or rollback dirty state.',
@@ -177,8 +191,20 @@ function buildProfiles(sampleId: string | undefined): DynamicPlanProfile[] {
       goals: ['network'],
       runtimeFit: ['hyperv-vm', 'manual-runtime', 'sandbox'],
       setupTools: ['dynamic.toolkit.status', 'debug.network.plan'],
-      executionTools: ['debug.network.plan', 'runtime.debug.command', 'dynamic.behavior.capture', 'debug.telemetry.plan', 'dynamic.trace.import'],
-      artifacts: ['behavior_capture.json', 'network_events', 'etw_dns.etl', 'eventlog_snapshot.json', 'future fakenet_report'],
+      executionTools: [
+        'debug.network.plan',
+        'runtime.debug.command',
+        'dynamic.behavior.capture',
+        'debug.telemetry.plan',
+        'dynamic.trace.import',
+      ],
+      artifacts: [
+        'behavior_capture.json',
+        'network_events',
+        'etw_dns.etl',
+        'eventlog_snapshot.json',
+        'future fakenet_report',
+      ],
       notes: [
         'Baseline network safety uses proxy sinkholing through dynamic.behavior.capture; FakeNet-style services require explicit runtime setup.',
         'Prefer Hyper-V when realistic DNS/HTTP service emulation or packet capture is required.',
@@ -190,8 +216,18 @@ function buildProfiles(sampleId: string | undefined): DynamicPlanProfile[] {
       goals: ['dotnet'],
       runtimeFit: ['sandbox', 'hyperv-vm', 'manual-runtime'],
       setupTools: ['dynamic.toolkit.status', 'dotnet.metadata.extract', 'debug.managed.plan'],
-      executionTools: ['debug.managed.plan', 'runtime.debug.command', 'managed.safe_run', 'debug.gui.handoff'],
-      artifacts: ['managed safe-run output', 'debug_session_trace.json', 'procdump_capture.json', 'debug_gui_handoff'],
+      executionTools: [
+        'debug.managed.plan',
+        'runtime.debug.command',
+        'managed.safe_run',
+        'debug.gui.handoff',
+      ],
+      artifacts: [
+        'managed safe-run output',
+        'debug_session_trace.json',
+        'procdump_capture.json',
+        'debug_gui_handoff',
+      ],
       notes: [
         'dotnet is required for managed execution; dnSpyEx is a manual GUI companion for retained runtime sessions.',
         'Pair with static dotnet metadata and resource extraction before live execution.',
@@ -203,7 +239,11 @@ function buildProfiles(sampleId: string | undefined): DynamicPlanProfile[] {
       goals: ['anti_evasion'],
       runtimeFit: ['sandbox', 'hyperv-vm', 'manual-runtime'],
       setupTools: ['dynamic.auto_hook', 'dynamic.toolkit.status', 'dynamic.persona.plan'],
-      executionTools: ['frida.script.generate', 'runtime.debug.command', 'dynamic.behavior.capture'],
+      executionTools: [
+        'frida.script.generate',
+        'runtime.debug.command',
+        'dynamic.behavior.capture',
+      ],
       artifacts: ['frida trace jsonl', 'debug_session_trace.json', 'behavior_capture.json'],
       notes: [
         'Start with hook generation for IsDebuggerPresent, NtQueryInformationProcess, timing, firmware, window, and cursor checks.',
@@ -228,7 +268,12 @@ function buildProfiles(sampleId: string | undefined): DynamicPlanProfile[] {
       title: 'Manual GUI debugging profile',
       goals: ['manual_gui', 'debugger', 'dotnet'],
       runtimeFit: ['hyperv-vm', 'sandbox'],
-      setupTools: ['runtime.debug.session.start', 'runtime.hyperv.control', 'dynamic.toolkit.status', 'debug.gui.handoff'],
+      setupTools: [
+        'runtime.debug.session.start',
+        'runtime.hyperv.control',
+        'dynamic.toolkit.status',
+        'debug.gui.handoff',
+      ],
       executionTools: ['debug.gui.handoff', 'runtime.debug.session.status'],
       artifacts: ['debug_gui_handoff', 'retained VM state', 'manual notes'],
       notes: [
@@ -241,14 +286,30 @@ function buildProfiles(sampleId: string | undefined): DynamicPlanProfile[] {
 
 function goalSet(goals: string[]): Set<string> {
   if (goals.includes('all')) {
-    return new Set(['behavior', 'debugger', 'memory', 'telemetry', 'network', 'dotnet', 'anti_evasion', 'ttd', 'manual_gui'])
+    return new Set([
+      'behavior',
+      'debugger',
+      'memory',
+      'telemetry',
+      'network',
+      'dotnet',
+      'anti_evasion',
+      'ttd',
+      'manual_gui',
+    ])
   }
   return new Set(goals)
 }
 
-function profileMatches(profile: DynamicPlanProfile, goals: Set<string>, includeGui: boolean, includeHeavy: boolean): boolean {
+function profileMatches(
+  profile: DynamicPlanProfile,
+  goals: Set<string>,
+  includeGui: boolean,
+  includeHeavy: boolean
+): boolean {
   if (!includeGui && profile.goals.includes('manual_gui')) return false
-  if (!includeHeavy && (profile.goals.includes('ttd') || profile.id === 'telemetry_procmon_sysmon')) return false
+  if (!includeHeavy && (profile.goals.includes('ttd') || profile.id === 'telemetry_procmon_sysmon'))
+    return false
   return profile.goals.some((goal) => goals.has(goal))
 }
 
@@ -310,36 +371,51 @@ function buildStaticBehaviorContextFromPayloads(
       if (/service|wmi|scheduled_task/i.test(id)) {
         inferredGoals.push('telemetry')
         suggestedProfiles.push('telemetry_procmon_sysmon')
-        runtimeNotes.push('Persistence findings involving services, WMI, or scheduled tasks are better validated in Hyper-V/manual runtime when service lifecycle telemetry matters.')
+        runtimeNotes.push(
+          'Persistence findings involving services, WMI, or scheduled tasks are better validated in Hyper-V/manual runtime when service lifecycle telemetry matters.'
+        )
       }
     }
     if (category === 'injection') {
       inferredGoals.push('debugger', 'memory')
       suggestedProfiles.push('debugger_cdb', 'memory_dump')
-      runtimeNotes.push('Injection findings should start with debugger/API breakpoints and a bounded memory capture plan before broad execution.')
+      runtimeNotes.push(
+        'Injection findings should start with debugger/API breakpoints and a bounded memory capture plan before broad execution.'
+      )
     }
     if (category === 'anti_analysis') {
       inferredGoals.push('anti_evasion')
       suggestedProfiles.push('anti_evasion')
-      runtimeNotes.push('Anti-analysis findings should be paired with persona planning and explicit hook/debugger choices.')
+      runtimeNotes.push(
+        'Anti-analysis findings should be paired with persona planning and explicit hook/debugger choices.'
+      )
     }
   }
 
-  const recommendedTools = dedupe([
-    ...payloads.flatMap((payload) => payload.recommended_next_tools || []),
-    ...findings.flatMap((finding) => finding.recommended_next_tools || []),
-    highSignalFindings.some((finding) => finding.category === 'injection') ? 'breakpoint.smart' : null,
-    highSignalFindings.some((finding) => finding.category === 'injection') ? 'trace.condition' : null,
-    highSignalFindings.length > 0 ? 'dynamic.behavior.diff' : null,
-    highSignalFindings.length > 0 ? 'analysis.evidence.graph' : null,
-  ], 16)
+  const recommendedTools = dedupe(
+    [
+      ...payloads.flatMap((payload) => payload.recommended_next_tools || []),
+      ...findings.flatMap((finding) => finding.recommended_next_tools || []),
+      highSignalFindings.some((finding) => finding.category === 'injection')
+        ? 'breakpoint.smart'
+        : null,
+      highSignalFindings.some((finding) => finding.category === 'injection')
+        ? 'trace.condition'
+        : null,
+      highSignalFindings.length > 0 ? 'dynamic.behavior.diff' : null,
+      highSignalFindings.length > 0 ? 'analysis.evidence.graph' : null,
+    ],
+    16
+  )
 
   return {
     enabled: true,
     artifact_ids: artifactIds,
     scope_note: scopeNote,
     finding_count: findings.length,
-    high_or_critical_count: highSignalFindings.filter((finding) => severityScore(finding.severity) >= 3).length,
+    high_or_critical_count: highSignalFindings.filter(
+      (finding) => severityScore(finding.severity) >= 3
+    ).length,
     high_signal_findings: highSignalFindings.slice(0, 12).map((finding) => ({
       id: finding.id || 'unknown',
       category: finding.category || 'unknown',
@@ -381,7 +457,10 @@ async function loadStaticBehaviorContext(
     return emptyStaticBehaviorContext(false)
   }
   if (!deps.workspaceManager || !deps.database) {
-    return emptyStaticBehaviorContext(false, 'Static behavior artifact lookup is unavailable in this handler context.')
+    return emptyStaticBehaviorContext(
+      false,
+      'Static behavior artifact lookup is unavailable in this handler context.'
+    )
   }
 
   try {
@@ -419,7 +498,9 @@ function applyStaticBehaviorContext(
   context: StaticBehaviorContext
 ): DynamicPlanProfile[] {
   const suggested = new Set(context.suggested_profile_ids)
-  const highSignalTechniques = context.high_signal_findings.map((finding) => `${finding.id}:${finding.technique}`)
+  const highSignalTechniques = context.high_signal_findings.map(
+    (finding) => `${finding.id}:${finding.technique}`
+  )
   return profiles
     .map((profile, index) => {
       const evidenceBoost = suggested.has(profile.id) ? 40 : 0
@@ -429,12 +510,13 @@ function applyStaticBehaviorContext(
         ...profile,
         priority,
         evidence_hooks: evidenceHooks,
-        notes: evidenceHooks.length > 0
-          ? [
-              ...profile.notes,
-              `Prioritized by static.behavior.classify findings: ${evidenceHooks.join(', ')}`,
-            ]
-          : profile.notes,
+        notes:
+          evidenceHooks.length > 0
+            ? [
+                ...profile.notes,
+                `Prioritized by static.behavior.classify findings: ${evidenceHooks.join(', ')}`,
+              ]
+            : profile.notes,
       }
     })
     .sort((left, right) => (right.priority || 0) - (left.priority || 0))
@@ -444,8 +526,15 @@ function buildExecutionOrder(profiles: DynamicPlanProfile[], runtimePreference: 
   const order = [
     {
       phase: 'preflight',
-      tools: ['static.behavior.classify', 'dynamic.runtime.status', 'dynamic.toolkit.status', 'dynamic.dependencies', 'dynamic.persona.plan'],
-      purpose: 'Collect static behavior expectations, verify configured runtime endpoint, Host Agent, Runtime Node capabilities, and runtime-side tools without launching or executing samples.',
+      tools: [
+        'static.behavior.classify',
+        'dynamic.runtime.status',
+        'dynamic.toolkit.status',
+        'dynamic.dependencies',
+        'dynamic.persona.plan',
+      ],
+      purpose:
+        'Collect static behavior expectations, verify configured runtime endpoint, Host Agent, Runtime Node capabilities, and runtime-side tools without launching or executing samples.',
     },
     {
       phase: 'session',
@@ -459,8 +548,16 @@ function buildExecutionOrder(profiles: DynamicPlanProfile[], runtimePreference: 
     },
     {
       phase: 'import',
-      tools: ['dynamic.trace.import', 'dynamic.memory.import', 'dynamic.behavior.diff', 'analysis.evidence.graph', 'artifact.read', 'artifacts.list'],
-      purpose: 'Normalize runtime evidence back into sample artifacts and correlate it against static expectations.',
+      tools: [
+        'dynamic.trace.import',
+        'dynamic.memory.import',
+        'dynamic.behavior.diff',
+        'analysis.evidence.graph',
+        'artifact.read',
+        'artifacts.list',
+      ],
+      purpose:
+        'Normalize runtime evidence back into sample artifacts and correlate it against static expectations.',
     },
   ]
   return order
@@ -478,7 +575,12 @@ export function createDynamicDeepPlanHandler(deps: PluginToolDeps) {
     ])
     const profiles = applyStaticBehaviorContext(
       buildProfiles(input.sample_id).filter((profile) =>
-        profileMatches(profile, effectiveGoals, input.include_gui_profiles, input.include_heavy_profiles)
+        profileMatches(
+          profile,
+          effectiveGoals,
+          input.include_gui_profiles,
+          input.include_heavy_profiles
+        )
       ),
       staticBehaviorContext
     )
@@ -509,17 +611,19 @@ export function createDynamicDeepPlanHandler(deps: PluginToolDeps) {
           live_execution_requires_explicit_runtime_tool: true,
           transformations_are_not_automatic: true,
         },
-        next_actions: staticBehaviorContext.artifact_ids.length > 0
-          ? [
-              'Use prioritized profiles first; they were inferred from static.behavior.classify evidence.',
-              'After runtime evidence is imported, run dynamic.behavior.diff and analysis.evidence.graph to compare observations with these static expectations.',
-            ]
-          : [
-              'Run static.behavior.classify first when persistence, injection, or anti-analysis behavior is suspected.',
-              'Start a runtime session only after dynamic.runtime.status and dynamic.toolkit.status confirm the desired backend.',
-            ],
+        next_actions:
+          staticBehaviorContext.artifact_ids.length > 0
+            ? [
+                'Use prioritized profiles first; they were inferred from static.behavior.classify evidence.',
+                'After runtime evidence is imported, run dynamic.behavior.diff and analysis.evidence.graph to compare observations with these static expectations.',
+              ]
+            : [
+                'Run static.behavior.classify first when persistence, injection, or anti-analysis behavior is suspected.',
+                'Start a runtime session only after dynamic.runtime.status and dynamic.toolkit.status confirm the desired backend.',
+              ],
       },
-      warnings: staticBehaviorContext.warnings.length > 0 ? staticBehaviorContext.warnings : undefined,
+      warnings:
+        staticBehaviorContext.warnings.length > 0 ? staticBehaviorContext.warnings : undefined,
       metrics: {
         elapsed_ms: Date.now() - started,
         tool: TOOL_NAME,

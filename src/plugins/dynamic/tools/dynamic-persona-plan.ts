@@ -22,9 +22,15 @@ const PersonaProfileSchema = z.enum([
 ])
 
 export const DynamicPersonaPlanInputSchema = z.object({
-  sample_id: z.string().optional().describe('Optional sample id used to persist the persona plan as an artifact.'),
+  sample_id: z
+    .string()
+    .optional()
+    .describe('Optional sample id used to persist the persona plan as an artifact.'),
   profile: PersonaProfileSchema.optional().default('desktop_user'),
-  runtime_backend: z.enum(['auto', 'windows-sandbox', 'hyperv-vm', 'manual-runtime']).optional().default('auto'),
+  runtime_backend: z
+    .enum(['auto', 'windows-sandbox', 'hyperv-vm', 'manual-runtime'])
+    .optional()
+    .default('auto'),
   include_network_persona: z.boolean().optional().default(true),
   include_user_activity: z.boolean().optional().default(true),
   include_office_artifacts: z.boolean().optional().default(false),
@@ -51,7 +57,12 @@ export const dynamicPersonaPlanToolDefinition: ToolDefinition = {
 
 function basePersona(profile: z.infer<typeof PersonaProfileSchema>) {
   const common = {
-    username: profile === 'developer_workstation' ? 'devuser' : profile === 'analyst_vm' ? 'analyst' : 'j.smith',
+    username:
+      profile === 'developer_workstation'
+        ? 'devuser'
+        : profile === 'analyst_vm'
+          ? 'analyst'
+          : 'j.smith',
     locale: 'en-US',
     timezone: 'Pacific Standard Time',
     screen: { width: 1920, height: 1080, scale: 100 },
@@ -107,7 +118,11 @@ function buildPersonaPlan(input: z.infer<typeof DynamicPersonaPlanInputSchema>) 
     'HKCU\\Control Panel\\International',
     'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders',
   ]
-  if (input.include_office_artifacts || input.profile === 'office_user' || input.profile === 'enterprise_joined') {
+  if (
+    input.include_office_artifacts ||
+    input.profile === 'office_user' ||
+    input.profile === 'enterprise_joined'
+  ) {
     registry.push('HKCU\\Software\\Microsoft\\Office')
     filesystem.push('%APPDATA%\\Microsoft\\Office\\Recent')
   }
@@ -116,7 +131,8 @@ function buildPersonaPlan(input: z.infer<typeof DynamicPersonaPlanInputSchema>) 
         dns_suffixes: ['corp.example.local'],
         proxy_mode: 'disabled_by_default',
         fake_services: ['dns', 'http', 'https_metadata_only'],
-        guidance: 'Pair with dynamic.network.lab or runtime sinkhole when network behavior must be exercised.',
+        guidance:
+          'Pair with dynamic.network.lab or runtime sinkhole when network behavior must be exercised.',
       }
     : null
   const userActivity = input.include_user_activity
@@ -138,7 +154,8 @@ function buildPersonaPlan(input: z.infer<typeof DynamicPersonaPlanInputSchema>) 
       {
         phase: 'preflight',
         tools: ['dynamic.runtime.status', 'dynamic.toolkit.status', 'dynamic.deep_plan'],
-        purpose: 'Confirm runtime availability and choose behavior/debugger/network profile before any persona mutation.',
+        purpose:
+          'Confirm runtime availability and choose behavior/debugger/network profile before any persona mutation.',
       },
       {
         phase: 'runtime_state',
@@ -185,15 +202,17 @@ export function createDynamicPersonaPlanHandler(deps: PluginToolDeps) {
       if (input.persist_artifact && input.sample_id && deps.workspaceManager && deps.database) {
         const sample = deps.database.findSample?.(input.sample_id)
         if (sample) {
-          artifacts.push(await persistStaticAnalysisJsonArtifact(
-            deps.workspaceManager,
-            deps.database,
-            input.sample_id,
-            'dynamic_persona_plan',
-            'dynamic_persona_plan',
-            data,
-            input.session_tag
-          ))
+          artifacts.push(
+            await persistStaticAnalysisJsonArtifact(
+              deps.workspaceManager,
+              deps.database,
+              input.sample_id,
+              'dynamic_persona_plan',
+              'dynamic_persona_plan',
+              data,
+              input.session_tag
+            )
+          )
         }
       }
       return {

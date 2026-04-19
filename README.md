@@ -498,12 +498,13 @@ pip install frida frida-tools
 - `FRIDA_SERVER_PATH` - Path to Frida server binary for USB/remote device analysis
 - `FRIDA_DEVICE` - Device ID or "usb" for USB device selection (default: local spawn)
 
-**Pre-built Scripts** are included in `src/plugins/frida/scripts/`:
-- `api_trace.js` - Windows API tracing with argument logging
-- `string_decoder.js` - Runtime string decryption
-- `anti_debug_bypass.js` - Anti-debug detection neutralization
-- `crypto_finder.js` - Cryptographic API detection
-- `file_registry_monitor.js` - File/registry operation tracking
+**Pre-built Scripts** are included in `src/plugins/frida/scripts/` and exposed as
+MCP resources without filename extensions:
+- `script://frida/api_trace` - Windows API tracing with argument logging
+- `script://frida/string_decoder` - Runtime string decryption
+- `script://frida/anti_debug_bypass` - Anti-debug detection neutralization
+- `script://frida/crypto_finder` - Cryptographic API detection
+- `script://frida/file_registry_monitor` - File/registry operation tracking
 
 See [`docs/EXAMPLES.md`](./docs/EXAMPLES.md#场景 -9-frida-运行时 instrumentation) for usage examples.
 
@@ -900,10 +901,12 @@ Runtime rules that matter:
 
 - `static` and `hybrid` use the analyzer image and do not install local dynamic execution dependencies such as Wine, Frida, Qiling, or GDB into the analyzer container.
 - `hybrid` sets `RUNTIME_MODE=remote-sandbox`; the analyzer talks to the Windows Host Agent, and the Host Agent starts the selected runtime backend only when a dynamic/sandbox tool actually needs execution.
+- `GET /api/v1/health` is a liveness check; `GET /api/v1/ready` is profile-aware readiness and checks only dependencies required by enabled plugins.
 - The default `windows-sandbox` Host Agent backend must run in a logged-on Windows user session. Do not install it as a Windows Service; use the top-level script, PM2 in the user session, or a scheduled task configured to run only when the user is logged on. For Docker/WSL analyzers, the Host Agent binds to `0.0.0.0` by default and the installer creates best-effort Hyper-V firewall rules so `host.docker.internal:18082` and runtime portproxy ports can be reached; keep `RUNTIME_HOST_AGENT_API_KEY` configured.
 - The `hyperv-vm` backend is for debugging and unattended-style runtime experiments. The VM must already contain a reachable Runtime Node, and an optional checkpoint can be restored before each runtime session.
 - Hyper-V runtime sessions can choose a release policy. Use `hyperv_retention_policy='clean_rollback'` on `runtime.debug.session.start` to restore the checkpoint after release, `stop_only` to power off and keep disk state, or `preserve_dirty` to leave the VM available for manual inspection. The installer flag `-HyperVRestoreOnRelease` sets the Host Agent default.
 - Runtime sessions are explicit. Use `workflow.analyze.promote(dynamic_plan)` when you want the staged workflow to run `static.behavior.classify`, build an evidence-aware `dynamic.deep_plan`, and keep live execution gated. Use `dynamic.runtime.status` to inspect Runtime Node and Host Agent readiness, `dynamic.toolkit.status` to inspect runtime-side debugger/telemetry/dump/manual-GUI tool inventory, `dynamic.deep_plan` to choose a bounded live-analysis profile, `debug.network.plan`, `debug.managed.plan`, and `debug.gui.handoff` when you need network lab, .NET runtime, or manual GUI handoff detail, `dynamic.persona.plan` to prepare a planning-only Sandbox/Hyper-V persona checklist, `runtime.hyperv.control` when you need Hyper-V status/checkpoint create/restore/stop operations, `runtime.debug.session.start` to create or attach to a Windows runtime, `runtime.debug.command` to dispatch `debug.session.*`, `sandbox.execute`, `dynamic.behavior.capture`, telemetry, ProcDump, managed safe-run, or memory-dump work inside it, then use `dynamic.behavior.diff`, `analysis.evidence.graph`, and `crypto.lifecycle.graph` to correlate runtime observations back to static expectations before `runtime.debug.session.stop` releases the backend.
+- `sandbox.execute` reports `data.execution_semantics`, including whether the run was live Windows Sandbox, live Hyper-V, safe simulation, or emulation. Treat safe simulation as non-live evidence.
 - Runtime tool cache lookup is read-only and can use `RUNTIME_TOOL_DIRS`, `RUNTIME_TOOL_CACHE_DIR`, `RIKUNE_RUNTIME_TOOLS`, or the default `C:\rikune-tools` mount. Put optional tools such as Windows Debugging Tools `cdb.exe`, Sysinternals ProcDump/ProcMon/Sysmon, TTD helpers, x64dbg, dnSpyEx, Frida, dotnet, or FakeNet-style harnesses there when you want deeper dynamic profiles.
 - The Windows Sandbox window may appear during dynamic analysis. That is expected; install/start does not need to keep a Sandbox GUI open.
 - Docker and WSL analyzers cannot use `auto-sandbox` directly. `auto-sandbox` is only for a Windows-native analyzer process.

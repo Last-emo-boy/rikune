@@ -11,8 +11,20 @@ import { z } from 'zod'
 import { logger } from './logger.js'
 import { config } from './config.js'
 import { isIsolatedEnvironment } from './isolation.js'
-import type { ExecuteTask, RuntimeBackendCapability, RuntimeBackendHint, RuntimeToolInventory } from './executor.js'
-import { submitTask, getTask, cancelTask, getLogs, listTasks, subscribeTaskEvents } from './task-store.js'
+import type {
+  ExecuteTask,
+  RuntimeBackendCapability,
+  RuntimeBackendHint,
+  RuntimeToolInventory,
+} from './executor.js'
+import {
+  submitTask,
+  getTask,
+  cancelTask,
+  getLogs,
+  listTasks,
+  subscribeTaskEvents,
+} from './task-store.js'
 
 export interface Router {
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>
@@ -53,11 +65,18 @@ const RuntimeBackendHintSchema = z.object({
 })
 
 const ExecutePayloadSchema = z.object({
-  taskId: z.string().regex(TASK_ID_PATTERN, 'taskId must contain only letters, numbers, underscores, or dashes'),
+  taskId: z
+    .string()
+    .regex(TASK_ID_PATTERN, 'taskId must contain only letters, numbers, underscores, or dashes'),
   sampleId: z.string().min(1, 'sampleId is required'),
   tool: z.string().min(1, 'tool is required'),
   args: z.record(z.string(), z.unknown()).default({}),
-  timeoutMs: z.number().int().min(1).max(30 * 60 * 1000).default(120_000),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(1)
+    .max(30 * 60 * 1000)
+    .default(120_000),
   runtimeBackendHint: RuntimeBackendHintSchema.optional(),
 })
 
@@ -92,9 +111,10 @@ async function defaultLoadRuntimeBackendSupport(): Promise<RuntimeBackendSupport
 export function createRuntimeRouter(
   options: {
     loadRuntimeBackendSupport?: () => Promise<RuntimeBackendSupport>
-  } = {},
+  } = {}
 ): Router {
-  const loadRuntimeBackendSupport = options.loadRuntimeBackendSupport ?? defaultLoadRuntimeBackendSupport
+  const loadRuntimeBackendSupport =
+    options.loadRuntimeBackendSupport ?? defaultLoadRuntimeBackendSupport
   return {
     async handle(req, res) {
       const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
@@ -125,19 +145,23 @@ export function createRuntimeRouter(
           return
         }
       } else if (process.env.NODE_ENV === 'production') {
-        logger.warn('RUNTIME_API_KEY is not set. The runtime node is exposed without authentication.')
+        logger.warn(
+          'RUNTIME_API_KEY is not set. The runtime node is exposed without authentication.'
+        )
       }
 
       // Routes
       if (method === 'GET' && pathname === '/capabilities') {
         const { listRuntimeBackendCapabilities } = await loadRuntimeBackendSupport()
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          ok: true,
-          data: {
-            runtime_backends: listRuntimeBackendCapabilities(),
-          },
-        }))
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: {
+              runtime_backends: listRuntimeBackendCapabilities(),
+            },
+          })
+        )
         return
       }
 
@@ -145,40 +169,50 @@ export function createRuntimeRouter(
         const { buildRuntimeToolInventory } = await loadRuntimeBackendSupport()
         if (!buildRuntimeToolInventory) {
           res.writeHead(501, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({
-            ok: false,
-            error: 'Runtime tool inventory probe is not available in this Runtime Node build.',
-          }))
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: 'Runtime tool inventory probe is not available in this Runtime Node build.',
+            })
+          )
           return
         }
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          ok: true,
-          data: buildRuntimeToolInventory(),
-        }))
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: buildRuntimeToolInventory(),
+          })
+        )
         return
       }
 
       if (method === 'GET' && pathname === '/health') {
         const isolated = await isIsolatedEnvironment()
         const healthDetails = await getDeepHealthChecks()
-        const ok = healthDetails.inboxWritable && healthDetails.outboxWritable && healthDetails.pythonOk && healthDetails.workerOk
+        const ok =
+          healthDetails.inboxWritable &&
+          healthDetails.outboxWritable &&
+          healthDetails.pythonOk &&
+          healthDetails.workerOk
         res.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          ok,
-          role: 'runtime',
-          isolation: isolated ? 'verified' : 'unverified',
-          mode: config.runtime.mode,
-          pid: process.pid,
-          features: {
-            runtimeBackendCapabilities: true,
-            runtimeToolInventory: true,
-            taskUploadManifest: true,
-            sidecarUpload: true,
-            taskEvents: true,
-          },
-          checks: healthDetails,
-        }))
+        res.end(
+          JSON.stringify({
+            ok,
+            role: 'runtime',
+            isolation: isolated ? 'verified' : 'unverified',
+            mode: config.runtime.mode,
+            pid: process.pid,
+            features: {
+              runtimeBackendCapabilities: true,
+              runtimeToolInventory: true,
+              taskUploadManifest: true,
+              sidecarUpload: true,
+              taskEvents: true,
+            },
+            checks: healthDetails,
+          })
+        )
         return
       }
 
@@ -197,7 +231,7 @@ export function createRuntimeRouter(
         const role = parseUploadRole(url)
         const filename = sanitizeUploadFilename(
           url.searchParams.get('filename') || url.searchParams.get('name') || '',
-          role === 'primary' ? `${taskId}.sample` : 'sidecar.bin',
+          role === 'primary' ? `${taskId}.sample` : 'sidecar.bin'
         )
         const taskInboxDir = path.join(inboxDir, taskId)
         fs.mkdirSync(taskInboxDir, { recursive: true })
@@ -233,16 +267,20 @@ export function createRuntimeRouter(
           }
           const manifest = updateTaskUploadManifest(taskId, filename, role, stat.size)
           res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({
-            ok: true,
-            role,
-            name: filename,
-            inboxPath: destPath,
-            legacyPath,
-            manifest,
-          }))
+          res.end(
+            JSON.stringify({
+              ok: true,
+              role,
+              name: filename,
+              inboxPath: destPath,
+              legacyPath,
+              manifest,
+            })
+          )
         } catch (err) {
-          try { fs.unlinkSync(destPath) } catch {}
+          try {
+            fs.unlinkSync(destPath)
+          } catch {}
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ ok: false, error: `Upload failed: ${err}` }))
         }
@@ -253,7 +291,12 @@ export function createRuntimeRouter(
         const rest = pathname.slice('/download/'.length)
         const [taskId, ...artifactNameParts] = rest.split('/')
         const artifactName = decodeURIComponent(artifactNameParts.join('/'))
-        if (!taskId || !artifactName || artifactName.includes('..') || /[\\/\x00]/.test(artifactName)) {
+        if (
+          !taskId ||
+          !artifactName ||
+          artifactName.includes('..') ||
+          /[\\/\x00]/.test(artifactName)
+        ) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ ok: false, error: 'Invalid download path or artifact name' }))
           return
@@ -308,7 +351,11 @@ export function createRuntimeRouter(
             return
           }
           const payload = payloadResult.data
-          const { isRuntimeBackendHintSupported, listRuntimeBackendCapabilities, getRuntimeBackendCapability } = await loadRuntimeBackendSupport()
+          const {
+            isRuntimeBackendHintSupported,
+            listRuntimeBackendCapabilities,
+            getRuntimeBackendCapability,
+          } = await loadRuntimeBackendSupport()
           const runtimeBackendHint = payload.runtimeBackendHint as RuntimeBackendHint | undefined
           if (runtimeBackendHint && !isRuntimeBackendHintSupported(runtimeBackendHint)) {
             writeJson(res, 400, {
@@ -380,17 +427,19 @@ export function createRuntimeRouter(
           return
         }
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          ok: true,
-          taskId: state.taskId,
-          status: state.status,
-          submittedAt: state.submittedAt,
-          startedAt: state.startedAt,
-          completedAt: state.completedAt,
-          progressPercent: state.progressPercent,
-          lastMessage: state.lastMessage,
-          result: state.result,
-        }))
+        res.end(
+          JSON.stringify({
+            ok: true,
+            taskId: state.taskId,
+            status: state.status,
+            submittedAt: state.submittedAt,
+            startedAt: state.startedAt,
+            completedAt: state.completedAt,
+            progressPercent: state.progressPercent,
+            lastMessage: state.lastMessage,
+            result: state.result,
+          })
+        )
         return
       }
 
@@ -400,7 +449,9 @@ export function createRuntimeRouter(
         if (subResource === 'cancel') {
           const cancelResult = cancelTask(taskId)
           res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: cancelResult.ok, taskId, wasRunning: cancelResult.wasRunning }))
+          res.end(
+            JSON.stringify({ ok: cancelResult.ok, taskId, wasRunning: cancelResult.wasRunning })
+          )
           return
         }
         res.writeHead(404, { 'Content-Type': 'application/json' })
@@ -485,7 +536,11 @@ export function createRuntimeRouter(
 
 function parseUploadRole(url: URL): UploadRole {
   const rawRole = (url.searchParams.get('role') || '').toLowerCase()
-  if (rawRole === 'sidecar' || url.searchParams.get('sidecar') === '1' || url.searchParams.get('sidecar') === 'true') {
+  if (
+    rawRole === 'sidecar' ||
+    url.searchParams.get('sidecar') === '1' ||
+    url.searchParams.get('sidecar') === 'true'
+  ) {
     return 'sidecar'
   }
   return 'primary'
@@ -508,20 +563,27 @@ function readTaskUploadManifest(taskId: string): TaskUploadManifest {
     return {
       schema: 'rikune.runtime_upload_manifest.v1',
       taskId,
-      primary: typeof parsed.primary === 'string' ? sanitizeUploadFilename(parsed.primary, `${taskId}.sample`) : null,
+      primary:
+        typeof parsed.primary === 'string'
+          ? sanitizeUploadFilename(parsed.primary, `${taskId}.sample`)
+          : null,
       files: Array.isArray(parsed.files)
         ? parsed.files
-            .filter((entry): entry is TaskUploadManifest['files'][number] =>
-              entry &&
-              typeof entry === 'object' &&
-              typeof entry.name === 'string' &&
-              (entry.role === 'primary' || entry.role === 'sidecar') &&
-              typeof entry.size === 'number' &&
-              typeof entry.uploadedAt === 'string'
+            .filter(
+              (entry): entry is TaskUploadManifest['files'][number] =>
+                entry &&
+                typeof entry === 'object' &&
+                typeof entry.name === 'string' &&
+                (entry.role === 'primary' || entry.role === 'sidecar') &&
+                typeof entry.size === 'number' &&
+                typeof entry.uploadedAt === 'string'
             )
             .map((entry) => ({
               ...entry,
-              name: sanitizeUploadFilename(entry.name, entry.role === 'primary' ? `${taskId}.sample` : 'sidecar.bin'),
+              name: sanitizeUploadFilename(
+                entry.name,
+                entry.role === 'primary' ? `${taskId}.sample` : 'sidecar.bin'
+              ),
             }))
         : [],
     }
@@ -535,7 +597,12 @@ function readTaskUploadManifest(taskId: string): TaskUploadManifest {
   }
 }
 
-function updateTaskUploadManifest(taskId: string, name: string, role: UploadRole, size: number): TaskUploadManifest {
+function updateTaskUploadManifest(
+  taskId: string,
+  name: string,
+  role: UploadRole,
+  size: number
+): TaskUploadManifest {
   const taskInboxDir = path.join(config.runtime.inbox, taskId)
   fs.mkdirSync(taskInboxDir, { recursive: true })
   const manifest = readTaskUploadManifest(taskId)
@@ -555,7 +622,11 @@ function updateTaskUploadManifest(taskId: string, name: string, role: UploadRole
       },
     ].sort((a, b) => a.name.localeCompare(b.name)),
   }
-  fs.writeFileSync(path.join(taskInboxDir, TASK_UPLOAD_MANIFEST), JSON.stringify(next, null, 2), 'utf8')
+  fs.writeFileSync(
+    path.join(taskInboxDir, TASK_UPLOAD_MANIFEST),
+    JSON.stringify(next, null, 2),
+    'utf8'
+  )
   return next
 }
 
@@ -563,7 +634,7 @@ class RequestBodyReadError extends Error {
   constructor(
     message: string,
     readonly code: Extract<RuntimeErrorCode, 'invalid_json' | 'payload_too_large'>,
-    readonly statusCode: number,
+    readonly statusCode: number
   ) {
     super(message)
   }
@@ -594,7 +665,11 @@ async function readJsonBody(req: IncomingMessage, maxBytes = 10 * 1024 * 1024): 
   })
 }
 
-function writeJson(res: ServerResponse, statusCode: number, payload: RuntimeErrorResponse | Record<string, unknown>): void {
+function writeJson(
+  res: ServerResponse,
+  statusCode: number,
+  payload: RuntimeErrorResponse | Record<string, unknown>
+): void {
   res.writeHead(statusCode, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify(payload))
 }

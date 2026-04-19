@@ -26,17 +26,8 @@ export const vmEmulateInputSchema = z.object({
     .optional()
     .default(10000)
     .describe('Maximum emulation steps'),
-  symbolic: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Enable symbolic execution mode'),
-  bit_width: z
-    .number()
-    .int()
-    .optional()
-    .default(32)
-    .describe('Register bit width (8, 16, 32, 64)'),
+  symbolic: z.boolean().optional().default(false).describe('Enable symbolic execution mode'),
+  bit_width: z.number().int().optional().default(32).describe('Register bit width (8, 16, 32, 64)'),
 })
 
 export const vmEmulateOutputSchema = z.object({
@@ -76,9 +67,10 @@ export function createVmEmulateHandler(
     if (Array.isArray(evidence)) {
       for (const entry of evidence) {
         if (entry.evidence_family === 'vm_opcode_table') {
-          const data = typeof entry.result_json === 'string'
-            ? JSON.parse(entry.result_json)
-            : entry.result_json
+          const data =
+            typeof entry.result_json === 'string'
+              ? JSON.parse(entry.result_json)
+              : entry.result_json
           if (data?.opcode_table) {
             opcodeTable = data.opcode_table
             break
@@ -119,13 +111,13 @@ export function createVmEmulateHandler(
       termination_reason: emulationResult.terminationReason,
       final_registers: emulationResult.finalRegisters,
       constraints_extracted: emulationResult.constraints.length,
-      constraints: emulationResult.constraints.map(c => ({
+      constraints: emulationResult.constraints.map((c) => ({
         left: c.leftExpr,
         operator: c.operator,
         right: c.rightValue,
         source_pc: c.sourcePC,
       })),
-      trace_summary: emulationResult.trace.slice(0, 100).map(s => ({
+      trace_summary: emulationResult.trace.slice(0, 100).map((s) => ({
         pc: s.pc,
         mnemonic: s.mnemonic,
         operands: s.operands,
@@ -136,8 +128,12 @@ export function createVmEmulateHandler(
     const artifacts: ArtifactRef[] = []
     try {
       const ref = await persistStaticAnalysisJsonArtifact(
-        workspaceManager, database, input.sample_id,
-        'vm_emulation', 'emulation_result', result
+        workspaceManager,
+        database,
+        input.sample_id,
+        'vm_emulation',
+        'emulation_result',
+        result
       )
       artifacts.push(ref)
     } catch {

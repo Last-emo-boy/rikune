@@ -33,7 +33,11 @@ export interface ExecuteToolOptions {
 /**
  * Tool result function type - can return either WorkerResult or ToolResult
  */
-type ToolResult = { content: TextContent[]; structuredContent?: Record<string, unknown>; isError?: boolean }
+type ToolResult = {
+  content: TextContent[]
+  structuredContent?: Record<string, unknown>
+  isError?: boolean
+}
 
 export class ToolExecutor {
   private logger: pino.Logger
@@ -55,7 +59,9 @@ export class ToolExecutor {
       const resolvedName = registry.resolveToolName(name)
 
       // Check if tool exists
-      const definition = resolvedName ? registry.getToolDefinitionByTransportName(resolvedName) : undefined
+      const definition = resolvedName
+        ? registry.getToolDefinitionByTransportName(resolvedName)
+        : undefined
       if (!definition) {
         throw new Error(`Tool not found: ${name}`)
       }
@@ -72,7 +78,11 @@ export class ToolExecutor {
       // Fire plugin before-hook (best effort, non-blocking on failure)
       const canonicalName = definition.canonicalName || definition.name
       if (pluginRuntime) {
-        await pluginRuntime.fireHook('before', canonicalName, validatedArgs as Record<string, unknown>)
+        await pluginRuntime.fireHook(
+          'before',
+          canonicalName,
+          validatedArgs as Record<string, unknown>
+        )
       }
 
       // Execute handler
@@ -82,7 +92,12 @@ export class ToolExecutor {
 
       // Fire plugin after-hook
       if (pluginRuntime) {
-        await pluginRuntime.fireHook('after', canonicalName, validatedArgs as Record<string, unknown>, { elapsedMs: elapsed })
+        await pluginRuntime.fireHook(
+          'after',
+          canonicalName,
+          validatedArgs as Record<string, unknown>,
+          { elapsedMs: elapsed }
+        )
       }
 
       // Progressive surface — scan result for activation signals
@@ -92,7 +107,9 @@ export class ToolExecutor {
           const workerData = 'content' in result ? undefined : result
           if (workerData) surface.processToolResult(canonicalName, workerData)
         }
-      } catch (e) { this.logger.debug({ err: e }, 'Surface expansion failed (best-effort)') }
+      } catch (e) {
+        this.logger.debug({ err: e }, 'Surface expansion failed (best-effort)')
+      }
 
       // Check if result is ToolResult or WorkerResult
       if ('content' in result) {
@@ -101,16 +118,25 @@ export class ToolExecutor {
           this.rewriteToolReferences(result.structuredContent, registry),
           definition.outputSchema
         )
-        this.logger.info({ tool: name, elapsed, isError: result.isError }, 'Tool execution completed')
-        return guardResponseSize({
-          content: this.rewriteTextContentItems(result.content as TextContent[], registry) as any,
-          structuredContent,
-          isError: result.isError
-        }, this.logger)
+        this.logger.info(
+          { tool: name, elapsed, isError: result.isError },
+          'Tool execution completed'
+        )
+        return guardResponseSize(
+          {
+            content: this.rewriteTextContentItems(result.content, registry) as any,
+            structuredContent,
+            isError: result.isError,
+          },
+          this.logger
+        )
       } else {
         // It's a WorkerResult - convert to ToolResult
         this.logger.info({ tool: name, elapsed, ok: result.ok }, 'Tool execution completed')
-        return guardResponseSize(this.workerResultToToolResult(result, definition.outputSchema, registry), this.logger)
+        return guardResponseSize(
+          this.workerResultToToolResult(result, definition.outputSchema, registry),
+          this.logger
+        )
       }
     } catch (error) {
       const elapsed = Date.now() - startTime
@@ -118,7 +144,9 @@ export class ToolExecutor {
 
       // Fire plugin error-hook
       if (pluginRuntime) {
-        await pluginRuntime.fireHook('error', name, (args ?? {}) as Record<string, unknown>, { error }).catch(() => {})
+        await pluginRuntime
+          .fireHook('error', name, (args ?? {}) as Record<string, unknown>, { error })
+          .catch(() => {})
       }
 
       return {
@@ -155,9 +183,7 @@ export class ToolExecutor {
         const example = generateSchemaExample(schema)
         const exampleStr = example ? `\n\nExample:\n${JSON.stringify(example, null, 2)}` : ''
 
-        throw new Error(
-          `Invalid arguments:\n${errorDetails.join('\n')}${exampleStr}`
-        )
+        throw new Error(`Invalid arguments:\n${errorDetails.join('\n')}${exampleStr}`)
       }
       throw error
     }
@@ -166,20 +192,27 @@ export class ToolExecutor {
   /**
    * Convert worker result to MCP tool result
    */
-  private workerResultToToolResult(result: WorkerResult, outputSchema: z.ZodTypeAny | undefined, registry: MCPRegistry): CallToolResult {
+  private workerResultToToolResult(
+    result: WorkerResult,
+    outputSchema: z.ZodTypeAny | undefined,
+    registry: MCPRegistry
+  ): CallToolResult {
     const content: TextContent[] = []
-    const structuredPayload = this.rewriteToolReferences<Record<string, unknown>>({
-      ok: result.ok,
-      ...(result.data !== undefined ? { data: result.data } : {}),
-      ...(result.warnings !== undefined ? { warnings: result.warnings } : {}),
-      ...(result.errors !== undefined ? { errors: result.errors } : {}),
-      ...(result.artifacts !== undefined ? { artifacts: result.artifacts } : {}),
-      ...(result.metrics !== undefined ? { metrics: result.metrics } : {}),
-      ...(result.setup_actions !== undefined ? { setup_actions: result.setup_actions } : {}),
-      ...(result.required_user_inputs !== undefined
-        ? { required_user_inputs: result.required_user_inputs }
-        : {}),
-    }, registry)
+    const structuredPayload = this.rewriteToolReferences<Record<string, unknown>>(
+      {
+        ok: result.ok,
+        ...(result.data !== undefined ? { data: result.data } : {}),
+        ...(result.warnings !== undefined ? { warnings: result.warnings } : {}),
+        ...(result.errors !== undefined ? { errors: result.errors } : {}),
+        ...(result.artifacts !== undefined ? { artifacts: result.artifacts } : {}),
+        ...(result.metrics !== undefined ? { metrics: result.metrics } : {}),
+        ...(result.setup_actions !== undefined ? { setup_actions: result.setup_actions } : {}),
+        ...(result.required_user_inputs !== undefined
+          ? { required_user_inputs: result.required_user_inputs }
+          : {}),
+      },
+      registry
+    )
 
     // Add text representation
     content.push({
@@ -207,7 +240,12 @@ export class ToolExecutor {
     }
 
     const parsed = outputSchema.safeParse(structuredContent)
-    if (!parsed.success || !parsed.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data)) {
+    if (
+      !parsed.success ||
+      !parsed.data ||
+      typeof parsed.data !== 'object' ||
+      Array.isArray(parsed.data)
+    ) {
       this.logger.warn(
         {
           issues: parsed.success ? undefined : parsed.error.issues,

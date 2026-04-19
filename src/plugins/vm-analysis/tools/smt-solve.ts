@@ -14,8 +14,18 @@ const TOOL_NAME = 'smt.solve'
 
 export const smtSolveInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  z3_script: z.string().optional().describe('Custom Z3 Python script to execute (overrides auto-extracted constraints)'),
-  timeout_ms: z.number().int().min(1000).max(300000).optional().default(30000).describe('Solver timeout in milliseconds'),
+  z3_script: z
+    .string()
+    .optional()
+    .describe('Custom Z3 Python script to execute (overrides auto-extracted constraints)'),
+  timeout_ms: z
+    .number()
+    .int()
+    .min(1000)
+    .max(300000)
+    .optional()
+    .default(30000)
+    .describe('Solver timeout in milliseconds'),
 })
 
 export const smtSolveOutputSchema = z.object({
@@ -35,9 +45,7 @@ export const smtSolveToolDefinition: ToolDefinition = {
   outputSchema: smtSolveOutputSchema,
 }
 
-function invokeWorker(
-  request: Record<string, unknown>
-): Promise<Record<string, unknown>> {
+function invokeWorker(request: Record<string, unknown>): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const workerPath = path.resolve(
       import.meta.dirname ?? '.',
@@ -51,8 +59,12 @@ function invokeWorker(
     let stdout = ''
     let stderr = ''
 
-    proc.stdout.on('data', (data: Buffer) => { stdout += data.toString() })
-    proc.stderr.on('data', (data: Buffer) => { stderr += data.toString() })
+    proc.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString()
+    })
+    proc.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString()
+    })
 
     proc.on('close', (code) => {
       if (code !== 0 && !stdout.trim()) {
@@ -104,8 +116,12 @@ export function createSmtSolveHandler(
         const artifacts: ArtifactRef[] = []
         try {
           const ref = await persistStaticAnalysisJsonArtifact(
-            workspaceManager, database, input.sample_id,
-            'smt_solution', 'z3_result', response
+            workspaceManager,
+            database,
+            input.sample_id,
+            'smt_solution',
+            'z3_result',
+            response
           )
           artifacts.push(ref)
         } catch {
@@ -113,7 +129,7 @@ export function createSmtSolveHandler(
         }
 
         return {
-          ok: (response as Record<string, unknown>).ok as boolean ?? true,
+          ok: (response.ok as boolean) ?? true,
           data: response,
           warnings: warnings.length > 0 ? warnings : undefined,
           artifacts,
@@ -131,9 +147,10 @@ export function createSmtSolveHandler(
     if (Array.isArray(evidence)) {
       for (const entry of evidence) {
         if (entry.evidence_family === 'constraint_extraction') {
-          const data = typeof entry.result_json === 'string'
-            ? JSON.parse(entry.result_json)
-            : entry.result_json
+          const data =
+            typeof entry.result_json === 'string'
+              ? JSON.parse(entry.result_json)
+              : entry.result_json
           if (data) {
             constraintData = data as Record<string, unknown>
             break
@@ -171,8 +188,12 @@ export function createSmtSolveHandler(
       const artifacts: ArtifactRef[] = []
       try {
         const ref = await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, input.sample_id,
-          'smt_solution', 'z3_result', response
+          workspaceManager,
+          database,
+          input.sample_id,
+          'smt_solution',
+          'z3_result',
+          response
         )
         artifacts.push(ref)
       } catch {
@@ -180,7 +201,7 @@ export function createSmtSolveHandler(
       }
 
       return {
-        ok: (response as Record<string, unknown>).ok as boolean ?? true,
+        ok: (response.ok as boolean) ?? true,
         data: response,
         warnings: warnings.length > 0 ? warnings : undefined,
         artifacts,

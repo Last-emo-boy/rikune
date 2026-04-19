@@ -20,11 +20,7 @@ export const KbFunctionMatchInputSchema = z.object({
     .optional()
     .default(0.7)
     .describe('Minimum similarity score to report a match (0.0-1.0)'),
-  max_matches: z
-    .number()
-    .optional()
-    .default(100)
-    .describe('Maximum matches to return'),
+  max_matches: z.number().optional().default(100).describe('Maximum matches to return'),
 })
 
 export const kbFunctionMatchToolDefinition: ToolDefinition = {
@@ -99,7 +95,11 @@ export function createKbFunctionMatchHandler(deps: PluginToolDeps) {
                 : entry.result_json
             const family = entry.evidence_family ?? ''
 
-            if (family === 'function_index' || family === 'function_list' || family === 'ghidra_functions') {
+            if (
+              family === 'function_index' ||
+              family === 'function_list' ||
+              family === 'ghidra_functions'
+            ) {
               const funcs = data?.data?.functions ?? data?.functions ?? []
               for (const f of funcs) {
                 targetFunctions.push({
@@ -112,12 +112,17 @@ export function createKbFunctionMatchHandler(deps: PluginToolDeps) {
                 })
               }
             }
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
       }
 
       if (targetFunctions.length === 0) {
-        return { ok: false, errors: ['No function data found for target sample. Run function analysis first.'] }
+        return {
+          ok: false,
+          errors: ['No function data found for target sample. Run function analysis first.'],
+        }
       }
 
       // Collect reference functions from other samples
@@ -142,7 +147,11 @@ export function createKbFunctionMatchHandler(deps: PluginToolDeps) {
                   : entry.result_json
               const family = entry.evidence_family ?? ''
 
-              if (family === 'function_index' || family === 'function_list' || family === 'ghidra_functions') {
+              if (
+                family === 'function_index' ||
+                family === 'function_list' ||
+                family === 'ghidra_functions'
+              ) {
                 const funcs = data?.data?.functions ?? data?.functions ?? []
                 for (const f of funcs) {
                   referenceFunctions.push({
@@ -155,13 +164,17 @@ export function createKbFunctionMatchHandler(deps: PluginToolDeps) {
                   })
                 }
               }
-            } catch { /* skip */ }
+            } catch {
+              /* skip */
+            }
           }
         }
       }
 
       if (referenceFunctions.length === 0) {
-        warnings.push('No reference functions found. Provide match_against sample IDs or build KB first.')
+        warnings.push(
+          'No reference functions found. Provide match_against sample IDs or build KB first.'
+        )
       }
 
       // Match functions
@@ -206,18 +219,26 @@ export function createKbFunctionMatchHandler(deps: PluginToolDeps) {
         reference_function_count: referenceFunctions.length,
         match_count: topMatches.length,
         exact_matches: topMatches.filter((m) => m.confidence >= 0.99).length,
-        high_confidence_matches: topMatches.filter((m) => m.confidence >= 0.8 && m.confidence < 0.99).length,
+        high_confidence_matches: topMatches.filter(
+          (m) => m.confidence >= 0.8 && m.confidence < 0.99
+        ).length,
         matches: topMatches,
       }
 
       const artifacts: ArtifactRef[] = []
       try {
         const artRef = await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, args.sample_id,
-          'function_match', 'kb-function-match', resultData
+          workspaceManager,
+          database,
+          args.sample_id,
+          'function_match',
+          'kb-function-match',
+          resultData
         )
         if (artRef) artifacts.push(artRef)
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
       return {
         ok: true,

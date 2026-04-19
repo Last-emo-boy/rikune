@@ -3,16 +3,14 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult , PluginToolDeps} from '../../sdk.js'
+import type { ToolDefinition, WorkerResult, PluginToolDeps } from '../../sdk.js'
 import { getDebugSessionManager } from '../debug/debug-session-state.js'
 
 const TOOL_NAME = 'debug.session.inspect'
 
 export const DebugSessionInspectInputSchema = z.object({
   session_id: z.string().describe('Debug session ID'),
-  target: z
-    .enum(['registers', 'memory', 'stack', 'disasm'])
-    .describe('What to inspect'),
+  target: z.enum(['registers', 'memory', 'stack', 'disasm']).describe('What to inspect'),
   address: z
     .string()
     .optional()

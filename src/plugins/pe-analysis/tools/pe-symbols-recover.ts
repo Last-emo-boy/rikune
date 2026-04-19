@@ -1,19 +1,24 @@
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult , PluginToolDeps} from '../../sdk.js'
+import type { ToolDefinition, ToolArgs, WorkerResult, PluginToolDeps } from '../../sdk.js'
 import { generateCacheKey } from '../../../cache-manager.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
 import { smartRecoverFunctionsFromPE } from '../../../pe-runtime-functions.js'
 import { createStringsExtractHandler } from '../../strings/tools/strings-extract.js'
 import { createRuntimeDetectHandler } from '../../static-triage/tools/runtime-detect.js'
 import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
-import { demangleRustSymbol, normalizeSymbolList, type DemangledSymbol } from '../../../tools/rust-demangle.js'
+import {
+  demangleRustSymbol,
+  normalizeSymbolList,
+  type DemangledSymbol,
+} from '../../../tools/rust-demangle.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 
 const TOOL_NAME = 'pe.symbols.recover'
 const TOOL_VERSION = '0.1.0'
 const CACHE_TTL_MS = CACHE_TTL_30_DAYS
 
-const cargoPathPattern = /(?:^|[\\/])cargo[\\/](?:registry|git)[\\/][^\\/]+[\\/](?<crate>[A-Za-z0-9_.-]+?)(?:-\d[\w.+-]*)?(?:[\\/]|$)/i
+const cargoPathPattern =
+  /(?:^|[\\/])cargo[\\/](?:registry|git)[\\/][^\\/]+[\\/](?<crate>[A-Za-z0-9_.-]+?)(?:-\d[\w.+-]*)?(?:[\\/]|$)/i
 
 const rustMarkers = [
   'rust_panic',
@@ -117,11 +122,13 @@ interface SymbolRecoverDependencies {
 }
 
 function normalizeSymbolBase(name: string): string {
-  return name
-    .replace(/[^A-Za-z0-9_]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .replace(/_{2,}/g, '_')
-    .toLowerCase() || 'recovered_function'
+  return (
+    name
+      .replace(/[^A-Za-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .replace(/_{2,}/g, '_')
+      .toLowerCase() || 'recovered_function'
+  )
 }
 
 function extractCrateHints(strings: string[]): string[] {
@@ -143,15 +150,17 @@ function inferRuntimeHints(
 ): { primaryRuntime: string | null; runtimeHints: string[] } {
   const runtimeHints = new Set<string>()
   let primaryRuntime =
-    runtimeData?.suspected
-      ?.slice()
-      .sort((left, right) => right.confidence - left.confidence)[0]?.runtime || null
+    runtimeData?.suspected?.slice().sort((left, right) => right.confidence - left.confidence)[0]
+      ?.runtime || null
 
   for (const suspected of runtimeData?.suspected || []) {
     runtimeHints.add(suspected.runtime)
   }
 
-  if (crateHints.length > 0 || strings.some((value) => rustMarkers.some((marker) => value.includes(marker)))) {
+  if (
+    crateHints.length > 0 ||
+    strings.some((value) => rustMarkers.some((marker) => value.includes(marker)))
+  ) {
     runtimeHints.add('rust')
     primaryRuntime = primaryRuntime || 'rust'
   }
@@ -254,8 +263,12 @@ function recoverSymbolName(options: {
 
 export function createPESymbolsRecoverHandler(deps: PluginToolDeps) {
   const { workspaceManager, database, cacheManager } = deps
-  const stringsHandler = (deps.stringsHandler as ((args: ToolArgs) => Promise<WorkerResult>) | undefined) || createStringsExtractHandler(workspaceManager, database, cacheManager)
-  const runtimeHandler = (deps.runtimeHandler as ((args: ToolArgs) => Promise<WorkerResult>) | undefined) || createRuntimeDetectHandler(workspaceManager, database, cacheManager)
+  const stringsHandler =
+    (deps.stringsHandler as ((args: ToolArgs) => Promise<WorkerResult>) | undefined) ||
+    createStringsExtractHandler(workspaceManager, database, cacheManager)
+  const runtimeHandler =
+    (deps.runtimeHandler as ((args: ToolArgs) => Promise<WorkerResult>) | undefined) ||
+    createRuntimeDetectHandler(workspaceManager, database, cacheManager)
 
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const input = peSymbolsRecoverInputSchema.parse(args)
@@ -308,11 +321,19 @@ export function createPESymbolsRecoverHandler(deps: PluginToolDeps) {
         }),
       ])
 
-      const stringsData = (stringsResult.ok ? stringsResult.data : undefined) as StringsData | undefined
-      const runtimeData = (runtimeResult.ok ? runtimeResult.data : undefined) as RuntimeDetectData | undefined
+      const stringsData = (stringsResult.ok ? stringsResult.data : undefined) as
+        | StringsData
+        | undefined
+      const runtimeData = (runtimeResult.ok ? runtimeResult.data : undefined) as
+        | RuntimeDetectData
+        | undefined
       const rawStrings = (stringsData?.strings || []).map((item) => item.string)
       const crateHints = extractCrateHints(rawStrings)
-      const { primaryRuntime, runtimeHints } = inferRuntimeHints(runtimeData, rawStrings, crateHints)
+      const { primaryRuntime, runtimeHints } = inferRuntimeHints(
+        runtimeData,
+        rawStrings,
+        crateHints
+      )
 
       const symbols = recovery.functions.map((item) => {
         const unwindFlags = item.unwind?.flagNames || []

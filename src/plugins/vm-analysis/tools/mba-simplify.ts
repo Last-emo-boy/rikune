@@ -86,9 +86,10 @@ export function createMbaSimplifyHandler(
       }
     }
 
-    const totalReduction = results.length > 0
-      ? Math.round(results.reduce((s, r) => s + r.reduction_percent, 0) / results.length)
-      : 0
+    const totalReduction =
+      results.length > 0
+        ? Math.round(results.reduce((s, r) => s + r.reduction_percent, 0) / results.length)
+        : 0
 
     return {
       ok: true,

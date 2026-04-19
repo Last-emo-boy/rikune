@@ -64,6 +64,18 @@ check_optional_command() {
     fi
 }
 
+plugin_enabled() {
+    local plugin_name=$1
+    case ",${PLUGINS:-}," in
+        *,"$plugin_name",*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+require_ghidra() {
+    plugin_enabled "ghidra"
+}
+
 # Check if a directory exists, create if not
 ensure_dir() {
     local dir_path=$1
@@ -71,8 +83,14 @@ ensure_dir() {
     
     if [ ! -d "$dir_path" ]; then
         log_info "Creating directory: $dir_path"
-        mkdir -p "$dir_path"
-        chown "$owner" "$dir_path"
+        if ! mkdir -p "$dir_path"; then
+            log_warn "Could not create directory: $dir_path"
+            return 1
+        fi
+    fi
+
+    if ! chown "$owner:$owner" "$dir_path" 2>/dev/null; then
+        log_warn "Could not chown $dir_path"
     fi
 }
 
@@ -92,11 +110,29 @@ ensure_optional_dir() {
 
 log_info "=== Validating Environment Variables ==="
 
-check_env GHIDRA_INSTALL_DIR
-check_env JAVA_HOME
 check_env WORKSPACE_ROOT
 check_env DB_PATH
 check_env CACHE_ROOT
+
+if require_ghidra; then
+    check_env GHIDRA_INSTALL_DIR
+else
+    if [ -n "${GHIDRA_INSTALL_DIR:-}" ]; then
+        log_info "GHIDRA_INSTALL_DIR=$GHIDRA_INSTALL_DIR"
+    else
+        log_info "GHIDRA_INSTALL_DIR is not set; Ghidra plugin is not enabled for this profile"
+    fi
+fi
+
+if require_ghidra; then
+    check_env JAVA_HOME
+else
+    if [ -n "${JAVA_HOME:-}" ]; then
+        log_info "JAVA_HOME=$JAVA_HOME"
+    else
+        log_info "JAVA_HOME is not set; Ghidra plugin is not enabled for this profile"
+    fi
+fi
 
 # Optional variables (log if set)
 if [ -n "$GHIDRA_PROJECT_ROOT" ]; then
@@ -131,30 +167,40 @@ else
     exit 1
 fi
 
-# Check Java
+# Check Java. Required for Ghidra profiles, optional otherwise.
 if command -v java &> /dev/null; then
     JAVA_VERSION=$(java -version 2>&1 | head -n 1)
     log_info "Java available: $JAVA_VERSION"
-else
+elif require_ghidra; then
     log_error "Java is not installed"
     exit 1
+else
+    log_warn "Java is not available on PATH; Ghidra plugin is disabled for this profile"
 fi
 
-# Check Ghidra analyzeHeadless
-if [ -f "$GHIDRA_INSTALL_DIR/support/analyzeHeadless" ]; then
+# Check Ghidra analyzeHeadless. Required only when the ghidra plugin is enabled.
+if require_ghidra && [ -f "$GHIDRA_INSTALL_DIR/support/analyzeHeadless" ]; then
     log_info "Ghidra analyzeHeadless found at: $GHIDRA_INSTALL_DIR/support/analyzeHeadless"
-else
-    log_error "Ghidra analyzeHeadless not found at: $GHIDRA_INSTALL_DIR/support/analyzeHeadless"
+elif require_ghidra; then
+    log_error "Ghidra plugin is enabled but analyzeHeadless was not found at: $GHIDRA_INSTALL_DIR/support/analyzeHeadless"
     exit 1
+else
+    log_info "Ghidra plugin is disabled for this profile; skipping analyzeHeadless check"
 fi
 
 check_optional_command "Graphviz dot" "${GRAPHVIZ_DOT_PATH:-dot}" "-V"
 check_optional_command "Rizin" "${RIZIN_PATH:-rizin}" "-v"
 check_optional_command "UPX" "${UPX_PATH:-upx}" "--version"
-check_optional_command "Wine" "${WINE_PATH:-wine}" "--version"
+if [ "${RUNTIME_MODE:-disabled}" = "remote-sandbox" ]; then
+    log_info "Wine delegated to remote runtime"
+else
+    check_optional_command "Wine" "${WINE_PATH:-wine}" "--version"
+fi
 check_optional_command "RetDec" "${RETDEC_PATH:-retdec-decompiler}" "--help"
 
-if command -v frida-ps >/dev/null 2>&1; then
+if [ "${RUNTIME_MODE:-disabled}" = "remote-sandbox" ]; then
+    log_info "Frida CLI delegated to remote runtime"
+elif command -v frida-ps >/dev/null 2>&1; then
     log_info "Frida CLI available: $(frida-ps --help 2>&1 | head -n 1 || true)"
 else
     log_warn "Frida CLI is not available on PATH"
@@ -166,13 +212,17 @@ else
     log_warn "ANGR_PYTHON is not executable: ${ANGR_PYTHON:-unset}"
 fi
 
-if [ -x "${QILING_PYTHON:-}" ]; then
+if [ "${RUNTIME_MODE:-disabled}" = "remote-sandbox" ]; then
+    log_info "Qiling runtime delegated to remote runtime"
+elif [ -x "${QILING_PYTHON:-}" ]; then
     log_info "Qiling runtime available at ${QILING_PYTHON}"
 else
     log_warn "QILING_PYTHON is not executable: ${QILING_PYTHON:-unset}"
 fi
 
-if [ -x "${PANDA_PYTHON:-}" ]; then
+if [ "${RUNTIME_MODE:-disabled}" = "remote-sandbox" ]; then
+    log_info "PANDA runtime delegated to remote runtime"
+elif [ -x "${PANDA_PYTHON:-}" ]; then
     log_info "PANDA runtime available at ${PANDA_PYTHON}"
 else
     log_warn "PANDA_PYTHON is not executable: ${PANDA_PYTHON:-unset}"
@@ -193,6 +243,10 @@ fi
 ensure_dir "$WORKSPACE_ROOT" "appuser"
 ensure_dir "$(dirname $DB_PATH)" "appuser"
 ensure_dir "$CACHE_ROOT" "appuser"
+if [ -n "$HOME" ]; then
+    ensure_dir "$HOME" "appuser"
+    ensure_dir "$HOME/.cache" "appuser"
+fi
 ensure_dir "/app/logs" "appuser"
 if [ -n "$XDG_CONFIG_HOME" ]; then
     ensure_dir "$XDG_CONFIG_HOME" "appuser"
@@ -215,7 +269,7 @@ DB_DIR=$(dirname "$DB_PATH")
 if [ ! -d "$DB_DIR" ]; then
     log_info "Creating database directory: $DB_DIR"
     mkdir -p "$DB_DIR"
-    chown appuser:appuser "$DB_DIR"
+    chown appuser:appuser "$DB_DIR" 2>/dev/null || log_warn "Could not chown $DB_DIR"
 fi
 
 # =============================================================================

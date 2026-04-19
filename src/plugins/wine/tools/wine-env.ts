@@ -14,21 +14,34 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
   SharedMetricsSchema,
-  executeCommand, normalizeError, buildMetrics, buildDynamicSetupRequired,
+  executeCommand,
+  normalizeError,
+  buildMetrics,
+  buildDynamicSetupRequired,
   resolveAnalysisBackends,
 } from '../../docker-shared.js'
 
 const inputSchema = z.object({
-  action: z.enum(['create', 'inspect', 'list', 'remove']).describe(
-    'create: initialise a new WINEPREFIX; inspect: show details of an existing prefix; list: list all prefixes; remove: delete a prefix'
-  ),
-  prefix_name: z.string().optional().describe(
-    'Name for the Wine prefix directory. Required for create/inspect/remove.'
-  ),
-  arch: z.enum(['win32', 'win64']).default('win64').describe(
-    'Architecture for new prefix (WINEARCH). win32 = 32-bit, win64 = 64-bit.'
-  ),
-  timeout_sec: z.number().int().min(5).max(120).default(60).describe('Timeout for wineboot initialisation.'),
+  action: z
+    .enum(['create', 'inspect', 'list', 'remove'])
+    .describe(
+      'create: initialise a new WINEPREFIX; inspect: show details of an existing prefix; list: list all prefixes; remove: delete a prefix'
+    ),
+  prefix_name: z
+    .string()
+    .optional()
+    .describe('Name for the Wine prefix directory. Required for create/inspect/remove.'),
+  arch: z
+    .enum(['win32', 'win64'])
+    .default('win64')
+    .describe('Architecture for new prefix (WINEARCH). win32 = 32-bit, win64 = 64-bit.'),
+  timeout_sec: z
+    .number()
+    .int()
+    .min(5)
+    .max(120)
+    .default(60)
+    .describe('Timeout for wineboot initialisation.'),
 })
 
 export const wineEnvToolDefinition: ToolDefinition = {
@@ -61,7 +74,7 @@ export function createWineEnvHandler(wm: WorkspaceManager, _db: DatabaseManager)
 
       if (input.action === 'list') {
         const entries = existsSync(prefixRoot)
-          ? readdirSync(prefixRoot).filter(e => statSync(join(prefixRoot, e)).isDirectory())
+          ? readdirSync(prefixRoot).filter((e) => statSync(join(prefixRoot, e)).isDirectory())
           : []
         return {
           ok: true,
@@ -75,7 +88,11 @@ export function createWineEnvHandler(wm: WorkspaceManager, _db: DatabaseManager)
       }
 
       if (!input.prefix_name) {
-        return { ok: false, errors: ['prefix_name is required for create/inspect/remove'], metrics: buildMetrics(startTime, 'wine.env') }
+        return {
+          ok: false,
+          errors: ['prefix_name is required for create/inspect/remove'],
+          metrics: buildMetrics(startTime, 'wine.env'),
+        }
       }
 
       // Sanitize prefix name to prevent path traversal
@@ -84,14 +101,25 @@ export function createWineEnvHandler(wm: WorkspaceManager, _db: DatabaseManager)
 
       if (input.action === 'create') {
         if (existsSync(prefixPath)) {
-          return { ok: false, errors: [`Prefix '${safeName}' already exists at ${prefixPath}`], metrics: buildMetrics(startTime, 'wine.env') }
+          return {
+            ok: false,
+            errors: [`Prefix '${safeName}' already exists at ${prefixPath}`],
+            metrics: buildMetrics(startTime, 'wine.env'),
+          }
         }
         mkdirSync(prefixPath, { recursive: true })
         const result = await executeCommand(
           wine.path,
           ['wineboot', '--init'],
           input.timeout_sec * 1000,
-          { env: { ...process.env, WINEPREFIX: prefixPath, WINEARCH: input.arch, WINEDEBUG: '-all' } }
+          {
+            env: {
+              ...process.env,
+              WINEPREFIX: prefixPath,
+              WINEARCH: input.arch,
+              WINEDEBUG: '-all',
+            },
+          }
         )
         return {
           ok: result.exitCode === 0,
@@ -109,7 +137,11 @@ export function createWineEnvHandler(wm: WorkspaceManager, _db: DatabaseManager)
 
       if (input.action === 'inspect') {
         if (!existsSync(prefixPath)) {
-          return { ok: false, errors: [`Prefix '${safeName}' does not exist`], metrics: buildMetrics(startTime, 'wine.env') }
+          return {
+            ok: false,
+            errors: [`Prefix '${safeName}' does not exist`],
+            metrics: buildMetrics(startTime, 'wine.env'),
+          }
         }
         const stat = statSync(prefixPath)
         const driveC = join(prefixPath, 'drive_c')
@@ -130,7 +162,11 @@ export function createWineEnvHandler(wm: WorkspaceManager, _db: DatabaseManager)
 
       if (input.action === 'remove') {
         if (!existsSync(prefixPath)) {
-          return { ok: false, errors: [`Prefix '${safeName}' does not exist`], metrics: buildMetrics(startTime, 'wine.env') }
+          return {
+            ok: false,
+            errors: [`Prefix '${safeName}' does not exist`],
+            metrics: buildMetrics(startTime, 'wine.env'),
+          }
         }
         rmSync(prefixPath, { recursive: true, force: true })
         return {
@@ -142,7 +178,11 @@ export function createWineEnvHandler(wm: WorkspaceManager, _db: DatabaseManager)
 
       return { ok: false, errors: ['Unknown action'], metrics: buildMetrics(startTime, 'wine.env') }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, 'wine.env') }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, 'wine.env'),
+      }
     }
   }
 }

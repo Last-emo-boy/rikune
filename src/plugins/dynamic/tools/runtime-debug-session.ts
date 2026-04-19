@@ -14,7 +14,10 @@ import path from 'path'
 import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
 import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
-import { resolveRuntimeSidecarUploads, type RuntimeSidecarUpload } from '../../../runtime-client/sidecar-staging.js'
+import {
+  resolveRuntimeSidecarUploads,
+  type RuntimeSidecarUpload,
+} from '../../../runtime-client/sidecar-staging.js'
 
 const SESSION_START_TOOL = 'runtime.debug.session.start'
 const SESSION_STATUS_TOOL = 'runtime.debug.session.status'
@@ -55,25 +58,76 @@ const RuntimeBackendHintSchema = z.object({
 })
 
 export const RuntimeDebugSessionStartInputSchema = z.object({
-  host_agent_endpoint: z.string().url().optional().describe('Override Host Agent endpoint. Defaults to runtime.hostAgentEndpoint.'),
-  host_agent_api_key: z.string().optional().describe('Override Host Agent API key. Defaults to runtime.hostAgentApiKey.'),
-  runtime_api_key: z.string().optional().describe('Runtime Node API key to pass through to the runtime. Defaults to runtime.apiKey.'),
-  sample_id: z.string().optional().describe('Optional sample id to bind this runtime debug session to the persisted debug session table.'),
-  timeout_ms: z.number().int().min(1000).max(10 * 60 * 1000).optional().default(120_000),
-  manual_endpoint: z.string().url().optional().describe('Attach to an already running Runtime Node instead of asking Host Agent to start one.'),
+  host_agent_endpoint: z
+    .string()
+    .url()
+    .optional()
+    .describe('Override Host Agent endpoint. Defaults to runtime.hostAgentEndpoint.'),
+  host_agent_api_key: z
+    .string()
+    .optional()
+    .describe('Override Host Agent API key. Defaults to runtime.hostAgentApiKey.'),
+  runtime_api_key: z
+    .string()
+    .optional()
+    .describe('Runtime Node API key to pass through to the runtime. Defaults to runtime.apiKey.'),
+  sample_id: z
+    .string()
+    .optional()
+    .describe(
+      'Optional sample id to bind this runtime debug session to the persisted debug session table.'
+    ),
+  timeout_ms: z
+    .number()
+    .int()
+    .min(1000)
+    .max(10 * 60 * 1000)
+    .optional()
+    .default(120_000),
+  manual_endpoint: z
+    .string()
+    .url()
+    .optional()
+    .describe(
+      'Attach to an already running Runtime Node instead of asking Host Agent to start one.'
+    ),
   hyperv_retention_policy: z
     .enum(['clean_rollback', 'stop_only', 'preserve_dirty'])
     .optional()
-    .describe('High-level Hyper-V release policy. clean_rollback restores a checkpoint on release, stop_only powers off the VM, preserve_dirty leaves the VM state available for manual review.'),
-  hyperv_snapshot_name: z.string().optional().describe('Optional Hyper-V checkpoint name forwarded to Host Agent when backend=hyperv-vm.'),
-  hyperv_restore_on_start: z.boolean().optional().describe('Override Hyper-V restore-on-start policy for this session.'),
-  hyperv_restore_on_release: z.boolean().optional().describe('Override Hyper-V restore-on-release policy for this session.'),
-  hyperv_stop_on_release: z.boolean().optional().describe('Override Hyper-V stop-on-release policy for this session. Use false to preserve dirty VM state after release.'),
+    .describe(
+      'High-level Hyper-V release policy. clean_rollback restores a checkpoint on release, stop_only powers off the VM, preserve_dirty leaves the VM state available for manual review.'
+    ),
+  hyperv_snapshot_name: z
+    .string()
+    .optional()
+    .describe('Optional Hyper-V checkpoint name forwarded to Host Agent when backend=hyperv-vm.'),
+  hyperv_restore_on_start: z
+    .boolean()
+    .optional()
+    .describe('Override Hyper-V restore-on-start policy for this session.'),
+  hyperv_restore_on_release: z
+    .boolean()
+    .optional()
+    .describe('Override Hyper-V restore-on-release policy for this session.'),
+  hyperv_stop_on_release: z
+    .boolean()
+    .optional()
+    .describe(
+      'Override Hyper-V stop-on-release policy for this session. Use false to preserve dirty VM state after release.'
+    ),
 })
 
 export const RuntimeDebugSessionStatusInputSchema = z.object({
-  session_id: z.string().optional().describe('Runtime debug session id. Omit to list tracked sessions and Host Agent health.'),
-  sample_id: z.string().optional().describe('Optional sample id used to include persisted runtime debug sessions for this sample.'),
+  session_id: z
+    .string()
+    .optional()
+    .describe('Runtime debug session id. Omit to list tracked sessions and Host Agent health.'),
+  sample_id: z
+    .string()
+    .optional()
+    .describe(
+      'Optional sample id used to include persisted runtime debug sessions for this sample.'
+    ),
   limit: z.number().int().min(1).max(200).optional().default(20),
   host_agent_endpoint: z.string().url().optional(),
   host_agent_api_key: z.string().optional(),
@@ -81,35 +135,64 @@ export const RuntimeDebugSessionStatusInputSchema = z.object({
 })
 
 export const RuntimeDebugSessionStopInputSchema = z.object({
-  session_id: z.string().describe('Runtime debug session id returned by runtime.debug.session.start'),
+  session_id: z
+    .string()
+    .describe('Runtime debug session id returned by runtime.debug.session.start'),
   host_agent_endpoint: z.string().url().optional(),
   host_agent_api_key: z.string().optional(),
 })
 
 export const RuntimeDebugCommandInputSchema = z.object({
-  session_id: z.string().describe('Runtime debug session id returned by runtime.debug.session.start'),
+  session_id: z
+    .string()
+    .describe('Runtime debug session id returned by runtime.debug.session.start'),
   tool: z
     .string()
     .min(1)
     .default('debug.session.inspect')
-    .describe('Runtime tool name to execute, e.g. debug.session.start, debug.session.inspect, sandbox.execute, dynamic.memory_dump.'),
-  sample_id: z.string().optional().describe('Optional sample id. When provided, the sample is uploaded to the runtime inbox for this task.'),
+    .describe(
+      'Runtime tool name to execute, e.g. debug.session.start, debug.session.inspect, sandbox.execute, dynamic.memory_dump.'
+    ),
+  sample_id: z
+    .string()
+    .optional()
+    .describe(
+      'Optional sample id. When provided, the sample is uploaded to the runtime inbox for this task.'
+    ),
   sidecar_paths: z
     .array(z.string())
     .optional()
     .default([])
-    .describe('Optional local sidecar files, such as DLLs or config files, to stage next to the sample inside the Runtime Node.'),
+    .describe(
+      'Optional local sidecar files, such as DLLs or config files, to stage next to the sample inside the Runtime Node.'
+    ),
   auto_stage_sidecars: z
     .boolean()
     .optional()
     .default(true)
-    .describe('Best-effort scan of the sample directory for common sidecar files (.dll, .config, .json, .dat, etc.) before upload.'),
+    .describe(
+      'Best-effort scan of the sample directory for common sidecar files (.dll, .config, .json, .dat, etc.) before upload.'
+    ),
   max_sidecars: z.number().int().min(0).max(256).optional().default(32),
-  sidecar_max_total_bytes: z.number().int().min(0).max(1024 * 1024 * 1024).optional().default(128 * 1024 * 1024),
+  sidecar_max_total_bytes: z
+    .number()
+    .int()
+    .min(0)
+    .max(1024 * 1024 * 1024)
+    .optional()
+    .default(128 * 1024 * 1024),
   args: z.record(z.string(), z.unknown()).optional().default({}),
-  runtime_backend_hint: RuntimeBackendHintSchema.optional().describe('Runtime backend hint. Defaults to inline/executeDebugSession for debug.session.* tools.'),
+  runtime_backend_hint: RuntimeBackendHintSchema.optional().describe(
+    'Runtime backend hint. Defaults to inline/executeDebugSession for debug.session.* tools.'
+  ),
   runtime_api_key: z.string().optional(),
-  timeout_ms: z.number().int().min(1000).max(30 * 60 * 1000).optional().default(120_000),
+  timeout_ms: z
+    .number()
+    .int()
+    .min(1000)
+    .max(30 * 60 * 1000)
+    .optional()
+    .default(120_000),
 })
 
 const RuntimeDebugOutputSchema = z.object({
@@ -184,11 +267,7 @@ async function fetchJson(
 
 async function runtimeHealth(endpoint: string, runtimeApiKey?: string): Promise<unknown> {
   const healthUrl = new URL('/health', endpoint).toString()
-  const response = await fetchJson(
-    healthUrl,
-    { headers: getAuthHeader(runtimeApiKey) },
-    10_000
-  )
+  const response = await fetchJson(healthUrl, { headers: getAuthHeader(runtimeApiKey) }, 10_000)
   if (!response.ok) {
     return {
       ok: false,
@@ -199,17 +278,26 @@ async function runtimeHealth(endpoint: string, runtimeApiKey?: string): Promise<
   return response.body
 }
 
-function resolveHostAgentEndpoint(inputEndpoint: string | undefined, deps: PluginToolDeps): string | undefined {
+function resolveHostAgentEndpoint(
+  inputEndpoint: string | undefined,
+  deps: PluginToolDeps
+): string | undefined {
   const runtime = getRuntimeConfig(deps)
   return inputEndpoint || runtime.hostAgentEndpoint
 }
 
-function resolveHostAgentApiKey(inputKey: string | undefined, deps: PluginToolDeps): string | undefined {
+function resolveHostAgentApiKey(
+  inputKey: string | undefined,
+  deps: PluginToolDeps
+): string | undefined {
   const runtime = getRuntimeConfig(deps)
   return inputKey || runtime.hostAgentApiKey
 }
 
-function resolveRuntimeApiKey(inputKey: string | undefined, deps: PluginToolDeps): string | undefined {
+function resolveRuntimeApiKey(
+  inputKey: string | undefined,
+  deps: PluginToolDeps
+): string | undefined {
   const runtime = getRuntimeConfig(deps)
   return inputKey || runtime.apiKey
 }
@@ -250,7 +338,9 @@ function resolveHyperVStartPolicy(input: z.infer<typeof RuntimeDebugSessionStart
   }
 }
 
-function buildDefaultRuntimeBackendHint(tool: string): z.infer<typeof RuntimeBackendHintSchema> | undefined {
+function buildDefaultRuntimeBackendHint(
+  tool: string
+): z.infer<typeof RuntimeBackendHintSchema> | undefined {
   if (tool.startsWith('debug.session.')) {
     return { type: 'inline', handler: 'executeDebugSession' }
   }
@@ -308,7 +398,7 @@ function parseJsonObject(value: unknown): Record<string, unknown> {
   try {
     const parsed = JSON.parse(value)
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
+      ? (parsed as Record<string, unknown>)
       : {}
   } catch {
     return {}
@@ -324,13 +414,14 @@ function parseArtifactRefs(value: unknown): ArtifactRef[] {
     if (!Array.isArray(parsed)) {
       return []
     }
-    return parsed.filter((entry): entry is ArtifactRef =>
-      entry &&
-      typeof entry === 'object' &&
-      typeof (entry as ArtifactRef).id === 'string' &&
-      typeof (entry as ArtifactRef).type === 'string' &&
-      typeof (entry as ArtifactRef).path === 'string' &&
-      typeof (entry as ArtifactRef).sha256 === 'string'
+    return parsed.filter(
+      (entry): entry is ArtifactRef =>
+        entry &&
+        typeof entry === 'object' &&
+        typeof (entry as ArtifactRef).id === 'string' &&
+        typeof (entry as ArtifactRef).type === 'string' &&
+        typeof (entry as ArtifactRef).path === 'string' &&
+        typeof (entry as ArtifactRef).sha256 === 'string'
     )
   } catch {
     return []
@@ -351,19 +442,23 @@ function buildRuntimeDebugGuidance(status: string): Record<string, unknown> {
       'dynamic.trace.import',
       'dynamic.memory.import',
     ],
-    next_actions: status === 'captured'
-      ? [
-          'Review imported runtime_debug_artifact records with artifact.read or artifacts.list.',
-          'Use dynamic.trace.import or dynamic.memory.import when the runtime command produced trace or dump outputs.',
-        ]
-      : [
-          'Dispatch a runtime.debug.command using one of the advertised Runtime Node backend handlers.',
-          'Call runtime.debug.session.status before long-running commands to confirm runtime health and capabilities.',
-        ],
+    next_actions:
+      status === 'captured'
+        ? [
+            'Review imported runtime_debug_artifact records with artifact.read or artifacts.list.',
+            'Use dynamic.trace.import or dynamic.memory.import when the runtime command produced trace or dump outputs.',
+          ]
+        : [
+            'Dispatch a runtime.debug.command using one of the advertised Runtime Node backend handlers.',
+            'Call runtime.debug.session.status before long-running commands to confirm runtime health and capabilities.',
+          ],
   }
 }
 
-function buildSessionMetadata(session: RuntimeDebugSession, extra: Record<string, unknown> = {}): Record<string, unknown> {
+function buildSessionMetadata(
+  session: RuntimeDebugSession,
+  extra: Record<string, unknown> = {}
+): Record<string, unknown> {
   return {
     runtime_debug_schema: 'v1',
     endpoint: session.endpoint,
@@ -379,7 +474,10 @@ function buildSessionMetadata(session: RuntimeDebugSession, extra: Record<string
   }
 }
 
-function resolveSampleMetadata(deps: PluginToolDeps, sampleId: string): { sampleId: string; sha256: string } | null {
+function resolveSampleMetadata(
+  deps: PluginToolDeps,
+  sampleId: string
+): { sampleId: string; sha256: string } | null {
   const sample = deps.database?.findSample?.(sampleId)
   if (sample && typeof sample.sha256 === 'string') {
     return { sampleId, sha256: sample.sha256 }
@@ -418,7 +516,9 @@ async function persistRuntimeSession(
   const now = new Date().toISOString()
   const artifactRefs = session.artifactRefs || []
   const status = updates.status || 'armed'
-  const debugState = updates.debugState || (status === 'captured' ? 'captured' : status === 'capturing' ? 'capturing' : 'armed')
+  const debugState =
+    updates.debugState ||
+    (status === 'captured' ? 'captured' : status === 'capturing' ? 'capturing' : 'armed')
   const phase = updates.phase || 'runtime_ready'
   const metadataJson = JSON.stringify(buildSessionMetadata(session, updates.metadata), null, 2)
   const guidanceJson = JSON.stringify(buildRuntimeDebugGuidance(status), null, 2)
@@ -464,7 +564,10 @@ async function persistRuntimeSession(
   session.sampleSha256 = sample.sha256
 }
 
-function restorePersistedSession(deps: PluginToolDeps, sessionId: string): RuntimeDebugSession | undefined {
+function restorePersistedSession(
+  deps: PluginToolDeps,
+  sessionId: string
+): RuntimeDebugSession | undefined {
   const row = deps.database?.findDebugSession?.(sessionId)
   if (!row) {
     return undefined
@@ -480,9 +583,12 @@ function restorePersistedSession(deps: PluginToolDeps, sessionId: string): Runti
     sessionId: row.id,
     endpoint,
     sandboxId: typeof metadata.sandbox_id === 'string' ? metadata.sandbox_id : undefined,
-    backend: typeof metadata.backend === 'string' ? metadata.backend : row.backend ?? undefined,
+    backend: typeof metadata.backend === 'string' ? metadata.backend : (row.backend ?? undefined),
     startedAt: row.created_at,
-    stoppedAt: typeof metadata.stopped_at === 'string' ? metadata.stopped_at : row.finished_at ?? undefined,
+    stoppedAt:
+      typeof metadata.stopped_at === 'string'
+        ? metadata.stopped_at
+        : (row.finished_at ?? undefined),
     status: row.status,
     debugState: row.debug_state,
     sampleId: row.sample_id,
@@ -490,17 +596,23 @@ function restorePersistedSession(deps: PluginToolDeps, sessionId: string): Runti
     persisted: true,
     lastTaskId: typeof metadata.last_task_id === 'string' ? metadata.last_task_id : undefined,
     lastHealth: metadata.last_health,
-    capabilities: Array.isArray(metadata.capabilities) ? metadata.capabilities as RuntimeBackendCapability[] : null,
+    capabilities: Array.isArray(metadata.capabilities)
+      ? (metadata.capabilities as RuntimeBackendCapability[])
+      : null,
     artifactRefs: parseArtifactRefs(row.artifact_refs_json),
-    hypervPolicy: metadata.hyperv_policy && typeof metadata.hyperv_policy === 'object'
-      ? metadata.hyperv_policy as Record<string, unknown>
-      : undefined,
+    hypervPolicy:
+      metadata.hyperv_policy && typeof metadata.hyperv_policy === 'object'
+        ? (metadata.hyperv_policy as Record<string, unknown>)
+        : undefined,
   }
   sessions.set(sessionId, session)
   return session
 }
 
-function getRuntimeDebugSession(deps: PluginToolDeps, sessionId: string): RuntimeDebugSession | undefined {
+function getRuntimeDebugSession(
+  deps: PluginToolDeps,
+  sessionId: string
+): RuntimeDebugSession | undefined {
   return sessions.get(sessionId) || restorePersistedSession(deps, sessionId)
 }
 
@@ -519,14 +631,20 @@ function normalizePersistedDebugSession(row: any): Record<string, unknown> {
     endpoint: typeof metadata.endpoint === 'string' ? metadata.endpoint : null,
     sandbox_id: typeof metadata.sandbox_id === 'string' ? metadata.sandbox_id : null,
     last_task_id: typeof metadata.last_task_id === 'string' ? metadata.last_task_id : null,
-    hyperv_policy: metadata.hyperv_policy && typeof metadata.hyperv_policy === 'object' ? metadata.hyperv_policy : null,
+    hyperv_policy:
+      metadata.hyperv_policy && typeof metadata.hyperv_policy === 'object'
+        ? metadata.hyperv_policy
+        : null,
     created_at: row?.created_at,
     updated_at: row?.updated_at,
     finished_at: row?.finished_at,
   }
 }
 
-async function runtimeCapabilities(endpoint: string, runtimeApiKey?: string): Promise<RuntimeBackendCapability[] | null> {
+async function runtimeCapabilities(
+  endpoint: string,
+  runtimeApiKey?: string
+): Promise<RuntimeBackendCapability[] | null> {
   const capabilitiesUrl = new URL('/capabilities', endpoint).toString()
   const response = await fetchJson(
     capabilitiesUrl,
@@ -548,14 +666,17 @@ async function runtimeCapabilities(endpoint: string, runtimeApiKey?: string): Pr
     }
     const candidate = entry as Partial<RuntimeBackendCapability>
     if (
-      (candidate.type === 'python-worker' || candidate.type === 'spawn' || candidate.type === 'inline') &&
+      (candidate.type === 'python-worker' ||
+        candidate.type === 'spawn' ||
+        candidate.type === 'inline') &&
       typeof candidate.handler === 'string'
     ) {
       capabilities.push({
         type: candidate.type,
         handler: candidate.handler,
         description: typeof candidate.description === 'string' ? candidate.description : undefined,
-        requiresSample: typeof candidate.requiresSample === 'boolean' ? candidate.requiresSample : undefined,
+        requiresSample:
+          typeof candidate.requiresSample === 'boolean' ? candidate.requiresSample : undefined,
       })
     }
   }
@@ -608,7 +729,14 @@ function collectRuntimeArtifactNames(value: unknown): string[] {
       return
     }
     const basename = path.win32.basename(path.posix.basename(candidate.trim()))
-    if (!basename || basename === '.' || basename === '..' || basename.includes('\0') || basename.includes('/') || basename.includes('\\')) {
+    if (
+      !basename ||
+      basename === '.' ||
+      basename === '..' ||
+      basename.includes('\0') ||
+      basename.includes('/') ||
+      basename.includes('\\')
+    ) {
       return
     }
     names.add(basename)
@@ -664,14 +792,19 @@ async function downloadRuntimeArtifact(
 ): Promise<string> {
   const basename = path.win32.basename(path.posix.basename(artifactName))
   const safeName = sanitizePathSegment(basename, 'artifact.bin')
-  const url = new URL(`/download/${encodeURIComponent(taskId)}/${encodeURIComponent(basename)}`, endpoint).toString()
+  const url = new URL(
+    `/download/${encodeURIComponent(taskId)}/${encodeURIComponent(basename)}`,
+    endpoint
+  ).toString()
   const response = await fetch(url, {
     headers: getAuthHeader(runtimeApiKey),
     signal: AbortSignal.timeout(60_000),
   })
   if (!response.ok) {
     const text = await response.text().catch(() => '')
-    throw new Error(`Runtime artifact download failed for ${safeName}: HTTP ${response.status}${text ? ` ${text}` : ''}`)
+    throw new Error(
+      `Runtime artifact download failed for ${safeName}: HTTP ${response.status}${text ? ` ${text}` : ''}`
+    )
   }
   const bytes = Buffer.from(await response.arrayBuffer())
   const destPath = path.join(downloadDir, safeName)
@@ -687,7 +820,12 @@ async function persistRuntimeDebugArtifacts(
   toolName: string,
   downloadedPaths: string[]
 ): Promise<ArtifactRef[]> {
-  if (!sampleId || downloadedPaths.length === 0 || !deps.workspaceManager || !deps.database?.insertArtifact) {
+  if (
+    !sampleId ||
+    downloadedPaths.length === 0 ||
+    !deps.workspaceManager ||
+    !deps.database?.insertArtifact
+  ) {
     return []
   }
 
@@ -750,11 +888,14 @@ async function uploadRuntimeFile(
   taskId: string,
   filePath: string,
   filename: string,
-  role: 'primary' | 'sidecar',
+  role: 'primary' | 'sidecar'
 ): Promise<void> {
   const url = new URL('/upload', endpoint)
   url.searchParams.set('taskId', taskId)
-  url.searchParams.set('filename', sanitizeRuntimeUploadName(filename, role === 'primary' ? `${taskId}.sample` : 'sidecar.bin'))
+  url.searchParams.set(
+    'filename',
+    sanitizeRuntimeUploadName(filename, role === 'primary' ? `${taskId}.sample` : 'sidecar.bin')
+  )
   url.searchParams.set('role', role)
   const transport = url.protocol === 'https:' ? https : http
   const stat = fs.statSync(filePath)
@@ -783,7 +924,9 @@ async function uploadRuntimeFile(
             resolve()
             return
           }
-          reject(new Error(`Runtime upload failed: HTTP ${res.statusCode || 0}${body ? ` ${body}` : ''}`))
+          reject(
+            new Error(`Runtime upload failed: HTTP ${res.statusCode || 0}${body ? ` ${body}` : ''}`)
+          )
         })
       }
     )
@@ -798,17 +941,31 @@ async function uploadSample(
   runtimeApiKey: string | undefined,
   taskId: string,
   samplePath: string,
-  sidecars: RuntimeSidecarUpload[] = [],
+  sidecars: RuntimeSidecarUpload[] = []
 ): Promise<number> {
-  await uploadRuntimeFile(endpoint, runtimeApiKey, taskId, samplePath, path.basename(samplePath), 'primary')
+  await uploadRuntimeFile(
+    endpoint,
+    runtimeApiKey,
+    taskId,
+    samplePath,
+    path.basename(samplePath),
+    'primary'
+  )
   if (sidecars.length > 0) {
-    const health = await runtimeHealth(endpoint, runtimeApiKey).catch(() => null) as any
+    const health = (await runtimeHealth(endpoint, runtimeApiKey).catch(() => null)) as any
     if (health?.features?.sidecarUpload !== true) {
       return 0
     }
   }
   for (const sidecar of sidecars) {
-    await uploadRuntimeFile(endpoint, runtimeApiKey, taskId, sidecar.path, sidecar.name || path.basename(sidecar.path), 'sidecar')
+    await uploadRuntimeFile(
+      endpoint,
+      runtimeApiKey,
+      taskId,
+      sidecar.path,
+      sidecar.name || path.basename(sidecar.path),
+      'sidecar'
+    )
   }
   return sidecars.length
 }
@@ -824,9 +981,15 @@ async function pollRuntimeTask(
     const statusUrl = new URL(`/tasks/${encodeURIComponent(taskId)}`, endpoint).toString()
     const status = await fetchJson(statusUrl, { headers: getAuthHeader(runtimeApiKey) }, 30_000)
     if (!status.ok) {
-      throw new Error(`Runtime task status failed: HTTP ${status.status}${status.text ? ` ${status.text}` : ''}`)
+      throw new Error(
+        `Runtime task status failed: HTTP ${status.status}${status.text ? ` ${status.text}` : ''}`
+      )
     }
-    if (status.body?.status === 'completed' || status.body?.status === 'failed' || status.body?.status === 'cancelled') {
+    if (
+      status.body?.status === 'completed' ||
+      status.body?.status === 'failed' ||
+      status.body?.status === 'cancelled'
+    ) {
       return status.body
     }
     await new Promise((resolve) => setTimeout(resolve, 2000))
@@ -856,7 +1019,12 @@ export function createRuntimeDebugSessionStartHandler(deps: PluginToolDeps) {
         sessions.set(sessionId, session)
         return {
           ok: true,
-          data: { session, health, persistent: session.persisted === true, tracked_sessions: sessions.size },
+          data: {
+            session,
+            health,
+            persistent: session.persisted === true,
+            tracked_sessions: sessions.size,
+          },
           metrics: { elapsed_ms: Date.now() - start, tool: SESSION_START_TOOL },
         }
       }
@@ -866,7 +1034,9 @@ export function createRuntimeDebugSessionStartHandler(deps: PluginToolDeps) {
       if (!hostAgentEndpoint) {
         return {
           ok: false,
-          errors: ['runtime.hostAgentEndpoint is not configured. Provide host_agent_endpoint or use manual_endpoint.'],
+          errors: [
+            'runtime.hostAgentEndpoint is not configured. Provide host_agent_endpoint or use manual_endpoint.',
+          ],
           metrics: { elapsed_ms: Date.now() - start, tool: SESSION_START_TOOL },
         }
       }
@@ -928,7 +1098,12 @@ export function createRuntimeDebugSessionStartHandler(deps: PluginToolDeps) {
       sessions.set(sessionId, session)
       return {
         ok: true,
-        data: { session, health, persistent: session.persisted === true, tracked_sessions: sessions.size },
+        data: {
+          session,
+          health,
+          persistent: session.persisted === true,
+          tracked_sessions: sessions.size,
+        },
         metrics: { elapsed_ms: Date.now() - start, tool: SESSION_START_TOOL },
       }
     } catch (err) {
@@ -956,9 +1131,15 @@ export function createRuntimeDebugSessionStatusHandler(deps: PluginToolDeps) {
         : null
       if (selected) {
         selected.lastHealth = runtime
-        const capabilities = await runtimeCapabilities(selected.endpoint, runtimeApiKey).catch(() => null)
+        const capabilities = await runtimeCapabilities(selected.endpoint, runtimeApiKey).catch(
+          () => null
+        )
         selected.capabilities = capabilities
-        if (!selected.stoppedAt && selected.status !== 'captured' && selected.status !== 'correlated') {
+        if (
+          !selected.stoppedAt &&
+          selected.status !== 'captured' &&
+          selected.status !== 'correlated'
+        ) {
           await persistRuntimeSession(deps, selected, selected.sampleId, {
             status: selected.status || 'armed',
             debugState: selected.debugState || 'armed',
@@ -976,10 +1157,12 @@ export function createRuntimeDebugSessionStatusHandler(deps: PluginToolDeps) {
           new URL('/sandbox/health', hostAgentEndpoint).toString(),
           { headers: getAuthHeader(hostAgentApiKey) },
           10_000
-        ).then((res) => res.body || { ok: res.ok, status: res.status }).catch((err) => ({
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        }))
+        )
+          .then((res) => res.body || { ok: res.ok, status: res.status })
+          .catch((err) => ({
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          }))
       }
 
       return {
@@ -988,9 +1171,12 @@ export function createRuntimeDebugSessionStatusHandler(deps: PluginToolDeps) {
           session: selected || null,
           runtime,
           host_agent: hostAgent,
-          persisted_sessions: input.sample_id && deps.database?.findDebugSessionsBySample
-            ? deps.database.findDebugSessionsBySample(input.sample_id, input.limit).map(normalizePersistedDebugSession)
-            : [],
+          persisted_sessions:
+            input.sample_id && deps.database?.findDebugSessionsBySample
+              ? deps.database
+                  .findDebugSessionsBySample(input.sample_id, input.limit)
+                  .map(normalizePersistedDebugSession)
+              : [],
           tracked_sessions: Array.from(sessions.values()),
         },
         metrics: { elapsed_ms: Date.now() - start, tool: SESSION_STATUS_TOOL },
@@ -1026,7 +1212,9 @@ export function createRuntimeDebugSessionStopHandler(deps: PluginToolDeps) {
         if (!hostAgentEndpoint) {
           return {
             ok: false,
-            errors: ['Cannot stop Host Agent backed session because runtime.hostAgentEndpoint is not configured.'],
+            errors: [
+              'Cannot stop Host Agent backed session because runtime.hostAgentEndpoint is not configured.',
+            ],
             metrics: { elapsed_ms: Date.now() - start, tool: SESSION_STOP_TOOL },
           }
         }
@@ -1039,7 +1227,11 @@ export function createRuntimeDebugSessionStopHandler(deps: PluginToolDeps) {
           },
           30_000
         )
-        hostAgentResult = response.body || { ok: response.ok, status: response.status, text: response.text }
+        hostAgentResult = response.body || {
+          ok: response.ok,
+          status: response.status,
+          text: response.text,
+        }
         if (!response.ok || response.body?.ok === false) {
           return {
             ok: false,
@@ -1061,7 +1253,11 @@ export function createRuntimeDebugSessionStopHandler(deps: PluginToolDeps) {
       sessions.delete(input.session_id)
       return {
         ok: true,
-        data: { stopped_session: session, host_agent: hostAgentResult, tracked_sessions: sessions.size },
+        data: {
+          stopped_session: session,
+          host_agent: hostAgentResult,
+          tracked_sessions: sessions.size,
+        },
         metrics: { elapsed_ms: Date.now() - start, tool: SESSION_STOP_TOOL },
       }
     } catch (err) {
@@ -1092,17 +1288,22 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
       const taskId = randomUUID()
       let sidecarWarnings: string[] = []
       let stagedSidecarCount = 0
-      const runtimeBackendHint = input.runtime_backend_hint || buildDefaultRuntimeBackendHint(input.tool)
+      const runtimeBackendHint =
+        input.runtime_backend_hint || buildDefaultRuntimeBackendHint(input.tool)
       if (!input.sample_id && isSampleBoundRuntimeTool(input.tool)) {
         return {
           ok: false,
-          errors: [`sample_id is required when dispatching sample-bound runtime tool ${input.tool}.`],
+          errors: [
+            `sample_id is required when dispatching sample-bound runtime tool ${input.tool}.`,
+          ],
           metrics: { elapsed_ms: Date.now() - start, tool: COMMAND_TOOL },
         }
       }
 
       if (runtimeBackendHint) {
-        const capabilities = await runtimeCapabilities(session.endpoint, runtimeApiKey).catch(() => null)
+        const capabilities = await runtimeCapabilities(session.endpoint, runtimeApiKey).catch(
+          () => null
+        )
         session.capabilities = capabilities
         if (capabilities && !findRuntimeCapability(capabilities, runtimeBackendHint)) {
           await persistRuntimeSession(deps, session, input.sample_id || session.sampleId, {
@@ -1131,7 +1332,9 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
         if (!deps.resolvePrimarySamplePath || !deps.workspaceManager) {
           return {
             ok: false,
-            errors: ['Sample upload is unavailable because resolvePrimarySamplePath/workspaceManager is not wired.'],
+            errors: [
+              'Sample upload is unavailable because resolvePrimarySamplePath/workspaceManager is not wired.',
+            ],
             metrics: { elapsed_ms: Date.now() - start, tool: COMMAND_TOOL },
           }
         }
@@ -1143,7 +1346,13 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
           maxTotalBytes: input.sidecar_max_total_bytes,
         })
         sidecarWarnings = sidecarResolution.warnings
-        stagedSidecarCount = await uploadSample(session.endpoint, runtimeApiKey, taskId, resolved.samplePath, sidecarResolution.sidecars)
+        stagedSidecarCount = await uploadSample(
+          session.endpoint,
+          runtimeApiKey,
+          taskId,
+          resolved.samplePath,
+          sidecarResolution.sidecars
+        )
         if (sidecarResolution.sidecars.length > 0 && stagedSidecarCount === 0) {
           sidecarWarnings = [
             ...sidecarWarnings,
@@ -1184,11 +1393,21 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
       let persistedArtifacts: ArtifactRef[] = []
       const artifactNames = collectRuntimeArtifactNames(task)
       if (artifactNames.length > 0) {
-        const downloadDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'rikune-runtime-debug-'))
+        const downloadDir = await fs.promises.mkdtemp(
+          path.join(os.tmpdir(), 'rikune-runtime-debug-')
+        )
         try {
           const downloadedPaths: string[] = []
           for (const artifactName of artifactNames) {
-            downloadedPaths.push(await downloadRuntimeArtifact(session.endpoint, runtimeApiKey, taskId, artifactName, downloadDir))
+            downloadedPaths.push(
+              await downloadRuntimeArtifact(
+                session.endpoint,
+                runtimeApiKey,
+                taskId,
+                artifactName,
+                downloadDir
+              )
+            )
           }
           persistedArtifacts = await persistRuntimeDebugArtifacts(
             deps,

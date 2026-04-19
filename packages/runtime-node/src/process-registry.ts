@@ -42,7 +42,10 @@ export function killTaskProcesses(taskId: string): void {
       if (child.pid && !child.killed) {
         if (process.platform === 'win32') {
           // Kill the entire process tree on Windows
-          spawn('taskkill', ['/T', '/F', '/PID', String(child.pid)], { stdio: 'ignore', windowsHide: true })
+          spawn('taskkill', ['/T', '/F', '/PID', String(child.pid)], {
+            stdio: 'ignore',
+            windowsHide: true,
+          })
         } else {
           // Negative PID kills the process group on Unix-like systems
           try {

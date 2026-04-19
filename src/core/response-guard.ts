@@ -25,7 +25,8 @@ function rebuildResult(original: CallToolResult, data: Record<string, unknown>):
 function hardTruncateResult(original: CallToolResult, text: string): CallToolResult {
   const maxBytes = MAX_RESPONSE_BYTES
   // Binary-search a safe UTF-8 cut point
-  let lo = 0, hi = Math.min(text.length, maxBytes)
+  let lo = 0,
+    hi = Math.min(text.length, maxBytes)
   while (lo < hi) {
     const mid = (lo + hi + 1) >>> 1
     if (Buffer.byteLength(text.slice(0, mid), 'utf8') <= maxBytes) {
@@ -35,7 +36,8 @@ function hardTruncateResult(original: CallToolResult, text: string): CallToolRes
     }
   }
   const truncated = text.slice(0, lo)
-  const suffix = '\n\n[TRUNCATED: response exceeded token budget. Use more specific queries or request individual stages.]'
+  const suffix =
+    '\n\n[TRUNCATED: response exceeded token budget. Use more specific queries or request individual stages.]'
   const finalText = truncated + suffix
   return {
     ...original,
@@ -110,7 +112,8 @@ export function guardResponseSize(result: CallToolResult, logger: pino.Logger): 
   }
   pruned = JSON.stringify(data)
   if (Buffer.byteLength(pruned, 'utf8') <= MAX_RESPONSE_BYTES) {
-    data._response_trimmed = 'stage results omitted from run history to fit token budget; use workflow.analyze.status with include_stage_results=false or query individual stages'
+    data._response_trimmed =
+      'stage results omitted from run history to fit token budget; use workflow.analyze.status with include_stage_results=false or query individual stages'
     return rebuildResult(result, data)
   }
 

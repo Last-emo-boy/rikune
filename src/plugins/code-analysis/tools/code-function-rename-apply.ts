@@ -16,10 +16,16 @@ const SemanticNameSuggestionInputSchema = z
     address_or_function: z
       .string()
       .optional()
-      .describe('Optional combined identifier when the reviewing client returns a single address_or_function field'),
+      .describe(
+        'Optional combined identifier when the reviewing client returns a single address_or_function field'
+      ),
     address: z.string().optional().describe('Optional function address for precise matching'),
     function: z.string().optional().describe('Optional function symbol/name for fallback matching'),
-    candidate_name: z.string().min(1).max(160).describe('LLM-proposed human-readable semantic name'),
+    candidate_name: z
+      .string()
+      .min(1)
+      .max(160)
+      .describe('LLM-proposed human-readable semantic name'),
     confidence: z.number().min(0).max(1).describe('Confidence score for the proposed name'),
     why: z.string().min(1).max(1000).describe('Short rationale grounded in the provided evidence'),
     required_assumptions: z
@@ -31,7 +37,9 @@ const SemanticNameSuggestionInputSchema = z
       .array(z.string())
       .optional()
       .default([])
-      .describe('Evidence sources used by the LLM, such as strings, runtime trace, xrefs, or CFG shape'),
+      .describe(
+        'Evidence sources used by the LLM, such as strings, runtime trace, xrefs, or CFG shape'
+      ),
   })
   .refine(
     (value) =>
@@ -39,11 +47,14 @@ const SemanticNameSuggestionInputSchema = z
       Boolean(value.address?.trim()) ||
       Boolean(value.function?.trim()),
     {
-      message: 'Each suggestion must provide at least one of `address_or_function`, `address`, or `function`.',
+      message:
+        'Each suggestion must provide at least one of `address_or_function`, `address`, or `function`.',
     }
   )
 
-function normalizeSuggestionIdentifier(suggestion: z.infer<typeof SemanticNameSuggestionInputSchema>): {
+function normalizeSuggestionIdentifier(
+  suggestion: z.infer<typeof SemanticNameSuggestionInputSchema>
+): {
   address: string | null
   function: string | null
 } {
@@ -88,10 +99,7 @@ export const codeFunctionRenameApplyInputSchema = z.object({
     .string()
     .optional()
     .describe('Optional client identifier, such as claude-desktop or codex-cli'),
-  model_name: z
-    .string()
-    .optional()
-    .describe('Optional model identifier for provenance only'),
+  model_name: z.string().optional().describe('Optional model identifier for provenance only'),
   prepare_artifact_id: z
     .string()
     .optional()

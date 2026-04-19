@@ -7,10 +7,17 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, executeCommand, safeJsonParse,
-  persistBackendArtifact, buildMetrics, truncateText,
-  resolveSampleFile, resolveExecutable,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  executeCommand,
+  safeJsonParse,
+  persistBackendArtifact,
+  buildMetrics,
+  truncateText,
+  resolveSampleFile,
+  resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -25,17 +32,19 @@ export const goSymbolsRecoverInputSchema = z.object({
 
 export const goSymbolsRecoverOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    go_version: z.string().optional(),
-    build_id: z.string().optional(),
-    function_count: z.number().optional(),
-    functions_preview: z.array(z.any()).optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      go_version: z.string().optional(),
+      build_id: z.string().optional(),
+      function_count: z.number().optional(),
+      functions_preview: z.array(z.any()).optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
@@ -52,7 +61,7 @@ export const goSymbolsRecoverToolDefinition: ToolDefinition = {
 
 export function createGoSymbolsRecoverHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -60,21 +69,41 @@ export function createGoSymbolsRecoverHandler(
       const input = goSymbolsRecoverInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolveExecutable({ envPath: process.env.GORESYM_PATH, pathCandidates: ['GoReSym', 'goresym'], versionArgSets: [['-version'], ['--help']] })
+      const backend = resolveExecutable({
+        envPath: process.env.GORESYM_PATH,
+        pathCandidates: ['GoReSym', 'goresym'],
+        versionArgSets: [['-version'], ['--help']],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'GoReSym', available: false, error: 'GoReSym not installed' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend || ({ name: 'GoReSym', available: false, error: 'GoReSym not installed' } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       // -t = recover types, -d = recover filenames, -p = recover packages
-      const result = await executeCommand(backend.path, ['-t', '-d', '-p', samplePath], input.timeout_sec * 1000)
+      const result = await executeCommand(
+        backend.path,
+        ['-t', '-d', '-p', samplePath],
+        input.timeout_sec * 1000
+      )
 
       if (result.exitCode !== 0 && !result.stdout.trim()) {
-        return { ok: false, errors: [`GoReSym exited ${result.exitCode}: ${result.stderr}`], metrics: buildMetrics(startTime, TOOL_NAME) }
+        return {
+          ok: false,
+          errors: [`GoReSym exited ${result.exitCode}: ${result.stderr}`],
+          metrics: buildMetrics(startTime, TOOL_NAME),
+        }
       }
 
       const parsed = safeJsonParse<any>(result.stdout)
       if (!parsed) {
-        return { ok: false, errors: ['Not a Go binary or GoReSym failed to parse'], metrics: buildMetrics(startTime, TOOL_NAME) }
+        return {
+          ok: false,
+          errors: ['Not a Go binary or GoReSym failed to parse'],
+          metrics: buildMetrics(startTime, TOOL_NAME),
+        }
       }
 
       const userFuncs = parsed.UserFunctions || []
@@ -86,7 +115,15 @@ export function createGoSymbolsRecoverHandler(
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'goresym', 'symbols', JSON.stringify(parsed, null, 2), { extension: 'json', mime: 'application/json', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'goresym',
+          'symbols',
+          JSON.stringify(parsed, null, 2),
+          { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -106,7 +143,12 @@ export function createGoSymbolsRecoverHandler(
           })),
           artifact,
           summary: `Go ${goVersion} binary: ${userFuncs.length} user + ${stdFuncs.length} std functions recovered.`,
-          recommended_next_tools: ['artifact.read', 'go.types.list', 'go.binary.analyze', 'code.function.decompile'],
+          recommended_next_tools: [
+            'artifact.read',
+            'go.types.list',
+            'go.binary.analyze',
+            'code.function.decompile',
+          ],
           next_actions: [
             'Use artifact.read for full function list.',
             'Use go.types.list for Go interface/struct type information.',
@@ -116,7 +158,11 @@ export function createGoSymbolsRecoverHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

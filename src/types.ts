@@ -157,7 +157,9 @@ export const RuntimeDelegationFailureCategorySchema = z.enum([
   'tool_specific_execution_failed',
 ])
 
-export type RuntimeDelegationFailureCategory = z.infer<typeof RuntimeDelegationFailureCategorySchema>
+export type RuntimeDelegationFailureCategory = z.infer<
+  typeof RuntimeDelegationFailureCategorySchema
+>
 
 export const RuntimeDelegationFailureDataSchema = z.object({
   status: z.enum(['setup_required', 'failed']),
@@ -262,7 +264,7 @@ export enum ErrorCategory {
   PARTIAL_SUCCESS = 'E_PARTIAL_SUCCESS',
 
   // Unknown errors
-  UNKNOWN = 'E_UNKNOWN'
+  UNKNOWN = 'E_UNKNOWN',
 }
 
 /**
@@ -298,7 +300,7 @@ export enum JobPriority {
   LOW = 1,
   NORMAL = 5,
   HIGH = 10,
-  CRITICAL = 20
+  CRITICAL = 20,
 }
 
 /**
@@ -338,7 +340,7 @@ export interface Job {
   retryPolicy: RetryPolicy
   createdAt: string
   attempts: number
-  estimatedDurationMs?: number  // Estimated duration for async job pattern
+  estimatedDurationMs?: number // Estimated duration for async job pattern
 }
 
 /**

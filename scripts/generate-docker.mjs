@@ -25,7 +25,8 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 const DEFAULT_DATA_ROOT = 'D:/Docker/rikune'
-const DEFAULT_NO_PROXY = 'localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com'
+const DEFAULT_NO_PROXY =
+  'localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com'
 
 const PROFILES = {
   full: {
@@ -41,7 +42,8 @@ const PROFILES = {
     nodeRole: 'analyzer',
     runtimeMode: 'disabled',
     buildDynamicDeps: true,
-    description: 'Full Linux-side analysis stack. Runtime remains disabled until you opt into manual or remote-sandbox mode.',
+    description:
+      'Full Linux-side analysis stack. Runtime remains disabled until you opt into manual or remote-sandbox mode.',
   },
   static: {
     id: 'static',
@@ -56,7 +58,8 @@ const PROFILES = {
     nodeRole: 'analyzer',
     runtimeMode: 'disabled',
     buildDynamicDeps: false,
-    description: 'Static-only Linux analyzer. No runtime endpoint is configured and dynamic execution plugins are disabled.',
+    description:
+      'Static-only Linux analyzer. No runtime endpoint is configured and dynamic execution plugins are disabled.',
   },
   hybrid: {
     id: 'hybrid',
@@ -71,7 +74,8 @@ const PROFILES = {
     nodeRole: 'analyzer',
     runtimeMode: 'remote-sandbox',
     buildDynamicDeps: false,
-    description: 'Linux analyzer image with dynamic tools delegated to a Windows Host Agent / Runtime Node.',
+    description:
+      'Linux analyzer image with dynamic tools delegated to a Windows Host Agent / Runtime Node.',
   },
 }
 
@@ -85,7 +89,7 @@ function discoverPluginIds() {
   for (const base of [join(ROOT, 'dist', 'plugins'), join(ROOT, 'src', 'plugins')]) {
     if (!existsSync(base)) continue
     return readdirSync(base)
-      .filter(name => {
+      .filter((name) => {
         if (name === 'sdk.ts' || name === 'sdk.js' || name.startsWith('.')) return false
         const full = join(base, name)
         return statSync(full).isDirectory()
@@ -104,12 +108,15 @@ function discoverPluginWorkerDirs(activePluginIds = null) {
   const srcPlugins = join(ROOT, 'src', 'plugins')
   if (!existsSync(srcPlugins)) return []
   return readdirSync(srcPlugins)
-    .filter(name => {
+    .filter((name) => {
       if (name === 'sdk.ts' || name.startsWith('.')) return false
       if (activePluginIds && !activePluginIds.has(name)) return false
       const workersDir = join(srcPlugins, name, 'workers')
-      return existsSync(workersDir) && statSync(workersDir).isDirectory() &&
-        readdirSync(workersDir).some(f => f.endsWith('.py'))
+      return (
+        existsSync(workersDir) &&
+        statSync(workersDir).isDirectory() &&
+        readdirSync(workersDir).some((f) => f.endsWith('.py'))
+      )
     })
     .sort()
 }
@@ -127,7 +134,7 @@ function discoverPluginDataDirs(activePluginIds = null) {
     if (activePluginIds && !activePluginIds.has(name)) continue
     const dataDir = join(srcPlugins, name, 'data')
     if (!existsSync(dataDir) || !statSync(dataDir).isDirectory()) continue
-    const files = readdirSync(dataDir).filter(f => !f.startsWith('.'))
+    const files = readdirSync(dataDir).filter((f) => !f.startsWith('.'))
     if (files.length > 0) result.push({ plugin: name, files })
   }
   return result.sort((a, b) => a.plugin.localeCompare(b.plugin))
@@ -186,6 +193,27 @@ function parseDockerFragment(content) {
 }
 
 // -----------------------------------------------------------------------------
+// 1e. Auto-discover plugin scripts/ directories exposed as MCP resources
+// -----------------------------------------------------------------------------
+
+function discoverPluginScriptDirs() {
+  const srcPlugins = join(ROOT, 'src', 'plugins')
+  if (!existsSync(srcPlugins)) return []
+
+  return readdirSync(srcPlugins)
+    .filter((name) => {
+      if (name === 'sdk.ts' || name.startsWith('.')) return false
+      const scriptsDir = join(srcPlugins, name, 'scripts')
+      return (
+        existsSync(scriptsDir) &&
+        statSync(scriptsDir).isDirectory() &&
+        readdirSync(scriptsDir).some((f) => !f.startsWith('.'))
+      )
+    })
+    .sort()
+}
+
+// -----------------------------------------------------------------------------
 // 2. Load systemDeps from compiled plugins
 // -----------------------------------------------------------------------------
 
@@ -227,16 +255,19 @@ function depsForPluginIds(pluginIds, metadata, profile = PROFILES.full) {
   const result = new Map()
   for (const id of pluginIds) {
     const deps = metadata.get(id)?.systemDeps ?? []
-    result.set(id, profile.buildDynamicDeps
-      ? deps
-      : deps.filter(dep => !EXECUTION_DOCKER_FEATURES.has(dep.dockerFeature)))
+    result.set(
+      id,
+      profile.buildDynamicDeps
+        ? deps
+        : deps.filter((dep) => !EXECUTION_DOCKER_FEATURES.has(dep.dockerFeature))
+    )
   }
   return result
 }
 
 function filterBuildPluginsForProfile(pluginIds, metadata, profile) {
   if (profile.buildDynamicDeps) return pluginIds
-  return pluginIds.filter(id => metadata.get(id)?.executionDomain !== 'dynamic')
+  return pluginIds.filter((id) => metadata.get(id)?.executionDomain !== 'dynamic')
 }
 
 // -----------------------------------------------------------------------------
@@ -272,12 +303,12 @@ function collectDockerRequirements(pluginDepMap) {
       }
       if (dep.directories) {
         for (const d of dep.directories) {
-          if (!directories.some(x => x.path === d.path)) directories.push(d)
+          if (!directories.some((x) => x.path === d.path)) directories.push(d)
         }
       }
       if (dep.volumes) {
         for (const v of dep.volumes) {
-          if (!volumes.some(x => x.target === v.target)) volumes.push(v)
+          if (!volumes.some((x) => x.target === v.target)) volumes.push(v)
         }
       }
     }
@@ -304,7 +335,14 @@ function collectDockerRequirements(pluginDepMap) {
 // 4. Process Dockerfile.template
 // -----------------------------------------------------------------------------
 
-function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntries, fragments) {
+function processTemplate(
+  template,
+  requirements,
+  pluginWorkerIds,
+  pluginDataEntries,
+  pluginScriptIds,
+  fragments
+) {
   const { features, aptPackages, envVars, extraEnv, directories, validationCmds } = requirements
 
   // 4a. Conditional blocks (only dynamic-python remains in template)
@@ -316,8 +354,15 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
   for (const line of lines) {
     const ifMatch = line.match(/^[ \t]*# @if (.+)$/)
     const endifMatch = line.match(/^[ \t]*# @endif (.+)$/)
-    if (ifMatch)    { stack.push(enabled); enabled = enabled && features.has(ifMatch[1].trim()); continue }
-    if (endifMatch) { enabled = stack.pop() ?? true; continue }
+    if (ifMatch) {
+      stack.push(enabled)
+      enabled = enabled && features.has(ifMatch[1].trim())
+      continue
+    }
+    if (endifMatch) {
+      enabled = stack.pop() ?? true
+      continue
+    }
     if (enabled) output.push(line)
   }
 
@@ -345,9 +390,8 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
   result = result.replace('{{FEATURE_RUNTIME}}', runtimeLines.join('\n\n') || '')
 
   // 4e. {{RUNTIME_APT_PACKAGES}}
-  const aptLines = aptPackages.length > 0
-    ? aptPackages.map(p => `    ${p} \\`).join('\n') + '\n'
-    : ''
+  const aptLines =
+    aptPackages.length > 0 ? aptPackages.map((p) => `    ${p} \\`).join('\n') + '\n' : ''
   result = result.replace('{{RUNTIME_APT_PACKAGES}}', aptLines)
 
   // 4f. {{RUNTIME_ENV_VARS}} - merged from envVars + extraEnv (plugin-driven)
@@ -360,9 +404,10 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
 
   if (allEnv.size > 0) {
     const entries = [...allEnv.entries()]
-    const envLines = entries.map(([k, v], i) =>
-      i < entries.length - 1 ? `    ${k}=${v} \\` : `    ${k}=${v}`
-    ).join('\n') + '\n'
+    const envLines =
+      entries
+        .map(([k, v], i) => (i < entries.length - 1 ? `    ${k}=${v} \\` : `    ${k}=${v}`))
+        .join('\n') + '\n'
     // Add trailing backslash to SANDBOX_PYTHON_PATH so ENV block continues
     result = result.replace(
       'SANDBOX_PYTHON_PATH=/usr/local/bin/python3\n{{RUNTIME_ENV_VARS}}',
@@ -373,25 +418,34 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
   }
 
   // 4g. {{VALIDATION_COMMANDS}}
-  const allValidation = ['echo "[validate] Rikune Docker image"', ...validationCmds, 'echo "[validate] All checks passed"']
+  const allValidation = [
+    'echo "[validate] Rikune Docker image"',
+    ...validationCmds,
+    'echo "[validate] All checks passed"',
+  ].map((cmd) => `(${cmd})`)
   result = result.replace('{{VALIDATION_COMMANDS}}', `RUN ${allValidation.join(' && \\\n    ')}`)
 
   // 4h. {{EXTRA_DIRS}} / {{EXTRA_CHOWN}} - from plugin systemDeps directories
-  const extraDirs = directories.map(d => d.path)
-  const extraChown = directories.filter(d => d.chown).map(d => `chown -R ${d.chown} ${d.path}`)
+  const extraDirs = directories.map((d) => d.path)
+  const extraChown = directories.filter((d) => d.chown).map((d) => `chown -R ${d.chown} ${d.path}`)
   result = result.replace('{{EXTRA_DIRS}}', extraDirs.join(' '))
-  result = result.replace('{{EXTRA_CHOWN}}', extraChown.length > 0
-    ? extraChown.map(c => `    ${c} && \\`).join('\n') + '\n' : '')
+  result = result.replace(
+    '{{EXTRA_CHOWN}}',
+    extraChown.length > 0 ? extraChown.map((c) => `    ${c} && \\`).join('\n') + '\n' : ''
+  )
 
   // 4i. {{PLUGIN_WORKER_COPY}} / {{PLUGIN_WORKER_COPY_FROM}}
   if (pluginWorkerIds.length > 0) {
     const copyLines = pluginWorkerIds
-      .map(id => `COPY src/plugins/${id}/workers/ ./src/plugins/${id}/workers/`)
+      .map((id) => `COPY src/plugins/${id}/workers/ ./src/plugins/${id}/workers/`)
       .join('\n')
     result = result.replace('{{PLUGIN_WORKER_COPY}}', copyLines)
 
     const copyFromLines = pluginWorkerIds
-      .map(id => `COPY --from=python-base /app/src/plugins/${id}/workers/ ./src/plugins/${id}/workers/`)
+      .map(
+        (id) =>
+          `COPY --from=python-base /app/src/plugins/${id}/workers/ ./src/plugins/${id}/workers/`
+      )
       .join('\n')
     result = result.replace('{{PLUGIN_WORKER_COPY_FROM}}', copyFromLines)
   } else {
@@ -411,6 +465,16 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
     result = result.replace('{{PLUGIN_DATA_COPY}}', dataLines.join('\n'))
   } else {
     result = result.replace('{{PLUGIN_DATA_COPY}}\n', '')
+  }
+
+  // 4k. {{PLUGIN_SCRIPT_COPY}}
+  if (pluginScriptIds.length > 0) {
+    const scriptLines = pluginScriptIds
+      .map((id) => `COPY src/plugins/${id}/scripts/ ./src/plugins/${id}/scripts/`)
+      .join('\n')
+    result = result.replace('{{PLUGIN_SCRIPT_COPY}}', scriptLines)
+  } else {
+    result = result.replace('{{PLUGIN_SCRIPT_COPY}}\n', '')
   }
 
   return result.replace(/\n{3,}/g, '\n\n')
@@ -437,18 +501,30 @@ function generateDockerCompose(requirements, buildPluginIds, runtimePluginIds, p
     ['NO_PROXY', `\${RIKUNE_BUILD_NO_PROXY:-${DEFAULT_NO_PROXY}}`],
   ])
   for (const [k, v] of buildArgs) allBuildArgs.set(k, v)
-  const buildArgsYaml = '\n' + [...allBuildArgs.entries()].sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `        ${k}: "${v}"`).join('\n')
+  const buildArgsYaml =
+    '\n' +
+    [...allBuildArgs.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `        ${k}: "${v}"`)
+      .join('\n')
 
   // Environment: base + plugin-declared
   const allEnv = new Map([
-    ['NODE_ENV', 'production'], ['PYTHONUNBUFFERED', '1'],
-    ['NODE_ROLE', profile.nodeRole], ['RUNTIME_MODE', profile.runtimeMode],
+    ['NODE_ENV', 'production'],
+    ['PYTHONUNBUFFERED', '1'],
+    ['RIKUNE_DOCKER_PROFILE', profile.id],
+    ['NODE_ROLE', profile.nodeRole],
+    ['RUNTIME_MODE', profile.runtimeMode],
     ['PLUGINS', makePluginsEnv(runtimePluginIds)],
-    ['WORKSPACE_ROOT', '/app/workspaces'], ['DB_PATH', '/app/data/database.db'],
-    ['CACHE_ROOT', '/app/cache'], ['AUDIT_LOG_PATH', '/app/logs/audit.log'],
-    ['XDG_CONFIG_HOME', '/app/logs/.config'], ['XDG_CACHE_HOME', '/app/cache/xdg'],
-    ['LOG_LEVEL', 'info'], ['SANDBOX_PYTHON_PATH', '/usr/local/bin/python3'],
+    ['WORKSPACE_ROOT', '/app/workspaces'],
+    ['DB_PATH', '/app/data/database.db'],
+    ['CACHE_ROOT', '/app/cache'],
+    ['HOME', '/app/cache/home'],
+    ['AUDIT_LOG_PATH', '/app/logs/audit.log'],
+    ['XDG_CONFIG_HOME', '/app/logs/.config'],
+    ['XDG_CACHE_HOME', '/app/cache/xdg'],
+    ['LOG_LEVEL', 'info'],
+    ['SANDBOX_PYTHON_PATH', '/usr/local/bin/python3'],
   ])
   for (const [k, v] of envVars) allEnv.set(k, v)
   for (const [k, v] of extraEnv) {
@@ -589,7 +665,7 @@ Options:
   const selectedProfiles = flags['all-profiles']
     ? [PROFILES.full, PROFILES.static, PROFILES.hybrid]
     : [PROFILES[flags.profile || 'full']]
-  if (selectedProfiles.some(p => !p)) {
+  if (selectedProfiles.some((p) => !p)) {
     console.error(`  x Unknown profile '${flags.profile}'. Use full, static, or hybrid.`)
     process.exit(1)
   }
@@ -599,17 +675,19 @@ Options:
 
   let selectedPluginIds = [...allPlugins]
   if (flags.include) {
-    const include = new Set(flags.include.split(',').map(s => s.trim()))
-    selectedPluginIds = selectedPluginIds.filter(id => include.has(id))
+    const include = new Set(flags.include.split(',').map((s) => s.trim()))
+    selectedPluginIds = selectedPluginIds.filter((id) => include.has(id))
     console.log(`  --include: ${selectedPluginIds.length} selected`)
   }
   if (flags.exclude) {
-    const exclude = new Set(flags.exclude.split(',').map(s => s.trim()))
+    const exclude = new Set(flags.exclude.split(',').map((s) => s.trim()))
     const before = selectedPluginIds.length
-    selectedPluginIds = selectedPluginIds.filter(id => !exclude.has(id))
+    selectedPluginIds = selectedPluginIds.filter((id) => !exclude.has(id))
     console.log(`  --exclude: removed ${before - selectedPluginIds.length}`)
   }
-  console.log(`  Runtime selection base (${selectedPluginIds.length}): ${selectedPluginIds.join(', ')}`)
+  console.log(
+    `  Runtime selection base (${selectedPluginIds.length}): ${selectedPluginIds.join(', ')}`
+  )
 
   console.log('\n  Loading plugin metadata from dist/...')
   const metadata = await loadPluginMetadata(selectedPluginIds)
@@ -632,12 +710,18 @@ Options:
 
     console.log(`\n  Profile: ${profile.id} (${profile.displayName})`)
     console.log(`  ${profile.description}`)
-    console.log(`  Build plugins (${buildPluginIds.length}): ${buildPluginIds.join(', ') || '(none)'}`)
-    console.log(`  Runtime plugins (${runtimePluginIds.length}): ${runtimePluginIds.join(', ') || '(none)'}`)
+    console.log(
+      `  Build plugins (${buildPluginIds.length}): ${buildPluginIds.join(', ') || '(none)'}`
+    )
+    console.log(
+      `  Runtime plugins (${runtimePluginIds.length}): ${runtimePluginIds.join(', ') || '(none)'}`
+    )
     console.log(`  Features (${featureList.length}): ${featureList.join(', ') || '(none)'}`)
     console.log(`  apt: ${req.aptPackages.join(', ') || '(none)'}`)
     console.log(`  env: ${req.envVars.size} + ${req.extraEnv.size} extra vars`)
-    console.log(`  buildArgs: ${req.buildArgs.size} (${[...req.buildArgs.keys()].join(', ') || 'none'})`)
+    console.log(
+      `  buildArgs: ${req.buildArgs.size} (${[...req.buildArgs.keys()].join(', ') || 'none'})`
+    )
     console.log(`  directories: ${req.directories.length}`)
     console.log(`  volumes: ${req.volumes.length}`)
     console.log(`  validation: ${req.validationCmds.length} commands`)
@@ -660,12 +744,26 @@ Options:
 
     const pluginDataEntries = discoverPluginDataDirs(activeSet)
     if (pluginDataEntries.length > 0) {
-      console.log(`  Plugin data: ${pluginDataEntries.map(e => `${e.plugin} (${e.files.join(', ')})`).join('; ')}`)
+      console.log(
+        `  Plugin data: ${pluginDataEntries.map((e) => `${e.plugin} (${e.files.join(', ')})`).join('; ')}`
+      )
+    }
+
+    const pluginScriptIds = discoverPluginScriptDirs()
+    if (pluginScriptIds.length > 0) {
+      console.log(`  Plugin scripts (${pluginScriptIds.length}): ${pluginScriptIds.join(', ')}`)
     }
 
     if (flags['dry-run']) continue
 
-    const dockerfile = processTemplate(template, req, pluginWorkerIds, pluginDataEntries, fragments)
+    const dockerfile = processTemplate(
+      template,
+      req,
+      pluginWorkerIds,
+      pluginDataEntries,
+      pluginScriptIds,
+      fragments
+    )
     writeFileSync(join(outputDir, profile.dockerfile), dockerfile, 'utf-8')
     console.log(`  OK ${profile.dockerfile} (${dockerfile.split('\n').length} lines)`)
 
@@ -678,4 +776,7 @@ Options:
   console.log('--- Done ---\n')
 }
 
-main().catch(err => { console.error('Fatal:', err); process.exit(1) })
+main().catch((err) => {
+  console.error('Fatal:', err)
+  process.exit(1)
+})

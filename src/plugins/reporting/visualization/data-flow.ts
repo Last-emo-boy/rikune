@@ -3,7 +3,10 @@
  * Tasks: visualization-enhanced-reporting 2.1-2.5
  */
 
-import { ExplanationGraphDigestSchema, type ExplanationGraphDigest } from '../../../artifacts/explanation-graphs.js'
+import {
+  ExplanationGraphDigestSchema,
+  type ExplanationGraphDigest,
+} from '../../../artifacts/explanation-graphs.js'
 import { escapeDot, escapeMermaid } from '../../../utils/shared-helpers.js'
 
 export interface DataFlowNode {
@@ -25,51 +28,126 @@ export interface DataFlowEdge {
 export interface DataFlowData {
   nodes: DataFlowNode[]
   edges: DataFlowEdge[]
-  metadata: { sampleId: string; totalNodes: number; dataSources: number; dataSinks: number; trackedDataTypes: string[] }
+  metadata: {
+    sampleId: string
+    totalNodes: number
+    dataSources: number
+    dataSinks: number
+    trackedDataTypes: string[]
+  }
   explanation: ExplanationGraphDigest
 }
-export interface DataFlowOptions { maxNodes?: number; trackDataTypes?: Array<'crypto_keys' | 'handles' | 'file_paths' | 'network_sockets' | 'buffers'>; format?: 'dot' | 'mermaid' | 'json'; sampleId?: string }
+export interface DataFlowOptions {
+  maxNodes?: number
+  trackDataTypes?: Array<'crypto_keys' | 'handles' | 'file_paths' | 'network_sockets' | 'buffers'>
+  format?: 'dot' | 'mermaid' | 'json'
+  sampleId?: string
+}
 
 const DATA_TYPE_PATTERNS: Record<string, string[]> = {
-  crypto_keys: ['CryptGenKey', 'CryptImportKey', 'CryptEncrypt', 'CryptDecrypt', 'BCryptEncrypt', 'BCryptDecrypt', 'key', 'password', 'secret', 'aes', 'rc4'],
+  crypto_keys: [
+    'CryptGenKey',
+    'CryptImportKey',
+    'CryptEncrypt',
+    'CryptDecrypt',
+    'BCryptEncrypt',
+    'BCryptDecrypt',
+    'key',
+    'password',
+    'secret',
+    'aes',
+    'rc4',
+  ],
   handles: ['CreateFile', 'OpenProcess', 'hProcess', 'hThread', 'hFile'],
   file_paths: ['CreateFile', 'WriteFile', 'ReadFile', 'path', 'filename'],
   network_sockets: ['socket', 'connect', 'send', 'recv', 'InternetOpen', 'HttpSendRequest'],
   buffers: ['VirtualAlloc', 'HeapAlloc', 'malloc', 'memcpy', 'buffer'],
 }
 
-export function generateDataFlow(functions: Array<{ address: string; name: string; score: number; calledApis?: string[]; referencedStrings?: string[] }>, options: DataFlowOptions = {}): DataFlowData {
-  const { maxNodes = 30, trackDataTypes = Object.keys(DATA_TYPE_PATTERNS) as Array<keyof typeof DATA_TYPE_PATTERNS> } = options
-  const nodes: DataFlowNode[] = []; const edges: DataFlowEdge[] = []; const nodeMap = new Map<string, DataFlowNode>()
+export function generateDataFlow(
+  functions: Array<{
+    address: string
+    name: string
+    score: number
+    calledApis?: string[]
+    referencedStrings?: string[]
+  }>,
+  options: DataFlowOptions = {}
+): DataFlowData {
+  const { maxNodes = 30, trackDataTypes = Object.keys(DATA_TYPE_PATTERNS) } = options
+  const nodes: DataFlowNode[] = []
+  const edges: DataFlowEdge[] = []
+  const nodeMap = new Map<string, DataFlowNode>()
 
   for (const func of functions.slice(0, maxNodes)) {
     const calledApis = func.calledApis || []
     for (const dataType of trackDataTypes) {
       const patterns = DATA_TYPE_PATTERNS[dataType]
-      const matches = calledApis.filter(api => patterns.some(p => p.toLowerCase().includes(api.toLowerCase()) || api.toLowerCase().includes(p.toLowerCase())))
+      const matches = calledApis.filter((api) =>
+        patterns.some(
+          (p) =>
+            p.toLowerCase().includes(api.toLowerCase()) ||
+            api.toLowerCase().includes(p.toLowerCase())
+        )
+      )
       if (matches.length > 0) {
         const sourceId = `${func.address}_source_${dataType}`
         if (!nodeMap.has(sourceId)) {
-          const sourceNode: DataFlowNode = { id: sourceId, address: func.address, name: `${func.name} (source)`, type: 'data_source', dataType, isSuspicious: func.score > 0.7, confidence_state: 'inferred' }
-          nodes.push(sourceNode); nodeMap.set(sourceId, sourceNode)
+          const sourceNode: DataFlowNode = {
+            id: sourceId,
+            address: func.address,
+            name: `${func.name} (source)`,
+            type: 'data_source',
+            dataType,
+            isSuspicious: func.score > 0.7,
+            confidence_state: 'inferred',
+          }
+          nodes.push(sourceNode)
+          nodeMap.set(sourceId, sourceNode)
         }
-        edges.push({ source: func.address, target: sourceId, dataType, label: matches[0], confidence_state: 'inferred' })
+        edges.push({
+          source: func.address,
+          target: sourceId,
+          dataType,
+          label: matches[0],
+          confidence_state: 'inferred',
+        })
       }
     }
     const sinkPatterns = ['WriteFile', 'send', 'recv', 'CryptEncrypt', 'CryptDecrypt']
-    const sinkMatches = calledApis.filter(api => sinkPatterns.some(p => api.toLowerCase().includes(p.toLowerCase())))
+    const sinkMatches = calledApis.filter((api) =>
+      sinkPatterns.some((p) => api.toLowerCase().includes(p.toLowerCase()))
+    )
     if (sinkMatches.length > 0) {
       const sinkId = `${func.address}_sink`
       if (!nodeMap.has(sinkId)) {
-        const sinkNode: DataFlowNode = { id: sinkId, address: func.address, name: `${func.name} (sink)`, type: 'data_sink', isSuspicious: func.score > 0.7, confidence_state: 'inferred' }
-        nodes.push(sinkNode); nodeMap.set(sinkId, sinkNode)
+        const sinkNode: DataFlowNode = {
+          id: sinkId,
+          address: func.address,
+          name: `${func.name} (sink)`,
+          type: 'data_sink',
+          isSuspicious: func.score > 0.7,
+          confidence_state: 'inferred',
+        }
+        nodes.push(sinkNode)
+        nodeMap.set(sinkId, sinkNode)
       }
     }
-    const funcNode: DataFlowNode = { id: func.address, address: func.address, name: func.name, type: 'function', isSuspicious: func.score > 0.7, confidence_state: 'correlated' }
-    nodes.push(funcNode); nodeMap.set(func.address, funcNode)
+    const funcNode: DataFlowNode = {
+      id: func.address,
+      address: func.address,
+      name: func.name,
+      type: 'function',
+      isSuspicious: func.score > 0.7,
+      confidence_state: 'correlated',
+    }
+    nodes.push(funcNode)
+    nodeMap.set(func.address, funcNode)
   }
 
-  const trackedDataTypes = Array.from(new Set(nodes.filter(n => n.dataType).map(n => n.dataType!)))
+  const trackedDataTypes = Array.from(
+    new Set(nodes.filter((n) => n.dataType).map((n) => n.dataType))
+  )
   const explanation = ExplanationGraphDigestSchema.parse({
     graph_type: 'data_flow',
     surface_role: 'explanation_artifact',
@@ -89,7 +167,8 @@ export function generateDataFlow(functions: Array<{ address: string; name: strin
       {
         kind: 'heuristic',
         label: 'api_pattern_matching',
-        detail: 'Sources and sinks are inferred from bounded API-name patterns rather than from full data-flow reconstruction.',
+        detail:
+          'Sources and sinks are inferred from bounded API-name patterns rather than from full data-flow reconstruction.',
       },
       {
         kind: 'selection',
@@ -100,7 +179,8 @@ export function generateDataFlow(functions: Array<{ address: string; name: strin
     omissions: [
       {
         code: 'no_precise_taint_engine',
-        reason: 'This graph does not claim exact observed data movement; it is a bounded correlation surface for analyst guidance.',
+        reason:
+          'This graph does not claim exact observed data movement; it is a bounded correlation surface for analyst guidance.',
       },
       ...(functions.length > maxNodes
         ? [
@@ -111,7 +191,11 @@ export function generateDataFlow(functions: Array<{ address: string; name: strin
           ]
         : []),
     ],
-    recommended_next_tools: ['analysis.context.link', 'crypto.identify', 'workflow.analyze.promote'],
+    recommended_next_tools: [
+      'analysis.context.link',
+      'crypto.identify',
+      'workflow.analyze.promote',
+    ],
   })
 
   return {
@@ -120,8 +204,8 @@ export function generateDataFlow(functions: Array<{ address: string; name: strin
     metadata: {
       sampleId: options.sampleId || '',
       totalNodes: nodes.length,
-      dataSources: nodes.filter(n => n.type === 'data_source').length,
-      dataSinks: nodes.filter(n => n.type === 'data_sink').length,
+      dataSources: nodes.filter((n) => n.type === 'data_source').length,
+      dataSinks: nodes.filter((n) => n.type === 'data_sink').length,
       trackedDataTypes,
     },
     explanation,
@@ -132,30 +216,57 @@ export function dataFlowToDot(data: DataFlowData, options?: { title?: string }):
   const { title = 'Data Flow Diagram' } = options || {}
   let dot = `digraph "${title}" {\n  rankdir=LR;\n  node [shape=box, style=rounded];\n\n`
   for (const node of data.nodes) {
-    let shape = 'box', color = 'black', fillcolor = 'white', style = 'solid'
-    if (node.type === 'data_source') { shape = 'ellipse'; fillcolor = 'lightblue'; style = 'filled' }
-    else if (node.type === 'data_sink') { shape = 'doubleoctagon'; fillcolor = 'lightcoral'; style = 'filled' }
-    if (node.isSuspicious) { color = 'red'; style = 'filled,bold' }
-    const label = node.dataType ? `${escapeDot(node.name)}\\n${node.dataType}` : escapeDot(node.name)
+    let shape = 'box',
+      color = 'black',
+      fillcolor = 'white',
+      style = 'solid'
+    if (node.type === 'data_source') {
+      shape = 'ellipse'
+      fillcolor = 'lightblue'
+      style = 'filled'
+    } else if (node.type === 'data_sink') {
+      shape = 'doubleoctagon'
+      fillcolor = 'lightcoral'
+      style = 'filled'
+    }
+    if (node.isSuspicious) {
+      color = 'red'
+      style = 'filled,bold'
+    }
+    const label = node.dataType
+      ? `${escapeDot(node.name)}\\n${node.dataType}`
+      : escapeDot(node.name)
     dot += `  "${node.id}" [label="${label}", shape="${shape}", color="${color}", style="${style}", fillcolor="${fillcolor}"];\n`
   }
   dot += '\n'
-  for (const edge of data.edges) dot += `  "${edge.source}" -> "${edge.target}" [label="${escapeDot(edge.label || edge.dataType)}", color="gray"];\n`
+  for (const edge of data.edges)
+    dot += `  "${edge.source}" -> "${edge.target}" [label="${escapeDot(edge.label || edge.dataType)}", color="gray"];\n`
   return dot + '}\n'
 }
 
 export function dataFlowToMermaid(data: DataFlowData): string {
   let mermaid = 'graph LR\n'
   for (const node of data.nodes) {
-    let shape = '["', endShape = '"]'
-    if (node.type === 'data_source') { shape = '(('; endShape = '))' }
-    else if (node.type === 'data_sink') { shape = '[('; endShape = ')]' }
-    const label = node.dataType ? `${escapeMermaid(node.name)}\\n${node.dataType}` : escapeMermaid(node.name)
+    let shape = '["',
+      endShape = '"]'
+    if (node.type === 'data_source') {
+      shape = '(('
+      endShape = '))'
+    } else if (node.type === 'data_sink') {
+      shape = '[('
+      endShape = ')]'
+    }
+    const label = node.dataType
+      ? `${escapeMermaid(node.name)}\\n${node.dataType}`
+      : escapeMermaid(node.name)
     mermaid += `  ${node.id}${shape}${label}${endShape}\n`
     if (node.isSuspicious) mermaid += `  ${node.id}:::suspicious\n`
   }
   mermaid += '\n'
-  for (const edge of data.edges) mermaid += `  ${edge.source} -->|${escapeMermaid(edge.label || edge.dataType)}| ${edge.target}\n`
-  return mermaid + '\nclassDef suspicious fill:#ffcccc,stroke:red,stroke-width:2px;\nclassDef data_source fill:lightblue,stroke:blue;\nclassDef data_sink fill:lightcoral,stroke:darkred;\n'
+  for (const edge of data.edges)
+    mermaid += `  ${edge.source} -->|${escapeMermaid(edge.label || edge.dataType)}| ${edge.target}\n`
+  return (
+    mermaid +
+    '\nclassDef suspicious fill:#ffcccc,stroke:red,stroke-width:2px;\nclassDef data_source fill:lightblue,stroke:blue;\nclassDef data_sink fill:lightcoral,stroke:darkred;\n'
+  )
 }
-

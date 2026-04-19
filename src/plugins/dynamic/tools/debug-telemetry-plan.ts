@@ -27,9 +27,15 @@ const TelemetryProfileSchema = z.enum([
 ])
 
 export const DebugTelemetryPlanInputSchema = z.object({
-  sample_id: z.string().optional().describe('Optional sample ID used to persist the plan and render sample-bound guidance.'),
+  sample_id: z
+    .string()
+    .optional()
+    .describe('Optional sample ID used to persist the plan and render sample-bound guidance.'),
   profiles: z.array(TelemetryProfileSchema).optional().default(['procmon', 'etw_process']),
-  runtime_backend: z.enum(['auto', 'windows-sandbox', 'hyperv-vm', 'manual-runtime']).optional().default('auto'),
+  runtime_backend: z
+    .enum(['auto', 'windows-sandbox', 'hyperv-vm', 'manual-runtime'])
+    .optional()
+    .default('auto'),
   capture_seconds: z.number().int().min(5).max(3600).optional().default(90),
   include_cleanup: z.boolean().optional().default(true),
   use_static_behavior_artifacts: z.boolean().optional().default(true),
@@ -88,7 +94,12 @@ function expandProfiles(profiles: string[]): string[] {
 async function loadStaticTelemetryHints(
   deps: PluginToolDeps,
   input: z.infer<typeof DebugTelemetryPlanInputSchema>
-): Promise<{ artifact_ids: string[]; scope_note: string | null; suggested_profiles: string[]; warnings: string[] }> {
+): Promise<{
+  artifact_ids: string[]
+  scope_note: string | null
+  suggested_profiles: string[]
+  warnings: string[]
+}> {
   if (!input.use_static_behavior_artifacts || !input.sample_id) {
     return { artifact_ids: [], scope_note: null, suggested_profiles: [], warnings: [] }
   }
@@ -117,7 +128,9 @@ async function loadStaticTelemetryHints(
       findings.some((finding) => finding.category === 'persistence') ? 'procmon' : null,
       findings.some((finding) => finding.category === 'persistence') ? 'sysmon' : null,
       findings.some((finding) => finding.category === 'injection') ? 'etw_process' : null,
-      findings.some((finding) => finding.category === 'anti_analysis') ? 'powershell_eventlog' : null,
+      findings.some((finding) => finding.category === 'anti_analysis')
+        ? 'powershell_eventlog'
+        : null,
     ]
     return {
       artifact_ids: selection.artifact_ids,
@@ -130,7 +143,9 @@ async function loadStaticTelemetryHints(
       artifact_ids: [],
       scope_note: null,
       suggested_profiles: [],
-      warnings: [`Failed to load static behavior artifacts: ${error instanceof Error ? error.message : String(error)}`],
+      warnings: [
+        `Failed to load static behavior artifacts: ${error instanceof Error ? error.message : String(error)}`,
+      ],
     }
   }
 }
@@ -144,7 +159,10 @@ function backendFit(profile: string, runtimeBackend: string): string {
   return 'supported'
 }
 
-function buildRuntimeTemplate(input: z.infer<typeof DebugTelemetryPlanInputSchema>, profile: string): Record<string, unknown> {
+function buildRuntimeTemplate(
+  input: z.infer<typeof DebugTelemetryPlanInputSchema>,
+  profile: string
+): Record<string, unknown> {
   return {
     tool: 'runtime.debug.command',
     args: {
@@ -184,7 +202,9 @@ function buildProfilePlan(profile: string, input: z.infer<typeof DebugTelemetryP
         ],
         artifacts: ['procmon.pml', 'procmon.csv or procmon.xml', 'telemetry_manifest.json'],
         runtime_command_template: buildRuntimeTemplate(input, profile),
-        risks: ['ProcMon driver/service lifecycle requires cleanup; Hyper-V checkpoint rollback is preferred.'],
+        risks: [
+          'ProcMon driver/service lifecycle requires cleanup; Hyper-V checkpoint rollback is preferred.',
+        ],
       }
     case 'sysmon':
       return {
@@ -233,7 +253,9 @@ function buildProfilePlan(profile: string, input: z.infer<typeof DebugTelemetryP
         ],
         artifacts: ['eventlog_snapshot.json', 'telemetry_manifest.json'],
         runtime_command_template: buildRuntimeTemplate(input, profile),
-        risks: ['Lower fidelity than ProcMon/Sysmon but safer for Sandbox and minimal runtime images.'],
+        risks: [
+          'Lower fidelity than ProcMon/Sysmon but safer for Sandbox and minimal runtime images.',
+        ],
       }
     default:
       return {
@@ -247,14 +269,25 @@ function buildProfilePlan(profile: string, input: z.infer<typeof DebugTelemetryP
           'Run explicit sample execution or behavior capture.',
           'Stop collectors and export ETL/JSON summaries.',
         ],
-        artifacts: ['process.etl', 'process_events.json', 'image_load_events.json', 'telemetry_manifest.json'],
+        artifacts: [
+          'process.etl',
+          'process_events.json',
+          'image_load_events.json',
+          'telemetry_manifest.json',
+        ],
         runtime_command_template: buildRuntimeTemplate(input, profile),
-        risks: ['Use Hyper-V/manual runtime when provider permissions are not available in Sandbox.'],
+        risks: [
+          'Use Hyper-V/manual runtime when provider permissions are not available in Sandbox.',
+        ],
       }
   }
 }
 
-function buildTelemetryPlan(input: z.infer<typeof DebugTelemetryPlanInputSchema>, profiles: string[], staticHints: Awaited<ReturnType<typeof loadStaticTelemetryHints>>) {
+function buildTelemetryPlan(
+  input: z.infer<typeof DebugTelemetryPlanInputSchema>,
+  profiles: string[],
+  staticHints: Awaited<ReturnType<typeof loadStaticTelemetryHints>>
+) {
   return {
     schema: 'rikune.debug_telemetry_plan.v1',
     tool_version: TOOL_VERSION,
@@ -272,17 +305,20 @@ function buildTelemetryPlan(input: z.infer<typeof DebugTelemetryPlanInputSchema>
       {
         phase: 'preflight',
         tools: ['dynamic.runtime.status', 'dynamic.toolkit.status', 'debug.telemetry.plan'],
-        purpose: 'Confirm Runtime Node, Host Agent, and runtime-side telemetry tool availability without starting capture.',
+        purpose:
+          'Confirm Runtime Node, Host Agent, and runtime-side telemetry tool availability without starting capture.',
       },
       {
         phase: 'isolation',
         tools: ['runtime.hyperv.control', 'runtime.debug.session.start'],
-        purpose: 'Prefer Hyper-V/manual runtime for service or driver-backed capture; Sandbox is best-effort.',
+        purpose:
+          'Prefer Hyper-V/manual runtime for service or driver-backed capture; Sandbox is best-effort.',
       },
       {
         phase: 'capture',
         tools: ['dynamic.behavior.capture', 'runtime.debug.command'],
-        purpose: 'Run explicit behavior capture or future telemetry capture commands after setup is intentionally complete.',
+        purpose:
+          'Run explicit behavior capture or future telemetry capture commands after setup is intentionally complete.',
       },
       {
         phase: 'correlate',
@@ -290,11 +326,14 @@ function buildTelemetryPlan(input: z.infer<typeof DebugTelemetryPlanInputSchema>
         purpose: 'Normalize telemetry artifacts and compare observations with static expectations.',
       },
       ...(input.include_cleanup
-        ? [{
-            phase: 'cleanup',
-            tools: ['runtime.debug.session.stop', 'runtime.hyperv.control'],
-            purpose: 'Stop collectors, uninstall service-backed telemetry when needed, or rollback Hyper-V checkpoint.',
-          }]
+        ? [
+            {
+              phase: 'cleanup',
+              tools: ['runtime.debug.session.stop', 'runtime.hyperv.control'],
+              purpose:
+                'Stop collectors, uninstall service-backed telemetry when needed, or rollback Hyper-V checkpoint.',
+            },
+          ]
         : []),
     ],
     safety: {
@@ -327,21 +366,26 @@ export function createDebugTelemetryPlanHandler(deps: PluginToolDeps) {
     try {
       const input = DebugTelemetryPlanInputSchema.parse(args || {})
       const staticHints = await loadStaticTelemetryHints(deps, input)
-      const selectedProfiles = dedupe([...expandProfiles(input.profiles), ...staticHints.suggested_profiles])
+      const selectedProfiles = dedupe([
+        ...expandProfiles(input.profiles),
+        ...staticHints.suggested_profiles,
+      ])
       const data = buildTelemetryPlan(input, selectedProfiles, staticHints)
       const artifacts: ArtifactRef[] = []
       if (input.persist_artifact && input.sample_id && deps.workspaceManager && deps.database) {
         const sample = deps.database.findSample?.(input.sample_id)
         if (sample) {
-          artifacts.push(await persistStaticAnalysisJsonArtifact(
-            deps.workspaceManager,
-            deps.database,
-            input.sample_id,
-            'debug_telemetry_plan',
-            'debug_telemetry_plan',
-            data,
-            input.session_tag
-          ))
+          artifacts.push(
+            await persistStaticAnalysisJsonArtifact(
+              deps.workspaceManager,
+              deps.database,
+              input.sample_id,
+              'debug_telemetry_plan',
+              'debug_telemetry_plan',
+              data,
+              input.session_tag
+            )
+          )
         }
       }
 

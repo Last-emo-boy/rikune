@@ -140,7 +140,9 @@ export function diffOpcodeTables(tableA: OpcodeTable, tableB: OpcodeTable): Sema
     } else if (!sameMnemonic && !sameCategory) {
       classification = 'TRAP'
       isTrap = true
-      details.push(`Mnemonic: ${a.mnemonic} → ${b.mnemonic}, Category: ${a.semanticCategory} → ${b.semanticCategory}`)
+      details.push(
+        `Mnemonic: ${a.mnemonic} → ${b.mnemonic}, Category: ${a.semanticCategory} → ${b.semanticCategory}`
+      )
     }
 
     // Check operand structure
@@ -190,16 +192,16 @@ export function diffOpcodeTables(tableA: OpcodeTable, tableB: OpcodeTable): Sema
     })
   }
 
-  const traps = entries.filter(e => e.isTrap)
+  const traps = entries.filter((e) => e.isTrap)
 
   return {
     entries,
     totalOpcodes: allOpcodes.size,
-    identicalCount: entries.filter(e => e.classification === 'IDENTICAL').length,
-    renamedCount: entries.filter(e => e.classification === 'RENAMED').length,
+    identicalCount: entries.filter((e) => e.classification === 'IDENTICAL').length,
+    renamedCount: entries.filter((e) => e.classification === 'RENAMED').length,
     trapCount: traps.length,
-    uniqueACount: entries.filter(e => e.classification === 'UNIQUE_A').length,
-    uniqueBCount: entries.filter(e => e.classification === 'UNIQUE_B').length,
+    uniqueACount: entries.filter((e) => e.classification === 'UNIQUE_A').length,
+    uniqueBCount: entries.filter((e) => e.classification === 'UNIQUE_B').length,
     traps,
   }
 }

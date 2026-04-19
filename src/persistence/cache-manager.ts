@@ -32,19 +32,22 @@ export interface CacheHitLookup {
  * LRU Cache implementation for memory caching
  */
 class LRUCache<T> {
-  private cache: Map<string, {
-    value: T
-    insertedAt: number
-    createdAt: string
-    expiresAt?: string
-    expiresAtMs?: number
-    sampleSha256?: string
-    approxBytes: number
-  }>
+  private cache: Map<
+    string,
+    {
+      value: T
+      insertedAt: number
+      createdAt: string
+      expiresAt?: string
+      expiresAtMs?: number
+      sampleSha256?: string
+      approxBytes: number
+    }
+  >
   private maxSize: number
   private ttlMs: number
   private _totalBytes = 0
-  private static readonly MAX_BYTES = 50 * 1024 * 1024  // 50 MB memory ceiling
+  private static readonly MAX_BYTES = 50 * 1024 * 1024 // 50 MB memory ceiling
 
   constructor(maxSize: number, ttlMs: number) {
     this.cache = new Map()
@@ -182,9 +185,12 @@ class FileSystemCache {
     return path.join(this.cacheDir, bucket, `${key}.json`)
   }
 
-  async getWithMeta(
-    key: string
-  ): Promise<{ data: unknown; createdAt?: string; expiresAt?: string; sampleSha256?: string } | null> {
+  async getWithMeta(key: string): Promise<{
+    data: unknown
+    createdAt?: string
+    expiresAt?: string
+    sampleSha256?: string
+  } | null> {
     try {
       const cachePath = this.getCachePath(key)
       const content = await fs.readFile(cachePath, 'utf-8')
@@ -246,9 +252,9 @@ class FileSystemCache {
 
 /**
  * Cache Manager with three-tier architecture
- * 
+ *
  * Requirements: 20.3, 20.4, 20.5, 26.1 (cache prewarming)
- * 
+ *
  * Architecture:
  * - L1: Memory cache (LRU, 5 minutes TTL)
  * - L2: File system cache (30 days TTL)
@@ -273,15 +279,15 @@ export class CacheManager {
 
   /**
    * Get cached result from three-tier cache
-   * 
+   *
    * Requirements: 20.3
-   * 
+   *
    * Algorithm:
    * 1. Check L1 (memory cache)
    * 2. If miss, check L2 (file system cache) and populate L1
    * 3. If miss, check L3 (database cache) and populate L1 and L2
    * 4. Return null if not found in any layer
-   * 
+   *
    * @param key - Cache key
    * @returns Cached data or null if not found
    */
@@ -375,19 +381,24 @@ export class CacheManager {
 
   /**
    * Set cached result in all three tiers
-   * 
+   *
    * Requirements: 20.4
-   * 
+   *
    * Algorithm:
    * 1. Store in L1 (memory cache)
    * 2. Store in L2 (file system cache)
    * 3. Store in L3 (database cache) if available
-   * 
+   *
    * @param key - Cache key
    * @param data - Data to cache
    * @param ttl - Time to live in milliseconds (optional)
    */
-  async setCachedResult(key: string, data: unknown, ttl?: number, sampleSha256?: string): Promise<void> {
+  async setCachedResult(
+    key: string,
+    data: unknown,
+    ttl?: number,
+    sampleSha256?: string
+  ): Promise<void> {
     // L1: Store in memory cache
     this.memoryCache.set(key, data, { sampleSha256 })
 
@@ -418,12 +429,16 @@ export class CacheManager {
     // L2
     try {
       await this.fsCache.delete(key)
-    } catch (e) { logDebug?.('cache_invalidate_fs_failed', { key, err: String(e) }) }
+    } catch (e) {
+      logDebug?.('cache_invalidate_fs_failed', { key, err: String(e) })
+    }
     // L3
     if (this.db) {
       try {
         this.db.runSql('DELETE FROM cache WHERE key = ?', [key])
-      } catch (e) { logDebug?.('cache_invalidate_db_failed', { key, err: String(e) }) }
+      } catch (e) {
+        logDebug?.('cache_invalidate_db_failed', { key, err: String(e) })
+      }
     }
   }
 
@@ -440,7 +455,11 @@ export class CacheManager {
     if (this.db) {
       const entries = await this.db.getCacheEntriesBySample(sampleSha256)
       for (const entry of entries) {
-        try { await this.fsCache.delete(entry.key) } catch (e) { logDebug?.('cache_invalidate_sample_fs_failed', { key: entry.key, err: String(e) }) }
+        try {
+          await this.fsCache.delete(entry.key)
+        } catch (e) {
+          logDebug?.('cache_invalidate_sample_fs_failed', { key: entry.key, err: String(e) })
+        }
         deleted++
       }
       this.db.runSql('DELETE FROM cache WHERE sample_sha256 = ?', [sampleSha256])
@@ -469,14 +488,14 @@ export class CacheManager {
 
   /**
    * Prewarm cache by loading frequently accessed data into memory
-   * 
+   *
    * Requirements: 26.1 (cache prewarming)
-   * 
+   *
    * Strategy:
    * 1. Load recent cache entries from database
    * 2. Populate L1 (memory) and L2 (filesystem) caches
    * 3. Prioritize entries with high access frequency
-   * 
+   *
    * @param maxEntries - Maximum number of entries to prewarm (default: 100)
    */
   async prewarmCache(maxEntries: number = 100): Promise<number> {
@@ -530,9 +549,9 @@ export class CacheManager {
   /**
    * Prewarm cache for a specific sample
    * Loads all cached results for a sample into memory
-   * 
+   *
    * Requirements: 26.1 (cache prewarming)
-   * 
+   *
    * @param sampleSha256 - SHA256 hash of the sample
    * @returns Number of entries prewarmed
    */
@@ -572,14 +591,14 @@ export class CacheManager {
 
 /**
  * Generate deterministic cache key from parameters
- * 
+ *
  * Requirements: 20.1, 20.2
- * 
+ *
  * Algorithm:
  * 1. Normalize arguments (sort keys, remove defaults)
  * 2. Create canonical representation
  * 3. Generate SHA256 hash
- * 
+ *
  * @param params - Cache key parameters
  * @returns Cache key string in format "cache:<sha256>"
  */
@@ -590,7 +609,7 @@ export function generateCacheKey(params: CacheKeyParams): string {
     toolName: params.toolName,
     toolVersion: params.toolVersion,
     args: normalizeArgs(params.args),
-    ...(params.rulesetVersion && { rulesetVersion: params.rulesetVersion })
+    ...(params.rulesetVersion && { rulesetVersion: params.rulesetVersion }),
   }
 
   // Generate SHA256 hash directly from canonical JSON
@@ -601,15 +620,15 @@ export function generateCacheKey(params: CacheKeyParams): string {
 
 /**
  * Normalize arguments for cache key generation
- * 
+ *
  * Requirements: 20.2
- * 
+ *
  * Normalization rules:
  * 1. Sort object keys recursively
  * 2. Remove null and undefined values
  * 3. Recursively normalize nested objects
  * 4. Preserve arrays as-is (order matters)
- * 
+ *
  * @param args - Arguments object to normalize
  * @returns Normalized arguments object
  */
@@ -622,24 +641,27 @@ export function normalizeArgs(args: Record<string, unknown>): Record<string, unk
   // Sort keys and filter out null/undefined values
   const sortedKeys = Object.keys(args).sort()
 
-  const normalized = sortedKeys.reduce((acc, key) => {
-    const value = args[key]
+  const normalized = sortedKeys.reduce(
+    (acc, key) => {
+      const value = args[key]
 
-    // Skip null and undefined values
-    if (value === null || value === undefined) {
+      // Skip null and undefined values
+      if (value === null || value === undefined) {
+        return acc
+      }
+
+      // Recursively normalize nested objects
+      if (typeof value === 'object' && !Array.isArray(value)) {
+        acc[key] = normalizeArgs(value as Record<string, unknown>)
+      } else {
+        // Keep primitives and arrays as-is
+        acc[key] = value
+      }
+
       return acc
-    }
-
-    // Recursively normalize nested objects
-    if (typeof value === 'object' && !Array.isArray(value)) {
-      acc[key] = normalizeArgs(value as Record<string, unknown>)
-    } else {
-      // Keep primitives and arrays as-is
-      acc[key] = value
-    }
-
-    return acc
-  }, {} as Record<string, unknown>)
+    },
+    {} as Record<string, unknown>
+  )
 
   return normalized
 }
@@ -679,13 +701,13 @@ export function filterUnstableParams(args: Record<string, unknown>): Record<stri
   }
 
   const filtered: Record<string, unknown> = {}
-  
+
   for (const [key, value] of Object.entries(args)) {
     if (!UNSTABLE_PARAMS.has(key)) {
       filtered[key] = value
     }
   }
-  
+
   return filtered
 }
 
@@ -696,22 +718,25 @@ export function filterUnstableParams(args: Record<string, unknown>): Record<stri
 export function generateSmartCacheKey(params: CacheKeyParams): string {
   // Filter unstable parameters from args
   const filteredArgs = filterUnstableParams(params.args)
-  
+
   // Create normalized object with sorted keys
   const normalized = {
     sampleSha256: params.sampleSha256,
     toolName: params.toolName,
     toolVersion: params.toolVersion,
     args: normalizeArgs(filteredArgs),
-    ...(params.rulesetVersion && { rulesetVersion: params.rulesetVersion })
+    ...(params.rulesetVersion && { rulesetVersion: params.rulesetVersion }),
   }
 
   // Sort keys at top level to ensure deterministic order
   const sortedKeys = Object.keys(normalized).sort()
-  const sortedNormalized = sortedKeys.reduce((acc, key) => {
-    acc[key] = normalized[key as keyof typeof normalized]
-    return acc
-  }, {} as Record<string, unknown>)
+  const sortedNormalized = sortedKeys.reduce(
+    (acc, key) => {
+      acc[key] = normalized[key as keyof typeof normalized]
+      return acc
+    },
+    {} as Record<string, unknown>
+  )
 
   // Generate canonical JSON string
   const keyString = JSON.stringify(sortedNormalized)
@@ -721,5 +746,3 @@ export function generateSmartCacheKey(params: CacheKeyParams): string {
 
   return `cache:${hash}`
 }
-
-

@@ -24,7 +24,7 @@ export interface ProgressReporter {
  */
 export function createProgressReporter(
   server: Server,
-  progressToken: string | number | undefined,
+  progressToken: string | number | undefined
 ): ProgressReporter {
   if (progressToken === undefined) {
     return { report: async () => {} }

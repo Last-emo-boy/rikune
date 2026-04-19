@@ -20,10 +20,7 @@ import {
   buildStaticWorkerRequest,
   callStaticWorker as callPooledStaticWorker,
 } from '../../../tools/static-worker-client.js'
-import {
-  buildEnrichedStringBundle,
-  EnrichedStringBundleSchema,
-} from '../string-xref-analysis.js'
+import { buildEnrichedStringBundle, EnrichedStringBundleSchema } from '../string-xref-analysis.js'
 import {
   ENRICHED_STRING_ANALYSIS_ARTIFACT_TYPE,
   persistStringXrefJsonArtifact,
@@ -54,8 +51,18 @@ const DEFAULT_TIMEOUT = 60 // seconds
  */
 export const StringsFlossDecodeInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  timeout: z.number().int().min(1).optional().default(DEFAULT_TIMEOUT).describe('Timeout in seconds (default: 60)'),
-  modes: z.array(z.enum(['static', 'stack', 'tight', 'decoded'])).optional().default(['decoded']).describe('Decoding modes to use'),
+  timeout: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .default(DEFAULT_TIMEOUT)
+    .describe('Timeout in seconds (default: 60)'),
+  modes: z
+    .array(z.enum(['static', 'stack', 'tight', 'decoded']))
+    .optional()
+    .default(['decoded'])
+    .describe('Decoding modes to use'),
   force_refresh: z
     .boolean()
     .optional()
@@ -65,7 +72,9 @@ export const StringsFlossDecodeInputSchema = z.object({
     .boolean()
     .optional()
     .default(true)
-    .describe('When true, FLOSS decoding may be deferred to the background queue instead of blocking the MCP request.'),
+    .describe(
+      'When true, FLOSS decoding may be deferred to the background queue instead of blocking the MCP request.'
+    ),
   enrich_result: z
     .boolean()
     .optional()
@@ -90,34 +99,42 @@ export type StringsFlossDecodeInput = z.infer<typeof StringsFlossDecodeInputSche
  */
 export const StringsFlossDecodeOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    status: z.enum(['ready', 'queued', 'partial']).optional(),
-    sample_id: z.string().optional(),
-    result_mode: z.enum(['full']).optional(),
-    execution_state: z.enum(['inline', 'queued', 'partial', 'completed']).optional(),
-    job_id: z.string().optional(),
-    polling_guidance: z.any().optional(),
-    recommended_next_tools: z.array(z.string()).optional(),
-    next_actions: z.array(z.string()).optional(),
-    decoded_strings: z.array(z.object({
-      string: z.string(),
-      offset: z.number(),
-      type: z.string(),
-      decoding_method: z.string().nullable(),
-    })).optional(),
-    count: z.number().optional(),
-    timeout_occurred: z.boolean().optional(),
-    partial_results: z.boolean().optional(),
-    enriched: EnrichedStringBundleSchema.optional(),
-    tooling: z.any().optional(),
-  }).optional(),
+  data: z
+    .object({
+      status: z.enum(['ready', 'queued', 'partial']).optional(),
+      sample_id: z.string().optional(),
+      result_mode: z.enum(['full']).optional(),
+      execution_state: z.enum(['inline', 'queued', 'partial', 'completed']).optional(),
+      job_id: z.string().optional(),
+      polling_guidance: z.any().optional(),
+      recommended_next_tools: z.array(z.string()).optional(),
+      next_actions: z.array(z.string()).optional(),
+      decoded_strings: z
+        .array(
+          z.object({
+            string: z.string(),
+            offset: z.number(),
+            type: z.string(),
+            decoding_method: z.string().nullable(),
+          })
+        )
+        .optional(),
+      count: z.number().optional(),
+      timeout_occurred: z.boolean().optional(),
+      partial_results: z.boolean().optional(),
+      enriched: EnrichedStringBundleSchema.optional(),
+      tooling: z.any().optional(),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(z.any()).optional(),
-  metrics: z.object({
-    elapsed_ms: z.number(),
-    tool: z.string(),
-  }).optional(),
+  metrics: z
+    .object({
+      elapsed_ms: z.number(),
+      tool: z.string(),
+    })
+    .optional(),
 })
 
 export type StringsFlossDecodeOutput = z.infer<typeof StringsFlossDecodeOutputSchema>
@@ -178,9 +195,9 @@ interface WorkerResponse {
 
 /**
  * Spawn Python Static Worker and communicate via stdin/stdout JSON protocol
- * 
+ *
  * Requirements: Worker communication
- * 
+ *
  * @param request - Worker request object
  * @returns Worker response object
  */
@@ -188,7 +205,7 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
   return new Promise((resolve, reject) => {
     // Get Python worker path
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
-    
+
     // Spawn Python process
     const pythonCommand = getPythonCommand()
     const pythonProcess = spawn(pythonCommand, [workerPath], {
@@ -222,7 +239,11 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
         const response: WorkerResponse = JSON.parse(lastLine)
         resolve(response)
       } catch (error) {
-        reject(new Error(`Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`))
+        reject(
+          new Error(
+            `Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`
+          )
+        )
       }
     })
 
@@ -245,7 +266,8 @@ function normalizeStringsFlossDecodeData(
   payload: unknown,
   input: StringsFlossDecodeInput
 ): Record<string, unknown> {
-  const data = payload && typeof payload === 'object' ? ({ ...(payload as Record<string, unknown>) }) : {}
+  const data =
+    payload && typeof payload === 'object' ? { ...(payload as Record<string, unknown>) } : {}
   const decoded = Array.isArray(data.decoded_strings)
     ? data.decoded_strings
         .map((item) => {
@@ -316,7 +338,7 @@ export function createStringsFlossDecodeHandler(
         sampleSha256: sample.sha256,
         toolName: TOOL_NAME,
         toolVersion: TOOL_VERSION,
-        args: { 
+        args: {
           timeout: input.timeout,
           modes: input.modes,
           enrich_result: input.enrich_result,
@@ -379,7 +401,7 @@ export function createStringsFlossDecodeHandler(
 
       // 3. Get sample path from workspace
       const workspace = await workspaceManager.getWorkspace(input.sample_id)
-      
+
       // Find the sample file in the original directory
       const fs = await import('fs/promises')
       const files = await fs.readdir(workspace.original)
@@ -389,7 +411,7 @@ export function createStringsFlossDecodeHandler(
           errors: ['Sample file not found in workspace'],
         }
       }
-      
+
       const samplePath = path.join(workspace.original, files[0])
 
       // 4. Prepare worker request
@@ -445,7 +467,10 @@ export function createStringsFlossDecodeHandler(
       }
 
       // 6. Cache result (only if not timeout or partial)
-      const responseData = normalizedData as { timeout_occurred?: boolean; partial_results?: boolean }
+      const responseData = normalizedData as {
+        timeout_occurred?: boolean
+        partial_results?: boolean
+      }
       if (!responseData.timeout_occurred && !responseData.partial_results) {
         await cacheManager.setCachedResult(cacheKey, normalizedData, CACHE_TTL_MS, sample.sha256)
       }
@@ -458,12 +483,12 @@ export function createStringsFlossDecodeHandler(
       if (workerResponse.warnings) {
         warnings.push(...workerResponse.warnings)
       }
-      const decodedStrings = (normalizedData as Record<string, unknown>).decoded_strings
+      const decodedStrings = normalizedData.decoded_strings
       if (Array.isArray(decodedStrings) && decodedStrings.length === 0) {
         warnings.push(
           'FLOSS decoded 0 strings. This is expected for samples protected by strong obfuscators ' +
-          '(e.g. .NET Reactor, Themida, VMProtect) where string decoding requires runtime execution. ' +
-          'Consider using a debugger or memory dump approach instead.'
+            '(e.g. .NET Reactor, Themida, VMProtect) where string decoding requires runtime execution. ' +
+            'Consider using a debugger or memory dump approach instead.'
         )
       }
 
@@ -476,8 +501,7 @@ export function createStringsFlossDecodeHandler(
           result_mode: 'full',
           execution_state: 'completed',
           ...normalizedData,
-          worker_pool:
-            (workerResponse.metrics as Record<string, unknown> | undefined)?.worker_pool,
+          worker_pool: workerResponse.metrics?.worker_pool,
         },
         warnings: warnings.length > 0 ? warnings : undefined,
         errors: workerResponse.errors,

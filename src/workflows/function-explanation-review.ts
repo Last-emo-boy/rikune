@@ -49,7 +49,9 @@ export const functionExplanationReviewWorkflowInputSchema = z
     include_resolved: z
       .boolean()
       .default(true)
-      .describe('Include already resolved functions so the external LLM can explain stable and unresolved ones together'),
+      .describe(
+        'Include already resolved functions so the external LLM can explain stable and unresolved ones together'
+      ),
     analysis_goal: z
       .string()
       .min(1)
@@ -65,39 +67,57 @@ export const functionExplanationReviewWorkflowInputSchema = z
     evidence_scope: z
       .enum(['all', 'latest', 'session'])
       .default('all')
-      .describe('Runtime evidence scope forwarded to review and optional reconstruct/export refresh'),
+      .describe(
+        'Runtime evidence scope forwarded to review and optional reconstruct/export refresh'
+      ),
     evidence_session_tag: z
       .string()
       .optional()
-      .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
+      .describe(
+        'Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'
+      ),
     semantic_scope: z
       .enum(['all', 'latest', 'session'])
       .default('all')
-      .describe('Semantic artifact scope used when refreshing reconstruct/export output after apply'),
+      .describe(
+        'Semantic artifact scope used when refreshing reconstruct/export output after apply'
+      ),
     semantic_session_tag: z
       .string()
       .optional()
-      .describe('Optional semantic review session selector used when semantic_scope=session or to narrow all/latest results'),
+      .describe(
+        'Optional semantic review session selector used when semantic_scope=session or to narrow all/latest results'
+      ),
     compare_evidence_scope: z
       .enum(['all', 'latest', 'session'])
       .optional()
-      .describe('Optional baseline runtime evidence scope used when refreshing export for comparison-aware workflow output'),
+      .describe(
+        'Optional baseline runtime evidence scope used when refreshing export for comparison-aware workflow output'
+      ),
     compare_evidence_session_tag: z
       .string()
       .optional()
-      .describe('Optional baseline runtime evidence session selector used when compare_evidence_scope=session'),
+      .describe(
+        'Optional baseline runtime evidence session selector used when compare_evidence_scope=session'
+      ),
     compare_semantic_scope: z
       .enum(['all', 'latest', 'session'])
       .optional()
-      .describe('Optional baseline semantic artifact scope used when refreshing export for comparison-aware workflow output'),
+      .describe(
+        'Optional baseline semantic artifact scope used when refreshing export for comparison-aware workflow output'
+      ),
     compare_semantic_session_tag: z
       .string()
       .optional()
-      .describe('Optional baseline semantic artifact session selector used when compare_semantic_scope=session'),
+      .describe(
+        'Optional baseline semantic artifact session selector used when compare_semantic_scope=session'
+      ),
     persist_artifact: z
       .boolean()
       .default(true)
-      .describe('Persist the prepare bundle artifact before requesting external explanation review'),
+      .describe(
+        'Persist the prepare bundle artifact before requesting external explanation review'
+      ),
     auto_apply: z
       .boolean()
       .default(true)
@@ -152,7 +172,9 @@ export const functionExplanationReviewWorkflowInputSchema = z
     rerun_export: z
       .boolean()
       .default(true)
-      .describe('After successful apply, rerun workflow.reconstruct to refresh rewrite/export output'),
+      .describe(
+        'After successful apply, rerun workflow.reconstruct to refresh rewrite/export output'
+      ),
     export_path: z
       .enum(['auto', 'native', 'dotnet'])
       .default('auto')
@@ -177,7 +199,9 @@ export const functionExplanationReviewWorkflowInputSchema = z
     auto_recover_function_index: z
       .boolean()
       .default(true)
-      .describe('When native function-index coverage is missing, automatically recover it before refresh export'),
+      .describe(
+        'When native function-index coverage is missing, automatically recover it before refresh export'
+      ),
     include_plan: z
       .boolean()
       .default(false)
@@ -227,17 +251,24 @@ export const functionExplanationReviewWorkflowInputSchema = z
       .default(true)
       .describe('Reuse cached reconstruct workflow results for the optional refresh run'),
   })
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
-  })
-  .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
-    message: 'semantic_session_tag is required when semantic_scope=session',
-    path: ['semantic_session_tag'],
-  })
+  .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()),
+    {
+      message: 'semantic_session_tag is required when semantic_scope=session',
+      path: ['semantic_session_tag'],
+    }
+  )
   .refine(
     (value) =>
-      value.compare_evidence_scope !== 'session' || Boolean(value.compare_evidence_session_tag?.trim()),
+      value.compare_evidence_scope !== 'session' ||
+      Boolean(value.compare_evidence_session_tag?.trim()),
     {
       message: 'compare_evidence_session_tag is required when compare_evidence_scope=session',
       path: ['compare_evidence_session_tag'],
@@ -245,7 +276,8 @@ export const functionExplanationReviewWorkflowInputSchema = z
   )
   .refine(
     (value) =>
-      value.compare_semantic_scope !== 'session' || Boolean(value.compare_semantic_session_tag?.trim()),
+      value.compare_semantic_scope !== 'session' ||
+      Boolean(value.compare_semantic_session_tag?.trim()),
     {
       message: 'compare_semantic_session_tag is required when compare_semantic_scope=session',
       path: ['compare_semantic_session_tag'],
@@ -265,59 +297,59 @@ export const functionExplanationReviewWorkflowOutputSchema = z.object({
         polling_guidance: PollingGuidanceSchema.nullable(),
       }),
       z.object({
-      sample_id: z.string(),
-      review: z.object({
-        review_status: z.string(),
-        prompt_name: z.string(),
-        client: z.object({
-          name: z.string().nullable(),
-          version: z.string().nullable(),
-          sampling_available: z.boolean(),
+        sample_id: z.string(),
+        review: z.object({
+          review_status: z.string(),
+          prompt_name: z.string(),
+          client: z.object({
+            name: z.string().nullable(),
+            version: z.string().nullable(),
+            sampling_available: z.boolean(),
+          }),
+          prepare: z.object({
+            prepared_count: z.number().int().nonnegative(),
+            artifact_id: z.string().nullable(),
+          }),
+          sampling: z.object({
+            attempted: z.boolean(),
+            model: z.string().nullable(),
+            stop_reason: z.string().nullable(),
+            parsed_explanation_count: z.number().int().nonnegative(),
+          }),
+          apply: z.object({
+            attempted: z.boolean(),
+            accepted_count: z.number().int().nonnegative(),
+            rejected_count: z.number().int().nonnegative(),
+            artifact_id: z.string().nullable(),
+          }),
+          confidence_policy: z.object({
+            calibrated: z.boolean(),
+            explanation_scores_are_heuristic: z.boolean(),
+            meaning: z.string(),
+          }),
         }),
-        prepare: z.object({
-          prepared_count: z.number().int().nonnegative(),
-          artifact_id: z.string().nullable(),
-        }),
-        sampling: z.object({
+        export: z.object({
           attempted: z.boolean(),
-          model: z.string().nullable(),
-          stop_reason: z.string().nullable(),
-          parsed_explanation_count: z.number().int().nonnegative(),
+          status: z.enum(['completed', 'failed', 'skipped']),
+          selected_path: z.enum(['native', 'dotnet']).nullable(),
+          export_tool: z.string().nullable(),
+          export_root: z.string().nullable(),
+          manifest_path: z.string().nullable(),
+          build_validation_status: z.string().nullable(),
+          harness_validation_status: z.string().nullable(),
+          preflight: z
+            .object({
+              binary_profile: BinaryRoleProfileDataSchema.nullable(),
+              rust_profile: z.any().nullable(),
+              function_index_recovery: z.any().nullable(),
+            })
+            .nullable(),
+          ghidra_execution: GhidraExecutionSummarySchema.nullable(),
+          provenance: AnalysisProvenanceSchema.nullable(),
+          selection_diffs: AnalysisSelectionDiffSchema.nullable(),
+          notes: z.array(z.string()),
         }),
-        apply: z.object({
-          attempted: z.boolean(),
-          accepted_count: z.number().int().nonnegative(),
-          rejected_count: z.number().int().nonnegative(),
-          artifact_id: z.string().nullable(),
-        }),
-        confidence_policy: z.object({
-          calibrated: z.boolean(),
-          explanation_scores_are_heuristic: z.boolean(),
-          meaning: z.string(),
-        }),
-      }),
-      export: z.object({
-        attempted: z.boolean(),
-        status: z.enum(['completed', 'failed', 'skipped']),
-        selected_path: z.enum(['native', 'dotnet']).nullable(),
-        export_tool: z.string().nullable(),
-        export_root: z.string().nullable(),
-        manifest_path: z.string().nullable(),
-        build_validation_status: z.string().nullable(),
-        harness_validation_status: z.string().nullable(),
-        preflight: z
-          .object({
-            binary_profile: BinaryRoleProfileDataSchema.nullable(),
-            rust_profile: z.any().nullable(),
-            function_index_recovery: z.any().nullable(),
-          })
-          .nullable(),
-        ghidra_execution: GhidraExecutionSummarySchema.nullable(),
-        provenance: AnalysisProvenanceSchema.nullable(),
-        selection_diffs: AnalysisSelectionDiffSchema.nullable(),
-        notes: z.array(z.string()),
-      }),
-      next_steps: z.array(z.string()),
+        next_steps: z.array(z.string()),
       }),
     ])
     .optional(),
@@ -357,12 +389,7 @@ export function createFunctionExplanationReviewWorkflowHandler(
 ) {
   const explainReviewHandler =
     dependencies?.explainReviewHandler ||
-    createCodeFunctionExplainReviewHandler(
-      workspaceManager,
-      database,
-      cacheManager,
-      mcpServer
-    )
+    createCodeFunctionExplainReviewHandler(workspaceManager, database, cacheManager, mcpServer)
   const reconstructWorkflowHandler =
     dependencies?.reconstructWorkflowHandler ||
     createReconstructWorkflowHandler(workspaceManager, database, cacheManager)
@@ -561,7 +588,9 @@ export function createFunctionExplanationReviewWorkflowHandler(
         }
 
         if (!exportResult.ok) {
-          errors.push(...(exportResult.errors || ['workflow.reconstruct failed during export refresh']))
+          errors.push(
+            ...(exportResult.errors || ['workflow.reconstruct failed during export refresh'])
+          )
           exportSummary = {
             attempted: true,
             status: 'failed',

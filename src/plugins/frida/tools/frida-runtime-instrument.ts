@@ -28,7 +28,17 @@ export const FridaRuntimeInstrumentInputSchema = z.object({
     .optional()
     .describe('Process ID to attach to (required for attach mode)'),
   script_name: z
-    .enum(['api_trace', 'string_decoder', 'anti_debug_bypass', 'time_bypass', 'evasion_score', 'combo_evasion', 'crypto_finder', 'file_registry_monitor', 'default'])
+    .enum([
+      'api_trace',
+      'string_decoder',
+      'anti_debug_bypass',
+      'time_bypass',
+      'evasion_score',
+      'combo_evasion',
+      'crypto_finder',
+      'file_registry_monitor',
+      'default',
+    ])
     .optional()
     .default('api_trace')
     .describe('Pre-built Frida script to use'),
@@ -47,7 +57,9 @@ export const FridaRuntimeInstrumentInputSchema = z.object({
     .max(10000)
     .optional()
     .default(100)
-    .describe('Time acceleration factor for time_bypass / combo_evasion scripts (e.g. 100 means 100x faster time/sleep)'),
+    .describe(
+      'Time acceleration factor for time_bypass / combo_evasion scripts (e.g. 100 means 100x faster time/sleep)'
+    ),
   timeout_sec: z
     .number()
     .int()
@@ -118,10 +130,7 @@ interface FridaRuntimeInstrumentDependencies {
   callWorker?: (request: WorkerRequest) => Promise<WorkerResponse>
 }
 
-const WINDOWS_FRIDA_EXAMPLES = [
-  'pip install frida',
-  'pip install frida-tools',
-]
+const WINDOWS_FRIDA_EXAMPLES = ['pip install frida', 'pip install frida-tools']
 
 function buildFridaSetupActions() {
   return [
@@ -141,8 +150,7 @@ function buildFridaSetupActions() {
       required: false,
       kind: 'pip_install',
       title: 'Install Frida tools package',
-      summary:
-        'Install frida-tools for additional CLI utilities and script compilation support.',
+      summary: 'Install frida-tools for additional CLI utilities and script compilation support.',
       command: 'python -m pip install frida-tools',
       examples: ['python -m pip install frida-tools'],
       applies_to: ['frida.script.inject', 'system.health'],
@@ -167,7 +175,9 @@ function buildFridaSetupActions() {
         'Optionally set FRIDA_SCRIPT_ROOT to a directory containing custom Frida scripts for reuse.',
       env_var: 'FRIDA_SCRIPT_ROOT',
       value_hint: 'Absolute path to a directory containing Frida scripts',
-      examples: WINDOWS_FRIDA_EXAMPLES.map(() => `$env:FRIDA_SCRIPT_ROOT = "C:\\tools\\frida-scripts"`),
+      examples: WINDOWS_FRIDA_EXAMPLES.map(
+        () => `$env:FRIDA_SCRIPT_ROOT = "C:\\tools\\frida-scripts"`
+      ),
       applies_to: ['frida.script.inject', 'system.health'],
     },
   ]
@@ -237,7 +247,7 @@ export function createFridaRuntimeInstrumentHandler(
 
   async function callFridaWorker(request: WorkerRequest): Promise<WorkerResponse> {
     return new Promise((resolve, reject) => {
-      const workerPath = resolvePackagePath!('workers', 'frida_worker.py')
+      const workerPath = resolvePackagePath('workers', 'frida_worker.py')
       const pythonCommand = getPythonCommand()
       const pythonProcess = spawn(pythonCommand, [workerPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -423,8 +433,14 @@ export function createFridaRuntimeInstrumentHandler(
         workerResponse = await runWorker(workerRequest)
       } catch (error) {
         const errorStr = normalizeError(error)
-        if (errorStr.includes('Frida is not installed') || errorStr.includes('ModuleNotFoundError')) {
-          return buildFridaUnavailableResponse(startTime, 'Frida runtime not installed. Run: pip install frida')
+        if (
+          errorStr.includes('Frida is not installed') ||
+          errorStr.includes('ModuleNotFoundError')
+        ) {
+          return buildFridaUnavailableResponse(
+            startTime,
+            'Frida runtime not installed. Run: pip install frida'
+          )
         }
         return {
           ok: false,
@@ -438,7 +454,10 @@ export function createFridaRuntimeInstrumentHandler(
 
       if (!workerResponse.ok) {
         const errorMsg = workerResponse.errors.join('; ') || 'Frida instrumentation failed'
-        if (errorMsg.toLowerCase().includes('not installed') || errorMsg.toLowerCase().includes('import')) {
+        if (
+          errorMsg.toLowerCase().includes('not installed') ||
+          errorMsg.toLowerCase().includes('import')
+        ) {
           return buildFridaUnavailableResponse(startTime, errorMsg)
         }
         return {

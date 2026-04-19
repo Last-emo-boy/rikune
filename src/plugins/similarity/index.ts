@@ -5,15 +5,26 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { sampleSimilarityToolDefinition, createSampleSimilarityHandler } from './tools/sample-similarity.js'
-import { sampleClusterFuzzyToolDefinition, createSampleClusterFuzzyHandler } from './tools/sample-cluster-fuzzy.js'
+import {
+  sampleSimilarityToolDefinition,
+  createSampleSimilarityHandler,
+} from './tools/sample-similarity.js'
+import {
+  sampleClusterFuzzyToolDefinition,
+  createSampleClusterFuzzyHandler,
+} from './tools/sample-cluster-fuzzy.js'
 
 const similarityPlugin: Plugin = {
   id: 'similarity',
   name: 'Sample Similarity',
   executionDomain: 'static',
-  surfaceRules: { tier: 2, activateOn: { findings: ['packed', 'obfuscated'] }, category: 'malware-analysis' },
-  description: 'Fuzzy hashing (ssdeep, TLSH) for sample similarity analysis and malware family clustering',
+  surfaceRules: {
+    tier: 2,
+    activateOn: { findings: ['packed', 'obfuscated'] },
+    category: 'malware-analysis',
+  },
+  description:
+    'Fuzzy hashing (ssdeep, TLSH) for sample similarity analysis and malware family clustering',
   version: '1.0.0',
   systemDeps: [
     {

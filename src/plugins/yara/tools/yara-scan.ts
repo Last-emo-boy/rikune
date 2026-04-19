@@ -41,7 +41,13 @@ const CACHE_TTL_MS = CACHE_TTL_30_DAYS
 export const YaraScanInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
   rule_set: z.string().describe('Rule set name (e.g., malware_families, packers)'),
-  timeout_ms: z.number().int().min(1000).optional().default(30000).describe('Timeout in milliseconds'),
+  timeout_ms: z
+    .number()
+    .int()
+    .min(1000)
+    .optional()
+    .default(30000)
+    .describe('Timeout in milliseconds'),
   rule_tier: z
     .enum(['production', 'experimental', 'test', 'all'])
     .optional()
@@ -62,72 +68,97 @@ export type YaraScanInput = z.infer<typeof YaraScanInputSchema>
  */
 export const YaraScanOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    matches: z.array(z.object({
-      rule: z.string(),
-      tags: z.array(z.string()),
-      meta: z.record(z.any()),
-      strings: z.array(z.object({
-        identifier: z.string(),
-        offset: z.number(),
-        matched_data: z.string(),
-        location: z.object({
-          section: z.string().nullable().optional(),
-          offset_in_section: z.number().nullable().optional(),
-          rva: z.number().nullable().optional(),
-          distance_to_entrypoint: z.number().nullable().optional(),
-          function_hint: z.object({
-            name: z.string(),
-            address: z.string(),
-            proximity: z.string(),
-          }).nullable().optional(),
-        }).optional(),
-      })),
-      confidence: z.object({
-        level: z.enum(['low', 'medium', 'high']),
-        score: z.number(),
-        reason: z.string(),
-      }).optional(),
-      evidence: z.object({
-        import_dll_hits: z.array(z.string()),
-        import_api_hits: z.array(z.string()),
-        section_hits: z.array(z.string()).optional(),
-        near_entrypoint_hits: z.number().optional(),
-        string_only: z.boolean(),
-      }).optional(),
-      inference: z.object({
-        classification: z.string(),
-        summary: z.string(),
-      }).optional(),
-    })),
-    ruleset_version: z.string(),
-    timed_out: z.boolean(),
-    rule_set: z.string(),
-    rule_tier: z.string().optional(),
-    rule_files: z.array(z.string()).optional(),
-    confidence_summary: z.object({
-      high: z.number(),
-      medium: z.number(),
-      low: z.number(),
-    }).optional(),
-    import_evidence: z.object({
-      dll_count: z.number(),
-      api_count: z.number(),
-    }).optional(),
-    offset_mapping: z.object({
-      parser: z.string().nullable().optional(),
-      sections_count: z.number().optional(),
-      entry_point: z.record(z.any()).optional(),
-    }).optional(),
-    quality_notes: z.array(z.string()).optional(),
-  }).optional(),
+  data: z
+    .object({
+      matches: z.array(
+        z.object({
+          rule: z.string(),
+          tags: z.array(z.string()),
+          meta: z.record(z.any()),
+          strings: z.array(
+            z.object({
+              identifier: z.string(),
+              offset: z.number(),
+              matched_data: z.string(),
+              location: z
+                .object({
+                  section: z.string().nullable().optional(),
+                  offset_in_section: z.number().nullable().optional(),
+                  rva: z.number().nullable().optional(),
+                  distance_to_entrypoint: z.number().nullable().optional(),
+                  function_hint: z
+                    .object({
+                      name: z.string(),
+                      address: z.string(),
+                      proximity: z.string(),
+                    })
+                    .nullable()
+                    .optional(),
+                })
+                .optional(),
+            })
+          ),
+          confidence: z
+            .object({
+              level: z.enum(['low', 'medium', 'high']),
+              score: z.number(),
+              reason: z.string(),
+            })
+            .optional(),
+          evidence: z
+            .object({
+              import_dll_hits: z.array(z.string()),
+              import_api_hits: z.array(z.string()),
+              section_hits: z.array(z.string()).optional(),
+              near_entrypoint_hits: z.number().optional(),
+              string_only: z.boolean(),
+            })
+            .optional(),
+          inference: z
+            .object({
+              classification: z.string(),
+              summary: z.string(),
+            })
+            .optional(),
+        })
+      ),
+      ruleset_version: z.string(),
+      timed_out: z.boolean(),
+      rule_set: z.string(),
+      rule_tier: z.string().optional(),
+      rule_files: z.array(z.string()).optional(),
+      confidence_summary: z
+        .object({
+          high: z.number(),
+          medium: z.number(),
+          low: z.number(),
+        })
+        .optional(),
+      import_evidence: z
+        .object({
+          dll_count: z.number(),
+          api_count: z.number(),
+        })
+        .optional(),
+      offset_mapping: z
+        .object({
+          parser: z.string().nullable().optional(),
+          sections_count: z.number().optional(),
+          entry_point: z.record(z.any()).optional(),
+        })
+        .optional(),
+      quality_notes: z.array(z.string()).optional(),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(z.any()).optional(),
-  metrics: z.object({
-    elapsed_ms: z.number(),
-    tool: z.string(),
-  }).optional(),
+  metrics: z
+    .object({
+      elapsed_ms: z.number(),
+      tool: z.string(),
+    })
+    .optional(),
 })
 
 export type YaraScanOutput = z.infer<typeof YaraScanOutputSchema>
@@ -186,9 +217,9 @@ interface WorkerResponse {
 
 /**
  * Spawn Python Static Worker and communicate via stdin/stdout JSON protocol
- * 
+ *
  * Requirements: Worker communication
- * 
+ *
  * @param request - Worker request object
  * @returns Worker response object
  */
@@ -196,7 +227,7 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
   return new Promise((resolve, reject) => {
     // Get Python worker path
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
-    
+
     // Spawn Python process
     const pythonCommand = getPythonCommand()
     const pythonProcess = spawn(pythonCommand, [workerPath], {
@@ -230,7 +261,11 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
         const response: WorkerResponse = JSON.parse(lastLine)
         resolve(response)
       } catch (error) {
-        reject(new Error(`Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`))
+        reject(
+          new Error(
+            `Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`
+          )
+        )
       }
     })
 
@@ -282,7 +317,7 @@ export function createYaraScanHandler(
         sampleSha256: sample.sha256,
         toolName: TOOL_NAME,
         toolVersion: TOOL_VERSION,
-        args: { 
+        args: {
           rule_set: input.rule_set,
           timeout_ms: input.timeout_ms,
           rule_tier: input.rule_tier,
@@ -313,7 +348,7 @@ export function createYaraScanHandler(
 
       // 4. Get sample path from workspace
       const workspace = await workspaceManager.getWorkspace(input.sample_id)
-      
+
       // Find the sample file in the original directory
       const fs = await import('fs/promises')
       const files = await fs.readdir(workspace.original)
@@ -323,7 +358,7 @@ export function createYaraScanHandler(
           errors: ['Sample file not found in workspace'],
         }
       }
-      
+
       const samplePath = path.join(workspace.original, files[0])
 
       // 5. Prepare worker request
@@ -365,8 +400,7 @@ export function createYaraScanHandler(
           workerResponse.data && typeof workerResponse.data === 'object'
             ? {
                 ...(workerResponse.data as Record<string, unknown>),
-                worker_pool:
-                  (workerResponse.metrics as Record<string, unknown> | undefined)?.worker_pool,
+                worker_pool: workerResponse.metrics?.worker_pool,
               }
             : workerResponse.data,
         warnings: input.force_refresh

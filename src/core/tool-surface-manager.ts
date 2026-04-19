@@ -26,7 +26,7 @@ import { SURFACE_FILE_TYPE_TAGS } from '../plugins/sdk.js'
 // MCP stdio reserves stdout for JSON-RPC frames. Send surface logs to stderr.
 const logger = pino(
   { name: 'tool-surface-manager', level: process.env.LOG_LEVEL || 'info' },
-  pino.destination({ dest: 2, sync: false }),
+  pino.destination({ dest: 2, sync: false })
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -38,7 +38,8 @@ function normalizeFileTypeTags(rawType: string): string[] {
   if (SURFACE_FILE_TYPE_TAGS[lower]) return SURFACE_FILE_TYPE_TAGS[lower]
   // Extension-based fallback
   if (lower.endsWith('.apk') && SURFACE_FILE_TYPE_TAGS.apk) return SURFACE_FILE_TYPE_TAGS.apk
-  if ((lower.endsWith('.pcap') || lower.endsWith('.pcapng')) && SURFACE_FILE_TYPE_TAGS.pcap) return SURFACE_FILE_TYPE_TAGS.pcap
+  if ((lower.endsWith('.pcap') || lower.endsWith('.pcapng')) && SURFACE_FILE_TYPE_TAGS.pcap)
+    return SURFACE_FILE_TYPE_TAGS.pcap
   if (lower.endsWith('.jar') && SURFACE_FILE_TYPE_TAGS.jar) return SURFACE_FILE_TYPE_TAGS.jar
   return [lower]
 }
@@ -60,7 +61,14 @@ interface PluginSurfaceEntry {
 
 export interface DiscoverableCategory {
   category: string
-  plugins: Array<{ id: string; name: string; description?: string; tools: string[]; tier: SurfaceTier; activated: boolean }>
+  plugins: Array<{
+    id: string
+    name: string
+    description?: string
+    tools: string[]
+    tier: SurfaceTier
+    activated: boolean
+  }>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -121,7 +129,7 @@ export class ToolSurfaceManager {
    */
   getVisibleToolNames(): Set<string> {
     // When disabled, everything is visible
-    if (!this.enabled) return new Set<string>()  // empty = no filtering
+    if (!this.enabled) return new Set<string>() // empty = no filtering
 
     const visible = new Set<string>(this.coreTools)
     for (const entry of this.entries.values()) {
@@ -161,11 +169,11 @@ export class ToolSurfaceManager {
    */
   activateByFileType(rawFileType: string): string[] {
     const tags = normalizeFileTypeTags(rawFileType)
-    return this.activateMatching(entry => {
+    return this.activateMatching((entry) => {
       if (entry.rules.tier !== 1) return false
       const fileTypes = entry.rules.activateOn?.fileTypes
       if (!fileTypes) return false
-      return fileTypes.some(ft => tags.includes(ft.toLowerCase()))
+      return fileTypes.some((ft) => tags.includes(ft.toLowerCase()))
     })
   }
 
@@ -177,11 +185,11 @@ export class ToolSurfaceManager {
    */
   activateByFinding(finding: string): string[] {
     const lower = finding.toLowerCase()
-    return this.activateMatching(entry => {
+    return this.activateMatching((entry) => {
       if (entry.rules.tier !== 2) return false
       const findings = entry.rules.activateOn?.findings
       if (!findings) return false
-      return findings.some(f => lower.includes(f.toLowerCase()))
+      return findings.some((f) => lower.includes(f.toLowerCase()))
     })
   }
 
@@ -193,7 +201,7 @@ export class ToolSurfaceManager {
    */
   activateByCategory(category: string): string[] {
     const lower = category.toLowerCase()
-    return this.activateMatching(entry => {
+    return this.activateMatching((entry) => {
       return entry.rules.category?.toLowerCase() === lower
     })
   }
@@ -205,7 +213,7 @@ export class ToolSurfaceManager {
    * @returns list of newly activated plugin IDs
    */
   activatePlugins(pluginIds: string[]): string[] {
-    return this.activateMatching(entry => pluginIds.includes(entry.pluginId))
+    return this.activateMatching((entry) => pluginIds.includes(entry.pluginId))
   }
 
   /**
@@ -239,7 +247,10 @@ export class ToolSurfaceManager {
         if (typeof nextTool !== 'string') continue
         // Find which plugin owns this tool and activate it
         for (const entry of this.entries.values()) {
-          if (!entry.activated && entry.tools.some(t => t === nextTool || nextTool.startsWith(t.split('.')[0] + '.'))) {
+          if (
+            !entry.activated &&
+            entry.tools.some((t) => t === nextTool || nextTool.startsWith(t.split('.')[0] + '.'))
+          ) {
             activated.push(...this.activatePlugins([entry.pluginId]))
           }
         }
@@ -261,7 +272,9 @@ export class ToolSurfaceManager {
    * List all discoverable categories with their plugins and activation status.
    * Used by the `tools.discover` meta-tool.
    */
-  listCategories(pluginIndex: Map<string, { name: string; description?: string }>): DiscoverableCategory[] {
+  listCategories(
+    pluginIndex: Map<string, { name: string; description?: string }>
+  ): DiscoverableCategory[] {
     const catMap = new Map<string, DiscoverableCategory['plugins']>()
 
     for (const entry of this.entries.values()) {
@@ -320,7 +333,7 @@ export class ToolSurfaceManager {
     return {
       enabled: this.enabled,
       totalPlugins: this.entries.size,
-      activatedPlugins: [...this.entries.values()].filter(e => e.activated).length,
+      activatedPlugins: [...this.entries.values()].filter((e) => e.activated).length,
       totalTools,
       visibleTools,
       tiers,
@@ -338,7 +351,7 @@ export class ToolSurfaceManager {
         newlyActivated.push(entry.pluginId)
         logger.info(
           { plugin: entry.pluginId, tier: entry.rules.tier, tools: entry.tools.length },
-          `Surface activated: ${entry.pluginId} (+${entry.tools.length} tools)`,
+          `Surface activated: ${entry.pluginId} (+${entry.tools.length} tools)`
         )
       }
     }

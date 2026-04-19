@@ -8,20 +8,14 @@
  * - DB-backed persistence — survives process restarts
  */
 
-import { randomUUID } from 'crypto';
-import { EventEmitter } from 'events';
-import type { DatabaseManager } from '../database.js';
-import type {
-  Job,
-  JobStatus,
-  JobStatusType,
-  JobResult,
-  RetryPolicy
-} from '../types.js';
-import { logger } from '../logger.js';
+import { randomUUID } from 'crypto'
+import { EventEmitter } from 'events'
+import type { DatabaseManager } from '../database.js'
+import type { Job, JobStatus, JobStatusType, JobResult, RetryPolicy } from '../types.js'
+import { logger } from '../logger.js'
 
 // Re-export types for convenience
-export { JobPriority } from '../types.js';
+export { JobPriority } from '../types.js'
 export type {
   Job,
   JobStatus,
@@ -29,8 +23,8 @@ export type {
   JobResult,
   JobMetrics,
   RetryPolicy,
-  ArtifactRef
-} from '../types.js';
+  ArtifactRef,
+} from '../types.js'
 
 /**
  * Estimated duration for common tools (in milliseconds)
@@ -40,38 +34,38 @@ export type {
 export const TOOL_DURATION_ESTIMATES: Record<string, number> = {
   // Ghidra tools (5-30 minutes)
   'ghidra.analyze': 30 * 60 * 1000,
-  
+
   // Workflows (10-60 minutes)
   'workflow.reconstruct': 40 * 60 * 1000,
   'workflow.triage': 10 * 60 * 1000,
   'workflow.deep_static': 25 * 60 * 1000,
   'workflow.summarize': 15 * 60 * 1000,
-  
+
   // String tools (2-10 minutes)
   'strings.floss.decode': 5 * 60 * 1000,
-  
+
   // Default estimate (5 minutes)
-  'default': 5 * 60 * 1000,
-} as const;
+  default: 5 * 60 * 1000,
+} as const
 
 /**
  * Internal job entry with status tracking
  */
 interface JobEntry {
-  job: Job;
-  status: JobStatusType;
-  progress?: number;
-  progressStage?: string;
-  startedAt?: string;
-  finishedAt?: string;
-  error?: string;
-  cancelReason?: string;
-  result?: JobResult;
+  job: Job
+  status: JobStatusType
+  progress?: number
+  progressStage?: string
+  startedAt?: string
+  finishedAt?: string
+  error?: string
+  cancelReason?: string
+  result?: JobResult
 }
 
 /**
  * In-memory job queue with priority support
- * 
+ *
  * Features:
  * - Priority-based ordering
  * - Job status tracking
@@ -79,16 +73,16 @@ interface JobEntry {
  * - Event-based completion notifications
  */
 export class JobQueue extends EventEmitter {
-  private jobs: Map<string, JobEntry> = new Map();
-  private queue: Job[] = [];
+  private jobs: Map<string, JobEntry> = new Map()
+  private queue: Job[] = []
   private readonly defaultRetryPolicy: RetryPolicy = {
     maxRetries: 3,
     backoffMs: 1000,
-    retryableErrors: ['E_TIMEOUT', 'E_RESOURCE_EXHAUSTED', 'E_WORKER_UNAVAILABLE']
-  };
+    retryableErrors: ['E_TIMEOUT', 'E_RESOURCE_EXHAUSTED', 'E_WORKER_UNAVAILABLE'],
+  }
 
   constructor(private readonly database?: DatabaseManager) {
-    super();
+    super()
   }
 
   /**
@@ -119,7 +113,7 @@ export class JobQueue extends EventEmitter {
     // 2. Restore all non-cleaned-up jobs into memory
     const allRows = this.database.findJobsByStatuses(
       ['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted'],
-      5000,
+      5000
     )
 
     for (const row of allRows) {
@@ -148,7 +142,15 @@ export class JobQueue extends EventEmitter {
         finishedAt: row.finished_at ?? undefined,
         error: row.error ?? undefined,
         result: row.result_json
-          ? { jobId: row.id, ok: status === 'completed', data: JSON.parse(row.result_json), errors: [], warnings: [], artifacts: [], metrics: { elapsedMs: 0, peakRssMb: 0 } }
+          ? {
+              jobId: row.id,
+              ok: status === 'completed',
+              data: JSON.parse(row.result_json),
+              errors: [],
+              warnings: [],
+              artifacts: [],
+              metrics: { elapsedMs: 0, peakRssMb: 0 },
+            }
           : undefined,
       }
 
@@ -173,27 +175,29 @@ export class JobQueue extends EventEmitter {
 
   /**
    * Enqueue a new job
-   * 
+   *
    * @param job - Job configuration (id will be generated if not provided)
    * @returns Job ID
    */
-  enqueue(job: Omit<Job, 'id' | 'createdAt' | 'attempts' | 'retryPolicy'> & { retryPolicy?: RetryPolicy }): string {
-    const jobId = randomUUID();
+  enqueue(
+    job: Omit<Job, 'id' | 'createdAt' | 'attempts' | 'retryPolicy'> & { retryPolicy?: RetryPolicy }
+  ): string {
+    const jobId = randomUUID()
     const fullJob: Job = {
       ...job,
       id: jobId,
       createdAt: new Date().toISOString(),
       attempts: 0,
-      retryPolicy: job.retryPolicy || this.defaultRetryPolicy
-    };
+      retryPolicy: job.retryPolicy || this.defaultRetryPolicy,
+    }
 
     const entry: JobEntry = {
       job: fullJob,
-      status: 'queued'
-    };
+      status: 'queued',
+    }
 
-    this.jobs.set(jobId, entry);
-    this.queue.push(fullJob);
+    this.jobs.set(jobId, entry)
+    this.queue.push(fullJob)
     this.database?.createJob({
       id: jobId,
       type: fullJob.type,
@@ -204,25 +208,25 @@ export class JobQueue extends EventEmitter {
       timeout: fullJob.timeout,
       estimatedDurationMs: fullJob.estimatedDurationMs,
     })
-    
-    // Sort queue by priority (descending)
-    this.sortQueue();
 
-    this.emit('job:enqueued', jobId);
-    
-    return jobId;
+    // Sort queue by priority (descending)
+    this.sortQueue()
+
+    this.emit('job:enqueued', jobId)
+
+    return jobId
   }
 
   /**
    * Get job status
-   * 
+   *
    * @param jobId - Job identifier
    * @returns Job status or undefined if not found
    */
   getStatus(jobId: string): JobStatus | undefined {
-    const entry = this.jobs.get(jobId);
+    const entry = this.jobs.get(jobId)
     if (!entry) {
-      return undefined;
+      return undefined
     }
 
     return {
@@ -232,66 +236,66 @@ export class JobQueue extends EventEmitter {
       progressStage: entry.progressStage,
       startedAt: entry.startedAt,
       finishedAt: entry.finishedAt,
-      error: entry.error
-    };
+      error: entry.error,
+    }
   }
 
   /**
    * Cancel a job
-   * 
+   *
    * @param jobId - Job identifier
    * @returns True if job was cancelled, false if not found or already completed
    */
   cancel(jobId: string, reason?: string): boolean {
-    const entry = this.jobs.get(jobId);
+    const entry = this.jobs.get(jobId)
     if (!entry) {
-      return false;
+      return false
     }
 
     // Can only cancel queued or running jobs
     if (entry.status !== 'queued' && entry.status !== 'running') {
-      return false;
+      return false
     }
 
     // Remove from queue if still queued
     if (entry.status === 'queued') {
-      this.queue = this.queue.filter(j => j.id !== jobId);
+      this.queue = this.queue.filter((j) => j.id !== jobId)
     }
 
     // Update status
-    entry.status = 'cancelled';
-    entry.finishedAt = new Date().toISOString();
-    entry.cancelReason = reason;
-    entry.error = reason ? `Cancelled: ${reason}` : 'Cancelled by user';
-    this.database?.updateJobStatus(jobId, 'cancelled', entry.progress, entry.error);
+    entry.status = 'cancelled'
+    entry.finishedAt = new Date().toISOString()
+    entry.cancelReason = reason
+    entry.error = reason ? `Cancelled: ${reason}` : 'Cancelled by user'
+    this.database?.updateJobStatus(jobId, 'cancelled', entry.progress, entry.error)
 
-    this.emit('job:cancelled', jobId, reason);
-    
-    return true;
+    this.emit('job:cancelled', jobId, reason)
+
+    return true
   }
 
   /**
    * Register a completion callback for a job
-   * 
+   *
    * @param jobId - Job identifier
    * @param callback - Callback function to invoke when job completes
    */
   onComplete(jobId: string, callback: (result: JobResult) => void): void {
     const handler = (completedJobId: string, result: JobResult) => {
       if (completedJobId === jobId) {
-        callback(result);
-        this.removeListener('job:completed', handler);
-        this.removeListener('job:failed', handler);
+        callback(result)
+        this.removeListener('job:completed', handler)
+        this.removeListener('job:failed', handler)
       }
-    };
+    }
 
-    this.on('job:completed', handler);
-    this.on('job:failed', handler);
+    this.on('job:completed', handler)
+    this.on('job:failed', handler)
   }
 
   /**
    * Get the next job from the queue (highest priority)
-   * 
+   *
    * @returns Next job or undefined if queue is empty
    */
   dequeue(): Job | undefined {
@@ -331,48 +335,48 @@ export class JobQueue extends EventEmitter {
 
   /**
    * Mark a job as completed
-   * 
+   *
    * Requirements: 21.4, 21.5, 28.2 - Job completion with retry logic
-   * 
+   *
    * @param jobId - Job identifier
    * @param result - Job execution result
    */
   complete(jobId: string, result: JobResult): void {
-    const entry = this.jobs.get(jobId);
+    const entry = this.jobs.get(jobId)
     if (!entry) {
-      return;
+      return
     }
 
     // Check if job should be retried on failure
     if (!result.ok && this.shouldRetry(entry.job, result)) {
-      this.retryJob(entry.job);
-      return;
+      this.retryJob(entry.job)
+      return
     }
 
     // Mark as completed or failed (no more retries)
-    entry.status = result.ok ? 'completed' : 'failed';
-    entry.finishedAt = new Date().toISOString();
-    entry.result = result;
-    
+    entry.status = result.ok ? 'completed' : 'failed'
+    entry.finishedAt = new Date().toISOString()
+    entry.result = result
+
     if (!result.ok) {
-      entry.error = result.errors.join('; ');
+      entry.error = result.errors.join('; ')
     }
 
     if (result.ok) {
-      this.database?.setJobResult(jobId, result);
+      this.database?.setJobResult(jobId, result)
     } else {
-      this.database?.updateJobStatus(jobId, 'failed', entry.progress, entry.error);
+      this.database?.updateJobStatus(jobId, 'failed', entry.progress, entry.error)
     }
 
-    const eventName = result.ok ? 'job:completed' : 'job:failed';
-    this.emit(eventName, jobId, result);
+    const eventName = result.ok ? 'job:completed' : 'job:failed'
+    this.emit(eventName, jobId, result)
   }
 
   /**
    * Check if a failed job should be retried
-   * 
+   *
    * Requirements: 21.5, 28.2 - Retry policy evaluation
-   * 
+   *
    * @param job - Job that failed
    * @param result - Job execution result
    * @returns True if job should be retried
@@ -380,96 +384,94 @@ export class JobQueue extends EventEmitter {
   private shouldRetry(job: Job, result: JobResult): boolean {
     // Check if we've exceeded max retries
     if (job.attempts >= job.retryPolicy.maxRetries) {
-      return false;
+      return false
     }
 
     // Check if any error is retryable
-    const hasRetryableError = result.errors.some(error => 
-      job.retryPolicy.retryableErrors.some(retryableError => 
-        error.includes(retryableError)
-      )
-    );
+    const hasRetryableError = result.errors.some((error) =>
+      job.retryPolicy.retryableErrors.some((retryableError) => error.includes(retryableError))
+    )
 
-    return hasRetryableError;
+    return hasRetryableError
   }
 
   /**
    * Retry a failed job with exponential backoff
-   * 
+   *
    * Requirements: 21.5, 28.2 - Exponential backoff retry
-   * 
+   *
    * @param job - Job to retry
    */
   private retryJob(job: Job): void {
     // Increment attempts counter
-    job.attempts += 1;
+    job.attempts += 1
 
     // Calculate exponential backoff delay
-    const backoffMs = this.calculateBackoff(job);
+    const backoffMs = this.calculateBackoff(job)
 
     // Schedule retry after backoff delay
     setTimeout(() => {
-      this.requeue(job);
-      this.emit('job:retry', job.id, job.attempts, backoffMs);
-    }, backoffMs);
+      this.requeue(job)
+      this.emit('job:retry', job.id, job.attempts, backoffMs)
+    }, backoffMs)
 
     // Emit retry scheduled event
-    this.emit('job:retry-scheduled', job.id, job.attempts, backoffMs);
+    this.emit('job:retry-scheduled', job.id, job.attempts, backoffMs)
   }
 
   /**
    * Calculate exponential backoff delay
-   * 
+   *
    * Requirements: 21.5, 28.2 - Exponential backoff calculation
-   * 
+   *
    * Formula: baseBackoff * (2 ^ (attempts - 1))
-   * 
+   *
    * @param job - Job to calculate backoff for
    * @returns Backoff delay in milliseconds
    */
   private calculateBackoff(job: Job): number {
-    const baseBackoff = job.retryPolicy.backoffMs;
-    const exponentialFactor = Math.pow(2, job.attempts - 1);
-    return baseBackoff * exponentialFactor;
+    const baseBackoff = job.retryPolicy.backoffMs
+    const exponentialFactor = Math.pow(2, job.attempts - 1)
+    return baseBackoff * exponentialFactor
   }
 
   /**
    * Update job progress
-   * 
+   *
    * @param jobId - Job identifier
    * @param progress - Progress percentage (0-100)
    * @param stage - Optional named stage (e.g. 'decompiling', 'extracting strings')
    */
   updateProgress(jobId: string, progress: number, stage?: string): void {
-    const entry = this.jobs.get(jobId);
+    const entry = this.jobs.get(jobId)
     if (entry && entry.status === 'running') {
-      entry.progress = Math.max(0, Math.min(100, progress));
+      entry.progress = Math.max(0, Math.min(100, progress))
       if (stage !== undefined) {
-        entry.progressStage = stage;
+        entry.progressStage = stage
       }
-      this.database?.updateJobStatus(jobId, 'running', entry.progress);
-      this.emit('job:progress', jobId, entry.progress, entry.progressStage);
+      this.database?.updateJobStatus(jobId, 'running', entry.progress)
+      this.emit('job:progress', jobId, entry.progress, entry.progressStage)
     }
   }
 
   /**
    * Get queue length
-   * 
+   *
    * @returns Number of jobs in queue (not including running jobs)
    */
   getQueueLength(): number {
-    return this.queue.length;
+    return this.queue.length
   }
 
   /**
    * Get all jobs with a specific status
-   * 
+   *
    * @param status - Job status to filter by
    * @returns Array of job statuses
    */
   getJobsByStatus(status: JobStatusType): JobStatus[] {
-    const results: JobStatus[] = [];
-    
+    const results: JobStatus[] = []
+
     for (const [jobId, entry] of this.jobs.entries()) {
       if (entry.status === status) {
         results.push({
@@ -479,29 +481,29 @@ export class JobQueue extends EventEmitter {
           progressStage: entry.progressStage,
           startedAt: entry.startedAt,
           finishedAt: entry.finishedAt,
-          error: entry.error
-        });
+          error: entry.error,
+        })
       }
     }
-    
-    return results;
+
+    return results
   }
 
   /**
    * Get full job status list with lightweight execution context.
    */
   listStatuses(status?: JobStatusType): Array<
-      JobStatus & {
-        tool: string
-        sampleId: string
-        attempts: number
-        timeout: number
-        createdAt: string
-        updatedAt?: string
-        args: Record<string, unknown>
-        estimatedDurationMs?: number
-        cancelReason?: string
-      }
+    JobStatus & {
+      tool: string
+      sampleId: string
+      attempts: number
+      timeout: number
+      createdAt: string
+      updatedAt?: string
+      args: Record<string, unknown>
+      estimatedDurationMs?: number
+      cancelReason?: string
+    }
   > {
     const rows: Array<
       JobStatus & {
@@ -540,34 +542,30 @@ export class JobQueue extends EventEmitter {
       })
     }
 
-    rows.sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() -
-        new Date(a.createdAt).getTime()
-    )
+    rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     return rows
   }
 
   /**
    * Get job result
-   * 
+   *
    * @param jobId - Job identifier
    * @returns Job result or undefined if not found or not completed
    */
   getResult(jobId: string): JobResult | undefined {
-    const entry = this.jobs.get(jobId);
-    return entry?.result;
+    const entry = this.jobs.get(jobId)
+    return entry?.result
   }
 
   /**
    * Clear completed jobs older than specified age
-   * 
+   *
    * @param maxAgeMs - Maximum age in milliseconds
    * @returns Number of jobs cleared
    */
   clearOldJobs(maxAgeMs: number): number {
-    const now = Date.now();
-    let cleared = 0;
+    const now = Date.now()
+    let cleared = 0
 
     for (const [jobId, entry] of this.jobs.entries()) {
       if (
@@ -577,16 +575,16 @@ export class JobQueue extends EventEmitter {
         entry.status === 'interrupted'
       ) {
         if (entry.finishedAt) {
-          const finishedTime = new Date(entry.finishedAt).getTime();
+          const finishedTime = new Date(entry.finishedAt).getTime()
           if (now - finishedTime > maxAgeMs) {
-            this.jobs.delete(jobId);
-            cleared++;
+            this.jobs.delete(jobId)
+            cleared++
           }
         }
       }
     }
 
-    return cleared;
+    return cleared
   }
 
   /**
@@ -637,37 +635,37 @@ export class JobQueue extends EventEmitter {
 
   /**
    * Get total number of jobs tracked
-   * 
+   *
    * @returns Total job count
    */
   getTotalJobs(): number {
-    return this.jobs.size;
+    return this.jobs.size
   }
 
   /**
    * Re-enqueue a job for retry (used by retry mechanism)
-   * 
+   *
    * Requirements: 21.5, 28.2 - Failure retry mechanism
-   * 
+   *
    * @param job - Job to re-enqueue (with updated attempts count)
    */
   requeue(job: Job): void {
     // Update the job entry
-    const entry = this.jobs.get(job.id);
+    const entry = this.jobs.get(job.id)
     if (entry) {
-      entry.job = job;
-      entry.status = 'queued';
-      entry.error = undefined;
-      entry.startedAt = undefined;
-      entry.finishedAt = undefined;
-      this.database?.updateJobStatus(job.id, 'queued', 0);
+      entry.job = job
+      entry.status = 'queued'
+      entry.error = undefined
+      entry.startedAt = undefined
+      entry.finishedAt = undefined
+      this.database?.updateJobStatus(job.id, 'queued', 0)
     }
 
     // Add back to queue
-    this.queue.push(job);
-    this.sortQueue();
+    this.queue.push(job)
+    this.sortQueue()
 
-    this.emit('job:requeued', job.id, job.attempts);
+    this.emit('job:requeued', job.id, job.attempts)
   }
 
   /**
@@ -677,10 +675,10 @@ export class JobQueue extends EventEmitter {
     this.queue.sort((a, b) => {
       // Higher priority first
       if (a.priority !== b.priority) {
-        return b.priority - a.priority;
+        return b.priority - a.priority
       }
       // If same priority, FIFO (earlier created first)
-      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-    });
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    })
   }
 }

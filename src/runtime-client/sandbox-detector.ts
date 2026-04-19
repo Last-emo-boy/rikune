@@ -25,7 +25,7 @@ export async function isWindowsSandboxAvailable(): Promise<boolean> {
     const { stdout } = await execFileAsync(
       'dism',
       ['/Online', '/Get-FeatureInfo', '/FeatureName:Containers-DisposableClientVM'],
-      { timeout: 10000, windowsHide: true },
+      { timeout: 10000, windowsHide: true }
     )
     const enabled = stdout.includes('State : Enabled')
     cachedAvailability = enabled

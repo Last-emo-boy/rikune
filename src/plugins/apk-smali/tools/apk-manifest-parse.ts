@@ -8,11 +8,17 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  os, path,
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, executeCommand,
-  persistBackendArtifact, buildMetrics,
-  resolveSampleFile, resolveExecutable,
+  os,
+  path,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  executeCommand,
+  persistBackendArtifact,
+  buildMetrics,
+  resolveSampleFile,
+  resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -27,24 +33,26 @@ export const apkManifestParseInputSchema = z.object({
 
 export const apkManifestParseOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    package_name: z.string().optional(),
-    version_name: z.string().optional(),
-    version_code: z.string().optional(),
-    min_sdk: z.string().optional(),
-    target_sdk: z.string().optional(),
-    permissions: z.array(z.string()).optional(),
-    activities: z.array(z.string()).optional(),
-    services: z.array(z.string()).optional(),
-    receivers: z.array(z.string()).optional(),
-    providers: z.array(z.string()).optional(),
-    manifest_xml: z.string().optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      package_name: z.string().optional(),
+      version_name: z.string().optional(),
+      version_code: z.string().optional(),
+      min_sdk: z.string().optional(),
+      target_sdk: z.string().optional(),
+      permissions: z.array(z.string()).optional(),
+      activities: z.array(z.string()).optional(),
+      services: z.array(z.string()).optional(),
+      receivers: z.array(z.string()).optional(),
+      providers: z.array(z.string()).optional(),
+      manifest_xml: z.string().optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
   metrics: SharedMetricsSchema.optional(),
@@ -52,14 +60,15 @@ export const apkManifestParseOutputSchema = z.object({
 
 export const apkManifestParseToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
-  description: 'Parse and decode AndroidManifest.xml from an APK, extracting permissions, components, and metadata.',
+  description:
+    'Parse and decode AndroidManifest.xml from an APK, extracting permissions, components, and metadata.',
   inputSchema: apkManifestParseInputSchema,
   outputSchema: apkManifestParseOutputSchema,
 }
 
 export function createApkManifestParseHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -68,9 +77,17 @@ export function createApkManifestParseHandler(
       const input = apkManifestParseInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolveExecutable({ envPath: process.env.APKTOOL_PATH, pathCandidates: ['apktool'], versionArgSets: [['--version'], ['-version']] })
+      const backend = resolveExecutable({
+        envPath: process.env.APKTOOL_PATH,
+        pathCandidates: ['apktool'],
+        versionArgSets: [['--version'], ['-version']],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'apktool', available: false, error: 'apktool not installed' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend || ({ name: 'apktool', available: false, error: 'apktool not installed' } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       nodeFs.mkdirSync(tmpDir, { recursive: true })
@@ -78,12 +95,16 @@ export function createApkManifestParseHandler(
       await executeCommand(
         backend.path,
         ['d', '-f', '-s', '-o', tmpDir, samplePath],
-        input.timeout_sec * 1000,
+        input.timeout_sec * 1000
       )
 
       const manifestPath = path.join(tmpDir, 'AndroidManifest.xml')
       if (!nodeFs.existsSync(manifestPath)) {
-        return { ok: false, errors: ['AndroidManifest.xml not found after decoding.'], metrics: buildMetrics(startTime, TOOL_NAME) }
+        return {
+          ok: false,
+          errors: ['AndroidManifest.xml not found after decoding.'],
+          metrics: buildMetrics(startTime, TOOL_NAME),
+        }
       }
 
       const xml = nodeFs.readFileSync(manifestPath, 'utf-8')
@@ -95,21 +116,33 @@ export function createApkManifestParseHandler(
       const minSdk = xml.match(/android:minSdkVersion="([^"]+)"/)?.[1] || ''
       const targetSdk = xml.match(/android:targetSdkVersion="([^"]+)"/)?.[1] || ''
 
-      const permissions = [...xml.matchAll(/android:name="(android\.permission\.[^"]+)"/g)].map(m => m[1])
-      const activities = [...xml.matchAll(/<activity[^>]+android:name="([^"]+)"/g)].map(m => m[1])
-      const services = [...xml.matchAll(/<service[^>]+android:name="([^"]+)"/g)].map(m => m[1])
-      const receivers = [...xml.matchAll(/<receiver[^>]+android:name="([^"]+)"/g)].map(m => m[1])
-      const providers = [...xml.matchAll(/<provider[^>]+android:name="([^"]+)"/g)].map(m => m[1])
+      const permissions = [...xml.matchAll(/android:name="(android\.permission\.[^"]+)"/g)].map(
+        (m) => m[1]
+      )
+      const activities = [...xml.matchAll(/<activity[^>]+android:name="([^"]+)"/g)].map((m) => m[1])
+      const services = [...xml.matchAll(/<service[^>]+android:name="([^"]+)"/g)].map((m) => m[1])
+      const receivers = [...xml.matchAll(/<receiver[^>]+android:name="([^"]+)"/g)].map((m) => m[1])
+      const providers = [...xml.matchAll(/<provider[^>]+android:name="([^"]+)"/g)].map((m) => m[1])
 
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'apk', 'manifest', xml.slice(0, 32768), { extension: 'xml', mime: 'application/xml', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'apk',
+          'manifest',
+          xml.slice(0, 32768),
+          { extension: 'xml', mime: 'application/xml', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
-      const dangerousPerms = permissions.filter(p =>
-        /INTERNET|SEND_SMS|READ_CONTACTS|CAMERA|RECORD_AUDIO|READ_PHONE|WRITE_EXTERNAL|INSTALL_PACKAGES|RECEIVE_BOOT/i.test(p)
+      const dangerousPerms = permissions.filter((p) =>
+        /INTERNET|SEND_SMS|READ_CONTACTS|CAMERA|RECORD_AUDIO|READ_PHONE|WRITE_EXTERNAL|INSTALL_PACKAGES|RECEIVE_BOOT/i.test(
+          p
+        )
       )
 
       return {
@@ -131,7 +164,9 @@ export function createApkManifestParseHandler(
           summary: `Package: ${pkg}, ${permissions.length} permissions (${dangerousPerms.length} dangerous), ${activities.length} activities, ${services.length} services, ${receivers.length} receivers.`,
           recommended_next_tools: ['apk.disassemble', 'apk.resources.decode', 'string.extract'],
           next_actions: [
-            dangerousPerms.length > 0 ? `Review dangerous permissions: ${dangerousPerms.slice(0, 5).join(', ')}.` : 'No dangerous permissions found.',
+            dangerousPerms.length > 0
+              ? `Review dangerous permissions: ${dangerousPerms.slice(0, 5).join(', ')}.`
+              : 'No dangerous permissions found.',
             'Disassemble to Smali to inspect entry-point activities.',
           ],
         },
@@ -139,9 +174,15 @@ export function createApkManifestParseHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     } finally {
-      try { nodeFs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+      try {
+        nodeFs.rmSync(tmpDir, { recursive: true, force: true })
+      } catch {}
     }
   }
 }

@@ -11,7 +11,8 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
   SharedMetricsSchema,
-  normalizeError, runPythonJson,
+  normalizeError,
+  runPythonJson,
   buildMetrics,
   resolveExecutable,
   buildStaticSetupRequired,
@@ -20,31 +21,42 @@ import {
 const TOOL_NAME = 'hash.identify'
 
 export const hashIdentifyInputSchema = z.object({
-  hashes: z.array(z.string()).min(1).max(50).describe('Hex hash values to test (e.g. ["0x6A4ABC5B"]).'),
+  hashes: z
+    .array(z.string())
+    .min(1)
+    .max(50)
+    .describe('Hex hash values to test (e.g. ["0x6A4ABC5B"]).'),
   unicode: z.boolean().default(false).describe('Also try Unicode (UTF-16LE) API names.'),
 })
 
 export const hashIdentifyOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    candidates: z.array(z.object({
-      algorithm: z.string(),
-      matches: z.number(),
-      total: z.number(),
-      match_rate: z.number(),
-      sample_matches: z.array(z.object({ hash: z.string(), api: z.string() })),
-    })).optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      candidates: z
+        .array(
+          z.object({
+            algorithm: z.string(),
+            matches: z.number(),
+            total: z.number(),
+            match_rate: z.number(),
+            sample_matches: z.array(z.object({ hash: z.string(), api: z.string() })),
+          })
+        )
+        .optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   metrics: SharedMetricsSchema.optional(),
 })
 
 export const hashIdentifyToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
-  description: 'Identify the hash algorithm used to produce shellcode API hashes by brute-force matching against known APIs.',
+  description:
+    'Identify the hash algorithm used to produce shellcode API hashes by brute-force matching against known APIs.',
   inputSchema: hashIdentifyInputSchema,
   outputSchema: hashIdentifyOutputSchema,
 }
@@ -166,25 +178,33 @@ print(json.dumps({'candidates': results}))
 
 export function createHashIdentifyHandler(
   _workspaceManager: WorkspaceManager,
-  _database: DatabaseManager,
+  _database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
       const input = hashIdentifyInputSchema.parse(args)
-      const backend = resolveExecutable({ envPath: process.env.PYTHON_PATH, pathCandidates: ['python3', 'python'], versionArgSets: [['--version']] })
+      const backend = resolveExecutable({
+        envPath: process.env.PYTHON_PATH,
+        pathCandidates: ['python3', 'python'],
+        versionArgSets: [['--version']],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'python3', available: false, error: 'Python 3 not found' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend || ({ name: 'python3', available: false, error: 'Python 3 not found' } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const result = await runPythonJson(
         backend.path,
         PYTHON_SCRIPT,
         { hashes: input.hashes, unicode: input.unicode },
-        30000,
+        30000
       )
 
-      const parsed = result.parsed as any
+      const parsed = result.parsed
       const candidates = parsed?.candidates || []
       const best = candidates[0]
 
@@ -203,7 +223,11 @@ export function createHashIdentifyHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

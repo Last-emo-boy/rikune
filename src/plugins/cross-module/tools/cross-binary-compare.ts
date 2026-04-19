@@ -86,7 +86,7 @@ export function createCrossBinaryCompareHandler(deps: PluginToolDeps) {
               if (family === 'pe_imports' || family === 'elf_imports') {
                 const imps = data?.data?.imports ?? data?.imports ?? []
                 for (const imp of imps) {
-                  const name = typeof imp === 'string' ? imp : imp?.name ?? imp?.function_name
+                  const name = typeof imp === 'string' ? imp : (imp?.name ?? imp?.function_name)
                   if (name) imports.push(name)
                 }
               }
@@ -144,8 +144,12 @@ export function createCrossBinaryCompareHandler(deps: PluginToolDeps) {
 
           const overall = (fnSim + impSim + strSim) / 3
 
-          const sharedImports = [...new Set(a.imports)].filter((x) => new Set(b.imports).has(x)).slice(0, 50)
-          const sharedStrings = [...new Set(a.strings)].filter((x) => new Set(b.strings).has(x)).slice(0, 50)
+          const sharedImports = [...new Set(a.imports)]
+            .filter((x) => new Set(b.imports).has(x))
+            .slice(0, 50)
+          const sharedStrings = [...new Set(a.strings)]
+            .filter((x) => new Set(b.strings).has(x))
+            .slice(0, 50)
 
           pairResults.push({
             a: a.sample_id,

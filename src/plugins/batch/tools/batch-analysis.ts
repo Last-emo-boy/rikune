@@ -37,13 +37,24 @@ const batches = new Map<string, BatchJob>()
 
 const submitSchema = z.object({
   sample_ids: z.array(z.string()).min(1).max(500).describe('List of sample IDs to process'),
-  tool_pipeline: z.array(z.string()).min(1).describe('Ordered list of tool names to run on each sample'),
-  concurrency: z.number().int().min(1).max(16).optional().default(4).describe('Max concurrent analyses'),
+  tool_pipeline: z
+    .array(z.string())
+    .min(1)
+    .describe('Ordered list of tool names to run on each sample'),
+  concurrency: z
+    .number()
+    .int()
+    .min(1)
+    .max(16)
+    .optional()
+    .default(4)
+    .describe('Max concurrent analyses'),
 })
 
 export const batchSubmitToolDefinition: ToolDefinition = {
   name: 'batch.submit',
-  description: 'Submit a batch of samples for parallel analysis through a tool pipeline. Returns a batch ID for tracking.',
+  description:
+    'Submit a batch of samples for parallel analysis through a tool pipeline. Returns a batch ID for tracking.',
   inputSchema: submitSchema as any,
 }
 
@@ -57,7 +68,11 @@ export function createBatchSubmitHandler(server: MCPServer, database: DatabaseMa
       sampleIds: args.sample_ids,
       toolPipeline: args.tool_pipeline,
       status: 'pending',
-      progress: { completed: 0, total: args.sample_ids.length * args.tool_pipeline.length, errors: [] },
+      progress: {
+        completed: 0,
+        total: args.sample_ids.length * args.tool_pipeline.length,
+        errors: [],
+      },
       results: new Map(),
       createdAt: now,
       updatedAt: now,
@@ -66,7 +81,7 @@ export function createBatchSubmitHandler(server: MCPServer, database: DatabaseMa
     batches.set(batchId, job)
 
     // Start processing asynchronously
-    void processBatch(job, server, args.concurrency).catch(err => {
+    void processBatch(job, server, args.concurrency).catch((err) => {
       logger.error({ err, batchId }, 'Batch processing failed')
       job.status = 'failed'
       job.updatedAt = new Date().toISOString()
@@ -117,7 +132,10 @@ export function createBatchStatusHandler() {
       progress: {
         completed: job.progress.completed,
         total: job.progress.total,
-        percent: job.progress.total > 0 ? Math.round(job.progress.completed / job.progress.total * 100) : 0,
+        percent:
+          job.progress.total > 0
+            ? Math.round((job.progress.completed / job.progress.total) * 100)
+            : 0,
         error_count: job.progress.errors.length,
       },
       created_at: job.createdAt,
@@ -159,11 +177,11 @@ export function createBatchResultsHandler() {
 
     let entries = Array.from(job.results.entries()).map(([key, value]) => ({
       key,
-      ...value as Record<string, unknown>,
+      ...(value as Record<string, unknown>),
     }))
 
     if (args.sample_id) {
-      entries = entries.filter(e => e.key.startsWith(args.sample_id!))
+      entries = entries.filter((e) => e.key.startsWith(args.sample_id))
     }
 
     const result = {
@@ -202,26 +220,28 @@ async function processBatch(job: BatchJob, server: MCPServer, concurrency: numbe
   const workers: Promise<void>[] = []
 
   for (let w = 0; w < Math.min(concurrency, workItems.length); w++) {
-    workers.push((async () => {
-      while (idx < workItems.length) {
-        const myIdx = idx++
-        if (myIdx >= workItems.length) break
-        const [sampleId, tool] = workItems[myIdx]
+    workers.push(
+      (async () => {
+        while (idx < workItems.length) {
+          const myIdx = idx++
+          if (myIdx >= workItems.length) break
+          const [sampleId, tool] = workItems[myIdx]
 
-        try {
-          // Call the tool through the server's callTool interface
-          const result = await (server as any).callToolInternal?.(tool, { sample_id: sampleId })
-          job.results.set(`${sampleId}:${tool}`, { ok: true, data: result ?? null })
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
-          job.results.set(`${sampleId}:${tool}`, { ok: false, error: msg })
-          job.progress.errors.push(`${sampleId}:${tool}: ${msg}`)
+          try {
+            // Call the tool through the server's callTool interface
+            const result = await (server as any).callToolInternal?.(tool, { sample_id: sampleId })
+            job.results.set(`${sampleId}:${tool}`, { ok: true, data: result ?? null })
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            job.results.set(`${sampleId}:${tool}`, { ok: false, error: msg })
+            job.progress.errors.push(`${sampleId}:${tool}: ${msg}`)
+          }
+
+          job.progress.completed++
+          job.updatedAt = new Date().toISOString()
         }
-
-        job.progress.completed++
-        job.updatedAt = new Date().toISOString()
-      }
-    })())
+      })()
+    )
   }
 
   await Promise.all(workers)
@@ -229,9 +249,12 @@ async function processBatch(job: BatchJob, server: MCPServer, concurrency: numbe
   job.status = job.progress.errors.length === 0 ? 'completed' : 'completed'
   job.updatedAt = new Date().toISOString()
 
-  logger.info({
-    batchId: job.id,
-    completed: job.progress.completed,
-    errors: job.progress.errors.length,
-  }, 'Batch processing complete')
+  logger.info(
+    {
+      batchId: job.id,
+      completed: job.progress.completed,
+      errors: job.progress.errors.length,
+    },
+    'Batch processing complete'
+  )
 }

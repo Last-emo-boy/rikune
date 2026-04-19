@@ -5,24 +5,30 @@
 import { z } from 'zod'
 
 export const ConfigSchema = z.object({
-  server: z.object({
-    port: z.number().int().min(1).max(65535).default(18081),
-    host: z.string().default('0.0.0.0'),
-  }).default({}),
-  runtime: z.object({
-    mode: z.enum(['sandbox', 'manual', 'disabled']).default('sandbox'),
-    inbox: z.string().default('C:\\rikune-inbox'),
-    outbox: z.string().default('C:\\rikune-outbox'),
-    apiKey: z.string().optional(),
-    readyFile: z.string().optional(),
-    corsOrigin: z.string().optional(),
-    pythonPath: z.string().default('python'),
-    maxRssBytes: z.number().default(2 * 1024 * 1024 * 1024),
-    minDiskSpaceBytes: z.number().default(5 * 1024 * 1024 * 1024),
-  }).default({}),
-  logging: z.object({
-    level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-  }).default({}),
+  server: z
+    .object({
+      port: z.number().int().min(1).max(65535).default(18081),
+      host: z.string().default('0.0.0.0'),
+    })
+    .default({}),
+  runtime: z
+    .object({
+      mode: z.enum(['sandbox', 'manual', 'disabled']).default('sandbox'),
+      inbox: z.string().default('C:\\rikune-inbox'),
+      outbox: z.string().default('C:\\rikune-outbox'),
+      apiKey: z.string().optional(),
+      readyFile: z.string().optional(),
+      corsOrigin: z.string().optional(),
+      pythonPath: z.string().default('python'),
+      maxRssBytes: z.number().default(2 * 1024 * 1024 * 1024),
+      minDiskSpaceBytes: z.number().default(5 * 1024 * 1024 * 1024),
+    })
+    .default({}),
+  logging: z
+    .object({
+      level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+    })
+    .default({}),
 })
 
 export type Config = z.infer<typeof ConfigSchema>
@@ -166,7 +172,10 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Record<
     ensureNestedObject(cfg, 'runtime').maxRssBytes = parseInt(env.RUNTIME_MAX_RSS_BYTES, 10)
   }
   if (env.RUNTIME_MIN_DISK_SPACE_BYTES) {
-    ensureNestedObject(cfg, 'runtime').minDiskSpaceBytes = parseInt(env.RUNTIME_MIN_DISK_SPACE_BYTES, 10)
+    ensureNestedObject(cfg, 'runtime').minDiskSpaceBytes = parseInt(
+      env.RUNTIME_MIN_DISK_SPACE_BYTES,
+      10
+    )
   }
   if (env.LOG_LEVEL) {
     ensureNestedObject(cfg, 'logging').level = env.LOG_LEVEL
@@ -174,14 +183,20 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Record<
   return cfg
 }
 
-function mergeConfigLayers(baseConfig: Record<string, any>, overrideConfig: Record<string, any>): Record<string, any> {
+function mergeConfigLayers(
+  baseConfig: Record<string, any>,
+  overrideConfig: Record<string, any>
+): Record<string, any> {
   const merged: Record<string, any> = {
     ...baseConfig,
   }
 
   for (const [key, value] of Object.entries(overrideConfig)) {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      merged[key] = mergeConfigLayers((baseConfig[key] as Record<string, any>) ?? {}, value as Record<string, any>)
+      merged[key] = mergeConfigLayers(
+        (baseConfig[key] as Record<string, any>) ?? {},
+        value as Record<string, any>
+      )
       continue
     }
     merged[key] = value

@@ -17,7 +17,12 @@
  */
 
 import type { ToolDeps } from './tool-registry.js'
-import type { ToolRegistrar, PromptRegistrar, ResourceRegistrar, SamplingClient } from './registrar.js'
+import type {
+  ToolRegistrar,
+  PromptRegistrar,
+  ResourceRegistrar,
+  SamplingClient,
+} from './registrar.js'
 
 // Re-export SDK types so existing consumers don't break
 export type {
@@ -58,24 +63,34 @@ export class PluginManager {
   private syncRuntimeMaps(): void {
     this.runtime.setMaps(
       new Map(this.orchestrator.getPluginToolMap()),
-      new Map(this.orchestrator.getLoadedPlugins()),
+      new Map(this.orchestrator.getLoadedPlugins())
     )
   }
 
   /** Get status of all known plugins. */
-  getStatuses(): PluginStatus[] { return this.orchestrator.getStatuses() }
+  getStatuses(): PluginStatus[] {
+    return this.orchestrator.getStatuses()
+  }
 
   /** Get the Plugin definition for a loaded plugin. */
-  getPlugin(id: string): Plugin | undefined { return this.orchestrator.getPlugin(id) }
+  getPlugin(id: string): Plugin | undefined {
+    return this.orchestrator.getPlugin(id)
+  }
 
   /** Find which plugin owns a given tool name. */
-  getPluginForTool(toolName: string): string | undefined { return this.orchestrator.getPluginForTool(toolName) }
+  getPluginForTool(toolName: string): string | undefined {
+    return this.orchestrator.getPluginForTool(toolName)
+  }
 
   /** Check if a specific plugin is loaded. */
-  isLoaded(id: string): boolean { return this.orchestrator.isLoaded(id) }
+  isLoaded(id: string): boolean {
+    return this.orchestrator.isLoaded(id)
+  }
 
   /** Get all discovered plugin definitions (loaded or not). */
-  getDiscoveredPlugins(): Plugin[] { return this.orchestrator.getDiscoveredPlugins() }
+  getDiscoveredPlugins(): Plugin[] {
+    return this.orchestrator.getDiscoveredPlugins()
+  }
 
   /**
    * Resolve which plugins are enabled via `PLUGINS` env var.
@@ -104,7 +119,7 @@ export class PluginManager {
   async loadAll(
     server: PluginServer,
     deps: ToolDeps,
-    extraPlugins: Plugin[] = [],
+    extraPlugins: Plugin[] = []
   ): Promise<PluginStatus[]> {
     const result = await this.orchestrator.loadAll(server, deps, extraPlugins)
     this.syncRuntimeMaps()
@@ -136,7 +151,7 @@ export class PluginManager {
     phase: 'before' | 'after' | 'error',
     toolName: string,
     args: Record<string, unknown>,
-    extra?: { elapsedMs?: number; error?: unknown },
+    extra?: { elapsedMs?: number; error?: unknown }
   ): Promise<void> {
     return this.runtime.fireHook(phase, toolName, args, extra)
   }
@@ -161,9 +176,9 @@ export function getPluginManager(): PluginManager {
 export async function loadPlugins(
   server: PluginServer,
   deps: ToolDeps,
-  extraPlugins: Plugin[] = [],
+  extraPlugins: Plugin[] = []
 ): Promise<string[]> {
   const mgr = getPluginManager()
   const statuses = await mgr.loadAll(server, deps, extraPlugins)
-  return statuses.filter(s => s.status === 'loaded').map(s => s.id)
+  return statuses.filter((s) => s.status === 'loaded').map((s) => s.id)
 }

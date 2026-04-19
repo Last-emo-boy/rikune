@@ -15,7 +15,11 @@ export const CallGraphCrossModuleInputSchema = z.object({
     .min(2)
     .max(30)
     .describe('Array of sample IDs representing related modules (EXE + DLLs, etc.)'),
-  resolve_ordinals: z.boolean().optional().default(true).describe('Attempt to resolve ordinal imports'),
+  resolve_ordinals: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe('Attempt to resolve ordinal imports'),
 })
 
 export const callGraphCrossModuleToolDefinition: ToolDefinition = {
@@ -141,8 +145,7 @@ export function createCallGraphCrossModuleHandler(deps: PluginToolDeps) {
       for (const mod of modules) {
         for (const imp of mod.imports) {
           const dllKey = imp.dll.toLowerCase().replace(/\.(dll|so|dylib|exe)$/i, '')
-          const expMap =
-            exportIndex.get(imp.dll.toLowerCase()) ?? exportIndex.get(dllKey)
+          const expMap = exportIndex.get(imp.dll.toLowerCase()) ?? exportIndex.get(dllKey)
 
           for (const fn of imp.functions) {
             if (expMap) {
@@ -177,7 +180,7 @@ export function createCallGraphCrossModuleHandler(deps: PluginToolDeps) {
       for (const e of edges) {
         const key = e.caller_module
         if (!depSummary.has(key)) depSummary.set(key, new Set())
-        depSummary.get(key)!.add(e.callee_module)
+        depSummary.get(key).add(e.callee_module)
       }
 
       const resultData = {

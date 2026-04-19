@@ -20,10 +20,7 @@ import {
   buildStaticWorkerRequest,
   callStaticWorker as callPooledStaticWorker,
 } from '../../../tools/static-worker-client.js'
-import {
-  buildEnrichedStringBundle,
-  EnrichedStringBundleSchema,
-} from '../string-xref-analysis.js'
+import { buildEnrichedStringBundle, EnrichedStringBundleSchema } from '../string-xref-analysis.js'
 import {
   ENRICHED_STRING_ANALYSIS_ARTIFACT_TYPE,
   persistStringXrefJsonArtifact,
@@ -72,17 +69,37 @@ export const StringsExtractInputSchema = z.object({
     .enum(['preview', 'full'])
     .optional()
     .default('preview')
-    .describe('preview is bounded and safe for synchronous MCP use. Start with preview on medium or larger samples. full scans the complete sample and may be deferred to the background queue.'),
+    .describe(
+      'preview is bounded and safe for synchronous MCP use. Start with preview on medium or larger samples. full scans the complete sample and may be deferred to the background queue.'
+    ),
   min_len: z.number().int().min(1).optional().default(4).describe('Minimum string length'),
-  encoding: z.enum(['ascii', 'unicode', 'all']).optional().default('all').describe('Encoding type to extract'),
-  max_strings: z.number().int().min(1).optional().default(500).describe('Maximum number of strings to return (default: 500)'),
-  max_string_length: z.number().int().min(16).optional().default(512).describe('Maximum length for each returned string'),
+  encoding: z
+    .enum(['ascii', 'unicode', 'all'])
+    .optional()
+    .default('all')
+    .describe('Encoding type to extract'),
+  max_strings: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .default(500)
+    .describe('Maximum number of strings to return (default: 500)'),
+  max_string_length: z
+    .number()
+    .int()
+    .min(16)
+    .optional()
+    .default(512)
+    .describe('Maximum length for each returned string'),
   max_scan_bytes: z
     .number()
     .int()
     .min(65536)
     .optional()
-    .describe('Optional bounded scan budget used in preview mode. The worker samples the file instead of scanning every byte.'),
+    .describe(
+      'Optional bounded scan budget used in preview mode. The worker samples the file instead of scanning every byte.'
+    ),
   context_window_bytes: z
     .number()
     .int()
@@ -99,7 +116,18 @@ export const StringsExtractInputSchema = z.object({
     .optional()
     .default(12)
     .describe('Maximum number of context windows returned in the summary'),
-  category_filter: z.enum(['all', 'ioc', 'url', 'network', 'ipc', 'command', 'registry', 'file_path', 'suspicious_api'])
+  category_filter: z
+    .enum([
+      'all',
+      'ioc',
+      'url',
+      'network',
+      'ipc',
+      'command',
+      'registry',
+      'file_path',
+      'suspicious_api',
+    ])
     .optional()
     .default('all')
     .describe('Optional category filter; use `ioc` to prioritize IOC-related strings'),
@@ -112,7 +140,9 @@ export const StringsExtractInputSchema = z.object({
     .boolean()
     .optional()
     .default(true)
-    .describe('When true, mode=full may return a queued job instead of blocking the MCP request on medium or larger samples.'),
+    .describe(
+      'When true, mode=full may return a queued job instead of blocking the MCP request on medium or larger samples.'
+    ),
   enrich_result: z
     .boolean()
     .optional()
@@ -137,65 +167,83 @@ export type StringsExtractInput = z.infer<typeof StringsExtractInputSchema>
  */
 export const StringsExtractOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    status: z.enum(['ready', 'queued', 'partial']).optional(),
-    sample_id: z.string().optional(),
-    result_mode: z.enum(['preview', 'full']).optional(),
-    execution_state: z.enum(['inline', 'queued', 'partial', 'completed']).optional(),
-    job_id: z.string().optional(),
-    polling_guidance: z.any().optional(),
-    evidence_state: z.array(AnalysisEvidenceStateSchema).optional(),
-    recommended_next_tools: z.array(z.string()).optional(),
-    next_actions: z.array(z.string()).optional(),
-    strings: z.array(z.object({
-      offset: z.number(),
-      string: z.string(),
-      encoding: z.string(),
-    })).optional(),
-    count: z.number().optional(),
-    total_count: z.number().optional(),
-    pre_filter_count: z.number().optional(),
-    truncated: z.boolean().optional(),
-    max_strings: z.number().optional(),
-    max_string_length: z.number().optional(),
-    max_scan_bytes: z.number().optional(),
-    scan_mode: z.string().optional(),
-    scan_bytes: z.number().optional(),
-    sampled: z.boolean().optional(),
-    min_len: z.number().optional(),
-    encoding_filter: z.string().optional(),
-    category_filter: z.string().optional(),
-    summary: z.object({
-      cluster_counts: z.record(z.string(), z.number()),
-      clusters: z.record(z.string(), z.array(z.string())),
-      top_high_value: z.array(z.object({
-        offset: z.number(),
-        string: z.string(),
-        encoding: z.string(),
-        categories: z.array(z.string()),
-      })),
-      context_windows: z.array(z.object({
-        start_offset: z.number(),
-        end_offset: z.number(),
-        score: z.number(),
-        categories: z.array(z.string()),
-        strings: z.array(z.object({
-          offset: z.number(),
-          string: z.string(),
-          encoding: z.string(),
-          categories: z.array(z.string()),
-        })),
-      })).optional(),
-    }).optional(),
-    enriched: EnrichedStringBundleSchema.optional(),
-  }).optional(),
+  data: z
+    .object({
+      status: z.enum(['ready', 'queued', 'partial']).optional(),
+      sample_id: z.string().optional(),
+      result_mode: z.enum(['preview', 'full']).optional(),
+      execution_state: z.enum(['inline', 'queued', 'partial', 'completed']).optional(),
+      job_id: z.string().optional(),
+      polling_guidance: z.any().optional(),
+      evidence_state: z.array(AnalysisEvidenceStateSchema).optional(),
+      recommended_next_tools: z.array(z.string()).optional(),
+      next_actions: z.array(z.string()).optional(),
+      strings: z
+        .array(
+          z.object({
+            offset: z.number(),
+            string: z.string(),
+            encoding: z.string(),
+          })
+        )
+        .optional(),
+      count: z.number().optional(),
+      total_count: z.number().optional(),
+      pre_filter_count: z.number().optional(),
+      truncated: z.boolean().optional(),
+      max_strings: z.number().optional(),
+      max_string_length: z.number().optional(),
+      max_scan_bytes: z.number().optional(),
+      scan_mode: z.string().optional(),
+      scan_bytes: z.number().optional(),
+      sampled: z.boolean().optional(),
+      min_len: z.number().optional(),
+      encoding_filter: z.string().optional(),
+      category_filter: z.string().optional(),
+      summary: z
+        .object({
+          cluster_counts: z.record(z.string(), z.number()),
+          clusters: z.record(z.string(), z.array(z.string())),
+          top_high_value: z.array(
+            z.object({
+              offset: z.number(),
+              string: z.string(),
+              encoding: z.string(),
+              categories: z.array(z.string()),
+            })
+          ),
+          context_windows: z
+            .array(
+              z.object({
+                start_offset: z.number(),
+                end_offset: z.number(),
+                score: z.number(),
+                categories: z.array(z.string()),
+                strings: z.array(
+                  z.object({
+                    offset: z.number(),
+                    string: z.string(),
+                    encoding: z.string(),
+                    categories: z.array(z.string()),
+                  })
+                ),
+              })
+            )
+            .optional(),
+        })
+        .optional(),
+      enriched: EnrichedStringBundleSchema.optional(),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(z.any()).optional(),
-  metrics: z.object({
-    elapsed_ms: z.number(),
-    tool: z.string(),
-  }).optional(),
+  metrics: z
+    .object({
+      elapsed_ms: z.number(),
+      tool: z.string(),
+    })
+    .optional(),
 })
 
 export type StringsExtractOutput = z.infer<typeof StringsExtractOutputSchema>
@@ -257,9 +305,9 @@ interface WorkerResponse {
 
 /**
  * Spawn Python Static Worker and communicate via stdin/stdout JSON protocol
- * 
+ *
  * Requirements: Worker communication
- * 
+ *
  * @param request - Worker request object
  * @returns Worker response object
  */
@@ -267,7 +315,7 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
   return new Promise((resolve, reject) => {
     // Get Python worker path
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
-    
+
     // Spawn Python process
     const pythonCommand = getPythonCommand()
     const pythonProcess = spawn(pythonCommand, [workerPath], {
@@ -301,7 +349,11 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
         const response: WorkerResponse = JSON.parse(lastLine)
         resolve(response)
       } catch (error) {
-        reject(new Error(`Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`))
+        reject(
+          new Error(
+            `Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`
+          )
+        )
       }
     })
 
@@ -324,7 +376,8 @@ function normalizeStringsExtractData(
   payload: unknown,
   input: StringsExtractInput
 ): Record<string, unknown> {
-  const data = payload && typeof payload === 'object' ? ({ ...(payload as Record<string, unknown>) }) : {}
+  const data =
+    payload && typeof payload === 'object' ? { ...(payload as Record<string, unknown>) } : {}
   const extracted = Array.isArray(data.strings)
     ? data.strings
         .map((item) => {
@@ -351,18 +404,24 @@ function normalizeStringsExtractData(
 
   if (input.enrich_result !== false) {
     const summary =
-      data.summary && typeof data.summary === 'object' ? (data.summary as Record<string, unknown>) : {}
+      data.summary && typeof data.summary === 'object'
+        ? (data.summary as Record<string, unknown>)
+        : {}
     data.enriched = buildEnrichedStringBundle(extracted, [], {
       maxRecords: Math.max(20, Math.min(input.max_strings || 500, 120)),
       maxHighlights: 12,
-      contextWindows: Array.isArray(summary.context_windows) ? (summary.context_windows as unknown[]) : [],
+      contextWindows: Array.isArray(summary.context_windows)
+        ? (summary.context_windows as unknown[])
+        : [],
     })
   }
 
   return data
 }
 
-function chooseInlineStringsLimit(sampleSizeTier: ReturnType<typeof classifySampleSizeTier>): number {
+function chooseInlineStringsLimit(
+  sampleSizeTier: ReturnType<typeof classifySampleSizeTier>
+): number {
   if (sampleSizeTier === 'large' || sampleSizeTier === 'oversized') {
     return LARGE_SAMPLE_INLINE_STRINGS
   }
@@ -406,7 +465,7 @@ export function createStringsExtractHandler(
         sampleSha256: sample.sha256,
         toolName: TOOL_NAME,
         toolVersion: TOOL_VERSION,
-        args: { 
+        args: {
           mode: input.mode,
           min_len: input.min_len,
           encoding: input.encoding,
@@ -443,7 +502,10 @@ export function createStringsExtractHandler(
           const normalizedCachedData = normalizeStringsExtractData(resolved.record.result, input)
           const warnings =
             resolved.source === 'cache' && resolved.cache
-              ? [...buildEvidenceReuseWarnings(resolved), formatCacheWarning(resolved.cache.metadata)]
+              ? [
+                  ...buildEvidenceReuseWarnings(resolved),
+                  formatCacheWarning(resolved.cache.metadata),
+                ]
               : buildEvidenceReuseWarnings(resolved)
           return {
             ok: true,
@@ -517,7 +579,8 @@ export function createStringsExtractHandler(
         samplePath,
         args: {
           scan_mode: input.mode,
-          max_scan_bytes: input.mode === 'preview' ? input.max_scan_bytes || 1024 * 1024 : undefined,
+          max_scan_bytes:
+            input.mode === 'preview' ? input.max_scan_bytes || 1024 * 1024 : undefined,
           min_len: input.min_len,
           encoding: input.encoding,
           max_strings: input.max_strings,
@@ -551,7 +614,10 @@ export function createStringsExtractHandler(
       const extractedStrings = Array.isArray(normalizedData.strings)
         ? (normalizedData.strings as Array<Record<string, unknown>>)
         : []
-      if (input.mode === 'full' && extractedStrings.length > chooseInlineStringsLimit(sampleSizeTier)) {
+      if (
+        input.mode === 'full' &&
+        extractedStrings.length > chooseInlineStringsLimit(sampleSizeTier)
+      ) {
         const chunked = await persistChunkedArrayArtifacts(extractedStrings, {
           family: 'strings',
           inlineLimit: chooseInlineStringsLimit(sampleSizeTier),
@@ -644,7 +710,9 @@ export function createStringsExtractHandler(
           session_tag: input.session_tag || null,
           cache_key: cacheKey,
           sample_size_tier: sampleSizeTier,
-          ...(normalizedData.chunk_manifest ? { chunk_manifest: normalizedData.chunk_manifest } : {}),
+          ...(normalizedData.chunk_manifest
+            ? { chunk_manifest: normalizedData.chunk_manifest }
+            : {}),
         },
         provenance: {
           tool: TOOL_NAME,
@@ -661,8 +729,7 @@ export function createStringsExtractHandler(
           sample_id: input.sample_id,
           result_mode: input.mode,
           execution_state: 'completed',
-          worker_pool:
-            (workerResponse.metrics as Record<string, unknown> | undefined)?.worker_pool,
+          worker_pool: workerResponse.metrics?.worker_pool,
           evidence_state: [
             buildFreshEvidenceState({
               evidenceFamily: 'strings',

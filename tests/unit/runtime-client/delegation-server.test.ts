@@ -3,8 +3,16 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createDelegatingServer, type RuntimeClientLike } from '../../../src/runtime-client/delegation-server.js'
-import type { PluginServerInterface, ToolDefinition, WorkerResult, RuntimeBackendHint } from '../../../src/plugins/sdk.js'
+import {
+  createDelegatingServer,
+  type RuntimeClientLike,
+} from '../../../src/runtime-client/delegation-server.js'
+import type {
+  PluginServerInterface,
+  ToolDefinition,
+  WorkerResult,
+  RuntimeBackendHint,
+} from '../../../src/plugins/sdk.js'
 import type { RuntimeBackendCapability } from '../../../src/runtime-client/runtime-client.js'
 import type { WorkspaceManager } from '../../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../../src/database.js'
@@ -24,7 +32,9 @@ describe('createDelegatingServer', () => {
   let resolvePrimarySamplePath: jest.Mock
   const sandboxDir = '/tmp/sandbox'
 
-  const makeRuntimeResponse = (overrides: Partial<RuntimeExecuteResponse> = {}): RuntimeExecuteResponse => ({
+  const makeRuntimeResponse = (
+    overrides: Partial<RuntimeExecuteResponse> = {}
+  ): RuntimeExecuteResponse => ({
     ok: true,
     taskId: 'runtime-task-1',
     result: { ok: true, data: { test: true } },
@@ -36,7 +46,9 @@ describe('createDelegatingServer', () => {
     inner = {
       registerTool: jest.fn(),
       unregisterTool: jest.fn(),
-      getProgressReporter: jest.fn().mockReturnValue({ report: jest.fn().mockResolvedValue(undefined) }),
+      getProgressReporter: jest
+        .fn()
+        .mockReturnValue({ report: jest.fn().mockResolvedValue(undefined) }),
     } as any
 
     runtimeClient = {
@@ -52,7 +64,15 @@ describe('createDelegatingServer', () => {
   })
 
   const createServer = (client: RuntimeClientLike | null) =>
-    createDelegatingServer(inner, 'test-plugin', client, workspaceManager, database, resolvePrimarySamplePath, sandboxDir)
+    createDelegatingServer(
+      inner,
+      'test-plugin',
+      client,
+      workspaceManager,
+      database,
+      resolvePrimarySamplePath,
+      sandboxDir
+    )
 
   const localDynamicTool: ToolDefinition = {
     name: 'dynamic.auto_hook',
@@ -124,7 +144,7 @@ describe('createDelegatingServer', () => {
     'runtime.debug.command',
   ])('should register local control tool %s directly on inner server', (toolName) => {
     const server = createServer(runtimeClient)
-    const handler = async () => ({ ok: true } as WorkerResult)
+    const handler = async () => ({ ok: true }) as WorkerResult
     const tool = { ...localDynamicTool, name: toolName }
 
     server.registerTool(tool, handler)
@@ -136,9 +156,11 @@ describe('createDelegatingServer', () => {
   test('should wrap remote dynamic tools and forward runtimeBackendHint', async () => {
     const server = createServer(runtimeClient)
     let wrappedHandler: any
-    inner.registerTool = jest.fn((_def, handler) => { wrappedHandler = handler })
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
 
-    const originalHandler = async () => ({ ok: true } as WorkerResult)
+    const originalHandler = async () => ({ ok: true }) as WorkerResult
     server.registerTool(remoteDynamicTool, originalHandler)
 
     expect(inner.registerTool).toHaveBeenCalledWith(remoteDynamicTool, expect.any(Function))
@@ -159,9 +181,11 @@ describe('createDelegatingServer', () => {
   test('should return setup_required when runtimeClient is null', async () => {
     const server = createServer(null)
     let wrappedHandler: any
-    inner.registerTool = jest.fn((_def, handler) => { wrappedHandler = handler })
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
 
-    server.registerTool(remoteDynamicTool, async () => ({ ok: true } as WorkerResult))
+    server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
     const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
 
     expect(result.ok).toBe(true)
@@ -175,16 +199,20 @@ describe('createDelegatingServer', () => {
   })
 
   test('should download artifacts when runtime returns artifactRefs', async () => {
-    runtimeClient.execute = jest.fn().mockResolvedValue(makeRuntimeResponse({
-      result: { ok: true, data: {} },
-      artifactRefs: [{ name: 'report.json', path: 'C:\\rikune-outbox\\task-123\\report.json' }],
-    }))
+    runtimeClient.execute = jest.fn().mockResolvedValue(
+      makeRuntimeResponse({
+        result: { ok: true, data: {} },
+        artifactRefs: [{ name: 'report.json', path: 'C:\\rikune-outbox\\task-123\\report.json' }],
+      })
+    )
 
     const server = createServer(runtimeClient)
     let wrappedHandler: any
-    inner.registerTool = jest.fn((_def, handler) => { wrappedHandler = handler })
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
 
-    server.registerTool(remoteDynamicTool, async () => ({ ok: true } as WorkerResult))
+    server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
     await wrappedHandler({ sample_id: 'sha256:abc123' })
 
     expect(runtimeClient.downloadArtifacts).toHaveBeenCalledWith(
@@ -198,18 +226,22 @@ describe('createDelegatingServer', () => {
     runtimeClient.execute = jest
       .fn()
       .mockRejectedValueOnce(new Error('ECONNREFUSED'))
-      .mockResolvedValueOnce(makeRuntimeResponse({
-        result: { ok: true, data: { recovered: true } },
-        artifactRefs: [],
-      }))
+      .mockResolvedValueOnce(
+        makeRuntimeResponse({
+          result: { ok: true, data: { recovered: true } },
+          artifactRefs: [],
+        })
+      )
     runtimeClient.recover = jest.fn().mockResolvedValue(true)
     runtimeClient.getEndpoint = jest.fn().mockReturnValue('http://127.0.0.1:4020')
 
     const server = createServer(runtimeClient)
     let wrappedHandler: any
-    inner.registerTool = jest.fn((_def, handler) => { wrappedHandler = handler })
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
 
-    server.registerTool(remoteDynamicTool, async () => ({ ok: true } as WorkerResult))
+    server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
     const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
 
     expect(runtimeClient.recover).toHaveBeenCalledWith({ forceRefreshCapabilities: true })
@@ -221,9 +253,11 @@ describe('createDelegatingServer', () => {
   test('should skip upload when sample_id is missing', async () => {
     const server = createServer(runtimeClient)
     let wrappedHandler: any
-    inner.registerTool = jest.fn((_def, handler) => { wrappedHandler = handler })
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
 
-    server.registerTool(remoteDynamicTool, async () => ({ ok: true } as WorkerResult))
+    server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
     await wrappedHandler({})
 
     expect(runtimeClient.uploadSample).not.toHaveBeenCalled()
@@ -236,9 +270,11 @@ describe('createDelegatingServer', () => {
 
     const server = createServer(runtimeClient)
     let wrappedHandler: any
-    inner.registerTool = jest.fn((_def, handler) => { wrappedHandler = handler })
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
 
-    server.registerTool(remoteDynamicTool, async () => ({ ok: true } as WorkerResult))
+    server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
     const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
 
     expect(runtimeClient.recover).toHaveBeenCalledWith({ forceRefreshCapabilities: true })
@@ -247,17 +283,21 @@ describe('createDelegatingServer', () => {
   })
 
   test('should normalize runtime execution errors without result payloads', async () => {
-    runtimeClient.execute = jest.fn().mockResolvedValue(makeRuntimeResponse({
-      ok: false,
-      result: undefined,
-      errors: ['Unsupported runtime backend hint: inline/missing.handler'],
-    }))
+    runtimeClient.execute = jest.fn().mockResolvedValue(
+      makeRuntimeResponse({
+        ok: false,
+        result: undefined,
+        errors: ['Unsupported runtime backend hint: inline/missing.handler'],
+      })
+    )
 
     const server = createServer(runtimeClient)
     let wrappedHandler: any
-    inner.registerTool = jest.fn((_def, handler) => { wrappedHandler = handler })
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
 
-    server.registerTool(remoteDynamicTool, async () => ({ ok: true } as WorkerResult))
+    server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
     const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
 
     expect(result.ok).toBe(false)
@@ -272,29 +312,47 @@ describe('createDelegatingServer', () => {
 
     const server = createServer(runtimeClient)
     let wrappedHandler: any
-    inner.registerTool = jest.fn((_def, handler) => { wrappedHandler = handler })
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
 
-    server.registerTool(remoteDynamicTool, async () => ({ ok: true } as WorkerResult))
+    server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
     const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
 
-    expect(runtimeClient.validateRuntimeBackendHint).toHaveBeenCalledWith(remoteDynamicTool.runtimeBackendHint)
+    expect(runtimeClient.validateRuntimeBackendHint).toHaveBeenCalledWith(
+      remoteDynamicTool.runtimeBackendHint
+    )
     expect(runtimeClient.uploadSample).not.toHaveBeenCalled()
     expect(runtimeClient.execute).not.toHaveBeenCalled()
     expect(result.ok).toBe(false)
-    expect(result.errors?.[0]).toMatch(/does not advertise support for backend hint python-worker\/frida_worker.py/)
-    expect(result.data).toEqual({
-      status: 'setup_required',
-      failure_category: 'unsupported_runtime_backend_hint',
-      summary: 'Runtime does not advertise support for backend hint python-worker/frida_worker.py required by tool frida.runtime.instrument.',
-      recommended_next_tools: ['frida.script.generate', 'dynamic.dependencies', 'system.health'],
-      next_actions: [
-        'Verify Frida runtime dependencies and reconnect a compatible runtime before retrying instrumentation.',
-        'Use frida.script.generate to prepare instrumentation logic while runtime support is unavailable.',
-      ],
-      runtime_endpoint: null,
-      required_runtime_backend_hint: remoteDynamicTool.runtimeBackendHint,
-      available_runtime_backends: availableRuntimeBackends,
-    })
+    expect(result.errors?.[0]).toMatch(
+      /does not advertise support for backend hint python-worker\/frida_worker.py/
+    )
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        status: 'setup_required',
+        failure_category: 'unsupported_runtime_backend_hint',
+        summary:
+          'Runtime does not advertise support for backend hint python-worker/frida_worker.py required by tool frida.runtime.instrument.',
+        runtime_endpoint: null,
+        required_runtime_backend_hint: remoteDynamicTool.runtimeBackendHint,
+        available_runtime_backends: availableRuntimeBackends,
+      })
+    )
+    expect((result.data as any).recommended_next_tools).toEqual(
+      expect.arrayContaining([
+        'dynamic.runtime.status',
+        'frida.script.generate',
+        'dynamic.dependencies',
+        'system.health',
+      ])
+    )
+    expect((result.data as any).runtime_diagnostic).toEqual(
+      expect.objectContaining({
+        likely_missing_plane: 'runtime_node_capability',
+        required_backend_advertised: false,
+      })
+    )
   })
 
   test.each(runtimeBackedToolCases)(
@@ -307,7 +365,9 @@ describe('createDelegatingServer', () => {
 
       const server = createServer(runtimeClient)
       let wrappedHandler: any
-      inner.registerTool = jest.fn((_def, handler) => { wrappedHandler = handler })
+      inner.registerTool = jest.fn((_def, handler) => {
+        wrappedHandler = handler
+      })
 
       server.registerTool(
         {
@@ -316,7 +376,7 @@ describe('createDelegatingServer', () => {
           inputSchema: {},
           runtimeBackendHint: hint,
         },
-        async () => ({ ok: true } as WorkerResult)
+        async () => ({ ok: true }) as WorkerResult
       )
 
       const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
@@ -340,14 +400,23 @@ describe('createDelegatingServer', () => {
 
     const server = createServer(runtimeClient)
     let wrappedHandler: any
-    inner.registerTool = jest.fn((_def, handler) => { wrappedHandler = handler })
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
 
-    server.registerTool(remoteDynamicTool, async () => ({ ok: true } as WorkerResult))
+    server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
     const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
 
     expect(result.ok).toBe(false)
     expect((result.data as any)?.failure_category).toBe('runtime_recovery_failed')
     expect((result.data as any)?.runtime_endpoint).toBe('http://127.0.0.1:4010')
+    expect((result.data as any)?.runtime_diagnostic).toEqual(
+      expect.objectContaining({
+        runtime_endpoint_configured: true,
+        likely_missing_plane: 'host_agent_or_runtime_node',
+      })
+    )
+    expect((result.data as any)?.recommended_next_tools).toContain('dynamic.runtime.status')
     expect((result.data as any)?.recommended_next_tools).toContain('frida.script.generate')
   })
 })

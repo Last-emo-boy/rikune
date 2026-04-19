@@ -5,15 +5,28 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { crossBinaryCompareToolDefinition, createCrossBinaryCompareHandler } from './tools/cross-binary-compare.js'
-import { callGraphCrossModuleToolDefinition, createCallGraphCrossModuleHandler } from './tools/call-graph-cross-module.js'
-import { dllDependencyTreeToolDefinition, createDllDependencyTreeHandler } from './tools/dll-dependency-tree.js'
+import {
+  crossBinaryCompareToolDefinition,
+  createCrossBinaryCompareHandler,
+} from './tools/cross-binary-compare.js'
+import {
+  callGraphCrossModuleToolDefinition,
+  createCallGraphCrossModuleHandler,
+} from './tools/call-graph-cross-module.js'
+import {
+  dllDependencyTreeToolDefinition,
+  createDllDependencyTreeHandler,
+} from './tools/dll-dependency-tree.js'
 
 const crossModulePlugin: Plugin = {
   id: 'cross-module',
   name: 'Cross-Module Analysis',
   executionDomain: 'static',
-  surfaceRules: { tier: 2, activateOn: { findings: ['suspicious_imports'] }, category: 'reverse-engineering' },
+  surfaceRules: {
+    tier: 2,
+    activateOn: { findings: ['suspicious_imports'] },
+    category: 'reverse-engineering',
+  },
   description: 'Cross-binary comparison, cross-module call graphs, and DLL dependency trees',
   version: '1.0.0',
   register(server, deps) {

@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, ArtifactRef , PluginToolDeps} from '../../sdk.js'
+import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { getDebugSessionManager } from '../debug/debug-session-state.js'
 

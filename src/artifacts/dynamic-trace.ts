@@ -16,10 +16,7 @@ export type DynamicTraceSourceFormat =
   | 'sandbox_trace'
 
 export type DynamicEvidenceKind = 'trace' | 'memory_snapshot' | 'hybrid'
-export type DynamicEvidenceLayerName =
-  | 'safe_simulation'
-  | 'memory_or_hybrid'
-  | 'executed_trace'
+export type DynamicEvidenceLayerName = 'safe_simulation' | 'memory_or_hybrid' | 'executed_trace'
 export type DynamicEvidenceScope = 'all' | 'latest' | 'session'
 
 export interface LoadDynamicTraceEvidenceOptions {
@@ -157,8 +154,6 @@ const DYNAMIC_RESOLUTION_APIS = new Set([
   'LoadLibraryExW',
 ])
 
-
-
 function normalizeApiName(value: string): string {
   const trimmed = value.trim()
   return trimmed.replace(/\(.*/, '').replace(/^.*!/, '')
@@ -211,13 +206,19 @@ function categorizeApi(api: string): string {
   if (DYNAMIC_RESOLUTION_APIS.has(normalized)) {
     return 'dynamic_resolution'
   }
-  if (/Process|Thread|RemoteThread|VirtualAllocEx|VirtualProtectEx|SetThreadContext|ResumeThread/i.test(normalized)) {
+  if (
+    /Process|Thread|RemoteThread|VirtualAllocEx|VirtualProtectEx|SetThreadContext|ResumeThread/i.test(
+      normalized
+    )
+  ) {
     return 'process_manipulation'
   }
   if (/Reg(Open|Set|Query|Create|Delete)/i.test(normalized)) {
     return 'registry'
   }
-  if (/CreateFile|ReadFile|WriteFile|DeleteFile|CopyFile|FindFirstFile|FindNextFile/i.test(normalized)) {
+  if (
+    /CreateFile|ReadFile|WriteFile|DeleteFile|CopyFile|FindFirstFile|FindNextFile/i.test(normalized)
+  ) {
     return 'filesystem'
   }
   if (/Http|WinInet|Internet|WSA|connect|send|recv|socket/i.test(normalized)) {
@@ -250,13 +251,21 @@ function deriveStages(apis: string[], memoryRegions: string[]): string[] {
   ) {
     stages.push('prepare_remote_process_access')
   }
-  if (Array.from(apiSet).some((item) => /CreateFile|ReadFile|WriteFile|DeleteFile|CopyFile/i.test(item))) {
+  if (
+    Array.from(apiSet).some((item) =>
+      /CreateFile|ReadFile|WriteFile|DeleteFile|CopyFile/i.test(item)
+    )
+  ) {
     stages.push('file_operations')
   }
   if (Array.from(apiSet).some((item) => /Reg(Open|Set|Query|Create|Delete)/i.test(item))) {
     stages.push('registry_operations')
   }
-  if (Array.from(apiSet).some((item) => /NtQueryInformationProcess|NtQuerySystemInformation/i.test(item))) {
+  if (
+    Array.from(apiSet).some((item) =>
+      /NtQueryInformationProcess|NtQuerySystemInformation/i.test(item)
+    )
+  ) {
     stages.push('anti_analysis_checks')
   }
   if (
@@ -293,7 +302,9 @@ function deriveRiskHints(apis: string[], evidenceKind: DynamicEvidenceKind): str
     hints.push('Anti-analysis or environment-query APIs were observed in runtime evidence.')
   }
   if (evidenceKind === 'memory_snapshot') {
-    hints.push('Evidence is memory-snapshot based; execution was not directly proven by this artifact alone.')
+    hints.push(
+      'Evidence is memory-snapshot based; execution was not directly proven by this artifact alone.'
+    )
   }
 
   return hints
@@ -309,7 +320,9 @@ function classifyDynamicEvidenceLayer(trace: NormalizedDynamicTrace): DynamicEvi
   return 'memory_or_hybrid'
 }
 
-function confidenceBandForLayer(layer: DynamicEvidenceLayerName): 'baseline' | 'suggestive' | 'high' {
+function confidenceBandForLayer(
+  layer: DynamicEvidenceLayerName
+): 'baseline' | 'suggestive' | 'high' {
   if (layer === 'executed_trace') {
     return 'high'
   }
@@ -458,11 +471,14 @@ export function normalizeDynamicTrace(
     ...apiCalls.map((item) => item.module || ''),
     ...memoryRegions.map((item) => item.module_name || ''),
   ])
-  const strings = dedupeStrings([
-    ...toStringArray(record.strings),
-    ...toStringArray(record.observed_strings),
-    ...memoryRegions.flatMap((item) => item.indicators),
-  ], 100)
+  const strings = dedupeStrings(
+    [
+      ...toStringArray(record.strings),
+      ...toStringArray(record.observed_strings),
+      ...memoryRegions.flatMap((item) => item.indicators),
+    ],
+    100
+  )
   const stages = dedupeStrings([
     ...toStringArray(record.stages),
     ...deriveStages(
@@ -532,7 +548,10 @@ export function normalizeDynamicTraceArtifactPayload(raw: unknown): NormalizedDy
     }
   }
 
-  if (typeof record.run_id === 'string' && (Array.isArray(record.timeline) || Array.isArray(record.api_resolution))) {
+  if (
+    typeof record.run_id === 'string' &&
+    (Array.isArray(record.timeline) || Array.isArray(record.api_resolution))
+  ) {
     const apiResolution = Array.isArray(record.api_resolution) ? record.api_resolution : []
     const memoryRegions = Array.isArray(record.memory_regions) ? record.memory_regions : []
     const executionHypotheses = Array.isArray(record.execution_hypotheses)
@@ -579,7 +598,9 @@ export function normalizeDynamicTraceArtifactPayload(raw: unknown): NormalizedDy
         ...toStringArray(record.warnings),
       ]),
       notes: [
-        typeof record.mode === 'string' ? `Imported sandbox trace from mode=${record.mode}` : 'Imported sandbox trace',
+        typeof record.mode === 'string'
+          ? `Imported sandbox trace from mode=${record.mode}`
+          : 'Imported sandbox trace',
       ],
     }
   }
@@ -678,10 +699,9 @@ export function summarizeDynamicTrace(trace: NormalizedDynamicTrace): DynamicTra
     latest_imported_at: trace.imported_at,
     scope_note: 'Runtime evidence currently reflects a single registered artifact.',
     evidence: dedupeStrings(evidence),
-    summary:
-      trace.executed
-        ? `Runtime evidence observed ${trace.api_calls.length} API(s) across ${trace.stages.length || 1} inferred stage(s).`
-        : `Imported ${trace.evidence_kind} evidence observed ${trace.api_calls.length} API(s) with ${trace.memory_regions.length} memory-region hint(s).`,
+    summary: trace.executed
+      ? `Runtime evidence observed ${trace.api_calls.length} API(s) across ${trace.stages.length || 1} inferred stage(s).`
+      : `Imported ${trace.evidence_kind} evidence observed ${trace.api_calls.length} API(s) with ${trace.memory_regions.length} memory-region hint(s).`,
   }
 }
 
@@ -759,8 +779,13 @@ export async function loadDynamicTraceEvidence(
 
     if (Number.isFinite(latestTimestamp)) {
       selectedTraces = selectedTraces.filter((item) => {
-        const timestamp = new Date(item.artifact.created_at || item.normalized.imported_at).getTime()
-        return Number.isFinite(timestamp) && latestTimestamp - timestamp <= LATEST_DYNAMIC_EVIDENCE_WINDOW_MS
+        const timestamp = new Date(
+          item.artifact.created_at || item.normalized.imported_at
+        ).getTime()
+        return (
+          Number.isFinite(timestamp) &&
+          latestTimestamp - timestamp <= LATEST_DYNAMIC_EVIDENCE_WINDOW_MS
+        )
       })
     }
   }
@@ -780,7 +805,9 @@ export async function loadDynamicTraceEvidence(
       30
     ),
     memory_regions: dedupeStrings(
-      normalizedTraces.flatMap((item) => item.memory_regions.map((entry) => entry.purpose || entry.region_type)),
+      normalizedTraces.flatMap((item) =>
+        item.memory_regions.map((entry) => entry.purpose || entry.region_type)
+      ),
       20
     ),
     region_types: dedupeStrings(
@@ -788,7 +815,9 @@ export async function loadDynamicTraceEvidence(
       20
     ),
     protections: dedupeStrings(
-      normalizedTraces.flatMap((item) => item.memory_regions.map((entry) => entry.protection || '')),
+      normalizedTraces.flatMap((item) =>
+        item.memory_regions.map((entry) => entry.protection || '')
+      ),
       20
     ),
     address_ranges: dedupeStrings(
@@ -810,7 +839,9 @@ export async function loadDynamicTraceEvidence(
       20
     ),
     region_owners: dedupeStrings(
-      normalizedTraces.flatMap((item) => item.memory_regions.map((entry) => entry.module_name || '')),
+      normalizedTraces.flatMap((item) =>
+        item.memory_regions.map((entry) => entry.module_name || '')
+      ),
       20
     ),
     observed_modules: dedupeStrings(
@@ -821,25 +852,37 @@ export async function loadDynamicTraceEvidence(
       20
     ),
     segment_names: dedupeStrings(
-      normalizedTraces.flatMap((item) => item.memory_regions.map((entry) => entry.segment_name || '')),
+      normalizedTraces.flatMap((item) =>
+        item.memory_regions.map((entry) => entry.segment_name || '')
+      ),
       20
     ),
     observed_strings: dedupeStrings(
       normalizedTraces.flatMap((item) => item.strings),
       20
     ),
-    stages: dedupeStrings(normalizedTraces.flatMap((item) => item.stages), 20),
-    risk_hints: dedupeStrings(normalizedTraces.flatMap((item) => item.risk_hints), 20),
-    source_formats: dedupeStrings(normalizedTraces.map((item) => item.source_format), 12),
-    evidence_kinds: dedupeStrings(normalizedTraces.map((item) => item.evidence_kind), 12),
+    stages: dedupeStrings(
+      normalizedTraces.flatMap((item) => item.stages),
+      20
+    ),
+    risk_hints: dedupeStrings(
+      normalizedTraces.flatMap((item) => item.risk_hints),
+      20
+    ),
+    source_formats: dedupeStrings(
+      normalizedTraces.map((item) => item.source_format),
+      12
+    ),
+    evidence_kinds: dedupeStrings(
+      normalizedTraces.map((item) => item.evidence_kind),
+      12
+    ),
     source_modes: dedupeStrings(
       normalizedTraces.map((item) => item.source_mode || '').filter((item) => item.length > 0),
       12
     ),
     source_names: dedupeStrings(
-      normalizedTraces
-        .map((item) => item.source_name || '')
-        .filter((item) => item.length > 0),
+      normalizedTraces.map((item) => item.source_name || '').filter((item) => item.length > 0),
       20
     ),
     imported_at: normalizedTraces
@@ -930,7 +973,9 @@ export async function loadDynamicTraceEvidence(
 
   const earliestImportedAt = aggregated.imported_at[0] || null
   const latestImportedAt =
-    aggregated.imported_at.length > 0 ? aggregated.imported_at[aggregated.imported_at.length - 1] : null
+    aggregated.imported_at.length > 0
+      ? aggregated.imported_at[aggregated.imported_at.length - 1]
+      : null
   const scopeNote =
     evidenceScope === 'latest'
       ? `Runtime evidence is limited to the latest artifact window (${selectedTraces.length}/${loadedTraces.length} artifact(s), window=${LATEST_DYNAMIC_EVIDENCE_WINDOW_MS}ms).`
@@ -970,7 +1015,10 @@ export async function loadDynamicTraceEvidence(
     scope_note: scopeNote,
     evidence_scope: evidenceScope,
     session_selector: options.sessionTag || null,
-    session_tags: dedupeStrings(selectedTraces.flatMap((item) => item.session_tags), 20),
+    session_tags: dedupeStrings(
+      selectedTraces.flatMap((item) => item.session_tags),
+      20
+    ),
     evidence,
     summary: aggregated.executed
       ? `Imported runtime evidence from ${aggregated.artifact_count} artifact(s) observed ${aggregated.observed_apis.length} API(s).`

@@ -70,8 +70,20 @@ export const UnpackChildHandoffInputSchema = z.object({
   include_raw_dump_scan: z.boolean().optional().default(true),
   max_candidates: z.number().int().min(1).max(128).optional().default(32),
   max_children: z.number().int().min(0).max(32).optional().default(8),
-  min_candidate_size: z.number().int().min(2).max(1024 * 1024).optional().default(64),
-  max_child_bytes: z.number().int().min(1024).max(256 * 1024 * 1024).optional().default(32 * 1024 * 1024),
+  min_candidate_size: z
+    .number()
+    .int()
+    .min(2)
+    .max(1024 * 1024)
+    .optional()
+    .default(64),
+  max_child_bytes: z
+    .number()
+    .int()
+    .min(1024)
+    .max(256 * 1024 * 1024)
+    .optional()
+    .default(32 * 1024 * 1024),
   register_children: z.boolean().optional().default(true),
   persist_payload_artifacts: z.boolean().optional().default(true),
   persist_artifact: z.boolean().optional().default(true),
@@ -128,14 +140,21 @@ function estimatePeSize(buffer: Buffer, offset: number): number | null {
   }
   const peOffset = readUInt32(buffer, offset + 0x3c)
   const signatureOffset = offset + peOffset
-  if (signatureOffset + 0x18 > buffer.length || buffer.subarray(signatureOffset, signatureOffset + 4).toString('ascii') !== 'PE\0\0') {
+  if (
+    signatureOffset + 0x18 > buffer.length ||
+    buffer.subarray(signatureOffset, signatureOffset + 4).toString('ascii') !== 'PE\0\0'
+  ) {
     return null
   }
   const coffOffset = signatureOffset + 4
   const sectionCount = readUInt16(buffer, coffOffset + 2)
   const optionalHeaderSize = readUInt16(buffer, coffOffset + 16)
   const sectionTableOffset = coffOffset + 20 + optionalHeaderSize
-  if (sectionCount <= 0 || sectionCount > 96 || sectionTableOffset + sectionCount * 40 > buffer.length) {
+  if (
+    sectionCount <= 0 ||
+    sectionCount > 96 ||
+    sectionTableOffset + sectionCount * 40 > buffer.length
+  ) {
     return null
   }
   let end = sectionTableOffset + sectionCount * 40
@@ -164,34 +183,40 @@ function estimateZipSize(buffer: Buffer, offset: number): number | null {
 }
 
 function nextMagicOffset(buffer: Buffer, offset: number): number {
-  const signatures = ['MZ', 'PK\x03\x04', 'MSCF', '\x7fELF'].map((item) => Buffer.from(item, 'binary'))
+  const signatures = ['MZ', 'PK\x03\x04', 'MSCF', '\x7fELF'].map((item) =>
+    Buffer.from(item, 'binary')
+  )
   const offsets = signatures
     .map((signature) => buffer.indexOf(signature, offset + 2))
     .filter((item) => item > offset)
   return offsets.length > 0 ? Math.min(...offsets) : buffer.length
 }
 
-function buildCandidate(
-  options: {
-    source: CandidateSource
-    sourcePath?: string
-    sourceArtifactId?: string
-    sourceArtifactPath?: string
-    resourcePath?: string
-    offset: number
-    bytes: Buffer
-    evidence: string[]
-  }
-): PayloadCandidate | null {
+function buildCandidate(options: {
+  source: CandidateSource
+  sourcePath?: string
+  sourceArtifactId?: string
+  sourceArtifactPath?: string
+  resourcePath?: string
+  offset: number
+  bytes: Buffer
+  evidence: string[]
+}): PayloadCandidate | null {
   if (options.bytes.length === 0) {
     return null
   }
   const magic = magicOf(options.bytes)
-  const entropy = shannonEntropy(options.bytes.subarray(0, Math.min(options.bytes.length, 1024 * 1024)))
+  const entropy = shannonEntropy(
+    options.bytes.subarray(0, Math.min(options.bytes.length, 1024 * 1024))
+  )
   const confidence =
-    magic === 'pe_or_dos' ? 0.92 :
-    magic === 'zip' || magic === 'cab' || magic === 'elf' ? 0.82 :
-    entropy >= 7.2 ? 0.58 : 0.38
+    magic === 'pe_or_dos'
+      ? 0.92
+      : magic === 'zip' || magic === 'cab' || magic === 'elf'
+        ? 0.82
+        : entropy >= 7.2
+          ? 0.58
+          : 0.38
   const digest = sha256(options.bytes)
   return {
     candidate_id: `${options.source}:${digest.slice(0, 16)}:${options.offset}`,
@@ -214,7 +239,13 @@ function scanBufferForPayloads(
   buffer: Buffer,
   source: CandidateSource,
   sourcePath: string,
-  options: { minSize: number; maxBytes: number; maxCandidates: number; sourceArtifactId?: string; sourceArtifactPath?: string }
+  options: {
+    minSize: number
+    maxBytes: number
+    maxCandidates: number
+    sourceArtifactId?: string
+    sourceArtifactPath?: string
+  }
 ): PayloadCandidate[] {
   const candidates: PayloadCandidate[] = []
   const seenOffsets = new Set<number>()
@@ -262,7 +293,10 @@ function scanBufferForPayloads(
   return candidates
 }
 
-function dedupeCandidates(candidates: PayloadCandidate[], maxCandidates: number): PayloadCandidate[] {
+function dedupeCandidates(
+  candidates: PayloadCandidate[],
+  maxCandidates: number
+): PayloadCandidate[] {
   const byHash = new Map<string, PayloadCandidate>()
   for (const candidate of candidates) {
     const existing = byHash.get(candidate.sha256)
@@ -301,11 +335,12 @@ async function persistPayloadArtifact(
   sessionTag?: string
 ): Promise<ArtifactRef> {
   const workspace = await workspaceManager.createWorkspace(sampleId)
-  const sessionSegment = (sessionTag || 'default')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '_')
-    .replace(/^_+|_+$/g, '') || 'default'
+  const sessionSegment =
+    (sessionTag || 'default')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'default'
   const dir = path.join(workspace.reports, 'unpack_handoff', sessionSegment)
   await fs.mkdir(dir, { recursive: true })
   const fileName = `payload_${candidate.source}_${candidate.sha256.slice(0, 12)}${extensionForMagic(candidate.magic)}`
@@ -381,7 +416,8 @@ function summarize(candidates: PayloadCandidate[], registered: RegisteredChild[]
   return {
     candidate_count: candidates.length,
     registered_child_count: registered.length,
-    executable_like_count: candidates.filter((item) => ['pe_or_dos', 'elf'].includes(item.magic)).length,
+    executable_like_count: candidates.filter((item) => ['pe_or_dos', 'elf'].includes(item.magic))
+      .length,
     archive_like_count: candidates.filter((item) => ['zip', 'cab'].includes(item.magic)).length,
     by_source: bySource,
     by_magic: byMagic,
@@ -411,11 +447,13 @@ export function createUnpackChildHandoffHandler(
       const warnings: string[] = []
 
       if (input.include_sample_scan) {
-        candidates.push(...scanBufferForPayloads(sampleBuffer, 'sample_scan', samplePath, {
-          minSize: input.min_candidate_size,
-          maxBytes: input.max_child_bytes,
-          maxCandidates: input.max_candidates,
-        }))
+        candidates.push(
+          ...scanBufferForPayloads(sampleBuffer, 'sample_scan', samplePath, {
+            minSize: input.min_candidate_size,
+            maxBytes: input.max_child_bytes,
+            maxCandidates: input.max_candidates,
+          })
+        )
       }
 
       let resourceArtifactIds: string[] = []
@@ -432,20 +470,28 @@ export function createUnpackChildHandoffHandler(
         )
         resourceArtifactIds = resourceSelection.artifact_ids
         if (resourceSelection.artifacts.length === 0) {
-          warnings.push('No static_resource_graph artifacts were selected; raw sample scan is still used when enabled.')
+          warnings.push(
+            'No static_resource_graph artifacts were selected; raw sample scan is still used when enabled.'
+          )
         }
         for (const selected of resourceSelection.artifacts) {
           for (const resource of selected.payload.resources || []) {
             const offset = typeof resource.dataOffset === 'number' ? resource.dataOffset : null
             const size = typeof resource.size === 'number' ? resource.size : 0
-            if (offset === null || size < input.min_candidate_size || size > input.max_child_bytes) {
+            if (
+              offset === null ||
+              size < input.min_candidate_size ||
+              size > input.max_child_bytes
+            ) {
               continue
             }
             if (offset < 0 || offset + size > sampleBuffer.length) {
               continue
             }
-            const magic = resource.magic || magicOf(sampleBuffer.subarray(offset, offset + Math.min(size, 16)))
-            const interesting = ['pe_or_dos', 'zip', 'cab', 'elf'].includes(magic) || (resource.entropy || 0) >= 7.2
+            const magic =
+              resource.magic || magicOf(sampleBuffer.subarray(offset, offset + Math.min(size, 16)))
+            const interesting =
+              ['pe_or_dos', 'zip', 'cab', 'elf'].includes(magic) || (resource.entropy || 0) >= 7.2
             if (!interesting) {
               continue
             }
@@ -456,7 +502,10 @@ export function createUnpackChildHandoffHandler(
               resourcePath: Array.isArray(resource.path) ? resource.path.join('/') : undefined,
               offset,
               bytes: sampleBuffer.subarray(offset, offset + size),
-              evidence: [`resource_magic=${magic}`, `resource_entropy=${resource.entropy ?? 'unknown'}`],
+              evidence: [
+                `resource_magic=${magic}`,
+                `resource_entropy=${resource.entropy ?? 'unknown'}`,
+              ],
             })
             if (candidate) {
               candidates.push(candidate)
@@ -471,13 +520,15 @@ export function createUnpackChildHandoffHandler(
           try {
             const absPath = workspaceManager.normalizePath(workspace.root, artifact.path)
             const rawDump = await fs.readFile(absPath)
-            candidates.push(...scanBufferForPayloads(rawDump, 'raw_dump_scan', absPath, {
-              minSize: input.min_candidate_size,
-              maxBytes: input.max_child_bytes,
-              maxCandidates: input.max_candidates,
-              sourceArtifactId: artifact.id,
-              sourceArtifactPath: artifact.path,
-            }))
+            candidates.push(
+              ...scanBufferForPayloads(rawDump, 'raw_dump_scan', absPath, {
+                minSize: input.min_candidate_size,
+                maxBytes: input.max_child_bytes,
+                maxCandidates: input.max_candidates,
+                sourceArtifactId: artifact.id,
+                sourceArtifactPath: artifact.path,
+              })
+            )
           } catch {
             warnings.push(`Failed to scan raw_dump artifact ${artifact.id}.`)
           }
@@ -490,16 +541,28 @@ export function createUnpackChildHandoffHandler(
 
       for (const candidate of selectedCandidates.slice(0, input.max_children)) {
         if (input.persist_payload_artifacts) {
-          payloadArtifacts.push(await persistPayloadArtifact(workspaceManager, database, input.sample_id, candidate, input.session_tag))
+          payloadArtifacts.push(
+            await persistPayloadArtifact(
+              workspaceManager,
+              database,
+              input.sample_id,
+              candidate,
+              input.session_tag
+            )
+          )
         }
         if (input.register_children) {
-          registeredChildren.push(await registerChildSample(workspaceManager, database, input.sample_id, candidate))
+          registeredChildren.push(
+            await registerChildSample(workspaceManager, database, input.sample_id, candidate)
+          )
         }
       }
 
       const candidateViews = selectedCandidates.map((candidate) => {
         const registered = registeredChildren.find((child) => child.sha256 === candidate.sha256)
-        const payloadArtifact = payloadArtifacts.find((artifact) => artifact.sha256 === candidate.sha256)
+        const payloadArtifact = payloadArtifacts.find(
+          (artifact) => artifact.sha256 === candidate.sha256
+        )
         return {
           candidate_id: candidate.candidate_id,
           source: candidate.source,
@@ -538,28 +601,31 @@ export function createUnpackChildHandoffHandler(
           'unpack.auto',
           'dynamic.memory.import',
         ],
-        next_actions: registeredChildren.length > 0
-          ? [
-              'Run workflow.analyze.start on registered child sample IDs to preserve parent/child provenance.',
-              'Use static.behavior.classify and static.config.carver on child payloads before dynamic execution.',
-            ]
-          : [
-              'Run static.resource.graph and dynamic.memory.import to add richer payload sources, then retry unpack.child.handoff.',
-            ],
+        next_actions:
+          registeredChildren.length > 0
+            ? [
+                'Run workflow.analyze.start on registered child sample IDs to preserve parent/child provenance.',
+                'Use static.behavior.classify and static.config.carver on child payloads before dynamic execution.',
+              ]
+            : [
+                'Run static.resource.graph and dynamic.memory.import to add richer payload sources, then retry unpack.child.handoff.',
+              ],
         warnings,
       }
 
       const artifacts: ArtifactRef[] = [...payloadArtifacts]
       if (input.persist_artifact) {
-        artifacts.push(await persistStaticAnalysisJsonArtifact(
-          workspaceManager,
-          database,
-          input.sample_id,
-          'unpack_child_handoff',
-          'child_handoff',
-          data,
-          input.session_tag
-        ))
+        artifacts.push(
+          await persistStaticAnalysisJsonArtifact(
+            workspaceManager,
+            database,
+            input.sample_id,
+            'unpack_child_handoff',
+            'child_handoff',
+            data,
+            input.session_tag
+          )
+        )
       }
 
       return {

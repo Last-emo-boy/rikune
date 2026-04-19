@@ -31,75 +31,76 @@ const TOOL_NAME = 'dotnet.reconstruct.export'
 const TOOL_VERSION = '0.2.0'
 const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
-export const DotNetReconstructExportInputSchema = z.object({
-  sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  topk: z
-    .number()
-    .int()
-    .min(1)
-    .max(40)
-    .default(16)
-    .describe('Top-K high-value functions used for reconstruction'),
-  project_name: z
-    .string()
-    .min(1)
-    .max(64)
-    .default('RecoveredDotNet')
-    .describe('Exported C# project name'),
-  namespace: z
-    .string()
-    .min(1)
-    .max(128)
-    .default('Recovered')
-    .describe('Root C# namespace for reconstructed classes'),
-  include_metadata_types: z
-    .boolean()
-    .default(true)
-    .describe('Generate CLR metadata-driven type skeletons alongside module skeletons'),
-  max_managed_types: z
-    .number()
-    .int()
-    .min(1)
-    .max(200)
-    .default(64)
-    .describe('Maximum number of managed metadata types emitted as C# skeletons'),
-  export_name: z
-    .string()
-    .min(1)
-    .max(64)
-    .optional()
-    .describe('Optional folder name for export'),
-  include_obfuscation_fallback: z
-    .boolean()
-    .default(true)
-    .describe('Generate IL fallback notes when packed/obfuscated signals exist'),
-  validate_build: z
-    .boolean()
-    .default(true)
-    .describe('Run dotnet build validation for exported project skeleton'),
-  build_timeout_ms: z
-    .number()
-    .int()
-    .min(5000)
-    .max(180000)
-    .default(45000)
-    .describe('Timeout for dotnet build validation in milliseconds'),
-  evidence_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('all')
-    .describe('Runtime evidence scope forwarded to native reconstruction fallback: all artifacts, latest artifact window, or a specific session selector'),
-  evidence_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
-  reuse_cached: z
-    .boolean()
-    .default(true)
-    .describe('Reuse cached result for identical inputs'),
-}).refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-  message: 'evidence_session_tag is required when evidence_scope=session',
-  path: ['evidence_session_tag'],
-})
+export const DotNetReconstructExportInputSchema = z
+  .object({
+    sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
+    topk: z
+      .number()
+      .int()
+      .min(1)
+      .max(40)
+      .default(16)
+      .describe('Top-K high-value functions used for reconstruction'),
+    project_name: z
+      .string()
+      .min(1)
+      .max(64)
+      .default('RecoveredDotNet')
+      .describe('Exported C# project name'),
+    namespace: z
+      .string()
+      .min(1)
+      .max(128)
+      .default('Recovered')
+      .describe('Root C# namespace for reconstructed classes'),
+    include_metadata_types: z
+      .boolean()
+      .default(true)
+      .describe('Generate CLR metadata-driven type skeletons alongside module skeletons'),
+    max_managed_types: z
+      .number()
+      .int()
+      .min(1)
+      .max(200)
+      .default(64)
+      .describe('Maximum number of managed metadata types emitted as C# skeletons'),
+    export_name: z.string().min(1).max(64).optional().describe('Optional folder name for export'),
+    include_obfuscation_fallback: z
+      .boolean()
+      .default(true)
+      .describe('Generate IL fallback notes when packed/obfuscated signals exist'),
+    validate_build: z
+      .boolean()
+      .default(true)
+      .describe('Run dotnet build validation for exported project skeleton'),
+    build_timeout_ms: z
+      .number()
+      .int()
+      .min(5000)
+      .max(180000)
+      .default(45000)
+      .describe('Timeout for dotnet build validation in milliseconds'),
+    evidence_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('all')
+      .describe(
+        'Runtime evidence scope forwarded to native reconstruction fallback: all artifacts, latest artifact window, or a specific session selector'
+      ),
+    evidence_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'
+      ),
+    reuse_cached: z.boolean().default(true).describe('Reuse cached result for identical inputs'),
+  })
+  .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
 
 export type DotNetReconstructExportInput = z.infer<typeof DotNetReconstructExportInputSchema>
 
@@ -392,7 +393,9 @@ function buildModuleClassContent(
       )
       lines.push(`    public static void ${methodName}()`)
       lines.push('    {')
-      lines.push('        // TODO: Recover exact managed semantics by comparing IL with native reconstruction.')
+      lines.push(
+        '        // TODO: Recover exact managed semantics by comparing IL with native reconstruction.'
+      )
       lines.push('    }')
       lines.push('')
     }
@@ -406,7 +409,10 @@ function buildModuleClassContent(
   return lines.join('\n')
 }
 
-function inferTypeModuleHints(typeInfo: DotNetMetadataType, modules: ReconstructModule[]): string[] {
+function inferTypeModuleHints(
+  typeInfo: DotNetMetadataType,
+  modules: ReconstructModule[]
+): string[] {
   const lowered = `${typeInfo.full_name} ${typeInfo.name}`.toLowerCase()
   const hints: string[] = []
   const keywordMap: Record<string, string[]> = {
@@ -636,7 +642,9 @@ function buildDotNetReverseNotes(
 
   lines.push('## Analyst Priorities')
   if (!managedProfile || managedProfile.analysis_priorities.length === 0) {
-    lines.push('- Compare exported type skeletons with IL and module skeletons before renaming methods.')
+    lines.push(
+      '- Compare exported type skeletons with IL and module skeletons before renaming methods.'
+    )
   } else {
     for (const item of managedProfile.analysis_priorities) {
       lines.push(`- ${item}`)
@@ -734,7 +742,9 @@ function buildFallbackNotes(
   if (degradationReasons.length === 0) {
     lines.push('- Fallback was requested, but no explicit degradation reason was detected.')
   } else if (packed) {
-    lines.push('- Packer/obfuscation signals detected; high-fidelity C# requires IL-level recovery.')
+    lines.push(
+      '- Packer/obfuscation signals detected; high-fidelity C# requires IL-level recovery.'
+    )
     lines.push(`- Reasons: ${degradationReasons.join('; ')}`)
   } else {
     lines.push(`- Reasons: ${degradationReasons.join('; ')}`)
@@ -1011,7 +1021,9 @@ export function createDotNetReconstructExportHandler(
       const packingConfidence = clamp(packerData?.confidence ?? 0, 0, 1)
 
       if (!packerResult.ok) {
-        warnings.push(`packer.detect unavailable: ${(packerResult.errors || ['unknown']).join('; ')}`)
+        warnings.push(
+          `packer.detect unavailable: ${(packerResult.errors || ['unknown']).join('; ')}`
+        )
       }
 
       const baseExportName =
@@ -1069,7 +1081,9 @@ export function createDotNetReconstructExportHandler(
       if (modules.length === 0 && !managedMetadata) {
         return {
           ok: false,
-          errors: ['Neither native reconstruction modules nor CLR metadata were available for export.'],
+          errors: [
+            'Neither native reconstruction modules nor CLR metadata were available for export.',
+          ],
           warnings,
           metrics: {
             elapsed_ms: Date.now() - startTime,
@@ -1088,7 +1102,10 @@ export function createDotNetReconstructExportHandler(
       await fs.mkdir(typeSrcRoot, { recursive: true })
 
       const framework = mapTargetFramework(runtime.target_framework)
-      const csprojPath = path.join(dotnetExportRoot, `${sanitizeIdentifier(input.project_name)}.csproj`)
+      const csprojPath = path.join(
+        dotnetExportRoot,
+        `${sanitizeIdentifier(input.project_name)}.csproj`
+      )
       await fs.writeFile(csprojPath, buildCsproj(input.project_name, framework), 'utf-8')
 
       const classOutputs: Array<z.infer<typeof DotNetClassSchema>> = []
@@ -1098,7 +1115,13 @@ export function createDotNetReconstructExportHandler(
         const classNamespace = buildNamespace(input.namespace, 'Modules')
         await fs.writeFile(
           classFile,
-          buildModuleClassContent(classNamespace, className, module.name, module.confidence, module.functions),
+          buildModuleClassContent(
+            classNamespace,
+            className,
+            module.name,
+            module.confidence,
+            module.functions
+          ),
           'utf-8'
         )
         classOutputs.push({
@@ -1180,7 +1203,9 @@ export function createDotNetReconstructExportHandler(
         degradationReasons.push(`low-confidence methods detected: ${lowConfidenceMethods.length}`)
       }
       if (managedMetadata && input.include_metadata_types && managedMetadata.types.length === 0) {
-        degradationReasons.push('managed metadata contained no analyst-facing types after filtering')
+        degradationReasons.push(
+          'managed metadata contained no analyst-facing types after filtering'
+        )
       }
 
       const managedProfile = buildManagedProfile(managedMetadata, packed, packingConfidence)
@@ -1198,15 +1223,23 @@ export function createDotNetReconstructExportHandler(
       }
       let buildLogPath: string | null = null
       if (input.validate_build) {
-        buildValidation = await runBuildValidation(csprojPath, dotnetExportRoot, input.build_timeout_ms)
+        buildValidation = await runBuildValidation(
+          csprojPath,
+          dotnetExportRoot,
+          input.build_timeout_ms
+        )
         buildLogPath = path.join(dotnetExportRoot, 'BUILD_VALIDATION.log')
         await fs.writeFile(buildLogPath, buildValidationLog(buildValidation), 'utf-8')
 
         if (buildValidation.status === 'failed') {
-          warnings.push('dotnet build validation failed; review BUILD_VALIDATION.log before using exported project.')
+          warnings.push(
+            'dotnet build validation failed; review BUILD_VALIDATION.log before using exported project.'
+          )
           degradationReasons.push('dotnet build validation failed')
         } else if (buildValidation.status === 'unavailable') {
-          warnings.push('dotnet CLI unavailable; skipped compile validation (export still generated).')
+          warnings.push(
+            'dotnet CLI unavailable; skipped compile validation (export still generated).'
+          )
         }
       }
 
@@ -1257,7 +1290,9 @@ export function createDotNetReconstructExportHandler(
           buildFallbackNotes(runtime, packed, degradationReasons, lowConfidenceMethods),
           'utf-8'
         )
-        warnings.push('Degraded reconstruction detected; generated IL fallback notes with priority methods.')
+        warnings.push(
+          'Degraded reconstruction detected; generated IL fallback notes with priority methods.'
+        )
       }
 
       const artifacts: ArtifactRef[] = []
@@ -1415,9 +1450,7 @@ export function createDotNetReconstructExportHandler(
           log_path: buildLogRelative,
         },
         managed_profile: managedProfile,
-        fallback_notes_path: fallbackPath
-          ? toPosixRelative(workspace.root, fallbackPath)
-          : null,
+        fallback_notes_path: fallbackPath ? toPosixRelative(workspace.root, fallbackPath) : null,
         classes: classOutputs,
       }
 

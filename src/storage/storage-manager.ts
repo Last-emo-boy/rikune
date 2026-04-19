@@ -11,7 +11,7 @@ import { StorageError, ErrorCode } from '../errors.js'
 
 export interface StorageConfig {
   root: string
-  maxFileSize: number  // bytes
+  maxFileSize: number // bytes
   retentionDays: number
   /** Maximum total storage in bytes. 0 = unlimited. Default: 0. */
   maxTotalBytes?: number
@@ -61,17 +61,13 @@ export class StorageManager {
   /**
    * Store sample file
    */
-  async storeSample(
-    data: Buffer,
-    filename: string,
-    _source?: string
-  ): Promise<StoredFile> {
+  async storeSample(data: Buffer, filename: string, _source?: string): Promise<StoredFile> {
     // Check file size
     if (data.length > this.config.maxFileSize) {
       throw new StorageError(
         ErrorCode.E_SAMPLE_TOO_LARGE,
         `File size ${data.length} exceeds limit ${this.config.maxFileSize}`,
-        { recoverable: false, details: { size: data.length, limit: this.config.maxFileSize } },
+        { recoverable: false, details: { size: data.length, limit: this.config.maxFileSize } }
       )
     }
 
@@ -105,16 +101,12 @@ export class StorageManager {
   /**
    * Stage an uploaded file under the shared uploads root.
    */
-  async stageUpload(
-    sessionToken: string,
-    data: Buffer,
-    filename: string
-  ): Promise<StagedUpload> {
+  async stageUpload(sessionToken: string, data: Buffer, filename: string): Promise<StagedUpload> {
     if (data.length > this.config.maxFileSize) {
       throw new StorageError(
         ErrorCode.E_SAMPLE_TOO_LARGE,
         `File size ${data.length} exceeds limit ${this.config.maxFileSize}`,
-        { recoverable: false, details: { size: data.length, limit: this.config.maxFileSize } },
+        { recoverable: false, details: { size: data.length, limit: this.config.maxFileSize } }
       )
     }
 
@@ -174,11 +166,11 @@ export class StorageManager {
       // Search through date-partitioned directories
       const samplesDir = path.join(this.config.root, 'samples')
       const dateDirs = await fs.readdir(samplesDir, { withFileTypes: true })
-      
-      for (const dateDir of dateDirs.filter(d => d.isDirectory())) {
+
+      for (const dateDir of dateDirs.filter((d) => d.isDirectory())) {
         const datePath = path.join(samplesDir, dateDir.name)
         const files = await fs.readdir(datePath)
-        
+
         for (const file of files) {
           if (file.startsWith(sha256)) {
             const filePath = path.join(datePath, file)
@@ -186,7 +178,7 @@ export class StorageManager {
           }
         }
       }
-      
+
       logger.warn(`Sample not found: ${sha256}`)
       return null
     } catch (error) {
@@ -203,13 +195,15 @@ export class StorageManager {
       // Artifacts are stored under artifacts/<sampleId>/<artifactType>.json
       // Search for the artifact by ID
       const artifactsDir = this.config.root
-      const sampleDirs = await fs.readdir(path.join(artifactsDir, 'artifacts'), { withFileTypes: true })
-      
-      for (const sampleDir of sampleDirs.filter(d => d.isDirectory())) {
+      const sampleDirs = await fs.readdir(path.join(artifactsDir, 'artifacts'), {
+        withFileTypes: true,
+      })
+
+      for (const sampleDir of sampleDirs.filter((d) => d.isDirectory())) {
         const samplePath = path.join(artifactsDir, 'artifacts', sampleDir.name)
         const files = await fs.readdir(samplePath, { withFileTypes: true })
-        
-        for (const file of files.filter(f => f.isFile())) {
+
+        for (const file of files.filter((f) => f.isFile())) {
           const filePath = path.join(samplePath, file.name)
           // Check if this file matches the artifact ID pattern
           if (file.name.includes(artifactId) || file.name === `${artifactId}.json`) {
@@ -217,7 +211,7 @@ export class StorageManager {
           }
         }
       }
-      
+
       logger.warn(`Artifact not found: ${artifactId}`)
       return null
     } catch (error) {
@@ -234,11 +228,11 @@ export class StorageManager {
     try {
       const samplesDir = path.join(this.config.root, 'samples')
       const dateDirs = await fs.readdir(samplesDir, { withFileTypes: true })
-      
-      for (const dateDir of dateDirs.filter(d => d.isDirectory())) {
+
+      for (const dateDir of dateDirs.filter((d) => d.isDirectory())) {
         const datePath = path.join(samplesDir, dateDir.name)
         const files = await fs.readdir(datePath)
-        
+
         for (const file of files) {
           if (file.startsWith(sha256)) {
             const filePath = path.join(datePath, file)
@@ -248,7 +242,7 @@ export class StorageManager {
           }
         }
       }
-      
+
       logger.warn(`Sample not found for deletion: ${sha256}`)
       return false
     } catch (error) {
@@ -266,7 +260,7 @@ export class StorageManager {
       const fullPath = path.isAbsolute(artifactPath)
         ? artifactPath
         : path.join(this.config.root, artifactPath)
-      
+
       await fs.unlink(fullPath)
       logger.info(`Deleted artifact: ${fullPath}`)
       return true
@@ -293,7 +287,7 @@ export class StorageManager {
       throw new StorageError(
         ErrorCode.E_QUOTA_EXCEEDED,
         `Storage quota exceeded: used ${usedBytes} + new ${additionalBytes} > limit ${maxTotal}`,
-        { recoverable: true, details: { usedBytes, additionalBytes, maxTotalBytes: maxTotal } },
+        { recoverable: true, details: { usedBytes, additionalBytes, maxTotalBytes: maxTotal } }
       )
     }
   }
@@ -389,7 +383,7 @@ export class StorageManager {
     const now = new Date()
     const activeDays = 7
     const recentDays = 30
-    
+
     const buckets = {
       active: { sampleCount: 0, artifactCount: 0, totalBytes: 0, dates: [] as string[] },
       recent: { sampleCount: 0, artifactCount: 0, totalBytes: 0, dates: [] as string[] },
@@ -399,16 +393,16 @@ export class StorageManager {
     // Analyze samples
     const samplesDir = path.join(this.config.root, 'samples')
     const dateDirs = await fs.readdir(samplesDir, { withFileTypes: true }).catch(() => [])
-    
-    for (const dateDir of dateDirs.filter(d => d.isDirectory())) {
+
+    for (const dateDir of dateDirs.filter((d) => d.isDirectory())) {
       const datePath = path.join(samplesDir, dateDir.name)
       const dateStr = dateDir.name
       const date = new Date(dateStr)
       const daysOld = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
-      
+
       const files = await fs.readdir(datePath)
       let bucketSize = 0
-      
+
       for (const file of files) {
         const filePath = path.join(datePath, file)
         const stats = await fs.stat(filePath).catch(() => null)
@@ -434,19 +428,19 @@ export class StorageManager {
     // Analyze artifacts
     const artifactsDir = path.join(this.config.root, 'artifacts')
     const sampleDirs = await fs.readdir(artifactsDir, { withFileTypes: true }).catch(() => [])
-    
-    for (const sampleDir of sampleDirs.filter(d => d.isDirectory())) {
+
+    for (const sampleDir of sampleDirs.filter((d) => d.isDirectory())) {
       const samplePath = path.join(artifactsDir, sampleDir.name)
       const files = await fs.readdir(samplePath, { withFileTypes: true }).catch(() => [])
-      
-      for (const file of files.filter(f => f.isFile())) {
+
+      for (const file of files.filter((f) => f.isFile())) {
         const filePath = path.join(samplePath, file.name)
         const stats = await fs.stat(filePath).catch(() => null)
         if (stats) {
           // Use file mtime to determine bucket
           const mtime = new Date(stats.mtime)
           const daysOld = Math.floor((now.getTime() - mtime.getTime()) / (1000 * 60 * 60 * 24))
-          
+
           let bucket: keyof typeof buckets
           if (daysOld <= activeDays) {
             bucket = 'active'
@@ -455,7 +449,7 @@ export class StorageManager {
           } else {
             bucket = 'archive'
           }
-          
+
           buckets[bucket].artifactCount++
           buckets[bucket].totalBytes += stats.size
         }
@@ -475,7 +469,7 @@ export class StorageManager {
     const cleanupEstimate = buckets.archive.totalBytes
 
     return {
-      buckets: ['active', 'recent', 'archive'].map(b => formatBucket(b as keyof typeof buckets)),
+      buckets: ['active', 'recent', 'archive'].map((b) => formatBucket(b as keyof typeof buckets)),
       totalBytes: Object.values(buckets).reduce((sum, b) => sum + b.totalBytes, 0),
       cleanupEstimate,
     }
@@ -498,7 +492,7 @@ export class StorageManager {
     const dryRun = options?.dryRun ?? false
     const maxAgeDays = options?.maxAgeDays ?? this.config.retentionDays
     const targetBucket = options?.bucket
-    
+
     const now = new Date()
     const deletedSamples: number[] = []
     const deletedArtifacts: number[] = []
@@ -508,12 +502,12 @@ export class StorageManager {
     // Delete old samples
     const samplesDir = path.join(this.config.root, 'samples')
     const dateDirs = await fs.readdir(samplesDir, { withFileTypes: true }).catch(() => [])
-    
-    for (const dateDir of dateDirs.filter(d => d.isDirectory())) {
+
+    for (const dateDir of dateDirs.filter((d) => d.isDirectory())) {
       const dateStr = dateDir.name
       const date = new Date(dateStr)
       const daysOld = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
-      
+
       if (daysOld <= maxAgeDays) {
         continue
       }
@@ -526,11 +520,11 @@ export class StorageManager {
 
       const datePath = path.join(samplesDir, dateDir.name)
       const files = await fs.readdir(datePath)
-      
+
       for (const file of files) {
         const filePath = path.join(datePath, file)
         const stats = await fs.stat(filePath).catch(() => null)
-        
+
         if (stats) {
           if (dryRun) {
             freedBytes += stats.size
@@ -552,19 +546,19 @@ export class StorageManager {
     // Delete old artifacts
     const artifactsDir = path.join(this.config.root, 'artifacts')
     const sampleDirs = await fs.readdir(artifactsDir, { withFileTypes: true }).catch(() => [])
-    
-    for (const sampleDir of sampleDirs.filter(d => d.isDirectory())) {
+
+    for (const sampleDir of sampleDirs.filter((d) => d.isDirectory())) {
       const samplePath = path.join(artifactsDir, sampleDir.name)
       const files = await fs.readdir(samplePath, { withFileTypes: true }).catch(() => [])
-      
-      for (const file of files.filter(f => f.isFile())) {
+
+      for (const file of files.filter((f) => f.isFile())) {
         const filePath = path.join(samplePath, file.name)
         const stats = await fs.stat(filePath).catch(() => null)
-        
+
         if (stats) {
           const mtime = new Date(stats.mtime)
           const daysOld = Math.floor((now.getTime() - mtime.getTime()) / (1000 * 60 * 60 * 24))
-          
+
           if (daysOld <= maxAgeDays) {
             continue
           }
@@ -591,7 +585,12 @@ export class StorageManager {
       }
     }
 
-    const status = errors.length === 0 ? 'complete' : errors.length < (deletedSamples.length + deletedArtifacts.length) ? 'partial' : 'failed'
+    const status =
+      errors.length === 0
+        ? 'complete'
+        : errors.length < deletedSamples.length + deletedArtifacts.length
+          ? 'partial'
+          : 'failed'
 
     return {
       status,

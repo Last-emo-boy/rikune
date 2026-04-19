@@ -7,5 +7,5 @@ export const logger = pino(
     level: process.env.LOG_LEVEL || 'info',
     name: 'windows-host-agent',
   },
-  pino.destination({ dest: 2, sync: false }),
+  pino.destination({ dest: 2, sync: false })
 )

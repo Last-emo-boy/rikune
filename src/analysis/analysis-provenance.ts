@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import type { DynamicEvidenceScope, DynamicTraceSummary } from '../artifacts/dynamic-trace.js'
-import type { StaticArtifactScope, StaticArtifactSelection } from '../artifacts/static-analysis-artifacts.js'
+import type {
+  StaticArtifactScope,
+  StaticArtifactSelection,
+} from '../artifacts/static-analysis-artifacts.js'
 import type {
   SemanticArtifactScope,
   SemanticFunctionExplanationIndex,
@@ -111,8 +114,7 @@ export function buildSemanticArtifactProvenance(
     session_tags: index.session_tags,
     earliest_artifact_at: index.earliest_created_at,
     latest_artifact_at: index.latest_created_at,
-    scope_note:
-      index.scope_note || emptyScopeNote(label, scope, sessionTag),
+    scope_note: index.scope_note || emptyScopeNote(label, scope, sessionTag),
   }
 }
 

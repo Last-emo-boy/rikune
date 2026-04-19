@@ -14,24 +14,32 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
   SharedMetricsSchema,
-  executeCommand, normalizeError, truncateText, buildMetrics,
-  buildDynamicSetupRequired, resolveAnalysisBackends,
+  executeCommand,
+  normalizeError,
+  truncateText,
+  buildMetrics,
+  buildDynamicSetupRequired,
+  resolveAnalysisBackends,
   persistBackendArtifact,
 } from '../../docker-shared.js'
 import type { ArtifactRef } from '../../../types.js'
 
 const inputSchema = z.object({
-  action: z.enum(['query', 'add', 'export']).describe(
-    'query: read a key/value; add: set a registry value; export: dump a registry subtree'
-  ),
+  action: z
+    .enum(['query', 'add', 'export'])
+    .describe(
+      'query: read a key/value; add: set a registry value; export: dump a registry subtree'
+    ),
   prefix_name: z.string().describe('Wine prefix name.'),
-  key: z.string().describe(
-    'Registry key path, e.g. "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"'
-  ),
+  key: z
+    .string()
+    .describe('Registry key path, e.g. "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"'),
   value_name: z.string().optional().describe('Value name under the key (for query/add).'),
   value_data: z.string().optional().describe('Data to set (for action=add).'),
-  value_type: z.enum(['REG_SZ', 'REG_DWORD', 'REG_BINARY', 'REG_EXPAND_SZ', 'REG_MULTI_SZ'])
-    .default('REG_SZ').describe('Registry value type (for action=add).'),
+  value_type: z
+    .enum(['REG_SZ', 'REG_DWORD', 'REG_BINARY', 'REG_EXPAND_SZ', 'REG_MULTI_SZ'])
+    .default('REG_SZ')
+    .describe('Registry value type (for action=add).'),
   sample_id: z.string().optional().describe('Sample ID to attach exported registry as artifact.'),
   session_tag: z.string().optional().describe('Optional artifact session tag.'),
   timeout_sec: z.number().int().min(5).max(60).default(15).describe('Timeout.'),
@@ -66,7 +74,11 @@ export function createWineRegHandler(wm: WorkspaceManager, db: DatabaseManager) 
       const prefixPath = join(prefixRoot, safeName)
 
       if (!existsSync(prefixPath)) {
-        return { ok: false, errors: [`Prefix '${safeName}' does not exist. Create it first with wine.env`], metrics: buildMetrics(startTime, 'wine.reg') }
+        return {
+          ok: false,
+          errors: [`Prefix '${safeName}' does not exist. Create it first with wine.env`],
+          metrics: buildMetrics(startTime, 'wine.reg'),
+        }
       }
 
       const env = { ...process.env, WINEPREFIX: prefixPath, WINEDEBUG: '-all' }
@@ -82,16 +94,34 @@ export function createWineRegHandler(wm: WorkspaceManager, db: DatabaseManager) 
             key: input.key,
             output: preview.text,
           },
-          errors: result.exitCode !== 0 ? [`reg query exited ${result.exitCode}: ${result.stderr}`] : undefined,
+          errors:
+            result.exitCode !== 0
+              ? [`reg query exited ${result.exitCode}: ${result.stderr}`]
+              : undefined,
           metrics: buildMetrics(startTime, 'wine.reg'),
         }
       }
 
       if (input.action === 'add') {
         if (!input.value_name || !input.value_data) {
-          return { ok: false, errors: ['value_name and value_data are required for action=add'], metrics: buildMetrics(startTime, 'wine.reg') }
+          return {
+            ok: false,
+            errors: ['value_name and value_data are required for action=add'],
+            metrics: buildMetrics(startTime, 'wine.reg'),
+          }
         }
-        const cmdArgs = ['reg', 'add', input.key, '/v', input.value_name, '/t', input.value_type, '/d', input.value_data, '/f']
+        const cmdArgs = [
+          'reg',
+          'add',
+          input.key,
+          '/v',
+          input.value_name,
+          '/t',
+          input.value_type,
+          '/d',
+          input.value_data,
+          '/f',
+        ]
         const result = await executeCommand(wine.path, cmdArgs, input.timeout_sec * 1000, { env })
         return {
           ok: result.exitCode === 0,
@@ -102,7 +132,10 @@ export function createWineRegHandler(wm: WorkspaceManager, db: DatabaseManager) 
             value_type: input.value_type,
             written: result.exitCode === 0,
           },
-          errors: result.exitCode !== 0 ? [`reg add exited ${result.exitCode}: ${result.stderr}`] : undefined,
+          errors:
+            result.exitCode !== 0
+              ? [`reg add exited ${result.exitCode}: ${result.stderr}`]
+              : undefined,
           metrics: buildMetrics(startTime, 'wine.reg'),
         }
       }
@@ -114,7 +147,11 @@ export function createWineRegHandler(wm: WorkspaceManager, db: DatabaseManager) 
         const artifacts: ArtifactRef[] = []
         if (result.exitCode === 0 && input.sample_id) {
           const artifact = await persistBackendArtifact(
-            wm, db, input.sample_id, 'wine-reg', 'export',
+            wm,
+            db,
+            input.sample_id,
+            'wine-reg',
+            'export',
             result.stdout,
             { extension: 'reg', mime: 'text/plain', sessionTag: input.session_tag }
           )
@@ -129,14 +166,21 @@ export function createWineRegHandler(wm: WorkspaceManager, db: DatabaseManager) 
             output: preview.text,
           },
           artifacts: artifacts.length > 0 ? artifacts : undefined,
-          errors: result.exitCode !== 0 ? [`reg export exited ${result.exitCode}: ${result.stderr}`] : undefined,
+          errors:
+            result.exitCode !== 0
+              ? [`reg export exited ${result.exitCode}: ${result.stderr}`]
+              : undefined,
           metrics: buildMetrics(startTime, 'wine.reg'),
         }
       }
 
       return { ok: false, errors: ['Unknown action'], metrics: buildMetrics(startTime, 'wine.reg') }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, 'wine.reg') }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, 'wine.reg'),
+      }
     }
   }
 }

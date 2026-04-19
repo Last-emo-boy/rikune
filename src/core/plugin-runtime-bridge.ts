@@ -1,5 +1,10 @@
 import type { PluginServerInterface } from '../plugins/sdk.js'
-import type { ToolRegistrar, PromptRegistrar, ResourceRegistrar, SamplingClient } from './registrar.js'
+import type {
+  ToolRegistrar,
+  PromptRegistrar,
+  ResourceRegistrar,
+  SamplingClient,
+} from './registrar.js'
 import { createDelegatingServer } from '../runtime-client/delegation-server.js'
 
 export interface RuntimeBridgeDeps {
@@ -27,7 +32,7 @@ export class PluginRuntimeBridge {
         this.deps.database,
         this.deps.resolvePrimarySamplePath,
         this.deps.sandboxDir ?? null
-      ) as PluginServerInterface
+      )
     }
     return baseServer as PluginServerInterface
   }

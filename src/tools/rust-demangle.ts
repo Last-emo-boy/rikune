@@ -59,18 +59,20 @@ export function demangleRustSymbol(mangled: string): DemangledSymbol | null {
  * Normalize a demangled Rust name for analyst consumption
  */
 export function normalizeRustName(name: string): string {
-  return name
-    // Remove hash suffixes like hXXXXXXX
-    .replace(/h[0-9a-f]{7,}$/i, '')
-    // Remove generic instantiations for cleaner names
-    .replace(/<.*>/g, '')
-    // Normalize closure markers
-    .replace(/\{closure#\d+\}/g, '{closure}')
-    // Normalize async markers
-    .replace(/\{async_closure#\d+\}/g, '{async_closure}')
-    // Clean up multiple underscores
-    .replace(/_{2,}/g, '_')
-    .trim()
+  return (
+    name
+      // Remove hash suffixes like hXXXXXXX
+      .replace(/h[0-9a-f]{7,}$/i, '')
+      // Remove generic instantiations for cleaner names
+      .replace(/<.*>/g, '')
+      // Normalize closure markers
+      .replace(/\{closure#\d+\}/g, '{closure}')
+      // Normalize async markers
+      .replace(/\{async_closure#\d+\}/g, '{async_closure}')
+      // Clean up multiple underscores
+      .replace(/_{2,}/g, '_')
+      .trim()
+  )
 }
 
 /**
@@ -112,18 +114,18 @@ function parseRustSymbol(mangled: string): DemangledSymbol['components'] | null 
  */
 function parseRustV0Symbol(mangled: string): DemangledSymbol['components'] | null {
   // Simple heuristic parsing - real implementation would use full v0 spec
-  const parts = mangled.split('_').filter(p => p.length > 0)
-  
+  const parts = mangled.split('_').filter((p) => p.length > 0)
+
   if (parts.length < 2) {
     return null
   }
 
   // Try to extract crate name from encoded parts
-  const crateMatch = parts.find(p => /^[0-9a-zA-Z]+$/.test(p) && p.length > 4)
-  
+  const crateMatch = parts.find((p) => /^[0-9a-zA-Z]+$/.test(p) && p.length > 4)
+
   // Look for path-like segments
-  const pathSegments = parts.filter(p => /^[a-z][a-z0-9_]*$/i.test(p) && p.length > 1)
-  
+  const pathSegments = parts.filter((p) => /^[a-z][a-z0-9_]*$/i.test(p) && p.length > 1)
+
   return {
     crate: crateMatch || pathSegments[0],
     module: pathSegments.length > 2 ? pathSegments[pathSegments.length - 2] : undefined,
@@ -137,10 +139,10 @@ function parseRustV0Symbol(mangled: string): DemangledSymbol['components'] | nul
 function parseRustLegacySymbol(mangled: string): DemangledSymbol['components'] | null {
   // Remove prefix and suffix
   const inner = mangled.substring(2, mangled.length - 1) // Remove _ZN and E
-  
+
   // Split by hash separators
   const parts = inner.split(/\$hash\$|\$/)
-  
+
   if (parts.length < 2) {
     return null
   }
@@ -156,7 +158,7 @@ function parseRustLegacySymbol(mangled: string): DemangledSymbol['components'] |
  */
 function buildDemangledName(components: DemangledSymbol['components']): string {
   const parts: string[] = []
-  
+
   if (components.crate) {
     parts.push(components.crate)
   }
@@ -227,13 +229,16 @@ export function mergeWithRecoveredNames(
   confidence: number
   isDemangled: boolean
 }> {
-  const merged = new Map<string, {
-    address: string
-    name: string
-    source: string
-    confidence: number
-    isDemangled: boolean
-  }>()
+  const merged = new Map<
+    string,
+    {
+      address: string
+      name: string
+      source: string
+      confidence: number
+      isDemangled: boolean
+    }
+  >()
 
   // Add existing names first
   for (const item of existingNames) {
@@ -250,7 +255,7 @@ export function mergeWithRecoveredNames(
   // Override with demangled names where available
   for (const sym of demangled) {
     // Find matching address by raw symbol (simplified - real impl would use address map)
-    const existing = Array.from(merged.values()).find(e => e.name === sym.raw)
+    const existing = Array.from(merged.values()).find((e) => e.name === sym.raw)
     if (existing) {
       existing.name = sym.normalized
       existing.source = 'demangled'

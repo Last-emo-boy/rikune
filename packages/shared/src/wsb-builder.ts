@@ -48,8 +48,12 @@ export function buildWsbXml(cfg: WsbConfig): string {
     : undefined
 
   const runtimeEnvCommands = [
-    cfg.runtimeApiKey ? `$env:RUNTIME_API_KEY = ${quotePowerShellString(cfg.runtimeApiKey)}` : undefined,
-    pythonPathSandbox ? `$env:RUNTIME_PYTHON_PATH = ${quotePowerShellString(pythonPathSandbox)}` : undefined,
+    cfg.runtimeApiKey
+      ? `$env:RUNTIME_API_KEY = ${quotePowerShellString(cfg.runtimeApiKey)}`
+      : undefined,
+    pythonPathSandbox
+      ? `$env:RUNTIME_PYTHON_PATH = ${quotePowerShellString(pythonPathSandbox)}`
+      : undefined,
   ].filter(Boolean)
 
   const runtimeArgs = [

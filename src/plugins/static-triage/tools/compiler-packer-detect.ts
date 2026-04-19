@@ -6,7 +6,10 @@ import type { ToolArgs, ToolDefinition, WorkerResult } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { config } from '../../../config.js'
-import { resolveDieCli, type ExternalExecutableResolution } from '../../../static-backend-discovery.js'
+import {
+  resolveDieCli,
+  type ExternalExecutableResolution,
+} from '../../../static-backend-discovery.js'
 import {
   buildStaticAnalysisRequiredUserInputs,
   buildStaticAnalysisSetupActions,
@@ -121,12 +124,19 @@ interface DieExecutionResult {
 
 interface CompilerPackerDetectDependencies {
   resolveBackend?: () => ExternalExecutableResolution
-  executeBackend?: (binaryPath: string, samplePath: string, timeoutSec: number) => Promise<DieExecutionResult>
+  executeBackend?: (
+    binaryPath: string,
+    samplePath: string,
+    timeoutSec: number
+  ) => Promise<DieExecutionResult>
 }
 
-function detectCategory(text: string): 'compiler' | 'packer' | 'protector' | 'file_type' | 'unknown' {
+function detectCategory(
+  text: string
+): 'compiler' | 'packer' | 'protector' | 'file_type' | 'unknown' {
   const lowered = text.toLowerCase()
-  if (/(compiler|visual c\+\+|msvc|borland|gcc|clang|delphi|rust|go build)/.test(lowered)) return 'compiler'
+  if (/(compiler|visual c\+\+|msvc|borland|gcc|clang|delphi|rust|go build)/.test(lowered))
+    return 'compiler'
   if (/(packer|upx|aspack|mpress|petite|themida|vmprotect|fsg)/.test(lowered)) return 'packer'
   if (/(protector|obfuscator|virtualizer|sig)/.test(lowered)) return 'protector'
   if (/(pe32|pe32\+|elf|mach-o|ms-dos|file type|library|exe|dll)/.test(lowered)) return 'file_type'
@@ -199,7 +209,10 @@ function normalizeJsonFindings(raw: unknown): z.infer<typeof AttributionFindingS
   return findings
 }
 
-function normalizeTextFindings(stdout: string, stderr: string): z.infer<typeof AttributionFindingSchema>[] {
+function normalizeTextFindings(
+  stdout: string,
+  stderr: string
+): z.infer<typeof AttributionFindingSchema>[] {
   const findings: z.infer<typeof AttributionFindingSchema>[] = []
   const lines = `${stdout}\n${stderr}`
     .split(/\r?\n/)
@@ -210,7 +223,14 @@ function normalizeTextFindings(stdout: string, stderr: string): z.infer<typeof A
     const parts = normalizedLine.split(/\s*:\s*/, 2)
     const payload = parts.length === 2 ? parts[1] : normalizedLine
     if (!payload.trim()) continue
-    findings.push(buildFinding(payload.trim(), detectCategory(parts[0] || normalizedLine), 'die-text', normalizedLine))
+    findings.push(
+      buildFinding(
+        payload.trim(),
+        detectCategory(parts[0] || normalizedLine),
+        'die-text',
+        normalizedLine
+      )
+    )
   }
   return findings
 }
@@ -288,7 +308,12 @@ async function defaultExecuteBackend(
         encoding: 'utf8',
         maxBuffer: 8 * 1024 * 1024,
       })
-      return { stdout: result.stdout || '', stderr: result.stderr || '', format: attempt.format, command: [binaryPath, ...attempt.args] }
+      return {
+        stdout: result.stdout || '',
+        stderr: result.stderr || '',
+        format: attempt.format,
+        command: [binaryPath, ...attempt.args],
+      }
     } catch (error) {
       const failed = error as { stdout?: string; stderr?: string }
       lastStdout = typeof failed.stdout === 'string' ? failed.stdout : ''
@@ -297,7 +322,9 @@ async function defaultExecuteBackend(
     }
   }
 
-  throw new Error(`Detect It Easy execution failed: ${(lastStderr || lastStdout || 'unknown error').trim()}`)
+  throw new Error(
+    `Detect It Easy execution failed: ${(lastStderr || lastStdout || 'unknown error').trim()}`
+  )
 }
 
 export function createCompilerPackerDetectHandler(

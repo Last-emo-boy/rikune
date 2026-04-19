@@ -25,13 +25,22 @@ const CdbProfileSchema = z.enum([
 ])
 
 export const DebugCdbPlanInputSchema = z.object({
-  sample_id: z.string().optional().describe('Optional sample ID used to render runtime.debug.command templates.'),
+  sample_id: z
+    .string()
+    .optional()
+    .describe('Optional sample ID used to render runtime.debug.command templates.'),
   profiles: z.array(CdbProfileSchema).optional().default(['api_breakpoints']),
   breakpoint_apis: z.array(z.string()).optional().default([]),
   modules: z.array(z.string()).optional().default([]),
   dump_path: z.string().optional().default('debug_snapshot.dmp'),
   max_breakpoints: z.number().int().min(1).max(64).optional().default(24),
-  timeout_ms: z.number().int().min(1000).max(30 * 60 * 1000).optional().default(120_000),
+  timeout_ms: z
+    .number()
+    .int()
+    .min(1000)
+    .max(30 * 60 * 1000)
+    .optional()
+    .default(120_000),
   use_static_behavior_artifacts: z.boolean().optional().default(true),
   static_artifact_scope: z.enum(['all', 'latest', 'session']).optional().default('latest'),
   static_artifact_session_tag: z.string().optional(),
@@ -110,7 +119,13 @@ function dedupe(values: Array<string | null | undefined>, limit?: number): strin
 
 function expandProfiles(profiles: string[]): string[] {
   if (profiles.includes('all')) {
-    return ['api_breakpoints', 'exception_trace', 'dump_on_break', 'module_breakpoints', 'injection_watch']
+    return [
+      'api_breakpoints',
+      'exception_trace',
+      'dump_on_break',
+      'module_breakpoints',
+      'injection_watch',
+    ]
   }
   return dedupe(profiles)
 }
@@ -122,7 +137,8 @@ function sanitizeCdbToken(value: string): string {
 function inferModuleForApi(api: string): string {
   const name = api.replace(/^.*!/, '')
   if (/^(Nt|Zw|Rtl|Ldr)/i.test(name)) return 'ntdll'
-  if (/^(Reg|OpenSCManager|CreateService|StartService|ChangeServiceConfig)/i.test(name)) return 'advapi32'
+  if (/^(Reg|OpenSCManager|CreateService|StartService|ChangeServiceConfig)/i.test(name))
+    return 'advapi32'
   if (/^(Internet|Http|WinHttp)/i.test(name)) return /^WinHttp/i.test(name) ? 'winhttp' : 'wininet'
   if (/^(ShellExecute)/i.test(name)) return 'shell32'
   if (/^(CoCreateInstance|CoInitialize)/i.test(name)) return 'ole32'
@@ -161,7 +177,12 @@ function runtimeCommandTemplate(
 async function loadStaticBehaviorApis(
   deps: PluginToolDeps,
   input: z.infer<typeof DebugCdbPlanInputSchema>
-): Promise<{ apis: string[]; artifact_ids: string[]; scope_note: string | null; warnings: string[] }> {
+): Promise<{
+  apis: string[]
+  artifact_ids: string[]
+  scope_note: string | null
+  warnings: string[]
+}> {
   if (!input.use_static_behavior_artifacts || !input.sample_id) {
     return { apis: [], artifact_ids: [], scope_note: null, warnings: [] }
   }
@@ -203,7 +224,9 @@ async function loadStaticBehaviorApis(
       apis: [],
       artifact_ids: [],
       scope_note: null,
-      warnings: [`Failed to load static behavior artifacts: ${error instanceof Error ? error.message : String(error)}`],
+      warnings: [
+        `Failed to load static behavior artifacts: ${error instanceof Error ? error.message : String(error)}`,
+      ],
     }
   }
 }
@@ -224,9 +247,12 @@ function buildBatches(
       title: 'CDB API breakpoint batch',
       profile: 'api_breakpoints',
       commands,
-      purpose: 'Break on high-signal APIs, print registers and stack, then continue within the configured timeout budget.',
+      purpose:
+        'Break on high-signal APIs, print registers and stack, then continue within the configured timeout budget.',
       runtime_command_template: runtimeCommandTemplate(input.sample_id, commands, input.timeout_ms),
-      notes: ['Use after runtime.debug.session.start returns a session id and dynamic.toolkit.status confirms cdb availability.'],
+      notes: [
+        'Use after runtime.debug.session.start returns a session id and dynamic.toolkit.status confirms cdb availability.',
+      ],
     })
   }
 
@@ -243,9 +269,12 @@ function buildBatches(
       title: 'CDB process-injection watch batch',
       profile: 'injection_watch',
       commands,
-      purpose: 'Watch classic process-injection and hollowing APIs with register/stack snapshots on every hit.',
+      purpose:
+        'Watch classic process-injection and hollowing APIs with register/stack snapshots on every hit.',
       runtime_command_template: runtimeCommandTemplate(input.sample_id, commands, input.timeout_ms),
-      notes: ['Pair with dynamic.behavior.capture and dynamic.behavior.diff to confirm whether injection code paths executed.'],
+      notes: [
+        'Pair with dynamic.behavior.capture and dynamic.behavior.diff to confirm whether injection code paths executed.',
+      ],
     })
   }
 
@@ -256,7 +285,8 @@ function buildBatches(
       title: 'CDB exception trace batch',
       profile: 'exception_trace',
       commands,
-      purpose: 'Stop on access violations, breakpoint exceptions, and C++ exceptions for triage snapshots.',
+      purpose:
+        'Stop on access violations, breakpoint exceptions, and C++ exceptions for triage snapshots.',
       runtime_command_template: runtimeCommandTemplate(input.sample_id, commands, input.timeout_ms),
       notes: ['Use with bounded timeouts; exception-heavy samples can produce noisy transcripts.'],
     })
@@ -269,9 +299,12 @@ function buildBatches(
       title: 'CDB module-load breakpoint batch',
       profile: 'module_breakpoints',
       commands,
-      purpose: 'Stop when selected DLLs load so follow-up API breakpoints can be attached at the right point.',
+      purpose:
+        'Stop when selected DLLs load so follow-up API breakpoints can be attached at the right point.',
       runtime_command_template: runtimeCommandTemplate(input.sample_id, commands, input.timeout_ms),
-      notes: ['Useful when delayed imports, plugin DLLs, or unpacked child modules appear only after startup.'],
+      notes: [
+        'Useful when delayed imports, plugin DLLs, or unpacked child modules appear only after startup.',
+      ],
     })
   }
 
@@ -285,7 +318,9 @@ function buildBatches(
       commands,
       purpose: 'Capture a full user-mode dump at the current debugger stop point.',
       runtime_command_template: runtimeCommandTemplate(input.sample_id, commands, input.timeout_ms),
-      notes: ['For canonical artifact import, prefer debug.session.snapshot when a simple immediate dump is enough.'],
+      notes: [
+        'For canonical artifact import, prefer debug.session.snapshot when a simple immediate dump is enough.',
+      ],
     })
   }
 

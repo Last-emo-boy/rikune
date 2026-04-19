@@ -15,10 +15,27 @@ const upxPlugin: Plugin = {
   description: 'UPX packer/unpacker for executable compression analysis',
   version: '1.0.0',
   configSchema: [
-    { envVar: 'UPX_PATH', description: 'Path to UPX binary', required: false, defaultValue: '/usr/local/bin/upx' },
+    {
+      envVar: 'UPX_PATH',
+      description: 'Path to UPX binary',
+      required: false,
+      defaultValue: '/usr/local/bin/upx',
+    },
   ],
   systemDeps: [
-    { type: 'binary', name: 'upx', target: '$UPX_PATH', envVar: 'UPX_PATH', dockerDefault: '/usr/local/bin/upx', required: false, description: 'UPX packer/unpacker', dockerInstall: 'Download UPX release to /usr/local/bin', dockerFeature: 'upx', dockerValidation: ['upx --version >/dev/null 2>&1'], buildArgs: { UPX_VERSION: '5.1.1' } },
+    {
+      type: 'binary',
+      name: 'upx',
+      target: '$UPX_PATH',
+      envVar: 'UPX_PATH',
+      dockerDefault: '/usr/local/bin/upx',
+      required: false,
+      description: 'UPX packer/unpacker',
+      dockerInstall: 'Download UPX release to /usr/local/bin',
+      dockerFeature: 'upx',
+      dockerValidation: ['upx --version >/dev/null 2>&1'],
+      buildArgs: { UPX_VERSION: '5.1.1' },
+    },
   ],
   register(server, deps) {
     const { workspaceManager: wm, database: db } = deps

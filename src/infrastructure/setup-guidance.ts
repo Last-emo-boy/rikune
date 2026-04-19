@@ -36,25 +36,13 @@ const WINDOWS_JAVA_EXAMPLES = [
   'C:\\Program Files\\Java\\jdk-21',
 ]
 
-const WINDOWS_CAPA_RULES_EXAMPLES = [
-  'C:\\tools\\capa-rules',
-  'D:\\analysis\\capa-rules',
-]
+const WINDOWS_CAPA_RULES_EXAMPLES = ['C:\\tools\\capa-rules', 'D:\\analysis\\capa-rules']
 
-const WINDOWS_DIE_EXAMPLES = [
-  'C:\\tools\\die\\diec.exe',
-  'D:\\tools\\Detect It Easy\\diec.exe',
-]
+const WINDOWS_DIE_EXAMPLES = ['C:\\tools\\die\\diec.exe', 'D:\\tools\\Detect It Easy\\diec.exe']
 
-const WINDOWS_FRIDA_EXAMPLES = [
-  'pip install frida',
-  'pip install frida-tools',
-]
+const WINDOWS_FRIDA_EXAMPLES = ['pip install frida', 'pip install frida-tools']
 
-const LINUX_QILING_ROOTFS_EXAMPLES = [
-  '/opt/qiling-rootfs/windows_x86_64',
-  '/mnt/qiling-rootfs',
-]
+const LINUX_QILING_ROOTFS_EXAMPLES = ['/opt/qiling-rootfs/windows_x86_64', '/mnt/qiling-rootfs']
 
 const LINUX_RETDEC_EXAMPLES = [
   '/opt/retdec/bin/retdec-decompiler',
@@ -131,7 +119,12 @@ export function buildStaticAnalysisSetupActions(): SetupAction[] {
         'Install the core Python packages used by PE parsing and capability triage, including pefile, LIEF, and flare-capa.',
       command: 'python -m pip install -r requirements.txt',
       examples: ['python -m pip install -r requirements.txt'],
-      applies_to: ['system.health', 'system.setup.guide', 'static.capability.triage', 'pe.structure.analyze'],
+      applies_to: [
+        'system.health',
+        'system.setup.guide',
+        'static.capability.triage',
+        'pe.structure.analyze',
+      ],
     },
     {
       id: 'install_capa',
@@ -149,7 +142,8 @@ export function buildStaticAnalysisSetupActions(): SetupAction[] {
       required: false,
       kind: 'pip_install',
       title: 'Install pefile',
-      summary: 'Install pefile for lightweight PE header, section, import, export, and resource parsing.',
+      summary:
+        'Install pefile for lightweight PE header, section, import, export, and resource parsing.',
       command: 'python -m pip install pefile',
       examples: ['python -m pip install pefile'],
       applies_to: ['pe.structure.analyze', 'system.health'],
@@ -292,7 +286,8 @@ export function buildCoreLinuxToolchainSetupActions(): SetupAction[] {
       required: false,
       kind: 'pip_install',
       title: 'Install Frida CLI tools',
-      summary: 'Install frida-tools so frida-ps, frida-trace, and other CLI helpers are available on PATH.',
+      summary:
+        'Install frida-tools so frida-ps, frida-trace, and other CLI helpers are available on PATH.',
       command: 'python -m pip install frida-tools',
       examples: ['python -m pip install frida-tools'],
       applies_to: ['dynamic.dependencies', 'system.health', 'system.setup.guide'],
@@ -362,7 +357,12 @@ export function buildDynamicDependencySetupActions(): SetupAction[] {
         'Install Qiling for Windows API emulation, hookable user-mode execution, and automated dynamic analysis workflows.',
       command: 'python -m pip install qiling',
       examples: ['python -m pip install qiling'],
-      applies_to: ['dynamic.dependencies', 'sandbox.execute', 'system.health', 'system.setup.guide'],
+      applies_to: [
+        'dynamic.dependencies',
+        'sandbox.execute',
+        'system.health',
+        'system.setup.guide',
+      ],
     },
     {
       id: 'set_qiling_rootfs',
@@ -374,7 +374,12 @@ export function buildDynamicDependencySetupActions(): SetupAction[] {
       env_var: 'QILING_ROOTFS',
       value_hint: 'Absolute path to a mounted Qiling Windows rootfs directory',
       examples: LINUX_QILING_ROOTFS_EXAMPLES.map((example) => `export QILING_ROOTFS="${example}"`),
-      applies_to: ['dynamic.dependencies', 'sandbox.execute', 'system.health', 'system.setup.guide'],
+      applies_to: [
+        'dynamic.dependencies',
+        'sandbox.execute',
+        'system.health',
+        'system.setup.guide',
+      ],
     },
     {
       id: 'install_angr_runtime',
@@ -480,8 +485,7 @@ export function buildFridaSetupActions(): SetupAction[] {
       required: false,
       kind: 'pip_install',
       title: 'Install Frida tools package',
-      summary:
-        'Install frida-tools for additional CLI utilities and script compilation support.',
+      summary: 'Install frida-tools for additional CLI utilities and script compilation support.',
       command: 'python -m pip install frida-tools',
       examples: ['python -m pip install frida-tools'],
       applies_to: ['frida.script.inject', 'system.health'],
@@ -506,7 +510,9 @@ export function buildFridaSetupActions(): SetupAction[] {
         'Optionally set FRIDA_SCRIPT_ROOT to a directory containing custom Frida scripts for reuse.',
       env_var: 'FRIDA_SCRIPT_ROOT',
       value_hint: 'Absolute path to a directory containing Frida scripts',
-      examples: WINDOWS_FRIDA_EXAMPLES.map(() => `$env:FRIDA_SCRIPT_ROOT = "C:\\tools\\frida-scripts"`),
+      examples: WINDOWS_FRIDA_EXAMPLES.map(
+        () => `$env:FRIDA_SCRIPT_ROOT = "C:\\tools\\frida-scripts"`
+      ),
       applies_to: ['frida.script.inject', 'system.health'],
     },
   ]
@@ -679,7 +685,9 @@ export function buildGhidraSetupActions(): SetupAction[] {
       title: 'Verify Ghidra install layout',
       summary:
         'Confirm the configured directory contains support\\analyzeHeadless.bat. Do not point GHIDRA_PATH at the support subdirectory itself.',
-      examples: WINDOWS_GHIDRA_EXAMPLES.map((example) => `${example}\\support\\analyzeHeadless.bat`),
+      examples: WINDOWS_GHIDRA_EXAMPLES.map(
+        (example) => `${example}\\support\\analyzeHeadless.bat`
+      ),
       applies_to: ['ghidra.health', 'ghidra.analyze'],
     },
     {
@@ -736,9 +744,16 @@ function inferSetupGuidanceFromMessages(messages: string[]) {
 
   if (/ghidra|analyzeheadless|project_.*ghidra|support\\analyzeHeadless/i.test(combined)) {
     setupActions = mergeSetupActions(setupActions, buildGhidraSetupActions())
-    requiredUserInputs = mergeRequiredUserInputs(requiredUserInputs, buildGhidraRequiredUserInputs())
+    requiredUserInputs = mergeRequiredUserInputs(
+      requiredUserInputs,
+      buildGhidraRequiredUserInputs()
+    )
   }
-  if (/JAVA_HOME|UnsupportedClassVersionError|class file version|java runtime|java version|java 21/i.test(combined)) {
+  if (
+    /JAVA_HOME|UnsupportedClassVersionError|class file version|java runtime|java version|java 21/i.test(
+      combined
+    )
+  ) {
     setupActions = mergeSetupActions(setupActions, buildJavaSetupActions())
     requiredUserInputs = mergeRequiredUserInputs(requiredUserInputs, buildJavaRequiredUserInputs())
   }
@@ -764,11 +779,17 @@ function inferSetupGuidanceFromMessages(messages: string[]) {
     }
     if (/speakeasy|frida|psutil|qiling|angr|pandare|panda|wine|winedbg/i.test(combined)) {
       setupActions = mergeSetupActions(setupActions, buildDynamicDependencySetupActions())
-      requiredUserInputs = mergeRequiredUserInputs(requiredUserInputs, buildDynamicDependencyRequiredUserInputs())
+      requiredUserInputs = mergeRequiredUserInputs(
+        requiredUserInputs,
+        buildDynamicDependencyRequiredUserInputs()
+      )
     }
     if (/frida/i.test(combined)) {
       setupActions = mergeSetupActions(setupActions, buildFridaSetupActions())
-      requiredUserInputs = mergeRequiredUserInputs(requiredUserInputs, buildFridaRequiredUserInputs())
+      requiredUserInputs = mergeRequiredUserInputs(
+        requiredUserInputs,
+        buildFridaRequiredUserInputs()
+      )
     }
     if (/retdec/i.test(combined)) {
       setupActions = mergeSetupActions(setupActions, buildHeavyBackendSetupActions())
@@ -791,7 +812,8 @@ export function collectSetupGuidanceFromWorkerResult(result?: WorkerResult | nul
     }
   }
 
-  const data = result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   const setupActions = Array.isArray(data.setup_actions)
     ? data.setup_actions.filter(Boolean).map((item) => SetupActionSchema.parse(item))
     : []

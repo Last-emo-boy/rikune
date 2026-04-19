@@ -21,7 +21,13 @@ export const SampleSizeTierSchema = z.enum(['small', 'medium', 'large', 'oversiz
 
 export const AnalysisBudgetProfileSchema = z.enum(['quick', 'balanced', 'deep'])
 
-export const CoverageGapStatusSchema = z.enum(['missing', 'skipped', 'queued', 'degraded', 'blocked'])
+export const CoverageGapStatusSchema = z.enum([
+  'missing',
+  'skipped',
+  'queued',
+  'degraded',
+  'blocked',
+])
 
 export const UpgradeCostTierSchema = z.enum(['low', 'medium', 'high'])
 
@@ -84,7 +90,6 @@ export type CoverageEnvelope = z.infer<typeof CoverageEnvelopeSchema>
 
 const FINDING_LIMIT = 8
 const UPGRADE_LIMIT = 6
-
 
 export function classifySampleSizeTier(sizeBytes: number): SampleSizeTier {
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {

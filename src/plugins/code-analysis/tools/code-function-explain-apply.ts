@@ -15,14 +15,34 @@ const ExplanationSuggestionInputSchema = z
     address_or_function: z
       .string()
       .optional()
-      .describe('Optional combined identifier when the reviewing client returns a single address_or_function field'),
+      .describe(
+        'Optional combined identifier when the reviewing client returns a single address_or_function field'
+      ),
     address: z.string().optional().describe('Optional function address for precise matching'),
     function: z.string().optional().describe('Optional function symbol/name for fallback matching'),
-    summary: z.string().min(1).max(1200).describe('Evidence-grounded plain-language explanation of the function'),
-    behavior: z.string().min(1).max(160).describe('Short behavior label, such as resolve_dynamic_imports or dispatch_exported_command'),
+    summary: z
+      .string()
+      .min(1)
+      .max(1200)
+      .describe('Evidence-grounded plain-language explanation of the function'),
+    behavior: z
+      .string()
+      .min(1)
+      .max(160)
+      .describe(
+        'Short behavior label, such as resolve_dynamic_imports or dispatch_exported_command'
+      ),
     confidence: z.number().min(0).max(1).describe('Heuristic support score for the explanation'),
-    assumptions: z.array(z.string()).optional().default([]).describe('Assumptions that must hold for the explanation to remain valid'),
-    evidence_used: z.array(z.string()).optional().default([]).describe('Evidence sources used by the external LLM'),
+    assumptions: z
+      .array(z.string())
+      .optional()
+      .default([])
+      .describe('Assumptions that must hold for the explanation to remain valid'),
+    evidence_used: z
+      .array(z.string())
+      .optional()
+      .default([])
+      .describe('Evidence sources used by the external LLM'),
     rewrite_guidance: z
       .union([z.string().min(1), z.array(z.string().min(1))])
       .optional()
@@ -34,7 +54,8 @@ const ExplanationSuggestionInputSchema = z
       Boolean(value.address?.trim()) ||
       Boolean(value.function?.trim()),
     {
-      message: 'Each explanation must provide at least one of `address_or_function`, `address`, or `function`.',
+      message:
+        'Each explanation must provide at least one of `address_or_function`, `address`, or `function`.',
     }
   )
 
@@ -72,14 +93,15 @@ function normalizeExplanationIdentifier(
   }
 }
 
-function normalizeRewriteGuidance(
-  input: string | string[] | undefined
-): string[] {
+function normalizeRewriteGuidance(input: string | string[] | undefined): string[] {
   if (!input) {
     return []
   }
   const values = Array.isArray(input) ? input : [input]
-  return values.map((item) => item.trim()).filter((item) => item.length > 0).slice(0, 8)
+  return values
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .slice(0, 8)
 }
 
 export const codeFunctionExplainApplyInputSchema = z.object({
@@ -92,14 +114,13 @@ export const codeFunctionExplainApplyInputSchema = z.object({
     .string()
     .optional()
     .describe('Optional client identifier, such as claude-desktop or codex-cli'),
-  model_name: z
-    .string()
-    .optional()
-    .describe('Optional model identifier for provenance only'),
+  model_name: z.string().optional().describe('Optional model identifier for provenance only'),
   prepare_artifact_id: z
     .string()
     .optional()
-    .describe('Optional semantic_explanation_prepare_bundle artifact ID that produced this review task'),
+    .describe(
+      'Optional semantic_explanation_prepare_bundle artifact ID that produced this review task'
+    ),
   session_tag: z
     .string()
     .optional()

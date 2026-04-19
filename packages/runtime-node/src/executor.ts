@@ -102,16 +102,17 @@ function resolveTaskSample(taskId: string): ResolvedTaskSample {
 
   try {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as TaskUploadManifest
-    const primaryName = typeof manifest.primary === 'string'
-      ? sanitizeManifestFilename(manifest.primary, `${taskId}.sample`)
-      : `${taskId}.sample`
+    const primaryName =
+      typeof manifest.primary === 'string'
+        ? sanitizeManifestFilename(manifest.primary, `${taskId}.sample`)
+        : `${taskId}.sample`
     const primaryPath = path.join(taskInboxDir, primaryName)
     if (fs.existsSync(primaryPath)) {
       const sidecars = Array.isArray(manifest.files)
         ? manifest.files
             .filter((entry) => entry?.role === 'sidecar' && typeof entry.name === 'string')
             .map((entry) => {
-              const name = sanitizeManifestFilename(entry.name!, 'sidecar.bin')
+              const name = sanitizeManifestFilename(entry.name, 'sidecar.bin')
               return {
                 name,
                 path: path.join(taskInboxDir, name),
@@ -146,7 +147,7 @@ function resolveTaskSamplePath(taskId: string): string {
 export async function executeTask(
   task: ExecuteTask,
   onLog?: (msg: string) => void,
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const logs: string[] = []
   const log = (msg: string) => {
@@ -162,7 +163,9 @@ export async function executeTask(
     return {
       ok: false,
       taskId: task.taskId,
-      errors: [`Unknown tool: ${task.tool}. No runtimeBackendHint provided and no fallback heuristic matched.`],
+      errors: [
+        `Unknown tool: ${task.tool}. No runtimeBackendHint provided and no fallback heuristic matched.`,
+      ],
       logs,
     }
   }
@@ -315,7 +318,15 @@ function buildEvasionScoreScript(): string {
   `.trim()
 }
 
-const inlineHandlers: Record<string, (task: ExecuteTask, log: (msg: string) => void, logs: string[], onProgress?: (progress: number, message?: string) => void) => Promise<ExecuteResult>> = {
+const inlineHandlers: Record<
+  string,
+  (
+    task: ExecuteTask,
+    log: (msg: string) => void,
+    logs: string[],
+    onProgress?: (progress: number, message?: string) => void
+  ) => Promise<ExecuteResult>
+> = {
   executeSandboxExecute,
   executeSpeakeasyEmulate,
   executeSpeakeasyShellcode,
@@ -342,30 +353,61 @@ const pythonWorkerHandlers: Record<string, { description: string }> = {
 }
 
 const inlineHandlerMetadata: Record<string, { description: string; requiresSample?: boolean }> = {
-  executeSandboxExecute: { description: 'Run the sandbox.execute dynamic workflow inline inside the runtime node.' },
-  executeSpeakeasyEmulate: { description: 'Run Speakeasy user-mode emulation inline inside the runtime node.' },
-  executeSpeakeasyShellcode: { description: 'Run Speakeasy shellcode emulation inline inside the runtime node.' },
+  executeSandboxExecute: {
+    description: 'Run the sandbox.execute dynamic workflow inline inside the runtime node.',
+  },
+  executeSpeakeasyEmulate: {
+    description: 'Run Speakeasy user-mode emulation inline inside the runtime node.',
+  },
+  executeSpeakeasyShellcode: {
+    description: 'Run Speakeasy shellcode emulation inline inside the runtime node.',
+  },
   executeSpeakeasyApiTrace: { description: 'Collect API traces from Speakeasy inline execution.' },
-  executeWineRun: { description: 'Run or preflight Wine execution inline inside the runtime node.' },
-  executeWineEnv: { description: 'Inspect or prepare Wine environment state inline inside the runtime node.' },
-  executeWineDllOverrides: { description: 'Configure Wine DLL override behavior inline inside the runtime node.' },
-  executeWineReg: { description: 'Read or write Wine registry values inline inside the runtime node.' },
-  executeDynamicMemoryDump: { description: 'Capture dynamic memory dumps inline inside the runtime node.' },
+  executeWineRun: {
+    description: 'Run or preflight Wine execution inline inside the runtime node.',
+  },
+  executeWineEnv: {
+    description: 'Inspect or prepare Wine environment state inline inside the runtime node.',
+  },
+  executeWineDllOverrides: {
+    description: 'Configure Wine DLL override behavior inline inside the runtime node.',
+  },
+  executeWineReg: {
+    description: 'Read or write Wine registry values inline inside the runtime node.',
+  },
+  executeDynamicMemoryDump: {
+    description: 'Capture dynamic memory dumps inline inside the runtime node.',
+  },
   executeProcDumpCapture: {
-    description: 'Capture crash, timeout, launch, or PID-triggered dumps with Sysinternals ProcDump inside the runtime node.',
+    description:
+      'Capture crash, timeout, launch, or PID-triggered dumps with Sysinternals ProcDump inside the runtime node.',
     requiresSample: false,
   },
   executeTelemetryCapture: {
-    description: 'Capture ProcMon, Sysmon, ETW, or PowerShell event-log telemetry inside the runtime node.',
+    description:
+      'Capture ProcMon, Sysmon, ETW, or PowerShell event-log telemetry inside the runtime node.',
     requiresSample: false,
   },
-  executeBehaviorCapture: { description: 'Run a bounded Windows behavior capture inside the runtime node and persist process/module/file observations.' },
-  executeQilingInspect: { description: 'Run Qiling-backed inspection inline inside the runtime node.' },
-  executePandaInspect: { description: 'Run PANDA-backed inspection inline inside the runtime node.' },
-  executeManagedSafeRun: { description: 'Run managed sandbox analysis inline inside the runtime node.' },
-  executeDebugSession: { description: 'Handle debug-session lifecycle and inspection requests inline inside the runtime node.' },
+  executeBehaviorCapture: {
+    description:
+      'Run a bounded Windows behavior capture inside the runtime node and persist process/module/file observations.',
+  },
+  executeQilingInspect: {
+    description: 'Run Qiling-backed inspection inline inside the runtime node.',
+  },
+  executePandaInspect: {
+    description: 'Run PANDA-backed inspection inline inside the runtime node.',
+  },
+  executeManagedSafeRun: {
+    description: 'Run managed sandbox analysis inline inside the runtime node.',
+  },
+  executeDebugSession: {
+    description:
+      'Handle debug-session lifecycle and inspection requests inline inside the runtime node.',
+  },
   executeRuntimeToolProbe: {
-    description: 'Inspect runtime-side debugger, dump, telemetry, network, and manual GUI tool availability without executing a sample.',
+    description:
+      'Inspect runtime-side debugger, dump, telemetry, network, and manual GUI tool availability without executing a sample.',
     requiresSample: false,
   },
 }
@@ -390,7 +432,7 @@ const spawnHandlers: Record<string, SpawnBackendHandler> = {
     requiresSample: true,
     buildPlan(task, samplePath) {
       return {
-        command: samplePath!,
+        command: samplePath,
         args: readStringArrayArg(task.args, 'arguments', 'args'),
       }
     },
@@ -405,7 +447,7 @@ const spawnHandlers: Record<string, SpawnBackendHandler> = {
     buildPlan(task, samplePath) {
       return {
         command: 'wine',
-        args: [samplePath!, ...readStringArrayArg(task.args, 'arguments', 'args')],
+        args: [samplePath, ...readStringArrayArg(task.args, 'arguments', 'args')],
       }
     },
   },
@@ -419,7 +461,7 @@ const spawnHandlers: Record<string, SpawnBackendHandler> = {
     buildPlan(task, samplePath) {
       return {
         command: 'winedbg',
-        args: [samplePath!, ...readStringArrayArg(task.args, 'arguments', 'args')],
+        args: [samplePath, ...readStringArrayArg(task.args, 'arguments', 'args')],
       }
     },
   },
@@ -433,7 +475,7 @@ const spawnHandlers: Record<string, SpawnBackendHandler> = {
     buildPlan(task, samplePath) {
       return {
         command: 'dotnet',
-        args: [samplePath!, ...readStringArrayArg(task.args, 'arguments', 'args')],
+        args: [samplePath, ...readStringArrayArg(task.args, 'arguments', 'args')],
       }
     },
   },
@@ -479,15 +521,21 @@ const runtimeBackendCapabilityRegistry: RuntimeBackendCapabilityDetails[] = [
 ]
 
 const runtimeBackendCapabilityIndex = new Map(
-  runtimeBackendCapabilityRegistry.map((entry) => [entry.key, entry] satisfies [string, RuntimeBackendCapabilityDetails]),
+  runtimeBackendCapabilityRegistry.map(
+    (entry) => [entry.key, entry] satisfies [string, RuntimeBackendCapabilityDetails]
+  )
 )
 
 export function listRuntimeBackendCapabilities(): RuntimeBackendCapability[] {
   return runtimeBackendCapabilityRegistry.map(({ key: _key, ...capability }) => ({ ...capability }))
 }
 
-export function getRuntimeBackendCapability(hint: RuntimeBackendHint): RuntimeBackendCapability | undefined {
-  const capability = runtimeBackendCapabilityIndex.get(getRuntimeBackendCapabilityKey(hint.type, hint.handler))
+export function getRuntimeBackendCapability(
+  hint: RuntimeBackendHint
+): RuntimeBackendCapability | undefined {
+  const capability = runtimeBackendCapabilityIndex.get(
+    getRuntimeBackendCapabilityKey(hint.type, hint.handler)
+  )
   if (!capability) {
     return undefined
   }
@@ -515,7 +563,7 @@ function tryParseStructuredSpawnResult(stdout: string): ExecuteResult['result'] 
     return undefined
   }
 
-  const candidates = [trimmed, trimmed.split(/\r?\n/).filter(Boolean).slice(-1)[0]].filter(Boolean) as string[]
+  const candidates = [trimmed, trimmed.split(/\r?\n/).filter(Boolean).slice(-1)[0]].filter(Boolean)
   for (const candidate of candidates) {
     try {
       const parsed = JSON.parse(candidate)
@@ -526,10 +574,17 @@ function tryParseStructuredSpawnResult(stdout: string): ExecuteResult['result'] 
       return {
         ok: typeof payload.ok === 'boolean' ? payload.ok : true,
         data: 'data' in payload ? payload.data : payload,
-        errors: Array.isArray(payload.errors) ? payload.errors.filter((entry): entry is string => typeof entry === 'string') : undefined,
-        warnings: Array.isArray(payload.warnings) ? payload.warnings.filter((entry): entry is string => typeof entry === 'string') : undefined,
+        errors: Array.isArray(payload.errors)
+          ? payload.errors.filter((entry): entry is string => typeof entry === 'string')
+          : undefined,
+        warnings: Array.isArray(payload.warnings)
+          ? payload.warnings.filter((entry): entry is string => typeof entry === 'string')
+          : undefined,
         artifacts: Array.isArray(payload.artifacts) ? payload.artifacts : undefined,
-        metrics: payload.metrics && typeof payload.metrics === 'object' ? payload.metrics as Record<string, unknown> : undefined,
+        metrics:
+          payload.metrics && typeof payload.metrics === 'object'
+            ? (payload.metrics as Record<string, unknown>)
+            : undefined,
       }
     } catch {
       // fall through and keep treating stdout as plain text
@@ -544,7 +599,7 @@ async function executeSpawnBackend(
   handlerName: string,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const handler = spawnHandlers[handlerName]
   if (!handler) {
@@ -556,9 +611,8 @@ async function executeSpawnBackend(
     }
   }
 
-  const samplePath = handler.requiresSample === false
-    ? undefined
-    : resolveTaskSamplePath(task.taskId)
+  const samplePath =
+    handler.requiresSample === false ? undefined : resolveTaskSamplePath(task.taskId)
   const sampleWorkingDir = samplePath ? path.dirname(samplePath) : undefined
 
   if (samplePath && !fs.existsSync(samplePath)) {
@@ -618,7 +672,12 @@ async function executeSpawnBackend(
     })
 
     child.on('close', (code, signal) => {
-      onProgress?.(1, code === 0 ? `Spawn backend '${handlerName}' completed` : `Spawn backend '${handlerName}' failed`)
+      onProgress?.(
+        1,
+        code === 0
+          ? `Spawn backend '${handlerName}' completed`
+          : `Spawn backend '${handlerName}' failed`
+      )
 
       const parsedResult = tryParseStructuredSpawnResult(stdout)
       const stagedArtifacts = stageArtifactsToOutbox(task.taskId, parsedResult?.artifacts, log)
@@ -641,7 +700,12 @@ async function executeSpawnBackend(
         : {
             ok: code === 0,
             data: defaultData,
-            errors: code === 0 ? undefined : [`Spawn backend '${handlerName}' exited with code ${code}${signal ? ` (signal ${signal})` : ''}.`],
+            errors:
+              code === 0
+                ? undefined
+                : [
+                    `Spawn backend '${handlerName}' exited with code ${code}${signal ? ` (signal ${signal})` : ''}.`,
+                  ],
             warnings: undefined,
             artifacts: undefined,
             metrics: undefined,
@@ -652,7 +716,12 @@ async function executeSpawnBackend(
         taskId: task.taskId,
         result,
         logs: [...logs, stderr].filter(Boolean),
-        errors: code === 0 ? undefined : [`Spawn backend '${handlerName}' exited with code ${code}${signal ? ` (signal ${signal})` : ''}.`],
+        errors:
+          code === 0
+            ? undefined
+            : [
+                `Spawn backend '${handlerName}' exited with code ${code}${signal ? ` (signal ${signal})` : ''}.`,
+              ],
         artifactRefs: stagedArtifacts,
       })
     })
@@ -677,7 +746,7 @@ function resolveWorkerPath(workerName: string): string | null {
 function stageArtifactsToOutbox(
   taskId: string,
   artifacts: unknown[] | undefined,
-  log: (msg: string) => void,
+  log: (msg: string) => void
 ): { name: string; path: string }[] {
   const staged: { name: string; path: string }[] = []
   if (!artifacts || artifacts.length === 0) {
@@ -712,7 +781,9 @@ async function checkPythonAvailable(): Promise<boolean> {
   try {
     const pythonCheck = spawnProcess(pythonCommand, ['--version'], { stdio: 'ignore' })
     await new Promise<void>((resolve, reject) => {
-      pythonCheck.on('close', (code) => (code === 0 ? resolve() : reject(new Error('Python not available'))))
+      pythonCheck.on('close', (code) =>
+        code === 0 ? resolve() : reject(new Error('Python not available'))
+      )
       pythonCheck.on('error', reject)
     })
     return true
@@ -725,7 +796,9 @@ async function checkPythonModuleAvailable(moduleName: string): Promise<boolean> 
   try {
     const check = spawnProcess(pythonCommand, ['-c', `import ${moduleName}`], { stdio: 'ignore' })
     await new Promise<void>((resolve, reject) => {
-      check.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`Module ${moduleName} not available`))))
+      check.on('close', (code) =>
+        code === 0 ? resolve() : reject(new Error(`Module ${moduleName} not available`))
+      )
       check.on('error', reject)
     })
     return true
@@ -738,7 +811,9 @@ async function checkCommandAvailable(cmd: string): Promise<boolean> {
   try {
     const check = spawnProcess(cmd, ['--version'], { stdio: 'ignore' })
     await new Promise<void>((resolve, reject) => {
-      check.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} not available`))))
+      check.on('close', (code) =>
+        code === 0 ? resolve() : reject(new Error(`${cmd} not available`))
+      )
       check.on('error', reject)
     })
     return true
@@ -752,7 +827,7 @@ export async function executePythonWorker(
   workerName: string,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const uploadedSample = resolveTaskSample(task.taskId)
   const samplePath = uploadedSample.samplePath
@@ -770,7 +845,9 @@ export async function executePythonWorker(
     return {
       ok: false,
       taskId: task.taskId,
-      errors: [`${workerName} not found. Ensure workers/ directory is mapped into the runtime environment.`],
+      errors: [
+        `${workerName} not found. Ensure workers/ directory is mapped into the runtime environment.`,
+      ],
       logs,
     }
   }
@@ -886,7 +963,9 @@ export async function executePythonWorker(
         resolve({
           ok: false,
           taskId: task.taskId,
-          errors: [`Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`],
+          errors: [
+            `Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`,
+          ],
           logs,
         })
       }
@@ -913,7 +992,7 @@ async function runPythonInline(
   log: (msg: string) => void,
   logs: string[],
   onProgress?: (progress: number, message?: string) => void,
-  requiredModule?: string,
+  requiredModule?: string
 ): Promise<ExecuteResult> {
   if (!(await checkPythonAvailable())) {
     return {
@@ -1003,7 +1082,9 @@ async function runPythonInline(
         resolve({
           ok: false,
           taskId: task.taskId,
-          errors: [`Failed to parse inline Python response: ${(error as Error).message}. stdout: ${stdout}`],
+          errors: [
+            `Failed to parse inline Python response: ${(error as Error).message}. stdout: ${stdout}`,
+          ],
           logs,
         })
       }
@@ -1089,7 +1170,7 @@ export async function executeDynamicMemoryDump(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const samplePath = resolveTaskSamplePath(task.taskId)
   if (!fs.existsSync(samplePath)) {
@@ -1152,18 +1233,31 @@ print(json.dumps(result))
 `
 
   log(`Spawning Frida memory dump for ${samplePath} trigger=${trigger}`)
-  return runPythonInline(pyScript, [samplePath, scriptPath, String(timeoutSec), outboxTaskDir], task, log, logs, onProgress, 'frida')
+  return runPythonInline(
+    pyScript,
+    [samplePath, scriptPath, String(timeoutSec), outboxTaskDir],
+    task,
+    log,
+    logs,
+    onProgress,
+    'frida'
+  )
 }
 
 export async function executeSandboxExecute(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const samplePath = resolveTaskSamplePath(task.taskId)
   if (!fs.existsSync(samplePath)) {
-    return { ok: false, taskId: task.taskId, errors: [`Sample file not found: ${samplePath}`], logs }
+    return {
+      ok: false,
+      taskId: task.taskId,
+      errors: [`Sample file not found: ${samplePath}`],
+      logs,
+    }
   }
 
   const antiDebug = Boolean(task.args.anti_debug)
@@ -1182,7 +1276,9 @@ export async function executeSandboxExecute(
     return {
       ok: false,
       taskId: task.taskId,
-      errors: ['Direct PE execution is only allowed inside an isolated environment (Windows Sandbox).'],
+      errors: [
+        'Direct PE execution is only allowed inside an isolated environment (Windows Sandbox).',
+      ],
       logs,
     }
   }
@@ -1249,7 +1345,15 @@ print(json.dumps(result))
 `.trim()
 
     log(`Spawning sandbox.execute with Frida evasion for ${samplePath}`)
-    return runPythonInline(pyScript, [samplePath, scriptPath, String(Math.floor(timeoutMs / 1000))], task, log, logs, onProgress, 'frida')
+    return runPythonInline(
+      pyScript,
+      [samplePath, scriptPath, String(Math.floor(timeoutMs / 1000))],
+      task,
+      log,
+      logs,
+      onProgress,
+      'frida'
+    )
   }
 
   log(`Spawning sandbox.execute directly for ${samplePath}`)
@@ -1263,8 +1367,12 @@ print(json.dumps(result))
     registerProcess(task.taskId, child)
     let stdout = ''
     let stderr = ''
-    child.stdout.on('data', (d) => { stdout += d.toString() })
-    child.stderr.on('data', (d) => { stderr += d.toString() })
+    child.stdout.on('data', (d) => {
+      stdout += d.toString()
+    })
+    child.stderr.on('data', (d) => {
+      stderr += d.toString()
+    })
     child.on('error', (e) => resolve({ ok: false, taskId: task.taskId, errors: [e.message], logs }))
     child.on('close', (code) => {
       resolve({
@@ -1377,7 +1485,7 @@ export async function executeSpeakeasyEmulate(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const samplePath = resolveTaskSamplePath(task.taskId)
   if (!fs.existsSync(samplePath)) {
@@ -1392,49 +1500,83 @@ export async function executeSpeakeasyEmulate(
   const maxApi = Number(task.args.max_api_count || 10000)
   const outboxTaskDir = path.join(config.runtime.outbox, task.taskId)
   log(`Spawning speakeasy emulate for ${samplePath}`)
-  return runPythonInline(buildSpeakeasyScript('module'), [samplePath, 'module', String(timeoutSec), String(maxApi), outboxTaskDir], task, log, logs, onProgress, 'speakeasy')
+  return runPythonInline(
+    buildSpeakeasyScript('module'),
+    [samplePath, 'module', String(timeoutSec), String(maxApi), outboxTaskDir],
+    task,
+    log,
+    logs,
+    onProgress,
+    'speakeasy'
+  )
 }
 
 export async function executeSpeakeasyShellcode(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const samplePath = resolveTaskSamplePath(task.taskId)
   if (!fs.existsSync(samplePath)) {
-    return { ok: false, taskId: task.taskId, errors: [`Sample file not found: ${samplePath}`], logs }
+    return {
+      ok: false,
+      taskId: task.taskId,
+      errors: [`Sample file not found: ${samplePath}`],
+      logs,
+    }
   }
   const timeoutSec = Number(task.args.timeout_sec || 60)
   const maxApi = Number(task.args.max_api_count || 10000)
   const arch = String(task.args.arch || 'x64')
   const outboxTaskDir = path.join(config.runtime.outbox, task.taskId)
   log(`Spawning speakeasy shellcode for ${samplePath} arch=${arch}`)
-  return runPythonInline(buildSpeakeasyScript('shellcode'), [samplePath, 'shellcode', String(timeoutSec), String(maxApi), outboxTaskDir, arch], task, log, logs, onProgress, 'speakeasy')
+  return runPythonInline(
+    buildSpeakeasyScript('shellcode'),
+    [samplePath, 'shellcode', String(timeoutSec), String(maxApi), outboxTaskDir, arch],
+    task,
+    log,
+    logs,
+    onProgress,
+    'speakeasy'
+  )
 }
 
 export async function executeSpeakeasyApiTrace(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const samplePath = resolveTaskSamplePath(task.taskId)
   if (!fs.existsSync(samplePath)) {
-    return { ok: false, taskId: task.taskId, errors: [`Sample file not found: ${samplePath}`], logs }
+    return {
+      ok: false,
+      taskId: task.taskId,
+      errors: [`Sample file not found: ${samplePath}`],
+      logs,
+    }
   }
   const timeoutSec = Number(task.args.timeout_sec || 60)
   const maxApi = Number(task.args.max_api_count || 10000)
   const outboxTaskDir = path.join(config.runtime.outbox, task.taskId)
   log(`Spawning speakeasy api_trace for ${samplePath}`)
-  return runPythonInline(buildSpeakeasyScript('api_trace'), [samplePath, 'api_trace', String(timeoutSec), String(maxApi), outboxTaskDir], task, log, logs, onProgress, 'speakeasy')
+  return runPythonInline(
+    buildSpeakeasyScript('api_trace'),
+    [samplePath, 'api_trace', String(timeoutSec), String(maxApi), outboxTaskDir],
+    task,
+    log,
+    logs,
+    onProgress,
+    'speakeasy'
+  )
 }
 
 export async function executeWineRun(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const samplePath = resolveTaskSamplePath(task.taskId)
   if (!fs.existsSync(samplePath)) {
@@ -1450,15 +1592,18 @@ export async function executeWineRun(
     return {
       ok: false,
       taskId: task.taskId,
-      errors: ['Wine is not available in the runtime environment. Install Wine to run Windows PE samples on Linux.'],
+      errors: [
+        'Wine is not available in the runtime environment. Install Wine to run Windows PE samples on Linux.',
+      ],
       logs,
     }
   }
 
   const wineCmd = process.platform === 'win32' ? samplePath : 'wine'
-  const wineArgs = process.platform === 'win32'
-    ? [String(task.args.command_line_args || '')]
-    : [samplePath, String(task.args.command_line_args || '')]
+  const wineArgs =
+    process.platform === 'win32'
+      ? [String(task.args.command_line_args || '')]
+      : [samplePath, String(task.args.command_line_args || '')]
 
   if (process.platform === 'win32') {
     const { isIsolatedEnvironment } = await import('./isolation.js')
@@ -1467,7 +1612,9 @@ export async function executeWineRun(
       return {
         ok: false,
         taskId: task.taskId,
-        errors: ['Direct PE execution is only allowed inside an isolated environment (Windows Sandbox).'],
+        errors: [
+          'Direct PE execution is only allowed inside an isolated environment (Windows Sandbox).',
+        ],
         logs,
       }
     }
@@ -1527,13 +1674,15 @@ export async function executeWineEnv(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   if (process.platform !== 'win32' && !(await checkCommandAvailable('wine'))) {
     return {
       ok: false,
       taskId: task.taskId,
-      errors: ['Wine is not available in the runtime environment. Install Wine to query Windows PE environment on Linux.'],
+      errors: [
+        'Wine is not available in the runtime environment. Install Wine to query Windows PE environment on Linux.',
+      ],
       logs,
     }
   }
@@ -1541,12 +1690,20 @@ export async function executeWineEnv(
   const wineArgs = process.platform === 'win32' ? ['/c', 'set'] : ['cmd', '/c', 'set']
   log(`Querying wine environment`)
   return new Promise<ExecuteResult>((resolve) => {
-    const child = spawnProcess(wineCmd, wineArgs, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, windowsHide: true })
+    const child = spawnProcess(wineCmd, wineArgs, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 15000,
+      windowsHide: true,
+    })
     registerProcess(task.taskId, child)
     let stdout = ''
     let stderr = ''
-    child.stdout.on('data', (d) => { stdout += d.toString() })
-    child.stderr.on('data', (d) => { stderr += d.toString() })
+    child.stdout.on('data', (d) => {
+      stdout += d.toString()
+    })
+    child.stderr.on('data', (d) => {
+      stderr += d.toString()
+    })
     child.on('error', (e) => resolve({ ok: false, taskId: task.taskId, errors: [e.message], logs }))
     child.on('close', (code) => {
       const envVars: Record<string, string> = {}
@@ -1554,7 +1711,16 @@ export async function executeWineEnv(
         const idx = line.indexOf('=')
         if (idx > 0) envVars[line.slice(0, idx)] = line.slice(idx + 1)
       }
-      resolve({ ok: true, taskId: task.taskId, result: { ok: true, data: { env_vars: envVars, exit_code: code }, metrics: { tool: 'wine.env' } }, logs: [...logs, stdout, stderr].filter(Boolean) })
+      resolve({
+        ok: true,
+        taskId: task.taskId,
+        result: {
+          ok: true,
+          data: { env_vars: envVars, exit_code: code },
+          metrics: { tool: 'wine.env' },
+        },
+        logs: [...logs, stdout, stderr].filter(Boolean),
+      })
     })
   })
 }
@@ -1563,31 +1729,66 @@ export async function executeWineDllOverrides(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const overrides = task.args.overrides as Record<string, string> | undefined
   if (process.platform === 'win32') {
-    return { ok: true, taskId: task.taskId, result: { ok: true, data: { overrides: overrides || {}, note: 'DLL overrides are managed via registry on native Windows.' }, metrics: { tool: 'wine.dll_overrides' } }, logs }
+    return {
+      ok: true,
+      taskId: task.taskId,
+      result: {
+        ok: true,
+        data: {
+          overrides: overrides || {},
+          note: 'DLL overrides are managed via registry on native Windows.',
+        },
+        metrics: { tool: 'wine.dll_overrides' },
+      },
+      logs,
+    }
   }
   if (!(await checkCommandAvailable('wine'))) {
     return {
       ok: false,
       taskId: task.taskId,
-      errors: ['Wine is not available in the runtime environment. Install Wine to configure DLL overrides on Linux.'],
+      errors: [
+        'Wine is not available in the runtime environment. Install Wine to configure DLL overrides on Linux.',
+      ],
       logs,
     }
   }
   const wineCmd = 'wine'
-  const env = { ...process.env, WINEDLLOVERRIDES: Object.entries(overrides || {}).map(([k, v]) => `${k}=${v}`).join(';') }
+  const env = {
+    ...process.env,
+    WINEDLLOVERRIDES: Object.entries(overrides || {})
+      .map(([k, v]) => `${k}=${v}`)
+      .join(';'),
+  }
   log(`Setting WINEDLLOVERRIDES`)
   return new Promise<ExecuteResult>((resolve) => {
-    const child = spawnProcess(wineCmd, ['regedit', '/?'], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env, windowsHide: true })
+    const child = spawnProcess(wineCmd, ['regedit', '/?'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 15000,
+      env,
+      windowsHide: true,
+    })
     registerProcess(task.taskId, child)
     let stdout = ''
-    child.stdout.on('data', (d) => { stdout += d.toString() })
+    child.stdout.on('data', (d) => {
+      stdout += d.toString()
+    })
     child.on('error', (e) => resolve({ ok: false, taskId: task.taskId, errors: [e.message], logs }))
     child.on('close', () => {
-      resolve({ ok: true, taskId: task.taskId, result: { ok: true, data: { overrides: overrides || {}, note: 'WINEDLLOVERRIDES updated' }, metrics: { tool: 'wine.dll_overrides' } }, logs: [...logs, stdout].filter(Boolean) })
+      resolve({
+        ok: true,
+        taskId: task.taskId,
+        result: {
+          ok: true,
+          data: { overrides: overrides || {}, note: 'WINEDLLOVERRIDES updated' },
+          metrics: { tool: 'wine.dll_overrides' },
+        },
+        logs: [...logs, stdout].filter(Boolean),
+      })
     })
   })
 }
@@ -1596,7 +1797,7 @@ export async function executeWineReg(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const operation = String(task.args.operation || 'read')
   const keyPath = String(task.args.key_path || '')
@@ -1607,7 +1808,9 @@ export async function executeWineReg(
     return {
       ok: false,
       taskId: task.taskId,
-      errors: ['Wine is not available in the runtime environment. Install Wine to manipulate registry on Linux.'],
+      errors: [
+        'Wine is not available in the runtime environment. Install Wine to manipulate registry on Linux.',
+      ],
       logs,
     }
   }
@@ -1616,7 +1819,8 @@ export async function executeWineReg(
   let wineArgs: string[]
   if (process.platform === 'win32') {
     if (operation === 'read') wineArgs = ['query', keyPath, '/v', valueName]
-    else if (operation === 'add') wineArgs = ['add', keyPath, '/v', valueName, '/d', valueData || '', '/f']
+    else if (operation === 'add')
+      wineArgs = ['add', keyPath, '/v', valueName, '/d', valueData || '', '/f']
     else if (operation === 'delete') wineArgs = ['delete', keyPath, '/v', valueName, '/f']
     else wineArgs = ['query', keyPath]
   } else {
@@ -1626,15 +1830,32 @@ export async function executeWineReg(
 
   log(`Spawning wine reg: ${wineCmd} ${wineArgs.join(' ')}`)
   return new Promise<ExecuteResult>((resolve) => {
-    const child = spawnProcess(wineCmd, wineArgs, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, windowsHide: true })
+    const child = spawnProcess(wineCmd, wineArgs, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 15000,
+      windowsHide: true,
+    })
     registerProcess(task.taskId, child)
     let stdout = ''
     let stderr = ''
-    child.stdout.on('data', (d) => { stdout += d.toString() })
-    child.stderr.on('data', (d) => { stderr += d.toString() })
+    child.stdout.on('data', (d) => {
+      stdout += d.toString()
+    })
+    child.stderr.on('data', (d) => {
+      stderr += d.toString()
+    })
     child.on('error', (e) => resolve({ ok: false, taskId: task.taskId, errors: [e.message], logs }))
     child.on('close', (code) => {
-      resolve({ ok: code === 0, taskId: task.taskId, result: { ok: code === 0, data: { operation, stdout: stdout.slice(0, 5000), stderr: stderr.slice(0, 5000) }, metrics: { tool: 'wine.reg' } }, logs: [...logs, stdout, stderr].filter(Boolean) })
+      resolve({
+        ok: code === 0,
+        taskId: task.taskId,
+        result: {
+          ok: code === 0,
+          data: { operation, stdout: stdout.slice(0, 5000), stderr: stderr.slice(0, 5000) },
+          metrics: { tool: 'wine.reg' },
+        },
+        logs: [...logs, stdout, stderr].filter(Boolean),
+      })
     })
   })
 }
@@ -1643,11 +1864,16 @@ export async function executeQilingInspect(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const samplePath = resolveTaskSamplePath(task.taskId)
   if (!fs.existsSync(samplePath)) {
-    return { ok: false, taskId: task.taskId, errors: [`Sample file not found: ${samplePath}`], logs }
+    return {
+      ok: false,
+      taskId: task.taskId,
+      errors: [`Sample file not found: ${samplePath}`],
+      logs,
+    }
   }
   const timeoutSec = Number(task.args.timeout_sec || 60)
   const outboxTaskDir = path.join(config.runtime.outbox, task.taskId)
@@ -1718,19 +1944,29 @@ except Exception as exc:
 print(json.dumps(payload))
 `
   log(`Spawning qiling inspect for ${samplePath}`)
-  return runPythonInline(script, [samplePath, outboxTaskDir, String(timeoutSec)], task, log, logs, onProgress, 'qiling')
+  return runPythonInline(
+    script,
+    [samplePath, outboxTaskDir, String(timeoutSec)],
+    task,
+    log,
+    logs,
+    onProgress,
+    'qiling'
+  )
 }
 
 export async function executePandaInspect(
   _task: ExecuteTask,
   _log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   return {
     ok: false,
     taskId: _task.taskId,
-    errors: [`PANDA record/replay is not supported in the Windows Sandbox runtime. Consider using the Linux analyzer node for PANDA analysis.`],
+    errors: [
+      `PANDA record/replay is not supported in the Windows Sandbox runtime. Consider using the Linux analyzer node for PANDA analysis.`,
+    ],
     logs,
   }
 }
@@ -1739,17 +1975,24 @@ export async function executeManagedSafeRun(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const samplePath = resolveTaskSamplePath(task.taskId)
   if (!fs.existsSync(samplePath)) {
-    return { ok: false, taskId: task.taskId, errors: [`Sample file not found: ${samplePath}`], logs }
+    return {
+      ok: false,
+      taskId: task.taskId,
+      errors: [`Sample file not found: ${samplePath}`],
+      logs,
+    }
   }
   if (process.platform !== 'win32' && !(await checkCommandAvailable('dotnet'))) {
     return {
       ok: false,
       taskId: task.taskId,
-      errors: ['dotnet CLI is not available in the runtime environment. Install .NET SDK to run managed sandbox analysis on Linux.'],
+      errors: [
+        'dotnet CLI is not available in the runtime environment. Install .NET SDK to run managed sandbox analysis on Linux.',
+      ],
       logs,
     }
   }
@@ -1816,7 +2059,14 @@ except Exception as exc:
 print(json.dumps(payload))
 `
   log(`Spawning managed safe run for ${samplePath} timeout=${timeoutSec}s memory=${memoryMb}MB`)
-  return runPythonInline(script, [samplePath, String(timeoutSec), String(memoryMb), String(networkSinkhole), outboxTaskDir], task, log, logs, onProgress)
+  return runPythonInline(
+    script,
+    [samplePath, String(timeoutSec), String(memoryMb), String(networkSinkhole), outboxTaskDir],
+    task,
+    log,
+    logs,
+    onProgress
+  )
 }
 
 function quotePowerShellSingle(value: string): string {
@@ -1839,7 +2089,11 @@ function parsePowerShellJsonArray(value: string): any[] {
   }
 }
 
-async function runPowerShellJsonArray(taskId: string, script: string, timeoutMs = 10_000): Promise<any[]> {
+async function runPowerShellJsonArray(
+  taskId: string,
+  script: string,
+  timeoutMs = 10_000
+): Promise<any[]> {
   return new Promise<any[]>((resolve) => {
     const child = spawnProcess(
       'powershell.exe',
@@ -1886,7 +2140,11 @@ function buildTcpConnectionSnapshotScript(pid: number): string {
   ].join('; ')
 }
 
-function buildRecentFileSnapshotScript(paths: string[], startIso: string, maxEvents: number): string {
+function buildRecentFileSnapshotScript(
+  paths: string[],
+  startIso: string,
+  maxEvents: number
+): string {
   const pathArray = paths.map(quotePowerShellSingle).join(', ')
   return [
     '$ErrorActionPreference = "SilentlyContinue"',
@@ -1909,8 +2167,8 @@ function normalizeProcessRow(row: any): Record<string, unknown> {
   return {
     pid: Number(row?.ProcessId ?? row?.process_id ?? row?.Id ?? 0) || null,
     parent_pid: Number(row?.ParentProcessId ?? row?.parent_pid ?? 0) || null,
-    name: typeof row?.Name === 'string' ? row.Name : row?.ProcessName ?? null,
-    image_path: typeof row?.ExecutablePath === 'string' ? row.ExecutablePath : row?.Path ?? null,
+    name: typeof row?.Name === 'string' ? row.Name : (row?.ProcessName ?? null),
+    image_path: typeof row?.ExecutablePath === 'string' ? row.ExecutablePath : (row?.Path ?? null),
     command_line: typeof row?.CommandLine === 'string' ? row.CommandLine : null,
     creation_date: typeof row?.CreationDate === 'string' ? row.CreationDate : null,
   }
@@ -1929,7 +2187,10 @@ function normalizeFileRow(row: any): Record<string, unknown> {
   return {
     path: typeof row?.FullName === 'string' ? row.FullName : null,
     size: Number(row?.Length ?? 0) || 0,
-    last_write_time_utc: typeof row?.LastWriteTimeUtc === 'string' ? row.LastWriteTimeUtc : row?.LastWriteTimeUtc ?? null,
+    last_write_time_utc:
+      typeof row?.LastWriteTimeUtc === 'string'
+        ? row.LastWriteTimeUtc
+        : (row?.LastWriteTimeUtc ?? null),
   }
 }
 
@@ -1942,23 +2203,31 @@ function normalizeNetworkRow(row: any): Record<string, unknown> {
     local_port: Number(row?.LocalPort ?? 0) || null,
     remote_address: typeof row?.RemoteAddress === 'string' ? row.RemoteAddress : null,
     remote_port: Number(row?.RemotePort ?? 0) || null,
-    creation_time: typeof row?.CreationTime === 'string' ? row.CreationTime : row?.CreationTime ?? null,
+    creation_time:
+      typeof row?.CreationTime === 'string' ? row.CreationTime : (row?.CreationTime ?? null),
   }
 }
 
 function buildBehaviorCaptureTrace(payload: Record<string, any>): Record<string, unknown> {
   const modules = Array.isArray(payload.module_loads)
-    ? payload.module_loads.map((entry: any) => entry.module_name || entry.path || '').filter(Boolean)
+    ? payload.module_loads
+        .map((entry: any) => entry.module_name || entry.path || '')
+        .filter(Boolean)
     : []
   const fileIndicators = Array.isArray(payload.file_events)
     ? payload.file_events.map((entry: any) => entry.path || '').filter(Boolean)
     : []
   const processIndicators = Array.isArray(payload.process_observations)
-    ? payload.process_observations.map((entry: any) => entry.name || entry.image_path || '').filter(Boolean)
+    ? payload.process_observations
+        .map((entry: any) => entry.name || entry.image_path || '')
+        .filter(Boolean)
     : []
   const networkIndicators = Array.isArray(payload.network_events)
     ? payload.network_events
-        .flatMap((entry: any) => [entry.remote_address, entry.remote_port ? `${entry.remote_address || ''}:${entry.remote_port}` : ''])
+        .flatMap((entry: any) => [
+          entry.remote_address,
+          entry.remote_port ? `${entry.remote_address || ''}:${entry.remote_port}` : '',
+        ])
         .filter(Boolean)
     : []
   const stages = ['process_execution']
@@ -1983,18 +2252,24 @@ function buildBehaviorCaptureTrace(payload: Record<string, any>): Record<string,
     api_calls: [],
     memory_regions: [],
     modules: Array.from(new Set(modules)).slice(0, 200),
-    strings: Array.from(new Set([...fileIndicators, ...processIndicators, ...networkIndicators])).slice(0, 200),
+    strings: Array.from(
+      new Set([...fileIndicators, ...processIndicators, ...networkIndicators])
+    ).slice(0, 200),
     stages: Array.from(new Set(stages)),
-    risk_hints: payload.status === 'timeout'
-      ? ['The sample did not exit before the behavior-capture timeout.']
-      : [],
+    risk_hints:
+      payload.status === 'timeout'
+        ? ['The sample did not exit before the behavior-capture timeout.']
+        : [],
     notes: [
       'Coarse behavior capture records process, module, file, network, stdout, and stderr observations. It is not a full ETW/Sysmon trace.',
     ],
   }
 }
 
-function writeBehaviorCaptureArtifact(task: ExecuteTask, payload: Record<string, unknown>): { name: string; path: string } | null {
+function writeBehaviorCaptureArtifact(
+  task: ExecuteTask,
+  payload: Record<string, unknown>
+): { name: string; path: string } | null {
   try {
     const outboxDir = ensureTaskOutboxDir(task.taskId)
     const artifactPath = path.join(outboxDir, 'behavior_capture.json')
@@ -2083,7 +2358,8 @@ const RUNTIME_TOOL_SPECS: RuntimeToolSpec[] = [
       'Windows Kits\\11\\Debuggers\\x64\\cdb.exe',
       'cdb.exe',
     ],
-    installHint: 'Install Windows SDK Debugging Tools or mount cdb.exe under C:\\rikune-tools\\debuggers\\x64.',
+    installHint:
+      'Install Windows SDK Debugging Tools or mount cdb.exe under C:\\rikune-tools\\debuggers\\x64.',
     profiles: ['debugger_cdb', 'ttd_recording', 'memory_dump'],
   },
   {
@@ -2099,7 +2375,8 @@ const RUNTIME_TOOL_SPECS: RuntimeToolSpec[] = [
       'windbg.exe',
       'WinDbgX.exe',
     ],
-    installHint: 'Install WinDbg from Windows SDK or Microsoft Store, then expose it inside the runtime tool cache.',
+    installHint:
+      'Install WinDbg from Windows SDK or Microsoft Store, then expose it inside the runtime tool cache.',
     profiles: ['manual_gui_debug', 'memory_dump'],
   },
   {
@@ -2108,8 +2385,14 @@ const RUNTIME_TOOL_SPECS: RuntimeToolSpec[] = [
     category: 'dump',
     role: 'Crash, timeout, and breakpoint-adjacent memory dump capture.',
     filenames: ['procdump64.exe', 'procdump.exe'],
-    relativePaths: ['Sysinternals\\procdump64.exe', 'Sysinternals\\procdump.exe', 'procdump64.exe', 'procdump.exe'],
-    installHint: 'Download Sysinternals ProcDump and place procdump64.exe in C:\\rikune-tools\\Sysinternals.',
+    relativePaths: [
+      'Sysinternals\\procdump64.exe',
+      'Sysinternals\\procdump.exe',
+      'procdump64.exe',
+      'procdump.exe',
+    ],
+    installHint:
+      'Download Sysinternals ProcDump and place procdump64.exe in C:\\rikune-tools\\Sysinternals.',
     profiles: ['memory_dump', 'debugger_cdb'],
   },
   {
@@ -2118,8 +2401,14 @@ const RUNTIME_TOOL_SPECS: RuntimeToolSpec[] = [
     category: 'telemetry',
     role: 'File, registry, process, and network activity capture for ProcMon-grade traces.',
     filenames: ['Procmon64.exe', 'Procmon.exe'],
-    relativePaths: ['Sysinternals\\Procmon64.exe', 'Sysinternals\\Procmon.exe', 'Procmon64.exe', 'Procmon.exe'],
-    installHint: 'Download Sysinternals Process Monitor and place Procmon64.exe in C:\\rikune-tools\\Sysinternals.',
+    relativePaths: [
+      'Sysinternals\\Procmon64.exe',
+      'Sysinternals\\Procmon.exe',
+      'Procmon64.exe',
+      'Procmon.exe',
+    ],
+    installHint:
+      'Download Sysinternals Process Monitor and place Procmon64.exe in C:\\rikune-tools\\Sysinternals.',
     profiles: ['procmon_capture', 'behavior_capture'],
   },
   {
@@ -2128,8 +2417,14 @@ const RUNTIME_TOOL_SPECS: RuntimeToolSpec[] = [
     category: 'telemetry',
     role: 'Process, network, image-load, registry, and file-create event telemetry.',
     filenames: ['Sysmon64.exe', 'Sysmon.exe'],
-    relativePaths: ['Sysinternals\\Sysmon64.exe', 'Sysinternals\\Sysmon.exe', 'Sysmon64.exe', 'Sysmon.exe'],
-    installHint: 'Download Sysinternals Sysmon and provide a sandbox-safe config before enabling service-backed capture.',
+    relativePaths: [
+      'Sysinternals\\Sysmon64.exe',
+      'Sysinternals\\Sysmon.exe',
+      'Sysmon64.exe',
+      'Sysmon.exe',
+    ],
+    installHint:
+      'Download Sysinternals Sysmon and provide a sandbox-safe config before enabling service-backed capture.',
     profiles: ['sysmon_capture', 'behavior_capture'],
   },
   {
@@ -2146,7 +2441,8 @@ const RUNTIME_TOOL_SPECS: RuntimeToolSpec[] = [
       'TTD\\TTTracer.exe',
       'TTD.exe',
     ],
-    installHint: 'Install WinDbg Preview / Debugging Tools with TTD support or mount TTD tooling in C:\\rikune-tools.',
+    installHint:
+      'Install WinDbg Preview / Debugging Tools with TTD support or mount TTD tooling in C:\\rikune-tools.',
     profiles: ['ttd_recording'],
   },
   {
@@ -2155,8 +2451,14 @@ const RUNTIME_TOOL_SPECS: RuntimeToolSpec[] = [
     category: 'manual-gui',
     role: 'Manual GUI debugger for retained Hyper-V or visible Sandbox review.',
     filenames: ['x64dbg.exe', 'x96dbg.exe'],
-    relativePaths: ['x64dbg\\release\\x64\\x64dbg.exe', 'x64dbg\\x64dbg.exe', 'x96dbg.exe', 'x64dbg.exe'],
-    installHint: 'Place x64dbg in the runtime tool cache when manual GUI debugging profiles are needed.',
+    relativePaths: [
+      'x64dbg\\release\\x64\\x64dbg.exe',
+      'x64dbg\\x64dbg.exe',
+      'x96dbg.exe',
+      'x64dbg.exe',
+    ],
+    installHint:
+      'Place x64dbg in the runtime tool cache when manual GUI debugging profiles are needed.',
     profiles: ['manual_gui_debug', 'anti_evasion'],
   },
   {
@@ -2166,7 +2468,8 @@ const RUNTIME_TOOL_SPECS: RuntimeToolSpec[] = [
     role: '.NET assembly inspection, edit-and-continue style manual debugging, and resource review.',
     filenames: ['dnSpy.exe', 'dnSpy.Console.exe'],
     relativePaths: ['dnSpy\\dnSpy.exe', 'dnSpyEx\\dnSpy.exe', 'dnSpy.exe'],
-    installHint: 'Place dnSpyEx in the runtime tool cache for manual .NET debugging and resource review.',
+    installHint:
+      'Place dnSpyEx in the runtime tool cache for manual .NET debugging and resource review.',
     profiles: ['dotnet_runtime', 'manual_gui_debug'],
   },
   {
@@ -2175,8 +2478,15 @@ const RUNTIME_TOOL_SPECS: RuntimeToolSpec[] = [
     category: 'instrumentation',
     role: 'Runtime API tracing, anti-analysis bypass hooks, and decrypted string capture.',
     filenames: ['frida.exe', 'frida-trace.exe', 'frida-ps.exe', 'frida'],
-    relativePaths: ['frida\\frida.exe', 'frida\\frida-trace.exe', 'frida.exe', 'frida-trace.exe', 'frida'],
-    installHint: 'Install frida-tools in the runtime Python environment or mount standalone Frida CLI binaries.',
+    relativePaths: [
+      'frida\\frida.exe',
+      'frida\\frida-trace.exe',
+      'frida.exe',
+      'frida-trace.exe',
+      'frida',
+    ],
+    installHint:
+      'Install frida-tools in the runtime Python environment or mount standalone Frida CLI binaries.',
     profiles: ['frida_runtime', 'anti_evasion', 'network_lab'],
   },
   {
@@ -2186,7 +2496,8 @@ const RUNTIME_TOOL_SPECS: RuntimeToolSpec[] = [
     role: 'Managed sample execution, .NET runtime inspection, and future CLRMD/dotnet-dump flows.',
     filenames: ['dotnet.exe', 'dotnet'],
     relativePaths: ['dotnet\\dotnet.exe', 'dotnet.exe', 'dotnet'],
-    installHint: 'Install the .NET runtime/SDK in the Runtime Node when managed samples need native execution.',
+    installHint:
+      'Install the .NET runtime/SDK in the Runtime Node when managed samples need native execution.',
     profiles: ['dotnet_runtime'],
   },
   {
@@ -2195,8 +2506,14 @@ const RUNTIME_TOOL_SPECS: RuntimeToolSpec[] = [
     category: 'network',
     role: 'Network service emulation, DNS/HTTP capture, and malware traffic sinkholing.',
     filenames: ['fakenet.exe', 'fakenet.py', 'FakeNet-NG.exe'],
-    relativePaths: ['FakeNet-NG\\fakenet.py', 'FakeNet-NG\\fakenet.exe', 'FakeNet-NG.exe', 'fakenet.py'],
-    installHint: 'Install FakeNet-NG or expose a compatible fake-service harness in the runtime tool cache.',
+    relativePaths: [
+      'FakeNet-NG\\fakenet.py',
+      'FakeNet-NG\\fakenet.exe',
+      'FakeNet-NG.exe',
+      'fakenet.py',
+    ],
+    installHint:
+      'Install FakeNet-NG or expose a compatible fake-service harness in the runtime tool cache.',
     profiles: ['network_lab'],
   },
 ]
@@ -2211,13 +2528,22 @@ const RUNTIME_TOOL_PROFILE_DEFINITIONS: Array<{
     id: 'behavior_capture',
     requiredTools: [],
     optionalTools: ['procmon', 'sysmon', 'frida', 'fakenet'],
-    recommendedTools: ['dynamic.behavior.capture', 'dynamic.toolkit.status', 'dynamic.trace.import'],
+    recommendedTools: [
+      'dynamic.behavior.capture',
+      'dynamic.toolkit.status',
+      'dynamic.trace.import',
+    ],
   },
   {
     id: 'debugger_cdb',
     requiredTools: ['cdb'],
     optionalTools: ['procdump', 'windbg'],
-    recommendedTools: ['runtime.debug.command', 'debug.session.inspect', 'debug.session.breakpoint', 'debug.session.snapshot'],
+    recommendedTools: [
+      'runtime.debug.command',
+      'debug.session.inspect',
+      'debug.session.breakpoint',
+      'debug.session.snapshot',
+    ],
   },
   {
     id: 'memory_dump',
@@ -2247,19 +2573,33 @@ const RUNTIME_TOOL_PROFILE_DEFINITIONS: Array<{
     id: 'network_lab',
     requiredTools: [],
     optionalTools: ['fakenet', 'frida'],
-    recommendedTools: ['debug.network.plan', 'dynamic.behavior.capture', 'debug.telemetry.plan', 'dynamic.trace.import'],
+    recommendedTools: [
+      'debug.network.plan',
+      'dynamic.behavior.capture',
+      'debug.telemetry.plan',
+      'dynamic.trace.import',
+    ],
   },
   {
     id: 'dotnet_runtime',
     requiredTools: ['dotnet'],
     optionalTools: ['dnspy'],
-    recommendedTools: ['debug.managed.plan', 'runtime.debug.command', 'managed.safe_run', 'debug.gui.handoff'],
+    recommendedTools: [
+      'debug.managed.plan',
+      'runtime.debug.command',
+      'managed.safe_run',
+      'debug.gui.handoff',
+    ],
   },
   {
     id: 'manual_gui_debug',
     requiredTools: [],
     optionalTools: ['x64dbg', 'dnspy', 'windbg'],
-    recommendedTools: ['debug.gui.handoff', 'runtime.debug.session.start', 'runtime.hyperv.control'],
+    recommendedTools: [
+      'debug.gui.handoff',
+      'runtime.debug.session.start',
+      'runtime.hyperv.control',
+    ],
   },
   {
     id: 'anti_evasion',
@@ -2346,10 +2686,13 @@ function buildRuntimeToolProfiles(tools: RuntimeToolStatus[]): RuntimeToolProfil
   return RUNTIME_TOOL_PROFILE_DEFINITIONS.map((profile) => {
     const requiredAvailable = profile.requiredTools.filter((tool) => available.has(tool))
     const optionalAvailable = profile.optionalTools.filter((tool) => available.has(tool))
-    const missingTools = [...profile.requiredTools, ...profile.optionalTools].filter((tool) => !available.has(tool))
+    const missingTools = [...profile.requiredTools, ...profile.optionalTools].filter(
+      (tool) => !available.has(tool)
+    )
     let status: RuntimeToolProfile['status'] = 'missing'
     if (profile.requiredTools.length === 0) {
-      status = optionalAvailable.length > 0 || profile.optionalTools.length === 0 ? 'ready' : 'partial'
+      status =
+        optionalAvailable.length > 0 || profile.optionalTools.length === 0 ? 'ready' : 'partial'
     } else if (requiredAvailable.length === profile.requiredTools.length) {
       status = 'ready'
     } else if (requiredAvailable.length > 0 || optionalAvailable.length > 0) {
@@ -2398,9 +2741,15 @@ export function buildRuntimeToolInventory(): RuntimeToolInventory {
     summary: {
       availableToolCount: tools.filter((tool) => tool.available).length,
       missingToolCount: tools.filter((tool) => !tool.available).length,
-      readyProfiles: profiles.filter((profile) => profile.status === 'ready').map((profile) => profile.id),
-      partialProfiles: profiles.filter((profile) => profile.status === 'partial').map((profile) => profile.id),
-      missingProfiles: profiles.filter((profile) => profile.status === 'missing').map((profile) => profile.id),
+      readyProfiles: profiles
+        .filter((profile) => profile.status === 'ready')
+        .map((profile) => profile.id),
+      partialProfiles: profiles
+        .filter((profile) => profile.status === 'partial')
+        .map((profile) => profile.id),
+      missingProfiles: profiles
+        .filter((profile) => profile.status === 'missing')
+        .map((profile) => profile.id),
     },
   }
 }
@@ -2409,7 +2758,7 @@ export async function executeRuntimeToolProbe(
   task: ExecuteTask,
   _log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   onProgress?.(0.2, 'Inspecting runtime tool cache')
   const inventory = buildRuntimeToolInventory()
@@ -2448,12 +2797,17 @@ export async function executeBehaviorCapture(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const uploadedSample = resolveTaskSample(task.taskId)
   const samplePath = uploadedSample.samplePath
   if (!fs.existsSync(samplePath)) {
-    return { ok: false, taskId: task.taskId, errors: [`Sample file not found: ${samplePath}`], logs }
+    return {
+      ok: false,
+      taskId: task.taskId,
+      errors: [`Sample file not found: ${samplePath}`],
+      logs,
+    }
   }
 
   const timeoutSec = Math.max(5, Math.min(Number(task.args.timeout_sec || 30), 300))
@@ -2476,7 +2830,9 @@ export async function executeBehaviorCapture(
       backend: process.platform,
       started_at: startedAt,
       finished_at: new Date().toISOString(),
-      errors: ['dynamic.behavior.capture currently requires a Windows Runtime Node such as Windows Sandbox or Hyper-V VM.'],
+      errors: [
+        'dynamic.behavior.capture currently requires a Windows Runtime Node such as Windows Sandbox or Hyper-V VM.',
+      ],
     }
     const artifact = writeBehaviorCaptureArtifact(task, payload)
     return {
@@ -2520,7 +2876,9 @@ export async function executeBehaviorCapture(
 
   log(`Starting behavior capture for ${samplePath} timeout=${timeoutSec}s`)
   if (uploadedSample.sidecars.length > 0) {
-    log(`Staged ${uploadedSample.sidecars.length} sidecar file(s): ${uploadedSample.sidecars.map((entry) => entry.name).join(', ')}`)
+    log(
+      `Staged ${uploadedSample.sidecars.length} sidecar file(s): ${uploadedSample.sidecars.map((entry) => entry.name).join(', ')}`
+    )
   }
   onProgress?.(0.2, 'Launching sample inside runtime node')
 
@@ -2532,14 +2890,20 @@ export async function executeBehaviorCapture(
   })
   registerProcess(task.taskId, child)
   childPid = child.pid ?? null
-  child.stdout.on('data', (data: Buffer) => { stdout = appendCapped(stdout, data, 20_000) })
-  child.stderr.on('data', (data: Buffer) => { stderr = appendCapped(stderr, data, 10_000) })
+  child.stdout.on('data', (data: Buffer) => {
+    stdout = appendCapped(stdout, data, 20_000)
+  })
+  child.stderr.on('data', (data: Buffer) => {
+    stderr = appendCapped(stderr, data, 10_000)
+  })
 
   const childClosed = new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
       timedOut = true
       if (childPid) {
-        const killer = spawnProcess('taskkill.exe', ['/PID', String(childPid), '/T', '/F'], { stdio: 'ignore' })
+        const killer = spawnProcess('taskkill.exe', ['/PID', String(childPid), '/T', '/F'], {
+          stdio: 'ignore',
+        })
         registerProcess(task.taskId, killer)
       }
       child.kill('SIGKILL')
@@ -2559,13 +2923,23 @@ export async function executeBehaviorCapture(
   })
 
   if (captureModules && childPid) {
-    await new Promise((resolve) => setTimeout(resolve, Math.min(1500, Math.max(250, timeoutMs / 5))))
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.min(1500, Math.max(250, timeoutMs / 5)))
+    )
     onProgress?.(0.45, 'Capturing module snapshot')
-    moduleRows = await runPowerShellJsonArray(task.taskId, buildModuleSnapshotScript(childPid), 10_000)
+    moduleRows = await runPowerShellJsonArray(
+      task.taskId,
+      buildModuleSnapshotScript(childPid),
+      10_000
+    )
   }
   if (captureNetworkSnapshot && childPid) {
     onProgress?.(0.55, 'Capturing TCP connection snapshot')
-    networkRows = await runPowerShellJsonArray(task.taskId, buildTcpConnectionSnapshotScript(childPid), 10_000)
+    networkRows = await runPowerShellJsonArray(
+      task.taskId,
+      buildTcpConnectionSnapshotScript(childPid),
+      10_000
+    )
   }
 
   await childClosed
@@ -2584,11 +2958,15 @@ export async function executeBehaviorCapture(
     ? await runPowerShellJsonArray(
         task.taskId,
         buildRecentFileSnapshotScript(
-          Array.from(new Set([
-            path.dirname(samplePath),
-            ensureTaskOutboxDir(task.taskId),
-            process.env.TEMP || '',
-          ].filter(Boolean))),
+          Array.from(
+            new Set(
+              [
+                path.dirname(samplePath),
+                ensureTaskOutboxDir(task.taskId),
+                process.env.TEMP || '',
+              ].filter(Boolean)
+            )
+          ),
           startedAt,
           maxEvents
         ),
@@ -2631,7 +3009,12 @@ export async function executeBehaviorCapture(
     network_events: [
       ...networkRows.slice(0, maxEvents).map(normalizeNetworkRow),
       ...(networkSinkhole
-        ? [{ policy: 'sinkhole', note: 'HTTP_PROXY/HTTPS_PROXY pointed at 127.0.0.1:9 for this process.' }]
+        ? [
+            {
+              policy: 'sinkhole',
+              note: 'HTTP_PROXY/HTTPS_PROXY pointed at 127.0.0.1:9 for this process.',
+            },
+          ]
         : []),
     ],
     summary: {
@@ -2672,7 +3055,7 @@ export async function executeBehaviorCapture(
 }
 
 function findCdbPath(): string | null {
-  const toolCacheMatch = findRuntimeTool(RUNTIME_TOOL_SPECS.find((spec) => spec.id === 'cdb')!)
+  const toolCacheMatch = findRuntimeTool(RUNTIME_TOOL_SPECS.find((spec) => spec.id === 'cdb'))
   if (toolCacheMatch) {
     return toolCacheMatch.path
   }
@@ -2689,7 +3072,7 @@ function findCdbPath(): string | null {
 }
 
 function findProcDumpPath(): string | null {
-  const toolCacheMatch = findRuntimeTool(RUNTIME_TOOL_SPECS.find((spec) => spec.id === 'procdump')!)
+  const toolCacheMatch = findRuntimeTool(RUNTIME_TOOL_SPECS.find((spec) => spec.id === 'procdump'))
   if (toolCacheMatch) {
     return toolCacheMatch.path
   }
@@ -2697,12 +3080,12 @@ function findProcDumpPath(): string | null {
 }
 
 function findProcMonPath(): string | null {
-  const toolCacheMatch = findRuntimeTool(RUNTIME_TOOL_SPECS.find((spec) => spec.id === 'procmon')!)
+  const toolCacheMatch = findRuntimeTool(RUNTIME_TOOL_SPECS.find((spec) => spec.id === 'procmon'))
   return toolCacheMatch?.path ?? null
 }
 
 function findSysmonPath(): string | null {
-  const toolCacheMatch = findRuntimeTool(RUNTIME_TOOL_SPECS.find((spec) => spec.id === 'sysmon')!)
+  const toolCacheMatch = findRuntimeTool(RUNTIME_TOOL_SPECS.find((spec) => spec.id === 'sysmon'))
   return toolCacheMatch?.path ?? null
 }
 
@@ -2747,7 +3130,10 @@ function writeDebugSessionTranscript(
   }
 }
 
-function collectDebugSessionArtifactRefs(taskId: string, refs: Array<{ name: string; path: string } | null>): { name: string; path: string }[] {
+function collectDebugSessionArtifactRefs(
+  taskId: string,
+  refs: Array<{ name: string; path: string } | null>
+): { name: string; path: string }[] {
   const outboxDir = ensureTaskOutboxDir(taskId)
   const collected = refs.filter((entry): entry is { name: string; path: string } => Boolean(entry))
   const snapshotDump = path.join(outboxDir, 'debug_snapshot.dmp')
@@ -2759,9 +3145,8 @@ function collectDebugSessionArtifactRefs(taskId: string, refs: Array<{ name: str
 
 function readCdbCommandBatch(args: Record<string, unknown>): string[] {
   const rawCommands = readStringArrayArg(args, 'commands', 'cdb_commands')
-  const fallbackCommand = typeof args.command === 'string' && args.command.trim().length > 0
-    ? [args.command]
-    : []
+  const fallbackCommand =
+    typeof args.command === 'string' && args.command.trim().length > 0 ? [args.command] : []
   const commands = (rawCommands.length > 0 ? rawCommands : fallbackCommand)
     .map((command) => command.replace(/\0/g, '').trim())
     .filter((command) => command.length > 0)
@@ -2915,7 +3300,11 @@ function readTelemetryProfiles(args: Record<string, unknown>): string[] {
   return Array.from(new Set(expanded.map((profile) => profile.trim()).filter(Boolean)))
 }
 
-function buildEventLogSnapshotScript(startedAt: string, outputPath: string, maxEvents: number): string {
+function buildEventLogSnapshotScript(
+  startedAt: string,
+  outputPath: string,
+  maxEvents: number
+): string {
   const logs = [
     'System',
     'Application',
@@ -2937,7 +3326,13 @@ function buildEventLogSnapshotScript(startedAt: string, outputPath: string, maxE
   ].join('; ')
 }
 
-function runRuntimeCommand(taskId: string, command: string, args: string[], timeoutMs: number, cwd?: string): Promise<{ code: number | null; stdout: string; stderr: string; error?: string }> {
+function runRuntimeCommand(
+  taskId: string,
+  command: string,
+  args: string[],
+  timeoutMs: number,
+  cwd?: string
+): Promise<{ code: number | null; stdout: string; stderr: string; error?: string }> {
   return new Promise((resolve) => {
     const child = spawnProcess(command, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -2949,19 +3344,31 @@ function runRuntimeCommand(taskId: string, command: string, args: string[], time
     let stdout = ''
     let stderr = ''
     let settled = false
-    const finish = (result: { code: number | null; stdout: string; stderr: string; error?: string }) => {
+    const finish = (result: {
+      code: number | null
+      stdout: string
+      stderr: string
+      error?: string
+    }) => {
       if (settled) return
       settled = true
       resolve(result)
     }
-    child.stdout.on('data', (data) => { stdout = appendCapped(stdout, data, DEBUG_STDOUT_LIMIT) })
-    child.stderr.on('data', (data) => { stderr = appendCapped(stderr, data, DEBUG_STDERR_LIMIT) })
+    child.stdout.on('data', (data) => {
+      stdout = appendCapped(stdout, data, DEBUG_STDOUT_LIMIT)
+    })
+    child.stderr.on('data', (data) => {
+      stderr = appendCapped(stderr, data, DEBUG_STDERR_LIMIT)
+    })
     child.on('error', (error) => finish({ code: null, stdout, stderr, error: error.message }))
     child.on('close', (code) => finish({ code, stdout, stderr }))
   })
 }
 
-async function runTelemetrySampleWindow(task: ExecuteTask, timeoutSec: number): Promise<Record<string, unknown> | null> {
+async function runTelemetrySampleWindow(
+  task: ExecuteTask,
+  timeoutSec: number
+): Promise<Record<string, unknown> | null> {
   const samplePath = resolveTaskSamplePath(task.taskId)
   const hasSample = fs.existsSync(samplePath)
   if (!hasSample) {
@@ -2971,7 +3378,13 @@ async function runTelemetrySampleWindow(task: ExecuteTask, timeoutSec: number): 
     return null
   }
   const commandArgs = readStringArrayArg(task.args, 'arguments', 'args', 'sample_args')
-  const result = await runRuntimeCommand(task.taskId, samplePath, commandArgs, Math.max(1000, timeoutSec * 1000), path.dirname(samplePath))
+  const result = await runRuntimeCommand(
+    task.taskId,
+    samplePath,
+    commandArgs,
+    Math.max(1000, timeoutSec * 1000),
+    path.dirname(samplePath)
+  )
   return {
     executable: samplePath,
     arguments: commandArgs,
@@ -2985,7 +3398,14 @@ async function runTelemetrySampleWindow(task: ExecuteTask, timeoutSec: number): 
 function buildProcDumpArgs(
   task: ExecuteTask,
   outboxDir: string
-): { args: string[]; samplePath?: string; mode: string; dumpPath?: string; cwd?: string; error?: string } {
+): {
+  args: string[]
+  samplePath?: string
+  mode: string
+  dumpPath?: string
+  cwd?: string
+  error?: string
+} {
   const mode = String(task.args.mode || 'launch_crash')
   const dumpType = String(task.args.dump_type || 'full') === 'mini' ? '-mm' : '-ma'
   const extraArgs = readStringArrayArg(task.args, 'arguments', 'sample_args')
@@ -2995,7 +3415,10 @@ function buildProcDumpArgs(
     if (!pid || pid < 1) {
       return { args: [], mode, error: 'pid_snapshot mode requires args.pid.' }
     }
-    const dumpPath = path.join(outboxDir, safeDumpFilename(task.args.dump_name, `procdump_pid_${pid}.dmp`))
+    const dumpPath = path.join(
+      outboxDir,
+      safeDumpFilename(task.args.dump_name, `procdump_pid_${pid}.dmp`)
+    )
     return {
       args: ['-accepteula', dumpType, String(Math.trunc(pid)), dumpPath],
       mode,
@@ -3015,7 +3438,10 @@ function buildProcDumpArgs(
     args.push('-e', '1')
   } else if (mode === 'launch_timeout') {
     const seconds = Math.max(1, Math.min(3600, Math.trunc(readNumberArg(task.args, 'seconds', 30))))
-    const dumpCount = Math.max(1, Math.min(64, Math.trunc(readNumberArg(task.args, 'max_dumps', 1))))
+    const dumpCount = Math.max(
+      1,
+      Math.min(64, Math.trunc(readNumberArg(task.args, 'max_dumps', 1)))
+    )
     args.push('-s', String(seconds), '-n', String(dumpCount))
   }
   args.push('-x', outboxDir, samplePath, ...extraArgs)
@@ -3031,7 +3457,7 @@ export async function executeProcDumpCapture(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const procdumpPath = findProcDumpPath()
   if (!procdumpPath) {
@@ -3039,7 +3465,8 @@ export async function executeProcDumpCapture(
       status: 'setup_required',
       failure_category: 'missing_procdump',
       errors: ['Sysinternals ProcDump was not found in the runtime environment.'],
-      install_hint: 'Place procdump64.exe or procdump.exe in C:\\rikune-tools\\Sysinternals or another configured runtime tool cache path.',
+      install_hint:
+        'Place procdump64.exe or procdump.exe in C:\\rikune-tools\\Sysinternals or another configured runtime tool cache path.',
     })
     return {
       ok: false,
@@ -3081,8 +3508,12 @@ export async function executeProcDumpCapture(
     registerProcess(task.taskId, child)
     let stdout = ''
     let stderr = ''
-    child.stdout.on('data', (data) => { stdout = appendCapped(stdout, data, DEBUG_STDOUT_LIMIT) })
-    child.stderr.on('data', (data) => { stderr = appendCapped(stderr, data, DEBUG_STDERR_LIMIT) })
+    child.stdout.on('data', (data) => {
+      stdout = appendCapped(stdout, data, DEBUG_STDOUT_LIMIT)
+    })
+    child.stderr.on('data', (data) => {
+      stderr = appendCapped(stderr, data, DEBUG_STDERR_LIMIT)
+    })
     child.on('error', (error) => {
       const artifact = writeProcDumpCaptureArtifact(task, {
         status: 'failed',
@@ -3146,7 +3577,9 @@ export async function executeProcDumpCapture(
           artifacts: artifactRefs,
           metrics: { tool: task.tool },
         },
-        errors: ok ? undefined : [`ProcDump exited with code ${code} and no dump files were found.`],
+        errors: ok
+          ? undefined
+          : [`ProcDump exited with code ${code} and no dump files were found.`],
         logs: [...logs, stdout, stderr].filter(Boolean),
         artifactRefs,
       })
@@ -3158,13 +3591,19 @@ export async function executeTelemetryCapture(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const startedAt = new Date().toISOString()
   const outboxDir = ensureTaskOutboxDir(task.taskId)
   const profiles = readTelemetryProfiles(task.args)
-  const timeoutSec = Math.max(0, Math.min(3600, Math.trunc(readNumberArg(task.args, 'capture_seconds', 30))))
-  const maxEvents = Math.max(1, Math.min(20_000, Math.trunc(readNumberArg(task.args, 'max_events', 1000))))
+  const timeoutSec = Math.max(
+    0,
+    Math.min(3600, Math.trunc(readNumberArg(task.args, 'capture_seconds', 30)))
+  )
+  const maxEvents = Math.max(
+    1,
+    Math.min(20_000, Math.trunc(readNumberArg(task.args, 'max_events', 1000)))
+  )
   const includeCleanup = task.args.include_cleanup !== false
 
   if (process.platform !== 'win32') {
@@ -3196,7 +3635,9 @@ export async function executeTelemetryCapture(
     if (profile === 'procmon') {
       const procmonPath = findProcMonPath()
       if (!procmonPath) {
-        warnings.push('ProcMon was requested but Procmon64.exe/Procmon.exe was not found in the runtime tool cache.')
+        warnings.push(
+          'ProcMon was requested but Procmon64.exe/Procmon.exe was not found in the runtime tool cache.'
+        )
         profileResults.push({ profile, status: 'setup_required', missing_tool: 'procmon' })
         continue
       }
@@ -3208,9 +3649,20 @@ export async function executeTelemetryCapture(
         15_000,
         outboxDir
       )
-      profileResults.push({ profile, status: start.code === 0 ? 'started' : 'start_submitted', artifact: pmlPath, start })
+      profileResults.push({
+        profile,
+        status: start.code === 0 ? 'started' : 'start_submitted',
+        artifact: pmlPath,
+        start,
+      })
       cleanupCommands.push(async () => {
-        const stop = await runRuntimeCommand(task.taskId, procmonPath, ['/AcceptEula', '/Terminate'], 20_000, outboxDir)
+        const stop = await runRuntimeCommand(
+          task.taskId,
+          procmonPath,
+          ['/AcceptEula', '/Terminate'],
+          20_000,
+          outboxDir
+        )
         return { profile, action: 'terminate', result: stop }
       })
       continue
@@ -3219,17 +3671,37 @@ export async function executeTelemetryCapture(
     if (profile === 'sysmon') {
       const sysmonPath = findSysmonPath()
       if (!sysmonPath) {
-        warnings.push('Sysmon was requested but Sysmon64.exe/Sysmon.exe was not found in the runtime tool cache.')
+        warnings.push(
+          'Sysmon was requested but Sysmon64.exe/Sysmon.exe was not found in the runtime tool cache.'
+        )
         profileResults.push({ profile, status: 'setup_required', missing_tool: 'sysmon' })
         continue
       }
-      const install = await runRuntimeCommand(task.taskId, sysmonPath, ['-accepteula', '-i'], 30_000, outboxDir)
-      profileResults.push({ profile, status: install.code === 0 ? 'started' : 'start_failed', install })
+      const install = await runRuntimeCommand(
+        task.taskId,
+        sysmonPath,
+        ['-accepteula', '-i'],
+        30_000,
+        outboxDir
+      )
+      profileResults.push({
+        profile,
+        status: install.code === 0 ? 'started' : 'start_failed',
+        install,
+      })
       if (install.error || (install.code !== 0 && install.stderr)) {
-        warnings.push('Sysmon install may have failed; see telemetry_capture.json for command output.')
+        warnings.push(
+          'Sysmon install may have failed; see telemetry_capture.json for command output.'
+        )
       }
       cleanupCommands.push(async () => {
-        const uninstall = await runRuntimeCommand(task.taskId, sysmonPath, ['-u', 'force'], 30_000, outboxDir)
+        const uninstall = await runRuntimeCommand(
+          task.taskId,
+          sysmonPath,
+          ['-u', 'force'],
+          30_000,
+          outboxDir
+        )
         return { profile, action: 'uninstall', result: uninstall }
       })
       continue
@@ -3238,9 +3710,8 @@ export async function executeTelemetryCapture(
     if (profile === 'etw_process' || profile === 'etw_dns') {
       const sessionName = `Rikune_${profile}_${task.taskId.replace(/[^A-Za-z0-9]/g, '').slice(0, 16)}`
       const etlPath = path.join(outboxDir, `${profile}.etl`)
-      const provider = profile === 'etw_dns'
-        ? 'Microsoft-Windows-DNS-Client'
-        : 'Microsoft-Windows-Kernel-Process'
+      const provider =
+        profile === 'etw_dns' ? 'Microsoft-Windows-DNS-Client' : 'Microsoft-Windows-Kernel-Process'
       const start = await runRuntimeCommand(
         task.taskId,
         'logman.exe',
@@ -3248,19 +3719,38 @@ export async function executeTelemetryCapture(
         15_000,
         outboxDir
       )
-      profileResults.push({ profile, status: start.code === 0 ? 'started' : 'start_failed', provider, session_name: sessionName, artifact: etlPath, start })
+      profileResults.push({
+        profile,
+        status: start.code === 0 ? 'started' : 'start_failed',
+        provider,
+        session_name: sessionName,
+        artifact: etlPath,
+        start,
+      })
       if (start.error || start.code !== 0) {
-        warnings.push(`${profile} logman start failed or is unavailable; see telemetry_capture.json for command output.`)
+        warnings.push(
+          `${profile} logman start failed or is unavailable; see telemetry_capture.json for command output.`
+        )
       }
       cleanupCommands.push(async () => {
-        const stop = await runRuntimeCommand(task.taskId, 'logman.exe', ['stop', sessionName, '-ets'], 15_000, outboxDir)
+        const stop = await runRuntimeCommand(
+          task.taskId,
+          'logman.exe',
+          ['stop', sessionName, '-ets'],
+          15_000,
+          outboxDir
+        )
         return { profile, action: 'logman_stop', result: stop }
       })
       continue
     }
 
     if (profile === 'powershell_eventlog') {
-      profileResults.push({ profile, status: 'scheduled', artifact: path.join(outboxDir, 'eventlog_snapshot.json') })
+      profileResults.push({
+        profile,
+        status: 'scheduled',
+        artifact: path.join(outboxDir, 'eventlog_snapshot.json'),
+      })
       continue
     }
 
@@ -3278,7 +3768,9 @@ export async function executeTelemetryCapture(
       cleanupResults.push(await cleanup())
     }
   } else if (cleanupCommands.length > 0) {
-    warnings.push('Telemetry cleanup was disabled; collector state may remain dirty until runtime rollback or manual cleanup.')
+    warnings.push(
+      'Telemetry cleanup was disabled; collector state may remain dirty until runtime rollback or manual cleanup.'
+    )
   }
 
   if (profiles.includes('powershell_eventlog') || profiles.includes('sysmon')) {
@@ -3348,7 +3840,7 @@ export async function executeDebugSession(
   task: ExecuteTask,
   log: (msg: string) => void,
   logs: string[],
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ): Promise<ExecuteResult> {
   const cdbPath = findCdbPath()
   if (!cdbPath) {
@@ -3365,7 +3857,9 @@ export async function executeDebugSession(
     return {
       ok: false,
       taskId: task.taskId,
-      errors: [`Debug session tools require Windows Debugger (cdb.exe), which was not found in the runtime environment.`],
+      errors: [
+        `Debug session tools require Windows Debugger (cdb.exe), which was not found in the runtime environment.`,
+      ],
       logs,
       artifactRefs: collectDebugSessionArtifactRefs(task.taskId, [transcript]),
     }
@@ -3402,7 +3896,13 @@ export async function executeDebugSession(
       cdbArgs = ['-c', `bm ${address}; g`, '-c', 'q', samplePath]
       break
     case 'debug.session.snapshot':
-      cdbArgs = ['-c', `.dump /ma \"${path.join(config.runtime.outbox, task.taskId, 'debug_snapshot.dmp')}\"`, '-c', 'q', samplePath]
+      cdbArgs = [
+        '-c',
+        `.dump /ma \"${path.join(config.runtime.outbox, task.taskId, 'debug_snapshot.dmp')}\"`,
+        '-c',
+        'q',
+        samplePath,
+      ]
       break
     case 'debug.session.watch':
       cdbArgs = ['-c', `ba r4 ${expression}; g`, '-c', 'q', samplePath]
@@ -3418,12 +3918,21 @@ export async function executeDebugSession(
   log(`Spawning debug session tool=${task.tool} with cdb`)
 
   return new Promise<ExecuteResult>((resolve) => {
-    const child = spawnProcess(cdbPath, cdbArgs, { stdio: ['ignore', 'pipe', 'pipe'], timeout: task.timeoutMs, cwd: path.dirname(samplePath), windowsHide: true })
+    const child = spawnProcess(cdbPath, cdbArgs, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: task.timeoutMs,
+      cwd: path.dirname(samplePath),
+      windowsHide: true,
+    })
     registerProcess(task.taskId, child)
     let stdout = ''
     let stderr = ''
-    child.stdout.on('data', (d) => { stdout += d.toString() })
-    child.stderr.on('data', (d) => { stderr += d.toString() })
+    child.stdout.on('data', (d) => {
+      stdout += d.toString()
+    })
+    child.stderr.on('data', (d) => {
+      stderr += d.toString()
+    })
     child.on('error', (e) => {
       const transcript = writeDebugSessionTranscript(task, {
         status: 'failed',

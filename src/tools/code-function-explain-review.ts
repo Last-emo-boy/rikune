@@ -70,7 +70,9 @@ export const codeFunctionExplainReviewInputSchema = z
     include_resolved: z
       .boolean()
       .default(true)
-      .describe('Include already resolved functions so the external LLM can explain stable and unresolved ones together'),
+      .describe(
+        'Include already resolved functions so the external LLM can explain stable and unresolved ones together'
+      ),
     analysis_goal: z
       .string()
       .min(1)
@@ -90,11 +92,15 @@ export const codeFunctionExplainReviewInputSchema = z
     evidence_session_tag: z
       .string()
       .optional()
-      .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
+      .describe(
+        'Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'
+      ),
     persist_artifact: z
       .boolean()
       .default(true)
-      .describe('Persist the prepare bundle artifact before requesting external explanation review'),
+      .describe(
+        'Persist the prepare bundle artifact before requesting external explanation review'
+      ),
     auto_apply: z
       .boolean()
       .default(true)
@@ -147,10 +153,13 @@ export const codeFunctionExplainReviewInputSchema = z
       .optional()
       .describe('Optional extra system prompt for the client-mediated explanation review'),
   })
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
-  })
+  .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
 
 export const codeFunctionExplainReviewOutputSchema = z.object({
   ok: z.boolean(),
@@ -306,11 +315,12 @@ export function createCodeFunctionExplainReviewHandler(
     dependencies?.prepareHandler ||
     createCodeFunctionExplainPrepareHandler(workspaceManager, database, cacheManager)
   const applyHandler =
-    dependencies?.applyHandler ||
-    createCodeFunctionExplainApplyHandler(workspaceManager, database)
+    dependencies?.applyHandler || createCodeFunctionExplainApplyHandler(workspaceManager, database)
   const samplingRequester =
     dependencies?.samplingRequester ||
-    (mcpServer ? (params: CreateMessageRequest['params']) => mcpServer.createMessage(params) : undefined)
+    (mcpServer
+      ? (params: CreateMessageRequest['params']) => mcpServer.createMessage(params)
+      : undefined)
   const clientCapabilitiesProvider =
     dependencies?.clientCapabilitiesProvider ||
     (mcpServer ? () => mcpServer.getClientCapabilities() : undefined)
@@ -461,7 +471,7 @@ export function createCodeFunctionExplainReviewHandler(
         }
       }
 
-      const samplingResult = await samplingRequester!(buildSamplingRequest(input, taskPrompt))
+      const samplingResult = await samplingRequester(buildSamplingRequest(input, taskPrompt))
       const responseText = extractTextBlocks(samplingResult)
       const samplingModel = (samplingResult as any)?.model || null
       const stopReason = (samplingResult as any)?.stopReason || null

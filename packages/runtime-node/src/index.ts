@@ -31,12 +31,19 @@ function quotePowerShellString(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
 }
 
-async function runPowerShellBestEffort(command: string, timeoutMs: number): Promise<{ code: number | null; stdout: string; stderr: string }> {
+async function runPowerShellBestEffort(
+  command: string,
+  timeoutMs: number
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command], {
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+    const child = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+      {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
+    )
     let stdout = ''
     let stderr = ''
     const timeout = setTimeout(() => {
@@ -65,18 +72,22 @@ async function applyWindowsSandboxDefenderExclusions(): Promise<void> {
     return
   }
   if (process.env.RUNTIME_APPLY_DEFENDER_EXCLUSIONS === 'false') {
-    logger.info('Runtime Defender exclusion setup disabled by RUNTIME_APPLY_DEFENDER_EXCLUSIONS=false')
+    logger.info(
+      'Runtime Defender exclusion setup disabled by RUNTIME_APPLY_DEFENDER_EXCLUSIONS=false'
+    )
     return
   }
 
-  const candidatePaths = Array.from(new Set([
-    config.runtime.inbox,
-    config.runtime.outbox,
-    'C:\\rikune-workers',
-  ].filter(Boolean)))
+  const candidatePaths = Array.from(
+    new Set([config.runtime.inbox, config.runtime.outbox, 'C:\\rikune-workers'].filter(Boolean))
+  )
 
   try {
-    await Promise.all(candidatePaths.map((candidatePath) => fs.mkdir(candidatePath, { recursive: true }).catch(() => undefined)))
+    await Promise.all(
+      candidatePaths.map((candidatePath) =>
+        fs.mkdir(candidatePath, { recursive: true }).catch(() => undefined)
+      )
+    )
   } catch {
     // Directory creation is best-effort; Add-MpPreference below checks path existence.
   }
@@ -97,18 +108,24 @@ async function applyWindowsSandboxDefenderExclusions(): Promise<void> {
   ].join('; ')
   const result = await runPowerShellBestEffort(command, 15_000)
   if (result.code === 0) {
-    logger.info({
-      paths: candidatePaths,
-      stdout: result.stdout.trim(),
-    }, 'Completed Windows Defender exclusion setup for runtime sandbox paths')
+    logger.info(
+      {
+        paths: candidatePaths,
+        stdout: result.stdout.trim(),
+      },
+      'Completed Windows Defender exclusion setup for runtime sandbox paths'
+    )
     return
   }
-  logger.warn({
-    paths: candidatePaths,
-    code: result.code,
-    stderr: result.stderr.trim(),
-    stdout: result.stdout.trim(),
-  }, 'Failed to apply Windows Defender exclusions; continuing runtime startup')
+  logger.warn(
+    {
+      paths: candidatePaths,
+      code: result.code,
+      stderr: result.stderr.trim(),
+      stdout: result.stdout.trim(),
+    },
+    'Failed to apply Windows Defender exclusions; continuing runtime startup'
+  )
 }
 
 async function main() {
@@ -118,9 +135,13 @@ async function main() {
     const isolated = await isIsolatedEnvironment()
     if (!isolated) {
       if (process.env.ALLOW_UNSAFE_RUNTIME === 'true') {
-        logger.warn('ALLOW_UNSAFE_RUNTIME is set; continuing without verified isolation. THIS IS DANGEROUS.')
+        logger.warn(
+          'ALLOW_UNSAFE_RUNTIME is set; continuing without verified isolation. THIS IS DANGEROUS.'
+        )
       } else {
-        logger.error('Runtime node is configured for sandbox mode but isolation could not be verified. Refusing to start. Set ALLOW_UNSAFE_RUNTIME=true only for development.')
+        logger.error(
+          'Runtime node is configured for sandbox mode but isolation could not be verified. Refusing to start. Set ALLOW_UNSAFE_RUNTIME=true only for development.'
+        )
         process.exit(1)
       }
     }
@@ -139,14 +160,20 @@ async function main() {
   })
 
   server.listen(config.server.port, config.server.host, () => {
-    logger.info({ host: config.server.host, port: config.server.port }, 'Runtime HTTP server listening')
+    logger.info(
+      { host: config.server.host, port: config.server.port },
+      'Runtime HTTP server listening'
+    )
   })
 
   // Memory watchdog (A4.5)
   const memoryWatchdogInterval = setInterval(() => {
     const rss = process.memoryUsage().rss
     if (rss > config.runtime.maxRssBytes) {
-      logger.error({ rss, maxRss: config.runtime.maxRssBytes }, 'Memory limit exceeded; exiting to allow restart')
+      logger.error(
+        { rss, maxRss: config.runtime.maxRssBytes },
+        'Memory limit exceeded; exiting to allow restart'
+      )
       clearInterval(memoryWatchdogInterval)
       process.exit(1)
     }
@@ -161,12 +188,21 @@ async function main() {
       await fs.mkdir(path.dirname(config.runtime.readyFile), { recursive: true })
       await fs.writeFile(
         config.runtime.readyFile,
-        JSON.stringify({ endpoint, host: endpointHost, port: config.server.port, pid: process.pid, readyAt: new Date().toISOString() }),
-        'utf-8',
+        JSON.stringify({
+          endpoint,
+          host: endpointHost,
+          port: config.server.port,
+          pid: process.pid,
+          readyAt: new Date().toISOString(),
+        }),
+        'utf-8'
       )
       logger.info({ readyFile: config.runtime.readyFile, endpoint }, 'Wrote runtime ready file')
     } catch (err) {
-      logger.warn({ err, readyFile: config.runtime.readyFile }, 'Failed to write runtime ready file')
+      logger.warn(
+        { err, readyFile: config.runtime.readyFile },
+        'Failed to write runtime ready file'
+      )
     }
   }
 

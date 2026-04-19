@@ -1042,14 +1042,17 @@
               <code>auto-sandbox</code> for Windows-native analyzers. Runtime execution starts
               through explicit <code>runtime.debug.session.*</code> tools, and runtime-side tool
               readiness is checked with <code>dynamic.toolkit.status</code>; connecting an MCP client
-              alone does not execute samples.</span
+              alone does not execute samples. <code>sandbox.execute</code> reports
+              <code>execution_semantics</code> for live Sandbox, live Hyper-V, safe simulation, or
+              emulation.</span
             >
             <span data-lang-zh
               ><strong>推荐实践：</strong>使用 <code>static</code> Docker profile 进行安全离线分析；
               只有在 Windows Host Agent / Windows Sandbox 或 Hyper-V VM 运行时就绪时才使用
               <code>hybrid</code>；<code>auto-sandbox</code> 仅适用于 Windows 原生 analyzer。运行时执行由显式
               <code>runtime.debug.session.*</code> 工具触发，runtime 内工具就绪状态由
-              <code>dynamic.toolkit.status</code> 查询；不会因为 MCP 客户端连接而自动执行样本。</span
+              <code>dynamic.toolkit.status</code> 查询；不会因为 MCP 客户端连接而自动执行样本。
+              <code>sandbox.execute</code> 会用 <code>execution_semantics</code> 标明 live Sandbox、live Hyper-V、safe simulation 或 emulation。</span
             >
           </p>
         </div>

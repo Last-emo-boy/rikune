@@ -15,10 +15,24 @@ const pandaPlugin: Plugin = {
   description: 'PANDA record/replay analysis for dynamic binary inspection',
   version: '1.0.0',
   configSchema: [
-    { envVar: 'PANDA_PYTHON', description: 'Python binary with PANDA installed', required: false, defaultValue: '/usr/local/bin/python3' },
+    {
+      envVar: 'PANDA_PYTHON',
+      description: 'Python binary with PANDA installed',
+      required: false,
+      defaultValue: '/usr/local/bin/python3',
+    },
   ],
   systemDeps: [
-    { type: 'python', name: 'pandare', importName: 'pandare', required: false, description: 'PANDA record/replay analysis', dockerInstall: 'pip install pandare', dockerFeature: 'dynamic-python', extraEnv: { PANDA_PYTHON: '/usr/local/bin/python3' } },
+    {
+      type: 'python',
+      name: 'pandare',
+      importName: 'pandare',
+      required: false,
+      description: 'PANDA record/replay analysis',
+      dockerInstall: 'pip install pandare',
+      dockerFeature: 'dynamic-python',
+      extraEnv: { PANDA_PYTHON: '/usr/local/bin/python3' },
+    },
   ],
   register(server, deps) {
     const { workspaceManager: wm, database: db } = deps

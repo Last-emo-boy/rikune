@@ -7,10 +7,15 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, runPythonJson,
-  persistBackendArtifact, buildMetrics,
-  resolveSampleFile, resolvePythonModuleBackend,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  runPythonJson,
+  persistBackendArtifact,
+  buildMetrics,
+  resolveSampleFile,
+  resolvePythonModuleBackend,
   buildDynamicSetupRequired,
 } from '../../docker-shared.js'
 
@@ -18,27 +23,41 @@ const TOOL_NAME = 'speakeasy.api_trace'
 
 export const speakeasyApiTraceInputSchema = z.object({
   sample_id: z.string().describe('Target sample identifier.'),
-  filter_modules: z.array(z.string()).optional().describe('Only include API calls from these modules (e.g. ["kernel32","ntdll"]).'),
-  filter_apis: z.array(z.string()).optional().describe('Only include API calls matching these names (substring match).'),
-  timeout_sec: z.number().int().min(5).max(300).default(60).describe('Emulation timeout in seconds.'),
+  filter_modules: z
+    .array(z.string())
+    .optional()
+    .describe('Only include API calls from these modules (e.g. ["kernel32","ntdll"]).'),
+  filter_apis: z
+    .array(z.string())
+    .optional()
+    .describe('Only include API calls matching these names (substring match).'),
+  timeout_sec: z
+    .number()
+    .int()
+    .min(5)
+    .max(300)
+    .default(60)
+    .describe('Emulation timeout in seconds.'),
   persist_artifact: z.boolean().default(true).describe('Persist trace as an artifact.'),
   session_tag: z.string().optional().describe('Optional artifact session tag.'),
 })
 
 export const speakeasyApiTraceOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    total_apis: z.number().optional(),
-    filtered_count: z.number().optional(),
-    api_trace: z.array(z.any()).optional(),
-    unique_apis: z.array(z.string()).optional(),
-    module_histogram: z.record(z.number()).optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      total_apis: z.number().optional(),
+      filtered_count: z.number().optional(),
+      api_trace: z.array(z.any()).optional(),
+      unique_apis: z.array(z.string()).optional(),
+      module_histogram: z.record(z.number()).optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
@@ -102,7 +121,7 @@ print(json.dumps({
 
 export function createSpeakeasyApiTraceHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -110,22 +129,48 @@ export function createSpeakeasyApiTraceHandler(
       const input = speakeasyApiTraceInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolvePythonModuleBackend({ envPythonPath: process.env.SPEAKEASY_PYTHON, moduleNames: ['speakeasy'], distributionNames: ['speakeasy-emulator'] })
+      const backend = resolvePythonModuleBackend({
+        envPythonPath: process.env.SPEAKEASY_PYTHON,
+        moduleNames: ['speakeasy'],
+        distributionNames: ['speakeasy-emulator'],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildDynamicSetupRequired(backend || { name: 'speakeasy', available: false, error: 'speakeasy-emulator not installed' } as any, startTime, TOOL_NAME)
+        return buildDynamicSetupRequired(
+          backend ||
+            ({
+              name: 'speakeasy',
+              available: false,
+              error: 'speakeasy-emulator not installed',
+            } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const result = await runPythonJson(
         backend.path,
         SPEAKEASY_TRACE_SCRIPT,
-        { sample_path: samplePath, timeout_sec: input.timeout_sec, filter_modules: input.filter_modules, filter_apis: input.filter_apis },
-        (input.timeout_sec + 30) * 1000,
+        {
+          sample_path: samplePath,
+          timeout_sec: input.timeout_sec,
+          filter_modules: input.filter_modules,
+          filter_apis: input.filter_apis,
+        },
+        (input.timeout_sec + 30) * 1000
       )
 
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'speakeasy', 'api_trace', JSON.stringify(result.parsed, null, 2), { extension: 'json', mime: 'application/json', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'speakeasy',
+          'api_trace',
+          JSON.stringify(result.parsed, null, 2),
+          { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -151,7 +196,11 @@ export function createSpeakeasyApiTraceHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

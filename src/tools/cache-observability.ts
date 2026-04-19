@@ -30,11 +30,7 @@ export async function lookupCachedResult(
 }
 
 export function formatCacheWarning(metadata: CacheHitMetadata): string {
-  const parts = [
-    `tier=${metadata.tier}`,
-    `key=${metadata.key}`,
-    `hit_at=${metadata.fetchedAt}`,
-  ]
+  const parts = [`tier=${metadata.tier}`, `key=${metadata.key}`, `hit_at=${metadata.fetchedAt}`]
 
   if (metadata.createdAt) {
     parts.push(`created_at=${metadata.createdAt}`)
@@ -48,4 +44,3 @@ export function formatCacheWarning(metadata: CacheHitMetadata): string {
 
   return `Cache details: ${parts.join(', ')}`
 }
-

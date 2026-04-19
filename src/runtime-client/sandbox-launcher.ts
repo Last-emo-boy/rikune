@@ -45,7 +45,13 @@ export function createSandboxLauncher(): SandboxLauncher {
       await fs.mkdir(path.join(sandboxDir, 'inbox'), { recursive: true })
       await fs.mkdir(path.join(sandboxDir, 'outbox'), { recursive: true })
 
-      const runtimeEntryHost = path.resolve(process.cwd(), 'packages', 'runtime-node', 'dist', 'index.js')
+      const runtimeEntryHost = path.resolve(
+        process.cwd(),
+        'packages',
+        'runtime-node',
+        'dist',
+        'index.js'
+      )
       const wsbPath = path.join(sandboxDir, 'runtime.wsb')
       await writeWsbConfig(wsbPath, sandboxDir, runtimeEntryHost)
 
@@ -53,10 +59,15 @@ export function createSandboxLauncher(): SandboxLauncher {
       // but if python is not installed on the host, dynamic tools will fail.
       try {
         const { execFileSync } = await import('child_process')
-        const pyVer = execFileSync('python', ['--version'], { encoding: 'utf-8', timeout: 3000 }).trim()
+        const pyVer = execFileSync('python', ['--version'], {
+          encoding: 'utf-8',
+          timeout: 3000,
+        }).trim()
         logger.debug({ pythonVersion: pyVer }, 'Host Python detected for sandbox runtime')
       } catch {
-        logger.warn('Python was not detected on the host. Dynamic tools (Frida, Speakeasy, Qiling) inside Windows Sandbox will likely fail. Install Python and ensure it is in PATH.')
+        logger.warn(
+          'Python was not detected on the host. Dynamic tools (Frida, Speakeasy, Qiling) inside Windows Sandbox will likely fail. Install Python and ensure it is in PATH.'
+        )
       }
 
       logger.info({ sandboxDir, wsbPath }, 'Launching Windows Sandbox runtime')
@@ -102,14 +113,19 @@ export function createSandboxLauncher(): SandboxLauncher {
       healthCheckTimer = setInterval(async () => {
         if (!currentConnection) return
         try {
-          const res = await fetch(`${currentConnection.endpoint}/health`, { signal: AbortSignal.timeout(10_000) })
+          const res = await fetch(`${currentConnection.endpoint}/health`, {
+            signal: AbortSignal.timeout(10_000),
+          })
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          const data = await res.json() as { ok?: boolean }
+          const data = (await res.json()) as { ok?: boolean }
           if (!data.ok) throw new Error('Health check returned not ok')
           consecutiveFailures = 0
         } catch (err) {
           consecutiveFailures++
-          logger.warn({ err, consecutiveFailures, endpoint: currentConnection?.endpoint }, 'Runtime health check failed')
+          logger.warn(
+            { err, consecutiveFailures, endpoint: currentConnection?.endpoint },
+            'Runtime health check failed'
+          )
           if (consecutiveFailures >= unhealthyThreshold) {
             logger.error('Runtime deemed unhealthy; triggering recovery')
             if (options.onUnhealthy) {
@@ -137,7 +153,7 @@ export function createSandboxLauncher(): SandboxLauncher {
 async function writeWsbConfig(
   wsbPath: string,
   sandboxDir: string,
-  runtimeEntryHost: string,
+  runtimeEntryHost: string
 ): Promise<void> {
   const projectRoot = process.cwd()
   const stagedRuntimeEntryHost = await stageRuntimeBundle(projectRoot, sandboxDir, runtimeEntryHost)

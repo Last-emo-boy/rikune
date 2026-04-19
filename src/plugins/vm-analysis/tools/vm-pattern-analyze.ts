@@ -25,7 +25,14 @@ export const vmPatternAnalyzeInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
   function_name: z.string().optional().describe('Specific function name to analyze'),
   function_address: z.string().optional().describe('Specific function address to analyze'),
-  top_n: z.number().int().min(1).max(50).optional().default(10).describe('Number of top VM candidates to analyze in detail'),
+  top_n: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .optional()
+    .default(10)
+    .describe('Number of top VM candidates to analyze in detail'),
 })
 
 export const vmPatternAnalyzeOutputSchema = z.object({
@@ -45,10 +52,7 @@ export const vmPatternAnalyzeToolDefinition: ToolDefinition = {
   outputSchema: vmPatternAnalyzeOutputSchema,
 }
 
-function extractDecompiledFunctions(
-  database: DatabaseManager,
-  sampleId: string
-): DecompiledFunc[] {
+function extractDecompiledFunctions(database: DatabaseManager, sampleId: string): DecompiledFunc[] {
   const functions: DecompiledFunc[] = []
   const evidence = database.findAnalysisEvidenceBySample(sampleId)
   if (!Array.isArray(evidence)) return functions
@@ -57,9 +61,7 @@ function extractDecompiledFunctions(
     const family = entry.evidence_family ?? ''
     if (family === 'function_map' || family === 'decompilation' || family === 'functions') {
       const data =
-        typeof entry.result_json === 'string'
-          ? JSON.parse(entry.result_json)
-          : entry.result_json
+        typeof entry.result_json === 'string' ? JSON.parse(entry.result_json) : entry.result_json
       if (!data) continue
       const fnList =
         (data as Record<string, unknown>).functions ??
@@ -103,15 +105,17 @@ export function createVmPatternAnalyzeHandler(
     if (functions.length === 0) {
       return {
         ok: false,
-        errors: ['No decompiled functions found. Run function_map or code.functions.reconstruct first.'],
+        errors: [
+          'No decompiled functions found. Run function_map or code.functions.reconstruct first.',
+        ],
       }
     }
 
     // Filter to specific function if requested
     if (input.function_name) {
-      functions = functions.filter(f => f.name === input.function_name)
+      functions = functions.filter((f) => f.name === input.function_name)
     } else if (input.function_address) {
-      functions = functions.filter(f => f.address === input.function_address)
+      functions = functions.filter((f) => f.address === input.function_address)
     }
 
     if (functions.length === 0) {
@@ -123,7 +127,7 @@ export function createVmPatternAnalyzeHandler(
 
     // Deep analysis: per-heuristic breakdown
     const detailed = functions
-      .map(fn => ({
+      .map((fn) => ({
         function_name: fn.name,
         address: fn.address,
         score: scoreVMCandidate(fn.decompiled_code),
@@ -140,8 +144,8 @@ export function createVmPatternAnalyzeHandler(
 
     // Component classification
     const topFunctions = detailed
-      .filter(d => d.score.total >= 30)
-      .map(d => functions.find(f => f.name === d.function_name)!)
+      .filter((d) => d.score.total >= 30)
+      .map((d) => functions.find((f) => f.name === d.function_name))
       .filter(Boolean)
     const components = classifyVMComponents(topFunctions)
 
@@ -150,8 +154,8 @@ export function createVmPatternAnalyzeHandler(
       components,
       summary: {
         total_functions: functions.length,
-        vm_candidates: detailed.filter(d => d.score.total >= 60).length,
-        possible_vm: detailed.filter(d => d.score.total >= 30 && d.score.total < 60).length,
+        vm_candidates: detailed.filter((d) => d.score.total >= 60).length,
+        possible_vm: detailed.filter((d) => d.score.total >= 30 && d.score.total < 60).length,
       },
     }
 
@@ -159,8 +163,12 @@ export function createVmPatternAnalyzeHandler(
     const artifacts: ArtifactRef[] = []
     try {
       const ref = await persistStaticAnalysisJsonArtifact(
-        workspaceManager, database, input.sample_id,
-        'vm_pattern_analysis', 'pattern_analysis_result', result
+        workspaceManager,
+        database,
+        input.sample_id,
+        'vm_pattern_analysis',
+        'pattern_analysis_result',
+        result
       )
       artifacts.push(ref)
     } catch {

@@ -16,19 +16,34 @@ export type ConstraintExpr =
   | { kind: 'const'; value: bigint }
   | { kind: 'binop'; op: string; left: ConstraintExpr; right: ConstraintExpr }
   | { kind: 'unary'; op: string; child: ConstraintExpr }
-  | { kind: 'rotate'; dir: 'left' | 'right'; child: ConstraintExpr; bits: ConstraintExpr; width: number }
+  | {
+      kind: 'rotate'
+      dir: 'left' | 'right'
+      child: ConstraintExpr
+      bits: ConstraintExpr
+      width: number
+    }
   | { kind: 'func'; name: string; args: ConstraintExpr[] }
 
 // Constructors
-export function cVar(name: string): ConstraintExpr { return { kind: 'var', name } }
-export function cConst(value: bigint | number): ConstraintExpr { return { kind: 'const', value: BigInt(value) } }
+export function cVar(name: string): ConstraintExpr {
+  return { kind: 'var', name }
+}
+export function cConst(value: bigint | number): ConstraintExpr {
+  return { kind: 'const', value: BigInt(value) }
+}
 export function cBinop(op: string, left: ConstraintExpr, right: ConstraintExpr): ConstraintExpr {
   return { kind: 'binop', op, left, right }
 }
 export function cUnary(op: string, child: ConstraintExpr): ConstraintExpr {
   return { kind: 'unary', op, child }
 }
-export function cRotate(dir: 'left' | 'right', child: ConstraintExpr, bits: ConstraintExpr, width: number): ConstraintExpr {
+export function cRotate(
+  dir: 'left' | 'right',
+  child: ConstraintExpr,
+  bits: ConstraintExpr,
+  width: number
+): ConstraintExpr {
   return { kind: 'rotate', dir, child, bits, width }
 }
 export function cFunc(name: string, args: ConstraintExpr[]): ConstraintExpr {
@@ -44,12 +59,18 @@ export function cFunc(name: string, args: ConstraintExpr[]): ConstraintExpr {
  */
 export function exprToString(e: ConstraintExpr): string {
   switch (e.kind) {
-    case 'var': return e.name
-    case 'const': return `0x${e.value.toString(16)}`
-    case 'binop': return `(${exprToString(e.left)} ${e.op} ${exprToString(e.right)})`
-    case 'unary': return `(${e.op}${exprToString(e.child)})`
-    case 'rotate': return `ROT${e.dir === 'left' ? 'L' : 'R'}(${exprToString(e.child)}, ${exprToString(e.bits)}, ${e.width})`
-    case 'func': return `${e.name}(${e.args.map(exprToString).join(', ')})`
+    case 'var':
+      return e.name
+    case 'const':
+      return `0x${e.value.toString(16)}`
+    case 'binop':
+      return `(${exprToString(e.left)} ${e.op} ${exprToString(e.right)})`
+    case 'unary':
+      return `(${e.op}${exprToString(e.child)})`
+    case 'rotate':
+      return `ROT${e.dir === 'left' ? 'L' : 'R'}(${exprToString(e.child)}, ${exprToString(e.bits)}, ${e.width})`
+    case 'func':
+      return `${e.name}(${e.args.map(exprToString).join(', ')})`
   }
 }
 
@@ -58,8 +79,10 @@ export function exprToString(e: ConstraintExpr): string {
  */
 export function exprToZ3py(e: ConstraintExpr, bitWidth = 32): string {
   switch (e.kind) {
-    case 'var': return e.name
-    case 'const': return `BitVecVal(0x${e.value.toString(16)}, ${bitWidth})`
+    case 'var':
+      return e.name
+    case 'const':
+      return `BitVecVal(0x${e.value.toString(16)}, ${bitWidth})`
     case 'binop': {
       const l = exprToZ3py(e.left, bitWidth)
       const r = exprToZ3py(e.right, bitWidth)
@@ -74,14 +97,14 @@ export function exprToZ3py(e: ConstraintExpr, bitWidth = 32): string {
         '|': `${l} | ${r}`,
         '<<': `${l} << ${r}`,
         '>>': `LShR(${l}, ${r})`,
-        'ADD': `${l} + ${r}`,
-        'SUB': `${l} - ${r}`,
-        'MUL': `${l} * ${r}`,
-        'XOR': `${l} ^ ${r}`,
-        'AND': `${l} & ${r}`,
-        'OR': `${l} | ${r}`,
-        'SHL': `${l} << ${r}`,
-        'SHR': `LShR(${l}, ${r})`,
+        ADD: `${l} + ${r}`,
+        SUB: `${l} - ${r}`,
+        MUL: `${l} * ${r}`,
+        XOR: `${l} ^ ${r}`,
+        AND: `${l} & ${r}`,
+        OR: `${l} | ${r}`,
+        SHL: `${l} << ${r}`,
+        SHR: `LShR(${l}, ${r})`,
       }
       return opMap[e.op] ?? `${l} ${e.op} ${r}`
     }
@@ -98,7 +121,7 @@ export function exprToZ3py(e: ConstraintExpr, bitWidth = 32): string {
       return `RotateRight(${c}, ${b})`
     }
     case 'func': {
-      const args = e.args.map(a => exprToZ3py(a, bitWidth)).join(', ')
+      const args = e.args.map((a) => exprToZ3py(a, bitWidth)).join(', ')
       return `${e.name}(${args})`
     }
   }
@@ -139,7 +162,26 @@ export function parseExprString(s: string): ConstraintExpr {
   if (s.startsWith('(') && s.endsWith(')')) {
     const inner = s.slice(1, -1)
     // Find the operator at the top level
-    const ops = ['+', '-', '*', '/', '%', '^', '&', '|', '<<', '>>', 'ADD', 'SUB', 'MUL', 'XOR', 'AND', 'OR', 'SHL', 'SHR']
+    const ops = [
+      '+',
+      '-',
+      '*',
+      '/',
+      '%',
+      '^',
+      '&',
+      '|',
+      '<<',
+      '>>',
+      'ADD',
+      'SUB',
+      'MUL',
+      'XOR',
+      'AND',
+      'OR',
+      'SHL',
+      'SHR',
+    ]
     let depth = 0
     for (let i = 0; i < inner.length; i++) {
       if (inner[i] === '(') depth++
@@ -199,18 +241,21 @@ export function extractConstraints(trace: ExecutionStep[]): Constraint[] {
  * Generate Z3 Python script for solving the constraints.
  */
 export function constraintsToZ3Script(constraints: Constraint[], bitWidth = 32): string {
-  const lines: string[] = [
-    'from z3 import *',
-    '',
-  ]
+  const lines: string[] = ['from z3 import *', '']
 
   // Collect all variables
   const vars = new Set<string>()
   function collectVars(e: ConstraintExpr): void {
     if (e.kind === 'var') vars.add(e.name)
-    if (e.kind === 'binop') { collectVars(e.left); collectVars(e.right) }
+    if (e.kind === 'binop') {
+      collectVars(e.left)
+      collectVars(e.right)
+    }
     if (e.kind === 'unary') collectVars(e.child)
-    if (e.kind === 'rotate') { collectVars(e.child); collectVars(e.bits) }
+    if (e.kind === 'rotate') {
+      collectVars(e.child)
+      collectVars(e.bits)
+    }
     if (e.kind === 'func') e.args.forEach(collectVars)
   }
   for (const c of constraints) {

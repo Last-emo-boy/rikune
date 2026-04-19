@@ -6,17 +6,15 @@
 
 import type { Plugin } from '../sdk.js'
 import {
-  crackmeLocateValidationToolDefinition, createCrackmeLocateValidationHandler,
+  crackmeLocateValidationToolDefinition,
+  createCrackmeLocateValidationHandler,
 } from './tools/crackme-locate-validation.js'
 import {
-  symbolicExploreToolDefinition, createSymbolicExploreHandler,
+  symbolicExploreToolDefinition,
+  createSymbolicExploreHandler,
 } from './tools/symbolic-explore.js'
-import {
-  patchGenerateToolDefinition, createPatchGenerateHandler,
-} from './tools/patch-generate.js'
-import {
-  keygenVerifyToolDefinition, createKeygenVerifyHandler,
-} from './tools/keygen-verify.js'
+import { patchGenerateToolDefinition, createPatchGenerateHandler } from './tools/patch-generate.js'
+import { keygenVerifyToolDefinition, createKeygenVerifyHandler } from './tools/keygen-verify.js'
 
 const crackmePlugin: Plugin = {
   id: 'crackme',
@@ -27,17 +25,35 @@ const crackmePlugin: Plugin = {
   version: '1.0.0',
   dependencies: [],
   configSchema: [
-    { envVar: 'ANGR_AVAILABLE', description: 'Whether angr is installed for symbolic execution', required: false },
+    {
+      envVar: 'ANGR_AVAILABLE',
+      description: 'Whether angr is installed for symbolic execution',
+      required: false,
+    },
   ],
   systemDeps: [
-    { type: 'python-venv', name: 'angr', target: '$ANGR_PYTHON', envVar: 'ANGR_PYTHON', dockerDefault: '/opt/angr-venv/bin/python', required: false, description: 'angr symbolic execution framework', dockerInstall: 'python3 -m venv /opt/angr-venv && pip install angr', dockerFeature: 'angr', dockerValidation: ['/opt/angr-venv/bin/python -c "import angr; print(\'✓ angr\')"'] },
+    {
+      type: 'python-venv',
+      name: 'angr',
+      target: '$ANGR_PYTHON',
+      envVar: 'ANGR_PYTHON',
+      dockerDefault: '/opt/angr-venv/bin/python',
+      required: false,
+      description: 'angr symbolic execution framework',
+      dockerInstall: 'python3 -m venv /opt/angr-venv && pip install angr',
+      dockerFeature: 'angr',
+      dockerValidation: ['/opt/angr-venv/bin/python -c "import angr; print(\'✓ angr\')"'],
+    },
   ],
   resources: { workers: 'workers' },
   check() {
     return true
   },
   register(server, deps) {
-    server.registerTool(crackmeLocateValidationToolDefinition, createCrackmeLocateValidationHandler(deps))
+    server.registerTool(
+      crackmeLocateValidationToolDefinition,
+      createCrackmeLocateValidationHandler(deps)
+    )
     server.registerTool(symbolicExploreToolDefinition, createSymbolicExploreHandler(deps))
     server.registerTool(patchGenerateToolDefinition, createPatchGenerateHandler(deps))
     server.registerTool(keygenVerifyToolDefinition, createKeygenVerifyHandler(deps))

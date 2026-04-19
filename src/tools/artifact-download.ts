@@ -15,24 +15,32 @@ const TOOL_VERSION = '0.1.0'
 
 export const ArtifactDownloadInputSchema = z.object({
   artifact_id: z.string().describe('Artifact ID'),
-  include_content: z.boolean().default(false).describe('Whether to include artifact content (for JSON artifacts)'),
+  include_content: z
+    .boolean()
+    .default(false)
+    .describe('Whether to include artifact content (for JSON artifacts)'),
   sample_id: z.string().optional().describe('Optional sample ID for context'),
 })
 
 export const ArtifactDownloadOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    artifact_id: z.string(),
-    sample_id: z.string(),
-    type: z.string(),
-    path: z.string(),
-    sha256: z.string(),
-    mime: z.string().optional(),
-    created_at: z.string(),
-    size: z.number().optional(),
-    download_url: z.string().describe('HTTP API download URL'),
-    content: z.unknown().optional().describe('Parsed JSON content if include_content=true and artifact is JSON'),
-  }).optional(),
+  data: z
+    .object({
+      artifact_id: z.string(),
+      sample_id: z.string(),
+      type: z.string(),
+      path: z.string(),
+      sha256: z.string(),
+      mime: z.string().optional(),
+      created_at: z.string(),
+      size: z.number().optional(),
+      download_url: z.string().describe('HTTP API download URL'),
+      content: z
+        .unknown()
+        .optional()
+        .describe('Parsed JSON content if include_content=true and artifact is JSON'),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   warnings: z.array(z.string()).optional(),
 })

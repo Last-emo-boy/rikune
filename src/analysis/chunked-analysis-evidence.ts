@@ -18,11 +18,7 @@ export async function persistChunkedArrayArtifacts<T>(
     chunkSize: number
     notes?: string[]
     buildLabel?: (index: number, itemCount: number) => string
-    persistChunk: (input: {
-      index: number
-      itemCount: number
-      items: T[]
-    }) => Promise<ArtifactRef>
+    persistChunk: (input: { index: number; itemCount: number; items: T[] }) => Promise<ArtifactRef>
   }
 ): Promise<ChunkedArrayPersistenceResult<T>> {
   const inlineLimit = Math.max(1, options.inlineLimit)

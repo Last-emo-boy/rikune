@@ -420,12 +420,12 @@ pip install frida frida-tools
 - `FRIDA_SERVER_PATH` - Frida server 二进制文件路径，用于 USB/远程设备分析
 - `FRIDA_DEVICE` - 设备 ID 或 "usb" 用于 USB 设备选择（默认：本地 spawn）
 
-**内置脚本** 位于 `src/plugins/frida/scripts/`：
-- `api_trace.js` - Windows API 追踪与参数日志
-- `string_decoder.js` - 运行时字符串解密
-- `anti_debug_bypass.js` - 反调试检测中和
-- `crypto_finder.js` - 加密 API 检测
-- `file_registry_monitor.js` - 文件/注册表操作追踪
+**内置脚本** 位于 `src/plugins/frida/scripts/`，并以不带文件扩展名的 MCP resource 暴露：
+- `script://frida/api_trace` - Windows API 追踪与参数日志
+- `script://frida/string_decoder` - 运行时字符串解密
+- `script://frida/anti_debug_bypass` - 反调试检测中和
+- `script://frida/crypto_finder` - 加密 API 检测
+- `script://frida/file_registry_monitor` - 文件/注册表操作追踪
 
 使用示例见 [`docs/EXAMPLES.md`](./docs/EXAMPLES.md#场景 -9-frida-运行时 instrumentation)。
 
@@ -672,10 +672,12 @@ npm run docker:generate:all
 关键边界：
 
 - `static` 和 `hybrid` 的 analyzer 镜像不再安装本地动态执行依赖，动态执行由 Windows 运行时面承担。
+- `GET /api/v1/health` 是进程存活检查；`GET /api/v1/ready` 是 profile-aware readiness，只检查当前启用插件真正需要的依赖。
 - 默认 `windows-sandbox` 后端要求 Host Agent 跑在已登录的 Windows 用户会话里，不能作为传统 Windows Service 运行。Docker/WSL analyzer 需要通过 `host.docker.internal:18082` 访问 Host Agent，所以安装脚本默认让 Host Agent 绑定 `0.0.0.0`，并 best-effort 创建 Hyper-V firewall 规则放行 Host Agent 和 runtime portproxy 端口；控制面仍依赖 `RUNTIME_HOST_AGENT_API_KEY` 鉴权。
 - `hyperv-vm` 后端适合调试和无人值守风格实验：Host Agent 会启动 VM、可选恢复 checkpoint，然后等待 VM 内 Runtime Node 健康后把 endpoint 返回给 analyzer。
 - Hyper-V 运行时会话可以选择释放策略：`runtime.debug.session.start` 里使用 `hyperv_retention_policy='clean_rollback'` 会在释放后恢复 checkpoint，`stop_only` 会关机并保留磁盘状态，`preserve_dirty` 会保留 VM 现场供人工检查。安装参数 `-HyperVRestoreOnRelease` 会设置 Host Agent 默认策略。
 - 运行时会话是显式的：如果希望走 staged workflow，先用 `workflow.analyze.promote(dynamic_plan)` 自动运行 `static.behavior.classify`、生成证据感知的 `dynamic.deep_plan`，并保持 live execution 显式门控；也可以手动调用 `dynamic.runtime.status` 检查 Runtime Node 和 Host Agent 就绪状态，用 `dynamic.toolkit.status` 查看 runtime 内调试器、遥测、dump、手动 GUI 工具库存，用 `dynamic.deep_plan` 选择受限的动态分析方案，需要网络实验、.NET runtime 或 GUI 交接细节时再用 `debug.network.plan`、`debug.managed.plan`、`debug.gui.handoff`，用 `dynamic.persona.plan` 生成只规划不启动的 Sandbox/Hyper-V persona 清单；需要 Hyper-V 状态、checkpoint 创建/恢复或停止时调用 `runtime.hyperv.control`，再调用 `runtime.debug.session.start` 创建或附着 Windows runtime，然后用 `runtime.debug.command` 分发 `debug.session.*`、`sandbox.execute`、`dynamic.behavior.capture`、遥测、ProcDump、managed safe-run 或内存转储类任务，再用 `dynamic.behavior.diff`、`analysis.evidence.graph` 和 `crypto.lifecycle.graph` 把运行时观察关联回静态预期，最后用 `runtime.debug.session.stop` 释放。
+- `sandbox.execute` 会返回 `data.execution_semantics`，明确本次是 live Windows Sandbox、live Hyper-V、safe simulation 还是 emulation。safe simulation 不能当作真实运行时证据。
 - Runtime 工具缓存查询是只读的，可使用 `RUNTIME_TOOL_DIRS`、`RUNTIME_TOOL_CACHE_DIR`、`RIKUNE_RUNTIME_TOOLS` 或默认 `C:\rikune-tools` 挂载。需要更深动态方案时，把 Windows Debugging Tools 的 `cdb.exe`、Sysinternals ProcDump/ProcMon/Sysmon、TTD helper、x64dbg、dnSpyEx、Frida、dotnet 或 FakeNet 风格 harness 放到这里。
 - Docker/WSL analyzer 不能使用 `auto-sandbox`；`auto-sandbox` 只适用于 Windows 原生 analyzer。
 - `RUNTIME_HOST_AGENT_API_KEY` 用于 Analyzer -> Host Agent 控制面，`RUNTIME_API_KEY` 只在 Runtime Node 自身需要鉴权时使用。

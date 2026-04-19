@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult , PluginToolDeps} from '../../sdk.js'
+import type { ToolDefinition, ToolArgs, WorkerResult, PluginToolDeps } from '../../sdk.js'
 import { toStringArray } from '../../../utils/shared-helpers.js'
 import { createTriageWorkflowHandler } from '../../../workflows/triage.js'
 import { createPackerDetectHandler } from '../../static-triage/tools/packer-detect.js'
@@ -119,7 +119,6 @@ export interface CapabilityCluster {
   confidence: number
   indicators: string[]
 }
-
 
 function normalizeImportApi(importRef: string): string {
   const last = importRef.split('!').pop() || importRef
@@ -292,7 +291,10 @@ function upsertTechnique(
     evidence_weights: normalizeWeights({
       import: Math.max(existing.evidence_weights.import, technique.evidence_weights?.import || 0),
       string: Math.max(existing.evidence_weights.string, technique.evidence_weights?.string || 0),
-      runtime: Math.max(existing.evidence_weights.runtime, technique.evidence_weights?.runtime || 0),
+      runtime: Math.max(
+        existing.evidence_weights.runtime,
+        technique.evidence_weights?.runtime || 0
+      ),
     }),
     counter_evidence: Array.from(
       new Set([...(existing.counter_evidence || []), ...(technique.counter_evidence || [])])
@@ -330,7 +332,8 @@ export function mapIndicatorsToAttack(
   if (
     normalizedApis.some((api) =>
       ['createprocess', 'winexec', 'shellexecute'].some((needle) => api.includes(needle))
-    ) || /cmd\.exe|wscript\.exe|cscript\.exe|mshta\.exe/.test(joinedCommands)
+    ) ||
+    /cmd\.exe|wscript\.exe|cscript\.exe|mshta\.exe/.test(joinedCommands)
   ) {
     upsertTechnique(techniqueMap, {
       technique_id: 'T1059.003',
@@ -620,7 +623,7 @@ export function createAttackMapHandler(deps: PluginToolDeps) {
           }
         }
       }
-      const iocs = (triageData.iocs || {}) as Record<string, unknown>
+      const iocs = triageData.iocs || {}
       const highValue = (iocs.high_value_iocs || {}) as Record<string, unknown>
       const runtimeRaw = (triageData.raw_results || {}).runtime as {
         suspected?: Array<{ runtime?: string }>
@@ -702,10 +705,7 @@ export function createAttackMapHandler(deps: PluginToolDeps) {
                 : 'No strong ATT&CK technique mapping from current evidence.',
           },
         },
-        warnings: [
-          ...(triageResult.warnings || []),
-          ...(packerResult.warnings || []),
-        ],
+        warnings: [...(triageResult.warnings || []), ...(packerResult.warnings || [])],
         metrics: {
           elapsed_ms: Date.now() - startTime,
           tool: TOOL_NAME,

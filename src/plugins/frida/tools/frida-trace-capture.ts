@@ -32,11 +32,7 @@ export const FridaTraceCaptureInputSchema = z.object({
     })
     .optional()
     .describe('Trace filtering options'),
-  aggregate: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Aggregate duplicate events'),
+  aggregate: z.boolean().optional().default(false).describe('Aggregate duplicate events'),
   limit: z
     .number()
     .int()
@@ -191,11 +187,10 @@ export function filterTraceEvents(
       if (!filter.types.includes(event.type)) return false
     }
     if (filter.modules && filter.modules.length > 0) {
-      if (!event.module || !filter.modules.some((m) => event.module!.includes(m))) return false
+      if (!event.module || !filter.modules.some((m) => event.module.includes(m))) return false
     }
     if (filter.functions && filter.functions.length > 0) {
-      if (!event.function || !filter.functions.some((f) => event.function!.includes(f)))
-        return false
+      if (!event.function || !filter.functions.some((f) => event.function.includes(f))) return false
     }
     if (filter.min_timestamp && event.timestamp && event.timestamp < filter.min_timestamp)
       return false
@@ -295,7 +290,7 @@ export function createFridaTraceCaptureHandler(
 
   async function callFridaWorker(request: WorkerRequest): Promise<WorkerResponse> {
     return new Promise((resolve, reject) => {
-      const workerPath = resolvePackagePath!('workers', 'frida_worker.py')
+      const workerPath = resolvePackagePath('workers', 'frida_worker.py')
       const pythonCommand = getPythonCommand()
       const pythonProcess = spawn(pythonCommand, [workerPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -504,7 +499,10 @@ export function createFridaTraceCaptureHandler(
         workerResponse = await runWorker(workerRequest)
       } catch (error) {
         const errorStr = normalizeError(error)
-        if (errorStr.includes('Frida is not installed') || errorStr.includes('ModuleNotFoundError')) {
+        if (
+          errorStr.includes('Frida is not installed') ||
+          errorStr.includes('ModuleNotFoundError')
+        ) {
           return buildFridaUnavailableResponse(
             input,
             startTime,
@@ -523,7 +521,10 @@ export function createFridaTraceCaptureHandler(
 
       if (!workerResponse.ok) {
         const errorMsg = workerResponse.errors.join('; ') || 'Frida trace capture failed'
-        if (errorMsg.toLowerCase().includes('not installed') || errorMsg.toLowerCase().includes('import')) {
+        if (
+          errorMsg.toLowerCase().includes('not installed') ||
+          errorMsg.toLowerCase().includes('import')
+        ) {
           return buildFridaUnavailableResponse(input, startTime, errorMsg)
         }
         return {

@@ -58,20 +58,20 @@ export async function runBenchmark<T>(
   iterations: number = 100
 ): Promise<BenchmarkResult> {
   const times: number[] = []
-  
+
   for (let i = 0; i < iterations; i++) {
     const start = performance.now()
     await fn()
     const end = performance.now()
     times.push(end - start)
   }
-  
+
   const totalTimeMs = times.reduce((sum, time) => sum + time, 0)
   const avgTimeMs = totalTimeMs / iterations
   const minTimeMs = Math.min(...times)
   const maxTimeMs = Math.max(...times)
   const throughputPerSec = iterations / (totalTimeMs / 1000)
-  
+
   return {
     name,
     iterations,
@@ -101,15 +101,15 @@ export async function benchmarkCachePerformance(
       database: { hits: 0, latencies: [] as number[] },
     },
   }
-  
+
   for (const key of testKeys) {
     const start = performance.now()
     const value = await cacheManager.getCachedResult(key)
     const end = performance.now()
-    
+
     const latency = end - start
     results.latencies.push(latency)
-    
+
     if (value !== null) {
       results.hits++
       // Tier detection would require cache manager enhancement
@@ -119,12 +119,13 @@ export async function benchmarkCachePerformance(
       results.misses++
     }
   }
-  
+
   const total = results.hits + results.misses
-  const avgLatencyMs = results.latencies.length > 0
-    ? results.latencies.reduce((a, b) => a + b) / results.latencies.length
-    : 0
-  
+  const avgLatencyMs =
+    results.latencies.length > 0
+      ? results.latencies.reduce((a, b) => a + b) / results.latencies.length
+      : 0
+
   return {
     hitRate: total > 0 ? results.hits / total : 0,
     missRate: total > 0 ? results.misses / total : 0,
@@ -132,21 +133,27 @@ export async function benchmarkCachePerformance(
     byTier: {
       memory: {
         hits: results.byTier.memory.hits,
-        avgLatencyMs: results.byTier.memory.latencies.length > 0
-          ? results.byTier.memory.latencies.reduce((a, b) => a + b) / results.byTier.memory.latencies.length
-          : 0,
+        avgLatencyMs:
+          results.byTier.memory.latencies.length > 0
+            ? results.byTier.memory.latencies.reduce((a, b) => a + b) /
+              results.byTier.memory.latencies.length
+            : 0,
       },
       filesystem: {
         hits: results.byTier.filesystem.hits,
-        avgLatencyMs: results.byTier.filesystem.latencies.length > 0
-          ? results.byTier.filesystem.latencies.reduce((a, b) => a + b) / results.byTier.filesystem.latencies.length
-          : 0,
+        avgLatencyMs:
+          results.byTier.filesystem.latencies.length > 0
+            ? results.byTier.filesystem.latencies.reduce((a, b) => a + b) /
+              results.byTier.filesystem.latencies.length
+            : 0,
       },
       database: {
         hits: results.byTier.database.hits,
-        avgLatencyMs: results.byTier.database.latencies.length > 0
-          ? results.byTier.database.latencies.reduce((a, b) => a + b) / results.byTier.database.latencies.length
-          : 0,
+        avgLatencyMs:
+          results.byTier.database.latencies.length > 0
+            ? results.byTier.database.latencies.reduce((a, b) => a + b) /
+              results.byTier.database.latencies.length
+            : 0,
       },
     },
   }
@@ -168,8 +175,8 @@ export function measureResponseTokenReduction(
   const beforeTokens = estimateTokens(JSON.stringify(beforeResponse))
   const afterTokens = estimateTokens(JSON.stringify(afterResponse))
   const reduction = beforeTokens - afterTokens
-  const reductionPercentage = beforeTokens > 0 ? (reduction / beforeTokens * 100) : 0
-  
+  const reductionPercentage = beforeTokens > 0 ? (reduction / beforeTokens) * 100 : 0
+
   return {
     beforeTokens,
     afterTokens,
@@ -182,9 +189,7 @@ export function measureResponseTokenReduction(
  * Measure disk space reduction
  * Tasks: mcp-server-optimization 8.5
  */
-export async function measureDiskSpaceReduction(
-  storagePath: string
-): Promise<{
+export async function measureDiskSpaceReduction(storagePath: string): Promise<{
   beforeSizeBytes: number
   afterSizeBytes: number
   reduction: number
@@ -192,16 +197,16 @@ export async function measureDiskSpaceReduction(
 }> {
   const fs = await import('fs/promises')
   const path = await import('path')
-  
+
   async function getDirectorySize(dir: string): Promise<number> {
     let totalSize = 0
-    
+
     try {
       const entries = await fs.readdir(dir, { withFileTypes: true })
-      
+
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name)
-        
+
         if (entry.isDirectory()) {
           totalSize += await getDirectorySize(fullPath)
         } else {
@@ -212,17 +217,17 @@ export async function measureDiskSpaceReduction(
     } catch (error) {
       // Ignore errors
     }
-    
+
     return totalSize
   }
-  
+
   const beforeSizeBytes = await getDirectorySize(storagePath)
-  
+
   // Estimate compressed size (assume 60% compression ratio for text-based artifacts)
   const afterSizeBytes = Math.floor(beforeSizeBytes * 0.4)
   const reduction = beforeSizeBytes - afterSizeBytes
-  const reductionPercentage = beforeSizeBytes > 0 ? (reduction / beforeSizeBytes * 100) : 0
-  
+  const reductionPercentage = beforeSizeBytes > 0 ? (reduction / beforeSizeBytes) * 100 : 0
+
   return {
     beforeSizeBytes,
     afterSizeBytes,
@@ -242,24 +247,28 @@ export function generateOptimizationReport(
   diskReduction: { beforeSizeBytes: number; afterSizeBytes: number; reductionPercentage: number }
 ): OptimizationReport {
   const recommendations: string[] = []
-  
+
   // Cache recommendations
   if (cacheAfter.hitRate < 0.3) {
-    recommendations.push('Cache hit rate is low (<30%). Consider reviewing cache key generation and TTL settings.')
+    recommendations.push(
+      'Cache hit rate is low (<30%). Consider reviewing cache key generation and TTL settings.'
+    )
   } else if (cacheAfter.hitRate > 0.7) {
     recommendations.push('Cache hit rate is excellent (>70%). Keep current configuration.')
   }
-  
+
   // Response recommendations
   if (responseReduction.reductionPercentage > 80) {
     recommendations.push('Response tiering is highly effective (>80% token reduction).')
   }
-  
+
   // Disk recommendations
   if (diskReduction.reductionPercentage > 50) {
-    recommendations.push('Artifact compression is effective (>50% disk reduction). Consider enabling auto-compression.')
+    recommendations.push(
+      'Artifact compression is effective (>50% disk reduction). Consider enabling auto-compression.'
+    )
   }
-  
+
   return {
     timestamp: new Date().toISOString(),
     cacheOptimization: {
@@ -295,21 +304,21 @@ export function estimateTokens(text: string): number {
  */
 export function generateTuningRecommendations(report: OptimizationReport): string[] {
   const recommendations = [...report.recommendations]
-  
+
   // Cache tuning
   if (report.cacheOptimization.improvement < 0.1) {
     recommendations.push('Consider implementing smart cache key generation to improve hit rate.')
   }
-  
+
   // Response tuning
   if (report.responseOptimization.reduction < 50) {
     recommendations.push('Response tiering could be improved. Consider stricter L1 summary limits.')
   }
-  
+
   // Disk tuning
   if (report.diskOptimization.reduction < 30) {
     recommendations.push('Consider enabling gzip compression for artifacts older than 7 days.')
   }
-  
+
   return recommendations
 }

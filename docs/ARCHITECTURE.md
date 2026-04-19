@@ -183,21 +183,21 @@ discover them via `resources/list` and read their content via `resources/read`.
 
 | URI | Description |
 |-----|-------------|
-| `script://frida/api_trace.js` | Windows API tracing with argument logging |
-| `script://frida/string_decoder.js` | Runtime string decryption |
-| `script://frida/anti_debug_bypass.js` | Anti-debug bypass |
-| `script://frida/crypto_finder.js` | Cryptographic API detection |
-| `script://frida/file_registry_monitor.js` | File/registry monitoring |
+| `script://frida/api_trace` | Windows API tracing with argument logging |
+| `script://frida/string_decoder` | Runtime string decryption |
+| `script://frida/anti_debug_bypass` | Anti-debug bypass |
+| `script://frida/crypto_finder` | Cryptographic API detection |
+| `script://frida/file_registry_monitor` | File/registry monitoring |
 
 **Ghidra scripts** (8):
 
 | URI | Description |
 |-----|-------------|
-| `script://ghidra/ExtractFunctions.java` | Function extraction |
-| `script://ghidra/DecompileFunction.java` | Function decompilation |
-| `script://ghidra/ExtractCFG.java` | Control flow graph extraction |
-| `script://ghidra/AnalyzeCrossReferences.java` | Cross-reference analysis |
-| `script://ghidra/SearchFunctionReferences.java` | Function reference search |
+| `script://ghidra/ExtractFunctions` | Function extraction |
+| `script://ghidra/DecompileFunction` | Function decompilation |
+| `script://ghidra/ExtractCFG` | Control flow graph extraction |
+| `script://ghidra/AnalyzeCrossReferences` | Cross-reference analysis |
+| `script://ghidra/SearchFunctionReferences` | Function reference search |
 
 The resource handler reads script files from disk on demand and returns their
 content as `text/javascript` or `text/x-java-source`.

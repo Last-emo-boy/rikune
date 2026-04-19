@@ -1,9 +1,6 @@
 import { z } from 'zod'
 import type { ToolArgs, ToolDefinition, WorkerResult } from '../types.js'
-import {
-  ToolSurfaceRoleSchema,
-  buildPreferredPrimaryTools,
-} from '../tool-surface-guidance.js'
+import { ToolSurfaceRoleSchema, buildPreferredPrimaryTools } from '../tool-surface-guidance.js'
 import {
   rewriteToolReferencesInValue,
   rewriteToolReferencesInText,
@@ -29,7 +26,10 @@ const ToolSchemaSummarySchema = z.object({
 })
 
 export const toolHelpInputSchema = z.object({
-  tool_name: z.string().optional().describe('Optional exact tool name for a detailed schema/help lookup'),
+  tool_name: z
+    .string()
+    .optional()
+    .describe('Optional exact tool name for a detailed schema/help lookup'),
   include_output_schema: z
     .boolean()
     .default(true)
@@ -89,13 +89,7 @@ function classifyToolSurfaceRole(toolName: string): z.infer<typeof ToolSurfaceRo
     return 'renderer_helper'
   }
 
-  if (
-    [
-      'workflow.triage',
-      'task.status',
-      'report.summarize',
-    ].includes(toolName)
-  ) {
+  if (['workflow.triage', 'task.status', 'report.summarize'].includes(toolName)) {
     return 'compatibility'
   }
 
@@ -121,9 +115,7 @@ function preferredPrimaryToolsFor(toolName: string) {
 
 type FieldSummary = z.infer<typeof ToolFieldSchema>
 
-function unwrapSchema(
-  schema: z.ZodTypeAny
-): {
+function unwrapSchema(schema: z.ZodTypeAny): {
   schema: z.ZodTypeAny
   required: boolean
   nullable: boolean
@@ -726,7 +718,9 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
       'When the environment is degraded, inspect setup_actions and required_user_inputs before retrying. These fields are intended for MCP clients to present exact pip install commands and missing path inputs.'
     )
   }
-  const inputFields = buildSchemaSummary(definition.inputSchema, definition.name).fields.map((item) => item.path)
+  const inputFields = buildSchemaSummary(definition.inputSchema, definition.name).fields.map(
+    (item) => item.path
+  )
   const outputFields = definition.outputSchema
     ? buildSchemaSummary(definition.outputSchema, definition.name).fields.map((item) => item.path)
     : []
@@ -768,10 +762,7 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
     )
   }
 
-  if (
-    outputFields.includes('data.coverage_level') ||
-    outputFields.includes('coverage_level')
-  ) {
+  if (outputFields.includes('data.coverage_level') || outputFields.includes('coverage_level')) {
     notes.push(
       'On workflow-style outputs, read coverage_level, completion_state, coverage_gaps, known_findings, suspected_findings, unverified_areas, and upgrade_paths before treating the result as complete.'
     )
@@ -976,18 +967,14 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
   }
 
   if (definition.name === 'workflow.dynamic.analyze') {
-    notes.push(
-      'Staged dynamic behavior analysis with simulation-first defaults.'
-    )
+    notes.push('Staged dynamic behavior analysis with simulation-first defaults.')
     notes.push(
       'Use mode=safe_simulation for non-executing behavioral analysis, or mode=auto_frida for automated Frida instrumentation.'
     )
     notes.push(
       'The auto_frida mode automatically generates Frida scripts based on static capability analysis and correlates results to functions.'
     )
-    notes.push(
-      'Stages: preflight → simulation → trace_capture → correlation → digest'
-    )
+    notes.push('Stages: preflight → simulation → trace_capture → correlation → digest')
   }
 
   if (definition.name === 'workflow.analyze.auto') {
@@ -1285,10 +1272,7 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
     )
   }
 
-  if (
-    definition.name === 'analysis.context.link' ||
-    definition.name === 'code.xrefs.analyze'
-  ) {
+  if (definition.name === 'analysis.context.link' || definition.name === 'code.xrefs.analyze') {
     notes.push(
       'Use these before workflow.reconstruct when you want bounded indicator-to-function correlation without paying for full export or module reconstruction.'
     )
@@ -1372,7 +1356,10 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
   return notes
 }
 
-function buildSchemaSummary(schema: z.ZodTypeAny, toolName?: string): z.infer<typeof ToolSchemaSummarySchema> {
+function buildSchemaSummary(
+  schema: z.ZodTypeAny,
+  toolName?: string
+): z.infer<typeof ToolSchemaSummarySchema> {
   const fields = collectSchemaFields(schema, '', toolName)
   return {
     field_count: fields.length,
@@ -1387,10 +1374,13 @@ export function createToolHelpHandler(
     try {
       const input = toolHelpInputSchema.parse(args)
       const definitions = getDefinitions()
-      const nameMappings = definitions.map((item) => [item.name, toTransportToolName(item.name)] as const)
+      const nameMappings = definitions.map(
+        (item) => [item.name, toTransportToolName(item.name)] as const
+      )
       const filtered = input.tool_name
         ? definitions.filter(
-            (item) => item.name === input.tool_name || toTransportToolName(item.name) === input.tool_name
+            (item) =>
+              item.name === input.tool_name || toTransportToolName(item.name) === input.tool_name
           )
         : definitions
 
@@ -1426,7 +1416,9 @@ export function createToolHelpHandler(
 
       return {
         ok: true,
-        data: rewriteToolReferencesInValue(toolData, nameMappings) as z.infer<typeof toolHelpOutputSchema>['data'],
+        data: rewriteToolReferencesInValue(toolData, nameMappings) as z.infer<
+          typeof toolHelpOutputSchema
+        >['data'],
       }
     } catch (error) {
       return {

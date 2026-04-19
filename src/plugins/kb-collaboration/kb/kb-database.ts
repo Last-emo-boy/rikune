@@ -71,7 +71,7 @@ export function initializeKnowledgeBase(db: DatabaseManager): void {
       user_id TEXT
     )
   `)
-  
+
   // Create indexes for function_kb
   db.runSql(`
     CREATE INDEX IF NOT EXISTS idx_function_kb_name ON function_kb(semantics_name)
@@ -82,7 +82,7 @@ export function initializeKnowledgeBase(db: DatabaseManager): void {
   db.runSql(`
     CREATE INDEX IF NOT EXISTS idx_function_kb_updated ON function_kb(updated_at DESC)
   `)
-  
+
   // Create sample_kb table
   db.runSql(`
     CREATE TABLE IF NOT EXISTS sample_kb (
@@ -97,7 +97,7 @@ export function initializeKnowledgeBase(db: DatabaseManager): void {
       user_id TEXT
     )
   `)
-  
+
   // Create indexes for sample_kb
   db.runSql(`
     CREATE INDEX IF NOT EXISTS idx_sample_kb_sample ON sample_kb(sample_id)
@@ -105,7 +105,7 @@ export function initializeKnowledgeBase(db: DatabaseManager): void {
   db.runSql(`
     CREATE INDEX IF NOT EXISTS idx_sample_kb_family ON sample_kb(threat_intel_family)
   `)
-  
+
   // Create kb_index table for feature-based search
   db.runSql(`
     CREATE TABLE IF NOT EXISTS kb_index (
@@ -119,7 +119,7 @@ export function initializeKnowledgeBase(db: DatabaseManager): void {
       updated_at TEXT NOT NULL
     )
   `)
-  
+
   // Create indexes for kb_index
   db.runSql(`
     CREATE INDEX IF NOT EXISTS idx_kb_index_type ON kb_index(entry_type, entry_id)
@@ -130,7 +130,7 @@ export function initializeKnowledgeBase(db: DatabaseManager): void {
   db.runSql(`
     CREATE INDEX IF NOT EXISTS idx_kb_index_string_hash ON kb_index(string_hash)
   `)
-  
+
   logger.info('Knowledge base tables initialized')
 }
 
@@ -145,7 +145,7 @@ export function getKbStats(db: DatabaseManager): {
   const funcRow = db.queryOneSql<{ count: number }>('SELECT COUNT(*) as count FROM function_kb')
   const sampleRow = db.queryOneSql<{ count: number }>('SELECT COUNT(*) as count FROM sample_kb')
   const indexRow = db.queryOneSql<{ count: number }>('SELECT COUNT(*) as count FROM kb_index')
-  
+
   return {
     totalFunctions: funcRow?.count || 0,
     totalSamples: sampleRow?.count || 0,

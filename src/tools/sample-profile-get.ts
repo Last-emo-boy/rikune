@@ -23,7 +23,9 @@ export const SampleProfileGetInputSchema = z.object({
     .min(1000)
     .nullable()
     .optional()
-    .describe('Optional stale-analysis reap threshold in milliseconds. Omit or null to disable auto-reaping.'),
+    .describe(
+      'Optional stale-analysis reap threshold in milliseconds. Omit or null to disable auto-reaping.'
+    ),
   analysis_detail: z
     .enum(['compact', 'full'])
     .default(DEFAULT_ANALYSIS_DETAIL)
@@ -36,21 +38,27 @@ export const SampleProfileGetInputSchema = z.object({
     .min(1)
     .max(200)
     .default(DEFAULT_MAX_ANALYSES)
-    .describe('Maximum number of analyses to return inline. Most recent analyses are returned first.'),
+    .describe(
+      'Maximum number of analyses to return inline. Most recent analyses are returned first.'
+    ),
   json_preview_chars: z
     .number()
     .int()
     .min(128)
     .max(20000)
     .default(DEFAULT_JSON_PREVIEW_CHARS)
-    .describe('Maximum number of characters to inline for each analysis output/metrics preview when analysis_detail=compact.'),
+    .describe(
+      'Maximum number of characters to inline for each analysis output/metrics preview when analysis_detail=compact.'
+    ),
   workspace_file_preview_limit: z
     .number()
     .int()
     .min(1)
     .max(200)
     .default(DEFAULT_WORKSPACE_FILE_PREVIEW_LIMIT)
-    .describe('Maximum number of filenames to inline from workspace/original and alternate original directories.'),
+    .describe(
+      'Maximum number of filenames to inline from workspace/original and alternate original directories.'
+    ),
 })
 
 export type SampleProfileGetInput = z.infer<typeof SampleProfileGetInputSchema>
@@ -95,7 +103,12 @@ export const SampleProfileGetOutputSchema = z.object({
       ),
       workspace: z
         .object({
-          status: z.enum(['ready', 'workspace_missing', 'original_dir_missing', 'original_file_missing']),
+          status: z.enum([
+            'ready',
+            'workspace_missing',
+            'original_dir_missing',
+            'original_file_missing',
+          ]),
           workspace_root: z.string().nullable(),
           original_dir: z.string().nullable(),
           reports_dir: z.string().nullable(),

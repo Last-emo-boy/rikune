@@ -10,7 +10,13 @@ import path from 'path'
 import { createHash, randomUUID } from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
-import { RuntimeDelegationFailureResultSchema, type ToolDefinition, type ToolArgs, type WorkerResult, type ArtifactRef } from '../../../types.js'
+import {
+  RuntimeDelegationFailureResultSchema,
+  type ToolDefinition,
+  type ToolArgs,
+  type WorkerResult,
+  type ArtifactRef,
+} from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { PolicyGuard } from '../../../policy-guard.js'
@@ -126,6 +132,16 @@ const SandboxExecuteSuccessResultSchema = z.object({
         executed: z.boolean(),
         isolation: z.string(),
       }),
+      execution_semantics: z
+        .object({
+          live_windows_sandbox_execution: z.boolean(),
+          live_hyperv_execution: z.boolean(),
+          safe_simulation: z.boolean(),
+          emulation: z.boolean(),
+          user_visible_sandbox_window_expected: z.boolean(),
+          explanation: z.string(),
+        })
+        .optional(),
       evidence: z.record(z.any()),
       inference: z.object({
         classification: z.string(),
@@ -306,6 +322,46 @@ function mergeWarnings(...warningLists: Array<string[] | undefined>): string[] |
   return Array.from(new Set(merged))
 }
 
+function enrichSandboxPayload(payload: SandboxPayload): SandboxPayload & {
+  execution_semantics: {
+    live_windows_sandbox_execution: boolean
+    live_hyperv_execution: boolean
+    safe_simulation: boolean
+    emulation: boolean
+    user_visible_sandbox_window_expected: boolean
+    explanation: string
+  }
+} {
+  const backend = String(payload.backend || '').toLowerCase()
+  const mode = String(payload.mode || '').toLowerCase()
+  const isolation = String(payload.environment?.isolation || '').toLowerCase()
+  const executed = Boolean(payload.environment?.executed)
+  const liveWindowsSandbox =
+    executed && (backend.includes('sandbox') || isolation.includes('sandbox'))
+  const liveHyperv = executed && (backend.includes('hyperv') || isolation.includes('hyperv'))
+  const safeSimulation = !executed || mode === 'safe_simulation' || backend.includes('simulation')
+  const emulation =
+    mode === 'speakeasy' || backend.includes('speakeasy') || backend.includes('qiling')
+
+  return {
+    ...payload,
+    execution_semantics: {
+      live_windows_sandbox_execution: liveWindowsSandbox,
+      live_hyperv_execution: liveHyperv,
+      safe_simulation: safeSimulation,
+      emulation,
+      user_visible_sandbox_window_expected: liveWindowsSandbox,
+      explanation: liveWindowsSandbox
+        ? 'This run used a live Windows Sandbox runtime; a visible Sandbox window may be expected depending on the Host Agent backend.'
+        : liveHyperv
+          ? 'This run used a live Hyper-V runtime endpoint; Windows Sandbox UI is not expected.'
+          : emulation
+            ? 'This run used emulator-backed dynamic analysis, not a live Windows Sandbox session.'
+            : 'This run used planning/safe simulation and did not execute the sample in a live Windows Sandbox session.',
+    },
+  }
+}
+
 export function createSandboxExecuteHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
@@ -434,7 +490,7 @@ export function createSandboxExecuteHandler(
         }
       }
 
-      const payload = workerResponse.data as SandboxPayload
+      const payload = enrichSandboxPayload(workerResponse.data as SandboxPayload)
       const artifacts: ArtifactRef[] = workerResponse.artifacts as ArtifactRef[]
       const persistedArtifacts: ArtifactRef[] = []
 
@@ -505,7 +561,14 @@ export function createSandboxExecuteHandler(
         }
       }
 
-      const warnings = mergeWarnings(workerResponse.warnings, payload.warnings)
+      const semanticWarning = payload.execution_semantics.live_windows_sandbox_execution
+        ? undefined
+        : 'sandbox.execute did not perform live Windows Sandbox execution for this run; inspect data.execution_semantics for the exact backend semantics.'
+      const warnings = mergeWarnings(
+        workerResponse.warnings,
+        payload.warnings,
+        semanticWarning ? [semanticWarning] : undefined
+      )
       if (persistedArtifacts.length > 0) {
         const persistedWarning = `Sandbox trace persisted as artifact(s) ${persistedArtifacts
           .map((item) => `${item.type}:${item.id}`)

@@ -12,7 +12,7 @@ import { config } from './config.js'
 export type TaskExecutor = (
   task: ExecuteTask,
   onLog?: (msg: string) => void,
-  onProgress?: (progress: number, message?: string) => void,
+  onProgress?: (progress: number, message?: string) => void
 ) => Promise<ExecuteResult>
 
 export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
@@ -48,7 +48,8 @@ let nextEventId = 1
 let executeTaskForTests: TaskExecutor | undefined
 const TASK_TTL_MS = 30 * 60 * 1000
 const TASK_STORE_STATE_FILE = '.runtime-task-store.json'
-const RECOVERY_FAILURE_MESSAGE = 'Task did not survive runtime restart and was marked failed during recovery.'
+const RECOVERY_FAILURE_MESSAGE =
+  'Task did not survive runtime restart and was marked failed during recovery.'
 export const RUNTIME_TASK_LIFECYCLE = {
   persistenceFileName: TASK_STORE_STATE_FILE,
   persistenceScope: 'runtime-outbox',
@@ -139,13 +140,21 @@ function loadPersistedTaskStore(): void {
     }
     const parsed = JSON.parse(raw) as Partial<PersistedTaskStore>
     if (parsed.version !== 1 || !Array.isArray(parsed.tasks)) {
-      logger.warn({ persistencePath }, 'Ignoring runtime task store persistence with unsupported shape')
+      logger.warn(
+        { persistencePath },
+        'Ignoring runtime task store persistence with unsupported shape'
+      )
       return
     }
 
     tasks.clear()
     for (const entry of parsed.tasks) {
-      if (!entry || typeof entry.taskId !== 'string' || typeof entry.status !== 'string' || !Array.isArray(entry.logs)) {
+      if (
+        !entry ||
+        typeof entry.taskId !== 'string' ||
+        typeof entry.status !== 'string' ||
+        !Array.isArray(entry.logs)
+      ) {
         continue
       }
       const recovered = normalizeRecoveredTaskState(entry)
@@ -183,7 +192,7 @@ function purgeStaleTasks(): void {
 function emitTaskEvent(
   state: TaskState,
   type: TaskEvent['type'],
-  extras: Partial<Omit<TaskEvent, 'id' | 'type' | 'taskId' | 'status' | 'timestamp'>> = {},
+  extras: Partial<Omit<TaskEvent, 'id' | 'type' | 'taskId' | 'status' | 'timestamp'>> = {}
 ): void {
   const event: TaskEvent = {
     id: nextEventId++,
@@ -228,7 +237,7 @@ export function submitTask(task: ExecuteTask): { taskId: string; status: TaskSta
     runTask(task, state).catch((err) => {
       logger.error({ err, taskId: task.taskId }, 'Unhandled task execution error')
       if (tasks.has(task.taskId)) {
-        const s = tasks.get(task.taskId)!
+        const s = tasks.get(task.taskId)
         s.status = 'failed'
         s.completedAt = Date.now()
         s.result = {
@@ -296,7 +305,15 @@ async function runTask(task: ExecuteTask, state: TaskState): Promise<void> {
       }
     }
     schedulePersistTaskStore()
-    emitTaskEvent(state, state.status === 'completed' ? 'completed' : state.status === 'cancelled' ? 'cancelled' : 'failed', { result })
+    emitTaskEvent(
+      state,
+      state.status === 'completed'
+        ? 'completed'
+        : state.status === 'cancelled'
+          ? 'cancelled'
+          : 'failed',
+      { result }
+    )
   } catch (err) {
     state.status = 'failed'
     state.completedAt = Date.now()

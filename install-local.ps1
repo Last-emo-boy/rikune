@@ -63,6 +63,75 @@ function Write-Step {
     Write-Host "-----------------------------------------" -ForegroundColor $ColorPrimary
 }
 
+function Get-OptionalFeatureByName {
+    param([string[]]$Names)
+
+    foreach ($name in $Names) {
+        try {
+            $feature = Get-WindowsOptionalFeature -Online -FeatureName $name -ErrorAction Stop
+            if ($feature) { return $feature }
+        } catch {
+            if ($EnableVerbose) { Write-Info "Optional feature not available by name '$name'" }
+        }
+    }
+
+    return $null
+}
+
+function ConvertTo-TomlString {
+    param([string]$Value)
+    if ($null -eq $Value) { return '""' }
+    $escaped = $Value.Replace('\', '\\').Replace('"', '\"')
+    return '"' + $escaped + '"'
+}
+
+function ConvertTo-TomlArray {
+    param([string[]]$Values)
+    return "[" + (($Values | ForEach-Object { ConvertTo-TomlString $_ }) -join ", ") + "]"
+}
+
+function Set-CodexMcpConfig {
+    param(
+        [string]$ConfigFile,
+        [string]$NodeCommand,
+        [string[]]$McpArgs,
+        [hashtable]$Env
+    )
+
+    $configDir = Split-Path -Parent $ConfigFile
+    if (-not (Test-Path $configDir)) {
+        New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+    }
+
+    $envLines = @()
+    foreach ($key in ($Env.Keys | Sort-Object)) {
+        $envLines += "$key = $(ConvertTo-TomlString $Env[$key])"
+    }
+
+    $block = @"
+[mcp_servers.rikune]
+type = "stdio"
+command = $(ConvertTo-TomlString $NodeCommand)
+startup_timeout_sec = 180
+args = $(ConvertTo-TomlArray $McpArgs)
+
+[mcp_servers.rikune.env]
+$($envLines -join "`r`n")
+"@
+
+    $content = ""
+    if (Test-Path $ConfigFile) {
+        $content = Get-Content -Path $ConfigFile -Raw
+        $content = [regex]::Replace($content, '(?ms)^\[mcp_servers\.rikune(?:\.env)?\]\r?\n.*?(?=^\[|\z)', '').TrimEnd()
+    }
+
+    if ([string]::IsNullOrWhiteSpace($content)) {
+        $block | Set-Content -Path $ConfigFile -Encoding UTF8
+    } else {
+        ($content + "`r`n`r`n" + $block) | Set-Content -Path $ConfigFile -Encoding UTF8
+    }
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main Script
 # ─────────────────────────────────────────────────────────────────────────────
@@ -117,15 +186,11 @@ if ($RuntimeMode -eq "auto-sandbox") {
         Write-Error-Message "RUNTIME_MODE=auto-sandbox requires a Windows-native analyzer"
         exit 1
     }
-    try {
-        $sandboxFeature = (Get-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClient -ErrorAction SilentlyContinue).State
-        if ($sandboxFeature -ne "Enabled") {
-            Write-Warning-Message "Windows Sandbox is not enabled. Enable Containers-DisposableClient before running dynamic tools."
-        } else {
-            Write-Success "Windows Sandbox feature enabled"
-        }
-    } catch {
-        Write-Warning-Message "Could not check Windows Sandbox feature: $($_.Exception.Message)"
+    $sandboxFeature = Get-OptionalFeatureByName -Names @("Containers-DisposableClientVM", "Containers-DisposableClient")
+    if (-not $sandboxFeature -or $sandboxFeature.State -ne "Enabled") {
+        Write-Warning-Message "Windows Sandbox is not enabled. Enable the 'Windows Sandbox' optional feature before running auto-sandbox dynamic tools."
+    } else {
+        Write-Success "Windows Sandbox feature enabled"
     }
 }
 
@@ -509,9 +574,8 @@ switch ($mcpClient) {
     }
     "3" {
         $configDir = "$env:USERPROFILE\.codex"
-        $configFile = Join-Path $configDir "mcp.json"
-        if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
-        $config | ConvertTo-Json -Depth 10 | Set-Content $configFile -Encoding UTF8
+        $configFile = Join-Path $configDir "config.toml"
+        Set-CodexMcpConfig -ConfigFile $configFile -NodeCommand $nodeExe -McpArgs @($distIndex) -Env $config.mcpServers["rikune"].env
         Write-Success "Codex config: $configFile"
     }
     "4" {

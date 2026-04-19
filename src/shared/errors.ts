@@ -67,7 +67,8 @@ const RECOVERY_HINTS: Partial<Record<ErrorCodeType, string>> = {
   E_SAMPLE_TOO_LARGE: 'Reduce file size or increase workspace.maxSampleSize in config.',
   E_STORAGE_FULL: 'Run storage.cleanup or increase storage quota.',
   E_QUOTA_EXCEEDED: 'Delete old samples or raise the quota limit.',
-  E_JOB_TIMEOUT: 'The job exceeded its timeout.  Consider increasing the timeout or splitting the workload.',
+  E_JOB_TIMEOUT:
+    'The job exceeded its timeout.  Consider increasing the timeout or splitting the workload.',
   E_BACKEND_UNAVAILABLE: 'Ensure the required backend is installed and reachable.',
   E_RATE_LIMITED: 'Wait a moment and retry the request.',
   E_CONFIG_INVALID: 'Check the configuration file for syntax or schema errors.',
@@ -97,7 +98,7 @@ export class RikuneError extends Error {
       details?: Record<string, unknown>
       cause?: unknown
       hint?: string
-    },
+    }
   ) {
     super(message, { cause: options?.cause })
     this.name = 'RikuneError'
@@ -124,9 +125,12 @@ export class RikuneError extends Error {
 
 export class NotFoundError extends RikuneError {
   constructor(entity: string, id: string, options?: { cause?: unknown }) {
-    const code = entity === 'sample' ? ErrorCode.E_SAMPLE_NOT_FOUND
-      : entity === 'job' ? ErrorCode.E_JOB_NOT_FOUND
-      : ErrorCode.E_NOT_FOUND
+    const code =
+      entity === 'sample'
+        ? ErrorCode.E_SAMPLE_NOT_FOUND
+        : entity === 'job'
+          ? ErrorCode.E_JOB_NOT_FOUND
+          : ErrorCode.E_NOT_FOUND
     super(code, `${entity} not found: ${id}`, { recoverable: false, ...options })
     this.name = 'NotFoundError'
   }
@@ -143,7 +147,7 @@ export class StorageError extends RikuneError {
   constructor(
     code: ErrorCodeType,
     message: string,
-    options?: { recoverable?: boolean; details?: Record<string, unknown>; cause?: unknown },
+    options?: { recoverable?: boolean; details?: Record<string, unknown>; cause?: unknown }
   ) {
     super(code, message, { recoverable: options?.recoverable ?? false, ...options })
     this.name = 'StorageError'
@@ -154,7 +158,7 @@ export class BackendError extends RikuneError {
   constructor(
     backend: string,
     message: string,
-    options?: { cause?: unknown; details?: Record<string, unknown> },
+    options?: { cause?: unknown; details?: Record<string, unknown> }
   ) {
     super(ErrorCode.E_BACKEND_EXEC, `[${backend}] ${message}`, {
       recoverable: false,
@@ -180,7 +184,7 @@ export class DatabaseError extends RikuneError {
   constructor(
     code: ErrorCodeType,
     message: string,
-    options?: { cause?: unknown; details?: Record<string, unknown> },
+    options?: { cause?: unknown; details?: Record<string, unknown> }
   ) {
     super(code, message, { recoverable: false, ...options })
     this.name = 'DatabaseError'

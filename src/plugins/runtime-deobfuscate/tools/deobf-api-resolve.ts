@@ -44,7 +44,7 @@ export const deobfApiResolveToolDefinition: ToolDefinition = {
 export function createDeobfApiResolveHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
-  dependencies?: SharedBackendDependencies,
+  dependencies?: SharedBackendDependencies
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -56,8 +56,16 @@ export function createDeobfApiResolveHandler(
 
       if (!backends.frida_cli?.available) {
         return buildDynamicSetupRequired(
-          backends.frida_cli || { available: false, source: null, path: null, version: null, checked_candidates: [], error: 'Frida not available' },
-          startTime, TOOL_NAME,
+          backends.frida_cli || {
+            available: false,
+            source: null,
+            path: null,
+            version: null,
+            checked_candidates: [],
+            error: 'Frida not available',
+          },
+          startTime,
+          TOOL_NAME
         )
       }
 
@@ -71,11 +79,16 @@ mod.main()
 `.trim()
 
       const runPython = dependencies?.runPythonJson || runPythonJson
-      const result = await runPython(pythonPath, workerScript, {
-        command: 'api_resolve',
-        sample_path: samplePath,
-        timeout: input.timeout,
-      }, (input.timeout + 10) * 1000)
+      const result = await runPython(
+        pythonPath,
+        workerScript,
+        {
+          command: 'api_resolve',
+          sample_path: samplePath,
+          timeout: input.timeout,
+        },
+        (input.timeout + 10) * 1000
+      )
 
       const workerData = result.parsed
       const artifacts: ArtifactRef[] = []
@@ -83,27 +96,40 @@ mod.main()
       if (workerData.ok && workerData.data && input.persist_artifact) {
         try {
           const artifact = await persistBackendArtifact(
-            workspaceManager, database, input.sample_id,
-            'deobfuscate', 'api_resolve',
+            workspaceManager,
+            database,
+            input.sample_id,
+            'deobfuscate',
+            'api_resolve',
             JSON.stringify(workerData.data, null, 2),
-            { extension: 'json', mime: 'application/json', sessionTag: input.session_tag },
+            { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
           )
           artifacts.push(artifact)
-        } catch { /* best effort */ }
+        } catch {
+          /* best effort */
+        }
       }
 
       return {
         ok: workerData.ok,
         data: {
           ...workerData.data,
-          recommended_next_tools: ['deep.unpack.pe_reconstruct', 'deobf.strings', 'deobf.cfg_trace'],
+          recommended_next_tools: [
+            'deep.unpack.pe_reconstruct',
+            'deobf.strings',
+            'deobf.cfg_trace',
+          ],
         },
         errors: workerData.errors?.length ? workerData.errors : undefined,
         artifacts: artifacts.length > 0 ? artifacts : undefined,
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [(error as Error).message], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [(error as Error).message],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

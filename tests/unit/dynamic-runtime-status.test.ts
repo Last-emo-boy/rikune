@@ -64,17 +64,19 @@ describe('dynamic.runtime.status tool', () => {
       }
       if (req.method === 'GET' && requestUrl.pathname === '/capabilities') {
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          ok: true,
-          data: {
-            runtime_backends: [
-              { type: 'inline', handler: 'executeDebugSession', requiresSample: true },
-              { type: 'inline', handler: 'executeSandboxExecute', requiresSample: true },
-              { type: 'inline', handler: 'executeBehaviorCapture', requiresSample: true },
-              { type: 'python-worker', handler: 'frida_worker.py', requiresSample: true },
-            ],
-          },
-        }))
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: {
+              runtime_backends: [
+                { type: 'inline', handler: 'executeDebugSession', requiresSample: true },
+                { type: 'inline', handler: 'executeSandboxExecute', requiresSample: true },
+                { type: 'inline', handler: 'executeBehaviorCapture', requiresSample: true },
+                { type: 'python-worker', handler: 'frida_worker.py', requiresSample: true },
+              ],
+            },
+          })
+        )
         return
       }
       res.writeHead(404, { 'Content-Type': 'application/json' })
@@ -84,11 +86,13 @@ describe('dynamic.runtime.status tool', () => {
       const requestUrl = new URL(req.url || '/', 'http://127.0.0.1')
       if (req.method === 'GET' && requestUrl.pathname === '/sandbox/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          ok: true,
-          backend: 'windows-sandbox',
-          hyperv: { configured: false },
-        }))
+        res.end(
+          JSON.stringify({
+            ok: true,
+            backend: 'windows-sandbox',
+            hyperv: { configured: false },
+          })
+        )
         return
       }
       res.writeHead(404, { 'Content-Type': 'application/json' })
@@ -99,8 +103,10 @@ describe('dynamic.runtime.status tool', () => {
     await new Promise<void>((resolve) => hostAgentServer.listen(0, '127.0.0.1', resolve))
     const runtimeAddress = runtimeServer.address()
     const hostAgentAddress = hostAgentServer.address()
-    if (!runtimeAddress || typeof runtimeAddress === 'string') throw new Error('Failed to bind runtime server')
-    if (!hostAgentAddress || typeof hostAgentAddress === 'string') throw new Error('Failed to bind host agent server')
+    if (!runtimeAddress || typeof runtimeAddress === 'string')
+      throw new Error('Failed to bind runtime server')
+    if (!hostAgentAddress || typeof hostAgentAddress === 'string')
+      throw new Error('Failed to bind host agent server')
 
     const runtimeEndpoint = `http://127.0.0.1:${runtimeAddress.port}`
     const hostAgentEndpoint = `http://127.0.0.1:${hostAgentAddress.port}`
@@ -113,7 +119,9 @@ describe('dynamic.runtime.status tool', () => {
       },
       database: {
         findDebugSession: jest.fn().mockReturnValue(createDebugSessionRow(runtimeEndpoint)),
-        findDebugSessionsBySample: jest.fn().mockReturnValue([createDebugSessionRow(runtimeEndpoint)]),
+        findDebugSessionsBySample: jest
+          .fn()
+          .mockReturnValue([createDebugSessionRow(runtimeEndpoint)]),
       },
     }
 
@@ -132,12 +140,22 @@ describe('dynamic.runtime.status tool', () => {
       expect((result.data as any).runtime_capabilities).toHaveLength(4)
       expect((result.data as any).sessions).toHaveLength(1)
       expect((result.data as any).artifact_count).toBe(1)
-      expect((result.data as any).backend_interface.supported_backends).toEqual(expect.objectContaining({
-        debug_session: true,
-        sandbox_execute: true,
-        behavior_capture: true,
-        frida_runtime: true,
-      }))
+      expect((result.data as any).backend_interface.supported_backends).toEqual(
+        expect.objectContaining({
+          debug_session: true,
+          sandbox_execute: true,
+          behavior_capture: true,
+          frida_runtime: true,
+        })
+      )
+      expect((result.data as any).execution_semantics).toEqual(
+        expect.objectContaining({
+          mcp_connect_opens_sandbox: false,
+          live_execution_requires_explicit_tool_call: true,
+          sandbox_execute_is_live_only_when_runtime_online: true,
+          current_live_execution_state: 'runtime_ready',
+        })
+      )
       expect((result.data as any).recommended_next_tools).toContain('runtime.debug.command')
       expect((result.data as any).recommended_next_tools).toContain('frida.runtime.instrument')
       expect((result.data as any).recommended_next_tools).toContain('dynamic.behavior.capture')
@@ -160,7 +178,16 @@ describe('dynamic.runtime.status tool', () => {
     expect((result.data as any).runtime_endpoint).toBeNull()
     expect((result.data as any).host_agent_endpoint).toBeNull()
     expect((result.data as any).backend_interface.can_execute_runtime_command).toBe(false)
+    expect((result.data as any).execution_semantics).toEqual(
+      expect.objectContaining({
+        mcp_connect_opens_sandbox: false,
+        dynamic_plan_opens_sandbox: false,
+        current_live_execution_state: 'not_configured',
+      })
+    )
     expect((result.data as any).recommended_next_tools).toContain('runtime.debug.session.start')
-    expect((result.data as any).next_actions.join(' ')).toContain('Configure runtime.hostAgentEndpoint')
+    expect((result.data as any).next_actions.join(' ')).toContain(
+      'Configure runtime.hostAgentEndpoint'
+    )
   })
 })

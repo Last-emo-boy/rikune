@@ -11,7 +11,13 @@ import type { CacheManager } from '../cache-manager.js'
 import type { JobQueue } from '../job-queue.js'
 import type { StorageManager } from '../storage/storage-manager.js'
 import type { Config } from '../config.js'
-import type { ToolRegistrar, PromptRegistrar, ResourceRegistrar, SamplingClient, PluginManagerSetter } from './registrar.js'
+import type {
+  ToolRegistrar,
+  PromptRegistrar,
+  ResourceRegistrar,
+  SamplingClient,
+  PluginManagerSetter,
+} from './registrar.js'
 
 export interface ToolDeps {
   workspaceManager: WorkspaceManager
@@ -31,7 +37,11 @@ import { resolvePrimarySamplePath } from '../sample/sample-workspace.js'
 import { persistStaticAnalysisJsonArtifact } from '../artifacts/static-analysis-artifacts.js'
 import { resolvePackagePath } from '../runtime-paths.js'
 import { generateCacheKey } from '../cache-manager.js'
-import { DecompilerWorker, getGhidraDiagnostics, normalizeGhidraError } from '../worker/decompiler-worker.js'
+import {
+  DecompilerWorker,
+  getGhidraDiagnostics,
+  normalizeGhidraError,
+} from '../worker/decompiler-worker.js'
 import {
   findBestGhidraAnalysis,
   getGhidraReadiness,
@@ -57,7 +67,11 @@ import { registerDiagnosticsTools } from './tool-registry/diagnostics-tools.js'
 import { registerScriptResources } from './tool-registry/script-resources.js'
 
 export async function registerAllTools(
-  server: ToolRegistrar & PromptRegistrar & ResourceRegistrar & SamplingClient & PluginManagerSetter,
+  server: ToolRegistrar &
+    PromptRegistrar &
+    ResourceRegistrar &
+    SamplingClient &
+    PluginManagerSetter,
   deps: ToolDeps
 ): Promise<void> {
   registerPrompts(server)
@@ -69,7 +83,7 @@ export async function registerAllTools(
   registerSystemTools(server, deps)
   registerUtilityTools(server)
 
-  const coreToolNames = Array.from(server.getToolDefinitions()).map(d => d.name)
+  const coreToolNames = Array.from(server.getToolDefinitions()).map((d) => d.name)
   getToolSurfaceManager().registerCoreTools(coreToolNames)
 
   const pluginDeps = {

@@ -13,29 +13,31 @@ const TOOL_NAME = 'analysis.notes'
 export const AnalysisNotesInputSchema = z.object({
   action: z.enum(['add', 'list', 'search', 'export']).describe('Note operation'),
   sample_id: z.string().describe('Sample identifier'),
-  note_text: z.string().optional()
-    .describe('Note content (required for "add")'),
-  category: z.enum([
-    'finding',
-    'hypothesis',
-    'ioc',
-    'technique',
-    'question',
-    'verdict',
-    'reference',
-  ]).optional().default('finding')
+  note_text: z.string().optional().describe('Note content (required for "add")'),
+  category: z
+    .enum(['finding', 'hypothesis', 'ioc', 'technique', 'question', 'verdict', 'reference'])
+    .optional()
+    .default('finding')
     .describe('Note category (for "add")'),
-  tags: z.array(z.string()).optional()
+  tags: z
+    .array(z.string())
+    .optional()
     .describe('Tags for the note (e.g., ["crypto", "c2", "evasion"])'),
-  severity: z.enum(['info', 'low', 'medium', 'high', 'critical']).optional()
-    .default('info').describe('Severity level for findings'),
-  related_samples: z.array(z.string()).optional()
-    .describe('Cross-reference to related sample IDs'),
-  related_tool: z.string().optional()
+  severity: z
+    .enum(['info', 'low', 'medium', 'high', 'critical'])
+    .optional()
+    .default('info')
+    .describe('Severity level for findings'),
+  related_samples: z.array(z.string()).optional().describe('Cross-reference to related sample IDs'),
+  related_tool: z
+    .string()
+    .optional()
     .describe('Tool that produced this finding (e.g., "entropy.analyze")'),
-  search_query: z.string().optional()
-    .describe('Search query (for "search" action)'),
-  export_format: z.enum(['json', 'markdown', 'csv']).optional().default('json')
+  search_query: z.string().optional().describe('Search query (for "search" action)'),
+  export_format: z
+    .enum(['json', 'markdown', 'csv'])
+    .optional()
+    .default('json')
     .describe('Export format (for "export" action)'),
 })
 
@@ -87,11 +89,17 @@ export function createAnalysisNotesHandler(deps: PluginToolDeps) {
           if (deps.persistStaticAnalysisJsonArtifact && deps.workspaceManager) {
             try {
               const artifact = await deps.persistStaticAnalysisJsonArtifact(
-                deps.workspaceManager, database, input.sample_id,
-                'analysis_note', `note_${noteId}`, note,
+                deps.workspaceManager,
+                database,
+                input.sample_id,
+                'analysis_note',
+                `note_${noteId}`,
+                note
               )
               artifacts.push(artifact)
-            } catch { /* best effort */ }
+            } catch {
+              /* best effort */
+            }
           }
 
           return {
@@ -111,7 +119,7 @@ export function createAnalysisNotesHandler(deps: PluginToolDeps) {
           // List all note artifacts for the sample
           const allArtifacts = database.listArtifacts(input.sample_id)
           const noteArtifacts = allArtifacts.filter(
-            (a: { type: string }) => a.type === 'analysis_note',
+            (a: { type: string }) => a.type === 'analysis_note'
           )
 
           return {
@@ -138,7 +146,7 @@ export function createAnalysisNotesHandler(deps: PluginToolDeps) {
           // Search across all note artifacts
           const allArtifacts = database.listArtifacts(input.sample_id)
           const noteArtifacts = allArtifacts.filter(
-            (a: { type: string }) => a.type === 'analysis_note',
+            (a: { type: string }) => a.type === 'analysis_note'
           )
 
           return {
@@ -157,7 +165,7 @@ export function createAnalysisNotesHandler(deps: PluginToolDeps) {
         case 'export': {
           const allArtifacts = database.listArtifacts(input.sample_id)
           const noteArtifacts = allArtifacts.filter(
-            (a: { type: string }) => a.type === 'analysis_note',
+            (a: { type: string }) => a.type === 'analysis_note'
           )
 
           return {

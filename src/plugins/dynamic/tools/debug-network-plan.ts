@@ -27,9 +27,17 @@ const NetworkProfileSchema = z.enum([
 ])
 
 export const DebugNetworkPlanInputSchema = z.object({
-  sample_id: z.string().optional().describe('Optional sample ID used to render runtime.debug.command templates and static context.'),
+  sample_id: z
+    .string()
+    .optional()
+    .describe(
+      'Optional sample ID used to render runtime.debug.command templates and static context.'
+    ),
   profiles: z.array(NetworkProfileSchema).optional().default(['proxy_sinkhole', 'etw_dns']),
-  runtime_backend: z.enum(['auto', 'windows-sandbox', 'hyperv-vm', 'manual-runtime']).optional().default('auto'),
+  runtime_backend: z
+    .enum(['auto', 'windows-sandbox', 'hyperv-vm', 'manual-runtime'])
+    .optional()
+    .default('auto'),
   capture_seconds: z.number().int().min(5).max(3600).optional().default(90),
   use_static_config_artifacts: z.boolean().optional().default(true),
   static_artifact_scope: z.enum(['all', 'latest', 'session']).optional().default('latest'),
@@ -84,7 +92,9 @@ function expandProfiles(profiles: string[]): string[] {
   return dedupe(profiles)
 }
 
-function behaviorCaptureTemplate(input: z.infer<typeof DebugNetworkPlanInputSchema>): Record<string, unknown> {
+function behaviorCaptureTemplate(
+  input: z.infer<typeof DebugNetworkPlanInputSchema>
+): Record<string, unknown> {
   return {
     tool: 'runtime.debug.command',
     args: {
@@ -102,7 +112,9 @@ function behaviorCaptureTemplate(input: z.infer<typeof DebugNetworkPlanInputSche
   }
 }
 
-function etwDnsTemplate(input: z.infer<typeof DebugNetworkPlanInputSchema>): Record<string, unknown> {
+function etwDnsTemplate(
+  input: z.infer<typeof DebugNetworkPlanInputSchema>
+): Record<string, unknown> {
   return {
     tool: 'runtime.debug.command',
     args: {
@@ -132,7 +144,12 @@ function backendFit(profile: string, backend: string): string {
 async function loadNetworkIndicators(
   deps: PluginToolDeps,
   input: z.infer<typeof DebugNetworkPlanInputSchema>
-): Promise<{ artifact_ids: string[]; scope_note: string | null; indicators: string[]; warnings: string[] }> {
+): Promise<{
+  artifact_ids: string[]
+  scope_note: string | null
+  indicators: string[]
+  warnings: string[]
+}> {
   if (!input.use_static_config_artifacts || !input.sample_id) {
     return { artifact_ids: [], scope_note: null, indicators: [], warnings: [] }
   }
@@ -157,9 +174,11 @@ async function loadNetworkIndicators(
     )
     const indicators = selection.artifacts.flatMap((artifact) =>
       (artifact.payload.candidates || [])
-        .filter((candidate) =>
-          ['url', 'domain', 'ip', 'ip_port', 'user_agent_or_http_client'].includes(candidate.kind || '') &&
-          (candidate.confidence || 0) >= 0.55
+        .filter(
+          (candidate) =>
+            ['url', 'domain', 'ip', 'ip_port', 'user_agent_or_http_client'].includes(
+              candidate.kind || ''
+            ) && (candidate.confidence || 0) >= 0.55
         )
         .map((candidate) => candidate.value)
     )
@@ -174,12 +193,18 @@ async function loadNetworkIndicators(
       artifact_ids: [],
       scope_note: null,
       indicators: [],
-      warnings: [`Failed to load static config artifacts: ${error instanceof Error ? error.message : String(error)}`],
+      warnings: [
+        `Failed to load static config artifacts: ${error instanceof Error ? error.message : String(error)}`,
+      ],
     }
   }
 }
 
-function buildProfile(profile: string, input: z.infer<typeof DebugNetworkPlanInputSchema>, indicators: string[]) {
+function buildProfile(
+  profile: string,
+  input: z.infer<typeof DebugNetworkPlanInputSchema>,
+  indicators: string[]
+) {
   const common = {
     capture_seconds: input.capture_seconds,
     backend_fit: backendFit(profile, input.runtime_backend),
@@ -193,7 +218,9 @@ function buildProfile(profile: string, input: z.infer<typeof DebugNetworkPlanInp
       required_tools: ['logman.exe', 'PowerShell'],
       runtime_command_template: etwDnsTemplate(input),
       artifacts: ['etw_dns.etl', 'eventlog_snapshot.json', 'telemetry_capture.json'],
-      notes: ['Use this after baseline behavior capture when DNS or network-client strings are present.'],
+      notes: [
+        'Use this after baseline behavior capture when DNS or network-client strings are present.',
+      ],
     }
   }
   if (profile === 'fakenet') {
@@ -215,7 +242,10 @@ function buildProfile(profile: string, input: z.infer<typeof DebugNetworkPlanInp
       id: `${profile}_lab`,
       title: profile === 'dns_sinkhole' ? 'DNS sinkhole preparation' : 'HTTP sinkhole preparation',
       ...common,
-      required_tools: ['PowerShell', profile === 'dns_sinkhole' ? 'hosts/firewall control' : 'local HTTP listener'],
+      required_tools: [
+        'PowerShell',
+        profile === 'dns_sinkhole' ? 'hosts/firewall control' : 'local HTTP listener',
+      ],
       runtime_command_template: behaviorCaptureTemplate(input),
       artifacts: ['behavior_capture.json', 'network_events'],
       notes: [
@@ -231,7 +261,9 @@ function buildProfile(profile: string, input: z.infer<typeof DebugNetworkPlanInp
     required_tools: ['Runtime Node behavior capture'],
     runtime_command_template: behaviorCaptureTemplate(input),
     artifacts: ['behavior_capture.json', 'network_events'],
-    notes: ['This is the safest first network run: it sets proxy environment variables for the sample process only.'],
+    notes: [
+      'This is the safest first network run: it sets proxy environment variables for the sample process only.',
+    ],
   }
 }
 
@@ -242,7 +274,9 @@ export function createDebugNetworkPlanHandler(deps: PluginToolDeps) {
       const input = DebugNetworkPlanInputSchema.parse(args || {})
       const staticContext = await loadNetworkIndicators(deps, input)
       const selectedProfiles = expandProfiles(input.profiles)
-      const profiles = selectedProfiles.map((profile) => buildProfile(profile, input, staticContext.indicators))
+      const profiles = selectedProfiles.map((profile) =>
+        buildProfile(profile, input, staticContext.indicators)
+      )
       const data = {
         schema: 'rikune.debug_network_plan.v1',
         tool_version: TOOL_VERSION,
@@ -280,16 +314,23 @@ export function createDebugNetworkPlanHandler(deps: PluginToolDeps) {
         ],
       }
       const artifacts: ArtifactRef[] = []
-      if (input.persist_artifact && input.sample_id && deps.workspaceManager && deps.database?.findSample?.(input.sample_id)) {
-        artifacts.push(await persistStaticAnalysisJsonArtifact(
-          deps.workspaceManager,
-          deps.database,
-          input.sample_id,
-          'debug_network_plan',
-          'debug_network_plan',
-          data,
-          input.session_tag
-        ))
+      if (
+        input.persist_artifact &&
+        input.sample_id &&
+        deps.workspaceManager &&
+        deps.database?.findSample?.(input.sample_id)
+      ) {
+        artifacts.push(
+          await persistStaticAnalysisJsonArtifact(
+            deps.workspaceManager,
+            deps.database,
+            input.sample_id,
+            'debug_network_plan',
+            'debug_network_plan',
+            data,
+            input.session_tag
+          )
+        )
       }
       return {
         ok: true,

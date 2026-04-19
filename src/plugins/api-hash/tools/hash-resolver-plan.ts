@@ -47,29 +47,71 @@ const RESOLVER_PATTERNS: Array<{
   confidence: number
   evidence: string
 }> = [
-  { pattern: /\bGetProcAddress\b/i, indicator: 'GetProcAddress', category: 'dynamic_api_resolution', confidence: 0.92, evidence: 'resolver_api_string' },
-  { pattern: /\bLoadLibrary(?:A|W|ExA|ExW)?\b/i, indicator: 'LoadLibrary', category: 'dynamic_api_resolution', confidence: 0.9, evidence: 'loader_api_string' },
-  { pattern: /\bLdrGetProcedureAddress\b/i, indicator: 'LdrGetProcedureAddress', category: 'native_dynamic_resolution', confidence: 0.92, evidence: 'native_resolver_api_string' },
-  { pattern: /\bLdrLoadDll\b/i, indicator: 'LdrLoadDll', category: 'native_dynamic_resolution', confidence: 0.9, evidence: 'native_loader_api_string' },
-  { pattern: /\bPEB\b|\bInMemoryOrderModuleList\b|\bLDR_DATA_TABLE_ENTRY\b/i, indicator: 'PEB module walk', category: 'manual_module_walk', confidence: 0.78, evidence: 'peb_walk_string' },
-  { pattern: /\bkernel32\.dll\b/i, indicator: 'kernel32.dll', category: 'resolver_module', confidence: 0.74, evidence: 'resolver_module_string' },
-  { pattern: /\bntdll\.dll\b/i, indicator: 'ntdll.dll', category: 'resolver_module', confidence: 0.72, evidence: 'native_module_string' },
+  {
+    pattern: /\bGetProcAddress\b/i,
+    indicator: 'GetProcAddress',
+    category: 'dynamic_api_resolution',
+    confidence: 0.92,
+    evidence: 'resolver_api_string',
+  },
+  {
+    pattern: /\bLoadLibrary(?:A|W|ExA|ExW)?\b/i,
+    indicator: 'LoadLibrary',
+    category: 'dynamic_api_resolution',
+    confidence: 0.9,
+    evidence: 'loader_api_string',
+  },
+  {
+    pattern: /\bLdrGetProcedureAddress\b/i,
+    indicator: 'LdrGetProcedureAddress',
+    category: 'native_dynamic_resolution',
+    confidence: 0.92,
+    evidence: 'native_resolver_api_string',
+  },
+  {
+    pattern: /\bLdrLoadDll\b/i,
+    indicator: 'LdrLoadDll',
+    category: 'native_dynamic_resolution',
+    confidence: 0.9,
+    evidence: 'native_loader_api_string',
+  },
+  {
+    pattern: /\bPEB\b|\bInMemoryOrderModuleList\b|\bLDR_DATA_TABLE_ENTRY\b/i,
+    indicator: 'PEB module walk',
+    category: 'manual_module_walk',
+    confidence: 0.78,
+    evidence: 'peb_walk_string',
+  },
+  {
+    pattern: /\bkernel32\.dll\b/i,
+    indicator: 'kernel32.dll',
+    category: 'resolver_module',
+    confidence: 0.74,
+    evidence: 'resolver_module_string',
+  },
+  {
+    pattern: /\bntdll\.dll\b/i,
+    indicator: 'ntdll.dll',
+    category: 'resolver_module',
+    confidence: 0.72,
+    evidence: 'native_module_string',
+  },
 ]
 
 const LOW_VALUE_DWORDS = new Set([
-  0x00000000,
-  0xffffffff,
-  0xcccccccc,
-  0x90909090,
-  0x41414141,
-  0x42424242,
-  0xdeadbeef,
+  0x00000000, 0xffffffff, 0xcccccccc, 0x90909090, 0x41414141, 0x42424242, 0xdeadbeef,
 ])
 
 export const hashResolverPlanInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
   max_candidates: z.number().int().min(1).max(256).optional().default(64),
-  max_scan_bytes: z.number().int().min(4096).max(16 * 1024 * 1024).optional().default(2 * 1024 * 1024),
+  max_scan_bytes: z
+    .number()
+    .int()
+    .min(4096)
+    .max(16 * 1024 * 1024)
+    .optional()
+    .default(2 * 1024 * 1024),
   include_raw_dwords: z.boolean().optional().default(true),
   persist_artifact: z.boolean().optional().default(true),
   session_tag: z.string().optional(),
@@ -82,7 +124,10 @@ export const hashResolverPlanToolDefinition: ToolDefinition = {
   inputSchema: hashResolverPlanInputSchema,
 }
 
-async function readSamplePrefix(samplePath: string, maxBytes: number): Promise<{
+async function readSamplePrefix(
+  samplePath: string,
+  maxBytes: number
+): Promise<{
   buffer: Buffer
   totalSize: number
   scannedBytes: number
@@ -155,12 +200,7 @@ function isPlausibleHashDword(value: number): boolean {
   if (LOW_VALUE_DWORDS.has(value >>> 0)) {
     return false
   }
-  const bytes = [
-    value & 0xff,
-    (value >>> 8) & 0xff,
-    (value >>> 16) & 0xff,
-    (value >>> 24) & 0xff,
-  ]
+  const bytes = [value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]
   const printable = bytes.filter((item) => item >= 0x20 && item <= 0x7e).length
   return printable < 4
 }
@@ -229,7 +269,11 @@ function collectHashCandidates(
   }
 
   if (options.includeRawDwords) {
-    for (let offset = 0; offset + 4 <= buffer.length && candidates.size < options.maxCandidates * 4; offset += 4) {
+    for (
+      let offset = 0;
+      offset + 4 <= buffer.length && candidates.size < options.maxCandidates * 4;
+      offset += 4
+    ) {
       const le = buffer.readUInt32LE(offset)
       if (isPlausibleHashDword(le)) {
         const normalized = `0x${le.toString(16).padStart(8, '0')}`
@@ -270,7 +314,9 @@ function collectHashCandidates(
 }
 
 function buildAlgorithmHints(indicators: ResolverIndicator[], candidates: HashCandidate[]) {
-  const hasResolver = indicators.some((item) => item.category.includes('resolution') || item.category.includes('walk'))
+  const hasResolver = indicators.some(
+    (item) => item.category.includes('resolution') || item.category.includes('walk')
+  )
   const candidateCount = candidates.length
   const baseConfidence = hasResolver ? 0.76 : candidateCount >= 8 ? 0.58 : 0.42
 
@@ -278,12 +324,22 @@ function buildAlgorithmHints(indicators: ResolverIndicator[], candidates: HashCa
     {
       algorithm: 'ror13',
       confidence: Math.min(0.95, baseConfidence + 0.1),
-      rationale: ['Common shellcode API hashing algorithm.', hasResolver ? 'Resolver or module-walk indicators were found.' : 'Use as first-pass fallback.'].filter(Boolean),
+      rationale: [
+        'Common shellcode API hashing algorithm.',
+        hasResolver
+          ? 'Resolver or module-walk indicators were found.'
+          : 'Use as first-pass fallback.',
+      ].filter(Boolean),
     },
     {
       algorithm: 'ror13_additive',
       confidence: Math.min(0.9, baseConfidence + 0.06),
-      rationale: ['Common DLL+API additive hash variant.', hasResolver ? 'Loader/resolver strings support DLL-aware matching.' : 'Useful when API-only hashes do not match.'].filter(Boolean),
+      rationale: [
+        'Common DLL+API additive hash variant.',
+        hasResolver
+          ? 'Loader/resolver strings support DLL-aware matching.'
+          : 'Useful when API-only hashes do not match.',
+      ].filter(Boolean),
     },
     {
       algorithm: 'crc32',
@@ -321,7 +377,10 @@ export function createHashResolverPlanHandler(
       }
 
       const { samplePath } = await resolvePrimarySamplePath(workspaceManager, input.sample_id)
-      const { buffer, totalSize, scannedBytes, truncated } = await readSamplePrefix(samplePath, input.max_scan_bytes)
+      const { buffer, totalSize, scannedBytes, truncated } = await readSamplePrefix(
+        samplePath,
+        input.max_scan_bytes
+      )
       const strings = extractAsciiStrings(buffer)
       const resolverIndicators = collectResolverIndicators(strings)
       const hashCandidates = collectHashCandidates(strings, buffer, resolverIndicators, {
@@ -336,13 +395,19 @@ export function createHashResolverPlanHandler(
       const warnings: string[] = []
 
       if (truncated) {
-        warnings.push(`Only scanned the first ${scannedBytes} of ${totalSize} bytes. Increase max_scan_bytes for a deeper resolver sweep.`)
+        warnings.push(
+          `Only scanned the first ${scannedBytes} of ${totalSize} bytes. Increase max_scan_bytes for a deeper resolver sweep.`
+        )
       }
       if (resolverIndicators.length === 0) {
-        warnings.push('No explicit dynamic resolver strings were found in the scanned sample prefix.')
+        warnings.push(
+          'No explicit dynamic resolver strings were found in the scanned sample prefix.'
+        )
       }
       if (recommendedHashes.length === 0) {
-        warnings.push('No high-confidence hash constants were found; raw DWORD candidates may be noisy.')
+        warnings.push(
+          'No high-confidence hash constants were found; raw DWORD candidates may be noisy.'
+        )
       }
 
       const data = {
@@ -372,30 +437,33 @@ export function createHashResolverPlanHandler(
           'trace.condition',
           'dynamic.behavior.diff',
         ],
-        next_actions: recommendedHashes.length > 0
-          ? [
-              `Run hash.identify with hashes=${JSON.stringify(recommendedHashes.slice(0, 12))}.`,
-              'Use hash.resolve with the best-matching algorithm to recover API names.',
-              'If runtime is available, convert resolver APIs into breakpoint.smart / trace.condition capture points.',
-            ]
-          : [
-              'Run static.config.carver and strings.extract(mode=full) to collect more resolver context.',
-              'If runtime is available, trace GetProcAddress/LdrGetProcedureAddress hits before attempting custom hash recovery.',
-            ],
+        next_actions:
+          recommendedHashes.length > 0
+            ? [
+                `Run hash.identify with hashes=${JSON.stringify(recommendedHashes.slice(0, 12))}.`,
+                'Use hash.resolve with the best-matching algorithm to recover API names.',
+                'If runtime is available, convert resolver APIs into breakpoint.smart / trace.condition capture points.',
+              ]
+            : [
+                'Run static.config.carver and strings.extract(mode=full) to collect more resolver context.',
+                'If runtime is available, trace GetProcAddress/LdrGetProcedureAddress hits before attempting custom hash recovery.',
+              ],
         warnings,
       }
 
       const artifacts: ArtifactRef[] = []
       if (input.persist_artifact) {
-        artifacts.push(await persistStaticAnalysisJsonArtifact(
-          workspaceManager,
-          database,
-          input.sample_id,
-          'api_hash_resolver_plan',
-          'hash_resolver_plan',
-          data,
-          input.session_tag
-        ))
+        artifacts.push(
+          await persistStaticAnalysisJsonArtifact(
+            workspaceManager,
+            database,
+            input.sample_id,
+            'api_hash_resolver_plan',
+            'hash_resolver_plan',
+            data,
+            input.session_tag
+          )
+        )
       }
 
       return {

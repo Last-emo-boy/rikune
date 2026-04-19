@@ -3,12 +3,45 @@
  * Manages SQLite database schema and operations
  */
 
-import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
-import { randomUUID } from 'crypto';
-import { logger, logDebug } from '../logger.js';
-import { DatabaseError, ErrorCode } from '../errors.js';
+import Database from 'better-sqlite3'
+import path from 'path'
+import fs from 'fs'
+import { randomUUID } from 'crypto'
+import { logger, logDebug } from '../logger.js'
+import { DatabaseError, ErrorCode } from '../errors.js'
+
+const DEFAULT_SQLITE_BUSY_TIMEOUT_MS = 30000
+
+function getSqliteBusyTimeoutMs(): number {
+  const raw = process.env.RIKUNE_SQLITE_BUSY_TIMEOUT_MS || process.env.SQLITE_BUSY_TIMEOUT_MS
+  if (!raw) {
+    return DEFAULT_SQLITE_BUSY_TIMEOUT_MS
+  }
+
+  const parsed = Number.parseInt(raw, 10)
+  if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 2147483647) {
+    return parsed
+  }
+
+  logger.warn(
+    { value: raw, fallback_ms: DEFAULT_SQLITE_BUSY_TIMEOUT_MS },
+    'Invalid SQLite busy timeout; using default'
+  )
+  return DEFAULT_SQLITE_BUSY_TIMEOUT_MS
+}
+
+function isSqliteBusyError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+
+  const maybeSqliteError = error as { code?: unknown; message?: unknown }
+  return (
+    maybeSqliteError.code === 'SQLITE_BUSY' ||
+    (typeof maybeSqliteError.message === 'string' &&
+      /SQLITE_BUSY|database is locked/i.test(maybeSqliteError.message))
+  )
+}
 
 // ─── Lightweight query builder ────────────────────────────────────────────────
 
@@ -85,7 +118,7 @@ export class QueryBuilder {
     const params: unknown[] = []
 
     if (this._wheres.length > 0) {
-      sql += ' WHERE ' + this._wheres.map(w => w.sql).join(' AND ')
+      sql += ' WHERE ' + this._wheres.map((w) => w.sql).join(' AND ')
       for (const w of this._wheres) params.push(...w.params)
     }
 
@@ -457,260 +490,259 @@ CREATE TABLE IF NOT EXISTS batch_samples (
 
 CREATE INDEX IF NOT EXISTS idx_batch_samples_batch ON batch_samples(batch_id);
 CREATE INDEX IF NOT EXISTS idx_batch_samples_status ON batch_samples(status);
-`;
+`
 
 /**
  * Database interface types
  */
 export interface Sample {
-  id: string; // sha256:<hex>
-  sha256: string;
-  md5: string | null;
-  size: number;
-  file_type: string | null;
-  created_at: string;
-  source: string | null;
+  id: string // sha256:<hex>
+  sha256: string
+  md5: string | null
+  size: number
+  file_type: string | null
+  created_at: string
+  source: string | null
 }
 
 export interface Analysis {
-  id: string; // UUID
-  sample_id: string; // FK -> samples.id
-  stage: string; // fingerprint/strings/ghidra/dotnet/sandbox
-  backend: string; // static/ghidra/dotnet/...
-  status: string; // queued/running/done/failed
-  started_at: string | null;
-  finished_at: string | null;
-  output_json: string | null; // 结构化结果
-  metrics_json: string | null; // 性能指标
+  id: string // UUID
+  sample_id: string // FK -> samples.id
+  stage: string // fingerprint/strings/ghidra/dotnet/sandbox
+  backend: string // static/ghidra/dotnet/...
+  status: string // queued/running/done/failed
+  started_at: string | null
+  finished_at: string | null
+  output_json: string | null // 结构化结果
+  metrics_json: string | null // 性能指标
 }
 
 export interface AnalysisRun {
-  id: string;
-  sample_id: string;
-  sample_sha256: string;
-  goal: string;
-  depth: string;
-  backend_policy: string;
-  compatibility_marker: string;
-  pipeline_version: string;
-  sample_size_tier: string | null;
-  analysis_budget_profile: string | null;
-  status: string;
-  latest_stage: string | null;
-  stage_plan_json: string | null;
-  artifact_refs_json: string | null;
-  metadata_json: string | null;
-  created_at: string;
-  updated_at: string;
-  finished_at: string | null;
-  reused_from_run_id: string | null;
-  last_accessed_at: string | null;
+  id: string
+  sample_id: string
+  sample_sha256: string
+  goal: string
+  depth: string
+  backend_policy: string
+  compatibility_marker: string
+  pipeline_version: string
+  sample_size_tier: string | null
+  analysis_budget_profile: string | null
+  status: string
+  latest_stage: string | null
+  stage_plan_json: string | null
+  artifact_refs_json: string | null
+  metadata_json: string | null
+  created_at: string
+  updated_at: string
+  finished_at: string | null
+  reused_from_run_id: string | null
+  last_accessed_at: string | null
 }
 
 export interface AnalysisRunStage {
-  run_id: string;
-  stage: string;
-  status: string;
-  execution_state: string | null;
-  tool: string | null;
-  job_id: string | null;
-  result_json: string | null;
-  artifact_refs_json: string | null;
-  coverage_json: string | null;
-  metadata_json: string | null;
-  created_at: string;
-  updated_at: string;
-  started_at: string | null;
-  finished_at: string | null;
+  run_id: string
+  stage: string
+  status: string
+  execution_state: string | null
+  tool: string | null
+  job_id: string | null
+  result_json: string | null
+  artifact_refs_json: string | null
+  coverage_json: string | null
+  metadata_json: string | null
+  created_at: string
+  updated_at: string
+  started_at: string | null
+  finished_at: string | null
 }
 
 export interface AnalysisEvidence {
-  id: string;
-  sample_id: string;
-  sample_sha256: string;
-  evidence_family: string;
-  backend: string;
-  mode: string;
-  compatibility_marker: string;
-  freshness_marker: string | null;
-  provenance_json: string | null;
-  metadata_json: string | null;
-  result_json: string;
-  artifact_refs_json: string | null;
-  created_at: string;
-  updated_at: string;
-  last_accessed_at: string | null;
+  id: string
+  sample_id: string
+  sample_sha256: string
+  evidence_family: string
+  backend: string
+  mode: string
+  compatibility_marker: string
+  freshness_marker: string | null
+  provenance_json: string | null
+  metadata_json: string | null
+  result_json: string
+  artifact_refs_json: string | null
+  created_at: string
+  updated_at: string
+  last_accessed_at: string | null
 }
 
 export interface DebugSession {
-  id: string;
-  run_id: string | null;
-  sample_id: string;
-  sample_sha256: string;
-  status: string;
-  debug_state: string;
-  backend: string | null;
-  current_phase: string | null;
-  session_tag: string | null;
-  artifact_refs_json: string | null;
-  guidance_json: string | null;
-  metadata_json: string | null;
-  created_at: string;
-  updated_at: string;
-  finished_at: string | null;
+  id: string
+  run_id: string | null
+  sample_id: string
+  sample_sha256: string
+  status: string
+  debug_state: string
+  backend: string | null
+  current_phase: string | null
+  session_tag: string | null
+  artifact_refs_json: string | null
+  guidance_json: string | null
+  metadata_json: string | null
+  created_at: string
+  updated_at: string
+  finished_at: string | null
 }
 
 export interface RuntimeWorkerFamilyState {
-  family: string;
-  compatibility_key: string;
-  deployment_key: string | null;
-  pool_kind: string;
-  live_workers: number;
-  idle_workers: number;
-  busy_workers: number;
-  unhealthy_workers: number;
-  warm_reuse_count: number;
-  cold_start_count: number;
-  eviction_count: number;
-  last_error: string | null;
-  metadata_json: string | null;
-  created_at: string;
-  updated_at: string;
-  last_used_at: string | null;
+  family: string
+  compatibility_key: string
+  deployment_key: string | null
+  pool_kind: string
+  live_workers: number
+  idle_workers: number
+  busy_workers: number
+  unhealthy_workers: number
+  warm_reuse_count: number
+  cold_start_count: number
+  eviction_count: number
+  last_error: string | null
+  metadata_json: string | null
+  created_at: string
+  updated_at: string
+  last_used_at: string | null
 }
 
 export interface SchedulerEvent {
-  id: string;
-  job_id: string | null;
-  run_id: string | null;
-  sample_id: string | null;
-  tool: string | null;
-  stage: string | null;
-  execution_bucket: string;
-  cost_class: string;
-  decision: string;
-  reason: string | null;
-  worker_family: string | null;
-  warm_reuse: number | null;
-  cold_start: number | null;
-  metadata_json: string | null;
-  created_at: string;
+  id: string
+  job_id: string | null
+  run_id: string | null
+  sample_id: string | null
+  tool: string | null
+  stage: string | null
+  execution_bucket: string
+  cost_class: string
+  decision: string
+  reason: string | null
+  worker_family: string | null
+  warm_reuse: number | null
+  cold_start: number | null
+  metadata_json: string | null
+  created_at: string
 }
 
 export interface Function {
-  sample_id: string; // FK
-  address: string;
-  name: string | null;
-  size: number | null;
-  score: number | null; // 兴趣函数排序分
-  tags: string | null; // JSON array
-  summary: string | null;
-  caller_count: number | null;
-  callee_count: number | null;
-  is_entry_point: number | null; // SQLite uses INTEGER for boolean (0/1)
-  is_exported: number | null; // SQLite uses INTEGER for boolean (0/1)
-  callees: string | null; // JSON array of callee names
+  sample_id: string // FK
+  address: string
+  name: string | null
+  size: number | null
+  score: number | null // 兴趣函数排序分
+  tags: string | null // JSON array
+  summary: string | null
+  caller_count: number | null
+  callee_count: number | null
+  is_entry_point: number | null // SQLite uses INTEGER for boolean (0/1)
+  is_exported: number | null // SQLite uses INTEGER for boolean (0/1)
+  callees: string | null // JSON array of callee names
 }
 
 export interface Artifact {
-  id: string; // UUID
-  sample_id: string; // FK
-  type: string; // strings/json/report/resource_dump/cfg
-  path: string; // workspace 相对路径
-  sha256: string;
-  mime: string | null;
-  created_at: string;
+  id: string // UUID
+  sample_id: string // FK
+  type: string // strings/json/report/resource_dump/cfg
+  path: string // workspace 相对路径
+  sha256: string
+  mime: string | null
+  created_at: string
 }
 
 export interface CachedResult {
-  key: string;
-  data: unknown;
-  created_at: string;
-  expires_at: string | null;
+  key: string
+  data: unknown
+  created_at: string
+  expires_at: string | null
 }
 
-export type UploadSessionStatus =
-  | 'pending'
-  | 'uploaded'
-  | 'registered'
-  | 'expired'
-  | 'failed';
+export type UploadSessionStatus = 'pending' | 'uploaded' | 'registered' | 'expired' | 'failed'
 
 export interface UploadSession {
-  id: string;
-  token: string;
-  status: UploadSessionStatus;
-  filename: string | null;
-  source: string | null;
-  created_at: string;
-  expires_at: string;
-  uploaded_at: string | null;
-  staged_path: string | null;
-  size: number | null;
-  sha256: string | null;
-  md5: string | null;
-  sample_id: string | null;
-  error: string | null;
-  metadata_json: string | null;
+  id: string
+  token: string
+  status: UploadSessionStatus
+  filename: string | null
+  source: string | null
+  created_at: string
+  expires_at: string
+  uploaded_at: string | null
+  staged_path: string | null
+  size: number | null
+  sha256: string | null
+  md5: string | null
+  sample_id: string | null
+  error: string | null
+  metadata_json: string | null
 }
 
 export interface CreateUploadSessionInput {
-  filename?: string | null;
-  source?: string | null;
-  expires_at: string;
-  metadata_json?: string | null;
-  token?: string;
+  filename?: string | null
+  source?: string | null
+  expires_at: string
+  metadata_json?: string | null
+  token?: string
 }
 
 export interface Batch {
-  id: string;
-  status: string;
-  total_samples: number;
-  completed_samples: number;
-  failed_samples: number;
-  cancelled_samples: number;
-  metadata_json: string | null;
-  created_at: string;
-  updated_at: string;
+  id: string
+  status: string
+  total_samples: number
+  completed_samples: number
+  failed_samples: number
+  cancelled_samples: number
+  metadata_json: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface BatchSample {
-  batch_id: string;
-  sample_id: string;
-  status: string;
-  filename: string;
-  size: number;
-  sha256: string;
-  artifact_refs_json: string | null;
-  error: string | null;
-  created_at: string;
-  updated_at: string;
+  batch_id: string
+  sample_id: string
+  status: string
+  filename: string
+  size: number
+  sha256: string
+  artifact_refs_json: string | null
+  error: string | null
+  created_at: string
+  updated_at: string
 }
 
 /**
  * Database manager class
  */
 export class DatabaseManager {
-  private db: Database.Database;
+  private db: Database.Database
 
   constructor(dbPath: string) {
     // Ensure directory exists
-    const dbDir = path.dirname(dbPath);
+    const dbDir = path.dirname(dbPath)
     if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
-      logDebug('Created database directory', { path: dbDir });
+      fs.mkdirSync(dbDir, { recursive: true })
+      logDebug('Created database directory', { path: dbDir })
     }
 
     // Initialize database
-    logger.info({ dbPath }, 'Initializing database');
-    this.db = new Database(dbPath);
+    logger.info({ dbPath }, 'Initializing database')
+    const busyTimeoutMs = getSqliteBusyTimeoutMs()
+    this.db = new Database(dbPath, { timeout: busyTimeoutMs })
 
     // Enable foreign keys
-    this.db.pragma('foreign_keys = ON');
+    this.db.pragma('foreign_keys = ON')
+    this.db.pragma(`busy_timeout = ${busyTimeoutMs}`)
+    this.db.pragma('journal_mode = WAL')
+    this.db.pragma('synchronous = NORMAL')
 
     // Initialize schema
-    this.initializeSchema();
-    logger.info('Database initialized successfully');
+    this.initializeSchema()
+    logger.info('Database initialized successfully')
   }
 
   /**
@@ -745,7 +777,7 @@ export class DatabaseManager {
    */
   querySql<T>(sql: string, params?: any[]): T[] {
     const stmt = this.db.prepare(sql)
-    return params ? stmt.all(...params) as T[] : stmt.all() as T[]
+    return params ? (stmt.all(...params) as T[]) : (stmt.all() as T[])
   }
 
   /**
@@ -753,15 +785,15 @@ export class DatabaseManager {
    */
   queryOneSql<T>(sql: string, params?: any[]): T | undefined {
     const stmt = this.db.prepare(sql)
-    return params ? stmt.get(...params) as T : stmt.get() as T
+    return params ? (stmt.get(...params) as T) : (stmt.get() as T)
   }
 
   /**
    * Initialize database schema
    */
   private initializeSchema(): void {
-    this.db.exec(SCHEMA_SQL);
-    this.ensureColumnExists('jobs', 'updated_at', "ALTER TABLE jobs ADD COLUMN updated_at TEXT");
+    this.db.exec(SCHEMA_SQL)
+    this.ensureColumnExists('jobs', 'updated_at', 'ALTER TABLE jobs ADD COLUMN updated_at TEXT')
     this.db.exec(`
       UPDATE jobs
       SET updated_at = COALESCE(updated_at, finished_at, started_at, created_at)
@@ -781,22 +813,22 @@ export class DatabaseManager {
    * Get the underlying database instance
    */
   getDatabase(): Database.Database {
-    return this.db;
+    return this.db
   }
 
   /**
    * Close the database connection
    */
   close(): void {
-    this.db.close();
+    this.db.close()
   }
 
   /**
    * Execute a transaction
    */
   transaction<T>(fn: () => T): T {
-    const txn = this.db.transaction(fn);
-    return txn();
+    const txn = this.db.transaction(fn)
+    return txn()
   }
 
   /**
@@ -812,7 +844,7 @@ export class DatabaseManager {
       throw new DatabaseError(
         ErrorCode.E_DB_TRANSACTION,
         `Transaction failed: ${(err as Error).message}`,
-        { cause: err },
+        { cause: err }
       )
     }
   }
@@ -826,7 +858,7 @@ export class DatabaseManager {
     const stmt = this.db.prepare(`
       INSERT INTO samples (id, sha256, md5, size, file_type, created_at, source)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
+    `)
     stmt.run(
       sample.id,
       sample.sha256,
@@ -835,23 +867,23 @@ export class DatabaseManager {
       sample.file_type,
       sample.created_at,
       sample.source
-    );
+    )
   }
 
   /**
    * Find a sample by ID
    */
   findSample(sampleId: string): Sample | undefined {
-    const stmt = this.db.prepare('SELECT * FROM samples WHERE id = ?');
-    return stmt.get(sampleId) as Sample | undefined;
+    const stmt = this.db.prepare('SELECT * FROM samples WHERE id = ?')
+    return stmt.get(sampleId) as Sample | undefined
   }
 
   /**
    * Find a sample by SHA256
    */
   findSampleBySha256(sha256: string): Sample | undefined {
-    const stmt = this.db.prepare('SELECT * FROM samples WHERE sha256 = ?');
-    return stmt.get(sha256) as Sample | undefined;
+    const stmt = this.db.prepare('SELECT * FROM samples WHERE sha256 = ?')
+    return stmt.get(sha256) as Sample | undefined
   }
 
   // ==================== Upload Session Operations ====================
@@ -876,7 +908,7 @@ export class DatabaseManager {
       sample_id: null,
       error: null,
       metadata_json: input.metadata_json ?? null,
-    };
+    }
 
     const stmt = this.db.prepare(`
       INSERT INTO upload_sessions (
@@ -884,7 +916,7 @@ export class DatabaseManager {
         uploaded_at, staged_path, size, sha256, md5, sample_id, error, metadata_json
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    `)
 
     stmt.run(
       session.id,
@@ -902,17 +934,17 @@ export class DatabaseManager {
       session.sample_id,
       session.error,
       session.metadata_json
-    );
+    )
 
-    return session;
+    return session
   }
 
   /**
    * Find an upload session by token.
    */
   findUploadSessionByToken(token: string): UploadSession | undefined {
-    const stmt = this.db.prepare('SELECT * FROM upload_sessions WHERE token = ?');
-    return stmt.get(token) as UploadSession | undefined;
+    const stmt = this.db.prepare('SELECT * FROM upload_sessions WHERE token = ?')
+    return stmt.get(token) as UploadSession | undefined
   }
 
   /**
@@ -922,67 +954,67 @@ export class DatabaseManager {
     token: string,
     updates: Partial<Omit<UploadSession, 'id' | 'token' | 'created_at'>>
   ): void {
-    const fields: string[] = [];
-    const values: any[] = [];
+    const fields: string[] = []
+    const values: any[] = []
 
     if (updates.status !== undefined) {
-      fields.push('status = ?');
-      values.push(updates.status);
+      fields.push('status = ?')
+      values.push(updates.status)
     }
     if (updates.filename !== undefined) {
-      fields.push('filename = ?');
-      values.push(updates.filename);
+      fields.push('filename = ?')
+      values.push(updates.filename)
     }
     if (updates.source !== undefined) {
-      fields.push('source = ?');
-      values.push(updates.source);
+      fields.push('source = ?')
+      values.push(updates.source)
     }
     if (updates.expires_at !== undefined) {
-      fields.push('expires_at = ?');
-      values.push(updates.expires_at);
+      fields.push('expires_at = ?')
+      values.push(updates.expires_at)
     }
     if (updates.uploaded_at !== undefined) {
-      fields.push('uploaded_at = ?');
-      values.push(updates.uploaded_at);
+      fields.push('uploaded_at = ?')
+      values.push(updates.uploaded_at)
     }
     if (updates.staged_path !== undefined) {
-      fields.push('staged_path = ?');
-      values.push(updates.staged_path);
+      fields.push('staged_path = ?')
+      values.push(updates.staged_path)
     }
     if (updates.size !== undefined) {
-      fields.push('size = ?');
-      values.push(updates.size);
+      fields.push('size = ?')
+      values.push(updates.size)
     }
     if (updates.sha256 !== undefined) {
-      fields.push('sha256 = ?');
-      values.push(updates.sha256);
+      fields.push('sha256 = ?')
+      values.push(updates.sha256)
     }
     if (updates.md5 !== undefined) {
-      fields.push('md5 = ?');
-      values.push(updates.md5);
+      fields.push('md5 = ?')
+      values.push(updates.md5)
     }
     if (updates.sample_id !== undefined) {
-      fields.push('sample_id = ?');
-      values.push(updates.sample_id);
+      fields.push('sample_id = ?')
+      values.push(updates.sample_id)
     }
     if (updates.error !== undefined) {
-      fields.push('error = ?');
-      values.push(updates.error);
+      fields.push('error = ?')
+      values.push(updates.error)
     }
     if (updates.metadata_json !== undefined) {
-      fields.push('metadata_json = ?');
-      values.push(updates.metadata_json);
+      fields.push('metadata_json = ?')
+      values.push(updates.metadata_json)
     }
 
     if (fields.length === 0) {
-      return;
+      return
     }
 
-    values.push(token);
+    values.push(token)
     const stmt = this.db.prepare(`
       UPDATE upload_sessions SET ${fields.join(', ')} WHERE token = ?
-    `);
-    stmt.run(...values);
+    `)
+    stmt.run(...values)
   }
 
   /**
@@ -991,9 +1023,9 @@ export class DatabaseManager {
   markUploadSessionUploaded(
     token: string,
     details: {
-      staged_path: string;
-      size: number;
-      filename?: string | null;
+      staged_path: string
+      size: number
+      filename?: string | null
     }
   ): void {
     this.updateUploadSessionByToken(token, {
@@ -1003,7 +1035,7 @@ export class DatabaseManager {
       staged_path: details.staged_path,
       size: details.size,
       error: null,
-    });
+    })
   }
 
   /**
@@ -1012,11 +1044,11 @@ export class DatabaseManager {
   markUploadSessionRegistered(
     token: string,
     details: {
-      sample_id: string;
-      size?: number | null;
-      sha256?: string | null;
-      md5?: string | null;
-      clearStagedPath?: boolean;
+      sample_id: string
+      size?: number | null
+      sha256?: string | null
+      md5?: string | null
+      clearStagedPath?: boolean
     }
   ): void {
     this.updateUploadSessionByToken(token, {
@@ -1027,7 +1059,7 @@ export class DatabaseManager {
       md5: details.md5 ?? undefined,
       staged_path: details.clearStagedPath ? null : undefined,
       error: null,
-    });
+    })
   }
 
   /**
@@ -1037,7 +1069,7 @@ export class DatabaseManager {
     this.updateUploadSessionByToken(token, {
       status: 'failed',
       error,
-    });
+    })
   }
 
   /**
@@ -1047,7 +1079,7 @@ export class DatabaseManager {
     this.updateUploadSessionByToken(token, {
       status: 'expired',
       error: 'Upload session expired',
-    });
+    })
   }
 
   /**
@@ -1059,9 +1091,9 @@ export class DatabaseManager {
       SET status = 'expired', error = COALESCE(error, 'Upload session expired')
       WHERE status IN ('pending', 'uploaded')
         AND expires_at < ?
-    `);
-    const result = stmt.run(nowIso);
-    return result.changes;
+    `)
+    const result = stmt.run(nowIso)
+    return result.changes
   }
 
   // ==================== Analysis Operations ====================
@@ -1073,7 +1105,7 @@ export class DatabaseManager {
     const stmt = this.db.prepare(`
       INSERT INTO analyses (id, sample_id, stage, backend, status, started_at, finished_at, output_json, metrics_json)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    `)
     stmt.run(
       analysis.id,
       analysis.sample_id,
@@ -1084,73 +1116,72 @@ export class DatabaseManager {
       analysis.finished_at,
       analysis.output_json,
       analysis.metrics_json
-    );
+    )
   }
 
   /**
    * Update an analysis
    */
-  updateAnalysis(
-    analysisId: string,
-    updates: Partial<Omit<Analysis, 'id' | 'sample_id'>>
-  ): void {
-    const fields: string[] = [];
-    const values: any[] = [];
+  updateAnalysis(analysisId: string, updates: Partial<Omit<Analysis, 'id' | 'sample_id'>>): void {
+    const fields: string[] = []
+    const values: any[] = []
 
     if (updates.stage !== undefined) {
-      fields.push('stage = ?');
-      values.push(updates.stage);
+      fields.push('stage = ?')
+      values.push(updates.stage)
     }
     if (updates.backend !== undefined) {
-      fields.push('backend = ?');
-      values.push(updates.backend);
+      fields.push('backend = ?')
+      values.push(updates.backend)
     }
     if (updates.status !== undefined) {
-      fields.push('status = ?');
-      values.push(updates.status);
+      fields.push('status = ?')
+      values.push(updates.status)
     }
     if (updates.started_at !== undefined) {
-      fields.push('started_at = ?');
-      values.push(updates.started_at);
+      fields.push('started_at = ?')
+      values.push(updates.started_at)
     }
     if (updates.finished_at !== undefined) {
-      fields.push('finished_at = ?');
-      values.push(updates.finished_at);
+      fields.push('finished_at = ?')
+      values.push(updates.finished_at)
     }
     if (updates.output_json !== undefined) {
-      fields.push('output_json = ?');
-      values.push(updates.output_json);
+      fields.push('output_json = ?')
+      values.push(updates.output_json)
     }
     if (updates.metrics_json !== undefined) {
-      fields.push('metrics_json = ?');
-      values.push(updates.metrics_json);
+      fields.push('metrics_json = ?')
+      values.push(updates.metrics_json)
     }
 
     if (fields.length === 0) {
-      return; // No updates to perform
+      return // No updates to perform
     }
 
-    values.push(analysisId);
+    values.push(analysisId)
     const stmt = this.db.prepare(`
       UPDATE analyses SET ${fields.join(', ')} WHERE id = ?
-    `);
-    stmt.run(...values);
+    `)
+    stmt.run(...values)
   }
 
   /**
    * Find an analysis by ID
    */
   findAnalysis(analysisId: string): Analysis | undefined {
-    const stmt = this.db.prepare('SELECT * FROM analyses WHERE id = ?');
-    return stmt.get(analysisId) as Analysis | undefined;
+    const stmt = this.db.prepare('SELECT * FROM analyses WHERE id = ?')
+    return stmt.get(analysisId) as Analysis | undefined
   }
 
   /**
    * Find all analyses for a sample
    */
   findAnalysesBySample(sampleId: string): Analysis[] {
-    const stmt = this.db.prepare('SELECT * FROM analyses WHERE sample_id = ? ORDER BY started_at DESC');
-    return stmt.all(sampleId) as Analysis[];
+    const stmt = this.db.prepare(
+      'SELECT * FROM analyses WHERE sample_id = ? ORDER BY started_at DESC'
+    )
+    return stmt.all(sampleId) as Analysis[]
   }
 
   // ==================== Analysis Run Operations ====================
@@ -1192,7 +1223,20 @@ export class DatabaseManager {
 
   updateAnalysisRun(
     runId: string,
-    updates: Partial<Omit<AnalysisRun, 'id' | 'sample_id' | 'sample_sha256' | 'goal' | 'depth' | 'backend_policy' | 'compatibility_marker' | 'pipeline_version' | 'created_at'>>
+    updates: Partial<
+      Omit<
+        AnalysisRun,
+        | 'id'
+        | 'sample_id'
+        | 'sample_sha256'
+        | 'goal'
+        | 'depth'
+        | 'backend_policy'
+        | 'compatibility_marker'
+        | 'pipeline_version'
+        | 'created_at'
+      >
+    >
   ): void {
     const fields: string[] = []
     const values: any[] = []
@@ -1375,7 +1419,11 @@ export class DatabaseManager {
     return stmt.get(evidenceId) as AnalysisEvidence | undefined
   }
 
-  findAnalysisEvidenceBySample(sampleId: string, family?: string, limit?: number): AnalysisEvidence[] {
+  findAnalysisEvidenceBySample(
+    sampleId: string,
+    family?: string,
+    limit?: number
+  ): AnalysisEvidence[] {
     let sql = 'SELECT * FROM analysis_evidence WHERE sample_id = ?'
     const params: any[] = [sampleId]
     if (family) {
@@ -1590,9 +1638,7 @@ export class DatabaseManager {
    */
   findRecentSamples(limit: number = 20): Sample[] {
     const safeLimit = Math.max(1, Math.min(limit, 500))
-    const stmt = this.db.prepare(
-      'SELECT * FROM samples ORDER BY datetime(created_at) DESC LIMIT ?'
-    )
+    const stmt = this.db.prepare('SELECT * FROM samples ORDER BY datetime(created_at) DESC LIMIT ?')
     return stmt.all(safeLimit) as Sample[]
   }
 
@@ -1684,25 +1730,29 @@ export class DatabaseManager {
       status: 'failed',
       finished_at: finishedAt,
       output_json: JSON.stringify({
-        ...(row.output_json ? (() => {
-          try {
-            return JSON.parse(row.output_json)
-          } catch {
-            return {}
-          }
-        })() : {}),
+        ...(row.output_json
+          ? (() => {
+              try {
+                return JSON.parse(row.output_json)
+              } catch {
+                return {}
+              }
+            })()
+          : {}),
         error: `E_TIMEOUT: stale persisted analysis reaped after exceeding ${maxRuntimeMs}ms`,
         stale_reaped: true,
         stale_reaped_at: finishedAt,
       }),
       metrics_json: JSON.stringify({
-        ...(row.metrics_json ? (() => {
-          try {
-            return JSON.parse(row.metrics_json)
-          } catch {
-            return {}
-          }
-        })() : {}),
+        ...(row.metrics_json
+          ? (() => {
+              try {
+                return JSON.parse(row.metrics_json)
+              } catch {
+                return {}
+              }
+            })()
+          : {}),
         stale_reaped: true,
       }),
     }))
@@ -1717,7 +1767,7 @@ export class DatabaseManager {
     const stmt = this.db.prepare(`
       INSERT INTO functions (sample_id, address, name, size, score, tags, summary, caller_count, callee_count, is_entry_point, is_exported, callees)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    `)
     stmt.run(
       func.sample_id,
       func.address,
@@ -1731,27 +1781,27 @@ export class DatabaseManager {
       func.is_entry_point ?? 0,
       func.is_exported ?? 0,
       func.callees
-    );
+    )
   }
 
   /**
    * Find all functions for a sample
    */
   findFunctions(sampleId: string): Function[] {
-    const stmt = this.db.prepare('SELECT * FROM functions WHERE sample_id = ? ORDER BY address');
-    return stmt.all(sampleId) as Function[];
+    const stmt = this.db.prepare('SELECT * FROM functions WHERE sample_id = ? ORDER BY address')
+    return stmt.all(sampleId) as Function[]
   }
 
   /**
    * Find functions by sample with score ordering
    */
   findFunctionsByScore(sampleId: string, limit?: number): Function[] {
-    let sql = 'SELECT * FROM functions WHERE sample_id = ? ORDER BY score DESC';
+    let sql = 'SELECT * FROM functions WHERE sample_id = ? ORDER BY score DESC'
     if (limit !== undefined) {
-      sql += ` LIMIT ${limit}`;
+      sql += ` LIMIT ${limit}`
     }
-    const stmt = this.db.prepare(sql);
-    return stmt.all(sampleId) as Function[];
+    const stmt = this.db.prepare(sql)
+    return stmt.all(sampleId) as Function[]
   }
 
   /**
@@ -1762,39 +1812,39 @@ export class DatabaseManager {
     address: string,
     updates: Partial<Omit<Function, 'sample_id' | 'address'>>
   ): void {
-    const fields: string[] = [];
-    const values: any[] = [];
+    const fields: string[] = []
+    const values: any[] = []
 
     if (updates.name !== undefined) {
-      fields.push('name = ?');
-      values.push(updates.name);
+      fields.push('name = ?')
+      values.push(updates.name)
     }
     if (updates.size !== undefined) {
-      fields.push('size = ?');
-      values.push(updates.size);
+      fields.push('size = ?')
+      values.push(updates.size)
     }
     if (updates.score !== undefined) {
-      fields.push('score = ?');
-      values.push(updates.score);
+      fields.push('score = ?')
+      values.push(updates.score)
     }
     if (updates.tags !== undefined) {
-      fields.push('tags = ?');
-      values.push(updates.tags);
+      fields.push('tags = ?')
+      values.push(updates.tags)
     }
     if (updates.summary !== undefined) {
-      fields.push('summary = ?');
-      values.push(updates.summary);
+      fields.push('summary = ?')
+      values.push(updates.summary)
     }
 
     if (fields.length === 0) {
-      return; // No updates to perform
+      return // No updates to perform
     }
 
-    values.push(sampleId, address);
+    values.push(sampleId, address)
     const stmt = this.db.prepare(`
       UPDATE functions SET ${fields.join(', ')} WHERE sample_id = ? AND address = ?
-    `);
-    stmt.run(...values);
+    `)
+    stmt.run(...values)
   }
 
   // ==================== Artifact Operations ====================
@@ -1806,7 +1856,7 @@ export class DatabaseManager {
     const stmt = this.db.prepare(`
       INSERT INTO artifacts (id, sample_id, type, path, sha256, mime, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
+    `)
     stmt.run(
       artifact.id,
       artifact.sample_id,
@@ -1815,15 +1865,17 @@ export class DatabaseManager {
       artifact.sha256,
       artifact.mime,
       artifact.created_at
-    );
+    )
   }
 
   /**
    * Find all artifacts for a sample
    */
   findArtifacts(sampleId: string): Artifact[] {
-    const stmt = this.db.prepare('SELECT * FROM artifacts WHERE sample_id = ? ORDER BY created_at DESC');
-    return stmt.all(sampleId) as Artifact[];
+    const stmt = this.db.prepare(
+      'SELECT * FROM artifacts WHERE sample_id = ? ORDER BY created_at DESC'
+    )
+    return stmt.all(sampleId) as Artifact[]
   }
 
   /**
@@ -1854,8 +1906,10 @@ export class DatabaseManager {
    * Find artifacts by sample and type
    */
   findArtifactsByType(sampleId: string, type: string): Artifact[] {
-    const stmt = this.db.prepare('SELECT * FROM artifacts WHERE sample_id = ? AND type = ? ORDER BY created_at DESC');
-    return stmt.all(sampleId, type) as Artifact[];
+    const stmt = this.db.prepare(
+      'SELECT * FROM artifacts WHERE sample_id = ? AND type = ? ORDER BY created_at DESC'
+    )
+    return stmt.all(sampleId, type) as Artifact[]
   }
 
   // ==================== Cache Operations ====================
@@ -1870,30 +1924,34 @@ export class DatabaseManager {
     expiresAt?: string
     sampleSha256?: string
   } | null> {
-    const stmt = this.db.prepare('SELECT data, created_at, expires_at, sample_sha256 FROM cache WHERE key = ?');
-    const row = stmt.get(key) as {
-      data: string
-      created_at: string | null
-      expires_at: string | null
-      sample_sha256: string | null
-    } | undefined;
+    const stmt = this.db.prepare(
+      'SELECT data, created_at, expires_at, sample_sha256 FROM cache WHERE key = ?'
+    )
+    const row = stmt.get(key) as
+      | {
+          data: string
+          created_at: string | null
+          expires_at: string | null
+          sample_sha256: string | null
+        }
+      | undefined
 
     if (!row) {
-      return null;
+      return null
     }
 
     try {
-      const data = JSON.parse(row.data);
+      const data = JSON.parse(row.data)
       return {
         data,
         createdAt: row.created_at || undefined,
         expiresAt: row.expires_at || undefined,
         sampleSha256: row.sample_sha256 || undefined,
-      };
+      }
     } catch (error) {
       // Invalid JSON, remove from cache
-      this.db.prepare('DELETE FROM cache WHERE key = ?').run(key);
-      return null;
+      this.db.prepare('DELETE FROM cache WHERE key = ?').run(key)
+      return null
     }
   }
 
@@ -1901,11 +1959,16 @@ export class DatabaseManager {
    * Set cached result in database
    * Requirements: 20.5
    */
-  async setCachedResult(key: string, data: unknown, expiresAt?: string, sampleSha256?: string): Promise<void> {
+  async setCachedResult(
+    key: string,
+    data: unknown,
+    expiresAt?: string,
+    sampleSha256?: string
+  ): Promise<void> {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO cache (key, data, sample_sha256, created_at, expires_at)
       VALUES (?, ?, ?, ?, ?)
-    `);
+    `)
 
     stmt.run(
       key,
@@ -1913,44 +1976,54 @@ export class DatabaseManager {
       sampleSha256 || null,
       new Date().toISOString(),
       expiresAt || null
-    );
+    )
   }
 
   /**
    * Delete expired cache entries
    */
   cleanExpiredCache(): number {
-    const stmt = this.db.prepare('DELETE FROM cache WHERE expires_at IS NOT NULL AND expires_at < ?');
-    const result = stmt.run(new Date().toISOString());
-    return result.changes;
+    const stmt = this.db.prepare(
+      'DELETE FROM cache WHERE expires_at IS NOT NULL AND expires_at < ?'
+    )
+    const result = stmt.run(new Date().toISOString())
+    return result.changes
   }
 
   /**
    * Get recent cache entries for prewarming
    * Requirements: 26.1 (cache prewarming), 26.2 (query optimization)
-   * 
+   *
    * @param limit - Maximum number of entries to return
    * @returns Array of cache entries ordered by creation time (most recent first)
    */
-  async getRecentCacheEntries(limit: number): Promise<Array<{ key: string; data: string; expires_at: string | null }>> {
+  async getRecentCacheEntries(
+    limit: number
+  ): Promise<Array<{ key: string; data: string; expires_at: string | null }>> {
     const stmt = this.db.prepare(`
       SELECT key, data, expires_at 
       FROM cache 
       WHERE expires_at IS NULL OR expires_at > ?
       ORDER BY created_at DESC 
       LIMIT ?
-    `);
-    return stmt.all(new Date().toISOString(), limit) as Array<{ key: string; data: string; expires_at: string | null }>;
+    `)
+    return stmt.all(new Date().toISOString(), limit) as Array<{
+      key: string
+      data: string
+      expires_at: string | null
+    }>
   }
 
   /**
    * Get cache entries for a specific sample
    * Requirements: 26.1 (cache prewarming), 26.2 (query optimization)
-   * 
+   *
    * @param sampleSha256 - SHA256 hash of the sample
    * @returns Array of cache entries for the sample
    */
-  async getCacheEntriesBySample(sampleSha256: string): Promise<Array<{ key: string; data: string; expires_at: string | null }>> {
+  async getCacheEntriesBySample(
+    sampleSha256: string
+  ): Promise<Array<{ key: string; data: string; expires_at: string | null }>> {
     // Query cache entries by sample_sha256 column
     const stmt = this.db.prepare(`
       SELECT key, data, expires_at 
@@ -1958,26 +2031,30 @@ export class DatabaseManager {
       WHERE sample_sha256 = ?
         AND (expires_at IS NULL OR expires_at > ?)
       ORDER BY created_at DESC
-    `);
-    return stmt.all(sampleSha256, new Date().toISOString()) as Array<{ key: string; data: string; expires_at: string | null }>;
+    `)
+    return stmt.all(sampleSha256, new Date().toISOString()) as Array<{
+      key: string
+      data: string
+      expires_at: string | null
+    }>
   }
 
   /**
    * Batch insert functions for better performance
    * Requirements: 26.2 (database query optimization)
-   * 
+   *
    * @param functions - Array of functions to insert
    */
   insertFunctionsBatch(functions: Function[]): void {
     if (functions.length === 0) {
-      return;
+      return
     }
 
     // Use transaction for batch insert
     const insertStmt = this.db.prepare(`
       INSERT OR REPLACE INTO functions (sample_id, address, name, size, score, tags, summary, caller_count, callee_count, is_entry_point, is_exported, callees)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    `)
 
     const insertMany = this.db.transaction((funcs: Function[]) => {
       for (const func of funcs) {
@@ -1994,29 +2071,29 @@ export class DatabaseManager {
           func.is_entry_point ?? 0,
           func.is_exported ?? 0,
           func.callees
-        );
+        )
       }
-    });
+    })
 
-    insertMany(functions);
+    insertMany(functions)
   }
 
   /**
    * Batch insert artifacts for better performance
    * Requirements: 26.2 (database query optimization)
-   * 
+   *
    * @param artifacts - Array of artifacts to insert
    */
   insertArtifactsBatch(artifacts: Artifact[]): void {
     if (artifacts.length === 0) {
-      return;
+      return
     }
 
     // Use transaction for batch insert
     const insertStmt = this.db.prepare(`
       INSERT INTO artifacts (id, sample_id, type, path, sha256, mime, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
+    `)
 
     const insertMany = this.db.transaction((arts: Artifact[]) => {
       for (const artifact of arts) {
@@ -2028,55 +2105,65 @@ export class DatabaseManager {
           artifact.sha256,
           artifact.mime,
           artifact.created_at
-        );
+        )
       }
-    });
+    })
 
-    insertMany(artifacts);
+    insertMany(artifacts)
   }
 
   /**
    * Optimize database by running VACUUM and ANALYZE
    * Requirements: 26.2 (database query optimization)
-   * 
+   *
    * Should be run periodically to maintain performance
    */
   optimizeDatabase(): void {
     // ANALYZE updates statistics for query planner
-    this.db.exec('ANALYZE');
-    
+    this.db.exec('ANALYZE')
+
     // VACUUM reclaims space and defragments
     // Note: VACUUM can be slow on large databases
-    this.db.exec('VACUUM');
+    this.db.exec('VACUUM')
   }
 
   /**
    * Get database statistics for monitoring
    * Requirements: 26.2 (database query optimization)
-   * 
+   *
    * @returns Object with database statistics
    */
   getDatabaseStats(): {
-    sampleCount: number;
-    analysisCount: number;
-    functionCount: number;
-    artifactCount: number;
-    cacheCount: number;
-    dbSizeBytes: number;
+    sampleCount: number
+    analysisCount: number
+    functionCount: number
+    artifactCount: number
+    cacheCount: number
+    dbSizeBytes: number
   } {
-    const sampleCount = this.db.prepare('SELECT COUNT(*) as count FROM samples').get() as { count: number };
-    const analysisCount = this.db.prepare('SELECT COUNT(*) as count FROM analyses').get() as { count: number };
-    const functionCount = this.db.prepare('SELECT COUNT(*) as count FROM functions').get() as { count: number };
-    const artifactCount = this.db.prepare('SELECT COUNT(*) as count FROM artifacts').get() as { count: number };
-    const cacheCount = this.db.prepare('SELECT COUNT(*) as count FROM cache').get() as { count: number };
-    
+    const sampleCount = this.db.prepare('SELECT COUNT(*) as count FROM samples').get() as {
+      count: number
+    }
+    const analysisCount = this.db.prepare('SELECT COUNT(*) as count FROM analyses').get() as {
+      count: number
+    }
+    const functionCount = this.db.prepare('SELECT COUNT(*) as count FROM functions').get() as {
+      count: number
+    }
+    const artifactCount = this.db.prepare('SELECT COUNT(*) as count FROM artifacts').get() as {
+      count: number
+    }
+    const cacheCount = this.db.prepare('SELECT COUNT(*) as count FROM cache').get() as {
+      count: number
+    }
+
     // Get database file size
-    const dbPath = (this.db as { name?: string }).name; // Access internal property
-    let dbSizeBytes = 0;
+    const dbPath = (this.db as { name?: string }).name // Access internal property
+    let dbSizeBytes = 0
     try {
       if (typeof dbPath === 'string' && dbPath.length > 0) {
-        const stats = fs.statSync(dbPath);
-        dbSizeBytes = stats.size;
+        const stats = fs.statSync(dbPath)
+        dbSizeBytes = stats.size
       }
     } catch (e) {
       // DB file size read is best-effort
@@ -2089,8 +2176,8 @@ export class DatabaseManager {
       functionCount: functionCount.count,
       artifactCount: artifactCount.count,
       cacheCount: cacheCount.count,
-      dbSizeBytes
-    };
+      dbSizeBytes,
+    }
   }
 
   // Batch submission methods
@@ -2299,7 +2386,9 @@ export class DatabaseManager {
   }
 
   findJobsByStatus(status: string, limit: number = 100): any[] {
-    const stmt = this.db.prepare('SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?')
+    const stmt = this.db.prepare(
+      'SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?'
+    )
     return stmt.all(status, limit) as any[]
   }
 
@@ -2330,13 +2419,17 @@ export class DatabaseManager {
   }
 
   findJobsBySample(sampleId: string, limit: number = 50): any[] {
-    const stmt = this.db.prepare('SELECT * FROM jobs WHERE sample_id = ? ORDER BY created_at DESC LIMIT ?')
+    const stmt = this.db.prepare(
+      'SELECT * FROM jobs WHERE sample_id = ? ORDER BY created_at DESC LIMIT ?'
+    )
     return stmt.all(sampleId, limit) as any[]
   }
 
   cleanupOldJobs(retentionHours: number = 24): number {
     const cutoff = new Date(Date.now() - retentionHours * 60 * 60 * 1000).toISOString()
-    const stmt = this.db.prepare('DELETE FROM jobs WHERE created_at < ? AND status IN (\'completed\', \'failed\', \'cancelled\')')
+    const stmt = this.db.prepare(
+      "DELETE FROM jobs WHERE created_at < ? AND status IN ('completed', 'failed', 'cancelled')"
+    )
     const result = stmt.run(cutoff)
     return result.changes
   }
@@ -2408,23 +2501,40 @@ export class DatabaseManager {
         worker_family, warm_reuse, cold_start, metadata_json, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
-    stmt.run(
-      event.id,
-      event.job_id,
-      event.run_id,
-      event.sample_id,
-      event.tool,
-      event.stage,
-      event.execution_bucket,
-      event.cost_class,
-      event.decision,
-      event.reason,
-      event.worker_family,
-      event.warm_reuse,
-      event.cold_start,
-      event.metadata_json,
-      event.created_at
-    )
+    try {
+      stmt.run(
+        event.id,
+        event.job_id,
+        event.run_id,
+        event.sample_id,
+        event.tool,
+        event.stage,
+        event.execution_bucket,
+        event.cost_class,
+        event.decision,
+        event.reason,
+        event.worker_family,
+        event.warm_reuse,
+        event.cold_start,
+        event.metadata_json,
+        event.created_at
+      )
+    } catch (error) {
+      if (isSqliteBusyError(error)) {
+        logger.warn(
+          {
+            job_id: event.job_id,
+            run_id: event.run_id,
+            tool: event.tool,
+            decision: event.decision,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Skipped scheduler telemetry event because SQLite was busy'
+        )
+        return
+      }
+      throw error
+    }
   }
 
   findLatestSchedulerEventForJob(jobId: string): SchedulerEvent | null {
@@ -2446,5 +2556,5 @@ export class DatabaseManager {
  * Create and initialize a database instance
  */
 export function createDatabase(dbPath: string): DatabaseManager {
-  return new DatabaseManager(dbPath);
+  return new DatabaseManager(dbPath)
 }

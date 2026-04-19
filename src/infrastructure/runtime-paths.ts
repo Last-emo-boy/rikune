@@ -26,10 +26,7 @@ function resolveModuleDir(): string {
 }
 
 function resolvePackageRoot(): string {
-  const candidates = [
-    path.resolve(resolveModuleDir(), '..'),
-    process.cwd(),
-  ]
+  const candidates = [path.resolve(resolveModuleDir(), '..'), process.cwd()]
 
   for (const candidate of candidates) {
     if (fs.existsSync(path.join(candidate, 'package.json'))) {

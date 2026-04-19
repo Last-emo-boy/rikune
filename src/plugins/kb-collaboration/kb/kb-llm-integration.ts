@@ -16,42 +16,73 @@ export interface KbIntegrationOptions {
 
 export async function checkKbForFunctionNaming(
   db: DatabaseManager,
-  functionData: { address: string; calledApis?: string[]; referencedStrings?: string[]; cfgHash?: string },
+  functionData: {
+    address: string
+    calledApis?: string[]
+    referencedStrings?: string[]
+    cfgHash?: string
+  },
   options: KbIntegrationOptions = {}
-): Promise<{ found: boolean; suggestions?: Array<{ name: string; confidence: number; source: string; explanation: string }> } | null> {
+): Promise<{
+  found: boolean
+  suggestions?: Array<{ name: string; confidence: number; source: string; explanation: string }>
+} | null> {
   const { useKb = true, minConfidence = 0.6 } = options
   if (!useKb) return null
-  
-  const query: SearchFunctionsQuery = { apis: functionData.calledApis, strings: functionData.referencedStrings, minConfidence, limit: 5 }
+
+  const query: SearchFunctionsQuery = {
+    apis: functionData.calledApis,
+    strings: functionData.referencedStrings,
+    minConfidence,
+    limit: 5,
+  }
   const results = searchFunctions(db, query)
-  
+
   if (results.total === 0) return { found: false }
-  
+
   return {
     found: true,
-    suggestions: results.results.slice(0, 3).map(r => ({ name: r.name, confidence: r.confidence, source: r.source, explanation: r.explanation })),
+    suggestions: results.results.slice(0, 3).map((r) => ({
+      name: r.name,
+      confidence: r.confidence,
+      source: r.source,
+      explanation: r.explanation,
+    })),
   }
 }
 
 export async function contributeAfterLlmReview(
   db: DatabaseManager,
-  reviewResult: { address: string; name: string; explanation: string; behavior: string; calledApis?: string[]; referencedStrings?: string[]; cfgHash?: string; sampleId: string },
+  reviewResult: {
+    address: string
+    name: string
+    explanation: string
+    behavior: string
+    calledApis?: string[]
+    referencedStrings?: string[]
+    cfgHash?: string
+    sampleId: string
+  },
   options: KbIntegrationOptions = {}
 ): Promise<string> {
   const { contributeAfterReview = true, userId } = options
   if (!contributeAfterReview) return ''
-  
+
   const contributionData: ContributeFunctionData = {
     address: reviewResult.address,
     name: reviewResult.name,
     explanation: reviewResult.explanation,
     behavior: reviewResult.behavior,
     source: 'llm',
-    features: { apis: reviewResult.calledApis || [], strings: reviewResult.referencedStrings || [], cfg_shape: reviewResult.cfgHash || 'unknown' },
+    features: {
+      apis: reviewResult.calledApis || [],
+      strings: reviewResult.referencedStrings || [],
+      cfg_shape: reviewResult.cfgHash || 'unknown',
+    },
     sampleId: reviewResult.sampleId,
     userId,
   }
-  
+
   return await contributeFunction(db, contributionData)
 }
 

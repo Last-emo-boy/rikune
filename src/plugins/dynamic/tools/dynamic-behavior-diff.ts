@@ -40,14 +40,23 @@ export function createDynamicBehaviorDiffHandler(deps: PluginToolDeps) {
       const input = DynamicBehaviorDiffInputSchema.parse(args || {})
       const sample = deps.database.findSample(input.sample_id)
       if (!sample) {
-        return { ok: false, errors: [`Sample not found: ${input.sample_id}`], metrics: { elapsed_ms: Date.now() - started, tool: TOOL_NAME } }
+        return {
+          ok: false,
+          errors: [`Sample not found: ${input.sample_id}`],
+          metrics: { elapsed_ms: Date.now() - started, tool: TOOL_NAME },
+        }
       }
 
-      const bundle = await loadCorrelationEvidence(deps.workspaceManager, deps.database, input.sample_id, {
-        evidenceScope: input.evidence_scope,
-        sessionTag: input.evidence_session_tag,
-        maxStaticArtifacts: input.max_static_artifacts,
-      })
+      const bundle = await loadCorrelationEvidence(
+        deps.workspaceManager,
+        deps.database,
+        input.sample_id,
+        {
+          evidenceScope: input.evidence_scope,
+          sessionTag: input.evidence_session_tag,
+          maxStaticArtifacts: input.max_static_artifacts,
+        }
+      )
       const diff = buildBehaviorDiff(bundle)
       const data = {
         schema: 'rikune.dynamic_behavior_diff.v1',
@@ -75,15 +84,17 @@ export function createDynamicBehaviorDiffHandler(deps: PluginToolDeps) {
 
       const artifacts: ArtifactRef[] = []
       if (input.persist_artifact) {
-        artifacts.push(await persistStaticAnalysisJsonArtifact(
-          deps.workspaceManager,
-          deps.database,
-          input.sample_id,
-          'dynamic_behavior_diff',
-          'behavior_diff',
-          data,
-          input.session_tag
-        ))
+        artifacts.push(
+          await persistStaticAnalysisJsonArtifact(
+            deps.workspaceManager,
+            deps.database,
+            input.sample_id,
+            'dynamic_behavior_diff',
+            'behavior_diff',
+            data,
+            input.session_tag
+          )
+        )
       }
 
       return {

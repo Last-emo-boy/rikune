@@ -1,6 +1,7 @@
 import type { ToolRegistrar } from '../registrar.js'
 import {
-  configValidateToolDefinition, createConfigValidateHandler,
+  configValidateToolDefinition,
+  createConfigValidateHandler,
 } from '../../tools/config-validate.js'
 
 export function registerDiagnosticsTools(server: ToolRegistrar): void {

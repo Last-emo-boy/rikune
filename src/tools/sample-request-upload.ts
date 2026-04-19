@@ -15,18 +15,20 @@ export const SampleRequestUploadInputSchema = z.object({
 
 export const SampleRequestUploadOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    upload_url: z.string().url(),
-    status_url: z.string().url().optional(),
-    token: z.string(),
-    expires_at: z.string(),
-    ttl_seconds: z.number(),
-    result_mode: z.literal('upload_session'),
-    tool_surface_role: ToolSurfaceRoleSchema,
-    preferred_primary_tools: z.array(z.string()),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      upload_url: z.string().url(),
+      status_url: z.string().url().optional(),
+      token: z.string(),
+      expires_at: z.string(),
+      ttl_seconds: z.number(),
+      result_mode: z.literal('upload_session'),
+      tool_surface_role: ToolSurfaceRoleSchema,
+      preferred_primary_tools: z.array(z.string()),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
 })
 
@@ -89,8 +91,16 @@ export function createSampleRequestUploadHandler(
           ttl_seconds: input.ttl_seconds || 300,
           result_mode: 'upload_session',
           tool_surface_role: 'primary',
-          preferred_primary_tools: ['workflow.analyze.start', 'workflow.analyze.status', 'workflow.analyze.promote'],
-          recommended_next_tools: ['workflow.analyze.start', 'workflow.summarize', 'workflow.triage'],
+          preferred_primary_tools: [
+            'workflow.analyze.start',
+            'workflow.analyze.status',
+            'workflow.analyze.promote',
+          ],
+          recommended_next_tools: [
+            'workflow.analyze.start',
+            'workflow.summarize',
+            'workflow.triage',
+          ],
           next_actions: [
             'POST the file bytes to upload_url with Content-Type: application/octet-stream.',
             'Read sample_id from the HTTP upload response instead of calling another MCP tool first.',

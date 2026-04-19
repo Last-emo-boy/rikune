@@ -31,7 +31,13 @@ function checkPathExists(label: string, p: string | undefined): DiagnosticItem {
   if (fs.existsSync(p)) {
     return { category: 'path', key: label, status: 'ok', message: `${label} exists`, value: p }
   }
-  return { category: 'path', key: label, status: 'error', message: `${label} not found at ${p}`, value: p }
+  return {
+    category: 'path',
+    key: label,
+    status: 'error',
+    message: `${label} not found at ${p}`,
+    value: p,
+  }
 }
 
 function checkExecutable(label: string, p: string | undefined): DiagnosticItem {
@@ -42,7 +48,13 @@ function checkExecutable(label: string, p: string | undefined): DiagnosticItem {
     execFileSync(p, ['--version'], { timeout: 5000, stdio: 'pipe' })
     return { category: 'tool', key: label, status: 'ok', message: `${label} reachable`, value: p }
   } catch {
-    return { category: 'tool', key: label, status: 'warn', message: `${label} configured but not executable`, value: p }
+    return {
+      category: 'tool',
+      key: label,
+      status: 'warn',
+      message: `${label} configured but not executable`,
+      value: p,
+    }
   }
 }
 
@@ -55,7 +67,13 @@ function checkDirectory(label: string, p: string): DiagnosticItem {
     fs.accessSync(p, fs.constants.W_OK)
     return { category: 'dir', key: label, status: 'ok', message: `${label} writable`, value: p }
   } catch {
-    return { category: 'dir', key: label, status: 'error', message: `${label} not writable`, value: p }
+    return {
+      category: 'dir',
+      key: label,
+      status: 'error',
+      message: `${label} not writable`,
+      value: p,
+    }
   }
 }
 
@@ -73,7 +91,12 @@ export function validateConfig(config: Config): ValidationReport {
     diagnostics.push(checkDirectory('ghidra_project_root', config.workers.ghidra.projectRoot))
     diagnostics.push(checkDirectory('ghidra_log_root', config.workers.ghidra.logRoot))
   } else {
-    diagnostics.push({ category: 'worker', key: 'ghidra', status: 'warn', message: 'Ghidra worker disabled' })
+    diagnostics.push({
+      category: 'worker',
+      key: 'ghidra',
+      status: 'warn',
+      message: 'Ghidra worker disabled',
+    })
   }
 
   // Static analysis tools
@@ -104,9 +127,20 @@ export function validateConfig(config: Config): ValidationReport {
 
   // API
   if (config.api.enabled) {
-    diagnostics.push({ category: 'api', key: 'port', status: 'ok', message: `API port ${config.api.port}`, value: config.api.port })
+    diagnostics.push({
+      category: 'api',
+      key: 'port',
+      status: 'ok',
+      message: `API port ${config.api.port}`,
+      value: config.api.port,
+    })
     if (!config.api.apiKey) {
-      diagnostics.push({ category: 'api', key: 'api_key', status: 'warn', message: 'No API key set — auto-generated at runtime' })
+      diagnostics.push({
+        category: 'api',
+        key: 'api_key',
+        status: 'warn',
+        message: 'No API key set — auto-generated at runtime',
+      })
     }
   }
 
@@ -120,9 +154,9 @@ export function validateConfig(config: Config): ValidationReport {
   })
 
   const summary = {
-    ok: diagnostics.filter(d => d.status === 'ok').length,
-    warn: diagnostics.filter(d => d.status === 'warn').length,
-    error: diagnostics.filter(d => d.status === 'error').length,
+    ok: diagnostics.filter((d) => d.status === 'ok').length,
+    warn: diagnostics.filter((d) => d.status === 'warn').length,
+    error: diagnostics.filter((d) => d.status === 'error').length,
   }
 
   const report: ValidationReport = {

@@ -320,32 +320,40 @@ export function createDynamicDependenciesHandler(
       }
 
       const mergedComponents: Record<string, Record<string, unknown>> = {
-        ...(typeof rawData.components === 'object' && rawData.components ? (rawData.components as Record<string, unknown>) : {}),
+        ...(typeof rawData.components === 'object' && rawData.components
+          ? (rawData.components as Record<string, unknown>)
+          : {}),
         frida_cli: {
           ...analysisBackends.frida_cli,
-          caveat: 'Frida CLI provides helper commands such as frida-ps and frida-trace but still depends on target-side instrumentation support.',
+          caveat:
+            'Frida CLI provides helper commands such as frida-ps and frida-trace but still depends on target-side instrumentation support.',
         },
         qiling: {
           ...analysisBackends.qiling,
           rootfs_path: qilingRootfs || null,
           rootfs_ready: qilingRootfs ? qilingRootfsReady : null,
-          caveat: 'Qiling needs an externally supplied Windows rootfs and registry snapshot; the server does not bundle Microsoft DLLs.',
+          caveat:
+            'Qiling needs an externally supplied Windows rootfs and registry snapshot; the server does not bundle Microsoft DLLs.',
         },
         angr: {
           ...analysisBackends.angr,
-          caveat: 'angr is exposed through ANGR_PYTHON and is intended for targeted advanced analysis, not as a default background dependency for every workflow.',
+          caveat:
+            'angr is exposed through ANGR_PYTHON and is intended for targeted advanced analysis, not as a default background dependency for every workflow.',
         },
         panda: {
           ...analysisBackends.panda,
-          caveat: 'PANDA/pandare availability here reflects Python-side readiness; full record/replay workflows may still require additional host/runtime tuning.',
+          caveat:
+            'PANDA/pandare availability here reflects Python-side readiness; full record/replay workflows may still require additional host/runtime tuning.',
         },
         wine: {
           ...analysisBackends.wine,
-          caveat: 'Wine is a Linux-hosted compatibility layer, not a full Windows desktop or kernel debugger.',
+          caveat:
+            'Wine is a Linux-hosted compatibility layer, not a full Windows desktop or kernel debugger.',
         },
         winedbg: {
           ...analysisBackends.winedbg,
-          caveat: 'winedbg covers basic debugger-style flows for Wine-hosted targets, not WinDbg/x64dbg-equivalent kernel or GUI scenarios.',
+          caveat:
+            'winedbg covers basic debugger-style flows for Wine-hosted targets, not WinDbg/x64dbg-equivalent kernel or GUI scenarios.',
         },
       }
 
@@ -356,7 +364,7 @@ export function createDynamicDependenciesHandler(
               ? rawData.available_components.map((item) => String(item))
               : []),
             ...Object.entries(mergedComponents)
-              .filter(([, payload]) => Boolean((payload as Record<string, unknown>)?.available))
+              .filter(([, payload]) => Boolean(payload?.available))
               .map(([name]) => name),
           ].filter(Boolean)
         ),
@@ -364,19 +372,22 @@ export function createDynamicDependenciesHandler(
 
       let status = String(rawData.status || 'partial')
       const criticalReadiness = [
-        (mergedComponents.speakeasy as Record<string, unknown> | undefined)?.available,
-        (mergedComponents.frida as Record<string, unknown> | undefined)?.available,
-        (mergedComponents.psutil as Record<string, unknown> | undefined)?.available,
-        (mergedComponents.frida_cli as Record<string, unknown> | undefined)?.available,
-        (mergedComponents.qiling as Record<string, unknown> | undefined)?.available,
-        (mergedComponents.angr as Record<string, unknown> | undefined)?.available,
-        (mergedComponents.panda as Record<string, unknown> | undefined)?.available,
-        (mergedComponents.wine as Record<string, unknown> | undefined)?.available,
-        (mergedComponents.winedbg as Record<string, unknown> | undefined)?.available,
+        mergedComponents.speakeasy?.available,
+        mergedComponents.frida?.available,
+        mergedComponents.psutil?.available,
+        mergedComponents.frida_cli?.available,
+        mergedComponents.qiling?.available,
+        mergedComponents.angr?.available,
+        mergedComponents.panda?.available,
+        mergedComponents.wine?.available,
+        mergedComponents.winedbg?.available,
       ].filter((item): item is boolean => typeof item === 'boolean')
       const criticalReadyCount = criticalReadiness.filter(Boolean).length
       if (criticalReadiness.length > 0) {
-        if (criticalReadyCount === criticalReadiness.length && (!qilingRootfs || qilingRootfsReady)) {
+        if (
+          criticalReadyCount === criticalReadiness.length &&
+          (!qilingRootfs || qilingRootfsReady)
+        ) {
           status = 'ready'
         } else if (criticalReadyCount > 0) {
           status = 'partial'
@@ -389,21 +400,33 @@ export function createDynamicDependenciesHandler(
         ? [...new Set(rawData.recommendations.map((item) => String(item)))]
         : []
       if (!analysisBackends.frida_cli.available) {
-        recommendations.push('Install frida-tools so frida-ps and frida-trace are available for automated runtime workflows.')
+        recommendations.push(
+          'Install frida-tools so frida-ps and frida-trace are available for automated runtime workflows.'
+        )
       }
       if (!analysisBackends.qiling.available) {
-        recommendations.push('Install Qiling for automated Windows API emulation and hook-based dynamic analysis.')
+        recommendations.push(
+          'Install Qiling for automated Windows API emulation and hook-based dynamic analysis.'
+        )
       } else if (!qilingRootfs || !qilingRootfsReady) {
-        recommendations.push('Mount a Windows Qiling rootfs and set QILING_ROOTFS before relying on Qiling-backed automation.')
+        recommendations.push(
+          'Mount a Windows Qiling rootfs and set QILING_ROOTFS before relying on Qiling-backed automation.'
+        )
       }
       if (!analysisBackends.angr.available) {
-        recommendations.push('Install angr in an isolated Python environment and set ANGR_PYTHON for targeted CFG and path exploration.')
+        recommendations.push(
+          'Install angr in an isolated Python environment and set ANGR_PYTHON for targeted CFG and path exploration.'
+        )
       }
       if (!analysisBackends.panda.available) {
-        recommendations.push('Install pandare if you want PANDA-style record/replay helper workflows.')
+        recommendations.push(
+          'Install pandare if you want PANDA-style record/replay helper workflows.'
+        )
       }
       if (!analysisBackends.wine.available || !analysisBackends.winedbg.available) {
-        recommendations.push('Install Wine plus winedbg for Linux-hosted Windows execution and debugger-style troubleshooting.')
+        recommendations.push(
+          'Install Wine plus winedbg for Linux-hosted Windows execution and debugger-style troubleshooting.'
+        )
       }
       const normalizedRecommendations = [...new Set(recommendations)]
       const shouldAddSetupActions = status !== 'ready'

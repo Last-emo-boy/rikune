@@ -155,10 +155,9 @@ function importSampleKbEntry(
   const sampleId = String(data.sample_id ?? '')
   const now = new Date().toISOString()
 
-  const existing = db.queryOneSql<{ id: string }>(
-    'SELECT id FROM sample_kb WHERE sample_id = ?',
-    [sampleId]
-  )
+  const existing = db.queryOneSql<{ id: string }>('SELECT id FROM sample_kb WHERE sample_id = ?', [
+    sampleId,
+  ])
 
   if (existing) {
     switch (strategy) {

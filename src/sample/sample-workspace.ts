@@ -35,24 +35,15 @@ function buildRemediation(status: SampleWorkspaceStatus, sampleId: string): stri
   ]
 
   if (status === 'workspace_missing') {
-    return [
-      `Workspace directory is missing for ${sampleId}.`,
-      ...shared,
-    ]
+    return [`Workspace directory is missing for ${sampleId}.`, ...shared]
   }
 
   if (status === 'original_dir_missing') {
-    return [
-      'workspace/original is missing even though the sample record still exists.',
-      ...shared,
-    ]
+    return ['workspace/original is missing even though the sample record still exists.', ...shared]
   }
 
   if (status === 'original_file_missing') {
-    return [
-      'workspace/original exists but contains no sample file.',
-      ...shared,
-    ]
+    return ['workspace/original exists but contains no sample file.', ...shared]
   }
 
   return []
@@ -144,11 +135,9 @@ export async function inspectSampleWorkspace(
 
   if (status !== 'ready') {
     const workspaceParent = path.dirname(path.dirname(workspaceRootBase))
-    const candidateRoots = Array.from(
-      new Set([
-        path.join(workspaceParent, 'workspaces'),
-      ])
-    ).filter((candidate) => path.resolve(candidate) !== path.resolve(workspaceRootBase))
+    const candidateRoots = Array.from(new Set([path.join(workspaceParent, 'workspaces')])).filter(
+      (candidate) => path.resolve(candidate) !== path.resolve(workspaceRootBase)
+    )
 
     const sampleHash = sampleId.startsWith('sha256:') ? sampleId.slice(7).toLowerCase() : null
     if (sampleHash && /^[a-f0-9]{64}$/.test(sampleHash)) {
@@ -162,7 +151,10 @@ export async function inspectSampleWorkspace(
         )
         try {
           const entries = await fs.readdir(candidateOriginalDir, { withFileTypes: true })
-          const files = entries.filter((entry) => entry.isFile()).map((entry) => entry.name).sort()
+          const files = entries
+            .filter((entry) => entry.isFile())
+            .map((entry) => entry.name)
+            .sort()
           if (files.length > 0) {
             alternateWorkspaceRoot = candidateRoot
             alternateOriginalDir = candidateOriginalDir
@@ -234,7 +226,10 @@ export async function resolvePrimarySamplePath(
   }
   if (integrity.alternate_original_present && integrity.alternate_original_dir) {
     return {
-      samplePath: path.join(integrity.alternate_original_dir, integrity.alternate_original_files[0]),
+      samplePath: path.join(
+        integrity.alternate_original_dir,
+        integrity.alternate_original_files[0]
+      ),
       integrity,
     }
   }

@@ -21,7 +21,7 @@ export interface PromptRegistrar {
 export interface ResourceRegistrar {
   registerResource(
     meta: { uri: string; name: string; description?: string; mimeType?: string },
-    handler: () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>,
+    handler: () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>
   ): void
 }
 

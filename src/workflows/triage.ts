@@ -117,20 +117,24 @@ export const TriageWorkflowInputSchema = z.object({
     .enum(['compact', 'full'])
     .optional()
     .default('compact')
-    .describe('Return compact per-tool previews by default; use `full` only when the complete child tool payloads are required for a targeted smaller-sample review. Large samples should stay compact.'),
-  depth: AnalysisIntentDepthSchema
-    .optional()
+    .describe(
+      'Return compact per-tool previews by default; use `full` only when the complete child tool payloads are required for a targeted smaller-sample review. Large samples should stay compact.'
+    ),
+  depth: AnalysisIntentDepthSchema.optional()
     .default('balanced')
     .describe('Controls how aggressively safe corroborating backends are auto-selected.'),
-  backend_policy: BackendPolicySchema
-    .optional()
+  backend_policy: BackendPolicySchema.optional()
     .default('auto')
-    .describe('Controls whether newer installed backends are auto-preferred, suppressed, or only used when baseline evidence is weak.'),
+    .describe(
+      'Controls whether newer installed backends are auto-preferred, suppressed, or only used when baseline evidence is weak.'
+    ),
   allow_transformations: z
     .boolean()
     .optional()
     .default(false)
-    .describe('Keep false for normal triage. True suppresses automatic unpack-style backend actions so transformations remain explicit.'),
+    .describe(
+      'Keep false for normal triage. True suppresses automatic unpack-style backend actions so transformations remain explicit.'
+    ),
 })
 
 export type TriageWorkflowInput = z.infer<typeof TriageWorkflowInputSchema>
@@ -143,7 +147,10 @@ const IOCSchema = z.object({
   suspicious_imports: z.array(z.string()).describe('Suspicious imported functions'),
   suspicious_strings: z.array(z.string()).describe('Suspicious strings found'),
   yara_matches: z.array(z.string()).describe('YARA rule matches'),
-  yara_low_confidence: z.array(z.string()).optional().describe('YARA matches downgraded due to weak evidence'),
+  yara_low_confidence: z
+    .array(z.string())
+    .optional()
+    .describe('YARA matches downgraded due to weak evidence'),
   urls: z.array(z.string()).optional().describe('URLs found in strings'),
   ip_addresses: z.array(z.string()).optional().describe('IP addresses found'),
   file_paths: z.array(z.string()).optional().describe('File paths found'),
@@ -189,63 +196,82 @@ const ToolingAssessmentSchema = z.object({
  */
 export const TriageWorkflowOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    summary: z.string().describe('Natural language summary of the analysis'),
-    confidence: z.number().min(0).max(1).describe('Confidence score (0-1)'),
-    threat_level: z.enum(['clean', 'suspicious', 'malicious', 'unknown']).describe('Assessed threat level'),
-    iocs: IOCSchema.describe('Indicators of Compromise'),
-    evidence: z.array(z.string()).describe('Evidence supporting the assessment'),
-    evidence_weights: z
-      .object({
-        import: z.number().min(0).max(1),
-        string: z.number().min(0).max(1),
-        runtime: z.number().min(0).max(1),
-      })
-      .describe('Relative evidence contribution weights for this conclusion'),
-    inference: z
-      .object({
-        classification: z.enum(['benign', 'suspicious', 'malicious', 'unknown']),
-        hypotheses: z.array(z.string()),
-        false_positive_risks: z.array(z.string()),
-        intent_assessment: IntentAssessmentSchema.optional(),
-        tooling_assessment: ToolingAssessmentSchema.optional(),
-      })
-      .optional()
-      .describe('Inference layer derived from evidence, separated for auditability'),
-    recommendation: z.string().describe('Recommended next steps'),
-    result_mode: z.literal('quick_profile').describe('Routing hint indicating this workflow is a quick-profile stage rather than deep reverse engineering'),
-    tool_surface_role: ToolSurfaceRoleSchema.describe('Marks this workflow as a primary or compatibility surface for AI routing.'),
-    preferred_primary_tools: z.array(z.string()).describe('Primary staged-runtime alternatives that should be preferred for full lifecycle analysis.'),
-    recommended_next_tools: z.array(z.string()).describe('Machine-readable immediate follow-up tool suggestions'),
-    next_actions: z.array(z.string()).describe('Machine-readable next-step guidance for clients'),
-    raw_results: z.object({
-      fingerprint: z.any().optional(),
-      runtime: z.any().optional(),
-      imports: z.any().optional(),
-      strings: z.any().optional(),
-      yara: z.any().optional(),
-      static_capability: z.any().optional(),
-      pe_structure: z.any().optional(),
-      compiler_packer: z.any().optional(),
-      string_context: z.any().optional(),
-      backend_enrichments: z
+  data: z
+    .object({
+      summary: z.string().describe('Natural language summary of the analysis'),
+      confidence: z.number().min(0).max(1).describe('Confidence score (0-1)'),
+      threat_level: z
+        .enum(['clean', 'suspicious', 'malicious', 'unknown'])
+        .describe('Assessed threat level'),
+      iocs: IOCSchema.describe('Indicators of Compromise'),
+      evidence: z.array(z.string()).describe('Evidence supporting the assessment'),
+      evidence_weights: z
         .object({
-          upx: z.any().optional(),
-          yara_x: z.any().optional(),
-          rizin: z.any().optional(),
-      })
-        .optional(),
-    }).describe('Raw results from individual tools'),
-  })
+          import: z.number().min(0).max(1),
+          string: z.number().min(0).max(1),
+          runtime: z.number().min(0).max(1),
+        })
+        .describe('Relative evidence contribution weights for this conclusion'),
+      inference: z
+        .object({
+          classification: z.enum(['benign', 'suspicious', 'malicious', 'unknown']),
+          hypotheses: z.array(z.string()),
+          false_positive_risks: z.array(z.string()),
+          intent_assessment: IntentAssessmentSchema.optional(),
+          tooling_assessment: ToolingAssessmentSchema.optional(),
+        })
+        .optional()
+        .describe('Inference layer derived from evidence, separated for auditability'),
+      recommendation: z.string().describe('Recommended next steps'),
+      result_mode: z
+        .literal('quick_profile')
+        .describe(
+          'Routing hint indicating this workflow is a quick-profile stage rather than deep reverse engineering'
+        ),
+      tool_surface_role: ToolSurfaceRoleSchema.describe(
+        'Marks this workflow as a primary or compatibility surface for AI routing.'
+      ),
+      preferred_primary_tools: z
+        .array(z.string())
+        .describe(
+          'Primary staged-runtime alternatives that should be preferred for full lifecycle analysis.'
+        ),
+      recommended_next_tools: z
+        .array(z.string())
+        .describe('Machine-readable immediate follow-up tool suggestions'),
+      next_actions: z.array(z.string()).describe('Machine-readable next-step guidance for clients'),
+      raw_results: z
+        .object({
+          fingerprint: z.any().optional(),
+          runtime: z.any().optional(),
+          imports: z.any().optional(),
+          strings: z.any().optional(),
+          yara: z.any().optional(),
+          static_capability: z.any().optional(),
+          pe_structure: z.any().optional(),
+          compiler_packer: z.any().optional(),
+          string_context: z.any().optional(),
+          backend_enrichments: z
+            .object({
+              upx: z.any().optional(),
+              yara_x: z.any().optional(),
+              rizin: z.any().optional(),
+            })
+            .optional(),
+        })
+        .describe('Raw results from individual tools'),
+    })
     .extend(CoverageEnvelopeSchema.shape)
     .extend(BackendRoutingMetadataSchema.shape)
     .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
-  metrics: z.object({
-    elapsed_ms: z.number(),
-    tool: z.string(),
-  }).optional(),
+  metrics: z
+    .object({
+      elapsed_ms: z.number(),
+      tool: z.string(),
+    })
+    .optional(),
 })
 
 export type TriageWorkflowOutput = z.infer<typeof TriageWorkflowOutputSchema>
@@ -285,16 +311,19 @@ export const triageWorkflowToolDefinition: ToolDefinition = {
  */
 function analyzeSuspiciousImports(imports: Record<string, string[]>): string[] {
   const suspicious: string[] = []
-  
+
   try {
     for (const [dll, functions] of Object.entries(imports)) {
       // Ensure functions is an array
       if (!Array.isArray(functions)) {
         continue
       }
-      
+
       for (const func of functions) {
-        if (typeof func === 'string' && SUSPICIOUS_APIS.some(api => func.toLowerCase().includes(api.toLowerCase()))) {
+        if (
+          typeof func === 'string' &&
+          SUSPICIOUS_APIS.some((api) => func.toLowerCase().includes(api.toLowerCase()))
+        ) {
           suspicious.push(`${dll}!${func}`)
         }
       }
@@ -303,7 +332,7 @@ function analyzeSuspiciousImports(imports: Record<string, string[]>): string[] {
     // Silently handle errors to prevent workflow failure
     logger.warn({ err: error }, 'Error analyzing suspicious imports')
   }
-  
+
   return suspicious
 }
 
@@ -326,9 +355,15 @@ function summarizeStaticCapabilityResult(data: Record<string, unknown> | null | 
       : []
   const topGroups = capabilityGroups.slice(0, 4).map((item) => item.key)
   const threatHint = topGroups.some((item) =>
-    ['persistence', 'execution', 'injection', 'command-and-control', 'c2', 'network', 'service'].includes(
-      item.toLowerCase()
-    )
+    [
+      'persistence',
+      'execution',
+      'injection',
+      'command-and-control',
+      'c2',
+      'network',
+      'service',
+    ].includes(item.toLowerCase())
   )
 
   return {
@@ -342,9 +377,7 @@ function summarizeStaticCapabilityResult(data: Record<string, unknown> | null | 
       capabilityCount > 0
         ? [
             `Static capability triage matched ${capabilityCount} capability finding(s).`,
-            ...(topGroups.length > 0
-              ? [`Capability groups: ${topGroups.join(', ')}.`]
-              : []),
+            ...(topGroups.length > 0 ? [`Capability groups: ${topGroups.join(', ')}.`] : []),
           ]
         : [],
     recommendation:
@@ -366,12 +399,15 @@ function summarizePeStructureResult(data: Record<string, unknown> | null | undef
   }
 
   const summary =
-    data.summary && typeof data.summary === 'object' ? (data.summary as Record<string, unknown>) : {}
+    data.summary && typeof data.summary === 'object'
+      ? (data.summary as Record<string, unknown>)
+      : {}
   const overlayPresent = Boolean(summary.overlay_present)
   const sectionCount = Number(summary.section_count || 0)
   const resourceCount = Number(summary.resource_count || 0)
   const forwarderCount = Number(summary.forwarder_count || 0)
-  const parserPreference = typeof summary.parser_preference === 'string' ? summary.parser_preference : 'unknown'
+  const parserPreference =
+    typeof summary.parser_preference === 'string' ? summary.parser_preference : 'unknown'
   const overlaySuggestsPacking =
     overlayPresent &&
     data.status === 'ready' &&
@@ -410,7 +446,9 @@ function summarizeCompilerPackerResult(data: Record<string, unknown> | null | un
   }
 
   const summary =
-    data.summary && typeof data.summary === 'object' ? (data.summary as Record<string, unknown>) : {}
+    data.summary && typeof data.summary === 'object'
+      ? (data.summary as Record<string, unknown>)
+      : {}
   const compilerCount = Number(summary.compiler_count || 0)
   const packerCount = Number(summary.packer_count || 0)
   const protectorCount = Number(summary.protector_count || 0)
@@ -484,7 +522,9 @@ function summarizeStringContextResult(data: Record<string, unknown> | null | und
       `Context-linking retained ${analystRelevantCount} analyst-relevant string(s).`,
       ...(xrefStatus === 'available'
         ? [`Compact function contexts recovered: ${functionContexts.length}.`]
-        : ['Compact string context is currently string-only because Ghidra-backed attribution is unavailable.']),
+        : [
+            'Compact string context is currently string-only because Ghidra-backed attribution is unavailable.',
+          ]),
       ...(topFunctions.length > 0 ? [`Top correlated functions: ${topFunctions.join(', ')}.`] : []),
     ],
     recommendation:
@@ -524,7 +564,12 @@ function compactGroupedImports(
   value: unknown,
   maxGroups = 10,
   maxFunctionsPerGroup = 8
-): { values: Record<string, string[]>; totalGroups: number; totalFunctions: number; truncated: boolean } {
+): {
+  values: Record<string, string[]>
+  totalGroups: number
+  totalFunctions: number
+  truncated: boolean
+} {
   if (!value || typeof value !== 'object') {
     return {
       values: {},
@@ -538,20 +583,23 @@ function compactGroupedImports(
     .map(([name, functions]) => ({
       name,
       functions: Array.isArray(functions)
-        ? functions
-            .map((item) => String(item).trim())
-            .filter((item) => item.length > 0)
+        ? functions.map((item) => String(item).trim()).filter((item) => item.length > 0)
         : [],
     }))
     .filter((entry) => entry.functions.length > 0)
-    .sort((left, right) => right.functions.length - left.functions.length || left.name.localeCompare(right.name))
+    .sort(
+      (left, right) =>
+        right.functions.length - left.functions.length || left.name.localeCompare(right.name)
+    )
 
-  const previewEntries = entries.slice(0, maxGroups).map((entry) => [
-    entry.name,
-    entry.functions.slice(0, maxFunctionsPerGroup),
-  ] as const)
+  const previewEntries = entries
+    .slice(0, maxGroups)
+    .map((entry) => [entry.name, entry.functions.slice(0, maxFunctionsPerGroup)] as const)
 
-  const previewFunctionCount = previewEntries.reduce((total, [, functions]) => total + functions.length, 0)
+  const previewFunctionCount = previewEntries.reduce(
+    (total, [, functions]) => total + functions.length,
+    0
+  )
   const totalFunctions = entries.reduce((total, entry) => total + entry.functions.length, 0)
 
   return {
@@ -597,7 +645,9 @@ function compactRuntimeRawResult(data: unknown) {
         return {
           runtime: entry.runtime ?? null,
           confidence: entry.confidence ?? null,
-          evidence: Array.isArray(entry.evidence) ? entry.evidence.slice(0, 4).map((value) => trimText(value, 140)) : [],
+          evidence: Array.isArray(entry.evidence)
+            ? entry.evidence.slice(0, 4).map((value) => trimText(value, 140))
+            : [],
         }
       })
     : []
@@ -611,7 +661,9 @@ function compactRuntimeRawResult(data: unknown) {
     target_framework: record.target_framework ?? null,
     suspected,
     import_dlls: importDlls,
-    import_dll_count: Array.isArray(record.import_dlls) ? record.import_dlls.length : importDlls.length,
+    import_dll_count: Array.isArray(record.import_dlls)
+      ? record.import_dlls.length
+      : importDlls.length,
   }
 }
 
@@ -645,25 +697,32 @@ function compactStringsRawResult(data: unknown) {
 
   const record = data as Record<string, unknown>
   const strings = Array.isArray(record.strings) ? record.strings.slice(0, 20) : []
-  const summary = record.summary && typeof record.summary === 'object' ? (record.summary as Record<string, unknown>) : null
+  const summary =
+    record.summary && typeof record.summary === 'object'
+      ? (record.summary as Record<string, unknown>)
+      : null
   const topHighValue = Array.isArray(summary?.top_high_value)
-    ? summary!.top_high_value.slice(0, 12).map((item) => {
+    ? summary.top_high_value.slice(0, 12).map((item) => {
         const entry = item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
         return {
           offset: entry.offset ?? null,
           string: trimText(entry.string ?? '', 160),
           encoding: entry.encoding ?? null,
-          categories: Array.isArray(entry.categories) ? entry.categories.slice(0, 6).map((value) => String(value)) : [],
+          categories: Array.isArray(entry.categories)
+            ? entry.categories.slice(0, 6).map((value) => String(value))
+            : [],
         }
       })
     : []
   const contextWindows = Array.isArray(summary?.context_windows)
-    ? summary!.context_windows.slice(0, 4).map((item) => {
+    ? summary.context_windows.slice(0, 4).map((item) => {
         const entry = item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
         const stringsInWindow = Array.isArray(entry.strings)
           ? entry.strings.slice(0, 5).map((windowItem) => {
               const stringEntry =
-                windowItem && typeof windowItem === 'object' ? (windowItem as Record<string, unknown>) : {}
+                windowItem && typeof windowItem === 'object'
+                  ? (windowItem as Record<string, unknown>)
+                  : {}
               return {
                 offset: stringEntry.offset ?? null,
                 string: trimText(stringEntry.string ?? '', 140),
@@ -678,7 +737,9 @@ function compactStringsRawResult(data: unknown) {
           start_offset: entry.start_offset ?? null,
           end_offset: entry.end_offset ?? null,
           score: entry.score ?? null,
-          categories: Array.isArray(entry.categories) ? entry.categories.slice(0, 6).map((value) => String(value)) : [],
+          categories: Array.isArray(entry.categories)
+            ? entry.categories.slice(0, 6).map((value) => String(value))
+            : [],
           strings: stringsInWindow,
         }
       })
@@ -716,12 +777,16 @@ function compactYaraRawResult(data: unknown) {
         const match = item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
         return {
           rule: match.rule ?? null,
-          tags: Array.isArray(match.tags) ? match.tags.slice(0, 8).map((value) => String(value)) : [],
+          tags: Array.isArray(match.tags)
+            ? match.tags.slice(0, 8).map((value) => String(value))
+            : [],
           meta: match.meta ?? {},
           strings: Array.isArray(match.strings)
             ? match.strings.slice(0, 5).map((matchString) => {
                 const stringEntry =
-                  matchString && typeof matchString === 'object' ? (matchString as Record<string, unknown>) : {}
+                  matchString && typeof matchString === 'object'
+                    ? (matchString as Record<string, unknown>)
+                    : {}
                 return {
                   identifier: stringEntry.identifier ?? null,
                   offset: stringEntry.offset ?? null,
@@ -733,16 +798,29 @@ function compactYaraRawResult(data: unknown) {
           confidence: match.confidence ?? null,
           evidence: match.evidence
             ? {
-                import_dll_hits: Array.isArray((match.evidence as Record<string, unknown>).import_dll_hits)
-                  ? ((match.evidence as Record<string, unknown>).import_dll_hits as unknown[]).slice(0, 8).map(String)
+                import_dll_hits: Array.isArray(
+                  (match.evidence as Record<string, unknown>).import_dll_hits
+                )
+                  ? ((match.evidence as Record<string, unknown>).import_dll_hits as unknown[])
+                      .slice(0, 8)
+                      .map(String)
                   : [],
-                import_api_hits: Array.isArray((match.evidence as Record<string, unknown>).import_api_hits)
-                  ? ((match.evidence as Record<string, unknown>).import_api_hits as unknown[]).slice(0, 8).map(String)
+                import_api_hits: Array.isArray(
+                  (match.evidence as Record<string, unknown>).import_api_hits
+                )
+                  ? ((match.evidence as Record<string, unknown>).import_api_hits as unknown[])
+                      .slice(0, 8)
+                      .map(String)
                   : [],
-                section_hits: Array.isArray((match.evidence as Record<string, unknown>).section_hits)
-                  ? ((match.evidence as Record<string, unknown>).section_hits as unknown[]).slice(0, 8).map(String)
+                section_hits: Array.isArray(
+                  (match.evidence as Record<string, unknown>).section_hits
+                )
+                  ? ((match.evidence as Record<string, unknown>).section_hits as unknown[])
+                      .slice(0, 8)
+                      .map(String)
                   : [],
-                near_entrypoint_hits: (match.evidence as Record<string, unknown>).near_entrypoint_hits ?? null,
+                near_entrypoint_hits:
+                  (match.evidence as Record<string, unknown>).near_entrypoint_hits ?? null,
                 string_only: (match.evidence as Record<string, unknown>).string_only ?? null,
               }
             : null,
@@ -782,12 +860,15 @@ function compactStaticCapabilityRawResult(data: unknown) {
     capability_groups: record.capability_groups ?? {},
     capabilities: Array.isArray(record.capabilities)
       ? record.capabilities.slice(0, 15).map((item) => {
-          const capability = item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
+          const capability =
+            item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
           return {
             rule_id: capability.rule_id ?? null,
             name: capability.name ?? null,
             namespace: capability.namespace ?? null,
-            scopes: Array.isArray(capability.scopes) ? capability.scopes.slice(0, 6).map((value) => String(value)) : [],
+            scopes: Array.isArray(capability.scopes)
+              ? capability.scopes.slice(0, 6).map((value) => String(value))
+              : [],
             group: capability.group ?? null,
             confidence: capability.confidence ?? null,
             match_count: capability.match_count ?? null,
@@ -809,32 +890,43 @@ function compactPeStructureRawResult(data: unknown) {
   }
 
   const record = data as Record<string, unknown>
-  const imports = record.imports && typeof record.imports === 'object' ? (record.imports as Record<string, unknown>) : {}
+  const imports =
+    record.imports && typeof record.imports === 'object'
+      ? (record.imports as Record<string, unknown>)
+      : {}
   const importPreview = compactGroupedImports(imports.imports, 10, 8)
   const delayedImportPreview = compactGroupedImports(imports.delayed_imports, 8, 6)
   const exportsValue =
-    record.exports && typeof record.exports === 'object' ? (record.exports as Record<string, unknown>) : {}
+    record.exports && typeof record.exports === 'object'
+      ? (record.exports as Record<string, unknown>)
+      : {}
   const resourcesValue =
-    record.resources && typeof record.resources === 'object' ? (record.resources as Record<string, unknown>) : {}
+    record.resources && typeof record.resources === 'object'
+      ? (record.resources as Record<string, unknown>)
+      : {}
   const backendDetails =
     record.backend_details && typeof record.backend_details === 'object'
       ? Object.fromEntries(
-          Object.entries(record.backend_details as Record<string, unknown>).map(([backendName, backendValue]) => {
-            const backendRecord =
-              backendValue && typeof backendValue === 'object' ? (backendValue as Record<string, unknown>) : {}
-            return [
-              backendName,
-              {
-                parser: backendRecord.parser ?? null,
-                available: backendRecord.available ?? null,
-                status: backendRecord.status ?? null,
-                warnings: Array.isArray(backendRecord.warnings)
-                  ? backendRecord.warnings.slice(0, 3).map((item) => trimText(item, 160))
-                  : [],
-                error: backendRecord.error ? trimText(backendRecord.error, 180) : null,
-              },
-            ]
-          })
+          Object.entries(record.backend_details as Record<string, unknown>).map(
+            ([backendName, backendValue]) => {
+              const backendRecord =
+                backendValue && typeof backendValue === 'object'
+                  ? (backendValue as Record<string, unknown>)
+                  : {}
+              return [
+                backendName,
+                {
+                  parser: backendRecord.parser ?? null,
+                  available: backendRecord.available ?? null,
+                  status: backendRecord.status ?? null,
+                  warnings: Array.isArray(backendRecord.warnings)
+                    ? backendRecord.warnings.slice(0, 3).map((item) => trimText(item, 160))
+                    : [],
+                  error: backendRecord.error ? trimText(backendRecord.error, 180) : null,
+                },
+              ]
+            }
+          )
         )
       : {}
 
@@ -848,23 +940,18 @@ function compactPeStructureRawResult(data: unknown) {
     imports: {
       imports: importPreview.values,
       delayed_imports: delayedImportPreview.values,
-      total_dlls:
-        imports.total_dlls ??
-        importPreview.totalGroups,
-      total_delayed_dlls:
-        imports.total_delayed_dlls ??
-        delayedImportPreview.totalGroups,
-      total_functions:
-        imports.total_functions ??
-        importPreview.totalFunctions,
+      total_dlls: imports.total_dlls ?? importPreview.totalGroups,
+      total_delayed_dlls: imports.total_delayed_dlls ?? delayedImportPreview.totalGroups,
+      total_functions: imports.total_functions ?? importPreview.totalFunctions,
       total_delayed_functions:
-        imports.total_delayed_functions ??
-        delayedImportPreview.totalFunctions,
+        imports.total_delayed_functions ?? delayedImportPreview.totalFunctions,
       truncated: importPreview.truncated || delayedImportPreview.truncated,
     },
     exports: {
       exports: Array.isArray(exportsValue.exports) ? exportsValue.exports.slice(0, 12) : [],
-      forwarders: Array.isArray(exportsValue.forwarders) ? exportsValue.forwarders.slice(0, 12) : [],
+      forwarders: Array.isArray(exportsValue.forwarders)
+        ? exportsValue.forwarders.slice(0, 12)
+        : [],
       total_exports: exportsValue.total_exports ?? 0,
       total_forwarders: exportsValue.total_forwarders ?? 0,
     },
@@ -1072,16 +1159,18 @@ function summarizeWorkflowWarnings(allWarnings: string[]) {
 }
 
 function hasCryptoCapabilitySignals(result: WorkerResult | undefined): boolean {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   const namespaces = Array.isArray(data.behavior_namespaces)
     ? data.behavior_namespaces.map((item) => String(item))
     : []
   if (namespaces.some((item) => /(crypt|aes|rsa|hash|cipher|key|decrypt|encrypt)/i.test(item))) {
     return true
   }
-  const groups = data.capability_groups && typeof data.capability_groups === 'object'
-    ? Object.keys(data.capability_groups as Record<string, unknown>)
-    : []
+  const groups =
+    data.capability_groups && typeof data.capability_groups === 'object'
+      ? Object.keys(data.capability_groups as Record<string, unknown>)
+      : []
   if (groups.some((item) => /(crypt|aes|rsa|hash|cipher|key|decrypt|encrypt)/i.test(item))) {
     return true
   }
@@ -1095,16 +1184,23 @@ function hasCryptoCapabilitySignals(result: WorkerResult | undefined): boolean {
 }
 
 function hasCryptoContextSignals(result: WorkerResult | undefined): boolean {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   const contexts = Array.isArray(data.function_contexts) ? data.function_contexts : []
   return contexts.some((item) => {
     const context = item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
     const values = [
-      ...(Array.isArray(context.sensitive_apis) ? context.sensitive_apis.map((entry) => String(entry)) : []),
-      ...(Array.isArray(context.top_strings) ? context.top_strings.map((entry) => String(entry)) : []),
+      ...(Array.isArray(context.sensitive_apis)
+        ? context.sensitive_apis.map((entry) => String(entry))
+        : []),
+      ...(Array.isArray(context.top_strings)
+        ? context.top_strings.map((entry) => String(entry))
+        : []),
       ...(Array.isArray(context.rationale) ? context.rationale.map((entry) => String(entry)) : []),
     ]
-    return values.some((entry) => /(crypt|aes|rsa|hash|cipher|key|decrypt|encrypt|cbc|gcm|ctr|rc4|chacha|salsa)/i.test(entry))
+    return values.some((entry) =>
+      /(crypt|aes|rsa|hash|cipher|key|decrypt|encrypt|cbc|gcm|ctr|rc4|chacha|salsa)/i.test(entry)
+    )
   })
 }
 
@@ -1149,9 +1245,9 @@ export function extractCrateNameFromCargoPath(input: string): string | null {
 }
 
 function detectLibraryHints(str: string): string[] {
-  return NOTABLE_LIBRARY_HINTS
-    .filter((hint) => hint.patterns.some((pattern) => pattern.test(str)))
-    .map((hint) => hint.name)
+  return NOTABLE_LIBRARY_HINTS.filter((hint) =>
+    hint.patterns.some((pattern) => pattern.test(str))
+  ).map((hint) => hint.name)
 }
 
 function analyzeSuspiciousStrings(strings: unknown[]): {
@@ -1178,7 +1274,7 @@ function analyzeSuspiciousStrings(strings: unknown[]): {
   const rustMarkers: string[] = []
   const crateNames: string[] = []
   const libraryHints: string[] = []
-  
+
   for (const rawEntry of strings) {
     const str = normalizeStringEntry(rawEntry)
     if (!str) {
@@ -1191,31 +1287,33 @@ function analyzeSuspiciousStrings(strings: unknown[]): {
       urls.push(urlMatch[0])
       suspicious.push(str)
     }
-    
+
     // Check for IP addresses
     const ipMatch = str.match(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/)
     if (ipMatch) {
       ips.push(ipMatch[0])
       suspicious.push(str)
     }
-    
+
     // Check for file paths
     const pathMatch = str.match(/[A-Za-z]:\\[^\s]+/)
     if (pathMatch) {
       paths.push(pathMatch[0])
-      if (pathMatch[0].toLowerCase().includes('temp') || 
-          pathMatch[0].toLowerCase().includes('appdata')) {
+      if (
+        pathMatch[0].toLowerCase().includes('temp') ||
+        pathMatch[0].toLowerCase().includes('appdata')
+      ) {
         suspicious.push(str)
       }
     }
-    
+
     // Check for registry keys
     const regMatch = str.match(/HKEY_[A-Z_]+\\[^\s]+/i)
     if (regMatch) {
       registry.push(regMatch[0])
       suspicious.push(str)
     }
-    
+
     // Check for shell executables
     if (/cmd\.exe|powershell\.exe|wscript\.exe/i.test(str)) {
       suspicious.push(str)
@@ -1245,9 +1343,9 @@ function analyzeSuspiciousStrings(strings: unknown[]): {
 
     libraryHints.push(...detectLibraryHints(str))
   }
-  
+
   return {
-    suspicious: [...new Set(suspicious)],  // Remove duplicates
+    suspicious: [...new Set(suspicious)], // Remove duplicates
     urls: [...new Set(urls)],
     ips: [...new Set(ips)],
     paths: [...new Set(paths)],
@@ -1395,9 +1493,8 @@ function summarizeLibraryProfile(profile?: LibraryProfile): string {
     return ''
   }
 
-  const libraries = profile.notable_libraries.length > 0
-    ? profile.notable_libraries
-    : profile.top_crates
+  const libraries =
+    profile.notable_libraries.length > 0 ? profile.notable_libraries : profile.top_crates
   if (libraries.length === 0) {
     return profile.ecosystems.join(', ')
   }
@@ -1422,22 +1519,26 @@ function normalizeYaraSignals(matches: unknown[]): YaraSignal[] {
 
   return matches
     .map((match) => {
-      const rule = typeof (match as { rule?: unknown })?.rule === 'string'
-        ? String((match as { rule: string }).rule)
-        : ''
+      const rule =
+        typeof (match as { rule?: unknown })?.rule === 'string'
+          ? String((match as { rule: string }).rule)
+          : ''
       if (!rule) {
         return null
       }
 
-      const levelRaw = typeof (match as { confidence?: { level?: unknown } })?.confidence?.level === 'string'
-        ? String((match as { confidence?: { level?: string } }).confidence?.level).toLowerCase()
-        : 'unknown'
-      const level: YaraSignal['level'] =
-        levelRaw === 'high' || levelRaw === 'medium' || levelRaw === 'low'
-          ? levelRaw
+      const levelRaw =
+        typeof (match as { confidence?: { level?: unknown } })?.confidence?.level === 'string'
+          ? String((match as { confidence?: { level?: string } }).confidence?.level).toLowerCase()
           : 'unknown'
-      const numericScore = Number((match as { confidence?: { score?: unknown } })?.confidence?.score || 0)
-      const stringOnly = Boolean((match as { evidence?: { string_only?: unknown } })?.evidence?.string_only)
+      const level: YaraSignal['level'] =
+        levelRaw === 'high' || levelRaw === 'medium' || levelRaw === 'low' ? levelRaw : 'unknown'
+      const numericScore = Number(
+        (match as { confidence?: { score?: unknown } })?.confidence?.score || 0
+      )
+      const stringOnly = Boolean(
+        (match as { evidence?: { string_only?: unknown } })?.evidence?.string_only
+      )
       const loweredRule = rule.toLowerCase()
 
       return {
@@ -1447,7 +1548,9 @@ function normalizeYaraSignals(matches: unknown[]): YaraSignal[] {
         stringOnly,
         generic:
           loweredRule.includes('generic') ||
-          (loweredRule.includes('trojan') && !loweredRule.includes('downloader') && !loweredRule.includes('backdoor')),
+          (loweredRule.includes('trojan') &&
+            !loweredRule.includes('downloader') &&
+            !loweredRule.includes('backdoor')),
       } satisfies YaraSignal
     })
     .filter((item): item is YaraSignal => Boolean(item))
@@ -1493,9 +1596,10 @@ function assessIntentAndTooling(
     ].some((needle) => api.includes(needle))
   ).length
 
-  const malwareSpecificYara = yaraSignals.some((signal) =>
-    /ransomware|backdoor|downloader|keylogger/.test(signal.rule.toLowerCase()) &&
-    signal.level !== 'low'
+  const malwareSpecificYara = yaraSignals.some(
+    (signal) =>
+      /ransomware|backdoor|downloader|keylogger/.test(signal.rule.toLowerCase()) &&
+      signal.level !== 'low'
   )
   const networkBehavior = stringAnalysis.urls.length > 0 || stringAnalysis.ips.length > 0
   const persistenceBehavior = stringAnalysis.registry.length > 0
@@ -1505,17 +1609,16 @@ function assessIntentAndTooling(
         .filter((item: string) => item.length > 0)
     : []
   const toolchainMarkers: string[] = [
-    ...(
-      Array.isArray(runtime?.suspected)
-        ? runtime.suspected
-            .map((item: any) =>
+    ...(Array.isArray(runtime?.suspected)
+      ? runtime.suspected
+          .map(
+            (item: any) =>
               `${String(item?.runtime || '').trim()}${
                 typeof item?.confidence === 'number' ? `(${item.confidence.toFixed(2)})` : ''
               }`
-            )
-            .filter((item: string) => item.length > 0)
-        : []
-    ),
+          )
+          .filter((item: string) => item.length > 0)
+      : []),
     ...stringAnalysis.cargoPaths.slice(0, 5),
     ...stringAnalysis.rustMarkers.slice(0, 5),
   ]
@@ -1565,9 +1668,7 @@ function assessIntentAndTooling(
       intent: {
         label: 'operator_utility',
         confidence: 0.62,
-        evidence: [
-          'Operator-facing help or CLI surface detected in grouped string windows.',
-        ],
+        evidence: ['Operator-facing help or CLI surface detected in grouped string windows.'],
         counter_evidence: malwareSpecificYara
           ? ['Malware-specific YARA evidence is also present; treat as suspicious until validated.']
           : [],
@@ -1659,18 +1760,19 @@ function calculateThreatLevel(
 ): { level: 'clean' | 'suspicious' | 'malicious' | 'unknown'; confidence: number } {
   let score = 0
   let maxScore = 0
-  
+
   // YARA matches (highest weight)
   maxScore += 50
   if (yaraMatches.length > 0) {
     // Check for malware family matches
-    const hasMalwareMatch = yaraMatches.some(rule => 
-      rule.toLowerCase().includes('trojan') ||
-      rule.toLowerCase().includes('ransomware') ||
-      rule.toLowerCase().includes('backdoor') ||
-      rule.toLowerCase().includes('malware')
+    const hasMalwareMatch = yaraMatches.some(
+      (rule) =>
+        rule.toLowerCase().includes('trojan') ||
+        rule.toLowerCase().includes('ransomware') ||
+        rule.toLowerCase().includes('backdoor') ||
+        rule.toLowerCase().includes('malware')
     )
-    
+
     if (hasMalwareMatch) {
       score += 50
     } else {
@@ -1681,7 +1783,7 @@ function calculateThreatLevel(
     // Weak YARA-only signal: keep as low weight to reduce false positives.
     score += Math.min(lowConfidenceYaraCount * 2, 6)
   }
-  
+
   // Suspicious imports (context-aware weighting to reduce false positives)
   maxScore += 30
   if (suspiciousImports.length > 0) {
@@ -1713,16 +1815,16 @@ function calculateThreatLevel(
 
     score += Math.min(importScore, 30)
   }
-  
+
   // Suspicious strings (lower weight)
   maxScore += 20
   if (suspiciousStrings.length > 0) {
     score += Math.min(suspiciousStrings.length * 2, 20)
   }
-  
+
   // Calculate confidence
   const confidence = maxScore > 0 ? score / maxScore : 0
-  
+
   // Determine threat level
   let level: 'clean' | 'suspicious' | 'malicious' | 'unknown'
   if (score >= 40) {
@@ -1734,7 +1836,7 @@ function calculateThreatLevel(
   } else {
     level = 'clean'
   }
-  
+
   return { level, confidence }
 }
 
@@ -1749,31 +1851,31 @@ function generateEvidence(
   runtime: any
 ): string[] {
   const evidence: string[] = []
-  
+
   if (yaraMatches.length > 0) {
     evidence.push(`YARA 规则匹配: ${yaraMatches.join(', ')}`)
   }
-  
+
   if (suspiciousImports.length > 0) {
     evidence.push(`检测到 ${suspiciousImports.length} 个可疑导入函数`)
     if (suspiciousImports.length <= 5) {
       evidence.push(`可疑导入: ${suspiciousImports.join(', ')}`)
     }
   }
-  
+
   if (suspiciousStrings.length > 0) {
     evidence.push(`检测到 ${suspiciousStrings.length} 个可疑字符串`)
   }
-  
+
   if (runtime?.is_dotnet) {
     evidence.push(`.NET 程序 (${runtime.dotnet_version || 'unknown version'})`)
   }
-  
+
   if (runtime?.suspected && runtime.suspected.length > 0) {
     const runtimes = runtime.suspected.map((s: any) => s.runtime).join(', ')
     evidence.push(`检测到运行时: ${runtimes}`)
   }
-  
+
   return evidence
 }
 
@@ -1788,32 +1890,34 @@ function generateSummaryAndRecommendation(
 ): { summary: string; recommendation: string } {
   let summary = ''
   let recommendation = ''
-  
+
   // Generate summary based on threat level
   if (threatLevel === 'malicious') {
     const malwareTypes = yaraMatches
-      .filter(rule => 
-        rule.toLowerCase().includes('trojan') ||
-        rule.toLowerCase().includes('ransomware') ||
-        rule.toLowerCase().includes('backdoor')
+      .filter(
+        (rule) =>
+          rule.toLowerCase().includes('trojan') ||
+          rule.toLowerCase().includes('ransomware') ||
+          rule.toLowerCase().includes('backdoor')
       )
-      .map(rule => rule.split('_')[0])
-    
+      .map((rule) => rule.split('_')[0])
+
     if (malwareTypes.length > 0) {
       summary = `检测到恶意软件: ${malwareTypes.join(', ')}`
     } else {
       summary = '检测到高度可疑的恶意行为特征'
     }
-    
+
     recommendation = '强烈建议在隔离环境中进行深度分析，不要在生产环境执行此文件'
   } else if (threatLevel === 'suspicious') {
-    const packerMatches = yaraMatches.filter(rule => 
-      rule.toLowerCase().includes('upx') ||
-      rule.toLowerCase().includes('packer') ||
-      rule.toLowerCase().includes('themida') ||
-      rule.toLowerCase().includes('vmprotect')
+    const packerMatches = yaraMatches.filter(
+      (rule) =>
+        rule.toLowerCase().includes('upx') ||
+        rule.toLowerCase().includes('packer') ||
+        rule.toLowerCase().includes('themida') ||
+        rule.toLowerCase().includes('vmprotect')
     )
-    
+
     if (packerMatches.length > 0) {
       summary = `检测到加壳器: ${packerMatches.join(', ')}`
       recommendation = '建议进行脱壳分析或深度静态分析以了解真实行为'
@@ -1828,12 +1932,12 @@ function generateSummaryAndRecommendation(
     summary = '无法确定威胁等级，需要更多信息'
     recommendation = '建议进行深度静态分析以获取更多信息'
   }
-  
+
   // Add runtime info to summary
   if (runtime?.is_dotnet) {
     summary += ` (.NET 程序)`
   }
-  
+
   return { summary, recommendation }
 }
 
@@ -1888,9 +1992,7 @@ function buildInferenceLayer(
     hypotheses.push(`YARA medium/high confidence match: ${yaraMatches.slice(0, 5).join(', ')}`)
   }
   if (yaraLowConfidenceMatches.length > 0) {
-    hypotheses.push(
-      `YARA low-confidence hints: ${yaraLowConfidenceMatches.slice(0, 5).join(', ')}`
-    )
+    hypotheses.push(`YARA low-confidence hints: ${yaraLowConfidenceMatches.slice(0, 5).join(', ')}`)
     falsePositiveRisks.push(
       'Low-confidence YARA hits may be string overlap without strong import/API corroboration.'
     )
@@ -1959,13 +2061,7 @@ export function calculateThreatLevelV2(
   let yaraScore = 0
   for (const signal of yaraSignals) {
     const levelWeight =
-      signal.level === 'high'
-        ? 16
-        : signal.level === 'medium'
-          ? 10
-          : signal.level === 'low'
-            ? 4
-            : 6
+      signal.level === 'high' ? 16 : signal.level === 'medium' ? 10 : signal.level === 'low' ? 4 : 6
     let signalScore = levelWeight + Math.min(4, Math.max(0, signal.score) * 3)
 
     if (signal.stringOnly) {
@@ -2079,8 +2175,9 @@ function generateEvidenceV2(
   const evidence: string[] = []
   const strongSignals = yaraSignals
     .filter((signal) => signal.level !== 'low')
-    .map((signal) =>
-      `${signal.rule}${signal.stringOnly ? ' [string-only]' : ''}${signal.generic ? ' [generic]' : ''}`
+    .map(
+      (signal) =>
+        `${signal.rule}${signal.stringOnly ? ' [string-only]' : ''}${signal.generic ? ' [generic]' : ''}`
     )
   const downgradedSignals = yaraSignals
     .filter((signal) => signal.level === 'low')
@@ -2348,7 +2445,7 @@ function buildInferenceLayerV2(
 /**
  * Execute triage workflow
  * Requirements: 15.1, 15.2, 15.4, 15.5
- * 
+ *
  * This is a standalone function that can be called by other workflows
  */
 export async function triageWorkflow(
@@ -2357,16 +2454,16 @@ export async function triageWorkflow(
   database: DatabaseManager,
   cacheManager: CacheManager
 ): Promise<TriageWorkflowOutput> {
-  const handler = createTriageWorkflowHandler(workspaceManager, database, cacheManager);
-  const result = await handler({ sample_id: sampleId });
-  
+  const handler = createTriageWorkflowHandler(workspaceManager, database, cacheManager)
+  const result = await handler({ sample_id: sampleId })
+
   // Convert WorkerResult to TriageWorkflowOutput
   return {
     ok: result.ok,
     data: result.data as any,
     errors: result.errors,
-    warnings: result.warnings
-  };
+    warnings: result.warnings,
+  }
 }
 
 // ============================================================================
@@ -2402,30 +2499,38 @@ export function createTriageWorkflowHandler(
 ) {
   // Create tool handlers
   const peFingerprintHandler =
-    dependencies.peFingerprint || createPEFingerprintHandler({ workspaceManager, database, cacheManager } as any)
+    dependencies.peFingerprint ||
+    createPEFingerprintHandler({ workspaceManager, database, cacheManager } as any)
   const runtimeDetectHandler =
-    dependencies.runtimeDetect || createRuntimeDetectHandler(workspaceManager, database, cacheManager)
+    dependencies.runtimeDetect ||
+    createRuntimeDetectHandler(workspaceManager, database, cacheManager)
   const peImportsExtractHandler =
-    dependencies.peImportsExtract || createPEImportsExtractHandler({ workspaceManager, database, cacheManager } as any)
+    dependencies.peImportsExtract ||
+    createPEImportsExtractHandler({ workspaceManager, database, cacheManager } as any)
   const stringsExtractHandler =
-    dependencies.stringsExtract || createStringsExtractHandler(workspaceManager, database, cacheManager)
+    dependencies.stringsExtract ||
+    createStringsExtractHandler(workspaceManager, database, cacheManager)
   const yaraScanHandler =
     dependencies.yaraScan || createYaraScanHandler(workspaceManager, database, cacheManager)
   const staticCapabilityTriageHandler =
-    dependencies.staticCapabilityTriage || createStaticCapabilityTriageHandler(workspaceManager, database)
+    dependencies.staticCapabilityTriage ||
+    createStaticCapabilityTriageHandler(workspaceManager, database)
   const peStructureAnalyzeHandler =
-    dependencies.peStructureAnalyze || createPEStructureAnalyzeHandler({ workspaceManager, database } as any)
+    dependencies.peStructureAnalyze ||
+    createPEStructureAnalyzeHandler({ workspaceManager, database } as any)
   const compilerPackerDetectHandler =
-    dependencies.compilerPackerDetect || createCompilerPackerDetectHandler(workspaceManager, database)
+    dependencies.compilerPackerDetect ||
+    createCompilerPackerDetectHandler(workspaceManager, database)
   const analysisContextLinkHandler =
-    dependencies.analysisContextLink || createAnalysisContextLinkHandler(workspaceManager, database, cacheManager)
+    dependencies.analysisContextLink ||
+    createAnalysisContextLinkHandler(workspaceManager, database, cacheManager)
   const upxInspectHandler =
     dependencies.upxInspect || createUPXInspectHandler(workspaceManager, database)
   const yaraXScanHandler =
     dependencies.yaraXScan || createYaraXScanHandler(workspaceManager, database)
   const rizinAnalyzeHandler =
     dependencies.rizinAnalyze || createRizinAnalyzeHandler(workspaceManager, database)
-  
+
   return async (args: ToolArgs): Promise<WorkerResult> => {
     let input: z.infer<typeof TriageWorkflowInputSchema>
     try {
@@ -2439,7 +2544,7 @@ export function createTriageWorkflowHandler(
     const startTime = Date.now()
     const warnings: string[] = []
     const errors: string[] = []
-    
+
     try {
       if (dependencies.analyzeStart) {
         const delegated = await dependencies.analyzeStart({
@@ -2478,15 +2583,12 @@ export function createTriageWorkflowHandler(
             ...stageResult,
             run_id: delegatedPayload.run_id,
             deferred_jobs: delegatedPayload.deferred_jobs,
-            recommended_next_tools:
-              (stageResult.recommended_next_tools as string[] | undefined) || [
-                'workflow.analyze.promote',
-                'workflow.analyze.status',
-              ],
-            next_actions:
-              (stageResult.next_actions as string[] | undefined) || [
-                'Promote the persisted run instead of rerunning triage when you need deeper stages.',
-              ],
+            recommended_next_tools: (stageResult.recommended_next_tools as
+              | string[]
+              | undefined) || ['workflow.analyze.promote', 'workflow.analyze.status'],
+            next_actions: (stageResult.next_actions as string[] | undefined) || [
+              'Promote the persisted run instead of rerunning triage when you need deeper stages.',
+            ],
           },
           warnings: delegated.warnings,
           metrics: {
@@ -2506,76 +2608,76 @@ export function createTriageWorkflowHandler(
       }
       const sampleSizeTier = classifySampleSizeTier(sample.size || 0)
       const analysisBudgetProfile = deriveAnalysisBudgetProfile(input.depth, sampleSizeTier)
-      
+
       // Step 1: PE Fingerprint (fast mode)
       // Requirement: 15.1
-      const fingerprintResult = await peFingerprintHandler({ 
-        sample_id: input.sample_id, 
+      const fingerprintResult = await peFingerprintHandler({
+        sample_id: input.sample_id,
         fast: true,
         force_refresh: input.force_refresh,
       })
-      
+
       if (!fingerprintResult.ok) {
         errors.push('PE fingerprint extraction failed')
       }
       if (fingerprintResult.warnings) {
         warnings.push(...fingerprintResult.warnings)
       }
-      
+
       // Step 2: Runtime Detection
       // Requirement: 15.1
-      const runtimeResult = await runtimeDetectHandler({ 
+      const runtimeResult = await runtimeDetectHandler({
         sample_id: input.sample_id,
         force_refresh: input.force_refresh,
       })
-      
+
       if (!runtimeResult.ok) {
         errors.push('Runtime detection failed')
       }
       if (runtimeResult.warnings) {
         warnings.push(...runtimeResult.warnings)
       }
-      
+
       // Step 3: Import Table Extraction
       // Requirement: 15.1
-      const importsResult = await peImportsExtractHandler({ 
+      const importsResult = await peImportsExtractHandler({
         sample_id: input.sample_id,
         group_by_dll: true,
         force_refresh: input.force_refresh,
       })
-      
+
       if (!importsResult.ok) {
         errors.push('Import table extraction failed')
       }
       if (importsResult.warnings) {
         warnings.push(...importsResult.warnings)
       }
-      
+
       // Step 4: String Extraction
       // Requirement: 15.1
-      const stringsResult = await stringsExtractHandler({ 
+      const stringsResult = await stringsExtractHandler({
         sample_id: input.sample_id,
         min_len: 6,
         encoding: 'all',
         force_refresh: input.force_refresh,
       })
-      
+
       if (!stringsResult.ok) {
         errors.push('String extraction failed')
       }
       if (stringsResult.warnings) {
         warnings.push(...stringsResult.warnings)
       }
-      
+
       // Step 5: YARA Scan
       // Requirement: 15.1
-      const yaraResult = await yaraScanHandler({ 
+      const yaraResult = await yaraScanHandler({
         sample_id: input.sample_id,
         rule_set: 'malware_families',
         rule_tier: 'production',
         force_refresh: input.force_refresh,
       })
-      
+
       if (!yaraResult.ok) {
         errors.push('YARA scan failed')
       }
@@ -2635,7 +2737,7 @@ export function createTriageWorkflowHandler(
       if (stringContextResult.warnings) {
         warnings.push(...stringContextResult.warnings)
       }
-      
+
       // If all tools failed, return error
       if (errors.length >= 8) {
         return {
@@ -2648,10 +2750,10 @@ export function createTriageWorkflowHandler(
           },
         }
       }
-      
+
       // Step 10: Aggregate results and generate structured summary
       // Requirements: 15.2, 15.4, 15.5
-      
+
       // Extract YARA matches
       let yaraSignals: YaraSignal[] = []
       if (yaraResult.ok && yaraResult.data) {
@@ -2660,7 +2762,7 @@ export function createTriageWorkflowHandler(
           yaraSignals = normalizeYaraSignals(yaraData.matches)
         }
       }
-      
+
       // Analyze imports for suspicious APIs
       const suspiciousImports: string[] = []
       if (importsResult.ok && importsResult.data) {
@@ -2669,7 +2771,7 @@ export function createTriageWorkflowHandler(
           suspiciousImports.push(...analyzeSuspiciousImports(importsData.imports))
         }
       }
-      
+
       // Analyze strings for suspicious patterns
       const stringAnalysis = {
         suspicious: [] as string[],
@@ -2713,20 +2815,12 @@ export function createTriageWorkflowHandler(
       yaraSignals = applyIntentAwareYaraAdjustments(yaraSignals, intent)
 
       const yaraMatches = Array.from(
-        new Set(
-          yaraSignals
-            .filter((signal) => signal.level !== 'low')
-            .map((signal) => signal.rule)
-        )
+        new Set(yaraSignals.filter((signal) => signal.level !== 'low').map((signal) => signal.rule))
       )
       const yaraLowConfidenceMatches = Array.from(
-        new Set(
-          yaraSignals
-            .filter((signal) => signal.level === 'low')
-            .map((signal) => signal.rule)
-        )
+        new Set(yaraSignals.filter((signal) => signal.level === 'low').map((signal) => signal.rule))
       )
-      
+
       // Calculate threat level and confidence
       const { level: threatLevel, confidence } = calculateThreatLevelV2(
         yaraSignals,
@@ -2734,7 +2828,7 @@ export function createTriageWorkflowHandler(
         stringAnalysis.suspicious,
         intent
       )
-      
+
       // Generate evidence
       const evidence = generateEvidenceV2(
         yaraSignals,
@@ -2749,7 +2843,7 @@ export function createTriageWorkflowHandler(
           `YARA low-confidence matches (downgraded): ${yaraLowConfidenceMatches.join(', ')}`
         )
       }
-      
+
       // Generate summary and recommendation
       let { summary, recommendation } = generateSummaryAndRecommendationV2(
         threatLevel,
@@ -2775,20 +2869,21 @@ export function createTriageWorkflowHandler(
       )
 
       const highValueIocs = {
-        suspicious_apis:
-          suspiciousImports.length > 0 ? suspiciousImports.slice(0, 20) : undefined,
-        commands: stringAnalysis.commands.length > 0 ? stringAnalysis.commands.slice(0, 15) : undefined,
+        suspicious_apis: suspiciousImports.length > 0 ? suspiciousImports.slice(0, 20) : undefined,
+        commands:
+          stringAnalysis.commands.length > 0 ? stringAnalysis.commands.slice(0, 15) : undefined,
         pipes: stringAnalysis.pipes.length > 0 ? stringAnalysis.pipes.slice(0, 15) : undefined,
         urls: stringAnalysis.urls.length > 0 ? stringAnalysis.urls.slice(0, 15) : undefined,
-        network:
-          stringAnalysis.ips.length > 0 ? stringAnalysis.ips.slice(0, 15) : undefined,
+        network: stringAnalysis.ips.length > 0 ? stringAnalysis.ips.slice(0, 15) : undefined,
       }
 
       const compilerArtifacts = {
         cargo_paths:
           stringAnalysis.cargoPaths.length > 0 ? stringAnalysis.cargoPaths.slice(0, 10) : undefined,
         rust_markers:
-          stringAnalysis.rustMarkers.length > 0 ? stringAnalysis.rustMarkers.slice(0, 10) : undefined,
+          stringAnalysis.rustMarkers.length > 0
+            ? stringAnalysis.rustMarkers.slice(0, 10)
+            : undefined,
         library_profile: tooling.library_profile,
       }
 
@@ -2802,18 +2897,19 @@ export function createTriageWorkflowHandler(
         Boolean(compilerArtifacts.cargo_paths?.length) ||
         Boolean(compilerArtifacts.rust_markers?.length) ||
         Boolean(compilerArtifacts.library_profile)
-      
+
       // Build IOCs
       const iocs = {
         suspicious_imports: suspiciousImports,
-        suspicious_strings: stringAnalysis.suspicious.slice(0, 20),  // Limit to top 20
+        suspicious_strings: stringAnalysis.suspicious.slice(0, 20), // Limit to top 20
         yara_matches: yaraMatches,
         yara_low_confidence:
           yaraLowConfidenceMatches.length > 0 ? yaraLowConfidenceMatches : undefined,
         urls: stringAnalysis.urls.length > 0 ? stringAnalysis.urls : undefined,
         ip_addresses: stringAnalysis.ips.length > 0 ? stringAnalysis.ips : undefined,
         file_paths: stringAnalysis.paths.length > 0 ? stringAnalysis.paths.slice(0, 10) : undefined,
-        registry_keys: stringAnalysis.registry.length > 0 ? stringAnalysis.registry.slice(0, 10) : undefined,
+        registry_keys:
+          stringAnalysis.registry.length > 0 ? stringAnalysis.registry.slice(0, 10) : undefined,
         high_value_iocs: hasHighValue ? highValueIocs : undefined,
         compiler_artifacts: hasCompilerArtifacts ? compilerArtifacts : undefined,
       }
@@ -2895,8 +2991,7 @@ export function createTriageWorkflowHandler(
         allowTransformations: input.allow_transformations,
         readiness: (dependencies.resolveBackends || resolveAnalysisBackends)(),
         signals: {
-          packer_suspected:
-            compilerPackerInsights.packer_hint || peStructureInsights.packer_hint,
+          packer_suspected: compilerPackerInsights.packer_hint || peStructureInsights.packer_hint,
           legacy_yara_weak:
             yaraMatches.length === 0 ||
             (yaraMatches.length <= 1 && yaraLowConfidenceMatches.length > 0),
@@ -2924,7 +3019,9 @@ export function createTriageWorkflowHandler(
         })
         if (upxResult.ok && upxResult.data) {
           upxEnrichment = upxResult.data
-          evidence.push(`UPX corroboration: ${String((upxResult.data as Record<string, unknown>).summary || 'validation completed.')}`)
+          evidence.push(
+            `UPX corroboration: ${String((upxResult.data as Record<string, unknown>).summary || 'validation completed.')}`
+          )
         } else {
           warnings.push(
             `upx.inspect unavailable: ${(upxResult.errors || ['unknown error']).join('; ')}`
@@ -2959,8 +3056,11 @@ export function createTriageWorkflowHandler(
       }
 
       if (selectedBackends.has('rizin.analyze')) {
-        const rizinOperation =
-          !importsResult.ok ? 'imports' : !peStructureResult.ok ? 'sections' : 'info'
+        const rizinOperation = !importsResult.ok
+          ? 'imports'
+          : !peStructureResult.ok
+            ? 'sections'
+            : 'info'
         const rizinResult = await rizinAnalyzeHandler({
           sample_id: input.sample_id,
           operation: rizinOperation,
@@ -2982,7 +3082,7 @@ export function createTriageWorkflowHandler(
           warnings.push(...rizinResult.warnings.map((item) => `rizin.analyze: ${item}`))
         }
       }
-      
+
       // Return structured result
       const backendEnrichments = {
         ...(upxEnrichment ? { upx: upxEnrichment } : {}),
@@ -3036,8 +3136,20 @@ export function createTriageWorkflowHandler(
       const recommendedNextTools = Array.from(
         new Set(
           stringContextReady
-            ? ['analysis.context.link', 'code.xrefs.analyze', 'ghidra.analyze', 'workflow.reconstruct', 'binary.role.profile']
-            : ['ghidra.analyze', 'analysis.context.link', 'code.xrefs.analyze', 'workflow.reconstruct', 'binary.role.profile']
+            ? [
+                'analysis.context.link',
+                'code.xrefs.analyze',
+                'ghidra.analyze',
+                'workflow.reconstruct',
+                'binary.role.profile',
+              ]
+            : [
+                'ghidra.analyze',
+                'analysis.context.link',
+                'code.xrefs.analyze',
+                'workflow.reconstruct',
+                'binary.role.profile',
+              ]
         )
       )
       if (cryptoSignalsPresent) {
@@ -3100,13 +3212,15 @@ export function createTriageWorkflowHandler(
           {
             domain: 'dynamic_behavior',
             status: 'missing',
-            reason: 'No dynamic execution, imported trace replay, or sandbox verification was performed.',
+            reason:
+              'No dynamic execution, imported trace replay, or sandbox verification was performed.',
           },
           cryptoSignalsPresent
             ? {
                 domain: 'crypto_analysis',
                 status: 'missing',
-                reason: 'Crypto-related imports or context were observed, but dedicated crypto identification was not run yet.',
+                reason:
+                  'Crypto-related imports or context were observed, but dedicated crypto identification was not run yet.',
               }
             : null,
         ],
@@ -3118,7 +3232,10 @@ export function createTriageWorkflowHandler(
             compilerPackerInsights.packer_hint || peStructureInsights.packer_hint
               ? Math.max(0.55, adjustedConfidence)
               : 0.3,
-          capabilities: staticCapabilityInsights.evidence.length > 0 ? Math.max(0.55, adjustedConfidence) : 0.35,
+          capabilities:
+            staticCapabilityInsights.evidence.length > 0
+              ? Math.max(0.55, adjustedConfidence)
+              : 0.35,
           graph_context: stringContextReady ? 0.65 : 0.2,
           crypto: cryptoSignalsPresent ? 0.55 : 0.15,
         },
@@ -3130,34 +3247,43 @@ export function createTriageWorkflowHandler(
         ],
         suspectedFindings: [
           ...inference.hypotheses.slice(0, 3),
-          ...yaraLowConfidenceMatches.slice(0, 2).map((item) => `Low-confidence YARA match: ${item}`),
-          compilerPackerInsights.packer_hint ? 'Packer or protector indicators suggest additional hidden logic may exist.' : null,
+          ...yaraLowConfidenceMatches
+            .slice(0, 2)
+            .map((item) => `Low-confidence YARA match: ${item}`),
+          compilerPackerInsights.packer_hint
+            ? 'Packer or protector indicators suggest additional hidden logic may exist.'
+            : null,
         ],
         unverifiedAreas: [
           'Full function-level decompilation was not performed.',
           'Dynamic behavior and runtime-only indicators remain unverified.',
-          cryptoSignalsPresent ? 'Crypto algorithm identity and constant extraction remain unverified.' : null,
+          cryptoSignalsPresent
+            ? 'Crypto algorithm identity and constant extraction remain unverified.'
+            : null,
         ],
         upgradePaths: [
           {
             tool: 'ghidra.analyze',
             purpose: 'Recover function-level decompilation and attribution.',
             closes_gaps: ['ghidra_analysis', 'function_attribution'],
-            expected_coverage_gain: 'Adds function index, decompiler output, and stronger API or string-to-function attribution.',
+            expected_coverage_gain:
+              'Adds function index, decompiler output, and stronger API or string-to-function attribution.',
             cost_tier: 'high',
           },
           {
             tool: stringContextReady ? 'code.xrefs.analyze' : 'analysis.context.link',
             purpose: 'Deepen string, API, and Xref correlation before full reconstruction.',
             closes_gaps: ['function_attribution'],
-            expected_coverage_gain: 'Clarifies which functions, strings, and APIs are linked to the top triage findings.',
+            expected_coverage_gain:
+              'Clarifies which functions, strings, and APIs are linked to the top triage findings.',
             cost_tier: 'medium',
           },
           {
             tool: 'workflow.reconstruct',
             purpose: 'Move from quick profile to source-like reconstruction artifacts.',
             closes_gaps: ['reconstruction_export'],
-            expected_coverage_gain: 'Adds planning, export, and corroborating backend artifacts beyond triage.',
+            expected_coverage_gain:
+              'Adds planning, export, and corroborating backend artifacts beyond triage.',
             cost_tier: 'high',
           },
           cryptoSignalsPresent
@@ -3165,7 +3291,8 @@ export function createTriageWorkflowHandler(
                 tool: 'crypto.identify',
                 purpose: 'Turn crypto-related signals into algorithm and constant findings.',
                 closes_gaps: ['crypto_analysis'],
-                expected_coverage_gain: 'Adds crypto routine, constant, and mode hints before breakpoint planning.',
+                expected_coverage_gain:
+                  'Adds crypto routine, constant, and mode hints before breakpoint planning.',
                 cost_tier: 'medium',
               }
             : null,
@@ -3187,7 +3314,11 @@ export function createTriageWorkflowHandler(
               recommendation,
               result_mode: 'quick_profile',
               tool_surface_role: 'compatibility',
-              preferred_primary_tools: ['workflow.analyze.start', 'workflow.analyze.status', 'workflow.analyze.promote'],
+              preferred_primary_tools: [
+                'workflow.analyze.start',
+                'workflow.analyze.status',
+                'workflow.analyze.promote',
+              ],
               recommended_next_tools: recommendedNextTools,
               next_actions: nextActions,
               raw_results: rawResults,

@@ -34,7 +34,13 @@ import { getToolSurfaceManager } from './tool-surface-manager.js'
 import { MCPRegistry } from './mcp-registry.js'
 import { ToolExecutor } from './tool-executor.js'
 import type { ApiBootstrapper } from '../api/api-bootstrapper.js'
-import type { ToolRegistrar, PromptRegistrar, ResourceRegistrar, SamplingClient, PluginManagerSetter } from './registrar.js'
+import type {
+  ToolRegistrar,
+  PromptRegistrar,
+  ResourceRegistrar,
+  SamplingClient,
+  PluginManagerSetter,
+} from './registrar.js'
 
 interface MCPServerDependencies {
   workspaceManager?: WorkspaceManager
@@ -47,7 +53,9 @@ interface MCPServerDependencies {
 /**
  * MCP Server class implementing the Model Context Protocol
  */
-export class MCPServer implements ToolRegistrar, PromptRegistrar, ResourceRegistrar, SamplingClient, PluginManagerSetter {
+export class MCPServer
+  implements ToolRegistrar, PromptRegistrar, ResourceRegistrar, SamplingClient, PluginManagerSetter
+{
   private server: Server
   private logger: pino.Logger
   private config: Config
@@ -62,9 +70,12 @@ export class MCPServer implements ToolRegistrar, PromptRegistrar, ResourceRegist
     const destination = pino.destination({ dest: 2, sync: false }) // fd 2 = stderr
 
     this.config = config
-    this.logger = pino({
-      level: config.logging.level,
-    }, destination)
+    this.logger = pino(
+      {
+        level: config.logging.level,
+      },
+      destination
+    )
 
     this.dependencies = dependencies
     this.registry = new MCPRegistry(this.logger)
@@ -110,14 +121,18 @@ export class MCPServer implements ToolRegistrar, PromptRegistrar, ResourceRegist
 
     this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
       this.logger.debug({ prompt: request.params.name }, 'Handling prompts/get request')
-      return (await this.getPrompt(request.params.name, request.params.arguments || {})) as any
+      return await this.getPrompt(request.params.name, request.params.arguments || {})
     })
 
     // Handle tools/call request
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       this.logger.debug({ tool: request.params.name }, 'Handling tools/call request')
       const progressToken = request.params._meta?.progressToken
-      const result = await this.callTool(request.params.name, request.params.arguments || {}, progressToken)
+      const result = await this.callTool(
+        request.params.name,
+        request.params.arguments || {},
+        progressToken
+      )
       return result
     })
 
@@ -168,7 +183,7 @@ export class MCPServer implements ToolRegistrar, PromptRegistrar, ResourceRegist
    */
   public registerResource(
     meta: { uri: string; name: string; description?: string; mimeType?: string },
-    handler: () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>,
+    handler: () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>
   ): void {
     this.registry.registerResource(meta, handler)
   }
@@ -184,7 +199,9 @@ export class MCPServer implements ToolRegistrar, PromptRegistrar, ResourceRegist
     surface.setNotifyCallback(() => {
       try {
         this.server.sendToolListChanged()
-      } catch (e) { this.logger.debug({ err: e }, 'Tool list change notification failed (best-effort)') }
+      } catch (e) {
+        this.logger.debug({ err: e }, 'Tool list change notification failed (best-effort)')
+      }
     })
   }
 
@@ -227,7 +244,11 @@ export class MCPServer implements ToolRegistrar, PromptRegistrar, ResourceRegist
   /**
    * Call a tool by name with arguments (MCP protocol method)
    */
-  public async callTool(name: string, args: unknown, progressToken?: string | number): Promise<CallToolResult> {
+  public async callTool(
+    name: string,
+    args: unknown,
+    progressToken?: string | number
+  ): Promise<CallToolResult> {
     return this.executor.executeTool(name, args, {
       registry: this.registry,
       pluginRuntime: this.pluginManager ?? undefined,

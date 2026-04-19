@@ -189,6 +189,96 @@ function Get-SystemProxy {
     }
 }
 
+function ConvertTo-TomlString {
+    param([string]$Value)
+    if ($null -eq $Value) { return '""' }
+    $escaped = $Value.Replace('\', '\\').Replace('"', '\"')
+    return '"' + $escaped + '"'
+}
+
+function ConvertTo-TomlArray {
+    param([string[]]$Values)
+    return "[" + (($Values | ForEach-Object { ConvertTo-TomlString $_ }) -join ", ") + "]"
+}
+
+function Set-CodexMcpConfig {
+    param(
+        [string]$ConfigFile,
+        [hashtable]$ProfileConfig
+    )
+
+    $configDir = Split-Path -Parent $ConfigFile
+    if (-not (Test-Path $configDir)) {
+        New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+    }
+
+    $mcpArgs = @(
+        "exec",
+        "-i",
+        "-e",
+        "API_ENABLED=false",
+        "-e",
+        "NODE_ENV=production",
+        "-e",
+        "PYTHONUNBUFFERED=1",
+        $ProfileConfig.Container,
+        "node",
+        "dist/index.js"
+    )
+
+    $block = @"
+[mcp_servers.rikune]
+type = "stdio"
+command = "docker"
+startup_timeout_sec = 180
+args = $(ConvertTo-TomlArray $mcpArgs)
+"@
+
+    $content = ""
+    if (Test-Path $ConfigFile) {
+        $content = Get-Content -Path $ConfigFile -Raw
+        $content = [regex]::Replace($content, '(?ms)^\[mcp_servers\.rikune(?:\.env)?\]\r?\n.*?(?=^\[|\z)', '').TrimEnd()
+    }
+
+    if ([string]::IsNullOrWhiteSpace($content)) {
+        $block | Set-Content -Path $ConfigFile -Encoding UTF8
+    } else {
+        ($content + "`r`n`r`n" + $block) | Set-Content -Path $ConfigFile -Encoding UTF8
+    }
+}
+
+function Test-HttpHealth {
+    param(
+        [string]$Uri,
+        [int]$TimeoutSec = 90
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    $lastError = $null
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $healthParams = @{
+                Uri = $Uri
+                UseBasicParsing = $true
+                TimeoutSec = 5
+            }
+            if ((Get-Command Invoke-WebRequest).Parameters.ContainsKey("NoProxy")) {
+                $healthParams.NoProxy = $true
+            }
+            $response = Invoke-WebRequest @healthParams
+            if ($response.StatusCode -eq 200) {
+                return @{ Ok = $true; Error = $null }
+            }
+            $lastError = "HTTP status $($response.StatusCode)"
+        } catch {
+            $lastError = $_.Exception.Message
+        }
+        Start-Sleep -Seconds 2
+    }
+
+    return @{ Ok = $false; Error = $lastError }
+}
+
 function Write-EnvFile {
     param(
         [string]$Path,
@@ -269,7 +359,7 @@ function Configure-McpClient {
         }
         "Codex" {
             $configDir = Join-Path $env:USERPROFILE ".codex"
-            $configFile = Join-Path $configDir "mcp.json"
+            $configFile = Join-Path $configDir "config.toml"
         }
         "Generic" {
             $configDir = Join-Path $DataRoot "config"
@@ -277,10 +367,14 @@ function Configure-McpClient {
         }
     }
 
-    if (-not (Test-Path $configDir)) {
-        New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+    if ($Client -eq "Codex") {
+        Set-CodexMcpConfig -ConfigFile $configFile -ProfileConfig $ProfileConfig
+    } else {
+        if (-not (Test-Path $configDir)) {
+            New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+        }
+        $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configFile -Encoding UTF8
     }
-    $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configFile -Encoding UTF8
     Write-Success "MCP client config written: $configFile"
 }
 
@@ -563,24 +657,12 @@ Write-Step "Health check"
 if ($SkipStart) {
     Write-Warning-Message "Health check skipped because -SkipStart was specified"
 } else {
-    Start-Sleep -Seconds 3
-    try {
-        $healthParams = @{
-            Uri = "http://localhost:18080/api/v1/health"
-            UseBasicParsing = $true
-            TimeoutSec = 10
-        }
-        if ((Get-Command Invoke-WebRequest).Parameters.ContainsKey("NoProxy")) {
-            $healthParams.NoProxy = $true
-        }
-        $response = Invoke-WebRequest @healthParams
-        if ($response.StatusCode -eq 200) {
-            Write-Success "HTTP API health check passed"
-        } else {
-            Write-Warning-Message "HTTP API returned status $($response.StatusCode)"
-        }
-    } catch {
-        Write-Warning-Message "HTTP API health check failed: $($_.Exception.Message)"
+    Write-Info "Waiting for HTTP API to become ready..."
+    $health = Test-HttpHealth -Uri "http://localhost:18080/api/v1/health" -TimeoutSec 90
+    if ($health.Ok) {
+        Write-Success "HTTP API health check passed"
+    } else {
+        Write-Warning-Message "HTTP API health check failed: $($health.Error)"
         Write-Info "Check logs with: docker logs $($profileConfig.Container)"
     }
 }

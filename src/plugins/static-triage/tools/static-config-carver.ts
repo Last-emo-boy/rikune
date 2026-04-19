@@ -62,7 +62,10 @@ interface BlobCandidate {
 function extractAsciiStrings(buffer: Buffer, minLength: number, maxStrings: number): string[] {
   const regex = new RegExp(`[\\x20-\\x7e]{${minLength},240}`, 'g')
   const matches = buffer.toString('latin1').match(regex) || []
-  return Array.from(new Set(matches.map((item) => item.trim()).filter(Boolean))).slice(0, maxStrings)
+  return Array.from(new Set(matches.map((item) => item.trim()).filter(Boolean))).slice(
+    0,
+    maxStrings
+  )
 }
 
 function extractUtf16Strings(buffer: Buffer, minLength: number, maxStrings: number): string[] {
@@ -83,10 +86,17 @@ function extractUtf16Strings(buffer: Buffer, minLength: number, maxStrings: numb
   return Array.from(new Set(strings)).slice(0, maxStrings)
 }
 
-function pushCandidate(candidates: ConfigCandidate[], kind: string, value: string, confidence: number, evidence: string[]): void {
+function pushCandidate(
+  candidates: ConfigCandidate[],
+  kind: string,
+  value: string,
+  confidence: number,
+  evidence: string[]
+): void {
   const normalized = value.trim()
   if (!normalized) return
-  if (candidates.some((candidate) => candidate.kind === kind && candidate.value === normalized)) return
+  if (candidates.some((candidate) => candidate.kind === kind && candidate.value === normalized))
+    return
   candidates.push({ kind, value: normalized, confidence, evidence })
 }
 
@@ -106,13 +116,16 @@ function inferConfigCandidates(strings: string[]): ConfigCandidate[] {
   for (const match of joined.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b/g)) {
     const parts = match[0].split(':')[0].split('.').map(Number)
     if (parts.every((part) => part >= 0 && part <= 255)) {
-      pushCandidate(candidates, match[0].includes(':') ? 'ip_port' : 'ip', match[0], 0.78, ['ipv4_string'])
+      pushCandidate(candidates, match[0].includes(':') ? 'ip_port' : 'ip', match[0], 0.78, [
+        'ipv4_string',
+      ])
     }
   }
   for (const raw of strings) {
     const domainMatches = raw.match(/\b[a-z0-9][a-z0-9.-]{2,80}\.[a-z]{2,12}\b/gi) || []
     for (const domain of domainMatches) {
-      if (domainLooksUseful(domain)) pushCandidate(candidates, 'domain', domain.toLowerCase(), 0.68, ['domain_like_string'])
+      if (domainLooksUseful(domain))
+        pushCandidate(candidates, 'domain', domain.toLowerCase(), 0.68, ['domain_like_string'])
     }
     if (/HKEY_|\\Software\\|\\Microsoft\\Windows\\CurrentVersion\\Run/i.test(raw)) {
       pushCandidate(candidates, 'registry_path', raw, 0.78, ['registry_path_string'])
@@ -130,7 +143,11 @@ function inferConfigCandidates(strings: string[]): ConfigCandidate[] {
     ) {
       pushCandidate(candidates, 'mutex_like', raw, 0.66, ['mutex_keyword'])
     }
-    if (/password|passwd|token|apikey|api_key|secret|gate|panel|campaign|botid|install_id|mutex|sleep|interval|beacon/i.test(raw)) {
+    if (
+      /password|passwd|token|apikey|api_key|secret|gate|panel|campaign|botid|install_id|mutex|sleep|interval|beacon/i.test(
+        raw
+      )
+    ) {
       pushCandidate(candidates, 'config_keyword_string', raw, 0.58, ['configuration_keyword'])
     }
   }
@@ -138,7 +155,8 @@ function inferConfigCandidates(strings: string[]): ConfigCandidate[] {
 }
 
 function tryDecodeBase64(value: string): Buffer | null {
-  if (value.length < 24 || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return null
+  if (value.length < 24 || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value))
+    return null
   try {
     const decoded = Buffer.from(value, 'base64')
     if (decoded.length < 12) return null
@@ -221,12 +239,20 @@ export function createStaticConfigCarverHandler(
       const input = StaticConfigCarverInputSchema.parse(args)
       const sample = database.findSample(input.sample_id)
       if (!sample) {
-        return { ok: false, errors: [`Sample not found: ${input.sample_id}`], metrics: { elapsed_ms: Date.now() - started, tool: TOOL_NAME } }
+        return {
+          ok: false,
+          errors: [`Sample not found: ${input.sample_id}`],
+          metrics: { elapsed_ms: Date.now() - started, tool: TOOL_NAME },
+        }
       }
       const { samplePath } = await resolvePrimarySamplePath(workspaceManager, input.sample_id)
       const buffer = await fs.readFile(samplePath)
       const asciiStrings = extractAsciiStrings(buffer, input.min_string_length, input.max_strings)
-      const utf16Strings = extractUtf16Strings(buffer, input.min_string_length, Math.floor(input.max_strings / 2))
+      const utf16Strings = extractUtf16Strings(
+        buffer,
+        input.min_string_length,
+        Math.floor(input.max_strings / 2)
+      )
       const strings = Array.from(new Set([...asciiStrings, ...utf16Strings]))
       const candidates = inferConfigCandidates(strings)
       const blobCandidates = collectBlobCandidates(strings, input.max_blob_candidates)
@@ -257,15 +283,17 @@ export function createStaticConfigCarverHandler(
 
       const artifacts: ArtifactRef[] = []
       if (input.persist_artifact) {
-        artifacts.push(await persistStaticAnalysisJsonArtifact(
-          workspaceManager,
-          database,
-          input.sample_id,
-          'static_config_carver',
-          'config_carver',
-          data,
-          input.session_tag
-        ))
+        artifacts.push(
+          await persistStaticAnalysisJsonArtifact(
+            workspaceManager,
+            database,
+            input.sample_id,
+            'static_config_carver',
+            'config_carver',
+            data,
+            input.session_tag
+          )
+        )
       }
 
       return {

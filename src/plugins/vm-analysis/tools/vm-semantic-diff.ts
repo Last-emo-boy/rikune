@@ -38,9 +38,8 @@ function loadOpcodeTable(database: DatabaseManager, sampleId: string) {
   if (!Array.isArray(evidence)) return null
   for (const entry of evidence) {
     if (entry.evidence_family === 'vm_opcode_table') {
-      const data = typeof entry.result_json === 'string'
-        ? JSON.parse(entry.result_json)
-        : entry.result_json
+      const data =
+        typeof entry.result_json === 'string' ? JSON.parse(entry.result_json) : entry.result_json
       if (data?.opcode_table) return data.opcode_table
     }
   }
@@ -66,10 +65,16 @@ export function createVmSemanticDiffHandler(
     const tableB = loadOpcodeTable(database, input.sample_id_b)
 
     if (!tableA) {
-      return { ok: false, errors: [`No opcode table for ${input.sample_id_a}. Run vm.opcode.extract first.`] }
+      return {
+        ok: false,
+        errors: [`No opcode table for ${input.sample_id_a}. Run vm.opcode.extract first.`],
+      }
     }
     if (!tableB) {
-      return { ok: false, errors: [`No opcode table for ${input.sample_id_b}. Run vm.opcode.extract first.`] }
+      return {
+        ok: false,
+        errors: [`No opcode table for ${input.sample_id_b}. Run vm.opcode.extract first.`],
+      }
     }
 
     const report = diffOpcodeTables(tableA, tableB)
@@ -84,8 +89,12 @@ export function createVmSemanticDiffHandler(
     const artifacts: ArtifactRef[] = []
     try {
       const ref = await persistStaticAnalysisJsonArtifact(
-        workspaceManager, database, input.sample_id_a,
-        'vm_semantic_diff', 'semantic_diff_report', result
+        workspaceManager,
+        database,
+        input.sample_id_a,
+        'vm_semantic_diff',
+        'semantic_diff_report',
+        result
       )
       artifacts.push(ref)
     } catch {

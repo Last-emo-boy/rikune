@@ -8,11 +8,18 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
-  BackendSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, runPythonJson, buildMetrics, buildDynamicSetupRequired,
+  BackendSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  runPythonJson,
+  buildMetrics,
+  buildDynamicSetupRequired,
   resolveAnalysisBackends,
-  mergeSetupActions, mergeRequiredUserInputs,
-  buildDynamicDependencySetupActions, buildDynamicDependencyRequiredUserInputs,
+  mergeSetupActions,
+  mergeRequiredUserInputs,
+  buildDynamicDependencySetupActions,
+  buildDynamicDependencyRequiredUserInputs,
 } from '../../docker-shared.js'
 
 export const qilingInspectInputSchema = z.object({
@@ -21,7 +28,13 @@ export const qilingInspectInputSchema = z.object({
     .enum(['preflight', 'rootfs_probe'])
     .default('preflight')
     .describe('Qiling readiness inspection mode.'),
-  timeout_sec: z.number().int().min(1).max(60).default(20).describe('Backend probe timeout in seconds.'),
+  timeout_sec: z
+    .number()
+    .int()
+    .min(1)
+    .max(60)
+    .default(20)
+    .describe('Backend probe timeout in seconds.'),
 })
 
 export const qilingInspectOutputSchema = z.object({
@@ -130,21 +143,29 @@ export function createQilingInspectHandler(
           rootfs_path:
             typeof result.parsed?.rootfs_path === 'string' ? result.parsed.rootfs_path : null,
           details: result.parsed,
-          summary: rootfsConfigured && rootfsExists
-            ? 'Qiling runtime is available and a rootfs is configured.'
-            : 'Qiling runtime is available, but the Windows rootfs still needs attention before useful emulation.',
+          summary:
+            rootfsConfigured && rootfsExists
+              ? 'Qiling runtime is available and a rootfs is configured.'
+              : 'Qiling runtime is available, but the Windows rootfs still needs attention before useful emulation.',
           recommended_next_tools: ['dynamic.dependencies', 'sandbox.execute', 'tool.help'],
-          next_actions: rootfsConfigured && rootfsExists
-            ? ['Use sandbox.execute or future Qiling-backed workflows when you need controlled emulation.']
-            : ['Set QILING_ROOTFS to a mounted Windows rootfs before attempting Qiling-backed emulation.'],
+          next_actions:
+            rootfsConfigured && rootfsExists
+              ? [
+                  'Use sandbox.execute or future Qiling-backed workflows when you need controlled emulation.',
+                ]
+              : [
+                  'Set QILING_ROOTFS to a mounted Windows rootfs before attempting Qiling-backed emulation.',
+                ],
         },
         warnings: warnings.length > 0 ? warnings : undefined,
-        required_user_inputs: !rootfsConfigured || !rootfsExists
-          ? mergeRequiredUserInputs(buildDynamicDependencyRequiredUserInputs())
-          : undefined,
-        setup_actions: !rootfsConfigured || !rootfsExists
-          ? mergeSetupActions(buildDynamicDependencySetupActions())
-          : undefined,
+        required_user_inputs:
+          !rootfsConfigured || !rootfsExists
+            ? mergeRequiredUserInputs(buildDynamicDependencyRequiredUserInputs())
+            : undefined,
+        setup_actions:
+          !rootfsConfigured || !rootfsExists
+            ? mergeSetupActions(buildDynamicDependencySetupActions())
+            : undefined,
         metrics: buildMetrics(startTime, qilingInspectToolDefinition.name),
       }
     } catch (error) {

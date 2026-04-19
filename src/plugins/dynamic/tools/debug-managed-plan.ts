@@ -27,7 +27,12 @@ const ManagedProfileSchema = z.enum([
 ])
 
 export const DebugManagedPlanInputSchema = z.object({
-  sample_id: z.string().optional().describe('Optional sample ID used to render runtime.debug.command templates and static metadata context.'),
+  sample_id: z
+    .string()
+    .optional()
+    .describe(
+      'Optional sample ID used to render runtime.debug.command templates and static metadata context.'
+    ),
   profiles: z.array(ManagedProfileSchema).optional().default(['safe_run', 'sos_stack']),
   timeout_sec: z.number().int().min(5).max(600).optional().default(90),
   network_sinkhole: z.boolean().optional().default(true),
@@ -97,9 +102,23 @@ function expandProfiles(profiles: string[]): string[] {
 async function loadDotNetMetadataContext(
   deps: PluginToolDeps,
   input: z.infer<typeof DebugManagedPlanInputSchema>
-): Promise<{ artifact_ids: string[]; scope_note: string | null; assemblies: string[]; types: string[]; resources: string[]; warnings: string[] }> {
+): Promise<{
+  artifact_ids: string[]
+  scope_note: string | null
+  assemblies: string[]
+  types: string[]
+  resources: string[]
+  warnings: string[]
+}> {
   if (!input.use_dotnet_metadata_artifacts || !input.sample_id) {
-    return { artifact_ids: [], scope_note: null, assemblies: [], types: [], resources: [], warnings: [] }
+    return {
+      artifact_ids: [],
+      scope_note: null,
+      assemblies: [],
+      types: [],
+      resources: [],
+      warnings: [],
+    }
   }
   if (!deps.workspaceManager || !deps.database) {
     return {
@@ -126,9 +145,20 @@ async function loadDotNetMetadataContext(
     return {
       artifact_ids: selection.artifact_ids,
       scope_note: selection.scope_note,
-      assemblies: dedupe(payloads.map((payload) => payload.assembly_name || null), 10),
-      types: dedupe(payloads.flatMap((payload) => (payload.types || []).map((type) => type.full_name || type.name)), 50),
-      resources: dedupe(payloads.flatMap((payload) => (payload.resources || []).map((resource) => resource.name)), 50),
+      assemblies: dedupe(
+        payloads.map((payload) => payload.assembly_name || null),
+        10
+      ),
+      types: dedupe(
+        payloads.flatMap((payload) =>
+          (payload.types || []).map((type) => type.full_name || type.name)
+        ),
+        50
+      ),
+      resources: dedupe(
+        payloads.flatMap((payload) => (payload.resources || []).map((resource) => resource.name)),
+        50
+      ),
       warnings: [],
     }
   } catch (error) {
@@ -138,12 +168,16 @@ async function loadDotNetMetadataContext(
       assemblies: [],
       types: [],
       resources: [],
-      warnings: [`Failed to load .NET metadata artifacts: ${error instanceof Error ? error.message : String(error)}`],
+      warnings: [
+        `Failed to load .NET metadata artifacts: ${error instanceof Error ? error.message : String(error)}`,
+      ],
     }
   }
 }
 
-function safeRunTemplate(input: z.infer<typeof DebugManagedPlanInputSchema>): Record<string, unknown> {
+function safeRunTemplate(
+  input: z.infer<typeof DebugManagedPlanInputSchema>
+): Record<string, unknown> {
   return {
     tool: 'runtime.debug.command',
     args: {
@@ -184,7 +218,9 @@ function sosTemplate(input: z.infer<typeof DebugManagedPlanInputSchema>): Record
   }
 }
 
-function procDumpTemplate(input: z.infer<typeof DebugManagedPlanInputSchema>): Record<string, unknown> {
+function procDumpTemplate(
+  input: z.infer<typeof DebugManagedPlanInputSchema>
+): Record<string, unknown> {
   return {
     tool: 'runtime.debug.command',
     args: {
@@ -203,7 +239,11 @@ function procDumpTemplate(input: z.infer<typeof DebugManagedPlanInputSchema>): R
   }
 }
 
-function buildProfile(profile: string, input: z.infer<typeof DebugManagedPlanInputSchema>, metadata: Awaited<ReturnType<typeof loadDotNetMetadataContext>>) {
+function buildProfile(
+  profile: string,
+  input: z.infer<typeof DebugManagedPlanInputSchema>,
+  metadata: Awaited<ReturnType<typeof loadDotNetMetadataContext>>
+) {
   const common = {
     metadata_context: {
       assemblies: metadata.assemblies,
@@ -219,7 +259,9 @@ function buildProfile(profile: string, input: z.infer<typeof DebugManagedPlanInp
       required_tools: ['cdb.exe', 'SOS extension via CLR/CoreCLR'],
       runtime_command_template: sosTemplate(input),
       artifacts: ['debug_session_trace.json'],
-      notes: ['Use after dotnet.metadata.extract confirms a managed sample and CDB is available inside the runtime.'],
+      notes: [
+        'Use after dotnet.metadata.extract confirms a managed sample and CDB is available inside the runtime.',
+      ],
     }
   }
   if (profile === 'managed_dump') {
@@ -230,7 +272,9 @@ function buildProfile(profile: string, input: z.infer<typeof DebugManagedPlanInp
       required_tools: ['ProcDump'],
       runtime_command_template: procDumpTemplate(input),
       artifacts: ['procdump_capture.json', '*.dmp'],
-      notes: ['Use dynamic.memory.import or unpack.child.handoff on produced dumps when decrypted resources or unpacked assemblies are expected.'],
+      notes: [
+        'Use dynamic.memory.import or unpack.child.handoff on produced dumps when decrypted resources or unpacked assemblies are expected.',
+      ],
     }
   }
   if (profile === 'resource_review') {
@@ -241,7 +285,9 @@ function buildProfile(profile: string, input: z.infer<typeof DebugManagedPlanInp
       required_tools: ['dotnet.metadata.extract', 'static.resource.graph'],
       runtime_command_template: null,
       artifacts: ['dotnet_metadata', 'static_resource_graph'],
-      notes: ['This profile is static-first; use runtime execution only after metadata/resource pivots identify behavior to trigger.'],
+      notes: [
+        'This profile is static-first; use runtime execution only after metadata/resource pivots identify behavior to trigger.',
+      ],
     }
   }
   if (profile === 'dnspy_handoff') {
@@ -252,7 +298,9 @@ function buildProfile(profile: string, input: z.infer<typeof DebugManagedPlanInp
       required_tools: ['dnSpyEx in visible runtime'],
       runtime_command_template: null,
       artifacts: ['debug_gui_handoff', 'retained Hyper-V VM state'],
-      notes: ['Prefer Hyper-V preserve_dirty retention for manual dnSpyEx review; Windows service sessions cannot reliably show GUI tools.'],
+      notes: [
+        'Prefer Hyper-V preserve_dirty retention for manual dnSpyEx review; Windows service sessions cannot reliably show GUI tools.',
+      ],
     }
   }
   return {
@@ -312,16 +360,23 @@ export function createDebugManagedPlanHandler(deps: PluginToolDeps) {
         ],
       }
       const artifacts: ArtifactRef[] = []
-      if (input.persist_artifact && input.sample_id && deps.workspaceManager && deps.database?.findSample?.(input.sample_id)) {
-        artifacts.push(await persistStaticAnalysisJsonArtifact(
-          deps.workspaceManager,
-          deps.database,
-          input.sample_id,
-          'debug_managed_plan',
-          'debug_managed_plan',
-          data,
-          input.session_tag
-        ))
+      if (
+        input.persist_artifact &&
+        input.sample_id &&
+        deps.workspaceManager &&
+        deps.database?.findSample?.(input.sample_id)
+      ) {
+        artifacts.push(
+          await persistStaticAnalysisJsonArtifact(
+            deps.workspaceManager,
+            deps.database,
+            input.sample_id,
+            'debug_managed_plan',
+            'debug_managed_plan',
+            data,
+            input.session_tag
+          )
+        )
       }
       return {
         ok: true,

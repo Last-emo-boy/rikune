@@ -6,6 +6,7 @@
 
 import { spawn } from 'child_process'
 import fs from 'fs'
+import path from 'path'
 import type { ServerResponse } from 'http'
 import type { DatabaseManager } from '../../database.js'
 import type { StorageManager } from '../../storage/storage-manager.js'
@@ -48,7 +49,11 @@ export function setHealthDependencies(deps: HealthDependencies): void {
   _deps = deps
 }
 
-async function runCommandCheck(cmd: string, args: string[], timeoutMs = 5000): Promise<{ ok: boolean; message?: string }> {
+async function runCommandCheck(
+  cmd: string,
+  args: string[],
+  timeoutMs = 5000
+): Promise<{ ok: boolean; message?: string }> {
   return new Promise((resolve) => {
     const proc = spawn(cmd, args, { stdio: 'ignore', timeout: timeoutMs })
     let killed = false
@@ -68,12 +73,29 @@ async function runCommandCheck(cmd: string, args: string[], timeoutMs = 5000): P
   })
 }
 
+function isPluginEnabled(pluginId: string): boolean {
+  const envVal = (process.env.PLUGINS ?? '*').trim()
+  if (envVal === '*' || envVal === '') return true
+
+  const tokens = envVal
+    .split(',')
+    .map((token) => token.trim())
+    .filter(Boolean)
+  const included = new Set(tokens.filter((token) => !token.startsWith('-')))
+  const excluded = new Set(
+    tokens.filter((token) => token.startsWith('-')).map((token) => token.slice(1))
+  )
+
+  if (included.size > 0) return included.has(pluginId)
+  return !excluded.has(pluginId)
+}
+
 async function checkGhidra(): Promise<ComponentCheck> {
   const ghidraDir = process.env.GHIDRA_INSTALL_DIR
   if (!ghidraDir || !fs.existsSync(ghidraDir)) {
     return { status: 'fail', message: `GHIDRA_INSTALL_DIR not found: ${ghidraDir || 'unset'}` }
   }
-  const analyzeHeadless = `${ghidraDir}/support/analyzeHeadless`
+  const analyzeHeadless = path.join(ghidraDir, 'support', 'analyzeHeadless')
   if (!fs.existsSync(analyzeHeadless)) {
     return { status: 'fail', message: 'analyzeHeadless missing' }
   }
@@ -93,9 +115,15 @@ async function checkPython(): Promise<ComponentCheck> {
   return { status: 'ok' }
 }
 
-async function checkExternalBackend(name: string, cmd: string, args: string[]): Promise<ComponentCheck> {
+async function checkExternalBackend(
+  name: string,
+  cmd: string,
+  args: string[]
+): Promise<ComponentCheck> {
   const res = await runCommandCheck(cmd, args, 3000)
-  return res.ok ? { status: 'ok' } : { status: 'fail', message: `${name} unavailable: ${res.message}` }
+  return res.ok
+    ? { status: 'ok' }
+    : { status: 'fail', message: `${name} unavailable: ${res.message}` }
 }
 
 async function checkRuntimeConnection(): Promise<ComponentCheck> {
@@ -104,7 +132,10 @@ async function checkRuntimeConnection(): Promise<ComponentCheck> {
   }
   const client = _deps.runtimeClient
   if (!client) {
-    return { status: 'degraded', message: `runtime mode=${config.runtime.mode} but no runtime client connected` }
+    return {
+      status: 'degraded',
+      message: `runtime mode=${config.runtime.mode} but no runtime client connected`,
+    }
   }
   try {
     const health = await client.health()
@@ -119,10 +150,7 @@ async function checkRuntimeConnection(): Promise<ComponentCheck> {
  * Handle liveness check — always succeeds if process is alive.
  * GET /api/v1/health
  */
-export async function handleHealthCheck(
-  res: ServerResponse,
-  version?: string
-): Promise<void> {
+export async function handleHealthCheck(res: ServerResponse, version?: string): Promise<void> {
   const health: HealthResponse = {
     status: 'healthy',
     uptime: process.uptime(),
@@ -138,10 +166,7 @@ export async function handleHealthCheck(
  * Handle readiness check — verifies all dependencies.
  * GET /api/v1/ready
  */
-export async function handleReadinessCheck(
-  res: ServerResponse,
-  version?: string,
-): Promise<void> {
+export async function handleReadinessCheck(res: ServerResponse, version?: string): Promise<void> {
   const checks: Record<string, ComponentCheck> = {}
 
   // Database check
@@ -151,7 +176,11 @@ export async function handleReadinessCheck(
       _deps.database.querySql<{ ok: number }>('SELECT 1 AS ok')
       checks.database = { status: 'ok', latencyMs: Date.now() - start }
     } catch (err) {
-      checks.database = { status: 'fail', latencyMs: Date.now() - start, message: (err as Error).message }
+      checks.database = {
+        status: 'fail',
+        latencyMs: Date.now() - start,
+        message: (err as Error).message,
+      }
     }
   } else {
     checks.database = { status: 'fail', message: 'not initialised' }
@@ -167,10 +196,18 @@ export async function handleReadinessCheck(
 
   // Analyzer-specific backend checks
   if (config.node.role === 'analyzer' || config.node.role === 'hybrid') {
-    checks.ghidra = await checkGhidra()
     checks.python = await checkPython()
-    checks.rizin = await checkExternalBackend('rizin', 'rizin', ['-v'])
-    checks.capa = await checkExternalBackend('capa', 'capa', ['--version'])
+    if (isPluginEnabled('ghidra')) {
+      checks.ghidra = await checkGhidra()
+    }
+    if (isPluginEnabled('rizin')) {
+      checks.rizin = await checkExternalBackend('rizin', process.env.RIZIN_PATH || 'rizin', ['-v'])
+    }
+    if (isPluginEnabled('static-triage')) {
+      checks.capa = await checkExternalBackend('capa', process.env.CAPA_PATH || 'capa', [
+        '--version',
+      ])
+    }
   }
 
   // Runtime connection check
@@ -178,9 +215,13 @@ export async function handleReadinessCheck(
 
   // Determine overall status
   const allChecks = Object.values(checks)
-  const hasFail = allChecks.some(c => c.status === 'fail')
-  const hasDegraded = allChecks.some(c => c.status === 'degraded')
-  const overall: ReadinessResponse['status'] = hasFail ? 'unavailable' : hasDegraded ? 'degraded' : 'ready'
+  const hasFail = allChecks.some((c) => c.status === 'fail')
+  const hasDegraded = allChecks.some((c) => c.status === 'degraded')
+  const overall: ReadinessResponse['status'] = hasFail
+    ? 'unavailable'
+    : hasDegraded
+      ? 'degraded'
+      : 'ready'
 
   const body: ReadinessResponse = {
     status: overall,

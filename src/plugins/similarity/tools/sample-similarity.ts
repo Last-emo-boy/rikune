@@ -8,8 +8,12 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
   SharedMetricsSchema,
-  ensureSampleExists, normalizeError, runPythonJson,
-  buildMetrics, resolveSampleFile, resolvePythonModuleBackend,
+  ensureSampleExists,
+  normalizeError,
+  runPythonJson,
+  buildMetrics,
+  resolveSampleFile,
+  resolvePythonModuleBackend,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -22,19 +26,23 @@ export const sampleSimilarityInputSchema = z.object({
 
 export const sampleSimilarityOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    ssdeep_hash: z.string().optional(),
-    tlsh_hash: z.string().optional(),
-    comparison: z.object({
-      compare_to: z.string(),
-      ssdeep_score: z.number().optional(),
-      tlsh_distance: z.number().optional(),
-    }).optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      ssdeep_hash: z.string().optional(),
+      tlsh_hash: z.string().optional(),
+      comparison: z
+        .object({
+          compare_to: z.string(),
+          ssdeep_score: z.number().optional(),
+          tlsh_distance: z.number().optional(),
+        })
+        .optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   metrics: SharedMetricsSchema.optional(),
@@ -104,7 +112,7 @@ print(json.dumps(result, ensure_ascii=False))
 
 export function createSampleSimilarityHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -112,9 +120,22 @@ export function createSampleSimilarityHandler(
       const input = sampleSimilarityInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolvePythonModuleBackend({ envPythonPath: process.env.SIMILARITY_PYTHON, moduleNames: ['ppdeep'], distributionNames: ['ppdeep'] })
+      const backend = resolvePythonModuleBackend({
+        envPythonPath: process.env.SIMILARITY_PYTHON,
+        moduleNames: ['ppdeep'],
+        distributionNames: ['ppdeep'],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'similarity', available: false, error: 'ppdeep Python module not available' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend ||
+            ({
+              name: 'similarity',
+              available: false,
+              error: 'ppdeep Python module not available',
+            } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const payload: Record<string, unknown> = { sample_path: samplePath }
@@ -129,9 +150,14 @@ export function createSampleSimilarityHandler(
       const warnings = result.parsed?.warnings || []
       const comparison = result.parsed?.comparison || undefined
 
-      let summaryParts = [`ssdeep: ${result.parsed?.ssdeep_hash || 'N/A'}`, `TLSH: ${result.parsed?.tlsh_hash || 'N/A'}`]
-      if (comparison?.ssdeep_score !== undefined) summaryParts.push(`ssdeep match: ${comparison.ssdeep_score}%`)
-      if (comparison?.tlsh_distance !== undefined) summaryParts.push(`TLSH distance: ${comparison.tlsh_distance}`)
+      let summaryParts = [
+        `ssdeep: ${result.parsed?.ssdeep_hash || 'N/A'}`,
+        `TLSH: ${result.parsed?.tlsh_hash || 'N/A'}`,
+      ]
+      if (comparison?.ssdeep_score !== undefined)
+        summaryParts.push(`ssdeep match: ${comparison.ssdeep_score}%`)
+      if (comparison?.tlsh_distance !== undefined)
+        summaryParts.push(`TLSH distance: ${comparison.tlsh_distance}`)
 
       return {
         ok: true,
@@ -151,7 +177,11 @@ export function createSampleSimilarityHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

@@ -808,8 +808,8 @@ node scripts/generate-docker.mjs --profile=static --dry-run</pre>
                 <td><span class="badge badge--green">HTTP API</span></td>
                 <td>:18080</td>
                 <td>
-                  <span data-lang-en>Sample upload, artifact download, health check, SSE</span
-                  ><span data-lang-zh>样本上传、产物下载、健康检查、SSE 推送</span>
+                  <span data-lang-en>Sample upload, artifact download, health/readiness, SSE</span
+                  ><span data-lang-zh>样本上传、产物下载、健康/就绪检查、SSE 推送</span>
                 </td>
               </tr>
               <tr>
@@ -830,6 +830,15 @@ node scripts/generate-docker.mjs --profile=static --dry-run</pre>
               </tr>
             </tbody>
           </table>
+          <p>
+            <span data-lang-en
+              ><code>/api/v1/health</code> is a liveness check. <code>/api/v1/ready</code> is
+              profile-aware readiness and checks only dependencies required by enabled plugins.</span
+            ><span data-lang-zh
+              ><code>/api/v1/health</code> 是进程存活检查；<code>/api/v1/ready</code> 是
+              profile-aware readiness，只检查当前启用插件真正需要的依赖。</span
+            >
+          </p>
         </section>
 
         <!-- Production Mode -->
@@ -1429,11 +1438,14 @@ PYTHONUNBUFFERED = "1"</pre>
                 </td>
                 <td>
                   <span data-lang-en
-                    >Run <code>.\rikune.ps1 health -Profile hybrid</code>. If a system proxy is
+                    >Use <code>/api/v1/health</code> for process liveness and
+                    <code>/api/v1/ready</code> for dependency readiness. Run
+                    <code>.\rikune.ps1 health -Profile hybrid</code>. If a system proxy is
                     configured, local checks should bypass it with <code>--noproxy</code> /
                     <code>-NoProxy</code>.</span
                   ><span data-lang-zh
-                    >运行 <code>.\rikune.ps1 health -Profile hybrid</code>。如果系统配置了代理，本地
+                    ><code>/api/v1/health</code> 用于进程存活，<code>/api/v1/ready</code>
+                    用于依赖就绪。运行 <code>.\rikune.ps1 health -Profile hybrid</code>。如果系统配置了代理，本地
                     健康检查应通过 <code>--noproxy</code> / <code>-NoProxy</code> 绕过代理。</span
                   >
                 </td>

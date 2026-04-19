@@ -11,7 +11,10 @@ const TOOL_NAME = 'dex.decompile'
 
 export const DexDecompileInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  class_filter: z.string().optional().describe('Substring filter for class names (e.g. "com.example.Main")'),
+  class_filter: z
+    .string()
+    .optional()
+    .describe('Substring filter for class names (e.g. "com.example.Main")'),
 })
 
 export const DexDecompileOutputSchema = z.object({
@@ -30,22 +33,33 @@ export const dexDecompileToolDefinition: ToolDefinition = {
   outputSchema: DexDecompileOutputSchema,
 }
 
-async function callApkWorker(request: Record<string, unknown>, pythonCmd: string, workerPath: string): Promise<Record<string, unknown>> {
+async function callApkWorker(
+  request: Record<string, unknown>,
+  pythonCmd: string,
+  workerPath: string
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const proc = spawn(pythonCmd, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'] })
 
     let stdout = ''
     let stderr = ''
-    proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
-    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+    proc.stdout.on('data', (d: Buffer) => {
+      stdout += d.toString()
+    })
+    proc.stderr.on('data', (d: Buffer) => {
+      stderr += d.toString()
+    })
 
     proc.on('close', (code) => {
       if (code !== 0) {
         reject(new Error(`APK worker exited with code ${code}: ${stderr}`))
         return
       }
-      try { resolve(JSON.parse(stdout.trim())) }
-      catch (e) { reject(new Error(`Parse error: ${(e as Error).message}`)) }
+      try {
+        resolve(JSON.parse(stdout.trim()))
+      } catch (e) {
+        reject(new Error(`Parse error: ${(e as Error).message}`))
+      }
     })
     proc.on('error', (e) => reject(new Error(`Spawn error: ${e.message}`)))
     proc.stdin.write(JSON.stringify(request) + '\n')
@@ -54,7 +68,14 @@ async function callApkWorker(request: Record<string, unknown>, pythonCmd: string
 }
 
 export function createDexDecompileHandler(deps: PluginToolDeps) {
-  const { workspaceManager, database, config, resolvePrimarySamplePath, persistStaticAnalysisJsonArtifact, resolvePackagePath } = deps
+  const {
+    workspaceManager,
+    database,
+    config,
+    resolvePrimarySamplePath,
+    persistStaticAnalysisJsonArtifact,
+    resolvePackagePath,
+  } = deps
   const pythonCmd = getPythonCommand(undefined, config.workers.static.pythonPath)
   const workerPath = resolvePackagePath('src', 'plugins', 'android', 'workers', 'apk_dex_worker.py')
   return async (args: z.infer<typeof DexDecompileInputSchema>): Promise<WorkerResult> => {
@@ -64,11 +85,15 @@ export function createDexDecompileHandler(deps: PluginToolDeps) {
       if (!sample) return { ok: false, errors: [`Sample not found: ${args.sample_id}`] }
 
       const { samplePath } = await resolvePrimarySamplePath(workspaceManager, args.sample_id)
-      const result = await callApkWorker({
-        action: 'decompile_dex',
-        file_path: samplePath,
-        class_filter: args.class_filter ?? null,
-      }, pythonCmd, workerPath)
+      const result = await callApkWorker(
+        {
+          action: 'decompile_dex',
+          file_path: samplePath,
+          class_filter: args.class_filter ?? null,
+        },
+        pythonCmd,
+        workerPath
+      )
 
       if (!result.ok) {
         return { ok: false, errors: [String(result.error || 'DEX decompilation failed')] }
@@ -77,11 +102,17 @@ export function createDexDecompileHandler(deps: PluginToolDeps) {
       const artifacts: ArtifactRef[] = []
       try {
         const artRef = await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, args.sample_id,
-          'dex_decompilation', 'dex-decompile', result
+          workspaceManager,
+          database,
+          args.sample_id,
+          'dex_decompilation',
+          'dex-decompile',
+          result
         )
         if (artRef) artifacts.push(artRef)
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
       return {
         ok: true,

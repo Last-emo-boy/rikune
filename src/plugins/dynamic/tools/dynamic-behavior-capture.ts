@@ -14,19 +14,33 @@ const TOOL_NAME = 'dynamic.behavior.capture'
 export const DynamicBehaviorCaptureInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
   timeout_sec: z.number().int().min(5).max(300).optional().default(30),
-  arguments: z.array(z.string()).optional().default([]).describe('Optional command-line arguments passed to the sample.'),
+  arguments: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe('Optional command-line arguments passed to the sample.'),
   sidecar_paths: z
     .array(z.string())
     .optional()
     .default([])
-    .describe('Optional local sidecar files, such as DLLs or config files, to stage next to the sample inside the Runtime Node.'),
+    .describe(
+      'Optional local sidecar files, such as DLLs or config files, to stage next to the sample inside the Runtime Node.'
+    ),
   auto_stage_sidecars: z
     .boolean()
     .optional()
     .default(true)
-    .describe('Best-effort scan of the sample directory for common sidecar files (.dll, .config, .json, .dat, etc.) before upload.'),
+    .describe(
+      'Best-effort scan of the sample directory for common sidecar files (.dll, .config, .json, .dat, etc.) before upload.'
+    ),
   max_sidecars: z.number().int().min(0).max(256).optional().default(32),
-  sidecar_max_total_bytes: z.number().int().min(0).max(1024 * 1024 * 1024).optional().default(128 * 1024 * 1024),
+  sidecar_max_total_bytes: z
+    .number()
+    .int()
+    .min(0)
+    .max(1024 * 1024 * 1024)
+    .optional()
+    .default(128 * 1024 * 1024),
   network_sinkhole: z
     .boolean()
     .optional()
@@ -57,13 +71,20 @@ export const dynamicBehaviorCaptureToolDefinition: ToolDefinition = {
 }
 
 export function createDynamicBehaviorCaptureHandler(_deps: PluginToolDeps) {
-  return async (_args: z.infer<typeof DynamicBehaviorCaptureInputSchema>): Promise<WorkerResult> => ({
+  return async (
+    _args: z.infer<typeof DynamicBehaviorCaptureInputSchema>
+  ): Promise<WorkerResult> => ({
     ok: false,
     data: {
       status: 'setup_required',
       failure_category: 'runtime_required',
-      summary: 'dynamic.behavior.capture must run inside a Runtime Node. Configure Docker + Windows Host Agent + Sandbox/Hyper-V, or attach a manual Runtime Node endpoint.',
-      recommended_next_tools: ['dynamic.runtime.status', 'runtime.debug.session.start', 'sandbox.execute'],
+      summary:
+        'dynamic.behavior.capture must run inside a Runtime Node. Configure Docker + Windows Host Agent + Sandbox/Hyper-V, or attach a manual Runtime Node endpoint.',
+      recommended_next_tools: [
+        'dynamic.runtime.status',
+        'runtime.debug.session.start',
+        'sandbox.execute',
+      ],
       next_actions: [
         'Call dynamic.runtime.status to verify Runtime Node capabilities.',
         'Use runtime.debug.session.start to launch or attach to Sandbox/Hyper-V before behavior capture.',

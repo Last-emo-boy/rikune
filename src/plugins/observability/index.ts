@@ -33,7 +33,15 @@ const metricsStore = new Map<string, ToolMetrics>()
 function getOrCreate(toolName: string): ToolMetrics {
   let m = metricsStore.get(toolName)
   if (!m) {
-    m = { calls: 0, errors: 0, totalMs: 0, minMs: Infinity, maxMs: 0, lastCalledAt: null, lastError: null }
+    m = {
+      calls: 0,
+      errors: 0,
+      totalMs: 0,
+      minMs: Infinity,
+      maxMs: 0,
+      lastCalledAt: null,
+      lastError: null,
+    }
     metricsStore.set(toolName, m)
   }
   return m
@@ -72,7 +80,8 @@ const metricsInputSchema = z.object({
 
 const metricsToolDefinition: ToolDefinition = {
   name: 'observability.metrics',
-  description: 'Query tool invocation metrics — call counts, latencies, error rates. Powered by the plugin hook system.',
+  description:
+    'Query tool invocation metrics — call counts, latencies, error rates. Powered by the plugin hook system.',
   inputSchema: metricsInputSchema,
 }
 
@@ -84,28 +93,39 @@ function createMetricsHandler() {
       const m = metricsStore.get(input.tool_name)
       if (!m) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ ok: true, data: null, message: `No metrics recorded for '${input.tool_name}'` }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                ok: true,
+                data: null,
+                message: `No metrics recorded for '${input.tool_name}'`,
+              }),
+            },
+          ],
         }
       }
       const avgMs = m.calls > 0 ? Math.round(m.totalMs / m.calls) : 0
       return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            ok: true,
-            data: {
-              tool: input.tool_name,
-              calls: m.calls,
-              errors: m.errors,
-              error_rate: m.calls > 0 ? +(m.errors / m.calls).toFixed(4) : 0,
-              avg_ms: avgMs,
-              min_ms: m.minMs === Infinity ? 0 : m.minMs,
-              max_ms: m.maxMs,
-              last_called_at: m.lastCalledAt,
-              last_error: m.lastError,
-            },
-          }),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              ok: true,
+              data: {
+                tool: input.tool_name,
+                calls: m.calls,
+                errors: m.errors,
+                error_rate: m.calls > 0 ? +(m.errors / m.calls).toFixed(4) : 0,
+                avg_ms: avgMs,
+                min_ms: m.minMs === Infinity ? 0 : m.minMs,
+                max_ms: m.maxMs,
+                last_called_at: m.lastCalledAt,
+                last_error: m.lastError,
+              },
+            }),
+          },
+        ],
       }
     }
 
@@ -121,8 +141,8 @@ function createMetricsHandler() {
       last_called_at: m.lastCalledAt,
     }))
 
-    const sortFn: Record<string, (a: typeof entries[0], b: typeof entries[0]) => number> = {
-      calls:  (a, b) => b.calls - a.calls,
+    const sortFn: Record<string, (a: (typeof entries)[0], b: (typeof entries)[0]) => number> = {
+      calls: (a, b) => b.calls - a.calls,
       errors: (a, b) => b.errors - a.errors,
       avg_ms: (a, b) => b.avg_ms - a.avg_ms,
       max_ms: (a, b) => b.max_ms - a.max_ms,
@@ -134,21 +154,23 @@ function createMetricsHandler() {
     const totalErrors = entries.reduce((s, e) => s + e.errors, 0)
 
     return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          ok: true,
-          data: {
-            summary: {
-              total_tools_tracked: entries.length,
-              total_calls: totalCalls,
-              total_errors: totalErrors,
-              global_error_rate: totalCalls > 0 ? +(totalErrors / totalCalls).toFixed(4) : 0,
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            ok: true,
+            data: {
+              summary: {
+                total_tools_tracked: entries.length,
+                total_calls: totalCalls,
+                total_errors: totalErrors,
+                global_error_rate: totalCalls > 0 ? +(totalErrors / totalCalls).toFixed(4) : 0,
+              },
+              tools: top,
             },
-            tools: top,
-          },
-        }),
-      }],
+          }),
+        },
+      ],
     }
   }
 }

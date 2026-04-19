@@ -13,20 +13,19 @@ const TOOL_NAME = 'debug.session.watch'
 export const DebugSessionWatchInputSchema = z.object({
   session_id: z.string().describe('Active debug session ID'),
   action: z.enum(['add', 'remove', 'list', 'history']).describe('Watch operation'),
-  watch_type: z.enum(['memory', 'register', 'expression']).optional()
+  watch_type: z
+    .enum(['memory', 'register', 'expression'])
+    .optional()
     .describe('Type of watchpoint (required for "add")'),
-  address: z.string().optional()
-    .describe('Memory address to watch (hex, for memory type)'),
-  register: z.string().optional()
-    .describe('Register name (for register type, e.g., "rax", "rcx")'),
-  expression: z.string().optional()
-    .describe('GDB expression to watch (for expression type)'),
-  size: z.number().int().min(1).max(8).default(4)
-    .describe('Watch size in bytes (for memory type)'),
-  access_type: z.enum(['write', 'read', 'readwrite']).default('write')
+  address: z.string().optional().describe('Memory address to watch (hex, for memory type)'),
+  register: z.string().optional().describe('Register name (for register type, e.g., "rax", "rcx")'),
+  expression: z.string().optional().describe('GDB expression to watch (for expression type)'),
+  size: z.number().int().min(1).max(8).default(4).describe('Watch size in bytes (for memory type)'),
+  access_type: z
+    .enum(['write', 'read', 'readwrite'])
+    .default('write')
     .describe('Trigger on write, read, or both'),
-  watch_id: z.string().optional()
-    .describe('Watch ID (for remove/history actions)'),
+  watch_id: z.string().optional().describe('Watch ID (for remove/history actions)'),
 })
 
 export const debugSessionWatchToolDefinition: ToolDefinition = {
@@ -54,13 +53,16 @@ export function createDebugSessionWatchHandler(deps: PluginToolDeps) {
 
           let target: string
           if (input.watch_type === 'memory') {
-            if (!input.address) return { ok: false, errors: ['address is required for memory watch'] }
+            if (!input.address)
+              return { ok: false, errors: ['address is required for memory watch'] }
             target = input.address
           } else if (input.watch_type === 'register') {
-            if (!input.register) return { ok: false, errors: ['register is required for register watch'] }
+            if (!input.register)
+              return { ok: false, errors: ['register is required for register watch'] }
             target = `$${input.register}`
           } else {
-            if (!input.expression) return { ok: false, errors: ['expression is required for expression watch'] }
+            if (!input.expression)
+              return { ok: false, errors: ['expression is required for expression watch'] }
             target = input.expression
           }
 
@@ -77,11 +79,12 @@ export function createDebugSessionWatchHandler(deps: PluginToolDeps) {
               size: input.size,
               access_type: input.access_type,
               status: 'active',
-              gdb_command: input.watch_type === 'memory'
-                ? `watch *(${input.size === 1 ? 'char' : input.size === 2 ? 'short' : input.size === 4 ? 'int' : 'long long'}*)${target}`
-                : input.watch_type === 'register'
-                  ? `watch $${input.register}`
-                  : `watch ${input.expression}`,
+              gdb_command:
+                input.watch_type === 'memory'
+                  ? `watch *(${input.size === 1 ? 'char' : input.size === 2 ? 'short' : input.size === 4 ? 'int' : 'long long'}*)${target}`
+                  : input.watch_type === 'register'
+                    ? `watch $${input.register}`
+                    : `watch ${input.expression}`,
               note: 'Watchpoint will trigger when the target value changes',
             },
             metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },

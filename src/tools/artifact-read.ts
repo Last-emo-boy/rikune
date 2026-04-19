@@ -201,7 +201,6 @@ function selectArtifact(
   return ordered[0] || null
 }
 
-
 function extractIOCTextHighlights(content: string): {
   urls?: string[]
   ip_addresses?: string[]
@@ -214,8 +213,9 @@ function extractIOCTextHighlights(content: string): {
   const registry = dedupe(content.match(/HKEY_[A-Z_]+\\[^\s]+/gi) || []).slice(0, 30)
   const pipes = dedupe(content.match(/\\\\\.\\pipe\\[^\s]+|\\\\pipe\\[^\s]+/gi) || []).slice(0, 30)
   const commandMatches =
-    content.match(/(?:^|\s)(?:cmd\.exe|powershell\.exe|wscript\.exe|cscript\.exe|mshta\.exe)[^\r\n]*/gim) ||
-    []
+    content.match(
+      /(?:^|\s)(?:cmd\.exe|powershell\.exe|wscript\.exe|cscript\.exe|mshta\.exe)[^\r\n]*/gim
+    ) || []
   const commands = dedupe(commandMatches.map((item) => item.trim())).slice(0, 30)
 
   return {

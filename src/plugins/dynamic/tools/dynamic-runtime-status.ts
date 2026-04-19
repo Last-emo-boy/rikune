@@ -45,12 +45,36 @@ interface FetchStatus {
 }
 
 export const DynamicRuntimeStatusInputSchema = z.object({
-  sample_id: z.string().optional().describe('Optional sample id used to list persisted runtime debug sessions.'),
-  session_id: z.string().optional().describe('Optional runtime debug session id used to resolve the Runtime Node endpoint from persisted metadata.'),
-  runtime_endpoint: z.string().url().optional().describe('Override Runtime Node endpoint. Defaults to runtime.endpoint or the latest persisted session endpoint.'),
-  runtime_api_key: z.string().optional().describe('Override Runtime Node API key. Defaults to runtime.apiKey.'),
-  host_agent_endpoint: z.string().url().optional().describe('Override Windows Host Agent endpoint. Defaults to runtime.hostAgentEndpoint.'),
-  host_agent_api_key: z.string().optional().describe('Override Windows Host Agent API key. Defaults to runtime.hostAgentApiKey.'),
+  sample_id: z
+    .string()
+    .optional()
+    .describe('Optional sample id used to list persisted runtime debug sessions.'),
+  session_id: z
+    .string()
+    .optional()
+    .describe(
+      'Optional runtime debug session id used to resolve the Runtime Node endpoint from persisted metadata.'
+    ),
+  runtime_endpoint: z
+    .string()
+    .url()
+    .optional()
+    .describe(
+      'Override Runtime Node endpoint. Defaults to runtime.endpoint or the latest persisted session endpoint.'
+    ),
+  runtime_api_key: z
+    .string()
+    .optional()
+    .describe('Override Runtime Node API key. Defaults to runtime.apiKey.'),
+  host_agent_endpoint: z
+    .string()
+    .url()
+    .optional()
+    .describe('Override Windows Host Agent endpoint. Defaults to runtime.hostAgentEndpoint.'),
+  host_agent_api_key: z
+    .string()
+    .optional()
+    .describe('Override Windows Host Agent API key. Defaults to runtime.hostAgentApiKey.'),
   limit: z.number().int().min(1).max(200).optional().default(20),
 })
 
@@ -85,7 +109,7 @@ function parseJsonObject(value: unknown): Record<string, unknown> {
   try {
     const parsed = JSON.parse(value)
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
+      ? (parsed as Record<string, unknown>)
       : {}
   } catch {
     return {}
@@ -101,13 +125,14 @@ function parseArtifactRefs(value: unknown): ArtifactRef[] {
     if (!Array.isArray(parsed)) {
       return []
     }
-    return parsed.filter((entry): entry is ArtifactRef =>
-      entry &&
-      typeof entry === 'object' &&
-      typeof (entry as ArtifactRef).id === 'string' &&
-      typeof (entry as ArtifactRef).type === 'string' &&
-      typeof (entry as ArtifactRef).path === 'string' &&
-      typeof (entry as ArtifactRef).sha256 === 'string'
+    return parsed.filter(
+      (entry): entry is ArtifactRef =>
+        entry &&
+        typeof entry === 'object' &&
+        typeof (entry as ArtifactRef).id === 'string' &&
+        typeof (entry as ArtifactRef).type === 'string' &&
+        typeof (entry as ArtifactRef).path === 'string' &&
+        typeof (entry as ArtifactRef).sha256 === 'string'
     )
   } catch {
     return []
@@ -137,7 +162,9 @@ async function fetchJsonStatus(
       ok: response.ok,
       status: response.status,
       body,
-      error: response.ok ? undefined : body?.error || body?.message || text || `HTTP ${response.status}`,
+      error: response.ok
+        ? undefined
+        : body?.error || body?.message || text || `HTTP ${response.status}`,
     }
   } catch (error) {
     return {
@@ -163,14 +190,17 @@ function normalizeRuntimeCapabilities(value: unknown): RuntimeBackendCapability[
     }
     const candidate = entry as Partial<RuntimeBackendCapability>
     if (
-      (candidate.type === 'python-worker' || candidate.type === 'spawn' || candidate.type === 'inline') &&
+      (candidate.type === 'python-worker' ||
+        candidate.type === 'spawn' ||
+        candidate.type === 'inline') &&
       typeof candidate.handler === 'string'
     ) {
       capabilities.push({
         type: candidate.type,
         handler: candidate.handler,
         description: typeof candidate.description === 'string' ? candidate.description : undefined,
-        requiresSample: typeof candidate.requiresSample === 'boolean' ? candidate.requiresSample : undefined,
+        requiresSample:
+          typeof candidate.requiresSample === 'boolean' ? candidate.requiresSample : undefined,
       })
     }
   }
@@ -199,7 +229,10 @@ function normalizePersistedSession(row: any): RuntimeSessionSummary {
   }
 }
 
-function findPersistedSessions(deps: PluginToolDeps, input: z.infer<typeof DynamicRuntimeStatusInputSchema>): RuntimeSessionSummary[] {
+function findPersistedSessions(
+  deps: PluginToolDeps,
+  input: z.infer<typeof DynamicRuntimeStatusInputSchema>
+): RuntimeSessionSummary[] {
   const db = deps.database
   const rows: any[] = []
 
@@ -223,9 +256,7 @@ function findPersistedSessions(deps: PluginToolDeps, input: z.infer<typeof Dynam
     }
   }
 
-  return rows
-    .map(normalizePersistedSession)
-    .filter((session) => session.session_id.length > 0)
+  return rows.map(normalizePersistedSession).filter((session) => session.session_id.length > 0)
 }
 
 function resolveRuntimeEndpoint(
@@ -240,9 +271,14 @@ function resolveRuntimeEndpoint(
   if (typeof runtime.endpoint === 'string' && runtime.endpoint.trim().length > 0) {
     return { endpoint: runtime.endpoint, source: 'config.runtime.endpoint' }
   }
-  const sessionWithEndpoint = sessions.find((session) => typeof session.endpoint === 'string' && session.endpoint.length > 0)
+  const sessionWithEndpoint = sessions.find(
+    (session) => typeof session.endpoint === 'string' && session.endpoint.length > 0
+  )
   if (sessionWithEndpoint?.endpoint) {
-    return { endpoint: sessionWithEndpoint.endpoint, source: `debug_session:${sessionWithEndpoint.session_id}` }
+    return {
+      endpoint: sessionWithEndpoint.endpoint,
+      source: `debug_session:${sessionWithEndpoint.session_id}`,
+    }
   }
   return { source: 'none' }
 }
@@ -255,7 +291,10 @@ function resolveHostAgentEndpoint(
   if (input.host_agent_endpoint) {
     return { endpoint: input.host_agent_endpoint, source: 'input.host_agent_endpoint' }
   }
-  if (typeof runtime.hostAgentEndpoint === 'string' && runtime.hostAgentEndpoint.trim().length > 0) {
+  if (
+    typeof runtime.hostAgentEndpoint === 'string' &&
+    runtime.hostAgentEndpoint.trim().length > 0
+  ) {
     return { endpoint: runtime.hostAgentEndpoint, source: 'config.runtime.hostAgentEndpoint' }
   }
   return { source: 'none' }
@@ -281,8 +320,14 @@ function buildStatus(params: {
   return 'not_configured'
 }
 
-function hasCapability(capabilities: RuntimeBackendCapability[], type: RuntimeBackendCapability['type'], handler: string): boolean {
-  return capabilities.some((capability) => capability.type === type && capability.handler === handler)
+function hasCapability(
+  capabilities: RuntimeBackendCapability[],
+  type: RuntimeBackendCapability['type'],
+  handler: string
+): boolean {
+  return capabilities.some(
+    (capability) => capability.type === type && capability.handler === handler
+  )
 }
 
 function buildBackendInterface(params: {
@@ -298,10 +343,8 @@ function buildBackendInterface(params: {
   const hypervConfigured = Boolean(
     hostAgentBody &&
     typeof hostAgentBody === 'object' &&
-    (
-      (hostAgentBody as any).backend === 'hyperv-vm' ||
-      ((hostAgentBody as any).hyperv && (hostAgentBody as any).hyperv.configured !== false)
-    )
+    (hostAgentBody.backend === 'hyperv-vm' ||
+      (hostAgentBody.hyperv && hostAgentBody.hyperv.configured !== false))
   )
   return {
     host_agent_configured: Boolean(params.hostAgentEndpoint),
@@ -314,7 +357,9 @@ function buildBackendInterface(params: {
     can_upload_sample: runtimeOnline,
     can_execute_runtime_command: runtimeOnline && params.capabilities.length > 0,
     can_download_artifacts: runtimeOnline,
-    can_stop_host_agent_session: Boolean(params.hostAgentEndpoint && params.sessions.some((session) => session.sandbox_id)),
+    can_stop_host_agent_session: Boolean(
+      params.hostAgentEndpoint && params.sessions.some((session) => session.sandbox_id)
+    ),
     supported_backends: {
       debug_session: hasCapability(params.capabilities, 'inline', 'executeDebugSession'),
       sandbox_execute: hasCapability(params.capabilities, 'inline', 'executeSandboxExecute'),
@@ -327,13 +372,43 @@ function buildBackendInterface(params: {
   }
 }
 
+function buildExecutionSemantics(params: {
+  status: 'ready' | 'partial' | 'not_configured'
+  backendInterface: ReturnType<typeof buildBackendInterface>
+}) {
+  return {
+    mcp_connect_opens_sandbox: false,
+    dynamic_plan_opens_sandbox: false,
+    live_execution_requires_explicit_tool_call: true,
+    sandbox_execute_is_live_only_when_runtime_online:
+      params.backendInterface.runtime_online &&
+      params.backendInterface.supported_backends.sandbox_execute,
+    safe_simulation_available_without_live_runtime: true,
+    current_live_execution_state:
+      params.status === 'ready' && params.backendInterface.can_execute_runtime_command
+        ? 'runtime_ready'
+        : params.backendInterface.host_agent_online
+          ? 'host_agent_ready_runtime_not_started'
+          : params.backendInterface.host_agent_configured ||
+              params.backendInterface.runtime_configured
+            ? 'configured_but_unreachable'
+            : 'not_configured',
+  }
+}
+
 function buildGuidance(params: {
   status: 'ready' | 'partial' | 'not_configured'
   backendInterface: ReturnType<typeof buildBackendInterface>
   capabilities: RuntimeBackendCapability[]
 }) {
   if (params.status === 'ready') {
-    const recommended = ['dynamic.runtime.status', 'dynamic.toolkit.status', 'dynamic.deep_plan', 'runtime.debug.session.status', 'runtime.debug.command']
+    const recommended = [
+      'dynamic.runtime.status',
+      'dynamic.toolkit.status',
+      'dynamic.deep_plan',
+      'runtime.debug.session.status',
+      'runtime.debug.command',
+    ]
     if (params.backendInterface.supported_backends.frida_runtime) {
       recommended.push('frida.runtime.instrument')
     }
@@ -349,6 +424,7 @@ function buildGuidance(params: {
     return {
       recommended_next_tools: recommended,
       next_actions: [
+        'Live execution is explicit: MCP connection and dynamic_plan do not launch Windows Sandbox or Hyper-V by themselves.',
         'Reuse the existing runtime endpoint for dynamic commands instead of launching another sandbox.',
         'Check capability support before selecting debug.session.*, sandbox.execute, dynamic.memory_dump, managed.safe_run, or Frida instrumentation.',
       ],
@@ -356,13 +432,18 @@ function buildGuidance(params: {
   }
 
   if (params.backendInterface.host_agent_online) {
-    const recommended = ['runtime.debug.session.start', 'dynamic.dependencies', 'workflow.analyze.start']
+    const recommended = [
+      'runtime.debug.session.start',
+      'dynamic.dependencies',
+      'workflow.analyze.start',
+    ]
     if (params.backendInterface.hyperv_configured) {
       recommended.unshift('runtime.hyperv.control')
     }
     return {
       recommended_next_tools: recommended,
       next_actions: [
+        'MCP is connected, but no Runtime Node endpoint is active yet; start a runtime session before expecting sandbox.execute to run live.',
         'Start a runtime debug session only when live execution is needed; dynamic planning can continue without launching Sandbox or Hyper-V.',
         'Use dynamic.dependencies to verify local and runtime-side prerequisites before long-running dynamic work.',
       ],
@@ -373,6 +454,7 @@ function buildGuidance(params: {
     return {
       recommended_next_tools: ['dynamic.runtime.status', 'dynamic.dependencies', 'system.health'],
       next_actions: [
+        'MCP connection is separate from live execution; configured runtime endpoints must be reachable before live Sandbox/Hyper-V work can start.',
         'Inspect the returned runtime_health and host_agent_health errors, then restart the unavailable service before retrying live execution.',
         'Continue static or dynamic-plan workflows while the runtime plane is unavailable.',
       ],
@@ -380,8 +462,13 @@ function buildGuidance(params: {
   }
 
   return {
-    recommended_next_tools: ['runtime.debug.session.start', 'dynamic.dependencies', 'workflow.analyze.start'],
+    recommended_next_tools: [
+      'runtime.debug.session.start',
+      'dynamic.dependencies',
+      'workflow.analyze.start',
+    ],
     next_actions: [
+      'MCP connection alone does not open Windows Sandbox. Configure and start the runtime plane only when live execution is needed.',
       'Configure runtime.hostAgentEndpoint for Windows Host Agent backed Sandbox or Hyper-V execution, or runtime.endpoint for a manual Runtime Node.',
       'Use workflow.analyze.start or workflow.analyze.promote(dynamic_plan) when live execution is not required.',
     ],
@@ -401,13 +488,22 @@ export function createDynamicRuntimeStatusHandler(deps: PluginToolDeps) {
 
     const [runtimeHealth, runtimeCapabilitiesResult, hostAgentHealth] = await Promise.all([
       runtimeResolution.endpoint
-        ? fetchJsonStatus(new URL('/health', runtimeResolution.endpoint).toString(), getAuthHeader(runtimeApiKey))
+        ? fetchJsonStatus(
+            new URL('/health', runtimeResolution.endpoint).toString(),
+            getAuthHeader(runtimeApiKey)
+          )
         : Promise.resolve(null),
       runtimeResolution.endpoint
-        ? fetchJsonStatus(new URL('/capabilities', runtimeResolution.endpoint).toString(), getAuthHeader(runtimeApiKey))
+        ? fetchJsonStatus(
+            new URL('/capabilities', runtimeResolution.endpoint).toString(),
+            getAuthHeader(runtimeApiKey)
+          )
         : Promise.resolve(null),
       hostAgentResolution.endpoint
-        ? fetchJsonStatus(new URL('/sandbox/health', hostAgentResolution.endpoint).toString(), getAuthHeader(hostAgentApiKey))
+        ? fetchJsonStatus(
+            new URL('/sandbox/health', hostAgentResolution.endpoint).toString(),
+            getAuthHeader(hostAgentApiKey)
+          )
         : Promise.resolve(null),
     ])
 
@@ -428,6 +524,7 @@ export function createDynamicRuntimeStatusHandler(deps: PluginToolDeps) {
       capabilities: runtimeCapabilities,
       sessions,
     })
+    const executionSemantics = buildExecutionSemantics({ status, backendInterface })
     const guidance = buildGuidance({ status, backendInterface, capabilities: runtimeCapabilities })
     const warnings: string[] = []
 
@@ -435,7 +532,9 @@ export function createDynamicRuntimeStatusHandler(deps: PluginToolDeps) {
       warnings.push(`Runtime Node health check failed: ${runtimeHealth?.error || 'unknown error'}`)
     }
     if (runtimeResolution.endpoint && !runtimeCapabilitiesResult?.ok) {
-      warnings.push(`Runtime Node capabilities check failed: ${runtimeCapabilitiesResult?.error || 'unknown error'}`)
+      warnings.push(
+        `Runtime Node capabilities check failed: ${runtimeCapabilitiesResult?.error || 'unknown error'}`
+      )
     }
     if (hostAgentResolution.endpoint && !hostAgentHealth?.ok) {
       warnings.push(`Host Agent health check failed: ${hostAgentHealth?.error || 'unknown error'}`)
@@ -448,12 +547,20 @@ export function createDynamicRuntimeStatusHandler(deps: PluginToolDeps) {
         runtime_mode: runtimeMode(deps),
         runtime_endpoint: runtimeResolution.endpoint || null,
         runtime_endpoint_source: runtimeResolution.source,
-        runtime_health: runtimeHealth?.body || (runtimeHealth ? { ok: false, status: runtimeHealth.status, error: runtimeHealth.error } : null),
+        runtime_health:
+          runtimeHealth?.body ||
+          (runtimeHealth
+            ? { ok: false, status: runtimeHealth.status, error: runtimeHealth.error }
+            : null),
         runtime_capabilities: runtimeCapabilities,
         runtime_capabilities_raw: runtimeCapabilitiesResult?.body || null,
         host_agent_endpoint: hostAgentResolution.endpoint || null,
         host_agent_endpoint_source: hostAgentResolution.source,
-        host_agent_health: hostAgentHealth?.body || (hostAgentHealth ? { ok: false, status: hostAgentHealth.status, error: hostAgentHealth.error } : null),
+        host_agent_health:
+          hostAgentHealth?.body ||
+          (hostAgentHealth
+            ? { ok: false, status: hostAgentHealth.status, error: hostAgentHealth.error }
+            : null),
         sessions,
         session_count: sessions.length,
         active_session_count: sessions.filter((session) =>
@@ -461,6 +568,7 @@ export function createDynamicRuntimeStatusHandler(deps: PluginToolDeps) {
         ).length,
         artifact_count: sessions.reduce((sum, session) => sum + session.artifact_count, 0),
         backend_interface: backendInterface,
+        execution_semantics: executionSemantics,
         recommended_next_tools: guidance.recommended_next_tools,
         next_actions: guidance.next_actions,
       },

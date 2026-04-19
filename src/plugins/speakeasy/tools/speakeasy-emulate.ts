@@ -7,10 +7,16 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  fs, ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, runPythonJson,
-  persistBackendArtifact, buildMetrics,
-  resolveSampleFile, resolvePythonModuleBackend,
+  fs,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  runPythonJson,
+  persistBackendArtifact,
+  buildMetrics,
+  resolveSampleFile,
+  resolvePythonModuleBackend,
   buildDynamicSetupRequired,
 } from '../../docker-shared.js'
 
@@ -18,28 +24,42 @@ const TOOL_NAME = 'speakeasy.emulate'
 
 export const speakeasyEmulateInputSchema = z.object({
   sample_id: z.string().describe('Target sample identifier.'),
-  timeout_sec: z.number().int().min(5).max(300).default(60).describe('Emulation timeout in seconds.'),
-  max_api_count: z.number().int().min(100).max(50000).default(10000).describe('Max API calls to capture before stopping.'),
+  timeout_sec: z
+    .number()
+    .int()
+    .min(5)
+    .max(300)
+    .default(60)
+    .describe('Emulation timeout in seconds.'),
+  max_api_count: z
+    .number()
+    .int()
+    .min(100)
+    .max(50000)
+    .default(10000)
+    .describe('Max API calls to capture before stopping.'),
   persist_artifact: z.boolean().default(true).describe('Persist emulation report as an artifact.'),
   session_tag: z.string().optional().describe('Optional artifact session tag.'),
 })
 
 export const speakeasyEmulateOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    entry_points: z.array(z.any()).optional(),
-    api_call_count: z.number().optional(),
-    api_calls_preview: z.array(z.any()).optional(),
-    file_activity: z.array(z.string()).optional(),
-    registry_activity: z.array(z.string()).optional(),
-    network_activity: z.array(z.string()).optional(),
-    dropped_files: z.array(z.string()).optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      entry_points: z.array(z.any()).optional(),
+      api_call_count: z.number().optional(),
+      api_calls_preview: z.array(z.any()).optional(),
+      file_activity: z.array(z.string()).optional(),
+      registry_activity: z.array(z.string()).optional(),
+      network_activity: z.array(z.string()).optional(),
+      dropped_files: z.array(z.string()).optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
@@ -109,7 +129,7 @@ print(json.dumps({
 
 export function createSpeakeasyEmulateHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -117,22 +137,47 @@ export function createSpeakeasyEmulateHandler(
       const input = speakeasyEmulateInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolvePythonModuleBackend({ envPythonPath: process.env.SPEAKEASY_PYTHON, moduleNames: ['speakeasy'], distributionNames: ['speakeasy-emulator'] })
+      const backend = resolvePythonModuleBackend({
+        envPythonPath: process.env.SPEAKEASY_PYTHON,
+        moduleNames: ['speakeasy'],
+        distributionNames: ['speakeasy-emulator'],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildDynamicSetupRequired(backend || { name: 'speakeasy', available: false, error: 'speakeasy-emulator not installed' } as any, startTime, TOOL_NAME)
+        return buildDynamicSetupRequired(
+          backend ||
+            ({
+              name: 'speakeasy',
+              available: false,
+              error: 'speakeasy-emulator not installed',
+            } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const result = await runPythonJson(
         backend.path,
         SPEAKEASY_EMULATE_SCRIPT,
-        { sample_path: samplePath, timeout_sec: input.timeout_sec, max_api_count: input.max_api_count },
-        (input.timeout_sec + 30) * 1000,
+        {
+          sample_path: samplePath,
+          timeout_sec: input.timeout_sec,
+          max_api_count: input.max_api_count,
+        },
+        (input.timeout_sec + 30) * 1000
       )
 
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'speakeasy', 'emulate', JSON.stringify(result.parsed, null, 2), { extension: 'json', mime: 'application/json', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'speakeasy',
+          'emulate',
+          JSON.stringify(result.parsed, null, 2),
+          { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -150,7 +195,12 @@ export function createSpeakeasyEmulateHandler(
           dropped_files: result.parsed?.dropped_files || [],
           artifact,
           summary: `Speakeasy emulated ${input.sample_id}: ${apiCount} API calls captured across ${result.parsed?.entry_points_count || 0} entry points.`,
-          recommended_next_tools: ['artifact.read', 'c2.extract', 'malware.config.extract', 'report.summarize'],
+          recommended_next_tools: [
+            'artifact.read',
+            'c2.extract',
+            'malware.config.extract',
+            'report.summarize',
+          ],
           next_actions: [
             'Review API trace for suspicious behavior patterns.',
             'Use c2.extract or malware.config.extract for deeper analysis.',
@@ -160,7 +210,11 @@ export function createSpeakeasyEmulateHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

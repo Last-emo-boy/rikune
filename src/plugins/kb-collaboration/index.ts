@@ -5,8 +5,14 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { kbFunctionMatchToolDefinition, createKbFunctionMatchHandler } from './tools/kb-function-match.js'
-import { analysisTemplateToolDefinition, createAnalysisTemplateHandler } from './tools/analysis-template.js'
+import {
+  kbFunctionMatchToolDefinition,
+  createKbFunctionMatchHandler,
+} from './tools/kb-function-match.js'
+import {
+  analysisTemplateToolDefinition,
+  createAnalysisTemplateHandler,
+} from './tools/analysis-template.js'
 import { kbImportBulkToolDefinition, createKbImportBulkHandler } from './tools/kb-import-bulk.js'
 import { kbExportToolDefinition, createKbExportHandler } from './tools/kb-export.js'
 import { kbImportToolDefinition, createKbImportHandler } from './tools/kb-import.js'
@@ -19,21 +25,39 @@ const kbCollaborationPlugin: Plugin = {
   name: 'Knowledge Base & Collaboration',
   executionDomain: 'static',
   surfaceRules: { tier: 0, category: 'static-analysis' },
-  description: 'Function signature matching, analysis templates, and knowledge base import/export/management',
+  description:
+    'Function signature matching, analysis templates, and knowledge base import/export/management',
   version: '1.0.0',
   register(server, deps) {
     server.registerTool(kbFunctionMatchToolDefinition, createKbFunctionMatchHandler(deps))
     server.registerTool(analysisTemplateToolDefinition, createAnalysisTemplateHandler(deps))
-    server.registerTool(kbImportBulkToolDefinition, createKbImportBulkHandler(deps.workspaceManager, deps.database))
-    server.registerTool(kbExportToolDefinition, createKbExportHandler(deps.workspaceManager, deps.database))
-    server.registerTool(kbImportToolDefinition, createKbImportHandler(deps.workspaceManager, deps.database))
-    server.registerTool(kbStatsToolDefinition, createKbStatsHandler(deps.workspaceManager, deps.database))
+    server.registerTool(
+      kbImportBulkToolDefinition,
+      createKbImportBulkHandler(deps.workspaceManager, deps.database)
+    )
+    server.registerTool(
+      kbExportToolDefinition,
+      createKbExportHandler(deps.workspaceManager, deps.database)
+    )
+    server.registerTool(
+      kbImportToolDefinition,
+      createKbImportHandler(deps.workspaceManager, deps.database)
+    )
+    server.registerTool(
+      kbStatsToolDefinition,
+      createKbStatsHandler(deps.workspaceManager, deps.database)
+    )
     server.registerTool(analysisNotesToolDefinition, createAnalysisNotesHandler(deps))
     server.registerTool(ruleLibraryToolDefinition, createRuleLibraryHandler(deps))
     return [
-      'kb.function_match', 'analysis.template',
-      'kb.import.bulk', 'kb.export', 'kb.import', 'kb.stats',
-      'analysis.notes', 'rule.library',
+      'kb.function_match',
+      'analysis.template',
+      'kb.import.bulk',
+      'kb.export',
+      'kb.import',
+      'kb.stats',
+      'analysis.notes',
+      'rule.library',
     ]
   },
 }

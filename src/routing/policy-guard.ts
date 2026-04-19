@@ -205,10 +205,7 @@ export class PolicyGuard {
    * Check permission for an operation
    * Requirements: 18.1, 18.2
    */
-  async checkPermission(
-    operation: Operation,
-    context: PolicyContext
-  ): Promise<PolicyDecision> {
+  async checkPermission(operation: Operation, context: PolicyContext): Promise<PolicyDecision> {
     this.pruneExpiredApprovals()
 
     // Detect dangerous operations
@@ -254,7 +251,7 @@ export class PolicyGuard {
 
       const approvalRequest =
         resolvedApproval.token && resolvedApproval.status === 'pending'
-          ? this.approvals.get(resolvedApproval.token)!
+          ? this.approvals.get(resolvedApproval.token)
           : await this.createApprovalRequest(dangerousOperation)
 
       return {
@@ -279,10 +276,7 @@ export class PolicyGuard {
    */
   private detectDangerousOperation(operation: Operation): string {
     // Check for dynamic execution
-    if (
-      operation.tool === 'sandbox.execute' ||
-      operation.type === 'dynamic_execution'
-    ) {
+    if (operation.tool === 'sandbox.execute' || operation.type === 'dynamic_execution') {
       return 'dynamic_execution'
     }
 
@@ -319,10 +313,7 @@ export class PolicyGuard {
     }
 
     // Check for network access
-    if (
-      operation.args.network === 'enabled' ||
-      operation.args.network === 'fake'
-    ) {
+    if (operation.args.network === 'enabled' || operation.args.network === 'fake') {
       return 'network_access'
     }
 
@@ -559,7 +550,9 @@ export class PolicyGuard {
   getApprovalStatus(approvalToken: string): ApprovalRecord | undefined {
     this.pruneExpiredApprovals()
     const record = this.approvals.get(approvalToken)
-    return record ? { ...record, operation: { ...record.operation, risks: [...record.operation.risks] } } : undefined
+    return record
+      ? { ...record, operation: { ...record.operation, risks: [...record.operation.risks] } }
+      : undefined
   }
 
   listApprovalRequests(status?: ApprovalStatus): ApprovalRecord[] {
@@ -579,15 +572,16 @@ export class PolicyGuard {
    * Require user approval for dangerous operation
    * Requirements: 18.1
    */
-  async requireUserApproval(
-    operation: DangerousOperation
-  ): Promise<boolean> {
+  async requireUserApproval(operation: DangerousOperation): Promise<boolean> {
     this.pruneExpiredApprovals()
 
     const approvalToken = operation.approvalToken?.trim()
     if (approvalToken) {
       const record = this.approvals.get(approvalToken)
-      if (record && record.operationKey === this.buildOperationKey({ ...operation, approvalToken: undefined })) {
+      if (
+        record &&
+        record.operationKey === this.buildOperationKey({ ...operation, approvalToken: undefined })
+      ) {
         return record.status === 'approved'
       }
     }

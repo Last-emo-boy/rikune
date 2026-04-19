@@ -7,10 +7,15 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, executeCommand,
-  persistBackendArtifact, buildMetrics,
-  resolveSampleFile, resolveExecutable,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  executeCommand,
+  persistBackendArtifact,
+  buildMetrics,
+  resolveSampleFile,
+  resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -25,17 +30,19 @@ export const pcapAnalyzeInputSchema = z.object({
 
 export const pcapAnalyzeOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    packet_count: z.number().optional(),
-    protocol_hierarchy: z.string().optional(),
-    conversations: z.string().optional(),
-    endpoints: z.string().optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      packet_count: z.number().optional(),
+      protocol_hierarchy: z.string().optional(),
+      conversations: z.string().optional(),
+      endpoints: z.string().optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
   metrics: SharedMetricsSchema.optional(),
@@ -43,15 +50,14 @@ export const pcapAnalyzeOutputSchema = z.object({
 
 export const pcapAnalyzeToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
-  description:
-    'Analyze a PCAP file: protocol hierarchy, conversations, endpoints, packet count.',
+  description: 'Analyze a PCAP file: protocol hierarchy, conversations, endpoints, packet count.',
   inputSchema: pcapAnalyzeInputSchema,
   outputSchema: pcapAnalyzeOutputSchema,
 }
 
 export function createPcapAnalyzeHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -59,20 +65,49 @@ export function createPcapAnalyzeHandler(
       const input = pcapAnalyzeInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolveExecutable({ envPath: process.env.TSHARK_PATH, pathCandidates: ['tshark'], versionArgSets: [['--version']] })
+      const backend = resolveExecutable({
+        envPath: process.env.TSHARK_PATH,
+        pathCandidates: ['tshark'],
+        versionArgSets: [['--version']],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'tshark', available: false, error: 'tshark not installed. apt-get install tshark' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend ||
+            ({
+              name: 'tshark',
+              available: false,
+              error: 'tshark not installed. apt-get install tshark',
+            } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       // Get stats
       const [statsResult, convResult, protoResult] = await Promise.all([
-        executeCommand(backend.path, ['-r', samplePath, '-q', '-z', 'io,stat,0'], input.timeout_sec * 1000),
-        executeCommand(backend.path, ['-r', samplePath, '-q', '-z', 'conv,tcp'], input.timeout_sec * 1000),
-        executeCommand(backend.path, ['-r', samplePath, '-q', '-z', 'io,phs'], input.timeout_sec * 1000),
+        executeCommand(
+          backend.path,
+          ['-r', samplePath, '-q', '-z', 'io,stat,0'],
+          input.timeout_sec * 1000
+        ),
+        executeCommand(
+          backend.path,
+          ['-r', samplePath, '-q', '-z', 'conv,tcp'],
+          input.timeout_sec * 1000
+        ),
+        executeCommand(
+          backend.path,
+          ['-r', samplePath, '-q', '-z', 'io,phs'],
+          input.timeout_sec * 1000
+        ),
       ])
 
       // Count packets
-      const countResult = await executeCommand(backend.path, ['-r', samplePath, '-T', 'fields', '-e', 'frame.number'], input.timeout_sec * 1000)
+      const countResult = await executeCommand(
+        backend.path,
+        ['-r', samplePath, '-T', 'fields', '-e', 'frame.number'],
+        input.timeout_sec * 1000
+      )
       const packetCount = countResult.stdout.trim().split(/\r?\n/).filter(Boolean).length
 
       const analysisText = [
@@ -87,7 +122,15 @@ export function createPcapAnalyzeHandler(
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'pcap', 'analysis', analysisText, { extension: 'txt', mime: 'text/plain', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'pcap',
+          'analysis',
+          analysisText,
+          { extension: 'txt', mime: 'text/plain', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -101,7 +144,12 @@ export function createPcapAnalyzeHandler(
           endpoints: statsResult.stdout.slice(0, 1000),
           artifact,
           summary: `PCAP analysis: ${packetCount} packets captured.`,
-          recommended_next_tools: ['pcap.dns.list', 'pcap.extract.streams', 'behavior.network', 'ioc.export'],
+          recommended_next_tools: [
+            'pcap.dns.list',
+            'pcap.extract.streams',
+            'behavior.network',
+            'ioc.export',
+          ],
           next_actions: [
             'Use pcap.dns.list for DNS query/response analysis.',
             'Use pcap.extract.streams for TCP stream reassembly.',
@@ -111,7 +159,11 @@ export function createPcapAnalyzeHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

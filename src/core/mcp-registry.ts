@@ -22,7 +22,11 @@ type PromptHandler = (args: PromptArgs) => Promise<PromptResult>
 /**
  * Tool result function type - can return either WorkerResult or ToolResult
  */
-type ToolResult = { content: TextContent[]; structuredContent?: Record<string, unknown>; isError?: boolean }
+type ToolResult = {
+  content: TextContent[]
+  structuredContent?: Record<string, unknown>
+  isError?: boolean
+}
 
 export class MCPRegistry {
   private logger: pino.Logger
@@ -32,8 +36,14 @@ export class MCPRegistry {
   private handlers: Map<string, ToolHandler>
   private prompts: Map<string, PromptDefinition>
   private promptHandlers: Map<string, PromptHandler>
-  private resources: Map<string, { uri: string; name: string; description?: string; mimeType?: string }>
-  private resourceHandlers: Map<string, () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>>
+  private resources: Map<
+    string,
+    { uri: string; name: string; description?: string; mimeType?: string }
+  >
+  private resourceHandlers: Map<
+    string,
+    () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>
+  >
 
   /**
    * Tool names that are sample-ingestion entry points themselves and should
@@ -112,7 +122,7 @@ export class MCPRegistry {
    */
   registerResource(
     meta: { uri: string; name: string; description?: string; mimeType?: string },
-    handler: () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>,
+    handler: () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>
   ): void {
     this.logger.info({ resource: meta.uri }, 'Registering resource')
     this.resources.set(meta.uri, meta)
@@ -240,7 +250,9 @@ export class MCPRegistry {
     return this.tools.get(transportName)
   }
 
-  getResourceHandler(uri: string): (() => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>) | undefined {
+  getResourceHandler(
+    uri: string
+  ): (() => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>) | undefined {
     return this.resourceHandlers.get(uri)
   }
 

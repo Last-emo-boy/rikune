@@ -7,10 +7,15 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, executeCommand,
-  persistBackendArtifact, buildMetrics,
-  resolveSampleFile, resolveExecutable,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  executeCommand,
+  persistBackendArtifact,
+  buildMetrics,
+  resolveSampleFile,
+  resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -25,20 +30,26 @@ export const pcapDnsListInputSchema = z.object({
 
 export const pcapDnsListOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    query_count: z.number().optional(),
-    unique_domains: z.array(z.string()).optional(),
-    dns_entries: z.array(z.object({
-      query: z.string(),
-      type: z.string().optional(),
-      response: z.string().optional(),
-    })).optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      query_count: z.number().optional(),
+      unique_domains: z.array(z.string()).optional(),
+      dns_entries: z
+        .array(
+          z.object({
+            query: z.string(),
+            type: z.string().optional(),
+            response: z.string().optional(),
+          })
+        )
+        .optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
   metrics: SharedMetricsSchema.optional(),
@@ -53,7 +64,7 @@ export const pcapDnsListToolDefinition: ToolDefinition = {
 
 export function createPcapDnsListHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -61,15 +72,40 @@ export function createPcapDnsListHandler(
       const input = pcapDnsListInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolveExecutable({ envPath: process.env.TSHARK_PATH, pathCandidates: ['tshark'], versionArgSets: [['--version']] })
+      const backend = resolveExecutable({
+        envPath: process.env.TSHARK_PATH,
+        pathCandidates: ['tshark'],
+        versionArgSets: [['--version']],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'tshark', available: false, error: 'tshark not installed' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend || ({ name: 'tshark', available: false, error: 'tshark not installed' } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const result = await executeCommand(
         backend.path,
-        ['-r', samplePath, '-Y', 'dns', '-T', 'fields', '-e', 'dns.qry.name', '-e', 'dns.qry.type', '-e', 'dns.a', '-E', 'separator=|', '-E', 'occurrence=f'],
-        input.timeout_sec * 1000,
+        [
+          '-r',
+          samplePath,
+          '-Y',
+          'dns',
+          '-T',
+          'fields',
+          '-e',
+          'dns.qry.name',
+          '-e',
+          'dns.qry.type',
+          '-e',
+          'dns.a',
+          '-E',
+          'separator=|',
+          '-E',
+          'occurrence=f',
+        ],
+        input.timeout_sec * 1000
       )
 
       const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean)
@@ -87,7 +123,15 @@ export function createPcapDnsListHandler(
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact && dnsEntries.length > 0) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'pcap', 'dns', JSON.stringify(dnsEntries, null, 2), { extension: 'json', mime: 'application/json', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'pcap',
+          'dns',
+          JSON.stringify(dnsEntries, null, 2),
+          { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -110,7 +154,11 @@ export function createPcapDnsListHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

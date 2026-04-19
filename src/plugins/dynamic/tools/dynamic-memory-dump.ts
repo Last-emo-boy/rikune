@@ -15,9 +15,20 @@ const TOOL_NAME = 'dynamic.memory.dump'
 
 export const DynamicMemoryDumpInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  trigger: z.enum(['alloc_rwx', 'protect_rx', 'on_entry', 'timed']).optional().default('alloc_rwx')
-    .describe('Dump trigger: alloc_rwx (RWX allocation), protect_rx (protection change to RX), on_entry (at EP), timed (after N ms)'),
-  delay_ms: z.number().int().min(0).max(60000).optional().default(3000)
+  trigger: z
+    .enum(['alloc_rwx', 'protect_rx', 'on_entry', 'timed'])
+    .optional()
+    .default('alloc_rwx')
+    .describe(
+      'Dump trigger: alloc_rwx (RWX allocation), protect_rx (protection change to RX), on_entry (at EP), timed (after N ms)'
+    ),
+  delay_ms: z
+    .number()
+    .int()
+    .min(0)
+    .max(60000)
+    .optional()
+    .default(3000)
     .describe('For timed trigger, delay before dump in ms'),
   max_dumps: z.number().int().min(1).max(20).optional().default(5),
   timeout_sec: z.number().int().min(5).max(120).optional().default(30),
@@ -109,18 +120,28 @@ if (trigger === 'timed') {
 }
 
 send({ type: 'dump_hooks_installed', trigger: trigger, max_dumps: maxDumps });
-`;
+`
 
-export function createDynamicMemoryDumpHandler(
-  deps: PluginToolDeps
-) {
-  const { workspaceManager, database, config, policyGuard, resolvePrimarySamplePath, persistStaticAnalysisJsonArtifact, resolvePackagePath } = deps
-  const pythonCmd = config?.workers?.frida?.path || getPythonCommand(undefined, config?.workers?.static?.pythonPath)
+export function createDynamicMemoryDumpHandler(deps: PluginToolDeps) {
+  const {
+    workspaceManager,
+    database,
+    config,
+    policyGuard,
+    resolvePrimarySamplePath,
+    persistStaticAnalysisJsonArtifact,
+    resolvePackagePath,
+  } = deps
+  const pythonCmd =
+    config?.workers?.frida?.path || getPythonCommand(undefined, config?.workers?.static?.pythonPath)
   return async (args: z.infer<typeof DynamicMemoryDumpInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()
     const warnings: string[] = []
     // Backend gate
-    const fridaBackend = resolveExecutable({ pathCandidates: ['frida', 'frida-ps'], versionArgSets: [['--version'], ['--help']] })
+    const fridaBackend = resolveExecutable({
+      pathCandidates: ['frida', 'frida-ps'],
+      versionArgSets: [['--version'], ['--help']],
+    })
     if (!fridaBackend.available) {
       return buildDynamicSetupRequired(fridaBackend as any, t0, TOOL_NAME)
     }
@@ -134,18 +155,23 @@ export function createDynamicMemoryDumpHandler(
         { sampleId: args.sample_id, timestamp: new Date().toISOString() }
       )
       await policyGuard.auditLog({
-        timestamp: new Date().toISOString(), operation: TOOL_NAME,
-        sampleId: args.sample_id, decision: policyDecision.allowed ? 'allow' : 'deny',
+        timestamp: new Date().toISOString(),
+        operation: TOOL_NAME,
+        sampleId: args.sample_id,
+        decision: policyDecision.allowed ? 'allow' : 'deny',
         reason: policyDecision.reason,
       })
       if (!policyDecision.allowed) {
-        return { ok: false, errors: [policyDecision.reason || 'Memory dump denied by policy guard.'], metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME } }
+        return {
+          ok: false,
+          errors: [policyDecision.reason || 'Memory dump denied by policy guard.'],
+          metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME },
+        }
       }
 
-      const { samplePath } = await resolvePrimarySamplePath!(workspaceManager, args.sample_id)
+      const { samplePath } = await resolvePrimarySamplePath(workspaceManager, args.sample_id)
 
-      const script = FRIDA_DUMP_SCRIPT
-        .replace('%MAX_DUMPS%', String(args.max_dumps))
+      const script = FRIDA_DUMP_SCRIPT.replace('%MAX_DUMPS%', String(args.max_dumps))
         .replace('%TRIGGER%', args.trigger)
         .replace('%DELAY_MS%', String(args.delay_ms))
 
@@ -156,7 +182,7 @@ export function createDynamicMemoryDumpHandler(
       await fs.writeFile(scriptPath, script, 'utf-8')
 
       // Call frida worker to execute
-      const workerPath = resolvePackagePath!('workers', 'frida_worker.py')
+      const workerPath = resolvePackagePath('workers', 'frida_worker.py')
 
       const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
         const proc = spawn(pythonCmd, [workerPath], {
@@ -165,39 +191,54 @@ export function createDynamicMemoryDumpHandler(
         })
         let stdout = ''
         let stderr = ''
-        proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
-        proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+        proc.stdout.on('data', (d: Buffer) => {
+          stdout += d.toString()
+        })
+        proc.stderr.on('data', (d: Buffer) => {
+          stderr += d.toString()
+        })
         proc.on('close', (code) => {
           if (code !== 0 && !stdout.trim()) {
             reject(new Error(`Frida worker exited ${code}: ${stderr.slice(0, 500)}`))
             return
           }
-          try { resolve(JSON.parse(stdout.trim())) }
-          catch { resolve({ ok: false, error: 'Parse error', stderr: stderr.slice(0, 500) }) }
+          try {
+            resolve(JSON.parse(stdout.trim()))
+          } catch {
+            resolve({ ok: false, error: 'Parse error', stderr: stderr.slice(0, 500) })
+          }
         })
         proc.on('error', (e) => reject(new Error(`Spawn: ${e.message}`)))
-        proc.stdin.write(JSON.stringify({
-          action: 'inject_script',
-          target: samplePath,
-          script_path: scriptPath,
-          timeout: args.timeout_sec,
-          spawn: true,
-        }) + '\n')
+        proc.stdin.write(
+          JSON.stringify({
+            action: 'inject_script',
+            target: samplePath,
+            script_path: scriptPath,
+            timeout: args.timeout_sec,
+            spawn: true,
+          }) + '\n'
+        )
         proc.stdin.end()
       })
 
       const artifacts: ArtifactRef[] = []
       try {
         const artRef = await persistStaticAnalysisJsonArtifact?.(
-          workspaceManager, database, args.sample_id,
-          'memory_dump', 'memory-dump-hook', {
+          workspaceManager,
+          database,
+          args.sample_id,
+          'memory_dump',
+          'memory-dump-hook',
+          {
             trigger: args.trigger,
             script_path: scriptPath,
             result,
           }
         )
         if (artRef) artifacts.push(artRef)
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
       return {
         ok: Boolean(result.ok),

@@ -25,7 +25,7 @@ type RuntimeClient = ReturnType<typeof createRuntimeClient>
 export class HostAgentSandboxStartError extends Error {
   constructor(
     message: string,
-    readonly status?: number,
+    readonly status?: number
   ) {
     super(message)
     this.name = 'HostAgentSandboxStartError'
@@ -53,7 +53,9 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(config.runtime.hostAgentApiKey ? { Authorization: `Bearer ${config.runtime.hostAgentApiKey}` } : {}),
+          ...(config.runtime.hostAgentApiKey
+            ? { Authorization: `Bearer ${config.runtime.hostAgentApiKey}` }
+            : {}),
         },
         body: JSON.stringify({
           timeoutMs: config.runtime.healthCheckTimeoutMs,
@@ -66,14 +68,18 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
         const body = await startRes.text().catch(() => '')
         throw new HostAgentSandboxStartError(
           `Host agent failed to start sandbox: HTTP ${startRes.status}${body ? ` ${body}` : ''}`,
-          startRes.status,
+          startRes.status
         )
       }
 
-      const startData = (await startRes.json()) as { ok?: boolean; endpoint?: string; sandboxId?: string }
+      const startData = (await startRes.json()) as {
+        ok?: boolean
+        endpoint?: string
+        sandboxId?: string
+      }
       if (!startData.ok || !startData.endpoint) {
         throw new HostAgentSandboxStartError(
-          `Host agent returned an unsuccessful sandbox start: ${JSON.stringify(startData)}`,
+          `Host agent returned an unsuccessful sandbox start: ${JSON.stringify(startData)}`
         )
       }
 
@@ -83,8 +89,13 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
       })
       next.recover = recover
       client = next
-      logger.info({ endpoint: startData.endpoint, sandboxId: startData.sandboxId }, 'Remote-sandbox runtime connected')
-      logger.warn('Dynamic analysis will execute actual samples inside the remote Windows Sandbox. Ensure the sandbox is properly isolated.')
+      logger.info(
+        { endpoint: startData.endpoint, sandboxId: startData.sandboxId },
+        'Remote-sandbox runtime connected'
+      )
+      logger.warn(
+        'Dynamic analysis will execute actual samples inside the remote Windows Sandbox. Ensure the sandbox is properly isolated.'
+      )
       return next
     })()
 
@@ -117,20 +128,22 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
       return client.health()
     },
 
-    async getCapabilities(options: { forceRefresh?: boolean } = {}): Promise<RuntimeBackendCapability[] | null> {
+    async getCapabilities(
+      options: { forceRefresh?: boolean } = {}
+    ): Promise<RuntimeBackendCapability[] | null> {
       return (await startSandbox()).getCapabilities(options)
     },
 
     async validateRuntimeBackendHint(
       hint: Parameters<RuntimeClient['validateRuntimeBackendHint']>[0],
-      options: { forceRefresh?: boolean } = {},
+      options: { forceRefresh?: boolean } = {}
     ): Promise<RuntimeBackendHintValidationResult> {
       return (await startSandbox()).validateRuntimeBackendHint(hint, options)
     },
 
     async execute(
       req: RuntimeExecuteRequest,
-      opts?: { onProgress?: (progress: number, message?: string) => void },
+      opts?: { onProgress?: (progress: number, message?: string) => void }
     ): Promise<RuntimeExecuteResponse> {
       return (await startSandbox()).execute(req, opts)
     },
@@ -139,12 +152,16 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
       taskId: string,
       localSamplePath: string,
       inboxHostDir: string,
-      options?: RuntimeUploadOptions,
+      options?: RuntimeUploadOptions
     ): Promise<void> {
       return (await startSandbox()).uploadSample(taskId, localSamplePath, inboxHostDir, options)
     },
 
-    async downloadArtifacts(taskId: string, outboxHostDir: string, artifactNames: string[]): Promise<string[]> {
+    async downloadArtifacts(
+      taskId: string,
+      outboxHostDir: string,
+      artifactNames: string[]
+    ): Promise<string[]> {
       return (await startSandbox()).downloadArtifacts(taskId, outboxHostDir, artifactNames)
     },
 

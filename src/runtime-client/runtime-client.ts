@@ -85,7 +85,9 @@ export interface RuntimeClientOptions {
   healthCheckTimeoutMs?: number
 }
 
-function cloneRuntimeBackendCapabilities(capabilities: RuntimeBackendCapability[]): RuntimeBackendCapability[] {
+function cloneRuntimeBackendCapabilities(
+  capabilities: RuntimeBackendCapability[]
+): RuntimeBackendCapability[] {
   return capabilities.map((capability) => ({ ...capability }))
 }
 
@@ -108,10 +110,12 @@ function parseRuntimeBackendCapabilities(body: string): RuntimeBackendCapability
       }
       const candidate = entry as Partial<RuntimeBackendCapability>
       if (
-        (candidate.type === 'python-worker' || candidate.type === 'spawn' || candidate.type === 'inline')
-        && typeof candidate.handler === 'string'
-        && typeof candidate.description === 'string'
-        && typeof candidate.requiresSample === 'boolean'
+        (candidate.type === 'python-worker' ||
+          candidate.type === 'spawn' ||
+          candidate.type === 'inline') &&
+        typeof candidate.handler === 'string' &&
+        typeof candidate.description === 'string' &&
+        typeof candidate.requiresSample === 'boolean'
       ) {
         capabilities.push({
           type: candidate.type,
@@ -162,7 +166,9 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     }
   }
 
-  async function getCapabilities(options: { forceRefresh?: boolean } = {}): Promise<RuntimeBackendCapability[] | null> {
+  async function getCapabilities(
+    options: { forceRefresh?: boolean } = {}
+  ): Promise<RuntimeBackendCapability[] | null> {
     if (!options.forceRefresh && capabilitiesCache) {
       return cloneRuntimeBackendCapabilities(capabilitiesCache)
     }
@@ -189,14 +195,16 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
 
   async function validateRuntimeBackendHint(
     hint: RuntimeBackendHint,
-    options: { forceRefresh?: boolean } = {},
+    options: { forceRefresh?: boolean } = {}
   ): Promise<RuntimeBackendHintValidationResult> {
     const capabilities = await getCapabilities(options)
     if (!capabilities) {
       return { supported: null }
     }
 
-    const capability = capabilities.find((entry) => entry.type === hint.type && entry.handler === hint.handler)
+    const capability = capabilities.find(
+      (entry) => entry.type === hint.type && entry.handler === hint.handler
+    )
     return {
       supported: capability !== undefined,
       capability,
@@ -206,7 +214,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
 
   async function execute(
     req: RuntimeExecuteRequest,
-    opts?: { onProgress?: (progress: number, message?: string) => void },
+    opts?: { onProgress?: (progress: number, message?: string) => void }
   ): Promise<RuntimeExecuteResponse> {
     if (req.runtimeBackendHint) {
       const validation = await validateRuntimeBackendHint(req.runtimeBackendHint)
@@ -217,7 +225,9 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
         return {
           ok: false,
           taskId: req.taskId,
-          errors: [`Unsupported runtime backend hint: ${req.runtimeBackendHint.type}/${req.runtimeBackendHint.handler}`],
+          errors: [
+            `Unsupported runtime backend hint: ${req.runtimeBackendHint.type}/${req.runtimeBackendHint.handler}`,
+          ],
           capabilities: validation.capabilities,
         }
       }
@@ -232,10 +242,15 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
       capabilities?: RuntimeBackendCapability[]
     }
     if (submitRes.statusCode !== 202 || !submitBody.ok) {
-      const responseCapabilities = Array.isArray(submitBody.capabilities) ? submitBody.capabilities : null
+      const responseCapabilities = Array.isArray(submitBody.capabilities)
+        ? submitBody.capabilities
+        : null
       if (responseCapabilities) {
         replaceCapabilitiesCache(responseCapabilities)
-      } else if (typeof submitBody.error === 'string' && submitBody.error.startsWith('Unsupported runtime backend hint:')) {
+      } else if (
+        typeof submitBody.error === 'string' &&
+        submitBody.error.startsWith('Unsupported runtime backend hint:')
+      ) {
         invalidateCapabilitiesCache()
       }
       return {
@@ -270,15 +285,30 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
       }
       if (statusBody.status === 'completed') {
         opts?.onProgress?.(1, statusBody.lastMessage || 'Runtime execution completed')
-        return statusBody.result || { ok: false, taskId: req.taskId, errors: ['Task finished without a result'] }
+        return (
+          statusBody.result || {
+            ok: false,
+            taskId: req.taskId,
+            errors: ['Task finished without a result'],
+          }
+        )
       }
       if (statusBody.status === 'failed' || statusBody.status === 'cancelled') {
         opts?.onProgress?.(1, statusBody.lastMessage || `Runtime execution ${statusBody.status}`)
-        return statusBody.result || { ok: false, taskId: req.taskId, errors: [`Task ${statusBody.status}`] }
+        return (
+          statusBody.result || {
+            ok: false,
+            taskId: req.taskId,
+            errors: [`Task ${statusBody.status}`],
+          }
+        )
       }
       if (statusBody.status === 'running') {
         if (typeof statusBody.progressPercent === 'number') {
-          opts?.onProgress?.(statusBody.progressPercent, statusBody.lastMessage || 'Runtime running...')
+          opts?.onProgress?.(
+            statusBody.progressPercent,
+            statusBody.lastMessage || 'Runtime running...'
+          )
         } else if (!hasReportedRunning) {
           opts?.onProgress?.(0, 'Task started on runtime node')
           hasReportedRunning = true
@@ -300,7 +330,12 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
 
   function isLocalhost(urlStr: string): boolean {
     const u = new URL(urlStr)
-    return u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.hostname === '::1' || u.hostname === '[::1]'
+    return (
+      u.hostname === '127.0.0.1' ||
+      u.hostname === 'localhost' ||
+      u.hostname === '::1' ||
+      u.hostname === '[::1]'
+    )
   }
 
   function sanitizeRuntimeUploadName(value: string, fallback: string): string {
@@ -316,27 +351,41 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     taskId: string,
     localSamplePath: string,
     inboxHostDir: string,
-    options: RuntimeUploadOptions = {},
+    options: RuntimeUploadOptions = {}
   ): Promise<void> {
     const sidecars = options.sidecars || []
-    const primaryFilename = options.preserveFilename === false
-      ? `${taskId}.sample`
-      : path.basename(localSamplePath) || `${taskId}.sample`
+    const primaryFilename =
+      options.preserveFilename === false
+        ? `${taskId}.sample`
+        : path.basename(localSamplePath) || `${taskId}.sample`
     if (isLocalhost(endpoint)) {
       const destDir = path.join(inboxHostDir, taskId)
       await fs.promises.mkdir(destDir, { recursive: true })
-      const destPath = path.join(destDir, sanitizeRuntimeUploadName(primaryFilename, `${taskId}.sample`))
+      const destPath = path.join(
+        destDir,
+        sanitizeRuntimeUploadName(primaryFilename, `${taskId}.sample`)
+      )
       await fs.promises.copyFile(localSamplePath, destPath)
       const legacyPath = path.join(inboxHostDir, `${taskId}.sample`)
       await fs.promises.copyFile(localSamplePath, legacyPath)
-      const manifestFiles: Array<{ name: string; role: 'primary' | 'sidecar'; size: number; uploadedAt: string }> = [{
-        name: path.basename(destPath),
-        role: 'primary',
-        size: (await fs.promises.stat(destPath)).size,
-        uploadedAt: new Date().toISOString(),
-      }]
+      const manifestFiles: Array<{
+        name: string
+        role: 'primary' | 'sidecar'
+        size: number
+        uploadedAt: string
+      }> = [
+        {
+          name: path.basename(destPath),
+          role: 'primary',
+          size: (await fs.promises.stat(destPath)).size,
+          uploadedAt: new Date().toISOString(),
+        },
+      ]
       for (const sidecar of sidecars) {
-        const name = sanitizeRuntimeUploadName(sidecar.name || path.basename(sidecar.path), 'sidecar.bin')
+        const name = sanitizeRuntimeUploadName(
+          sidecar.name || path.basename(sidecar.path),
+          'sidecar.bin'
+        )
         const sidecarDest = path.join(destDir, name)
         await fs.promises.copyFile(sidecar.path, sidecarDest)
         manifestFiles.push({
@@ -348,13 +397,17 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
       }
       await fs.promises.writeFile(
         path.join(destDir, 'upload-manifest.json'),
-        JSON.stringify({
-          schema: 'rikune.runtime_upload_manifest.v1',
-          taskId,
-          primary: path.basename(destPath),
-          files: manifestFiles,
-        }, null, 2),
-        'utf8',
+        JSON.stringify(
+          {
+            schema: 'rikune.runtime_upload_manifest.v1',
+            taskId,
+            primary: path.basename(destPath),
+            files: manifestFiles,
+          },
+          null,
+          2
+        ),
+        'utf8'
       )
       return
     }
@@ -365,19 +418,35 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
 
     const runtimeHealth = await health()
     if (runtimeHealth?.features?.sidecarUpload !== true) {
-      logger.warn({ taskId, endpoint, sidecarCount: sidecars.length }, 'Runtime node does not advertise sidecar upload support; skipping sidecars')
+      logger.warn(
+        { taskId, endpoint, sidecarCount: sidecars.length },
+        'Runtime node does not advertise sidecar upload support; skipping sidecars'
+      )
       return
     }
 
     for (const sidecar of sidecars) {
-      await uploadRuntimeFile(taskId, sidecar.path, sidecar.name || path.basename(sidecar.path), 'sidecar')
+      await uploadRuntimeFile(
+        taskId,
+        sidecar.path,
+        sidecar.name || path.basename(sidecar.path),
+        'sidecar'
+      )
     }
   }
 
-  async function uploadRuntimeFile(taskId: string, localPath: string, filename: string, role: 'primary' | 'sidecar'): Promise<void> {
+  async function uploadRuntimeFile(
+    taskId: string,
+    localPath: string,
+    filename: string,
+    role: 'primary' | 'sidecar'
+  ): Promise<void> {
     const url = new URL('/upload', endpoint)
     url.searchParams.set('taskId', taskId)
-    url.searchParams.set('filename', sanitizeRuntimeUploadName(filename, role === 'primary' ? `${taskId}.sample` : 'sidecar.bin'))
+    url.searchParams.set(
+      'filename',
+      sanitizeRuntimeUploadName(filename, role === 'primary' ? `${taskId}.sample` : 'sidecar.bin')
+    )
     url.searchParams.set('role', role)
     const stat = fs.statSync(localPath)
     const stream = fs.createReadStream(localPath)
@@ -391,7 +460,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
           headers: {
             'Content-Type': 'application/octet-stream',
             'Content-Length': stat.size.toString(),
-            ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
           },
           timeout: 120_000,
         },
@@ -406,7 +475,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
               reject(new Error(`Upload failed: HTTP ${res.statusCode}, ${body}`))
             }
           })
-        },
+        }
       )
       req.on('error', reject)
       req.on('timeout', () => {
@@ -417,7 +486,11 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     })
   }
 
-  async function downloadArtifacts(taskId: string, outboxHostDir: string, artifactNames: string[]): Promise<string[]> {
+  async function downloadArtifacts(
+    taskId: string,
+    outboxHostDir: string,
+    artifactNames: string[]
+  ): Promise<string[]> {
     if (isLocalhost(endpoint)) {
       const downloaded: string[] = []
       for (const name of artifactNames) {
@@ -431,7 +504,10 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     const downloaded: string[] = []
     const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'rikune-runtime-'))
     for (const name of artifactNames) {
-      const url = new URL(`/download/${encodeURIComponent(taskId)}/${encodeURIComponent(name)}`, endpoint)
+      const url = new URL(
+        `/download/${encodeURIComponent(taskId)}/${encodeURIComponent(name)}`,
+        endpoint
+      )
       const destPath = path.join(tempDir, `${taskId}_${name}`)
       try {
         await downloadFile(url, destPath)
@@ -451,7 +527,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
           hostname: url.hostname,
           port: url.port || (url.protocol === 'https:' ? 443 : 80),
           path: url.pathname + url.search,
-          headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {},
+          headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
           timeout: 60_000,
         },
         (res) => {
@@ -465,7 +541,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
             file.close()
             resolve()
           })
-        },
+        }
       )
       req.on('error', reject)
       req.on('timeout', () => {
@@ -592,7 +668,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
             options.onError?.(error instanceof Error ? error : new Error(String(error)))
           }
         })
-      },
+      }
     )
 
     req.on('error', (error) => {
@@ -617,11 +693,15 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     return request('POST', path, body)
   }
 
-  function request(method: string, path: string, body?: unknown): Promise<{ statusCode: number; body: string }> {
+  function request(
+    method: string,
+    path: string,
+    body?: unknown
+  ): Promise<{ statusCode: number; body: string }> {
     return new Promise((resolve, reject) => {
       const url = new URL(path, endpoint)
       const headers: Record<string, string> = {
-        'Accept': 'application/json',
+        Accept: 'application/json',
       }
       if (apiKey) {
         headers['Authorization'] = `Bearer ${apiKey}`
@@ -647,9 +727,12 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
           const chunks: Buffer[] = []
           res.on('data', (c) => chunks.push(c))
           res.on('end', () => {
-            resolve({ statusCode: res.statusCode || 0, body: Buffer.concat(chunks).toString('utf-8') })
+            resolve({
+              statusCode: res.statusCode || 0,
+              body: Buffer.concat(chunks).toString('utf-8'),
+            })
           })
-        },
+        }
       )
 
       req.on('error', reject)

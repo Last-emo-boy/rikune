@@ -14,7 +14,16 @@ const TOOL_NAME = 'sigma.rule.generate'
 export const SigmaRuleGenerateInputSchema = z.object({
   sample_id: z.string().describe('Sample identifier (sha256:<hex>)'),
   rule_types: z
-    .array(z.enum(['process_creation', 'file_event', 'registry_event', 'network_connection', 'dns_query', 'image_load']))
+    .array(
+      z.enum([
+        'process_creation',
+        'file_event',
+        'registry_event',
+        'network_connection',
+        'dns_query',
+        'image_load',
+      ])
+    )
     .optional()
     .default(['process_creation', 'file_event', 'network_connection'])
     .describe('Sigma rule categories to generate'),
@@ -22,10 +31,7 @@ export const SigmaRuleGenerateInputSchema = z.object({
     .enum(['low', 'medium', 'high', 'critical'])
     .default('high')
     .describe('Detection rule severity level'),
-  deploy: z
-    .boolean()
-    .default(false)
-    .describe('Save generated rules to workspace'),
+  deploy: z.boolean().default(false).describe('Save generated rules to workspace'),
 })
 
 export type SigmaRuleGenerateInput = z.infer<typeof SigmaRuleGenerateInputSchema>
@@ -99,7 +105,10 @@ function extractSigmaEvidence(database: DatabaseManager, sampleId: string): Sigm
   for (const entry of allEvidence) {
     let data: Record<string, unknown>
     try {
-      data = typeof entry.result_json === 'string' ? JSON.parse(entry.result_json) : entry.result_json as Record<string, unknown>
+      data =
+        typeof entry.result_json === 'string'
+          ? JSON.parse(entry.result_json)
+          : (entry.result_json as Record<string, unknown>)
     } catch {
       continue
     }
@@ -108,7 +117,11 @@ function extractSigmaEvidence(database: DatabaseManager, sampleId: string): Sigm
     // Extract strings
     if (Array.isArray(data.strings)) {
       for (const s of data.strings) {
-        const str = typeof s === 'string' ? s : (s as { value?: string; string?: string })?.value || (s as { string?: string })?.string
+        const str =
+          typeof s === 'string'
+            ? s
+            : (s as { value?: string; string?: string })?.value ||
+              (s as { string?: string })?.string
         if (str && str.length >= 6 && str.length <= 200) {
           evidence.strings.push(str)
         }
@@ -122,7 +135,11 @@ function extractSigmaEvidence(database: DatabaseManager, sampleId: string): Sigm
           evidence.imports.push({
             dll: imp.dll,
             functions: Array.isArray(imp.functions)
-              ? imp.functions.map((f: unknown) => typeof f === 'string' ? f : (f as { name?: string })?.name || '').filter(Boolean)
+              ? imp.functions
+                  .map((f: unknown) =>
+                    typeof f === 'string' ? f : (f as { name?: string })?.name || ''
+                  )
+                  .filter(Boolean)
               : [],
           })
         }
@@ -133,7 +150,9 @@ function extractSigmaEvidence(database: DatabaseManager, sampleId: string): Sigm
     for (const str of evidence.strings) {
       if (/^https?:\/\//i.test(str)) evidence.urls.push(str)
       if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(str)) evidence.ips.push(str)
-      if (/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/i.test(str)) {
+      if (
+        /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/i.test(str)
+      ) {
         evidence.domains.push(str)
       }
       // Mutex patterns
@@ -182,11 +201,22 @@ function yamlEscape(s: string): string {
   return s
 }
 
-function generateProcessCreationRule(evidence: SigmaEvidence, level: string, sampleId: string): string | null {
+function generateProcessCreationRule(
+  evidence: SigmaEvidence,
+  level: string,
+  sampleId: string
+): string | null {
   const indicators: string[] = []
 
   // Suspicious imports that suggest process manipulation
-  const suspiciousApis = ['CreateProcessW', 'CreateProcessA', 'ShellExecuteW', 'ShellExecuteA', 'WinExec', 'CreateRemoteThread']
+  const suspiciousApis = [
+    'CreateProcessW',
+    'CreateProcessA',
+    'ShellExecuteW',
+    'ShellExecuteA',
+    'WinExec',
+    'CreateRemoteThread',
+  ]
   const hasProcManip = evidence.imports.some((imp) =>
     imp.functions.some((f) => suspiciousApis.includes(f))
   )
@@ -234,7 +264,11 @@ function generateProcessCreationRule(evidence: SigmaEvidence, level: string, sam
   return yaml
 }
 
-function generateFileEventRule(evidence: SigmaEvidence, level: string, sampleId: string): string | null {
+function generateFileEventRule(
+  evidence: SigmaEvidence,
+  level: string,
+  sampleId: string
+): string | null {
   if (evidence.filePaths.length === 0 && evidence.processNames.length === 0) return null
 
   let yaml = `title: 'Suspicious File Activity - ${evidence.sha256.slice(0, 8)}'\n`
@@ -262,7 +296,11 @@ function generateFileEventRule(evidence: SigmaEvidence, level: string, sampleId:
   return yaml
 }
 
-function generateRegistryEventRule(evidence: SigmaEvidence, level: string, sampleId: string): string | null {
+function generateRegistryEventRule(
+  evidence: SigmaEvidence,
+  level: string,
+  sampleId: string
+): string | null {
   if (evidence.registryKeys.length === 0) return null
 
   let yaml = `title: 'Suspicious Registry Modification - ${evidence.sha256.slice(0, 8)}'\n`
@@ -289,7 +327,11 @@ function generateRegistryEventRule(evidence: SigmaEvidence, level: string, sampl
   return yaml
 }
 
-function generateNetworkConnectionRule(evidence: SigmaEvidence, level: string, sampleId: string): string | null {
+function generateNetworkConnectionRule(
+  evidence: SigmaEvidence,
+  level: string,
+  sampleId: string
+): string | null {
   if (evidence.ips.length === 0 && evidence.domains.length === 0) return null
 
   let yaml = `title: 'Suspicious Network Connection - ${evidence.sha256.slice(0, 8)}'\n`
@@ -329,7 +371,11 @@ function generateNetworkConnectionRule(evidence: SigmaEvidence, level: string, s
   return yaml
 }
 
-function generateDnsQueryRule(evidence: SigmaEvidence, level: string, sampleId: string): string | null {
+function generateDnsQueryRule(
+  evidence: SigmaEvidence,
+  level: string,
+  sampleId: string
+): string | null {
   if (evidence.domains.length === 0) return null
 
   let yaml = `title: 'Suspicious DNS Query - ${evidence.sha256.slice(0, 8)}'\n`
@@ -356,7 +402,11 @@ function generateDnsQueryRule(evidence: SigmaEvidence, level: string, sampleId: 
   return yaml
 }
 
-function generateImageLoadRule(evidence: SigmaEvidence, level: string, sampleId: string): string | null {
+function generateImageLoadRule(
+  evidence: SigmaEvidence,
+  level: string,
+  sampleId: string
+): string | null {
   const suspiciousDlls = evidence.imports
     .map((imp) => imp.dll)
     .filter((dll) => {
@@ -413,7 +463,10 @@ function generateUUID(seed: string): string {
 // Handler
 // --------------------------------------------------------------------------
 
-const RULE_GENERATORS: Record<string, (evidence: SigmaEvidence, level: string, sampleId: string) => string | null> = {
+const RULE_GENERATORS: Record<
+  string,
+  (evidence: SigmaEvidence, level: string, sampleId: string) => string | null
+> = {
   process_creation: generateProcessCreationRule,
   file_event: generateFileEventRule,
   registry_event: generateRegistryEventRule,
@@ -472,7 +525,9 @@ export function createSigmaRuleGenerateHandler(
       if (rules.length === 0) {
         return {
           ok: false,
-          errors: ['Insufficient analysis evidence to generate Sigma rules. Run strings.extract and pe.imports.extract first.'],
+          errors: [
+            'Insufficient analysis evidence to generate Sigma rules. Run strings.extract and pe.imports.extract first.',
+          ],
           warnings,
           metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
         }
@@ -489,12 +544,19 @@ export function createSigmaRuleGenerateHandler(
 
       try {
         await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, input.sample_id, 'sigma_rules', 'sigma', {
+          workspaceManager,
+          database,
+          input.sample_id,
+          'sigma_rules',
+          'sigma',
+          {
             tool: TOOL_NAME,
-            data: { total_rules: rules.length, rule_types: rules.map(r => r.type) },
+            data: { total_rules: rules.length, rule_types: rules.map((r) => r.type) },
           }
         )
-      } catch { /* best effort */ }
+      } catch {
+        /* best effort */
+      }
 
       return {
         ok: true,

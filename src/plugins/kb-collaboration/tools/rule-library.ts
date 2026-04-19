@@ -12,20 +12,20 @@ const TOOL_NAME = 'rule.library'
 
 export const RuleLibraryInputSchema = z.object({
   action: z.enum(['list', 'get', 'tag', 'export', 'stats']).describe('Library operation'),
-  rule_type: z.enum(['yara', 'sigma', 'all']).default('all')
-    .describe('Rule type filter'),
-  sample_id: z.string().optional()
-    .describe('Filter rules by source sample'),
-  rule_id: z.string().optional()
-    .describe('Specific rule ID (for "get" action)'),
-  tags: z.array(z.string()).optional()
-    .describe('Tags to add (for "tag" action) or filter by'),
-  status_filter: z.enum(['draft', 'reviewed', 'production', 'deprecated', 'all']).default('all')
+  rule_type: z.enum(['yara', 'sigma', 'all']).default('all').describe('Rule type filter'),
+  sample_id: z.string().optional().describe('Filter rules by source sample'),
+  rule_id: z.string().optional().describe('Specific rule ID (for "get" action)'),
+  tags: z.array(z.string()).optional().describe('Tags to add (for "tag" action) or filter by'),
+  status_filter: z
+    .enum(['draft', 'reviewed', 'production', 'deprecated', 'all'])
+    .default('all')
     .describe('Filter by rule status'),
-  export_format: z.enum(['yara_file', 'sigma_yaml', 'json', 'zip']).optional()
-    .default('json').describe('Export format (for "export" action)'),
-  search_query: z.string().optional()
-    .describe('Search rule names and descriptions'),
+  export_format: z
+    .enum(['yara_file', 'sigma_yaml', 'json', 'zip'])
+    .optional()
+    .default('json')
+    .describe('Export format (for "export" action)'),
+  search_query: z.string().optional().describe('Search rule names and descriptions'),
 })
 
 export const ruleLibraryToolDefinition: ToolDefinition = {
@@ -116,11 +116,12 @@ export function createRuleLibraryHandler(deps: PluginToolDeps) {
               total_rules: ruleArtifacts.length,
               export_ready: ruleArtifacts.length > 0,
               rules: ruleArtifacts,
-              note: input.export_format === 'yara_file'
-                ? 'Rules will be concatenated into a single .yar file'
-                : input.export_format === 'sigma_yaml'
-                  ? 'Rules exported as individual Sigma YAML files'
-                  : 'Rules exported as JSON array',
+              note:
+                input.export_format === 'yara_file'
+                  ? 'Rules will be concatenated into a single .yar file'
+                  : input.export_format === 'sigma_yaml'
+                    ? 'Rules exported as individual Sigma YAML files'
+                    : 'Rules exported as JSON array',
             },
             metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
           }
@@ -180,7 +181,7 @@ interface RuleEntry {
 function collectRuleArtifacts(
   database: any,
   sampleId: string | undefined,
-  ruleType: string,
+  ruleType: string
 ): RuleEntry[] {
   const results: RuleEntry[] = []
 

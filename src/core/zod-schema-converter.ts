@@ -181,7 +181,11 @@ export function generateSchemaExample(schema: z.ZodTypeAny): Record<string, unkn
     if (schema instanceof z.ZodEffects) {
       return generateSchemaExample(schema._def.schema)
     }
-    if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable || schema instanceof z.ZodCatch) {
+    if (
+      schema instanceof z.ZodOptional ||
+      schema instanceof z.ZodNullable ||
+      schema instanceof z.ZodCatch
+    ) {
       return generateSchemaExample(schema._def.innerType)
     }
     if (schema instanceof z.ZodDefault) {
@@ -311,19 +315,25 @@ export function zodFieldToJsonSchema(schema: z.ZodTypeAny): Record<string, unkno
   // Handle nullable
   if (schema instanceof z.ZodNullable) {
     const innerSchema = zodFieldToJsonSchema(schema._def.innerType)
-    return withSchemaMetadata({
-      anyOf: [innerSchema, { type: 'null' }],
-    }, schema)
+    return withSchemaMetadata(
+      {
+        anyOf: [innerSchema, { type: 'null' }],
+      },
+      schema
+    )
   }
 
   // Handle defaults
   if (schema instanceof z.ZodDefault) {
     const innerSchema = zodFieldToJsonSchema(schema._def.innerType)
     try {
-      return withSchemaMetadata({
-        ...innerSchema,
-        default: schema._def.defaultValue(),
-      }, schema)
+      return withSchemaMetadata(
+        {
+          ...innerSchema,
+          default: schema._def.defaultValue(),
+        },
+        schema
+      )
     } catch {
       return withSchemaMetadata(innerSchema, schema)
     }
@@ -382,28 +392,31 @@ export function zodFieldToJsonSchema(schema: z.ZodTypeAny): Record<string, unkno
     if (hasConcreteItemType) {
       base.items = zodFieldToJsonSchema(elementType)
     }
-    return withSchemaMetadata(
-      applyArrayChecks(base, schema),
-      schema
-    )
+    return withSchemaMetadata(applyArrayChecks(base, schema), schema)
   }
 
   // Handle enum
   if (schema instanceof z.ZodEnum) {
-    return withSchemaMetadata({
-      type: 'string',
-      enum: schema._def.values,
-    }, schema)
+    return withSchemaMetadata(
+      {
+        type: 'string',
+        enum: schema._def.values,
+      },
+      schema
+    )
   }
 
   // Handle literal
   if (schema instanceof z.ZodLiteral) {
     const literalValue = schema._def.value
     const literalType = literalValue === null ? 'null' : typeof literalValue
-    return withSchemaMetadata({
-      type: literalType,
-      const: literalValue,
-    }, schema)
+    return withSchemaMetadata(
+      {
+        type: literalType,
+        const: literalValue,
+      },
+      schema
+    )
   }
 
   // Handle object
@@ -427,13 +440,11 @@ export function zodFieldToJsonSchema(schema: z.ZodTypeAny): Record<string, unkno
         type: 'object',
         properties,
         ...(required.length > 0 ? { required } : {}),
-        ...(
-          catchall && !isNeverSchema(catchall)
-            ? { additionalProperties: zodFieldToJsonSchema(catchall) }
-            : unknownKeys === 'passthrough'
-              ? { additionalProperties: true }
-              : { additionalProperties: false }
-        ),
+        ...(catchall && !isNeverSchema(catchall)
+          ? { additionalProperties: zodFieldToJsonSchema(catchall) }
+          : unknownKeys === 'passthrough'
+            ? { additionalProperties: true }
+            : { additionalProperties: false }),
       },
       schema
     )
@@ -442,33 +453,45 @@ export function zodFieldToJsonSchema(schema: z.ZodTypeAny): Record<string, unkno
   // Handle union
   if (schema instanceof z.ZodUnion) {
     const options = schema._def.options as z.ZodTypeAny[]
-    return withSchemaMetadata({
-      anyOf: options.map((option) => zodFieldToJsonSchema(option)),
-    }, schema)
+    return withSchemaMetadata(
+      {
+        anyOf: options.map((option) => zodFieldToJsonSchema(option)),
+      },
+      schema
+    )
   }
 
   // Handle discriminated union
   if (schema instanceof z.ZodDiscriminatedUnion) {
     const options = Array.from(schema.options.values()) as z.ZodTypeAny[]
-    return withSchemaMetadata({
-      anyOf: options.map((option) => zodFieldToJsonSchema(option)),
-    }, schema)
+    return withSchemaMetadata(
+      {
+        anyOf: options.map((option) => zodFieldToJsonSchema(option)),
+      },
+      schema
+    )
   }
 
   // Handle record
   if (schema instanceof z.ZodRecord) {
-    return withSchemaMetadata({
-      type: 'object',
-      additionalProperties: zodFieldToJsonSchema(schema._def.valueType),
-    }, schema)
+    return withSchemaMetadata(
+      {
+        type: 'object',
+        additionalProperties: zodFieldToJsonSchema(schema._def.valueType),
+      },
+      schema
+    )
   }
 
   // Handle tuple
   if (schema instanceof z.ZodTuple) {
-    return withSchemaMetadata({
-      type: 'array',
-      items: schema._def.items.map((item: z.ZodTypeAny) => zodFieldToJsonSchema(item)),
-    }, schema)
+    return withSchemaMetadata(
+      {
+        type: 'array',
+        items: schema._def.items.map((item: z.ZodTypeAny) => zodFieldToJsonSchema(item)),
+      },
+      schema
+    )
   }
 
   // Default

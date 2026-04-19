@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult , PluginToolDeps} from '../../sdk.js'
+import type { ToolDefinition, WorkerResult, PluginToolDeps } from '../../sdk.js'
 import { getDebugSessionManager } from '../debug/debug-session-state.js'
 
 const TOOL_NAME = 'debug.session.breakpoint'
@@ -54,10 +54,13 @@ export function createDebugSessionBreakpointHandler(deps: PluginToolDeps) {
             cmd = `-break-insert -c "${args.condition}" ${args.address}`
           }
           const resp = await session.gdb.command(cmd)
-          const bkptId = String((resp.payload as Record<string, unknown>).bkpt
-            ? ((resp.payload as Record<string, Record<string, unknown>>).bkpt.number || session.breakpoints.length + 1)
-            : session.breakpoints.length + 1)
-          
+          const bkptId = String(
+            resp.payload.bkpt
+              ? (resp.payload as Record<string, Record<string, unknown>>).bkpt.number ||
+                  session.breakpoints.length + 1
+              : session.breakpoints.length + 1
+          )
+
           const bp = {
             id: bkptId,
             address: args.address,

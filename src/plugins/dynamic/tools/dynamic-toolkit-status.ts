@@ -19,10 +19,25 @@ interface FetchStatus {
 }
 
 export const DynamicToolkitStatusInputSchema = z.object({
-  sample_id: z.string().optional().describe('Optional sample id used to find persisted runtime debug sessions.'),
-  session_id: z.string().optional().describe('Optional runtime debug session id used to resolve a Runtime Node endpoint.'),
-  runtime_endpoint: z.string().url().optional().describe('Override Runtime Node endpoint. Defaults to runtime.endpoint or persisted debug-session metadata.'),
-  runtime_api_key: z.string().optional().describe('Override Runtime Node API key. Defaults to runtime.apiKey.'),
+  sample_id: z
+    .string()
+    .optional()
+    .describe('Optional sample id used to find persisted runtime debug sessions.'),
+  session_id: z
+    .string()
+    .optional()
+    .describe('Optional runtime debug session id used to resolve a Runtime Node endpoint.'),
+  runtime_endpoint: z
+    .string()
+    .url()
+    .optional()
+    .describe(
+      'Override Runtime Node endpoint. Defaults to runtime.endpoint or persisted debug-session metadata.'
+    ),
+  runtime_api_key: z
+    .string()
+    .optional()
+    .describe('Override Runtime Node API key. Defaults to runtime.apiKey.'),
   limit: z.number().int().min(1).max(200).optional().default(20),
 })
 
@@ -58,7 +73,7 @@ function parseJsonObject(value: unknown): Record<string, unknown> {
   try {
     const parsed = JSON.parse(value)
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
+      ? (parsed as Record<string, unknown>)
       : {}
   } catch {
     return {}
@@ -88,7 +103,9 @@ async function fetchJsonStatus(
       ok: response.ok,
       status: response.status,
       body,
-      error: response.ok ? undefined : body?.error || body?.message || text || `HTTP ${response.status}`,
+      error: response.ok
+        ? undefined
+        : body?.error || body?.message || text || `HTTP ${response.status}`,
     }
   } catch (error) {
     return {
@@ -100,7 +117,10 @@ async function fetchJsonStatus(
   }
 }
 
-function persistedSessionRows(deps: PluginToolDeps, input: z.infer<typeof DynamicToolkitStatusInputSchema>): any[] {
+function persistedSessionRows(
+  deps: PluginToolDeps,
+  input: z.infer<typeof DynamicToolkitStatusInputSchema>
+): any[] {
   const db = deps.database
   const rows: any[] = []
   if (input.session_id && typeof db?.findDebugSession === 'function') {
@@ -142,9 +162,15 @@ function toolkitSummary(inventory: any): Record<string, unknown> {
   return {
     available_tools: tools.filter((tool: any) => tool?.available).map((tool: any) => tool.id),
     missing_tools: tools.filter((tool: any) => !tool?.available).map((tool: any) => tool.id),
-    ready_profiles: profiles.filter((profile: any) => profile?.status === 'ready').map((profile: any) => profile.id),
-    partial_profiles: profiles.filter((profile: any) => profile?.status === 'partial').map((profile: any) => profile.id),
-    missing_profiles: profiles.filter((profile: any) => profile?.status === 'missing').map((profile: any) => profile.id),
+    ready_profiles: profiles
+      .filter((profile: any) => profile?.status === 'ready')
+      .map((profile: any) => profile.id),
+    partial_profiles: profiles
+      .filter((profile: any) => profile?.status === 'partial')
+      .map((profile: any) => profile.id),
+    missing_profiles: profiles
+      .filter((profile: any) => profile?.status === 'missing')
+      .map((profile: any) => profile.id),
   }
 }
 
@@ -152,11 +178,16 @@ function buildGuidance(status: 'ready' | 'partial' | 'not_configured', inventory
   const summary = toolkitSummary(inventory)
   if (status === 'ready') {
     const recommended = ['dynamic.deep_plan', 'runtime.debug.command', 'dynamic.behavior.capture']
-    if ((summary.ready_profiles as string[]).includes('debugger_cdb')) recommended.push('debug.session.inspect')
-    if ((summary.ready_profiles as string[]).includes('network_lab')) recommended.push('debug.network.plan')
-    if ((summary.ready_profiles as string[]).includes('dotnet_runtime')) recommended.push('debug.managed.plan')
-    if ((summary.ready_profiles as string[]).includes('manual_gui_debug')) recommended.push('runtime.hyperv.control')
-    if ((summary.ready_profiles as string[]).includes('manual_gui_debug')) recommended.push('debug.gui.handoff')
+    if ((summary.ready_profiles as string[]).includes('debugger_cdb'))
+      recommended.push('debug.session.inspect')
+    if ((summary.ready_profiles as string[]).includes('network_lab'))
+      recommended.push('debug.network.plan')
+    if ((summary.ready_profiles as string[]).includes('dotnet_runtime'))
+      recommended.push('debug.managed.plan')
+    if ((summary.ready_profiles as string[]).includes('manual_gui_debug'))
+      recommended.push('runtime.hyperv.control')
+    if ((summary.ready_profiles as string[]).includes('manual_gui_debug'))
+      recommended.push('debug.gui.handoff')
     return {
       recommended_next_tools: Array.from(new Set(recommended)),
       next_actions: [
@@ -168,7 +199,11 @@ function buildGuidance(status: 'ready' | 'partial' | 'not_configured', inventory
   }
   if (status === 'partial') {
     return {
-      recommended_next_tools: ['dynamic.runtime.status', 'dynamic.deep_plan', 'runtime.debug.session.start'],
+      recommended_next_tools: [
+        'dynamic.runtime.status',
+        'dynamic.deep_plan',
+        'runtime.debug.session.start',
+      ],
       next_actions: [
         'Runtime Node is reachable, but toolkit inventory is incomplete; use the missing tool install hints before deep debug profiles.',
         'Behavior capture and native execution can still run without optional ProcMon/Sysmon/CDB tooling.',
@@ -176,7 +211,11 @@ function buildGuidance(status: 'ready' | 'partial' | 'not_configured', inventory
     }
   }
   return {
-    recommended_next_tools: ['dynamic.runtime.status', 'runtime.debug.session.start', 'dynamic.dependencies'],
+    recommended_next_tools: [
+      'dynamic.runtime.status',
+      'runtime.debug.session.start',
+      'dynamic.dependencies',
+    ],
     next_actions: [
       'Configure runtime.endpoint, start a runtime debug session, or attach a manual Runtime Node before querying runtime-side tools.',
       'This probe is read-only and will not launch Windows Sandbox by itself.',
@@ -220,7 +259,9 @@ export function createDynamicToolkitStatusHandler(deps: PluginToolDeps) {
     const guidance = buildGuidance(status, inventory)
     const warnings = [
       !health.ok ? `Runtime health check failed: ${health.error || 'unknown error'}` : null,
-      !capabilities.ok ? `Runtime capabilities check failed: ${capabilities.error || 'unknown error'}` : null,
+      !capabilities.ok
+        ? `Runtime capabilities check failed: ${capabilities.error || 'unknown error'}`
+        : null,
       !toolkit.ok ? `Runtime toolkit check failed: ${toolkit.error || 'unknown error'}` : null,
     ].filter((entry): entry is string => Boolean(entry))
 
@@ -230,7 +271,9 @@ export function createDynamicToolkitStatusHandler(deps: PluginToolDeps) {
         status,
         runtime_endpoint: endpointResolution.endpoint,
         runtime_endpoint_source: endpointResolution.source,
-        runtime_health: health.body || (health.ok ? null : { ok: false, status: health.status, error: health.error }),
+        runtime_health:
+          health.body ||
+          (health.ok ? null : { ok: false, status: health.status, error: health.error }),
         runtime_capabilities: capabilities.body?.data?.runtime_backends || [],
         toolkit: inventory,
         toolkit_summary: toolkitSummary(inventory),

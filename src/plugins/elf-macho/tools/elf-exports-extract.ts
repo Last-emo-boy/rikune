@@ -53,7 +53,8 @@ export function createElfExportsExtractHandler(
         return { ok: false, errors: [String(parsed.error || 'ELF parsing failed')] }
       }
 
-      const symbols = (parsed.symbols as Array<{ name: string; type: string; bind: string; value: number }>) || []
+      const symbols =
+        (parsed.symbols as Array<{ name: string; type: string; bind: string; value: number }>) || []
       const exported = symbols
         .filter((s) => s.value !== 0 && s.name && (s.bind === 'GLOBAL' || s.bind === 'WEAK'))
         .map((s) => ({ name: s.name, address: s.value, type: s.type, bind: s.bind }))
@@ -66,10 +67,17 @@ export function createElfExportsExtractHandler(
       const artifacts: ArtifactRef[] = []
       try {
         const artRef = await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, args.sample_id, 'elf_exports', 'elf-exports', exportData
+          workspaceManager,
+          database,
+          args.sample_id,
+          'elf_exports',
+          'elf-exports',
+          exportData
         )
         if (artRef) artifacts.push(artRef)
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
       return {
         ok: true,
@@ -87,17 +95,29 @@ export function createElfExportsExtractHandler(
   }
 }
 
-async function callElfMachoWorker(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function callElfMachoWorker(
+  request: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const workerPath = resolvePackagePath('src', 'plugins', 'elf-macho', 'workers', 'elf_macho_worker.py')
+    const workerPath = resolvePackagePath(
+      'src',
+      'plugins',
+      'elf-macho',
+      'workers',
+      'elf_macho_worker.py'
+    )
     const pythonCommand = getPythonCommand()
     const proc = spawn(pythonCommand, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'] })
 
     let stdout = ''
     let stderr = ''
 
-    proc.stdout.on('data', (d) => { stdout += d.toString() })
-    proc.stderr.on('data', (d) => { stderr += d.toString() })
+    proc.stdout.on('data', (d) => {
+      stdout += d.toString()
+    })
+    proc.stderr.on('data', (d) => {
+      stderr += d.toString()
+    })
 
     proc.on('close', (code) => {
       if (code !== 0) {

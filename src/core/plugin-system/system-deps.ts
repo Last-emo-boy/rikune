@@ -17,10 +17,16 @@ const execFileAsync = promisify(execFile)
  * references and falling back to dockerDefault or the bare name.
  */
 export function resolveDepTarget(dep: PluginSystemDep): string {
-  if (dep.envVar && process.env[dep.envVar]) return process.env[dep.envVar]!
+  if (dep.envVar && process.env[dep.envVar]) return process.env[dep.envVar]
   if (dep.target) {
     // Substitute $ENV_VAR references in target
-    return dep.target.replace(/\$([A-Z_][A-Z0-9_]*)/g, (_m, v) => process.env[v] ?? '')
+    const substituted = dep.target.replace(/\$([A-Z_][A-Z0-9_]*)/g, (_m, v) => process.env[v] ?? '')
+    if (substituted.trim().length > 0) {
+      return substituted
+    }
+    if (dep.dockerDefault) {
+      return dep.dockerDefault
+    }
   }
   return dep.dockerDefault ?? dep.name
 }
@@ -46,7 +52,7 @@ export async function checkOneDep(dep: PluginSystemDep): Promise<DepCheckResult>
         await execFileAsync(
           getPythonCommand(),
           ['-c', `import ${mod}; print(getattr(${mod}, '__version__', 'ok'))`],
-          { timeout: 10000 },
+          { timeout: 10000 }
         )
         result.available = true
         break
@@ -92,11 +98,13 @@ export async function checkOneDep(dep: PluginSystemDep): Promise<DepCheckResult>
  * Check all system dependencies declared by a plugin.
  * Returns an array of results + a boolean indicating whether all required deps passed.
  */
-export async function checkSystemDeps(plugin: { systemDeps?: PluginSystemDep[] }): Promise<{ results: DepCheckResult[]; allRequiredOk: boolean }> {
+export async function checkSystemDeps(plugin: {
+  systemDeps?: PluginSystemDep[]
+}): Promise<{ results: DepCheckResult[]; allRequiredOk: boolean }> {
   if (!plugin.systemDeps || plugin.systemDeps.length === 0) {
     return { results: [], allRequiredOk: true }
   }
   const results = await Promise.all(plugin.systemDeps.map(checkOneDep))
-  const allRequiredOk = results.every(r => r.available || !r.dep.required)
+  const allRequiredOk = results.every((r) => r.available || !r.dep.required)
   return { results, allRequiredOk }
 }

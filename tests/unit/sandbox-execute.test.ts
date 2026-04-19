@@ -75,8 +75,15 @@ describe('sandbox.execute tool', () => {
       run_id: string
       iocs: Record<string, string[]>
       risk: { level: string }
+      execution_semantics: {
+        live_windows_sandbox_execution: boolean
+        safe_simulation: boolean
+      }
     }
     expect(data.simulated).toBe(true)
+    expect(data.execution_semantics.live_windows_sandbox_execution).toBe(false)
+    expect(data.execution_semantics.safe_simulation).toBe(true)
+    expect(result.warnings?.join(' ')).toContain('did not perform live Windows Sandbox execution')
     expect(data.run_id.startsWith('sim-')).toBe(true)
     expect(Array.isArray(data.iocs.urls)).toBe(true)
     expect(typeof data.risk.level).toBe('string')
@@ -128,25 +135,25 @@ describe('sandbox.execute tool', () => {
     expect(data.simulated).toBe(true)
     expect(data.environment.isolation).toBe('image_memory_guided')
     expect((data.memory_regions || []).length).toBeGreaterThan(0)
-    expect((data.api_resolution || []).some((item) => item.api.toLowerCase() === 'writeprocessmemory')).toBe(
-      true
-    )
-    expect((data.execution_hypotheses || []).some((item) => item.stage === 'resolve_dynamic_apis')).toBe(
-      true
-    )
-    expect((data.execution_hypotheses || []).some((item) => item.stage === 'prepare_remote_process_access')).toBe(
-      true
-    )
-    expect((data.memory_regions || []).some((item) => item.region_type === 'process_operation_plan')).toBe(
-      true
-    )
+    expect(
+      (data.api_resolution || []).some((item) => item.api.toLowerCase() === 'writeprocessmemory')
+    ).toBe(true)
+    expect(
+      (data.execution_hypotheses || []).some((item) => item.stage === 'resolve_dynamic_apis')
+    ).toBe(true)
+    expect(
+      (data.execution_hypotheses || []).some(
+        (item) => item.stage === 'prepare_remote_process_access'
+      )
+    ).toBe(true)
+    expect(
+      (data.memory_regions || []).some((item) => item.region_type === 'process_operation_plan')
+    ).toBe(true)
   })
 
-  test(
-    'should execute speakeasy mode when emulator is available',
-    async () => {
-      const dependencyHandler = createDynamicDependenciesHandler(workspaceManager, database)
-      const dependencyResult = await dependencyHandler({})
+  test('should execute speakeasy mode when emulator is available', async () => {
+    const dependencyHandler = createDynamicDependenciesHandler(workspaceManager, database)
+    const dependencyResult = await dependencyHandler({})
 
     expect(dependencyResult.ok).toBe(true)
     const dependencyData = dependencyResult.data as {
@@ -159,7 +166,11 @@ describe('sandbox.execute tool', () => {
     }
 
     const speakeasyAvailable = Boolean(dependencyData.components?.speakeasy?.available)
-    if (!speakeasyAvailable || process.platform !== 'win32' || !process.execPath.toLowerCase().endsWith('.exe')) {
+    if (
+      !speakeasyAvailable ||
+      process.platform !== 'win32' ||
+      !process.execPath.toLowerCase().endsWith('.exe')
+    ) {
       expect(true).toBe(true)
       return
     }
@@ -204,6 +215,10 @@ describe('sandbox.execute tool', () => {
       timeline: Array<{ event_type: string }>
       evidence: { runtime_api_calls?: unknown[] }
       environment: { executed: boolean; isolation: string }
+      execution_semantics: {
+        live_windows_sandbox_execution: boolean
+        emulation: boolean
+      }
       metrics?: { runtime_api_call_count?: number }
     }
 
@@ -212,12 +227,12 @@ describe('sandbox.execute tool', () => {
     expect(data.simulated).toBe(false)
     expect(data.environment.executed).toBe(true)
     expect(data.environment.isolation).toBe('user_mode_emulation')
+    expect(data.execution_semantics.live_windows_sandbox_execution).toBe(false)
+    expect(data.execution_semantics.emulation).toBe(true)
     expect((data.metrics?.runtime_api_call_count || 0) > 0).toBe(true)
     expect((data.evidence.runtime_api_calls || []).length).toBeGreaterThan(0)
     expect(data.timeline.some((item) => item.event_type === 'api_call')).toBe(true)
-    },
-    30000
-  )
+  }, 30000)
 })
 
 async function ingestSample(

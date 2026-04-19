@@ -32,10 +32,15 @@ const DynamicTraceImportInputSchema = z
       .enum(['trace', 'memory_snapshot', 'hybrid'])
       .optional()
       .default('trace')
-      .describe('Whether the imported evidence reflects executed runtime trace, memory snapshot, or hybrid evidence'),
+      .describe(
+        'Whether the imported evidence reflects executed runtime trace, memory snapshot, or hybrid evidence'
+      ),
     path: z.string().optional().describe('Path to external JSON trace file'),
     trace_json: z.any().optional().describe('Inline JSON payload to import when path is not used'),
-    trace_name: z.string().optional().describe('Optional source name used in persisted artifact naming'),
+    trace_name: z
+      .string()
+      .optional()
+      .describe('Optional source name used in persisted artifact naming'),
     persist_artifact: z
       .boolean()
       .optional()

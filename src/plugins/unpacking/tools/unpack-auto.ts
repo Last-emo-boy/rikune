@@ -102,14 +102,10 @@ function extractPackerResult(database: DatabaseManager, sampleId: string): Packe
     const evidenceRows = database.findAnalysisEvidenceBySample(sampleId, 'packer_detect')
     if (evidenceRows.length > 0) {
       const latest = evidenceRows[0]
-      const result =
-        typeof latest.result_json === 'string'
-          ? JSON.parse(latest.result_json)
-          : null
+      const result = typeof latest.result_json === 'string' ? JSON.parse(latest.result_json) : null
       if (result) {
         const packed = Boolean(result.packed)
-        const confidence =
-          typeof result.confidence === 'number' ? result.confidence : 0
+        const confidence = typeof result.confidence === 'number' ? result.confidence : 0
         const detections = Array.isArray(result.detections) ? result.detections : []
         const packer_names = detections
           .map((d: { name?: string }) => String(d.name || ''))
@@ -133,10 +129,7 @@ function extractPackerResult(database: DatabaseManager, sampleId: string): Packe
         if (packerData) {
           return {
             packed: Boolean(packerData.packed),
-            confidence:
-              typeof packerData.confidence === 'number'
-                ? packerData.confidence
-                : 0,
+            confidence: typeof packerData.confidence === 'number' ? packerData.confidence : 0,
             packer_names: Array.isArray(packerData.detections)
               ? packerData.detections
                   .map((d: { name?: string }) => String(d.name || ''))
@@ -146,7 +139,10 @@ function extractPackerResult(database: DatabaseManager, sampleId: string): Packe
           }
         }
         // Check packed_state from the profile envelope
-        if (result?.packed_state === 'confirmed_packed' || result?.packed_state === 'suspected_packed') {
+        if (
+          result?.packed_state === 'confirmed_packed' ||
+          result?.packed_state === 'suspected_packed'
+        ) {
           return {
             packed: true,
             confidence: result?.unpack_confidence || 0.5,
@@ -217,7 +213,7 @@ export function createUnpackAutoHandler(
         // Select strategy
         let strategy = input.force_backend
           ? {
-              backend: input.force_backend as UnpackBackend,
+              backend: input.force_backend,
               packer_name: 'forced',
               confidence: packerResult.confidence,
               description: `Forced backend: ${input.force_backend}`,
@@ -325,12 +321,7 @@ export function createUnpackAutoHandler(
           layers_unpacked: layersUnpacked,
           layer_details: layerDetails,
           recommended_next_tools: finalUnpackedId
-            ? [
-                'workflow.analyze.start',
-                'pe.fingerprint',
-                'pe.imports.extract',
-                'packer.detect',
-              ]
+            ? ['workflow.analyze.start', 'pe.fingerprint', 'pe.imports.extract', 'packer.detect']
             : ['workflow.analyze.promote', 'upx.inspect'],
           next_actions: finalUnpackedId
             ? [
@@ -343,9 +334,10 @@ export function createUnpackAutoHandler(
               ],
         },
         warnings: warnings.length > 0 ? warnings : undefined,
-        errors: layersUnpacked === 0 && layerDetails.length > 0
-          ? ['All unpack attempts failed']
-          : undefined,
+        errors:
+          layersUnpacked === 0 && layerDetails.length > 0
+            ? ['All unpack attempts failed']
+            : undefined,
       }
     } catch (error) {
       return {

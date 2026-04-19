@@ -75,7 +75,9 @@ export const codeFunctionExplainPrepareInputSchema = z
     include_resolved: z
       .boolean()
       .default(true)
-      .describe('Include already resolved functions so the external LLM can explain stable names and unresolved ones together'),
+      .describe(
+        'Include already resolved functions so the external LLM can explain stable names and unresolved ones together'
+      ),
     analysis_goal: z
       .string()
       .min(1)
@@ -83,11 +85,15 @@ export const codeFunctionExplainPrepareInputSchema = z
       .default(
         'Explain the prepared functions in plain language and propose evidence-grounded rewrite guidance.'
       )
-      .describe('Human-readable analysis goal injected into the prompt contract for any external LLM'),
+      .describe(
+        'Human-readable analysis goal injected into the prompt contract for any external LLM'
+      ),
     persist_artifact: z
       .boolean()
       .default(true)
-      .describe('Persist the prepared explanation bundle as a JSON artifact for later review and provenance'),
+      .describe(
+        'Persist the prepared explanation bundle as a JSON artifact for later review and provenance'
+      ),
     session_tag: z
       .string()
       .optional()
@@ -95,16 +101,23 @@ export const codeFunctionExplainPrepareInputSchema = z
     evidence_scope: z
       .enum(['all', 'latest', 'session'])
       .default('all')
-      .describe('Runtime evidence scope forwarded to code.functions.reconstruct for explanation preparation'),
+      .describe(
+        'Runtime evidence scope forwarded to code.functions.reconstruct for explanation preparation'
+      ),
     evidence_session_tag: z
       .string()
       .optional()
-      .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
+      .describe(
+        'Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'
+      ),
   })
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
-  })
+  .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
 
 export const codeFunctionExplainPrepareOutputSchema = z.object({
   ok: z.boolean(),
@@ -210,7 +223,7 @@ export function createCodeFunctionExplainPrepareHandler(
         }
       }
 
-      const functions = dedupePreparedFunctions(((reconstructResult.data as any)?.functions || []))
+      const functions = dedupePreparedFunctions((reconstructResult.data as any)?.functions || [])
         .filter((item: any) => input.include_resolved || !item?.name_resolution?.validated_name)
         .slice(0, input.max_functions)
         .map((item: any) => ({

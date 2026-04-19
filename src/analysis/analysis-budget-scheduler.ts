@@ -16,19 +16,9 @@ export const ExecutionBucketSchema = z.enum([
   'artifact-only',
 ])
 
-export const AnalysisCostClassSchema = z.enum([
-  'cheap',
-  'moderate',
-  'expensive',
-  'manual-only',
-])
+export const AnalysisCostClassSchema = z.enum(['cheap', 'moderate', 'expensive', 'manual-only'])
 
-export const SchedulerDecisionSchema = z.enum([
-  'admitted',
-  'deferred',
-  'completed',
-  'interrupted',
-])
+export const SchedulerDecisionSchema = z.enum(['admitted', 'deferred', 'completed', 'interrupted'])
 
 export const WorkerFamilySchema = z.string().min(1)
 
@@ -100,12 +90,7 @@ function extractStage(args: Record<string, unknown>): AnalysisPipelineStage | nu
 
 function inferSampleTier(args: Record<string, unknown>): SampleSizeTier | null {
   const tier = args?.sample_size_tier
-  if (
-    tier === 'small' ||
-    tier === 'medium' ||
-    tier === 'large' ||
-    tier === 'oversized'
-  ) {
+  if (tier === 'small' || tier === 'medium' || tier === 'large' || tier === 'oversized') {
     return tier
   }
   return null
@@ -113,9 +98,7 @@ function inferSampleTier(args: Record<string, unknown>): SampleSizeTier | null {
 
 function hasExplicitExecutionApproval(args: Record<string, unknown>): boolean {
   return (
-    args.approved === true ||
-    args.allow_live_execution === true ||
-    args.allowLiveExecution === true
+    args.approved === true || args.allow_live_execution === true || args.allowLiveExecution === true
   )
 }
 
@@ -298,7 +281,7 @@ export function buildSchedulerExecutionPlan(input: {
 }): SchedulerExecutionPlan {
   const args = input.args || {}
   const stage = extractStage(args)
-  const sampleSizeTier = (input.sampleSizeTier ?? inferSampleTier(args) ?? null) as SampleSizeTier | null
+  const sampleSizeTier = input.sampleSizeTier ?? inferSampleTier(args) ?? null
 
   if (input.tool === 'workflow.analyze.stage' && stage) {
     switch (stage) {
@@ -314,7 +297,8 @@ export function buildSchedulerExecutionPlan(input: {
       case 'enrich_static':
         return withExpectedRss({
           execution_bucket: 'enrich-static',
-          cost_class: sampleSizeTier === 'large' || sampleSizeTier === 'oversized' ? 'expensive' : 'moderate',
+          cost_class:
+            sampleSizeTier === 'large' || sampleSizeTier === 'oversized' ? 'expensive' : 'moderate',
           worker_family: 'stage.enrich_static',
           manual_only: false,
           stage,
@@ -412,9 +396,7 @@ export function buildSchedulerExecutionPlan(input: {
     input.tool === 'pe.structure.analyze'
   ) {
     const fullMode =
-      args.mode === 'full' ||
-      args.result_mode === 'full' ||
-      args.analysis_mode === 'full'
+      args.mode === 'full' || args.result_mode === 'full' || args.analysis_mode === 'full'
     const enrichPreferred =
       fullMode || input.tool === 'static.capability.triage' || input.tool === 'pe.structure.analyze'
     return withExpectedRss({
@@ -559,7 +541,10 @@ export class AnalysisBudgetScheduler {
 
   private buildMemorySnapshot(plans: SchedulerExecutionPlan[]) {
     const currentRssMb = getRuntimeMemoryUsageMb()
-    const activeExpectedRssMb = plans.reduce((sum, plan) => sum + Math.max(0, plan.expected_rss_mb || 0), 0)
+    const activeExpectedRssMb = plans.reduce(
+      (sum, plan) => sum + Math.max(0, plan.expected_rss_mb || 0),
+      0
+    )
     const usableBudgetMb = Math.max(0, this.memoryLimitMb - this.controlPlaneHeadroomMb)
     return {
       current_rss_mb: currentRssMb,
@@ -577,7 +562,9 @@ export class AnalysisBudgetScheduler {
     }
 
     const previewWaiting = queuedJobs.some(
-      (job) => buildSchedulerExecutionPlan({ tool: job.tool, args: job.args }).execution_bucket === 'preview-static'
+      (job) =>
+        buildSchedulerExecutionPlan({ tool: job.tool, args: job.args }).execution_bucket ===
+        'preview-static'
     )
 
     const runningRows = jobQueue.listStatuses('running').map((row) => ({
@@ -592,8 +579,12 @@ export class AnalysisBudgetScheduler {
     const sorted = [...queuedJobs].sort((left, right) => {
       const leftPlan = buildSchedulerExecutionPlan({ tool: left.tool, args: left.args })
       const rightPlan = buildSchedulerExecutionPlan({ tool: right.tool, args: right.args })
-      if (bucketPriority(leftPlan.execution_bucket) !== bucketPriority(rightPlan.execution_bucket)) {
-        return bucketPriority(leftPlan.execution_bucket) - bucketPriority(rightPlan.execution_bucket)
+      if (
+        bucketPriority(leftPlan.execution_bucket) !== bucketPriority(rightPlan.execution_bucket)
+      ) {
+        return (
+          bucketPriority(leftPlan.execution_bucket) - bucketPriority(rightPlan.execution_bucket)
+        )
       }
       if (left.priority !== right.priority) {
         return right.priority - left.priority
@@ -605,7 +596,13 @@ export class AnalysisBudgetScheduler {
       const plan = buildSchedulerExecutionPlan({ tool: job.tool, args: job.args })
 
       if (plan.manual_only || this.bucketCaps[plan.execution_bucket] <= 0) {
-        this.recordEvent(job, plan, 'deferred', 'manual_only_bucket_requires_explicit_approval', memorySnapshot)
+        this.recordEvent(
+          job,
+          plan,
+          'deferred',
+          'manual_only_bucket_requires_explicit_approval',
+          memorySnapshot
+        )
         continue
       }
 
@@ -614,7 +611,13 @@ export class AnalysisBudgetScheduler {
         plan.execution_bucket !== 'preview-static' &&
         plan.execution_bucket !== 'artifact-only'
       ) {
-        this.recordEvent(job, plan, 'deferred', buildReasonForDeferred(plan, 'preview_lane_has_waiting_work'), memorySnapshot)
+        this.recordEvent(
+          job,
+          plan,
+          'deferred',
+          buildReasonForDeferred(plan, 'preview_lane_has_waiting_work'),
+          memorySnapshot
+        )
         continue
       }
 
@@ -697,14 +700,14 @@ export class AnalysisBudgetScheduler {
       decision: 'completed',
       reason: null,
       worker_family: input.workerFamily || null,
-      warm_reuse:
-        typeof input.warmReuse === 'boolean' ? (input.warmReuse ? 1 : 0) : null,
-      cold_start:
-        typeof input.coldStart === 'boolean' ? (input.coldStart ? 1 : 0) : null,
+      warm_reuse: typeof input.warmReuse === 'boolean' ? (input.warmReuse ? 1 : 0) : null,
+      cold_start: typeof input.coldStart === 'boolean' ? (input.coldStart ? 1 : 0) : null,
       metadata_json: JSON.stringify({
         ...(typeof input.peakRssMb === 'number' ? { peak_rss_mb: input.peakRssMb } : {}),
         ...(typeof input.currentRssMb === 'number' ? { current_rss_mb: input.currentRssMb } : {}),
-        ...(typeof input.expectedRssMb === 'number' ? { expected_rss_mb: input.expectedRssMb } : {}),
+        ...(typeof input.expectedRssMb === 'number'
+          ? { expected_rss_mb: input.expectedRssMb }
+          : {}),
         ...(typeof input.latencyMs === 'number' ? { latency_ms: input.latencyMs } : {}),
         ...(typeof input.interruptionCause === 'string' && input.interruptionCause.length > 0
           ? { interruption_cause: input.interruptionCause }
@@ -747,7 +750,9 @@ export class AnalysisBudgetScheduler {
       metadata_json: JSON.stringify({
         ...(typeof input.peakRssMb === 'number' ? { peak_rss_mb: input.peakRssMb } : {}),
         ...(typeof input.currentRssMb === 'number' ? { current_rss_mb: input.currentRssMb } : {}),
-        ...(typeof input.expectedRssMb === 'number' ? { expected_rss_mb: input.expectedRssMb } : {}),
+        ...(typeof input.expectedRssMb === 'number'
+          ? { expected_rss_mb: input.expectedRssMb }
+          : {}),
         ...(typeof input.latencyMs === 'number' ? { latency_ms: input.latencyMs } : {}),
         interruption_cause: input.interruptionCause || 'unknown',
       }),
@@ -823,12 +828,9 @@ export function findWorkerReuseTelemetry(payload: unknown): {
         : null
     if (workerPool) {
       return {
-        worker_family:
-          typeof workerPool.family === 'string' ? workerPool.family : undefined,
-        warm_reuse:
-          typeof workerPool.warm_reuse === 'boolean' ? workerPool.warm_reuse : undefined,
-        cold_start:
-          typeof workerPool.cold_start === 'boolean' ? workerPool.cold_start : undefined,
+        worker_family: typeof workerPool.family === 'string' ? workerPool.family : undefined,
+        warm_reuse: typeof workerPool.warm_reuse === 'boolean' ? workerPool.warm_reuse : undefined,
+        cold_start: typeof workerPool.cold_start === 'boolean' ? workerPool.cold_start : undefined,
         compatibility_key:
           typeof workerPool.compatibility_key === 'string'
             ? workerPool.compatibility_key

@@ -11,7 +11,7 @@ import { TOOL_DURATION_ESTIMATES } from '../job-queue.js'
 
 /**
  * Create async wrapper for long-running tools
- * 
+ *
  * @param toolName - Name of the tool to wrap
  * @param handler - Original tool handler
  * @param jobQueue - Job queue instance
@@ -26,10 +26,10 @@ export function createAsyncToolWrapper(
 ): (args: ToolArgs) => Promise<WorkerResult> {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const sampleId = (args as any).sample_id
-    
+
     // Get estimated duration for this tool
     const estimatedDurationMs = TOOL_DURATION_ESTIMATES[toolName] || TOOL_DURATION_ESTIMATES.default
-    
+
     // Create job in queue (the queue is responsible for any database persistence)
     const jobId = jobQueue.enqueue({
       type: 'static',
@@ -40,7 +40,7 @@ export function createAsyncToolWrapper(
       timeout: 60 * 60 * 1000, // 1 hour timeout
       priority: 5, // Normal priority
     })
-    
+
     // Return immediately with job_id and polling guidance
     return {
       ok: true,
@@ -86,4 +86,4 @@ export const LONG_RUNNING_TOOLS = [
   'strings.floss.decode',
 ] as const
 
-export type LongRunningTool = typeof LONG_RUNNING_TOOLS[number]
+export type LongRunningTool = (typeof LONG_RUNNING_TOOLS)[number]

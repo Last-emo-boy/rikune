@@ -17,13 +17,40 @@ export const RuntimeHyperVControlInputSchema = z.object({
     .optional()
     .default('status')
     .describe('Hyper-V control action routed through Windows Host Agent.'),
-  host_agent_endpoint: z.string().url().optional().describe('Override Windows Host Agent endpoint. Defaults to runtime.hostAgentEndpoint.'),
-  host_agent_api_key: z.string().optional().describe('Override Windows Host Agent API key. Defaults to runtime.hostAgentApiKey.'),
-  runtime_api_key: z.string().optional().describe('Runtime Node API key passed through when restore waits for runtime health. Defaults to runtime.apiKey.'),
-  snapshot_name: z.string().optional().describe('Checkpoint name for restore or create_checkpoint. Restore defaults to Host Agent HOST_AGENT_HYPERV_SNAPSHOT_NAME.'),
+  host_agent_endpoint: z
+    .string()
+    .url()
+    .optional()
+    .describe('Override Windows Host Agent endpoint. Defaults to runtime.hostAgentEndpoint.'),
+  host_agent_api_key: z
+    .string()
+    .optional()
+    .describe('Override Windows Host Agent API key. Defaults to runtime.hostAgentApiKey.'),
+  runtime_api_key: z
+    .string()
+    .optional()
+    .describe(
+      'Runtime Node API key passed through when restore waits for runtime health. Defaults to runtime.apiKey.'
+    ),
+  snapshot_name: z
+    .string()
+    .optional()
+    .describe(
+      'Checkpoint name for restore or create_checkpoint. Restore defaults to Host Agent HOST_AGENT_HYPERV_SNAPSHOT_NAME.'
+    ),
   start: z.boolean().optional().default(true).describe('Start VM after restore.'),
-  wait_for_runtime: z.boolean().optional().default(true).describe('Wait for Runtime Node health after restore when endpoint is configured.'),
-  timeout_ms: z.number().int().min(1000).max(10 * 60 * 1000).optional().default(120_000),
+  wait_for_runtime: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe('Wait for Runtime Node health after restore when endpoint is configured.'),
+  timeout_ms: z
+    .number()
+    .int()
+    .min(1000)
+    .max(10 * 60 * 1000)
+    .optional()
+    .default(120_000),
 })
 
 const RuntimeHyperVControlOutputSchema = z.object({
@@ -84,11 +111,16 @@ async function fetchHostAgentJson(
     status: response.status,
     body,
     text,
-    error: response.ok ? undefined : body?.error || body?.message || text || `HTTP ${response.status}`,
+    error: response.ok
+      ? undefined
+      : body?.error || body?.message || text || `HTTP ${response.status}`,
   }
 }
 
-function resolveHostAgentEndpoint(deps: PluginToolDeps, inputEndpoint?: string): string | undefined {
+function resolveHostAgentEndpoint(
+  deps: PluginToolDeps,
+  inputEndpoint?: string
+): string | undefined {
   const runtime = getRuntimeConfig(deps)
   return inputEndpoint || runtime.hostAgentEndpoint
 }
@@ -119,7 +151,10 @@ function actionPath(action: z.infer<typeof RuntimeHyperVControlInputSchema>['act
   }
 }
 
-function buildRequestBody(input: z.infer<typeof RuntimeHyperVControlInputSchema>, runtimeApiKey?: string): Record<string, unknown> | undefined {
+function buildRequestBody(
+  input: z.infer<typeof RuntimeHyperVControlInputSchema>,
+  runtimeApiKey?: string
+): Record<string, unknown> | undefined {
   if (input.action === 'create_checkpoint') {
     return { snapshotName: input.snapshot_name }
   }
@@ -135,10 +170,17 @@ function buildRequestBody(input: z.infer<typeof RuntimeHyperVControlInputSchema>
   }
 }
 
-function guidanceFor(action: z.infer<typeof RuntimeHyperVControlInputSchema>['action'], resultOk: boolean) {
+function guidanceFor(
+  action: z.infer<typeof RuntimeHyperVControlInputSchema>['action'],
+  resultOk: boolean
+) {
   if (resultOk && action === 'restore') {
     return {
-      recommended_next_tools: ['dynamic.runtime.status', 'runtime.debug.session.start', 'dynamic.behavior.capture'],
+      recommended_next_tools: [
+        'dynamic.runtime.status',
+        'runtime.debug.session.start',
+        'dynamic.behavior.capture',
+      ],
       next_actions: [
         'Confirm the Runtime Node endpoint is healthy with dynamic.runtime.status.',
         'Use runtime.debug.session.start with manual_endpoint or remote-sandbox configuration to bind this VM runtime to a sample session.',
@@ -157,7 +199,9 @@ function guidanceFor(action: z.infer<typeof RuntimeHyperVControlInputSchema>['ac
   if (resultOk && action === 'checkpoints') {
     return {
       recommended_next_tools: ['runtime.hyperv.control', 'dynamic.runtime.status'],
-      next_actions: ['Restore a known clean checkpoint before live dynamic analysis when repeatability matters.'],
+      next_actions: [
+        'Restore a known clean checkpoint before live dynamic analysis when repeatability matters.',
+      ],
     }
   }
   return {
@@ -214,10 +258,14 @@ export function createRuntimeHyperVControlHandler(deps: PluginToolDeps) {
           result: response.body,
           ...guidance,
         },
-        errors: ok ? undefined : [response.error || `Host Agent Hyper-V action failed: ${input.action}`],
+        errors: ok
+          ? undefined
+          : [response.error || `Host Agent Hyper-V action failed: ${input.action}`],
         warnings:
           response.ok && response.body?.backend && response.body.backend !== 'hyperv-vm'
-            ? [`Host Agent backend is ${response.body.backend}; Hyper-V control endpoints may be unavailable until HOST_AGENT_BACKEND=hyperv-vm.`]
+            ? [
+                `Host Agent backend is ${response.body.backend}; Hyper-V control endpoints may be unavailable until HOST_AGENT_BACKEND=hyperv-vm.`,
+              ]
             : undefined,
         metrics: { elapsed_ms: Date.now() - started, tool: TOOL_NAME },
       }

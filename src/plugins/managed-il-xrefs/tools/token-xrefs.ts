@@ -15,10 +15,23 @@ const TOOL_NAME = 'managed.token_xrefs'
 
 export const TokenXrefsInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  token: z.string().describe('Metadata token in hex (e.g. 0x06000042) or fully-qualified member name'),
-  depth: z.number().min(1).max(5).default(1).describe('How many levels of transitive references to follow'),
-  direction: z.enum(['both', 'incoming', 'outgoing']).default('both').describe('Reference direction to trace'),
-  include_system_refs: z.boolean().default(false).describe('Include references to/from System.* types'),
+  token: z
+    .string()
+    .describe('Metadata token in hex (e.g. 0x06000042) or fully-qualified member name'),
+  depth: z
+    .number()
+    .min(1)
+    .max(5)
+    .default(1)
+    .describe('How many levels of transitive references to follow'),
+  direction: z
+    .enum(['both', 'incoming', 'outgoing'])
+    .default('both')
+    .describe('Reference direction to trace'),
+  include_system_refs: z
+    .boolean()
+    .default(false)
+    .describe('Include references to/from System.* types'),
   max_nodes: z.number().min(1).max(2000).default(500).describe('Maximum graph nodes to return'),
 })
 
@@ -35,22 +48,35 @@ export const tokenXrefsToolDefinition: ToolDefinition = {
 async function callTokenXrefsWorker(
   request: Record<string, unknown>,
   pythonCmd: string,
-  resolvePackagePath: PluginToolDeps['resolvePackagePath'],
+  resolvePackagePath: PluginToolDeps['resolvePackagePath']
 ): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const workerPath = resolvePackagePath!('src', 'plugins', 'managed-il-xrefs', 'workers', 'managed_il_xrefs_worker.py')
+    const workerPath = resolvePackagePath(
+      'src',
+      'plugins',
+      'managed-il-xrefs',
+      'workers',
+      'managed_il_xrefs_worker.py'
+    )
     const proc = spawn(pythonCmd, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
-    proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
-    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+    proc.stdout.on('data', (d: Buffer) => {
+      stdout += d.toString()
+    })
+    proc.stderr.on('data', (d: Buffer) => {
+      stderr += d.toString()
+    })
     proc.on('close', (code) => {
       if (code !== 0 && !stdout.trim()) {
         reject(new Error(`Token xrefs worker exited ${code}: ${stderr.slice(0, 500)}`))
         return
       }
-      try { resolve(JSON.parse(stdout.trim())) }
-      catch (e) { reject(new Error(`Parse: ${(e as Error).message}`)) }
+      try {
+        resolve(JSON.parse(stdout.trim()))
+      } catch (e) {
+        reject(new Error(`Parse: ${(e as Error).message}`))
+      }
     })
     proc.on('error', (e) => reject(new Error(`Spawn: ${e.message}`)))
     proc.stdin.write(JSON.stringify(request) + '\n')
@@ -60,8 +86,14 @@ async function callTokenXrefsWorker(
 
 export function createTokenXrefsHandler(deps: PluginToolDeps) {
   const {
-    workspaceManager, database, config, cacheManager, generateCacheKey,
-    resolvePrimarySamplePath, persistStaticAnalysisJsonArtifact, resolvePackagePath,
+    workspaceManager,
+    database,
+    config,
+    cacheManager,
+    generateCacheKey,
+    resolvePrimarySamplePath,
+    persistStaticAnalysisJsonArtifact,
+    resolvePackagePath,
   } = deps
   const pythonCmd = getPythonCommand(undefined, config?.workers?.static?.pythonPath)
 
@@ -71,35 +103,58 @@ export function createTokenXrefsHandler(deps: PluginToolDeps) {
       const sample = database.findSample(args.sample_id)
       if (!sample) return { ok: false, errors: [`Sample not found: ${args.sample_id}`] }
 
-      const cacheKey = generateCacheKey!({
-        sampleSha256: sample.sha256, toolName: TOOL_NAME, toolVersion: '1.0.0',
+      const cacheKey = generateCacheKey({
+        sampleSha256: sample.sha256,
+        toolName: TOOL_NAME,
+        toolVersion: '1.0.0',
         args: { token: args.token, depth: args.depth, direction: args.direction },
       })
       const cached = await cacheManager!.getCachedResult(cacheKey)
-      if (cached) return { ok: true, data: cached, metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME, cache: 'hit' } }
+      if (cached)
+        return {
+          ok: true,
+          data: cached,
+          metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME, cache: 'hit' },
+        }
 
-      const { samplePath } = await resolvePrimarySamplePath!(workspaceManager, args.sample_id)
+      const { samplePath } = await resolvePrimarySamplePath(workspaceManager, args.sample_id)
 
-      const result = await callTokenXrefsWorker({
-        action: 'token_xrefs',
-        file_path: samplePath,
-        token: args.token,
-        depth: args.depth,
-        direction: args.direction,
-        include_system_refs: args.include_system_refs,
-        max_nodes: args.max_nodes,
-      }, pythonCmd, resolvePackagePath)
+      const result = await callTokenXrefsWorker(
+        {
+          action: 'token_xrefs',
+          file_path: samplePath,
+          token: args.token,
+          depth: args.depth,
+          direction: args.direction,
+          include_system_refs: args.include_system_refs,
+          max_nodes: args.max_nodes,
+        },
+        pythonCmd,
+        resolvePackagePath
+      )
 
       const artifacts: ArtifactRef[] = []
       try {
-        const artRef = await persistStaticAnalysisJsonArtifact!(
-          workspaceManager, database, args.sample_id,
-          'token_xrefs', 'managed-token-xrefs', result,
+        const artRef = await persistStaticAnalysisJsonArtifact(
+          workspaceManager,
+          database,
+          args.sample_id,
+          'token_xrefs',
+          'managed-token-xrefs',
+          result
         )
         if (artRef) artifacts.push(artRef)
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
-      if (result.ok) await cacheManager!.setCachedResult(cacheKey, result, 30 * 24 * 60 * 60 * 1000, sample.sha256)
+      if (result.ok)
+        await cacheManager!.setCachedResult(
+          cacheKey,
+          result,
+          30 * 24 * 60 * 60 * 1000,
+          sample.sha256
+        )
 
       return {
         ok: Boolean(result.ok),

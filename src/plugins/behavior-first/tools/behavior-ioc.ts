@@ -23,7 +23,9 @@ const TOOL_NAME = 'behavior.ioc'
 
 export const behaviorIocInputSchema = z.object({
   sample_id: z.string().describe('Sample ID for artifact association'),
-  behavior_data: z.record(z.any()).describe('Behavioral capture data from behavior.capture tool output'),
+  behavior_data: z
+    .record(z.any())
+    .describe('Behavioral capture data from behavior.capture tool output'),
   persist_artifact: z.boolean().default(true),
   session_tag: z.string().optional(),
 })
@@ -42,7 +44,7 @@ export const behaviorIocToolDefinition: ToolDefinition = {
 export function createBehaviorIocHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
-  dependencies?: SharedBackendDependencies,
+  dependencies?: SharedBackendDependencies
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -61,10 +63,15 @@ mod.main()
 `.trim()
 
       const runPython = dependencies?.runPythonJson || runPythonJson
-      const result = await runPython(pythonPath, workerScript, {
-        command: 'ioc_extract',
-        behavior_data: input.behavior_data,
-      }, 30_000)
+      const result = await runPython(
+        pythonPath,
+        workerScript,
+        {
+          command: 'ioc_extract',
+          behavior_data: input.behavior_data,
+        },
+        30_000
+      )
 
       const workerData = result.parsed
       const artifacts: ArtifactRef[] = []
@@ -72,13 +79,18 @@ mod.main()
       if (workerData.ok && workerData.data && input.persist_artifact) {
         try {
           const artifact = await persistBackendArtifact(
-            workspaceManager, database, input.sample_id,
-            'behavior', 'iocs',
+            workspaceManager,
+            database,
+            input.sample_id,
+            'behavior',
+            'iocs',
             JSON.stringify(workerData.data, null, 2),
-            { extension: 'json', mime: 'application/json', sessionTag: input.session_tag },
+            { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
           )
           artifacts.push(artifact)
-        } catch { /* best effort */ }
+        } catch {
+          /* best effort */
+        }
       }
 
       return {
@@ -92,7 +104,11 @@ mod.main()
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [(error as Error).message], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [(error as Error).message],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

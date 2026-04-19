@@ -7,10 +7,16 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, executeCommand,
-  persistBackendArtifact, buildMetrics, safeJsonParse,
-  resolveSampleFile, resolveAnalysisBackends,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  executeCommand,
+  persistBackendArtifact,
+  buildMetrics,
+  safeJsonParse,
+  resolveSampleFile,
+  resolveAnalysisBackends,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -26,23 +32,29 @@ export const dieScanInputSchema = z.object({
 
 export const dieScanOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    file_type: z.string().optional(),
-    arch: z.string().optional(),
-    mode: z.string().optional(),
-    entropy: z.number().optional(),
-    detects: z.array(z.object({
-      type: z.string().optional(),
-      name: z.string().optional(),
-      version: z.string().optional(),
-      options: z.string().optional(),
-    })).optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      file_type: z.string().optional(),
+      arch: z.string().optional(),
+      mode: z.string().optional(),
+      entropy: z.number().optional(),
+      detects: z
+        .array(
+          z.object({
+            type: z.string().optional(),
+            name: z.string().optional(),
+            version: z.string().optional(),
+            options: z.string().optional(),
+          })
+        )
+        .optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
@@ -59,7 +71,7 @@ export const dieScanToolDefinition: ToolDefinition = {
 
 export function createDieScanHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -70,7 +82,16 @@ export function createDieScanHandler(
       const backends = resolveAnalysisBackends()
       const backend = backends.die
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'die', available: false, error: 'diec (Detect It Easy console) not installed' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend ||
+            ({
+              name: 'die',
+              available: false,
+              error: 'diec (Detect It Easy console) not installed',
+            } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const dieArgs = [samplePath, '-j']
@@ -78,12 +99,20 @@ export function createDieScanHandler(
       const result = await executeCommand(backend.path, dieArgs, input.timeout_sec * 1000)
 
       if (result.exitCode !== 0 && !result.stdout.trim()) {
-        return { ok: false, errors: [`DIE exited with code ${result.exitCode}: ${result.stderr}`], metrics: buildMetrics(startTime, TOOL_NAME) }
+        return {
+          ok: false,
+          errors: [`DIE exited with code ${result.exitCode}: ${result.stderr}`],
+          metrics: buildMetrics(startTime, TOOL_NAME),
+        }
       }
 
       const parsed = safeJsonParse<any>(result.stdout)
       if (!parsed) {
-        return { ok: false, errors: ['Failed to parse DIE JSON output'], metrics: buildMetrics(startTime, TOOL_NAME) }
+        return {
+          ok: false,
+          errors: ['Failed to parse DIE JSON output'],
+          metrics: buildMetrics(startTime, TOOL_NAME),
+        }
       }
 
       const detects = (parsed.detects || []).map((d: any) => ({
@@ -96,7 +125,15 @@ export function createDieScanHandler(
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'die', 'scan', JSON.stringify(parsed, null, 2), { extension: 'json', mime: 'application/json', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'die',
+          'scan',
+          JSON.stringify(parsed, null, 2),
+          { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -121,7 +158,11 @@ export function createDieScanHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

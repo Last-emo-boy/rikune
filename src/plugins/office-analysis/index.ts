@@ -6,9 +6,18 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { officeVbaExtractToolDefinition, createOfficeVbaExtractHandler } from './tools/office-vba-extract.js'
-import { officeMacroDetectToolDefinition, createOfficeMacroDetectHandler } from './tools/office-macro-detect.js'
-import { officeOleAnalyzeToolDefinition, createOfficeOleAnalyzeHandler } from './tools/office-ole-analyze.js'
+import {
+  officeVbaExtractToolDefinition,
+  createOfficeVbaExtractHandler,
+} from './tools/office-vba-extract.js'
+import {
+  officeMacroDetectToolDefinition,
+  createOfficeMacroDetectHandler,
+} from './tools/office-macro-detect.js'
+import {
+  officeOleAnalyzeToolDefinition,
+  createOfficeOleAnalyzeHandler,
+} from './tools/office-ole-analyze.js'
 
 const officeAnalysisPlugin: Plugin = {
   id: 'office-analysis',
@@ -19,11 +28,12 @@ const officeAnalysisPlugin: Plugin = {
     activateOn: { fileTypes: ['office', 'doc', 'xls'] },
     category: 'static-analysis',
     signalMap: {
-      'has_macros': 'vba_macros',
-      'has_vba': 'vba_macros',
+      has_macros: 'vba_macros',
+      has_vba: 'vba_macros',
     },
   },
-  description: 'VBA macro extraction, OLE structure analysis, and malicious Office document detection via oletools',
+  description:
+    'VBA macro extraction, OLE structure analysis, and malicious Office document detection via oletools',
   version: '1.0.0',
   systemDeps: [
     {

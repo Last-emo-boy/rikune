@@ -14,9 +14,7 @@ import type { ArtifactRef } from '../../types.js'
 import type { WorkspaceManager } from '../../workspace-manager.js'
 import type { DatabaseManager } from '../../database.js'
 import { getPythonCommand } from '../../utils/shared-helpers.js'
-import {
-  resolveAnalysisBackends,
-} from '../../static-backend-discovery.js'
+import { resolveAnalysisBackends } from '../../static-backend-discovery.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -24,11 +22,7 @@ const execFileAsync = promisify(execFile)
 // Types & Schemas
 // ============================================================================
 
-export const UnpackBackendSchema = z.enum([
-  'upx_cli',
-  'speakeasy_dump',
-  'qiling_oep_dump',
-])
+export const UnpackBackendSchema = z.enum(['upx_cli', 'speakeasy_dump', 'qiling_oep_dump'])
 export type UnpackBackend = z.infer<typeof UnpackBackendSchema>
 
 export interface UnpackStrategyEntry {
@@ -98,19 +92,14 @@ export interface PackerDetectionResult {
   high_entropy?: boolean
 }
 
-export function selectUnpackStrategy(
-  packerResult: PackerDetectionResult
-): SelectedStrategy | null {
+export function selectUnpackStrategy(packerResult: PackerDetectionResult): SelectedStrategy | null {
   if (!packerResult.packed) {
     return null
   }
 
   for (const name of packerResult.packer_names) {
     for (const entry of STRATEGY_TABLE) {
-      if (
-        entry.packer_pattern.test(name) &&
-        packerResult.confidence >= entry.min_confidence
-      ) {
+      if (entry.packer_pattern.test(name) && packerResult.confidence >= entry.min_confidence) {
         return {
           backend: entry.backend,
           packer_name: name,
@@ -245,16 +234,12 @@ except Exception as e:
 `
 
   try {
-    const result = await execFileAsync(
-      pythonCmd,
-      ['-c', script, samplePath, dumpPath],
-      {
-        encoding: 'utf8',
-        timeout: 120_000,
-        windowsHide: true,
-        maxBuffer: 4 * 1024 * 1024,
-      }
-    )
+    const result = await execFileAsync(pythonCmd, ['-c', script, samplePath, dumpPath], {
+      encoding: 'utf8',
+      timeout: 120_000,
+      windowsHide: true,
+      maxBuffer: 4 * 1024 * 1024,
+    })
 
     try {
       const output = JSON.parse(result.stdout.trim())
@@ -341,16 +326,12 @@ except Exception as e:
 `
 
   try {
-    const result = await execFileAsync(
-      pythonCmd,
-      ['-c', script, samplePath, dumpPath],
-      {
-        encoding: 'utf8',
-        timeout: 120_000,
-        windowsHide: true,
-        maxBuffer: 4 * 1024 * 1024,
-      }
-    )
+    const result = await execFileAsync(pythonCmd, ['-c', script, samplePath, dumpPath], {
+      encoding: 'utf8',
+      timeout: 120_000,
+      windowsHide: true,
+      maxBuffer: 4 * 1024 * 1024,
+    })
 
     try {
       const output = JSON.parse(result.stdout.trim())

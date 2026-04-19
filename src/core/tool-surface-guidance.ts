@@ -11,9 +11,6 @@ export const ToolSurfaceRoleSchema = z.enum(TOOL_SURFACE_ROLE_VALUES)
 
 export type ToolSurfaceRole = z.infer<typeof ToolSurfaceRoleSchema>
 
-export function buildPreferredPrimaryTools(
-  role: ToolSurfaceRole,
-  preferredPrimaryTools: string[]
-) {
+export function buildPreferredPrimaryTools(role: ToolSurfaceRole, preferredPrimaryTools: string[]) {
   return role === 'primary' ? [] : preferredPrimaryTools
 }

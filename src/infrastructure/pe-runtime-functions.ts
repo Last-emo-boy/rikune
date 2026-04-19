@@ -356,9 +356,9 @@ function parseUnwindInfo(context: PEContext, unwindInfoRva: number): UnwindInfoR
   const frameRegisterAndOffset = buffer.readUInt8(offset + 3)
   const frameRegisterId = frameRegisterAndOffset & 0x0f
   const frameOffset = frameRegisterAndOffset >> 4
-  const flagNames = UNWIND_FLAG_NAMES
-    .filter(([flag]) => (flags & flag) !== 0)
-    .map(([, name]) => name)
+  const flagNames = UNWIND_FLAG_NAMES.filter(([flag]) => (flags & flag) !== 0).map(
+    ([, name]) => name
+  )
 
   let trailingOffset = offset + 4 + unwindCodeCount * 2
   if (trailingOffset % 4 !== 0) {
@@ -401,8 +401,13 @@ export function extractPdataFromPE(filePath: string): PdataExtractResult {
     const pdataSection = sections.find((section) => section.name.toLowerCase() === '.pdata')
     if (pdataSection) {
       exceptionDirectoryRva = pdataSection.virtualAddress
-      exceptionDirectorySize = Math.min(pdataSection.virtualSize || pdataSection.rawSize, pdataSection.rawSize)
-      warnings.push('Exception directory metadata was empty; fell back to the .pdata section bounds.')
+      exceptionDirectorySize = Math.min(
+        pdataSection.virtualSize || pdataSection.rawSize,
+        pdataSection.rawSize
+      )
+      warnings.push(
+        'Exception directory metadata was empty; fell back to the .pdata section bounds.'
+      )
     }
   }
 
@@ -430,7 +435,10 @@ export function extractPdataFromPE(filePath: string): PdataExtractResult {
     throw new Error('Exception directory RVA could not be mapped to a file offset.')
   }
 
-  const availableBytes = Math.max(0, Math.min(exceptionDirectorySize, buffer.length - exceptionDirectoryOffset))
+  const availableBytes = Math.max(
+    0,
+    Math.min(exceptionDirectorySize, buffer.length - exceptionDirectoryOffset)
+  )
   if (availableBytes % 12 !== 0) {
     warnings.push(`Exception directory size (${availableBytes}) is not a multiple of 12 bytes.`)
   }
@@ -444,7 +452,9 @@ export function extractPdataFromPE(filePath: string): PdataExtractResult {
       continue
     }
     if (!beginRva || !endRva || endRva <= beginRva) {
-      warnings.push(`Skipped malformed RUNTIME_FUNCTION entry at directory offset +0x${offset.toString(16)}.`)
+      warnings.push(
+        `Skipped malformed RUNTIME_FUNCTION entry at directory offset +0x${offset.toString(16)}.`
+      )
       continue
     }
 
@@ -574,7 +584,9 @@ export function smartRecoverFunctionsFromPE(filePath: string): SmartRecoverResul
       executableSection: section?.executable || false,
       isEntryPoint: true,
       isExported: false,
-      evidence: ['Recovered directly from PE AddressOfEntryPoint because no .pdata entry matched it.'],
+      evidence: [
+        'Recovered directly from PE AddressOfEntryPoint because no .pdata entry matched it.',
+      ],
       unwind: null,
     })
   }
@@ -602,4 +614,3 @@ export function smartRecoverFunctionsFromPE(filePath: string): SmartRecoverResul
     warnings: pdata.warnings,
   }
 }
-

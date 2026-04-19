@@ -55,176 +55,218 @@ export function getDefaultGhidraLogRoot(): string {
 }
 
 // Configuration schema using Zod
-export const ConfigSchema = z.object({
-  server: z.object({
-    port: z.number().int().min(1).max(65535).default(3000),
-    host: z.string().default('localhost'),
-  }).default({}),
-  database: z.object({
-    type: z.enum(['sqlite', 'postgresql']).default('sqlite'),
-    path: z.string().default(getDefaultDatabasePath()),
-    host: z.string().optional(),
-    port: z.number().int().optional(),
-    database: z.string().optional(),
-    user: z.string().optional(),
-    password: z.string().optional(),
-  }).default({}),
-  workspace: z.object({
-    root: z.string().default(getDefaultWorkspaceRoot()),
-    maxSampleSize: z.number().int().min(1).default(500 * 1024 * 1024), // 500MB
-  }).default({}),
-  workers: z.object({
-    ghidra: z.object({
-      enabled: z.boolean().default(false),
-      path: z.string().optional(),
-      projectRoot: z.string().default(getDefaultGhidraProjectRoot()),
-      logRoot: z.string().default(getDefaultGhidraLogRoot()),
-      cleanupAfterAnalysis: z.boolean().default(false),
-      logRetentionDays: z.number().int().min(1).default(30),
-      minJavaVersion: z.number().int().min(8).default(21),
-      maxConcurrent: z.number().int().min(1).max(16).default(4),
-      timeout: z.number().int().min(1).default(300),
-    }).default({}),
-    static: z.object({
-      enabled: z.boolean().default(true),
-      pythonPath: z.string().optional(),
-      capaPath: z.string().optional(),
-      capaRulesPath: z.string().optional(),
-      diePath: z.string().optional(),
-      graphvizDotPath: z.string().optional(),
-      rizinPath: z.string().optional(),
-      upxPath: z.string().optional(),
-      retdecPath: z.string().optional(),
-      jadxPath: z.string().optional(),
-      yaraXPythonPath: z.string().optional(),
-      dieTimeout: z.number().int().min(1).default(30),
-      timeout: z.number().int().min(1).default(60),
-    }).default({}),
-    dotnet: z.object({
-      enabled: z.boolean().default(true),
-      ilspyPath: z.string().optional(),
-      timeout: z.number().int().min(1).default(60),
-    }).default({}),
-    sandbox: z.object({
-      enabled: z.boolean().default(true),
-      winePath: z.string().optional(),
-      winedbgPath: z.string().optional(),
-      qilingPythonPath: z.string().optional(),
-      qilingRootfsPath: z.string().optional(),
-      angrPythonPath: z.string().optional(),
-      pandaPythonPath: z.string().optional(),
-      timeout: z.number().int().min(1).default(120),
-    }).default({}),
-    frida: z.object({
-      enabled: z.boolean().default(true),
-      path: z.string().optional(),
-      scriptRoot: z.string().optional(),
-      timeout: z.number().int().min(1).default(30),
-    }).default({}),
-  }).default({}),
-  cache: z.object({
-    enabled: z.boolean().default(true),
-    root: z.string().default(getDefaultCacheRoot()),
-    ttl: z.number().int().min(0).default(30 * 24 * 60 * 60), // 30 days
-  }).default({}),
-  logging: z.object({
-    level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-    pretty: z.boolean().default(false),
-    auditPath: z.string().default(getDefaultAuditLogPath()),
-  }).default({}),
-  api: z.object({
-    enabled: z.boolean().default(true),  // Default: enabled
-    port: z.number().int().min(1).max(65535).default(18080),
-    apiKey: z.string().optional(),  // Auto-generated if not set
-    maxFileSize: z.number().int().min(1).default(500 * 1024 * 1024), // 500MB
-    storageRoot: z.string().default('/app/storage'),
-    retentionDays: z.number().int().min(1).default(30),
-    maxTotalBytes: z.number().int().min(0).default(0),  // 0 = unlimited
-  }).default({
-    enabled: true,
-    port: 18080,
-    maxFileSize: 500 * 1024 * 1024,
-    storageRoot: '/app/storage',
-    retentionDays: 30,
-    maxTotalBytes: 0,
-  }),
-  node: z.object({
-    role: z.enum(['analyzer', 'runtime', 'hybrid']).default('analyzer'),
-  }).default({}),
-  runtime: z.object({
-    mode: z.enum(['auto-sandbox', 'remote-sandbox', 'manual', 'disabled']).default('disabled'),
-    endpoint: z.string().optional(),
-    apiKey: z.string().optional(),
-    hostAgentEndpoint: z.string().optional(),
-    hostAgentApiKey: z.string().optional(),
-    sandboxWorkspace: z.string().default(getDefaultAppRoot()),
-    heartbeatIntervalMs: z.number().int().min(1000).default(30000),
-    healthCheckTimeoutMs: z.number().int().min(1000).default(60000),
-  }).default({}),
-}).superRefine((data, ctx) => {
-  // Cross-field validations
+export const ConfigSchema = z
+  .object({
+    server: z
+      .object({
+        port: z.number().int().min(1).max(65535).default(3000),
+        host: z.string().default('localhost'),
+      })
+      .default({}),
+    database: z
+      .object({
+        type: z.enum(['sqlite', 'postgresql']).default('sqlite'),
+        path: z.string().default(getDefaultDatabasePath()),
+        host: z.string().optional(),
+        port: z.number().int().optional(),
+        database: z.string().optional(),
+        user: z.string().optional(),
+        password: z.string().optional(),
+      })
+      .default({}),
+    workspace: z
+      .object({
+        root: z.string().default(getDefaultWorkspaceRoot()),
+        maxSampleSize: z
+          .number()
+          .int()
+          .min(1)
+          .default(500 * 1024 * 1024), // 500MB
+      })
+      .default({}),
+    workers: z
+      .object({
+        ghidra: z
+          .object({
+            enabled: z.boolean().default(false),
+            path: z.string().optional(),
+            projectRoot: z.string().default(getDefaultGhidraProjectRoot()),
+            logRoot: z.string().default(getDefaultGhidraLogRoot()),
+            cleanupAfterAnalysis: z.boolean().default(false),
+            logRetentionDays: z.number().int().min(1).default(30),
+            minJavaVersion: z.number().int().min(8).default(21),
+            maxConcurrent: z.number().int().min(1).max(16).default(4),
+            timeout: z.number().int().min(1).default(300),
+          })
+          .default({}),
+        static: z
+          .object({
+            enabled: z.boolean().default(true),
+            pythonPath: z.string().optional(),
+            capaPath: z.string().optional(),
+            capaRulesPath: z.string().optional(),
+            diePath: z.string().optional(),
+            graphvizDotPath: z.string().optional(),
+            rizinPath: z.string().optional(),
+            upxPath: z.string().optional(),
+            retdecPath: z.string().optional(),
+            jadxPath: z.string().optional(),
+            yaraXPythonPath: z.string().optional(),
+            dieTimeout: z.number().int().min(1).default(30),
+            timeout: z.number().int().min(1).default(60),
+          })
+          .default({}),
+        dotnet: z
+          .object({
+            enabled: z.boolean().default(true),
+            ilspyPath: z.string().optional(),
+            timeout: z.number().int().min(1).default(60),
+          })
+          .default({}),
+        sandbox: z
+          .object({
+            enabled: z.boolean().default(true),
+            winePath: z.string().optional(),
+            winedbgPath: z.string().optional(),
+            qilingPythonPath: z.string().optional(),
+            qilingRootfsPath: z.string().optional(),
+            angrPythonPath: z.string().optional(),
+            pandaPythonPath: z.string().optional(),
+            timeout: z.number().int().min(1).default(120),
+          })
+          .default({}),
+        frida: z
+          .object({
+            enabled: z.boolean().default(true),
+            path: z.string().optional(),
+            scriptRoot: z.string().optional(),
+            timeout: z.number().int().min(1).default(30),
+          })
+          .default({}),
+      })
+      .default({}),
+    cache: z
+      .object({
+        enabled: z.boolean().default(true),
+        root: z.string().default(getDefaultCacheRoot()),
+        ttl: z
+          .number()
+          .int()
+          .min(0)
+          .default(30 * 24 * 60 * 60), // 30 days
+      })
+      .default({}),
+    logging: z
+      .object({
+        level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+        pretty: z.boolean().default(false),
+        auditPath: z.string().default(getDefaultAuditLogPath()),
+      })
+      .default({}),
+    api: z
+      .object({
+        enabled: z.boolean().default(true), // Default: enabled
+        port: z.number().int().min(1).max(65535).default(18080),
+        apiKey: z.string().optional(), // Auto-generated if not set
+        maxFileSize: z
+          .number()
+          .int()
+          .min(1)
+          .default(500 * 1024 * 1024), // 500MB
+        storageRoot: z.string().default('/app/storage'),
+        retentionDays: z.number().int().min(1).default(30),
+        maxTotalBytes: z.number().int().min(0).default(0), // 0 = unlimited
+      })
+      .default({
+        enabled: true,
+        port: 18080,
+        maxFileSize: 500 * 1024 * 1024,
+        storageRoot: '/app/storage',
+        retentionDays: 30,
+        maxTotalBytes: 0,
+      }),
+    node: z
+      .object({
+        role: z.enum(['analyzer', 'runtime', 'hybrid']).default('analyzer'),
+      })
+      .default({}),
+    runtime: z
+      .object({
+        mode: z.enum(['auto-sandbox', 'remote-sandbox', 'manual', 'disabled']).default('disabled'),
+        endpoint: z.string().optional(),
+        apiKey: z.string().optional(),
+        hostAgentEndpoint: z.string().optional(),
+        hostAgentApiKey: z.string().optional(),
+        sandboxWorkspace: z.string().default(getDefaultAppRoot()),
+        heartbeatIntervalMs: z.number().int().min(1000).default(30000),
+        healthCheckTimeoutMs: z.number().int().min(1000).default(60000),
+      })
+      .default({}),
+  })
+  .superRefine((data, ctx) => {
+    // Cross-field validations
 
-  // PostgreSQL requires host + database
-  if (data.database.type === 'postgresql') {
-    if (!data.database.host) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['database', 'host'],
-        message: 'database.host is required when database.type is "postgresql"',
-      })
+    // PostgreSQL requires host + database
+    if (data.database.type === 'postgresql') {
+      if (!data.database.host) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['database', 'host'],
+          message: 'database.host is required when database.type is "postgresql"',
+        })
+      }
+      if (!data.database.database) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['database', 'database'],
+          message: 'database.database is required when database.type is "postgresql"',
+        })
+      }
     }
-    if (!data.database.database) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['database', 'database'],
-        message: 'database.database is required when database.type is "postgresql"',
-      })
-    }
-  }
 
-  // maxFileSize must be ≤ maxTotalBytes (if quota is set)
-  if (data.api.maxTotalBytes > 0 && data.api.maxFileSize > data.api.maxTotalBytes) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['api', 'maxFileSize'],
-      message: `api.maxFileSize (${data.api.maxFileSize}) must not exceed api.maxTotalBytes (${data.api.maxTotalBytes})`,
-    })
-  }
+    // maxFileSize must be ≤ maxTotalBytes (if quota is set)
+    if (data.api.maxTotalBytes > 0 && data.api.maxFileSize > data.api.maxTotalBytes) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['api', 'maxFileSize'],
+        message: `api.maxFileSize (${data.api.maxFileSize}) must not exceed api.maxTotalBytes (${data.api.maxTotalBytes})`,
+      })
+    }
 
-  // server port ≠ api port
-  if (data.api.enabled && data.server.port === data.api.port) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['api', 'port'],
-      message: `api.port (${data.api.port}) must differ from server.port (${data.server.port})`,
-    })
-  }
+    // server port ≠ api port
+    if (data.api.enabled && data.server.port === data.api.port) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['api', 'port'],
+        message: `api.port (${data.api.port}) must differ from server.port (${data.server.port})`,
+      })
+    }
 
-  // runtime mode cross-field validation
-  if (data.node.role === 'analyzer' || data.node.role === 'hybrid') {
-    if (data.runtime.mode === 'manual' && !data.runtime.endpoint) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['runtime', 'endpoint'],
-        message: 'runtime.endpoint is required when runtime.mode is "manual"',
-      })
+    // runtime mode cross-field validation
+    if (data.node.role === 'analyzer' || data.node.role === 'hybrid') {
+      if (data.runtime.mode === 'manual' && !data.runtime.endpoint) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['runtime', 'endpoint'],
+          message: 'runtime.endpoint is required when runtime.mode is "manual"',
+        })
+      }
+      if (data.runtime.mode === 'remote-sandbox' && !data.runtime.hostAgentEndpoint) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['runtime', 'hostAgentEndpoint'],
+          message: 'runtime.hostAgentEndpoint is required when runtime.mode is "remote-sandbox"',
+        })
+      }
+      if (data.runtime.mode === 'remote-sandbox' && !data.runtime.hostAgentApiKey) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['runtime', 'hostAgentApiKey'],
+          message: 'runtime.hostAgentApiKey is required when runtime.mode is "remote-sandbox"',
+        })
+      }
     }
-    if (data.runtime.mode === 'remote-sandbox' && !data.runtime.hostAgentEndpoint) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['runtime', 'hostAgentEndpoint'],
-        message: 'runtime.hostAgentEndpoint is required when runtime.mode is "remote-sandbox"',
-      })
-    }
-    if (data.runtime.mode === 'remote-sandbox' && !data.runtime.hostAgentApiKey) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['runtime', 'hostAgentApiKey'],
-        message: 'runtime.hostAgentApiKey is required when runtime.mode is "remote-sandbox"',
-      })
-    }
-  }
-})
+  })
 
 export type Config = z.infer<typeof ConfigSchema>
 
@@ -311,8 +353,9 @@ export function loadConfigFromEnv(): Record<string, any> {
   if (process.env.GHIDRA_CLEANUP_AFTER_ANALYSIS) {
     if (!config.workers) config.workers = {}
     if (!config.workers.ghidra) config.workers.ghidra = {}
-    config.workers.ghidra.cleanupAfterAnalysis =
-      /^(1|true|yes|on)$/i.test(process.env.GHIDRA_CLEANUP_AFTER_ANALYSIS)
+    config.workers.ghidra.cleanupAfterAnalysis = /^(1|true|yes|on)$/i.test(
+      process.env.GHIDRA_CLEANUP_AFTER_ANALYSIS
+    )
   }
   if (process.env.GHIDRA_LOG_RETENTION_DAYS) {
     if (!config.workers) config.workers = {}
@@ -515,9 +558,9 @@ export function loadConfigFromEnv(): Record<string, any> {
  */
 function deepMerge(target: any, source: any): any {
   const output = { ...target }
-  
+
   if (isObject(target) && isObject(source)) {
-    Object.keys(source).forEach(key => {
+    Object.keys(source).forEach((key) => {
       if (isObject(source[key])) {
         if (!(key in target)) {
           output[key] = source[key]
@@ -529,7 +572,7 @@ function deepMerge(target: any, source: any): any {
       }
     })
   }
-  
+
   return output
 }
 

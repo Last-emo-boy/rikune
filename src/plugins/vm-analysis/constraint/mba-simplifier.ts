@@ -25,10 +25,18 @@ export type MBAExpr =
   | { kind: 'binop'; op: string; left: MBAExpr; right: MBAExpr }
   | { kind: 'unary'; op: string; child: MBAExpr }
 
-export function mVar(name: string): MBAExpr { return { kind: 'var', name } }
-export function mConst(value: bigint | number): MBAExpr { return { kind: 'const', value: BigInt(value) } }
-export function mBinop(op: string, left: MBAExpr, right: MBAExpr): MBAExpr { return { kind: 'binop', op, left, right } }
-export function mUnary(op: string, child: MBAExpr): MBAExpr { return { kind: 'unary', op, child } }
+export function mVar(name: string): MBAExpr {
+  return { kind: 'var', name }
+}
+export function mConst(value: bigint | number): MBAExpr {
+  return { kind: 'const', value: BigInt(value) }
+}
+export function mBinop(op: string, left: MBAExpr, right: MBAExpr): MBAExpr {
+  return { kind: 'binop', op, left, right }
+}
+export function mUnary(op: string, child: MBAExpr): MBAExpr {
+  return { kind: 'unary', op, child }
+}
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -38,8 +46,10 @@ export function mUnary(op: string, child: MBAExpr): MBAExpr { return { kind: 'un
 export function exprEqual(a: MBAExpr, b: MBAExpr): boolean {
   if (a.kind !== b.kind) return false
   switch (a.kind) {
-    case 'var':   return (b as typeof a).name === a.name
-    case 'const': return (b as typeof a).value === a.value
+    case 'var':
+      return (b as typeof a).name === a.name
+    case 'const':
+      return (b as typeof a).value === a.value
     case 'binop': {
       const bb = b as typeof a
       return a.op === bb.op && exprEqual(a.left, bb.left) && exprEqual(a.right, bb.right)
@@ -55,17 +65,23 @@ export function exprEqual(a: MBAExpr, b: MBAExpr): boolean {
 function commEqual(a: MBAExpr, b: MBAExpr): boolean {
   if (a.kind !== 'binop' || b.kind !== 'binop') return exprEqual(a, b)
   if (a.op !== b.op) return false
-  return (exprEqual(a.left, b.left) && exprEqual(a.right, b.right)) ||
-         (exprEqual(a.left, b.right) && exprEqual(a.right, b.left))
+  return (
+    (exprEqual(a.left, b.left) && exprEqual(a.right, b.right)) ||
+    (exprEqual(a.left, b.right) && exprEqual(a.right, b.left))
+  )
 }
 
 /** Pretty-print. */
 export function exprToString(e: MBAExpr): string {
   switch (e.kind) {
-    case 'var':   return e.name
-    case 'const': return e.value < 0 ? `(${e.value.toString()})` : `0x${e.value.toString(16)}`
-    case 'binop': return `(${exprToString(e.left)} ${e.op} ${exprToString(e.right)})`
-    case 'unary': return `${e.op}(${exprToString(e.child)})`
+    case 'var':
+      return e.name
+    case 'const':
+      return e.value < 0 ? `(${e.value.toString()})` : `0x${e.value.toString(16)}`
+    case 'binop':
+      return `(${exprToString(e.left)} ${e.op} ${exprToString(e.right)})`
+    case 'unary':
+      return `${e.op}(${exprToString(e.child)})`
   }
 }
 
@@ -73,9 +89,12 @@ export function exprToString(e: MBAExpr): string {
 export function nodeCount(e: MBAExpr): number {
   switch (e.kind) {
     case 'var':
-    case 'const': return 1
-    case 'binop': return 1 + nodeCount(e.left) + nodeCount(e.right)
-    case 'unary': return 1 + nodeCount(e.child)
+    case 'const':
+      return 1
+    case 'binop':
+      return 1 + nodeCount(e.left) + nodeCount(e.right)
+    case 'unary':
+      return 1 + nodeCount(e.child)
   }
 }
 
@@ -92,13 +111,20 @@ const foldConstants: Rule = (e) => {
   const a = e.left.value
   const b = e.right.value
   switch (e.op) {
-    case '+':  return mConst(a + b)
-    case '-':  return mConst(a - b)
-    case '*':  return mConst(a * b)
-    case '&':  return mConst(a & b)
-    case '|':  return mConst(a | b)
-    case '^':  return mConst(a ^ b)
-    default:   return null
+    case '+':
+      return mConst(a + b)
+    case '-':
+      return mConst(a - b)
+    case '*':
+      return mConst(a * b)
+    case '&':
+      return mConst(a & b)
+    case '|':
+      return mConst(a | b)
+    case '^':
+      return mConst(a ^ b)
+    default:
+      return null
   }
 }
 
@@ -112,20 +138,20 @@ const identityRules: Rule = (e) => {
   const isNegOne = (n: MBAExpr) => n.kind === 'const' && n.value === -1n
 
   if (op === '+' && isZero(right)) return left
-  if (op === '+' && isZero(left))  return right
+  if (op === '+' && isZero(left)) return right
   if (op === '-' && isZero(right)) return left
-  if (op === '*' && isOne(right))  return left
-  if (op === '*' && isOne(left))   return right
+  if (op === '*' && isOne(right)) return left
+  if (op === '*' && isOne(left)) return right
   if (op === '*' && isZero(right)) return mConst(0)
-  if (op === '*' && isZero(left))  return mConst(0)
+  if (op === '*' && isZero(left)) return mConst(0)
   if (op === '&' && isNegOne(right)) return left
-  if (op === '&' && isNegOne(left))  return right
+  if (op === '&' && isNegOne(left)) return right
   if (op === '&' && isZero(right)) return mConst(0)
-  if (op === '&' && isZero(left))  return mConst(0)
+  if (op === '&' && isZero(left)) return mConst(0)
   if (op === '|' && isZero(right)) return left
-  if (op === '|' && isZero(left))  return right
+  if (op === '|' && isZero(left)) return right
   if (op === '^' && isZero(right)) return left
-  if (op === '^' && isZero(left))  return right
+  if (op === '^' && isZero(left)) return right
   return null
 }
 
@@ -134,11 +160,16 @@ const selfRules: Rule = (e) => {
   if (e.kind !== 'binop') return null
   if (!exprEqual(e.left, e.right)) return null
   switch (e.op) {
-    case '^': return mConst(0)      // x ^ x = 0
-    case '-': return mConst(0)      // x - x = 0
-    case '&': return e.left         // x & x = x
-    case '|': return e.left         // x | x = x
-    default:  return null
+    case '^':
+      return mConst(0) // x ^ x = 0
+    case '-':
+      return mConst(0) // x - x = 0
+    case '&':
+      return e.left // x & x = x
+    case '|':
+      return e.left // x | x = x
+    default:
+      return null
   }
 }
 
@@ -176,9 +207,13 @@ const mbaAddFromBool: Rule = (e) => {
   // Check both orderings: (a&b)+(a|b) and (a|b)+(a&b)
   let andPart: MBAExpr | null = null
   let orPart: MBAExpr | null = null
-  if (left.op === '&' && right.op === '|') { andPart = left; orPart = right }
-  else if (left.op === '|' && right.op === '&') { andPart = right; orPart = left }
-  else return null
+  if (left.op === '&' && right.op === '|') {
+    andPart = left
+    orPart = right
+  } else if (left.op === '|' && right.op === '&') {
+    andPart = right
+    orPart = left
+  } else return null
 
   if (andPart.kind !== 'binop' || orPart.kind !== 'binop') return null
   if (commEqual(andPart, mBinop('&', orPart.left, orPart.right))) {
@@ -195,9 +230,16 @@ const mbaAddFromXor: Rule = (e) => {
   let xorPart: MBAExpr | null = null
   let mulPart: MBAExpr | null = null
   if (left.kind === 'binop' && left.op === '^' && right.kind === 'binop' && right.op === '*') {
-    xorPart = left; mulPart = right
-  } else if (right.kind === 'binop' && right.op === '^' && left.kind === 'binop' && left.op === '*') {
-    xorPart = right; mulPart = left
+    xorPart = left
+    mulPart = right
+  } else if (
+    right.kind === 'binop' &&
+    right.op === '^' &&
+    left.kind === 'binop' &&
+    left.op === '*'
+  ) {
+    xorPart = right
+    mulPart = left
   } else return null
 
   if (mulPart.kind !== 'binop') return null
@@ -326,9 +368,8 @@ export function simplify(expr: MBAExpr, maxIter = 20): SimplifyResult {
 
   const simplifiedStr = exprToString(current)
   const simplifiedNodes = nodeCount(current)
-  const reductionPercent = originalNodes > 0
-    ? Math.round((1 - simplifiedNodes / originalNodes) * 100)
-    : 0
+  const reductionPercent =
+    originalNodes > 0 ? Math.round((1 - simplifiedNodes / originalNodes) * 100) : 0
 
   return {
     original: originalStr,
@@ -348,8 +389,12 @@ export function parseExpression(input: string): MBAExpr {
   let pos = 0
   const s = input.replace(/\s+/g, '')
 
-  function peek(): string { return s[pos] ?? '' }
-  function consume(): string { return s[pos++] }
+  function peek(): string {
+    return s[pos] ?? ''
+  }
+  function consume(): string {
+    return s[pos++]
+  }
 
   function parseAtom(): MBAExpr {
     if (peek() === '~') {

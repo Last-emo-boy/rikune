@@ -7,11 +7,21 @@
 import { z } from 'zod'
 import { spawn } from 'child_process'
 import { v4 as uuidv4 } from 'uuid'
-import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef , PluginToolDeps} from '../../sdk.js'
+import type {
+  ToolDefinition,
+  ToolArgs,
+  WorkerResult,
+  ArtifactRef,
+  PluginToolDeps,
+} from '../../sdk.js'
 import { generateCacheKey } from '../../../cache-manager.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
-import { inspectSampleWorkspace, formatMissingOriginalError, resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
+import {
+  inspectSampleWorkspace,
+  formatMissingOriginalError,
+  resolvePrimarySamplePath,
+} from '../../../sample/sample-workspace.js'
 import {
   buildStaticWorkerRequest,
   callStaticWorker as callPooledStaticWorker,
@@ -53,19 +63,23 @@ export type PEImportsExtractInput = z.infer<typeof PEImportsExtractInputSchema>
  */
 export const PEImportsExtractOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    imports: z.record(z.string(), z.array(z.string())).optional(),
-    delay_imports: z.record(z.string(), z.array(z.string())).optional(),
-    _parser: z.string().optional(),
-    _pefile_error: z.string().optional(),
-  }).optional(),
+  data: z
+    .object({
+      imports: z.record(z.string(), z.array(z.string())).optional(),
+      delay_imports: z.record(z.string(), z.array(z.string())).optional(),
+      _parser: z.string().optional(),
+      _pefile_error: z.string().optional(),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(z.any()).optional(),
-  metrics: z.object({
-    elapsed_ms: z.number(),
-    tool: z.string(),
-  }).optional(),
+  metrics: z
+    .object({
+      elapsed_ms: z.number(),
+      tool: z.string(),
+    })
+    .optional(),
 })
 
 export type PEImportsExtractOutput = z.infer<typeof PEImportsExtractOutputSchema>
@@ -124,9 +138,9 @@ interface WorkerResponse {
 
 /**
  * Spawn Python Static Worker and communicate via stdin/stdout JSON protocol
- * 
+ *
  * Requirements: Worker communication
- * 
+ *
  * @param request - Worker request object
  * @returns Worker response object
  */
@@ -134,7 +148,7 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
   return new Promise((resolve, reject) => {
     // Get Python worker path
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
-    
+
     // Spawn Python process
     const pythonCommand = getPythonCommand()
     const pythonProcess = spawn(pythonCommand, [workerPath], {
@@ -168,7 +182,11 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
         const response: WorkerResponse = JSON.parse(lastLine)
         resolve(response)
       } catch (error) {
-        reject(new Error(`Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`))
+        reject(
+          new Error(
+            `Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`
+          )
+        )
       }
     })
 
@@ -286,8 +304,7 @@ export function createPEImportsExtractHandler(deps: PluginToolDeps) {
           workerResponse.data && typeof workerResponse.data === 'object'
             ? {
                 ...(workerResponse.data as Record<string, unknown>),
-                worker_pool:
-                  (workerResponse.metrics as Record<string, unknown> | undefined)?.worker_pool,
+                worker_pool: workerResponse.metrics?.worker_pool,
               }
             : workerResponse.data,
         warnings: input.force_refresh

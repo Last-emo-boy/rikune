@@ -69,14 +69,18 @@ const clients = new Set<SseClient>()
  * Query params:
  *   - stream: (optional) filter events by stream ID (e.g. sample_id)
  */
-export function handleSseConnection(req: IncomingMessage, res: ServerResponse, searchParams: URLSearchParams): void {
+export function handleSseConnection(
+  req: IncomingMessage,
+  res: ServerResponse,
+  searchParams: URLSearchParams
+): void {
   const stream = searchParams.get('stream') || null
 
   // SSE headers
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
+    Connection: 'keep-alive',
     'Access-Control-Allow-Origin': '*',
     'X-Accel-Buffering': 'no',
   })

@@ -20,7 +20,7 @@
 Windows 单机 hybrid，也就是 Docker Desktop、Windows Host Agent 和 Windows Sandbox 都在同一台 Windows 上：
 
 ```powershell
-.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+.\rikune.ps1 install -Profile hybrid -InstallRuntime
 ```
 
 Linux analyzer + 远程 Windows Host Agent：
@@ -71,8 +71,8 @@ Linux analyzer + 远程 Windows Host Agent：
 .\rikune.ps1 logs -Profile static -Follow
 .\rikune.ps1 stop -Profile static
 
-# 单机 hybrid
-.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+# 单机 hybrid；Host Agent 运行在已登录用户会话中，不作为传统 Windows Service
+.\rikune.ps1 install -Profile hybrid -InstallRuntime
 
 # 代理：rikune.ps1 默认自动读取 Windows 系统代理；也可以显式指定或禁用
 .\rikune.ps1 install -Profile static -HttpProxy "http://127.0.0.1:7890" -HttpsProxy "http://127.0.0.1:7890"
@@ -217,6 +217,7 @@ docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml dow
 
 # 健康检查
 Invoke-WebRequest http://localhost:18080/api/v1/health -UseBasicParsing
+Invoke-WebRequest http://localhost:18080/api/v1/ready -UseBasicParsing
 ```
 
 ## Hybrid 快速说明
@@ -224,13 +225,13 @@ Invoke-WebRequest http://localhost:18080/api/v1/health -UseBasicParsing
 Windows 单机：
 
 ```powershell
-.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+.\rikune.ps1 install -Profile hybrid -InstallRuntime
 ```
 
 Windows 运行时侧手工安装：
 
 ```powershell
-.\install-runtime-windows.ps1 -Headless -Service -ApiKey <host-agent-key>
+.\install-runtime-windows.ps1 -Headless -ApiKey <host-agent-key>
 ```
 
 Linux 侧：
@@ -244,7 +245,9 @@ Linux 侧：
 
 - Docker/WSL analyzer 不能使用 `auto-sandbox`。
 - `static` 默认不执行样本。
-- `hybrid` 通过 Windows Host Agent 启动 Windows Sandbox。
+- `hybrid` 通过 Windows Host Agent 按需启动 Windows Sandbox 或连接 Hyper-V VM。
+- MCP 连接、`dynamic.runtime.status`、`dynamic.deep_plan`、`debug.*.plan` 不会启动 Sandbox；只有 `runtime.debug.session.start`、`runtime.debug.command`、`sandbox.execute` 这类显式 live execution 工具才会触发运行时。
+- `sandbox.execute` 会在结果里返回 `execution_semantics`，说明本次是 live Windows Sandbox、live Hyper-V、safe simulation 还是 emulation。
 - `RUNTIME_HOST_AGENT_API_KEY` 用于控制 Host Agent。
 - `RUNTIME_API_KEY` 只在 Runtime Node 自身需要鉴权时使用。
 
@@ -255,6 +258,8 @@ Linux 侧：
 | `app/dist not found copy from builder` | 重新运行 `npm run docker:generate:all` 后再 build；新版 Dockerfile 会复制 monorepo `packages/` 并显式检查 `/app/dist/index.js` |
 | Docker build 代理指向 `127.0.0.1` 失败 | 使用安装脚本传 `-UseProxy` 或 `-HttpProxy`，脚本会转换为 `host.docker.internal` |
 | Hybrid 连接不上 Host Agent | 检查 Windows 防火墙、`RUNTIME_HOST_AGENT_ENDPOINT`、`RUNTIME_HOST_AGENT_API_KEY`，并运行 `diagnose-hybrid.sh` |
+| Dashboard 能打开但安装脚本 health 警告 | `/api/v1/health` 是进程存活检查，`/api/v1/ready` 才是依赖就绪检查；先看 `docker logs rikune-analyzer` 和 `.\rikune.ps1 health -Profile hybrid` |
+| 一连 MCP 就以为 Sandbox 会启动 | 不会。MCP stdio 只加载工具面；用 `dynamic.runtime.status` 查看状态，用 `runtime.debug.session.start` 或 `sandbox.execute` 才进入 live runtime |
 | 想清空持久化数据 | 显式传 `-ResetData`，不要手工删除不确定路径 |
 
 更多部署细节见 [`DEPLOYMENT.md`](./DEPLOYMENT.md) 和 [`docs/docker.html`](./docs/docker.html)。

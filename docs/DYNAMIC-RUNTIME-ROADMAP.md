@@ -20,6 +20,25 @@ staged analysis workflows.
 
 ## Iteration Phases
 
+### Phase 0: Tool Stability Tasks From Beta Usage
+
+Focus: convert the tool failures observed during beta use into explicit
+product tasks before expanding the runtime surface.
+
+| ID | Item | Scope | Acceptance Criteria |
+|----|------|-------|---------------------|
+| TS-01 | Runtime failure diagnostics | Make `runtime_recovery_failed`, Host Agent unreachable, Runtime Node unreachable, and unsupported backend errors explain the exact missing plane. | Runtime delegation failures recommend `dynamic.runtime.status`, include endpoint/backend state, and tell users whether Host Agent, Runtime Node, or live Sandbox/Hyper-V execution is missing. |
+| TS-02 | Sandbox execution semantics | Make `sandbox.execute` state whether it performed safe simulation, emulation, or live Sandbox/Hyper-V execution. | Tool output includes explicit execution semantics; AI clients do not treat safe simulation as live Windows Sandbox execution. |
+| TS-03 | MCP resource smoke test | Prevent `resources/list` from advertising resources that fail `resources/read` inside Docker/npm package layouts. | Unit or integration smoke test registers all script resources and reads each handler result. |
+| TS-04 | Host Agent startup guidance | Prefer logged-on user session startup and clearly separate foreground, Task Scheduler, and service modes. | Install/runtime docs and failure guidance explain that Windows Sandbox needs an interactive user session; service mode is advanced. |
+| TS-05 | Dynamic tool availability gating | Avoid presenting runtime execution tools as fully runnable when backend dependencies are missing. | `dynamic.runtime.status` reports supported backends and next tools; execution tools point to status/guidance before retry. |
+| TS-06 | Docker health check reliability | Remove false-negative install success reports when Dashboard/API is already reachable. | Installer waits for the correct endpoint, retries with clear logs, and reports degraded vs failed states. |
+| TS-07 | Proxy propagation | Propagate system/Git/npm proxy settings into Docker build args, npm, pip, apt, and compose env. | Docker builds can fetch base images and dependencies behind a configured proxy without manual global setup. |
+| TS-08 | Long-task transport hardening | Reduce `Transport closed` during workflow promotion and parallel tool calls. | Long tasks are queued, output stays on stderr/artifacts, and failures return structured results instead of killing MCP stdio. |
+| TS-09 | Sidecar and AV interference handling | Detect missing sidecars and changed/deleted sample files during upload and dynamic staging. | Upload/profile results report missing sidecars, staged file hashes, and derived-sample provenance. |
+| TS-10 | Profile-specific dependency checks | Do not require Ghidra/Java/dynamic tools for profiles that do not include them. | Entrypoint and health checks distinguish required, optional, and delegated dependencies per profile. |
+| TS-11 | Public contract drift tests | Keep README/docs examples aligned with MCP resource and deployment contracts. | Tests fail when public docs advertise stale MCP resource URIs or copy-paste commands that no longer match runtime behavior. |
+
 ### Phase 1: Runtime Control Plane Hardening
 
 Focus: make the current runtime session layer stable and recoverable.

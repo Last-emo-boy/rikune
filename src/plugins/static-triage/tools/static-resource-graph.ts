@@ -128,9 +128,14 @@ function magicOf(buffer: Buffer): string {
   if (buffer.length >= 2 && buffer.subarray(0, 2).toString('ascii') === 'MZ') return 'pe_or_dos'
   if (buffer.length >= 4 && buffer.subarray(0, 4).toString('hex') === '504b0304') return 'zip'
   if (buffer.length >= 4 && buffer.subarray(0, 4).toString('hex') === '4d534346') return 'cab'
-  if (buffer.length >= 8 && buffer.subarray(0, 8).toString('hex') === '89504e470d0a1a0a') return 'png'
+  if (buffer.length >= 8 && buffer.subarray(0, 8).toString('hex') === '89504e470d0a1a0a')
+    return 'png'
   if (buffer.length >= 3 && buffer.subarray(0, 3).toString('hex') === 'ffd8ff') return 'jpeg'
-  if (buffer.length >= 6 && ['474946383761', '474946383961'].includes(buffer.subarray(0, 6).toString('hex'))) return 'gif'
+  if (
+    buffer.length >= 6 &&
+    ['474946383761', '474946383961'].includes(buffer.subarray(0, 6).toString('hex'))
+  )
+    return 'gif'
   if (buffer.length >= 4 && buffer.subarray(0, 4).toString('ascii') === '%PDF') return 'pdf'
   if (buffer.length >= 4 && buffer.subarray(0, 4).toString('hex') === '7f454c46') return 'elf'
   const ascii = buffer.subarray(0, Math.min(16, buffer.length)).toString('ascii')
@@ -173,7 +178,11 @@ function parsePe(buffer: Buffer): {
     return { isPe: false, machine: null, sections: [], resourceRva: null, resourceSize: null }
   }
   const peOffset = readUInt32(buffer, 0x3c)
-  if (peOffset <= 0 || peOffset + 0x18 > buffer.length || buffer.subarray(peOffset, peOffset + 4).toString('ascii') !== 'PE\0\0') {
+  if (
+    peOffset <= 0 ||
+    peOffset + 0x18 > buffer.length ||
+    buffer.subarray(peOffset, peOffset + 4).toString('ascii') !== 'PE\0\0'
+  ) {
     return { isPe: false, machine: null, sections: [], resourceRva: null, resourceSize: null }
   }
 
@@ -212,7 +221,12 @@ function parsePe(buffer: Buffer): {
   }
 }
 
-function parseResourceLeaves(buffer: Buffer, pe: ReturnType<typeof parsePe>, maxResources: number, maxStringPreview: number): PeResourceLeaf[] {
+function parseResourceLeaves(
+  buffer: Buffer,
+  pe: ReturnType<typeof parsePe>,
+  maxResources: number,
+  maxStringPreview: number
+): PeResourceLeaf[] {
   if (!pe.resourceRva || pe.resourceSize === null) return []
   const resourceBaseOffset = rvaToOffset(pe.resourceRva, pe.sections)
   if (resourceBaseOffset === null) return []
@@ -239,7 +253,8 @@ function parseResourceLeaves(buffer: Buffer, pe: ReturnType<typeof parsePe>, max
       const valueRaw = readUInt32(buffer, entryOffset + 4)
       const isNamed = Boolean(nameRaw & 0x80000000)
       const name = isNamed
-        ? parseUtf16ResourceName(buffer, resourceBaseOffset + (nameRaw & 0x7fffffff)) || `name_${index}`
+        ? parseUtf16ResourceName(buffer, resourceBaseOffset + (nameRaw & 0x7fffffff)) ||
+          `name_${index}`
         : `id_${nameRaw & 0xffff}`
       const isDirectory = Boolean(valueRaw & 0x80000000)
       const nextRelative = valueRaw & 0x7fffffff
@@ -255,9 +270,10 @@ function parseResourceLeaves(buffer: Buffer, pe: ReturnType<typeof parsePe>, max
       const codepage = readUInt32(buffer, dataEntryOffset + 8)
       const dataOffset = rvaToOffset(dataRva, pe.sections)
       const boundedSize = Math.min(size, 32 * 1024 * 1024)
-      const blob = dataOffset !== null && dataOffset >= 0 && dataOffset + boundedSize <= buffer.length
-        ? buffer.subarray(dataOffset, dataOffset + boundedSize)
-        : null
+      const blob =
+        dataOffset !== null && dataOffset >= 0 && dataOffset + boundedSize <= buffer.length
+          ? buffer.subarray(dataOffset, dataOffset + boundedSize)
+          : null
       leaves.push({
         path: [...pathParts, name],
         depth,
@@ -268,7 +284,12 @@ function parseResourceLeaves(buffer: Buffer, pe: ReturnType<typeof parsePe>, max
         sha256: blob ? createHash('sha256').update(blob).digest('hex') : null,
         entropy: blob ? shannonEntropy(blob.subarray(0, Math.min(blob.length, 1024 * 1024))) : null,
         magic: blob ? magicOf(blob) : 'unavailable',
-        stringPreview: blob ? extractStringPreview(blob.subarray(0, Math.min(blob.length, 64 * 1024)), maxStringPreview) : [],
+        stringPreview: blob
+          ? extractStringPreview(
+              blob.subarray(0, Math.min(blob.length, 64 * 1024)),
+              maxStringPreview
+            )
+          : [],
       })
     }
   }
@@ -281,10 +302,11 @@ function buildSummary(resources: PeResourceLeaf[]): ResourceGraphData['summary']
   const executableLike = new Set(['pe_or_dos', 'elf', 'zip', 'cab'])
   const highEntropy = resources.filter((resource) => (resource.entropy ?? 0) >= 7.2)
   const executableResources = resources.filter((resource) => executableLike.has(resource.magic))
-  const suspicious = resources.filter((resource) =>
-    executableLike.has(resource.magic) ||
-    (resource.entropy ?? 0) >= 7.2 ||
-    resource.size >= 1024 * 1024
+  const suspicious = resources.filter(
+    (resource) =>
+      executableLike.has(resource.magic) ||
+      (resource.entropy ?? 0) >= 7.2 ||
+      resource.size >= 1024 * 1024
   )
   return {
     resource_count: resources.length,
@@ -312,12 +334,21 @@ export function createStaticResourceGraphHandler(
       const input = StaticResourceGraphInputSchema.parse(args)
       const sample = database.findSample(input.sample_id)
       if (!sample) {
-        return { ok: false, errors: [`Sample not found: ${input.sample_id}`], metrics: { elapsed_ms: Date.now() - started, tool: TOOL_NAME } }
+        return {
+          ok: false,
+          errors: [`Sample not found: ${input.sample_id}`],
+          metrics: { elapsed_ms: Date.now() - started, tool: TOOL_NAME },
+        }
       }
       const { samplePath } = await resolvePrimarySamplePath(workspaceManager, input.sample_id)
       const buffer = await fs.readFile(samplePath)
       const pe = parsePe(buffer)
-      const resources = parseResourceLeaves(buffer, pe, input.max_resources, input.max_string_preview)
+      const resources = parseResourceLeaves(
+        buffer,
+        pe,
+        input.max_resources,
+        input.max_string_preview
+      )
       const data: ResourceGraphData = {
         schema: 'rikune.static_resource_graph.v1',
         tool_version: TOOL_VERSION,
@@ -348,15 +379,17 @@ export function createStaticResourceGraphHandler(
 
       const artifacts: ArtifactRef[] = []
       if (input.persist_artifact) {
-        artifacts.push(await persistStaticAnalysisJsonArtifact(
-          workspaceManager,
-          database,
-          input.sample_id,
-          'static_resource_graph',
-          'resource_graph',
-          data,
-          input.session_tag
-        ))
+        artifacts.push(
+          await persistStaticAnalysisJsonArtifact(
+            workspaceManager,
+            database,
+            input.sample_id,
+            'static_resource_graph',
+            'resource_graph',
+            data,
+            input.session_tag
+          )
+        )
       }
 
       return {

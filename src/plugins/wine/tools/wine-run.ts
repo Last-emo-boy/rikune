@@ -3,15 +3,28 @@
  */
 
 import { z } from 'zod'
-import { RuntimeDelegationFailureResultSchema, type WorkerResult, type ToolDefinition, type ToolArgs, type ArtifactRef } from '../../../types.js'
+import {
+  RuntimeDelegationFailureResultSchema,
+  type WorkerResult,
+  type ToolDefinition,
+  type ToolArgs,
+  type ArtifactRef,
+} from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
-  ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
-  executeCommand, truncateText, normalizeError,
-  persistBackendArtifact, buildMetrics, buildDynamicSetupRequired,
-  resolveSampleFile, resolveAnalysisBackends,
+  ArtifactRefSchema,
+  BackendSchema,
+  SharedMetricsSchema,
+  executeCommand,
+  truncateText,
+  normalizeError,
+  persistBackendArtifact,
+  buildMetrics,
+  buildDynamicSetupRequired,
+  resolveSampleFile,
+  resolveAnalysisBackends,
 } from '../../docker-shared.js'
 
 export const wineRunInputSchema = z.object({
@@ -23,9 +36,20 @@ export const wineRunInputSchema = z.object({
   approved: z
     .boolean()
     .default(false)
-    .describe('Required when mode=run or mode=debug because those modes attempt to start the sample under Wine.'),
-  timeout_sec: z.number().int().min(1).max(180).default(30).describe('Execution timeout in seconds.'),
-  arguments: z.array(z.string()).default([]).describe('Optional command-line arguments forwarded to the sample.'),
+    .describe(
+      'Required when mode=run or mode=debug because those modes attempt to start the sample under Wine.'
+    ),
+  timeout_sec: z
+    .number()
+    .int()
+    .min(1)
+    .max(180)
+    .default(30)
+    .describe('Execution timeout in seconds.'),
+  arguments: z
+    .array(z.string())
+    .default([])
+    .describe('Optional command-line arguments forwarded to the sample.'),
   persist_artifact: z
     .boolean()
     .default(true)
@@ -146,7 +170,11 @@ export function createWineRunHandler(
       }
 
       const runner = dependencies?.executeCommand || executeCommand
-      const result = await runner(selectedBackend.path, [samplePath, ...input.arguments], input.timeout_sec * 1000)
+      const result = await runner(
+        selectedBackend.path,
+        [samplePath, ...input.arguments],
+        input.timeout_sec * 1000
+      )
 
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined

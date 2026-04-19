@@ -36,7 +36,7 @@ export function createPluginListHandler(_server: ToolRegistrar) {
     let statuses = mgr.getStatuses()
 
     if (args.plugin_id) {
-      statuses = statuses.filter(s => s.id === args.plugin_id)
+      statuses = statuses.filter((s) => s.id === args.plugin_id)
       if (statuses.length === 0) {
         return {
           content: [{ type: 'text', text: `No plugin found with id '${args.plugin_id}'` }],
@@ -47,10 +47,10 @@ export function createPluginListHandler(_server: ToolRegistrar) {
 
     const summary = {
       total: statuses.length,
-      loaded: statuses.filter(s => s.status === 'loaded').length,
-      skipped: statuses.filter(s => s.status.startsWith('skipped')).length,
-      errored: statuses.filter(s => s.status === 'error').length,
-      plugins: statuses.map(s => {
+      loaded: statuses.filter((s) => s.status === 'loaded').length,
+      skipped: statuses.filter((s) => s.status.startsWith('skipped')).length,
+      errored: statuses.filter((s) => s.status === 'error').length,
+      plugins: statuses.map((s) => {
         const entry: Record<string, unknown> = {
           id: s.id,
           name: s.name,
@@ -62,7 +62,7 @@ export function createPluginListHandler(_server: ToolRegistrar) {
         }
         if (s.error) entry.error = s.error
         if (args.include_config && s.configFields) {
-          entry.config = s.configFields.map(f => ({
+          entry.config = s.configFields.map((f) => ({
             env_var: f.envVar,
             description: f.description,
             required: f.required,
@@ -108,7 +108,7 @@ export function createPluginEnableHandler(server: ToolRegistrar) {
 
     // Find the plugin definition in discovered plugins
     const allPlugins = mgr.getDiscoveredPlugins()
-    const pluginDef = allPlugins.find(p => p.id === args.plugin_id)
+    const pluginDef = allPlugins.find((p) => p.id === args.plugin_id)
     if (!pluginDef) {
       return {
         content: [{ type: 'text', text: `Unknown plugin id: '${args.plugin_id}'` }],
@@ -119,7 +119,12 @@ export function createPluginEnableHandler(server: ToolRegistrar) {
     try {
       const status = await mgr.hotLoad(pluginDef)
       return {
-        content: [{ type: 'text', text: `Plugin '${args.plugin_id}' loaded: ${status.tools.length} tools registered` }],
+        content: [
+          {
+            type: 'text',
+            text: `Plugin '${args.plugin_id}' loaded: ${status.tools.length} tools registered`,
+          },
+        ],
         structuredContent: { ...status } as Record<string, unknown>,
       }
     } catch (err) {
@@ -150,7 +155,12 @@ export function createPluginDisableHandler(server: ToolRegistrar) {
   return async (args: z.infer<typeof disableSchema>): Promise<ToolResult> => {
     if (CORE_PLUGIN_IDS.has(args.plugin_id)) {
       return {
-        content: [{ type: 'text', text: `Plugin '${args.plugin_id}' is a core plugin and cannot be disabled` }],
+        content: [
+          {
+            type: 'text',
+            text: `Plugin '${args.plugin_id}' is a core plugin and cannot be disabled`,
+          },
+        ],
         isError: true,
       }
     }

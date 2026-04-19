@@ -10,9 +10,7 @@ export const PollingGuidanceSchema = z.object({
 
 export type PollingGuidance = z.infer<typeof PollingGuidanceSchema>
 
-const VERY_LONG_RUNNING_TOOLS = new Set([
-  'workflow.deep_static',
-])
+const VERY_LONG_RUNNING_TOOLS = new Set(['workflow.deep_static'])
 
 const LONG_RUNNING_TOOLS = new Set([
   'ghidra.analyze',
@@ -45,10 +43,7 @@ export function buildPollingGuidance(input: {
   const progress = typeof input.progress === 'number' ? input.progress : null
   const timeoutMs = typeof input.timeout_ms === 'number' ? input.timeout_ms : null
 
-  let recommendedWaitMs =
-    input.status === 'queued'
-      ? 10_000
-      : 12_000
+  let recommendedWaitMs = input.status === 'queued' ? 10_000 : 12_000
 
   let reason = 'Background analysis is still active.'
 
@@ -72,13 +67,15 @@ export function buildPollingGuidance(input: {
       reason = 'The job is already making visible progress.'
     } else if (progress <= 10 && input.status === 'queued') {
       recommendedWaitMs = Math.max(recommendedWaitMs, 20_000)
-      reason = 'The job is still queued or just starting, so immediate polling is unlikely to add value.'
+      reason =
+        'The job is still queued or just starting, so immediate polling is unlikely to add value.'
     }
   }
 
   if (timeoutMs && timeoutMs >= 45 * 60 * 1000) {
     recommendedWaitMs = Math.max(recommendedWaitMs, 30_000)
-    reason = 'The configured timeout is large, which usually indicates a long-running reverse-engineering task.'
+    reason =
+      'The configured timeout is large, which usually indicates a long-running reverse-engineering task.'
   } else if (timeoutMs && timeoutMs >= 10 * 60 * 1000) {
     recommendedWaitMs = Math.max(recommendedWaitMs, 20_000)
   }
@@ -89,7 +86,6 @@ export function buildPollingGuidance(input: {
     recommended_wait_seconds: recommendedWaitSeconds,
     prefer_sleep: true,
     reason,
-    guidance:
-      `Prefer one client-side sleep/wait for about ${recommendedWaitSeconds}s before calling task.status again, instead of repeated immediate polling.`,
+    guidance: `Prefer one client-side sleep/wait for about ${recommendedWaitSeconds}s before calling task.status again, instead of repeated immediate polling.`,
   }
 }

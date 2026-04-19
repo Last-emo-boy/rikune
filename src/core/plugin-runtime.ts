@@ -22,7 +22,7 @@ export class PluginRuntime {
     phase: 'before' | 'after' | 'error',
     toolName: string,
     args: Record<string, unknown>,
-    extra?: { elapsedMs?: number; error?: unknown },
+    extra?: { elapsedMs?: number; error?: unknown }
   ): Promise<void> {
     const targets: Plugin[] = []
 
@@ -50,7 +50,10 @@ export class PluginRuntime {
           await plugin.hooks.onToolError(toolName, extra?.error)
         }
       } catch (hookErr) {
-        logger.warn({ plugin: plugin.id, phase, toolName, hookErr }, 'Plugin hook threw — swallowed')
+        logger.warn(
+          { plugin: plugin.id, phase, toolName, hookErr },
+          'Plugin hook threw — swallowed'
+        )
       }
     }
   }

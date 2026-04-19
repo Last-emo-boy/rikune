@@ -48,128 +48,145 @@ const ReviewSuggestionPayloadSchema = z.object({
   suggestions: z.array(ReviewSuggestionSchema).min(1),
 })
 
-export const codeFunctionRenameReviewInputSchema = z.object({
-  sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  address: z.string().optional().describe('Optional specific function address'),
-  symbol: z.string().optional().describe('Optional specific function symbol'),
-  topk: z
-    .number()
-    .int()
-    .min(1)
-    .max(20)
-    .default(6)
-    .describe('When address/symbol not provided, review up to top-K reconstructed functions'),
-  max_functions: z
-    .number()
-    .int()
-    .min(1)
-    .max(20)
-    .default(6)
-    .describe('Maximum number of functions included in the review bundle'),
-  include_resolved: z
-    .boolean()
-    .default(false)
-    .describe('Include functions that already have validated names in the initial review request'),
-  auto_include_resolved_on_empty: z
-    .boolean()
-    .default(true)
-    .describe('When unresolved selection is empty, automatically retry in audit mode with include_resolved=true'),
-  analysis_goal: z
-    .string()
-    .min(1)
-    .max(400)
-    .default(
-      'Reverse-engineer the prepared functions and propose precise human-readable semantic names.'
-    )
-    .describe('Human-readable analysis goal injected into the MCP prompt and sampling request'),
-  session_tag: z
-    .string()
-    .optional()
-    .describe('Optional semantic naming session tag used for artifact grouping'),
-  evidence_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('all')
-    .describe('Runtime evidence scope forwarded to prepare and reconstruct passes'),
-  evidence_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
-  semantic_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('all')
-    .describe('Semantic naming artifact scope used for prepare and rerun reconstruct passes'),
-  semantic_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional semantic naming session selector used when semantic_scope=session or to narrow all/latest results'),
-  persist_artifact: z
-    .boolean()
-    .default(true)
-    .describe('Persist the prepare bundle artifact before requesting external semantic review'),
-  auto_apply: z
-    .boolean()
-    .default(true)
-    .describe('Persist accepted suggestions automatically via code.function.rename.apply'),
-  rerun_reconstruct: z
-    .boolean()
-    .default(true)
-    .describe('Rerun code.functions.reconstruct after apply to materialize llm/hybrid validated names'),
-  temperature: z
-    .number()
-    .min(0)
-    .max(1)
-    .default(0.2)
-    .describe('Sampling temperature passed to the connected MCP client'),
-  max_tokens: z
-    .number()
-    .int()
-    .min(200)
-    .max(8000)
-    .default(1800)
-    .describe('Maximum sampling tokens requested from the connected MCP client'),
-  include_context: z
-    .enum(['none', 'thisServer', 'allServers'])
-    .default('none')
-    .describe('Requested MCP sampling context scope; clients may ignore this preference'),
-  model_hint: z
-    .string()
-    .min(1)
-    .max(120)
-    .optional()
-    .describe('Optional advisory model-family hint for client-mediated MCP sampling'),
-  cost_priority: z
-    .number()
-    .min(0)
-    .max(1)
-    .default(0.1)
-    .describe('Advisory model selection preference for sampling cost'),
-  speed_priority: z
-    .number()
-    .min(0)
-    .max(1)
-    .default(0.2)
-    .describe('Advisory model selection preference for sampling latency'),
-  intelligence_priority: z
-    .number()
-    .min(0)
-    .max(1)
-    .default(0.95)
-    .describe('Advisory model selection preference for reasoning quality'),
-  system_prompt: z
-    .string()
-    .min(1)
-    .max(800)
-    .optional()
-    .describe('Optional extra system prompt for the client-mediated semantic naming review'),
-})
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
+export const codeFunctionRenameReviewInputSchema = z
+  .object({
+    sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
+    address: z.string().optional().describe('Optional specific function address'),
+    symbol: z.string().optional().describe('Optional specific function symbol'),
+    topk: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(6)
+      .describe('When address/symbol not provided, review up to top-K reconstructed functions'),
+    max_functions: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(6)
+      .describe('Maximum number of functions included in the review bundle'),
+    include_resolved: z
+      .boolean()
+      .default(false)
+      .describe(
+        'Include functions that already have validated names in the initial review request'
+      ),
+    auto_include_resolved_on_empty: z
+      .boolean()
+      .default(true)
+      .describe(
+        'When unresolved selection is empty, automatically retry in audit mode with include_resolved=true'
+      ),
+    analysis_goal: z
+      .string()
+      .min(1)
+      .max(400)
+      .default(
+        'Reverse-engineer the prepared functions and propose precise human-readable semantic names.'
+      )
+      .describe('Human-readable analysis goal injected into the MCP prompt and sampling request'),
+    session_tag: z
+      .string()
+      .optional()
+      .describe('Optional semantic naming session tag used for artifact grouping'),
+    evidence_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('all')
+      .describe('Runtime evidence scope forwarded to prepare and reconstruct passes'),
+    evidence_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'
+      ),
+    semantic_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('all')
+      .describe('Semantic naming artifact scope used for prepare and rerun reconstruct passes'),
+    semantic_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional semantic naming session selector used when semantic_scope=session or to narrow all/latest results'
+      ),
+    persist_artifact: z
+      .boolean()
+      .default(true)
+      .describe('Persist the prepare bundle artifact before requesting external semantic review'),
+    auto_apply: z
+      .boolean()
+      .default(true)
+      .describe('Persist accepted suggestions automatically via code.function.rename.apply'),
+    rerun_reconstruct: z
+      .boolean()
+      .default(true)
+      .describe(
+        'Rerun code.functions.reconstruct after apply to materialize llm/hybrid validated names'
+      ),
+    temperature: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.2)
+      .describe('Sampling temperature passed to the connected MCP client'),
+    max_tokens: z
+      .number()
+      .int()
+      .min(200)
+      .max(8000)
+      .default(1800)
+      .describe('Maximum sampling tokens requested from the connected MCP client'),
+    include_context: z
+      .enum(['none', 'thisServer', 'allServers'])
+      .default('none')
+      .describe('Requested MCP sampling context scope; clients may ignore this preference'),
+    model_hint: z
+      .string()
+      .min(1)
+      .max(120)
+      .optional()
+      .describe('Optional advisory model-family hint for client-mediated MCP sampling'),
+    cost_priority: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.1)
+      .describe('Advisory model selection preference for sampling cost'),
+    speed_priority: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.2)
+      .describe('Advisory model selection preference for sampling latency'),
+    intelligence_priority: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.95)
+      .describe('Advisory model selection preference for reasoning quality'),
+    system_prompt: z
+      .string()
+      .min(1)
+      .max(800)
+      .optional()
+      .describe('Optional extra system prompt for the client-mediated semantic naming review'),
   })
-  .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
-    message: 'semantic_session_tag is required when semantic_scope=session',
-    path: ['semantic_session_tag'],
-  })
+  .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()),
+    {
+      message: 'semantic_session_tag is required when semantic_scope=session',
+      path: ['semantic_session_tag'],
+    }
+  )
 
 export const codeFunctionRenameReviewOutputSchema = z.object({
   ok: z.boolean(),
@@ -263,9 +280,7 @@ interface CodeFunctionRenameReviewDependencies {
   clientVersionProvider?: () => Implementation | undefined
 }
 
-function normalizeSuggestionIdentifier(
-  suggestion: z.infer<typeof ReviewSuggestionSchema>
-): {
+function normalizeSuggestionIdentifier(suggestion: z.infer<typeof ReviewSuggestionSchema>): {
   address?: string
   function?: string
 } {
@@ -393,14 +408,15 @@ export function createCodeFunctionRenameReviewHandler(
     dependencies?.prepareHandler ||
     createCodeFunctionRenamePrepareHandler(workspaceManager, database, cacheManager)
   const applyHandler =
-    dependencies?.applyHandler ||
-    createCodeFunctionRenameApplyHandler(workspaceManager, database)
+    dependencies?.applyHandler || createCodeFunctionRenameApplyHandler(workspaceManager, database)
   const reconstructHandler =
     dependencies?.reconstructHandler ||
     createCodeFunctionsReconstructHandler(workspaceManager, database, cacheManager)
   const samplingRequester =
     dependencies?.samplingRequester ||
-    (mcpServer ? (params: CreateMessageRequest['params']) => mcpServer.createMessage(params) : undefined)
+    (mcpServer
+      ? (params: CreateMessageRequest['params']) => mcpServer.createMessage(params)
+      : undefined)
   const clientCapabilitiesProvider =
     dependencies?.clientCapabilitiesProvider ||
     (mcpServer ? () => mcpServer.getClientCapabilities() : undefined)
@@ -575,7 +591,7 @@ export function createCodeFunctionRenameReviewHandler(
         }
       }
 
-      const samplingResult = await samplingRequester!(buildSamplingRequest(input, taskPrompt))
+      const samplingResult = await samplingRequester(buildSamplingRequest(input, taskPrompt))
       const responseText = extractTextBlocks(samplingResult)
       const samplingModel = (samplingResult as any)?.model || null
       const stopReason = (samplingResult as any)?.stopReason || null
@@ -761,7 +777,9 @@ export function createCodeFunctionRenameReviewHandler(
         if (!reconstructResult.ok) {
           return {
             ok: false,
-            errors: reconstructResult.errors || ['code.functions.reconstruct failed after semantic name apply'],
+            errors: reconstructResult.errors || [
+              'code.functions.reconstruct failed after semantic name apply',
+            ],
             warnings: [...warnings, ...(reconstructResult.warnings || [])],
             artifacts: artifacts.length > 0 ? artifacts : undefined,
             metrics: {
@@ -772,7 +790,9 @@ export function createCodeFunctionRenameReviewHandler(
         }
 
         warnings.push(...(reconstructResult.warnings || []))
-        const reconstructedFunctions = (((reconstructResult.data as any)?.functions || []) as any[]).map((item) => ({
+        const reconstructedFunctions = (
+          ((reconstructResult.data as any)?.functions || []) as any[]
+        ).map((item) => ({
           function: item.function,
           address: item.address,
           validated_name: item?.name_resolution?.validated_name || null,
@@ -781,9 +801,11 @@ export function createCodeFunctionRenameReviewHandler(
 
         reconstructData = {
           attempted: true,
-          reconstructed_count: Number((reconstructResult.data as any)?.reconstructed_count || reconstructedFunctions.length),
-          llm_or_hybrid_count: reconstructedFunctions.filter((item) =>
-            item.resolution_source === 'llm' || item.resolution_source === 'hybrid'
+          reconstructed_count: Number(
+            (reconstructResult.data as any)?.reconstructed_count || reconstructedFunctions.length
+          ),
+          llm_or_hybrid_count: reconstructedFunctions.filter(
+            (item) => item.resolution_source === 'llm' || item.resolution_source === 'hybrid'
           ).length,
           functions: reconstructedFunctions,
         }

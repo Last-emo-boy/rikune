@@ -13,7 +13,12 @@ const TOOL_NAME = 'constraint.extract'
 
 export const constraintExtractInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  bit_width: z.number().int().optional().default(32).describe('Bit width for Z3 BitVec declarations'),
+  bit_width: z
+    .number()
+    .int()
+    .optional()
+    .default(32)
+    .describe('Bit width for Z3 BitVec declarations'),
 })
 
 export const constraintExtractOutputSchema = z.object({
@@ -54,9 +59,10 @@ export function createConstraintExtractHandler(
     if (Array.isArray(evidence)) {
       for (const entry of evidence) {
         if (entry.evidence_family === 'vm_emulation') {
-          const data = typeof entry.result_json === 'string'
-            ? JSON.parse(entry.result_json)
-            : entry.result_json
+          const data =
+            typeof entry.result_json === 'string'
+              ? JSON.parse(entry.result_json)
+              : entry.result_json
           if (data) {
             emulationData = data as Record<string, unknown>
             break
@@ -73,7 +79,9 @@ export function createConstraintExtractHandler(
     }
 
     // Extract constraints from the emulation trace
-    const trace = (emulationData.steps ?? emulationData.trace ?? []) as Array<Record<string, unknown>>
+    const trace = (emulationData.steps ?? emulationData.trace ?? []) as Array<
+      Record<string, unknown>
+    >
     const constraints = extractConstraints(trace as never[])
 
     // Generate Z3 script
@@ -81,35 +89,43 @@ export function createConstraintExtractHandler(
 
     const result = {
       constraint_count: constraints.length,
-      constraints: constraints.map(c => ({
+      constraints: constraints.map((c) => ({
         left: c.raw ?? 'expr',
         operator: c.operator,
         source_pc: c.sourcePC,
       })),
       z3_script: z3Script,
-      variables: [...new Set(constraints.flatMap(c => {
-        const vars: string[] = []
-        function walkExpr(e: unknown): void {
-          if (!e || typeof e !== 'object') return
-          const node = e as Record<string, unknown>
-          if (node.kind === 'var') vars.push(node.name as string)
-          if (node.left) walkExpr(node.left)
-          if (node.right) walkExpr(node.right)
-          if (node.child) walkExpr(node.child)
-          if (Array.isArray(node.args)) (node.args as unknown[]).forEach(walkExpr)
-        }
-        walkExpr(c.leftExpr)
-        walkExpr(c.rightExpr)
-        return vars
-      }))],
+      variables: [
+        ...new Set(
+          constraints.flatMap((c) => {
+            const vars: string[] = []
+            function walkExpr(e: unknown): void {
+              if (!e || typeof e !== 'object') return
+              const node = e as Record<string, unknown>
+              if (node.kind === 'var') vars.push(node.name as string)
+              if (node.left) walkExpr(node.left)
+              if (node.right) walkExpr(node.right)
+              if (node.child) walkExpr(node.child)
+              if (Array.isArray(node.args)) (node.args as unknown[]).forEach(walkExpr)
+            }
+            walkExpr(c.leftExpr)
+            walkExpr(c.rightExpr)
+            return vars
+          })
+        ),
+      ],
     }
 
     // Persist
     const artifacts: ArtifactRef[] = []
     try {
       const ref = await persistStaticAnalysisJsonArtifact(
-        workspaceManager, database, input.sample_id,
-        'constraint_extraction', 'constraints', result
+        workspaceManager,
+        database,
+        input.sample_id,
+        'constraint_extraction',
+        'constraints',
+        result
       )
       artifacts.push(ref)
     } catch {

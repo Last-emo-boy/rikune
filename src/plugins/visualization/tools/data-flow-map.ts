@@ -130,14 +130,30 @@ export function createDataFlowMapHandler(deps: PluginToolDeps) {
             }
 
             // Dynamic trace
-            if (['dynamic_trace', 'frida_trace', 'sandbox_execution', 'speakeasy_trace', 'runtime_trace'].includes(family)) {
-              const events = data?.data?.events ?? data?.events ?? data?.data?.trace ?? data?.trace ?? data?.data?.api_calls ?? []
+            if (
+              [
+                'dynamic_trace',
+                'frida_trace',
+                'sandbox_execution',
+                'speakeasy_trace',
+                'runtime_trace',
+              ].includes(family)
+            ) {
+              const events =
+                data?.data?.events ??
+                data?.events ??
+                data?.data?.trace ??
+                data?.trace ??
+                data?.data?.api_calls ??
+                []
               for (const ev of events) {
                 const api = ev.api ?? ev.name ?? ev.function
                 if (api) dynamicApiSequence.push(api)
               }
             }
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
       }
 
@@ -170,8 +186,16 @@ export function createDataFlowMapHandler(deps: PluginToolDeps) {
       // Focus filter
       function matchesFocus(category: string): boolean {
         if (args.focus === 'all') return true
-        if (args.focus === 'crypto' && (category === 'transform' || category === 'input' || category === 'output')) return true
-        if (args.focus === 'network' && (category === 'setup' || category === 'output' || category === 'input')) return true
+        if (
+          args.focus === 'crypto' &&
+          (category === 'transform' || category === 'input' || category === 'output')
+        )
+          return true
+        if (
+          args.focus === 'network' &&
+          (category === 'setup' || category === 'output' || category === 'input')
+        )
+          return true
         if (args.focus === 'file_io' && (category === 'input' || category === 'output')) return true
         return false
       }
@@ -224,7 +248,10 @@ export function createDataFlowMapHandler(deps: PluginToolDeps) {
             }
           }
           if (!found) {
-            if (!apiSet.has(patApi.toLowerCase()) && ![...apiSet].some((a) => a.includes(patApi.toLowerCase()))) {
+            if (
+              !apiSet.has(patApi.toLowerCase()) &&
+              ![...apiSet].some((a) => a.includes(patApi.toLowerCase()))
+            ) {
               allFound = false
               break
             }
@@ -236,9 +263,10 @@ export function createDataFlowMapHandler(deps: PluginToolDeps) {
             name: pattern.name,
             description: pattern.description,
             severity: pattern.severity,
-            matched_apis: matchIdx.length === pattern.pattern.length
-              ? matchIdx.map((i) => apiSequence[i])
-              : pattern.pattern,
+            matched_apis:
+              matchIdx.length === pattern.pattern.length
+                ? matchIdx.map((i) => apiSequence[i])
+                : pattern.pattern,
           })
         }
       }
@@ -263,11 +291,17 @@ export function createDataFlowMapHandler(deps: PluginToolDeps) {
       const artifacts: ArtifactRef[] = []
       try {
         const artRef = await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, args.sample_id,
-          'data_flow_map', 'data-flow-map', resultData
+          workspaceManager,
+          database,
+          args.sample_id,
+          'data_flow_map',
+          'data-flow-map',
+          resultData
         )
         if (artRef) artifacts.push(artRef)
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
       return {
         ok: true,

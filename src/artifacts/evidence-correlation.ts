@@ -2,7 +2,11 @@ import fs from 'fs/promises'
 import type { DatabaseManager } from '../database.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { ArtifactRef } from '../types.js'
-import { loadDynamicTraceEvidence, type DynamicEvidenceScope, type DynamicTraceSummary } from './dynamic-trace.js'
+import {
+  loadDynamicTraceEvidence,
+  type DynamicEvidenceScope,
+  type DynamicTraceSummary,
+} from './dynamic-trace.js'
 
 export type EvidenceExpectationCategory =
   | 'network'
@@ -133,10 +137,23 @@ function readNumber(value: unknown, fallback: number): number {
 }
 
 function sanitizeId(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9_.:-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 120) || 'item'
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9_.:-]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 120) || 'item'
+  )
 }
 
-function artifactRef(artifact: { id: string; type: string; path: string; sha256: string; mime?: string | null; created_at?: string }): ArtifactRef & { created_at?: string } {
+function artifactRef(artifact: {
+  id: string
+  type: string
+  path: string
+  sha256: string
+  mime?: string | null
+  created_at?: string
+}): ArtifactRef & { created_at?: string } {
   return {
     id: artifact.id,
     type: artifact.type,
@@ -162,10 +179,13 @@ async function readArtifactPayload(
   }
 }
 
-function configExpectationCategory(candidate: Record<string, unknown>): EvidenceExpectationCategory {
+function configExpectationCategory(
+  candidate: Record<string, unknown>
+): EvidenceExpectationCategory {
   const kind = readString(candidate.kind)
   const value = readString(candidate.value).toLowerCase()
-  if (['url', 'domain', 'ip', 'ip_port', 'user_agent_or_http_client'].includes(kind)) return 'network'
+  if (['url', 'domain', 'ip', 'ip_port', 'user_agent_or_http_client'].includes(kind))
+    return 'network'
   if (kind === 'registry_path') {
     if (/\\run|\\runonce|\\services|winlogon|startup/i.test(value)) return 'persistence'
     return 'registry'
@@ -178,7 +198,10 @@ function configExpectationCategory(candidate: Record<string, unknown>): Evidence
   return 'unknown'
 }
 
-function expectationsFromConfigArtifact(artifact: ArtifactRef, payload: Record<string, unknown>): EvidenceExpectation[] {
+function expectationsFromConfigArtifact(
+  artifact: ArtifactRef,
+  payload: Record<string, unknown>
+): EvidenceExpectation[] {
   const expectations: EvidenceExpectation[] = []
   let index = 0
   for (const candidateValue of asArray(payload.candidates)) {
@@ -217,7 +240,10 @@ function expectationsFromConfigArtifact(artifact: ArtifactRef, payload: Record<s
   return expectations
 }
 
-function expectationsFromResourceArtifact(artifact: ArtifactRef, payload: Record<string, unknown>): EvidenceExpectation[] {
+function expectationsFromResourceArtifact(
+  artifact: ArtifactRef,
+  payload: Record<string, unknown>
+): EvidenceExpectation[] {
   const expectations: EvidenceExpectation[] = []
   let index = 0
   for (const resourceValue of asArray(payload.resources)) {
@@ -276,13 +302,26 @@ function expectationsFromResourceArtifact(artifact: ArtifactRef, payload: Record
 function categoryFromApi(api: string): EvidenceExpectationCategory {
   if (/Reg(Open|Set|Query|Create|Delete)|NtSetValueKey/i.test(api)) return 'registry'
   if (/RunOnce|CreateService|StartService|schtasks|WMI|Winlogon/i.test(api)) return 'persistence'
-  if (/WSA|socket|connect|send|recv|Internet|Http|WinHttp|URLDownload|Dns/i.test(api)) return 'network'
-  if (/CreateFile|ReadFile|WriteFile|DeleteFile|CopyFile|MoveFile|FindFirstFile/i.test(api)) return 'file_activity'
+  if (/WSA|socket|connect|send|recv|Internet|Http|WinHttp|URLDownload|Dns/i.test(api))
+    return 'network'
+  if (/CreateFile|ReadFile|WriteFile|DeleteFile|CopyFile|MoveFile|FindFirstFile/i.test(api))
+    return 'file_activity'
   if (/CreateProcess|ShellExecute|WinExec|OpenProcess|TerminateProcess/i.test(api)) return 'process'
-  if (/WriteProcessMemory|CreateRemoteThread|VirtualAllocEx|SetThreadContext|NtMapViewOfSection|QueueUserAPC/i.test(api)) return 'injection'
+  if (
+    /WriteProcessMemory|CreateRemoteThread|VirtualAllocEx|SetThreadContext|NtMapViewOfSection|QueueUserAPC/i.test(
+      api
+    )
+  )
+    return 'injection'
   if (/Crypt|BCrypt|NCrypt|Hash|RtlDecrypt|SystemFunction0/i.test(api)) return 'crypto'
-  if (/IsDebuggerPresent|CheckRemoteDebugger|NtQueryInformationProcess|NtQuerySystemInformation|GetTickCount|QueryPerformanceCounter|Sleep/i.test(api)) return 'anti_analysis'
-  if (/VirtualAlloc|VirtualProtect|LoadLibrary|CreateThread|ResumeThread/i.test(api)) return 'execution'
+  if (
+    /IsDebuggerPresent|CheckRemoteDebugger|NtQueryInformationProcess|NtQuerySystemInformation|GetTickCount|QueryPerformanceCounter|Sleep/i.test(
+      api
+    )
+  )
+    return 'anti_analysis'
+  if (/VirtualAlloc|VirtualProtect|LoadLibrary|CreateThread|ResumeThread/i.test(api))
+    return 'execution'
   if (/ReadProcessMemory|MiniDump|VirtualQuery/i.test(api)) return 'memory'
   if (/GetProcAddress|LdrGetProcedureAddress/i.test(api)) return 'dynamic_resolution'
   return 'unknown'
@@ -345,13 +384,29 @@ function observationsFromDynamicSummary(summary: DynamicTraceSummary | null): Ru
   return observations
 }
 
-export function categoriesCompatible(expected: EvidenceExpectationCategory, observed: EvidenceExpectationCategory): boolean {
+export function categoriesCompatible(
+  expected: EvidenceExpectationCategory,
+  observed: EvidenceExpectationCategory
+): boolean {
   if (expected === observed) return true
   if (expected === 'persistence' && observed === 'registry') return true
-  if (expected === 'embedded_payload' && ['memory', 'execution', 'injection', 'process'].includes(observed)) return true
-  if (expected === 'encrypted_or_packed_resource' && ['memory', 'crypto', 'execution'].includes(observed)) return true
-  if (expected === 'encoded_config' && ['crypto', 'network', 'registry'].includes(observed)) return true
-  if (expected === 'environment_state' && ['anti_analysis', 'process', 'registry'].includes(observed)) return true
+  if (
+    expected === 'embedded_payload' &&
+    ['memory', 'execution', 'injection', 'process'].includes(observed)
+  )
+    return true
+  if (
+    expected === 'encrypted_or_packed_resource' &&
+    ['memory', 'crypto', 'execution'].includes(observed)
+  )
+    return true
+  if (expected === 'encoded_config' && ['crypto', 'network', 'registry'].includes(observed))
+    return true
+  if (
+    expected === 'environment_state' &&
+    ['anti_analysis', 'process', 'registry'].includes(observed)
+  )
+    return true
   return false
 }
 
@@ -366,7 +421,9 @@ export async function loadCorrelationEvidence(
   const maxStaticArtifacts = options.maxStaticArtifacts ?? 20
 
   for (const artifactType of STATIC_ARTIFACT_TYPES) {
-    const artifacts = database.findArtifactsByType(sampleId, artifactType).slice(0, maxStaticArtifacts)
+    const artifacts = database
+      .findArtifactsByType(sampleId, artifactType)
+      .slice(0, maxStaticArtifacts)
     for (const dbArtifact of artifacts) {
       const artifact = artifactRef(dbArtifact)
       const payload = await readArtifactPayload(workspaceManager, sampleId, artifact)
@@ -377,8 +434,10 @@ export async function loadCorrelationEvidence(
   }
 
   const expectations = staticArtifacts.flatMap(({ artifact, payload }) => {
-    if (artifact.type === 'static_config_carver') return expectationsFromConfigArtifact(artifact, payload)
-    if (artifact.type === 'static_resource_graph') return expectationsFromResourceArtifact(artifact, payload)
+    if (artifact.type === 'static_config_carver')
+      return expectationsFromConfigArtifact(artifact, payload)
+    if (artifact.type === 'static_resource_graph')
+      return expectationsFromResourceArtifact(artifact, payload)
     return []
   })
 
@@ -389,10 +448,14 @@ export async function loadCorrelationEvidence(
   const observations = observationsFromDynamicSummary(dynamicSummary)
 
   if (staticArtifacts.length === 0) {
-    warnings.push('No specialist static artifacts found. Run static.config.carver and static.resource.graph for richer correlation.')
+    warnings.push(
+      'No specialist static artifacts found. Run static.config.carver and static.resource.graph for richer correlation.'
+    )
   }
   if (!dynamicSummary) {
-    warnings.push('No dynamic trace artifacts found. Run dynamic.behavior.capture, sandbox.execute, or dynamic.trace.import for runtime correlation.')
+    warnings.push(
+      'No dynamic trace artifacts found. Run dynamic.behavior.capture, sandbox.execute, or dynamic.trace.import for runtime correlation.'
+    )
   }
 
   return {
@@ -430,7 +493,12 @@ export function buildEvidenceGraph(bundle: EvidenceCorrelationBundle): EvidenceG
       source: artifact.path,
       details: { artifact_id: artifact.id, sha256: artifact.sha256 },
     })
-    edges.push({ from: `sample:${bundle.sample_id}`, to: artifactNodeId, label: 'has_artifact', confidence: 1 })
+    edges.push({
+      from: `sample:${bundle.sample_id}`,
+      to: artifactNodeId,
+      label: 'has_artifact',
+      confidence: 1,
+    })
   }
 
   if (bundle.dynamic_summary) {
@@ -445,7 +513,12 @@ export function buildEvidenceGraph(bundle: EvidenceCorrelationBundle): EvidenceG
         scope_note: bundle.dynamic_summary.scope_note,
       },
     })
-    edges.push({ from: `sample:${bundle.sample_id}`, to: 'artifact:dynamic_trace_summary', label: 'has_runtime_evidence', confidence: 1 })
+    edges.push({
+      from: `sample:${bundle.sample_id}`,
+      to: 'artifact:dynamic_trace_summary',
+      label: 'has_runtime_evidence',
+      confidence: 1,
+    })
   }
 
   for (const expectation of bundle.expectations) {
@@ -462,7 +535,12 @@ export function buildEvidenceGraph(bundle: EvidenceCorrelationBundle): EvidenceG
         evidence: expectation.evidence,
       },
     })
-    edges.push({ from: `artifact:${expectation.source_artifact_id}`, to: nodeId, label: 'suggests', confidence: expectation.confidence })
+    edges.push({
+      from: `artifact:${expectation.source_artifact_id}`,
+      to: nodeId,
+      label: 'suggests',
+      confidence: expectation.confidence,
+    })
   }
 
   for (const observation of bundle.observations) {
@@ -479,7 +557,12 @@ export function buildEvidenceGraph(bundle: EvidenceCorrelationBundle): EvidenceG
         evidence: observation.evidence,
       },
     })
-    edges.push({ from: 'artifact:dynamic_trace_summary', to: nodeId, label: 'observed', confidence: observation.confidence })
+    edges.push({
+      from: 'artifact:dynamic_trace_summary',
+      to: nodeId,
+      label: 'observed',
+      confidence: observation.confidence,
+    })
   }
 
   for (const expectation of bundle.expectations) {
@@ -524,7 +607,9 @@ export function buildBehaviorDiff(bundle: EvidenceCorrelationBundle): BehaviorDi
   const observedMatches = new Set<string>()
 
   for (const expectation of bundle.expectations) {
-    const matching = bundle.observations.filter((observation) => categoriesCompatible(expectation.category, observation.category))
+    const matching = bundle.observations.filter((observation) =>
+      categoriesCompatible(expectation.category, observation.category)
+    )
     if (matching.length > 0) {
       confirmed.push({ category: expectation.category, expectation, observations: matching })
       for (const observation of matching) observedMatches.add(observation.id)
@@ -533,7 +618,9 @@ export function buildBehaviorDiff(bundle: EvidenceCorrelationBundle): BehaviorDi
     }
   }
 
-  const unexpected = bundle.observations.filter((observation) => !observedMatches.has(observation.id))
+  const unexpected = bundle.observations.filter(
+    (observation) => !observedMatches.has(observation.id)
+  )
   const expectedCategories = new Set(bundle.expectations.map((item) => item.category))
   const observedCategories = new Set(bundle.observations.map((item) => item.category))
   const confirmedCategories = new Set(confirmed.map((item) => item.category))
@@ -545,7 +632,11 @@ export function buildBehaviorDiff(bundle: EvidenceCorrelationBundle): BehaviorDi
     'dynamic.toolkit.status',
     'analysis.evidence.graph',
   ])
-  if (missing.some((item) => ['embedded_payload', 'encrypted_or_packed_resource', 'encoded_config'].includes(item.category))) {
+  if (
+    missing.some((item) =>
+      ['embedded_payload', 'encrypted_or_packed_resource', 'encoded_config'].includes(item.category)
+    )
+  ) {
     recommendedNextTools.add('dynamic.memory_dump')
     recommendedNextTools.add('breakpoint.smart')
   }

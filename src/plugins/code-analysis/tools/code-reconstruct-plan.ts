@@ -25,10 +25,7 @@ export const CodeReconstructPlanInputSchema = z.object({
     .enum(['auto', 'csharp', 'c', 'cpp', 'rust', 'go'])
     .default('auto')
     .describe('Preferred reconstruction language'),
-  depth: z
-    .enum(['quick', 'standard', 'deep'])
-    .default('standard')
-    .describe('Planning depth'),
+  depth: z.enum(['quick', 'standard', 'deep']).default('standard').describe('Planning depth'),
   include_decompiler: z
     .boolean()
     .default(true)
@@ -155,7 +152,9 @@ function assessReconstructability(
 
   if (packed) {
     score -= 0.35 * (packingConfidence || 0.8)
-    blockers.push('Sample appears packed/obfuscated; unpacking is needed before reliable reconstruction.')
+    blockers.push(
+      'Sample appears packed/obfuscated; unpacking is needed before reliable reconstruction.'
+    )
   }
 
   if (primaryRuntime === 'unknown') {
@@ -164,7 +163,9 @@ function assessReconstructability(
   }
 
   const confidenceSignals =
-    (runtimeData ? 1 : 0) + (packerData ? 1 : 0) + ((runtimeData?.suspected?.length || 0) > 0 ? 1 : 0)
+    (runtimeData ? 1 : 0) +
+    (packerData ? 1 : 0) +
+    ((runtimeData?.suspected?.length || 0) > 0 ? 1 : 0)
   const confidence = clamp(0.35 + confidenceSignals * 0.2, 0.35, 0.95)
   score = clamp(score, 0, 1)
 
@@ -252,7 +253,13 @@ function buildPhases(
   }
 
   phases.push({
-    phase: packed ? (input.include_decompiler ? 'phase_4' : 'phase_3') : (input.include_decompiler ? 'phase_3' : 'phase_2'),
+    phase: packed
+      ? input.include_decompiler
+        ? 'phase_4'
+        : 'phase_3'
+      : input.include_decompiler
+        ? 'phase_3'
+        : 'phase_2',
     title: isDotNet ? '.NET Structure Rebuild' : 'Module Recomposition',
     objective: isDotNet
       ? 'Recover assembly/type/method structure and generate maintainable C# project skeleton.'
@@ -378,7 +385,9 @@ export function createCodeReconstructPlanHandler(
       }
 
       if (packerData?.packed) {
-        recommendations.push('Complete unpacking/deobfuscation before claiming source-level conclusions.')
+        recommendations.push(
+          'Complete unpacking/deobfuscation before claiming source-level conclusions.'
+        )
       }
 
       const outputData = {
@@ -421,4 +430,3 @@ export function createCodeReconstructPlanHandler(
     }
   }
 }
-

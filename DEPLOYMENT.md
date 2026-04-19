@@ -26,7 +26,8 @@ start/stop, logs, health checks, status, and diagnostics.
 .\rikune.ps1
 
 # Windows single-host hybrid: Docker Desktop + Host Agent + Windows Sandbox
-.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+# Host Agent runs in the logged-on user session for Sandbox compatibility.
+.\rikune.ps1 install -Profile hybrid -InstallRuntime
 
 # Status, logs, and stop
 .\rikune.ps1 status -Profile hybrid
@@ -111,7 +112,7 @@ Requirements:
 Install the Host Agent:
 
 ```powershell
-.\install-runtime-windows.ps1 -Headless -Service -ApiKey <host-agent-key>
+.\install-runtime-windows.ps1 -Headless -ApiKey <host-agent-key>
 ```
 
 The installer writes `.env.runtime-windows` with `HOST_AGENT_PORT`,
@@ -128,7 +129,7 @@ netsh advfirewall firewall add rule name="RikuneHostAgent" dir=in action=allow p
 On Windows PowerShell with Docker Desktop and a local Windows runtime:
 
 ```powershell
-.\rikune.ps1 install -Profile hybrid -InstallRuntime -Service
+.\rikune.ps1 install -Profile hybrid -InstallRuntime
 ```
 
 When connecting to an existing Host Agent endpoint:
@@ -226,6 +227,41 @@ The dashboard remains available at `http://localhost:18080/dashboard`.
 `startup_timeout_sec` should be at least 180 for Docker profiles because the
 stdio child process loads the plugin graph and registers the full MCP surface on
 startup.
+
+## Health and Readiness
+
+Rikune exposes two HTTP checks:
+
+| Endpoint | Meaning | Typical Use |
+|----------|---------|-------------|
+| `/api/v1/health` | Liveness: the Node process and HTTP server are up. | Docker healthcheck and installer smoke test. |
+| `/api/v1/ready` | Readiness: database, queue, runtime, and enabled-plugin backends are usable. | Debugging degraded installs and dependency problems. |
+
+Readiness is profile-aware. If a plugin is disabled by `PLUGINS`, its backend is
+not treated as a required dependency. For example, a profile without `ghidra`
+should not fail readiness just because `GHIDRA_INSTALL_DIR` is absent.
+
+## Dynamic Execution Semantics
+
+Connecting an MCP client does not launch Windows Sandbox, Hyper-V, or a sample.
+Planning/status tools such as `dynamic.runtime.status`, `dynamic.toolkit.status`,
+`dynamic.deep_plan`, `dynamic.persona.plan`, `debug.network.plan`,
+`debug.managed.plan`, and `debug.gui.handoff` are read-only or planning-only.
+
+Live runtime execution starts only from explicit execution surfaces, primarily
+`runtime.debug.session.start`, `runtime.debug.command`, `sandbox.execute`,
+`dynamic.behavior.capture`, and memory/dump/debug commands dispatched inside an
+active runtime session.
+
+`sandbox.execute` returns `data.execution_semantics` so clients can distinguish:
+
+| Field | Meaning |
+|-------|---------|
+| `live_windows_sandbox_execution` | The sample actually ran in Windows Sandbox. |
+| `live_hyperv_execution` | The sample actually ran through a Hyper-V VM runtime. |
+| `safe_simulation` | No live sample execution occurred; output is a safe simulation/planning result. |
+| `emulation` | Execution used an emulator-style backend rather than Windows live runtime. |
+| `user_visible_sandbox_window_expected` | Whether a visible Sandbox window is expected for that run. |
 
 ## Full Docker Image
 

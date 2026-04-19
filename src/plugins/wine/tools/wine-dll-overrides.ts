@@ -12,22 +12,27 @@ import { join, basename } from 'path'
 import type { WorkerResult, ToolDefinition, ToolArgs } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
-import {
-  SharedMetricsSchema,
-  normalizeError, buildMetrics,
-} from '../../docker-shared.js'
+import { SharedMetricsSchema, normalizeError, buildMetrics } from '../../docker-shared.js'
 
-const overrideMode = z.enum(['native', 'builtin', 'native,builtin', 'builtin,native', 'disabled', ''])
-  .describe('native = use Windows DLL; builtin = use Wine DLL; disabled = DLL not loaded; empty = remove override')
+const overrideMode = z
+  .enum(['native', 'builtin', 'native,builtin', 'builtin,native', 'disabled', ''])
+  .describe(
+    'native = use Windows DLL; builtin = use Wine DLL; disabled = DLL not loaded; empty = remove override'
+  )
 
 const inputSchema = z.object({
-  action: z.enum(['set', 'get', 'list']).describe(
-    'set: apply DLL overrides; get: read current override for specific DLLs; list: show all overrides'
-  ),
+  action: z
+    .enum(['set', 'get', 'list'])
+    .describe(
+      'set: apply DLL overrides; get: read current override for specific DLLs; list: show all overrides'
+    ),
   prefix_name: z.string().describe('Wine prefix name (must exist under .wine-prefixes/).'),
-  overrides: z.record(z.string(), overrideMode).optional().describe(
-    'Map of DLL name → override mode. Required for action=set. Example: {"kernel32": "native", "ntdll": "builtin"}'
-  ),
+  overrides: z
+    .record(z.string(), overrideMode)
+    .optional()
+    .describe(
+      'Map of DLL name → override mode. Required for action=set. Example: {"kernel32": "native", "ntdll": "builtin"}'
+    ),
   dlls: z.array(z.string()).optional().describe('DLL names to query. Used with action=get.'),
 })
 
@@ -72,7 +77,11 @@ export function createWineDllOverridesHandler(wm: WorkspaceManager, _db: Databas
       const prefixPath = join(prefixRoot, safeName)
 
       if (!existsSync(prefixPath)) {
-        return { ok: false, errors: [`Prefix '${safeName}' does not exist. Create it first with wine.env`], metrics: buildMetrics(startTime, 'wine.dll_overrides') }
+        return {
+          ok: false,
+          errors: [`Prefix '${safeName}' does not exist. Create it first with wine.env`],
+          metrics: buildMetrics(startTime, 'wine.dll_overrides'),
+        }
       }
 
       if (input.action === 'list') {
@@ -87,7 +96,7 @@ export function createWineDllOverridesHandler(wm: WorkspaceManager, _db: Databas
       if (input.action === 'get') {
         const all = readDllOverrides(prefixPath)
         const result: Record<string, string | null> = {}
-        for (const dll of (input.dlls ?? [])) {
+        for (const dll of input.dlls ?? []) {
           result[dll] = all[dll] ?? null
         }
         return {
@@ -99,7 +108,11 @@ export function createWineDllOverridesHandler(wm: WorkspaceManager, _db: Databas
 
       if (input.action === 'set') {
         if (!input.overrides || Object.keys(input.overrides).length === 0) {
-          return { ok: false, errors: ['overrides map is required for action=set'], metrics: buildMetrics(startTime, 'wine.dll_overrides') }
+          return {
+            ok: false,
+            errors: ['overrides map is required for action=set'],
+            metrics: buildMetrics(startTime, 'wine.dll_overrides'),
+          }
         }
 
         // Build WINEDLLOVERRIDES env format: "dll1=mode;dll2=mode"
@@ -123,9 +136,17 @@ export function createWineDllOverridesHandler(wm: WorkspaceManager, _db: Databas
         }
       }
 
-      return { ok: false, errors: ['Unknown action'], metrics: buildMetrics(startTime, 'wine.dll_overrides') }
+      return {
+        ok: false,
+        errors: ['Unknown action'],
+        metrics: buildMetrics(startTime, 'wine.dll_overrides'),
+      }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, 'wine.dll_overrides') }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, 'wine.dll_overrides'),
+      }
     }
   }
 }

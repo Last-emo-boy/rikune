@@ -1,40 +1,47 @@
 /**
  * code.function.disassemble MCP Tool
- * 
+ *
  * Returns assembly code for a function
  */
 
-import { z } from 'zod';
-import fs from 'fs/promises';
-import path from 'path';
-import type { ToolDefinition, ToolHandler, ToolResult } from '../../../types.js';
-import type { DatabaseManager } from '../../../database.js';
-import type { WorkspaceManager } from '../../../workspace-manager.js';
-import { DecompilerWorker, getGhidraDiagnostics, normalizeGhidraError } from '../../../worker/decompiler-worker.js';
-import { runEntrypointFallbackDisasm } from '../../../tools/entrypoint-fallback-disasm.js';
-import { logger } from '../../../logger.js';
+import { z } from 'zod'
+import fs from 'fs/promises'
+import path from 'path'
+import type { ToolDefinition, ToolHandler, ToolResult } from '../../../types.js'
+import type { DatabaseManager } from '../../../database.js'
+import type { WorkspaceManager } from '../../../workspace-manager.js'
+import {
+  DecompilerWorker,
+  getGhidraDiagnostics,
+  normalizeGhidraError,
+} from '../../../worker/decompiler-worker.js'
+import { runEntrypointFallbackDisasm } from '../../../tools/entrypoint-fallback-disasm.js'
+import { logger } from '../../../logger.js'
 
 /**
  * Input schema for code.function.disassemble tool
  */
-export const codeFunctionDisassembleInputSchema = z.object({
-  sample_id: z.string().describe('Sample identifier (sha256:<hex>)'),
-  address: z.string().optional().describe('Function address (hex string)'),
-  symbol: z.string().optional().describe('Function symbol name')
-}).refine(data => data.address || data.symbol, {
-  message: 'Either address or symbol must be provided'
-});
+export const codeFunctionDisassembleInputSchema = z
+  .object({
+    sample_id: z.string().describe('Sample identifier (sha256:<hex>)'),
+    address: z.string().optional().describe('Function address (hex string)'),
+    symbol: z.string().optional().describe('Function symbol name'),
+  })
+  .refine((data) => data.address || data.symbol, {
+    message: 'Either address or symbol must be provided',
+  })
 
-export type CodeFunctionDisassembleInput = z.infer<typeof codeFunctionDisassembleInputSchema>;
+export type CodeFunctionDisassembleInput = z.infer<typeof codeFunctionDisassembleInputSchema>
 
 /**
  * Tool definition for code.function.disassemble
  */
 export const codeFunctionDisassembleToolDefinition: ToolDefinition = {
   name: 'code.function.disassemble',
-  description: 'Get assembly code for a function. Requires prior Ghidra analysis. Provide either address or symbol name.',
-  inputSchema: codeFunctionDisassembleInputSchema
-};
+  description:
+    'Get assembly code for a function. Requires prior Ghidra analysis. Provide either address or symbol name.',
+  inputSchema: codeFunctionDisassembleInputSchema,
+}
 
 function normalizeAddress(address: string | undefined): string | undefined {
   if (!address) {
@@ -76,33 +83,42 @@ export function createCodeFunctionDisassembleHandler(
 ): ToolHandler {
   return async (args: unknown): Promise<ToolResult> => {
     try {
-      const input = codeFunctionDisassembleInputSchema.parse(args);
+      const input = codeFunctionDisassembleInputSchema.parse(args)
 
-      const addressOrSymbol = input.address || input.symbol!;
+      const addressOrSymbol = input.address || input.symbol
 
-      logger.info({
-        sample_id: input.sample_id,
-        address_or_symbol: addressOrSymbol
-      }, 'code.function.disassemble tool called');
+      logger.info(
+        {
+          sample_id: input.sample_id,
+          address_or_symbol: addressOrSymbol,
+        },
+        'code.function.disassemble tool called'
+      )
 
       // Check if sample exists
-      const sample = database.findSample(input.sample_id);
+      const sample = database.findSample(input.sample_id)
       if (!sample) {
         return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              ok: false,
-              errors: [`Sample not found: ${input.sample_id}`]
-            }, null, 2)
-          }],
-          isError: true
-        };
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  ok: false,
+                  errors: [`Sample not found: ${input.sample_id}`],
+                },
+                null,
+                2
+              ),
+            },
+          ],
+          isError: true,
+        }
       }
 
       // For now, return a placeholder indicating this feature uses CFG
       // In a full implementation, this would extract assembly from Ghidra
-      const decompilerWorker = new DecompilerWorker(database, workspaceManager);
+      const decompilerWorker = new DecompilerWorker(database, workspaceManager)
 
       let functionName = ''
       let functionAddress = ''
@@ -167,52 +183,69 @@ export function createCodeFunctionDisassembleHandler(
         ]
       }
 
-      logger.info({
-        sample_id: input.sample_id,
-        function: functionName,
-        instruction_count: assemblyText.split('\n').filter((line) => line.length > 0).length,
-        fallback: Boolean(fallbackMetadata),
-      }, 'Function disassembled successfully');
+      logger.info(
+        {
+          sample_id: input.sample_id,
+          function: functionName,
+          instruction_count: assemblyText.split('\n').filter((line) => line.length > 0).length,
+          fallback: Boolean(fallbackMetadata),
+        },
+        'Function disassembled successfully'
+      )
 
       return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            ok: true,
-            data: {
-              function: functionName,
-              address: functionAddress,
-              assembly: assemblyText,
-              fallback: Boolean(fallbackMetadata),
-              fallback_metadata: fallbackMetadata,
-            },
-            warnings,
-          }, null, 2)
-        }]
-      };
-
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                ok: true,
+                data: {
+                  function: functionName,
+                  address: functionAddress,
+                  assembly: assemblyText,
+                  fallback: Boolean(fallbackMetadata),
+                  fallback_metadata: fallbackMetadata,
+                },
+                warnings,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const diagnostics = getGhidraDiagnostics(error);
-      const normalizedError = normalizeGhidraError(error, 'code.function.disassemble');
-      logger.error({
-        error: errorMessage,
-        ghidra_diagnostics: diagnostics,
-        normalized_error: normalizedError,
-      }, 'code.function.disassemble tool failed');
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      const diagnostics = getGhidraDiagnostics(error)
+      const normalizedError = normalizeGhidraError(error, 'code.function.disassemble')
+      logger.error(
+        {
+          error: errorMessage,
+          ghidra_diagnostics: diagnostics,
+          normalized_error: normalizedError,
+        },
+        'code.function.disassemble tool failed'
+      )
 
       return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            ok: false,
-            errors: [errorMessage],
-            diagnostics,
-            normalized_error: normalizedError,
-          }, null, 2)
-        }],
-        isError: true
-      };
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                ok: false,
+                errors: [errorMessage],
+                diagnostics,
+                normalized_error: normalizedError,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      }
     }
-  };
+  }
 }

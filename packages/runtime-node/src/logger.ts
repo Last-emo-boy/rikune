@@ -5,5 +5,5 @@ import { config } from './config.js'
 // behind a stdio transport or supervised by a protocol-aware parent.
 export const logger = pino(
   { level: config.logging.level },
-  pino.destination({ dest: 2, sync: false }),
+  pino.destination({ dest: 2, sync: false })
 )

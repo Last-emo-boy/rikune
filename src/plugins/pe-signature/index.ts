@@ -4,15 +4,22 @@
 
 import type { Plugin } from '../sdk.js'
 
-import { peSignatureVerifyToolDefinition, createPeSignatureVerifyHandler } from './tools/pe-signature-verify.js'
-import { peCertificateExtractToolDefinition, createPeCertificateExtractHandler } from './tools/pe-certificate-extract.js'
+import {
+  peSignatureVerifyToolDefinition,
+  createPeSignatureVerifyHandler,
+} from './tools/pe-signature-verify.js'
+import {
+  peCertificateExtractToolDefinition,
+  createPeCertificateExtractHandler,
+} from './tools/pe-certificate-extract.js'
 
 const peSignaturePlugin: Plugin = {
   id: 'pe-signature',
   name: 'PE Authenticode Signature',
   executionDomain: 'static',
   surfaceRules: { tier: 2, activateOn: { findings: ['signed'] }, category: 'static-analysis' },
-  description: 'Verify PE Authenticode signatures and extract embedded certificates via osslsigncode.',
+  description:
+    'Verify PE Authenticode signatures and extract embedded certificates via osslsigncode.',
   version: '1.0.0',
 
   systemDeps: [
@@ -33,7 +40,10 @@ const peSignaturePlugin: Plugin = {
     const { workspaceManager: wm, database: db } = deps
 
     server.registerTool(peSignatureVerifyToolDefinition, createPeSignatureVerifyHandler(wm, db))
-    server.registerTool(peCertificateExtractToolDefinition, createPeCertificateExtractHandler(wm, db))
+    server.registerTool(
+      peCertificateExtractToolDefinition,
+      createPeCertificateExtractHandler(wm, db)
+    )
 
     return ['pe.signature.verify', 'pe.certificate.extract']
   },

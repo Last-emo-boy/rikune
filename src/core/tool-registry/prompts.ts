@@ -14,6 +14,12 @@ import {
 
 export function registerPrompts(server: PromptRegistrar): void {
   server.registerPrompt(semanticNameReviewPromptDefinition, createSemanticNameReviewPromptHandler())
-  server.registerPrompt(functionExplanationReviewPromptDefinition, createFunctionExplanationReviewPromptHandler())
-  server.registerPrompt(moduleReconstructionReviewPromptDefinition, createModuleReconstructionReviewPromptHandler())
+  server.registerPrompt(
+    functionExplanationReviewPromptDefinition,
+    createFunctionExplanationReviewPromptHandler()
+  )
+  server.registerPrompt(
+    moduleReconstructionReviewPromptDefinition,
+    createModuleReconstructionReviewPromptHandler()
+  )
 }

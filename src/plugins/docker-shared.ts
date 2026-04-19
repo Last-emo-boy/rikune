@@ -47,7 +47,11 @@ import {
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
 
 export {
-  fs, os, path, z, randomUUID,
+  fs,
+  os,
+  path,
+  z,
+  randomUUID,
   resolveAnalysisBackends,
   resolveExecutable,
   resolvePythonModuleBackend,
@@ -70,10 +74,15 @@ export {
 }
 
 export type {
-  DatabaseManager, Sample,
+  DatabaseManager,
+  Sample,
   WorkspaceManager,
-  ArtifactRef, ToolArgs, ToolDefinition, WorkerResult,
-  ExternalExecutableResolution, ToolchainBackendResolution,
+  ArtifactRef,
+  ToolArgs,
+  ToolDefinition,
+  WorkerResult,
+  ExternalExecutableResolution,
+  ToolchainBackendResolution,
 }
 
 const execFileAsync = promisify(execFile)
@@ -223,7 +232,6 @@ export function persistBackendPreviewEvidence(
   })
 }
 
-
 export async function persistBackendArtifact(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
@@ -240,7 +248,12 @@ export async function persistBackendArtifact(
 ): Promise<ArtifactRef> {
   const workspace = await workspaceManager.createWorkspace(sampleId)
   const sessionSegment = sanitizeSegment(options.sessionTag, 'default')
-  const outputDir = path.join(workspace.reports, 'backend_tools', sessionSegment, sanitizeSegment(backend, 'backend'))
+  const outputDir = path.join(
+    workspace.reports,
+    'backend_tools',
+    sessionSegment,
+    sanitizeSegment(backend, 'backend')
+  )
   await fs.mkdir(outputDir, { recursive: true })
 
   const fileName = `${sanitizeSegment(operation, 'output')}_${Date.now()}.${options.extension}`

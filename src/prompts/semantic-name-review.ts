@@ -13,7 +13,8 @@ export const semanticNameReviewPromptDefinition: PromptDefinition = {
     },
     {
       name: 'analysis_goal',
-      description: 'Optional analysis goal to bias the review toward a malware/operator-tooling objective',
+      description:
+        'Optional analysis goal to bias the review toward a malware/operator-tooling objective',
       required: false,
     },
   ],

@@ -41,7 +41,6 @@ export interface CryptoPlanningArtifactSelection<TPayload = unknown> {
 
 const LATEST_ARTIFACT_WINDOW_MS = 10 * 1000
 
-
 function getArtifactRootSegment(artifactType: CryptoPlanningArtifactType): string {
   switch (artifactType) {
     case CRYPTO_IDENTIFICATION_ARTIFACT_TYPE:
@@ -64,7 +63,11 @@ export async function persistCryptoPlanningJsonArtifact(
 ): Promise<ArtifactRef> {
   const workspace = await workspaceManager.createWorkspace(sampleId)
   const sessionSegment = sanitizePathSegment(sessionTag || undefined, 'default')
-  const reportDir = path.join(workspace.reports, getArtifactRootSegment(artifactType), sessionSegment)
+  const reportDir = path.join(
+    workspace.reports,
+    getArtifactRootSegment(artifactType),
+    sessionSegment
+  )
   await fs.mkdir(reportDir, { recursive: true })
 
   const fileName = `${filePrefix}_${Date.now()}.json`

@@ -164,6 +164,9 @@ COPY src/plugins/kb-collaboration/data/windows-api-semantics.json ./src/plugins/
 # Dashboard static assets (not handled by tsc)
 COPY src/api/dashboard/ ./dist/api/dashboard/
 
+# Plugin static scripts exposed through MCP resources
+{{PLUGIN_SCRIPT_COPY}}
+
 # -- Python base (always) --
 COPY --from=python-base /usr/local/bin /usr/local/bin
 COPY --from=python-base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
@@ -197,6 +200,7 @@ ENV NODE_ENV=production \
     WORKSPACE_ROOT=/app/workspaces \
     DB_PATH=/app/data/database.db \
     CACHE_ROOT=/app/cache \
+    HOME=/app/cache/home \
     RUNNING_IN_DOCKER=true \
     UPLOAD_PORT=18081 \
     AUDIT_LOG_PATH=/app/logs/audit.log \
@@ -205,7 +209,7 @@ ENV NODE_ENV=production \
     SANDBOX_PYTHON_PATH=/usr/local/bin/python3
 {{RUNTIME_ENV_VARS}}
 
-RUN mkdir -p /app/workspaces /app/data /app/cache /app/logs /samples /tmp {{EXTRA_DIRS}} && \
+RUN mkdir -p /app/workspaces /app/data /app/cache /app/cache/home /app/logs /samples /tmp {{EXTRA_DIRS}} && \
     chown -R appuser:appuser /app && \
 {{EXTRA_CHOWN}}    chmod 1777 /tmp
 

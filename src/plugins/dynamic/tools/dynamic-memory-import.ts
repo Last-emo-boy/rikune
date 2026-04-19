@@ -27,7 +27,10 @@ const DynamicMemoryImportInputSchema = z.object({
     .optional()
     .default('auto')
     .describe('Format hint for the memory snapshot'),
-  trace_name: z.string().optional().describe('Optional source name used in persisted artifact naming'),
+  trace_name: z
+    .string()
+    .optional()
+    .describe('Optional source name used in persisted artifact naming'),
   persist_artifact: z
     .boolean()
     .optional()
@@ -156,7 +159,11 @@ function inferWindowProtection(regionType: string, indicators: string[]): string
   if (/api_resolution|dispatch/.test(corpus)) {
     return 'read_only_data'
   }
-  if (/process_operation|thread|virtualalloc|writeprocessmemory|setthreadcontext|resumethread/.test(corpus)) {
+  if (
+    /process_operation|thread|virtualalloc|writeprocessmemory|setthreadcontext|resumethread/.test(
+      corpus
+    )
+  ) {
     return 'read_write_control'
   }
   if (/file_operation|registry_operation/.test(corpus)) {
@@ -233,7 +240,6 @@ function isPrintableAscii(byte: number): boolean {
   return byte >= 0x20 && byte <= 0x7e
 }
 
-
 function inferModuleNameFromStrings(values: string[]): string | undefined {
   for (const value of values) {
     const match = value.match(/\b([A-Za-z0-9_.-]+\.(?:dll|exe|sys))\b/i)
@@ -271,7 +277,11 @@ function detectEmbeddedPeOffsets(data: Buffer, maxOffsets = 6): number[] {
   return offsets
 }
 
-function detectMemoryFormat(filePath: string, data: Buffer, hint: DynamicMemoryImportInput['format']): DynamicTraceSourceFormat {
+function detectMemoryFormat(
+  filePath: string,
+  data: Buffer,
+  hint: DynamicMemoryImportInput['format']
+): DynamicTraceSourceFormat {
   if (hint && hint !== 'auto') {
     return hint
   }
@@ -366,16 +376,13 @@ function extractUtf16Strings(data: Buffer, minLen: number, maxItems: number): Ex
   return results
 }
 
-function extractStrings(
-  data: Buffer,
-  minLen: number,
-  maxItems: number
-): ExtractedString[] {
+function extractStrings(data: Buffer, minLen: number, maxItems: number): ExtractedString[] {
   const half = Math.max(50, Math.floor(maxItems / 2))
-  const entries = [...extractAsciiStrings(data, minLen, half), ...extractUtf16Strings(data, minLen, half)]
-  return entries
-    .sort((left, right) => left.offset - right.offset)
-    .slice(0, maxItems)
+  const entries = [
+    ...extractAsciiStrings(data, minLen, half),
+    ...extractUtf16Strings(data, minLen, half),
+  ]
+  return entries.sort((left, right) => left.offset - right.offset).slice(0, maxItems)
 }
 
 function extractApisFromString(value: string): string[] {
@@ -428,13 +435,21 @@ function classifyWindow(apis: string[]): { regionType: string; purpose: string }
       purpose: 'dynamic_api_table',
     }
   }
-  if (/\b(OpenProcess|ReadProcessMemory|WriteProcessMemory|SetThreadContext|ResumeThread|CreateRemoteThread|VirtualAllocEx|CreateProcess)\b/i.test(corpus)) {
+  if (
+    /\b(OpenProcess|ReadProcessMemory|WriteProcessMemory|SetThreadContext|ResumeThread|CreateRemoteThread|VirtualAllocEx|CreateProcess)\b/i.test(
+      corpus
+    )
+  ) {
     return {
       regionType: 'process_operation_plan',
       purpose: 'remote_process_access',
     }
   }
-  if (/\b(CreateFile|ReadFile|WriteFile|DeleteFile|CopyFile|FindFirstFile|FindNextFile)\b/i.test(corpus)) {
+  if (
+    /\b(CreateFile|ReadFile|WriteFile|DeleteFile|CopyFile|FindFirstFile|FindNextFile)\b/i.test(
+      corpus
+    )
+  ) {
     return {
       regionType: 'file_operation_plan',
       purpose: 'file_dispatch_table',
@@ -446,7 +461,11 @@ function classifyWindow(apis: string[]): { regionType: string; purpose: string }
       purpose: 'registry_staging',
     }
   }
-  if (/\b(InternetOpen|InternetConnect|HttpSendRequest|WinHttp|socket|connect|send|recv)\b/i.test(corpus)) {
+  if (
+    /\b(InternetOpen|InternetConnect|HttpSendRequest|WinHttp|socket|connect|send|recv)\b/i.test(
+      corpus
+    )
+  ) {
     return {
       regionType: 'network_operation_plan',
       purpose: 'network_dispatch',
@@ -488,7 +507,10 @@ function buildContextRegions(
 
   return windows
     .map((windowEntries) => {
-      const apis = dedupeStrings(windowEntries.flatMap((entry) => extractApisFromString(entry.value)), 12)
+      const apis = dedupeStrings(
+        windowEntries.flatMap((entry) => extractApisFromString(entry.value)),
+        12
+      )
       const indicators = dedupeStrings(
         [...apis, ...windowEntries.slice(0, 4).map((entry) => entry.value)],
         10
@@ -502,7 +524,10 @@ function buildContextRegions(
         purpose: classification.purpose,
         source: 'memory_snapshot_window',
         confidence: Number(
-          Math.min(0.9, 0.54 + Math.min(0.18, apis.length * 0.06) + Math.min(0.12, windowEntries.length * 0.02)).toFixed(2)
+          Math.min(
+            0.9,
+            0.54 + Math.min(0.18, apis.length * 0.06) + Math.min(0.12, windowEntries.length * 0.02)
+          ).toFixed(2)
         ),
         base_address: `0x${start.toString(16)}`,
         size: Math.max(1, end - start),
@@ -524,7 +549,11 @@ function buildSyntheticSegments(
   const segments: MemoryRegionHint[] = []
   const globalModuleHint = inferModuleNameFromStrings(strings.map((item) => item.value))
 
-  if (effectiveFormat === 'minidump' && data.length >= 4 && data.subarray(0, 4).toString('ascii') === 'MDMP') {
+  if (
+    effectiveFormat === 'minidump' &&
+    data.length >= 4 &&
+    data.subarray(0, 4).toString('ascii') === 'MDMP'
+  ) {
     segments.push({
       region_type: 'minidump_header',
       purpose: 'minidump_container',
@@ -569,10 +598,16 @@ function buildRiskHints(format: DynamicTraceSourceFormat, apis: ApiAggregate[]):
   if (format === 'minidump') {
     hints.push('Memory evidence originated from a minidump; execution was not directly replayed.')
   } else {
-    hints.push('Memory evidence originated from a process-memory snapshot; execution was not directly replayed.')
+    hints.push(
+      'Memory evidence originated from a process-memory snapshot; execution was not directly replayed.'
+    )
   }
 
-  if (apiNames.some((item) => /WriteProcessMemory|ReadProcessMemory|VirtualAllocEx|CreateRemoteThread/i.test(item))) {
+  if (
+    apiNames.some((item) =>
+      /WriteProcessMemory|ReadProcessMemory|VirtualAllocEx|CreateRemoteThread/i.test(item)
+    )
+  ) {
     hints.push('Process-memory manipulation indicators were recovered from memory strings.')
   }
   if (apiNames.some((item) => /GetProcAddress|LoadLibrary/i.test(item))) {
@@ -604,7 +639,10 @@ function buildNormalizedMemoryTrace(
     memory_regions: memoryRegions,
     segments,
     modules: dedupeStrings(
-      [...memoryRegions.map((item) => item.module_name || ''), ...segments.map((item) => item.module_name || '')],
+      [
+        ...memoryRegions.map((item) => item.module_name || ''),
+        ...segments.map((item) => item.module_name || ''),
+      ],
       24
     ),
     strings: strings.slice(0, 120).map((item) => item.value),
@@ -663,7 +701,9 @@ export function createDynamicMemoryImportHandler(
         'Imported evidence does not prove full execution; treat it as memory-snapshot evidence until corroborated.',
       ]
       if (apiAggregates.length === 0) {
-        warnings.push('No strong API indicators were recovered from the memory snapshot; confidence is string-window limited.')
+        warnings.push(
+          'No strong API indicators were recovered from the memory snapshot; confidence is string-window limited.'
+        )
       }
 
       const artifacts: ArtifactRef[] = []

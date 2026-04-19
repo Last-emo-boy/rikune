@@ -26,7 +26,9 @@ const API_KEY = process.env.HOST_AGENT_API_KEY || ''
 const RUNTIME_INTERNAL_PORT = 18081
 const LISTEN_PORT_MIN = 18081
 const LISTEN_PORT_MAX = 19000
-const HOST_AGENT_BACKEND = normalizeBackend(process.env.HOST_AGENT_BACKEND || process.env.HOST_AGENT_RUNTIME_BACKEND)
+const HOST_AGENT_BACKEND = normalizeBackend(
+  process.env.HOST_AGENT_BACKEND || process.env.HOST_AGENT_RUNTIME_BACKEND
+)
 
 type HostAgentBackend = 'windows-sandbox' | 'hyperv-vm'
 
@@ -118,7 +120,12 @@ const usedListenPorts = new Set<number>()
 
 function normalizeBackend(raw?: string): HostAgentBackend {
   const value = (raw || '').trim().toLowerCase()
-  if (value === 'hyperv' || value === 'hyper-v' || value === 'hyperv-vm' || value === 'hyper-v-vm') {
+  if (
+    value === 'hyperv' ||
+    value === 'hyper-v' ||
+    value === 'hyperv-vm' ||
+    value === 'hyper-v-vm'
+  ) {
     return 'hyperv-vm'
   }
   return 'windows-sandbox'
@@ -138,10 +145,15 @@ function quotePowerShellLiteral(value: string): string {
 
 function previewText(value: string, maxChars = 4000): string {
   const normalized = value.replace(/\r\n/g, '\n')
-  return normalized.length > maxChars ? `${normalized.slice(0, maxChars)}\n...[truncated]` : normalized
+  return normalized.length > maxChars
+    ? `${normalized.slice(0, maxChars)}\n...[truncated]`
+    : normalized
 }
 
-async function readFilePreview(filePath: string, maxChars = 4000): Promise<{ path: string; exists: boolean; preview?: string }> {
+async function readFilePreview(
+  filePath: string,
+  maxChars = 4000
+): Promise<{ path: string; exists: boolean; preview?: string }> {
   if (!existsSync(filePath)) {
     return { path: filePath, exists: false }
   }
@@ -248,8 +260,8 @@ async function resolveHostPythonPath(): Promise<string | null> {
   return (
     existingExecutablePath(process.env.HOST_AGENT_PYTHON_PATH) ||
     existingExecutablePath(process.env.RUNTIME_PYTHON_PATH) ||
-    await findExecutableOnPath('python') ||
-    await findExecutableOnPath('py')
+    (await findExecutableOnPath('python')) ||
+    (await findExecutableOnPath('py'))
   )
 }
 
@@ -293,7 +305,7 @@ async function waitForRuntimeEndpoint(
         signal: AbortSignal.timeout(Math.min(interval, 5000)),
       })
       if (res.ok) {
-        const data = await res.json().catch(() => ({})) as { ok?: boolean }
+        const data = (await res.json().catch(() => ({}))) as { ok?: boolean }
         if (data.ok !== false) {
           return true
         }
@@ -306,10 +318,7 @@ async function waitForRuntimeEndpoint(
   return false
 }
 
-async function stageRuntimeBundle(
-  sandboxDir: string,
-  runtimeEntryHost: string
-): Promise<string> {
+async function stageRuntimeBundle(sandboxDir: string, runtimeEntryHost: string): Promise<string> {
   const runtimeStageDir = path.join(sandboxDir, 'runtime')
   const runtimeSourceDir = path.dirname(runtimeEntryHost)
   const sharedSourceDir = path.join(projectRoot, 'packages', 'shared')
@@ -384,7 +393,7 @@ async function writeWsbConfig(
   wsbPath: string,
   sandboxDir: string,
   runtimeEntryHost: string,
-  runtimeApiKey?: string,
+  runtimeApiKey?: string
 ): Promise<WsbConfigDiagnostics> {
   const inboxDir = path.join(sandboxDir, 'inbox')
   const outboxDir = path.join(sandboxDir, 'outbox')
@@ -423,12 +432,42 @@ async function writeWsbConfig(
   await fs.writeFile(wsbPath, wsb, 'utf-8')
 
   const mappedFolders: NonNullable<HostAgentStartDiagnostics['mappedFolders']> = [
-    { hostFolder: runtimeDirHost, sandboxFolder: 'C:\\rikune-runtime', readOnly: true, exists: existsSync(runtimeDirHost) },
-    { hostFolder: workersDirHost, sandboxFolder: 'C:\\rikune-workers', readOnly: true, exists: existsSync(workersDirHost) },
-    { hostFolder: inboxDir, sandboxFolder: 'C:\\rikune-inbox', readOnly: false, exists: existsSync(inboxDir) },
-    { hostFolder: outboxDir, sandboxFolder: 'C:\\rikune-outbox', readOnly: false, exists: existsSync(outboxDir) },
-    { hostFolder: path.dirname(hostNodePath), sandboxFolder: 'C:\\rikune-node', readOnly: true, exists: existsSync(path.dirname(hostNodePath)) },
-    { hostFolder: nodeModulesDirHost, sandboxFolder: 'C:\\node_modules', readOnly: true, exists: existsSync(nodeModulesDirHost) },
+    {
+      hostFolder: runtimeDirHost,
+      sandboxFolder: 'C:\\rikune-runtime',
+      readOnly: true,
+      exists: existsSync(runtimeDirHost),
+    },
+    {
+      hostFolder: workersDirHost,
+      sandboxFolder: 'C:\\rikune-workers',
+      readOnly: true,
+      exists: existsSync(workersDirHost),
+    },
+    {
+      hostFolder: inboxDir,
+      sandboxFolder: 'C:\\rikune-inbox',
+      readOnly: false,
+      exists: existsSync(inboxDir),
+    },
+    {
+      hostFolder: outboxDir,
+      sandboxFolder: 'C:\\rikune-outbox',
+      readOnly: false,
+      exists: existsSync(outboxDir),
+    },
+    {
+      hostFolder: path.dirname(hostNodePath),
+      sandboxFolder: 'C:\\rikune-node',
+      readOnly: true,
+      exists: existsSync(path.dirname(hostNodePath)),
+    },
+    {
+      hostFolder: nodeModulesDirHost,
+      sandboxFolder: 'C:\\node_modules',
+      readOnly: true,
+      exists: existsSync(nodeModulesDirHost),
+    },
   ]
   if (hostPythonPath) {
     mappedFolders.push({
@@ -441,7 +480,8 @@ async function writeWsbConfig(
 
   return {
     mappedFolders,
-    logonCommandSummary: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand <redacted>',
+    logonCommandSummary:
+      'powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand <redacted>',
     hostNodePath,
     hostPythonPath,
     stagedRuntimeEntryHost,
@@ -472,7 +512,9 @@ async function collectWindowsSandboxDiagnostics(params: {
       exit: params.sandboxExit ?? null,
     },
     readyFile: await readFilePreview(path.join(params.sandboxDir, 'outbox', 'runtime.ready.json')),
-    startupLog: await readFilePreview(path.join(params.sandboxDir, 'outbox', 'runtime-startup.log')),
+    startupLog: await readFilePreview(
+      path.join(params.sandboxDir, 'outbox', 'runtime-startup.log')
+    ),
     stdoutLog: await readFilePreview(path.join(params.sandboxDir, 'outbox', 'runtime.stdout.log')),
     stderrLog: await readFilePreview(path.join(params.sandboxDir, 'outbox', 'runtime.stderr.log')),
     missingPaths: params.missingPaths,
@@ -506,23 +548,29 @@ function buildHyperVDiagnostics(params: {
 
 function getHyperVConfig(overrides: Partial<StartSandboxRequest> = {}) {
   const vmName = (process.env.HOST_AGENT_HYPERV_VM_NAME || '').trim()
-  const snapshotName = typeof overrides.hypervSnapshotName === 'string'
-    ? overrides.hypervSnapshotName.trim()
-    : (process.env.HOST_AGENT_HYPERV_SNAPSHOT_NAME || '').trim()
-  const endpoint = (process.env.HOST_AGENT_HYPERV_RUNTIME_ENDPOINT || process.env.HOST_AGENT_HYPERV_ENDPOINT || '').trim()
-  const restoreOnStart = !!snapshotName && (
-    typeof overrides.hypervRestoreOnStart === 'boolean'
+  const snapshotName =
+    typeof overrides.hypervSnapshotName === 'string'
+      ? overrides.hypervSnapshotName.trim()
+      : (process.env.HOST_AGENT_HYPERV_SNAPSHOT_NAME || '').trim()
+  const endpoint = (
+    process.env.HOST_AGENT_HYPERV_RUNTIME_ENDPOINT ||
+    process.env.HOST_AGENT_HYPERV_ENDPOINT ||
+    ''
+  ).trim()
+  const restoreOnStart =
+    !!snapshotName &&
+    (typeof overrides.hypervRestoreOnStart === 'boolean'
       ? overrides.hypervRestoreOnStart
-      : readEnvFlag('HOST_AGENT_HYPERV_RESTORE_ON_START', true)
-  )
-  const restoreOnRelease = !!snapshotName && (
-    typeof overrides.hypervRestoreOnRelease === 'boolean'
+      : readEnvFlag('HOST_AGENT_HYPERV_RESTORE_ON_START', true))
+  const restoreOnRelease =
+    !!snapshotName &&
+    (typeof overrides.hypervRestoreOnRelease === 'boolean'
       ? overrides.hypervRestoreOnRelease
-      : readEnvFlag('HOST_AGENT_HYPERV_RESTORE_ON_RELEASE', false)
-  )
-  const stopOnRelease = typeof overrides.hypervStopOnRelease === 'boolean'
-    ? overrides.hypervStopOnRelease
-    : readEnvFlag('HOST_AGENT_HYPERV_STOP_ON_RELEASE', false)
+      : readEnvFlag('HOST_AGENT_HYPERV_RESTORE_ON_RELEASE', false))
+  const stopOnRelease =
+    typeof overrides.hypervStopOnRelease === 'boolean'
+      ? overrides.hypervStopOnRelease
+      : readEnvFlag('HOST_AGENT_HYPERV_STOP_ON_RELEASE', false)
   return { vmName, snapshotName, endpoint, restoreOnStart, restoreOnRelease, stopOnRelease }
 }
 
@@ -531,7 +579,8 @@ async function getHyperVRuntimeStatus(): Promise<Record<string, unknown> | null>
     return null
   }
 
-  const { vmName, snapshotName, endpoint, restoreOnStart, restoreOnRelease, stopOnRelease } = getHyperVConfig()
+  const { vmName, snapshotName, endpoint, restoreOnStart, restoreOnRelease, stopOnRelease } =
+    getHyperVConfig()
 
   if (!vmName || process.platform !== 'win32') {
     return {
@@ -543,9 +592,10 @@ async function getHyperVRuntimeStatus(): Promise<Record<string, unknown> | null>
       restoreOnRelease,
       stopOnRelease,
       state: null,
-      error: process.platform !== 'win32'
-        ? 'Hyper-V status requires Windows platform'
-        : 'HOST_AGENT_HYPERV_VM_NAME is not configured',
+      error:
+        process.platform !== 'win32'
+          ? 'Hyper-V status requires Windows platform'
+          : 'HOST_AGENT_HYPERV_VM_NAME is not configured',
     }
   }
 
@@ -587,10 +637,21 @@ async function getHyperVRuntimeStatus(): Promise<Record<string, unknown> | null>
   }
 }
 
-async function listHyperVCheckpoints(): Promise<{ ok: boolean; backend: 'hyperv-vm'; vmName?: string; checkpoints?: unknown[]; error?: string }> {
+async function listHyperVCheckpoints(): Promise<{
+  ok: boolean
+  backend: 'hyperv-vm'
+  vmName?: string
+  checkpoints?: unknown[]
+  error?: string
+}> {
   const { vmName } = getHyperVConfig()
   if (process.platform !== 'win32') {
-    return { ok: false, backend: 'hyperv-vm', vmName, error: 'Hyper-V checkpoint listing requires Windows platform' }
+    return {
+      ok: false,
+      backend: 'hyperv-vm',
+      vmName,
+      error: 'Hyper-V checkpoint listing requires Windows platform',
+    }
   }
   if (!vmName) {
     return { ok: false, backend: 'hyperv-vm', error: 'HOST_AGENT_HYPERV_VM_NAME is not configured' }
@@ -608,7 +669,12 @@ async function listHyperVCheckpoints(): Promise<{ ok: boolean; backend: 'hyperv-
     const checkpoints = Array.isArray(parsed) ? parsed : parsed ? [parsed] : []
     return { ok: true, backend: 'hyperv-vm', vmName, checkpoints }
   } catch (err) {
-    return { ok: false, backend: 'hyperv-vm', vmName, error: err instanceof Error ? err.message : String(err) }
+    return {
+      ok: false,
+      backend: 'hyperv-vm',
+      vmName,
+      error: err instanceof Error ? err.message : String(err),
+    }
   }
 }
 
@@ -618,7 +684,11 @@ async function createHyperVCheckpoint(body: unknown): Promise<Record<string, unk
   const rawSnapshotName = (request.snapshotName || '').trim()
   const snapshotName = rawSnapshotName || `rikune-${new Date().toISOString().replace(/[:.]/g, '-')}`
   if (process.platform !== 'win32') {
-    return { ok: false, backend: 'hyperv-vm', error: 'Hyper-V checkpoint creation requires Windows platform' }
+    return {
+      ok: false,
+      backend: 'hyperv-vm',
+      error: 'Hyper-V checkpoint creation requires Windows platform',
+    }
   }
   if (!vmName) {
     return { ok: false, backend: 'hyperv-vm', error: 'HOST_AGENT_HYPERV_VM_NAME is not configured' }
@@ -681,21 +751,35 @@ async function restoreHyperVCheckpoint(body: unknown): Promise<Record<string, un
   const snapshotName = (request.snapshotName || configuredSnapshot || '').trim()
   const startAfterRestore = request.start !== false
   const waitForRuntime = request.waitForRuntime !== false
-  const timeoutMs = typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs)
-    ? Math.max(1000, request.timeoutMs)
-    : parseInt(process.env.HOST_AGENT_HYPERV_WAIT_TIMEOUT_MS || '120000', 10)
-  const runtimeApiKey = typeof request.runtimeApiKey === 'string' && request.runtimeApiKey.trim().length > 0
-    ? request.runtimeApiKey.trim()
-    : process.env.HOST_AGENT_RUNTIME_API_KEY || process.env.RUNTIME_API_KEY || API_KEY || undefined
+  const timeoutMs =
+    typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs)
+      ? Math.max(1000, request.timeoutMs)
+      : parseInt(process.env.HOST_AGENT_HYPERV_WAIT_TIMEOUT_MS || '120000', 10)
+  const runtimeApiKey =
+    typeof request.runtimeApiKey === 'string' && request.runtimeApiKey.trim().length > 0
+      ? request.runtimeApiKey.trim()
+      : process.env.HOST_AGENT_RUNTIME_API_KEY ||
+        process.env.RUNTIME_API_KEY ||
+        API_KEY ||
+        undefined
 
   if (process.platform !== 'win32') {
-    return { ok: false, backend: 'hyperv-vm', error: 'Hyper-V checkpoint restore requires Windows platform' }
+    return {
+      ok: false,
+      backend: 'hyperv-vm',
+      error: 'Hyper-V checkpoint restore requires Windows platform',
+    }
   }
   if (!vmName) {
     return { ok: false, backend: 'hyperv-vm', error: 'HOST_AGENT_HYPERV_VM_NAME is not configured' }
   }
   if (!snapshotName) {
-    return { ok: false, backend: 'hyperv-vm', vmName, error: 'No snapshot name provided. Set HOST_AGENT_HYPERV_SNAPSHOT_NAME or pass snapshotName.' }
+    return {
+      ok: false,
+      backend: 'hyperv-vm',
+      vmName,
+      error: 'No snapshot name provided. Set HOST_AGENT_HYPERV_SNAPSHOT_NAME or pass snapshotName.',
+    }
   }
 
   const commands = [
@@ -710,9 +794,10 @@ async function restoreHyperVCheckpoint(body: unknown): Promise<Record<string, un
 
   try {
     const result = await runPowerShell(commands.join('\n'), timeoutMs)
-    const runtimeReady = startAfterRestore && waitForRuntime && endpoint
-      ? await waitForRuntimeEndpoint(endpoint, runtimeApiKey, timeoutMs)
-      : null
+    const runtimeReady =
+      startAfterRestore && waitForRuntime && endpoint
+        ? await waitForRuntimeEndpoint(endpoint, runtimeApiKey, timeoutMs)
+        : null
     const status = await getHyperVRuntimeStatus()
     return {
       ok: runtimeReady === false ? false : true,
@@ -733,7 +818,9 @@ async function restoreHyperVCheckpoint(body: unknown): Promise<Record<string, un
         stdout: result.stdout,
         stderr: result.stderr,
       }),
-      ...(runtimeReady === false ? { error: `Hyper-V runtime endpoint did not become healthy within timeout: ${endpoint}` } : {}),
+      ...(runtimeReady === false
+        ? { error: `Hyper-V runtime endpoint did not become healthy within timeout: ${endpoint}` }
+        : {}),
     }
   } catch (err) {
     const details = err as Error & { stdout?: string; stderr?: string }
@@ -885,22 +972,30 @@ async function removeSandboxDir(sandboxDir: string, reason: string): Promise<voi
   }
 }
 
-async function startHyperVRuntime(
-  body: unknown
-): Promise<StartSandboxResult> {
+async function startHyperVRuntime(body: unknown): Promise<StartSandboxResult> {
   if (process.platform !== 'win32') {
-    return { ok: false, backend: 'hyperv-vm', error: 'Hyper-V runtime backend requires Windows platform' }
+    return {
+      ok: false,
+      backend: 'hyperv-vm',
+      error: 'Hyper-V runtime backend requires Windows platform',
+    }
   }
 
   const request = (body && typeof body === 'object' ? body : {}) as StartSandboxRequest
-  const timeoutMs = typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs)
-    ? Math.max(1000, request.timeoutMs)
-    : parseInt(process.env.HOST_AGENT_HYPERV_WAIT_TIMEOUT_MS || '120000', 10)
-  const runtimeApiKey = typeof request.runtimeApiKey === 'string' && request.runtimeApiKey.trim().length > 0
-    ? request.runtimeApiKey.trim()
-    : process.env.HOST_AGENT_RUNTIME_API_KEY || process.env.RUNTIME_API_KEY || API_KEY || undefined
+  const timeoutMs =
+    typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs)
+      ? Math.max(1000, request.timeoutMs)
+      : parseInt(process.env.HOST_AGENT_HYPERV_WAIT_TIMEOUT_MS || '120000', 10)
+  const runtimeApiKey =
+    typeof request.runtimeApiKey === 'string' && request.runtimeApiKey.trim().length > 0
+      ? request.runtimeApiKey.trim()
+      : process.env.HOST_AGENT_RUNTIME_API_KEY ||
+        process.env.RUNTIME_API_KEY ||
+        API_KEY ||
+        undefined
 
-  const { vmName, snapshotName, endpoint, restoreOnStart, restoreOnRelease, stopOnRelease } = getHyperVConfig(request)
+  const { vmName, snapshotName, endpoint, restoreOnStart, restoreOnRelease, stopOnRelease } =
+    getHyperVConfig(request)
   if (!vmName) {
     return {
       ok: false,
@@ -936,7 +1031,10 @@ async function startHyperVRuntime(
   try {
     const result = await runPowerShell(commands.join('\n'), timeoutMs)
     if (result.stderr.trim()) {
-      logger.warn({ stderr: result.stderr.trim(), vmName }, 'Hyper-V backend command wrote to stderr')
+      logger.warn(
+        { stderr: result.stderr.trim(), vmName },
+        'Hyper-V backend command wrote to stderr'
+      )
     }
   } catch (err) {
     const details = err as Error & { stdout?: string; stderr?: string }
@@ -965,7 +1063,14 @@ async function startHyperVRuntime(
       ok: false,
       backend: 'hyperv-vm',
       error: `Hyper-V runtime endpoint did not become healthy within timeout: ${endpoint}`,
-      diagnostics: buildHyperVDiagnostics({ vmName, snapshotName, endpoint, restoreOnStart, restoreOnRelease, stopOnRelease }),
+      diagnostics: buildHyperVDiagnostics({
+        vmName,
+        snapshotName,
+        endpoint,
+        restoreOnStart,
+        restoreOnRelease,
+        stopOnRelease,
+      }),
     }
   }
 
@@ -989,7 +1094,10 @@ async function startHyperVRuntime(
     hypervStopOnRelease: stopOnRelease,
   })
 
-  logger.info({ sandboxId, vmName, endpoint, restoreOnStart, restoreOnRelease, stopOnRelease }, 'Hyper-V runtime connected')
+  logger.info(
+    { sandboxId, vmName, endpoint, restoreOnStart, restoreOnRelease, stopOnRelease },
+    'Hyper-V runtime connected'
+  )
   return {
     ok: true,
     endpoint,
@@ -1005,9 +1113,7 @@ async function startHyperVRuntime(
   }
 }
 
-async function startSandbox(
-  body: unknown
-): Promise<StartSandboxResult> {
+async function startSandbox(body: unknown): Promise<StartSandboxResult> {
   if (HOST_AGENT_BACKEND === 'hyperv-vm') {
     return startHyperVRuntime(body)
   }
@@ -1017,12 +1123,17 @@ async function startSandbox(
   }
 
   const request = (body && typeof body === 'object' ? body : {}) as StartSandboxRequest
-  const timeoutMs = typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs)
-    ? Math.max(1000, request.timeoutMs)
-    : 60000
-  const runtimeApiKey = typeof request.runtimeApiKey === 'string' && request.runtimeApiKey.trim().length > 0
-    ? request.runtimeApiKey.trim()
-    : process.env.HOST_AGENT_RUNTIME_API_KEY || process.env.RUNTIME_API_KEY || API_KEY || undefined
+  const timeoutMs =
+    typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs)
+      ? Math.max(1000, request.timeoutMs)
+      : 60000
+  const runtimeApiKey =
+    typeof request.runtimeApiKey === 'string' && request.runtimeApiKey.trim().length > 0
+      ? request.runtimeApiKey.trim()
+      : process.env.HOST_AGENT_RUNTIME_API_KEY ||
+        process.env.RUNTIME_API_KEY ||
+        API_KEY ||
+        undefined
   const listenPort = await allocateListenPort()
   if (listenPort === null) {
     return { ok: false, error: 'No available listen port for new Sandbox runtime' }
@@ -1041,8 +1152,16 @@ async function startSandbox(
   const requiredPaths = [
     { name: 'runtimeEntryHost', path: runtimeEntryHost, exists: existsSync(runtimeEntryHost) },
     { name: 'workersDirHost', path: workersDirHost, exists: existsSync(workersDirHost) },
-    { name: 'nodeModulesDirHost', path: nodeModulesDirHost, exists: existsSync(nodeModulesDirHost) },
-    { name: 'sharedDistEntryHost', path: sharedDistEntryHost, exists: existsSync(sharedDistEntryHost) },
+    {
+      name: 'nodeModulesDirHost',
+      path: nodeModulesDirHost,
+      exists: existsSync(nodeModulesDirHost),
+    },
+    {
+      name: 'sharedDistEntryHost',
+      path: sharedDistEntryHost,
+      exists: existsSync(sharedDistEntryHost),
+    },
   ]
   if (requiredPaths.some((entry) => !entry.exists)) {
     releaseListenPort(listenPort)
@@ -1086,7 +1205,10 @@ async function startSandbox(
   let sandboxExit: { code: number | null; signal: NodeJS.Signals | null } | null = null
   sandboxProcess.once('exit', (code, signal) => {
     sandboxExit = { code, signal }
-    logger.warn({ sandboxDir, wsbPath, code, signal }, 'Windows Sandbox process exited before runtime readiness was confirmed')
+    logger.warn(
+      { sandboxDir, wsbPath, code, signal },
+      'Windows Sandbox process exited before runtime readiness was confirmed'
+    )
   })
 
   const ready = await waitForRuntimeReady(sandboxDir, timeoutMs)
@@ -1110,8 +1232,7 @@ async function startSandbox(
     return {
       ok: false,
       error:
-        `Sandbox runtime did not become ready within timeout.${exitDetail} ` +
-        `wsbPath=${wsbPath}`,
+        `Sandbox runtime did not become ready within timeout.${exitDetail} ` + `wsbPath=${wsbPath}`,
       diagnostics,
     }
   }
@@ -1171,7 +1292,13 @@ async function stopSandbox(sandboxId: string): Promise<{ ok: boolean; error?: st
         await runPowerShell(commands.join('\n'), shouldRestore ? 120_000 : 60_000)
       } catch (err) {
         logger.warn(
-          { err, sandboxId, vmName: box.hypervVmName, snapshotName: box.hypervSnapshotName, shouldRestore },
+          {
+            err,
+            sandboxId,
+            vmName: box.hypervVmName,
+            snapshotName: box.hypervSnapshotName,
+            shouldRestore,
+          },
           'Failed to release Hyper-V VM'
         )
       }
@@ -1309,7 +1436,10 @@ const server = createServer(async (req, res) => {
 })
 
 server.listen(PORT, BIND_HOST, () => {
-  logger.info({ host: BIND_HOST, port: PORT, apiKeyConfigured: !!API_KEY }, 'Windows Host Agent listening')
+  logger.info(
+    { host: BIND_HOST, port: PORT, apiKeyConfigured: !!API_KEY },
+    'Windows Host Agent listening'
+  )
 })
 
 process.on('SIGTERM', async () => {
