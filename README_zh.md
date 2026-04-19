@@ -403,7 +403,7 @@ pip install frida frida-tools
 
 ## 当前开发进度
 
-### 最新 Release: v1.0.0-beta.3
+### 最新 Release: v1.1.0
 
 **稳定功能** (生产环境可用)：
 - PE 初筛与静态分析 (`static.capability.triage`, `pe.structure.analyze`, `compiler.packer.detect`)

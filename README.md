@@ -479,7 +479,7 @@ See [`docs/EXAMPLES.md`](./docs/EXAMPLES.md#场景 -9-frida-运行时 instrument
 
 ## Current Development Status
 
-### Latest Release: v1.0.0-beta.3
+### Latest Release: v1.1.0
 
 **Stable Features** (Production Ready):
 - PE triage and static analysis (`static.capability.triage`, `pe.structure.analyze`, `compiler.packer.detect`)

@@ -157,12 +157,12 @@ export class FileServer {
       }
 
       if (pathname === '/api/v1/health' && req.method === 'GET') {
-        await handleHealthCheck(res, '1.0.0-beta.3')
+        await handleHealthCheck(res, '1.1.0')
         return
       }
 
       if (pathname === '/api/v1/ready' && req.method === 'GET') {
-        await handleReadinessCheck(res, '1.0.0-beta.3')
+        await handleReadinessCheck(res, '1.1.0')
         return
       }
 
