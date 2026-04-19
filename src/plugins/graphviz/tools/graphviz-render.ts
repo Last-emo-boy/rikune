@@ -1,5 +1,5 @@
 /**
- * Graphviz render tool â€?renders DOT graph text into SVG or PNG artifacts.
+ * Graphviz render tool ï¿½?renders DOT graph text into SVG or PNG artifacts.
  */
 
 import { z } from 'zod'
@@ -8,13 +8,25 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
-  fs, os, path,
-  ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
-  ExplanationConfidenceStateSchema, ExplanationSurfaceRoleSchema, ToolSurfaceRoleSchema,
-  ensureSampleExists, executeCommand, truncateText, normalizeError,
-  persistBackendArtifact, buildMetrics,
+  fs,
+  os,
+  path,
+  ArtifactRefSchema,
+  BackendSchema,
+  SharedMetricsSchema,
+  ExplanationConfidenceStateSchema,
+  ExplanationSurfaceRoleSchema,
+  ToolSurfaceRoleSchema,
+  ensureSampleExists,
+  executeCommand,
+  truncateText,
+  normalizeError,
+  persistBackendArtifact,
+  buildMetrics,
   resolveAnalysisBackends,
-  mergeSetupActions, buildCoreLinuxToolchainSetupActions, buildHeavyBackendSetupActions,
+  mergeSetupActions,
+  buildCoreLinuxToolchainSetupActions,
+  buildHeavyBackendSetupActions,
 } from '../../docker-shared.js'
 
 export const graphvizRenderInputSchema = z.object({
@@ -25,14 +37,22 @@ export const graphvizRenderInputSchema = z.object({
     .enum(['dot', 'neato', 'fdp', 'sfdp', 'circo', 'twopi'])
     .default('dot')
     .describe('Graphviz layout engine.'),
-  timeout_sec: z.number().int().min(1).max(120).default(30).describe('Renderer timeout in seconds.'),
+  timeout_sec: z
+    .number()
+    .int()
+    .min(1)
+    .max(120)
+    .default(30)
+    .describe('Renderer timeout in seconds.'),
   preview_max_chars: z
     .number()
     .int()
     .min(128)
     .max(4000)
     .default(1000)
-    .describe('Maximum inline preview characters from the rendered asset text when the format is svg.'),
+    .describe(
+      'Maximum inline preview characters from the rendered asset text when the format is svg.'
+    ),
   persist_artifact: z
     .boolean()
     .default(true)
@@ -111,7 +131,11 @@ export function createGraphvizRenderHandler(
             backend,
             sample_id: input.sample_id,
             tool_surface_role: 'renderer_helper',
-            preferred_primary_tools: ['code.function.cfg', 'workflow.summarize', 'report.summarize'],
+            preferred_primary_tools: [
+              'code.function.cfg',
+              'workflow.summarize',
+              'report.summarize',
+            ],
             graph_semantics: {
               surface_role: 'render_export_helper',
               confidence_state: 'observed',

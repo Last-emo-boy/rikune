@@ -31,10 +31,21 @@ export interface CallGraphEdge {
 export interface CallGraphData {
   nodes: CallGraphNode[]
   edges: CallGraphEdge[]
-  metadata: { sampleId: string; totalFunctions: number; suspiciousFunctions: number; maxDepth: number; selectedFunctions: number }
+  metadata: {
+    sampleId: string
+    totalFunctions: number
+    suspiciousFunctions: number
+    maxDepth: number
+    selectedFunctions: number
+  }
   explanation: ExplanationGraphDigest
 }
-export interface CallGraphOptions { maxNodes?: number; highlightSuspicious?: boolean; format?: 'dot' | 'mermaid' | 'json'; sampleId?: string }
+export interface CallGraphOptions {
+  maxNodes?: number
+  highlightSuspicious?: boolean
+  format?: 'dot' | 'mermaid' | 'json'
+  sampleId?: string
+}
 
 export function generateCallGraph(
   functions: Array<{
@@ -52,21 +63,26 @@ export function generateCallGraph(
   const { maxNodes = 50, highlightSuspicious = true } = options
   const sortedFunctions = [...functions].sort((a, b) => b.score - a.score)
   const selectedFunctions = sortedFunctions.slice(0, maxNodes)
-  
-  const nodes: CallGraphNode[] = selectedFunctions.map(func => ({
-    id: func.address, address: func.address, name: func.name, size: func.size, score: func.score,
+
+  const nodes: CallGraphNode[] = selectedFunctions.map((func) => ({
+    id: func.address,
+    address: func.address,
+    name: func.name,
+    size: func.size,
+    score: func.score,
     isSuspicious: highlightSuspicious && func.score > 0.7,
-    callerCount: func.callers?.length || func.callerCount || 0, calleeCount: func.callees?.length || func.calleeCount || 0,
+    callerCount: func.callers?.length || func.callerCount || 0,
+    calleeCount: func.callees?.length || func.calleeCount || 0,
     confidence_state: 'correlated',
   }))
-  
+
   const edges: CallGraphEdge[] = []
   const edgeMap = new Map<string, CallGraphEdge>()
   for (const func of selectedFunctions) {
     if (func.callees) {
       for (const callee of func.callees) {
         const edgeKey = `${func.address}->${callee}`
-        if (edgeMap.has(edgeKey)) edgeMap.get(edgeKey)!.callCount++
+        if (edgeMap.has(edgeKey)) edgeMap.get(edgeKey).callCount++
         else {
           const edge: CallGraphEdge = {
             source: func.address,
@@ -74,7 +90,8 @@ export function generateCallGraph(
             callCount: 1,
             confidence_state: 'correlated',
           }
-          edgeMap.set(edgeKey, edge); edges.push(edge)
+          edgeMap.set(edgeKey, edge)
+          edges.push(edge)
         }
       }
     }
@@ -119,7 +136,8 @@ export function generateCallGraph(
       {
         kind: 'stage',
         label: 'persisted_function_index',
-        detail: 'Built from persisted function-score and callee relationship data already present in the workspace.',
+        detail:
+          'Built from persisted function-score and callee relationship data already present in the workspace.',
       },
       {
         kind: 'selection',
@@ -128,7 +146,11 @@ export function generateCallGraph(
       },
     ],
     omissions,
-    recommended_next_tools: ['code.function.cfg', 'code.function.decompile', 'workflow.analyze.promote'],
+    recommended_next_tools: [
+      'code.function.cfg',
+      'code.function.decompile',
+      'workflow.analyze.promote',
+    ],
   })
 
   return {
@@ -137,7 +159,7 @@ export function generateCallGraph(
     metadata: {
       sampleId: options.sampleId || '',
       totalFunctions: functions.length,
-      suspiciousFunctions: nodes.filter(n => n.isSuspicious).length,
+      suspiciousFunctions: nodes.filter((n) => n.isSuspicious).length,
       maxDepth: calculateMaxDepth(nodes, edges),
       selectedFunctions: selectedFunctions.length,
     },
@@ -175,16 +197,24 @@ export function callGraphToMermaid(graph: CallGraphData): string {
 function calculateMaxDepth(nodes: CallGraphNode[], edges: CallGraphEdge[]): number {
   if (nodes.length === 0) return 0
   const adjacency = new Map<string, string[]>()
-  for (const edge of edges) { if (!adjacency.has(edge.source)) adjacency.set(edge.source, []); adjacency.get(edge.source)!.push(edge.target) }
-  const visited = new Set<string>(); let maxDepth = 0
+  for (const edge of edges) {
+    if (!adjacency.has(edge.source)) adjacency.set(edge.source, [])
+    adjacency.get(edge.source).push(edge.target)
+  }
+  const visited = new Set<string>()
+  let maxDepth = 0
   function dfs(nodeId: string, depth: number): void {
     if (visited.has(nodeId)) return
-    visited.add(nodeId); maxDepth = Math.max(maxDepth, depth)
+    visited.add(nodeId)
+    maxDepth = Math.max(maxDepth, depth)
     const neighbors = adjacency.get(nodeId) || []
     for (const neighbor of neighbors) dfs(neighbor, depth + 1)
   }
-  const hasIncoming = new Set(edges.map(e => e.target))
-  const roots = nodes.filter(n => !hasIncoming.has(n.address))
-  for (const root of roots) { visited.clear(); dfs(root.address, 1) }
+  const hasIncoming = new Set(edges.map((e) => e.target))
+  const roots = nodes.filter((n) => !hasIncoming.has(n.address))
+  for (const root of roots) {
+    visited.clear()
+    dfs(root.address, 1)
+  }
   return maxDepth
 }

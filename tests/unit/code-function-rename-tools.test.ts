@@ -7,10 +7,10 @@ import { CacheManager } from '../../src/cache-manager.js'
 import {
   createCodeFunctionRenamePrepareHandler,
   codeFunctionRenamePrepareInputSchema,
-} from '../../src/tools/code-function-rename-prepare.js'
+} from '../../src/plugins/code-analysis/tools/code-function-rename-prepare.js'
 import {
   createCodeFunctionRenameApplyHandler,
-} from '../../src/tools/code-function-rename-apply.js'
+} from '../../src/plugins/code-analysis/tools/code-function-rename-apply.js'
 import {
   loadSemanticNameSuggestionIndex,
   SEMANTIC_NAME_PREPARE_BUNDLE_ARTIFACT_TYPE,

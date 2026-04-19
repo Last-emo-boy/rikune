@@ -1,5 +1,5 @@
 /**
- * YARA-X scan tool â€?scan a sample with YARA-X rules.
+ * YARA-X scan tool ï¿½?scan a sample with YARA-X rules.
  */
 
 import { createHash } from 'crypto'
@@ -10,11 +10,20 @@ import type { DatabaseManager } from '../../../database.js'
 import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
   fs,
-  ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, runPythonJson,
-  persistBackendArtifact, buildMetrics, buildStaticSetupRequired,
-  findBackendPreviewEvidence, persistBackendPreviewEvidence, buildEvidenceReuseWarnings,
-  resolveSampleFile, resolveAnalysisBackends,
+  ArtifactRefSchema,
+  BackendSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  runPythonJson,
+  persistBackendArtifact,
+  buildMetrics,
+  buildStaticSetupRequired,
+  findBackendPreviewEvidence,
+  persistBackendPreviewEvidence,
+  buildEvidenceReuseWarnings,
+  resolveSampleFile,
+  resolveAnalysisBackends,
 } from '../../docker-shared.js'
 
 export const yaraXScanInputSchema = z
@@ -22,7 +31,13 @@ export const yaraXScanInputSchema = z
     sample_id: z.string().describe('Target sample identifier.'),
     rules_text: z.string().optional().describe('Inline YARA-X source text.'),
     rules_path: z.string().optional().describe('Absolute path to a YARA or YARA-X rules file.'),
-    timeout_sec: z.number().int().min(1).max(180).default(30).describe('YARA-X scan timeout in seconds.'),
+    timeout_sec: z
+      .number()
+      .int()
+      .min(1)
+      .max(180)
+      .default(30)
+      .describe('YARA-X scan timeout in seconds.'),
     max_matches_per_pattern: z
       .number()
       .int()
@@ -30,7 +45,10 @@ export const yaraXScanInputSchema = z
       .max(5000)
       .default(250)
       .describe('Maximum matches per pattern for the scanner.'),
-    persist_artifact: z.boolean().default(true).describe('Persist the JSON scan result as an artifact.'),
+    persist_artifact: z
+      .boolean()
+      .default(true)
+      .describe('Persist the JSON scan result as an artifact.'),
     session_tag: z.string().optional().describe('Optional artifact session tag.'),
   })
   .superRefine((data, ctx) => {
@@ -151,13 +169,7 @@ export function createYaraXScanHandler(
         rules_digest: rulesDigest,
         max_matches_per_pattern: input.max_matches_per_pattern,
       }
-      const reused = findBackendPreviewEvidence(
-        database,
-        sample,
-        'yara_x',
-        'scan',
-        evidenceArgs
-      )
+      const reused = findBackendPreviewEvidence(database, sample, 'yara_x', 'scan', evidenceArgs)
       if (reused) {
         return {
           ok: true,
@@ -211,7 +223,9 @@ export function createYaraXScanHandler(
         artifacts.push(artifact)
       }
 
-      const matchingRules = Array.isArray(result.parsed?.matching_rules) ? result.parsed.matching_rules : []
+      const matchingRules = Array.isArray(result.parsed?.matching_rules)
+        ? result.parsed.matching_rules
+        : []
       const outputData = {
         status: 'ready',
         backend,

@@ -83,7 +83,7 @@ export function createKbStatsHandler(
       if (args.include_category_breakdown) {
         // Parse semantics_behavior for category hints
         const allEntries = database.querySql<{ semantics_behavior: string }>(
-          'SELECT semantics_behavior FROM function_kb WHERE semantics_behavior IS NOT NULL AND semantics_behavior != \'\''
+          "SELECT semantics_behavior FROM function_kb WHERE semantics_behavior IS NOT NULL AND semantics_behavior != ''"
         )
         const categories: Record<string, number> = {}
         for (const entry of allEntries || []) {

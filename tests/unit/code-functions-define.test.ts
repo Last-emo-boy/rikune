@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
-import { createCodeFunctionsDefineHandler } from '../../src/tools/code-functions-define.js'
+import { createCodeFunctionsDefineHandler } from '../../src/plugins/code-analysis/tools/code-functions-define.js'
 
 function createMinimalAmd64PdataPE(): Buffer {
   const dosHeader = Buffer.alloc(0x80, 0)

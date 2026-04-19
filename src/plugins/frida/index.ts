@@ -7,19 +7,26 @@
 import { execFileSync } from 'child_process'
 import type { Plugin } from '../sdk.js'
 import {
-  fridaRuntimeInstrumentToolDefinition, createFridaRuntimeInstrumentHandler,
+  fridaRuntimeInstrumentToolDefinition,
+  createFridaRuntimeInstrumentHandler,
 } from './tools/frida-runtime-instrument.js'
 import {
-  fridaScriptInjectToolDefinition, createFridaScriptInjectHandler,
+  fridaScriptInjectToolDefinition,
+  createFridaScriptInjectHandler,
 } from './tools/frida-script-inject.js'
 import {
-  fridaTraceCaptureToolDefinition, createFridaTraceCaptureHandler,
+  fridaTraceCaptureToolDefinition,
+  createFridaTraceCaptureHandler,
 } from './tools/frida-trace-capture.js'
-import { fridaScriptGenerateToolDefinition, createFridaScriptGenerateHandler } from './tools/frida-script-generate.js'
+import {
+  fridaScriptGenerateToolDefinition,
+  createFridaScriptGenerateHandler,
+} from './tools/frida-script-generate.js'
 
 const fridaPlugin: Plugin = {
   id: 'frida',
   name: 'Frida Instrumentation',
+  executionDomain: 'dynamic',
   surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description: 'Runtime instrumentation, script injection, and trace capture via Frida',
   version: '1.0.0',
@@ -27,20 +34,43 @@ const fridaPlugin: Plugin = {
     { envVar: 'FRIDA_PATH', description: 'Path to frida CLI binary', required: false },
   ],
   systemDeps: [
-    { type: 'binary', name: 'frida', versionFlag: '--version', envVar: 'FRIDA_PATH', required: true, description: 'Frida dynamic instrumentation toolkit', dockerInstall: 'pip install frida-tools', dockerFeature: 'frida', dockerValidation: ['frida-ps --help >/dev/null 2>&1'] },
+    {
+      type: 'binary',
+      name: 'frida',
+      versionFlag: '--version',
+      envVar: 'FRIDA_PATH',
+      required: true,
+      description: 'Frida dynamic instrumentation toolkit',
+      dockerInstall: 'pip install frida-tools',
+      dockerFeature: 'frida',
+      dockerValidation: ['frida-ps --help >/dev/null 2>&1'],
+    },
   ],
   check() {
     try {
       execFileSync('frida', ['--version'], { stdio: 'ignore', timeout: 3000 })
       return true
-    } catch { return false }
+    } catch {
+      return false
+    }
   },
   register(server, deps) {
-    server.registerTool(fridaRuntimeInstrumentToolDefinition, createFridaRuntimeInstrumentHandler(deps))
+    server.registerTool(
+      fridaRuntimeInstrumentToolDefinition,
+      createFridaRuntimeInstrumentHandler(deps)
+    )
     server.registerTool(fridaScriptInjectToolDefinition, createFridaScriptInjectHandler(deps))
     server.registerTool(fridaTraceCaptureToolDefinition, createFridaTraceCaptureHandler(deps))
-    server.registerTool(fridaScriptGenerateToolDefinition, createFridaScriptGenerateHandler(deps.workspaceManager, deps.database))
-    return ['frida.runtime.instrument', 'frida.script.inject', 'frida.trace.capture', 'frida.script.generate']
+    server.registerTool(
+      fridaScriptGenerateToolDefinition,
+      createFridaScriptGenerateHandler(deps.workspaceManager, deps.database)
+    )
+    return [
+      'frida.runtime.instrument',
+      'frida.script.inject',
+      'frida.trace.capture',
+      'frida.script.generate',
+    ]
   },
 }
 

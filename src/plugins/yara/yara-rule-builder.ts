@@ -46,13 +46,36 @@ export interface ScoredRule {
 // ============================================================================
 
 const COMMON_STRINGS = new Set([
-  'kernel32.dll', 'ntdll.dll', 'user32.dll', 'advapi32.dll', 'msvcrt.dll',
-  'GetProcAddress', 'LoadLibraryA', 'GetModuleHandleA', 'VirtualAlloc',
-  'VirtualFree', 'ExitProcess', 'CloseHandle', 'CreateFileA', 'ReadFile',
-  'WriteFile', 'GetLastError', 'SetLastError', 'GetCurrentProcess',
-  'HeapAlloc', 'HeapFree', 'GetCommandLineA', 'GetStartupInfoA',
-  'This program cannot be run in DOS mode', '.text', '.data', '.rdata',
-  '.rsrc', '.reloc', 'KERNEL32.dll', 'USER32.dll',
+  'kernel32.dll',
+  'ntdll.dll',
+  'user32.dll',
+  'advapi32.dll',
+  'msvcrt.dll',
+  'GetProcAddress',
+  'LoadLibraryA',
+  'GetModuleHandleA',
+  'VirtualAlloc',
+  'VirtualFree',
+  'ExitProcess',
+  'CloseHandle',
+  'CreateFileA',
+  'ReadFile',
+  'WriteFile',
+  'GetLastError',
+  'SetLastError',
+  'GetCurrentProcess',
+  'HeapAlloc',
+  'HeapFree',
+  'GetCommandLineA',
+  'GetStartupInfoA',
+  'This program cannot be run in DOS mode',
+  '.text',
+  '.data',
+  '.rdata',
+  '.rsrc',
+  '.reloc',
+  'KERNEL32.dll',
+  'USER32.dll',
 ])
 
 // ============================================================================
@@ -88,17 +111,13 @@ function buildMetaBlock(meta: RuleMeta): string {
 // ============================================================================
 
 export function buildStringRule(strings: string[], meta: RuleMeta): string {
-  const filtered = strings.filter(
-    (s) => s.length >= 6 && s.length <= 200 && !COMMON_STRINGS.has(s)
-  )
+  const filtered = strings.filter((s) => s.length >= 6 && s.length <= 200 && !COMMON_STRINGS.has(s))
   if (filtered.length === 0) return ''
 
   const selected = filtered.slice(0, 30)
   const ruleName = sanitizeRuleName(`string_${meta.sample_id.slice(7, 19)}`)
 
-  const stringDefs = selected
-    .map((s, i) => `        $s${i} = "${escapeYaraString(s)}"`)
-    .join('\n')
+  const stringDefs = selected.map((s, i) => `        $s${i} = "${escapeYaraString(s)}"`).join('\n')
 
   const minMatch = Math.max(1, Math.floor(selected.length * 0.6))
 
@@ -115,9 +134,7 @@ export function buildStringRule(strings: string[], meta: RuleMeta): string {
 }
 
 export function buildImportRule(imports: string[], meta: RuleMeta): string {
-  const suspicious = imports.filter(
-    (imp) => !COMMON_STRINGS.has(imp) && imp.length >= 4
-  )
+  const suspicious = imports.filter((imp) => !COMMON_STRINGS.has(imp) && imp.length >= 4)
   if (suspicious.length === 0) return ''
 
   const selected = suspicious.slice(0, 20)
@@ -150,9 +167,7 @@ export function buildBytePatternRule(
   const selected = patterns.slice(0, 10)
   const ruleName = sanitizeRuleName(`bytes_${meta.sample_id.slice(7, 19)}`)
 
-  const hexDefs = selected
-    .map((p, i) => `        $hex${i} = { ${p.hex} }`)
-    .join('\n')
+  const hexDefs = selected.map((p, i) => `        $hex${i} = { ${p.hex} }`).join('\n')
 
   return [
     `rule ${ruleName}`,
@@ -197,10 +212,7 @@ export function buildHybridRule(
   }
 
   // Byte patterns
-  const bytePatterns = evidence.byte_patterns.slice(
-    0,
-    strictness === 'tight' ? 5 : 2
-  )
+  const bytePatterns = evidence.byte_patterns.slice(0, strictness === 'tight' ? 5 : 2)
   for (const bp of bytePatterns) {
     stringDefs.push(`        $hex${idx} = { ${bp.hex} }`)
     idx++
@@ -264,7 +276,13 @@ export function extractRuleEvidence(artifactData: Record<string, unknown>): Rule
   if (Array.isArray(stringsData)) {
     evidence.unique_strings = stringsData
       .map((s) =>
-        typeof s === 'string' ? s : s && typeof s === 'object' ? String((s as Record<string, unknown>).string ?? (s as Record<string, unknown>).value ?? '') : ''
+        typeof s === 'string'
+          ? s
+          : s && typeof s === 'object'
+            ? String(
+                (s as Record<string, unknown>).string ?? (s as Record<string, unknown>).value ?? ''
+              )
+            : ''
       )
       .filter((s) => s.length >= 6 && !COMMON_STRINGS.has(s))
       .slice(0, 100)
@@ -282,7 +300,11 @@ export function extractRuleEvidence(artifactData: Record<string, unknown>): Rule
         if (Array.isArray(obj.functions)) {
           for (const fn of obj.functions) {
             if (typeof fn === 'string') evidence.all_imports.push(fn)
-            else if (fn && typeof fn === 'object' && typeof (fn as Record<string, unknown>).name === 'string') {
+            else if (
+              fn &&
+              typeof fn === 'object' &&
+              typeof (fn as Record<string, unknown>).name === 'string'
+            ) {
               evidence.all_imports.push((fn as Record<string, unknown>).name as string)
             }
           }
@@ -293,19 +315,39 @@ export function extractRuleEvidence(artifactData: Record<string, unknown>): Rule
 
   // Mark suspicious imports
   const SUSPICIOUS_APIS = [
-    'VirtualAllocEx', 'WriteProcessMemory', 'CreateRemoteThread', 'NtUnmapViewOfSection',
-    'RtlCreateUserThread', 'QueueUserAPC', 'SetWindowsHookEx', 'CreateToolhelp32Snapshot',
-    'Process32First', 'Process32Next', 'OpenProcess', 'NtCreateThreadEx',
-    'WinExec', 'ShellExecuteA', 'ShellExecuteW', 'URLDownloadToFileA',
-    'InternetOpenA', 'InternetConnectA', 'HttpOpenRequestA', 'HttpSendRequestA',
-    'CryptEncrypt', 'CryptDecrypt', 'BCryptEncrypt', 'BCryptDecrypt',
-    'RegSetValueExA', 'RegCreateKeyExA', 'NtSetInformationProcess',
-    'IsDebuggerPresent', 'CheckRemoteDebuggerPresent', 'NtQueryInformationProcess',
+    'VirtualAllocEx',
+    'WriteProcessMemory',
+    'CreateRemoteThread',
+    'NtUnmapViewOfSection',
+    'RtlCreateUserThread',
+    'QueueUserAPC',
+    'SetWindowsHookEx',
+    'CreateToolhelp32Snapshot',
+    'Process32First',
+    'Process32Next',
+    'OpenProcess',
+    'NtCreateThreadEx',
+    'WinExec',
+    'ShellExecuteA',
+    'ShellExecuteW',
+    'URLDownloadToFileA',
+    'InternetOpenA',
+    'InternetConnectA',
+    'HttpOpenRequestA',
+    'HttpSendRequestA',
+    'CryptEncrypt',
+    'CryptDecrypt',
+    'BCryptEncrypt',
+    'BCryptDecrypt',
+    'RegSetValueExA',
+    'RegCreateKeyExA',
+    'NtSetInformationProcess',
+    'IsDebuggerPresent',
+    'CheckRemoteDebuggerPresent',
+    'NtQueryInformationProcess',
   ]
   const suspSet = new Set(SUSPICIOUS_APIS.map((s) => s.toLowerCase()))
-  evidence.suspicious_imports = evidence.all_imports.filter((imp) =>
-    suspSet.has(imp.toLowerCase())
-  )
+  evidence.suspicious_imports = evidence.all_imports.filter((imp) => suspSet.has(imp.toLowerCase()))
 
   // PE imphash
   if (typeof artifactData.pe_imphash === 'string') {
@@ -328,7 +370,16 @@ export function scoreRule(
   ruleText: string,
   evidence: RuleEvidence
 ): { score: number; breakdown: ScoredRule['score_breakdown'] } {
-  if (!ruleText) return { score: 0, breakdown: { string_uniqueness: 0, import_specificity: 0, byte_pattern_quality: 0, condition_strictness: 0 } }
+  if (!ruleText)
+    return {
+      score: 0,
+      breakdown: {
+        string_uniqueness: 0,
+        import_specificity: 0,
+        byte_pattern_quality: 0,
+        condition_strictness: 0,
+      },
+    }
 
   // String uniqueness: penalize common strings
   const stringMatches = ruleText.match(/\$s\d+/g) ?? []
@@ -351,7 +402,9 @@ export function scoreRule(
   const andCount = (conditionLines.match(/\band\b/g) ?? []).length
   const condition_strictness = Math.min(25, (andCount + 1) * 6)
 
-  const score = Math.round(string_uniqueness + import_specificity + byte_pattern_quality + condition_strictness)
+  const score = Math.round(
+    string_uniqueness + import_specificity + byte_pattern_quality + condition_strictness
+  )
 
   return {
     score: Math.min(100, score),

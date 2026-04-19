@@ -5,7 +5,7 @@ import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import type { ToolArgs, WorkerResult } from '../../src/types.js'
-import { createDllExportProfileHandler } from '../../src/tools/dll-export-profile.js'
+import { createDllExportProfileHandler } from '../../src/plugins/static-triage/tools/dll-export-profile.js'
 
 describe('dll.export.profile tool', () => {
   let workspaceManager: WorkspaceManager

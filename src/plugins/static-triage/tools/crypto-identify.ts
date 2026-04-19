@@ -11,8 +11,15 @@ import { createStringsFlossDecodeHandler } from '../../strings/tools/strings-flo
 import { createAnalysisContextLinkHandler } from './analysis-context-link.js'
 import { createPEImportsExtractHandler } from '../../../plugins/pe-analysis/tools/pe-imports-extract.js'
 import { createStaticCapabilityTriageHandler } from './static-capability-triage.js'
-import { loadDynamicTraceEvidence, type DynamicEvidenceScope, type DynamicTraceSummary } from '../../../artifacts/dynamic-trace.js'
-import { buildDeferredToolResponse, shouldDeferLargeSample } from '../../../analysis/nonblocking-analysis.js'
+import {
+  loadDynamicTraceEvidence,
+  type DynamicEvidenceScope,
+  type DynamicTraceSummary,
+} from '../../../artifacts/dynamic-trace.js'
+import {
+  buildDeferredToolResponse,
+  shouldDeferLargeSample,
+} from '../../../analysis/nonblocking-analysis.js'
 import { classifySampleSizeTier } from '../../../analysis/analysis-coverage.js'
 import { persistChunkedArrayArtifacts } from '../../../analysis/chunked-analysis-evidence.js'
 import {
@@ -49,7 +56,9 @@ const MEDIUM_SAMPLE_INLINE_CRYPTO_FINDINGS = 6
 const DEFAULT_INLINE_CRYPTO_FINDINGS = 8
 const CRYPTO_FINDING_CHUNK_SIZE = 4
 
-function chooseInlineCryptoFindingLimit(sampleSizeTier: ReturnType<typeof classifySampleSizeTier>): number {
+function chooseInlineCryptoFindingLimit(
+  sampleSizeTier: ReturnType<typeof classifySampleSizeTier>
+): number {
   if (sampleSizeTier === 'large' || sampleSizeTier === 'oversized') {
     return LARGE_SAMPLE_INLINE_CRYPTO_FINDINGS
   }
@@ -65,7 +74,9 @@ export const cryptoIdentifyInputSchema = z.object({
     .enum(['preview', 'full'])
     .optional()
     .default('preview')
-    .describe('preview keeps crypto identification bounded for synchronous MCP use. Start with preview on medium or larger samples. full adds heavier decoded/context correlation and may be deferred on larger samples.'),
+    .describe(
+      'preview keeps crypto identification bounded for synchronous MCP use. Start with preview on medium or larger samples. full adds heavier decoded/context correlation and may be deferred on larger samples.'
+    ),
   include_runtime_evidence: z
     .boolean()
     .optional()
@@ -127,12 +138,16 @@ export const cryptoIdentifyInputSchema = z.object({
     .boolean()
     .optional()
     .default(false)
-    .describe('Bypass artifact reuse and recompute from current static and optional dynamic evidence'),
+    .describe(
+      'Bypass artifact reuse and recompute from current static and optional dynamic evidence'
+    ),
   defer_if_slow: z
     .boolean()
     .optional()
     .default(true)
-    .describe('When true, mode=full may be deferred instead of blocking the MCP request on medium/large samples.'),
+    .describe(
+      'When true, mode=full may be deferred instead of blocking the MCP request on medium/large samples.'
+    ),
   session_tag: z
     .string()
     .optional()
@@ -200,8 +215,12 @@ interface CryptoIdentifyDependencies {
 }
 
 function collectStringRecords(result: WorkerResult | undefined): BasicStringRecord[] {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
-  const enriched = data.enriched && typeof data.enriched === 'object' ? (data.enriched as Record<string, unknown>) : {}
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const enriched =
+    data.enriched && typeof data.enriched === 'object'
+      ? (data.enriched as Record<string, unknown>)
+      : {}
   const enrichedRecords = Array.isArray(enriched.records) ? enriched.records : []
   if (enrichedRecords.length > 0) {
     return enrichedRecords
@@ -213,11 +232,14 @@ function collectStringRecords(result: WorkerResult | undefined): BasicStringReco
         return {
           value: record.value,
           labels: Array.isArray(record.labels) ? record.labels.map((entry) => String(entry)) : [],
-          categories: Array.isArray(record.categories) ? record.categories.map((entry) => String(entry)) : [],
+          categories: Array.isArray(record.categories)
+            ? record.categories.map((entry) => String(entry))
+            : [],
           function_refs: Array.isArray(record.function_refs)
             ? record.function_refs
                 .map((entry) => {
-                  const ref = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {}
+                  const ref =
+                    entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {}
                   return {
                     address: typeof ref.address === 'string' ? ref.address : undefined,
                     name: typeof ref.name === 'string' ? ref.name : null,
@@ -232,15 +254,17 @@ function collectStringRecords(result: WorkerResult | undefined): BasicStringReco
 
   const rawStrings = Array.isArray(data.strings)
     ? data.strings.map((item) => ({
-        value: typeof (item as Record<string, unknown>)?.string === 'string'
-          ? String((item as Record<string, unknown>).string)
-          : '',
+        value:
+          typeof (item as Record<string, unknown>)?.string === 'string'
+            ? String((item as Record<string, unknown>).string)
+            : '',
       }))
     : Array.isArray(data.decoded_strings)
       ? data.decoded_strings.map((item) => ({
-          value: typeof (item as Record<string, unknown>)?.string === 'string'
-            ? String((item as Record<string, unknown>).string)
-            : '',
+          value:
+            typeof (item as Record<string, unknown>)?.string === 'string'
+              ? String((item as Record<string, unknown>).string)
+              : '',
           labels: ['decoded_signal'],
         }))
       : []
@@ -265,7 +289,9 @@ function mergeStringRecords(...groups: BasicStringRecord[][]): BasicStringRecord
       merged.set(key, {
         value: record.value,
         labels: Array.from(new Set([...(existing.labels || []), ...(record.labels || [])])),
-        categories: Array.from(new Set([...(existing.categories || []), ...(record.categories || [])])),
+        categories: Array.from(
+          new Set([...(existing.categories || []), ...(record.categories || [])])
+        ),
         function_refs: Array.from(
           new Map(
             [...(existing.function_refs || []), ...(record.function_refs || [])]
@@ -280,7 +306,8 @@ function mergeStringRecords(...groups: BasicStringRecord[][]): BasicStringRecord
 }
 
 function collectFunctionContexts(result: WorkerResult | undefined): FunctionContextLike[] {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   return Array.isArray(data.function_contexts)
     ? data.function_contexts
         .map((item) => {
@@ -288,11 +315,15 @@ function collectFunctionContexts(result: WorkerResult | undefined): FunctionCont
           return {
             function: typeof context.function === 'string' ? context.function : undefined,
             address: typeof context.address === 'string' ? context.address : undefined,
-            top_strings: Array.isArray(context.top_strings) ? context.top_strings.map((entry) => String(entry)) : [],
+            top_strings: Array.isArray(context.top_strings)
+              ? context.top_strings.map((entry) => String(entry))
+              : [],
             sensitive_apis: Array.isArray(context.sensitive_apis)
               ? context.sensitive_apis.map((entry) => String(entry))
               : [],
-            rationale: Array.isArray(context.rationale) ? context.rationale.map((entry) => String(entry)) : [],
+            rationale: Array.isArray(context.rationale)
+              ? context.rationale.map((entry) => String(entry))
+              : [],
           }
         })
         .filter((item) => item.function || item.address)
@@ -300,7 +331,8 @@ function collectFunctionContexts(result: WorkerResult | undefined): FunctionCont
 }
 
 function extractImportsMap(result: WorkerResult | undefined): Record<string, string[]> | undefined {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   return data.imports && typeof data.imports === 'object'
     ? Object.fromEntries(
         Object.entries(data.imports as Record<string, unknown>).map(([key, value]) => [
@@ -312,7 +344,8 @@ function extractImportsMap(result: WorkerResult | undefined): Record<string, str
 }
 
 function hasCryptoCapability(result: WorkerResult | undefined): boolean {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   const namespaces = Array.isArray(data.behavior_namespaces)
     ? data.behavior_namespaces.map((item) => String(item))
     : []
@@ -320,9 +353,10 @@ function hasCryptoCapability(result: WorkerResult | undefined): boolean {
     return true
   }
 
-  const groups = data.capability_groups && typeof data.capability_groups === 'object'
-    ? Object.keys(data.capability_groups as Record<string, unknown>)
-    : []
+  const groups =
+    data.capability_groups && typeof data.capability_groups === 'object'
+      ? Object.keys(data.capability_groups as Record<string, unknown>)
+      : []
   if (groups.some((item) => /(crypt|aes|rsa|hash|cipher|key|decrypt|encrypt)/i.test(item))) {
     return true
   }
@@ -374,15 +408,20 @@ export function createCryptoIdentifyHandler(
   options: { allowDeferred?: boolean } = {}
 ) {
   const stringsExtractHandler =
-    dependencies.stringsExtract || createStringsExtractHandler(workspaceManager, database, cacheManager)
+    dependencies.stringsExtract ||
+    createStringsExtractHandler(workspaceManager, database, cacheManager)
   const stringsFlossDecodeHandler =
-    dependencies.stringsFlossDecode || createStringsFlossDecodeHandler(workspaceManager, database, cacheManager)
+    dependencies.stringsFlossDecode ||
+    createStringsFlossDecodeHandler(workspaceManager, database, cacheManager)
   const analysisContextLinkHandler =
-    dependencies.analysisContextLink || createAnalysisContextLinkHandler(workspaceManager, database, cacheManager)
+    dependencies.analysisContextLink ||
+    createAnalysisContextLinkHandler(workspaceManager, database, cacheManager)
   const peImportsExtractHandler =
-    dependencies.peImportsExtract || createPEImportsExtractHandler({ workspaceManager, database, cacheManager } as any)
+    dependencies.peImportsExtract ||
+    createPEImportsExtractHandler({ workspaceManager, database, cacheManager } as any)
   const staticCapabilityTriageHandler =
-    dependencies.staticCapabilityTriage || createStaticCapabilityTriageHandler(workspaceManager, database)
+    dependencies.staticCapabilityTriage ||
+    createStaticCapabilityTriageHandler(workspaceManager, database)
   const dynamicTraceLoader = dependencies.loadDynamicTrace || loadDynamicTraceEvidence
 
   return async (args: ToolArgs): Promise<WorkerResult> => {
@@ -435,7 +474,8 @@ export function createCryptoIdentifyHandler(
               ...(resolved.record.result as Record<string, unknown>),
               result_mode: input.mode,
               execution_state:
-                typeof (resolved.record.result as Record<string, unknown>)?.execution_state === 'string'
+                typeof (resolved.record.result as Record<string, unknown>)?.execution_state ===
+                'string'
                   ? (resolved.record.result as Record<string, unknown>).execution_state
                   : 'completed',
               evidence_state: [buildResolvedEvidenceState(resolved)],
@@ -466,11 +506,11 @@ export function createCryptoIdentifyHandler(
           return {
             ok: true,
             data: {
-              ...(selection.latest_payload as Record<string, unknown>),
+              ...selection.latest_payload,
               result_mode: input.mode,
               execution_state:
-                typeof (selection.latest_payload as Record<string, unknown>)?.execution_state === 'string'
-                  ? (selection.latest_payload as Record<string, unknown>).execution_state
+                typeof selection.latest_payload?.execution_state === 'string'
+                  ? selection.latest_payload.execution_state
                   : 'completed',
               evidence_state: [
                 AnalysisEvidenceStateSchema.parse({
@@ -561,7 +601,8 @@ export function createCryptoIdentifyHandler(
         mode: input.mode,
         include_decoded: input.mode === 'full',
         max_records: input.mode === 'preview' ? Math.min(60, input.max_findings * 10) : 90,
-        max_functions: input.mode === 'preview' ? Math.min(input.max_contexts, 4) : input.max_contexts,
+        max_functions:
+          input.mode === 'preview' ? Math.min(input.max_contexts, 4) : input.max_contexts,
         xref_depth: input.xref_depth,
         persist_artifact: false,
         reuse_cached: true,
@@ -588,13 +629,12 @@ export function createCryptoIdentifyHandler(
       warnings.push(...(importsResult.warnings || []))
       warnings.push(...(capabilityResult.warnings || []))
 
-      const dynamicEvidence =
-        input.include_runtime_evidence
-          ? await dynamicTraceLoader(workspaceManager, database, input.sample_id, {
-              evidenceScope: input.runtime_evidence_scope,
-              sessionTag: input.session_tag,
-            })
-          : null
+      const dynamicEvidence = input.include_runtime_evidence
+        ? await dynamicTraceLoader(workspaceManager, database, input.sample_id, {
+            evidenceScope: input.runtime_evidence_scope,
+            sessionTag: input.session_tag,
+          })
+        : null
 
       const stringRecords = mergeStringRecords(
         collectStringRecords(stringsResult),
@@ -640,7 +680,10 @@ export function createCryptoIdentifyHandler(
       const chunkWarnings: string[] = []
       let chunkArtifacts: ArtifactRef[] = []
 
-      if (input.mode === 'full' && algorithms.length > chooseInlineCryptoFindingLimit(sampleSizeTier)) {
+      if (
+        input.mode === 'full' &&
+        algorithms.length > chooseInlineCryptoFindingLimit(sampleSizeTier)
+      ) {
         const chunked = await persistChunkedArrayArtifacts(algorithms, {
           family: 'crypto_identify',
           inlineLimit: chooseInlineCryptoFindingLimit(sampleSizeTier),
@@ -679,7 +722,7 @@ export function createCryptoIdentifyHandler(
       }
 
       const outputData = {
-        status: (xrefStatus === 'available' ? 'ready' : 'partial') as 'ready' | 'partial',
+        status: xrefStatus === 'available' ? 'ready' : 'partial',
         sample_id: input.sample_id,
         result_mode: input.mode,
         execution_state: xrefStatus === 'available' ? 'completed' : 'partial',
@@ -731,7 +774,9 @@ export function createCryptoIdentifyHandler(
           xref_depth: input.xref_depth,
         },
         result: outputData,
-        artifactRefs: artifact ? [...sourceArtifactRefs, ...chunkArtifacts, artifact] : [...sourceArtifactRefs, ...chunkArtifacts],
+        artifactRefs: artifact
+          ? [...sourceArtifactRefs, ...chunkArtifacts, artifact]
+          : [...sourceArtifactRefs, ...chunkArtifacts],
         metadata: {
           cache_key: cacheKey,
           sample_size_tier: sampleSizeTier,
@@ -753,7 +798,9 @@ export function createCryptoIdentifyHandler(
         warnings: Array.from(
           new Set([...warnings, ...chunkWarnings].filter((item) => item.trim().length > 0))
         ),
-        artifacts: artifact ? [...sourceArtifactRefs, ...chunkArtifacts, artifact] : [...sourceArtifactRefs, ...chunkArtifacts],
+        artifacts: artifact
+          ? [...sourceArtifactRefs, ...chunkArtifacts, artifact]
+          : [...sourceArtifactRefs, ...chunkArtifacts],
         metrics: {
           elapsed_ms: Date.now() - startTime,
           tool: TOOL_NAME,

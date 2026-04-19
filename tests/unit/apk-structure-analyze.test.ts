@@ -56,7 +56,7 @@ describe('apk.structure.analyze tool', () => {
   describe('Tool handler (sample not found)', () => {
     test('should return error when sample not found', async () => {
       const { createApkStructureAnalyzeHandler } = await import('../../src/plugins/android/tools/apk-structure-analyze.js')
-      const handler = createApkStructureAnalyzeHandler({ workspaceManager: mockWorkspaceManager, database: mockDatabase, config: mockConfig } as any)
+      const handler = createApkStructureAnalyzeHandler({ workspaceManager: mockWorkspaceManager, database: mockDatabase, config: mockConfig, resolvePackagePath: (...segs: string[]) => segs.join('/') } as any)
       mockDatabase.findSample.mockReturnValue(undefined)
 
       const result = await handler({ sample_id: 'sha256:nonexistent' })

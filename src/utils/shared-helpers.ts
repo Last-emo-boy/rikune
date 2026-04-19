@@ -52,8 +52,17 @@ export function matchesSessionTag(sessionTags: string[], selector?: string | nul
   if (!selector || !selector.trim()) {
     return false
   }
-  const normalized = selector.trim()
-  return sessionTags.some((tag) => tag === normalized)
+  const normalized = selector.trim().toLowerCase()
+  return sessionTags.some((tag) => {
+    const candidate = tag.trim().toLowerCase()
+    const lastSegment = candidate
+      .split('/')
+      .filter((item) => item.length > 0)
+      .pop()
+    return (
+      candidate === normalized || candidate.endsWith(`/${normalized}`) || lastSegment === normalized
+    )
+  })
 }
 
 export function toStringArray(value: unknown): string[] {
@@ -63,20 +72,29 @@ export function toStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string')
 }
 
-export function collectArtifactRefs(result: { artifacts?: unknown[]; data?: unknown } | undefined): ArtifactRef[] {
+export function collectArtifactRefs(
+  result: { artifacts?: unknown[]; data?: unknown } | undefined
+): ArtifactRef[] {
   if (!result) {
     return []
   }
   const refs: ArtifactRef[] = []
   if (Array.isArray(result.artifacts)) {
-    refs.push(...(result.artifacts.filter((item) => item && typeof item === 'object') as ArtifactRef[]))
+    refs.push(
+      ...(result.artifacts.filter((item) => item && typeof item === 'object') as ArtifactRef[])
+    )
   }
-  const data = result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   if (data.artifact && typeof data.artifact === 'object') {
     refs.push(data.artifact as ArtifactRef)
   }
   if (Array.isArray(data.source_artifact_refs)) {
-    refs.push(...(data.source_artifact_refs.filter((item) => item && typeof item === 'object') as ArtifactRef[]))
+    refs.push(
+      ...(data.source_artifact_refs.filter(
+        (item) => item && typeof item === 'object'
+      ) as ArtifactRef[])
+    )
   }
   return refs
 }
@@ -103,8 +121,16 @@ export function escapeMermaid(text: string): string {
   return text.replace(/"/g, "'").replace(/\n/g, ' ')
 }
 
-export function getPythonCommand(platform: NodeJS.Platform = process.platform): string {
-  return platform === 'win32' ? 'python' : 'python3'
+export function getPythonCommand(
+  platform: NodeJS.Platform = process.platform,
+  overridePath?: string
+): string {
+  if (overridePath) return overridePath
+  if (platform === 'win32') {
+    // Prefer Windows Python Launcher if available; fallback to bare 'python'
+    return 'python'
+  }
+  return 'python3'
 }
 
 export function extractJsonCandidates(rawText: string): string[] {

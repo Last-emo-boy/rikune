@@ -104,7 +104,8 @@ export function detectBytecodeFetch(code: string): { score: number; snippets: st
   }
 
   // Cast + dereference: *(uint8_t*)(base + offset)
-  const castDerefRe = /\*\s*\(\s*(u?int\d+_t|BYTE|WORD|DWORD)\s*\*\s*\)\s*\(\s*\w+\s*\+\s*\w+\s*\)/gi
+  const castDerefRe =
+    /\*\s*\(\s*(u?int\d+_t|BYTE|WORD|DWORD)\s*\*\s*\)\s*\(\s*\w+\s*\+\s*\w+\s*\)/gi
   const castMatches = code.match(castDerefRe)
   if (castMatches && castMatches.length > 0) {
     score += 8
@@ -218,13 +219,19 @@ export function detectOpcodeRange(code: string): { score: number; snippets: stri
 
   if (density >= 0.8) {
     score += 15
-    snippets.push(`Dense opcode range: ${values.length} opcodes in [${min}..${max}] (${(density * 100).toFixed(0)}%)`)
+    snippets.push(
+      `Dense opcode range: ${values.length} opcodes in [${min}..${max}] (${(density * 100).toFixed(0)}%)`
+    )
   } else if (density >= 0.5) {
     score += 10
-    snippets.push(`Moderate opcode range: ${values.length} opcodes in [${min}..${max}] (${(density * 100).toFixed(0)}%)`)
+    snippets.push(
+      `Moderate opcode range: ${values.length} opcodes in [${min}..${max}] (${(density * 100).toFixed(0)}%)`
+    )
   } else if (density >= 0.3) {
     score += 5
-    snippets.push(`Sparse opcode range: ${values.length} opcodes in [${min}..${max}] (${(density * 100).toFixed(0)}%)`)
+    snippets.push(
+      `Sparse opcode range: ${values.length} opcodes in [${min}..${max}] (${(density * 100).toFixed(0)}%)`
+    )
   }
 
   // Bonus: starts from 0

@@ -26,11 +26,14 @@ async function runVol3(args: string[], timeout = 120_000): Promise<string> {
   return stdout
 }
 
-async function resolveDumpPath(args: { sample_id?: string; dump_path?: string }, deps: PluginToolDeps): Promise<string> {
+async function resolveDumpPath(
+  args: { sample_id?: string; dump_path?: string },
+  deps: PluginToolDeps
+): Promise<string> {
   if (args.dump_path) return args.dump_path
   if (!args.sample_id) throw new Error('Either sample_id or dump_path must be provided')
 
-  const wm = deps.workspaceManager as any
+  const wm = deps.workspaceManager
   if (typeof wm.getSamplePath === 'function') {
     return wm.getSamplePath(args.sample_id)
   }
@@ -48,16 +51,47 @@ function tryParseJson(text: string): Record<string, unknown> {
 const memoryForensicsPlugin: Plugin = {
   id: 'memory-forensics',
   name: 'Memory Forensics (Volatility 3)',
+  executionDomain: 'static',
   surfaceRules: { tier: 3, category: 'memory-forensics' },
-  description: 'Memory dump analysis using Volatility 3 — process listing, DLL extraction, registry analysis, and memory-resident malware detection.',
+  description:
+    'Memory dump analysis using Volatility 3 — process listing, DLL extraction, registry analysis, and memory-resident malware detection.',
   version: '1.0.0',
   configSchema: [
-    { envVar: 'VOLATILITY3_PATH', description: 'Path to Volatility 3 (vol3) executable', required: true },
-    { envVar: 'VOL3_SYMBOL_PATH', description: 'Path to Volatility 3 symbol tables', required: false },
+    {
+      envVar: 'VOLATILITY3_PATH',
+      description: 'Path to Volatility 3 (vol3) executable',
+      required: true,
+    },
+    {
+      envVar: 'VOL3_SYMBOL_PATH',
+      description: 'Path to Volatility 3 symbol tables',
+      required: false,
+    },
   ],
   systemDeps: [
-    { type: 'binary', name: 'vol3', versionFlag: '--help', envVar: 'VOLATILITY3_PATH', dockerDefault: '/usr/local/bin/vol', required: true, description: 'Volatility 3 memory forensics framework', dockerInstall: 'pip install volatility3', dockerFeature: 'vol3', dockerValidation: ['python3 -c "import volatility3; print(\'✓ volatility3\')"'] },
-    { type: 'directory', name: 'vol3-symbols', target: '$VOL3_SYMBOL_PATH', envVar: 'VOL3_SYMBOL_PATH', dockerDefault: '/opt/vol3-symbols', required: false, description: 'Volatility 3 symbol tables', dockerFeature: 'vol3', directories: [{ path: '/opt/vol3-symbols' }] },
+    {
+      type: 'binary',
+      name: 'vol3',
+      versionFlag: '--help',
+      envVar: 'VOLATILITY3_PATH',
+      dockerDefault: '/usr/local/bin/vol',
+      required: true,
+      description: 'Volatility 3 memory forensics framework',
+      dockerInstall: 'pip install volatility3',
+      dockerFeature: 'vol3',
+      dockerValidation: ['HOME=/app/cache/home /usr/local/bin/vol --help >/dev/null'],
+    },
+    {
+      type: 'directory',
+      name: 'vol3-symbols',
+      target: '$VOL3_SYMBOL_PATH',
+      envVar: 'VOL3_SYMBOL_PATH',
+      dockerDefault: '/opt/vol3-symbols',
+      required: false,
+      description: 'Volatility 3 symbol tables',
+      dockerFeature: 'vol3',
+      directories: [{ path: '/opt/vol3-symbols' }],
+    },
   ],
 
   register(server, deps): string[] {
@@ -72,7 +106,10 @@ const memoryForensicsPlugin: Plugin = {
           type: 'object',
           properties: {
             sample_id: { type: 'string', description: 'Sample ID of the memory dump' },
-            dump_path: { type: 'string', description: 'Direct path to memory dump file (alternative to sample_id)' },
+            dump_path: {
+              type: 'string',
+              description: 'Direct path to memory dump file (alternative to sample_id)',
+            },
           },
         } as any,
       },
@@ -102,7 +139,11 @@ const memoryForensicsPlugin: Plugin = {
           },
         } as any,
       },
-      async (args: { sample_id?: string; dump_path?: string; pid?: number }): Promise<ToolResult> => {
+      async (args: {
+        sample_id?: string
+        dump_path?: string
+        pid?: number
+      }): Promise<ToolResult> => {
         const dumpPath = await resolveDumpPath(args, deps)
         const vol3Args = ['-f', dumpPath, 'windows.dlllist.DllList', '--output', 'json']
         if (args.pid) vol3Args.push('--pid', String(args.pid))
@@ -130,7 +171,11 @@ const memoryForensicsPlugin: Plugin = {
           },
         } as any,
       },
-      async (args: { sample_id?: string; dump_path?: string; pid?: number }): Promise<ToolResult> => {
+      async (args: {
+        sample_id?: string
+        dump_path?: string
+        pid?: number
+      }): Promise<ToolResult> => {
         const dumpPath = await resolveDumpPath(args, deps)
         const vol3Args = ['-f', dumpPath, 'windows.malfind.Malfind', '--output', 'json']
         if (args.pid) vol3Args.push('--pid', String(args.pid))
@@ -159,7 +204,13 @@ const memoryForensicsPlugin: Plugin = {
       },
       async (args: { sample_id?: string; dump_path?: string }): Promise<ToolResult> => {
         const dumpPath = await resolveDumpPath(args, deps)
-        const output = await runVol3(['-f', dumpPath, 'windows.netscan.NetScan', '--output', 'json'])
+        const output = await runVol3([
+          '-f',
+          dumpPath,
+          'windows.netscan.NetScan',
+          '--output',
+          'json',
+        ])
         const data = tryParseJson(output)
         return {
           content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
@@ -184,7 +235,13 @@ const memoryForensicsPlugin: Plugin = {
       },
       async (args: { sample_id?: string; dump_path?: string }): Promise<ToolResult> => {
         const dumpPath = await resolveDumpPath(args, deps)
-        const output = await runVol3(['-f', dumpPath, 'windows.registry.hivelist.HiveList', '--output', 'json'])
+        const output = await runVol3([
+          '-f',
+          dumpPath,
+          'windows.registry.hivelist.HiveList',
+          '--output',
+          'json',
+        ])
         const data = tryParseJson(output)
         return {
           content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
@@ -208,7 +265,11 @@ const memoryForensicsPlugin: Plugin = {
           },
         } as any,
       },
-      async (args: { sample_id?: string; dump_path?: string; pid?: number }): Promise<ToolResult> => {
+      async (args: {
+        sample_id?: string
+        dump_path?: string
+        pid?: number
+      }): Promise<ToolResult> => {
         const dumpPath = await resolveDumpPath(args, deps)
         const vol3Args = ['-f', dumpPath, 'windows.cmdline.CmdLine', '--output', 'json']
         if (args.pid) vol3Args.push('--pid', String(args.pid))

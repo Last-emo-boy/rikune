@@ -9,7 +9,7 @@ import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
 import type { JobQueue } from '../job-queue.js'
-import type { MCPServer } from '../server.js'
+import type { SamplingClient } from '../core/registrar.js'
 import { createCodeModuleReviewHandler } from '../tools/code-module-review.js'
 import { createReconstructWorkflowHandler } from './reconstruct.js'
 import { AnalysisProvenanceSchema } from '../analysis/analysis-provenance.js'
@@ -81,17 +81,24 @@ export const moduleReconstructionReviewWorkflowInputSchema = z
     run_timeout_ms: z.number().int().min(5000).max(300000).default(30000),
     reuse_cached: z.boolean().default(true),
   })
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
-  })
-  .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
-    message: 'semantic_session_tag is required when semantic_scope=session',
-    path: ['semantic_session_tag'],
-  })
+  .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()),
+    {
+      message: 'semantic_session_tag is required when semantic_scope=session',
+      path: ['semantic_session_tag'],
+    }
+  )
   .refine(
     (value) =>
-      value.compare_evidence_scope !== 'session' || Boolean(value.compare_evidence_session_tag?.trim()),
+      value.compare_evidence_scope !== 'session' ||
+      Boolean(value.compare_evidence_session_tag?.trim()),
     {
       message: 'compare_evidence_session_tag is required when compare_evidence_scope=session',
       path: ['compare_evidence_session_tag'],
@@ -99,7 +106,8 @@ export const moduleReconstructionReviewWorkflowInputSchema = z
   )
   .refine(
     (value) =>
-      value.compare_semantic_scope !== 'session' || Boolean(value.compare_semantic_session_tag?.trim()),
+      value.compare_semantic_scope !== 'session' ||
+      Boolean(value.compare_semantic_session_tag?.trim()),
     {
       message: 'compare_semantic_session_tag is required when compare_semantic_scope=session',
       path: ['compare_semantic_session_tag'],
@@ -153,10 +161,12 @@ export const moduleReconstructionReviewWorkflowOutputSchema = z.object({
   artifacts: z.array(z.any()).optional(),
   setup_actions: z.array(SetupActionSchema).optional(),
   required_user_inputs: z.array(RequiredUserInputSchema).optional(),
-  metrics: z.object({
-    elapsed_ms: z.number(),
-    tool: z.string(),
-  }).optional(),
+  metrics: z
+    .object({
+      elapsed_ms: z.number(),
+      tool: z.string(),
+    })
+    .optional(),
 })
 
 export const moduleReconstructionReviewWorkflowToolDefinition: ToolDefinition = {
@@ -176,7 +186,7 @@ export function createModuleReconstructionReviewWorkflowHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   cacheManager: CacheManager,
-  mcpServer?: MCPServer,
+  mcpServer?: SamplingClient,
   dependencies?: ModuleReconstructionReviewWorkflowDependencies,
   jobQueue?: JobQueue
 ) {
@@ -276,7 +286,10 @@ export function createModuleReconstructionReviewWorkflowHandler(
       {
         const setupGuidance = collectSetupGuidanceFromWorkerResult(reviewResult)
         setupActions = mergeSetupActions(setupActions, setupGuidance.setupActions)
-        requiredUserInputs = mergeRequiredUserInputs(requiredUserInputs, setupGuidance.requiredUserInputs)
+        requiredUserInputs = mergeRequiredUserInputs(
+          requiredUserInputs,
+          setupGuidance.requiredUserInputs
+        )
       }
 
       if (!reviewResult.ok) {
@@ -366,11 +379,16 @@ export function createModuleReconstructionReviewWorkflowHandler(
         {
           const setupGuidance = collectSetupGuidanceFromWorkerResult(exportResult)
           setupActions = mergeSetupActions(setupActions, setupGuidance.setupActions)
-          requiredUserInputs = mergeRequiredUserInputs(requiredUserInputs, setupGuidance.requiredUserInputs)
+          requiredUserInputs = mergeRequiredUserInputs(
+            requiredUserInputs,
+            setupGuidance.requiredUserInputs
+          )
         }
 
         if (!exportResult.ok) {
-          errors.push(...(exportResult.errors || ['workflow.reconstruct failed during export refresh']))
+          errors.push(
+            ...(exportResult.errors || ['workflow.reconstruct failed during export refresh'])
+          )
           exportSummary = {
             attempted: true,
             status: 'failed',

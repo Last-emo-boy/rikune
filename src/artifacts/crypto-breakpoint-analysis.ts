@@ -137,7 +137,10 @@ export const TracePredicateSchema = z
         message: 'register is required when source=register',
       })
     }
-    if ((value.source === 'argument' || value.source === 'buffer_length') && value.argument_index === undefined) {
+    if (
+      (value.source === 'argument' || value.source === 'buffer_length') &&
+      value.argument_index === undefined
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['argument_index'],
@@ -246,7 +249,10 @@ export interface FunctionContextLike {
 type ConstantKind = (typeof CONSTANT_KIND_VALUES)[number]
 type CryptoFamily = (typeof CRYPTO_FAMILY_VALUES)[number]
 
-const AES_SBOX_PREFIXES = ['637c777bf26b6fc53001672bfed7ab76', '637c777bf26b6fc53001672bfed7ab76ca82c97d']
+const AES_SBOX_PREFIXES = [
+  '637c777bf26b6fc53001672bfed7ab76',
+  '637c777bf26b6fc53001672bfed7ab76ca82c97d',
+]
 const AES_RCON_PREFIXES = ['01020408102040801b36', '8d01020408102040801b36']
 
 const FAMILY_CATALOG: Array<{
@@ -311,13 +317,15 @@ const FAMILY_CATALOG: Array<{
   },
 ]
 
-
 function normalizeText(value: string) {
   return value.replace(/\s+/g, ' ').trim()
 }
 
 function normalizeHexCandidate(value: string) {
-  return value.replace(/^0x/i, '').replace(/[^0-9a-f]/gi, '').toLowerCase()
+  return value
+    .replace(/^0x/i, '')
+    .replace(/[^0-9a-f]/gi, '')
+    .toLowerCase()
 }
 
 function previewValue(value: string, maxChars: number) {
@@ -461,9 +469,13 @@ function inferConstantCandidate(
   }
 
   const location =
-    record.function_refs && record.function_refs.length > 0 ? record.function_refs[0]?.address : undefined
+    record.function_refs && record.function_refs.length > 0
+      ? record.function_refs[0]?.address
+      : undefined
   const fn =
-    record.function_refs && record.function_refs.length > 0 ? record.function_refs[0]?.name || undefined : undefined
+    record.function_refs && record.function_refs.length > 0
+      ? record.function_refs[0]?.name || undefined
+      : undefined
   const preview = previewValue(value, previewMaxChars)
 
   return {
@@ -522,7 +534,10 @@ function normalizeApiName(value: string) {
   return value.replace(/^.*!/, '').replace(/\(.*/, '').trim()
 }
 
-export function collectCryptoApiNames(imports: Record<string, string[]> | undefined, dynamicEvidence?: DynamicTraceSummary | null) {
+export function collectCryptoApiNames(
+  imports: Record<string, string[]> | undefined,
+  dynamicEvidence?: DynamicTraceSummary | null
+) {
   const apis = new Set<string>()
   if (imports) {
     for (const functions of Object.values(imports)) {
@@ -531,7 +546,11 @@ export function collectCryptoApiNames(imports: Record<string, string[]> | undefi
       }
       for (const value of functions) {
         const normalized = normalizeApiName(String(value))
-        if (FAMILY_CATALOG.some((item) => item.apiPatterns.some((pattern) => pattern.test(normalized)))) {
+        if (
+          FAMILY_CATALOG.some((item) =>
+            item.apiPatterns.some((pattern) => pattern.test(normalized))
+          )
+        ) {
           apis.add(normalized)
         }
       }
@@ -539,7 +558,9 @@ export function collectCryptoApiNames(imports: Record<string, string[]> | undefi
   }
   for (const value of dynamicEvidence?.observed_apis || []) {
     const normalized = normalizeApiName(value)
-    if (FAMILY_CATALOG.some((item) => item.apiPatterns.some((pattern) => pattern.test(normalized)))) {
+    if (
+      FAMILY_CATALOG.some((item) => item.apiPatterns.some((pattern) => pattern.test(normalized)))
+    ) {
       apis.add(normalized)
     }
   }
@@ -570,7 +591,7 @@ function scoreFamilies(
         sourceApis: new Set<string>(),
       })
     }
-    return families.get(family)!
+    return families.get(family)
   }
 
   for (const entry of FAMILY_CATALOG) {
@@ -617,9 +638,7 @@ function scoreFamilies(
     if (!family) {
       continue
     }
-    const name =
-      FAMILY_CATALOG.find((item) => item.family === family)?.name ||
-      family.toUpperCase()
+    const name = FAMILY_CATALOG.find((item) => item.family === family)?.name || family.toUpperCase()
     const target = ensureFamily(family, name)
     target.score += 0.3
     target.evidence.push({
@@ -673,7 +692,9 @@ export function buildCryptoFindings(options: {
   const records = options.stringRecords
   const allConstants = extractConstantCandidates(records, 80, 32)
   const importedAndDynamicApis = collectCryptoApiNames(options.imports, options.dynamicEvidence)
-  const dynamicApis = dedupeStrings(options.dynamicEvidence?.observed_apis || []).map(normalizeApiName)
+  const dynamicApis = dedupeStrings(options.dynamicEvidence?.observed_apis || []).map(
+    normalizeApiName
+  )
   const xrefAvailable = options.xrefAvailable ?? false
   const findings: CryptoFinding[] = []
 
@@ -744,11 +765,14 @@ export function buildCryptoFindings(options: {
       'crypto.identify'
     )
 
-    for (const [family, payload] of [...sampleLevelFamilies.entries()].sort((left, right) => right[1].score - left[1].score)) {
+    for (const [family, payload] of [...sampleLevelFamilies.entries()].sort(
+      (left, right) => right[1].score - left[1].score
+    )) {
       const mode = detectMode(records.map((item) => item.value))
       findings.push({
         algorithm_family: family,
-        algorithm_name: mode && !payload.name.includes(mode) ? `${payload.name}-${mode}` : payload.name,
+        algorithm_name:
+          mode && !payload.name.includes(mode) ? `${payload.name}-${mode}` : payload.name,
         mode,
         confidence: Number(clamp(0.28 + payload.score, 0.32, 0.9).toFixed(2)),
         function: null,
@@ -810,7 +834,9 @@ export function buildBreakpointCandidates(options: {
           reason: `${finding.algorithm_name} candidate function entry`,
           confidence: finding.confidence,
           context_capture: defaultCaptureTargets(finding.algorithm_family),
-          evidence_sources: dedupeStrings(finding.evidence.map((item) => `${item.source_tool}:${item.kind}`)),
+          evidence_sources: dedupeStrings(
+            finding.evidence.map((item) => `${item.source_tool}:${item.kind}`)
+          ),
           dynamic_support: finding.dynamic_support,
         })
       }
@@ -825,7 +851,9 @@ export function buildBreakpointCandidates(options: {
             reason: `${finding.algorithm_name} candidate function exit`,
             confidence: Number(clamp(finding.confidence - 0.06, 0.35, 0.92).toFixed(2)),
             context_capture: defaultCaptureTargets(finding.algorithm_family),
-            evidence_sources: dedupeStrings(finding.evidence.map((item) => `${item.source_tool}:${item.kind}`)),
+            evidence_sources: dedupeStrings(
+              finding.evidence.map((item) => `${item.source_tool}:${item.kind}`)
+            ),
             dynamic_support: finding.dynamic_support,
           })
         }
@@ -842,9 +870,19 @@ export function buildBreakpointCandidates(options: {
         candidates.push({
           kind: 'api_call',
           api,
-          module: /^BCrypt/i.test(api) ? 'bcrypt.dll' : /^Crypt/i.test(api) ? 'advapi32.dll' : undefined,
+          module: /^BCrypt/i.test(api)
+            ? 'bcrypt.dll'
+            : /^Crypt/i.test(api)
+              ? 'advapi32.dll'
+              : undefined,
           reason: `${api} is a likely crypto transition point`,
-          confidence: Number(clamp(finding.confidence - 0.08 + (dynamicApis.has(api) ? 0.08 : 0), 0.35, 0.94).toFixed(2)),
+          confidence: Number(
+            clamp(
+              finding.confidence - 0.08 + (dynamicApis.has(api) ? 0.08 : 0),
+              0.35,
+              0.94
+            ).toFixed(2)
+          ),
           context_capture: defaultCaptureTargets(finding.algorithm_family),
           evidence_sources: dedupeStrings([
             ...finding.evidence.map((item) => `${item.source_tool}:${item.kind}`),
@@ -945,7 +983,7 @@ export function buildNormalizedTracePlan(options: {
   capture?: Partial<TraceCapturePlan> | null
   limits?: Partial<NormalizedTracePlan['limits']> | null
   runtimeReady: boolean
-}) : NormalizedTracePlan {
+}): NormalizedTracePlan {
   const breakpoint = options.breakpoint
   const defaultCapture = buildDefaultTraceCapturePlan(breakpoint)
   const rawCapture = options.capture || {}
@@ -957,7 +995,9 @@ export function buildNormalizedTracePlan(options: {
   const argumentsList = Array.from(
     new Set(
       Array.isArray(rawCapture.arguments)
-        ? rawCapture.arguments.map((item) => Number(item)).filter((item) => Number.isInteger(item) && item >= 0 && item <= 15)
+        ? rawCapture.arguments
+            .map((item) => Number(item))
+            .filter((item) => Number.isInteger(item) && item >= 0 && item <= 15)
         : defaultCapture.arguments
     )
   ).slice(0, 8)
@@ -966,20 +1006,32 @@ export function buildNormalizedTracePlan(options: {
       ? rawCapture.include_return_value
       : defaultCapture.include_return_value
   const stackBytes = clamp(
-    typeof rawCapture.stack_bytes === 'number' ? Math.trunc(rawCapture.stack_bytes) : defaultCapture.stack_bytes,
+    typeof rawCapture.stack_bytes === 'number'
+      ? Math.trunc(rawCapture.stack_bytes)
+      : defaultCapture.stack_bytes,
     0,
     512
   )
-  const memorySlices = (Array.isArray(rawCapture.memory_slices) ? rawCapture.memory_slices : defaultCapture.memory_slices)
+  const memorySlices = (
+    Array.isArray(rawCapture.memory_slices)
+      ? rawCapture.memory_slices
+      : defaultCapture.memory_slices
+  )
     .map((item) => {
       const source = item?.source === 'register' ? ('register' as const) : ('argument' as const)
       const maxBytes = clamp(Number(item?.max_bytes || 64), 1, 512)
       return {
         source,
-        ...(source === 'register' && typeof item?.register === 'string' ? { register: item.register } : {}),
-        ...(source === 'argument' ? { argument_index: clamp(Number(item?.argument_index || 0), 0, 15) } : {}),
+        ...(source === 'register' && typeof item?.register === 'string'
+          ? { register: item.register }
+          : {}),
+        ...(source === 'argument'
+          ? { argument_index: clamp(Number(item?.argument_index || 0), 0, 15) }
+          : {}),
         max_bytes: maxBytes,
-        ...(typeof item?.label === 'string' && item.label.trim().length > 0 ? { label: item.label.trim() } : {}),
+        ...(typeof item?.label === 'string' && item.label.trim().length > 0
+          ? { label: item.label.trim() }
+          : {}),
       }
     })
     .slice(0, 4)
@@ -995,7 +1047,8 @@ export function buildNormalizedTracePlan(options: {
       : breakpoint.reason.toLowerCase().includes('crypto')
         ? 'crypto_finder'
         : 'api_trace'
-  const recommendedTool = breakpoint.kind === 'api_call' ? 'frida.runtime.instrument' : 'frida.script.inject'
+  const recommendedTool =
+    breakpoint.kind === 'api_call' ? 'frida.runtime.instrument' : 'frida.script.inject'
 
   return {
     breakpoint,
@@ -1025,6 +1078,7 @@ export function buildNormalizedTracePlan(options: {
 }
 
 export function summarizeNormalizedTracePlan(plan: NormalizedTracePlan) {
-  const target = plan.breakpoint.function || plan.breakpoint.address || plan.breakpoint.api || 'target'
+  const target =
+    plan.breakpoint.function || plan.breakpoint.address || plan.breakpoint.api || 'target'
   return `Prepared a bounded trace plan for ${target} using ${summarizeConditionGroup(plan.condition)} with ${summarizeCapturePlan(plan.capture)}.`
 }

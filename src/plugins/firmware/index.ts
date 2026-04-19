@@ -6,12 +6,19 @@
 
 import type { Plugin } from '../sdk.js'
 import { firmwareScanToolDefinition, createFirmwareScanHandler } from './tools/firmware-scan.js'
-import { firmwareExtractToolDefinition, createFirmwareExtractHandler } from './tools/firmware-extract.js'
-import { firmwareEntropyToolDefinition, createFirmwareEntropyHandler } from './tools/firmware-entropy.js'
+import {
+  firmwareExtractToolDefinition,
+  createFirmwareExtractHandler,
+} from './tools/firmware-extract.js'
+import {
+  firmwareEntropyToolDefinition,
+  createFirmwareEntropyHandler,
+} from './tools/firmware-entropy.js'
 
 const firmwarePlugin: Plugin = {
   id: 'firmware',
   name: 'Firmware Analysis',
+  executionDomain: 'static',
   surfaceRules: {
     tier: 1,
     activateOn: { fileTypes: ['firmware'] },
@@ -23,10 +30,16 @@ const firmwarePlugin: Plugin = {
       return []
     },
   },
-  description: 'Firmware analysis, embedded file extraction, and entropy visualization using binwalk',
+  description:
+    'Firmware analysis, embedded file extraction, and entropy visualization using binwalk',
   version: '1.0.0',
   configSchema: [
-    { envVar: 'BINWALK_PATH', description: 'Path to binwalk binary', required: false, defaultValue: 'binwalk' },
+    {
+      envVar: 'BINWALK_PATH',
+      description: 'Path to binwalk binary',
+      required: false,
+      defaultValue: 'binwalk',
+    },
   ],
   systemDeps: [
     {
@@ -34,12 +47,13 @@ const firmwarePlugin: Plugin = {
       name: 'binwalk',
       target: '$BINWALK_PATH',
       envVar: 'BINWALK_PATH',
-      dockerDefault: '/usr/local/bin/binwalk',
+      dockerDefault: '/usr/bin/binwalk',
       versionFlag: '--help',
       required: false,
       description: 'Binwalk firmware analysis tool',
-      dockerInstall: 'cargo install binwalk || pip install binwalk',
+      dockerInstall: 'apt-get install -y binwalk',
       dockerFeature: 'binwalk',
+      aptPackages: ['binwalk'],
       dockerValidation: ['binwalk --help >/dev/null 2>&1'],
     },
   ],

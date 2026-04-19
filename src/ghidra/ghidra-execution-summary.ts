@@ -6,10 +6,7 @@ import {
   getGhidraReadiness,
   parseGhidraAnalysisMetadata,
 } from './ghidra-analysis-status.js'
-import {
-  getConfiguredGhidraLogRoot,
-  getConfiguredGhidraProjectRoot,
-} from './ghidra-config.js'
+import { getConfiguredGhidraLogRoot, getConfiguredGhidraProjectRoot } from './ghidra-config.js'
 
 export const GhidraProgressStageSchema = z.object({
   progress: z.number().int().min(0).max(100),
@@ -112,11 +109,7 @@ function latestAnalysisTimestamp(analysis: Analysis): number {
   return 0
 }
 
-
-
-export function buildGhidraExecutionSummary(
-  analyses: Analysis[]
-): GhidraExecutionSummary | null {
+export function buildGhidraExecutionSummary(analyses: Analysis[]): GhidraExecutionSummary | null {
   const ghidraAnalyses = analyses.filter(
     (analysis) => analysis.backend === 'ghidra' || analysis.stage === 'ghidra'
   )
@@ -160,22 +153,22 @@ export function buildGhidraExecutionSummary(
 
   const warnings = dedupe([
     ...(Array.isArray(functionExtraction?.warnings)
-      ? functionExtraction!.warnings.filter((item): item is string => typeof item === 'string')
+      ? functionExtraction.warnings.filter((item): item is string => typeof item === 'string')
       : []),
-    ...((readiness.function_index.warnings || []) as string[]),
-    ...((readiness.decompile.warnings || []) as string[]),
-    ...((readiness.cfg.warnings || []) as string[]),
+    ...(readiness.function_index.warnings || []),
+    ...(readiness.decompile.warnings || []),
+    ...(readiness.cfg.warnings || []),
   ])
 
   return {
     analysis_id: selected.id,
-    selected_source: readyAnalysis && readyAnalysis.id === selected.id ? 'best_ready' : 'latest_attempt',
+    selected_source:
+      readyAnalysis && readyAnalysis.id === selected.id ? 'best_ready' : 'latest_attempt',
     backend: selected.backend,
     status: selected.status,
     function_count: typeof metadata.function_count === 'number' ? metadata.function_count : 0,
     finished_at: selected.finished_at || selected.started_at || null,
-    project_path:
-      typeof metadata.project_path === 'string' ? metadata.project_path : null,
+    project_path: typeof metadata.project_path === 'string' ? metadata.project_path : null,
     project_key: typeof metadata.project_key === 'string' ? metadata.project_key : null,
     project_root:
       execution && typeof execution.project_root === 'string'

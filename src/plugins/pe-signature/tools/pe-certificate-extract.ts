@@ -8,11 +8,17 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  os, path,
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, executeCommand,
-  persistBackendArtifact, buildMetrics,
-  resolveSampleFile, resolveExecutable,
+  os,
+  path,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  executeCommand,
+  persistBackendArtifact,
+  buildMetrics,
+  resolveSampleFile,
+  resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -27,20 +33,22 @@ export const peCertificateExtractInputSchema = z.object({
 
 export const peCertificateExtractOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    has_certificate: z.boolean().optional(),
-    subject: z.string().optional(),
-    issuer: z.string().optional(),
-    serial: z.string().optional(),
-    not_before: z.string().optional(),
-    not_after: z.string().optional(),
-    certificate_pem: z.string().optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      has_certificate: z.boolean().optional(),
+      subject: z.string().optional(),
+      issuer: z.string().optional(),
+      serial: z.string().optional(),
+      not_before: z.string().optional(),
+      not_after: z.string().optional(),
+      certificate_pem: z.string().optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
   metrics: SharedMetricsSchema.optional(),
@@ -55,7 +63,7 @@ export const peCertificateExtractToolDefinition: ToolDefinition = {
 
 export function createPeCertificateExtractHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -64,16 +72,29 @@ export function createPeCertificateExtractHandler(
       const input = peCertificateExtractInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolveExecutable({ envPath: process.env.OSSLSIGNCODE_PATH, pathCandidates: ['osslsigncode'], versionArgSets: [['--version'], ['-v']] })
+      const backend = resolveExecutable({
+        envPath: process.env.OSSLSIGNCODE_PATH,
+        pathCandidates: ['osslsigncode'],
+        versionArgSets: [['--version'], ['-v']],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'osslsigncode', available: false, error: 'osslsigncode not installed' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend ||
+            ({
+              name: 'osslsigncode',
+              available: false,
+              error: 'osslsigncode not installed',
+            } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       // Extract PKCS7 signature
       const result = await executeCommand(
         backend.path,
         ['extract-signature', '-pem', '-in', samplePath, '-out', tmpCert],
-        input.timeout_sec * 1000,
+        input.timeout_sec * 1000
       )
 
       if (!nodeFs.existsSync(tmpCert) || nodeFs.statSync(tmpCert).size === 0) {
@@ -93,14 +114,22 @@ export function createPeCertificateExtractHandler(
       const pem = nodeFs.readFileSync(tmpCert, 'utf-8')
 
       // Try to parse certificate details using openssl if available
-      let subject = '', issuer = '', serial = '', notBefore = '', notAfter = ''
+      let subject = '',
+        issuer = '',
+        serial = '',
+        notBefore = '',
+        notAfter = ''
       try {
-        const opensslBackend = resolveExecutable({ envPath: process.env.OPENSSL_PATH, pathCandidates: ['openssl'], versionArgSets: [['version']] })
+        const opensslBackend = resolveExecutable({
+          envPath: process.env.OPENSSL_PATH,
+          pathCandidates: ['openssl'],
+          versionArgSets: [['version']],
+        })
         if (opensslBackend?.available && opensslBackend?.path) {
           const info = await executeCommand(
             opensslBackend.path,
             ['pkcs7', '-in', tmpCert, '-print_certs', '-noout', '-text'],
-            10000,
+            10000
           )
           subject = info.stdout.match(/Subject:\s*(.+)/)?.[1]?.trim() || ''
           issuer = info.stdout.match(/Issuer:\s*(.+)/)?.[1]?.trim() || ''
@@ -108,12 +137,22 @@ export function createPeCertificateExtractHandler(
           notBefore = info.stdout.match(/Not Before\s*:\s*(.+)/)?.[1]?.trim() || ''
           notAfter = info.stdout.match(/Not After\s*:\s*(.+)/)?.[1]?.trim() || ''
         }
-      } catch { /* openssl optional */ }
+      } catch {
+        /* openssl optional */
+      }
 
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'pe-sig', 'certificate', pem.slice(0, 32768), { extension: 'pem', mime: 'application/x-pem-file', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'pe-sig',
+          'certificate',
+          pem.slice(0, 32768),
+          { extension: 'pem', mime: 'application/x-pem-file', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -142,9 +181,15 @@ export function createPeCertificateExtractHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     } finally {
-      try { nodeFs.unlinkSync(tmpCert) } catch {}
+      try {
+        nodeFs.unlinkSync(tmpCert)
+      } catch {}
     }
   }
 }

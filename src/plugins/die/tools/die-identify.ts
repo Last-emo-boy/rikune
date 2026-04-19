@@ -8,8 +8,12 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
   SharedMetricsSchema,
-  ensureSampleExists, normalizeError, executeCommand,
-  buildMetrics, resolveSampleFile, resolveAnalysisBackends,
+  ensureSampleExists,
+  normalizeError,
+  executeCommand,
+  buildMetrics,
+  resolveSampleFile,
+  resolveAnalysisBackends,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -22,13 +26,15 @@ export const dieIdentifyInputSchema = z.object({
 
 export const dieIdentifyOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    identifications: z.array(z.string()).optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      identifications: z.array(z.string()).optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   metrics: SharedMetricsSchema.optional(),
 })
@@ -43,7 +49,7 @@ export const dieIdentifyToolDefinition: ToolDefinition = {
 
 export function createDieIdentifyHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -54,7 +60,11 @@ export function createDieIdentifyHandler(
       const backends = resolveAnalysisBackends()
       const backend = backends.die
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'die', available: false, error: 'diec not installed' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend || ({ name: 'die', available: false, error: 'diec not installed' } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const result = await executeCommand(backend.path, [samplePath], input.timeout_sec * 1000)
@@ -68,14 +78,16 @@ export function createDieIdentifyHandler(
           identifications: lines,
           summary: `DIE quick ID: ${lines.length > 0 ? lines.join('; ') : 'no detections'}.`,
           recommended_next_tools: ['die.scan', 'packer.detect', 'pe.structure.analyze'],
-          next_actions: [
-            'Use die.scan for full detailed results with JSON output.',
-          ],
+          next_actions: ['Use die.scan for full detailed results with JSON output.'],
         },
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

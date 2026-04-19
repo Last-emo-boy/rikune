@@ -101,12 +101,14 @@ tmp-ghidra-cmd-*/
 test-compiler-packer-detect/
 test-data-sample-ingest/
 test-docker-backend-tools/
+tests/temp/
 
 # Runtime data directories
 samples/
 
 # install-local.ps1 / install-local.sh generated files
 .env
+.env.runtime-windows
 angr-venv/
 qiling-venv/
 workers/venv/

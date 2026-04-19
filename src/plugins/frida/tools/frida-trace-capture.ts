@@ -8,6 +8,7 @@ import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
 import { normalizeError } from '../../../utils/shared-helpers.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'frida.trace.capture'
 const TOOL_VERSION = '0.1.0'
@@ -31,11 +32,7 @@ export const FridaTraceCaptureInputSchema = z.object({
     })
     .optional()
     .describe('Trace filtering options'),
-  aggregate: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Aggregate duplicate events'),
+  aggregate: z.boolean().optional().default(false).describe('Aggregate duplicate events'),
   limit: z
     .number()
     .int()
@@ -116,6 +113,7 @@ export const fridaTraceCaptureToolDefinition: ToolDefinition = {
     'Capture and normalize Frida traces with canonical schema, filtering, and aggregation.',
   inputSchema: FridaTraceCaptureInputSchema,
   outputSchema: FridaTraceCaptureOutputSchema,
+  runtimeBackendHint: { type: 'python-worker', handler: 'frida_worker.py' },
 }
 
 interface WorkerRequest {
@@ -189,11 +187,10 @@ export function filterTraceEvents(
       if (!filter.types.includes(event.type)) return false
     }
     if (filter.modules && filter.modules.length > 0) {
-      if (!event.module || !filter.modules.some((m) => event.module!.includes(m))) return false
+      if (!event.module || !filter.modules.some((m) => event.module.includes(m))) return false
     }
     if (filter.functions && filter.functions.length > 0) {
-      if (!event.function || !filter.functions.some((f) => event.function!.includes(f)))
-        return false
+      if (!event.function || !filter.functions.some((f) => event.function.includes(f))) return false
     }
     if (filter.min_timestamp && event.timestamp && event.timestamp < filter.min_timestamp)
       return false
@@ -293,8 +290,8 @@ export function createFridaTraceCaptureHandler(
 
   async function callFridaWorker(request: WorkerRequest): Promise<WorkerResponse> {
     return new Promise((resolve, reject) => {
-      const workerPath = resolvePackagePath!('workers', 'frida_worker.py')
-      const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+      const workerPath = resolvePackagePath('workers', 'frida_worker.py')
+      const pythonCommand = getPythonCommand()
       const pythonProcess = spawn(pythonCommand, [workerPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
       })
@@ -368,6 +365,54 @@ export function createFridaTraceCaptureHandler(
     })
   }
 
+  function buildFridaSetupActions() {
+    return [
+      {
+        id: 'install_frida_runtime',
+        required: false,
+        kind: 'pip_install',
+        title: 'Install Frida runtime',
+        summary: 'Install the Frida runtime for dynamic instrumentation.',
+        command: 'python -m pip install frida',
+        examples: ['python -m pip install frida'],
+        applies_to: ['frida.trace.capture', 'system.health'],
+      },
+      {
+        id: 'install_frida_tools_package',
+        required: false,
+        kind: 'pip_install',
+        title: 'Install Frida tools package',
+        summary: 'Install frida-tools for additional CLI utilities.',
+        command: 'python -m pip install frida-tools',
+        examples: ['python -m pip install frida-tools'],
+        applies_to: ['frida.trace.capture', 'system.health'],
+      },
+      {
+        id: 'verify_frida_install',
+        required: false,
+        kind: 'verify_install',
+        title: 'Verify Frida installation',
+        summary: 'Confirm that Frida can be imported in Python.',
+        command: 'python -c "import frida; print(frida.__version__)"',
+        examples: ['python -c "import frida; print(frida.__version__)"'],
+        applies_to: ['frida.trace.capture', 'system.health'],
+      },
+    ]
+  }
+
+  function buildFridaRequiredUserInputs() {
+    return [
+      {
+        key: 'frida_path',
+        label: 'Frida server binary path',
+        summary: 'Optional: Provide the absolute path to the Frida server binary.',
+        required: false,
+        env_vars: ['FRIDA_PATH'],
+        examples: ['C:\\Program Files\\frida-server.exe'],
+      },
+    ]
+  }
+
   function buildFridaUnavailableResponse(
     input: FridaTraceCaptureInput,
     startTime: number,
@@ -388,6 +433,8 @@ export function createFridaTraceCaptureHandler(
         errors: [errorMessage],
       },
       warnings: [`Frida is not available: ${errorMessage}`],
+      setup_actions: buildFridaSetupActions(),
+      required_user_inputs: buildFridaRequiredUserInputs(),
       metrics: {
         elapsed_ms: Date.now() - startTime,
         tool: TOOL_NAME,
@@ -452,7 +499,10 @@ export function createFridaTraceCaptureHandler(
         workerResponse = await runWorker(workerRequest)
       } catch (error) {
         const errorStr = normalizeError(error)
-        if (errorStr.includes('Frida is not installed') || errorStr.includes('ModuleNotFoundError')) {
+        if (
+          errorStr.includes('Frida is not installed') ||
+          errorStr.includes('ModuleNotFoundError')
+        ) {
           return buildFridaUnavailableResponse(
             input,
             startTime,
@@ -471,7 +521,10 @@ export function createFridaTraceCaptureHandler(
 
       if (!workerResponse.ok) {
         const errorMsg = workerResponse.errors.join('; ') || 'Frida trace capture failed'
-        if (errorMsg.toLowerCase().includes('not installed') || errorMsg.toLowerCase().includes('import')) {
+        if (
+          errorMsg.toLowerCase().includes('not installed') ||
+          errorMsg.toLowerCase().includes('import')
+        ) {
           return buildFridaUnavailableResponse(input, startTime, errorMsg)
         }
         return {

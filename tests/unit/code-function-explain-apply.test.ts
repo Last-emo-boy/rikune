@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createCodeFunctionExplainApplyHandler, codeFunctionExplainApplyInputSchema } from '../../src/tools/code-function-explain-apply.js'
+import { createCodeFunctionExplainApplyHandler, codeFunctionExplainApplyInputSchema } from '../../src/plugins/code-analysis/tools/code-function-explain-apply.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 
@@ -24,7 +24,7 @@ describe('code.function.explain.apply tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = codeFunctionExplainApplyInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = codeFunctionExplainApplyInputSchema.safeParse({ sample_id: 'sha256:abc123def456', explanations: [{ address: '0x401000', summary: 'test', behavior: 'test', confidence: 0.9 }] })
       expect(result.success).toBe(true)
     })
 

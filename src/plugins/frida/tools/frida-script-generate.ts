@@ -33,10 +33,7 @@ export const FridaScriptGenerateInputSchema = z.object({
     .boolean()
     .default(true)
     .describe('Hook all suspicious imports found in the binary'),
-  custom_apis: z
-    .array(z.string())
-    .optional()
-    .describe('Additional API names to hook'),
+  custom_apis: z.array(z.string()).optional().describe('Additional API names to hook'),
   output_format: z
     .enum(['standalone', 'modular'])
     .default('standalone')
@@ -374,7 +371,9 @@ function getImportedApis(database: DatabaseManager, sampleId: string): string[] 
         return apis
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return []
 }
 
@@ -506,9 +505,19 @@ export function createFridaScriptGenerateHandler(
 
       try {
         await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, input.sample_id, 'frida_script', 'frida_hooks', { tool: TOOL_NAME, data: { total_hooks: totalHooks, categories: scripts.map(s => s.category) } }
+          workspaceManager,
+          database,
+          input.sample_id,
+          'frida_script',
+          'frida_hooks',
+          {
+            tool: TOOL_NAME,
+            data: { total_hooks: totalHooks, categories: scripts.map((s) => s.category) },
+          }
         )
-      } catch { /* best effort */ }
+      } catch {
+        /* best effort */
+      }
 
       return {
         ok: true,

@@ -1,5 +1,5 @@
 /**
- * Rizin analyze tool â€?bounded Rizin inspection on a sample.
+ * Rizin analyze tool ï¿½?bounded Rizin inspection on a sample.
  */
 
 import { z } from 'zod'
@@ -9,12 +9,25 @@ import type { DatabaseManager } from '../../../database.js'
 import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
   randomUUID,
-  ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
-  ensureSampleExists, executeCommand, truncateText, normalizeError, safeJsonParse,
-  persistBackendArtifact, buildMetrics, buildStaticSetupRequired,
-  findBackendPreviewEvidence, persistBackendPreviewEvidence, buildEvidenceReuseWarnings,
-  resolveSampleFile, resolveAnalysisBackends,
-  getRuntimeWorkerPool, buildRizinPreviewCompatibilityKey, resolvePackagePath,
+  ArtifactRefSchema,
+  BackendSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  executeCommand,
+  truncateText,
+  normalizeError,
+  safeJsonParse,
+  persistBackendArtifact,
+  buildMetrics,
+  buildStaticSetupRequired,
+  findBackendPreviewEvidence,
+  persistBackendPreviewEvidence,
+  buildEvidenceReuseWarnings,
+  resolveSampleFile,
+  resolveAnalysisBackends,
+  getRuntimeWorkerPool,
+  buildRizinPreviewCompatibilityKey,
+  resolvePackagePath,
 } from '../../docker-shared.js'
 
 export const rizinAnalyzeInputSchema = z.object({
@@ -23,9 +36,24 @@ export const rizinAnalyzeInputSchema = z.object({
     .enum(['info', 'sections', 'imports', 'exports', 'entrypoints', 'functions', 'strings'])
     .default('info')
     .describe('Bounded Rizin inspection mode.'),
-  max_items: z.number().int().min(1).max(200).default(25).describe('Maximum preview items to return.'),
-  timeout_sec: z.number().int().min(1).max(180).default(45).describe('Rizin execution timeout in seconds.'),
-  persist_artifact: z.boolean().default(true).describe('Persist the raw JSON result as an artifact.'),
+  max_items: z
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .default(25)
+    .describe('Maximum preview items to return.'),
+  timeout_sec: z
+    .number()
+    .int()
+    .min(1)
+    .max(180)
+    .default(45)
+    .describe('Rizin execution timeout in seconds.'),
+  persist_artifact: z
+    .boolean()
+    .default(true)
+    .describe('Persist the raw JSON result as an artifact.'),
   session_tag: z.string().optional().describe('Optional artifact session tag.'),
 })
 
@@ -143,10 +171,7 @@ export function createRizinAnalyzeHandler(
               }),
               timeoutMs: input.timeout_sec * 1000,
               spawnConfig: {
-                command:
-                  process.platform === 'win32'
-                    ? 'python'
-                    : 'python3',
+                command: process.platform === 'win32' ? 'python' : 'python3',
                 args: [resolvePackagePath('workers', 'rizin_preview_worker.py')],
               },
             }
@@ -160,42 +185,41 @@ export function createRizinAnalyzeHandler(
           )
         : null
 
-      const effectiveResult =
-        pooledResult
-          ? {
-              stdout:
-                typeof pooledResult.response.data === 'object' &&
-                pooledResult.response.data &&
-                typeof (pooledResult.response.data as Record<string, unknown>).stdout === 'string'
-                  ? String((pooledResult.response.data as Record<string, unknown>).stdout)
-                  : '',
-              stderr:
-                typeof pooledResult.response.data === 'object' &&
-                pooledResult.response.data &&
-                typeof (pooledResult.response.data as Record<string, unknown>).stderr === 'string'
-                  ? String((pooledResult.response.data as Record<string, unknown>).stderr)
-                  : '',
-              exitCode:
-                typeof pooledResult.response.data === 'object' &&
-                pooledResult.response.data &&
-                typeof (pooledResult.response.data as Record<string, unknown>).exit_code === 'number'
-                  ? Number((pooledResult.response.data as Record<string, unknown>).exit_code)
-                  : pooledResult.response.ok
-                    ? 0
-                    : 1,
-              timedOut:
-                typeof pooledResult.response.data === 'object' &&
-                pooledResult.response.data &&
-                typeof (pooledResult.response.data as Record<string, unknown>).timed_out === 'boolean'
-                  ? Boolean((pooledResult.response.data as Record<string, unknown>).timed_out)
-                  : false,
-            }
-          : {
-              stdout: commandResult?.stdout || '',
-              stderr: commandResult?.stderr || '',
-              exitCode: commandResult?.exitCode ?? 1,
-              timedOut: commandResult?.timedOut ?? false,
-            }
+      const effectiveResult = pooledResult
+        ? {
+            stdout:
+              typeof pooledResult.response.data === 'object' &&
+              pooledResult.response.data &&
+              typeof (pooledResult.response.data as Record<string, unknown>).stdout === 'string'
+                ? String((pooledResult.response.data as Record<string, unknown>).stdout)
+                : '',
+            stderr:
+              typeof pooledResult.response.data === 'object' &&
+              pooledResult.response.data &&
+              typeof (pooledResult.response.data as Record<string, unknown>).stderr === 'string'
+                ? String((pooledResult.response.data as Record<string, unknown>).stderr)
+                : '',
+            exitCode:
+              typeof pooledResult.response.data === 'object' &&
+              pooledResult.response.data &&
+              typeof (pooledResult.response.data as Record<string, unknown>).exit_code === 'number'
+                ? Number((pooledResult.response.data as Record<string, unknown>).exit_code)
+                : pooledResult.response.ok
+                  ? 0
+                  : 1,
+            timedOut:
+              typeof pooledResult.response.data === 'object' &&
+              pooledResult.response.data &&
+              typeof (pooledResult.response.data as Record<string, unknown>).timed_out === 'boolean'
+                ? Boolean((pooledResult.response.data as Record<string, unknown>).timed_out)
+                : false,
+          }
+        : {
+            stdout: commandResult?.stdout || '',
+            stderr: commandResult?.stderr || '',
+            exitCode: commandResult?.exitCode ?? 1,
+            timedOut: commandResult?.timedOut ?? false,
+          }
 
       if (pooledResult && !pooledResult.response.ok) {
         return {
@@ -277,7 +301,11 @@ export function createRizinAnalyzeHandler(
           : undefined,
         artifact,
         summary: `Rizin completed ${input.operation} inspection for ${input.sample_id}.`,
-        recommended_next_tools: ['artifact.read', 'code.function.disassemble', 'code.xrefs.analyze'],
+        recommended_next_tools: [
+          'artifact.read',
+          'code.function.disassemble',
+          'code.xrefs.analyze',
+        ],
         next_actions: [
           'Use artifact.read for the full JSON payload when the inline preview is truncated.',
           'Prefer Ghidra-backed code tools when you need code-level decompile or reconstruction after this quick inspection.',

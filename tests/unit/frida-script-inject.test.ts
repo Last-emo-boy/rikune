@@ -110,7 +110,7 @@ describe('createFridaScriptInjectHandler', () => {
   })
 
   test('should return error when no script is provided', async () => {
-    const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+    const handler = createFridaScriptInjectHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => {
         throw new Error('Should not be called')
       },
@@ -125,7 +125,7 @@ describe('createFridaScriptInjectHandler', () => {
   })
 
   test('should return error for missing sample when sample_id provided but not found', async () => {
-    const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+    const handler = createFridaScriptInjectHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -152,7 +152,7 @@ describe('createFridaScriptInjectHandler', () => {
   })
 
   test('should return error when script file not found', async () => {
-    const handler = createFridaScriptInjectHandler({ workspaceManager, database } as any)
+    const handler = createFridaScriptInjectHandler({ workspaceManager, database, resolvePackagePath: (...s: string[]) => s.join('/') } as any)
     const result = await handler({
       pid: 1234,
       script_path: '/nonexistent/path/script.js',
@@ -187,7 +187,7 @@ describe('createFridaScriptInjectHandler', () => {
     )
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+    const handler = createFridaScriptInjectHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => {
         throw new Error('Worker connection failed')
       },
@@ -228,7 +228,7 @@ describe('createFridaScriptInjectHandler', () => {
     )
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+    const handler = createFridaScriptInjectHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => {
         throw new Error('ModuleNotFoundError: No module named frida')
       },
@@ -273,7 +273,7 @@ describe('createFridaScriptInjectHandler', () => {
     )
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+    const handler = createFridaScriptInjectHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: false,
@@ -320,7 +320,7 @@ describe('createFridaScriptInjectHandler', () => {
     )
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+    const handler = createFridaScriptInjectHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -380,7 +380,7 @@ describe('createFridaScriptInjectHandler', () => {
     )
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+    const handler = createFridaScriptInjectHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -433,7 +433,7 @@ describe('createFridaScriptInjectHandler', () => {
     )
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+    const handler = createFridaScriptInjectHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -487,7 +487,7 @@ describe('createFridaScriptInjectHandler', () => {
     )
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+    const handler = createFridaScriptInjectHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -542,7 +542,7 @@ describe('createFridaScriptInjectHandler', () => {
     )
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+    const handler = createFridaScriptInjectHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -594,7 +594,7 @@ describe('createFridaScriptInjectHandler', () => {
     )
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+    const handler = createFridaScriptInjectHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,

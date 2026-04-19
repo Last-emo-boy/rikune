@@ -120,20 +120,20 @@ export async function runRizinDiff(
   )
 
   try {
-    const { stdout } = await execFileAsync(
-      'python3',
-      [workerScript, binaryPathA, binaryPathB],
-      { encoding: 'utf8', timeout: 180_000, windowsHide: true }
-    )
+    const { stdout } = await execFileAsync('python3', [workerScript, binaryPathA, binaryPathB], {
+      encoding: 'utf8',
+      timeout: 180_000,
+      windowsHide: true,
+    })
     return JSON.parse(stdout.trim()) as RizinDiffResult
   } catch (err: unknown) {
     // Try python instead of python3 on Windows
     try {
-      const { stdout } = await execFileAsync(
-        'python',
-        [workerScript, binaryPathA, binaryPathB],
-        { encoding: 'utf8', timeout: 180_000, windowsHide: true }
-      )
+      const { stdout } = await execFileAsync('python', [workerScript, binaryPathA, binaryPathB], {
+        encoding: 'utf8',
+        timeout: 180_000,
+        windowsHide: true,
+      })
       return JSON.parse(stdout.trim()) as RizinDiffResult
     } catch {
       const msg = err instanceof Error ? err.message : String(err)
@@ -152,10 +152,7 @@ export async function runRizinDiff(
 // Structural delta computation
 // ============================================================================
 
-export function computeImportDelta(
-  importsA: string[],
-  importsB: string[]
-): ImportDelta {
+export function computeImportDelta(importsA: string[], importsB: string[]): ImportDelta {
   const setA = new Set(importsA.map((s) => s.toLowerCase()))
   const setB = new Set(importsB.map((s) => s.toLowerCase()))
   const added = [...setB].filter((x) => !setA.has(x))
@@ -164,10 +161,7 @@ export function computeImportDelta(
   return { added, removed, common_count: common.length }
 }
 
-export function computeExportDelta(
-  exportsA: string[],
-  exportsB: string[]
-): ExportDelta {
+export function computeExportDelta(exportsA: string[], exportsB: string[]): ExportDelta {
   const setA = new Set(exportsA)
   const setB = new Set(exportsB)
   const added = [...setB].filter((x) => !setA.has(x))
@@ -194,10 +188,7 @@ export function computeSectionDelta(
   return { added, removed, size_changed }
 }
 
-export function computeStringDelta(
-  stringsA: string[],
-  stringsB: string[]
-): StringDelta {
+export function computeStringDelta(stringsA: string[], stringsB: string[]): StringDelta {
   const setA = new Set(stringsA)
   const setB = new Set(stringsB)
   const added = [...setB].filter((x) => !setA.has(x)).slice(0, 200)
@@ -255,22 +246,10 @@ export function computeStructuralDelta(
   }
 ): StructuralDelta {
   return {
-    imports: computeImportDelta(
-      artifactsA.imports ?? [],
-      artifactsB.imports ?? []
-    ),
-    exports: computeExportDelta(
-      artifactsA.exports ?? [],
-      artifactsB.exports ?? []
-    ),
-    sections: computeSectionDelta(
-      artifactsA.sections ?? [],
-      artifactsB.sections ?? []
-    ),
-    strings: computeStringDelta(
-      artifactsA.strings ?? [],
-      artifactsB.strings ?? []
-    ),
+    imports: computeImportDelta(artifactsA.imports ?? [], artifactsB.imports ?? []),
+    exports: computeExportDelta(artifactsA.exports ?? [], artifactsB.exports ?? []),
+    sections: computeSectionDelta(artifactsA.sections ?? [], artifactsB.sections ?? []),
+    strings: computeStringDelta(artifactsA.strings ?? [], artifactsB.strings ?? []),
   }
 }
 

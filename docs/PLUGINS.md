@@ -26,7 +26,7 @@ from the centralised tool registry.
 |-----------|------|-------|---------------|
 | `android` | Android / APK Analysis | `apk.structure.analyze`, `dex.decompile`, `dex.classes.list`, `apk.packer.detect` | jadx binary accessible |
 | `angr` | angr | `angr.analyze` | `ANGR_PYTHON` |
-| `api-hash` | API Hash Resolution | `hash.resolve`, `hash.identify` | None |
+| `api-hash` | API Hash Resolution | `hash.resolve`, `hash.identify`, `hash.resolver.plan` | None |
 | `apk-smali` | APK Smali Analysis | `apk.disassemble`, `apk.manifest.parse`, `apk.resources.decode` | `JADX_PATH` |
 | `batch` | Batch Analysis | `batch.submit`, `batch.status`, `batch.results` | None |
 | `behavior-first` | Behavior-First Analysis | 3 tools | None |
@@ -40,7 +40,7 @@ from the centralised tool registry.
 | `die` | Detect It Easy | `die.scan`, `die.identify` | `DIE_PATH` |
 | `dotnet-decompile` | .NET Decompile | `dotnet.decompile`, `dotnet.decompile.type` | None |
 | `dotnet-reactor` | .NET Reactor | 4 tools | python3 |
-| `dynamic` | Dynamic Analysis Automation | 7 tools | None |
+| `dynamic` | Dynamic Analysis Automation | 24 tools: `dynamic.auto_hook`, `dynamic.trace_attribute`, `dynamic.memory_dump`, `dynamic.behavior.capture`, `dynamic.behavior.diff`, `dynamic.dependencies`, `dynamic.trace.import`, `dynamic.memory.import`, `sandbox.execute`, `runtime.debug.session.start`, `runtime.debug.session.status`, `runtime.debug.session.stop`, `runtime.debug.command`, `dynamic.runtime.status`, `dynamic.toolkit.status`, `dynamic.deep_plan`, `debug.cdb.plan`, `debug.procdump.plan`, `debug.telemetry.plan`, `debug.network.plan`, `debug.managed.plan`, `debug.gui.handoff`, `dynamic.persona.plan`, `runtime.hyperv.control` | None |
 | `elf-macho` | ELF/Mach-O Analysis | 4 tools | None |
 | `firmware` | Firmware Analysis | 3 tools | None |
 | `frida` | Frida Instrumentation | `frida.runtime.instrument`, `frida.script.inject`, `frida.trace.capture`, `frida.script.generate` | `frida --version` succeeds |
@@ -69,12 +69,12 @@ from the centralised tool registry.
 | `sbom` | SBOM | 1 tool | None |
 | `similarity` | Sample Similarity | `sample.similarity`, `sample.cluster.fuzzy` | py-tlsh optional |
 | `speakeasy` | Speakeasy Emulator | `speakeasy.emulate`, `speakeasy.shellcode`, `speakeasy.api_trace` | speakeasy-emulator |
-| `static-triage` | Static Triage | 17 tools | None |
+| `static-triage` | Static Triage | 20 tools: includes `static.resource.graph`, `static.config.carver`, and `static.behavior.classify` for resource/payload graphing, generic config carving, and persistence/injection classification | None |
 | `strings` | Strings | 2 tools | FLOSS optional |
 | `threat-intel` | Threat Intelligence | `attack.map`, `ioc.export`, `sigma.rule.generate` | None |
-| `unpacking` | Unpacking | 2 tools | None |
+| `unpacking` | Unpacking | 3 tools: `unpack.auto`, `unpack.guide`, `unpack.child.handoff` | None |
 | `upx` | UPX | `upx.inspect` | `UPX_PATH` |
-| `visualization` | Visualization & Reporting | `report.html.generate`, `behavior.timeline`, `data_flow.map` | None |
+| `visualization` | Visualization & Reporting | `report.html.generate`, `behavior.timeline`, `data_flow.map`, `analysis.evidence.graph`, `crypto.lifecycle.graph` | None |
 | `vm-analysis` | VM Analysis | 10 tools | None |
 | `vuln-scanner` | Vulnerability Scanner | 2 tools | None |
 | `wine` | Wine | `wine.run` | `WINE_PATH` |

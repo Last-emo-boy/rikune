@@ -47,14 +47,13 @@ export const binaryDiffSummaryToolDefinition: ToolDefinition = {
 // Summary generator
 // ============================================================================
 
-export function generateDiffSummary(
-  diff: BinaryDiffResult,
-  maxChars: number
-): string {
+export function generateDiffSummary(diff: BinaryDiffResult, maxChars: number): string {
   const lines: string[] = []
   const stats = diff.summary_stats
 
-  lines.push(`# Binary Diff: ${diff.sample_id_a.slice(0, 16)}… vs ${diff.sample_id_b.slice(0, 16)}…`)
+  lines.push(
+    `# Binary Diff: ${diff.sample_id_a.slice(0, 16)}… vs ${diff.sample_id_b.slice(0, 16)}…`
+  )
   lines.push('')
 
   // Overview stats
@@ -62,12 +61,8 @@ export function generateDiffSummary(
   lines.push(
     `Functions: +${stats.functions_added} added, -${stats.functions_removed} removed, ~${stats.functions_modified} modified`
   )
-  lines.push(
-    `Imports: +${stats.imports_added} added, -${stats.imports_removed} removed`
-  )
-  lines.push(
-    `Strings: +${stats.strings_added} added, -${stats.strings_removed} removed`
-  )
+  lines.push(`Imports: +${stats.imports_added} added, -${stats.imports_removed} removed`)
+  lines.push(`Strings: +${stats.strings_added} added, -${stats.strings_removed} removed`)
   if (stats.attack_techniques_added > 0 || stats.attack_techniques_removed > 0) {
     lines.push(
       `ATT&CK: +${stats.attack_techniques_added} techniques, -${stats.attack_techniques_removed} techniques`
@@ -113,7 +108,10 @@ export function generateDiffSummary(
   }
 
   // Import changes
-  if (diff.structural_delta?.imports.added.length || diff.structural_delta?.imports.removed.length) {
+  if (
+    diff.structural_delta?.imports.added.length ||
+    diff.structural_delta?.imports.removed.length
+  ) {
     lines.push('## Import Changes')
     for (const imp of (diff.structural_delta?.imports.added ?? []).slice(0, 10)) {
       lines.push(`+ ${imp}`)
@@ -184,9 +182,7 @@ export function createBinaryDiffSummaryHandler(
     if (!diffArtifact) {
       return {
         ok: false,
-        errors: [
-          `No binary diff artifact found for ${input.sample_id_a}. Run binary.diff first.`,
-        ],
+        errors: [`No binary diff artifact found for ${input.sample_id_a}. Run binary.diff first.`],
       }
     }
 

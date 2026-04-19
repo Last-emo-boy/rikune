@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, ArtifactRef , PluginToolDeps} from '../../sdk.js'
+import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { getDebugSessionManager } from '../debug/debug-session-state.js'
 
@@ -27,6 +27,7 @@ export const debugSessionEndToolDefinition: ToolDefinition = {
     'End a debug session: kill GDB, persist session trace as an artifact (breakpoint hits, register snapshots, history).',
   inputSchema: DebugSessionEndInputSchema,
   outputSchema: DebugSessionEndOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 export function createDebugSessionEndHandler(deps: PluginToolDeps) {

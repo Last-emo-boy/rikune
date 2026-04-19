@@ -10,7 +10,10 @@ const TOOL_NAME = 'dynamic.trace.attribute'
 
 export const DynamicTraceAttributeInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  trace_artifact_id: z.string().optional().describe('Specific trace artifact to attribute. Uses latest if omitted.'),
+  trace_artifact_id: z
+    .string()
+    .optional()
+    .describe('Specific trace artifact to attribute. Uses latest if omitted.'),
 })
 
 export const dynamicTraceAttributeToolDefinition: ToolDefinition = {
@@ -59,31 +62,43 @@ function findContainingFunction(addr: number, functions: FunctionRange[]): Funct
 
 function inferBehaviorTags(apis: string[]): string[] {
   const tags = new Set<string>()
-  const lowerApis = apis.map(a => a.toLowerCase())
+  const lowerApis = apis.map((a) => a.toLowerCase())
 
-  if (lowerApis.some(a => a.includes('createfile') || a.includes('writefile') || a.includes('readfile')))
+  if (
+    lowerApis.some(
+      (a) => a.includes('createfile') || a.includes('writefile') || a.includes('readfile')
+    )
+  )
     tags.add('file_io')
-  if (lowerApis.some(a => a.includes('regopen') || a.includes('regset') || a.includes('regquery')))
+  if (
+    lowerApis.some((a) => a.includes('regopen') || a.includes('regset') || a.includes('regquery'))
+  )
     tags.add('registry')
-  if (lowerApis.some(a => a.includes('socket') || a.includes('connect') || a.includes('send') || a.includes('recv') || a.includes('internet')))
+  if (
+    lowerApis.some(
+      (a) =>
+        a.includes('socket') ||
+        a.includes('connect') ||
+        a.includes('send') ||
+        a.includes('recv') ||
+        a.includes('internet')
+    )
+  )
     tags.add('network')
-  if (lowerApis.some(a => a.includes('crypt') || a.includes('bcrypt')))
-    tags.add('crypto')
-  if (lowerApis.some(a => a.includes('virtualalloc') || a.includes('virtualprotect')))
+  if (lowerApis.some((a) => a.includes('crypt') || a.includes('bcrypt'))) tags.add('crypto')
+  if (lowerApis.some((a) => a.includes('virtualalloc') || a.includes('virtualprotect')))
     tags.add('memory_manipulation')
-  if (lowerApis.some(a => a.includes('createremotethread') || a.includes('writeprocessmemory')))
+  if (lowerApis.some((a) => a.includes('createremotethread') || a.includes('writeprocessmemory')))
     tags.add('injection')
-  if (lowerApis.some(a => a.includes('createprocess') || a.includes('shellexecute')))
+  if (lowerApis.some((a) => a.includes('createprocess') || a.includes('shellexecute')))
     tags.add('process_creation')
-  if (lowerApis.some(a => a.includes('isdebuggerpresent') || a.includes('ntqueryinformation')))
+  if (lowerApis.some((a) => a.includes('isdebuggerpresent') || a.includes('ntqueryinformation')))
     tags.add('anti_debug')
 
   return [...tags]
 }
 
-export function createDynamicTraceAttributeHandler(
-  deps: PluginToolDeps
-) {
+export function createDynamicTraceAttributeHandler(deps: PluginToolDeps) {
   const { workspaceManager, database, persistStaticAnalysisJsonArtifact } = deps
   return async (args: z.infer<typeof DynamicTraceAttributeInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()
@@ -102,16 +117,26 @@ export function createDynamicTraceAttributeHandler(
         const family = entry.evidence_family ?? ''
         if (family === 'function_map' || family === 'functions') {
           try {
-            const data = typeof entry.result_json === 'string' ? JSON.parse(entry.result_json) : entry.result_json
+            const data =
+              typeof entry.result_json === 'string'
+                ? JSON.parse(entry.result_json)
+                : entry.result_json
             const fns = data?.functions ?? data?.data?.functions ?? []
             for (const fn of fns) {
               const addr = addressToNumber(fn.address ?? fn.entry ?? '0')
               const size = fn.size ?? 0
               if (addr && size) {
-                functionRanges.push({ name: fn.name ?? `FUN_${addr.toString(16)}`, address: addr, size, end: addr + size })
+                functionRanges.push({
+                  name: fn.name ?? `FUN_${addr.toString(16)}`,
+                  address: addr,
+                  size,
+                  end: addr + size,
+                })
               }
             }
-          } catch { /* */ }
+          } catch {
+            /* */
+          }
         }
       }
 
@@ -125,15 +150,26 @@ export function createDynamicTraceAttributeHandler(
         const family = entry.evidence_family ?? ''
         if (family === 'dynamic_trace' || family === 'frida_trace' || family === 'runtime_trace') {
           try {
-            const data = typeof entry.result_json === 'string' ? JSON.parse(entry.result_json) : entry.result_json
-            const events = data?.events ?? data?.data?.events ?? data?.trace ?? data?.data?.trace ?? []
+            const data =
+              typeof entry.result_json === 'string'
+                ? JSON.parse(entry.result_json)
+                : entry.result_json
+            const events =
+              data?.events ?? data?.data?.events ?? data?.trace ?? data?.data?.trace ?? []
             traceEvents.push(...events)
-          } catch { /* */ }
+          } catch {
+            /* */
+          }
         }
       }
 
       if (traceEvents.length === 0) {
-        return { ok: false, errors: ['No dynamic trace data found. Run frida.trace.capture or dynamic.trace.import first.'] }
+        return {
+          ok: false,
+          errors: [
+            'No dynamic trace data found. Run frida.trace.capture or dynamic.trace.import first.',
+          ],
+        }
       }
 
       // Attribute events to functions
@@ -143,7 +179,10 @@ export function createDynamicTraceAttributeHandler(
 
       for (const event of traceEvents) {
         const callerAddr = event.return_address ?? event.caller_address ?? event.address
-        if (!callerAddr) { unattributed++; continue }
+        if (!callerAddr) {
+          unattributed++
+          continue
+        }
 
         const addr = addressToNumber(callerAddr)
         const fn = findContainingFunction(addr, functionRanges)
@@ -151,7 +190,7 @@ export function createDynamicTraceAttributeHandler(
         if (fn) {
           const api = event.api ?? 'unknown_event'
           if (!fnApiMap.has(fn.name)) fnApiMap.set(fn.name, new Map())
-          const apiMap = fnApiMap.get(fn.name)!
+          const apiMap = fnApiMap.get(fn.name)
           apiMap.set(api, (apiMap.get(api) ?? 0) + 1)
           fnEventCount.set(fn.name, (fnEventCount.get(fn.name) ?? 0) + 1)
         } else {
@@ -166,13 +205,13 @@ export function createDynamicTraceAttributeHandler(
           .map(([api, count]) => ({ api, count }))
           .sort((a, b) => b.count - a.count)
 
-        const fnRange = functionRanges.find(f => f.name === fnName)
+        const fnRange = functionRanges.find((f) => f.name === fnName)
         attributed.push({
           name: fnName,
           address: fnRange ? `0x${fnRange.address.toString(16)}` : 'unknown',
           api_calls: apis,
           total_events: fnEventCount.get(fnName) ?? 0,
-          behavior_tags: inferBehaviorTags(apis.map(a => a.api)),
+          behavior_tags: inferBehaviorTags(apis.map((a) => a.api)),
         })
       }
 
@@ -185,18 +224,24 @@ export function createDynamicTraceAttributeHandler(
         unattributed_events: unattributed,
         functions: attributed.slice(0, 50),
         behavior_summary: inferBehaviorTags(
-          attributed.flatMap(f => f.api_calls.map(a => a.api))
+          attributed.flatMap((f) => f.api_calls.map((a) => a.api))
         ),
       }
 
       const artifacts: ArtifactRef[] = []
       try {
         const artRef = await persistStaticAnalysisJsonArtifact?.(
-          workspaceManager, database, args.sample_id,
-          'trace_attribution', 'trace-attribute', resultData
+          workspaceManager,
+          database,
+          args.sample_id,
+          'trace_attribution',
+          'trace-attribute',
+          resultData
         )
         if (artRef) artifacts.push(artRef)
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
       return {
         ok: true,

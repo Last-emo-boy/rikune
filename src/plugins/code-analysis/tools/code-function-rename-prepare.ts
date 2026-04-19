@@ -45,69 +45,86 @@ const PreparedBundleSchema = z.object({
   functions: z.array(PreparedFunctionSchema),
 })
 
-export const codeFunctionRenamePrepareInputSchema = z.object({
-  sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  address: z.string().optional().describe('Optional specific function address'),
-  symbol: z.string().optional().describe('Optional specific function symbol'),
-  topk: z
-    .number()
-    .int()
-    .min(1)
-    .max(20)
-    .default(6)
-    .describe('When address/symbol not provided, prepare up to top-K reconstructed functions'),
-  max_functions: z
-    .number()
-    .int()
-    .min(1)
-    .max(20)
-    .default(6)
-    .describe('Maximum number of functions included in the prepared bundle'),
-  include_resolved: z
-    .boolean()
-    .default(false)
-    .describe('Include functions that already have validated rule-based names'),
-  analysis_goal: z
-    .string()
-    .min(1)
-    .max(400)
-    .default(
-      'Reverse-engineer the prepared functions and propose precise human-readable semantic names.'
-    )
-    .describe('Human-readable analysis goal injected into the task prompt for any external LLM'),
-  persist_artifact: z
-    .boolean()
-    .default(true)
-    .describe('Persist the prepared evidence bundle as a JSON artifact for later review and provenance'),
-  session_tag: z
-    .string()
-    .optional()
-    .describe('Optional semantic naming session tag used for artifact grouping'),
-  evidence_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('all')
-    .describe('Runtime evidence scope forwarded to code.functions.reconstruct for semantic review preparation'),
-  evidence_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
-  semantic_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('all')
-    .describe('Semantic naming artifact scope forwarded to code.functions.reconstruct for review preparation'),
-  semantic_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional semantic naming session selector used when semantic_scope=session or to narrow all/latest results'),
-})
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
+export const codeFunctionRenamePrepareInputSchema = z
+  .object({
+    sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
+    address: z.string().optional().describe('Optional specific function address'),
+    symbol: z.string().optional().describe('Optional specific function symbol'),
+    topk: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(6)
+      .describe('When address/symbol not provided, prepare up to top-K reconstructed functions'),
+    max_functions: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(6)
+      .describe('Maximum number of functions included in the prepared bundle'),
+    include_resolved: z
+      .boolean()
+      .default(false)
+      .describe('Include functions that already have validated rule-based names'),
+    analysis_goal: z
+      .string()
+      .min(1)
+      .max(400)
+      .default(
+        'Reverse-engineer the prepared functions and propose precise human-readable semantic names.'
+      )
+      .describe('Human-readable analysis goal injected into the task prompt for any external LLM'),
+    persist_artifact: z
+      .boolean()
+      .default(true)
+      .describe(
+        'Persist the prepared evidence bundle as a JSON artifact for later review and provenance'
+      ),
+    session_tag: z
+      .string()
+      .optional()
+      .describe('Optional semantic naming session tag used for artifact grouping'),
+    evidence_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('all')
+      .describe(
+        'Runtime evidence scope forwarded to code.functions.reconstruct for semantic review preparation'
+      ),
+    evidence_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'
+      ),
+    semantic_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('all')
+      .describe(
+        'Semantic naming artifact scope forwarded to code.functions.reconstruct for review preparation'
+      ),
+    semantic_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional semantic naming session selector used when semantic_scope=session or to narrow all/latest results'
+      ),
   })
-  .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
-    message: 'semantic_session_tag is required when semantic_scope=session',
-    path: ['semantic_session_tag'],
-  })
+  .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()),
+    {
+      message: 'semantic_session_tag is required when semantic_scope=session',
+      path: ['semantic_session_tag'],
+    }
+  )
 
 export const codeFunctionRenamePrepareOutputSchema = z.object({
   ok: z.boolean(),
@@ -158,10 +175,7 @@ interface CodeFunctionRenamePrepareDependencies {
   reconstructHandler?: (args: ToolArgs) => Promise<WorkerResult>
 }
 
-function shouldIncludePreparedFunction(
-  func: any,
-  includeResolved: boolean
-): boolean {
+function shouldIncludePreparedFunction(func: any, includeResolved: boolean): boolean {
   if (includeResolved) {
     return true
   }
@@ -274,17 +288,16 @@ export function createCodeFunctionRenamePrepareHandler(
       }
 
       const preparedBundleJson = JSON.stringify(preparedBundle, null, 2)
-      const taskPrompt = buildSemanticNameReviewPromptText(
-        preparedBundleJson,
-        input.analysis_goal
-      )
+      const taskPrompt = buildSemanticNameReviewPromptText(preparedBundleJson, input.analysis_goal)
 
       const warnings = [...(reconstructResult.warnings || [])]
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
 
       if (functions.length === 0) {
-        warnings.push('No functions matched the preparation filter. Consider include_resolved=true or a larger topk.')
+        warnings.push(
+          'No functions matched the preparation filter. Consider include_resolved=true or a larger topk.'
+        )
       }
 
       if (input.persist_artifact) {
@@ -304,7 +317,9 @@ export function createCodeFunctionRenamePrepareHandler(
           sample_id: input.sample_id,
           analysis_goal: input.analysis_goal,
           prepared_count: functions.length,
-          unresolved_count: functions.filter((item: { suggestion_required: boolean }) => item.suggestion_required).length,
+          unresolved_count: functions.filter(
+            (item: { suggestion_required: boolean }) => item.suggestion_required
+          ).length,
           prompt_name: 'reverse.semantic_name_review',
           prompt_arguments: {
             analysis_goal: input.analysis_goal,

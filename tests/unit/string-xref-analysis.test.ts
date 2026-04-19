@@ -5,7 +5,7 @@ import {
   buildFunctionContextSummaries,
   compactStringBundleForContext,
   extractSuspiciousApiCandidates,
-} from '../../src/string-xref-analysis.js'
+} from '../../src/plugins/strings/string-xref-analysis.js'
 
 describe('string-xref-analysis helpers', () => {
   test('should merge extracted and decoded strings with runtime-noise and encoded-candidate labels', () => {

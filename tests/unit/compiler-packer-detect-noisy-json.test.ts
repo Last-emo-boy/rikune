@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
 import { DatabaseManager } from '../../src/database.js'
-import { createCompilerPackerDetectHandler } from '../../src/tools/compiler-packer-detect.js'
+import { createCompilerPackerDetectHandler } from '../../src/plugins/static-triage/tools/compiler-packer-detect.js'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 
 describe('compiler.packer.detect noisy backend output', () => {

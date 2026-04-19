@@ -10,6 +10,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 import {
   resolveSampleFile,
   runPythonJson,
@@ -29,11 +30,13 @@ export const dumpScanInputSchema = z.object({
 
 export const dumpScanOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    pe_count: z.number(),
-    images: z.array(z.any()),
-    total_size: z.number(),
-  }).optional(),
+  data: z
+    .object({
+      pe_count: z.number(),
+      images: z.array(z.any()),
+      total_size: z.number(),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(z.any()).optional(),
   metrics: z.any().optional(),
@@ -52,7 +55,7 @@ export const dumpScanToolDefinition: ToolDefinition = {
 export function createDumpScanHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
-  dependencies?: SharedBackendDependencies,
+  dependencies?: SharedBackendDependencies
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -60,7 +63,7 @@ export function createDumpScanHandler(
 
     try {
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
+      const pythonPath = getPythonCommand()
 
       const workerScript = `
 import sys, json, importlib.util
@@ -75,7 +78,7 @@ mod.main()
         pythonPath,
         workerScript,
         { command: 'dump_scan', dump_path: samplePath },
-        input.timeout * 1000,
+        input.timeout * 1000
       )
 
       const workerData = result.parsed
@@ -89,15 +92,18 @@ mod.main()
             try {
               const content = await fs.readFile(img.path)
               const artifact = await persistBackendArtifact(
-                workspaceManager, database, input.sample_id,
-                'deep_unpack', `dump_scan_pe${img.index}`,
+                workspaceManager,
+                database,
+                input.sample_id,
+                'deep_unpack',
+                `dump_scan_pe${img.index}`,
                 content,
                 {
                   extension: 'exe',
                   mime: 'application/vnd.microsoft.portable-executable',
                   sessionTag: input.session_tag,
                   metadata: { offset: img.offset, pe_type: img.pe_type },
-                },
+                }
               )
               artifacts.push(artifact)
             } catch {
@@ -111,9 +117,10 @@ mod.main()
         ok: workerData.ok ?? true,
         data: {
           ...workerData.data,
-          recommended_next_tools: (workerData.data?.pe_count ?? 0) > 0
-            ? ['unpack.reingest', 'pe.fingerprint', 'deep.unpack.pe_reconstruct']
-            : ['deep.unpack.pipeline', 'behavior.capture'],
+          recommended_next_tools:
+            (workerData.data?.pe_count ?? 0) > 0
+              ? ['unpack.reingest', 'pe.fingerprint', 'deep.unpack.pe_reconstruct']
+              : ['deep.unpack.pipeline', 'behavior.capture'],
         },
         errors: workerData.errors?.length ? workerData.errors : undefined,
         artifacts: artifacts.length > 0 ? artifacts : undefined,

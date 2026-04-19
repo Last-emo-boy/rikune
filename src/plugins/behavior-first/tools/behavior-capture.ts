@@ -12,6 +12,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 import {
   resolveSampleFile,
   runPythonJson,
@@ -26,8 +27,7 @@ const TOOL_NAME = 'behavior.capture'
 
 export const behaviorCaptureInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  timeout: z.number().int().min(5).max(120).default(60)
-    .describe('Execution timeout in seconds'),
+  timeout: z.number().int().min(5).max(120).default(60).describe('Execution timeout in seconds'),
   persist_artifact: z.boolean().default(true),
   session_tag: z.string().optional(),
 })
@@ -46,7 +46,7 @@ export const behaviorCaptureToolDefinition: ToolDefinition = {
 export function createBehaviorCaptureHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
-  dependencies?: SharedBackendDependencies,
+  dependencies?: SharedBackendDependencies
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -58,12 +58,20 @@ export function createBehaviorCaptureHandler(
 
       if (!backends.frida_cli?.available) {
         return buildDynamicSetupRequired(
-          backends.frida_cli || { available: false, source: null, path: null, version: null, checked_candidates: [], error: 'Frida not available' },
-          startTime, TOOL_NAME,
+          backends.frida_cli || {
+            available: false,
+            source: null,
+            path: null,
+            version: null,
+            checked_candidates: [],
+            error: 'Frida not available',
+          },
+          startTime,
+          TOOL_NAME
         )
       }
 
-      const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
+      const pythonPath = getPythonCommand()
       const workerScript = `
 import sys, json, importlib.util
 spec = importlib.util.spec_from_file_location("worker", "${resolvePackagePath('src', 'plugins', 'behavior-first', 'workers', 'behavior_worker.py').replace(/\\/g, '/')}")
@@ -73,11 +81,16 @@ mod.main()
 `.trim()
 
       const runPython = dependencies?.runPythonJson || runPythonJson
-      const result = await runPython(pythonPath, workerScript, {
-        command: 'capture',
-        sample_path: samplePath,
-        timeout: input.timeout,
-      }, (input.timeout + 15) * 1000)
+      const result = await runPython(
+        pythonPath,
+        workerScript,
+        {
+          command: 'capture',
+          sample_path: samplePath,
+          timeout: input.timeout,
+        },
+        (input.timeout + 15) * 1000
+      )
 
       const workerData = result.parsed
       const artifacts: ArtifactRef[] = []
@@ -85,27 +98,41 @@ mod.main()
       if (workerData.ok && workerData.data && input.persist_artifact) {
         try {
           const artifact = await persistBackendArtifact(
-            workspaceManager, database, input.sample_id,
-            'behavior', 'capture',
+            workspaceManager,
+            database,
+            input.sample_id,
+            'behavior',
+            'capture',
             JSON.stringify(workerData.data, null, 2),
-            { extension: 'json', mime: 'application/json', sessionTag: input.session_tag },
+            { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
           )
           artifacts.push(artifact)
-        } catch { /* best effort */ }
+        } catch {
+          /* best effort */
+        }
       }
 
       return {
         ok: workerData.ok,
         data: {
           ...workerData.data,
-          recommended_next_tools: ['behavior.ioc', 'behavior.network', 'malware.classify', 'threat.map'],
+          recommended_next_tools: [
+            'behavior.ioc',
+            'behavior.network',
+            'malware.classify',
+            'threat.map',
+          ],
         },
         errors: workerData.errors?.length ? workerData.errors : undefined,
         artifacts: artifacts.length > 0 ? artifacts : undefined,
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [(error as Error).message], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [(error as Error).message],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

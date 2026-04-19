@@ -7,7 +7,10 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
-import { listArtifactInventory, normalizeRelativeArtifactPath } from '../artifacts/artifact-inventory.js'
+import {
+  listArtifactInventory,
+  normalizeRelativeArtifactPath,
+} from '../artifacts/artifact-inventory.js'
 
 const TOOL_NAME = 'artifacts.list'
 const TOOL_VERSION = '0.1.2'
@@ -31,7 +34,9 @@ export const ArtifactsListInputSchema = z.object({
   path_prefix: z
     .string()
     .optional()
-    .describe('Optional relative path prefix filter, useful for narrowing to one export/session directory'),
+    .describe(
+      'Optional relative path prefix filter, useful for narrowing to one export/session directory'
+    ),
   session_tag: z
     .string()
     .optional()
@@ -54,7 +59,9 @@ export const ArtifactsListInputSchema = z.object({
     .boolean()
     .optional()
     .default(true)
-    .describe('Include files under workspace export roots even if not registered in artifacts table'),
+    .describe(
+      'Include files under workspace export roots even if not registered in artifacts table'
+    ),
   recursive: z
     .boolean()
     .optional()
@@ -321,7 +328,8 @@ export function createArtifactsListHandler(
       const highValueTypes = new Set<string>()
       for (const item of filtered) {
         byType[item.type] = (byType[item.type] || 0) + 1
-        byRetentionBucket[item.retention_bucket] = (byRetentionBucket[item.retention_bucket] || 0) + 1
+        byRetentionBucket[item.retention_bucket] =
+          (byRetentionBucket[item.retention_bucket] || 0) + 1
         const existing = latestByType[item.type]
         if (!existing || toTimestamp(item.created_at) > toTimestamp(existing.created_at)) {
           latestByType[item.type] = {
@@ -333,7 +341,10 @@ export function createArtifactsListHandler(
         }
         if (item.session_tag) {
           const existingSession = latestBySession[item.session_tag]
-          if (!existingSession || toTimestamp(item.created_at) > toTimestamp(existingSession.created_at)) {
+          if (
+            !existingSession ||
+            toTimestamp(item.created_at) > toTimestamp(existingSession.created_at)
+          ) {
             latestBySession[item.session_tag] = {
               id: item.id,
               path: item.path,

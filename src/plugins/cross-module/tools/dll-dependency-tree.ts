@@ -27,20 +27,62 @@ export const dllDependencyTreeToolDefinition: ToolDefinition = {
 }
 
 const KNOWN_SYSTEM_DLLS = new Set([
-  'kernel32.dll', 'ntdll.dll', 'user32.dll', 'gdi32.dll', 'advapi32.dll',
-  'ole32.dll', 'oleaut32.dll', 'shell32.dll', 'comctl32.dll', 'comdlg32.dll',
-  'ws2_32.dll', 'wsock32.dll', 'wininet.dll', 'winhttp.dll', 'urlmon.dll',
-  'msvcrt.dll', 'msvcr100.dll', 'msvcr110.dll', 'msvcr120.dll', 'msvcr140.dll',
-  'vcruntime140.dll', 'ucrtbase.dll', 'msvcp140.dll',
-  'crypt32.dll', 'bcrypt.dll', 'ncrypt.dll', 'wintrust.dll',
-  'rpcrt4.dll', 'secur32.dll', 'shlwapi.dll', 'version.dll', 'iphlpapi.dll',
-  'dnsapi.dll', 'netapi32.dll', 'psapi.dll', 'dbghelp.dll', 'imagehlp.dll',
-  'setupapi.dll', 'cfgmgr32.dll', 'devobj.dll', 'wtsapi32.dll',
-  'mpr.dll', 'userenv.dll', 'sspicli.dll', 'cryptbase.dll',
-  'kernelbase.dll', 'api-ms-win-core-synch-l1-1-0.dll',
+  'kernel32.dll',
+  'ntdll.dll',
+  'user32.dll',
+  'gdi32.dll',
+  'advapi32.dll',
+  'ole32.dll',
+  'oleaut32.dll',
+  'shell32.dll',
+  'comctl32.dll',
+  'comdlg32.dll',
+  'ws2_32.dll',
+  'wsock32.dll',
+  'wininet.dll',
+  'winhttp.dll',
+  'urlmon.dll',
+  'msvcrt.dll',
+  'msvcr100.dll',
+  'msvcr110.dll',
+  'msvcr120.dll',
+  'msvcr140.dll',
+  'vcruntime140.dll',
+  'ucrtbase.dll',
+  'msvcp140.dll',
+  'crypt32.dll',
+  'bcrypt.dll',
+  'ncrypt.dll',
+  'wintrust.dll',
+  'rpcrt4.dll',
+  'secur32.dll',
+  'shlwapi.dll',
+  'version.dll',
+  'iphlpapi.dll',
+  'dnsapi.dll',
+  'netapi32.dll',
+  'psapi.dll',
+  'dbghelp.dll',
+  'imagehlp.dll',
+  'setupapi.dll',
+  'cfgmgr32.dll',
+  'devobj.dll',
+  'wtsapi32.dll',
+  'mpr.dll',
+  'userenv.dll',
+  'sspicli.dll',
+  'cryptbase.dll',
+  'kernelbase.dll',
+  'api-ms-win-core-synch-l1-1-0.dll',
   'api-ms-win-core-processthreads-l1-1-0.dll',
-  'libc.so.6', 'libm.so.6', 'libdl.so.2', 'libpthread.so.0', 'librt.so.1',
-  'ld-linux-x86-64.so.2', 'libstdc++.so.6', 'libgcc_s.so.1',
+  'libc.so.6',
+  'libm.so.6',
+  'libdl.so.2',
+  'libpthread.so.0',
+  'librt.so.1',
+  'ld-linux-x86-64.so.2',
+  'libstdc++.so.6',
+  'libgcc_s.so.1',
 ])
 
 export function createDllDependencyTreeHandler(deps: PluginToolDeps) {
@@ -82,7 +124,10 @@ export function createDllDependencyTreeHandler(deps: PluginToolDeps) {
               for (const imp of impEntries) {
                 if (imp.dll && imp.functions) {
                   const dll = imp.dll.toLowerCase()
-                  grouped.set(dll, (imp.functions as Array<{ name?: string }>).map((f) => f.name ?? 'unknown'))
+                  grouped.set(
+                    dll,
+                    (imp.functions as Array<{ name?: string }>).map((f) => f.name ?? 'unknown')
+                  )
                 } else if (imp.dll && (imp.name || imp.function_name)) {
                   const dll = imp.dll.toLowerCase()
                   const existing = grouped.get(dll) ?? []
@@ -94,7 +139,9 @@ export function createDllDependencyTreeHandler(deps: PluginToolDeps) {
                 imports.push({ dll, function_count: fns.length, functions: fns })
               }
             }
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
       }
 
@@ -148,11 +195,17 @@ export function createDllDependencyTreeHandler(deps: PluginToolDeps) {
       const artifacts: ArtifactRef[] = []
       try {
         const artRef = await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, args.sample_id,
-          'dll_dependency_tree', 'dll-dependency-tree', resultData
+          workspaceManager,
+          database,
+          args.sample_id,
+          'dll_dependency_tree',
+          'dll-dependency-tree',
+          resultData
         )
         if (artRef) artifacts.push(artRef)
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
       return {
         ok: true,

@@ -13,7 +13,10 @@ const TOOL_NAME = 'vm.opcode.extract'
 
 export const vmOpcodeExtractInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  function_name: z.string().optional().describe('Name of the VM dispatcher function to analyze (auto-detected if omitted)'),
+  function_name: z
+    .string()
+    .optional()
+    .describe('Name of the VM dispatcher function to analyze (auto-detected if omitted)'),
   function_address: z.string().optional().describe('Address of the VM dispatcher function'),
 })
 
@@ -57,9 +60,10 @@ export function createVmOpcodeExtractHandler(
       // First try VM detection results for auto-detected dispatcher
       for (const entry of evidence) {
         if (entry.evidence_family === 'vm_detection') {
-          const data = typeof entry.result_json === 'string'
-            ? JSON.parse(entry.result_json)
-            : entry.result_json
+          const data =
+            typeof entry.result_json === 'string'
+              ? JSON.parse(entry.result_json)
+              : entry.result_json
           if (data?.candidates?.length > 0 && !input.function_name) {
             dispatcherName = data.candidates[0].function
           }
@@ -70,9 +74,10 @@ export function createVmOpcodeExtractHandler(
       for (const entry of evidence) {
         const family = entry.evidence_family ?? ''
         if (family === 'function_map' || family === 'decompilation' || family === 'functions') {
-          const data = typeof entry.result_json === 'string'
-            ? JSON.parse(entry.result_json)
-            : entry.result_json
+          const data =
+            typeof entry.result_json === 'string'
+              ? JSON.parse(entry.result_json)
+              : entry.result_json
           if (!data) continue
 
           const fnList =
@@ -129,8 +134,12 @@ export function createVmOpcodeExtractHandler(
     const artifacts: ArtifactRef[] = []
     try {
       const ref = await persistStaticAnalysisJsonArtifact(
-        workspaceManager, database, input.sample_id,
-        'vm_opcode_table', 'opcode_table', result
+        workspaceManager,
+        database,
+        input.sample_id,
+        'vm_opcode_table',
+        'opcode_table',
+        result
       )
       artifacts.push(ref)
     } catch {

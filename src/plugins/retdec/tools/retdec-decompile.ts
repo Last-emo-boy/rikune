@@ -1,5 +1,5 @@
 /**
- * RetDec decompile tool â€?decompile a sample with RetDec.
+ * RetDec decompile tool ï¿½?decompile a sample with RetDec.
  */
 
 import { z } from 'zod'
@@ -8,11 +8,20 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
-  fs, os, path,
-  ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
-  executeCommand, truncateText, normalizeError,
-  persistBackendArtifact, buildMetrics, buildStaticSetupRequired,
-  resolveSampleFile, resolveAnalysisBackends,
+  fs,
+  os,
+  path,
+  ArtifactRefSchema,
+  BackendSchema,
+  SharedMetricsSchema,
+  executeCommand,
+  truncateText,
+  normalizeError,
+  persistBackendArtifact,
+  buildMetrics,
+  buildStaticSetupRequired,
+  resolveSampleFile,
+  resolveAnalysisBackends,
 } from '../../docker-shared.js'
 
 export const retdecDecompileInputSchema = z.object({
@@ -21,8 +30,17 @@ export const retdecDecompileInputSchema = z.object({
     .enum(['plain', 'json-human'])
     .default('plain')
     .describe('RetDec output format for the main decompilation file.'),
-  timeout_sec: z.number().int().min(10).max(900).default(300).describe('RetDec timeout in seconds.'),
-  persist_artifact: z.boolean().default(true).describe('Persist the generated decompilation output as an artifact.'),
+  timeout_sec: z
+    .number()
+    .int()
+    .min(10)
+    .max(900)
+    .default(300)
+    .describe('RetDec timeout in seconds.'),
+  persist_artifact: z
+    .boolean()
+    .default(true)
+    .describe('Persist the generated decompilation output as an artifact.'),
   session_tag: z.string().optional().describe('Optional artifact session tag.'),
 })
 
@@ -140,7 +158,11 @@ export function createRetDecDecompileHandler(
           artifact,
           supporting_artifacts: [],
           summary: `RetDec produced ${input.output_format} decompilation output for ${input.sample_id}.`,
-          recommended_next_tools: ['artifact.read', 'code.function.decompile', 'workflow.reconstruct'],
+          recommended_next_tools: [
+            'artifact.read',
+            'code.function.decompile',
+            'workflow.reconstruct',
+          ],
           next_actions: [
             'Read the persisted RetDec artifact for the full output before comparing it with Ghidra-backed decompile results.',
           ],

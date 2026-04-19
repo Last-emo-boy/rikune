@@ -78,7 +78,6 @@ export const comRoleProfileToolDefinition: ToolDefinition = {
   outputSchema: ComRoleProfileOutputSchema,
 }
 
-
 function inferActivationModel(profile: z.infer<typeof BinaryRoleProfileDataSchema>): string {
   if (profile.com_profile.class_factory_exports.length > 0) {
     return 'inproc_class_factory'
@@ -86,7 +85,10 @@ function inferActivationModel(profile: z.infer<typeof BinaryRoleProfileDataSchem
   if (profile.com_profile.registration_strings.some((item) => /localserver32/i.test(item))) {
     return 'local_server_registration'
   }
-  if (profile.com_profile.clsid_strings.length > 0 || profile.com_profile.progid_strings.length > 0) {
+  if (
+    profile.com_profile.clsid_strings.length > 0 ||
+    profile.com_profile.progid_strings.length > 0
+  ) {
     return 'registration_strings_only'
   }
   return 'not_com_like'
@@ -101,13 +103,19 @@ function buildActivationSteps(profile: z.infer<typeof BinaryRoleProfileDataSchem
     steps.push('Resolve the InprocServer32 registration path and associated CLSID/ProgID bindings.')
   }
   if (profile.com_profile.registration_strings.some((item) => /localserver32/i.test(item))) {
-    steps.push('Check whether activation can fall back to a LocalServer32-style out-of-process server.')
+    steps.push(
+      'Check whether activation can fall back to a LocalServer32-style out-of-process server.'
+    )
   }
   if (profile.com_profile.class_factory_exports.length > 0) {
-    steps.push('Trace DllGetClassObject or equivalent class-factory export into object instantiation logic.')
+    steps.push(
+      'Trace DllGetClassObject or equivalent class-factory export into object instantiation logic.'
+    )
   }
   if (profile.com_profile.interface_hints.length > 0) {
-    steps.push('Follow interface negotiation paths for IClassFactory/IUnknown/IDispatch-style flows.')
+    steps.push(
+      'Follow interface negotiation paths for IClassFactory/IUnknown/IDispatch-style flows.'
+    )
   }
   return dedupe(steps)
 }
@@ -117,7 +125,9 @@ function buildClassFactorySurface(profile: z.infer<typeof BinaryRoleProfileDataS
     [
       ...profile.com_profile.clsid_strings,
       ...profile.com_profile.progid_strings,
-      ...profile.com_profile.registration_strings.filter((item) => /inprocserver32|localserver32|appid|clsid/i.test(item)),
+      ...profile.com_profile.registration_strings.filter((item) =>
+        /inprocserver32|localserver32|appid|clsid/i.test(item)
+      ),
     ].slice(0, 8)
   )
   let confidence = profile.com_profile.class_factory_exports.length > 0 ? 0.64 : 0.28

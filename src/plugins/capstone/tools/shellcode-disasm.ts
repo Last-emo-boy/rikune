@@ -7,10 +7,15 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, runPythonJson,
-  persistBackendArtifact, buildMetrics,
-  resolveSampleFile, resolvePythonModuleBackend,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  runPythonJson,
+  persistBackendArtifact,
+  buildMetrics,
+  resolveSampleFile,
+  resolvePythonModuleBackend,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -20,25 +25,33 @@ export const shellcodeDisasmInputSchema = z.object({
   sample_id: z.string().describe('Sample containing shellcode.'),
   arch: z.enum(['x86', 'x64']).default('x86').describe('Shellcode architecture.'),
   offset: z.number().int().min(0).default(0).describe('Starting byte offset.'),
-  max_bytes: z.number().int().min(1).max(65536).default(4096).describe('Maximum bytes to disassemble.'),
+  max_bytes: z
+    .number()
+    .int()
+    .min(1)
+    .max(65536)
+    .default(4096)
+    .describe('Maximum bytes to disassemble.'),
   persist_artifact: z.boolean().default(true).describe('Persist disassembly as artifact.'),
   session_tag: z.string().optional().describe('Optional artifact session tag.'),
 })
 
 export const shellcodeDisasmOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    arch: z.string().optional(),
-    shellcode_size: z.number().optional(),
-    instruction_count: z.number().optional(),
-    disassembly: z.string().optional(),
-    api_calls_heuristic: z.array(z.string()).optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      arch: z.string().optional(),
+      shellcode_size: z.number().optional(),
+      instruction_count: z.number().optional(),
+      disassembly: z.string().optional(),
+      api_calls_heuristic: z.array(z.string()).optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
   metrics: SharedMetricsSchema.optional(),
@@ -97,7 +110,7 @@ print(json.dumps({
 
 export function createShellcodeDisasmHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -105,22 +118,44 @@ export function createShellcodeDisasmHandler(
       const input = shellcodeDisasmInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolvePythonModuleBackend({ envPythonPath: process.env.CAPSTONE_PYTHON, moduleNames: ['capstone'], distributionNames: ['capstone'] })
+      const backend = resolvePythonModuleBackend({
+        envPythonPath: process.env.CAPSTONE_PYTHON,
+        moduleNames: ['capstone'],
+        distributionNames: ['capstone'],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'capstone', available: false, error: 'capstone not installed' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend ||
+            ({ name: 'capstone', available: false, error: 'capstone not installed' } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const result = await runPythonJson(
         backend.path,
         SHELLCODE_DISASM_SCRIPT,
-        { sample_path: samplePath, arch: input.arch, offset: input.offset, max_bytes: input.max_bytes },
-        30_000,
+        {
+          sample_path: samplePath,
+          arch: input.arch,
+          offset: input.offset,
+          max_bytes: input.max_bytes,
+        },
+        30_000
       )
 
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'capstone', 'shellcode', result.parsed?.disassembly || '', { extension: 'asm', mime: 'text/plain', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'capstone',
+          'shellcode',
+          result.parsed?.disassembly || '',
+          { extension: 'asm', mime: 'text/plain', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -136,7 +171,12 @@ export function createShellcodeDisasmHandler(
           api_calls_heuristic: result.parsed?.api_calls_heuristic || [],
           artifact,
           summary: `Shellcode (${input.arch}, ${result.parsed?.shellcode_size || 0} bytes): ${count} instructions, ${(result.parsed?.api_calls_heuristic || []).length} potential API dispatch points.`,
-          recommended_next_tools: ['artifact.read', 'speakeasy.shellcode', 'hash.resolve', 'strings.extract'],
+          recommended_next_tools: [
+            'artifact.read',
+            'speakeasy.shellcode',
+            'hash.resolve',
+            'strings.extract',
+          ],
           next_actions: [
             'Use speakeasy.shellcode to emulate the shellcode and trace API calls.',
             'Use hash.resolve if you see API hash constants.',
@@ -146,7 +186,11 @@ export function createShellcodeDisasmHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

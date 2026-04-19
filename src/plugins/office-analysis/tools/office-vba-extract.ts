@@ -7,10 +7,16 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, runPythonJson,
-  persistBackendArtifact, buildMetrics, truncateText,
-  resolveSampleFile, resolvePythonModuleBackend,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  runPythonJson,
+  persistBackendArtifact,
+  buildMetrics,
+  truncateText,
+  resolveSampleFile,
+  resolvePythonModuleBackend,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -25,20 +31,26 @@ export const officeVbaExtractInputSchema = z.object({
 
 export const officeVbaExtractOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    macro_count: z.number().optional(),
-    macros: z.array(z.object({
-      filename: z.string(),
-      stream_path: z.string(),
-      vba_code: z.string(),
-    })).optional(),
-    suspicious_keywords: z.array(z.string()).optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      macro_count: z.number().optional(),
+      macros: z
+        .array(
+          z.object({
+            filename: z.string(),
+            stream_path: z.string(),
+            vba_code: z.string(),
+          })
+        )
+        .optional(),
+      suspicious_keywords: z.array(z.string()).optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
   metrics: SharedMetricsSchema.optional(),
@@ -85,7 +97,7 @@ print(json.dumps({
 
 export function createOfficeVbaExtractHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -93,12 +105,30 @@ export function createOfficeVbaExtractHandler(
       const input = officeVbaExtractInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolvePythonModuleBackend({ envPythonPath: process.env.OLETOOLS_PYTHON, moduleNames: ['oletools'], distributionNames: ['oletools'] })
+      const backend = resolvePythonModuleBackend({
+        envPythonPath: process.env.OLETOOLS_PYTHON,
+        moduleNames: ['oletools'],
+        distributionNames: ['oletools'],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'oletools', available: false, error: 'oletools Python module not available' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend ||
+            ({
+              name: 'oletools',
+              available: false,
+              error: 'oletools Python module not available',
+            } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
-      const result = await runPythonJson(backend.path, VBA_EXTRACT_SCRIPT, { sample_path: samplePath }, input.timeout_sec * 1000)
+      const result = await runPythonJson(
+        backend.path,
+        VBA_EXTRACT_SCRIPT,
+        { sample_path: samplePath },
+        input.timeout_sec * 1000
+      )
 
       const macros = result.parsed?.macros || []
       const suspicious = result.parsed?.suspicious_keywords || []
@@ -106,8 +136,18 @@ export function createOfficeVbaExtractHandler(
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact && macros.length > 0) {
-        const vbaText = macros.map((m: any) => `' ===== ${m.filename} (${m.stream_path}) =====\n${m.vba_code}`).join('\n\n')
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'office', 'vba_extract', vbaText, { extension: 'vba', mime: 'text/plain', sessionTag: input.session_tag })
+        const vbaText = macros
+          .map((m: any) => `' ===== ${m.filename} (${m.stream_path}) =====\n${m.vba_code}`)
+          .join('\n\n')
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'office',
+          'vba_extract',
+          vbaText,
+          { extension: 'vba', mime: 'text/plain', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -116,11 +156,18 @@ export function createOfficeVbaExtractHandler(
         data: {
           sample_id: input.sample_id,
           macro_count: macros.length,
-          macros: macros.slice(0, 5).map((m: any) => ({ ...m, vba_code: truncateText(m.vba_code, 2000) })),
+          macros: macros
+            .slice(0, 5)
+            .map((m: any) => ({ ...m, vba_code: truncateText(m.vba_code, 2000) })),
           suspicious_keywords: suspicious,
           artifact,
           summary: `Extracted ${macros.length} VBA macro(s), ${suspicious.length} suspicious keyword(s).`,
-          recommended_next_tools: ['artifact.read', 'office.macro.detect', 'strings.extract', 'yara.scan'],
+          recommended_next_tools: [
+            'artifact.read',
+            'office.macro.detect',
+            'strings.extract',
+            'yara.scan',
+          ],
           next_actions: [
             'Use artifact.read for full untruncated macro source.',
             'Use office.macro.detect for maliciousness assessment.',
@@ -130,7 +177,11 @@ export function createOfficeVbaExtractHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

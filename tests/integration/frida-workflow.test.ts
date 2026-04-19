@@ -77,7 +77,7 @@ describe('Frida Integration Tests', () => {
    * Helper to ingest a test sample
    */
   async function ingestTestSample(peBuffer: Buffer): Promise<string> {
-    const ingestHandler = createSampleIngestHandler({ workspaceManager, database, policyGuard } as any)
+    const ingestHandler = createSampleIngestHandler(workspaceManager, database, policyGuard)
     const result = await ingestHandler({
       bytes_b64: peBuffer.toString('base64'),
       filename: 'test-sample.exe',
@@ -96,7 +96,7 @@ describe('Frida Integration Tests', () => {
       const peBuffer = await createMinimalPE()
       const sampleId = await ingestTestSample(peBuffer)
 
-      const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database, {
+      const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any, {
         callWorker: async () => {
           throw new Error('ModuleNotFoundError: No module named frida')
         },
@@ -122,7 +122,7 @@ describe('Frida Integration Tests', () => {
       const peBuffer = await createMinimalPE()
       const sampleId = await ingestTestSample(peBuffer)
 
-      const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database)
+      const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any)
       const result = await handler({
         sample_id: sampleId,
         mode: 'attach',
@@ -137,7 +137,7 @@ describe('Frida Integration Tests', () => {
       const peBuffer = await createMinimalPE()
       const sampleId = await ingestTestSample(peBuffer)
 
-      const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database, {
+      const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any, {
         callWorker: async () => ({
           job_id: 'test-job',
           ok: true,
@@ -181,7 +181,7 @@ describe('Frida Integration Tests', () => {
       const peBuffer = await createMinimalPE()
       const sampleId = await ingestTestSample(peBuffer)
 
-      const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+      const handler = createFridaScriptInjectHandler({ workspaceManager, database } as any, {
         callWorker: async () => {
           throw new Error('ModuleNotFoundError: No module named frida')
         },
@@ -204,7 +204,7 @@ describe('Frida Integration Tests', () => {
       const peBuffer = await createMinimalPE()
       const sampleId = await ingestTestSample(peBuffer)
 
-      const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+      const handler = createFridaScriptInjectHandler({ workspaceManager, database } as any, {
         callWorker: async () => ({
           job_id: 'test-job',
           ok: true,
@@ -246,7 +246,7 @@ describe('Frida Integration Tests', () => {
       const scriptPath = path.join(testDir, 'test_script.js')
       await fs.writeFile(scriptPath, 'console.log("test script");')
 
-      const handler = createFridaScriptInjectHandler(workspaceManager, database, {
+      const handler = createFridaScriptInjectHandler({ workspaceManager, database } as any, {
         callWorker: async () => ({
           job_id: 'test-job',
           ok: true,
@@ -278,7 +278,7 @@ describe('Frida Integration Tests', () => {
 
   describe('Frida Trace Capture', () => {
     test('should handle trace capture with graceful degradation', async () => {
-      const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+      const handler = createFridaTraceCaptureHandler({ workspaceManager, database } as any, {
         callWorker: async () => {
           throw new Error('ModuleNotFoundError: No module named frida')
         },
@@ -298,7 +298,7 @@ describe('Frida Integration Tests', () => {
       const peBuffer = await createMinimalPE()
       const sampleId = await ingestTestSample(peBuffer)
 
-      const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+      const handler = createFridaTraceCaptureHandler({ workspaceManager, database } as any, {
         callWorker: async () => ({
           job_id: 'test-job',
           ok: true,
@@ -339,7 +339,7 @@ describe('Frida Integration Tests', () => {
       const peBuffer = await createMinimalPE()
       const sampleId = await ingestTestSample(peBuffer)
 
-      const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+      const handler = createFridaTraceCaptureHandler({ workspaceManager, database } as any, {
         callWorker: async () => ({
           job_id: 'test-job',
           ok: true,
@@ -380,7 +380,7 @@ describe('Frida Integration Tests', () => {
       const peBuffer = await createMinimalPE()
       const sampleId = await ingestTestSample(peBuffer)
 
-      const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+      const handler = createFridaTraceCaptureHandler({ workspaceManager, database } as any, {
         callWorker: async () => ({
           job_id: 'test-job',
           ok: true,
@@ -421,7 +421,7 @@ describe('Frida Integration Tests', () => {
       const peBuffer = await createMinimalPE()
       const sampleId = await ingestTestSample(peBuffer)
 
-      const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+      const handler = createFridaTraceCaptureHandler({ workspaceManager, database } as any, {
         callWorker: async () => ({
           job_id: 'test-job',
           ok: true,
@@ -461,7 +461,7 @@ describe('Frida Integration Tests', () => {
       const peBuffer = await createMinimalPE()
       const sampleId = await ingestTestSample(peBuffer)
 
-      const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+      const handler = createFridaTraceCaptureHandler({ workspaceManager, database } as any, {
         callWorker: async () => ({
           job_id: 'test-job',
           ok: true,
@@ -500,7 +500,7 @@ describe('Frida Integration Tests', () => {
       const peBuffer = await createMinimalPE()
       const sampleId = await ingestTestSample(peBuffer)
 
-      const handler = createFridaRuntimeInstrumentHandler(workspaceManager, database, {
+      const handler = createFridaRuntimeInstrumentHandler({ workspaceManager, database } as any, {
         callWorker: async () => ({
           job_id: 'test-job',
           ok: true,

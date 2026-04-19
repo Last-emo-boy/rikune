@@ -31,12 +31,15 @@ export interface SearchFunctionsResult {
   }>
 }
 
-export function searchFunctions(db: DatabaseManager, query: SearchFunctionsQuery): SearchFunctionsResult {
+export function searchFunctions(
+  db: DatabaseManager,
+  query: SearchFunctionsQuery
+): SearchFunctionsResult {
   const { name, apis, strings, behavior, minConfidence = 0, source, limit = 20 } = query
-  
+
   const conditions: string[] = []
   const params: any[] = []
-  
+
   if (name) {
     conditions.push('semantics_name LIKE ?')
     params.push(`%${name}%`)
@@ -53,24 +56,29 @@ export function searchFunctions(db: DatabaseManager, query: SearchFunctionsQuery
     conditions.push('semantics_source = ?')
     params.push(source)
   }
-  
+
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-  
-  const rows = db.querySql<any>(`
+
+  const rows = db.querySql<any>(
+    `
     SELECT * FROM function_kb
     ${whereClause}
     ORDER BY semantics_confidence DESC, updated_at DESC
     LIMIT ?
-  `, [...params, limit])
-  
-  const results = rows.map(row => {
+  `,
+    [...params, limit]
+  )
+
+  const results = rows.map((row) => {
     const entry: FunctionKbEntry = {
       id: row.id,
       features: {
         apis: JSON.parse(row.features_apis_json),
         strings: JSON.parse(row.features_strings_json),
         cfg_shape: row.features_cfg_shape,
-        crypto_constants: row.features_crypto_constants_json ? JSON.parse(row.features_crypto_constants_json) : undefined,
+        crypto_constants: row.features_crypto_constants_json
+          ? JSON.parse(row.features_crypto_constants_json)
+          : undefined,
       },
       semantics: {
         name: row.semantics_name,
@@ -84,9 +92,9 @@ export function searchFunctions(db: DatabaseManager, query: SearchFunctionsQuery
       updated_at: row.updated_at,
       user_id: row.user_id,
     }
-    
+
     const { score, reasons } = calculateMatchScore(entry, query)
-    
+
     return {
       id: entry.id,
       name: entry.semantics.name,
@@ -99,49 +107,72 @@ export function searchFunctions(db: DatabaseManager, query: SearchFunctionsQuery
       matchReasons: reasons,
     }
   })
-  
+
   results.sort((a, b) => b.matchScore - a.matchScore)
-  
+
   return { total: results.length, results }
 }
 
-function calculateMatchScore(entry: FunctionKbEntry, query: SearchFunctionsQuery): { score: number; reasons: string[] } {
+function calculateMatchScore(
+  entry: FunctionKbEntry,
+  query: SearchFunctionsQuery
+): { score: number; reasons: string[] } {
   let score = 0
   const reasons: string[] = []
-  
+
   score += entry.semantics.confidence * 50
   reasons.push(`Confidence: ${(entry.semantics.confidence * 100).toFixed(0)}%`)
-  
+
   if (query.apis && query.apis.length > 0) {
-    const apiMatches = entry.features.apis.filter(api =>
-      query.apis!.some(qApi => api.toLowerCase().includes(qApi.toLowerCase()) || qApi.toLowerCase().includes(api.toLowerCase()))
+    const apiMatches = entry.features.apis.filter((api) =>
+      query.apis.some(
+        (qApi) =>
+          api.toLowerCase().includes(qApi.toLowerCase()) ||
+          qApi.toLowerCase().includes(api.toLowerCase())
+      )
     )
     if (apiMatches.length > 0) {
       score += Math.min(apiMatches.length * 10, 30)
       reasons.push(`API matches: ${apiMatches.length}`)
     }
   }
-  
+
   if (query.strings && query.strings.length > 0) {
-    const stringMatches = entry.features.strings.filter(str =>
-      query.strings!.some(qStr => str.toLowerCase().includes(qStr.toLowerCase()) || qStr.toLowerCase().includes(str.toLowerCase()))
+    const stringMatches = entry.features.strings.filter((str) =>
+      query.strings.some(
+        (qStr) =>
+          str.toLowerCase().includes(qStr.toLowerCase()) ||
+          qStr.toLowerCase().includes(str.toLowerCase())
+      )
     )
     if (stringMatches.length > 0) {
       score += Math.min(stringMatches.length * 5, 20)
       reasons.push(`String matches: ${stringMatches.length}`)
     }
   }
-  
-  if (query.behavior && entry.semantics.behavior.toLowerCase().includes(query.behavior.toLowerCase())) {
+
+  if (
+    query.behavior &&
+    entry.semantics.behavior.toLowerCase().includes(query.behavior.toLowerCase())
+  ) {
     score += 15
     reasons.push('Behavior match')
   }
-  
-  if (entry.semantics.source === 'human') { score += 10; reasons.push('Human verified') }
-  else if (entry.semantics.source === 'llm') { score += 5; reasons.push('LLM reviewed') }
-  
-  const daysSinceUpdate = (Date.now() - new Date(entry.updated_at).getTime()) / (1000 * 60 * 60 * 24)
-  if (daysSinceUpdate < 30) { score += 5; reasons.push('Recently updated') }
-  
+
+  if (entry.semantics.source === 'human') {
+    score += 10
+    reasons.push('Human verified')
+  } else if (entry.semantics.source === 'llm') {
+    score += 5
+    reasons.push('LLM reviewed')
+  }
+
+  const daysSinceUpdate =
+    (Date.now() - new Date(entry.updated_at).getTime()) / (1000 * 60 * 60 * 24)
+  if (daysSinceUpdate < 30) {
+    score += 5
+    reasons.push('Recently updated')
+  }
+
   return { score: Math.min(score, 100), reasons }
 }

@@ -9,7 +9,7 @@ import type { CacheManager } from '../cache-manager.js'
 import type { JobQueue, JobResult } from '../job-queue.js'
 import { JobPriority } from '../job-queue.js'
 import type { PolicyGuard } from '../policy-guard.js'
-import type { MCPServer } from '../server.js'
+import type { SamplingClient } from '../core/registrar.js'
 import { dedupeStrings } from '../utils/shared-helpers.js'
 import {
   AnalysisIntentDepthSchema,
@@ -62,34 +62,33 @@ import { createAnalysisContextLinkHandler } from '../plugins/static-triage/tools
 import { createCryptoIdentifyHandler } from '../plugins/static-triage/tools/crypto-identify.js'
 import { createRustBinaryAnalyzeHandler } from '../plugins/static-triage/tools/rust-binary-analyze.js'
 import { createDynamicDependenciesHandler } from '../plugins/dynamic/tools/dynamic-dependencies.js'
+import { createDynamicDeepPlanHandler } from '../plugins/dynamic/tools/dynamic-deep-plan.js'
 import { createBreakpointSmartHandler } from '../plugins/static-triage/tools/breakpoint-smart.js'
 import { createTraceConditionHandler } from '../plugins/static-triage/tools/trace-condition.js'
+import { createStaticBehaviorClassifyHandler } from '../plugins/static-triage/tools/static-behavior-classify.js'
 import { createSandboxExecuteHandler } from '../plugins/dynamic/tools/sandbox-execute.js'
 import { createWorkflowSummarizeHandler } from './summarize.js'
 import { createReconstructWorkflowHandler } from './reconstruct.js'
 import { createGhidraAnalyzeHandler } from '../plugins/ghidra/tools/ghidra-analyze.js'
-import {
-  createAngrAnalyzeHandler,
-} from '../plugins/angr/tools/angr-analyze.js'
-import {
-  createRetDecDecompileHandler,
-} from '../plugins/retdec/tools/retdec-decompile.js'
-import {
-  createRizinAnalyzeHandler,
-} from '../plugins/rizin/tools/rizin-analyze.js'
-import {
-  createUPXInspectHandler,
-} from '../plugins/upx/tools/upx-inspect.js'
-import {
-  createYaraXScanHandler,
-} from '../plugins/yara-x/tools/yara-x-scan.js'
-import {
-  createPandaInspectHandler,
-} from '../plugins/panda/tools/panda-inspect.js'
-import {
-  createQilingInspectHandler,
-} from '../plugins/qiling/tools/qiling-inspect.js'
+import { createAngrAnalyzeHandler } from '../plugins/angr/tools/angr-analyze.js'
+import { createRetDecDecompileHandler } from '../plugins/retdec/tools/retdec-decompile.js'
+import { createRizinAnalyzeHandler } from '../plugins/rizin/tools/rizin-analyze.js'
+import { createUPXInspectHandler } from '../plugins/upx/tools/upx-inspect.js'
+import { createYaraXScanHandler } from '../plugins/yara-x/tools/yara-x-scan.js'
+import { createPandaInspectHandler } from '../plugins/panda/tools/panda-inspect.js'
+import { createQilingInspectHandler } from '../plugins/qiling/tools/qiling-inspect.js'
 import { buildPollingGuidance } from '../polling-guidance.js'
+import { logger } from '../logger.js'
+import {
+  DecompilerWorker,
+  getGhidraDiagnostics,
+  normalizeGhidraError,
+} from '../worker/decompiler-worker.js'
+import {
+  findBestGhidraAnalysis,
+  getGhidraReadiness,
+  parseGhidraAnalysisMetadata,
+} from '../ghidra/ghidra-analysis-status.js'
 import { loadDynamicTraceEvidence } from '../artifacts/dynamic-trace.js'
 import { createSampleFinalizationService } from '../sample/sample-finalization.js'
 import { persistCanonicalEvidence } from '../analysis/analysis-evidence.js'
@@ -222,22 +221,57 @@ const UnpackDebugEnvelopeSchema = z.object({
   diff_digests: z.array(AnalysisDiffDigestSchema).optional(),
 })
 
-const runEnvelopeSchema = z.object({
-  run_id: z.string(),
-  reused: z.boolean(),
-  execution_state: z.enum(['inline', 'queued', 'reused', 'partial', 'completed']),
-  current_stage: AnalysisPipelineStageSchema,
-  run: AnalysisRunSummarySchema,
-  recovery_state: z.enum(['none', 'interrupted', 'recoverable']).optional(),
-  recoverable_stages: z.array(RecoverableStageSchema).optional(),
-  stage_result: z.any().optional(),
-  evidence_state: z.array(AnalysisEvidenceStateSchema).optional(),
-  provenance_visibility: ProvenanceVisibilitySchema.optional(),
-  runtime_explanation_graph: ExplanationGraphDigestSchema.optional(),
-  deferred_jobs: DeferredJobArraySchema,
-  recommended_next_tools: z.array(z.string()),
-  next_actions: z.array(z.string()),
-}).merge(UnpackDebugEnvelopeSchema)
+const RuntimeSessionSnapshotSchema = z.object({
+  session_id: z.string(),
+  sample_id: z.string(),
+  status: z.string(),
+  debug_state: z.string(),
+  backend: z.string().nullable().optional(),
+  current_phase: z.string().nullable().optional(),
+  endpoint: z.string().nullable().optional(),
+  sandbox_id: z.string().nullable().optional(),
+  last_task_id: z.string().nullable().optional(),
+  artifact_count: z.number().int().nonnegative(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  finished_at: z.string().nullable().optional(),
+})
+
+const RuntimeControlEnvelopeSchema = z.object({
+  runtime_sessions: z.array(RuntimeSessionSnapshotSchema).optional(),
+  runtime_readiness: z
+    .object({
+      session_count: z.number().int().nonnegative(),
+      active_session_count: z.number().int().nonnegative(),
+      latest_session_id: z.string().nullable(),
+      latest_endpoint: z.string().nullable(),
+      artifact_count: z.number().int().nonnegative(),
+      capabilities: z.array(z.any()).optional(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
+})
+
+const runEnvelopeSchema = z
+  .object({
+    run_id: z.string(),
+    reused: z.boolean(),
+    execution_state: z.enum(['inline', 'queued', 'reused', 'partial', 'completed']),
+    current_stage: AnalysisPipelineStageSchema,
+    run: AnalysisRunSummarySchema,
+    recovery_state: z.enum(['none', 'interrupted', 'recoverable']).optional(),
+    recoverable_stages: z.array(RecoverableStageSchema).optional(),
+    stage_result: z.any().optional(),
+    evidence_state: z.array(AnalysisEvidenceStateSchema).optional(),
+    provenance_visibility: ProvenanceVisibilitySchema.optional(),
+    runtime_explanation_graph: ExplanationGraphDigestSchema.optional(),
+    deferred_jobs: DeferredJobArraySchema,
+    recommended_next_tools: z.array(z.string()),
+    next_actions: z.array(z.string()),
+  })
+  .merge(UnpackDebugEnvelopeSchema)
+  .merge(RuntimeControlEnvelopeSchema)
 
 export const analyzeWorkflowStartOutputSchema = z.object({
   ok: z.boolean(),
@@ -247,10 +281,12 @@ export const analyzeWorkflowStartOutputSchema = z.object({
     .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
-  metrics: z.object({
-    elapsed_ms: z.number(),
-    tool: z.string(),
-  }).optional(),
+  metrics: z
+    .object({
+      elapsed_ms: z.number(),
+      tool: z.string(),
+    })
+    .optional(),
 })
 
 export const analyzeWorkflowStatusOutputSchema = analyzeWorkflowStartOutputSchema
@@ -298,6 +334,8 @@ export interface AnalyzePipelineDependencies {
   cryptoIdentify?: (args: ToolArgs) => Promise<WorkerResult>
   rustBinaryAnalyze?: (args: ToolArgs) => Promise<WorkerResult>
   dynamicDependencies?: (args: ToolArgs) => Promise<WorkerResult>
+  dynamicDeepPlan?: (args: ToolArgs) => Promise<WorkerResult>
+  staticBehaviorClassify?: (args: ToolArgs) => Promise<WorkerResult>
   breakpointSmart?: (args: ToolArgs) => Promise<WorkerResult>
   traceCondition?: (args: ToolArgs) => Promise<WorkerResult>
   sandboxExecute?: (args: ToolArgs) => Promise<WorkerResult>
@@ -319,10 +357,9 @@ interface StageExecutionContext {
   database: DatabaseManager
   cacheManager: CacheManager
   policyGuard: PolicyGuard
-  server?: MCPServer
+  server?: SamplingClient
   dependencies: AnalyzePipelineDependencies
 }
-
 
 function collectArtifactsFromResult(result: WorkerResult | undefined): ArtifactRef[] {
   if (!result) {
@@ -330,11 +367,14 @@ function collectArtifactsFromResult(result: WorkerResult | undefined): ArtifactR
   }
   const refs: ArtifactRef[] = []
   if (Array.isArray(result.artifacts)) {
-    refs.push(...(result.artifacts.filter((item) => item && typeof item === 'object') as ArtifactRef[]))
+    refs.push(...result.artifacts.filter((item) => item && typeof item === 'object'))
   }
-  const data = result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   if (Array.isArray(data.artifact_refs)) {
-    refs.push(...(data.artifact_refs.filter((item) => item && typeof item === 'object') as ArtifactRef[]))
+    refs.push(
+      ...(data.artifact_refs.filter((item) => item && typeof item === 'object') as ArtifactRef[])
+    )
   }
   if (data.artifact && typeof data.artifact === 'object') {
     refs.push(data.artifact as ArtifactRef)
@@ -423,7 +463,8 @@ function buildProvenanceVisibility(
 
   return ProvenanceVisibilitySchema.parse({
     evidence_counts: evidenceCounts,
-    reused_stage_count: runSummary.stages.filter((stage) => stage.execution_state === 'reused').length,
+    reused_stage_count: runSummary.stages.filter((stage) => stage.execution_state === 'reused')
+      .length,
     recoverable_stage_count: runSummary.recoverable_stages.length,
     deferred_stage_count: runSummary.deferred_jobs.length,
     omitted_backend_reasons: routing.omitted_backend_reasons,
@@ -440,7 +481,7 @@ function normalizeToolLikeResult(result: WorkerResult | ToolResult): WorkerResul
 
   const structured = result.structuredContent
   if (structured && typeof structured === 'object') {
-    const payload = structured as Record<string, unknown>
+    const payload = structured
     return {
       ok: Boolean(payload.ok ?? !result.isError),
       data: payload.data,
@@ -482,7 +523,8 @@ function normalizeToolLikeResult(result: WorkerResult | ToolResult): WorkerResul
 }
 
 function extractImportsMap(result: WorkerResult | undefined): Record<string, string[]> {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   if (data.imports && typeof data.imports === 'object') {
     return data.imports as Record<string, string[]>
   }
@@ -490,7 +532,8 @@ function extractImportsMap(result: WorkerResult | undefined): Record<string, str
 }
 
 function extractPreviewStrings(result: WorkerResult | undefined): string[] {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   if (!Array.isArray(data.strings)) {
     return []
   }
@@ -505,7 +548,8 @@ function extractPreviewStrings(result: WorkerResult | undefined): string[] {
 }
 
 function extractPackerNames(result: WorkerResult | undefined): string[] {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   if (!Array.isArray(data.detections)) {
     return []
   }
@@ -518,7 +562,8 @@ function extractPackerNames(result: WorkerResult | undefined): string[] {
 }
 
 function extractCompilerPackerNames(result: WorkerResult | undefined): string[] {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   if (!Array.isArray(data.packer_findings)) {
     return []
   }
@@ -531,8 +576,12 @@ function extractCompilerPackerNames(result: WorkerResult | undefined): string[] 
 }
 
 function extractSectionCount(result: WorkerResult | undefined): number | null {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
-  const summary = data.summary && typeof data.summary === 'object' ? (data.summary as Record<string, unknown>) : {}
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const summary =
+    data.summary && typeof data.summary === 'object'
+      ? (data.summary as Record<string, unknown>)
+      : {}
   if (typeof summary.section_count === 'number') {
     return summary.section_count
   }
@@ -592,8 +641,9 @@ function extractUnpackDebugEnvelope(
     }
   }
 
-  const uniqueDiffs = diffDigests.filter((item, index, array) =>
-    array.findIndex((candidate) => candidate.diff_id === item.diff_id) === index
+  const uniqueDiffs = diffDigests.filter(
+    (item, index, array) =>
+      array.findIndex((candidate) => candidate.diff_id === item.diff_id) === index
   )
 
   return UnpackDebugEnvelopeSchema.parse({
@@ -629,7 +679,10 @@ function findSuspiciousStrings(strings: string[]): string[] {
 }
 
 function findUrls(strings: string[]): string[] {
-  return dedupeStrings(strings.filter((value) => /^https?:\/\//i.test(value)), 12)
+  return dedupeStrings(
+    strings.filter((value) => /^https?:\/\//i.test(value)),
+    12
+  )
 }
 
 function findIpAddresses(strings: string[]): string[] {
@@ -685,7 +738,11 @@ function buildCoverageForRun(
   sample: Sample,
   depth: z.infer<typeof AnalysisIntentDepthSchema>,
   completionState: 'bounded' | 'partial' | 'queued' | 'completed',
-  extraGaps: Array<{ domain: string; status: 'missing' | 'skipped' | 'queued' | 'degraded' | 'blocked'; reason: string }>
+  extraGaps: Array<{
+    domain: string
+    status: 'missing' | 'skipped' | 'queued' | 'degraded' | 'blocked'
+    reason: string
+  }>
 ) {
   const sampleSizeTier = classifySampleSizeTier(sample.size)
   const analysisBudgetProfile = deriveAnalysisBudgetProfile(depth, sampleSizeTier)
@@ -707,9 +764,11 @@ function buildCoverageForRun(
     upgradePaths: [
       {
         tool: 'workflow.analyze.promote',
-        purpose: 'Promote this persisted run to deeper static, function-map, reconstruct, or summary stages.',
+        purpose:
+          'Promote this persisted run to deeper static, function-map, reconstruct, or summary stages.',
         closes_gaps: ['function_attribution', 'reconstruction_export', 'dynamic_behavior'],
-        expected_coverage_gain: 'Queues deeper stages without rerunning the existing preview profile.',
+        expected_coverage_gain:
+          'Queues deeper stages without rerunning the existing preview profile.',
         cost_tier: 'medium',
       },
     ],
@@ -788,7 +847,7 @@ function createOrReuseDebugSessionForRun(
           ? new Date().toISOString()
           : null,
     })
-    return parseDatabaseDebugSession(database.findDebugSession(existing.id)!)
+    return parseDatabaseDebugSession(database.findDebugSession(existing.id))
   }
 
   const session = createDebugSessionRecord({
@@ -812,7 +871,7 @@ function createDependencies(
   database: DatabaseManager,
   cacheManager: CacheManager,
   policyGuard: PolicyGuard,
-  server?: MCPServer,
+  server?: SamplingClient,
   dependencies: AnalyzePipelineDependencies = {},
   jobQueue?: JobQueue
 ): AnalyzePipelineDependencies {
@@ -833,8 +892,7 @@ function createDependencies(
       dependencies.stringsFlossDecode ||
       createStringsFlossDecodeHandler(workspaceManager, database, cacheManager, jobQueue),
     yaraScan:
-      dependencies.yaraScan ||
-      createYaraScanHandler(workspaceManager, database, cacheManager),
+      dependencies.yaraScan || createYaraScanHandler(workspaceManager, database, cacheManager),
     packerDetect:
       dependencies.packerDetect ||
       createPackerDetectHandler(workspaceManager, database, cacheManager),
@@ -868,6 +926,12 @@ function createDependencies(
     dynamicDependencies:
       dependencies.dynamicDependencies ||
       createDynamicDependenciesHandler(workspaceManager, database),
+    dynamicDeepPlan:
+      dependencies.dynamicDeepPlan ||
+      createDynamicDeepPlanHandler({ workspaceManager, database } as any),
+    staticBehaviorClassify:
+      dependencies.staticBehaviorClassify ||
+      createStaticBehaviorClassifyHandler(workspaceManager, database),
     breakpointSmart:
       dependencies.breakpointSmart ||
       createBreakpointSmartHandler(workspaceManager, database, cacheManager),
@@ -885,28 +949,30 @@ function createDependencies(
       createReconstructWorkflowHandler(workspaceManager, database, cacheManager),
     ghidraAnalyze:
       dependencies.ghidraAnalyze ||
-      (createGhidraAnalyzeHandler({ workspaceManager, database } as any) as any),
+      (createGhidraAnalyzeHandler({
+        workspaceManager,
+        database,
+        jobQueue,
+        logger,
+        DecompilerWorker,
+        getGhidraDiagnostics,
+        normalizeGhidraError,
+        findBestGhidraAnalysis,
+        getGhidraReadiness,
+        parseGhidraAnalysisMetadata,
+        buildPollingGuidance,
+      } as any) as any),
     rizinAnalyze:
-      dependencies.rizinAnalyze ||
-      createRizinAnalyzeHandler(workspaceManager, database),
-    yaraXScan:
-      dependencies.yaraXScan ||
-      createYaraXScanHandler(workspaceManager, database),
-    upxInspect:
-      dependencies.upxInspect ||
-      createUPXInspectHandler(workspaceManager, database),
+      dependencies.rizinAnalyze || createRizinAnalyzeHandler(workspaceManager, database),
+    yaraXScan: dependencies.yaraXScan || createYaraXScanHandler(workspaceManager, database),
+    upxInspect: dependencies.upxInspect || createUPXInspectHandler(workspaceManager, database),
     qilingInspect:
-      dependencies.qilingInspect ||
-      createQilingInspectHandler(workspaceManager, database),
+      dependencies.qilingInspect || createQilingInspectHandler(workspaceManager, database),
     pandaInspect:
-      dependencies.pandaInspect ||
-      createPandaInspectHandler(workspaceManager, database),
-    angrAnalyze:
-      dependencies.angrAnalyze ||
-      createAngrAnalyzeHandler(workspaceManager, database),
+      dependencies.pandaInspect || createPandaInspectHandler(workspaceManager, database),
+    angrAnalyze: dependencies.angrAnalyze || createAngrAnalyzeHandler(workspaceManager, database),
     retdecDecompile:
-      dependencies.retdecDecompile ||
-      createRetDecDecompileHandler(workspaceManager, database),
+      dependencies.retdecDecompile || createRetDecDecompileHandler(workspaceManager, database),
     resolveBackends: dependencies.resolveBackends || resolveAnalysisBackends,
   }
 }
@@ -939,36 +1005,36 @@ async function buildFastProfileStage(
     binaryRoleResult,
     rizinResult,
   ] = await Promise.all([
-    deps.peFingerprint!({ sample_id: sample.id, force_refresh: input.force_refresh }),
-    deps.runtimeDetect!({ sample_id: sample.id, force_refresh: input.force_refresh }),
-    deps.peImportsExtract!({
+    deps.peFingerprint({ sample_id: sample.id, force_refresh: input.force_refresh }),
+    deps.runtimeDetect({ sample_id: sample.id, force_refresh: input.force_refresh }),
+    deps.peImportsExtract({
       sample_id: sample.id,
       group_by_dll: true,
       force_refresh: input.force_refresh,
     }),
-    deps.stringsExtract!({
+    deps.stringsExtract({
       sample_id: sample.id,
       mode: 'preview',
       max_strings: boundedPreview.maxStrings,
       force_refresh: input.force_refresh,
       defer_if_slow: false,
     }),
-    deps.yaraScan!({
+    deps.yaraScan({
       sample_id: sample.id,
       rule_set: YARA_DEFAULT_RULE_SET,
       rule_tier: 'production',
       force_refresh: input.force_refresh,
     }),
-    deps.packerDetect!({ sample_id: sample.id, force_refresh: input.force_refresh }),
-    deps.compilerPackerDetect!({ sample_id: sample.id }),
-    deps.binaryRoleProfile!({
+    deps.packerDetect({ sample_id: sample.id, force_refresh: input.force_refresh }),
+    deps.compilerPackerDetect({ sample_id: sample.id }),
+    deps.binaryRoleProfile({
       sample_id: sample.id,
       mode: boundedPreview.binaryMode,
       force_refresh: input.force_refresh,
       defer_if_slow: false,
     }),
     readiness.rizin.available
-      ? deps.rizinAnalyze!({
+      ? deps.rizinAnalyze({
           sample_id: sample.id,
           operation: 'info',
           timeout_sec: 20,
@@ -979,7 +1045,7 @@ async function buildFastProfileStage(
 
   let yaraXResult: WorkerResult | undefined
   if (readiness.yara_x.available && defaultYaraXRulesPath) {
-    yaraXResult = await deps.yaraXScan!({
+    yaraXResult = await deps.yaraXScan({
       sample_id: sample.id,
       rules_path: defaultYaraXRulesPath,
       timeout_sec: 20,
@@ -992,7 +1058,7 @@ async function buildFastProfileStage(
     Boolean((compilerPackerResult.data as Record<string, unknown> | undefined)?.summary)
   let upxResult: WorkerResult | undefined
   if (packerHint && readiness.upx.available) {
-    upxResult = await deps.upxInspect!({
+    upxResult = await deps.upxInspect({
       sample_id: sample.id,
       operation: 'test',
       timeout_sec: 15,
@@ -1006,12 +1072,13 @@ async function buildFastProfileStage(
   const suspiciousStrings = findSuspiciousStrings(previewStrings)
   const urls = findUrls(previewStrings)
   const ipAddresses = findIpAddresses(previewStrings)
-  const yaraMatches =
-    Array.isArray((yaraResult.data as Record<string, unknown> | undefined)?.matches)
-      ? ((yaraResult.data as Record<string, unknown>).matches as Array<Record<string, unknown>>).map((item) =>
-          String(item.rule || '')
-        )
-      : []
+  const yaraMatches = Array.isArray(
+    (yaraResult.data as Record<string, unknown> | undefined)?.matches
+  )
+    ? ((yaraResult.data as Record<string, unknown>).matches as Array<Record<string, unknown>>).map(
+        (item) => String(item.rule || '')
+      )
+    : []
   const threat = buildFastThreatLevel({
     yaraMatches: yaraMatches.length,
     suspiciousImports: suspiciousImports.length,
@@ -1032,9 +1099,8 @@ async function buildFastProfileStage(
       degraded_structure: !fingerprintResult.ok,
       import_parsing_weak: !importsResult.ok,
       yara_x_rules_ready: Boolean(defaultYaraXRulesPath),
-      large_sample_preview:
-        sampleSizeTier === 'large' || sampleSizeTier === 'oversized',
-      },
+      large_sample_preview: sampleSizeTier === 'large' || sampleSizeTier === 'oversized',
+    },
   })
 
   const packerData =
@@ -1050,8 +1116,7 @@ async function buildFastProfileStage(
     allowTransformations: input.allow_transformations,
     allowLiveExecution: input.allow_live_execution,
     packerDetected: Boolean(packerData.packed),
-    packerConfidence:
-      typeof packerData.confidence === 'number' ? packerData.confidence : undefined,
+    packerConfidence: typeof packerData.confidence === 'number' ? packerData.confidence : undefined,
     packerNames: extractPackerNames(packerResult),
     compilerPackerNames: extractCompilerPackerNames(compilerPackerResult),
     upxValidationPassed:
@@ -1092,8 +1157,12 @@ async function buildFastProfileStage(
   })
 
   const evidence = dedupeStrings([
-    suspiciousImports.length > 0 ? `Detected ${suspiciousImports.length} suspicious import(s).` : null,
-    suspiciousStrings.length > 0 ? `Detected ${suspiciousStrings.length} suspicious preview string(s).` : null,
+    suspiciousImports.length > 0
+      ? `Detected ${suspiciousImports.length} suspicious import(s).`
+      : null,
+    suspiciousStrings.length > 0
+      ? `Detected ${suspiciousStrings.length} suspicious preview string(s).`
+      : null,
     yaraMatches.length > 0 ? `Legacy YARA matched ${yaraMatches.join(', ')}.` : null,
     packerHint ? 'Packing or protector indicators were observed in the fast profile.' : null,
     readiness.rizin.available && rizinResult.ok ? 'Rizin fast-path corroboration completed.' : null,
@@ -1120,7 +1189,8 @@ async function buildFastProfileStage(
     {
       domain: 'deep_static_enrichment',
       status: 'queued',
-      reason: 'Static enrichment remains a later promote stage so the first request stays nonblocking.',
+      reason:
+        'Static enrichment remains a later promote stage so the first request stays nonblocking.',
     },
     ...(sampleSizeTier === 'large' || sampleSizeTier === 'oversized'
       ? [
@@ -1241,18 +1311,51 @@ async function runEnrichStaticStage(
   } else if ((fileType === 'Mach-O' || fileType === 'Mach-O-Fat') && deps.machoStructureAnalyze) {
     structureAnalyzePromise = deps.machoStructureAnalyze({ sample_id: sampleId })
   } else {
-    structureAnalyzePromise = deps.peStructureAnalyze!({ sample_id: sampleId })
+    structureAnalyzePromise = deps.peStructureAnalyze({ sample_id: sampleId })
   }
 
-  const [stringsResult, flossResult, binaryRoleResult, capabilityResult, peStructureResult, contextLinkResult, cryptoResult, rustResult] = await Promise.all([
-    deps.stringsExtract!({ sample_id: sampleId, mode: 'full', force_refresh: forceRefresh, defer_if_slow: false }),
-    deps.stringsFlossDecode!({ sample_id: sampleId, force_refresh: forceRefresh, defer_if_slow: false }),
-    deps.binaryRoleProfile!({ sample_id: sampleId, mode: 'full', force_refresh: forceRefresh, defer_if_slow: false }),
-    deps.staticCapabilityTriage!({ sample_id: sampleId }),
+  const [
+    stringsResult,
+    flossResult,
+    binaryRoleResult,
+    capabilityResult,
+    peStructureResult,
+    contextLinkResult,
+    cryptoResult,
+    rustResult,
+  ] = await Promise.all([
+    deps.stringsExtract({
+      sample_id: sampleId,
+      mode: 'full',
+      force_refresh: forceRefresh,
+      defer_if_slow: false,
+    }),
+    deps.stringsFlossDecode({
+      sample_id: sampleId,
+      force_refresh: forceRefresh,
+      defer_if_slow: false,
+    }),
+    deps.binaryRoleProfile({
+      sample_id: sampleId,
+      mode: 'full',
+      force_refresh: forceRefresh,
+      defer_if_slow: false,
+    }),
+    deps.staticCapabilityTriage({ sample_id: sampleId }),
     structureAnalyzePromise,
-    deps.analysisContextLink!({ sample_id: sampleId, mode: 'full', force_refresh: forceRefresh, defer_if_slow: false }),
-    deps.cryptoIdentify!({ sample_id: sampleId, mode: 'full', force_refresh: forceRefresh, defer_if_slow: false }),
-    deps.rustBinaryAnalyze!({ sample_id: sampleId, force_refresh: forceRefresh }),
+    deps.analysisContextLink({
+      sample_id: sampleId,
+      mode: 'full',
+      force_refresh: forceRefresh,
+      defer_if_slow: false,
+    }),
+    deps.cryptoIdentify({
+      sample_id: sampleId,
+      mode: 'full',
+      force_refresh: forceRefresh,
+      defer_if_slow: false,
+    }),
+    deps.rustBinaryAnalyze({ sample_id: sampleId, force_refresh: forceRefresh }),
   ])
 
   const artifacts = [
@@ -1271,7 +1374,8 @@ async function runEnrichStaticStage(
       stage: 'enrich_static',
       status: 'ready',
       execution_state: 'completed',
-      summary: 'Static enrichment completed using full strings, FLOSS, role profiling, PE structure, capability triage, context-linking, crypto identification, and Rust-aware analysis.',
+      summary:
+        'Static enrichment completed using full strings, FLOSS, role profiling, PE structure, capability triage, context-linking, crypto identification, and Rust-aware analysis.',
       evidence_state: uniqueEvidenceStates(
         collectEvidenceStatesFromPayload([
           stringsResult.data,
@@ -1307,7 +1411,7 @@ async function runFunctionMapStage(
   sampleId: string
 ): Promise<{ result: Record<string, unknown>; artifacts: ArtifactRef[] }> {
   const ghidraResult = normalizeToolLikeResult(
-    await context.dependencies.ghidraAnalyze!({
+    await context.dependencies.ghidraAnalyze({
       sample_id: sampleId,
       options: {
         timeout: 900,
@@ -1315,7 +1419,7 @@ async function runFunctionMapStage(
       },
     })
   )
-  const rizinFunctions = await context.dependencies.rizinAnalyze!({
+  const rizinFunctions = await context.dependencies.rizinAnalyze({
     sample_id: sampleId,
     operation: 'functions',
     max_items: 64,
@@ -1331,15 +1435,18 @@ async function runFunctionMapStage(
       stage: 'function_map',
       status: ghidraResult.ok ? 'ready' : 'partial',
       execution_state: ghidraResult.ok ? 'completed' : 'partial',
-      summary:
-        ghidraResult.ok
-          ? 'Function-map stage completed with Ghidra-backed analysis and Rizin corroboration.'
-          : 'Function-map stage completed partially; inspect the persisted function-map artifacts and warnings.',
+      summary: ghidraResult.ok
+        ? 'Function-map stage completed with Ghidra-backed analysis and Rizin corroboration.'
+        : 'Function-map stage completed partially; inspect the persisted function-map artifacts and warnings.',
       stage_outputs: {
         ghidra: ghidraResult.data || null,
         rizin: rizinFunctions.data || null,
       },
-      recommended_next_tools: ['workflow.analyze.promote', 'workflow.reconstruct', 'code.function.decompile'],
+      recommended_next_tools: [
+        'workflow.analyze.promote',
+        'workflow.reconstruct',
+        'code.function.decompile',
+      ],
       next_actions: [
         'Promote to reconstruct when you need source-like export or backend fallback decompilation.',
         'Use code.function.decompile or code.function.cfg on the now-attributed function set before going broader.',
@@ -1354,7 +1461,7 @@ async function runReconstructStage(
   context: StageExecutionContext,
   sampleId: string
 ): Promise<{ result: Record<string, unknown>; artifacts: ArtifactRef[] }> {
-  const reconstructResult = await context.dependencies.reconstructWorkflow!({
+  const reconstructResult = await context.dependencies.reconstructWorkflow({
     sample_id: sampleId,
     path: 'auto',
     topk: 12,
@@ -1362,12 +1469,12 @@ async function runReconstructStage(
     include_plan: true,
     include_preflight: true,
   })
-  const angrResult = await context.dependencies.angrAnalyze!({
+  const angrResult = await context.dependencies.angrAnalyze({
     sample_id: sampleId,
     analysis: 'cfg_fast',
     persist_artifact: true,
   })
-  const retdecResult = await context.dependencies.retdecDecompile!({
+  const retdecResult = await context.dependencies.retdecDecompile({
     sample_id: sampleId,
     output_format: 'plain',
     persist_artifact: true,
@@ -1426,34 +1533,74 @@ async function runDynamicPlanStage(
   )
   const unpackPlan = unpackSelection.latest_payload
 
+  const behaviorClassifierResult = await context.dependencies.staticBehaviorClassify({
+    sample_id: sampleId,
+    static_artifact_scope: 'latest',
+    include_dynamic_evidence: false,
+    session_tag: `analysis/${runId}`,
+  })
   const [dependenciesResult, qilingResult, pandaResult, breakpointResult] = await Promise.all([
-    context.dependencies.dynamicDependencies!({ sample_id: sampleId }),
-    context.dependencies.qilingInspect!({ sample_id: sampleId, operation: 'preflight' }),
-    context.dependencies.pandaInspect!({ sample_id: sampleId }),
-    context.dependencies.breakpointSmart!({ sample_id: sampleId, session_tag: debugSessionTag }),
+    context.dependencies.dynamicDependencies({ sample_id: sampleId }),
+    context.dependencies.qilingInspect({ sample_id: sampleId, operation: 'preflight' }),
+    context.dependencies.pandaInspect({ sample_id: sampleId }),
+    context.dependencies.breakpointSmart({ sample_id: sampleId, session_tag: debugSessionTag }),
   ])
-  const tracePlanResult = await context.dependencies.traceCondition!({
+  const deepPlanResult = await context.dependencies.dynamicDeepPlan({
+    sample_id: sampleId,
+    goals: ['all'],
+    static_artifact_scope: 'session',
+    static_artifact_session_tag: `analysis/${runId}`,
+    runtime_preference: 'auto',
+  })
+  const tracePlanResult = await context.dependencies.traceCondition({
     sample_id: sampleId,
     reuse_cached: true,
     artifact_scope: 'session',
     session_tag: debugSessionTag,
   })
   const artifacts = [
+    ...collectArtifactsFromResult(behaviorClassifierResult),
     ...collectArtifactsFromResult(dependenciesResult),
     ...collectArtifactsFromResult(qilingResult),
     ...collectArtifactsFromResult(pandaResult),
     ...collectArtifactsFromResult(breakpointResult),
+    ...collectArtifactsFromResult(deepPlanResult),
     ...collectArtifactsFromResult(tracePlanResult),
   ]
+  const deepPlanData =
+    deepPlanResult.data && typeof deepPlanResult.data === 'object'
+      ? (deepPlanResult.data as Record<string, unknown>)
+      : {}
+  const deepPlanRecommendedTools = Array.isArray(deepPlanData.recommended_next_tools)
+    ? deepPlanData.recommended_next_tools.filter((item): item is string => typeof item === 'string')
+    : []
+  const deepPlanNextActions = Array.isArray(deepPlanData.next_actions)
+    ? deepPlanData.next_actions.filter((item): item is string => typeof item === 'string')
+    : []
   const withheldReasons = !executionPolicy.allowLiveExecution
-    ? ['Live debug backends remain approval-gated until allow_live_execution=true is present on the run.']
+    ? [
+        'Live debug backends remain approval-gated until allow_live_execution=true is present on the run.',
+      ]
     : []
   const sessionGuidance = {
-    recommended_next_tools: ['workflow.analyze.promote', 'workflow.analyze.status', 'sandbox.execute'],
+    recommended_next_tools: dedupeStrings([
+      'dynamic.runtime.status',
+      'dynamic.deep_plan',
+      'workflow.analyze.promote',
+      'workflow.analyze.status',
+      ...deepPlanRecommendedTools,
+      ...(executionPolicy.allowLiveExecution
+        ? ['dynamic.behavior.capture', 'sandbox.execute']
+        : ['runtime.debug.session.start']),
+    ]),
     next_actions: [
+      ...deepPlanNextActions,
+      'Call dynamic.runtime.status to confirm Host Agent and Runtime Node capabilities before selecting a live backend.',
       'Use dynamic_execute to continue through the persisted debug session instead of chaining loose one-off tools.',
       ...(unpackPlan?.packed_state && unpackPlan.packed_state !== 'not_packed'
-        ? ['This sample still appears packed; prefer safe dump-oriented steps before deep static reconstruction.']
+        ? [
+            'This sample still appears packed; prefer safe dump-oriented steps before deep static reconstruction.',
+          ]
         : []),
     ],
     ...(withheldReasons.length > 0 ? { withheld_reasons: withheldReasons } : {}),
@@ -1472,6 +1619,17 @@ async function runDynamicPlanStage(
       unpack_strategy: unpackPlan?.strategy || null,
       packed_state: unpackPlan?.packed_state || 'unknown',
       approval_gated: !executionPolicy.allowLiveExecution,
+      static_behavior_artifact_ids: collectArtifactsFromResult(behaviorClassifierResult).map(
+        (artifact) => artifact.id
+      ),
+      deep_plan_static_behavior_artifact_ids: Array.isArray(
+        (deepPlanData.static_behavior_context as { artifact_ids?: unknown })?.artifact_ids
+      )
+        ? (
+            (deepPlanData.static_behavior_context as { artifact_ids?: unknown[] }).artifact_ids ||
+            []
+          ).filter((item): item is string => typeof item === 'string')
+        : [],
     },
   })
   const debugSessionArtifact = await persistUnpackDebugJsonArtifact(
@@ -1497,7 +1655,15 @@ async function runDynamicPlanStage(
       backend: debugSession.backend,
     },
     provenance: {
-      sources: ['dynamic.dependencies', 'qiling.inspect', 'panda.inspect', 'breakpoint.smart', 'trace.condition'],
+      sources: [
+        'static.behavior.classify',
+        'dynamic.deep_plan',
+        'dynamic.dependencies',
+        'qiling.inspect',
+        'panda.inspect',
+        'breakpoint.smart',
+        'trace.condition',
+      ],
     },
   })
   return {
@@ -1514,6 +1680,8 @@ async function runDynamicPlanStage(
       debug_state: debugSession.debug_state,
       debug_session: debugSession,
       stage_outputs: {
+        behavior_classifier: behaviorClassifierResult.data || null,
+        deep_plan: deepPlanResult.data || null,
         dependencies: dependenciesResult.data || null,
         qiling: qilingResult.data || null,
         panda: pandaResult.data || null,
@@ -1543,7 +1711,8 @@ async function runDynamicExecuteStage(
   }
 
   const executionPolicy = readExecutionPolicy(run)
-  const debugSessionTag = context.database.findLatestDebugSessionByRun(runId)?.session_tag || `debug/${runId}`
+  const debugSessionTag =
+    context.database.findLatestDebugSessionByRun(runId)?.session_tag || `debug/${runId}`
   const unpackSelection = await loadUnpackDebugArtifactSelection<z.infer<typeof UnpackPlanSchema>>(
     context.workspaceManager,
     context.database,
@@ -1571,7 +1740,7 @@ async function runDynamicExecuteStage(
   let unpackedSampleId: string | null = null
 
   if (unpackPlan?.strategy === 'upx_decompress' && executionPolicy.allowTransformations) {
-    const upxDecompressResult = await context.dependencies.upxInspect!({
+    const upxDecompressResult = await context.dependencies.upxInspect({
       sample_id: sampleId,
       operation: 'decompress',
       timeout_sec: 30,
@@ -1581,13 +1750,18 @@ async function runDynamicExecuteStage(
     artifacts.push(...collectArtifactsFromResult(upxDecompressResult))
 
     const unpackedArtifact =
-      collectArtifactsFromResult(upxDecompressResult).find((artifact) => artifact.type === 'upx_decompress') ||
+      collectArtifactsFromResult(upxDecompressResult).find(
+        (artifact) => artifact.type === 'upx_decompress'
+      ) ||
       collectArtifactsFromResult(upxDecompressResult)[0] ||
       null
 
     if (unpackedArtifact) {
       const workspace = await context.workspaceManager.getWorkspace(sampleId)
-      const unpackedPath = context.workspaceManager.normalizePath(workspace.root, unpackedArtifact.path)
+      const unpackedPath = context.workspaceManager.normalizePath(
+        workspace.root,
+        unpackedArtifact.path
+      )
       const unpackedBytes = await fs.promises.readFile(unpackedPath)
       const finalizer = createSampleFinalizationService(
         context.workspaceManager,
@@ -1603,12 +1777,12 @@ async function runDynamicExecuteStage(
       unpackedSampleId = finalized.sample_id
 
       const [unpackedImports, unpackedStrings, unpackedStructure] = await Promise.all([
-        context.dependencies.peImportsExtract!({
+        context.dependencies.peImportsExtract({
           sample_id: unpackedSampleId,
           group_by_dll: true,
           force_refresh: false,
         }),
-        context.dependencies.stringsExtract!({
+        context.dependencies.stringsExtract({
           sample_id: unpackedSampleId,
           mode: 'preview',
           max_strings: 96,
@@ -1617,15 +1791,18 @@ async function runDynamicExecuteStage(
         }),
         // Format-aware: route unpacked sample to correct structural analysis
         (() => {
-          const unpackedSample = context.database.findSample(unpackedSampleId!)
+          const unpackedSample = context.database.findSample(unpackedSampleId)
           const ft = unpackedSample?.file_type ?? 'PE'
           if (ft === 'ELF' && context.dependencies.elfStructureAnalyze) {
-            return context.dependencies.elfStructureAnalyze({ sample_id: unpackedSampleId! })
+            return context.dependencies.elfStructureAnalyze({ sample_id: unpackedSampleId })
           }
-          if ((ft === 'Mach-O' || ft === 'Mach-O-Fat') && context.dependencies.machoStructureAnalyze) {
-            return context.dependencies.machoStructureAnalyze({ sample_id: unpackedSampleId! })
+          if (
+            (ft === 'Mach-O' || ft === 'Mach-O-Fat') &&
+            context.dependencies.machoStructureAnalyze
+          ) {
+            return context.dependencies.machoStructureAnalyze({ sample_id: unpackedSampleId })
           }
-          return context.dependencies.peStructureAnalyze!({ sample_id: unpackedSampleId! })
+          return context.dependencies.peStructureAnalyze({ sample_id: unpackedSampleId })
         })(),
       ])
       const packedDiff = buildPackedVsUnpackedDiffDigest({
@@ -1638,64 +1815,80 @@ async function runDynamicExecuteStage(
           extractImportsMap(
             normalizeToolLikeResult({
               ok: true,
-              data:
-                safeParseOptional(
-                  z.object({
-                    raw_results: z.object({
+              data: safeParseOptional(
+                z.object({
+                  raw_results: z
+                    .object({
                       imports: z.any().optional(),
-                    }).optional(),
-                  }),
-                  context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)?.result_json
-                    ? JSON.parse(context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)!.result_json || 'null')
-                    : null
-                )?.raw_results?.imports
-                  ? {
-                      imports:
-                        safeParseOptional(
-                          z.object({
-                            raw_results: z.object({
-                              imports: z.any().optional(),
-                            }).optional(),
-                          }),
-                          context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)?.result_json
-                            ? JSON.parse(context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)!.result_json || 'null')
-                            : null
-                        )?.raw_results?.imports,
-                    }
-                  : null,
-            }) as WorkerResult
+                    })
+                    .optional(),
+                }),
+                context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)?.result_json
+                  ? JSON.parse(
+                      context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)
+                        .result_json || 'null'
+                    )
+                  : null
+              )?.raw_results?.imports
+                ? {
+                    imports: safeParseOptional(
+                      z.object({
+                        raw_results: z
+                          .object({
+                            imports: z.any().optional(),
+                          })
+                          .optional(),
+                      }),
+                      context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)?.result_json
+                        ? JSON.parse(
+                            context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)
+                              .result_json || 'null'
+                          )
+                        : null
+                    )?.raw_results?.imports,
+                  }
+                : null,
+            })
           )
         ).flat(),
         importsAfter: Object.values(extractImportsMap(unpackedImports)).flat(),
         stringsBefore: extractPreviewStrings(
           normalizeToolLikeResult({
             ok: true,
-            data:
-              safeParseOptional(
-                z.object({
-                  raw_results: z.object({
+            data: safeParseOptional(
+              z.object({
+                raw_results: z
+                  .object({
                     strings: z.any().optional(),
-                  }).optional(),
-                }),
-                context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)?.result_json
-                  ? JSON.parse(context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)!.result_json || 'null')
-                  : null
-              )?.raw_results?.strings
-                ? {
-                    strings:
-                      safeParseOptional(
-                        z.object({
-                          raw_results: z.object({
-                            strings: z.any().optional(),
-                          }).optional(),
-                        }),
-                        context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)?.result_json
-                          ? JSON.parse(context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)!.result_json || 'null')
-                          : null
-                      )?.raw_results?.strings,
-                  }
-                : null,
-          }) as WorkerResult
+                  })
+                  .optional(),
+              }),
+              context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)?.result_json
+                ? JSON.parse(
+                    context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE).result_json ||
+                      'null'
+                  )
+                : null
+            )?.raw_results?.strings
+              ? {
+                  strings: safeParseOptional(
+                    z.object({
+                      raw_results: z
+                        .object({
+                          strings: z.any().optional(),
+                        })
+                        .optional(),
+                    }),
+                    context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)?.result_json
+                      ? JSON.parse(
+                          context.database.findAnalysisRunStage(runId, FAST_PROFILE_STAGE)
+                            .result_json || 'null'
+                        )
+                      : null
+                  )?.raw_results?.strings,
+                }
+              : null,
+          })
         ),
         stringsAfter: extractPreviewStrings(unpackedStrings),
         sectionCountBefore: null,
@@ -1751,7 +1944,11 @@ async function runDynamicExecuteStage(
         },
         failure_reason: null,
         derived_artifacts: dedupeArtifactRefsById([unpackedArtifact, packedDiffArtifact]),
-        recommended_next_tools: ['workflow.analyze.start', 'workflow.analyze.promote', 'workflow.summarize'],
+        recommended_next_tools: [
+          'workflow.analyze.start',
+          'workflow.analyze.promote',
+          'workflow.summarize',
+        ],
         next_actions: [
           'Continue deeper static analysis on the unpacked sample_id instead of the original packed input where practical.',
           'Use the persisted packed-vs-unpacked diff digest to understand what became visible after decompressing.',
@@ -1774,7 +1971,10 @@ async function runDynamicExecuteStage(
         mode: 'decompress',
         args: { run_id: runId },
         result: unpackExecution,
-        artifactRefs: dedupeArtifactRefsById([unpackExecutionArtifact, ...(unpackExecution.derived_artifacts as ArtifactRef[])]),
+        artifactRefs: dedupeArtifactRefsById([
+          unpackExecutionArtifact,
+          ...(unpackExecution.derived_artifacts as ArtifactRef[]),
+        ]),
         metadata: {
           unpack_state: unpackExecution.unpack_state,
           unpacked_sample_id: unpackedSampleId,
@@ -1829,10 +2029,9 @@ async function runDynamicExecuteStage(
       safe_execution_mode: 'none',
       approval_required: !executionPolicy.allowLiveExecution,
       resumable: true,
-      summary:
-        executionPolicy.allowLiveExecution
-          ? 'Packed sample still requires guided memory dump or rebuild-oriented debugging.'
-          : 'Packed sample remains approval-gated for live unpack or debug execution.',
+      summary: executionPolicy.allowLiveExecution
+        ? 'Packed sample still requires guided memory dump or rebuild-oriented debugging.'
+        : 'Packed sample remains approval-gated for live unpack or debug execution.',
       failure_reason: executionPolicy.allowLiveExecution ? null : 'approval_required',
       derived_artifacts: [],
       recommended_next_tools: ['workflow.analyze.status', 'workflow.analyze.promote', 'wine.run'],
@@ -1844,12 +2043,30 @@ async function runDynamicExecuteStage(
     })
   }
 
-  const sandboxResult = await context.dependencies.sandboxExecute!({
-    sample_id: sampleId,
-    mode: unpackPlan?.packed_state && unpackPlan.packed_state !== 'not_packed' ? 'memory_guided' : 'safe_simulation',
-    approved: false,
-    persist_artifact: true,
-  })
+  const sandboxResult = executionPolicy.allowLiveExecution
+    ? await context.dependencies.sandboxExecute({
+        sample_id: sampleId,
+        mode:
+          unpackPlan?.packed_state && unpackPlan.packed_state !== 'not_packed'
+            ? 'memory_guided'
+            : 'safe_simulation',
+        approved: true,
+        persist_artifact: true,
+      })
+    : ({
+        ok: false,
+        data: {
+          status: 'approval_gated',
+          failure_category: 'approval_required',
+          summary:
+            'Dynamic execution was not attempted because this run was not created with allow_live_execution=true.',
+          recommended_next_tools: ['workflow.analyze.start', 'workflow.analyze.status'],
+          next_actions: [
+            'Create a new dynamic run with allow_live_execution=true before promoting dynamic_execute.',
+          ],
+        },
+        warnings: ['Dynamic execution requires allow_live_execution=true on the analysis run.'],
+      } as WorkerResult)
   artifacts.push(...collectArtifactsFromResult(sandboxResult))
   const afterDynamicEvidence = await loadDynamicTraceEvidence(
     context.workspaceManager,
@@ -1860,6 +2077,16 @@ async function runDynamicExecuteStage(
       sessionTag: undefined,
     }
   )
+  const sandboxData =
+    sandboxResult.data && typeof sandboxResult.data === 'object'
+      ? (sandboxResult.data as Record<string, unknown>)
+      : {}
+  const sandboxStatus = typeof sandboxData.status === 'string' ? sandboxData.status : null
+  const sandboxExecuted =
+    executionPolicy.allowLiveExecution &&
+    sandboxResult.ok &&
+    sandboxStatus !== 'setup_required' &&
+    sandboxStatus !== 'approval_gated'
   const dynamicDiff = buildDynamicBehaviorDiffDigest({
     sampleId,
     diffType: 'pre_vs_post_dynamic',
@@ -1883,20 +2110,18 @@ async function runDynamicExecuteStage(
   diffDigests.push(dynamicDiff)
 
   const guidance = {
-    recommended_next_tools:
-      unpackedSampleId
-        ? ['workflow.analyze.start', 'workflow.analyze.promote', 'workflow.summarize']
-        : ['workflow.analyze.status', 'workflow.summarize', 'artifact.read'],
-    next_actions:
-      unpackedSampleId
-        ? [
-            'Use the unpacked sample_id for deeper function_map or reconstruct stages.',
-            'Keep the original run for unpack/debug provenance and diff history.',
-          ]
-        : [
-            'Consume the bounded dynamic diff digest and session artifact before escalating to manual live execution.',
-            'Use workflow.analyze.status to inspect recoverable packed/debug state instead of replaying dynamic_execute blindly.',
-          ],
+    recommended_next_tools: unpackedSampleId
+      ? ['workflow.analyze.start', 'workflow.analyze.promote', 'workflow.summarize']
+      : ['workflow.analyze.status', 'workflow.summarize', 'artifact.read'],
+    next_actions: unpackedSampleId
+      ? [
+          'Use the unpacked sample_id for deeper function_map or reconstruct stages.',
+          'Keep the original run for unpack/debug provenance and diff history.',
+        ]
+      : [
+          'Consume the bounded dynamic diff digest and session artifact before escalating to manual live execution.',
+          'Use workflow.analyze.status to inspect recoverable packed/debug state instead of replaying dynamic_execute blindly.',
+        ],
     ...(executionPolicy.allowLiveExecution
       ? {}
       : {
@@ -1967,16 +2192,17 @@ async function runDynamicExecuteStage(
     result: {
       stage: 'dynamic_execute',
       status:
-        unpackExecution?.unpack_state === 'unpacked' || afterDynamicEvidence
+        unpackExecution?.unpack_state === 'unpacked' || afterDynamicEvidence || sandboxExecuted
           ? 'ready'
           : 'partial',
       execution_state:
-        unpackExecution?.unpack_state === 'unpacked' || afterDynamicEvidence
+        unpackExecution?.unpack_state === 'unpacked' || afterDynamicEvidence || sandboxExecuted
           ? 'completed'
           : 'partial',
-      summary:
-        unpackedSampleId
-          ? 'Dynamic execute completed a bounded unpack/debug pass, persisted an unpacked sample, and recorded compact pre/post diff artifacts.'
+      summary: unpackedSampleId
+        ? 'Dynamic execute completed a bounded unpack/debug pass, persisted an unpacked sample, and recorded compact pre/post diff artifacts.'
+        : sandboxExecuted
+          ? 'Dynamic execute ran sandbox.execute through the approved runtime path and persisted session-linked diff artifacts.'
           : 'Dynamic execute remained bounded to safe simulation and persisted session-linked diff artifacts; live backends remain approval-gated.',
       packed_state: unpackPlan?.packed_state || 'unknown',
       unpack_state: unpackExecution?.unpack_state || unpackPlan?.unpack_state || 'not_started',
@@ -2002,7 +2228,7 @@ async function runSummarizeStage(
   context: StageExecutionContext,
   sampleId: string
 ): Promise<{ result: Record<string, unknown>; artifacts: ArtifactRef[] }> {
-  const summarizeResult = await context.dependencies.workflowSummarize!({
+  const summarizeResult = await context.dependencies.workflowSummarize({
     sample_id: sampleId,
     through_stage: 'final',
     synthesis_mode: 'deterministic',
@@ -2079,7 +2305,7 @@ export async function executeQueuedAnalysisStage(
           return buildFastProfileStage(
             context,
             run.id,
-            context.database.findSample(run.sample_id)!,
+            context.database.findSample(run.sample_id),
             {
               sample_id: run.sample_id,
               goal: run.goal as z.infer<typeof AnalysisIntentGoalSchema>,
@@ -2155,7 +2381,8 @@ function buildRunEnvelope(
   coverage: z.infer<typeof CoverageEnvelopeSchema>,
   routing: z.infer<typeof BackendRoutingMetadataSchema>,
   reused: boolean,
-  executionState: 'inline' | 'queued' | 'reused' | 'partial' | 'completed'
+  executionState: 'inline' | 'queued' | 'reused' | 'partial' | 'completed',
+  runtimeControl?: z.infer<typeof RuntimeControlEnvelopeSchema>
 ) {
   const evidenceState = uniqueEvidenceStates(
     collectEvidenceStatesFromPayload([
@@ -2181,11 +2408,7 @@ function buildRunEnvelope(
     recoverable_stages: runSummary.recoverable_stages.reduce<
       Array<{ stage: string; reason: string }>
     >((acc, stage) => {
-      if (
-        stage &&
-        typeof stage.stage === 'string' &&
-        typeof stage.reason === 'string'
-      ) {
+      if (stage && typeof stage.stage === 'string' && typeof stage.reason === 'string') {
         acc.push({
           stage: stage.stage,
           reason: stage.reason,
@@ -2226,12 +2449,20 @@ function buildRunEnvelope(
       : ['workflow.analyze.promote', 'workflow.analyze.status']
   const queuedNextActions =
     unpackDebugEnvelope.packed_state && unpackDebugEnvelope.packed_state !== 'not_packed'
-      ? ['Use workflow.analyze.status to monitor unpack/debug progression instead of repeating the same start or promote call.']
-      : ['Use workflow.analyze.status to monitor the persisted run instead of repeating the same start call.']
+      ? [
+          'Use workflow.analyze.status to monitor unpack/debug progression instead of repeating the same start or promote call.',
+        ]
+      : [
+          'Use workflow.analyze.status to monitor the persisted run instead of repeating the same start call.',
+        ]
   const completedNextActions =
     unpackDebugEnvelope.packed_state && unpackDebugEnvelope.packed_state !== 'not_packed'
-      ? ['Promote the persisted run through unpack/debug-aware stages before assuming the original packed binary is ready for deep reconstruction.']
-      : ['Promote the persisted run instead of repeating fast-profile analysis when you need deeper stages.']
+      ? [
+          'Promote the persisted run through unpack/debug-aware stages before assuming the original packed binary is ready for deep reconstruction.',
+        ]
+      : [
+          'Promote the persisted run instead of repeating fast-profile analysis when you need deeper stages.',
+        ]
   return mergeRoutingMetadata(
     mergeCoverageEnvelope(
       {
@@ -2266,14 +2497,10 @@ function buildRunEnvelope(
         runtime_explanation_graph: ExplanationGraphDigestSchema.parse(runtimeExplanationGraph),
         deferred_jobs: runSummary.deferred_jobs,
         ...unpackDebugEnvelope,
+        ...(runtimeControl || {}),
         recommended_next_tools:
-          executionState === 'queued'
-            ? queuedPreferredTools
-            : completedPreferredTools,
-        next_actions:
-          executionState === 'queued'
-            ? queuedNextActions
-            : completedNextActions,
+          executionState === 'queued' ? queuedPreferredTools : completedPreferredTools,
+        next_actions: executionState === 'queued' ? queuedNextActions : completedNextActions,
       },
       coverage
     ),
@@ -2302,30 +2529,38 @@ function queueStage(
               ? FAST_PROFILE_TIMEOUT_MS
               : DYNAMIC_PLAN_TIMEOUT_MS
 
+  const run = database.findAnalysisRun(runId)
+  const executionPolicy = run
+    ? readExecutionPolicy(run)
+    : { allowTransformations: false, allowLiveExecution: false }
+  const sampleSizeTier = run?.sample_size_tier || null
+  const stageArgs = {
+    run_id: runId,
+    stage,
+    force_refresh: forceRefresh,
+    sample_size_tier: sampleSizeTier,
+    ...(stage === 'dynamic_execute'
+      ? {
+          allow_live_execution: executionPolicy.allowLiveExecution,
+          allow_transformations: executionPolicy.allowTransformations,
+          approved: executionPolicy.allowLiveExecution,
+        }
+      : {}),
+  }
+
   const jobId = jobQueue.enqueue({
     type: stage === 'function_map' || stage === 'reconstruct' ? 'decompile' : 'static',
     tool: ANALYSIS_STAGE_JOB_TOOL,
     sampleId,
-    args: {
-      run_id: runId,
-      stage,
-      force_refresh: forceRefresh,
-      sample_size_tier:
-        database.findAnalysisRun(runId)?.sample_size_tier || null,
-    },
+    args: stageArgs,
     priority:
-      stage === 'function_map' || stage === 'reconstruct'
-        ? JobPriority.HIGH
-        : JobPriority.NORMAL,
+      stage === 'function_map' || stage === 'reconstruct' ? JobPriority.HIGH : JobPriority.NORMAL,
     timeout,
   })
 
   const executionPlan = buildSchedulerExecutionPlan({
     tool: ANALYSIS_STAGE_JOB_TOOL,
-    args: {
-      stage,
-      sample_size_tier: database.findAnalysisRun(runId)?.sample_size_tier || null,
-    },
+    args: stageArgs,
   })
 
   upsertAnalysisRunStage(database, {
@@ -2345,12 +2580,110 @@ function queueStage(
   return jobId
 }
 
+function parseRuntimeArtifactRefs(value: string | null | undefined): ArtifactRef[] {
+  const parsed = parseJsonRecord<unknown>(value, [])
+  if (!Array.isArray(parsed)) {
+    return []
+  }
+  return parsed.filter(
+    (entry): entry is ArtifactRef =>
+      entry &&
+      typeof entry === 'object' &&
+      typeof (entry as ArtifactRef).id === 'string' &&
+      typeof (entry as ArtifactRef).type === 'string' &&
+      typeof (entry as ArtifactRef).path === 'string' &&
+      typeof (entry as ArtifactRef).sha256 === 'string'
+  )
+}
+
+function buildRuntimeControlEnvelope(
+  database: DatabaseManager,
+  sampleId: string
+): z.infer<typeof RuntimeControlEnvelopeSchema> {
+  const rows =
+    typeof database.findDebugSessionsBySample === 'function'
+      ? database.findDebugSessionsBySample(sampleId, 20)
+      : []
+  const runtimeSessions = rows.map((row) => {
+    const metadata = parseJsonRecord<Record<string, unknown>>(row.metadata_json, {})
+    const artifactRefs = parseRuntimeArtifactRefs(row.artifact_refs_json)
+    return RuntimeSessionSnapshotSchema.parse({
+      session_id: row.id,
+      sample_id: row.sample_id,
+      status: row.status,
+      debug_state: row.debug_state,
+      backend: row.backend,
+      current_phase: row.current_phase,
+      endpoint: typeof metadata.endpoint === 'string' ? metadata.endpoint : null,
+      sandbox_id: typeof metadata.sandbox_id === 'string' ? metadata.sandbox_id : null,
+      last_task_id: typeof metadata.last_task_id === 'string' ? metadata.last_task_id : null,
+      artifact_count: artifactRefs.length,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      finished_at: row.finished_at,
+    })
+  })
+  const latest = rows[0]
+  const latestMetadata = latest
+    ? parseJsonRecord<Record<string, unknown>>(latest.metadata_json, {})
+    : {}
+  const latestEndpoint =
+    typeof latestMetadata.endpoint === 'string' ? latestMetadata.endpoint : null
+  const activeSessionCount = runtimeSessions.filter((session) =>
+    ['planned', 'armed', 'capturing', 'approval_gated'].includes(session.debug_state)
+  ).length
+  const artifactCount = runtimeSessions.reduce((sum, session) => sum + session.artifact_count, 0)
+  const capabilities = Array.isArray(latestMetadata.capabilities)
+    ? latestMetadata.capabilities
+    : undefined
+  const supportsRuntimeHandler = (handler: string) =>
+    Array.isArray(capabilities) &&
+    capabilities.some((entry: any) => entry?.type === 'inline' && entry?.handler === handler)
+  const readyTools = [
+    'dynamic.runtime.status',
+    'runtime.debug.session.status',
+    'runtime.debug.command',
+    ...(supportsRuntimeHandler('executeBehaviorCapture') ? ['dynamic.behavior.capture'] : []),
+    ...(supportsRuntimeHandler('executeSandboxExecute') ? ['sandbox.execute'] : []),
+    'workflow.analyze.promote',
+  ]
+
+  return {
+    runtime_sessions: runtimeSessions,
+    runtime_readiness: {
+      session_count: runtimeSessions.length,
+      active_session_count: activeSessionCount,
+      latest_session_id: latest?.id || null,
+      latest_endpoint: latestEndpoint,
+      artifact_count: artifactCount,
+      capabilities,
+      recommended_next_tools: latestEndpoint
+        ? readyTools
+        : [
+            'dynamic.runtime.status',
+            'runtime.debug.session.start',
+            'dynamic.dependencies',
+            'workflow.analyze.promote',
+          ],
+      next_actions: latestEndpoint
+        ? [
+            'Call dynamic.runtime.status or runtime.debug.session.status before dispatching more runtime work.',
+            'Use runtime.debug.command, dynamic.behavior.capture, or sandbox.execute only when the needed Runtime Node capability is advertised.',
+          ]
+        : [
+            'Start a runtime debug session when live Sandbox or Hyper-V execution is required.',
+            'Promote dynamic_plan first when you only need planning and readiness without live execution.',
+          ],
+    },
+  }
+}
+
 export function createAnalyzeWorkflowStartHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   cacheManager: CacheManager,
   policyGuard: PolicyGuard,
-  server?: MCPServer,
+  server?: SamplingClient,
   dependencies: AnalyzePipelineDependencies = {},
   jobQueue?: JobQueue
 ) {
@@ -2451,7 +2784,7 @@ export function createAnalyzeWorkflowStartHandler(
               backendPolicy: input.backend_policy,
               allowTransformations: input.allow_transformations,
               allowLiveExecution: input.allow_live_execution,
-              readiness: deps.resolveBackends!(),
+              readiness: deps.resolveBackends(),
             })
 
       return {
@@ -2462,7 +2795,8 @@ export function createAnalyzeWorkflowStartHandler(
           coverage,
           routing,
           runState.reused,
-          runState.reused ? 'reused' : 'completed'
+          runState.reused ? 'reused' : 'completed',
+          buildRuntimeControlEnvelope(database, runSummary.sample_id)
         ),
         metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME_START },
       }
@@ -2493,8 +2827,8 @@ export function createAnalyzeWorkflowStatusHandler(
           metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME_STATUS },
         }
       }
-      const run = database.findAnalysisRun(input.run_id)!
-      const sample = database.findSample(run.sample_id)!
+      const run = database.findAnalysisRun(input.run_id)
+      const sample = database.findSample(run.sample_id)
       const coverage = buildCoverageForRun(
         sample,
         run.depth as z.infer<typeof AnalysisIntentDepthSchema>,
@@ -2504,7 +2838,7 @@ export function createAnalyzeWorkflowStatusHandler(
             ? 'partial'
             : runSummary.status === 'completed'
               ? 'completed'
-            : 'partial',
+              : 'partial',
         runSummary.recoverable_stages.map((stage) => ({
           domain: stage.stage,
           status: 'degraded' as const,
@@ -2512,7 +2846,9 @@ export function createAnalyzeWorkflowStatusHandler(
         }))
       )
       const unpackDebugEnvelope = extractUnpackDebugEnvelope(
-        runSummary.stages.find((stage) => stage.stage === (runSummary.latest_stage || FAST_PROFILE_STAGE))?.result,
+        runSummary.stages.find(
+          (stage) => stage.stage === (runSummary.latest_stage || FAST_PROFILE_STAGE)
+        )?.result,
         runSummary
       )
       const routing = buildIntentBackendPlan({
@@ -2538,7 +2874,9 @@ export function createAnalyzeWorkflowStatusHandler(
         ok: true,
         data: buildRunEnvelope(
           runSummary,
-          runSummary.stages.find((stage) => stage.stage === (runSummary.latest_stage || FAST_PROFILE_STAGE))?.result,
+          runSummary.stages.find(
+            (stage) => stage.stage === (runSummary.latest_stage || FAST_PROFILE_STAGE)
+          )?.result,
           coverage,
           routing,
           runSummary.reused,
@@ -2546,7 +2884,8 @@ export function createAnalyzeWorkflowStatusHandler(
             ? 'queued'
             : runSummary.recovery_state !== 'none'
               ? 'partial'
-              : 'completed'
+              : 'completed',
+          buildRuntimeControlEnvelope(database, runSummary.sample_id)
         ),
         metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME_STATUS },
       }
@@ -2565,7 +2904,7 @@ export function createAnalyzeWorkflowPromoteHandler(
   database: DatabaseManager,
   cacheManager: CacheManager,
   policyGuard: PolicyGuard,
-  server?: MCPServer,
+  server?: SamplingClient,
   dependencies: AnalyzePipelineDependencies = {},
   jobQueue?: JobQueue
 ) {
@@ -2593,7 +2932,9 @@ export function createAnalyzeWorkflowPromoteHandler(
       if (!jobQueue) {
         return {
           ok: false,
-          errors: ['Job queue is not available; queued stage promotion is disabled in this environment.'],
+          errors: [
+            'Job queue is not available; queued stage promotion is disabled in this environment.',
+          ],
           metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME_PROMOTE },
         }
       }
@@ -2611,7 +2952,13 @@ export function createAnalyzeWorkflowPromoteHandler(
           continue
         }
         const existing = database.findAnalysisRunStage(run.id, stage)
-        if (!input.force_refresh && existing && (existing.status === 'completed' || existing.status === 'queued' || existing.status === 'running')) {
+        if (
+          !input.force_refresh &&
+          existing &&
+          (existing.status === 'completed' ||
+            existing.status === 'queued' ||
+            existing.status === 'running')
+        ) {
           continue
         }
         queueStage(database, jobQueue, run.id, stage, run.sample_id, input.force_refresh)
@@ -2622,7 +2969,7 @@ export function createAnalyzeWorkflowPromoteHandler(
       if (!runSummary) {
         throw new Error(`Failed to load persisted analysis run ${run.id}`)
       }
-      const sample = database.findSample(run.sample_id)!
+      const sample = database.findSample(run.sample_id)
       const coverage = buildCoverageForRun(
         sample,
         run.depth as z.infer<typeof AnalysisIntentDepthSchema>,
@@ -2634,14 +2981,16 @@ export function createAnalyzeWorkflowPromoteHandler(
         }))
       )
       const unpackDebugEnvelope = extractUnpackDebugEnvelope(
-        runSummary.stages.find((stage) => stage.stage === (runSummary.latest_stage || FAST_PROFILE_STAGE))?.result,
+        runSummary.stages.find(
+          (stage) => stage.stage === (runSummary.latest_stage || FAST_PROFILE_STAGE)
+        )?.result,
         runSummary
       )
       const routing = buildIntentBackendPlan({
         goal: run.goal as z.infer<typeof AnalysisIntentGoalSchema>,
         depth: run.depth as z.infer<typeof AnalysisIntentDepthSchema>,
         backendPolicy: run.backend_policy as z.infer<typeof BackendPolicySchema>,
-        readiness: deps.resolveBackends!(),
+        readiness: deps.resolveBackends(),
         signals: {
           large_sample_preview:
             classifySampleSizeTier(sample.size) === 'large' ||
@@ -2671,11 +3020,14 @@ export function createAnalyzeWorkflowPromoteHandler(
           coverage,
           routing,
           runSummary.reused,
-          'queued'
+          'queued',
+          buildRuntimeControlEnvelope(database, runSummary.sample_id)
         ),
         warnings:
           queuedStages.length === 0
-            ? ['Requested stages were already completed or queued; reused existing persisted run state.']
+            ? [
+                'Requested stages were already completed or queued; reused existing persisted run state.',
+              ]
             : undefined,
         metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME_PROMOTE },
       }
@@ -2694,7 +3046,7 @@ export function createAnalyzePipelineStageContext(
   database: DatabaseManager,
   cacheManager: CacheManager,
   policyGuard: PolicyGuard,
-  server?: MCPServer,
+  server?: SamplingClient,
   dependencies: AnalyzePipelineDependencies = {},
   jobQueue?: JobQueue
 ): StageExecutionContext {

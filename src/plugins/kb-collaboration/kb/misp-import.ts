@@ -71,7 +71,10 @@ function extractMispEntry(event: Record<string, unknown>): MispKbEntry | null {
       const lower = tagName.toLowerCase()
       if (lower.startsWith('misp-galaxy:threat-actor=')) {
         attribution = tagName.split('=')[1]?.replace(/"/g, '')
-      } else if (lower.startsWith('misp-galaxy:malpedia=') || lower.startsWith('misp-galaxy:malware=')) {
+      } else if (
+        lower.startsWith('misp-galaxy:malpedia=') ||
+        lower.startsWith('misp-galaxy:malware=')
+      ) {
         family = tagName.split('=')[1]?.replace(/"/g, '')
       } else if (lower.startsWith('campaign:')) {
         campaign = tagName.split(':')[1]

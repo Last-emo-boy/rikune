@@ -25,14 +25,8 @@ const DEFAULT_TIMEOUT_MS = 120000
 
 export const DotNetMetadataExtractInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  include_types: z
-    .boolean()
-    .default(true)
-    .describe('Include per-type rows from CLR metadata'),
-  include_methods: z
-    .boolean()
-    .default(true)
-    .describe('Include per-method rows for returned types'),
+  include_types: z.boolean().default(true).describe('Include per-type rows from CLR metadata'),
+  include_methods: z.boolean().default(true).describe('Include per-method rows for returned types'),
   max_types: z
     .number()
     .int()
@@ -251,7 +245,9 @@ interface DotNetMetadataExtractDependencies {
   ) => Promise<DotNetMetadataProbeResult>
 }
 
-function extractVersionFromTargetFramework(targetFramework: string | null | undefined): string | null {
+function extractVersionFromTargetFramework(
+  targetFramework: string | null | undefined
+): string | null {
   if (!targetFramework) {
     return null
   }
@@ -270,7 +266,14 @@ export async function runDotNetMetadataProbe(
   }
 ): Promise<DotNetMetadataProbeResult> {
   return new Promise((resolve) => {
-    const projectPath = resolvePackagePath('src', 'plugins', 'static-triage', 'helpers', 'DotNetMetadataProbe', 'DotNetMetadataProbe.csproj')
+    const projectPath = resolvePackagePath(
+      'src',
+      'plugins',
+      'static-triage',
+      'helpers',
+      'DotNetMetadataProbe',
+      'DotNetMetadataProbe.csproj'
+    )
     const args = [
       'run',
       '--project',
@@ -336,7 +339,9 @@ export async function runDotNetMetadataProbe(
       if (code !== 0 && output.length === 0) {
         finish({
           ok: false,
-          errors: [`dotnet metadata probe failed with exit code ${code ?? 'unknown'}: ${stderr.trim() || 'no stderr'}`],
+          errors: [
+            `dotnet metadata probe failed with exit code ${code ?? 'unknown'}: ${stderr.trim() || 'no stderr'}`,
+          ],
         })
         return
       }
@@ -385,7 +390,9 @@ export function createDotNetMetadataExtractHandler(
       }
 
       const runtimeResult = await runtimeDetectHandler({ sample_id: input.sample_id })
-      const runtimeData = (runtimeResult.ok ? runtimeResult.data : undefined) as RuntimeDetectData | undefined
+      const runtimeData = (runtimeResult.ok ? runtimeResult.data : undefined) as
+        | RuntimeDetectData
+        | undefined
       if (!runtimeResult.ok || runtimeData?.is_dotnet !== true) {
         const suspected = (runtimeData?.suspected || [])
           .map((item) => `${item.runtime}(${item.confidence.toFixed(2)})`)
@@ -461,13 +468,17 @@ export function createDotNetMetadataExtractHandler(
       })
 
       // Fallback to Python/dnfile worker when dotnet CLI is unavailable or SDK is missing
-      if (!probeResult.ok && probeResult.errors?.some(e =>
-        e.includes('not available in PATH') ||
-        e.includes('ENOENT') ||
-        e.includes('SDK') ||
-        e.includes('sdk') ||
-        e.includes('dotnet metadata probe failed')
-      )) {
+      if (
+        !probeResult.ok &&
+        probeResult.errors?.some(
+          (e) =>
+            e.includes('not available in PATH') ||
+            e.includes('ENOENT') ||
+            e.includes('SDK') ||
+            e.includes('sdk') ||
+            e.includes('dotnet metadata probe failed')
+        )
+      ) {
         const workerRequest = buildStaticWorkerRequest({
           tool: TOOL_NAME,
           sampleId: input.sample_id,
@@ -485,8 +496,13 @@ export function createDotNetMetadataExtractHandler(
           // The Python handler returns {ok, data, warnings, metrics} which execute()
           // wraps as WorkerResponse.data — unwrap the inner data layer
           const innerResult = workerResponse.data as Record<string, unknown>
-          const actualData = (innerResult.data ?? innerResult) as Omit<DotNetMetadataData, 'dotnet_version'>
-          const innerWarnings = Array.isArray(innerResult.warnings) ? innerResult.warnings as string[] : []
+          const actualData = (innerResult.data ?? innerResult) as Omit<
+            DotNetMetadataData,
+            'dotnet_version'
+          >
+          const innerWarnings = Array.isArray(innerResult.warnings)
+            ? (innerResult.warnings as string[])
+            : []
           probeResult = {
             ok: true,
             data: actualData,
@@ -495,7 +511,9 @@ export function createDotNetMetadataExtractHandler(
         } else {
           probeResult = {
             ok: false,
-            errors: workerResponse.errors?.length ? workerResponse.errors : ['Python dnfile backend also failed'],
+            errors: workerResponse.errors?.length
+              ? workerResponse.errors
+              : ['Python dnfile backend also failed'],
             warnings: workerResponse.warnings,
           }
         }

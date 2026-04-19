@@ -104,7 +104,10 @@ export class FileServer {
   }
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const url = new URL(req.url || '/', `http://127.0.0.1:${this.effectivePort || this.config.port}`)
+    const url = new URL(
+      req.url || '/',
+      `http://127.0.0.1:${this.effectivePort || this.config.port}`
+    )
     const pathname = url.pathname
 
     // ── Request ID (accept from client or generate) ─────────────────
@@ -115,7 +118,10 @@ export class FileServer {
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('X-Frame-Options', 'DENY')
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self'; connect-src 'self'")
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self'; connect-src 'self'"
+    )
 
     // ── CORS — allow same-origin and explicitly configured origins only ─
     const origin = req.headers.origin
@@ -189,7 +195,12 @@ export class FileServer {
 
       if (pathname.startsWith('/api/v1/artifacts/') && req.method === 'GET') {
         const artifactId = decodeURIComponent(pathname.split('/').pop() || '')
-        await this.handleArtifactGet(req, res, artifactId, url.searchParams.get('download') === 'true')
+        await this.handleArtifactGet(
+          req,
+          res,
+          artifactId,
+          url.searchParams.get('download') === 'true'
+        )
         return
       }
 
@@ -232,12 +243,22 @@ export class FileServer {
       }
 
       if (isRikuneError(error)) {
-        const status = error.code === 'E_NOT_FOUND' || error.code === 'E_SAMPLE_NOT_FOUND' || error.code === 'E_JOB_NOT_FOUND' ? 404
-          : error.code === 'E_INVALID_INPUT' || error.code === 'E_UPLOAD_INVALID' ? 400
-          : error.code === 'E_UNAUTHORIZED' ? 401
-          : error.code === 'E_RATE_LIMITED' ? 429
-          : error.code === 'E_QUOTA_EXCEEDED' || error.code === 'E_SAMPLE_TOO_LARGE' || error.code === 'E_STORAGE_FULL' ? 413
-          : 500
+        const status =
+          error.code === 'E_NOT_FOUND' ||
+          error.code === 'E_SAMPLE_NOT_FOUND' ||
+          error.code === 'E_JOB_NOT_FOUND'
+            ? 404
+            : error.code === 'E_INVALID_INPUT' || error.code === 'E_UPLOAD_INVALID'
+              ? 400
+              : error.code === 'E_UNAUTHORIZED'
+                ? 401
+                : error.code === 'E_RATE_LIMITED'
+                  ? 429
+                  : error.code === 'E_QUOTA_EXCEEDED' ||
+                      error.code === 'E_SAMPLE_TOO_LARGE' ||
+                      error.code === 'E_STORAGE_FULL'
+                    ? 413
+                    : 500
         this.sendJson(res, status, error.toJSON())
         return
       }
@@ -271,7 +292,11 @@ export class FileServer {
    * Check dashboard authentication.
    * Accepts API key from X-API-Key header OR ?key= query param (for browser convenience).
    */
-  private checkDashboardAuth(req: IncomingMessage, res: ServerResponse, params: URLSearchParams): boolean {
+  private checkDashboardAuth(
+    req: IncomingMessage,
+    res: ServerResponse,
+    params: URLSearchParams
+  ): boolean {
     if (!this.authMiddleware.isEnabled()) return true
 
     // Check header first
@@ -283,7 +308,8 @@ export class FileServer {
 
     this.sendJson(res, 401, {
       error: 'Unauthorized',
-      message: 'Dashboard requires authentication. Use X-API-Key header or ?key=<api-key> query parameter.',
+      message:
+        'Dashboard requires authentication. Use X-API-Key header or ?key=<api-key> query parameter.',
     })
     return false
   }
@@ -393,10 +419,7 @@ export class FileServer {
       return null
     }
 
-    if (
-      session.status !== 'registered' &&
-      new Date(session.expires_at).getTime() < Date.now()
-    ) {
+    if (session.status !== 'registered' && new Date(session.expires_at).getTime() < Date.now()) {
       this.dependencies.database.markUploadSessionExpired(token)
       return this.dependencies.database.findUploadSessionByToken(token) || null
     }

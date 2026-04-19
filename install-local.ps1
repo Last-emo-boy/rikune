@@ -12,6 +12,10 @@ param(
     [Parameter(HelpMessage="Skip optional tools check")]
     [switch]$SkipOptional,
 
+    [Parameter(HelpMessage="Runtime execution mode")]
+    [ValidateSet("disabled", "auto-sandbox", "manual", "remote-sandbox")]
+    [string]$RuntimeMode = "disabled",
+
     [Parameter(HelpMessage="Enable verbose output")]
     [switch]$EnableVerbose
 )
@@ -59,10 +63,79 @@ function Write-Step {
     Write-Host "-----------------------------------------" -ForegroundColor $ColorPrimary
 }
 
+function Get-OptionalFeatureByName {
+    param([string[]]$Names)
+
+    foreach ($name in $Names) {
+        try {
+            $feature = Get-WindowsOptionalFeature -Online -FeatureName $name -ErrorAction Stop
+            if ($feature) { return $feature }
+        } catch {
+            if ($EnableVerbose) { Write-Info "Optional feature not available by name '$name'" }
+        }
+    }
+
+    return $null
+}
+
+function ConvertTo-TomlString {
+    param([string]$Value)
+    if ($null -eq $Value) { return '""' }
+    $escaped = $Value.Replace('\', '\\').Replace('"', '\"')
+    return '"' + $escaped + '"'
+}
+
+function ConvertTo-TomlArray {
+    param([string[]]$Values)
+    return "[" + (($Values | ForEach-Object { ConvertTo-TomlString $_ }) -join ", ") + "]"
+}
+
+function Set-CodexMcpConfig {
+    param(
+        [string]$ConfigFile,
+        [string]$NodeCommand,
+        [string[]]$McpArgs,
+        [hashtable]$Env
+    )
+
+    $configDir = Split-Path -Parent $ConfigFile
+    if (-not (Test-Path $configDir)) {
+        New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+    }
+
+    $envLines = @()
+    foreach ($key in ($Env.Keys | Sort-Object)) {
+        $envLines += "$key = $(ConvertTo-TomlString $Env[$key])"
+    }
+
+    $block = @"
+[mcp_servers.rikune]
+type = "stdio"
+command = $(ConvertTo-TomlString $NodeCommand)
+startup_timeout_sec = 180
+args = $(ConvertTo-TomlArray $McpArgs)
+
+[mcp_servers.rikune.env]
+$($envLines -join "`r`n")
+"@
+
+    $content = ""
+    if (Test-Path $ConfigFile) {
+        $content = Get-Content -Path $ConfigFile -Raw
+        $content = [regex]::Replace($content, '(?ms)^\[mcp_servers\.rikune(?:\.env)?\]\r?\n.*?(?=^\[|\z)', '').TrimEnd()
+    }
+
+    if ([string]::IsNullOrWhiteSpace($content)) {
+        $block | Set-Content -Path $ConfigFile -Encoding UTF8
+    } else {
+        ($content + "`r`n`r`n" + $block) | Set-Content -Path $ConfigFile -Encoding UTF8
+    }
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main Script
 # ─────────────────────────────────────────────────────────────────────────────
-Clear-Host
+try { Clear-Host } catch { }
 Write-Header "Rikune — Local Install (No Docker)"
 
 Write-Host "This script will:" -ForegroundColor $ColorInfo
@@ -73,6 +146,8 @@ Write-Host "  4. Create data directories" -ForegroundColor $ColorInfo
 Write-Host "  5. Check optional analysis tools" -ForegroundColor $ColorInfo
 Write-Host "  6. Configure MCP clients" -ForegroundColor $ColorInfo
 Write-Host "  7. Run health check" -ForegroundColor $ColorInfo
+Write-Host "" -ForegroundColor $ColorInfo
+Write-Host "Runtime mode: $RuntimeMode" -ForegroundColor $ColorInfo
 
 $continue = Read-Host "`nContinue? (Y/n)"
 if ($continue -eq 'n' -or $continue -eq 'N') {
@@ -105,6 +180,19 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     exit 1
 }
 Write-Success "npm: $((npm --version).Trim())"
+
+if ($RuntimeMode -eq "auto-sandbox") {
+    if (-not [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
+        Write-Error-Message "RUNTIME_MODE=auto-sandbox requires a Windows-native analyzer"
+        exit 1
+    }
+    $sandboxFeature = Get-OptionalFeatureByName -Names @("Containers-DisposableClientVM", "Containers-DisposableClient")
+    if (-not $sandboxFeature -or $sandboxFeature.State -ne "Enabled") {
+        Write-Warning-Message "Windows Sandbox is not enabled. Enable the 'Windows Sandbox' optional feature before running auto-sandbox dynamic tools."
+    } else {
+        Write-Success "Windows Sandbox feature enabled"
+    }
+}
 
 # Python
 $pythonCmd = $null
@@ -390,6 +478,8 @@ $envContent = @"
 # Adjust paths to match your local tool installations.
 
 # Core paths
+NODE_ROLE=analyzer
+RUNTIME_MODE=$RuntimeMode
 WORKSPACE_ROOT=$((Join-Path $DataRoot "workspaces") -replace '\\', '/')
 DB_PATH=$((Join-Path $DataRoot "data/database.db") -replace '\\', '/')
 CACHE_ROOT=$((Join-Path $DataRoot "cache") -replace '\\', '/')
@@ -452,6 +542,8 @@ $config = @{
             args = @($distIndex)
             env = @{
                 NODE_ENV = "production"
+                NODE_ROLE = "analyzer"
+                RUNTIME_MODE = $RuntimeMode
                 WORKSPACE_ROOT = (Join-Path $DataRoot "workspaces") -replace '\\', '/'
                 DB_PATH = (Join-Path $DataRoot "data/database.db") -replace '\\', '/'
                 CACHE_ROOT = (Join-Path $DataRoot "cache") -replace '\\', '/'
@@ -482,9 +574,8 @@ switch ($mcpClient) {
     }
     "3" {
         $configDir = "$env:USERPROFILE\.codex"
-        $configFile = Join-Path $configDir "mcp.json"
-        if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
-        $config | ConvertTo-Json -Depth 10 | Set-Content $configFile -Encoding UTF8
+        $configFile = Join-Path $configDir "config.toml"
+        Set-CodexMcpConfig -ConfigFile $configFile -NodeCommand $nodeExe -McpArgs @($distIndex) -Env $config.mcpServers["rikune"].env
         Write-Success "Codex config: $configFile"
     }
     "4" {
@@ -505,6 +596,8 @@ Write-Step "Running Health Check"
 Write-Host "`nStarting Rikune in health-check mode..." -ForegroundColor $ColorPrimary
 
 $healthEnv = @{
+    NODE_ROLE = "analyzer"
+    RUNTIME_MODE = $RuntimeMode
     WORKSPACE_ROOT = Join-Path $DataRoot "workspaces"
     DB_PATH = Join-Path $DataRoot "data/database.db"
     CACHE_ROOT = Join-Path $DataRoot "cache"
@@ -562,6 +655,7 @@ Write-Host ""
 $installInfo = @{
     InstallDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Mode = "local"
+    RuntimeMode = $RuntimeMode
     DataRoot = $DataRoot
     ProjectRoot = $ProjectRoot
     PythonVenv = $venvDir

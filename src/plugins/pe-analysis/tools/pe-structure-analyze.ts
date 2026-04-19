@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import { z } from 'zod'
-import type { ToolArgs, ToolDefinition, WorkerResult , PluginToolDeps} from '../../sdk.js'
+import type { ToolArgs, ToolDefinition, WorkerResult, PluginToolDeps } from '../../sdk.js'
 import {
   buildPeStructureConfidenceSemantics,
   ConfidenceSemanticsSchema,
@@ -152,7 +152,9 @@ export function createPEStructureAnalyzeHandler(deps: PluginToolDeps) {
       if (!workerResponse.ok || !workerResponse.data || typeof workerResponse.data !== 'object') {
         return {
           ok: false,
-          errors: workerResponse.errors?.length ? workerResponse.errors : ['PE structure analysis failed.'],
+          errors: workerResponse.errors?.length
+            ? workerResponse.errors
+            : ['PE structure analysis failed.'],
           warnings: workerResponse.warnings,
           metrics: {
             elapsed_ms: Date.now() - startTime,

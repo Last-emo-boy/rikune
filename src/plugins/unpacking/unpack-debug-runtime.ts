@@ -80,7 +80,13 @@ export const UnpackPlanSchema = z.object({
   unpack_confidence: z.number().min(0).max(1),
   safety_level: UnpackSafetyLevelSchema,
   strategy: z.enum(['none_needed', 'upx_decompress', 'guided_memory_dump', 'manual_debug_rebuild']),
-  next_safe_step: z.enum(['none_needed', 'preview_only', 'dump_oriented', 'rebuild_oriented', 'approval_gated']),
+  next_safe_step: z.enum([
+    'none_needed',
+    'preview_only',
+    'dump_oriented',
+    'rebuild_oriented',
+    'approval_gated',
+  ]),
   evidence: z.array(z.string()),
   proposed_backends: z.array(UnpackBackendRecommendationSchema),
   expected_artifacts: z.array(z.string()),
@@ -127,7 +133,15 @@ export const DebugSessionRecordSchema = z.object({
   run_id: z.string().nullable(),
   sample_id: z.string(),
   sample_sha256: z.string(),
-  status: z.enum(['planned', 'armed', 'capturing', 'captured', 'correlated', 'interrupted', 'approval_gated']),
+  status: z.enum([
+    'planned',
+    'armed',
+    'capturing',
+    'captured',
+    'correlated',
+    'interrupted',
+    'approval_gated',
+  ]),
   debug_state: DebugStateSchema,
   backend: z.string().nullable(),
   current_phase: z.string().nullable(),
@@ -190,7 +204,6 @@ export interface UnpackDebugArtifactSelection<TPayload = unknown> {
 }
 
 const LATEST_ARTIFACT_WINDOW_MS = 10 * 1000
-
 
 function artifactRootSegment(artifactType: UnpackDebugArtifactType): string {
   switch (artifactType) {
@@ -363,7 +376,9 @@ function includesUpx(values: string[] = []): boolean {
 }
 
 export function buildUnpackPlan(input: UnpackPlanBuildInput) {
-  const packerNames = Array.from(new Set([...(input.packerNames || []), ...(input.compilerPackerNames || [])]))
+  const packerNames = Array.from(
+    new Set([...(input.packerNames || []), ...(input.compilerPackerNames || [])])
+  )
   const packedConfidence = Math.max(
     0,
     Math.min(
@@ -371,7 +386,7 @@ export function buildUnpackPlan(input: UnpackPlanBuildInput) {
       input.upxValidationPassed
         ? 0.94
         : input.packerDetected
-          ? input.packerConfidence ?? 0.72
+          ? (input.packerConfidence ?? 0.72)
           : packerNames.length > 0
             ? 0.64
             : 0.16
@@ -439,7 +454,8 @@ export function buildUnpackPlan(input: UnpackPlanBuildInput) {
       role: 'preview_structure_probe',
       ready: Boolean(input.rizinReady),
       approval_required: false,
-      reason: 'Rizin remains the cheap preview backend for section and import corroboration before deeper unpack or debug work.',
+      reason:
+        'Rizin remains the cheap preview backend for section and import corroboration before deeper unpack or debug work.',
     },
     {
       backend: 'sandbox',
@@ -447,7 +463,8 @@ export function buildUnpackPlan(input: UnpackPlanBuildInput) {
       role: 'safe_dump_or_trace_preparation',
       ready: true,
       approval_required: false,
-      reason: 'Safe simulation and memory-guided dynamic helpers can collect bounded runtime clues before live debugging.',
+      reason:
+        'Safe simulation and memory-guided dynamic helpers can collect bounded runtime clues before live debugging.',
     },
     {
       backend: 'wine',
@@ -526,12 +543,13 @@ export function createDebugSessionRecord(input: {
     metadata: input.metadata || {},
     created_at: now,
     updated_at: now,
-    finished_at:
-      input.status === 'captured' || input.status === 'correlated' ? now : null,
+    finished_at: input.status === 'captured' || input.status === 'correlated' ? now : null,
   })
 }
 
-export function toDatabaseDebugSession(session: z.infer<typeof DebugSessionRecordSchema>): DebugSession {
+export function toDatabaseDebugSession(
+  session: z.infer<typeof DebugSessionRecordSchema>
+): DebugSession {
   return {
     id: session.session_id,
     run_id: session.run_id,
@@ -562,7 +580,9 @@ function parseJsonValue<T>(raw: string | null | undefined, fallback: T): T {
   }
 }
 
-export function parseDatabaseDebugSession(session: DebugSession): z.infer<typeof DebugSessionRecordSchema> {
+export function parseDatabaseDebugSession(
+  session: DebugSession
+): z.infer<typeof DebugSessionRecordSchema> {
   return DebugSessionRecordSchema.parse({
     session_id: session.id,
     run_id: session.run_id,
@@ -603,8 +623,12 @@ export function buildPackedVsUnpackedDiffDigest(input: {
   const afterImports = new Set(input.importsAfter || [])
   const beforeStrings = new Set(input.stringsBefore || [])
   const afterStrings = new Set(input.stringsAfter || [])
-  const newImports = Array.from(afterImports).filter((item) => !beforeImports.has(item)).slice(0, 8)
-  const newStrings = Array.from(afterStrings).filter((item) => !beforeStrings.has(item)).slice(0, 8)
+  const newImports = Array.from(afterImports)
+    .filter((item) => !beforeImports.has(item))
+    .slice(0, 8)
+  const newStrings = Array.from(afterStrings)
+    .filter((item) => !beforeStrings.has(item))
+    .slice(0, 8)
   const findings = [
     input.sizeBefore != null && input.sizeAfter != null
       ? `File size changed from ${input.sizeBefore} bytes to ${input.sizeAfter} bytes.`
@@ -612,7 +636,9 @@ export function buildPackedVsUnpackedDiffDigest(input: {
     input.sectionCountBefore != null && input.sectionCountAfter != null
       ? `Section count changed from ${input.sectionCountBefore} to ${input.sectionCountAfter}.`
       : null,
-    newImports.length > 0 ? `New imports became visible after unpacking: ${newImports.join(', ')}.` : null,
+    newImports.length > 0
+      ? `New imports became visible after unpacking: ${newImports.join(', ')}.`
+      : null,
     newStrings.length > 0 ? `New preview strings became visible after unpacking.` : null,
   ].filter((item): item is string => Boolean(item))
   return AnalysisDiffDigestSchema.parse({
@@ -656,8 +682,12 @@ export function buildDynamicBehaviorDiffDigest(input: {
   const afterApis = new Set(input.afterSummary?.observed_apis || [])
   const beforeStages = new Set(input.beforeSummary?.stages || [])
   const afterStages = new Set(input.afterSummary?.stages || [])
-  const newApis = Array.from(afterApis).filter((item) => !beforeApis.has(item)).slice(0, 10)
-  const newStages = Array.from(afterStages).filter((item) => !beforeStages.has(item)).slice(0, 8)
+  const newApis = Array.from(afterApis)
+    .filter((item) => !beforeApis.has(item))
+    .slice(0, 10)
+  const newStages = Array.from(afterStages)
+    .filter((item) => !beforeStages.has(item))
+    .slice(0, 8)
   const newHints = (input.afterSummary?.risk_hints || [])
     .filter((item) => !(input.beforeSummary?.risk_hints || []).includes(item))
     .slice(0, 6)

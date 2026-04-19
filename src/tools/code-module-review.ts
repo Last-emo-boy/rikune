@@ -10,7 +10,7 @@ import { type SamplingResult, extractTextBlocks } from '../utils/sampling-helper
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
-import type { MCPServer } from '../server.js'
+import type { SamplingClient } from '../core/registrar.js'
 import { createCodeModuleReviewPrepareHandler } from '../plugins/code-analysis/tools/code-module-review-prepare.js'
 import { createCodeModuleReviewApplyHandler } from '../plugins/code-analysis/tools/code-module-review-apply.js'
 
@@ -64,7 +64,10 @@ export const codeModuleReviewInputSchema = z
       .default(2)
       .describe('Modules with fewer functions than this threshold are merged into core'),
     include_imports: z.boolean().default(true).describe('Use import features for module hints'),
-    include_strings: z.boolean().default(true).describe('Use high-value string clusters for module hints'),
+    include_strings: z
+      .boolean()
+      .default(true)
+      .describe('Use high-value string clusters for module hints'),
     analysis_goal: z
       .string()
       .min(1)
@@ -84,7 +87,9 @@ export const codeModuleReviewInputSchema = z
     evidence_session_tag: z
       .string()
       .optional()
-      .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
+      .describe(
+        'Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'
+      ),
     semantic_scope: z
       .enum(['all', 'latest', 'session'])
       .default('all')
@@ -92,13 +97,17 @@ export const codeModuleReviewInputSchema = z
     semantic_session_tag: z
       .string()
       .optional()
-      .describe('Optional semantic artifact session selector used when semantic_scope=session or to narrow all/latest results'),
+      .describe(
+        'Optional semantic artifact session selector used when semantic_scope=session or to narrow all/latest results'
+      ),
     role_target: z
       .string()
       .min(1)
       .max(64)
       .optional()
-      .describe('Optional high-level binary role hint such as native_rust_executable, dll_library, or com_server'),
+      .describe(
+        'Optional high-level binary role hint such as native_rust_executable, dll_library, or com_server'
+      ),
     role_focus_areas: z
       .array(z.string().min(1).max(96))
       .max(16)
@@ -150,14 +159,20 @@ export const codeModuleReviewInputSchema = z
       .optional()
       .describe('Optional extra system prompt for the client-mediated module review'),
   })
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
-  })
-  .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
-    message: 'semantic_session_tag is required when semantic_scope=session',
-    path: ['semantic_session_tag'],
-  })
+  .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()),
+    {
+      message: 'semantic_session_tag is required when semantic_scope=session',
+      path: ['semantic_session_tag'],
+    }
+  )
 
 export const codeModuleReviewOutputSchema = z.object({
   ok: z.boolean(),
@@ -303,7 +318,7 @@ export function createCodeModuleReviewHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   cacheManager: CacheManager,
-  mcpServer?: MCPServer,
+  mcpServer?: SamplingClient,
   dependencies?: CodeModuleReviewDependencies
 ) {
   const prepareHandler =
@@ -313,7 +328,9 @@ export function createCodeModuleReviewHandler(
     dependencies?.applyHandler || createCodeModuleReviewApplyHandler(workspaceManager, database)
   const samplingRequester =
     dependencies?.samplingRequester ||
-    (mcpServer ? (params: CreateMessageRequest['params']) => mcpServer.createMessage(params) : undefined)
+    (mcpServer
+      ? (params: CreateMessageRequest['params']) => mcpServer.createMessage(params)
+      : undefined)
   const clientCapabilitiesProvider =
     dependencies?.clientCapabilitiesProvider ||
     (mcpServer ? () => mcpServer.getClientCapabilities() : undefined)
@@ -403,7 +420,10 @@ export function createCodeModuleReviewHandler(
               artifact_id: null,
             },
             confidence_policy: buildModuleReviewConfidencePolicy(),
-            next_steps: ['increase topk or module_limit', 'rerun code.reconstruct.export to produce module output'],
+            next_steps: [
+              'increase topk or module_limit',
+              'rerun code.reconstruct.export to produce module output',
+            ],
           },
           warnings: warnings.length > 0 ? warnings : undefined,
           artifacts: artifacts.length > 0 ? artifacts : undefined,
@@ -464,7 +484,7 @@ export function createCodeModuleReviewHandler(
         }
       }
 
-      const samplingResult = await samplingRequester!(buildSamplingRequest(input, taskPrompt))
+      const samplingResult = await samplingRequester(buildSamplingRequest(input, taskPrompt))
       const responseText = extractTextBlocks(samplingResult)
       let parsedReviews: z.infer<typeof ReviewModuleSchema>[]
       try {

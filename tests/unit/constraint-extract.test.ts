@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createConstraintExtractHandler, constraintExtractInputSchema } from '../../src/tools/constraint-extract.js'
+import { createConstraintExtractHandler, constraintExtractInputSchema } from '../../src/plugins/vm-analysis/tools/constraint-extract.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 

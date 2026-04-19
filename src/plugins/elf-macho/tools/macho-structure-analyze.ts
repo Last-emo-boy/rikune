@@ -10,6 +10,7 @@ import type { DatabaseManager } from '../../../database.js'
 import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'macho.structure.analyze'
 
@@ -85,17 +86,29 @@ export function createMachoStructureAnalyzeHandler(
   }
 }
 
-async function callElfMachoWorker(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function callElfMachoWorker(
+  request: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const workerPath = resolvePackagePath('src', 'plugins', 'elf-macho', 'workers', 'elf_macho_worker.py')
-    const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+    const workerPath = resolvePackagePath(
+      'src',
+      'plugins',
+      'elf-macho',
+      'workers',
+      'elf_macho_worker.py'
+    )
+    const pythonCommand = getPythonCommand()
     const proc = spawn(pythonCommand, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'] })
 
     let stdout = ''
     let stderr = ''
 
-    proc.stdout.on('data', (d) => { stdout += d.toString() })
-    proc.stderr.on('data', (d) => { stderr += d.toString() })
+    proc.stdout.on('data', (d) => {
+      stdout += d.toString()
+    })
+    proc.stderr.on('data', (d) => {
+      stderr += d.toString()
+    })
 
     proc.on('close', (code) => {
       if (code !== 0) {

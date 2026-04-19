@@ -85,9 +85,11 @@ export const dllExportProfileToolDefinition: ToolDefinition = {
   outputSchema: DllExportProfileOutputSchema,
 }
 
-
 function inferDllEntryModel(profile: z.infer<typeof BinaryRoleProfileDataSchema>): string {
-  if (profile.com_profile.confidence >= 0.55 && profile.export_dispatch_profile.registration_exports.length > 0) {
+  if (
+    profile.com_profile.confidence >= 0.55 &&
+    profile.export_dispatch_profile.registration_exports.length > 0
+  ) {
     return 'registration_and_class_factory'
   }
   if (profile.host_interaction_profile.likely_hosted) {
@@ -105,22 +107,30 @@ function inferDllEntryModel(profile: z.infer<typeof BinaryRoleProfileDataSchema>
 function collectDllEntryHints(profile: z.infer<typeof BinaryRoleProfileDataSchema>): string[] {
   const hints: string[] = []
   if (profile.export_dispatch_profile.registration_exports.length > 0) {
-    hints.push('Registration exports suggest DllRegisterServer/DllInstall style lifecycle handling.')
+    hints.push(
+      'Registration exports suggest DllRegisterServer/DllInstall style lifecycle handling.'
+    )
   }
   if (profile.com_profile.class_factory_exports.length > 0) {
     hints.push('Class factory exports suggest DllGetClassObject / COM activation entry paths.')
   }
   if (profile.host_interaction_profile.callback_exports.length > 0) {
-    hints.push('Callback-like exports suggest host-driven invocation rather than standalone execution.')
+    hints.push(
+      'Callback-like exports suggest host-driven invocation rather than standalone execution.'
+    )
   }
   if (profile.host_interaction_profile.service_hooks.length > 0) {
-    hints.push('Service-related hooks suggest SCM-facing lifecycle callbacks or service helper exports.')
+    hints.push(
+      'Service-related hooks suggest SCM-facing lifecycle callbacks or service helper exports.'
+    )
   }
   if (profile.export_surface.forwarded_exports.length > 0) {
     hints.push('Forwarded exports suggest this DLL may act as a shim or adapter layer.')
   }
   if (profile.import_surface.process_related_imports.some((item) => /kernel32/i.test(item))) {
-    hints.push('Kernel32 import surface suggests classic DllMain attach/detach side effects are worth reviewing.')
+    hints.push(
+      'Kernel32 import surface suggests classic DllMain attach/detach side effects are worth reviewing.'
+    )
   }
   return dedupe(hints)
 }
@@ -132,11 +142,15 @@ function buildLifecycleSurface(profile: z.infer<typeof BinaryRoleProfileDataSche
     )
   )
   const lifecycleImports = dedupe(
-    profile.import_surface.process_related_imports.filter((item) => /kernel32|ntdll|psapi|dbghelp/i.test(item))
+    profile.import_surface.process_related_imports.filter((item) =>
+      /kernel32|ntdll|psapi|dbghelp/i.test(item)
+    )
   )
   const attachDetachStrings = dedupe(
     [
-      ...profile.host_interaction_profile.host_hints.filter((item) => /attach|detach|dll|module/i.test(item)),
+      ...profile.host_interaction_profile.host_hints.filter((item) =>
+        /attach|detach|dll|module/i.test(item)
+      ),
       ...profile.export_surface.notable_exports.filter((item) => /attach|detach/i.test(item)),
     ].slice(0, 8)
   )
@@ -155,8 +169,12 @@ function buildLifecycleSurface(profile: z.infer<typeof BinaryRoleProfileDataSche
 function buildClassFactorySurface(profile: z.infer<typeof BinaryRoleProfileDataSchema>) {
   const activationMarkers = dedupe(
     [
-      ...profile.com_profile.registration_strings.filter((item) => /inprocserver32|localserver32|appid|clsid/i.test(item)),
-      ...profile.com_profile.interface_hints.filter((item) => /iclassfactory|iunknown|idispatch/i.test(item)),
+      ...profile.com_profile.registration_strings.filter((item) =>
+        /inprocserver32|localserver32|appid|clsid/i.test(item)
+      ),
+      ...profile.com_profile.interface_hints.filter((item) =>
+        /iclassfactory|iunknown|idispatch/i.test(item)
+      ),
       ...profile.com_profile.clsid_strings,
       ...profile.com_profile.progid_strings,
     ].slice(0, 8)

@@ -97,11 +97,7 @@ function extractCapaEntry(doc: Record<string, unknown>): CapaKbEntry | null {
   }
 }
 
-function extractFeaturesRecursive(
-  features: unknown[],
-  apis: string[],
-  strings: string[]
-): void {
+function extractFeaturesRecursive(features: unknown[], apis: string[], strings: string[]): void {
   for (const feature of features) {
     if (!feature || typeof feature !== 'object') continue
     const obj = feature as Record<string, unknown>

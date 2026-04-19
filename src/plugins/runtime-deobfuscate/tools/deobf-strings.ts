@@ -11,6 +11,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 import {
   resolveSampleFile,
   runPythonJson,
@@ -25,9 +26,10 @@ const TOOL_NAME = 'deobf.strings'
 
 export const deobfStringsInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  timeout: z.number().int().min(5).max(120).default(60)
-    .describe('Execution timeout in seconds'),
-  frida_script: z.string().optional()
+  timeout: z.number().int().min(5).max(120).default(60).describe('Execution timeout in seconds'),
+  frida_script: z
+    .string()
+    .optional()
     .describe('Optional custom Frida script path for string decryption hooks'),
   persist_artifact: z.boolean().default(true),
   session_tag: z.string().optional(),
@@ -46,7 +48,7 @@ export const deobfStringsToolDefinition: ToolDefinition = {
 export function createDeobfStringsHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
-  dependencies?: SharedBackendDependencies,
+  dependencies?: SharedBackendDependencies
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -58,12 +60,20 @@ export function createDeobfStringsHandler(
 
       if (!backends.frida_cli?.available) {
         return buildDynamicSetupRequired(
-          backends.frida_cli || { available: false, source: null, path: null, version: null, checked_candidates: [], error: 'Frida not available' },
-          startTime, TOOL_NAME,
+          backends.frida_cli || {
+            available: false,
+            source: null,
+            path: null,
+            version: null,
+            checked_candidates: [],
+            error: 'Frida not available',
+          },
+          startTime,
+          TOOL_NAME
         )
       }
 
-      const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
+      const pythonPath = getPythonCommand()
 
       const workerScript = `
 import sys, json, importlib.util
@@ -83,7 +93,7 @@ mod.main()
           timeout: input.timeout,
           frida_script: input.frida_script,
         },
-        (input.timeout + 10) * 1000,
+        (input.timeout + 10) * 1000
       )
 
       const workerData = result.parsed
@@ -92,18 +102,23 @@ mod.main()
       if (workerData.ok && workerData.data && input.persist_artifact) {
         try {
           const artifact = await persistBackendArtifact(
-            workspaceManager, database, input.sample_id,
-            'deobfuscate', 'runtime_strings',
+            workspaceManager,
+            database,
+            input.sample_id,
+            'deobfuscate',
+            'runtime_strings',
             JSON.stringify(workerData.data, null, 2),
             {
               extension: 'json',
               mime: 'application/json',
               sessionTag: input.session_tag,
               metadata: { unique_strings: workerData.data.unique_strings },
-            },
+            }
           )
           artifacts.push(artifact)
-        } catch { /* best effort */ }
+        } catch {
+          /* best effort */
+        }
       }
 
       return {

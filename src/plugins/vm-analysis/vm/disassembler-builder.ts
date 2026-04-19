@@ -132,17 +132,20 @@ export function formatDisassembly(result: DisassemblyResult): string {
   const lines: string[] = []
   for (const instr of result.instructions) {
     const addr = `0x${instr.address.toString(16).padStart(4, '0')}`
-    const rawHex = instr.raw.map(b => b.toString(16).padStart(2, '0')).join(' ')
-    const ops = instr.operands.length > 0
-      ? '  ' + instr.operands.map(o => `0x${o.toString(16)}`).join(', ')
-      : ''
+    const rawHex = instr.raw.map((b) => b.toString(16).padStart(2, '0')).join(' ')
+    const ops =
+      instr.operands.length > 0
+        ? '  ' + instr.operands.map((o) => `0x${o.toString(16)}`).join(', ')
+        : ''
     lines.push(`${addr}:  ${rawHex.padEnd(16)}  ${instr.mnemonic}${ops}`)
   }
   lines.push('')
   lines.push(`; Total: ${result.instructions.length} instructions, ${result.totalBytes} bytes`)
   lines.push(`; Coverage: ${(result.coverage * 100).toFixed(1)}%`)
   if (result.unknownOpcodes.length > 0) {
-    lines.push(`; Unknown opcodes: ${result.unknownOpcodes.map(o => `0x${o.toString(16)}`).join(', ')}`)
+    lines.push(
+      `; Unknown opcodes: ${result.unknownOpcodes.map((o) => `0x${o.toString(16)}`).join(', ')}`
+    )
   }
   return lines.join('\n')
 }

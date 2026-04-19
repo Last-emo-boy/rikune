@@ -23,7 +23,7 @@ describe('dex.classes.list tool', () => {
       getDb: jest.fn(),
     } as unknown as jest.Mocked<DatabaseManager>
 
-    mockConfig = {} as unknown as jest.Mocked<Config>
+    mockConfig = { workers: { static: { pythonPath: 'python3' } } } as unknown as jest.Mocked<Config>
   })
 
   describe('Input validation', () => {
@@ -45,7 +45,7 @@ describe('dex.classes.list tool', () => {
 
   describe('Handler', () => {
     test('should return error for non-existent resource', async () => {
-      const handler = createDexClassesListHandler({ workspaceManager: mockWorkspaceManager, database: mockDatabase, config: mockConfig } as any)
+      const handler = createDexClassesListHandler({ workspaceManager: mockWorkspaceManager, database: mockDatabase, config: mockConfig, resolvePackagePath: (...segs: string[]) => segs.join('/') } as any)
 
       mockDatabase.findSample.mockReturnValue(undefined)
 

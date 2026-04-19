@@ -202,9 +202,9 @@ function extractCrateNameFromCargoPath(input: string): string | null {
 }
 
 function detectLibraryHints(str: string): string[] {
-  return LIBRARY_HINT_PATTERNS.filter((hint) => hint.patterns.some((pattern) => pattern.test(str))).map(
-    (hint) => hint.name
-  )
+  return LIBRARY_HINT_PATTERNS.filter((hint) =>
+    hint.patterns.some((pattern) => pattern.test(str))
+  ).map((hint) => hint.name)
 }
 
 function analyzeRustStrings(strings: unknown[]): {
@@ -242,7 +242,11 @@ function analyzeRustStrings(strings: unknown[]): {
       }
     }
 
-    if (/rust_panic|core::panicking|panic_unwind|alloc::|std::rt|rustc|\\src\\main\.rs|\\src\\lib\.rs/i.test(str)) {
+    if (
+      /rust_panic|core::panicking|panic_unwind|alloc::|std::rt|rustc|\\src\\main\.rs|\\src\\lib\.rs/i.test(
+        str
+      )
+    ) {
       rustMarkers.push(str)
     }
     if (/tokio|async|futures|mio|spawn_blocking|joinhandle|reactor/i.test(str)) {
@@ -290,9 +294,11 @@ export function createRustBinaryAnalyzeHandler(
   dependencies: RustBinaryAnalyzeDependencies = {}
 ) {
   const runtimeHandler =
-    dependencies.runtimeHandler || createRuntimeDetectHandler(workspaceManager, database, cacheManager)
+    dependencies.runtimeHandler ||
+    createRuntimeDetectHandler(workspaceManager, database, cacheManager)
   const stringsHandler =
-    dependencies.stringsHandler || createStringsExtractHandler(workspaceManager, database, cacheManager)
+    dependencies.stringsHandler ||
+    createStringsExtractHandler(workspaceManager, database, cacheManager)
   const smartRecoverHandler =
     dependencies.smartRecoverHandler ||
     createCodeFunctionsSmartRecoverHandler(workspaceManager, database, cacheManager)
@@ -345,23 +351,32 @@ export function createRustBinaryAnalyzeHandler(
         }
       }
 
-      const [runtimeResult, stringsResult, smartRecoverResult, symbolsRecoverResult, binaryRoleResult] =
-        await Promise.all([
-          runtimeHandler({ sample_id: input.sample_id, force_refresh: input.force_refresh }),
-          stringsHandler({
-            sample_id: input.sample_id,
-            category_filter: 'all',
-            max_strings: input.max_strings,
-            force_refresh: input.force_refresh,
-          }),
-          smartRecoverHandler({ sample_id: input.sample_id, force_refresh: input.force_refresh }),
-          symbolsRecoverHandler({
-            sample_id: input.sample_id,
-            max_string_hints: input.max_strings,
-            force_refresh: input.force_refresh,
-          }),
-          binaryRoleHandler({ sample_id: input.sample_id, max_strings: input.max_strings, force_refresh: input.force_refresh }),
-        ])
+      const [
+        runtimeResult,
+        stringsResult,
+        smartRecoverResult,
+        symbolsRecoverResult,
+        binaryRoleResult,
+      ] = await Promise.all([
+        runtimeHandler({ sample_id: input.sample_id, force_refresh: input.force_refresh }),
+        stringsHandler({
+          sample_id: input.sample_id,
+          category_filter: 'all',
+          max_strings: input.max_strings,
+          force_refresh: input.force_refresh,
+        }),
+        smartRecoverHandler({ sample_id: input.sample_id, force_refresh: input.force_refresh }),
+        symbolsRecoverHandler({
+          sample_id: input.sample_id,
+          max_string_hints: input.max_strings,
+          force_refresh: input.force_refresh,
+        }),
+        binaryRoleHandler({
+          sample_id: input.sample_id,
+          max_strings: input.max_strings,
+          force_refresh: input.force_refresh,
+        }),
+      ])
 
       const componentStatus = {
         runtime_detect: {
@@ -393,9 +408,13 @@ export function createRustBinaryAnalyzeHandler(
 
       const warnings = [
         ...(runtimeResult.warnings || []).map((item) => `runtime: ${item}`),
-        ...(runtimeResult.ok ? [] : (runtimeResult.errors || []).map((item) => `runtime error: ${item}`)),
+        ...(runtimeResult.ok
+          ? []
+          : (runtimeResult.errors || []).map((item) => `runtime error: ${item}`)),
         ...(stringsResult.warnings || []).map((item) => `strings: ${item}`),
-        ...(stringsResult.ok ? [] : (stringsResult.errors || []).map((item) => `strings error: ${item}`)),
+        ...(stringsResult.ok
+          ? []
+          : (stringsResult.errors || []).map((item) => `strings error: ${item}`)),
         ...(smartRecoverResult.warnings || []).map((item) => `smart_recover: ${item}`),
         ...(smartRecoverResult.ok
           ? []
@@ -410,11 +429,21 @@ export function createRustBinaryAnalyzeHandler(
           : (binaryRoleResult.errors || []).map((item) => `binary_role error: ${item}`)),
       ]
 
-      const runtimeData = (runtimeResult.ok ? runtimeResult.data : undefined) as RuntimeDetectData | undefined
-      const stringsData = (stringsResult.ok ? stringsResult.data : undefined) as StringsData | undefined
-      const smartRecoverData = (smartRecoverResult.ok ? smartRecoverResult.data : undefined) as SmartRecoverData | undefined
-      const symbolsData = (symbolsRecoverResult.ok ? symbolsRecoverResult.data : undefined) as SymbolsRecoverData | undefined
-      const binaryProfile = binaryRoleResult.ok ? (binaryRoleResult.data as z.infer<typeof BinaryRoleProfileDataSchema>) : undefined
+      const runtimeData = (runtimeResult.ok ? runtimeResult.data : undefined) as
+        | RuntimeDetectData
+        | undefined
+      const stringsData = (stringsResult.ok ? stringsResult.data : undefined) as
+        | StringsData
+        | undefined
+      const smartRecoverData = (smartRecoverResult.ok ? smartRecoverResult.data : undefined) as
+        | SmartRecoverData
+        | undefined
+      const symbolsData = (symbolsRecoverResult.ok ? symbolsRecoverResult.data : undefined) as
+        | SymbolsRecoverData
+        | undefined
+      const binaryProfile = binaryRoleResult.ok
+        ? (binaryRoleResult.data as z.infer<typeof BinaryRoleProfileDataSchema>)
+        : undefined
 
       const rawStrings = stringsData?.strings || []
       const stringAnalysis = analyzeRustStrings(rawStrings)
@@ -461,18 +490,26 @@ export function createRustBinaryAnalyzeHandler(
           .flatMap((item) => item.evidence || []),
         ...stringAnalysis.cargoPaths.slice(0, 3).map((item) => `Cargo path: ${item}`),
         ...stringAnalysis.rustMarkers.slice(0, 3).map((item) => `Rust marker: ${item}`),
-        ...stringAnalysis.asyncRuntimeMarkers.slice(0, 2).map((item) => `Async/runtime marker: ${item}`),
+        ...stringAnalysis.asyncRuntimeMarkers
+          .slice(0, 2)
+          .map((item) => `Async/runtime marker: ${item}`),
         ...stringAnalysis.panicMarkers.slice(0, 2).map((item) => `Panic marker: ${item}`),
-        ...((libraryProfile?.evidence || []).slice(0, 3)),
-        ...(recoveredSymbolPreview.slice(0, 3).map((item) => `Recovered symbol: ${item.recovered_name}`)),
+        ...(libraryProfile?.evidence || []).slice(0, 3),
+        ...recoveredSymbolPreview
+          .slice(0, 3)
+          .map((item) => `Recovered symbol: ${item.recovered_name}`),
       ])
 
       const analysisPriorities = uniqueStrings([
         ...(binaryProfile?.analysis_priorities || []),
         recoveredFunctionCount > 0 ? 'feed_recovered_boundaries_into_code.functions.define' : '',
         recoveredSymbolCount > 0 ? 'review_recovered_symbol_names_before_manual_validation' : '',
-        stringAnalysis.asyncRuntimeMarkers.length > 0 ? 'trace_async_runtime_and_scheduler_paths' : '',
-        stringAnalysis.panicMarkers.length > 0 ? 'separate_panic_paths_from_primary_business_logic' : '',
+        stringAnalysis.asyncRuntimeMarkers.length > 0
+          ? 'trace_async_runtime_and_scheduler_paths'
+          : '',
+        stringAnalysis.panicMarkers.length > 0
+          ? 'separate_panic_paths_from_primary_business_logic'
+          : '',
         crateHints.includes('tokio') || crateHints.includes('mio')
           ? 'trace_runtime_bootstrap_and_async_task_dispatch'
           : '',
@@ -509,7 +546,8 @@ export function createRustBinaryAnalyzeHandler(
         recovered_symbol_count: recoveredSymbolCount,
         recovered_symbol_preview: recoveredSymbolPreview,
         components: componentStatus,
-        importable_with_code_functions_define: recoveredFunctionCount > 0 || recoveredSymbolCount > 0,
+        importable_with_code_functions_define:
+          recoveredFunctionCount > 0 || recoveredSymbolCount > 0,
         evidence,
         analysis_priorities: analysisPriorities,
         next_steps: nextSteps,

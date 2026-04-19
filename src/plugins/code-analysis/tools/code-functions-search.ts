@@ -2,16 +2,30 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolHandler, ToolResult } from '../../../types.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
-import { DecompilerWorker, getGhidraDiagnostics, normalizeGhidraError } from '../../../worker/decompiler-worker.js'
+import {
+  DecompilerWorker,
+  getGhidraDiagnostics,
+  normalizeGhidraError,
+} from '../../../worker/decompiler-worker.js'
 import { logger } from '../../../logger.js'
 
 export const codeFunctionsSearchInputSchema = z
   .object({
     sample_id: z.string().describe('Sample identifier (sha256:<hex>)'),
     api: z.string().optional().describe('API name or substring, e.g. WriteProcessMemory'),
-    string: z.string().optional().describe('String literal substring to reverse-map into functions'),
+    string: z
+      .string()
+      .optional()
+      .describe('String literal substring to reverse-map into functions'),
     limit: z.number().int().min(1).max(200).optional().default(20),
-    timeout: z.number().int().min(5).max(300).optional().default(30).describe('Timeout in seconds for Ghidra-backed searches'),
+    timeout: z
+      .number()
+      .int()
+      .min(5)
+      .max(300)
+      .optional()
+      .default(30)
+      .describe('Timeout in seconds for Ghidra-backed searches'),
   })
   .refine((data) => Boolean(data.api || data.string), {
     message: 'At least one of api or string must be provided',

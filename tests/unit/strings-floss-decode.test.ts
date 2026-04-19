@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createStringsFlossDecodeHandler, StringsFlossDecodeInputSchema } from '../../src/tools/strings-floss-decode.js'
+import { createStringsFlossDecodeHandler, StringsFlossDecodeInputSchema } from '../../src/plugins/strings/tools/strings-floss-decode.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 import type { CacheManager } from '../../src/cache-manager.js'

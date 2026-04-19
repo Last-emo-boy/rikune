@@ -13,12 +13,13 @@ describe('task.cancel tool', () => {
     mockJobQueue = {
       enqueue: jest.fn(),
       getStatus: jest.fn(),
+      cancel: jest.fn().mockReturnValue(false),
     } as unknown as jest.Mocked<JobQueue>
   })
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = taskCancelInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = taskCancelInputSchema.safeParse({ job_id: 'job-abc123' })
       expect(result.success).toBe(true)
     })
 
@@ -28,19 +29,19 @@ describe('task.cancel tool', () => {
     })
 
     test('should reject invalid types', () => {
-      const result = taskCancelInputSchema.safeParse({ sample_id: 123 })
+      const result = taskCancelInputSchema.safeParse({ job_id: 123 })
       expect(result.success).toBe(false)
     })
   })
 
   describe('Handler', () => {
-    test('should return error for non-existent resource', async () => {
+    test('should return error for non-existent job', async () => {
       const handler = createTaskCancelHandler(mockJobQueue)
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
+      const result = await handler({ job_id: 'nonexistent-job' })
 
-      expect(result.ok).toBe(false)
-      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)
+      const parsed = JSON.parse(result.content[0].text)
+      expect(parsed.ok).toBe(false)
     })
   })
 })

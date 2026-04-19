@@ -64,7 +64,12 @@ export class DebugSessionManager {
     }))
   }
 
-  async createSession(sampleId: string, binaryPath: string, gdbPath?: string, useWine = false): Promise<DebugSession> {
+  async createSession(
+    sampleId: string,
+    binaryPath: string,
+    gdbPath?: string,
+    useWine = false
+  ): Promise<DebugSession> {
     if (this.sessions.size >= MAX_CONCURRENT_SESSIONS) {
       throw new Error(
         `Maximum concurrent debug sessions reached (${MAX_CONCURRENT_SESSIONS}). End an existing session first.`

@@ -58,9 +58,10 @@ export function createVmDisasmBuildHandler(
     if (Array.isArray(evidence)) {
       for (const entry of evidence) {
         if (entry.evidence_family === 'vm_opcode_table') {
-          const data = typeof entry.result_json === 'string'
-            ? JSON.parse(entry.result_json)
-            : entry.result_json
+          const data =
+            typeof entry.result_json === 'string'
+              ? JSON.parse(entry.result_json)
+              : entry.result_json
           if (data?.opcode_table) {
             opcodeTable = data.opcode_table
             break
@@ -112,13 +113,13 @@ export function createVmDisasmBuildHandler(
 
     const result = {
       disassembly: formatted,
-      instructions: disasmResult.instructions.map(i => ({
+      instructions: disasmResult.instructions.map((i) => ({
         address: i.address,
         opcode: i.opcode,
         mnemonic: i.mnemonic,
         operands: i.operands,
         length: i.length,
-        raw_hex: bytecodeBuffer!.subarray(i.address, i.address + i.length).toString('hex'),
+        raw_hex: bytecodeBuffer.subarray(i.address, i.address + i.length).toString('hex'),
       })),
       total_instructions: disasmResult.instructions.length,
       coverage: disasmResult.coverage,
@@ -128,8 +129,12 @@ export function createVmDisasmBuildHandler(
     const artifacts: ArtifactRef[] = []
     try {
       const ref = await persistStaticAnalysisJsonArtifact(
-        workspaceManager, database, input.sample_id,
-        'vm_disassembly', 'disassembly_result', result
+        workspaceManager,
+        database,
+        input.sample_id,
+        'vm_disassembly',
+        'disassembly_result',
+        result
       )
       artifacts.push(ref)
     } catch {

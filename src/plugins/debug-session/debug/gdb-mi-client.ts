@@ -34,22 +34,18 @@ export class GdbMiClient extends EventEmitter {
    * @param gdbPath Path to gdb executable (default: 'gdb')
    * @param extraArgs Additional GDB arguments
    */
-  async start(
-    binaryPath: string,
-    gdbPath = 'gdb',
-    extraArgs: string[] = []
-  ): Promise<MiResponse> {
+  async start(binaryPath: string, gdbPath = 'gdb', extraArgs: string[] = []): Promise<MiResponse> {
     const args = ['--interpreter=mi', '--quiet', ...extraArgs, binaryPath]
     this.process = spawn(gdbPath, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
-    this.process.stdout!.on('data', (data: Buffer) => {
+    this.process.stdout.on('data', (data: Buffer) => {
       this.buffer += data.toString()
       this.processBuffer()
     })
 
-    this.process.stderr!.on('data', (data: Buffer) => {
+    this.process.stderr.on('data', (data: Buffer) => {
       this.emit('log', data.toString())
     })
 
@@ -105,7 +101,7 @@ export class GdbMiClient extends EventEmitter {
       }, timeoutMs)
 
       this.commandQueue.push({ token, resolve, reject, timer })
-      this.process!.stdin!.write(fullCmd)
+      this.process.stdin.write(fullCmd)
     })
   }
 
@@ -115,7 +111,7 @@ export class GdbMiClient extends EventEmitter {
   kill(): void {
     if (this.process && !this._exited) {
       try {
-        this.process.stdin!.write('-gdb-exit\n')
+        this.process.stdin.write('-gdb-exit\n')
       } catch {
         // stdin may already be closed
       }
@@ -201,17 +197,32 @@ export class GdbMiClient extends EventEmitter {
 
     // Console output: ~"string"
     if (line.startsWith('~"')) {
-      return { type: 'console', class_: 'output', payload: { text: this.unquote(line.slice(1)) }, raw: line }
+      return {
+        type: 'console',
+        class_: 'output',
+        payload: { text: this.unquote(line.slice(1)) },
+        raw: line,
+      }
     }
 
     // Target output: @"string"
     if (line.startsWith('@"')) {
-      return { type: 'target', class_: 'output', payload: { text: this.unquote(line.slice(1)) }, raw: line }
+      return {
+        type: 'target',
+        class_: 'output',
+        payload: { text: this.unquote(line.slice(1)) },
+        raw: line,
+      }
     }
 
     // Log output: &"string"
     if (line.startsWith('&"')) {
-      return { type: 'log', class_: 'output', payload: { text: this.unquote(line.slice(1)) }, raw: line }
+      return {
+        type: 'log',
+        class_: 'output',
+        payload: { text: this.unquote(line.slice(1)) },
+        raw: line,
+      }
     }
 
     return null

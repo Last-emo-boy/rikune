@@ -3,16 +3,14 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult , PluginToolDeps} from '../../sdk.js'
+import type { ToolDefinition, WorkerResult, PluginToolDeps } from '../../sdk.js'
 import { getDebugSessionManager } from '../debug/debug-session-state.js'
 
 const TOOL_NAME = 'debug.session.inspect'
 
 export const DebugSessionInspectInputSchema = z.object({
   session_id: z.string().describe('Debug session ID'),
-  target: z
-    .enum(['registers', 'memory', 'stack', 'disasm'])
-    .describe('What to inspect'),
+  target: z.enum(['registers', 'memory', 'stack', 'disasm']).describe('What to inspect'),
   address: z
     .string()
     .optional()
@@ -48,6 +46,7 @@ export const debugSessionInspectToolDefinition: ToolDefinition = {
     'Inspect debug session state: registers, memory (up to 4096 bytes), stack frames (up to 20), or disassembly window.',
   inputSchema: DebugSessionInspectInputSchema,
   outputSchema: DebugSessionInspectOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 export function createDebugSessionInspectHandler(deps: PluginToolDeps) {

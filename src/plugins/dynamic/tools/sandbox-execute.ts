@@ -4,17 +4,25 @@
  */
 
 import { spawn } from 'child_process'
+import { existsSync } from 'fs'
 import fs from 'fs/promises'
 import path from 'path'
 import { createHash, randomUUID } from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
+import {
+  RuntimeDelegationFailureResultSchema,
+  type ToolDefinition,
+  type ToolArgs,
+  type WorkerResult,
+  type ArtifactRef,
+} from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { PolicyGuard } from '../../../policy-guard.js'
 import { normalizeDynamicTraceArtifactPayload } from '../../../artifacts/dynamic-trace.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'sandbox.execute'
 const TOOL_VERSION = '0.1.0'
@@ -97,7 +105,7 @@ const ExecutionHypothesisSchema = z.object({
   indicators: z.array(z.string()),
 })
 
-export const SandboxExecuteOutputSchema = z.object({
+const SandboxExecuteSuccessResultSchema = z.object({
   ok: z.boolean(),
   data: z
     .object({
@@ -124,6 +132,16 @@ export const SandboxExecuteOutputSchema = z.object({
         executed: z.boolean(),
         isolation: z.string(),
       }),
+      execution_semantics: z
+        .object({
+          live_windows_sandbox_execution: z.boolean(),
+          live_hyperv_execution: z.boolean(),
+          safe_simulation: z.boolean(),
+          emulation: z.boolean(),
+          user_visible_sandbox_window_expected: z.boolean(),
+          explanation: z.string(),
+        })
+        .optional(),
       evidence: z.record(z.any()),
       inference: z.object({
         classification: z.string(),
@@ -142,12 +160,18 @@ export const SandboxExecuteOutputSchema = z.object({
     .optional(),
 })
 
+export const SandboxExecuteOutputSchema = z.union([
+  SandboxExecuteSuccessResultSchema,
+  RuntimeDelegationFailureResultSchema,
+])
+
 export const sandboxExecuteToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Execute dynamic-analysis workflow in safe simulation mode (default), memory-guided mode, or Speakeasy user-mode emulation and return timeline/IOC/risk outputs.',
   inputSchema: SandboxExecuteInputSchema,
   outputSchema: SandboxExecuteOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeSandboxExecute' },
 }
 
 interface WorkerRequest {
@@ -242,7 +266,7 @@ interface SandboxPayload {
 async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse> {
   return new Promise((resolve, reject) => {
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
-    const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+    const pythonCommand = getPythonCommand()
     const child = spawn(pythonCommand, [workerPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
@@ -298,6 +322,46 @@ function mergeWarnings(...warningLists: Array<string[] | undefined>): string[] |
   return Array.from(new Set(merged))
 }
 
+function enrichSandboxPayload(payload: SandboxPayload): SandboxPayload & {
+  execution_semantics: {
+    live_windows_sandbox_execution: boolean
+    live_hyperv_execution: boolean
+    safe_simulation: boolean
+    emulation: boolean
+    user_visible_sandbox_window_expected: boolean
+    explanation: string
+  }
+} {
+  const backend = String(payload.backend || '').toLowerCase()
+  const mode = String(payload.mode || '').toLowerCase()
+  const isolation = String(payload.environment?.isolation || '').toLowerCase()
+  const executed = Boolean(payload.environment?.executed)
+  const liveWindowsSandbox =
+    executed && (backend.includes('sandbox') || isolation.includes('sandbox'))
+  const liveHyperv = executed && (backend.includes('hyperv') || isolation.includes('hyperv'))
+  const safeSimulation = !executed || mode === 'safe_simulation' || backend.includes('simulation')
+  const emulation =
+    mode === 'speakeasy' || backend.includes('speakeasy') || backend.includes('qiling')
+
+  return {
+    ...payload,
+    execution_semantics: {
+      live_windows_sandbox_execution: liveWindowsSandbox,
+      live_hyperv_execution: liveHyperv,
+      safe_simulation: safeSimulation,
+      emulation,
+      user_visible_sandbox_window_expected: liveWindowsSandbox,
+      explanation: liveWindowsSandbox
+        ? 'This run used a live Windows Sandbox runtime; a visible Sandbox window may be expected depending on the Host Agent backend.'
+        : liveHyperv
+          ? 'This run used a live Hyper-V runtime endpoint; Windows Sandbox UI is not expected.'
+          : emulation
+            ? 'This run used emulator-backed dynamic analysis, not a live Windows Sandbox session.'
+            : 'This run used planning/safe simulation and did not execute the sample in a live Windows Sandbox session.',
+    },
+  }
+}
+
 export function createSandboxExecuteHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
@@ -305,6 +369,15 @@ export function createSandboxExecuteHandler(
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
+    // Backend gate
+    const workerPath = resolvePackagePath('workers', 'static_worker.py')
+    if (!existsSync(workerPath)) {
+      return {
+        ok: false,
+        errors: [`Sandbox worker not found: ${workerPath}`],
+        metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
+      }
+    }
 
     try {
       const input = SandboxExecuteInputSchema.parse(args)
@@ -417,7 +490,7 @@ export function createSandboxExecuteHandler(
         }
       }
 
-      const payload = workerResponse.data as SandboxPayload
+      const payload = enrichSandboxPayload(workerResponse.data as SandboxPayload)
       const artifacts: ArtifactRef[] = workerResponse.artifacts as ArtifactRef[]
       const persistedArtifacts: ArtifactRef[] = []
 
@@ -488,7 +561,14 @@ export function createSandboxExecuteHandler(
         }
       }
 
-      const warnings = mergeWarnings(workerResponse.warnings, payload.warnings)
+      const semanticWarning = payload.execution_semantics.live_windows_sandbox_execution
+        ? undefined
+        : 'sandbox.execute did not perform live Windows Sandbox execution for this run; inspect data.execution_semantics for the exact backend semantics.'
+      const warnings = mergeWarnings(
+        workerResponse.warnings,
+        payload.warnings,
+        semanticWarning ? [semanticWarning] : undefined
+      )
       if (persistedArtifacts.length > 0) {
         const persistedWarning = `Sandbox trace persisted as artifact(s) ${persistedArtifacts
           .map((item) => `${item.type}:${item.id}`)

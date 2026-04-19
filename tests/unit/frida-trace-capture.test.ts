@@ -326,7 +326,7 @@ describe('createFridaTraceCaptureHandler', () => {
   })
 
   test('should return error when worker call fails', async () => {
-    const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+    const handler = createFridaTraceCaptureHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => {
         throw new Error('Worker connection failed')
       },
@@ -339,7 +339,7 @@ describe('createFridaTraceCaptureHandler', () => {
   })
 
   test('should return error when worker returns failure', async () => {
-    const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+    const handler = createFridaTraceCaptureHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: false,
@@ -378,7 +378,7 @@ describe('createFridaTraceCaptureHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+    const handler = createFridaTraceCaptureHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -431,7 +431,7 @@ describe('createFridaTraceCaptureHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+    const handler = createFridaTraceCaptureHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -481,7 +481,7 @@ describe('createFridaTraceCaptureHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+    const handler = createFridaTraceCaptureHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -531,7 +531,7 @@ describe('createFridaTraceCaptureHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+    const handler = createFridaTraceCaptureHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -578,7 +578,7 @@ describe('createFridaTraceCaptureHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+    const handler = createFridaTraceCaptureHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,
@@ -629,7 +629,7 @@ describe('createFridaTraceCaptureHandler', () => {
     const dummyFile = path.join((await workspaceManager.getWorkspace(sampleId)).original, 'test.exe')
     await fs.writeFile(dummyFile, 'dummy content')
 
-    const handler = createFridaTraceCaptureHandler(workspaceManager, database, {
+    const handler = createFridaTraceCaptureHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/') } as any, {
       callWorker: async () => ({
         job_id: 'test-job',
         ok: true,

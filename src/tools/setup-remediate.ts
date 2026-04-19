@@ -23,14 +23,31 @@ const BlockedToolContextSchema = z.object({
 })
 
 export const SetupRemediateInputSchema = z.object({
-  blocked_tool: BlockedToolContextSchema.describe('Context about the blocked tool that triggered remediation'),
-  include_health_check: z.boolean().default(true).describe('Whether to run system.health as part of diagnosis'),
-  include_setup_guide: z.boolean().default(true).describe('Whether to include detailed setup guidance'),
-  session_tag: z.string().optional().describe('Optional session tag for grouping remediation state'),
+  blocked_tool: BlockedToolContextSchema.describe(
+    'Context about the blocked tool that triggered remediation'
+  ),
+  include_health_check: z
+    .boolean()
+    .default(true)
+    .describe('Whether to run system.health as part of diagnosis'),
+  include_setup_guide: z
+    .boolean()
+    .default(true)
+    .describe('Whether to include detailed setup guidance'),
+  session_tag: z
+    .string()
+    .optional()
+    .describe('Optional session tag for grouping remediation state'),
 })
 
 export const SetupActionSchema = z.object({
-  action_type: z.enum(['pip_install', 'set_env_var', 'install_package', 'run_command', 'manual_step']),
+  action_type: z.enum([
+    'pip_install',
+    'set_env_var',
+    'install_package',
+    'run_command',
+    'manual_step',
+  ]),
   command: z.string().optional().describe('Exact command to run'),
   description: z.string().describe('Human-readable description of the action'),
   required: z.boolean().default(true),
@@ -59,8 +76,14 @@ export const SetupRemediateDataSchema = z.object({
   setup_actions: z.array(SetupActionSchema).describe('Machine-readable setup actions'),
   required_user_inputs: z.array(RequiredUserInputSchema).describe('Required user-provided inputs'),
   retry_guidance: RetryGuidanceSchema.describe('How to resume the original analysis after setup'),
-  health_check: z.any().optional().describe('Optional system.health result if include_health_check=true'),
-  setup_guide: z.any().optional().describe('Optional system.setup.guide result if include_setup_guide=true'),
+  health_check: z
+    .any()
+    .optional()
+    .describe('Optional system.health result if include_health_check=true'),
+  setup_guide: z
+    .any()
+    .optional()
+    .describe('Optional system.setup.guide result if include_setup_guide=true'),
 })
 
 export const SetupRemediateOutputSchema = z.object({
@@ -68,10 +91,12 @@ export const SetupRemediateOutputSchema = z.object({
   data: SetupRemediateDataSchema.optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
-  metrics: z.object({
-    elapsed_ms: z.number(),
-    tool: z.string(),
-  }).optional(),
+  metrics: z
+    .object({
+      elapsed_ms: z.number(),
+      tool: z.string(),
+    })
+    .optional(),
 })
 
 export type SetupRemediateInput = z.infer<typeof SetupRemediateInputSchema>
@@ -103,8 +128,10 @@ export function createSetupRemediateHandler(
   cacheManager: CacheManager,
   deps: SetupRemediateDependencies = {}
 ) {
-  const healthHandler = deps.healthHandler || (() => Promise.resolve({ ok: true, data: {} } as WorkerResult))
-  const setupGuideHandler = deps.setupGuideHandler || (() => Promise.resolve({ ok: true, data: {} } as WorkerResult))
+  const healthHandler =
+    deps.healthHandler || (() => Promise.resolve({ ok: true, data: {} } as WorkerResult))
+  const setupGuideHandler =
+    deps.setupGuideHandler || (() => Promise.resolve({ ok: true, data: {} } as WorkerResult))
 
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -152,17 +179,18 @@ export function createSetupRemediateHandler(
       // Build retry guidance
       const retryGuidance: z.infer<typeof RetryGuidanceSchema> = {
         retry_tool: blockedTool.tool_name,
-        retry_conditions: setupActions.map(a => a.description),
+        retry_conditions: setupActions.map((a) => a.description),
         resume_target: `${blockedTool.tool_name} with original parameters`,
         estimated_setup_time_sec: estimateSetupTime(setupActions),
       }
 
       // Determine status
-      const status = setupActions.length === 0
-        ? 'retry_ready'
-        : setupActions.some(a => a.action_type === 'manual_step')
-          ? 'manual_only'
-          : 'setup_required'
+      const status =
+        setupActions.length === 0
+          ? 'retry_ready'
+          : setupActions.some((a) => a.action_type === 'manual_step')
+            ? 'manual_only'
+            : 'setup_required'
 
       const data: SetupRemediateData = {
         status,

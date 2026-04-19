@@ -12,7 +12,7 @@ import type { RankedFunction, DecompiledFunction, ControlFlowGraph } from '../..
 import {
   createCodeFunctionsReconstructHandler,
   CodeFunctionsReconstructInputSchema,
-} from '../../src/tools/code-functions-reconstruct.js'
+} from '../../src/plugins/code-analysis/tools/code-functions-reconstruct.js'
 import type { DynamicTraceSummary } from '../../src/artifacts/dynamic-trace.js'
 import { persistSemanticNameSuggestionsArtifact } from '../../src/artifacts/semantic-name-suggestion-artifacts.js'
 

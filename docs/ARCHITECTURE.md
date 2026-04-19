@@ -24,7 +24,7 @@ streaming support, and MCP resource exposure.
 │                    │                                │
 │        ┌───────────┼────────────────┐               │
 │        ▼           ▼                ▼               │
-│  222 Tool      3 Prompt      16 Resource            │
+│  226 Tool      3 Prompt      16 Resource            │
 │  Handlers      Handlers      Handlers               │
 │        │           │                │               │
 │  ┌─────▼───┐ ┌─────▼───┐   ┌──────▼──────┐        │
@@ -53,6 +53,47 @@ streaming support, and MCP resource exposure.
 3. Creates the `MCPServer` instance
 4. Calls `await registerAllTools(server, deps)` — the single point of tool/prompt/resource registration
 5. Starts the server and wires graceful shutdown handlers
+
+## Deployment planes
+
+Runtime deployment is intentionally split from the analyzer:
+
+| Plane | Responsibility | Typical process |
+|-------|----------------|-----------------|
+| Analyzer | MCP stdio server, dashboard/API, static analysis, database, Ghidra projects, artifacts | `node dist/index.js` or Docker `rikune-analyzer` |
+| Host Agent | Windows-side control plane for creating and supervising runtime backends | `packages/windows-host-agent/dist/index.js` |
+| Runtime Node | Execution API used by dynamic/sandbox tools | `packages/runtime-node/dist/index.js` inside Windows Sandbox or a managed VM |
+
+Docker profiles map onto these planes:
+
+- `static`: analyzer container only, `RUNTIME_MODE=disabled`.
+- `hybrid`: analyzer container with `RUNTIME_MODE=remote-sandbox`; runtime work is delegated to the Windows Host Agent, which starts the selected backend on demand.
+- `full`: heavier Linux analyzer image for all-in-one toolchain experiments; real Windows Sandbox execution still belongs to Windows native / hybrid runtime paths.
+- Windows native `auto-sandbox`: analyzer runs directly on Windows and may launch local Windows Sandbox without Docker.
+
+Host Agent runtime backends:
+
+- `windows-sandbox` (default): starts Windows Sandbox from a logged-on Windows user session. This backend must not run as a traditional Windows Service because Windows Sandbox requires an interactive desktop session for the runtime startup command to execute. In Docker/WSL deployments, the Host Agent binds to `0.0.0.0` by default and the installer creates best-effort Hyper-V firewall rules so the analyzer can reach it through `host.docker.internal:18082` and the runtime portproxy range; the API key remains required.
+- `hyperv-vm`: starts a pre-provisioned Hyper-V VM, optionally restores a named checkpoint, waits for the Runtime Node endpoint to become healthy, and returns that endpoint to the analyzer. This is useful for debugging, snapshot rollback, and unattended-style runtime experiments.
+
+Runtime execution is explicit at the tool level. `dynamic.runtime.status` and
+`dynamic.toolkit.status` are read-only probes, `dynamic.deep_plan` builds a
+planning-only profile, `debug.network.plan`, `debug.managed.plan`, and
+`debug.gui.handoff` refine network, .NET, and manual GUI paths, `runtime.debug.session.start`
+creates or attaches a Windows runtime session, `runtime.debug.command`
+dispatches approved Runtime Node commands such as `debug.session.*`,
+`sandbox.execute`, `dynamic.behavior.capture`, telemetry, ProcDump, managed
+safe-run, or `dynamic.memory_dump`, and `runtime.debug.session.stop` releases
+the backend.
+
+MCP clients do not connect to the dashboard HTTP server. They use JSON-RPC over
+stdio. In Docker deployments, clients normally run the MCP child with
+`API_ENABLED=false` so it does not attempt to bind the dashboard port already
+owned by the daemon container:
+
+```bash
+docker exec -i -e API_ENABLED=false rikune-analyzer node dist/index.js
+```
 
 ## Tool Registry
 
@@ -83,7 +124,7 @@ interface ToolDeps {
 
 An `async` function that:
 
-1. Registers 31 core MCP tools plus 191 plugin tools (222 total), grouped by category:
+1. Registers 31 core MCP tools plus 212 plugin tools (243 total), grouped by category:
    - Core (ingest, profile, triage)
    - LLM-assisted review (naming, explanation, reconstruction)
    - PE analysis (structure, headers, sections, exports)
@@ -142,21 +183,21 @@ discover them via `resources/list` and read their content via `resources/read`.
 
 | URI | Description |
 |-----|-------------|
-| `script://frida/api_trace.js` | Windows API tracing with argument logging |
-| `script://frida/string_decoder.js` | Runtime string decryption |
-| `script://frida/anti_debug_bypass.js` | Anti-debug bypass |
-| `script://frida/crypto_finder.js` | Cryptographic API detection |
-| `script://frida/file_registry_monitor.js` | File/registry monitoring |
+| `script://frida/api_trace` | Windows API tracing with argument logging |
+| `script://frida/string_decoder` | Runtime string decryption |
+| `script://frida/anti_debug_bypass` | Anti-debug bypass |
+| `script://frida/crypto_finder` | Cryptographic API detection |
+| `script://frida/file_registry_monitor` | File/registry monitoring |
 
 **Ghidra scripts** (8):
 
 | URI | Description |
 |-----|-------------|
-| `script://ghidra/ExtractFunctions.java` | Function extraction |
-| `script://ghidra/DecompileFunction.java` | Function decompilation |
-| `script://ghidra/ExtractCFG.java` | Control flow graph extraction |
-| `script://ghidra/AnalyzeCrossReferences.java` | Cross-reference analysis |
-| `script://ghidra/SearchFunctionReferences.java` | Function reference search |
+| `script://ghidra/ExtractFunctions` | Function extraction |
+| `script://ghidra/DecompileFunction` | Function decompilation |
+| `script://ghidra/ExtractCFG` | Control flow graph extraction |
+| `script://ghidra/AnalyzeCrossReferences` | Cross-reference analysis |
+| `script://ghidra/SearchFunctionReferences` | Function reference search |
 
 The resource handler reads script files from disk on demand and returns their
 content as `text/javascript` or `text/x-java-source`.

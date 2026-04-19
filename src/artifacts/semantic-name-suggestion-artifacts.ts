@@ -178,7 +178,6 @@ export interface SemanticModuleReviewIndex {
 
 const LATEST_SEMANTIC_ARTIFACT_WINDOW_MS = 10 * 1000
 
-
 export function normalizeFunctionKey(value: string | null | undefined): string | null {
   if (!value) {
     return null
@@ -408,7 +407,7 @@ function collectSemanticArtifactSessionTags(
 
 function filterSemanticArtifactsByScope<
   TArtifact extends { id: string; path: string; created_at: string; sha256: string },
-  TPayload extends { session_tag?: string | null }
+  TPayload extends { session_tag?: string | null },
 >(
   artifacts: Array<{ artifact: TArtifact; payload: TPayload | null }>,
   options: LoadSemanticArtifactOptions = {}
@@ -437,7 +436,10 @@ function filterSemanticArtifactsByScope<
     if (Number.isFinite(latestTimestamp)) {
       selectedArtifacts = selectedArtifacts.filter(({ artifact }) => {
         const timestamp = new Date(artifact.created_at).getTime()
-        return Number.isFinite(timestamp) && latestTimestamp - timestamp <= LATEST_SEMANTIC_ARTIFACT_WINDOW_MS
+        return (
+          Number.isFinite(timestamp) &&
+          latestTimestamp - timestamp <= LATEST_SEMANTIC_ARTIFACT_WINDOW_MS
+        )
       })
     }
   }
@@ -555,7 +557,10 @@ export async function loadSemanticFunctionExplanationIndex(
 ): Promise<SemanticFunctionExplanationIndex> {
   const byAddress = new Map<string, LoadedSemanticFunctionExplanation>()
   const byFunction = new Map<string, LoadedSemanticFunctionExplanation>()
-  const artifacts = database.findArtifactsByType(sampleId, SEMANTIC_FUNCTION_EXPLANATIONS_ARTIFACT_TYPE)
+  const artifacts = database.findArtifactsByType(
+    sampleId,
+    SEMANTIC_FUNCTION_EXPLANATIONS_ARTIFACT_TYPE
+  )
   const loadedArtifacts: Array<{
     artifact: (typeof artifacts)[number]
     payload: SemanticFunctionExplanationArtifactPayload | null
@@ -643,7 +648,7 @@ export async function loadSemanticFunctionExplanationIndex(
         ? `Semantic explanation artifacts are limited to session selector "${options.sessionTag.trim()}".`
         : options.scope === 'latest'
           ? 'Semantic explanation artifacts are limited to the latest artifact window.'
-        : 'Semantic explanation artifacts reflect the selected artifact scope.',
+          : 'Semantic explanation artifacts reflect the selected artifact scope.',
   }
 }
 

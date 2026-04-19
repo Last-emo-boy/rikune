@@ -88,7 +88,11 @@ function extractImportNames(artifactData: unknown): string[] {
       if (Array.isArray(obj.functions)) {
         for (const fn of obj.functions) {
           if (typeof fn === 'string') names.push(fn)
-          else if (fn && typeof fn === 'object' && typeof (fn as Record<string, unknown>).name === 'string') {
+          else if (
+            fn &&
+            typeof fn === 'object' &&
+            typeof (fn as Record<string, unknown>).name === 'string'
+          ) {
             names.push((fn as Record<string, unknown>).name as string)
           }
         }
@@ -140,14 +144,21 @@ function extractSections(artifactData: unknown): Array<{ name: string; size: num
     .filter((s): s is Record<string, unknown> => s !== null && typeof s === 'object')
     .map((s) => ({
       name: String(s.name ?? ''),
-      size: typeof s.size === 'number' ? s.size : typeof s.virtual_size === 'number' ? s.virtual_size : 0,
+      size:
+        typeof s.size === 'number'
+          ? s.size
+          : typeof s.virtual_size === 'number'
+            ? s.virtual_size
+            : 0,
     }))
 }
 
 function extractAttackTechniques(artifactData: unknown): AttackTechnique[] {
   if (!artifactData || typeof artifactData !== 'object') return []
   const data = artifactData as Record<string, unknown>
-  const techniques = (data.techniques ?? data.attack_techniques ?? data.mappings) as unknown[] | undefined
+  const techniques = (data.techniques ?? data.attack_techniques ?? data.mappings) as
+    | unknown[]
+    | undefined
   if (!Array.isArray(techniques)) return []
   return techniques
     .filter((t): t is Record<string, unknown> => t !== null && typeof t === 'object')
@@ -181,9 +192,8 @@ async function loadSampleArtifacts(
 
   if (Array.isArray(evidence)) {
     for (const entry of evidence) {
-      const data = typeof entry.result_json === 'string'
-        ? JSON.parse(entry.result_json)
-        : entry.result_json
+      const data =
+        typeof entry.result_json === 'string' ? JSON.parse(entry.result_json) : entry.result_json
       if (!data) continue
       const family = entry.evidence_family ?? ''
 
@@ -257,9 +267,15 @@ export function createBinaryDiffHandler(
         const resolvedB = await resolvePrimarySamplePath(workspaceManager, input.sample_id_b)
         const rizinResult = await runRizinDiff(resolvedA.samplePath, resolvedB.samplePath)
         if (rizinResult.ok) {
-          rizinResult.functions_modified = rizinResult.functions_modified.slice(0, input.max_functions)
+          rizinResult.functions_modified = rizinResult.functions_modified.slice(
+            0,
+            input.max_functions
+          )
           rizinResult.functions_added = rizinResult.functions_added.slice(0, input.max_functions)
-          rizinResult.functions_removed = rizinResult.functions_removed.slice(0, input.max_functions)
+          rizinResult.functions_removed = rizinResult.functions_removed.slice(
+            0,
+            input.max_functions
+          )
         }
         diffResult.function_diff = rizinResult
         if (rizinResult.warnings) warnings.push(...rizinResult.warnings)

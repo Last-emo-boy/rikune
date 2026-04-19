@@ -8,19 +8,23 @@
 import { z } from 'zod'
 import crypto from 'crypto'
 import type { ToolDefinition, ToolResult } from '../../../types.js'
-import type { MCPServer } from '../../../server.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 
 const inputSchema = z.object({
   sample_id: z.string().describe('Sample ID to generate SBOM for'),
-  format: z.enum(['cyclonedx', 'spdx-lite']).optional().default('cyclonedx').describe('SBOM format (default: cyclonedx)'),
+  format: z
+    .enum(['cyclonedx', 'spdx-lite'])
+    .optional()
+    .default('cyclonedx')
+    .describe('SBOM format (default: cyclonedx)'),
   include_hashes: z.boolean().optional().default(true).describe('Include file hashes'),
 })
 
 export const sbomGenerateToolDefinition: ToolDefinition = {
   name: 'sbom.generate',
-  description: 'Generate a Software Bill of Materials (SBOM) for a binary sample. Extracts component dependencies from PE imports, .NET assemblies, embedded resources, and static analysis results. Output in CycloneDX JSON or SPDX-lite format.',
+  description:
+    'Generate a Software Bill of Materials (SBOM) for a binary sample. Extracts component dependencies from PE imports, .NET assemblies, embedded resources, and static analysis results. Output in CycloneDX JSON or SPDX-lite format.',
   inputSchema: inputSchema as any,
 }
 
@@ -42,10 +46,10 @@ export function createSbomGenerateHandler(
 
     // 1. Query PE imports from the database
     try {
-      const imports = database.querySql(
+      const imports = database.querySql<{ library: string }>(
         'SELECT DISTINCT library FROM pe_imports WHERE sample_id = ?',
         [args.sample_id]
-      ) as Array<{ library: string }>
+      )
 
       for (const imp of imports) {
         components.push({
@@ -60,10 +64,10 @@ export function createSbomGenerateHandler(
 
     // 2. Query .NET assembly references
     try {
-      const refs = database.querySql(
+      const refs = database.querySql<{ name: string; version?: string }>(
         'SELECT DISTINCT name, version FROM dotnet_references WHERE sample_id = ?',
         [args.sample_id]
-      ) as Array<{ name: string; version?: string }>
+      )
 
       for (const ref of refs) {
         components.push({
@@ -79,12 +83,12 @@ export function createSbomGenerateHandler(
 
     // 3. Query string-based dependency evidence
     try {
-      const strings = database.querySql(
+      const strings = database.querySql<{ value: string }>(
         `SELECT DISTINCT value FROM strings_cache WHERE sample_id = ? AND (
           value LIKE '%.dll' OR value LIKE '%.sys' OR value LIKE '%Version=%'
         ) LIMIT 200`,
         [args.sample_id]
-      ) as Array<{ value: string }>
+      )
 
       for (const s of strings) {
         const val = s.value.trim()
@@ -104,10 +108,10 @@ export function createSbomGenerateHandler(
     let sampleHashes: Array<{ alg: string; content: string }> = []
     if (args.include_hashes) {
       try {
-        const hashRow = database.querySql(
+        const hashRow = database.querySql<{ sha256?: string; md5?: string }>(
           'SELECT sha256, md5 FROM samples WHERE id = ?',
           [args.sample_id]
-        ) as Array<{ sha256?: string; md5?: string }>
+        )
 
         if (hashRow.length > 0) {
           if (hashRow[0].sha256) sampleHashes.push({ alg: 'SHA-256', content: hashRow[0].sha256 })
@@ -120,7 +124,7 @@ export function createSbomGenerateHandler(
 
     // Deduplicate components by name
     const seen = new Set<string>()
-    const deduped = components.filter(c => {
+    const deduped = components.filter((c) => {
       const key = `${c.type}:${c.name.toLowerCase()}`
       if (seen.has(key)) return false
       seen.add(key)

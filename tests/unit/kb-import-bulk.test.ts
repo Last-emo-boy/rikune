@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createKbImportBulkHandler, KbImportBulkInputSchema } from '../../src/tools/kb-import-bulk.js'
+import { createKbImportBulkHandler, KbImportBulkInputSchema } from '../../src/plugins/kb-collaboration/tools/kb-import-bulk.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 
@@ -19,12 +19,15 @@ describe('kb.import.bulk tool', () => {
     mockDatabase = {
       findSample: jest.fn(),
       getDb: jest.fn(),
+      querySql: jest.fn().mockReturnValue([]),
+      queryOneSql: jest.fn().mockReturnValue(undefined),
+      runSql: jest.fn(),
     } as unknown as jest.Mocked<DatabaseManager>
   })
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = KbImportBulkInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = KbImportBulkInputSchema.safeParse({ source_type: 'seed' })
       expect(result.success).toBe(true)
     })
 
@@ -34,21 +37,19 @@ describe('kb.import.bulk tool', () => {
     })
 
     test('should reject invalid types', () => {
-      const result = KbImportBulkInputSchema.safeParse({ sample_id: 123 })
+      const result = KbImportBulkInputSchema.safeParse({ source_type: 'invalid' })
       expect(result.success).toBe(false)
     })
   })
 
   describe('Handler', () => {
-    test('should return error for non-existent resource', async () => {
+    test('should return error for missing source_path on capa import', async () => {
       const handler = createKbImportBulkHandler(mockWorkspaceManager, mockDatabase)
 
-      mockDatabase.findSample.mockReturnValue(undefined)
-
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
+      const result = await handler({ source_type: 'capa' })
 
       expect(result.ok).toBe(false)
-      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)
+      expect(result.errors?.[0]).toMatch(/source_path|required/i)
     })
   })
 })

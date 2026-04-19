@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createKbImportHandler, KbImportInputSchema } from '../../src/tools/kb-import.js'
+import { createKbImportHandler, KbImportInputSchema } from '../../src/plugins/kb-collaboration/tools/kb-import.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 
@@ -24,7 +24,7 @@ describe('kb.import tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = KbImportInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = KbImportInputSchema.safeParse({ file_path: '/tmp/kb-export.jsonl' })
       expect(result.success).toBe(true)
     })
 
@@ -34,21 +34,19 @@ describe('kb.import tool', () => {
     })
 
     test('should reject invalid types', () => {
-      const result = KbImportInputSchema.safeParse({ sample_id: 123 })
+      const result = KbImportInputSchema.safeParse({ file_path: 123 })
       expect(result.success).toBe(false)
     })
   })
 
   describe('Handler', () => {
-    test('should return error for non-existent resource', async () => {
+    test('should return error for non-existent file', async () => {
       const handler = createKbImportHandler(mockWorkspaceManager, mockDatabase)
 
-      mockDatabase.findSample.mockReturnValue(undefined)
-
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
+      const result = await handler({ file_path: '/nonexistent/path.jsonl' })
 
       expect(result.ok).toBe(false)
-      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)
+      expect(result.errors?.[0]).toMatch(/failed|not found|ENOENT/i)
     })
   })
 })

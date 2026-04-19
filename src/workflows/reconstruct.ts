@@ -89,135 +89,156 @@ const TOOL_NAME = 'workflow.reconstruct'
 const TOOL_VERSION = '0.1.5'
 const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
-export const ReconstructWorkflowInputSchema = z.object({
-  sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  path: z
-    .enum(['auto', 'native', 'dotnet'])
-    .default('auto')
-    .describe('Routing strategy for reconstruction path'),
-  topk: z
-    .number()
-    .int()
-    .min(1)
-    .max(40)
-    .default(16)
-    .describe('Top-K high-value functions used by export tools'),
-  export_name: z
-    .string()
-    .min(1)
-    .max(64)
-    .optional()
-    .describe('Optional export folder name'),
-  validate_build: z
-    .boolean()
-    .default(true)
-    .describe('For native path, compile the exported C skeleton when clang is available'),
-  run_harness: z
-    .boolean()
-    .default(true)
-    .describe('For native path, execute reconstruct_harness after a successful build'),
-  compiler_path: z
-    .string()
-    .min(1)
-    .max(260)
-    .optional()
-    .describe('Optional explicit clang compiler path for native validation'),
-  build_timeout_ms: z
-    .number()
-    .int()
-    .min(5000)
-    .max(300000)
-    .default(60000)
-    .describe('Timeout for native clang build validation in milliseconds'),
-  run_timeout_ms: z
-    .number()
-    .int()
-    .min(5000)
-    .max(300000)
-    .default(30000)
-    .describe('Timeout for reconstruct_harness execution in milliseconds'),
-  evidence_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('all')
-    .describe('Runtime evidence scope forwarded to downstream reconstruct/export tools'),
-  evidence_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
-  semantic_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('all')
-    .describe('Semantic review artifact scope forwarded to native reconstruct/export tools'),
-  semantic_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional semantic review session selector used when semantic_scope=session or to narrow all/latest results'),
-  compare_evidence_scope: z
-    .enum(['all', 'latest', 'session'])
-    .optional()
-    .describe('Optional baseline runtime evidence scope used to compare this workflow result against another runtime artifact selection'),
-  compare_evidence_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional baseline runtime evidence session selector used when compare_evidence_scope=session'),
-  compare_semantic_scope: z
-    .enum(['all', 'latest', 'session'])
-    .optional()
-    .describe('Optional baseline semantic artifact scope used to compare this workflow result against another naming/explanation selection'),
-  compare_semantic_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional baseline semantic artifact session selector used when compare_semantic_scope=session'),
-  include_preflight: z
-    .boolean()
-    .default(true)
-    .describe('Run binary role and language-specific preflight profiling before planning and export'),
-  auto_recover_function_index: z
-    .boolean()
-    .default(true)
-    .describe('When native function-index coverage is missing, automatically run workflow.function_index_recover before export'),
-  include_plan: z
-    .boolean()
-    .default(true)
-    .describe('Include code.reconstruct.plan stage in the workflow'),
-  include_obfuscation_fallback: z
-    .boolean()
-    .default(true)
-    .describe('When routing to .NET path, generate IL fallback notes when needed'),
-  fallback_on_error: z
-    .boolean()
-    .default(true)
-    .describe('When primary export path fails, automatically try the alternative path'),
-  allow_partial: z
-    .boolean()
-    .default(true)
-    .describe('When all export paths fail, still return runtime/plan as partial output'),
-  depth: AnalysisIntentDepthSchema
-    .default('balanced')
-    .describe('Controls how aggressively safe corroborating recovery backends are auto-selected.'),
-  backend_policy: BackendPolicySchema
-    .default('auto')
-    .describe('Controls whether newer installed backends are auto-preferred, suppressed, or only selected when reconstruction quality is weak.'),
-  allow_transformations: z
-    .boolean()
-    .default(false)
-    .describe('Reserved for future transform-capable reverse workflows. Keep false for normal artifact-first reconstruction.'),
-  reuse_cached: z
-    .boolean()
-    .default(true)
-    .describe('Reuse cached workflow result for identical inputs'),
-})
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
-  })
-  .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
-    message: 'semantic_session_tag is required when semantic_scope=session',
-    path: ['semantic_session_tag'],
+export const ReconstructWorkflowInputSchema = z
+  .object({
+    sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
+    path: z
+      .enum(['auto', 'native', 'dotnet'])
+      .default('auto')
+      .describe('Routing strategy for reconstruction path'),
+    topk: z
+      .number()
+      .int()
+      .min(1)
+      .max(40)
+      .default(16)
+      .describe('Top-K high-value functions used by export tools'),
+    export_name: z.string().min(1).max(64).optional().describe('Optional export folder name'),
+    validate_build: z
+      .boolean()
+      .default(true)
+      .describe('For native path, compile the exported C skeleton when clang is available'),
+    run_harness: z
+      .boolean()
+      .default(true)
+      .describe('For native path, execute reconstruct_harness after a successful build'),
+    compiler_path: z
+      .string()
+      .min(1)
+      .max(260)
+      .optional()
+      .describe('Optional explicit clang compiler path for native validation'),
+    build_timeout_ms: z
+      .number()
+      .int()
+      .min(5000)
+      .max(300000)
+      .default(60000)
+      .describe('Timeout for native clang build validation in milliseconds'),
+    run_timeout_ms: z
+      .number()
+      .int()
+      .min(5000)
+      .max(300000)
+      .default(30000)
+      .describe('Timeout for reconstruct_harness execution in milliseconds'),
+    evidence_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('all')
+      .describe('Runtime evidence scope forwarded to downstream reconstruct/export tools'),
+    evidence_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'
+      ),
+    semantic_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('all')
+      .describe('Semantic review artifact scope forwarded to native reconstruct/export tools'),
+    semantic_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional semantic review session selector used when semantic_scope=session or to narrow all/latest results'
+      ),
+    compare_evidence_scope: z
+      .enum(['all', 'latest', 'session'])
+      .optional()
+      .describe(
+        'Optional baseline runtime evidence scope used to compare this workflow result against another runtime artifact selection'
+      ),
+    compare_evidence_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional baseline runtime evidence session selector used when compare_evidence_scope=session'
+      ),
+    compare_semantic_scope: z
+      .enum(['all', 'latest', 'session'])
+      .optional()
+      .describe(
+        'Optional baseline semantic artifact scope used to compare this workflow result against another naming/explanation selection'
+      ),
+    compare_semantic_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional baseline semantic artifact session selector used when compare_semantic_scope=session'
+      ),
+    include_preflight: z
+      .boolean()
+      .default(true)
+      .describe(
+        'Run binary role and language-specific preflight profiling before planning and export'
+      ),
+    auto_recover_function_index: z
+      .boolean()
+      .default(true)
+      .describe(
+        'When native function-index coverage is missing, automatically run workflow.function_index_recover before export'
+      ),
+    include_plan: z
+      .boolean()
+      .default(true)
+      .describe('Include code.reconstruct.plan stage in the workflow'),
+    include_obfuscation_fallback: z
+      .boolean()
+      .default(true)
+      .describe('When routing to .NET path, generate IL fallback notes when needed'),
+    fallback_on_error: z
+      .boolean()
+      .default(true)
+      .describe('When primary export path fails, automatically try the alternative path'),
+    allow_partial: z
+      .boolean()
+      .default(true)
+      .describe('When all export paths fail, still return runtime/plan as partial output'),
+    depth: AnalysisIntentDepthSchema.default('balanced').describe(
+      'Controls how aggressively safe corroborating recovery backends are auto-selected.'
+    ),
+    backend_policy: BackendPolicySchema.default('auto').describe(
+      'Controls whether newer installed backends are auto-preferred, suppressed, or only selected when reconstruction quality is weak.'
+    ),
+    allow_transformations: z
+      .boolean()
+      .default(false)
+      .describe(
+        'Reserved for future transform-capable reverse workflows. Keep false for normal artifact-first reconstruction.'
+      ),
+    reuse_cached: z
+      .boolean()
+      .default(true)
+      .describe('Reuse cached workflow result for identical inputs'),
   })
   .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()),
+    {
+      message: 'semantic_session_tag is required when semantic_scope=session',
+      path: ['semantic_session_tag'],
+    }
+  )
+  .refine(
     (value) =>
-      value.compare_evidence_scope !== 'session' || Boolean(value.compare_evidence_session_tag?.trim()),
+      value.compare_evidence_scope !== 'session' ||
+      Boolean(value.compare_evidence_session_tag?.trim()),
     {
       message: 'compare_evidence_session_tag is required when compare_evidence_scope=session',
       path: ['compare_evidence_session_tag'],
@@ -225,7 +246,8 @@ export const ReconstructWorkflowInputSchema = z.object({
   )
   .refine(
     (value) =>
-      value.compare_semantic_scope !== 'session' || Boolean(value.compare_semantic_session_tag?.trim()),
+      value.compare_semantic_scope !== 'session' ||
+      Boolean(value.compare_semantic_session_tag?.trim()),
     {
       message: 'compare_semantic_session_tag is required when compare_semantic_scope=session',
       path: ['compare_semantic_session_tag'],
@@ -464,8 +486,13 @@ function buildReconstructCoverage(params: {
     ],
     confidenceByDomain: {
       function_index: params.queued ? 0.2 : 0.7,
-      reconstruction:
-        params.queued ? 0.15 : params.degraded ? 0.45 : params.exportSummary ? 0.78 : 0.4,
+      reconstruction: params.queued
+        ? 0.15
+        : params.degraded
+          ? 0.45
+          : params.exportSummary
+            ? 0.78
+            : 0.4,
       decompilation: params.queued ? 0.1 : params.selectedPath === 'native' ? 0.7 : 0.6,
       dynamic_behavior: params.runHarness ? 0.35 : 0.1,
     },
@@ -476,7 +503,9 @@ function buildReconstructCoverage(params: {
         : null,
     ],
     suspectedFindings: [
-      params.degraded ? 'Primary reconstruction path required degraded or fallback handling.' : null,
+      params.degraded
+        ? 'Primary reconstruction path required degraded or fallback handling.'
+        : null,
       params.stageStatus?.plan === 'failed' ? 'Planning quality was degraded before export.' : null,
     ],
     unverifiedAreas: [
@@ -501,7 +530,8 @@ function buildReconstructCoverage(params: {
             tool: 'sandbox.execute',
             purpose: 'Add bounded runtime confirmation after reconstruction.',
             closes_gaps: ['runtime_verification', 'dynamic_behavior'],
-            expected_coverage_gain: 'Provides execution-oriented evidence that reconstruction alone cannot confirm.',
+            expected_coverage_gain:
+              'Provides execution-oriented evidence that reconstruction alone cannot confirm.',
             cost_tier: 'medium',
           }
         : null,
@@ -509,47 +539,53 @@ function buildReconstructCoverage(params: {
   })
 }
 
-const ReconstructQueuedDataSchema = z.object({
-  job_id: z.string(),
-  status: z.literal('queued'),
-  tool: z.literal(TOOL_NAME),
-  sample_id: z.string(),
-  requested_path: z.enum(['auto', 'native', 'dotnet']),
-  progress: z.number().int().min(0).max(100),
-  polling_guidance: PollingGuidanceSchema.nullable(),
-  result_mode: z.literal('queued'),
-  recommended_next_tools: z.array(z.string()),
-  next_actions: z.array(z.string()),
-}).extend(CoverageEnvelopeSchema.shape).extend(BackendRoutingMetadataSchema.shape)
+const ReconstructQueuedDataSchema = z
+  .object({
+    job_id: z.string(),
+    status: z.literal('queued'),
+    tool: z.literal(TOOL_NAME),
+    sample_id: z.string(),
+    requested_path: z.enum(['auto', 'native', 'dotnet']),
+    progress: z.number().int().min(0).max(100),
+    polling_guidance: PollingGuidanceSchema.nullable(),
+    result_mode: z.literal('queued'),
+    recommended_next_tools: z.array(z.string()),
+    next_actions: z.array(z.string()),
+  })
+  .extend(CoverageEnvelopeSchema.shape)
+  .extend(BackendRoutingMetadataSchema.shape)
 
-const ReconstructCompletedDataSchema = z.object({
-  sample_id: z.string(),
-  selected_path: z.enum(['native', 'dotnet']),
-  degraded: z.boolean(),
-  stage_status: z.object({
-    runtime: z.enum(['ok', 'failed']),
-    preflight_binary_profile: z.enum(['ok', 'failed', 'skipped']),
-    preflight_dll_profile: z.enum(['ok', 'failed', 'skipped']),
-    preflight_com_profile: z.enum(['ok', 'failed', 'skipped']),
-    preflight_rust_profile: z.enum(['ok', 'failed', 'skipped']),
-    function_index_recovery: z.enum(['ok', 'failed', 'skipped']),
-    plan: z.enum(['ok', 'failed', 'skipped']),
-    export_primary: z.enum(['ok', 'failed', 'skipped']),
-    export_fallback: z.enum(['ok', 'failed', 'skipped']),
-  }),
-  provenance: AnalysisProvenanceSchema,
-  selection_diffs: AnalysisSelectionDiffSchema.optional(),
-  ghidra_execution: GhidraExecutionSummarySchema.nullable().optional(),
-  runtime: RuntimeSummarySchema,
-  preflight: PreflightSummarySchema.optional(),
-  plan: PlanSummarySchema.nullable(),
-  export: ExportSummarySchema.nullable(),
-  alternate_backends: AlternateBackendSummarySchema.optional(),
-  notes: z.array(z.string()),
-  result_mode: z.literal('completed'),
-  recommended_next_tools: z.array(z.string()),
-  next_actions: z.array(z.string()),
-}).extend(CoverageEnvelopeSchema.shape).extend(BackendRoutingMetadataSchema.shape)
+const ReconstructCompletedDataSchema = z
+  .object({
+    sample_id: z.string(),
+    selected_path: z.enum(['native', 'dotnet']),
+    degraded: z.boolean(),
+    stage_status: z.object({
+      runtime: z.enum(['ok', 'failed']),
+      preflight_binary_profile: z.enum(['ok', 'failed', 'skipped']),
+      preflight_dll_profile: z.enum(['ok', 'failed', 'skipped']),
+      preflight_com_profile: z.enum(['ok', 'failed', 'skipped']),
+      preflight_rust_profile: z.enum(['ok', 'failed', 'skipped']),
+      function_index_recovery: z.enum(['ok', 'failed', 'skipped']),
+      plan: z.enum(['ok', 'failed', 'skipped']),
+      export_primary: z.enum(['ok', 'failed', 'skipped']),
+      export_fallback: z.enum(['ok', 'failed', 'skipped']),
+    }),
+    provenance: AnalysisProvenanceSchema,
+    selection_diffs: AnalysisSelectionDiffSchema.optional(),
+    ghidra_execution: GhidraExecutionSummarySchema.nullable().optional(),
+    runtime: RuntimeSummarySchema,
+    preflight: PreflightSummarySchema.optional(),
+    plan: PlanSummarySchema.nullable(),
+    export: ExportSummarySchema.nullable(),
+    alternate_backends: AlternateBackendSummarySchema.optional(),
+    notes: z.array(z.string()),
+    result_mode: z.literal('completed'),
+    recommended_next_tools: z.array(z.string()),
+    next_actions: z.array(z.string()),
+  })
+  .extend(CoverageEnvelopeSchema.shape)
+  .extend(BackendRoutingMetadataSchema.shape)
 
 export const ReconstructWorkflowOutputSchema = z.object({
   ok: z.boolean(),
@@ -709,13 +745,11 @@ function pickLatestAnalysisMarker(
   }>,
   predicate: (analysis: { stage: string; backend: string }) => boolean
 ) {
-  const sorted = [...analyses]
-    .filter(predicate)
-    .sort((left, right) => {
-      const leftTs = new Date(left.finished_at || left.started_at || 0).getTime()
-      const rightTs = new Date(right.finished_at || right.started_at || 0).getTime()
-      return rightTs - leftTs
-    })
+  const sorted = [...analyses].filter(predicate).sort((left, right) => {
+    const leftTs = new Date(left.finished_at || left.started_at || 0).getTime()
+    const rightTs = new Date(right.finished_at || right.started_at || 0).getTime()
+    return rightTs - leftTs
+  })
 
   const selected = sorted[0]
   if (!selected) {
@@ -930,14 +964,11 @@ export function createReconstructWorkflowHandler(
     dependencies?.functionIndexRecoverHandler ||
     createFunctionIndexRecoverWorkflowHandler(workspaceManager, database, cacheManager)
   const rizinAnalyzeHandler =
-    dependencies?.rizinAnalyzeHandler ||
-    createRizinAnalyzeHandler(workspaceManager, database)
+    dependencies?.rizinAnalyzeHandler || createRizinAnalyzeHandler(workspaceManager, database)
   const angrAnalyzeHandler =
-    dependencies?.angrAnalyzeHandler ||
-    createAngrAnalyzeHandler(workspaceManager, database)
+    dependencies?.angrAnalyzeHandler || createAngrAnalyzeHandler(workspaceManager, database)
   const retdecDecompileHandler =
-    dependencies?.retdecDecompileHandler ||
-    createRetDecDecompileHandler(workspaceManager, database)
+    dependencies?.retdecDecompileHandler || createRetDecDecompileHandler(workspaceManager, database)
 
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const input = ReconstructWorkflowInputSchema.parse(args)
@@ -1072,7 +1103,9 @@ export function createReconstructWorkflowHandler(
       if (input.path === 'dotnet' && runtimeData?.is_dotnet === false) {
         return {
           ok: false,
-          errors: ['Requested dotnet path, but runtime.detect does not recognize the sample as .NET.'],
+          errors: [
+            'Requested dotnet path, but runtime.detect does not recognize the sample as .NET.',
+          ],
           warnings:
             runtimeData?.suspected && runtimeData.suspected.length > 0
               ? [
@@ -1089,13 +1122,16 @@ export function createReconstructWorkflowHandler(
       }
 
       if (selectedPath === 'native' && runtimeData?.is_dotnet) {
-        warnings.push('Selected native path while runtime indicates .NET; forcing native as requested.')
+        warnings.push(
+          'Selected native path while runtime indicates .NET; forcing native as requested.'
+        )
       }
 
       let analyses = database.findAnalysesBySample(input.sample_id)
       let completedGhidraAnalysis = findBestGhidraAnalysis(analyses, 'function_index')
       const hasReadyGhidraFunctionIndex = Boolean(
-        completedGhidraAnalysis && isGhidraCapabilityReady(completedGhidraAnalysis, 'function_index')
+        completedGhidraAnalysis &&
+        isGhidraCapabilityReady(completedGhidraAnalysis, 'function_index')
       )
       const hasFunctionDefinitionIndex = analyses.some(
         (analysis) => analysis.stage === 'function_definition' && analysis.status === 'done'
@@ -1116,7 +1152,9 @@ export function createReconstructWorkflowHandler(
         })
 
         if (binaryProfileResult.ok && binaryProfileResult.data) {
-          binaryProfileData = binaryProfileResult.data as z.infer<typeof BinaryRoleProfileDataSchema>
+          binaryProfileData = binaryProfileResult.data as z.infer<
+            typeof BinaryRoleProfileDataSchema
+          >
           stageStatus.preflight_binary_profile = 'ok'
         } else {
           stageStatus.preflight_binary_profile = 'failed'
@@ -1126,7 +1164,9 @@ export function createReconstructWorkflowHandler(
         }
 
         if (binaryProfileResult.warnings?.length) {
-          warnings.push(...binaryProfileResult.warnings.map((item) => `binary.role.profile: ${item}`))
+          warnings.push(
+            ...binaryProfileResult.warnings.map((item) => `binary.role.profile: ${item}`)
+          )
         }
         {
           const setupGuidance = collectSetupGuidanceFromWorkerResult(binaryProfileResult)
@@ -1266,7 +1306,9 @@ export function createReconstructWorkflowHandler(
 
         if (functionIndexRecoverResult.warnings?.length) {
           warnings.push(
-            ...functionIndexRecoverResult.warnings.map((item) => `workflow.function_index_recover: ${item}`)
+            ...functionIndexRecoverResult.warnings.map(
+              (item) => `workflow.function_index_recover: ${item}`
+            )
           )
         }
         {
@@ -1279,10 +1321,15 @@ export function createReconstructWorkflowHandler(
         }
       }
 
-      const dynamicEvidence = await loadDynamicTraceEvidence(workspaceManager, database, input.sample_id, {
-        evidenceScope: input.evidence_scope,
-        sessionTag: input.evidence_session_tag,
-      })
+      const dynamicEvidence = await loadDynamicTraceEvidence(
+        workspaceManager,
+        database,
+        input.sample_id,
+        {
+          evidenceScope: input.evidence_scope,
+          sessionTag: input.evidence_session_tag,
+        }
+      )
       const semanticNameIndex = await loadSemanticNameSuggestionIndex(
         workspaceManager,
         database,
@@ -1362,7 +1409,7 @@ export function createReconstructWorkflowHandler(
         )
         selectionDiffs.semantic_names = buildArtifactSelectionDiff(
           'semantic_names',
-          provenance.semantic_names!,
+          provenance.semantic_names,
           buildSemanticArtifactProvenance(
             'semantic naming artifacts',
             baselineSemanticNameIndex,
@@ -1372,7 +1419,7 @@ export function createReconstructWorkflowHandler(
         )
         selectionDiffs.semantic_explanations = buildArtifactSelectionDiff(
           'semantic_explanations',
-          provenance.semantic_explanations!,
+          provenance.semantic_explanations,
           buildSemanticArtifactProvenance(
             'semantic explanation artifacts',
             baselineSemanticExplanationIndex,
@@ -1645,34 +1692,38 @@ export function createReconstructWorkflowHandler(
         stageStatus.export_primary = 'ok'
         exportSummary = primaryExportResult.summary
         artifacts = primaryExportResult.artifacts || []
-        setupActions = mergeSetupActions(setupActions, primaryExportResult.setupGuidance.setupActions)
+        setupActions = mergeSetupActions(
+          setupActions,
+          primaryExportResult.setupGuidance.setupActions
+        )
         requiredUserInputs = mergeRequiredUserInputs(
           requiredUserInputs,
           primaryExportResult.setupGuidance.requiredUserInputs
         )
         if (primaryExportResult.warnings.length > 0) {
           warnings.push(
-            ...primaryExportResult.warnings.map((item) =>
-              `${primaryPath === 'dotnet' ? 'dotnet_export' : 'native_export'}: ${item}`
+            ...primaryExportResult.warnings.map(
+              (item) => `${primaryPath === 'dotnet' ? 'dotnet_export' : 'native_export'}: ${item}`
             )
           )
         }
       } else {
         stageStatus.export_primary = 'failed'
-        setupActions = mergeSetupActions(setupActions, primaryExportResult.setupGuidance.setupActions)
+        setupActions = mergeSetupActions(
+          setupActions,
+          primaryExportResult.setupGuidance.setupActions
+        )
         requiredUserInputs = mergeRequiredUserInputs(
           requiredUserInputs,
           primaryExportResult.setupGuidance.requiredUserInputs
         )
         const primaryExportErrors =
           'errors' in primaryExportResult ? primaryExportResult.errors : ['unknown error']
-        warnings.push(
-          `primary export(${primaryPath}) failed: ${primaryExportErrors.join('; ')}`
-        )
+        warnings.push(`primary export(${primaryPath}) failed: ${primaryExportErrors.join('; ')}`)
         if (primaryExportResult.warnings.length > 0) {
           warnings.push(
-            ...primaryExportResult.warnings.map((item) =>
-              `${primaryPath === 'dotnet' ? 'dotnet_export' : 'native_export'}: ${item}`
+            ...primaryExportResult.warnings.map(
+              (item) => `${primaryPath === 'dotnet' ? 'dotnet_export' : 'native_export'}: ${item}`
             )
           )
         }
@@ -1684,7 +1735,10 @@ export function createReconstructWorkflowHandler(
           stageStatus.export_fallback = 'ok'
           exportSummary = fallbackExportResult.summary
           artifacts = fallbackExportResult.artifacts || []
-          setupActions = mergeSetupActions(setupActions, fallbackExportResult.setupGuidance.setupActions)
+          setupActions = mergeSetupActions(
+            setupActions,
+            fallbackExportResult.setupGuidance.setupActions
+          )
           requiredUserInputs = mergeRequiredUserInputs(
             requiredUserInputs,
             fallbackExportResult.setupGuidance.requiredUserInputs
@@ -1693,14 +1747,18 @@ export function createReconstructWorkflowHandler(
           notes.push(`Primary export path failed; switched to fallback path: ${fallbackPath}.`)
           if (fallbackExportResult.warnings.length > 0) {
             warnings.push(
-              ...fallbackExportResult.warnings.map((item) =>
-                `${fallbackPath === 'dotnet' ? 'dotnet_export' : 'native_export'}: ${item}`
+              ...fallbackExportResult.warnings.map(
+                (item) =>
+                  `${fallbackPath === 'dotnet' ? 'dotnet_export' : 'native_export'}: ${item}`
               )
             )
           }
         } else {
           stageStatus.export_fallback = 'failed'
-          setupActions = mergeSetupActions(setupActions, fallbackExportResult.setupGuidance.setupActions)
+          setupActions = mergeSetupActions(
+            setupActions,
+            fallbackExportResult.setupGuidance.setupActions
+          )
           requiredUserInputs = mergeRequiredUserInputs(
             requiredUserInputs,
             fallbackExportResult.setupGuidance.requiredUserInputs
@@ -1712,8 +1770,9 @@ export function createReconstructWorkflowHandler(
           )
           if (fallbackExportResult.warnings.length > 0) {
             warnings.push(
-              ...fallbackExportResult.warnings.map((item) =>
-                `${fallbackPath === 'dotnet' ? 'dotnet_export' : 'native_export'}: ${item}`
+              ...fallbackExportResult.warnings.map(
+                (item) =>
+                  `${fallbackPath === 'dotnet' ? 'dotnet_export' : 'native_export'}: ${item}`
               )
             )
           }
@@ -1742,9 +1801,13 @@ export function createReconstructWorkflowHandler(
         notes.push('Feasibility is low; treat output as partial semantic reconstruction.')
       }
       if (runtimeData?.is_dotnet) {
-        notes.push('Runtime signal indicates .NET metadata is available for high-fidelity recovery.')
+        notes.push(
+          'Runtime signal indicates .NET metadata is available for high-fidelity recovery.'
+        )
       } else {
-        notes.push('Runtime signal indicates native path; exact original source text is not recoverable.')
+        notes.push(
+          'Runtime signal indicates native path; exact original source text is not recoverable.'
+        )
       }
       if (
         binaryProfileData?.export_dispatch_profile?.likely_dispatch_model &&
@@ -1755,13 +1818,17 @@ export function createReconstructWorkflowHandler(
         )
       }
       if (dllProfileData?.dll_entry_hints.length) {
-        notes.push(`DLL/export preflight hints: ${dllProfileData.dll_entry_hints.slice(0, 3).join(' ')}`)
+        notes.push(
+          `DLL/export preflight hints: ${dllProfileData.dll_entry_hints.slice(0, 3).join(' ')}`
+        )
       }
       if (comProfileData?.likely_com_server) {
         notes.push(`COM preflight suggests activation model: ${comProfileData.activation_model}.`)
       }
       if (binaryProfileData?.host_interaction_profile?.likely_hosted) {
-        notes.push('Binary role preflight suggests the sample is likely hosted as a DLL/plugin/service component.')
+        notes.push(
+          'Binary role preflight suggests the sample is likely hosted as a DLL/plugin/service component.'
+        )
       }
       if (rustProfileData?.suspected_rust) {
         notes.push(
@@ -1813,8 +1880,7 @@ export function createReconstructWorkflowHandler(
             ((!hasReadyGhidraFunctionIndex && !functionIndexRecoveryApplied) ||
               Boolean(
                 functionIndexRecoveryData &&
-                  functionIndexRecoveryData.recovered_function_count <
-                    Math.max(input.topk, 12)
+                functionIndexRecoveryData.recovered_function_count < Math.max(input.topk, 12)
               )),
           degraded_reconstruction:
             selectedPath === 'native' &&
@@ -1827,7 +1893,7 @@ export function createReconstructWorkflowHandler(
             selectedPath === 'native' &&
             Boolean(
               rustProfileData?.suspected_rust &&
-                rustProfileData.recovered_function_count < Math.max(input.topk * 2, 24)
+              rustProfileData.recovered_function_count < Math.max(input.topk * 2, 24)
             ),
         },
       })
@@ -1848,7 +1914,9 @@ export function createReconstructWorkflowHandler(
           })
           if (rizinResult.ok && rizinResult.data) {
             alternateBackends.rizin = summarizeAlternateBackendData(rizinResult.data)
-            notes.push('Rizin corroboration was used because baseline function coverage looked weak.')
+            notes.push(
+              'Rizin corroboration was used because baseline function coverage looked weak.'
+            )
           } else {
             warnings.push(
               `rizin.analyze unavailable: ${(rizinResult.errors || ['unknown error']).join('; ')}`
@@ -1869,7 +1937,9 @@ export function createReconstructWorkflowHandler(
           })
           if (angrResult.ok && angrResult.data) {
             alternateBackends.angr = summarizeAlternateBackendData(angrResult.data)
-            notes.push('angr CFGFast corroboration was used to cross-check weak or ambiguous function discovery.')
+            notes.push(
+              'angr CFGFast corroboration was used to cross-check weak or ambiguous function discovery.'
+            )
           } else {
             warnings.push(
               `angr.analyze unavailable: ${(angrResult.errors || ['unknown error']).join('; ')}`
@@ -1889,7 +1959,9 @@ export function createReconstructWorkflowHandler(
           })
           if (retdecResult.ok && retdecResult.data) {
             alternateBackends.retdec = summarizeAlternateBackendData(retdecResult.data)
-            notes.push('RetDec alternate decompilation was generated because reconstruction quality was degraded.')
+            notes.push(
+              'RetDec alternate decompilation was generated because reconstruction quality was degraded.'
+            )
           } else {
             warnings.push(
               `retdec.decompile unavailable: ${(retdecResult.errors || ['unknown error']).join('; ')}`
@@ -1905,7 +1977,8 @@ export function createReconstructWorkflowHandler(
         }
       }
 
-      const degraded = stageStatus.export_primary !== 'ok' || stageStatus.plan === 'failed' || !exportSummary
+      const degraded =
+        stageStatus.export_primary !== 'ok' || stageStatus.plan === 'failed' || !exportSummary
       const outputData = mergeRoutingMetadata(
         mergeCoverageEnvelope(
           {
@@ -1933,11 +2006,7 @@ export function createReconstructWorkflowHandler(
             alternate_backends: alternateBackends,
             notes,
             result_mode: 'completed' as const,
-            recommended_next_tools: [
-              'artifacts.list',
-              'artifact.read',
-              'code.module.review',
-            ],
+            recommended_next_tools: ['artifacts.list', 'artifact.read', 'code.module.review'],
             next_actions: [
               'Inspect export_root artifacts with artifacts.list or artifact.read.',
               'Use code.module.review or function-level review tools when you want LLM-guided refinement over reconstructed output.',

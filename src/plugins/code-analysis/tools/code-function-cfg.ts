@@ -6,7 +6,12 @@
 
 import { z } from 'zod'
 import type { DatabaseManager } from '../../../database.js'
-import { DecompilerWorker, getGhidraDiagnostics, normalizeGhidraError, type ControlFlowGraph } from '../../../worker/decompiler-worker.js'
+import {
+  DecompilerWorker,
+  getGhidraDiagnostics,
+  normalizeGhidraError,
+  type ControlFlowGraph,
+} from '../../../worker/decompiler-worker.js'
 import { logger } from '../../../logger.js'
 import type { ArtifactRef, ToolDefinition, WorkerResult } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
@@ -58,12 +63,16 @@ export const codeFunctionCFGInputSchema = z
       .enum(['json', 'dot', 'mermaid'])
       .optional()
       .default('json')
-      .describe('Primary graph export format. dot and mermaid return bounded inline previews plus persisted text artifacts.'),
+      .describe(
+        'Primary graph export format. dot and mermaid return bounded inline previews plus persisted text artifacts.'
+      ),
     render: z
       .enum(['none', 'svg', 'png'])
       .optional()
       .default('none')
-      .describe('Optional rendered artifact format. Rendered SVG/PNG is written to an artifact and never inlined.'),
+      .describe(
+        'Optional rendered artifact format. Rendered SVG/PNG is written to an artifact and never inlined.'
+      ),
     preview_max_chars: z
       .number()
       .int()
@@ -100,7 +109,9 @@ export const codeFunctionCFGInputSchema = z
       .max(2)
       .optional()
       .default(1)
-      .describe('Depth for the bounded local call-relationship preview when include_call_relationships=true.'),
+      .describe(
+        'Depth for the bounded local call-relationship preview when include_call_relationships=true.'
+      ),
     call_relationship_limit: z
       .number()
       .int()
@@ -113,11 +124,15 @@ export const codeFunctionCFGInputSchema = z
       .boolean()
       .optional()
       .default(true)
-      .describe('Persist full graph text and rendered outputs as artifacts. Recommended for artifact-first workflows.'),
+      .describe(
+        'Persist full graph text and rendered outputs as artifacts. Recommended for artifact-first workflows.'
+      ),
     session_tag: z
       .string()
       .optional()
-      .describe('Optional graph artifact session tag used to group CFG exports under one reports/graphs/<tag> path.'),
+      .describe(
+        'Optional graph artifact session tag used to group CFG exports under one reports/graphs/<tag> path.'
+      ),
   })
   .superRefine((data, ctx) => {
     if (!data.address && !data.symbol) {
@@ -272,7 +287,10 @@ function buildSummary(
   return `${base} Local call-relationship preview surfaced ${callGraph.nodes.length} node(s) and ${callGraph.edges.length} edge(s) with depth=${callGraph.depth} and limit=${callGraph.limit}.`
 }
 
-function buildNextActions(input: CodeFunctionCFGInput, renderStatus: 'not_requested' | 'rendered' | 'unavailable') {
+function buildNextActions(
+  input: CodeFunctionCFGInput,
+  renderStatus: 'not_requested' | 'rendered' | 'unavailable'
+) {
   const actions = [
     'Use artifact.read on artifact_refs.primary_graph when you need the complete graph text instead of the bounded preview.',
     input.include_call_relationships
@@ -292,7 +310,10 @@ function buildNextActions(input: CodeFunctionCFGInput, renderStatus: 'not_reques
   return actions
 }
 
-function buildRenderGuidance(render: CFGRenderFormat, availability: GraphvizAvailability | null): string[] | undefined {
+function buildRenderGuidance(
+  render: CFGRenderFormat,
+  availability: GraphvizAvailability | null
+): string[] | undefined {
   if (render === 'none') {
     return undefined
   }
@@ -301,7 +322,9 @@ function buildRenderGuidance(render: CFGRenderFormat, availability: GraphvizAvai
   }
   return [
     'Graphviz dot is unavailable, so the server returned text graph exports only.',
-    availability.error ? `Renderer probe error: ${availability.error}` : 'Renderer backend was not detected.',
+    availability.error
+      ? `Renderer probe error: ${availability.error}`
+      : 'Renderer backend was not detected.',
     'Install Graphviz to enable artifact-first SVG or PNG rendering.',
   ]
 }
@@ -326,7 +349,8 @@ export function createCodeFunctionCFGHandler(
   database: DatabaseManager,
   dependencies: CodeFunctionCFGDependencies = {}
 ): (args: unknown) => Promise<WorkerResult> {
-  const detectRendererAvailability = dependencies.detectRendererAvailability || detectGraphvizAvailability
+  const detectRendererAvailability =
+    dependencies.detectRendererAvailability || detectGraphvizAvailability
   const persistArtifactImpl = dependencies.persistGraphArtifact || persistGraphArtifact
   const renderArtifactImpl = dependencies.renderGraphvizArtifact || renderGraphvizArtifact
 
@@ -378,14 +402,19 @@ export function createCodeFunctionCFGHandler(
       const artifacts: ArtifactRef[] = []
       let primaryGraphArtifact: ArtifactRef | undefined
       if (input.persist_artifacts !== false) {
-        primaryGraphArtifact = await persistArtifactImpl(workspaceManager, database, primaryExport.text, {
-          sampleId: input.sample_id,
-          functionName: cfg.function,
-          functionAddress: cfg.address,
-          format: input.format,
-          scope: 'cfg',
-          sessionTag: input.session_tag,
-        })
+        primaryGraphArtifact = await persistArtifactImpl(
+          workspaceManager,
+          database,
+          primaryExport.text,
+          {
+            sampleId: input.sample_id,
+            functionName: cfg.function,
+            functionAddress: cfg.address,
+            format: input.format,
+            scope: 'cfg',
+            sessionTag: input.session_tag,
+          }
+        )
         artifacts.push(primaryGraphArtifact)
       }
 
@@ -407,9 +436,21 @@ export function createCodeFunctionCFGHandler(
         | undefined
 
       if (input.include_call_relationships) {
-        const functions = typeof database.findFunctions === 'function' ? database.findFunctions(input.sample_id) : []
-        callGraph = buildLocalCallGraphPreview(functions, cfg, input.call_relationship_depth, input.call_relationship_limit)
-        const callExport = buildLocalCallGraphExport(callGraph, input.format, input.preview_max_chars)
+        const functions =
+          typeof database.findFunctions === 'function'
+            ? database.findFunctions(input.sample_id)
+            : []
+        callGraph = buildLocalCallGraphPreview(
+          functions,
+          cfg,
+          input.call_relationship_depth,
+          input.call_relationship_limit
+        )
+        const callExport = buildLocalCallGraphExport(
+          callGraph,
+          input.format,
+          input.preview_max_chars
+        )
 
         if (input.persist_artifacts !== false) {
           callRelationshipArtifact = await persistArtifactImpl(
@@ -536,7 +577,11 @@ export function createCodeFunctionCFGHandler(
                 ]
               : []),
           ],
-          recommended_next_tools: ['artifact.read', 'code.function.decompile', 'workflow.reconstruct'],
+          recommended_next_tools: [
+            'artifact.read',
+            'code.function.decompile',
+            'workflow.reconstruct',
+          ],
         },
         graph_summary: graphSummary,
         preview: primaryExport.preview,
@@ -557,12 +602,18 @@ export function createCodeFunctionCFGHandler(
           backend: rendererAvailability?.backend || null,
           available: rendererAvailability?.available || input.render === 'none',
           ...(renderArtifact ? { artifact: renderArtifact } : {}),
-          ...((renderGuidance || buildRenderGuidance(input.render, rendererAvailability))
-            ? { guidance: renderGuidance || buildRenderGuidance(input.render, rendererAvailability) }
+          ...(renderGuidance || buildRenderGuidance(input.render, rendererAvailability)
+            ? {
+                guidance: renderGuidance || buildRenderGuidance(input.render, rendererAvailability),
+              }
             : {}),
         },
         summary: buildSummary(graphSummary, input.format, callGraph),
-        recommended_next_tools: ['artifact.read', 'code.function.decompile', 'workflow.reconstruct'],
+        recommended_next_tools: [
+          'artifact.read',
+          'code.function.decompile',
+          'workflow.reconstruct',
+        ],
         next_actions: buildNextActions(input, renderStatus),
       }
 

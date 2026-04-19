@@ -7,34 +7,62 @@
 import { accessSync } from 'fs'
 import type { Plugin } from '../sdk.js'
 import {
-  apkStructureAnalyzeToolDefinition, createApkStructureAnalyzeHandler,
+  apkStructureAnalyzeToolDefinition,
+  createApkStructureAnalyzeHandler,
 } from './tools/apk-structure-analyze.js'
+import { dexDecompileToolDefinition, createDexDecompileHandler } from './tools/dex-decompile.js'
 import {
-  dexDecompileToolDefinition, createDexDecompileHandler,
-} from './tools/dex-decompile.js'
-import {
-  dexClassesListToolDefinition, createDexClassesListHandler,
+  dexClassesListToolDefinition,
+  createDexClassesListHandler,
 } from './tools/dex-classes-list.js'
 import {
-  apkPackerDetectToolDefinition, createApkPackerDetectHandler,
+  apkPackerDetectToolDefinition,
+  createApkPackerDetectHandler,
 } from './tools/apk-packer-detect.js'
 
 const androidPlugin: Plugin = {
   id: 'android',
   name: 'Android / APK Analysis',
-  surfaceRules: { tier: 1, activateOn: { fileTypes: ['apk', 'android', 'dex'] }, category: 'android-analysis' },
+  executionDomain: 'static',
+  surfaceRules: {
+    tier: 1,
+    activateOn: { fileTypes: ['apk', 'android', 'dex'] },
+    category: 'android-analysis',
+  },
   description: 'APK manifest extraction, DEX decompilation, and packer detection',
   version: '1.0.0',
   configSchema: [
-    { envVar: 'JADX_PATH', description: 'Path to jadx binary for DEX decompilation', required: false, defaultValue: '/opt/jadx/bin/jadx' },
+    {
+      envVar: 'JADX_PATH',
+      description: 'Path to jadx binary for DEX decompilation',
+      required: false,
+      defaultValue: '/opt/jadx/bin/jadx',
+    },
   ],
   systemDeps: [
-    { type: 'file', name: 'JADX', target: '$JADX_PATH', envVar: 'JADX_PATH', dockerDefault: '/opt/jadx/bin/jadx', required: true, description: 'JADX DEX/APK decompiler', dockerInstall: 'Download jadx release to /opt/jadx', dockerFeature: 'jadx', dockerValidation: ['jadx --version >/dev/null 2>&1'], buildArgs: { JADX_VERSION: '1.5.1' } },
+    {
+      type: 'file',
+      name: 'JADX',
+      target: '$JADX_PATH',
+      envVar: 'JADX_PATH',
+      dockerDefault: '/opt/jadx/bin/jadx',
+      required: true,
+      description: 'JADX DEX/APK decompiler',
+      dockerInstall: 'Download jadx release to /opt/jadx',
+      dockerFeature: 'jadx',
+      dockerValidation: ['jadx --version >/dev/null 2>&1'],
+      buildArgs: { JADX_VERSION: '1.5.1' },
+    },
   ],
   resources: { workers: 'workers', scripts: 'scripts' },
   check() {
     const jadx = process.env.JADX_PATH ?? '/opt/jadx/bin/jadx'
-    try { accessSync(jadx); return true } catch { return false }
+    try {
+      accessSync(jadx)
+      return true
+    } catch {
+      return false
+    }
   },
   register(server, deps) {
     server.registerTool(apkStructureAnalyzeToolDefinition, createApkStructureAnalyzeHandler(deps))

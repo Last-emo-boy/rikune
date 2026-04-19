@@ -37,10 +37,7 @@ export const EntropyAnalyzeInputSchema = z.object({
     .max(8.0)
     .default(7.2)
     .describe('Threshold for marking high-entropy regions (0-8 scale)'),
-  force_refresh: z
-    .boolean()
-    .default(false)
-    .describe('Bypass cache lookup'),
+  force_refresh: z.boolean().default(false).describe('Bypass cache lookup'),
 })
 
 export type EntropyAnalyzeInput = z.infer<typeof EntropyAnalyzeInputSchema>
@@ -116,7 +113,10 @@ export function createEntropyAnalyzeHandler(
         sampleSha256: sample.sha256,
         toolName: TOOL_NAME,
         toolVersion: TOOL_VERSION,
-        args: { block_size: input.block_size, high_entropy_threshold: input.high_entropy_threshold },
+        args: {
+          block_size: input.block_size,
+          high_entropy_threshold: input.high_entropy_threshold,
+        },
       })
 
       if (!input.force_refresh) {
@@ -160,10 +160,17 @@ export function createEntropyAnalyzeHandler(
       const artifacts: ArtifactRef[] = []
       try {
         const artifact = await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, input.sample_id, 'entropy_analysis', 'entropy', { tool: TOOL_NAME, data }
+          workspaceManager,
+          database,
+          input.sample_id,
+          'entropy_analysis',
+          'entropy',
+          { tool: TOOL_NAME, data }
         )
         artifacts.push(artifact)
-      } catch { /* best effort */ }
+      } catch {
+        /* best effort */
+      }
 
       return {
         ok: true,

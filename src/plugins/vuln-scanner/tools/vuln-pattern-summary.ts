@@ -4,7 +4,7 @@
 
 import { z } from 'zod'
 import fs from 'fs/promises'
-import type { ToolDefinition, ToolArgs, WorkerResult , PluginToolDeps} from '../../sdk.js'
+import type { ToolDefinition, ToolArgs, WorkerResult, PluginToolDeps } from '../../sdk.js'
 import type { VulnScanResult, VulnFinding } from '../vuln-patterns.js'
 
 // ============================================================================
@@ -44,10 +44,7 @@ export const vulnPatternSummaryToolDefinition: ToolDefinition = {
 // Handler
 // ============================================================================
 
-function buildSummary(
-  scanResult: VulnScanResult,
-  topN: number
-): Record<string, unknown> {
+function buildSummary(scanResult: VulnScanResult, topN: number): Record<string, unknown> {
   // CWE breakdown
   const cweBreakdown = Object.entries(scanResult.cwe_counts)
     .sort((a, b) => b[1] - a[1])
@@ -69,9 +66,14 @@ function buildSummary(
   for (const f of scanResult.findings) {
     const key = f.function_address
     if (!functionRisk.has(key)) {
-      functionRisk.set(key, { name: f.function_name, address: f.function_address, findings: [], risk_score: 0 })
+      functionRisk.set(key, {
+        name: f.function_name,
+        address: f.function_address,
+        findings: [],
+        risk_score: 0,
+      })
     }
-    const entry = functionRisk.get(key)!
+    const entry = functionRisk.get(key)
     entry.findings.push(f)
     const severityWeight: Record<string, number> = { critical: 10, high: 5, medium: 2, low: 1 }
     entry.risk_score += (severityWeight[f.severity] ?? 1) * f.confidence
@@ -86,13 +88,10 @@ function buildSummary(
       risk_score: Math.round(f.risk_score * 100) / 100,
       finding_count: f.findings.length,
       cwe_list: [...new Set(f.findings.map((x) => x.cwe))],
-      top_severity: f.findings.reduce(
-        (worst, cur) => {
-          const order: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
-          return (order[cur.severity] ?? 4) < (order[worst] ?? 4) ? cur.severity : worst
-        },
-        'low' as string
-      ),
+      top_severity: f.findings.reduce((worst, cur) => {
+        const order: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+        return (order[cur.severity] ?? 4) < (order[worst] ?? 4) ? cur.severity : worst
+      }, 'low' as string),
     }))
 
   // Overall risk assessment

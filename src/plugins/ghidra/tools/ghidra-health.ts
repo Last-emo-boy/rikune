@@ -32,7 +32,9 @@ export const ghidraHealthInputSchema = z.object({
     .min(1000)
     .nullable()
     .optional()
-    .describe('Optional stale-analysis reap threshold in milliseconds. Omit or null to disable auto-reaping.'),
+    .describe(
+      'Optional stale-analysis reap threshold in milliseconds. Omit or null to disable auto-reaping.'
+    ),
 })
 
 export type GhidraHealthInput = z.infer<typeof ghidraHealthInputSchema>
@@ -92,12 +94,18 @@ function selectProbeAnalysis(
   }
 
   if (sampleId) {
-    const selected = findBestGhidraAnalysis(database.findAnalysesBySample(sampleId), 'function_index')
+    const selected = findBestGhidraAnalysis(
+      database.findAnalysesBySample(sampleId),
+      'function_index'
+    )
     return selected ? { sampleId, analysis: selected } : null
   }
 
   for (const sample of database.findRecentSamples(50)) {
-    const selected = findBestGhidraAnalysis(database.findAnalysesBySample(sample.id), 'function_index')
+    const selected = findBestGhidraAnalysis(
+      database.findAnalysesBySample(sample.id),
+      'function_index'
+    )
     if (selected) {
       return { sampleId: sample.id, analysis: selected }
     }
@@ -119,8 +127,9 @@ function selectProbeTarget(
     readiness.decompile.target ||
     readiness.cfg.target ||
     metadata.end_to_end_probe?.target ||
-    database.findFunctions(sampleId).find((func: any) => typeof func.address === 'string' && func.address.length > 0)
-      ?.address
+    database
+      .findFunctions(sampleId)
+      .find((func: any) => typeof func.address === 'string' && func.address.length > 0)?.address
   )
 }
 
@@ -143,12 +152,14 @@ export function createGhidraHealthHandler(
     buildPyGhidraSetupActions,
     mergeRequiredUserInputs,
     mergeSetupActions,
-  } = deps;
+  } = deps
 
   const runHealthCheck = dependencies?.checkGhidra || checkGhidraHealth
   const decompilerWorker =
     dependencies?.decompilerWorker ||
-    (workspaceManager && database && DecompilerWorker ? new DecompilerWorker(database, workspaceManager) : undefined)
+    (workspaceManager && database && DecompilerWorker
+      ? new DecompilerWorker(database, workspaceManager)
+      : undefined)
 
   return async (args: unknown): Promise<ToolResult> => {
     try {
@@ -160,7 +171,11 @@ export function createGhidraHealthHandler(
       let requiredUserInputs = [] as any[]
 
       if (!result.ok) {
-        setupActions = mergeSetupActions(setupActions, buildJavaSetupActions(), buildGhidraSetupActions())
+        setupActions = mergeSetupActions(
+          setupActions,
+          buildJavaSetupActions(),
+          buildGhidraSetupActions()
+        )
         requiredUserInputs = mergeRequiredUserInputs(
           requiredUserInputs,
           buildJavaRequiredUserInputs(),
@@ -226,7 +241,13 @@ export function createGhidraHealthHandler(
         } else {
           const readiness = getGhidraReadiness(probeSelection.analysis)
           const metadata = parseGhidraAnalysisMetadata(probeSelection.analysis.output_json)
-          const target = selectProbeTarget(database, getGhidraReadiness, parseGhidraAnalysisMetadata, probeSelection.sampleId, probeSelection.analysis)
+          const target = selectProbeTarget(
+            database,
+            getGhidraReadiness,
+            parseGhidraAnalysisMetadata,
+            probeSelection.sampleId,
+            probeSelection.analysis
+          )
 
           downstream = {
             attempted: true,

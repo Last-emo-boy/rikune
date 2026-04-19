@@ -10,15 +10,15 @@ import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
-import { normalizeError } from '../utils/shared-helpers.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
-import { pythonProcessPool } from '../worker/python-process-pool.js'
-import { checkGhidraHealth, type GhidraHealthStatus } from '../ghidra/ghidra-config.js'
 import { resolvePackagePath } from '../runtime-paths.js'
 import { lookupCachedResult } from './cache-observability.js'
 import { resolveAnalysisBackends } from '../static-backend-discovery.js'
+import { getPythonCommand, normalizeError } from '../utils/shared-helpers.js'
+import { pythonProcessPool } from '../worker/python-process-pool.js'
+import { checkGhidraHealth, type GhidraHealthStatus } from '../ghidra/ghidra-config.js'
 import {
   RequiredUserInputSchema,
   SetupActionSchema,
@@ -72,10 +72,7 @@ export const SystemHealthInputSchema = z.object({
     .max(120000)
     .default(10000)
     .describe('Timeout for each external probe in milliseconds'),
-  include_ghidra: z
-    .boolean()
-    .default(true)
-    .describe('Include ghidra.health probe'),
+  include_ghidra: z.boolean().default(true).describe('Include ghidra.health probe'),
   include_static_worker: z
     .boolean()
     .default(true)
@@ -108,6 +105,16 @@ export const SystemHealthOutputSchema = z.object({
       preferred_primary_tools: z.array(z.string()),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
+      runtime_status: z
+        .object({
+          status: z.enum(['healthy', 'degraded', 'unhealthy', 'unavailable']).optional(),
+          ok: z.boolean().optional(),
+          mode: z.string().optional(),
+          endpoint: z.string().optional(),
+          isolation: z.string().optional(),
+          dynamic_tools_ready: z.boolean().optional(),
+        })
+        .optional(),
     })
     .optional(),
   warnings: z.array(z.string()).optional(),
@@ -161,12 +168,15 @@ interface SystemHealthDependencies {
   checkGhidra?: (timeoutMs: number) => GhidraHealthStatus
   probeStaticWorker?: (timeoutMs: number) => Promise<StaticWorkerHealthData>
   cacheManager?: CacheManager
+  runtimeClient?: {
+    health(): Promise<{ ok?: boolean; isolation?: string; role?: string } | null>
+  } | null
 }
 
 async function callStaticWorkerHealth(timeoutMs: number): Promise<StaticWorkerHealthData> {
   return new Promise((resolve, reject) => {
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
-    const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+    const pythonCommand = getPythonCommand()
     const processTimeoutMs = Math.max(timeoutMs, 2000)
 
     const pythonProcess = spawn(pythonCommand, [workerPath], {
@@ -285,6 +295,7 @@ export function createSystemHealthHandler(
   const runGhidraCheck = dependencies?.checkGhidra || checkGhidraHealth
   const runStaticWorkerProbe = dependencies?.probeStaticWorker || callStaticWorkerHealth
   const cacheManager = dependencies?.cacheManager
+  const runtimeClient = dependencies?.runtimeClient
 
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const input = SystemHealthInputSchema.parse(args)
@@ -357,7 +368,10 @@ export function createSystemHealthHandler(
             )
             setupActions = mergeSetupActions(setupActions, buildPyGhidraSetupActions())
           }
-          if (ghidraStatus.checks?.java_available === false || ghidraStatus.checks?.java_version_ok === false) {
+          if (
+            ghidraStatus.checks?.java_available === false ||
+            ghidraStatus.checks?.java_version_ok === false
+          ) {
             recommendations.push(
               'Install/configure Java 21+ and set JAVA_HOME before retrying Ghidra workloads.'
             )
@@ -368,8 +382,14 @@ export function createSystemHealthHandler(
             )
           }
           if (!ghidraStatus.ok) {
-            recommendations.push('Fix Ghidra install path or launch check before decompiler workloads.')
-            setupActions = mergeSetupActions(setupActions, buildJavaSetupActions(), buildGhidraSetupActions())
+            recommendations.push(
+              'Fix Ghidra install path or launch check before decompiler workloads.'
+            )
+            setupActions = mergeSetupActions(
+              setupActions,
+              buildJavaSetupActions(),
+              buildGhidraSetupActions()
+            )
             requiredUserInputs = mergeRequiredUserInputs(
               requiredUserInputs,
               buildJavaRequiredUserInputs(),
@@ -522,7 +542,9 @@ export function createSystemHealthHandler(
               )
             }
             if (!fridaAvailable) {
-              recommendations.push('Install frida and frida-tools for runtime API tracing and dynamic instrumentation.')
+              recommendations.push(
+                'Install frida and frida-tools for runtime API tracing and dynamic instrumentation.'
+              )
               setupActions = mergeSetupActions(setupActions, buildFridaSetupActions())
               requiredUserInputs = mergeRequiredUserInputs(
                 requiredUserInputs,
@@ -530,19 +552,27 @@ export function createSystemHealthHandler(
               )
             }
             if (!analysisBackends.graphviz.available) {
-              recommendations.push('Install Graphviz dot to enable SVG and PNG CFG rendering artifacts.')
+              recommendations.push(
+                'Install Graphviz dot to enable SVG and PNG CFG rendering artifacts.'
+              )
             }
             if (!analysisBackends.rizin.available) {
-              recommendations.push('Install or configure Rizin for lightweight fallback disassembly and graph workflows.')
+              recommendations.push(
+                'Install or configure Rizin for lightweight fallback disassembly and graph workflows.'
+              )
             }
             if (!analysisBackends.yara_x.available) {
-              recommendations.push('Install YARA-X alongside legacy YARA to prepare for newer rule-engine workflows.')
+              recommendations.push(
+                'Install YARA-X alongside legacy YARA to prepare for newer rule-engine workflows.'
+              )
             }
             if (!analysisBackends.upx.available) {
               recommendations.push('Install UPX for common packed-sample helper workflows.')
             }
             if (!analysisBackends.wine.available || !analysisBackends.winedbg.available) {
-              recommendations.push('Install Wine plus winedbg for Linux-hosted Windows user-mode execution and debugger-style troubleshooting.')
+              recommendations.push(
+                'Install Wine plus winedbg for Linux-hosted Windows user-mode execution and debugger-style troubleshooting.'
+              )
             }
             if (!analysisBackends.qiling.available) {
               recommendations.push('Install Qiling for automated Windows API emulation workflows.')
@@ -552,13 +582,19 @@ export function createSystemHealthHandler(
               )
             }
             if (!analysisBackends.angr.available) {
-              recommendations.push('Install angr in an isolated Python environment and set ANGR_PYTHON for advanced CFG and path exploration workflows.')
+              recommendations.push(
+                'Install angr in an isolated Python environment and set ANGR_PYTHON for advanced CFG and path exploration workflows.'
+              )
             }
             if (!analysisBackends.panda.available) {
-              recommendations.push('Install pandare/PANDA bindings if you need record/replay-oriented dynamic workflows.')
+              recommendations.push(
+                'Install pandare/PANDA bindings if you need record/replay-oriented dynamic workflows.'
+              )
             }
             if (!analysisBackends.retdec.available) {
-              recommendations.push('Install RetDec as an artifact-first heavy decompiler backend for alternate native lifting workflows.')
+              recommendations.push(
+                'Install RetDec as an artifact-first heavy decompiler backend for alternate native lifting workflows.'
+              )
             }
           }
         } catch (error) {
@@ -570,7 +606,9 @@ export function createSystemHealthHandler(
               external_backends: resolveAnalysisBackends(),
             },
           }
-          recommendations.push('Fix Python runtime or static worker startup to avoid analysis outages.')
+          recommendations.push(
+            'Fix Python runtime or static worker startup to avoid analysis outages.'
+          )
           setupActions = mergeSetupActions(
             setupActions,
             buildBaselinePythonSetupActions(),
@@ -644,7 +682,9 @@ export function createSystemHealthHandler(
                   error: 'cache probe write/read failed',
                   details: { probe_key: probeKey },
                 }
-                recommendations.push('Investigate cache read/write path; probe key was not retrievable.')
+                recommendations.push(
+                  'Investigate cache read/write path; probe key was not retrievable.'
+                )
               } else {
                 const metadata = cachedLookup.metadata
                 const sampleStateConsistent =
@@ -693,11 +733,50 @@ export function createSystemHealthHandler(
         }
       }
 
+      let runtimeStatus: z.infer<typeof SystemHealthOutputSchema>['data']['runtime_status'] = {
+        status: 'unavailable',
+        ok: false,
+        dynamic_tools_ready: false,
+      }
+      if (runtimeClient) {
+        try {
+          const rtHealth = await runtimeClient.health()
+          if (rtHealth && rtHealth.ok) {
+            runtimeStatus = {
+              status: 'healthy',
+              ok: true,
+              isolation: rtHealth.isolation,
+              dynamic_tools_ready: true,
+            }
+            if (rtHealth.isolation === 'unverified') {
+              warnings.push(
+                'Runtime node reports unverified isolation. Ensure the runtime is running inside a virtual machine (Windows Sandbox / Hyper-V / VMware).'
+              )
+            }
+          } else {
+            runtimeStatus = {
+              status: 'degraded',
+              ok: false,
+              dynamic_tools_ready: false,
+            }
+          }
+        } catch (err) {
+          runtimeStatus = {
+            status: 'unhealthy',
+            ok: false,
+            dynamic_tools_ready: false,
+          }
+        }
+      }
+
       const essentialUnhealthy =
         workspaceComponent.status === 'unhealthy' || databaseComponent.status === 'unhealthy'
-      const optionalIssues = [ghidraComponent, staticWorkerComponent, cacheComponent].some(
-        (item) => item.status === 'degraded' || item.status === 'unhealthy'
-      )
+      const optionalIssues =
+        [ghidraComponent, staticWorkerComponent, cacheComponent].some(
+          (item) => item.status === 'degraded' || item.status === 'unhealthy'
+        ) ||
+        runtimeStatus?.status === 'degraded' ||
+        runtimeStatus?.status === 'unhealthy'
 
       const overallStatus: 'healthy' | 'degraded' | 'unhealthy' = essentialUnhealthy
         ? 'unhealthy'
@@ -736,6 +815,7 @@ export function createSystemHealthHandler(
             static_worker: staticWorkerComponent,
             cache: cacheComponent,
           },
+          runtime_status: runtimeStatus,
           cache_observability: cacheObservability,
           python_process_pool: pythonProcessPool.getStats(),
           recommendations,

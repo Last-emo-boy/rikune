@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createCodeModuleReviewApplyHandler, codeModuleReviewApplyInputSchema } from '../../src/tools/code-module-review-apply.js'
+import { createCodeModuleReviewApplyHandler, codeModuleReviewApplyInputSchema } from '../../src/plugins/code-analysis/tools/code-module-review-apply.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 
@@ -24,7 +24,7 @@ describe('code.module.review.apply tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = codeModuleReviewApplyInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = codeModuleReviewApplyInputSchema.safeParse({ sample_id: 'sha256:abc123def456', reviews: [{ module_name: 'main', summary: 'test', confidence: 0.9 }] })
       expect(result.success).toBe(true)
     })
 

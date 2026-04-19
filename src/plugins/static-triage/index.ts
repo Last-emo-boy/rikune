@@ -6,65 +6,139 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { analysisContextLinkToolDefinition, createAnalysisContextLinkHandler } from './tools/analysis-context-link.js'
+import {
+  analysisContextLinkToolDefinition,
+  createAnalysisContextLinkHandler,
+} from './tools/analysis-context-link.js'
 import { runtimeDetectToolDefinition, createRuntimeDetectHandler } from './tools/runtime-detect.js'
-import { dotNetMetadataExtractToolDefinition, createDotNetMetadataExtractHandler } from './tools/dotnet-metadata-extract.js'
-import { dotNetTypesListToolDefinition, createDotNetTypesListHandler } from './tools/dotnet-types-list.js'
+import {
+  dotNetMetadataExtractToolDefinition,
+  createDotNetMetadataExtractHandler,
+} from './tools/dotnet-metadata-extract.js'
+import {
+  dotNetTypesListToolDefinition,
+  createDotNetTypesListHandler,
+} from './tools/dotnet-types-list.js'
 import { packerDetectToolDefinition, createPackerDetectHandler } from './tools/packer-detect.js'
-import { staticCapabilityTriageToolDefinition, createStaticCapabilityTriageHandler } from './tools/static-capability-triage.js'
-import { compilerPackerDetectToolDefinition, createCompilerPackerDetectHandler } from './tools/compiler-packer-detect.js'
-import { binaryRoleProfileToolDefinition, createBinaryRoleProfileHandler } from './tools/binary-role-profile.js'
-import { cryptoIdentifyToolDefinition, createCryptoIdentifyHandler } from './tools/crypto-identify.js'
-import { breakpointSmartToolDefinition, createBreakpointSmartHandler } from './tools/breakpoint-smart.js'
-import { traceConditionToolDefinition, createTraceConditionHandler } from './tools/trace-condition.js'
-import { dllExportProfileToolDefinition, createDllExportProfileHandler } from './tools/dll-export-profile.js'
-import { comRoleProfileToolDefinition, createComRoleProfileHandler } from './tools/com-role-profile.js'
-import { rustBinaryAnalyzeToolDefinition, createRustBinaryAnalyzeHandler } from './tools/rust-binary-analyze.js'
-import { entropyAnalyzeToolDefinition, createEntropyAnalyzeHandler } from './tools/entropy-analyze.js'
-import { obfuscationDetectToolDefinition, createObfuscationDetectHandler } from './tools/obfuscation-detect.js'
+import {
+  staticCapabilityTriageToolDefinition,
+  createStaticCapabilityTriageHandler,
+} from './tools/static-capability-triage.js'
+import {
+  compilerPackerDetectToolDefinition,
+  createCompilerPackerDetectHandler,
+} from './tools/compiler-packer-detect.js'
+import {
+  binaryRoleProfileToolDefinition,
+  createBinaryRoleProfileHandler,
+} from './tools/binary-role-profile.js'
+import {
+  cryptoIdentifyToolDefinition,
+  createCryptoIdentifyHandler,
+} from './tools/crypto-identify.js'
+import {
+  breakpointSmartToolDefinition,
+  createBreakpointSmartHandler,
+} from './tools/breakpoint-smart.js'
+import {
+  traceConditionToolDefinition,
+  createTraceConditionHandler,
+} from './tools/trace-condition.js'
+import {
+  dllExportProfileToolDefinition,
+  createDllExportProfileHandler,
+} from './tools/dll-export-profile.js'
+import {
+  comRoleProfileToolDefinition,
+  createComRoleProfileHandler,
+} from './tools/com-role-profile.js'
+import {
+  rustBinaryAnalyzeToolDefinition,
+  createRustBinaryAnalyzeHandler,
+} from './tools/rust-binary-analyze.js'
+import {
+  entropyAnalyzeToolDefinition,
+  createEntropyAnalyzeHandler,
+} from './tools/entropy-analyze.js'
+import {
+  obfuscationDetectToolDefinition,
+  createObfuscationDetectHandler,
+} from './tools/obfuscation-detect.js'
 import { taintTrackToolDefinition, createTaintTrackHandler } from './tools/taint-track.js'
+import {
+  staticResourceGraphToolDefinition,
+  createStaticResourceGraphHandler,
+} from './tools/static-resource-graph.js'
+import {
+  staticConfigCarverToolDefinition,
+  createStaticConfigCarverHandler,
+} from './tools/static-config-carver.js'
+import {
+  staticBehaviorClassifyToolDefinition,
+  createStaticBehaviorClassifyHandler,
+} from './tools/static-behavior-classify.js'
 
 const staticTriagePlugin: Plugin = {
   id: 'static-triage',
   name: 'Static Triage',
+  executionDomain: 'static',
   surfaceRules: {
     tier: 0,
     category: 'static-analysis',
     signalMap: {
-      'is_packed': 'packed',
-      'packed': 'packed',
-      'packer': 'packed',
-      'is_dotnet': 'dotnet',
-      'dotnet': 'dotnet',
-      'is_go': 'go',
-      'go': 'go',
-      'is_signed': 'signed',
-      'has_certificate': 'signed',
-      'obfuscated': 'obfuscated',
-      'is_obfuscated': 'obfuscated',
-      'crypto_detected': 'crypto',
-      'suspicious_imports': 'suspicious_imports',
-      'anti_debug': ['anti_debug', 'suspicious_imports'],
-      'vm_detect': 'vm_detect',
-      'vm_detection': 'vm_detect',
-      'shellcode': 'shellcode',
-      'has_shellcode': 'shellcode',
+      is_packed: 'packed',
+      packed: 'packed',
+      packer: 'packed',
+      is_dotnet: 'dotnet',
+      dotnet: 'dotnet',
+      is_go: 'go',
+      go: 'go',
+      is_signed: 'signed',
+      has_certificate: 'signed',
+      obfuscated: 'obfuscated',
+      is_obfuscated: 'obfuscated',
+      crypto_detected: 'crypto',
+      suspicious_imports: 'suspicious_imports',
+      anti_debug: ['anti_debug', 'suspicious_imports'],
+      vm_detect: 'vm_detect',
+      vm_detection: 'vm_detect',
+      shellcode: 'shellcode',
+      has_shellcode: 'shellcode',
     },
   },
-  description: 'First-pass static analysis including runtime detection, packer ID, capability triage, binary profiling, crypto detection, entropy analysis, and obfuscation detection',
+  description:
+    'First-pass static analysis including runtime detection, packer ID, capability triage, binary profiling, resource graphing, config carving, behavior classification, crypto detection, entropy analysis, and obfuscation detection',
   version: '1.0.0',
   register(server, deps) {
     const { workspaceManager: wm, database: db, cacheManager: cm, jobQueue: jq } = deps
 
-    server.registerTool(analysisContextLinkToolDefinition, createAnalysisContextLinkHandler(wm, db, cm, {}, jq))
+    server.registerTool(
+      analysisContextLinkToolDefinition,
+      createAnalysisContextLinkHandler(wm, db, cm, {}, jq)
+    )
     server.registerTool(runtimeDetectToolDefinition, createRuntimeDetectHandler(wm, db, cm))
-    server.registerTool(dotNetMetadataExtractToolDefinition, createDotNetMetadataExtractHandler(wm, db, cm))
+    server.registerTool(
+      dotNetMetadataExtractToolDefinition,
+      createDotNetMetadataExtractHandler(wm, db, cm)
+    )
     server.registerTool(dotNetTypesListToolDefinition, createDotNetTypesListHandler(wm, db, cm))
     server.registerTool(packerDetectToolDefinition, createPackerDetectHandler(wm, db, cm))
-    server.registerTool(staticCapabilityTriageToolDefinition, createStaticCapabilityTriageHandler(wm, db))
-    server.registerTool(compilerPackerDetectToolDefinition, createCompilerPackerDetectHandler(wm, db))
-    server.registerTool(binaryRoleProfileToolDefinition, createBinaryRoleProfileHandler(wm, db, cm, undefined, jq))
-    server.registerTool(cryptoIdentifyToolDefinition, createCryptoIdentifyHandler(wm, db, cm, {}, jq))
+    server.registerTool(
+      staticCapabilityTriageToolDefinition,
+      createStaticCapabilityTriageHandler(wm, db)
+    )
+    server.registerTool(
+      compilerPackerDetectToolDefinition,
+      createCompilerPackerDetectHandler(wm, db)
+    )
+    server.registerTool(
+      binaryRoleProfileToolDefinition,
+      createBinaryRoleProfileHandler(wm, db, cm, undefined, jq)
+    )
+    server.registerTool(
+      cryptoIdentifyToolDefinition,
+      createCryptoIdentifyHandler(wm, db, cm, {}, jq)
+    )
     server.registerTool(breakpointSmartToolDefinition, createBreakpointSmartHandler(wm, db, cm))
     server.registerTool(traceConditionToolDefinition, createTraceConditionHandler(wm, db, cm))
     server.registerTool(dllExportProfileToolDefinition, createDllExportProfileHandler(wm, db, cm))
@@ -73,15 +147,34 @@ const staticTriagePlugin: Plugin = {
     server.registerTool(entropyAnalyzeToolDefinition, createEntropyAnalyzeHandler(wm, db, cm))
     server.registerTool(obfuscationDetectToolDefinition, createObfuscationDetectHandler(wm, db, cm))
     server.registerTool(taintTrackToolDefinition, createTaintTrackHandler(wm, db, cm))
+    server.registerTool(staticResourceGraphToolDefinition, createStaticResourceGraphHandler(wm, db))
+    server.registerTool(staticConfigCarverToolDefinition, createStaticConfigCarverHandler(wm, db))
+    server.registerTool(
+      staticBehaviorClassifyToolDefinition,
+      createStaticBehaviorClassifyHandler(wm, db)
+    )
 
     return [
-      'analysis.context.link', 'runtime.detect',
-      'dotnet.metadata.extract', 'dotnet.types.list',
-      'packer.detect', 'static.capability.triage', 'compiler.packer.detect',
-      'binary.role.profile', 'crypto.identify',
-      'breakpoint.smart', 'trace.condition',
-      'dll.export.profile', 'com.role.profile', 'rust.binary.analyze',
-      'entropy.analyze', 'obfuscation.detect', 'taint.track',
+      'analysis.context.link',
+      'runtime.detect',
+      'dotnet.metadata.extract',
+      'dotnet.types.list',
+      'packer.detect',
+      'static.capability.triage',
+      'compiler.packer.detect',
+      'binary.role.profile',
+      'crypto.identify',
+      'breakpoint.smart',
+      'trace.condition',
+      'dll.export.profile',
+      'com.role.profile',
+      'rust.binary.analyze',
+      'entropy.analyze',
+      'obfuscation.detect',
+      'taint.track',
+      'static.resource.graph',
+      'static.config.carver',
+      'static.behavior.classify',
     ]
   },
 }

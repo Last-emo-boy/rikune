@@ -48,7 +48,9 @@ const MEDIUM_SAMPLE_INLINE_CONTEXTS = 12
 const DEFAULT_FULL_INLINE_CONTEXTS = 16
 const CONTEXT_CHUNK_SIZE = 6
 
-function chooseInlineContextLimit(sampleSizeTier: ReturnType<typeof classifySampleSizeTier>): number {
+function chooseInlineContextLimit(
+  sampleSizeTier: ReturnType<typeof classifySampleSizeTier>
+): number {
   if (sampleSizeTier === 'large' || sampleSizeTier === 'oversized') {
     return LARGE_SAMPLE_INLINE_CONTEXTS
   }
@@ -64,7 +66,9 @@ export const analysisContextLinkInputSchema = z.object({
     .enum(['preview', 'full'])
     .optional()
     .default('preview')
-    .describe('preview is string-level only and safe for synchronous MCP use. Start with preview on medium or larger samples. full adds FLOSS and bounded Xref correlation and may be deferred to the background queue.'),
+    .describe(
+      'preview is string-level only and safe for synchronous MCP use. Start with preview on medium or larger samples. full adds FLOSS and bounded Xref correlation and may be deferred to the background queue.'
+    ),
   include_decoded: z
     .boolean()
     .optional()
@@ -111,7 +115,9 @@ export const analysisContextLinkInputSchema = z.object({
     .boolean()
     .optional()
     .default(true)
-    .describe('Reuse the latest matching persisted context-link artifact or cache entry when available'),
+    .describe(
+      'Reuse the latest matching persisted context-link artifact or cache entry when available'
+    ),
   force_refresh: z
     .boolean()
     .optional()
@@ -121,7 +127,9 @@ export const analysisContextLinkInputSchema = z.object({
     .boolean()
     .optional()
     .default(true)
-    .describe('When true, mode=full may be deferred to the background queue instead of blocking the MCP request.'),
+    .describe(
+      'When true, mode=full may be deferred to the background queue instead of blocking the MCP request.'
+    ),
   session_tag: z
     .string()
     .optional()
@@ -202,11 +210,7 @@ function buildAnalysisMarker(database: DatabaseManager, sampleId: string): strin
     return 'no_ghidra_analysis'
   }
 
-  return [
-    latest.id,
-    latest.status,
-    latest.finished_at || latest.started_at || 'unknown',
-  ].join(':')
+  return [latest.id, latest.status, latest.finished_at || latest.started_at || 'unknown'].join(':')
 }
 
 function isPrerequisiteError(message: string): boolean {
@@ -278,7 +282,7 @@ function collectDecodedRecords(data: unknown) {
 
 function collectSourceArtifacts(result: WorkerResult): ArtifactRef[] {
   return Array.isArray(result.artifacts)
-    ? (result.artifacts.filter((item) => item && typeof item === 'object') as ArtifactRef[])
+    ? result.artifacts.filter((item) => item && typeof item === 'object')
     : []
 }
 
@@ -304,7 +308,8 @@ export function createAnalysisContextLinkHandler(
   options: { allowDeferred?: boolean } = {}
 ): (args: unknown) => Promise<WorkerResult> {
   const stringsExtractHandler =
-    dependencies.stringsExtract || createStringsExtractHandler(workspaceManager, database, cacheManager)
+    dependencies.stringsExtract ||
+    createStringsExtractHandler(workspaceManager, database, cacheManager)
   const stringsFlossDecodeHandler =
     dependencies.stringsFlossDecode ||
     createStringsFlossDecodeHandler(workspaceManager, database, cacheManager)
@@ -353,10 +358,12 @@ export function createAnalysisContextLinkHandler(
                 typeof (canonical.result as Record<string, unknown>)?.execution_state === 'string'
                   ? (canonical.result as Record<string, unknown>).execution_state
                   : 'completed',
-              evidence_state: [buildResolvedEvidenceState({
-                source: 'analysis_evidence',
-                record: canonical,
-              })],
+              evidence_state: [
+                buildResolvedEvidenceState({
+                  source: 'analysis_evidence',
+                  record: canonical,
+                }),
+              ],
             },
             warnings: buildEvidenceReuseWarnings({
               source: 'analysis_evidence',
@@ -649,7 +656,10 @@ export function createAnalysisContextLinkHandler(
       let chunkManifest: Record<string, unknown> | undefined
       const artifacts: ArtifactRef[] = []
 
-      if (input.mode === 'full' && functionContexts.length > chooseInlineContextLimit(sampleSizeTier)) {
+      if (
+        input.mode === 'full' &&
+        functionContexts.length > chooseInlineContextLimit(sampleSizeTier)
+      ) {
         const chunked = await persistChunkedArrayArtifacts(functionContexts, {
           family: 'context_link',
           inlineLimit: chooseInlineContextLimit(sampleSizeTier),
@@ -746,10 +756,10 @@ export function createAnalysisContextLinkHandler(
                   'Preview mode is string-level only. Promote to mode=full when you need FLOSS and function-aware Xref correlation.',
                   'Run ghidra.analyze before expecting string-to-function attribution.',
                 ]
-            : [
-                'Run ghidra.analyze first if you need string-to-function or API-to-function attribution.',
-                'Retry analysis.context.link after Ghidra function_index readiness is available.',
-              ],
+              : [
+                  'Run ghidra.analyze first if you need string-to-function or API-to-function attribution.',
+                  'Retry analysis.context.link after Ghidra function_index readiness is available.',
+                ],
         artifact,
       }
 

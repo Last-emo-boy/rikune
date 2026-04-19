@@ -8,7 +8,13 @@ import path from 'path'
 import { createHash, randomUUID } from 'crypto'
 import { toStringArray } from '../../../utils/shared-helpers.js'
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef , PluginToolDeps} from '../../sdk.js'
+import type {
+  ToolDefinition,
+  ToolArgs,
+  WorkerResult,
+  ArtifactRef,
+  PluginToolDeps,
+} from '../../sdk.js'
 import { createTriageWorkflowHandler } from '../../../workflows/triage.js'
 import { createPackerDetectHandler } from '../../static-triage/tools/packer-detect.js'
 import { mapIndicatorsToAttack, type AttackIndicators } from './attack-map.js'
@@ -98,7 +104,6 @@ interface IOCRecord {
   tags: string[]
 }
 
-
 function dedupeIOC(records: IOCRecord[]): IOCRecord[] {
   const map = new Map<string, IOCRecord>()
   for (const record of records) {
@@ -133,10 +138,22 @@ function collectIOCRecords(iocs: Record<string, unknown>, includeLow: boolean): 
   const highValue = (iocs.high_value_iocs || {}) as Record<string, unknown>
 
   for (const value of toStringArray(iocs.urls)) {
-    records.push({ type: 'url', value, confidence: 'high', source: 'triage.urls', tags: ['network'] })
+    records.push({
+      type: 'url',
+      value,
+      confidence: 'high',
+      source: 'triage.urls',
+      tags: ['network'],
+    })
   }
   for (const value of toStringArray(iocs.ip_addresses)) {
-    records.push({ type: 'ipv4', value, confidence: 'high', source: 'triage.ip_addresses', tags: ['network'] })
+    records.push({
+      type: 'ipv4',
+      value,
+      confidence: 'high',
+      source: 'triage.ip_addresses',
+      tags: ['network'],
+    })
   }
   for (const value of toStringArray(iocs.registry_keys)) {
     records.push({
@@ -260,7 +277,12 @@ function buildIndicatorPattern(record: IOCRecord): string | null {
 function toSTIX(
   sampleId: string,
   records: IOCRecord[],
-  attackTechniques: Array<{ technique_id: string; name: string; tactics: string[]; confidence: number }>
+  attackTechniques: Array<{
+    technique_id: string
+    name: string
+    tactics: string[]
+    confidence: number
+  }>
 ): string {
   const now = new Date()
   const created = normalizeStixTimestamp(now)
@@ -425,7 +447,12 @@ function formatContent(
   sampleId: string,
   format: IOCExportInput['format'],
   records: IOCRecord[],
-  attackTechniques: Array<{ technique_id: string; name: string; tactics: string[]; confidence: number }>
+  attackTechniques: Array<{
+    technique_id: string
+    name: string
+    tactics: string[]
+    confidence: number
+  }>
 ): { content: string; mimeType: string; extension: string } {
   if (format === 'csv') {
     return {
@@ -500,7 +527,7 @@ export function createIOCExportHandler(deps: PluginToolDeps) {
       const triageData = triageResult.data as {
         iocs?: Record<string, unknown>
       }
-      const iocs = (triageData.iocs || {}) as Record<string, unknown>
+      const iocs = triageData.iocs || {}
       let records = collectIOCRecords(iocs, input.include_low_confidence)
       records = records.slice(0, input.max_iocs)
 

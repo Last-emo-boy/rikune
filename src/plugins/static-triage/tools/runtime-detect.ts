@@ -20,6 +20,7 @@ import {
   callStaticWorker as callPooledStaticWorker,
 } from '../../../tools/static-worker-client.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 // ============================================================================
 // Constants
@@ -54,24 +55,30 @@ export type RuntimeDetectInput = z.infer<typeof RuntimeDetectInputSchema>
  */
 export const RuntimeDetectOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    is_dotnet: z.boolean(),
-    dotnet_version: z.string().nullable(),
-    target_framework: z.string().nullable(),
-    suspected: z.array(z.object({
-      runtime: z.string(),
-      confidence: z.number(),
-      evidence: z.array(z.string()),
-    })),
-    import_dlls: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      is_dotnet: z.boolean(),
+      dotnet_version: z.string().nullable(),
+      target_framework: z.string().nullable(),
+      suspected: z.array(
+        z.object({
+          runtime: z.string(),
+          confidence: z.number(),
+          evidence: z.array(z.string()),
+        })
+      ),
+      import_dlls: z.array(z.string()),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(z.any()).optional(),
-  metrics: z.object({
-    elapsed_ms: z.number(),
-    tool: z.string(),
-  }).optional(),
+  metrics: z
+    .object({
+      elapsed_ms: z.number(),
+      tool: z.string(),
+    })
+    .optional(),
 })
 
 export type RuntimeDetectOutput = z.infer<typeof RuntimeDetectOutputSchema>
@@ -130,9 +137,9 @@ interface WorkerResponse {
 
 /**
  * Spawn Python Static Worker and communicate via stdin/stdout JSON protocol
- * 
+ *
  * Requirements: Worker communication
- * 
+ *
  * @param request - Worker request object
  * @returns Worker response object
  */
@@ -140,9 +147,9 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
   return new Promise((resolve, reject) => {
     // Get Python worker path
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
-    
+
     // Spawn Python process
-    const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+    const pythonCommand = getPythonCommand()
     const pythonProcess = spawn(pythonCommand, [workerPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
@@ -174,7 +181,11 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
         const response: WorkerResponse = JSON.parse(lastLine)
         resolve(response)
       } catch (error) {
-        reject(new Error(`Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`))
+        reject(
+          new Error(
+            `Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`
+          )
+        )
       }
     })
 
@@ -286,8 +297,7 @@ export function createRuntimeDetectHandler(
           workerResponse.data && typeof workerResponse.data === 'object'
             ? {
                 ...(workerResponse.data as Record<string, unknown>),
-                worker_pool:
-                  (workerResponse.metrics as Record<string, unknown> | undefined)?.worker_pool,
+                worker_pool: workerResponse.metrics?.worker_pool,
               }
             : workerResponse.data,
         warnings: input.force_refresh

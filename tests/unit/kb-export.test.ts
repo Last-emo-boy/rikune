@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createKbExportHandler, KbExportInputSchema } from '../../src/tools/kb-export.js'
+import { createKbExportHandler, KbExportInputSchema } from '../../src/plugins/kb-collaboration/tools/kb-export.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 
@@ -19,12 +19,14 @@ describe('kb.export tool', () => {
     mockDatabase = {
       findSample: jest.fn(),
       getDb: jest.fn(),
+      querySql: jest.fn().mockReturnValue([]),
+      queryOneSql: jest.fn().mockReturnValue(undefined),
     } as unknown as jest.Mocked<DatabaseManager>
   })
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = KbExportInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = KbExportInputSchema.safeParse({ output_path: '/tmp/export.jsonl' })
       expect(result.success).toBe(true)
     })
 
@@ -34,21 +36,21 @@ describe('kb.export tool', () => {
     })
 
     test('should reject invalid types', () => {
-      const result = KbExportInputSchema.safeParse({ sample_id: 123 })
+      const result = KbExportInputSchema.safeParse({ output_path: 123 })
       expect(result.success).toBe(false)
     })
   })
 
   describe('Handler', () => {
-    test('should return error for non-existent resource', async () => {
+    test('should return error when export fails', async () => {
       const handler = createKbExportHandler(mockWorkspaceManager, mockDatabase)
 
-      mockDatabase.findSample.mockReturnValue(undefined)
+      mockDatabase.querySql.mockImplementation(() => { throw new Error('database not found') })
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
+      const result = await handler({ output_path: '/tmp/export.jsonl' })
 
       expect(result.ok).toBe(false)
-      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)
+      expect(result.errors?.[0]).toMatch(/not found|failed/i)
     })
   })
 })

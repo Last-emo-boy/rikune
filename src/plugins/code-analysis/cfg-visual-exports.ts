@@ -112,7 +112,6 @@ const MIME_BY_FORMAT: Record<CFGExportFormat | 'svg' | 'png', string> = {
   png: 'image/png',
 }
 
-
 function sha256ForContent(content: string | Buffer): string {
   return createHash('sha256').update(content).digest('hex')
 }
@@ -379,7 +378,9 @@ function parseCallees(raw: string | null | undefined): string[] {
   }
   try {
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : []
   } catch {
     return []
   }
@@ -409,7 +410,10 @@ function buildCallerAndCalleeIndexes(functions: DatabaseFunction[]) {
   for (const func of functions) {
     byAddress.set(func.address, func)
     if (func.name) {
-      byName.set(func.name, [...(byName.get(func.name) || []), func].sort((a, b) => a.address.localeCompare(b.address)))
+      byName.set(
+        func.name,
+        [...(byName.get(func.name) || []), func].sort((a, b) => a.address.localeCompare(b.address))
+      )
     }
   }
 
@@ -424,7 +428,8 @@ function buildCallerAndCalleeIndexes(functions: DatabaseFunction[]) {
       inboundByAddress.set(
         preferred.address,
         currentInbound.sort(
-          (left, right) => left.address.localeCompare(right.address) || left.name.localeCompare(right.name)
+          (left, right) =>
+            left.address.localeCompare(right.address) || left.name.localeCompare(right.name)
         )
       )
     }
@@ -526,11 +531,22 @@ export function buildLocalCallGraphPreview(
           }
 
       upsertCallNode(nodes, targetNode)
-      if (!addEdge({ from: current.func.address, to: targetNode.id, relation: 'calls', depth: current.depth + 1 })) {
+      if (
+        !addEdge({
+          from: current.func.address,
+          to: targetNode.id,
+          relation: 'calls',
+          depth: current.depth + 1,
+        })
+      ) {
         break
       }
 
-      if (internalTarget && current.depth + 1 < normalizedDepth && !seen.has(internalTarget.address)) {
+      if (
+        internalTarget &&
+        current.depth + 1 < normalizedDepth &&
+        !seen.has(internalTarget.address)
+      ) {
         seen.add(internalTarget.address)
         queue.push({ func: internalTarget, depth: current.depth + 1 })
       }
@@ -546,7 +562,14 @@ export function buildLocalCallGraphPreview(
         internal: true,
       }
       upsertCallNode(nodes, callerNode)
-      if (!addEdge({ from: caller.address, to: current.func.address, relation: 'calls', depth: current.depth + 1 })) {
+      if (
+        !addEdge({
+          from: caller.address,
+          to: current.func.address,
+          relation: 'calls',
+          depth: current.depth + 1,
+        })
+      ) {
         break
       }
 
@@ -617,7 +640,8 @@ export function buildDOTFromLocalCallGraph(graph: LocalCallGraph): string {
 export function buildMermaidFromLocalCallGraph(graph: LocalCallGraph): string {
   const sortedNodes = [...graph.nodes].sort(
     (left, right) =>
-      (left.address || left.id).localeCompare(right.address || right.id) || left.name.localeCompare(right.name)
+      (left.address || left.id).localeCompare(right.address || right.id) ||
+      left.name.localeCompare(right.name)
   )
   const nodeIds = new Map<string, string>()
   sortedNodes.forEach((node, index) => {
@@ -680,7 +704,8 @@ export function buildLocalCallGraphExport(
     }
   }
 
-  const text = format === 'dot' ? buildDOTFromLocalCallGraph(graph) : buildMermaidFromLocalCallGraph(graph)
+  const text =
+    format === 'dot' ? buildDOTFromLocalCallGraph(graph) : buildMermaidFromLocalCallGraph(graph)
   return {
     format,
     text,
@@ -736,7 +761,8 @@ export function buildGraphvizSetupActions() {
       required: false,
       kind: 'install_package',
       title: 'Install Graphviz',
-      summary: 'Install the Graphviz dot renderer to enable code.function.cfg render=svg or render=png.',
+      summary:
+        'Install the Graphviz dot renderer to enable code.function.cfg render=svg or render=png.',
       command: 'apt-get update && apt-get install -y graphviz',
       examples: [
         'apt-get update && apt-get install -y graphviz',
@@ -760,7 +786,10 @@ export async function persistGraphArtifact(
   const reportDir = path.join(workspace.reports, 'graphs', sessionSegment, scopeSegment)
   await fs.mkdir(reportDir, { recursive: true })
 
-  const functionSegment = sanitizeSegment(options.functionName || options.functionAddress, 'function')
+  const functionSegment = sanitizeSegment(
+    options.functionName || options.functionAddress,
+    'function'
+  )
   const addressSegment = sanitizeSegment(options.functionAddress, 'addr')
   const fileName = `${scopeSegment}_${functionSegment}_${addressSegment}_${Date.now()}.${FILE_EXTENSION_BY_FORMAT[options.format]}`
   const absolutePath = path.join(reportDir, fileName)
@@ -826,7 +855,10 @@ export async function renderGraphvizArtifact(
   const reportDir = path.join(workspace.reports, 'graphs', sessionSegment, 'rendered')
   await fs.mkdir(reportDir, { recursive: true })
 
-  const functionSegment = sanitizeSegment(options.functionName || options.functionAddress, 'function')
+  const functionSegment = sanitizeSegment(
+    options.functionName || options.functionAddress,
+    'function'
+  )
   const addressSegment = sanitizeSegment(options.functionAddress, 'addr')
   const fileName = `cfg_render_${functionSegment}_${addressSegment}_${Date.now()}.${FILE_EXTENSION_BY_FORMAT[options.format]}`
   const absolutePath = path.join(reportDir, fileName)

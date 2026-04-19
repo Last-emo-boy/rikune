@@ -350,7 +350,10 @@ function collectMatchedAddressRanges(
   if (matchedMemoryRegions.length === 0) {
     return []
   }
-  return dedupe(dynamicEvidence.address_ranges || []).slice(0, Math.max(1, matchedMemoryRegions.length))
+  return dedupe(dynamicEvidence.address_ranges || []).slice(
+    0,
+    Math.max(1, matchedMemoryRegions.length)
+  )
 }
 
 function collectMatchedMemoryRegions(
@@ -393,10 +396,15 @@ export function correlateFunctionWithRuntimeEvidence(
 
   const candidateApis = collectCandidateApis(input)
   const observedMap = new Map(
-    (dynamicEvidence.observed_apis || []).map((item) => [normalizeRuntimeApiName(item).toLowerCase(), item])
+    (dynamicEvidence.observed_apis || []).map((item) => [
+      normalizeRuntimeApiName(item).toLowerCase(),
+      item,
+    ])
   )
   const highSignalSet = new Set(
-    (dynamicEvidence.high_signal_apis || []).map((item) => normalizeRuntimeApiName(item).toLowerCase())
+    (dynamicEvidence.high_signal_apis || []).map((item) =>
+      normalizeRuntimeApiName(item).toLowerCase()
+    )
   )
   const matchedApis = candidateApis
     .map((item) => observedMap.get(item.toLowerCase()) || '')
@@ -464,31 +472,49 @@ export function correlateFunctionWithRuntimeEvidence(
   )
   const notes: string[] = []
   if (matchedApis.length > 0) {
-    notes.push(`Runtime-observed APIs overlap with this function: ${dedupe(matchedApis).slice(0, 6).join(', ')}`)
+    notes.push(
+      `Runtime-observed APIs overlap with this function: ${dedupe(matchedApis).slice(0, 6).join(', ')}`
+    )
   }
   if (matchedStages.length > 0) {
-    notes.push(`Runtime stages align with this function: ${dedupe(matchedStages).slice(0, 4).join(', ')}`)
+    notes.push(
+      `Runtime stages align with this function: ${dedupe(matchedStages).slice(0, 4).join(', ')}`
+    )
   }
   if (matchedMemoryRegions.length > 0) {
-    notes.push(`Runtime memory regions align with this function: ${matchedMemoryRegions.slice(0, 4).join(', ')}`)
+    notes.push(
+      `Runtime memory regions align with this function: ${matchedMemoryRegions.slice(0, 4).join(', ')}`
+    )
   }
   if (matchedProtections.length > 0) {
-    notes.push(`Runtime protections align with this function: ${matchedProtections.slice(0, 4).join(', ')}`)
+    notes.push(
+      `Runtime protections align with this function: ${matchedProtections.slice(0, 4).join(', ')}`
+    )
   }
   if (matchedRegionOwners.length > 0) {
-    notes.push(`Runtime region owners align with this function: ${matchedRegionOwners.slice(0, 4).join(', ')}`)
+    notes.push(
+      `Runtime region owners align with this function: ${matchedRegionOwners.slice(0, 4).join(', ')}`
+    )
   }
   if (matchedObservedModules.length > 0) {
-    notes.push(`Runtime modules align with this function: ${matchedObservedModules.slice(0, 4).join(', ')}`)
+    notes.push(
+      `Runtime modules align with this function: ${matchedObservedModules.slice(0, 4).join(', ')}`
+    )
   }
   if (matchedSegmentNames.length > 0) {
-    notes.push(`Runtime segments align with this function: ${matchedSegmentNames.slice(0, 4).join(', ')}`)
+    notes.push(
+      `Runtime segments align with this function: ${matchedSegmentNames.slice(0, 4).join(', ')}`
+    )
   }
   if (matchedAddressRanges.length > 0) {
-    notes.push(`Runtime address ranges associated with this function: ${matchedAddressRanges.slice(0, 3).join(', ')}`)
+    notes.push(
+      `Runtime address ranges associated with this function: ${matchedAddressRanges.slice(0, 3).join(', ')}`
+    )
   }
   if (dynamicEvidence.executed) {
-    notes.push('Correlation includes executed runtime evidence, not just static or memory-only hints.')
+    notes.push(
+      'Correlation includes executed runtime evidence, not just static or memory-only hints.'
+    )
   }
   if (evidenceSources.length > 0) {
     notes.push(`Runtime evidence sources: ${evidenceSources.join(', ')}`)
@@ -510,7 +536,9 @@ export function correlateFunctionWithRuntimeEvidence(
 
   const suggestedModules = dedupe([
     ...modulesSuggestedByRuntimeStages(matchedStages),
-    ...(matchedMemoryRegions.some((item) => /process|thread|dispatch|resolution|command/i.test(item))
+    ...(matchedMemoryRegions.some((item) =>
+      /process|thread|dispatch|resolution|command/i.test(item)
+    )
       ? ['process_ops']
       : []),
     ...(matchedMemoryRegions.some((item) => /registry|key/i.test(item)) ? ['registry_ops'] : []),
@@ -552,7 +580,11 @@ export function correlateFunctionWithRuntimeEvidence(
       Math.min(0.12, highSignalMatches.length * 0.05) +
       Math.min(0.1, matchedMemoryRegions.length * 0.04) +
       Math.min(0.07, matchedProtections.length * 0.02) +
-      Math.min(0.07, (matchedRegionOwners.length + matchedObservedModules.length + matchedSegmentNames.length) * 0.015),
+      Math.min(
+        0.07,
+        (matchedRegionOwners.length + matchedObservedModules.length + matchedSegmentNames.length) *
+          0.015
+      ),
     0.45,
     0.97
   )
@@ -659,19 +691,17 @@ export interface BatchCorrelationResult {
  */
 export function correlateBatch(input: BatchCorrelationInput): BatchCorrelationResult {
   const { traceEvents, functionContext = [] } = input
-  
+
   // Count unique APIs and threads
-  const uniqueApis = new Set(traceEvents.map(e => e.api))
-  const uniqueThreads = new Set(traceEvents.map(e => e.thread_id))
-  
+  const uniqueApis = new Set(traceEvents.map((e) => e.api))
+  const uniqueThreads = new Set(traceEvents.map((e) => e.thread_id))
+
   // Calculate time range
-  const timestamps = traceEvents.map(e => e.timestamp)
-  const timeRangeMs = timestamps.length > 0
-    ? Math.max(...timestamps) - Math.min(...timestamps)
-    : 0
-  
+  const timestamps = traceEvents.map((e) => e.timestamp)
+  const timeRangeMs = timestamps.length > 0 ? Math.max(...timestamps) - Math.min(...timestamps) : 0
+
   // Correlate to functions
-  const correlatedFunctions = functionContext.map(func => {
+  const correlatedFunctions = functionContext.map((func) => {
     if (!func.apis || func.apis.length === 0) {
       return {
         address: func.address,
@@ -681,30 +711,29 @@ export function correlateBatch(input: BatchCorrelationInput): BatchCorrelationRe
         evidence: ['No API matches'],
       }
     }
-    
+
     // Count matching API calls
-    const matchingEvents = traceEvents.filter(e => func.apis!.includes(e.api))
+    const matchingEvents = traceEvents.filter((e) => func.apis.includes(e.api))
     const apiCalls = matchingEvents.length
-    
+
     // Calculate confidence based on match count
-    const confidence = apiCalls > 0
-      ? Math.min(0.5 + (apiCalls / 10) * 0.5, 0.95)
-      : 0.3
-    
+    const confidence = apiCalls > 0 ? Math.min(0.5 + (apiCalls / 10) * 0.5, 0.95) : 0.3
+
     return {
       address: func.address,
       name: func.name,
       apiCalls,
       confidence,
-      evidence: apiCalls > 0
-        ? [`Matched ${apiCalls} API calls`, ...uniqueApis.values()].slice(0, 5)
-        : ['No direct API matches'],
+      evidence:
+        apiCalls > 0
+          ? [`Matched ${apiCalls} API calls`, ...uniqueApis.values()].slice(0, 5)
+          : ['No direct API matches'],
     }
   })
-  
+
   // Sort by confidence
   correlatedFunctions.sort((a, b) => b.confidence - a.confidence)
-  
+
   // Identify top capabilities
   const capabilityMap = new Map<string, number>()
   for (const api of uniqueApis) {
@@ -712,19 +741,22 @@ export function correlateBatch(input: BatchCorrelationInput): BatchCorrelationRe
     if (normalized.includes('Crypt')) {
       capabilityMap.set('crypto', (capabilityMap.get('crypto') || 0) + 1)
     } else if (normalized.includes('Thread') || normalized.includes('Process')) {
-      capabilityMap.set('process_manipulation', (capabilityMap.get('process_manipulation') || 0) + 1)
+      capabilityMap.set(
+        'process_manipulation',
+        (capabilityMap.get('process_manipulation') || 0) + 1
+      )
     } else if (normalized.includes('File') || normalized.includes('Reg')) {
       capabilityMap.set('persistence', (capabilityMap.get('persistence') || 0) + 1)
     } else if (normalized.includes('Internet') || normalized.includes('Http')) {
       capabilityMap.set('network', (capabilityMap.get('network') || 0) + 1)
     }
   }
-  
+
   const topCapabilities = Array.from(capabilityMap.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
     .map(([cap]) => cap)
-  
+
   return {
     totalEvents: traceEvents.length,
     correlatedFunctions,

@@ -11,14 +11,22 @@ import {
 const TOOL_NAME = 'code.module.review.apply'
 
 const ModuleReviewInputSchema = z.object({
-  module_name: z.string().min(1).max(120).describe('Module name as returned by code.reconstruct.export'),
+  module_name: z
+    .string()
+    .min(1)
+    .max(120)
+    .describe('Module name as returned by code.reconstruct.export'),
   refined_name: z
     .string()
     .min(1)
     .max(120)
     .optional()
     .describe('Optional refined human-readable module display name'),
-  summary: z.string().min(1).max(1600).describe('Evidence-grounded plain-language explanation of the module'),
+  summary: z
+    .string()
+    .min(1)
+    .max(1600)
+    .describe('Evidence-grounded plain-language explanation of the module'),
   role_hint: z
     .string()
     .min(1)
@@ -26,8 +34,16 @@ const ModuleReviewInputSchema = z.object({
     .optional()
     .describe('Optional refined module role hint, such as export dispatch or COM activation'),
   confidence: z.number().min(0).max(1).describe('Heuristic support score for the module review'),
-  assumptions: z.array(z.string()).optional().default([]).describe('Assumptions that must hold for the review to remain valid'),
-  evidence_used: z.array(z.string()).optional().default([]).describe('Evidence sources used by the external LLM'),
+  assumptions: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe('Assumptions that must hold for the review to remain valid'),
+  evidence_used: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe('Evidence sources used by the external LLM'),
   rewrite_guidance: z
     .union([z.string().min(1), z.array(z.string().min(1))])
     .optional()
@@ -49,7 +65,10 @@ function normalizeStringArray(input: string | string[] | undefined, limit = 12):
     return []
   }
   const values = Array.isArray(input) ? input : [input]
-  return values.map((item) => item.trim()).filter((item) => item.length > 0).slice(0, limit)
+  return values
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .slice(0, limit)
 }
 
 export const codeModuleReviewApplyInputSchema = z.object({
@@ -62,14 +81,13 @@ export const codeModuleReviewApplyInputSchema = z.object({
     .string()
     .optional()
     .describe('Optional client identifier, such as claude-desktop or codex-cli'),
-  model_name: z
-    .string()
-    .optional()
-    .describe('Optional model identifier for provenance only'),
+  model_name: z.string().optional().describe('Optional model identifier for provenance only'),
   prepare_artifact_id: z
     .string()
     .optional()
-    .describe('Optional semantic_module_review_prepare_bundle artifact ID that produced this review task'),
+    .describe(
+      'Optional semantic_module_review_prepare_bundle artifact ID that produced this review task'
+    ),
   session_tag: z
     .string()
     .optional()
@@ -153,7 +171,9 @@ export function createCodeModuleReviewApplyHandler(
         const moduleName = review.module_name.trim()
         const summary = review.summary.trim()
         if (moduleName.length === 0 || summary.length === 0) {
-          warnings.push('Rejected module review because module_name or summary was empty after normalization.')
+          warnings.push(
+            'Rejected module review because module_name or summary was empty after normalization.'
+          )
           continue
         }
 
@@ -204,7 +224,11 @@ export function createCodeModuleReviewApplyHandler(
         reviews: acceptedReviews,
       }
 
-      const artifact = await persistSemanticModuleReviewsArtifact(workspaceManager, database, payload)
+      const artifact = await persistSemanticModuleReviewsArtifact(
+        workspaceManager,
+        database,
+        payload
+      )
 
       return {
         ok: true,

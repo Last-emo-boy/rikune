@@ -5,10 +5,8 @@ import type { ArtifactRef, ToolArgs, ToolDefinition, WorkerResult } from '../typ
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager, Artifact, Function as DbFunction } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
-import type { MCPServer } from '../server.js'
-import {
-  createReportSummarizeHandler,
-} from '../plugins/reporting/tools/report-summarize.js'
+import type { SamplingClient } from '../core/registrar.js'
+import { createReportSummarizeHandler } from '../plugins/reporting/tools/report-summarize.js'
 import { loadSemanticFunctionExplanationIndex } from '../artifacts/semantic-name-suggestion-artifacts.js'
 import {
   loadSummaryDigestArtifactSelection,
@@ -38,10 +36,7 @@ import {
   classifySampleSizeTier,
   deriveAnalysisBudgetProfile,
 } from '../analysis/analysis-coverage.js'
-import {
-  getAnalysisRunSummary,
-  createOrReuseAnalysisRun,
-} from '../analysis/analysis-run-state.js'
+import { getAnalysisRunSummary, createOrReuseAnalysisRun } from '../analysis/analysis-run-state.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
 
 const TOOL_NAME = 'workflow.summarize'
@@ -76,7 +71,9 @@ export const WorkflowSummarizeInputSchema = z
     reuse_digests: z
       .boolean()
       .default(true)
-      .describe('Reuse persisted summary-stage digest artifacts when a matching recent/session-scoped artifact exists.'),
+      .describe(
+        'Reuse persisted summary-stage digest artifacts when a matching recent/session-scoped artifact exists.'
+      ),
     synthesis_mode: z
       .enum(['auto', 'deterministic', 'sampling'])
       .default('auto')
@@ -114,12 +111,16 @@ export const WorkflowSummarizeInputSchema = z
     compare_evidence_scope: z
       .enum(['all', 'latest', 'session'])
       .optional()
-      .describe('Optional baseline runtime evidence scope passed through to compact report generation.'),
+      .describe(
+        'Optional baseline runtime evidence scope passed through to compact report generation.'
+      ),
     compare_evidence_session_tag: z.string().optional(),
     compare_static_scope: z
       .enum(['all', 'latest', 'session'])
       .optional()
-      .describe('Optional baseline static-analysis scope passed through to compact report generation.'),
+      .describe(
+        'Optional baseline static-analysis scope passed through to compact report generation.'
+      ),
     compare_static_session_tag: z.string().optional(),
     compare_semantic_scope: z
       .enum(['all', 'latest', 'session'])
@@ -127,21 +128,31 @@ export const WorkflowSummarizeInputSchema = z
       .describe('Optional baseline semantic scope passed through to compact report generation.'),
     compare_semantic_session_tag: z.string().optional(),
   })
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
-  })
-  .refine((value) => value.static_scope !== 'session' || Boolean(value.static_session_tag?.trim()), {
-    message: 'static_session_tag is required when static_scope=session',
-    path: ['static_session_tag'],
-  })
-  .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
-    message: 'semantic_session_tag is required when semantic_scope=session',
-    path: ['semantic_session_tag'],
-  })
+  .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.static_scope !== 'session' || Boolean(value.static_session_tag?.trim()),
+    {
+      message: 'static_session_tag is required when static_scope=session',
+      path: ['static_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()),
+    {
+      message: 'semantic_session_tag is required when semantic_scope=session',
+      path: ['semantic_session_tag'],
+    }
+  )
   .refine(
     (value) =>
-      value.compare_evidence_scope !== 'session' || Boolean(value.compare_evidence_session_tag?.trim()),
+      value.compare_evidence_scope !== 'session' ||
+      Boolean(value.compare_evidence_session_tag?.trim()),
     {
       message: 'compare_evidence_session_tag is required when compare_evidence_scope=session',
       path: ['compare_evidence_session_tag'],
@@ -393,7 +404,7 @@ export function createWorkflowSummarizeHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   cacheManager: CacheManager,
-  mcpServer?: MCPServer,
+  mcpServer?: SamplingClient,
   deps?: WorkflowSummarizeDependencies
 ) {
   const reportSummarizeHandler =
@@ -401,13 +412,14 @@ export function createWorkflowSummarizeHandler(
     createReportSummarizeHandler(workspaceManager, database, cacheManager)
   const samplingRequester =
     deps?.samplingRequester ||
-    (mcpServer ? (params: CreateMessageRequest['params']) => mcpServer.createMessage(params) : undefined)
+    (mcpServer
+      ? (params: CreateMessageRequest['params']) => mcpServer.createMessage(params)
+      : undefined)
   const clientCapabilitiesProvider =
     deps?.clientCapabilitiesProvider ||
     (mcpServer ? () => mcpServer.getClientCapabilities() : undefined)
   const clientVersionProvider =
-    deps?.clientVersionProvider ||
-    (mcpServer ? () => mcpServer.getClientVersion() : undefined)
+    deps?.clientVersionProvider || (mcpServer ? () => mcpServer.getClientVersion() : undefined)
 
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -423,11 +435,12 @@ export function createWorkflowSummarizeHandler(
           metrics: toolMetrics(startTime),
         }
       }
-      
+
       // Check if there's a persisted analysis run for this sample
       // If found, consume run state and stage artifacts instead of rerunning analysis
       const runs = database.findAnalysisRunsBySample(input.sample_id)
-      const latestRun = runs.length > 0 ? runs.sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] : null
+      const latestRun =
+        runs.length > 0 ? runs.sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] : null
 
       // Initialize stage tracking variables
       const completedStages: SummaryStage[] = []
@@ -437,7 +450,7 @@ export function createWorkflowSummarizeHandler(
         warnings.push(
           `Consuming persisted analysis run state (run_id: ${latestRun.id}, status: ${latestRun.status}, latest_stage: ${latestRun.latest_stage || 'none'}).`
         )
-        
+
         // Map run stages to summary stages
         const stageMap: Record<string, SummaryStage> = {
           fast_profile: 'triage',
@@ -448,7 +461,7 @@ export function createWorkflowSummarizeHandler(
           dynamic_execute: 'triage',
           summarize: 'final',
         }
-        
+
         // Load stage artifacts from run state
         const runStages = database.findAnalysisRunStages(latestRun.id)
         for (const stage of runStages) {
@@ -471,16 +484,22 @@ export function createWorkflowSummarizeHandler(
           }
         }
       }
-      
+
       const sampleSizeTier = classifySampleSizeTier(sample.size || 0)
       const analysisBudgetProfile = deriveAnalysisBudgetProfile(
-        input.through_stage === 'final' ? 'deep' : input.through_stage === 'triage' ? 'safe' : 'balanced',
+        input.through_stage === 'final'
+          ? 'deep'
+          : input.through_stage === 'triage'
+            ? 'safe'
+            : 'balanced',
         sampleSizeTier
       )
       const persistedStateVisibility = PersistedSummaryVisibilitySchema.parse({
         persisted_run_id: latestRun?.id || null,
         reused_stage_artifacts: false,
-        loaded_run_stages: latestRun ? database.findAnalysisRunStages(latestRun.id).map((stage) => stage.stage) : [],
+        loaded_run_stages: latestRun
+          ? database.findAnalysisRunStages(latestRun.id).map((stage) => stage.stage)
+          : [],
         deferred_requirements: latestRun
           ? []
           : ['analysis_run: no persisted staged analysis run was available for this sample.'],
@@ -686,8 +705,9 @@ export function createWorkflowSummarizeHandler(
             sessionTag: input.semantic_session_tag,
           }
         )
-        const ghidraExecution =
-          data.ghidra_execution ? GhidraExecutionSummarySchema.parse(data.ghidra_execution) : null
+        const ghidraExecution = data.ghidra_execution
+          ? GhidraExecutionSummarySchema.parse(data.ghidra_execution)
+          : null
         const analysisGaps = dedupeStrings([
           ...(Array.isArray(ghidraExecution?.warnings) ? ghidraExecution.warnings : []),
           ...(topFunctions.length === 0
@@ -697,16 +717,17 @@ export function createWorkflowSummarizeHandler(
             ? ['No semantic function explanations are currently persisted.']
             : []),
           ...(data.packed_state && data.packed_state !== 'not_packed'
-            ? [`Packed/debug progression is still relevant: packed_state=${data.packed_state}, unpack_state=${data.unpack_state || 'unknown'}.`]
+            ? [
+                `Packed/debug progression is still relevant: packed_state=${data.packed_state}, unpack_state=${data.unpack_state || 'unknown'}.`,
+              ]
             : []),
         ])
         const deepDigest = buildDeepStageDigest({
           sample_id: input.sample_id,
           session_tag: input.session_tag || null,
-          summary:
-            ghidraExecution
-              ? `Deep-stage digest summarizes persisted Ghidra execution plus ${topFunctions.length} scored function(s).`
-              : `Deep-stage digest summarizes persisted reconstruction context plus ${topFunctions.length} scored function(s).`,
+          summary: ghidraExecution
+            ? `Deep-stage digest summarizes persisted Ghidra execution plus ${topFunctions.length} scored function(s).`
+            : `Deep-stage digest summarizes persisted reconstruction context plus ${topFunctions.length} scored function(s).`,
           ghidra_execution: ghidraExecution,
           top_functions: topFunctions,
           function_explanations: functionExplanations,
@@ -720,8 +741,8 @@ export function createWorkflowSummarizeHandler(
               ? (data.artifact_refs.supporting as ArtifactRef[])
               : []),
             ...(Array.isArray(data.artifact_refs?.supporting)
-              ? (data.artifact_refs.supporting as ArtifactRef[]).filter((item) =>
-                  typeof item.type === 'string' && item.type === 'analysis_diff_digest'
+              ? (data.artifact_refs.supporting as ArtifactRef[]).filter(
+                  (item) => typeof item.type === 'string' && item.type === 'analysis_diff_digest'
                 )
               : []),
           ]),
@@ -751,15 +772,20 @@ export function createWorkflowSummarizeHandler(
                 reason: 'Deep-stage digest does not include source-like reconstruction export.',
               },
             ],
-            knownFindings: topFunctions.slice(0, 3).map((item) => `${item.address}: ${item.name || 'function'}`),
+            knownFindings: topFunctions
+              .slice(0, 3)
+              .map((item) => `${item.address}: ${item.name || 'function'}`),
             suspectedFindings: analysisGaps,
-            unverifiedAreas: ['Source-like reconstruction and runtime verification remain outside the deep-stage digest.'],
+            unverifiedAreas: [
+              'Source-like reconstruction and runtime verification remain outside the deep-stage digest.',
+            ],
             upgradePaths: [
               {
                 tool: 'workflow.reconstruct',
                 purpose: 'Continue from deep-stage context into reconstruction export.',
                 closes_gaps: ['reconstruction_export'],
-                expected_coverage_gain: 'Adds export artifacts and validation notes beyond the deep-stage digest.',
+                expected_coverage_gain:
+                  'Adds export artifacts and validation notes beyond the deep-stage digest.',
                 cost_tier: 'high',
               },
             ],
@@ -786,17 +812,24 @@ export function createWorkflowSummarizeHandler(
         const deepDigest = await ensureDeepStage()
         const compactReport = await getCompactReportData()
         const compactReportData =
-          compactReport.ok && compactReport.data ? (compactReport.data as Record<string, unknown>) : {}
+          compactReport.ok && compactReport.data
+            ? (compactReport.data as Record<string, unknown>)
+            : {}
         const explanationGraphs = Array.isArray(compactReportData.explanation_graphs)
           ? compactReportData.explanation_graphs
           : undefined
         const explanationArtifacts =
           compactReportData.artifact_refs &&
           typeof compactReportData.artifact_refs === 'object' &&
-          Array.isArray((compactReportData.artifact_refs as Record<string, unknown>).explanation_graphs)
-            ? ((compactReportData.artifact_refs as Record<string, unknown>).explanation_graphs as ArtifactRef[])
+          Array.isArray(
+            (compactReportData.artifact_refs as Record<string, unknown>).explanation_graphs
+          )
+            ? ((compactReportData.artifact_refs as Record<string, unknown>)
+                .explanation_graphs as ArtifactRef[])
             : undefined
-        const samplingAvailable = Boolean(clientCapabilitiesProvider?.()?.sampling && samplingRequester)
+        const samplingAvailable = Boolean(
+          clientCapabilitiesProvider?.()?.sampling && samplingRequester
+        )
         const requestedMode = input.synthesis_mode
         const shouldUseSampling =
           requestedMode === 'sampling' || (requestedMode === 'auto' && samplingAvailable)
@@ -808,7 +841,7 @@ export function createWorkflowSummarizeHandler(
           deepDigest,
           stage_artifact_refs: currentStageArtifactRefs(),
           synthesis_mode: shouldUseSampling ? 'sampling' : 'deterministic',
-          explanation_graphs: Array.isArray(explanationGraphs) ? explanationGraphs as any[] : undefined,
+          explanation_graphs: Array.isArray(explanationGraphs) ? explanationGraphs : undefined,
           explanation_artifact_refs: explanationArtifacts,
           source_artifact_refs: dedupeArtifactRefs([
             ...(triageDigest.source_artifact_refs as ArtifactRef[]),
@@ -830,7 +863,7 @@ export function createWorkflowSummarizeHandler(
               deepDigest,
               stage_artifact_refs: currentStageArtifactRefs(),
               synthesis_mode: 'deterministic',
-              explanation_graphs: Array.isArray(explanationGraphs) ? explanationGraphs as any[] : undefined,
+              explanation_graphs: Array.isArray(explanationGraphs) ? explanationGraphs : undefined,
               explanation_artifact_refs: explanationArtifacts,
               source_artifact_refs: dedupeArtifactRefs([
                 ...(triageDigest.source_artifact_refs as ArtifactRef[]),
@@ -840,13 +873,15 @@ export function createWorkflowSummarizeHandler(
             })
           } else {
             try {
-              const samplingResult = await samplingRequester!(buildSamplingRequest(triageDigest, staticDigest, deepDigest))
+              const samplingResult = await samplingRequester(
+                buildSamplingRequest(triageDigest, staticDigest, deepDigest)
+              )
               const responseText = extractTextBlocks(samplingResult)
               const parsed = parseSummaryJsonCandidate(responseText)
               finalDigest = {
                 ...finalDigest,
                 synthesis_mode: 'sampling',
-                model_name: (samplingResult as any)?.model || null,
+                model_name: samplingResult?.model || null,
                 executive_summary: parsed.executive_summary,
                 analyst_summary: parsed.analyst_summary,
                 key_findings: parsed.key_findings.slice(0, 8),
@@ -867,7 +902,9 @@ export function createWorkflowSummarizeHandler(
                 deepDigest,
                 stage_artifact_refs: currentStageArtifactRefs(),
                 synthesis_mode: 'deterministic',
-                explanation_graphs: Array.isArray(explanationGraphs) ? explanationGraphs as any[] : undefined,
+                explanation_graphs: Array.isArray(explanationGraphs)
+                  ? explanationGraphs
+                  : undefined,
                 explanation_artifact_refs: explanationArtifacts,
                 source_artifact_refs: dedupeArtifactRefs([
                   ...(triageDigest.source_artifact_refs as ArtifactRef[]),
@@ -886,7 +923,11 @@ export function createWorkflowSummarizeHandler(
       }
 
       await ensureTriageStage()
-      if (input.through_stage === 'static' || input.through_stage === 'deep' || input.through_stage === 'final') {
+      if (
+        input.through_stage === 'static' ||
+        input.through_stage === 'deep' ||
+        input.through_stage === 'final'
+      ) {
         await ensureStaticStage()
       }
       if (input.through_stage === 'deep' || input.through_stage === 'final') {
@@ -912,9 +953,13 @@ export function createWorkflowSummarizeHandler(
           completionState: input.through_stage === 'final' ? 'completed' : 'bounded',
           sampleSizeTier,
           analysisBudgetProfile,
-          unverifiedAreas: ['Coverage boundary could not be derived from persisted stage artifacts.'],
+          unverifiedAreas: [
+            'Coverage boundary could not be derived from persisted stage artifacts.',
+          ],
         })
-      const samplingAvailable = Boolean(clientCapabilitiesProvider?.()?.sampling && samplingRequester)
+      const samplingAvailable = Boolean(
+        clientCapabilitiesProvider?.()?.sampling && samplingRequester
+      )
       const resolvedMode = finalStage?.synthesis_mode || 'deterministic'
       const recommendedNextTools =
         input.through_stage === 'final'

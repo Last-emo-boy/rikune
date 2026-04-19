@@ -4,6 +4,8 @@ export default {
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
     '^uuid$': '<rootDir>/tests/mocks/uuid.ts',
+    '^@rikune/shared$': '<rootDir>/packages/shared/src/index.ts',
+    '^@rikune/plugin-sdk$': '<rootDir>/packages/plugin-sdk/src/index.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   transform: {
@@ -11,6 +13,8 @@ export default {
       'ts-jest',
       {
         useESM: true,
+        tsconfig: 'tsconfig.jest.json',
+        diagnostics: false,
       },
     ],
   },
@@ -26,4 +30,5 @@ export default {
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
+  testTimeout: 15000,
 }

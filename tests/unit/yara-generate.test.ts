@@ -11,7 +11,7 @@ import {
   scoreRule,
   type RuleMeta,
   type RuleEvidence,
-} from '../../src/yara-rule-builder.js'
+} from '../../src/plugins/yara/yara-rule-builder.js'
 
 const baseMeta: RuleMeta = {
   sample_id: 'sha256:abcd1234',

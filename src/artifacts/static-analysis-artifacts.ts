@@ -35,7 +35,6 @@ export interface StaticArtifactSelection<TPayload = unknown> {
 
 const LATEST_STATIC_ARTIFACT_WINDOW_MS = 10 * 1000
 
-
 export async function persistStaticAnalysisJsonArtifact(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
@@ -79,7 +78,6 @@ export async function persistStaticAnalysisJsonArtifact(
   }
 }
 
-
 export async function loadStaticAnalysisArtifactSelection<TPayload>(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
@@ -98,11 +96,12 @@ export async function loadStaticAnalysisArtifactSelection<TPayload>(
       session_tags: [],
       earliest_created_at: null,
       latest_created_at: null,
-      scope_note: scope === 'session' && sessionTag
-        ? `No ${artifactType} artifacts matched session selector "${sessionTag}".`
-        : scope === 'latest'
-          ? `No ${artifactType} artifacts matched the latest selection window.`
-          : `No ${artifactType} artifacts were selected.`,
+      scope_note:
+        scope === 'session' && sessionTag
+          ? `No ${artifactType} artifacts matched session selector "${sessionTag}".`
+          : scope === 'latest'
+            ? `No ${artifactType} artifacts matched the latest selection window.`
+            : `No ${artifactType} artifacts were selected.`,
     }
   }
 
@@ -146,21 +145,28 @@ export async function loadStaticAnalysisArtifactSelection<TPayload>(
     selected = loaded.filter((item) => matchesSessionTag(item.session_tags, sessionTag))
   } else if (scope === 'latest' && loaded.length > 0) {
     const latestCreated = new Date(loaded[0].created_at).getTime()
-    selected = loaded.filter((item) => latestCreated - new Date(item.created_at).getTime() <= LATEST_STATIC_ARTIFACT_WINDOW_MS)
+    selected = loaded.filter(
+      (item) =>
+        latestCreated - new Date(item.created_at).getTime() <= LATEST_STATIC_ARTIFACT_WINDOW_MS
+    )
   }
 
   const artifactIds = selected.map((item) => item.artifact_id)
   const sessionTags = Array.from(new Set(selected.flatMap((item) => item.session_tags)))
-  const createdAtValues = selected.map((item) => item.created_at).filter((item) => item && item.length > 0)
+  const createdAtValues = selected
+    .map((item) => item.created_at)
+    .filter((item) => item && item.length > 0)
   const latestCreatedAt = createdAtValues.length > 0 ? createdAtValues[0] : null
-  const earliestCreatedAt = createdAtValues.length > 0 ? createdAtValues[createdAtValues.length - 1] : null
-  const scopeNote = selected.length > 0
-    ? `Selected ${selected.length} ${artifactType} artifact(s) using scope=${scope}${sessionTag ? ` selector=${sessionTag}` : ''}.`
-    : scope === 'session' && sessionTag
-      ? `No ${artifactType} artifacts matched session selector "${sessionTag}".`
-      : scope === 'latest'
-        ? `No ${artifactType} artifacts matched the latest selection window.`
-        : `No ${artifactType} artifacts were selected.`
+  const earliestCreatedAt =
+    createdAtValues.length > 0 ? createdAtValues[createdAtValues.length - 1] : null
+  const scopeNote =
+    selected.length > 0
+      ? `Selected ${selected.length} ${artifactType} artifact(s) using scope=${scope}${sessionTag ? ` selector=${sessionTag}` : ''}.`
+      : scope === 'session' && sessionTag
+        ? `No ${artifactType} artifacts matched session selector "${sessionTag}".`
+        : scope === 'latest'
+          ? `No ${artifactType} artifacts matched the latest selection window.`
+          : `No ${artifactType} artifacts were selected.`
 
   return {
     artifacts: selected,
