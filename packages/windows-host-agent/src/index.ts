@@ -670,11 +670,15 @@ async function listHyperVCheckpoints(): Promise<{
     const checkpoints = Array.isArray(parsed) ? parsed : parsed ? [parsed] : []
     return { ok: true, backend: 'hyperv-vm', vmName, checkpoints }
   } catch (err) {
+    logger.error('Failed to list Hyper-V checkpoints', {
+      vmName,
+      error: err instanceof Error ? err.message : String(err),
+    })
     return {
       ok: false,
       backend: 'hyperv-vm',
       vmName,
-      error: err instanceof Error ? err.message : String(err),
+      error: 'Failed to list Hyper-V checkpoints',
     }
   }
 }
