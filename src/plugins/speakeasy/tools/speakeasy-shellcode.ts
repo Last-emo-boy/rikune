@@ -7,11 +7,16 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, runPythonJson,
-  persistBackendArtifact, buildMetrics,
-  resolveSampleFile, resolvePythonModuleBackend,
-  buildStaticSetupRequired,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  runPythonJson,
+  persistBackendArtifact,
+  buildMetrics,
+  resolveSampleFile,
+  resolvePythonModuleBackend,
+  buildDynamicSetupRequired,
 } from '../../docker-shared.js'
 
 const TOOL_NAME = 'speakeasy.shellcode'
@@ -20,23 +25,31 @@ export const speakeasyShellcodeInputSchema = z.object({
   sample_id: z.string().describe('Sample containing shellcode.'),
   arch: z.enum(['x86', 'x64']).default('x86').describe('Shellcode architecture.'),
   offset: z.number().int().min(0).default(0).describe('Byte offset where shellcode begins.'),
-  timeout_sec: z.number().int().min(5).max(120).default(30).describe('Emulation timeout in seconds.'),
+  timeout_sec: z
+    .number()
+    .int()
+    .min(5)
+    .max(120)
+    .default(30)
+    .describe('Emulation timeout in seconds.'),
   persist_artifact: z.boolean().default(true).describe('Persist emulation report as artifact.'),
   session_tag: z.string().optional().describe('Optional artifact session tag.'),
 })
 
 export const speakeasyShellcodeOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    arch: z.string().optional(),
-    api_call_count: z.number().optional(),
-    api_calls_preview: z.array(z.any()).optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      arch: z.string().optional(),
+      api_call_count: z.number().optional(),
+      api_calls_preview: z.array(z.any()).optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
@@ -49,6 +62,7 @@ export const speakeasyShellcodeToolDefinition: ToolDefinition = {
     'Emulate raw shellcode bytes from a sample using Speakeasy. Specify architecture and optional offset.',
   inputSchema: speakeasyShellcodeInputSchema,
   outputSchema: speakeasyShellcodeOutputSchema,
+  runtimeBackendHint: { type: 'inline', handler: 'executeSpeakeasyShellcode' },
 }
 
 const SPEAKEASY_SHELLCODE_SCRIPT = `
@@ -96,7 +110,7 @@ print(json.dumps({
 
 export function createSpeakeasyShellcodeHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -104,22 +118,48 @@ export function createSpeakeasyShellcodeHandler(
       const input = speakeasyShellcodeInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolvePythonModuleBackend({ envPythonPath: process.env.SPEAKEASY_PYTHON, moduleNames: ['speakeasy'], distributionNames: ['speakeasy-emulator'] })
+      const backend = resolvePythonModuleBackend({
+        envPythonPath: process.env.SPEAKEASY_PYTHON,
+        moduleNames: ['speakeasy'],
+        distributionNames: ['speakeasy-emulator'],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'speakeasy', available: false, error: 'speakeasy-emulator not installed' } as any, startTime, TOOL_NAME)
+        return buildDynamicSetupRequired(
+          backend ||
+            ({
+              name: 'speakeasy',
+              available: false,
+              error: 'speakeasy-emulator not installed',
+            } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const result = await runPythonJson(
         backend.path,
         SPEAKEASY_SHELLCODE_SCRIPT,
-        { sample_path: samplePath, arch: input.arch, offset: input.offset, timeout_sec: input.timeout_sec },
-        (input.timeout_sec + 15) * 1000,
+        {
+          sample_path: samplePath,
+          arch: input.arch,
+          offset: input.offset,
+          timeout_sec: input.timeout_sec,
+        },
+        (input.timeout_sec + 15) * 1000
       )
 
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'speakeasy', 'shellcode', JSON.stringify(result.parsed, null, 2), { extension: 'json', mime: 'application/json', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'speakeasy',
+          'shellcode',
+          JSON.stringify(result.parsed, null, 2),
+          { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -143,7 +183,11 @@ export function createSpeakeasyShellcodeHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

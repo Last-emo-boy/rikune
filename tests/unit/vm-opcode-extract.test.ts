@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createVmOpcodeExtractHandler, vmOpcodeExtractInputSchema } from '../../src/tools/vm-opcode-extract.js'
+import { createVmOpcodeExtractHandler, vmOpcodeExtractInputSchema } from '../../src/plugins/vm-analysis/tools/vm-opcode-extract.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 

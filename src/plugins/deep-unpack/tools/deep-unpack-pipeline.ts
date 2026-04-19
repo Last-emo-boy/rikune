@@ -11,6 +11,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 import {
   resolveSampleFile,
   runPythonJson,
@@ -25,30 +26,41 @@ const TOOL_NAME = 'deep.unpack.pipeline'
 
 export const deepUnpackPipelineInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  max_layers: z.number().int().min(1).max(10).default(5)
+  max_layers: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .default(5)
     .describe('Maximum unpack iterations �?supports up to 10 layers for deeply nested packers'),
-  strategies: z.array(z.enum(['upx', 'speakeasy', 'qiling', 'memory_carve']))
+  strategies: z
+    .array(z.enum(['upx', 'speakeasy', 'qiling', 'memory_carve']))
     .default(['upx', 'speakeasy', 'qiling', 'memory_carve'])
     .describe('Ordered list of unpacking strategies to try per layer'),
-  timeout: z.number().int().min(10).max(600).default(120)
+  timeout: z
+    .number()
+    .int()
+    .min(10)
+    .max(600)
+    .default(120)
     .describe('Per-strategy timeout in seconds'),
-  persist_artifact: z.boolean().default(true)
-    .describe('Persist unpacked binary as artifact'),
-  session_tag: z.string().optional()
-    .describe('Optional session tag for artifact grouping'),
+  persist_artifact: z.boolean().default(true).describe('Persist unpacked binary as artifact'),
+  session_tag: z.string().optional().describe('Optional session tag for artifact grouping'),
 })
 
 export const deepUnpackPipelineOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    total_layers: z.number(),
-    successful_layers: z.number(),
-    layers: z.array(z.any()),
-    final_sample_id: z.string().nullable(),
-    final_sha256: z.string().nullable(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      total_layers: z.number(),
+      successful_layers: z.number(),
+      layers: z.array(z.any()),
+      final_sample_id: z.string().nullable(),
+      final_sha256: z.string().nullable(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   warnings: z.array(z.string()).optional(),
   artifacts: z.array(z.any()).optional(),
@@ -70,7 +82,7 @@ export const deepUnpackPipelineToolDefinition: ToolDefinition = {
 export function createDeepUnpackPipelineHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
-  dependencies?: SharedBackendDependencies,
+  dependencies?: SharedBackendDependencies
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -84,15 +96,24 @@ export function createDeepUnpackPipelineHandler(
       const hasDynamic = backends.qiling?.available || backends.wine?.available
       if (!hasDynamic && !backends.upx?.available) {
         return buildDynamicSetupRequired(
-          backends.qiling || backends.wine || { available: false, source: null, path: null, version: null, checked_candidates: [], error: 'No unpacking backends available' },
-          startTime, TOOL_NAME,
+          backends.qiling ||
+            backends.wine || {
+              available: false,
+              source: null,
+              path: null,
+              version: null,
+              checked_candidates: [],
+              error: 'No unpacking backends available',
+            },
+          startTime,
+          TOOL_NAME
         )
       }
 
       // Resolve Python path for worker
       const pythonPath = backends.qiling?.path
-        ? backends.qiling.path  // Qiling venv has pefile
-        : process.platform === 'win32' ? 'python' : 'python3'
+        ? backends.qiling.path // Qiling venv has pefile
+        : getPythonCommand()
 
       const workerScript = `
 import sys, json, importlib.util
@@ -113,7 +134,7 @@ mod.main()
           strategies: input.strategies,
           timeout: input.timeout,
         },
-        input.timeout * 1000 * (input.max_layers + 1),
+        input.timeout * 1000 * (input.max_layers + 1)
       )
 
       const workerData = result.parsed
@@ -125,8 +146,11 @@ mod.main()
           const fs = await import('fs/promises')
           const content = await fs.readFile(workerData.data.final_path)
           const artifact = await persistBackendArtifact(
-            workspaceManager, database, input.sample_id,
-            'deep_unpack', 'unpacked',
+            workspaceManager,
+            database,
+            input.sample_id,
+            'deep_unpack',
+            'unpacked',
             content,
             {
               extension: 'exe',
@@ -136,7 +160,7 @@ mod.main()
                 layers_unpacked: workerData.data.successful_layers,
                 final_sha256: workerData.data.final_sha256,
               },
-            },
+            }
           )
           artifacts.push(artifact)
         } catch {
@@ -150,7 +174,12 @@ mod.main()
           ...workerData.data,
           final_sample_id: null, // caller can use unpack.reingest to register
           recommended_next_tools: workerData.ok
-            ? ['unpack.reingest', 'pe.fingerprint', 'workflow.analyze.start', 'deep.unpack.pe_reconstruct']
+            ? [
+                'unpack.reingest',
+                'pe.fingerprint',
+                'workflow.analyze.start',
+                'deep.unpack.pe_reconstruct',
+              ]
             : ['deep.unpack.pe_reconstruct', 'deobf.strings', 'behavior.capture'],
           next_actions: workerData.ok
             ? [

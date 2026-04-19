@@ -77,7 +77,10 @@ export const taskStatusToolDefinition: ToolDefinition = {
   outputSchema: taskStatusOutputSchema,
 }
 
-export function createTaskStatusHandler(jobQueue: JobQueue, database?: DatabaseManager): ToolHandler {
+export function createTaskStatusHandler(
+  jobQueue: JobQueue,
+  database?: DatabaseManager
+): ToolHandler {
   const buildJsonResult = (payload: Record<string, unknown>, isError = false): ToolResult => ({
     content: [
       {
@@ -111,12 +114,13 @@ export function createTaskStatusHandler(jobQueue: JobQueue, database?: DatabaseM
     const progress = status.progress as number
     const startedAt = status.startedAt as string
     const estimatedDurationMs = status.estimatedDurationMs as number
-    
+
     // Calculate elapsed time
     const elapsed = startedAt ? Date.now() - new Date(startedAt).getTime() : 0
-    const estimated = estimatedDurationMs || TOOL_DURATION_ESTIMATES[tool] || TOOL_DURATION_ESTIMATES.default
+    const estimated =
+      estimatedDurationMs || TOOL_DURATION_ESTIMATES[tool] || TOOL_DURATION_ESTIMATES.default
     const remaining = Math.max(0, estimated - elapsed)
-    
+
     // Friendly messages based on status
     const messages: Record<string, string> = {
       queued: 'Job queued. Waiting for worker...',
@@ -126,24 +130,27 @@ export function createTaskStatusHandler(jobQueue: JobQueue, database?: DatabaseM
       cancelled: `Analysis cancelled: ${status.cancelReason || 'User requested'}`,
       interrupted: `Analysis interrupted: ${status.error || 'Worker context was lost before completion'}`,
     }
-    
+
     return messages[jobStatus] || `Status: ${jobStatus}`
   }
 
   return async (args: unknown): Promise<ToolResult> => {
     try {
       const input = taskStatusInputSchema.parse(args)
-      const listStatus = (jobQueue as JobQueue & {
-        listStatuses?: (status?: JobStatusType) => unknown[]
-      }).listStatuses
+      const listStatus = (
+        jobQueue as JobQueue & {
+          listStatuses?: (status?: JobStatusType) => unknown[]
+        }
+      ).listStatuses
 
       if (input.job_id) {
         const detailedStatuses = listStatus ? listStatus.call(jobQueue) : []
         const detailedStatus = Array.isArray(detailedStatuses)
-          ? (detailedStatuses as Array<Record<string, unknown>>).find((row) => row.id === input.job_id)
+          ? (detailedStatuses as Array<Record<string, unknown>>).find(
+              (row) => row.id === input.job_id
+            )
           : undefined
-        const persistedJob =
-          !detailedStatus && database ? database.findJob(input.job_id) : null
+        const persistedJob = !detailedStatus && database ? database.findJob(input.job_id) : null
         const status = detailedStatus || jobQueue.getStatus(input.job_id) || persistedJob
         if (!status) {
           return buildJsonResult(
@@ -180,11 +187,13 @@ export function createTaskStatusHandler(jobQueue: JobQueue, database?: DatabaseM
         const schedulerMetadata = parseSchedulerMetadata(schedulerEvent?.metadata_json)
 
         // Calculate elapsed time safely
-        const startedAtStr = typeof statusRecord.startedAt === 'string' ? statusRecord.startedAt : null
+        const startedAtStr =
+          typeof statusRecord.startedAt === 'string' ? statusRecord.startedAt : null
         const elapsed = startedAtStr ? Date.now() - new Date(startedAtStr).getTime() : 0
-        const estimatedDurationMs = typeof statusRecord.estimatedDurationMs === 'number' 
-          ? statusRecord.estimatedDurationMs 
-          : (TOOL_DURATION_ESTIMATES[statusRecord.tool as string] || TOOL_DURATION_ESTIMATES.default)
+        const estimatedDurationMs =
+          typeof statusRecord.estimatedDurationMs === 'number'
+            ? statusRecord.estimatedDurationMs
+            : TOOL_DURATION_ESTIMATES[statusRecord.tool] || TOOL_DURATION_ESTIMATES.default
         const remaining = Math.max(0, estimatedDurationMs - elapsed)
 
         return buildJsonResult({
@@ -245,31 +254,34 @@ export function createTaskStatusHandler(jobQueue: JobQueue, database?: DatabaseM
                 status: statusRecord.status,
                 progress: typeof statusRecord.progress === 'number' ? statusRecord.progress : null,
                 timeout_ms: typeof statusRecord.timeout === 'number' ? statusRecord.timeout : null,
-                }),
+              }),
               analysis_run:
-                    isAnalysisStageJob && stageRunId
-                      ? {
-                          run_id: stageRunId,
-                          latest_run_status: runSummary?.status || database?.findAnalysisRun(stageRunId)?.status || null,
-                          recovery_state: runSummary?.recovery_state || 'none',
-                          recoverable_stages: runSummary?.recoverable_stages || [],
+                isAnalysisStageJob && stageRunId
+                  ? {
+                      run_id: stageRunId,
+                      latest_run_status:
+                        runSummary?.status || database?.findAnalysisRun(stageRunId)?.status || null,
+                      recovery_state: runSummary?.recovery_state || 'none',
+                      recoverable_stages: runSummary?.recoverable_stages || [],
                     }
                   : undefined,
             },
-            result: input.include_result && statusRecord.status === 'completed' ? jobQueue.getResult(input.job_id) : undefined,
+            result:
+              input.include_result && statusRecord.status === 'completed'
+                ? jobQueue.getResult(input.job_id)
+                : undefined,
             result_mode: 'job_lookup',
             tool_surface_role: 'compatibility',
             preferred_primary_tools: ['workflow.analyze.status'],
-            recommended_next_tools:
-              isAnalysisStageJob
-                ? statusRecord.status === 'completed'
-                  ? ['workflow.analyze.status', 'artifact.read', 'report.summarize']
-                  : statusRecord.status === 'interrupted'
-                    ? ['workflow.analyze.status', 'workflow.analyze.promote', 'task.status']
+            recommended_next_tools: isAnalysisStageJob
+              ? statusRecord.status === 'completed'
+                ? ['workflow.analyze.status', 'artifact.read', 'report.summarize']
+                : statusRecord.status === 'interrupted'
+                  ? ['workflow.analyze.status', 'workflow.analyze.promote', 'task.status']
                   : ['workflow.analyze.status', 'task.status']
-                : statusRecord.status === 'completed'
-                  ? ['workflow.reconstruct', 'code.functions.list', 'artifact.read']
-                  : ['task.status'],
+              : statusRecord.status === 'completed'
+                ? ['workflow.reconstruct', 'code.functions.list', 'artifact.read']
+                : ['task.status'],
             next_actions:
               statusRecord.status === 'queued' || statusRecord.status === 'running'
                 ? [
@@ -285,15 +297,15 @@ export function createTaskStatusHandler(jobQueue: JobQueue, database?: DatabaseM
                         ? `The underlying queued stage was interrupted. Inspect workflow.analyze.status for run_id=${stageRunId} and re-promote only the recoverable stages you still need.`
                         : 'This job was interrupted before completion; decide whether it should be requeued or restarted from the originating tool.',
                     ]
-                : statusRecord.status === 'completed'
-                  ? [
-                      isAnalysisStageJob && stageRunId
-                        ? `Inspect workflow.analyze.status for run_id=${stageRunId} before deciding whether to promote or summarize the persisted run.`
-                        : 'Inspect the completed job result or continue with downstream analysis tools using the finished artifacts.',
-                    ]
-                  : [
-                      'Inspect the error or cancellation reason before deciding whether to retry the originating analysis tool.',
-                    ],
+                  : statusRecord.status === 'completed'
+                    ? [
+                        isAnalysisStageJob && stageRunId
+                          ? `Inspect workflow.analyze.status for run_id=${stageRunId} before deciding whether to promote or summarize the persisted run.`
+                          : 'Inspect the completed job result or continue with downstream analysis tools using the finished artifacts.',
+                      ]
+                    : [
+                        'Inspect the error or cancellation reason before deciding whether to retry the originating analysis tool.',
+                      ],
           },
         })
       }
@@ -416,7 +428,9 @@ export function createTaskStatusHandler(jobQueue: JobQueue, database?: DatabaseM
                     : 'Use polling_guidance to wait before the next queue check.',
                   'Switch to task.status(job_id) when you want detailed state for a specific job.',
                 ]
-              : ['Start or inspect another analysis tool; there are no active jobs to poll right now.'],
+              : [
+                  'Start or inspect another analysis tool; there are no active jobs to poll right now.',
+                ],
         },
       })
     } catch (error) {

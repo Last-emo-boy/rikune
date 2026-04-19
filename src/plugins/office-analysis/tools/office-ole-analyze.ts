@@ -7,10 +7,15 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, runPythonJson,
-  persistBackendArtifact, buildMetrics,
-  resolveSampleFile, resolvePythonModuleBackend,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  runPythonJson,
+  persistBackendArtifact,
+  buildMetrics,
+  resolveSampleFile,
+  resolvePythonModuleBackend,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -25,23 +30,33 @@ export const officeOleAnalyzeInputSchema = z.object({
 
 export const officeOleAnalyzeOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    is_ole2: z.boolean().optional(),
-    streams: z.array(z.object({
-      name: z.string(),
-      size: z.number(),
-    })).optional(),
-    embedded_objects: z.array(z.object({
-      type: z.string(),
-      indicator: z.string().optional(),
-    })).optional(),
-    rtf_objects: z.array(z.any()).optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      is_ole2: z.boolean().optional(),
+      streams: z
+        .array(
+          z.object({
+            name: z.string(),
+            size: z.number(),
+          })
+        )
+        .optional(),
+      embedded_objects: z
+        .array(
+          z.object({
+            type: z.string(),
+            indicator: z.string().optional(),
+          })
+        )
+        .optional(),
+      rtf_objects: z.array(z.any()).optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
   metrics: SharedMetricsSchema.optional(),
@@ -111,7 +126,7 @@ print(json.dumps(result, ensure_ascii=False))
 
 export function createOfficeOleAnalyzeHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -119,12 +134,30 @@ export function createOfficeOleAnalyzeHandler(
       const input = officeOleAnalyzeInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolvePythonModuleBackend({ envPythonPath: process.env.OLETOOLS_PYTHON, moduleNames: ['oletools'], distributionNames: ['oletools'] })
+      const backend = resolvePythonModuleBackend({
+        envPythonPath: process.env.OLETOOLS_PYTHON,
+        moduleNames: ['oletools'],
+        distributionNames: ['oletools'],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'oletools', available: false, error: 'oletools Python module not available' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend ||
+            ({
+              name: 'oletools',
+              available: false,
+              error: 'oletools Python module not available',
+            } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
-      const result = await runPythonJson(backend.path, OLE_ANALYZE_SCRIPT, { sample_path: samplePath }, input.timeout_sec * 1000)
+      const result = await runPythonJson(
+        backend.path,
+        OLE_ANALYZE_SCRIPT,
+        { sample_path: samplePath },
+        input.timeout_sec * 1000
+      )
 
       const streams = result.parsed?.streams || []
       const embeds = result.parsed?.embedded_objects || []
@@ -133,7 +166,15 @@ export function createOfficeOleAnalyzeHandler(
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'office', 'ole_analysis', JSON.stringify(result.parsed, null, 2), { extension: 'json', mime: 'application/json', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'office',
+          'ole_analysis',
+          JSON.stringify(result.parsed, null, 2),
+          { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -147,7 +188,12 @@ export function createOfficeOleAnalyzeHandler(
           rtf_objects: rtfObjs.slice(0, 10),
           artifact,
           summary: `OLE analysis: ${streams.length} streams, ${embeds.length} embedded objects, ${rtfObjs.length} RTF objects. OLE2: ${result.parsed?.is_ole2 ? 'yes' : 'no'}.`,
-          recommended_next_tools: ['artifact.read', 'office.vba.extract', 'strings.extract', 'yara.scan'],
+          recommended_next_tools: [
+            'artifact.read',
+            'office.vba.extract',
+            'strings.extract',
+            'yara.scan',
+          ],
           next_actions: [
             'Check embedded objects for executable payloads.',
             'Extract VBA macros with office.vba.extract.',
@@ -157,7 +203,11 @@ export function createOfficeOleAnalyzeHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

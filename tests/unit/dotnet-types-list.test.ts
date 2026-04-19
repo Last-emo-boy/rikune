@@ -12,7 +12,7 @@ import type { ToolArgs, WorkerResult } from '../../src/types.js'
 import {
   createDotNetTypesListHandler,
   DotNetTypesListInputSchema,
-} from '../../src/tools/dotnet-types-list.js'
+} from '../../src/plugins/static-triage/tools/dotnet-types-list.js'
 
 describe('dotnet.types.list tool', () => {
   let workspaceManager: WorkspaceManager

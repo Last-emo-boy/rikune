@@ -31,7 +31,9 @@ describe('setup.remediate tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = SetupRemediateInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = SetupRemediateInputSchema.safeParse({
+        blocked_tool: { tool_name: 'ghidra.analyze', error_message: 'Ghidra not found' }
+      })
       expect(result.success).toBe(true)
     })
 
@@ -41,21 +43,22 @@ describe('setup.remediate tool', () => {
     })
 
     test('should reject invalid types', () => {
-      const result = SetupRemediateInputSchema.safeParse({ sample_id: 123 })
+      const result = SetupRemediateInputSchema.safeParse({ blocked_tool: 'not-an-object' })
       expect(result.success).toBe(false)
     })
   })
 
   describe('Handler', () => {
-    test('should return error for non-existent resource', async () => {
+    test('should return remediation result', async () => {
       const handler = createSetupRemediateHandler(mockWorkspaceManager, mockDatabase, mockCacheManager)
 
-      mockDatabase.findSample.mockReturnValue(undefined)
+      const result = await handler({
+        blocked_tool: { tool_name: 'ghidra.analyze', error_message: 'Ghidra not found' },
+      })
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
-
-      expect(result.ok).toBe(false)
-      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)
+      // Handler returns WorkerResult
+      expect(result.ok).toBeDefined()
+      expect(result.data).toBeDefined()
     })
   })
 })

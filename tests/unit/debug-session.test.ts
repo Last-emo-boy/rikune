@@ -2,8 +2,8 @@
  * Unit tests for interactive debug session
  */
 
-import { GdbMiClient, type MiResponse } from '../../src/debug/gdb-mi-client.js'
-import { DebugSessionManager } from '../../src/debug/debug-session-state.js'
+import { GdbMiClient, type MiResponse } from '../../src/plugins/debug-session/debug/gdb-mi-client.js'
+import { DebugSessionManager } from '../../src/plugins/debug-session/debug/debug-session-state.js'
 
 describe('GdbMiClient', () => {
   it('can be instantiated', () => {

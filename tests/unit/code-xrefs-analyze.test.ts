@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals'
-import { createCodeXrefsAnalyzeHandler } from '../../src/tools/code-xrefs-analyze.js'
+import { createCodeXrefsAnalyzeHandler } from '../../src/plugins/code-analysis/tools/code-xrefs-analyze.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 import type { CacheManager } from '../../src/cache-manager.js'

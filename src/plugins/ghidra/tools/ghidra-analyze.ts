@@ -1,13 +1,13 @@
 /**
  * ghidra.analyze MCP Tool
- * 
+ *
  * Requirements: 8.1, 8.2, 8.3
- * 
+ *
  * Analyzes a binary sample with Ghidra Headless and extracts function list
  */
 
-import { z } from 'zod';
-import type { ToolDefinition, ToolResult, PluginToolDeps } from '../../sdk.js';
+import { z } from 'zod'
+import type { ToolDefinition, ToolResult, PluginToolDeps } from '../../sdk.js'
 
 /**
  * Input schema for ghidra.analyze tool
@@ -15,18 +15,36 @@ import type { ToolDefinition, ToolResult, PluginToolDeps } from '../../sdk.js';
  */
 export const ghidraAnalyzeInputSchema = z.object({
   sample_id: z.string().describe('Sample identifier (sha256:<hex>)'),
-  options: z.object({
-    timeout: z.number().optional().describe('Analysis timeout in seconds (default: 300)'),
-    max_cpu: z.string().optional().describe('Maximum CPU cores to use (default: "4")'),
-    project_key: z.string().optional().describe('Optional project key for reusing existing project'),
-    processor: z.string().optional().describe('Optional processor or language override passed to analyzeHeadless -processor'),
-    language_id: z.string().optional().describe('Optional Ghidra language ID override for Rust/Go/C++ binaries'),
-    cspec: z.string().optional().describe('Optional compiler specification passed to analyzeHeadless -cspec'),
-    script_paths: z.array(z.string()).optional().describe('Additional Ghidra script directories appended to the default script path'),
-  }).optional().describe('Ghidra analysis options')
-});
+  options: z
+    .object({
+      timeout: z.number().optional().describe('Analysis timeout in seconds (default: 300)'),
+      max_cpu: z.string().optional().describe('Maximum CPU cores to use (default: "4")'),
+      project_key: z
+        .string()
+        .optional()
+        .describe('Optional project key for reusing existing project'),
+      processor: z
+        .string()
+        .optional()
+        .describe('Optional processor or language override passed to analyzeHeadless -processor'),
+      language_id: z
+        .string()
+        .optional()
+        .describe('Optional Ghidra language ID override for Rust/Go/C++ binaries'),
+      cspec: z
+        .string()
+        .optional()
+        .describe('Optional compiler specification passed to analyzeHeadless -cspec'),
+      script_paths: z
+        .array(z.string())
+        .optional()
+        .describe('Additional Ghidra script directories appended to the default script path'),
+    })
+    .optional()
+    .describe('Ghidra analysis options'),
+})
 
-export type GhidraAnalyzeInput = z.infer<typeof ghidraAnalyzeInputSchema>;
+export type GhidraAnalyzeInput = z.infer<typeof ghidraAnalyzeInputSchema>
 
 const GhidraAnalyzeDataSchema = z.object({
   analysis_id: z.string(),
@@ -62,28 +80,28 @@ export const ghidraAnalyzeOutputSchema = z.object({
  * Requirements: 8.2, 8.3
  */
 export interface GhidraAnalyzeOutput {
-  ok: boolean;
+  ok: boolean
   data?: {
-    analysis_id: string;
-    job_id?: string;
-    backend: string;
-    function_count: number;
-    project_path: string;
-    status: string;
-    polling_guidance?: unknown | null;
+    analysis_id: string
+    job_id?: string
+    backend: string
+    function_count: number
+    project_path: string
+    status: string
+    polling_guidance?: unknown | null
     capabilities?: {
-      function_index: unknown;
-      decompile: unknown;
-      cfg: unknown;
-    };
-    result_mode?: 'queued' | 'reused' | 'completed' | 'partial_success';
-    recommended_next_tools?: string[];
-    next_actions?: string[];
-  };
-  diagnostics?: unknown;
-  normalized_error?: unknown;
-  errors?: string[];
-  warnings?: string[];
+      function_index: unknown
+      decompile: unknown
+      cfg: unknown
+    }
+    result_mode?: 'queued' | 'reused' | 'completed' | 'partial_success'
+    recommended_next_tools?: string[]
+    next_actions?: string[]
+  }
+  diagnostics?: unknown
+  normalized_error?: unknown
+  errors?: string[]
+  warnings?: string[]
 }
 
 /**
@@ -103,19 +121,17 @@ export const ghidraAnalyzeToolDefinition: ToolDefinition = {
     '- Common mistake: assuming this tool is always synchronous and skipping task.status when a queue-backed client is active.',
   inputSchema: ghidraAnalyzeInputSchema,
   outputSchema: ghidraAnalyzeOutputSchema,
-};
+}
 
 /**
  * Create handler for ghidra.analyze tool
- * 
+ *
  * Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6
- * 
+ *
  * @param deps - Plugin dependencies injected by the server
  * @returns Tool handler function
  */
-export function createGhidraAnalyzeHandler(
-  deps: PluginToolDeps
-) {
+export function createGhidraAnalyzeHandler(deps: PluginToolDeps) {
   const {
     workspaceManager,
     database,
@@ -128,12 +144,9 @@ export function createGhidraAnalyzeHandler(
     getGhidraReadiness,
     parseGhidraAnalysisMetadata,
     buildPollingGuidance,
-  } = deps;
+  } = deps
 
-  const buildJsonResult = (
-    payload: GhidraAnalyzeOutput,
-    isError = false
-  ): ToolResult => ({
+  const buildJsonResult = (payload: GhidraAnalyzeOutput, isError = false): ToolResult => ({
     content: [
       {
         type: 'text',
@@ -147,15 +160,18 @@ export function createGhidraAnalyzeHandler(
   return async (args: unknown): Promise<ToolResult> => {
     try {
       // Validate input
-      const input = ghidraAnalyzeInputSchema.parse(args);
+      const input = ghidraAnalyzeInputSchema.parse(args)
 
-      logger.info({
-        sample_id: input.sample_id,
-        options: input.options
-      }, 'ghidra.analyze tool called');
+      logger.info(
+        {
+          sample_id: input.sample_id,
+          options: input.options,
+        },
+        'ghidra.analyze tool called'
+      )
 
       // Check if sample exists
-      const sample = database.findSample(input.sample_id);
+      const sample = database.findSample(input.sample_id)
       if (!sample) {
         return buildJsonResult(
           {
@@ -163,11 +179,11 @@ export function createGhidraAnalyzeHandler(
             errors: [`Sample not found: ${input.sample_id}`],
           },
           true
-        );
+        )
       }
 
       // Create decompiler worker
-      const decompilerWorker = new DecompilerWorker(database, workspaceManager);
+      const decompilerWorker = new DecompilerWorker(database, workspaceManager)
 
       const analyses = database.findAnalysesBySample(input.sample_id)
       const reusableAnalysis = (() => {
@@ -195,8 +211,7 @@ export function createGhidraAnalyzeHandler(
             backend: reusableAnalysis.backend,
             function_count:
               typeof metadata.function_count === 'number' ? metadata.function_count : 0,
-            project_path:
-              typeof metadata.project_path === 'string' ? metadata.project_path : '',
+            project_path: typeof metadata.project_path === 'string' ? metadata.project_path : '',
             status: 'reused',
             capabilities: getGhidraReadiness(reusableAnalysis),
             result_mode: 'reused',
@@ -221,7 +236,7 @@ export function createGhidraAnalyzeHandler(
       }
 
       // Convert timeout from seconds to milliseconds
-      const timeoutMs = (input.options?.timeout || 300) * 1000;
+      const timeoutMs = (input.options?.timeout || 300) * 1000
 
       // Prepare Ghidra options
       const ghidraOptions = {
@@ -232,7 +247,7 @@ export function createGhidraAnalyzeHandler(
         languageId: input.options?.language_id,
         cspec: input.options?.cspec,
         scriptPaths: input.options?.script_paths,
-      };
+      }
 
       // If job queue is available, enqueue the analysis
       if (jobQueue) {
@@ -246,14 +261,17 @@ export function createGhidraAnalyzeHandler(
           retryPolicy: {
             maxRetries: 2,
             backoffMs: 5000,
-            retryableErrors: ['E_TIMEOUT', 'E_RESOURCE_EXHAUSTED']
-          }
-        });
+            retryableErrors: ['E_TIMEOUT', 'E_RESOURCE_EXHAUSTED'],
+          },
+        })
 
-        logger.info({
-          job_id: jobId,
-          sample_id: input.sample_id
-        }, 'Ghidra analysis job enqueued');
+        logger.info(
+          {
+            job_id: jobId,
+            sample_id: input.sample_id,
+          },
+          'Ghidra analysis job enqueued'
+        )
 
         const output: GhidraAnalyzeOutput = {
           ok: true,
@@ -276,19 +294,22 @@ export function createGhidraAnalyzeHandler(
               'Wait for approximately the recommended polling interval before querying task.status.',
               'Call task.status with the returned job_id until the analysis completes, fails, or is cancelled.',
             ],
-          }
-        };
+          },
+        }
 
-        return buildJsonResult(output);
+        return buildJsonResult(output)
       }
 
       // Otherwise, execute synchronously
-      const result = await decompilerWorker.analyze(input.sample_id, ghidraOptions);
+      const result = await decompilerWorker.analyze(input.sample_id, ghidraOptions)
 
-      logger.info({
-        analysis_id: result.analysisId,
-        function_count: result.functionCount
-      }, 'Ghidra analysis completed');
+      logger.info(
+        {
+          analysis_id: result.analysisId,
+          function_count: result.functionCount,
+        },
+        'Ghidra analysis completed'
+      )
 
       const output: GhidraAnalyzeOutput = {
         ok: true,
@@ -311,28 +332,30 @@ export function createGhidraAnalyzeHandler(
           ],
         },
         warnings: result.warnings,
-      };
+      }
 
-      return buildJsonResult(output);
-
+      return buildJsonResult(output)
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const diagnostics = getGhidraDiagnostics(error);
-      const normalizedError = normalizeGhidraError(error, 'ghidra.analyze');
-      logger.error({
-        error: errorMessage,
-        ghidra_diagnostics: diagnostics,
-        normalized_error: normalizedError,
-      }, 'ghidra.analyze tool failed');
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      const diagnostics = getGhidraDiagnostics(error)
+      const normalizedError = normalizeGhidraError(error, 'ghidra.analyze')
+      logger.error(
+        {
+          error: errorMessage,
+          ghidra_diagnostics: diagnostics,
+          normalized_error: normalizedError,
+        },
+        'ghidra.analyze tool failed'
+      )
 
       const output: GhidraAnalyzeOutput = {
         ok: false,
         diagnostics,
         normalized_error: normalizedError,
-        errors: [errorMessage]
-      };
+        errors: [errorMessage],
+      }
 
-      return buildJsonResult(output, true);
+      return buildJsonResult(output, true)
     }
-  };
+  }
 }

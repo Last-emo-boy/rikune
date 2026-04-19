@@ -23,7 +23,9 @@ export const ConfidenceSemanticsSchema = z.object({
 
 export type ConfidenceSemantics = z.infer<typeof ConfidenceSemanticsSchema>
 
-export function confidenceBand(score: number | null | undefined): z.infer<typeof ConfidenceSemanticsSchema>['band'] {
+export function confidenceBand(
+  score: number | null | undefined
+): z.infer<typeof ConfidenceSemanticsSchema>['band'] {
   if (typeof score !== 'number' || Number.isNaN(score)) {
     return 'none'
   }
@@ -85,7 +87,9 @@ export function buildRuntimeConfidenceSemantics(input: {
 
   const drivers = [
     (input.matchedApis || []).length > 0 ? `matched_apis=${(input.matchedApis || []).length}` : '',
-    (input.matchedStages || []).length > 0 ? `matched_stages=${(input.matchedStages || []).length}` : '',
+    (input.matchedStages || []).length > 0
+      ? `matched_stages=${(input.matchedStages || []).length}`
+      : '',
     (input.matchedMemoryRegions || []).length > 0
       ? `matched_regions=${(input.matchedMemoryRegions || []).length}`
       : '',
@@ -119,13 +123,15 @@ export function buildNamingConfidenceSemantics(input: {
 }): ConfidenceSemantics {
   const baseScore =
     input.resolutionSource === 'llm'
-      ? input.llmConfidence ?? null
-      : input.renameConfidence ?? input.llmConfidence ?? null
+      ? (input.llmConfidence ?? null)
+      : (input.renameConfidence ?? input.llmConfidence ?? null)
 
   const drivers = [
     input.ruleBasedName ? `rule_name=${input.ruleBasedName}` : '',
     input.validatedName ? `validated_name=${input.validatedName}` : '',
-    typeof input.renameConfidence === 'number' ? `rule_score=${input.renameConfidence.toFixed(2)}` : '',
+    typeof input.renameConfidence === 'number'
+      ? `rule_score=${input.renameConfidence.toFixed(2)}`
+      : '',
     typeof input.llmConfidence === 'number' ? `llm_score=${input.llmConfidence.toFixed(2)}` : '',
     `resolution_source=${input.resolutionSource}`,
   ].filter((item) => item.length > 0)
@@ -168,14 +174,12 @@ export function buildReportConfidenceSemantics(input: {
     calibrated: false,
     meaning:
       'Assessment confidence for the generated report or triage summary. It indicates evidence strength and corroboration depth, not a calibrated threat probability.',
-    compare_within:
-      'Compare within the same report mode, tool version, and evidence scope.',
+    compare_within: 'Compare within the same report mode, tool version, and evidence scope.',
     caution:
       'Threat or intent judgments remain evidence-sensitive and can shift when scope changes from all to latest/session or when stronger runtime evidence is added.',
     drivers,
   }
 }
-
 
 export function buildCapabilityConfidenceSemantics(input: {
   score: number

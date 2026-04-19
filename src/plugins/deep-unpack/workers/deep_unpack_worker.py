@@ -418,7 +418,8 @@ def reconstruct_pe(dump_path: str, output_dir: str, api_trace: list = None,
         for sec in pe.sections:
             if sec.SizeOfRawData == 0 and sec.Misc_VirtualSize > 0:
                 sec.SizeOfRawData = sec.Misc_VirtualSize
-                fixes_applied.append(f"Fixed raw size for {sec.Name.rstrip(b'\x00').decode('utf-8', errors='replace')}")
+                sec_name = sec.Name.rstrip(b"\x00").decode("utf-8", errors="replace")
+                fixes_applied.append(f"Fixed raw size for {sec_name}")
 
         # Fix 2: Entry point
         if oep_rva:

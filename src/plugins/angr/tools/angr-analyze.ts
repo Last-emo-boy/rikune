@@ -1,5 +1,5 @@
 /**
- * angr analyze tool â€?bounded angr static analysis against a sample.
+ * angr analyze tool ï¿½?bounded angr static analysis against a sample.
  */
 
 import { z } from 'zod'
@@ -8,10 +8,16 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
-  ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
-  normalizeError, runPythonJson,
-  persistBackendArtifact, buildMetrics, buildDynamicSetupRequired,
-  resolveSampleFile, resolveAnalysisBackends,
+  ArtifactRefSchema,
+  BackendSchema,
+  SharedMetricsSchema,
+  normalizeError,
+  runPythonJson,
+  persistBackendArtifact,
+  buildMetrics,
+  buildDynamicSetupRequired,
+  resolveSampleFile,
+  resolveAnalysisBackends,
 } from '../../docker-shared.js'
 
 export const angrAnalyzeInputSchema = z.object({
@@ -20,9 +26,24 @@ export const angrAnalyzeInputSchema = z.object({
     .enum(['cfg_fast'])
     .default('cfg_fast')
     .describe('angr analysis mode. cfg_fast is the bounded default.'),
-  timeout_sec: z.number().int().min(5).max(300).default(60).describe('angr execution timeout in seconds.'),
-  max_functions: z.number().int().min(1).max(200).default(25).describe('Maximum function previews to return.'),
-  persist_artifact: z.boolean().default(true).describe('Persist the angr summary JSON as an artifact.'),
+  timeout_sec: z
+    .number()
+    .int()
+    .min(5)
+    .max(300)
+    .default(60)
+    .describe('angr execution timeout in seconds.'),
+  max_functions: z
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .default(25)
+    .describe('Maximum function previews to return.'),
+  persist_artifact: z
+    .boolean()
+    .default(true)
+    .describe('Persist the angr summary JSON as an artifact.'),
   session_tag: z.string().optional().describe('Optional artifact session tag.'),
 })
 
@@ -157,7 +178,11 @@ export function createAngrAnalyzeHandler(
           functions: Array.isArray(result.parsed?.functions) ? result.parsed.functions : [],
           artifact,
           summary: `angr CFGFast recovered ${Number(result.parsed?.function_count || 0)} function(s) for ${input.sample_id}.`,
-          recommended_next_tools: ['artifact.read', 'code.functions.smart_recover', 'workflow.function_index_recover'],
+          recommended_next_tools: [
+            'artifact.read',
+            'code.functions.smart_recover',
+            'workflow.function_index_recover',
+          ],
           next_actions: [
             'Compare angr-recovered functions with existing Ghidra or pdata-based results when function coverage is weak.',
           ],

@@ -39,7 +39,6 @@ export interface SummaryDigestSelection<TPayload = unknown> {
 
 const LATEST_SUMMARY_DIGEST_WINDOW_MS = 10 * 1000
 
-
 export function getSummaryDigestArtifactType(stage: SummaryStage): string {
   switch (stage) {
     case 'triage':
@@ -172,13 +171,16 @@ export async function loadSummaryDigestArtifactSelection<TPayload>(
   } else if (scope === 'latest' && loaded.length > 0) {
     const latestCreated = new Date(loaded[0].created_at).getTime()
     selected = loaded.filter(
-      (item) => latestCreated - new Date(item.created_at).getTime() <= LATEST_SUMMARY_DIGEST_WINDOW_MS
+      (item) =>
+        latestCreated - new Date(item.created_at).getTime() <= LATEST_SUMMARY_DIGEST_WINDOW_MS
     )
   }
 
   const artifactIds = selected.map((item) => item.artifact_id)
   const sessionTags = Array.from(new Set(selected.flatMap((item) => item.session_tags)))
-  const createdAtValues = selected.map((item) => item.created_at).filter((item) => item && item.length > 0)
+  const createdAtValues = selected
+    .map((item) => item.created_at)
+    .filter((item) => item && item.length > 0)
   const latestCreatedAt = createdAtValues.length > 0 ? createdAtValues[0] : null
   const earliestCreatedAt =
     createdAtValues.length > 0 ? createdAtValues[createdAtValues.length - 1] : null

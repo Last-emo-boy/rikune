@@ -9,7 +9,7 @@ import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
 import type { JobQueue } from '../job-queue.js'
-import type { MCPServer } from '../server.js'
+import type { SamplingClient } from '../core/registrar.js'
 import { createCodeFunctionRenameReviewHandler } from '../tools/code-function-rename-review.js'
 import { createReconstructWorkflowHandler } from './reconstruct.js'
 import { AnalysisProvenanceSchema } from '../analysis/analysis-provenance.js'
@@ -53,7 +53,9 @@ export const semanticNameReviewWorkflowInputSchema = z
     auto_include_resolved_on_empty: z
       .boolean()
       .default(true)
-      .describe('Retry in audit mode with include_resolved=true when unresolved selection is empty'),
+      .describe(
+        'Retry in audit mode with include_resolved=true when unresolved selection is empty'
+      ),
     analysis_goal: z
       .string()
       .min(1)
@@ -69,35 +71,51 @@ export const semanticNameReviewWorkflowInputSchema = z
     evidence_scope: z
       .enum(['all', 'latest', 'session'])
       .default('all')
-      .describe('Runtime evidence scope forwarded to review and optional reconstruct/export refresh'),
+      .describe(
+        'Runtime evidence scope forwarded to review and optional reconstruct/export refresh'
+      ),
     evidence_session_tag: z
       .string()
       .optional()
-      .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
+      .describe(
+        'Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'
+      ),
     semantic_scope: z
       .enum(['all', 'latest', 'session'])
       .default('all')
-      .describe('Semantic naming artifact scope used for review and optional reconstruct/export refresh'),
+      .describe(
+        'Semantic naming artifact scope used for review and optional reconstruct/export refresh'
+      ),
     semantic_session_tag: z
       .string()
       .optional()
-      .describe('Optional semantic naming session selector used when semantic_scope=session or to narrow all/latest results'),
+      .describe(
+        'Optional semantic naming session selector used when semantic_scope=session or to narrow all/latest results'
+      ),
     compare_evidence_scope: z
       .enum(['all', 'latest', 'session'])
       .optional()
-      .describe('Optional baseline runtime evidence scope used when refreshing export for comparison-aware workflow output'),
+      .describe(
+        'Optional baseline runtime evidence scope used when refreshing export for comparison-aware workflow output'
+      ),
     compare_evidence_session_tag: z
       .string()
       .optional()
-      .describe('Optional baseline runtime evidence session selector used when compare_evidence_scope=session'),
+      .describe(
+        'Optional baseline runtime evidence session selector used when compare_evidence_scope=session'
+      ),
     compare_semantic_scope: z
       .enum(['all', 'latest', 'session'])
       .optional()
-      .describe('Optional baseline semantic artifact scope used when refreshing export for comparison-aware workflow output'),
+      .describe(
+        'Optional baseline semantic artifact scope used when refreshing export for comparison-aware workflow output'
+      ),
     compare_semantic_session_tag: z
       .string()
       .optional()
-      .describe('Optional baseline semantic artifact session selector used when compare_semantic_scope=session'),
+      .describe(
+        'Optional baseline semantic artifact session selector used when compare_semantic_scope=session'
+      ),
     persist_artifact: z
       .boolean()
       .default(true)
@@ -109,7 +127,9 @@ export const semanticNameReviewWorkflowInputSchema = z
     rerun_reconstruct: z
       .boolean()
       .default(true)
-      .describe('Rerun code.functions.reconstruct after apply to materialize llm/hybrid validated names'),
+      .describe(
+        'Rerun code.functions.reconstruct after apply to materialize llm/hybrid validated names'
+      ),
     temperature: z
       .number()
       .min(0)
@@ -160,7 +180,9 @@ export const semanticNameReviewWorkflowInputSchema = z
     rerun_export: z
       .boolean()
       .default(true)
-      .describe('After successful apply, rerun workflow.reconstruct to refresh rewrite/export output'),
+      .describe(
+        'After successful apply, rerun workflow.reconstruct to refresh rewrite/export output'
+      ),
     export_path: z
       .enum(['auto', 'native', 'dotnet'])
       .default('auto')
@@ -185,7 +207,9 @@ export const semanticNameReviewWorkflowInputSchema = z
     auto_recover_function_index: z
       .boolean()
       .default(true)
-      .describe('When native function-index coverage is missing, automatically recover it before refresh export'),
+      .describe(
+        'When native function-index coverage is missing, automatically recover it before refresh export'
+      ),
     include_plan: z
       .boolean()
       .default(false)
@@ -235,17 +259,24 @@ export const semanticNameReviewWorkflowInputSchema = z
       .default(true)
       .describe('Reuse cached reconstruct workflow results for the optional refresh run'),
   })
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
-  })
-  .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
-    message: 'semantic_session_tag is required when semantic_scope=session',
-    path: ['semantic_session_tag'],
-  })
+  .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()),
+    {
+      message: 'semantic_session_tag is required when semantic_scope=session',
+      path: ['semantic_session_tag'],
+    }
+  )
   .refine(
     (value) =>
-      value.compare_evidence_scope !== 'session' || Boolean(value.compare_evidence_session_tag?.trim()),
+      value.compare_evidence_scope !== 'session' ||
+      Boolean(value.compare_evidence_session_tag?.trim()),
     {
       message: 'compare_evidence_session_tag is required when compare_evidence_scope=session',
       path: ['compare_evidence_session_tag'],
@@ -253,7 +284,8 @@ export const semanticNameReviewWorkflowInputSchema = z
   )
   .refine(
     (value) =>
-      value.compare_semantic_scope !== 'session' || Boolean(value.compare_semantic_session_tag?.trim()),
+      value.compare_semantic_scope !== 'session' ||
+      Boolean(value.compare_semantic_session_tag?.trim()),
     {
       message: 'compare_semantic_session_tag is required when compare_semantic_scope=session',
       path: ['compare_semantic_session_tag'],
@@ -273,75 +305,75 @@ export const semanticNameReviewWorkflowOutputSchema = z.object({
         polling_guidance: PollingGuidanceSchema.nullable(),
       }),
       z.object({
-      sample_id: z.string(),
-      review: z.object({
-        review_status: z.string(),
-        prompt_name: z.string(),
-        client: z.object({
-          name: z.string().nullable(),
-          version: z.string().nullable(),
-          sampling_available: z.boolean(),
+        sample_id: z.string(),
+        review: z.object({
+          review_status: z.string(),
+          prompt_name: z.string(),
+          client: z.object({
+            name: z.string().nullable(),
+            version: z.string().nullable(),
+            sampling_available: z.boolean(),
+          }),
+          prepare: z.object({
+            prepared_count: z.number().int().nonnegative(),
+            unresolved_count: z.number().int().nonnegative(),
+            include_resolved: z.boolean(),
+            artifact_id: z.string().nullable(),
+          }),
+          sampling: z.object({
+            attempted: z.boolean(),
+            model: z.string().nullable(),
+            stop_reason: z.string().nullable(),
+            parsed_suggestion_count: z.number().int().nonnegative(),
+          }),
+          apply: z.object({
+            attempted: z.boolean(),
+            accepted_count: z.number().int().nonnegative(),
+            rejected_count: z.number().int().nonnegative(),
+            artifact_id: z.string().nullable(),
+          }),
+          confidence_policy: z.object({
+            calibrated: z.boolean(),
+            rule_priority_over_llm: z.boolean(),
+            llm_acceptance_threshold: z.number().min(0).max(1),
+            meaning: z.string(),
+          }),
+          reconstruct: z.object({
+            attempted: z.boolean(),
+            reconstructed_count: z.number().int().nonnegative(),
+            llm_or_hybrid_count: z.number().int().nonnegative(),
+            functions: z.array(
+              z.object({
+                function: z.string(),
+                address: z.string(),
+                validated_name: z.string().nullable(),
+                resolution_source: z.string().nullable(),
+              })
+            ),
+          }),
         }),
-        prepare: z.object({
-          prepared_count: z.number().int().nonnegative(),
-          unresolved_count: z.number().int().nonnegative(),
-          include_resolved: z.boolean(),
-          artifact_id: z.string().nullable(),
-        }),
-        sampling: z.object({
+        export: z.object({
           attempted: z.boolean(),
-          model: z.string().nullable(),
-          stop_reason: z.string().nullable(),
-          parsed_suggestion_count: z.number().int().nonnegative(),
-        }),
-        apply: z.object({
-          attempted: z.boolean(),
-          accepted_count: z.number().int().nonnegative(),
-          rejected_count: z.number().int().nonnegative(),
-          artifact_id: z.string().nullable(),
-        }),
-        confidence_policy: z.object({
-          calibrated: z.boolean(),
-          rule_priority_over_llm: z.boolean(),
-          llm_acceptance_threshold: z.number().min(0).max(1),
-          meaning: z.string(),
-        }),
-        reconstruct: z.object({
-          attempted: z.boolean(),
-          reconstructed_count: z.number().int().nonnegative(),
-          llm_or_hybrid_count: z.number().int().nonnegative(),
-          functions: z.array(
-            z.object({
-              function: z.string(),
-              address: z.string(),
-              validated_name: z.string().nullable(),
-              resolution_source: z.string().nullable(),
+          status: z.enum(['completed', 'failed', 'skipped']),
+          selected_path: z.enum(['native', 'dotnet']).nullable(),
+          export_tool: z.string().nullable(),
+          export_root: z.string().nullable(),
+          manifest_path: z.string().nullable(),
+          build_validation_status: z.string().nullable(),
+          harness_validation_status: z.string().nullable(),
+          preflight: z
+            .object({
+              binary_profile: BinaryRoleProfileDataSchema.nullable(),
+              rust_profile: z.any().nullable(),
+              function_index_recovery: z.any().nullable(),
             })
-          ),
+            .nullable(),
+          ghidra_execution: GhidraExecutionSummarySchema.nullable(),
+          provenance: AnalysisProvenanceSchema.nullable(),
+          selection_diffs: AnalysisSelectionDiffSchema.nullable(),
+          notes: z.array(z.string()),
         }),
-      }),
-      export: z.object({
-        attempted: z.boolean(),
-        status: z.enum(['completed', 'failed', 'skipped']),
-        selected_path: z.enum(['native', 'dotnet']).nullable(),
-        export_tool: z.string().nullable(),
-        export_root: z.string().nullable(),
-        manifest_path: z.string().nullable(),
-        build_validation_status: z.string().nullable(),
-        harness_validation_status: z.string().nullable(),
-        preflight: z
-          .object({
-            binary_profile: BinaryRoleProfileDataSchema.nullable(),
-            rust_profile: z.any().nullable(),
-            function_index_recovery: z.any().nullable(),
-          })
-          .nullable(),
-        ghidra_execution: GhidraExecutionSummarySchema.nullable(),
-        provenance: AnalysisProvenanceSchema.nullable(),
-        selection_diffs: AnalysisSelectionDiffSchema.nullable(),
-        notes: z.array(z.string()),
-      }),
-      next_steps: z.array(z.string()),
+        next_steps: z.array(z.string()),
       }),
     ])
     .optional(),
@@ -375,18 +407,13 @@ export function createSemanticNameReviewWorkflowHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   cacheManager: CacheManager,
-  mcpServer?: MCPServer,
+  mcpServer?: SamplingClient,
   dependencies?: SemanticNameReviewWorkflowDependencies,
   jobQueue?: JobQueue
 ) {
   const renameReviewHandler =
     dependencies?.renameReviewHandler ||
-    createCodeFunctionRenameReviewHandler(
-      workspaceManager,
-      database,
-      cacheManager,
-      mcpServer
-    )
+    createCodeFunctionRenameReviewHandler(workspaceManager, database, cacheManager, mcpServer)
   const reconstructWorkflowHandler =
     dependencies?.reconstructWorkflowHandler ||
     createReconstructWorkflowHandler(workspaceManager, database, cacheManager)
@@ -590,7 +617,9 @@ export function createSemanticNameReviewWorkflowHandler(
         }
 
         if (!exportResult.ok) {
-          errors.push(...(exportResult.errors || ['workflow.reconstruct failed during export refresh']))
+          errors.push(
+            ...(exportResult.errors || ['workflow.reconstruct failed during export refresh'])
+          )
           exportSummary = {
             attempted: true,
             status: 'failed',
@@ -674,11 +703,10 @@ export function createSemanticNameReviewWorkflowHandler(
               llm_acceptance_threshold: Number(
                 reviewData.confidence_policy?.llm_acceptance_threshold ?? 0.62
               ),
-              meaning:
-                String(
-                  reviewData.confidence_policy?.meaning ||
-                    'Naming confidence remains heuristic. Rule-based names currently take priority, and pure LLM suggestions are promoted only after meeting the acceptance threshold.'
-                ),
+              meaning: String(
+                reviewData.confidence_policy?.meaning ||
+                  'Naming confidence remains heuristic. Rule-based names currently take priority, and pure LLM suggestions are promoted only after meeting the acceptance threshold.'
+              ),
             },
             reconstruct: {
               attempted: Boolean(reviewData.reconstruct?.attempted),

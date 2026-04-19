@@ -6,7 +6,11 @@ import type { DatabaseManager } from '../../../database.js'
 import type { CacheManager } from '../../../cache-manager.js'
 import { createCryptoIdentifyHandler } from './crypto-identify.js'
 import { createDynamicDependenciesHandler } from '../../dynamic/tools/dynamic-dependencies.js'
-import { loadDynamicTraceEvidence, type DynamicEvidenceScope, type DynamicTraceSummary } from '../../../artifacts/dynamic-trace.js'
+import {
+  loadDynamicTraceEvidence,
+  type DynamicEvidenceScope,
+  type DynamicTraceSummary,
+} from '../../../artifacts/dynamic-trace.js'
 import {
   BreakpointCandidateSchema,
   buildBreakpointCandidates,
@@ -126,29 +130,32 @@ interface BreakpointSmartDependencies {
 }
 
 function parseCryptoFindings(result: WorkerResult | undefined): CryptoFinding[] {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
   return Array.isArray(data.algorithms)
-    ? data.algorithms.filter((item) => item && typeof item === 'object') as CryptoFinding[]
+    ? (data.algorithms.filter((item) => item && typeof item === 'object') as CryptoFinding[])
     : []
 }
 
 function buildRuntimeReadiness(result: WorkerResult | undefined) {
-  const data = result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
-  const components = data.components && typeof data.components === 'object'
-    ? (data.components as Record<string, unknown>)
-    : {}
-  const fridaAvailable = Boolean((components.frida as Record<string, unknown> | undefined)?.available)
-  const workerAvailable = Boolean((components.worker as Record<string, unknown> | undefined)?.available)
+  const data =
+    result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
+  const components =
+    data.components && typeof data.components === 'object'
+      ? (data.components as Record<string, unknown>)
+      : {}
+  const fridaAvailable = Boolean(
+    (components.frida as Record<string, unknown> | undefined)?.available
+  )
+  const workerAvailable = Boolean(
+    (components.worker as Record<string, unknown> | undefined)?.available
+  )
   const ready = fridaAvailable && workerAvailable
   const availableComponents = Array.isArray(data.available_components)
     ? data.available_components.map((item) => String(item))
     : []
   return {
-    status: ready
-      ? 'ready'
-      : availableComponents.length > 0
-        ? 'partial'
-        : 'setup_required',
+    status: ready ? 'ready' : availableComponents.length > 0 ? 'partial' : 'setup_required',
     ready,
     recommended_runtime_tool: 'frida.runtime.instrument' as const,
     available_components: availableComponents,
@@ -156,7 +163,9 @@ function buildRuntimeReadiness(result: WorkerResult | undefined) {
       ? 'Frida runtime instrumentation prerequisites are available.'
       : 'Frida runtime instrumentation is not fully ready yet; inspect setup guidance before trying to instrument a live process.',
     setup_actions: Array.isArray(data.setup_actions) ? data.setup_actions : undefined,
-    required_user_inputs: Array.isArray(data.required_user_inputs) ? data.required_user_inputs : undefined,
+    required_user_inputs: Array.isArray(data.required_user_inputs)
+      ? data.required_user_inputs
+      : undefined,
   }
 }
 
@@ -167,7 +176,8 @@ export function createBreakpointSmartHandler(
   dependencies: BreakpointSmartDependencies = {}
 ) {
   const cryptoIdentifyHandler =
-    dependencies.cryptoIdentify || createCryptoIdentifyHandler(workspaceManager, database, cacheManager)
+    dependencies.cryptoIdentify ||
+    createCryptoIdentifyHandler(workspaceManager, database, cacheManager)
   const dynamicDependenciesHandler =
     dependencies.dynamicDependencies || createDynamicDependenciesHandler(workspaceManager, database)
   const dynamicTraceLoader = dependencies.loadDynamicTrace || loadDynamicTraceEvidence
@@ -248,13 +258,12 @@ export function createBreakpointSmartHandler(
       }
 
       warnings.push(...(cryptoResult.warnings || []))
-      const dynamicEvidence =
-        input.include_runtime_evidence
-          ? await dynamicTraceLoader(workspaceManager, database, input.sample_id, {
-              evidenceScope: input.runtime_evidence_scope,
-              sessionTag: input.session_tag,
-            })
-          : null
+      const dynamicEvidence = input.include_runtime_evidence
+        ? await dynamicTraceLoader(workspaceManager, database, input.sample_id, {
+            evidenceScope: input.runtime_evidence_scope,
+            sessionTag: input.session_tag,
+          })
+        : null
       const candidates = buildBreakpointCandidates({
         findings: parseCryptoFindings(cryptoResult),
         dynamicEvidence,
@@ -266,7 +275,7 @@ export function createBreakpointSmartHandler(
       const sourceArtifactRefs = dedupeArtifactRefs(collectArtifactRefs(cryptoResult))
       const summary = summarizeBreakpointCandidates(candidates)
       const outputData = {
-        status: (candidates.length > 0 ? 'ready' : 'partial') as 'ready' | 'partial',
+        status: candidates.length > 0 ? 'ready' : 'partial',
         sample_id: input.sample_id,
         recommended_breakpoints: candidates,
         runtime_readiness: runtimeReadiness,

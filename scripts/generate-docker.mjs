@@ -24,6 +24,62 @@ import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
+const DEFAULT_DATA_ROOT = 'D:/Docker/rikune'
+const DEFAULT_NO_PROXY =
+  'localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com'
+
+const PROFILES = {
+  full: {
+    id: 'full',
+    displayName: 'Full Docker analysis stack',
+    composeName: 'rikune',
+    composeFile: 'docker-compose.yml',
+    dockerfile: 'Dockerfile',
+    image: 'rikune:latest',
+    service: 'mcp-server',
+    container: 'rikune',
+    component: 'mcp-server',
+    nodeRole: 'analyzer',
+    runtimeMode: 'disabled',
+    buildDynamicDeps: true,
+    description:
+      'Full Linux-side analysis stack. Runtime remains disabled until you opt into manual or remote-sandbox mode.',
+  },
+  static: {
+    id: 'static',
+    displayName: 'Static-only Docker analyzer',
+    composeName: 'rikune-analyzer',
+    composeFile: 'docker-compose.analyzer.yml',
+    dockerfile: 'docker/Dockerfile.analyzer',
+    image: 'rikune-analyzer:latest',
+    service: 'analyzer',
+    container: 'rikune-analyzer',
+    component: 'analyzer',
+    nodeRole: 'analyzer',
+    runtimeMode: 'disabled',
+    buildDynamicDeps: false,
+    description:
+      'Static-only Linux analyzer. No runtime endpoint is configured and dynamic execution plugins are disabled.',
+  },
+  hybrid: {
+    id: 'hybrid',
+    displayName: 'Hybrid Docker analyzer + Windows runtime',
+    composeName: 'rikune-hybrid',
+    composeFile: 'docker-compose.hybrid.yml',
+    dockerfile: 'docker/Dockerfile.analyzer',
+    image: 'rikune-analyzer:latest',
+    service: 'analyzer',
+    container: 'rikune-analyzer',
+    component: 'analyzer',
+    nodeRole: 'analyzer',
+    runtimeMode: 'remote-sandbox',
+    buildDynamicDeps: false,
+    description:
+      'Linux analyzer image with dynamic tools delegated to a Windows Host Agent / Runtime Node.',
+  },
+}
+
+const EXECUTION_DOCKER_FEATURES = new Set(['dynamic-python', 'frida', 'gdb', 'qiling', 'wine'])
 
 // -----------------------------------------------------------------------------
 // 1. Auto-discover plugins from dist/plugins/ (or src/plugins/ for names)
@@ -33,7 +89,7 @@ function discoverPluginIds() {
   for (const base of [join(ROOT, 'dist', 'plugins'), join(ROOT, 'src', 'plugins')]) {
     if (!existsSync(base)) continue
     return readdirSync(base)
-      .filter(name => {
+      .filter((name) => {
         if (name === 'sdk.ts' || name === 'sdk.js' || name.startsWith('.')) return false
         const full = join(base, name)
         return statSync(full).isDirectory()
@@ -48,15 +104,19 @@ function discoverPluginIds() {
 // 1b. Auto-discover plugins that have Python workers/ directories
 // -----------------------------------------------------------------------------
 
-function discoverPluginWorkerDirs() {
+function discoverPluginWorkerDirs(activePluginIds = null) {
   const srcPlugins = join(ROOT, 'src', 'plugins')
   if (!existsSync(srcPlugins)) return []
   return readdirSync(srcPlugins)
-    .filter(name => {
+    .filter((name) => {
       if (name === 'sdk.ts' || name.startsWith('.')) return false
+      if (activePluginIds && !activePluginIds.has(name)) return false
       const workersDir = join(srcPlugins, name, 'workers')
-      return existsSync(workersDir) && statSync(workersDir).isDirectory() &&
-        readdirSync(workersDir).some(f => f.endsWith('.py'))
+      return (
+        existsSync(workersDir) &&
+        statSync(workersDir).isDirectory() &&
+        readdirSync(workersDir).some((f) => f.endsWith('.py'))
+      )
     })
     .sort()
 }
@@ -65,15 +125,16 @@ function discoverPluginWorkerDirs() {
 // 1c. Auto-discover plugins that have data/ directories with files
 // -----------------------------------------------------------------------------
 
-function discoverPluginDataDirs() {
+function discoverPluginDataDirs(activePluginIds = null) {
   const srcPlugins = join(ROOT, 'src', 'plugins')
   if (!existsSync(srcPlugins)) return []
   const result = []
   for (const name of readdirSync(srcPlugins)) {
     if (name === 'sdk.ts' || name.startsWith('.')) continue
+    if (activePluginIds && !activePluginIds.has(name)) continue
     const dataDir = join(srcPlugins, name, 'data')
     if (!existsSync(dataDir) || !statSync(dataDir).isDirectory()) continue
-    const files = readdirSync(dataDir).filter(f => !f.startsWith('.'))
+    const files = readdirSync(dataDir).filter((f) => !f.startsWith('.'))
     if (files.length > 0) result.push({ plugin: name, files })
   }
   return result.sort((a, b) => a.plugin.localeCompare(b.plugin))
@@ -132,10 +193,31 @@ function parseDockerFragment(content) {
 }
 
 // -----------------------------------------------------------------------------
+// 1e. Auto-discover plugin scripts/ directories exposed as MCP resources
+// -----------------------------------------------------------------------------
+
+function discoverPluginScriptDirs() {
+  const srcPlugins = join(ROOT, 'src', 'plugins')
+  if (!existsSync(srcPlugins)) return []
+
+  return readdirSync(srcPlugins)
+    .filter((name) => {
+      if (name === 'sdk.ts' || name.startsWith('.')) return false
+      const scriptsDir = join(srcPlugins, name, 'scripts')
+      return (
+        existsSync(scriptsDir) &&
+        statSync(scriptsDir).isDirectory() &&
+        readdirSync(scriptsDir).some((f) => !f.startsWith('.'))
+      )
+    })
+    .sort()
+}
+
+// -----------------------------------------------------------------------------
 // 2. Load systemDeps from compiled plugins
 // -----------------------------------------------------------------------------
 
-async function loadPluginDeps(pluginIds) {
+async function loadPluginMetadata(pluginIds) {
   const distDir = join(ROOT, 'dist', 'plugins')
   if (!existsSync(distDir)) {
     console.error('  x dist/plugins/ not found. Run `npm run build` first.')
@@ -148,21 +230,44 @@ async function loadPluginDeps(pluginIds) {
   for (const id of pluginIds) {
     const indexPath = join(distDir, id, 'index.js')
     if (!existsSync(indexPath)) {
-      result.set(id, [])
+      result.set(id, { id, executionDomain: 'both', systemDeps: [] })
       continue
     }
     try {
       const mod = await import(`file://${indexPath.replace(/\\/g, '/')}`)
       const plugin = mod.default
-      result.set(id, plugin?.systemDeps ?? [])
+      result.set(id, {
+        id,
+        executionDomain: plugin?.executionDomain ?? 'both',
+        systemDeps: plugin?.systemDeps ?? [],
+      })
       if (plugin?.systemDeps?.length > 0) loaded++
     } catch {
-      result.set(id, [])
+      result.set(id, { id, executionDomain: 'both', systemDeps: [] })
     }
   }
 
   console.log(`  Scanned ${pluginIds.length} plugins, ${loaded} have systemDeps`)
   return result
+}
+
+function depsForPluginIds(pluginIds, metadata, profile = PROFILES.full) {
+  const result = new Map()
+  for (const id of pluginIds) {
+    const deps = metadata.get(id)?.systemDeps ?? []
+    result.set(
+      id,
+      profile.buildDynamicDeps
+        ? deps
+        : deps.filter((dep) => !EXECUTION_DOCKER_FEATURES.has(dep.dockerFeature))
+    )
+  }
+  return result
+}
+
+function filterBuildPluginsForProfile(pluginIds, metadata, profile) {
+  if (profile.buildDynamicDeps) return pluginIds
+  return pluginIds.filter((id) => metadata.get(id)?.executionDomain !== 'dynamic')
 }
 
 // -----------------------------------------------------------------------------
@@ -198,12 +303,12 @@ function collectDockerRequirements(pluginDepMap) {
       }
       if (dep.directories) {
         for (const d of dep.directories) {
-          if (!directories.some(x => x.path === d.path)) directories.push(d)
+          if (!directories.some((x) => x.path === d.path)) directories.push(d)
         }
       }
       if (dep.volumes) {
         for (const v of dep.volumes) {
-          if (!volumes.some(x => x.target === v.target)) volumes.push(v)
+          if (!volumes.some((x) => x.target === v.target)) volumes.push(v)
         }
       }
     }
@@ -230,7 +335,14 @@ function collectDockerRequirements(pluginDepMap) {
 // 4. Process Dockerfile.template
 // -----------------------------------------------------------------------------
 
-function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntries, fragments) {
+function processTemplate(
+  template,
+  requirements,
+  pluginWorkerIds,
+  pluginDataEntries,
+  pluginScriptIds,
+  fragments
+) {
   const { features, aptPackages, envVars, extraEnv, directories, validationCmds } = requirements
 
   // 4a. Conditional blocks (only dynamic-python remains in template)
@@ -242,8 +354,15 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
   for (const line of lines) {
     const ifMatch = line.match(/^[ \t]*# @if (.+)$/)
     const endifMatch = line.match(/^[ \t]*# @endif (.+)$/)
-    if (ifMatch)    { stack.push(enabled); enabled = enabled && features.has(ifMatch[1].trim()); continue }
-    if (endifMatch) { enabled = stack.pop() ?? true; continue }
+    if (ifMatch) {
+      stack.push(enabled)
+      enabled = enabled && features.has(ifMatch[1].trim())
+      continue
+    }
+    if (endifMatch) {
+      enabled = stack.pop() ?? true
+      continue
+    }
     if (enabled) output.push(line)
   }
 
@@ -271,9 +390,8 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
   result = result.replace('{{FEATURE_RUNTIME}}', runtimeLines.join('\n\n') || '')
 
   // 4e. {{RUNTIME_APT_PACKAGES}}
-  const aptLines = aptPackages.length > 0
-    ? aptPackages.map(p => `    ${p} \\`).join('\n') + '\n'
-    : ''
+  const aptLines =
+    aptPackages.length > 0 ? aptPackages.map((p) => `    ${p} \\`).join('\n') + '\n' : ''
   result = result.replace('{{RUNTIME_APT_PACKAGES}}', aptLines)
 
   // 4f. {{RUNTIME_ENV_VARS}} - merged from envVars + extraEnv (plugin-driven)
@@ -286,9 +404,10 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
 
   if (allEnv.size > 0) {
     const entries = [...allEnv.entries()]
-    const envLines = entries.map(([k, v], i) =>
-      i < entries.length - 1 ? `    ${k}=${v} \\` : `    ${k}=${v}`
-    ).join('\n') + '\n'
+    const envLines =
+      entries
+        .map(([k, v], i) => (i < entries.length - 1 ? `    ${k}=${v} \\` : `    ${k}=${v}`))
+        .join('\n') + '\n'
     // Add trailing backslash to SANDBOX_PYTHON_PATH so ENV block continues
     result = result.replace(
       'SANDBOX_PYTHON_PATH=/usr/local/bin/python3\n{{RUNTIME_ENV_VARS}}',
@@ -299,25 +418,34 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
   }
 
   // 4g. {{VALIDATION_COMMANDS}}
-  const allValidation = ['echo "[validate] Rikune Docker image"', ...validationCmds, 'echo "[validate] All checks passed"']
+  const allValidation = [
+    'echo "[validate] Rikune Docker image"',
+    ...validationCmds,
+    'echo "[validate] All checks passed"',
+  ].map((cmd) => `(${cmd})`)
   result = result.replace('{{VALIDATION_COMMANDS}}', `RUN ${allValidation.join(' && \\\n    ')}`)
 
   // 4h. {{EXTRA_DIRS}} / {{EXTRA_CHOWN}} - from plugin systemDeps directories
-  const extraDirs = directories.map(d => d.path)
-  const extraChown = directories.filter(d => d.chown).map(d => `chown -R ${d.chown} ${d.path}`)
+  const extraDirs = directories.map((d) => d.path)
+  const extraChown = directories.filter((d) => d.chown).map((d) => `chown -R ${d.chown} ${d.path}`)
   result = result.replace('{{EXTRA_DIRS}}', extraDirs.join(' '))
-  result = result.replace('{{EXTRA_CHOWN}}', extraChown.length > 0
-    ? extraChown.map(c => `    ${c} && \\`).join('\n') + '\n' : '')
+  result = result.replace(
+    '{{EXTRA_CHOWN}}',
+    extraChown.length > 0 ? extraChown.map((c) => `    ${c} && \\`).join('\n') + '\n' : ''
+  )
 
   // 4i. {{PLUGIN_WORKER_COPY}} / {{PLUGIN_WORKER_COPY_FROM}}
   if (pluginWorkerIds.length > 0) {
     const copyLines = pluginWorkerIds
-      .map(id => `COPY src/plugins/${id}/workers/ ./src/plugins/${id}/workers/`)
+      .map((id) => `COPY src/plugins/${id}/workers/ ./src/plugins/${id}/workers/`)
       .join('\n')
     result = result.replace('{{PLUGIN_WORKER_COPY}}', copyLines)
 
     const copyFromLines = pluginWorkerIds
-      .map(id => `COPY --from=python-base /app/src/plugins/${id}/workers/ ./src/plugins/${id}/workers/`)
+      .map(
+        (id) =>
+          `COPY --from=python-base /app/src/plugins/${id}/workers/ ./src/plugins/${id}/workers/`
+      )
       .join('\n')
     result = result.replace('{{PLUGIN_WORKER_COPY_FROM}}', copyFromLines)
   } else {
@@ -339,6 +467,16 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
     result = result.replace('{{PLUGIN_DATA_COPY}}\n', '')
   }
 
+  // 4k. {{PLUGIN_SCRIPT_COPY}}
+  if (pluginScriptIds.length > 0) {
+    const scriptLines = pluginScriptIds
+      .map((id) => `COPY src/plugins/${id}/scripts/ ./src/plugins/${id}/scripts/`)
+      .join('\n')
+    result = result.replace('{{PLUGIN_SCRIPT_COPY}}', scriptLines)
+  } else {
+    result = result.replace('{{PLUGIN_SCRIPT_COPY}}\n', '')
+  }
+
   return result.replace(/\n{3,}/g, '\n\n')
 }
 
@@ -346,38 +484,68 @@ function processTemplate(template, requirements, pluginWorkerIds, pluginDataEntr
 // 5. Generate docker-compose.yml (all values from plugin systemDeps)
 // -----------------------------------------------------------------------------
 
-function generateDockerCompose(requirements, pluginIds) {
+function makePluginsEnv(pluginIds) {
+  return pluginIds.length > 0 ? pluginIds.join(',') : ''
+}
+
+function generateDockerCompose(requirements, buildPluginIds, runtimePluginIds, profile) {
   const { features, envVars, extraEnv, buildArgs, volumes: pluginVolumes } = requirements
 
-  // Build args from plugins
-  const buildArgsYaml = buildArgs.size > 0
-    ? '\n' + [...buildArgs.entries()].sort(([a], [b]) => a.localeCompare(b))
-        .map(([k, v]) => `        ${k}: "${v}"`).join('\n')
-    : ''
+  // Build args from plugins. Proxy args are always set explicitly so Docker
+  // Desktop cannot auto-inject an unusable 127.0.0.1 proxy into Linux builds.
+  const allBuildArgs = new Map([
+    ['HTTP_PROXY', '${RIKUNE_BUILD_HTTP_PROXY:-}'],
+    ['HTTPS_PROXY', '${RIKUNE_BUILD_HTTPS_PROXY:-}'],
+    ['http_proxy', '${RIKUNE_BUILD_HTTP_PROXY:-}'],
+    ['https_proxy', '${RIKUNE_BUILD_HTTPS_PROXY:-}'],
+    ['NO_PROXY', `\${RIKUNE_BUILD_NO_PROXY:-${DEFAULT_NO_PROXY}}`],
+  ])
+  for (const [k, v] of buildArgs) allBuildArgs.set(k, v)
+  const buildArgsYaml =
+    '\n' +
+    [...allBuildArgs.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `        ${k}: "${v}"`)
+      .join('\n')
 
   // Environment: base + plugin-declared
   const allEnv = new Map([
-    ['NODE_ENV', 'production'], ['PYTHONUNBUFFERED', '1'],
-    ['WORKSPACE_ROOT', '/app/workspaces'], ['DB_PATH', '/app/data/database.db'],
-    ['CACHE_ROOT', '/app/cache'], ['AUDIT_LOG_PATH', '/app/logs/audit.log'],
-    ['XDG_CONFIG_HOME', '/app/logs/.config'], ['XDG_CACHE_HOME', '/app/cache/xdg'],
-    ['LOG_LEVEL', 'info'], ['SANDBOX_PYTHON_PATH', '/usr/local/bin/python3'],
+    ['NODE_ENV', 'production'],
+    ['PYTHONUNBUFFERED', '1'],
+    ['RIKUNE_DOCKER_PROFILE', profile.id],
+    ['NODE_ROLE', profile.nodeRole],
+    ['RUNTIME_MODE', profile.runtimeMode],
+    ['PLUGINS', makePluginsEnv(runtimePluginIds)],
+    ['WORKSPACE_ROOT', '/app/workspaces'],
+    ['DB_PATH', '/app/data/database.db'],
+    ['CACHE_ROOT', '/app/cache'],
+    ['HOME', '/app/cache/home'],
+    ['AUDIT_LOG_PATH', '/app/logs/audit.log'],
+    ['XDG_CONFIG_HOME', '/app/logs/.config'],
+    ['XDG_CACHE_HOME', '/app/cache/xdg'],
+    ['LOG_LEVEL', 'info'],
+    ['SANDBOX_PYTHON_PATH', '/usr/local/bin/python3'],
   ])
   for (const [k, v] of envVars) allEnv.set(k, v)
   for (const [k, v] of extraEnv) {
     if (k === 'JAVA_TOOL_OPTIONS' || k === 'JAVA_HOME') continue
     allEnv.set(k, v)
   }
+  if (profile.id === 'hybrid') {
+    allEnv.set('RUNTIME_HOST_AGENT_ENDPOINT', '${RUNTIME_HOST_AGENT_ENDPOINT:-}')
+    allEnv.set('RUNTIME_HOST_AGENT_API_KEY', '${RUNTIME_HOST_AGENT_API_KEY:-}')
+    allEnv.set('RUNTIME_API_KEY', '${RUNTIME_API_KEY:-}')
+  }
 
   const envLines = [...allEnv.entries()].map(([k, v]) => `      - ${k}=${v}`).join('\n')
 
   // Volumes: base + plugin-declared
   let volumeYaml = `      - ./samples:/samples:ro
-      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/workspaces:/app/workspaces:rw"
-      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/data:/app/data:rw"
-      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/cache:/app/cache:rw"
-      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/logs:/app/logs:rw"
-      - "\${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/storage:/app/storage:rw"`
+      - "\${RIKUNE_DATA_ROOT:-${DEFAULT_DATA_ROOT}}/workspaces:/app/workspaces:rw"
+      - "\${RIKUNE_DATA_ROOT:-${DEFAULT_DATA_ROOT}}/data:/app/data:rw"
+      - "\${RIKUNE_DATA_ROOT:-${DEFAULT_DATA_ROOT}}/cache:/app/cache:rw"
+      - "\${RIKUNE_DATA_ROOT:-${DEFAULT_DATA_ROOT}}/logs:/app/logs:rw"
+      - "\${RIKUNE_DATA_ROOT:-${DEFAULT_DATA_ROOT}}/storage:/app/storage:rw"`
   for (const vol of pluginVolumes) {
     volumeYaml += `\n      - "${vol.source}:${vol.target}:${vol.mode || 'rw'}"`
   }
@@ -391,23 +559,25 @@ function generateDockerCompose(requirements, pluginIds) {
   const featureList = [...features].sort().join(', ') || 'none'
 
   return `# =============================================================================
-# Docker Compose - Rikune
+# Docker Compose - Rikune (${profile.id})
 # =============================================================================
 # Auto-generated from plugin systemDeps.
-# Plugins: ${pluginIds.length} enabled | Features: ${featureList}
-# Regenerate: npm run docker:generate
+# Profile: ${profile.displayName}
+# Build plugins: ${buildPluginIds.length} | Runtime plugins: ${runtimePluginIds.length}
+# Features: ${featureList}
+# Regenerate: npm run docker:generate -- --profile=${profile.id}
 # =============================================================================
 
-name: rikune
+name: ${profile.composeName}
 
 services:
-  mcp-server:
-    image: rikune:latest
+  ${profile.service}:
+    image: ${profile.image}
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: ${profile.dockerfile}
       args:${buildArgsYaml}
-    container_name: rikune
+    container_name: ${profile.container}
     stdin_open: true
     tty: true
     security_opt:
@@ -448,7 +618,7 @@ ${envLines}
     restart: unless-stopped
     labels:
       - "app=rikune"
-      - "component=mcp-server"
+      - "component=${profile.component}"
       - "security.isolation=high"
 
 volumes:
@@ -470,77 +640,58 @@ async function main() {
 
   if (flags.help) {
     console.log(`
-Rikune Docker Generator - builds Dockerfile + docker-compose.yml from plugin systemDeps
-
-Plugins are the single source of truth.  The generator auto-discovers all
-plugins, reads their systemDeps declarations and docker/*.dockerfile fragments,
-then derives the Docker image.  Zero hardcoded feature maps.
+Rikune Docker Generator - builds deployment-profile Dockerfiles and Compose files
 
 Usage:
-  node scripts/generate-docker.mjs                         # all plugins
-  node scripts/generate-docker.mjs --exclude=ghidra,angr   # skip heavy tools
-  node scripts/generate-docker.mjs --include=pe-analysis,malware,frida
-  node scripts/generate-docker.mjs --dry-run               # no file writes
+  node scripts/generate-docker.mjs --profile=full
+  node scripts/generate-docker.mjs --profile=static
+  node scripts/generate-docker.mjs --profile=hybrid
+  node scripts/generate-docker.mjs --all-profiles
 
 Options:
-  --include=<ids>    Only include these plugins (comma-separated)
-  --exclude=<ids>    Exclude these plugins
-  --output=<dir>     Output directory (default: project root)
-  --dry-run          Preview features without writing files
-  --help             Show this help
+  --profile=<name>  full | static | hybrid (default: full)
+  --all-profiles    Generate full, static, and hybrid deployment files
+  --include=<ids>   Only include these plugins (comma-separated)
+  --exclude=<ids>   Exclude these plugins
+  --output=<dir>    Output directory (default: project root)
+  --dry-run         Preview profile resolution without writing files
+  --help            Show this help
 `)
     process.exit(0)
   }
 
   console.log('--- Rikune Docker Generator ---')
 
+  const selectedProfiles = flags['all-profiles']
+    ? [PROFILES.full, PROFILES.static, PROFILES.hybrid]
+    : [PROFILES[flags.profile || 'full']]
+  if (selectedProfiles.some((p) => !p)) {
+    console.error(`  x Unknown profile '${flags.profile}'. Use full, static, or hybrid.`)
+    process.exit(1)
+  }
+
   const allPlugins = discoverPluginIds()
   console.log(`  Discovered ${allPlugins.length} plugins`)
 
-  let pluginIds = [...allPlugins]
+  let selectedPluginIds = [...allPlugins]
   if (flags.include) {
-    const include = new Set(flags.include.split(',').map(s => s.trim()))
-    pluginIds = pluginIds.filter(id => include.has(id))
-    console.log(`  --include: ${pluginIds.length} selected`)
+    const include = new Set(flags.include.split(',').map((s) => s.trim()))
+    selectedPluginIds = selectedPluginIds.filter((id) => include.has(id))
+    console.log(`  --include: ${selectedPluginIds.length} selected`)
   }
   if (flags.exclude) {
-    const exclude = new Set(flags.exclude.split(',').map(s => s.trim()))
-    const before = pluginIds.length
-    pluginIds = pluginIds.filter(id => !exclude.has(id))
-    console.log(`  --exclude: removed ${before - pluginIds.length}`)
+    const exclude = new Set(flags.exclude.split(',').map((s) => s.trim()))
+    const before = selectedPluginIds.length
+    selectedPluginIds = selectedPluginIds.filter((id) => !exclude.has(id))
+    console.log(`  --exclude: removed ${before - selectedPluginIds.length}`)
   }
-  console.log(`  Active (${pluginIds.length}): ${pluginIds.join(', ')}`)
+  console.log(
+    `  Runtime selection base (${selectedPluginIds.length}): ${selectedPluginIds.join(', ')}`
+  )
 
-  console.log('\n  Loading systemDeps from dist/...')
-  const pluginDepMap = await loadPluginDeps(pluginIds)
-
-  const req = collectDockerRequirements(pluginDepMap)
-  const featureList = [...req.features].sort()
-  console.log(`\n  Features from plugins (${featureList.length}):`)
-  for (const f of featureList) console.log(`    + ${f}`)
-  console.log(`  apt: ${req.aptPackages.join(', ') || '(none)'}`)
-  console.log(`  env: ${req.envVars.size} + ${req.extraEnv.size} extra vars`)
-  console.log(`  buildArgs: ${req.buildArgs.size} (${[...req.buildArgs.keys()].join(', ') || 'none'})`)
-  console.log(`  directories: ${req.directories.length}`)
-  console.log(`  volumes: ${req.volumes.length}`)
-  console.log(`  validation: ${req.validationCmds.length} commands`)
-
-  // Discover Docker fragments
+  console.log('\n  Loading plugin metadata from dist/...')
+  const metadata = await loadPluginMetadata(selectedPluginIds)
   const fragments = discoverDockerFragments()
-  const enabledFragments = [...fragments.entries()].filter(([f]) => req.features.has(f))
-  console.log(`\n  Docker fragments (${enabledFragments.length}/${fragments.size}):`)
-  for (const [feature, frag] of enabledFragments) {
-    const parts = []
-    if (frag.args) parts.push('args')
-    if (frag.stage) parts.push('stage')
-    if (frag.runtime) parts.push('runtime')
-    console.log(`    + ${feature} (${frag.plugin}) [${parts.join(', ')}]`)
-  }
-
-  if (flags['dry-run']) {
-    console.log('\n  [dry-run] No files written.')
-    process.exit(0)
-  }
 
   const templatePath = join(ROOT, 'docker', 'Dockerfile.template')
   if (!existsSync(templatePath)) {
@@ -548,27 +699,84 @@ Options:
     process.exit(1)
   }
 
-  const pluginWorkerIds = discoverPluginWorkerDirs()
-  if (pluginWorkerIds.length > 0) {
-    console.log(`\n  Plugin workers (${pluginWorkerIds.length}): ${pluginWorkerIds.join(', ')}`)
-  }
-
-  const pluginDataEntries = discoverPluginDataDirs()
-  if (pluginDataEntries.length > 0) {
-    console.log(`  Plugin data: ${pluginDataEntries.map(e => `${e.plugin} (${e.files.join(', ')})`).join('; ')}`)
-  }
-
-  const dockerfile = processTemplate(readFileSync(templatePath, 'utf-8'), req, pluginWorkerIds, pluginDataEntries, fragments)
   const outputDir = flags.output ? join(ROOT, flags.output) : ROOT
-  writeFileSync(join(outputDir, 'Dockerfile'), dockerfile, 'utf-8')
-  console.log(`\n  OK Dockerfile (${dockerfile.split('\n').length} lines)`)
+  const template = readFileSync(templatePath, 'utf-8')
 
-  const compose = generateDockerCompose(req, pluginIds)
-  writeFileSync(join(outputDir, 'docker-compose.yml'), compose, 'utf-8')
-  console.log(`  OK docker-compose.yml (${compose.split('\n').length} lines)`)
+  for (const profile of selectedProfiles) {
+    const buildPluginIds = filterBuildPluginsForProfile(selectedPluginIds, metadata, profile)
+    const runtimePluginIds = profile.id === 'static' ? buildPluginIds : selectedPluginIds
+    const req = collectDockerRequirements(depsForPluginIds(buildPluginIds, metadata, profile))
+    const featureList = [...req.features].sort()
 
-  console.log(`\n  ${pluginIds.length} plugins -> ${featureList.length} features`)
+    console.log(`\n  Profile: ${profile.id} (${profile.displayName})`)
+    console.log(`  ${profile.description}`)
+    console.log(
+      `  Build plugins (${buildPluginIds.length}): ${buildPluginIds.join(', ') || '(none)'}`
+    )
+    console.log(
+      `  Runtime plugins (${runtimePluginIds.length}): ${runtimePluginIds.join(', ') || '(none)'}`
+    )
+    console.log(`  Features (${featureList.length}): ${featureList.join(', ') || '(none)'}`)
+    console.log(`  apt: ${req.aptPackages.join(', ') || '(none)'}`)
+    console.log(`  env: ${req.envVars.size} + ${req.extraEnv.size} extra vars`)
+    console.log(
+      `  buildArgs: ${req.buildArgs.size} (${[...req.buildArgs.keys()].join(', ') || 'none'})`
+    )
+    console.log(`  directories: ${req.directories.length}`)
+    console.log(`  volumes: ${req.volumes.length}`)
+    console.log(`  validation: ${req.validationCmds.length} commands`)
+
+    const enabledFragments = [...fragments.entries()].filter(([f]) => req.features.has(f))
+    console.log(`  Docker fragments (${enabledFragments.length}/${fragments.size}):`)
+    for (const [feature, frag] of enabledFragments) {
+      const parts = []
+      if (frag.args) parts.push('args')
+      if (frag.stage) parts.push('stage')
+      if (frag.runtime) parts.push('runtime')
+      console.log(`    + ${feature} (${frag.plugin}) [${parts.join(', ')}]`)
+    }
+
+    const activeSet = new Set(buildPluginIds)
+    const pluginWorkerIds = discoverPluginWorkerDirs(activeSet)
+    if (pluginWorkerIds.length > 0) {
+      console.log(`  Plugin workers (${pluginWorkerIds.length}): ${pluginWorkerIds.join(', ')}`)
+    }
+
+    const pluginDataEntries = discoverPluginDataDirs(activeSet)
+    if (pluginDataEntries.length > 0) {
+      console.log(
+        `  Plugin data: ${pluginDataEntries.map((e) => `${e.plugin} (${e.files.join(', ')})`).join('; ')}`
+      )
+    }
+
+    const pluginScriptIds = discoverPluginScriptDirs()
+    if (pluginScriptIds.length > 0) {
+      console.log(`  Plugin scripts (${pluginScriptIds.length}): ${pluginScriptIds.join(', ')}`)
+    }
+
+    if (flags['dry-run']) continue
+
+    const dockerfile = processTemplate(
+      template,
+      req,
+      pluginWorkerIds,
+      pluginDataEntries,
+      pluginScriptIds,
+      fragments
+    )
+    writeFileSync(join(outputDir, profile.dockerfile), dockerfile, 'utf-8')
+    console.log(`  OK ${profile.dockerfile} (${dockerfile.split('\n').length} lines)`)
+
+    const compose = generateDockerCompose(req, buildPluginIds, runtimePluginIds, profile)
+    writeFileSync(join(outputDir, profile.composeFile), compose, 'utf-8')
+    console.log(`  OK ${profile.composeFile} (${compose.split('\n').length} lines)`)
+  }
+
+  if (flags['dry-run']) console.log('\n  [dry-run] No files written.')
   console.log('--- Done ---\n')
 }
 
-main().catch(err => { console.error('Fatal:', err); process.exit(1) })
+main().catch((err) => {
+  console.error('Fatal:', err)
+  process.exit(1)
+})

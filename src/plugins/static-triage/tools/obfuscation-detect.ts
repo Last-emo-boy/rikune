@@ -24,10 +24,7 @@ const CACHE_TTL_MS = CACHE_TTL_30_DAYS
 
 export const ObfuscationDetectInputSchema = z.object({
   sample_id: z.string().describe('Sample identifier (sha256:<hex>)'),
-  force_refresh: z
-    .boolean()
-    .default(false)
-    .describe('Bypass cache lookup'),
+  force_refresh: z.boolean().default(false).describe('Bypass cache lookup'),
 })
 
 export type ObfuscationDetectInput = z.infer<typeof ObfuscationDetectInputSchema>
@@ -127,10 +124,17 @@ export function createObfuscationDetectHandler(
       const artifacts: ArtifactRef[] = []
       try {
         const artifact = await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, input.sample_id, 'obfuscation_detection', 'obfuscation', { tool: TOOL_NAME, data }
+          workspaceManager,
+          database,
+          input.sample_id,
+          'obfuscation_detection',
+          'obfuscation',
+          { tool: TOOL_NAME, data }
         )
         artifacts.push(artifact)
-      } catch { /* best effort */ }
+      } catch {
+        /* best effort */
+      }
 
       return {
         ok: true,

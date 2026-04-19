@@ -4,6 +4,7 @@ import type { DatabaseManager } from '../database.js'
 import { config } from '../config.js'
 import { logger } from '../logger.js'
 import { resolvePackagePath } from '../runtime-paths.js'
+import { getPythonCommand } from '../utils/shared-helpers.js'
 
 export interface RuntimeWorkerPoolLeaseMetadata {
   family: string
@@ -70,12 +71,8 @@ export function buildStaticWorkerCompatibilityKey(request: StaticWorkerRequestLi
   const payload = JSON.stringify({
     tool: request.tool,
     tool_version: request.context?.versions?.tool_version || 'unknown',
-    mode:
-      request.args?.scan_mode ||
-      request.args?.mode ||
-      request.args?.analysis_mode ||
-      'default',
-    python: config.workers.static.pythonPath || (process.platform === 'win32' ? 'python' : 'python3'),
+    mode: request.args?.scan_mode || request.args?.mode || request.args?.analysis_mode || 'default',
+    python: getPythonCommand(undefined, config.workers.static.pythonPath),
     worker_path: resolvePackagePath('workers', 'static_worker.py'),
   })
   return createHash('sha256').update(payload).digest('hex')
@@ -116,9 +113,7 @@ export class RuntimeWorkerPool {
       family: options.family || 'static_python',
       compatibilityKey: options.compatibilityKey || buildStaticWorkerCompatibilityKey(request),
       spawnConfig: {
-        command:
-          config.workers.static.pythonPath ||
-          (process.platform === 'win32' ? 'python' : 'python3'),
+        command: getPythonCommand(undefined, config.workers.static.pythonPath),
         args: [resolvePackagePath('workers', 'static_worker.py')],
       },
     })
@@ -175,12 +170,7 @@ export class RuntimeWorkerPool {
       }
       worker = this.findIdleWorker(family, compatibilityKey, deploymentKey)
       if (!worker) {
-        worker = this.createWorker(
-          family,
-          compatibilityKey,
-          deploymentKey,
-          options.spawnConfig
-        )
+        worker = this.createWorker(family, compatibilityKey, deploymentKey, options.spawnConfig)
         coldStart = true
         const counters = this.getCounters(family, compatibilityKey)
         counters.coldStartCount += 1
@@ -354,7 +344,9 @@ export class RuntimeWorkerPool {
           pending.resolve(JSON.parse(line) as StaticWorkerResponseLike)
         } catch (error) {
           pending.reject(
-            new Error(`Failed to parse pooled worker response: ${error instanceof Error ? error.message : String(error)}`)
+            new Error(
+              `Failed to parse pooled worker response: ${error instanceof Error ? error.message : String(error)}`
+            )
           )
         }
       }
@@ -372,10 +364,17 @@ export class RuntimeWorkerPool {
     }
 
     return new Promise<StaticWorkerResponseLike>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        worker.pending = undefined
-        reject(new Error(`Static worker timed out after ${timeoutMs || config.workers.static.timeout * 1000}ms`))
-      }, timeoutMs || config.workers.static.timeout * 1000)
+      const timer = setTimeout(
+        () => {
+          worker.pending = undefined
+          reject(
+            new Error(
+              `Static worker timed out after ${timeoutMs || config.workers.static.timeout * 1000}ms`
+            )
+          )
+        },
+        timeoutMs || config.workers.static.timeout * 1000
+      )
 
       worker.pending = {
         resolve,
@@ -468,10 +467,11 @@ export class RuntimeWorkerPool {
       }),
       created_at: now,
       updated_at: now,
-      last_used_at: familyWorkers
-        .map((worker) => worker.lastUsedAt)
-        .sort()
-        .reverse()[0] || now,
+      last_used_at:
+        familyWorkers
+          .map((worker) => worker.lastUsedAt)
+          .sort()
+          .reverse()[0] || now,
     })
   }
 }

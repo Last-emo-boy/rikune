@@ -6,6 +6,7 @@
 import { z } from 'zod'
 import { spawn } from 'child_process'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'apk.structure.analyze'
 
@@ -29,14 +30,22 @@ export const apkStructureAnalyzeToolDefinition: ToolDefinition = {
   outputSchema: ApkStructureAnalyzeOutputSchema,
 }
 
-async function callApkWorker(request: Record<string, unknown>, pythonCmd: string, workerPath: string): Promise<Record<string, unknown>> {
+async function callApkWorker(
+  request: Record<string, unknown>,
+  pythonCmd: string,
+  workerPath: string
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const proc = spawn(pythonCmd, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'] })
 
     let stdout = ''
     let stderr = ''
-    proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
-    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+    proc.stdout.on('data', (d: Buffer) => {
+      stdout += d.toString()
+    })
+    proc.stderr.on('data', (d: Buffer) => {
+      stderr += d.toString()
+    })
 
     proc.on('close', (code) => {
       if (code !== 0) {
@@ -57,8 +66,15 @@ async function callApkWorker(request: Record<string, unknown>, pythonCmd: string
 }
 
 export function createApkStructureAnalyzeHandler(deps: PluginToolDeps) {
-  const { workspaceManager, database, config, resolvePrimarySamplePath, persistStaticAnalysisJsonArtifact, resolvePackagePath } = deps
-  const pythonCmd = config.workers.static.pythonPath || (process.platform === 'win32' ? 'python' : 'python3')
+  const {
+    workspaceManager,
+    database,
+    config,
+    resolvePrimarySamplePath,
+    persistStaticAnalysisJsonArtifact,
+    resolvePackagePath,
+  } = deps
+  const pythonCmd = getPythonCommand(undefined, config.workers.static.pythonPath)
   const workerPath = resolvePackagePath('src', 'plugins', 'android', 'workers', 'apk_dex_worker.py')
   return async (args: z.infer<typeof ApkStructureAnalyzeInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()
@@ -70,7 +86,11 @@ export function createApkStructureAnalyzeHandler(deps: PluginToolDeps) {
       }
 
       const { samplePath } = await resolvePrimarySamplePath(workspaceManager, args.sample_id)
-      const result = await callApkWorker({ action: 'parse_apk', file_path: samplePath }, pythonCmd, workerPath)
+      const result = await callApkWorker(
+        { action: 'parse_apk', file_path: samplePath },
+        pythonCmd,
+        workerPath
+      )
 
       if (!result.ok) {
         return { ok: false, errors: [String(result.error || 'APK parsing failed')] }
@@ -79,11 +99,17 @@ export function createApkStructureAnalyzeHandler(deps: PluginToolDeps) {
       const artifacts: ArtifactRef[] = []
       try {
         const artRef = await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, args.sample_id,
-          'apk_structure', 'apk-structure', result
+          workspaceManager,
+          database,
+          args.sample_id,
+          'apk_structure',
+          'apk-structure',
+          result
         )
         if (artRef) artifacts.push(artRef)
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
       return {
         ok: true,

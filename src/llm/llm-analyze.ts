@@ -7,7 +7,7 @@
 import { z } from 'zod'
 import { logger } from '../logger.js'
 import type { ToolArgs, ToolDefinition, WorkerResult } from '../types.js'
-import type { MCPServer } from '../server.js'
+import type { SamplingClient } from '../core/registrar.js'
 import type { CreateMessageRequest } from '@modelcontextprotocol/sdk/types.js'
 import { estimateTokens } from '../performance-benchmark.js'
 
@@ -18,34 +18,49 @@ export const LlmAnalyzeInputSchema = z.object({
   task: z.enum(['summarize', 'explain', 'recommend', 'review']).describe('LLM task type'),
   context: z.string().describe('Analysis context to provide to LLM'),
   goal: z.string().optional().describe('Analysis goal or question'),
-  max_tokens: z.number().int().min(100).max(10000).default(2000).describe('Maximum tokens in response'),
-  temperature: z.number().min(0).max(1).default(0.2).describe('LLM temperature (0=focused, 1=creative)'),
+  max_tokens: z
+    .number()
+    .int()
+    .min(100)
+    .max(10000)
+    .default(2000)
+    .describe('Maximum tokens in response'),
+  temperature: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.2)
+    .describe('LLM temperature (0=focused, 1=creative)'),
 })
 
 export const LlmAnalyzeOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string(),
-    task: z.string(),
-    response: z.string().describe('LLM response'),
-    token_count: z.number().optional().describe('Estimated token count'),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string(),
+      task: z.string(),
+      response: z.string().describe('LLM response'),
+      token_count: z.number().optional().describe('Estimated token count'),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
-  metrics: z.object({
-    elapsed_ms: z.number(),
-    tool: z.string(),
-  }).optional(),
+  metrics: z
+    .object({
+      elapsed_ms: z.number(),
+      tool: z.string(),
+    })
+    .optional(),
 })
 
 export type LlmAnalyzeInput = z.infer<typeof LlmAnalyzeInputSchema>
 
 interface LlmAnalyzeDependencies {
-  mcpServer?: MCPServer
+  mcpServer?: SamplingClient
 }
 
 export function createLlmAnalyzeHandler(
-  mcpServer?: MCPServer
+  mcpServer?: SamplingClient
 ): (args: ToolArgs) => Promise<WorkerResult> {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -69,7 +84,9 @@ export function createLlmAnalyzeHandler(
         return {
           ok: false,
           errors: ['Connected MCP Client does not support LLM sampling'],
-          warnings: ['Please use an MCP Client with LLM capabilities (e.g., Claude Desktop, Cursor)'],
+          warnings: [
+            'Please use an MCP Client with LLM capabilities (e.g., Claude Desktop, Cursor)',
+          ],
           metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
         }
       }
@@ -94,7 +111,7 @@ export function createLlmAnalyzeHandler(
       })
 
       const responseText = extractResponseText(result)
-      
+
       // Calculate token count (estimate from response text)
       // Note: MCP sampling doesn't return usage stats, so we estimate
       const tokenCount = estimateTokens(responseText)
@@ -109,7 +126,7 @@ export function createLlmAnalyzeHandler(
           task: input.task,
           response: responseText,
           token_count: tokenCount,
-          model: (result as any).model,  // MCP returns model info
+          model: (result as any).model, // MCP returns model info
         },
         warnings: warnings.length > 0 ? warnings : undefined,
         metrics: {
@@ -132,17 +149,21 @@ export function createLlmAnalyzeHandler(
 
 function buildSystemPrompt(task: string): string {
   const prompts: Record<string, string> = {
-    summarize: 'You are an expert reverse engineering analyst. Provide concise, accurate summaries of binary analysis results.',
-    explain: 'You are an expert reverse engineering analyst. Explain complex binary behavior in clear, accessible language.',
-    recommend: 'You are an expert reverse engineering analyst. Provide actionable recommendations for next analysis steps.',
-    review: 'You are an expert reverse engineering analyst. Review and critique analysis results, identifying gaps and suggesting improvements.',
+    summarize:
+      'You are an expert reverse engineering analyst. Provide concise, accurate summaries of binary analysis results.',
+    explain:
+      'You are an expert reverse engineering analyst. Explain complex binary behavior in clear, accessible language.',
+    recommend:
+      'You are an expert reverse engineering analyst. Provide actionable recommendations for next analysis steps.',
+    review:
+      'You are an expert reverse engineering analyst. Review and critique analysis results, identifying gaps and suggesting improvements.',
   }
   return prompts[task] || 'You are an expert reverse engineering analyst.'
 }
 
 function buildPrompt(input: LlmAnalyzeInput): string {
   let prompt = `Context:\n${input.context}\n\n`
-  
+
   switch (input.task) {
     case 'summarize':
       prompt += `Please summarize the analysis results for this sample.`
@@ -157,11 +178,11 @@ function buildPrompt(input: LlmAnalyzeInput): string {
       prompt += `Please review the analysis and identify any gaps or issues.`
       break
   }
-  
+
   if (input.goal) {
     prompt += `\n\nGoal: ${input.goal}`
   }
-  
+
   return prompt
 }
 
@@ -169,14 +190,14 @@ function extractResponseText(result: any): string {
   if (typeof result.content === 'string') {
     return result.content
   }
-  
+
   if (Array.isArray(result.content)) {
     return result.content
       .filter((item: any) => item.type === 'text')
       .map((item: any) => item.text)
       .join('\n')
   }
-  
+
   return String(result.content || '')
 }
 

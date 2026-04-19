@@ -11,7 +11,7 @@
  */
 
 const MAX_PARTS = 32
-const MAX_FIELD_VALUE_BYTES = 1024 * 64  // 64 KB per field
+const MAX_FIELD_VALUE_BYTES = 1024 * 64 // 64 KB per field
 const MAX_FILENAME_LENGTH = 255
 
 export interface MultipartFile {
@@ -50,10 +50,7 @@ function sanitiseFilename(raw: string): string {
 /**
  * Parse multipart/form-data request
  */
-export function parseMultipart(
-  body: Buffer,
-  contentType: string
-): ParsedMultipart {
+export function parseMultipart(body: Buffer, contentType: string): ParsedMultipart {
   const result: ParsedMultipart = {
     files: [],
     fields: {},
@@ -67,7 +64,7 @@ export function parseMultipart(
 
   const boundary = boundaryMatch[1] || boundaryMatch[2]
   const boundaryBuffer = Buffer.from(`--${boundary}`)
-  
+
   // Split body by boundary
   const parts: Buffer[] = []
   let start = 0
@@ -85,7 +82,10 @@ export function parseMultipart(
 
   for (const part of parts) {
     // Skip empty parts and epilogue
-    if (part.length === 0 || part.toString('utf8', 0, Math.min(part.length, 6)).startsWith('--\r\n')) {
+    if (
+      part.length === 0 ||
+      part.toString('utf8', 0, Math.min(part.length, 6)).startsWith('--\r\n')
+    ) {
       continue
     }
 
@@ -106,7 +106,11 @@ export function parseMultipart(
 
     // Remove trailing CRLF from body if present
     let cleanBody = bodyBuffer
-    if (cleanBody.length >= 2 && cleanBody[cleanBody.length - 2] === 0x0d && cleanBody[cleanBody.length - 1] === 0x0a) {
+    if (
+      cleanBody.length >= 2 &&
+      cleanBody[cleanBody.length - 2] === 0x0d &&
+      cleanBody[cleanBody.length - 1] === 0x0a
+    ) {
       cleanBody = cleanBody.slice(0, -2)
     }
 
@@ -119,9 +123,7 @@ export function parseMultipart(
     }
 
     // Parse content-disposition
-    const dispMatch = contentDisposition.match(
-      /name="([^"]+)"(?:;\s*filename="([^"]*)")?/
-    )
+    const dispMatch = contentDisposition.match(/name="([^"]+)"(?:;\s*filename="([^"]*)")?/)
     if (!dispMatch) {
       continue
     }
@@ -142,7 +144,9 @@ export function parseMultipart(
     } else {
       // This is a regular field — enforce size limit
       if (cleanBody.length > MAX_FIELD_VALUE_BYTES) {
-        throw new Error(`Field "${fieldName}" exceeds max allowed size (${MAX_FIELD_VALUE_BYTES} bytes)`)
+        throw new Error(
+          `Field "${fieldName}" exceeds max allowed size (${MAX_FIELD_VALUE_BYTES} bytes)`
+        )
       }
       result.fields[fieldName] = cleanBody.toString('utf8')
     }

@@ -12,7 +12,7 @@ import type { ToolArgs, WorkerResult } from '../../src/types.js'
 import {
   createCodeReconstructPlanHandler,
   CodeReconstructPlanInputSchema,
-} from '../../src/tools/code-reconstruct-plan.js'
+} from '../../src/plugins/code-analysis/tools/code-reconstruct-plan.js'
 
 describe('code.reconstruct.plan tool', () => {
   let workspaceManager: WorkspaceManager

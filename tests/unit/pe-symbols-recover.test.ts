@@ -163,7 +163,7 @@ describe('pe.symbols.recover tool', () => {
       },
     }))
 
-    const handler = createPESymbolsRecoverHandler({ workspaceManager, database, cacheManager } as any)
+    const handler = createPESymbolsRecoverHandler({ workspaceManager, database, cacheManager, stringsHandler, runtimeHandler } as any)
     const result = await handler({ sample_id: sampleId })
 
     expect(result.ok).toBe(true)

@@ -8,8 +8,12 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
   SharedMetricsSchema,
-  ensureSampleExists, normalizeError, runPythonJson,
-  buildMetrics, resolveSampleFile, resolvePythonModuleBackend,
+  ensureSampleExists,
+  normalizeError,
+  runPythonJson,
+  buildMetrics,
+  resolveSampleFile,
+  resolvePythonModuleBackend,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -22,24 +26,28 @@ export const officeMacroDetectInputSchema = z.object({
 
 export const officeMacroDetectOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    has_macros: z.boolean().optional(),
-    is_suspicious: z.boolean().optional(),
-    flags: z.object({
-      auto_exec: z.boolean().optional(),
-      suspicious: z.boolean().optional(),
-      ioc: z.boolean().optional(),
-      hex_strings: z.boolean().optional(),
-      base64_strings: z.boolean().optional(),
-      dridex_strings: z.boolean().optional(),
-      vba_stomping: z.boolean().optional(),
-    }).optional(),
-    risk_level: z.enum(['safe', 'low', 'medium', 'high']).optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      has_macros: z.boolean().optional(),
+      is_suspicious: z.boolean().optional(),
+      flags: z
+        .object({
+          auto_exec: z.boolean().optional(),
+          suspicious: z.boolean().optional(),
+          ioc: z.boolean().optional(),
+          hex_strings: z.boolean().optional(),
+          base64_strings: z.boolean().optional(),
+          dridex_strings: z.boolean().optional(),
+          vba_stomping: z.boolean().optional(),
+        })
+        .optional(),
+      risk_level: z.enum(['safe', 'low', 'medium', 'high']).optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   metrics: SharedMetricsSchema.optional(),
 })
@@ -109,7 +117,7 @@ print(json.dumps({
 
 export function createOfficeMacroDetectHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -117,12 +125,30 @@ export function createOfficeMacroDetectHandler(
       const input = officeMacroDetectInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolvePythonModuleBackend({ envPythonPath: process.env.OLETOOLS_PYTHON, moduleNames: ['oletools'], distributionNames: ['oletools'] })
+      const backend = resolvePythonModuleBackend({
+        envPythonPath: process.env.OLETOOLS_PYTHON,
+        moduleNames: ['oletools'],
+        distributionNames: ['oletools'],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'oletools', available: false, error: 'oletools Python module not available' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend ||
+            ({
+              name: 'oletools',
+              available: false,
+              error: 'oletools Python module not available',
+            } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
-      const result = await runPythonJson(backend.path, MACRO_DETECT_SCRIPT, { sample_path: samplePath }, input.timeout_sec * 1000)
+      const result = await runPythonJson(
+        backend.path,
+        MACRO_DETECT_SCRIPT,
+        { sample_path: samplePath },
+        input.timeout_sec * 1000
+      )
 
       const risk = result.parsed?.risk_level || 'safe'
       const hasMacros = result.parsed?.has_macros || false
@@ -135,16 +161,27 @@ export function createOfficeMacroDetectHandler(
           is_suspicious: result.parsed?.is_suspicious || false,
           flags: result.parsed?.flags,
           risk_level: risk,
-          summary: hasMacros ? `Macros detected — risk: ${risk.toUpperCase()}. ${result.parsed?.is_suspicious ? 'SUSPICIOUS indicators found.' : 'No suspicious patterns.'}` : 'No macros detected.',
-          recommended_next_tools: hasMacros ? ['office.vba.extract', 'yara.scan', 'sandbox.execute'] : ['pe.structure.analyze'],
+          summary: hasMacros
+            ? `Macros detected — risk: ${risk.toUpperCase()}. ${result.parsed?.is_suspicious ? 'SUSPICIOUS indicators found.' : 'No suspicious patterns.'}`
+            : 'No macros detected.',
+          recommended_next_tools: hasMacros
+            ? ['office.vba.extract', 'yara.scan', 'sandbox.execute']
+            : ['pe.structure.analyze'],
           next_actions: hasMacros
-            ? ['Extract macro source with office.vba.extract for manual review.', 'Scan with YARA rules for known malware patterns.']
+            ? [
+                'Extract macro source with office.vba.extract for manual review.',
+                'Scan with YARA rules for known malware patterns.',
+              ]
             : ['Document appears safe from macro-based threats.'],
         },
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

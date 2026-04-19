@@ -12,6 +12,7 @@ import { dieIdentifyToolDefinition, createDieIdentifyHandler } from './tools/die
 const diePlugin: Plugin = {
   id: 'die',
   name: 'Detect It Easy',
+  executionDomain: 'static',
   surfaceRules: {
     tier: 0,
     category: 'static-analysis',
@@ -23,17 +24,24 @@ const diePlugin: Plugin = {
           const type = ((det.type || det.name || '') as string).toLowerCase()
           if (type.includes('upx')) signals.push('packed', 'upx')
           if (type.includes('pack') || type.includes('protector')) signals.push('packed')
-          if (type.includes('.net') || type.includes('msil') || type.includes('dotnet')) signals.push('dotnet')
+          if (type.includes('.net') || type.includes('msil') || type.includes('dotnet'))
+            signals.push('dotnet')
           if (type.includes('golang') || type === 'go') signals.push('go')
         }
       }
       return signals
     },
   },
-  description: 'Deep signature-based identification of compilers, packers, linkers, and crypto using DIE',
+  description:
+    'Deep signature-based identification of compilers, packers, linkers, and crypto using DIE',
   version: '1.0.0',
   configSchema: [
-    { envVar: 'DIEC_PATH', description: 'Path to diec (DIE console) binary', required: false, defaultValue: '/usr/local/bin/diec' },
+    {
+      envVar: 'DIEC_PATH',
+      description: 'Path to diec (DIE console) binary',
+      required: false,
+      defaultValue: '/usr/bin/diec',
+    },
   ],
   systemDeps: [
     {
@@ -41,7 +49,7 @@ const diePlugin: Plugin = {
       name: 'diec',
       target: '$DIEC_PATH',
       envVar: 'DIEC_PATH',
-      dockerDefault: '/usr/local/bin/diec',
+      dockerDefault: '/usr/bin/diec',
       versionFlag: '--version',
       required: false,
       description: 'Detect It Easy console scanner',

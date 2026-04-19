@@ -7,10 +7,15 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, executeCommand,
-  persistBackendArtifact, buildMetrics,
-  resolveSampleFile, resolveExecutable,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  executeCommand,
+  persistBackendArtifact,
+  buildMetrics,
+  resolveSampleFile,
+  resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -25,21 +30,23 @@ export const peSignatureVerifyInputSchema = z.object({
 
 export const peSignatureVerifyOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    is_signed: z.boolean().optional(),
-    signature_valid: z.boolean().optional(),
-    signer: z.string().optional(),
-    issuer: z.string().optional(),
-    serial: z.string().optional(),
-    timestamp: z.string().optional(),
-    digest_algorithm: z.string().optional(),
-    raw_output: z.string().optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      is_signed: z.boolean().optional(),
+      signature_valid: z.boolean().optional(),
+      signer: z.string().optional(),
+      issuer: z.string().optional(),
+      serial: z.string().optional(),
+      timestamp: z.string().optional(),
+      digest_algorithm: z.string().optional(),
+      raw_output: z.string().optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
   metrics: SharedMetricsSchema.optional(),
@@ -54,7 +61,7 @@ export const peSignatureVerifyToolDefinition: ToolDefinition = {
 
 export function createPeSignatureVerifyHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -62,15 +69,28 @@ export function createPeSignatureVerifyHandler(
       const input = peSignatureVerifyInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolveExecutable({ envPath: process.env.OSSLSIGNCODE_PATH, pathCandidates: ['osslsigncode'], versionArgSets: [['--version'], ['-v']] })
+      const backend = resolveExecutable({
+        envPath: process.env.OSSLSIGNCODE_PATH,
+        pathCandidates: ['osslsigncode'],
+        versionArgSets: [['--version'], ['-v']],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'osslsigncode', available: false, error: 'osslsigncode not installed' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend ||
+            ({
+              name: 'osslsigncode',
+              available: false,
+              error: 'osslsigncode not installed',
+            } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const result = await executeCommand(
         backend.path,
         ['verify', '-in', samplePath],
-        input.timeout_sec * 1000,
+        input.timeout_sec * 1000
       )
 
       const out = result.stdout + '\n' + result.stderr
@@ -85,7 +105,15 @@ export function createPeSignatureVerifyHandler(
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'pe-sig', 'verify', out.slice(0, 16384), { extension: 'txt', mime: 'text/plain', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'pe-sig',
+          'verify',
+          out.slice(0, 16384),
+          { extension: 'txt', mime: 'text/plain', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -108,7 +136,9 @@ export function createPeSignatureVerifyHandler(
           recommended_next_tools: ['pe.certificate.extract', 'pe.inspect', 'capa.analyze'],
           next_actions: isSigned
             ? [
-                signatureValid ? 'Check if signer is a known publisher.' : 'Investigate invalid signature — may be tampered.',
+                signatureValid
+                  ? 'Check if signer is a known publisher.'
+                  : 'Investigate invalid signature — may be tampered.',
                 'Extract the full certificate chain for pivoting.',
               ]
             : ['Unsigned PE — no further signature analysis needed.'],
@@ -117,7 +147,11 @@ export function createPeSignatureVerifyHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

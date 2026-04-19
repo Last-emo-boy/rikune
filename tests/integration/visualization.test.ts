@@ -4,9 +4,9 @@
  */
 
 import { describe, test, expect } from '@jest/globals'
-import { generateCallGraph, callGraphToDot, callGraphToMermaid } from '../../src/visualization/call-graph.js'
-import { generateDataFlow, dataFlowToDot, dataFlowToMermaid } from '../../src/visualization/data-flow.js'
-import { generateCryptoFlow, cryptoFlowToDot, cryptoFlowToMermaid } from '../../src/visualization/crypto-flow.js'
+import { generateCallGraph, callGraphToDot, callGraphToMermaid } from '../../src/plugins/reporting/visualization/call-graph.js'
+import { generateDataFlow, dataFlowToDot, dataFlowToMermaid } from '../../src/plugins/reporting/visualization/data-flow.js'
+import { generateCryptoFlow, cryptoFlowToDot, cryptoFlowToMermaid } from '../../src/plugins/reporting/visualization/crypto-flow.js'
 
 describe('visualization-enhanced-reporting - Visualization Tests', () => {
   const sampleFunctions = [

@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
-import { createPackerDetectHandler } from '../../src/tools/packer-detect.js'
+import { createPackerDetectHandler } from '../../src/plugins/static-triage/tools/packer-detect.js'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'

@@ -172,16 +172,18 @@ export const ExplanationGraphSummarySchema = z.object({
   artifact_ref: SummaryArtifactRefSchema.optional(),
 })
 
-const DigestBaseSchema = z.object({
-  schema_version: z.literal(1),
-  sample_id: z.string(),
-  stage: z.enum(SUMMARY_STAGE_VALUES),
-  detail_level: DetailLevelSchema.default('compact'),
-  created_at: z.string(),
-  session_tag: z.string().nullable().optional(),
-  source_artifact_refs: z.array(SummaryArtifactRefSchema),
-  truncation: DigestTruncationSchema.optional(),
-}).extend(CoverageEnvelopeSchema.shape)
+const DigestBaseSchema = z
+  .object({
+    schema_version: z.literal(1),
+    sample_id: z.string(),
+    stage: z.enum(SUMMARY_STAGE_VALUES),
+    detail_level: DetailLevelSchema.default('compact'),
+    created_at: z.string(),
+    session_tag: z.string().nullable().optional(),
+    source_artifact_refs: z.array(SummaryArtifactRefSchema),
+    truncation: DigestTruncationSchema.optional(),
+  })
+  .extend(CoverageEnvelopeSchema.shape)
 
 export const TriageStageDigestSchema = DigestBaseSchema.extend({
   stage: z.literal('triage'),
@@ -294,7 +296,7 @@ export function limitArray<T>(
       }
       return map(item) as T
     })
-    .filter((item) => item !== null && item !== undefined) as T[]
+    .filter((item) => item !== null && item !== undefined)
   const kept = normalized.slice(0, limit)
   return {
     values: kept,
@@ -319,7 +321,6 @@ export function collectTruncationEntries(
   >
   return Object.keys(filtered).length > 0 ? filtered : undefined
 }
-
 
 export interface BuildTriageStageDigestInput {
   sample_id: string
@@ -383,9 +384,7 @@ export interface BuildFinalStageDigestInput {
   coverage?: CoverageEnvelope
 }
 
-export function buildTriageStageDigest(
-  input: BuildTriageStageDigestInput
-): TriageStageDigest {
+export function buildTriageStageDigest(input: BuildTriageStageDigestInput): TriageStageDigest {
   const evidence = limitArray('evidence', dedupeStrings(input.evidence))
   const suspiciousImports = limitArray(
     'suspicious_imports',
@@ -475,7 +474,9 @@ export function buildTriageStageDigest(
       suspicious_imports: suspiciousImports.values,
       suspicious_strings: suspiciousStrings.values,
       yara_matches: yaraMatches.values,
-      ...(yaraLowConfidence.values.length > 0 ? { yara_low_confidence: yaraLowConfidence.values } : {}),
+      ...(yaraLowConfidence.values.length > 0
+        ? { yara_low_confidence: yaraLowConfidence.values }
+        : {}),
       ...(urls.values.length > 0 ? { urls: urls.values } : {}),
       ...(ipAddresses.values.length > 0 ? { ip_addresses: ipAddresses.values } : {}),
       ...(filePaths.values.length > 0 ? { file_paths: filePaths.values } : {}),
@@ -541,9 +542,7 @@ export function buildTriageStageDigest(
   }
 }
 
-export function buildStaticStageDigest(
-  input: BuildStaticStageDigestInput
-): StaticStageDigest {
+export function buildStaticStageDigest(input: BuildStaticStageDigestInput): StaticStageDigest {
   const keyFindings = limitArray('key_findings', dedupeStrings(input.key_findings || []))
   const coverage =
     input.coverage ||
@@ -560,7 +559,9 @@ export function buildStaticStageDigest(
         },
       ],
       knownFindings: keyFindings.values,
-      unverifiedAreas: ['Source-like reconstruction and dynamic verification remain outside the static digest.'],
+      unverifiedAreas: [
+        'Source-like reconstruction and dynamic verification remain outside the static digest.',
+      ],
       upgradePaths: [
         {
           tool: 'workflow.reconstruct',
@@ -580,7 +581,9 @@ export function buildStaticStageDigest(
     session_tag: input.session_tag || null,
     source_artifact_refs: dedupeArtifactRefs(input.source_artifact_refs || []),
     ...coverage,
-    ...(input.binary_profile_summary ? { binary_profile_summary: input.binary_profile_summary } : {}),
+    ...(input.binary_profile_summary
+      ? { binary_profile_summary: input.binary_profile_summary }
+      : {}),
     ...(input.rust_profile_summary ? { rust_profile_summary: input.rust_profile_summary } : {}),
     ...(input.static_capability_summary
       ? { static_capability_summary: input.static_capability_summary }
@@ -598,9 +601,7 @@ export function buildStaticStageDigest(
   }
 }
 
-export function buildDeepStageDigest(
-  input: BuildDeepStageDigestInput
-): DeepStageDigest {
+export function buildDeepStageDigest(input: BuildDeepStageDigestInput): DeepStageDigest {
   const topFunctions = limitArray('top_functions', input.top_functions)
   const functionExplanations = limitArray('function_explanations', input.function_explanations)
   const trimmedExplanations = functionExplanations.values.map((item) => {
@@ -624,14 +625,17 @@ export function buildDeepStageDigest(
         status: 'degraded' as const,
         reason: item,
       })),
-      knownFindings: topFunctions.values.map((item) => `${item.address}: ${item.name || 'function'} retained in deep digest.`),
+      knownFindings: topFunctions.values.map(
+        (item) => `${item.address}: ${item.name || 'function'} retained in deep digest.`
+      ),
       unverifiedAreas: ['Source-like reconstruction export remains outside the deep digest.'],
       upgradePaths: [
         {
           tool: 'workflow.reconstruct',
           purpose: 'Continue from deep static findings into reconstruction export.',
           closes_gaps: ['reconstruction_export'],
-          expected_coverage_gain: 'Adds export artifacts and validation notes beyond the deep digest.',
+          expected_coverage_gain:
+            'Adds export artifacts and validation notes beyond the deep digest.',
           cost_tier: 'high',
         },
       ],
@@ -667,7 +671,9 @@ function buildExecutiveSummary(
 ): string {
   const parts = [triage.summary]
   if (staticDigest?.key_findings?.length) {
-    parts.push(`Static/toolchain digest highlights: ${staticDigest.key_findings.slice(0, 3).join('; ')}.`)
+    parts.push(
+      `Static/toolchain digest highlights: ${staticDigest.key_findings.slice(0, 3).join('; ')}.`
+    )
   }
   if (deepDigest?.summary) {
     parts.push(deepDigest.summary)
@@ -689,9 +695,7 @@ function buildAnalystSummary(
   return truncateText(sections.join(' '), 1600)
 }
 
-export function buildFinalStageDigest(
-  input: BuildFinalStageDigestInput
-): FinalStageDigest {
+export function buildFinalStageDigest(input: BuildFinalStageDigestInput): FinalStageDigest {
   const keyFindings = limitArray(
     'key_findings',
     dedupeStrings([
@@ -715,13 +719,18 @@ export function buildFinalStageDigest(
     'unresolved_unknowns',
     dedupeStrings([
       ...(input.deepDigest?.analysis_gaps || []),
-      ...(input.triage.iocs.yara_low_confidence || []).map((item) => `Low-confidence YARA: ${item}`),
+      ...(input.triage.iocs.yara_low_confidence || []).map(
+        (item) => `Low-confidence YARA: ${item}`
+      ),
     ])
   )
   const mergedCoverage =
     input.coverage ||
     buildCoverageEnvelope({
-      coverageLevel: input.deepDigest?.coverage_level || input.staticDigest?.coverage_level || input.triage.coverage_level,
+      coverageLevel:
+        input.deepDigest?.coverage_level ||
+        input.staticDigest?.coverage_level ||
+        input.triage.coverage_level,
       completionState:
         input.deepDigest?.completion_state ||
         input.staticDigest?.completion_state ||
@@ -800,7 +809,10 @@ export function buildFinalStageDigest(
       : {}),
     ...(input.explanation_artifact_refs?.length
       ? {
-          explanation_artifact_refs: dedupeArtifactRefs(input.explanation_artifact_refs).slice(0, 4),
+          explanation_artifact_refs: dedupeArtifactRefs(input.explanation_artifact_refs).slice(
+            0,
+            4
+          ),
         }
       : {}),
     truncation: collectTruncationEntries([

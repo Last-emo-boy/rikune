@@ -82,7 +82,6 @@ describe('file server API hardening', () => {
         port,
         apiKey: 'secret-key',
         maxFileSize: 32,
-        storageRoot,
       },
       {
         storageManager,

@@ -23,24 +23,131 @@ import os from 'os'
 import type { DatabaseManager } from '../../database.js'
 import type { MCPServer } from '../../server.js'
 import type { WorkspaceManager } from '../../workspace-manager.js'
-import { getPluginManager } from '../../plugins.js'
 import { validateConfig, type ValidationReport } from '../../config-validator.js'
 import { config } from '../../config.js'
 import { getActiveSseClients, eventBus } from '../sse-events.js'
 import { logger, logRingBuffer, type LogEntry } from '../../logger.js'
+import type { PluginStatus } from '../../plugins/sdk.js'
+import type { RuntimeSseEvent } from '../../runtime-client/index.js'
+import type { JobQueue } from '../../job-queue.js'
+import {
+  normalizeJobQueueStatus,
+  normalizeRuntimeEventStatus,
+} from '../../analysis/analysis-run-state.js'
 
 const SERVER_START_TIME = Date.now()
+const TASK_TTL_MS = 30 * 60 * 1000
+
+type RuntimeTaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+const RUNTIME_TASK_LIFECYCLE = {
+  persistenceFileName: '.runtime-task-store.json',
+  persistenceScope: 'runtime-outbox',
+  terminalTaskTtlMs: TASK_TTL_MS,
+  cleanupBehavior: 'terminal-tasks-purge-outbox-and-state',
+  recoveryBehavior: 'queued-and-running-marked-failed-on-restart',
+  terminalStatuses: ['completed', 'failed', 'cancelled'] as const,
+  persistedStatuses: ['queued', 'running', 'completed', 'failed', 'cancelled'] as const,
+} as const
 
 export interface DashboardDeps {
   server: MCPServer | null
   database: DatabaseManager
   workspaceManager?: WorkspaceManager
+  runtimeClient?: {
+    health(): Promise<{
+      ok: boolean
+      role: string
+      isolation: string
+      mode: string
+      pid: number
+    } | null>
+    getEndpoint?(): string
+    subscribeEvents?: (options: {
+      taskId?: string
+      onOpen?: () => void
+      onEvent: (event: RuntimeSseEvent) => void
+      onError?: (error: Error) => void
+    }) => { close(): void }
+  } | null
+  jobQueue?: Pick<JobQueue, 'getQueueLength' | 'listStatuses'>
+  getPluginStatuses?: () => PluginStatus[]
 }
 
+interface RuntimeEventSnapshot {
+  connected: boolean
+  lastEventAt: string | null
+  lastEvent: RuntimeSseEvent | null
+  recentEvents: RuntimeSseEvent[]
+  lastError: string | null
+  endpoint: string | null
+}
+
+interface RuntimeEventView extends RuntimeSseEvent {
+  normalized_status: ReturnType<typeof normalizeRuntimeEventStatus>
+}
+
+const RUNTIME_EVENT_HISTORY_LIMIT = 25
+
 let _deps: DashboardDeps | null = null
+let runtimeEventSubscription: { close(): void } | null = null
+const runtimeEventSnapshot: RuntimeEventSnapshot = {
+  connected: false,
+  lastEventAt: null,
+  lastEvent: null,
+  recentEvents: [],
+  lastError: null,
+  endpoint: null,
+}
 
 export function initDashboard(deps: DashboardDeps): void {
   _deps = deps
+
+  runtimeEventSubscription?.close()
+  runtimeEventSubscription = null
+  runtimeEventSnapshot.connected = false
+  runtimeEventSnapshot.lastEventAt = null
+  runtimeEventSnapshot.lastEvent = null
+  runtimeEventSnapshot.recentEvents = []
+  runtimeEventSnapshot.lastError = null
+  runtimeEventSnapshot.endpoint = deps.runtimeClient?.getEndpoint?.() ?? null
+
+  if (deps.runtimeClient?.subscribeEvents) {
+    runtimeEventSubscription = deps.runtimeClient.subscribeEvents({
+      onOpen: () => {
+        runtimeEventSnapshot.connected = true
+        runtimeEventSnapshot.lastError = null
+        runtimeEventSnapshot.endpoint =
+          deps.runtimeClient?.getEndpoint?.() ?? runtimeEventSnapshot.endpoint
+      },
+      onEvent: (event) => {
+        runtimeEventSnapshot.connected = true
+        runtimeEventSnapshot.lastError = null
+        runtimeEventSnapshot.lastEventAt = new Date().toISOString()
+        runtimeEventSnapshot.lastEvent = event
+        runtimeEventSnapshot.endpoint =
+          deps.runtimeClient?.getEndpoint?.() ?? runtimeEventSnapshot.endpoint
+        runtimeEventSnapshot.recentEvents = [...runtimeEventSnapshot.recentEvents, event].slice(
+          -RUNTIME_EVENT_HISTORY_LIMIT
+        )
+        eventBus.publish('runtime-events', 'status', {
+          event: event.event,
+          id: event.id ?? null,
+          data: event.data,
+          received_at: runtimeEventSnapshot.lastEventAt,
+        })
+      },
+      onError: (error) => {
+        runtimeEventSnapshot.connected = false
+        runtimeEventSnapshot.lastError = error.message
+        eventBus.publish('runtime-events', 'error', {
+          message: error.message,
+          endpoint: deps.runtimeClient?.getEndpoint?.() ?? runtimeEventSnapshot.endpoint,
+          timestamp: new Date().toISOString(),
+        })
+      },
+    })
+  }
 
   // Forward new log entries to SSE stream so the dashboard can display them in real time
   logRingBuffer.onEntry((entry: LogEntry) => {
@@ -52,7 +159,13 @@ export function initDashboard(deps: DashboardDeps): void {
   })
 }
 
-function sendJson(res: ServerResponse, status: number, data: unknown, req?: IncomingMessage, cacheSecs = 0): void {
+function sendJson(
+  res: ServerResponse,
+  status: number,
+  data: unknown,
+  req?: IncomingMessage,
+  cacheSecs = 0
+): void {
   const body = JSON.stringify(data)
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
 
@@ -96,7 +209,7 @@ export function handleDashboardApi(
 
   const artifactContentMatch = route.match(/^\/artifacts\/(.+)\/content$/)
   if (artifactContentMatch) {
-    handleArtifactContent(res, decodeURIComponent(artifactContentMatch[1])).catch(err => {
+    handleArtifactContent(res, decodeURIComponent(artifactContentMatch[1])).catch((err) => {
       logger.error({ err }, 'Dashboard: artifact content handler failed')
       if (!res.writableEnded) {
         sendJson(res, 500, { error: 'Internal error reading artifact' })
@@ -149,25 +262,32 @@ export function handleDashboardApi(
 function handleOverview(res: ServerResponse): void {
   const tools = _deps?.server?.getToolDefinitions() ?? []
   const prompts = _deps?.server?.getPromptDefinitions() ?? []
-  let pluginMgr: ReturnType<typeof getPluginManager> | null = null
-  try { pluginMgr = getPluginManager() } catch { /* not initialized */ }
-  const pluginStatuses = pluginMgr?.getStatuses() ?? []
+  let pluginStatuses: PluginStatus[] = []
+  try {
+    pluginStatuses = safeGetPluginStatuses()
+  } catch {
+    /* not initialized */
+  }
 
-  const loaded = pluginStatuses.filter(p => p.status === 'loaded').length
+  const loaded = pluginStatuses.filter((p) => p.status === 'loaded').length
   const sseClients = getActiveSseClients()
 
   // Query recent sample count
   let sampleCount = 0
   let recentAnalyses = 0
   try {
-    const countResult = _deps?.database?.querySql<{ cnt: number }>('SELECT COUNT(*) as cnt FROM samples') ?? []
+    const countResult =
+      _deps?.database?.querySql<{ cnt: number }>('SELECT COUNT(*) as cnt FROM samples') ?? []
     sampleCount = countResult[0]?.cnt ?? 0
 
-    const recentResult = _deps?.database?.querySql<{ cnt: number }>(
-      `SELECT COUNT(*) as cnt FROM samples WHERE created_at > datetime('now', '-24 hours')`
-    ) ?? []
+    const recentResult =
+      _deps?.database?.querySql<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM samples WHERE created_at > datetime('now', '-24 hours')`
+      ) ?? []
     recentAnalyses = recentResult[0]?.cnt ?? 0
-  } catch { /* table may not exist yet */ }
+  } catch {
+    /* table may not exist yet */
+  }
 
   sendJson(res, 200, {
     server: {
@@ -206,7 +326,7 @@ function handleTools(res: ServerResponse, req?: IncomingMessage): void {
     const dotIdx = t.name.indexOf('.')
     const category = dotIdx > 0 ? t.name.substring(0, dotIdx) : 'core'
     if (!categories.has(category)) categories.set(category, [])
-    categories.get(category)!.push({ name: t.name, description: t.description })
+    categories.get(category).push({ name: t.name, description: t.description })
   }
 
   const result = Array.from(categories.entries())
@@ -217,25 +337,35 @@ function handleTools(res: ServerResponse, req?: IncomingMessage): void {
 }
 
 function handlePlugins(res: ServerResponse, req?: IncomingMessage): void {
-  let pluginMgr: ReturnType<typeof getPluginManager> | null = null
-  try { pluginMgr = getPluginManager() } catch { /* not initialized */ }
-
-  const statuses = pluginMgr?.getStatuses() ?? []
+  const statuses = safeGetPluginStatuses()
 
   const data = {
     total: statuses.length,
-    loaded: statuses.filter(s => s.status === 'loaded').length,
-    skipped: statuses.filter(s => s.status.startsWith('skipped')).length,
-    errored: statuses.filter(s => s.status === 'error').length,
-    plugins: statuses.map(s => ({
+    loaded: statuses.filter((s) => s.status === 'loaded').length,
+    skipped: statuses.filter((s) => s.status.startsWith('skipped')).length,
+    errored: statuses.filter((s) => s.status === 'error').length,
+    plugins: statuses.map((s) => ({
       id: s.id,
       name: s.name,
       version: s.version ?? null,
       description: s.description ?? null,
       status: s.status,
+      normalized_status: s.controlPlaneStatus ?? normalizePluginControlPlaneStatus(s.status),
+      reason_code: s.reasonCode ?? null,
+      status_detail: s.statusDetail ?? s.error ?? null,
       tool_count: s.tools.length,
       tools: s.tools,
       error: s.error ?? null,
+      dependency_checks:
+        s.depChecks?.map((dep) => ({
+          name: dep.dep.name,
+          type: dep.dep.type,
+          required: dep.dep.required,
+          available: dep.available,
+          resolved_path: dep.resolvedPath ?? null,
+          version: dep.version ?? null,
+          error: dep.error ?? null,
+        })) ?? [],
     })),
   }
   sendJson(res, 200, data, req, 15)
@@ -248,32 +378,74 @@ function handleSamples(res: ServerResponse, params: URLSearchParams): void {
   let samples: unknown[] = []
   let total = 0
   try {
-    const countResult = _deps?.database?.querySql<{ cnt: number }>('SELECT COUNT(*) as cnt FROM samples') ?? []
+    const countResult =
+      _deps?.database?.querySql<{ cnt: number }>('SELECT COUNT(*) as cnt FROM samples') ?? []
     total = countResult[0]?.cnt ?? 0
 
-    samples = _deps?.database?.querySql(
-      'SELECT id, sha256, size, file_type, source, created_at FROM samples ORDER BY created_at DESC LIMIT ? OFFSET ?',
-      [limit, offset]
-    ) ?? []
-  } catch { /* table may not exist */ }
+    samples =
+      _deps?.database?.querySql(
+        'SELECT id, sha256, size, file_type, source, created_at FROM samples ORDER BY created_at DESC LIMIT ? OFFSET ?',
+        [limit, offset]
+      ) ?? []
+  } catch {
+    /* table may not exist */
+  }
 
   sendJson(res, 200, { total, offset, limit, samples })
 }
 
 function handleWorkers(res: ServerResponse): void {
-  // Worker stats are not directly accessible from here, but we can expose what we have
+  const jobs = _deps?.jobQueue?.listStatuses?.() ?? []
+  const normalizedJobs = jobs.map((job) => ({
+    ...job,
+    normalized_status: normalizeJobQueueStatus(job.status),
+  }))
+  const queuedJobs = normalizedJobs.filter((job) => job.normalized_status === 'pending')
+  const runningJobs = normalizedJobs.filter((job) => job.normalized_status === 'active')
+  const terminalJobs = normalizedJobs.filter((job) =>
+    ['completed', 'failed', 'cancelled', 'recoverable'].includes(job.normalized_status)
+  )
+  const pluginStatuses = safeGetPluginStatuses()
+  const pluginCounts = summarizePluginStatuses(pluginStatuses)
+  const runtimeLastEvent = toRuntimeEventView(runtimeEventSnapshot.lastEvent)
+  const runtimeRecentEvents = runtimeEventSnapshot.recentEvents.map((event) =>
+    toRuntimeEventView(event)
+  )
+
   sendJson(res, 200, {
-    pool: {
-      note: 'Worker pool statistics are available when the pool is running',
+    runtime: {
+      connected: runtimeEventSnapshot.connected,
+      endpoint: runtimeEventSnapshot.endpoint,
+      lifecycle: RUNTIME_TASK_LIFECYCLE,
+      last_event_at: runtimeEventSnapshot.lastEventAt,
+      last_error: runtimeEventSnapshot.lastError,
+      last_event: runtimeLastEvent,
+      recent_events: runtimeRecentEvents,
+      normalized_status:
+        runtimeLastEvent?.normalized_status ??
+        (runtimeEventSnapshot.connected ? 'active' : 'pending'),
     },
+    jobs: {
+      total: normalizedJobs.length,
+      queue_depth: _deps?.jobQueue?.getQueueLength?.() ?? queuedJobs.length,
+      queued: queuedJobs.length,
+      running: runningJobs.length,
+      terminal: terminalJobs.length,
+      by_status: normalizedJobs.reduce<Record<string, number>>((acc, job) => {
+        acc[job.normalized_status] = (acc[job.normalized_status] ?? 0) + 1
+        return acc
+      }, {}),
+      recent: normalizedJobs.slice(0, 10),
+    },
+    plugins: pluginCounts,
     process: {
       pid: process.pid,
       uptime_seconds: Math.floor(process.uptime()),
       cpu_usage: process.cpuUsage(),
     },
     system: {
-      total_memory_gb: Math.round(os.totalmem() / 1024 / 1024 / 1024 * 10) / 10,
-      free_memory_gb: Math.round(os.freemem() / 1024 / 1024 / 1024 * 10) / 10,
+      total_memory_gb: Math.round((os.totalmem() / 1024 / 1024 / 1024) * 10) / 10,
+      free_memory_gb: Math.round((os.freemem() / 1024 / 1024 / 1024) * 10) / 10,
       cpus: os.cpus().length,
       load_average: os.loadavg(),
     },
@@ -308,10 +480,81 @@ function handleConfig(res: ServerResponse, req?: IncomingMessage): void {
   sendJson(res, 200, data, req, 30)
 }
 
+function safeGetPluginStatuses(): PluginStatus[] {
+  try {
+    return _deps?.getPluginStatuses?.() ?? []
+  } catch {
+    return []
+  }
+}
+
+function summarizePluginStatuses(statuses: PluginStatus[]): Record<string, number> {
+  return statuses.reduce<Record<string, number>>((acc, status) => {
+    const normalized = status.controlPlaneStatus ?? normalizePluginControlPlaneStatus(status.status)
+    acc[status.status] = (acc[status.status] ?? 0) + 1
+    acc[normalized] = (acc[normalized] ?? 0) + 1
+    if (status.reasonCode) {
+      const reasonKey = `reason:${status.reasonCode}`
+      acc[reasonKey] = (acc[reasonKey] ?? 0) + 1
+    }
+    return acc
+  }, {})
+}
+
+function normalizePluginControlPlaneStatus(
+  status: PluginStatus['status']
+): 'completed' | 'cancelled' | 'failed' {
+  switch (status) {
+    case 'loaded':
+      return 'completed'
+    case 'skipped-disabled':
+      return 'cancelled'
+    case 'skipped-check':
+    case 'skipped-deps':
+    case 'error':
+      return 'failed'
+  }
+}
+
+function extractRuntimeStatusFromEvent(event: RuntimeSseEvent): RuntimeTaskStatus | undefined {
+  const status = (event.data as { status?: unknown } | undefined)?.status
+  if (typeof status !== 'string') {
+    return undefined
+  }
+  if (
+    status === 'queued' ||
+    status === 'running' ||
+    status === 'completed' ||
+    status === 'failed' ||
+    status === 'cancelled'
+  ) {
+    return status
+  }
+  return undefined
+}
+
+function toRuntimeEventView(event: RuntimeSseEvent | null): RuntimeEventView | null {
+  if (!event) {
+    return null
+  }
+  return {
+    ...event,
+    normalized_status: normalizeRuntimeEventStatus(
+      event.event,
+      extractRuntimeStatusFromEvent(event) ?? null
+    ),
+  }
+}
+
 // ── Logs ────────────────────────────────────────────────────────────────
 
 const LEVEL_NAME_TO_NUM: Record<string, number> = {
-  trace: 10, debug: 20, info: 30, warn: 40, error: 50, fatal: 60,
+  trace: 10,
+  debug: 20,
+  info: 30,
+  warn: 40,
+  error: 50,
+  fatal: 60,
 }
 
 function handleLogs(res: ServerResponse, params: URLSearchParams): void {
@@ -330,10 +573,10 @@ function handleSystem(res: ServerResponse, req?: IncomingMessage): void {
     arch: os.arch(),
     node: process.version,
     pid: process.pid,
-    cpus: os.cpus().map(c => ({ model: c.model, speed: c.speed })),
+    cpus: os.cpus().map((c) => ({ model: c.model, speed: c.speed })),
     memory: {
-      total_gb: Math.round(os.totalmem() / 1024 / 1024 / 1024 * 10) / 10,
-      free_gb: Math.round(os.freemem() / 1024 / 1024 / 1024 * 10) / 10,
+      total_gb: Math.round((os.totalmem() / 1024 / 1024 / 1024) * 10) / 10,
+      free_gb: Math.round((os.freemem() / 1024 / 1024 / 1024) * 10) / 10,
       usage_percent: Math.round((1 - os.freemem() / os.totalmem()) * 100),
     },
     uptime_host_seconds: Math.floor(os.uptime()),
@@ -358,31 +601,47 @@ function handleSampleDetail(res: ServerResponse, sampleId: string): void {
       return
     }
 
-    const analyses = _deps?.database?.querySql<{
-      id: string; stage: string; backend: string; status: string;
-      started_at: string | null; finished_at: string | null
-    }>(
-      'SELECT id, stage, backend, status, started_at, finished_at FROM analyses WHERE sample_id = ? ORDER BY started_at DESC',
-      [sampleId]
-    ) ?? []
+    const analyses =
+      _deps?.database?.querySql<{
+        id: string
+        stage: string
+        backend: string
+        status: string
+        started_at: string | null
+        finished_at: string | null
+      }>(
+        'SELECT id, stage, backend, status, started_at, finished_at FROM analyses WHERE sample_id = ? ORDER BY started_at DESC',
+        [sampleId]
+      ) ?? []
 
-    const artifacts = _deps?.database?.querySql<{
-      id: string; type: string; path: string; mime: string | null; created_at: string
-    }>(
-      'SELECT id, type, path, mime, created_at FROM artifacts WHERE sample_id = ? ORDER BY created_at DESC',
-      [sampleId]
-    ) ?? []
+    const artifacts =
+      _deps?.database?.querySql<{
+        id: string
+        type: string
+        path: string
+        mime: string | null
+        created_at: string
+      }>(
+        'SELECT id, type, path, mime, created_at FROM artifacts WHERE sample_id = ? ORDER BY created_at DESC',
+        [sampleId]
+      ) ?? []
 
-    const functions = _deps?.database?.querySql<{
-      address: string; name: string | null; size: number | null; score: number | null
-    }>(
-      'SELECT address, name, size, score FROM functions WHERE sample_id = ? ORDER BY score DESC LIMIT 20',
-      [sampleId]
-    ) ?? []
+    const functions =
+      _deps?.database?.querySql<{
+        address: string
+        name: string | null
+        size: number | null
+        score: number | null
+      }>(
+        'SELECT address, name, size, score FROM functions WHERE sample_id = ? ORDER BY score DESC LIMIT 20',
+        [sampleId]
+      ) ?? []
 
-    const functionCount = _deps?.database?.querySql<{ cnt: number }>(
-      'SELECT COUNT(*) as cnt FROM functions WHERE sample_id = ?', [sampleId]
-    ) ?? []
+    const functionCount =
+      _deps?.database?.querySql<{ cnt: number }>(
+        'SELECT COUNT(*) as cnt FROM functions WHERE sample_id = ?',
+        [sampleId]
+      ) ?? []
 
     sendJson(res, 200, {
       sample,
@@ -409,19 +668,28 @@ function handleAnalyses(res: ServerResponse, params: URLSearchParams): void {
     let where = ''
     const sqlParams: unknown[] = []
     const clauses: string[] = []
-    if (sampleId) { clauses.push('sample_id = ?'); sqlParams.push(sampleId) }
-    if (status) { clauses.push('status = ?'); sqlParams.push(status) }
+    if (sampleId) {
+      clauses.push('sample_id = ?')
+      sqlParams.push(sampleId)
+    }
+    if (status) {
+      clauses.push('status = ?')
+      sqlParams.push(status)
+    }
     if (clauses.length) where = ' WHERE ' + clauses.join(' AND ')
 
-    const countResult = _deps?.database?.querySql<{ cnt: number }>(
-      `SELECT COUNT(*) as cnt FROM analyses${where}`, sqlParams
-    ) ?? []
+    const countResult =
+      _deps?.database?.querySql<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM analyses${where}`,
+        sqlParams
+      ) ?? []
     const total = countResult[0]?.cnt ?? 0
 
-    const analyses = _deps?.database?.querySql(
-      `SELECT id, sample_id, stage, backend, status, started_at, finished_at FROM analyses${where} ORDER BY started_at DESC LIMIT ? OFFSET ?`,
-      [...sqlParams, limit, offset]
-    ) ?? []
+    const analyses =
+      _deps?.database?.querySql(
+        `SELECT id, sample_id, stage, backend, status, started_at, finished_at FROM analyses${where} ORDER BY started_at DESC LIMIT ? OFFSET ?`,
+        [...sqlParams, limit, offset]
+      ) ?? []
 
     sendJson(res, 200, { total, offset, limit, analyses })
   } catch {
@@ -443,24 +711,34 @@ function handleArtifacts(res: ServerResponse, params: URLSearchParams): void {
     let where = ''
     const sqlParams: unknown[] = []
     const clauses: string[] = []
-    if (sampleId) { clauses.push('sample_id = ?'); sqlParams.push(sampleId) }
-    if (type) { clauses.push('type = ?'); sqlParams.push(type) }
+    if (sampleId) {
+      clauses.push('sample_id = ?')
+      sqlParams.push(sampleId)
+    }
+    if (type) {
+      clauses.push('type = ?')
+      sqlParams.push(type)
+    }
     if (clauses.length) where = ' WHERE ' + clauses.join(' AND ')
 
-    const countResult = _deps?.database?.querySql<{ cnt: number }>(
-      `SELECT COUNT(*) as cnt FROM artifacts${where}`, sqlParams
-    ) ?? []
+    const countResult =
+      _deps?.database?.querySql<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM artifacts${where}`,
+        sqlParams
+      ) ?? []
     const total = countResult[0]?.cnt ?? 0
 
-    const artifacts = _deps?.database?.querySql(
-      `SELECT id, sample_id, type, path, sha256, mime, created_at FROM artifacts${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-      [...sqlParams, limit, offset]
-    ) ?? []
+    const artifacts =
+      _deps?.database?.querySql(
+        `SELECT id, sample_id, type, path, sha256, mime, created_at FROM artifacts${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+        [...sqlParams, limit, offset]
+      ) ?? []
 
     // Get distinct types for filter menu
-    const types = _deps?.database?.querySql<{ type: string; cnt: number }>(
-      'SELECT type, COUNT(*) as cnt FROM artifacts GROUP BY type ORDER BY cnt DESC'
-    ) ?? []
+    const types =
+      _deps?.database?.querySql<{ type: string; cnt: number }>(
+        'SELECT type, COUNT(*) as cnt FROM artifacts GROUP BY type ORDER BY cnt DESC'
+      ) ?? []
 
     sendJson(res, 200, { total, offset, limit, artifacts, types })
   } catch {
@@ -485,7 +763,9 @@ async function handleArtifactContent(res: ServerResponse, artifactId: string): P
       return
     }
 
-    const workspace = await (_deps as { workspaceManager: WorkspaceManager }).workspaceManager.getWorkspace(artifact.sample_id)
+    const workspace = await (
+      _deps as { workspaceManager: WorkspaceManager }
+    ).workspaceManager.getWorkspace(artifact.sample_id)
     const absPath = _deps.workspaceManager.normalizePath(workspace.root, artifact.path)
 
     // Security: verify path is inside workspace
@@ -524,7 +804,11 @@ async function handleArtifactContent(res: ServerResponse, artifactId: string): P
       const ext = path.extname(artifact.path).toLowerCase()
 
       if (ext === '.json' || artifact.mime === 'application/json') {
-        try { parsed = JSON.parse(content) } catch { /* not valid JSON */ }
+        try {
+          parsed = JSON.parse(content)
+        } catch {
+          /* not valid JSON */
+        }
       }
 
       sendJson(res, 200, {
@@ -560,10 +844,34 @@ async function handleArtifactContent(res: ServerResponse, artifactId: string): P
 
 function isTextContent(buf: Buffer, filePath: string, mime: string | null): boolean {
   const textExtensions = new Set([
-    '.txt', '.md', '.json', '.xml', '.html', '.htm', '.csv',
-    '.log', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf',
-    '.c', '.h', '.cpp', '.py', '.js', '.ts', '.java', '.rs',
-    '.dot', '.svg', '.yar', '.yara', '.rule', '.sig',
+    '.txt',
+    '.md',
+    '.json',
+    '.xml',
+    '.html',
+    '.htm',
+    '.csv',
+    '.log',
+    '.yaml',
+    '.yml',
+    '.toml',
+    '.ini',
+    '.cfg',
+    '.conf',
+    '.c',
+    '.h',
+    '.cpp',
+    '.py',
+    '.js',
+    '.ts',
+    '.java',
+    '.rs',
+    '.dot',
+    '.svg',
+    '.yar',
+    '.yara',
+    '.rule',
+    '.sig',
   ])
   const ext = path.extname(filePath).toLowerCase()
   if (textExtensions.has(ext)) return true

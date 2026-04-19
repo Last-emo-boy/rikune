@@ -42,7 +42,9 @@ export const BinaryRoleProfileInputSchema = z.object({
   mode: z
     .enum(['fast', 'full'])
     .default('fast')
-    .describe('fast reuses preview strings and bounded heuristics. Start with fast on medium or larger samples. full requests complete supporting evidence and may be deferred to the background queue.'),
+    .describe(
+      'fast reuses preview strings and bounded heuristics. Start with fast on medium or larger samples. full requests complete supporting evidence and may be deferred to the background queue.'
+    ),
   max_exports: z
     .number()
     .int()
@@ -64,7 +66,9 @@ export const BinaryRoleProfileInputSchema = z.object({
   defer_if_slow: z
     .boolean()
     .default(true)
-    .describe('When true, mode=full may be deferred to the background queue instead of blocking the MCP request.'),
+    .describe(
+      'When true, mode=full may be deferred to the background queue instead of blocking the MCP request.'
+    ),
 })
 
 export const ExportSurfaceSchema = z.object({
@@ -244,7 +248,10 @@ async function getOriginalFilename(
   workspaceManager: WorkspaceManager,
   sampleId: string
 ): Promise<string | null> {
-  const { samplePath: primarySamplePath } = await resolvePrimarySamplePath(workspaceManager, sampleId)
+  const { samplePath: primarySamplePath } = await resolvePrimarySamplePath(
+    workspaceManager,
+    sampleId
+  )
   if (!primarySamplePath) {
     return null
   }
@@ -288,7 +295,11 @@ function inferBinaryRole(
     loweredType.includes('dll')
   ) {
     evidence.push('dll-like filename/type')
-    return { binaryRole: 'dll', roleConfidence: exportCount > 0 ? 0.92 : 0.84, roleEvidence: evidence }
+    return {
+      binaryRole: 'dll',
+      roleConfidence: exportCount > 0 ? 0.92 : 0.84,
+      roleEvidence: evidence,
+    }
   }
 
   if (loweredName.endsWith('.exe') || loweredType.includes('exe') || loweredType.includes('pe32')) {
@@ -416,7 +427,10 @@ export function createBinaryRoleProfileHandler(
             },
             warnings:
               resolved.source === 'cache' && resolved.cache
-                ? [...buildEvidenceReuseWarnings(resolved), formatCacheWarning(resolved.cache.metadata)]
+                ? [
+                    ...buildEvidenceReuseWarnings(resolved),
+                    formatCacheWarning(resolved.cache.metadata),
+                  ]
                 : buildEvidenceReuseWarnings(resolved),
             metrics: {
               elapsed_ms: Date.now() - startTime,
@@ -497,11 +511,21 @@ export function createBinaryRoleProfileHandler(
         ...(packerResult.warnings || []).map((item) => `packer: ${item}`),
       ]
 
-      const exportsData = (exportsResult.ok ? exportsResult.data : undefined) as PEExportsData | undefined
-      const importsData = (importsResult.ok ? importsResult.data : undefined) as PEImportsData | undefined
-      const stringsData = (stringsResult.ok ? stringsResult.data : undefined) as StringsData | undefined
-      const runtimeData = (runtimeResult.ok ? runtimeResult.data : undefined) as RuntimeDetectData | undefined
-      const packerData = (packerResult.ok ? packerResult.data : undefined) as PackerDetectData | undefined
+      const exportsData = (exportsResult.ok ? exportsResult.data : undefined) as
+        | PEExportsData
+        | undefined
+      const importsData = (importsResult.ok ? importsResult.data : undefined) as
+        | PEImportsData
+        | undefined
+      const stringsData = (stringsResult.ok ? stringsResult.data : undefined) as
+        | StringsData
+        | undefined
+      const runtimeData = (runtimeResult.ok ? runtimeResult.data : undefined) as
+        | RuntimeDetectData
+        | undefined
+      const packerData = (packerResult.ok ? packerResult.data : undefined) as
+        | PackerDetectData
+        | undefined
 
       const exportEntries = exportsData?.exports || []
       const forwarders = exportsData?.forwarders || []
@@ -509,7 +533,7 @@ export function createBinaryRoleProfileHandler(
       const importFunctions = flattenImportFunctions(importsData)
       const stringValues = (stringsData?.strings || []).map((item) => item.string)
       const loweredStrings = stringValues.map((item) => item.toLowerCase())
-      const exportNames = exportEntries.map((item) => item.name).filter(Boolean) as string[]
+      const exportNames = exportEntries.map((item) => item.name).filter(Boolean)
       const loweredExports = exportNames.map((item) => item.toLowerCase())
       const loweredImportDlls = importDlls.map((item) => item.toLowerCase())
       const loweredImportFunctions = importFunctions.map((item) => item.toLowerCase())
@@ -523,13 +547,19 @@ export function createBinaryRoleProfileHandler(
       )
 
       const clsidStrings = uniqueStrings(
-        stringValues.filter((item) => /\{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}/i.test(item))
+        stringValues.filter((item) =>
+          /\{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}/i.test(item)
+        )
       ).slice(0, 6)
       const progIdStrings = uniqueStrings(
-        stringValues.filter((item) => /progid|classfactory|iclassfactory|cocreateinstance|dllgetclassobject/i.test(item))
+        stringValues.filter((item) =>
+          /progid|classfactory|iclassfactory|cocreateinstance|dllgetclassobject/i.test(item)
+        )
       ).slice(0, 6)
       const comExports = uniqueStrings(
-        exportNames.filter((item) => /dll(getclassobject|canunloadnow|registerserver|unregisterserver)/i.test(item))
+        exportNames.filter((item) =>
+          /dll(getclassobject|canunloadnow|registerserver|unregisterserver)/i.test(item)
+        )
       )
       const serviceExports = uniqueStrings(
         exportNames.filter((item) => /servicemain|svcmain/i.test(item))
@@ -538,13 +568,17 @@ export function createBinaryRoleProfileHandler(
         exportNames.filter((item) => /plugin|addin|extension|initialize/i.test(item))
       )
       const commandLikeExports = uniqueStrings(
-        exportNames.filter((item) => /dispatch|command|execute|handle|invoke|run|process|query/i.test(item))
+        exportNames.filter((item) =>
+          /dispatch|command|execute|handle|invoke|run|process|query/i.test(item)
+        )
       )
       const callbackLikeExports = uniqueStrings(
         exportNames.filter((item) => /callback|hook|notify|event|factory|attach|detach/i.test(item))
       )
       const registrationExports = uniqueStrings(
-        exportNames.filter((item) => /dll(registerserver|unregisterserver|install)|register/i.test(item))
+        exportNames.filter((item) =>
+          /dll(registerserver|unregisterserver|install)|register/i.test(item)
+        )
       )
       const forwardedExports = uniqueStrings(
         forwarders.map((item) => `${item.name || `ordinal_${item.ordinal}`} -> ${item.forwarder}`)
@@ -553,9 +587,7 @@ export function createBinaryRoleProfileHandler(
       const comImports = uniqueStrings(
         importDlls.filter((item) => /ole32|oleaut32|combase|rpcrt4/i.test(item))
       )
-      const serviceImports = uniqueStrings(
-        importDlls.filter((item) => /advapi32/i.test(item))
-      )
+      const serviceImports = uniqueStrings(importDlls.filter((item) => /advapi32/i.test(item)))
       const networkImports = uniqueStrings(
         importDlls.filter((item) => /winhttp|wininet|ws2_32|dnsapi|urlmon/i.test(item))
       )
@@ -577,14 +609,22 @@ export function createBinaryRoleProfileHandler(
       if (progIdStrings.length > 0) comScore += 0.18
       if (binaryRole === 'dll' || binaryRole === '.net_library') comScore += 0.08
       const interfaceHints = uniqueStrings(
-        stringValues.filter((item) => /iunknown|idispatch|iclassfactory|ipropertypage|iprovid(e|er)|interface/i.test(item))
+        stringValues.filter((item) =>
+          /iunknown|idispatch|iclassfactory|ipropertypage|iprovid(e|er)|interface/i.test(item)
+        )
       ).slice(0, 8)
       const registrationStrings = uniqueStrings(
-        stringValues.filter((item) => /inprocserver32|localserver32|typelib|appid|clsid|progid|treatas/i.test(item))
+        stringValues.filter((item) =>
+          /inprocserver32|localserver32|typelib|appid|clsid|progid|treatas/i.test(item)
+        )
       ).slice(0, 8)
 
       const serviceStrings = uniqueStrings(
-        stringValues.filter((item) => /services\\|registerservicectrlhandler|startservicectrldispatcher|setservicestatus|servicemain/i.test(item))
+        stringValues.filter((item) =>
+          /services\\|registerservicectrlhandler|startservicectrldispatcher|setservicestatus|servicemain/i.test(
+            item
+          )
+        )
       ).slice(0, 6)
       const serviceEvidence = [
         ...serviceImports.map((item) => `import:${item}`),
@@ -595,10 +635,13 @@ export function createBinaryRoleProfileHandler(
       if (serviceImports.length > 0) serviceScore += 0.28
       if (serviceStrings.length > 0) serviceScore += 0.24
       if (serviceExports.length > 0) serviceScore += 0.18
-      if (loweredStrings.some((item) => item.includes('currentcontrolset\\services'))) serviceScore += 0.16
+      if (loweredStrings.some((item) => item.includes('currentcontrolset\\services')))
+        serviceScore += 0.16
 
       const pluginStrings = uniqueStrings(
-        stringValues.filter((item) => /plugin|extension|addin|host application|register plugin/i.test(item))
+        stringValues.filter((item) =>
+          /plugin|extension|addin|host application|register plugin/i.test(item)
+        )
       ).slice(0, 6)
       const pluginEvidence = [
         ...pluginExports.map((item) => `export:${item}`),
@@ -607,26 +650,31 @@ export function createBinaryRoleProfileHandler(
       let pluginScore = 0
       if (pluginExports.length > 0) pluginScore += 0.34
       if (pluginStrings.length > 0) pluginScore += 0.22
-      if ((binaryRole === 'dll' || binaryRole === '.net_library') && (pluginExports.length > 0 || pluginStrings.length > 0)) {
+      if (
+        (binaryRole === 'dll' || binaryRole === '.net_library') &&
+        (pluginExports.length > 0 || pluginStrings.length > 0)
+      ) {
         pluginScore += 0.16
       }
       if (loweredExports.some((item) => item.includes('initialize'))) pluginScore += 0.1
 
-      const hostHints = uniqueStrings(
-        [
-          ...stringValues.filter((item) => /plugin host|host application|shell extension|addin|extension point|loaded by/i.test(item)),
-          ...importDlls.filter((item) => /shell32|explorerframe|office|vbscript|jscript/i.test(item)),
-        ]
-      ).slice(0, 8)
+      const hostHints = uniqueStrings([
+        ...stringValues.filter((item) =>
+          /plugin host|host application|shell extension|addin|extension point|loaded by/i.test(item)
+        ),
+        ...importDlls.filter((item) => /shell32|explorerframe|office|vbscript|jscript/i.test(item)),
+      ]).slice(0, 8)
       const callbackStrings = uniqueStrings(
-        stringValues.filter((item) => /callback|event sink|notification|hook chain|observer/i.test(item))
+        stringValues.filter((item) =>
+          /callback|event sink|notification|hook chain|observer/i.test(item)
+        )
       ).slice(0, 8)
-      const serviceHooks = uniqueStrings(
-        [
-          ...serviceExports,
-          ...importFunctions.filter((item) => /startservicectrldispatcher|registerservicectrlhandler|setservicestatus/i.test(item)),
-        ]
-      ).slice(0, 8)
+      const serviceHooks = uniqueStrings([
+        ...serviceExports,
+        ...importFunctions.filter((item) =>
+          /startservicectrldispatcher|registerservicectrlhandler|setservicestatus/i.test(item)
+        ),
+      ]).slice(0, 8)
       let hostInteractionScore = 0
       if (pluginScore >= 0.4) hostInteractionScore += 0.25
       if (callbackLikeExports.length > 0) hostInteractionScore += 0.18
@@ -659,7 +707,9 @@ export function createBinaryRoleProfileHandler(
 
       const driverEvidence = uniqueStrings([
         ...roleEvidence.filter((item) => item.includes('driver')),
-        ...loweredImportDlls.filter((item) => item.includes('ntoskrnl') || item.includes('fltmgr')).map((item) => `import:${item}`),
+        ...loweredImportDlls
+          .filter((item) => item.includes('ntoskrnl') || item.includes('fltmgr'))
+          .map((item) => `import:${item}`),
       ])
       let driverScore = 0
       if (binaryRole === 'driver') driverScore += 0.62
@@ -668,31 +718,44 @@ export function createBinaryRoleProfileHandler(
       const priorities: string[] = []
       if (binaryRole === 'driver') priorities.push('review_driver_entrypoints_and_ioctl_surface')
       if (comScore >= 0.55) priorities.push('trace_com_activation_and_class_factory_flow')
-      if (registrationExports.length > 0) priorities.push('review_registration_exports_and_inprocserver_paths')
+      if (registrationExports.length > 0)
+        priorities.push('review_registration_exports_and_inprocserver_paths')
       if (serviceScore >= 0.55) priorities.push('trace_service_entrypoint_and_scm_lifecycle')
       if (pluginScore >= 0.55) priorities.push('trace_host_plugin_exports_and_callback_model')
       if (exportDispatchScore >= 0.5) priorities.push('review_exported_command_dispatch_surface')
-      if (hostInteractionScore >= 0.5) priorities.push('identify_host_callbacks_and_extension_contract')
+      if (hostInteractionScore >= 0.5)
+        priorities.push('identify_host_callbacks_and_extension_contract')
       if (loweredImportFunctions.some((item) => item.includes('disablethreadlibrarycalls'))) {
         priorities.push('review_dllmain_lifecycle_and_attach_detach_side_effects')
       }
-      if ((exportsData?.total_exports ?? exportEntries.length) > 0) priorities.push('trace_export_surface_first')
-      if ((exportsData?.total_forwarders ?? forwarders.length) > 0) priorities.push('inspect_forwarded_exports')
+      if ((exportsData?.total_exports ?? exportEntries.length) > 0)
+        priorities.push('trace_export_surface_first')
+      if ((exportsData?.total_forwarders ?? forwarders.length) > 0)
+        priorities.push('inspect_forwarded_exports')
       if (runtimeData?.is_dotnet) priorities.push('prefer_managed_metadata_and_il_recovery')
-      if (packerData?.packed || (packerData?.confidence || 0) >= 0.45) priorities.push('unpack_or_stage_memory_import_before_deep_reconstruct')
-      if (networkImports.length > 0) priorities.push('review_network_session_setup_and_remote_endpoints')
-      if (processImports.length > 0) priorities.push('review_process_manipulation_and_dynamic_resolution_paths')
+      if (packerData?.packed || (packerData?.confidence || 0) >= 0.45)
+        priorities.push('unpack_or_stage_memory_import_before_deep_reconstruct')
+      if (networkImports.length > 0)
+        priorities.push('review_network_session_setup_and_remote_endpoints')
+      if (processImports.length > 0)
+        priorities.push('review_process_manipulation_and_dynamic_resolution_paths')
 
       const lifecycleSurface = uniqueStrings([
         ...exportNames.filter((item) => /dllmain|dllentry|initialize/i.test(item)),
-        ...importFunctions.filter((item) => /disablethreadlibrarycalls|getmodulehandle|freelibrary/i.test(item)),
-        ...stringValues.filter((item) => /dllmain|dll_process_attach|dll_process_detach|thread_attach|thread_detach/i.test(item)),
+        ...importFunctions.filter((item) =>
+          /disablethreadlibrarycalls|getmodulehandle|freelibrary/i.test(item)
+        ),
+        ...stringValues.filter((item) =>
+          /dllmain|dll_process_attach|dll_process_detach|thread_attach|thread_detach/i.test(item)
+        ),
       ]).slice(0, input.max_exports)
 
       const classFactorySurface = uniqueStrings([
         ...comExports,
         ...interfaceHints.filter((item) => /iclassfactory|iunknown|idispatch/i.test(item)),
-        ...stringValues.filter((item) => /createinstance|lockserver|dllgetclassobject|cocreateinstance/i.test(item)),
+        ...stringValues.filter((item) =>
+          /createinstance|lockserver|dllgetclassobject|cocreateinstance/i.test(item)
+        ),
       ]).slice(0, input.max_exports)
 
       const callbackSurface = uniqueStrings([
@@ -711,8 +774,8 @@ export function createBinaryRoleProfileHandler(
           dotnet_version: runtimeData?.dotnet_version ?? null,
           target_framework: runtimeData?.target_framework ?? null,
           primary_runtime:
-            [...(runtimeData?.suspected || [])].sort((a, b) => b.confidence - a.confidence)[0]?.runtime ||
-            null,
+            [...(runtimeData?.suspected || [])].sort((a, b) => b.confidence - a.confidence)[0]
+              ?.runtime || null,
         },
         export_surface: {
           total_exports: exportsData?.total_exports ?? exportEntries.length,

@@ -373,6 +373,42 @@ describe('Configuration Loading', () => {
       expect(result.success).toBe(true)
     })
 
+    test('should reject manual runtime mode without endpoint for analyzer role', () => {
+      const invalidConfig = {
+        node: { role: 'analyzer' as const },
+        runtime: { mode: 'manual' as const },
+      }
+      const result = ConfigSchema.safeParse(invalidConfig)
+      expect(result.success).toBe(false)
+    })
+
+    test('should reject remote-sandbox runtime mode without hostAgentEndpoint for analyzer role', () => {
+      const invalidConfig = {
+        node: { role: 'analyzer' as const },
+        runtime: { mode: 'remote-sandbox' as const },
+      }
+      const result = ConfigSchema.safeParse(invalidConfig)
+      expect(result.success).toBe(false)
+    })
+
+    test('should accept disabled runtime mode without endpoint or hostAgentEndpoint', () => {
+      const validConfig = {
+        node: { role: 'analyzer' as const },
+        runtime: { mode: 'disabled' as const },
+      }
+      const result = ConfigSchema.safeParse(validConfig)
+      expect(result.success).toBe(true)
+    })
+
+    test('should accept manual runtime mode with endpoint', () => {
+      const validConfig = {
+        node: { role: 'analyzer' as const },
+        runtime: { mode: 'manual' as const, endpoint: 'http://127.0.0.1:18081' },
+      }
+      const result = ConfigSchema.safeParse(validConfig)
+      expect(result.success).toBe(true)
+    })
+
     test('should reject invalid log level', () => {
       const invalidConfig = {
         logging: { level: 'invalid' },

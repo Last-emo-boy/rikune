@@ -15,7 +15,11 @@ import type { CacheManager } from '../../../cache-manager.js'
 import { generateCacheKey } from '../../../cache-manager.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
-import { inspectSampleWorkspace, formatMissingOriginalError, resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
+import {
+  inspectSampleWorkspace,
+  formatMissingOriginalError,
+  resolvePrimarySamplePath,
+} from '../../../sample/sample-workspace.js'
 import {
   buildStaticWorkerRequest,
   callStaticWorker as callPooledStaticWorker,
@@ -45,7 +49,8 @@ const DEFAULT_ENGINES: Array<'yara' | 'entropy' | 'entrypoint'> = ['yara', 'entr
  */
 export const PackerDetectInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  engines: z.array(z.enum(['yara', 'entropy', 'entrypoint']))
+  engines: z
+    .array(z.enum(['yara', 'entropy', 'entrypoint']))
     .optional()
     .default(['yara', 'entropy', 'entrypoint'])
     .describe('Detection engines to use'),
@@ -64,29 +69,35 @@ export type PackerDetectInput = z.infer<typeof PackerDetectInputSchema>
  */
 export const PackerDetectOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    packed: z.boolean(),
-    confidence: z.number(),
-    detections: z.array(z.object({
-      method: z.string(),
-      name: z.string(),
+  data: z
+    .object({
+      packed: z.boolean(),
       confidence: z.number(),
-      details: z.record(z.any()),
-    })),
-    methods: z.array(z.string()),
-    confidence_breakdown: z.record(z.number()).optional(),
-    feature_fusion: z.record(z.any()).optional(),
-    evidence: z.record(z.any()).optional(),
-    inference: z.record(z.any()).optional(),
-  }).optional(),
+      detections: z.array(
+        z.object({
+          method: z.string(),
+          name: z.string(),
+          confidence: z.number(),
+          details: z.record(z.any()),
+        })
+      ),
+      methods: z.array(z.string()),
+      confidence_breakdown: z.record(z.number()).optional(),
+      feature_fusion: z.record(z.any()).optional(),
+      evidence: z.record(z.any()).optional(),
+      inference: z.record(z.any()).optional(),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(z.any()).optional(),
-  metrics: z.object({
-    elapsed_ms: z.number(),
-    tool: z.string(),
-    engines_used: z.array(z.string()).optional(),
-  }).optional(),
+  metrics: z
+    .object({
+      elapsed_ms: z.number(),
+      tool: z.string(),
+      engines_used: z.array(z.string()).optional(),
+    })
+    .optional(),
 })
 
 export type PackerDetectOutput = z.infer<typeof PackerDetectOutputSchema>
@@ -109,7 +120,8 @@ function normalizeEngineList(engines: string[] | undefined, sort: boolean = true
  */
 export const packerDetectToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
-  description: '自动检测 PE 文件是否加壳，使用 YARA 规则、节区熵值分析和入口点检查来识别常见加壳器（如 UPX、Themida、VMProtect）',
+  description:
+    '自动检测 PE 文件是否加壳，使用 YARA 规则、节区熵值分析和入口点检查来识别常见加壳器（如 UPX、Themida、VMProtect）',
   inputSchema: PackerDetectInputSchema,
   outputSchema: PackerDetectOutputSchema,
 }
@@ -154,9 +166,9 @@ interface WorkerResponse {
 
 /**
  * Spawn Python Static Worker and communicate via stdin/stdout JSON protocol
- * 
+ *
  * Requirements: Worker communication
- * 
+ *
  * @param request - Worker request object
  * @returns Worker response object
  */
@@ -164,7 +176,7 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
   return new Promise((resolve, reject) => {
     // Get Python worker path
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
-    
+
     // Spawn Python process
     const pythonProcess = spawn(getPythonCommand(), [workerPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -197,7 +209,11 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
         const response: WorkerResponse = JSON.parse(lastLine)
         resolve(response)
       } catch (error) {
-        reject(new Error(`Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`))
+        reject(
+          new Error(
+            `Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`
+          )
+        )
       }
     })
 
@@ -314,13 +330,16 @@ export function createPackerDetectHandler(
       }
 
       // Extract the result from the worker response
-      const responseData = workerResponse.data as { result: unknown; warnings: string[]; metrics: Record<string, unknown> }
+      const responseData = workerResponse.data as {
+        result: unknown
+        warnings: string[]
+        metrics: Record<string, unknown>
+      }
       const packerResult =
         responseData.result && typeof responseData.result === 'object'
           ? {
               ...(responseData.result as Record<string, unknown>),
-              worker_pool:
-                (workerResponse.metrics as Record<string, unknown> | undefined)?.worker_pool,
+              worker_pool: workerResponse.metrics?.worker_pool,
             }
           : responseData.result
 
@@ -334,7 +353,7 @@ export function createPackerDetectHandler(
         warnings: input.force_refresh
           ? [
               'force_refresh=true; bypassed cache lookup',
-              ...((responseData.warnings || workerResponse.warnings || []) as string[]),
+              ...(responseData.warnings || workerResponse.warnings || []),
             ]
           : responseData.warnings || workerResponse.warnings,
         errors: workerResponse.errors,

@@ -18,7 +18,13 @@ export type SymbolicExpr =
   | { kind: 'var'; name: string }
   | { kind: 'binop'; op: string; left: SymbolicExpr; right: SymbolicExpr }
   | { kind: 'unary'; op: string; child: SymbolicExpr }
-  | { kind: 'rotate'; dir: 'left' | 'right'; child: SymbolicExpr; bits: SymbolicExpr; width: number }
+  | {
+      kind: 'rotate'
+      dir: 'left' | 'right'
+      child: SymbolicExpr
+      bits: SymbolicExpr
+      width: number
+    }
   | { kind: 'func'; name: string; args: SymbolicExpr[] }
 
 export function constExpr(v: bigint | number): SymbolicExpr {
@@ -33,18 +39,29 @@ export function binop(op: string, left: SymbolicExpr, right: SymbolicExpr): Symb
 export function unary(op: string, child: SymbolicExpr): SymbolicExpr {
   return { kind: 'unary', op, child }
 }
-export function rotateExpr(dir: 'left' | 'right', child: SymbolicExpr, bits: SymbolicExpr, width: number): SymbolicExpr {
+export function rotateExpr(
+  dir: 'left' | 'right',
+  child: SymbolicExpr,
+  bits: SymbolicExpr,
+  width: number
+): SymbolicExpr {
   return { kind: 'rotate', dir, child, bits, width }
 }
 
 export function exprToString(e: SymbolicExpr): string {
   switch (e.kind) {
-    case 'const': return `0x${e.value.toString(16)}`
-    case 'var': return e.name
-    case 'binop': return `(${exprToString(e.left)} ${e.op} ${exprToString(e.right)})`
-    case 'unary': return `(${e.op}${exprToString(e.child)})`
-    case 'rotate': return `ROT${e.dir === 'left' ? 'L' : 'R'}(${exprToString(e.child)}, ${exprToString(e.bits)}, ${e.width})`
-    case 'func': return `${e.name}(${e.args.map(exprToString).join(', ')})`
+    case 'const':
+      return `0x${e.value.toString(16)}`
+    case 'var':
+      return e.name
+    case 'binop':
+      return `(${exprToString(e.left)} ${e.op} ${exprToString(e.right)})`
+    case 'unary':
+      return `(${e.op}${exprToString(e.child)})`
+    case 'rotate':
+      return `ROT${e.dir === 'left' ? 'L' : 'R'}(${exprToString(e.child)}, ${exprToString(e.bits)}, ${e.width})`
+    case 'func':
+      return `${e.name}(${e.args.map(exprToString).join(', ')})`
   }
 }
 
@@ -166,16 +183,26 @@ function valueToString(v: VMValue): string {
 function concreteOp(op: string, a: bigint, b: bigint, bw: number): bigint {
   const m = mask(bw)
   switch (op) {
-    case 'ADD': return (a + b) & m
-    case 'SUB': return (a - b + (1n << BigInt(bw))) & m
-    case 'MUL': return (a * b) & m
-    case 'DIV': return b !== 0n ? a / b : 0n
-    case 'MOD': return b !== 0n ? a % b : 0n
-    case 'XOR': return (a ^ b) & m
-    case 'AND': return (a & b) & m
-    case 'OR': return (a | b) & m
-    case 'SHL': return (a << b) & m
-    case 'SHR': return (a >> b) & m
+    case 'ADD':
+      return (a + b) & m
+    case 'SUB':
+      return (a - b + (1n << BigInt(bw))) & m
+    case 'MUL':
+      return (a * b) & m
+    case 'DIV':
+      return b !== 0n ? a / b : 0n
+    case 'MOD':
+      return b !== 0n ? a % b : 0n
+    case 'XOR':
+      return (a ^ b) & m
+    case 'AND':
+      return a & b & m
+    case 'OR':
+      return (a | b) & m
+    case 'SHL':
+      return (a << b) & m
+    case 'SHR':
+      return (a >> b) & m
     case 'ROL': {
       const shift = Number(b) % bw
       return ((a << BigInt(shift)) | (a >> BigInt(bw - shift))) & m
@@ -184,18 +211,24 @@ function concreteOp(op: string, a: bigint, b: bigint, bw: number): bigint {
       const shift = Number(b) % bw
       return ((a >> BigInt(shift)) | (a << BigInt(bw - shift))) & m
     }
-    default: return a
+    default:
+      return a
   }
 }
 
 function concreteUnary(op: string, a: bigint, bw: number): bigint {
   const m = mask(bw)
   switch (op) {
-    case 'NOT': return (~a) & m
-    case 'NEG': return ((-a) + (1n << BigInt(bw))) & m
-    case 'INC': return (a + 1n) & m
-    case 'DEC': return (a - 1n + (1n << BigInt(bw))) & m
-    default: return a
+    case 'NOT':
+      return ~a & m
+    case 'NEG':
+      return (-a + (1n << BigInt(bw))) & m
+    case 'INC':
+      return (a + 1n) & m
+    case 'DEC':
+      return (a - 1n + (1n << BigInt(bw))) & m
+    default:
+      return a
   }
 }
 
@@ -223,19 +256,22 @@ function symbolicOp(op: string, a: VMValue, b: VMValue, bw: number): VMValue {
 // Execute Single Step
 // ---------------------------------------------------------------------------
 
-function executeStep(
-  state: VMState,
-  entry: OpcodeEntry,
-  operands: number[]
-): void {
+function executeStep(state: VMState, entry: OpcodeEntry, operands: number[]): void {
   const bw = state.bitWidth
   const delta: Record<string, string> = {}
 
   // Map operands to register names (r0, r1, ...) or immediate values
   const dstReg = operands.length > 0 ? `r${operands[0]}` : 'r0'
-  const srcVal = operands.length > 1
-    ? (operands[1] < 16 ? resolveReg(state, `r${operands[1]}`) : (state.mode === 'symbolic' ? constExpr(operands[1]) : BigInt(operands[1])))
-    : (state.mode === 'symbolic' ? constExpr(0) : 0n)
+  const srcVal =
+    operands.length > 1
+      ? operands[1] < 16
+        ? resolveReg(state, `r${operands[1]}`)
+        : state.mode === 'symbolic'
+          ? constExpr(operands[1])
+          : BigInt(operands[1])
+      : state.mode === 'symbolic'
+        ? constExpr(0)
+        : 0n
 
   const cat = entry.semanticCategory
   const mnem = entry.mnemonic
@@ -269,7 +305,7 @@ function executeStep(
     const addr = operands.length > 0 ? operands[0] : 0
     const val = resolveReg(state, operands.length > 1 ? `r${operands[1]}` : 'r0')
     if (state.mode === 'concrete' && addr < state.memory.length) {
-      state.memory[addr] = Number(getConcreteValue(val) & 0xFFn)
+      state.memory[addr] = Number(getConcreteValue(val) & 0xffn)
       delta[`mem[${addr}]`] = valueToString(val)
     }
   } else if (mnem === 'CMP' || mnem === 'TEST') {

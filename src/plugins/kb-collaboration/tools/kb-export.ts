@@ -19,10 +19,7 @@ export const KbExportInputSchema = z.object({
     .max(1)
     .optional()
     .describe('Minimum confidence threshold for function_kb entries'),
-  since: z
-    .string()
-    .optional()
-    .describe('Only export entries updated after this ISO date'),
+  since: z.string().optional().describe('Only export entries updated after this ISO date'),
   entry_type: z
     .enum(['function_kb', 'sample_kb', 'all'])
     .optional()

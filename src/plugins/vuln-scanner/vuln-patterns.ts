@@ -110,9 +110,7 @@ export function scanFunction(
         let confidence = pattern.confidence_default
 
         // Boost if inside a function that takes user input indicators
-        if (
-          /\b(recv|read|fgets|fread|getenv|argv|scanf|ReadFile|InternetReadFile)\b/.test(code)
-        ) {
+        if (/\b(recv|read|fgets|fread|getenv|argv|scanf|ReadFile|InternetReadFile)\b/.test(code)) {
           confidence = Math.min(1.0, confidence + 0.15)
         }
 
@@ -173,13 +171,7 @@ export function scanAllFunctions(
 
   for (const fn of functions) {
     if (!fn.decompiled_code) continue
-    const findings = scanFunction(
-      fn.decompiled_code,
-      fn.name,
-      fn.address,
-      patterns,
-      minConfidence
-    )
+    const findings = scanFunction(fn.decompiled_code, fn.name, fn.address, patterns, minConfidence)
     allFindings.push(...findings)
   }
 

@@ -368,11 +368,10 @@
 npm run docker:generate
 
 <span data-lang-en># Or include specific plugins only</span><span data-lang-zh># 或仅包含特定插件</span>
-npm run docker:generate -- --include deep-unpack,runtime-deobfuscate,behavior-first
+npm run docker:generate -- --profile=full --include=deep-unpack,runtime-deobfuscate,behavior-first
 
 <span data-lang-en># Build and start</span><span data-lang-zh># 构建并启动</span>
-docker compose build
-docker compose up -d</code></pre>
+docker compose --env-file .docker-runtime.env -f docker-compose.yml up -d --build mcp-server</code></pre>
   </div>
 </section>
 

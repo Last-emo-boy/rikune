@@ -44,12 +44,25 @@ function collectVars(e: ConstraintExpr): Set<string> {
   const vars = new Set<string>()
   function walk(node: ConstraintExpr): void {
     switch (node.kind) {
-      case 'var': vars.add(node.name); break
-      case 'const': break
-      case 'binop': walk(node.left); walk(node.right); break
-      case 'unary': walk(node.child); break
-      case 'rotate': walk(node.child); walk(node.bits); break
-      case 'func': node.args.forEach(walk); break
+      case 'var':
+        vars.add(node.name)
+        break
+      case 'const':
+        break
+      case 'binop':
+        walk(node.left)
+        walk(node.right)
+        break
+      case 'unary':
+        walk(node.child)
+        break
+      case 'rotate':
+        walk(node.child)
+        walk(node.bits)
+        break
+      case 'func':
+        node.args.forEach(walk)
+        break
     }
   }
   walk(e)
@@ -63,7 +76,7 @@ function hasNonInvertible(e: ConstraintExpr): { has: boolean; reason: string } {
   switch (e.kind) {
     case 'func': {
       const nonInv = ['CRC16', 'CRC32', 'MD5', 'SHA1', 'SHA256', 'HASH']
-      if (nonInv.some(n => e.name.toUpperCase().includes(n))) {
+      if (nonInv.some((n) => e.name.toUpperCase().includes(n))) {
         return { has: true, reason: `Non-invertible function: ${e.name}` }
       }
       break
@@ -73,9 +86,12 @@ function hasNonInvertible(e: ConstraintExpr): { has: boolean; reason: string } {
       if (left.has) return left
       return hasNonInvertible(e.right)
     }
-    case 'unary': return hasNonInvertible(e.child)
-    case 'rotate': return hasNonInvertible(e.child)
-    default: break
+    case 'unary':
+      return hasNonInvertible(e.child)
+    case 'rotate':
+      return hasNonInvertible(e.child)
+    default:
+      break
   }
   return { has: false, reason: '' }
 }
@@ -155,16 +171,32 @@ function topologicalSort(nodes: DependencyNode[]): string[] {
 
 function constraintExprToPython(e: ConstraintExpr): string {
   switch (e.kind) {
-    case 'var': return e.name
-    case 'const': return `0x${e.value.toString(16)}`
+    case 'var':
+      return e.name
+    case 'const':
+      return `0x${e.value.toString(16)}`
     case 'binop': {
       const l = constraintExprToPython(e.left)
       const r = constraintExprToPython(e.right)
       const pyOp: Record<string, string> = {
-        '+': '+', '-': '-', '*': '*', '/': '//', '%': '%',
-        '^': '^', '&': '&', '|': '|', '<<': '<<', '>>': '>>',
-        'ADD': '+', 'SUB': '-', 'MUL': '*', 'XOR': '^',
-        'AND': '&', 'OR': '|', 'SHL': '<<', 'SHR': '>>',
+        '+': '+',
+        '-': '-',
+        '*': '*',
+        '/': '//',
+        '%': '%',
+        '^': '^',
+        '&': '&',
+        '|': '|',
+        '<<': '<<',
+        '>>': '>>',
+        ADD: '+',
+        SUB: '-',
+        MUL: '*',
+        XOR: '^',
+        AND: '&',
+        OR: '|',
+        SHL: '<<',
+        SHR: '>>',
       }
       return `(${l} ${pyOp[e.op] ?? e.op} ${r})`
     }
@@ -193,14 +225,11 @@ function constraintExprToPython(e: ConstraintExpr): string {
 /**
  * Synthesize a Python keygen from constraints.
  */
-export function synthesizeKeygen(
-  constraints: Constraint[],
-  bitWidth = 32
-): KeygenResult {
+export function synthesizeKeygen(constraints: Constraint[], bitWidth = 32): KeygenResult {
   const notes: string[] = []
   const graph = buildDependencyGraph(constraints)
   const order = topologicalSort(graph)
-  const bruteForceVars = graph.filter(n => n.needsBruteForce).map(n => n.variable)
+  const bruteForceVars = graph.filter((n) => n.needsBruteForce).map((n) => n.variable)
 
   const forwardComputable = bruteForceVars.length === 0
   if (bruteForceVars.length > 0) {
@@ -252,7 +281,9 @@ export function synthesizeKeygen(
         lines.push(`        if (${checkExpr}) & MASK == (${varName}) & MASK:`)
         lines.push(`            break`)
         lines.push(`    else:`)
-        lines.push(`        ${varName} = 0  # brute-force exhausted; consider SMT (z3) for wider ranges`)
+        lines.push(
+          `        ${varName} = 0  # brute-force exhausted; consider SMT (z3) for wider ranges`
+        )
       } else {
         lines.push(`    ${varName} = (${expr}) & MASK`)
       }
@@ -260,7 +291,7 @@ export function synthesizeKeygen(
   }
 
   lines.push('')
-  lines.push(`    return {${order.map(v => `'${v}': ${v}`).join(', ')}}`)
+  lines.push(`    return {${order.map((v) => `'${v}': ${v}`).join(', ')}}`)
   lines.push('')
   lines.push('if __name__ == "__main__":')
   lines.push('    result = keygen()')

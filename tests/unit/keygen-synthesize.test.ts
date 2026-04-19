@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createKeygenSynthesizeHandler, keygenSynthesizeInputSchema } from '../../src/tools/keygen-synthesize.js'
+import { createKeygenSynthesizeHandler, keygenSynthesizeInputSchema } from '../../src/plugins/vm-analysis/tools/keygen-synthesize.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 

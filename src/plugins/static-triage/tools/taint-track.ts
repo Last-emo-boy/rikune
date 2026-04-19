@@ -144,10 +144,17 @@ export function createTaintTrackHandler(
       const artifacts: ArtifactRef[] = []
       try {
         const artifact = await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, input.sample_id, 'taint_tracking', 'taint', { tool: TOOL_NAME, data }
+          workspaceManager,
+          database,
+          input.sample_id,
+          'taint_tracking',
+          'taint',
+          { tool: TOOL_NAME, data }
         )
         artifacts.push(artifact)
-      } catch { /* best effort */ }
+      } catch {
+        /* best effort */
+      }
 
       return {
         ok: true,

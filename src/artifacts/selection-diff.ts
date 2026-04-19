@@ -63,9 +63,9 @@ export function buildArtifactSelectionDiff(
           ? 'PE structure selection'
           : label === 'compiler_packer'
             ? 'compiler/packer attribution selection'
-      : label === 'semantic_names'
-        ? 'semantic naming selection'
-        : 'semantic explanation selection'
+            : label === 'semantic_names'
+              ? 'semantic naming selection'
+              : 'semantic explanation selection'
   const summary =
     `Compared ${targetLabel} against baseline scope=${baseline.scope}` +
     `${baseline.session_selector ? ` selector=${baseline.session_selector}` : ''}: ` +

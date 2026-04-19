@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals'
-import { createAnalysisContextLinkHandler } from '../../src/tools/analysis-context-link.js'
+import { createAnalysisContextLinkHandler } from '../../src/plugins/static-triage/tools/analysis-context-link.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 import type { CacheManager } from '../../src/cache-manager.js'
@@ -14,6 +14,10 @@ describe('analysis.context.link tool', () => {
     mockDatabase = {
       findSample: jest.fn(),
       findAnalysesBySample: jest.fn(),
+      findLatestCompatibleAnalysisEvidence: jest.fn().mockReturnValue(null),
+      insertAnalysisEvidence: jest.fn(),
+      updateAnalysisEvidence: jest.fn(),
+      findArtifactsByType: jest.fn().mockReturnValue([]),
     } as unknown as jest.Mocked<DatabaseManager>
     mockCacheManager = {
       getCachedResult: jest.fn(),
@@ -105,6 +109,7 @@ describe('analysis.context.link tool', () => {
 
     const result = await handler({
       sample_id: 'sha256:' + 'c'.repeat(64),
+      mode: 'full',
       reuse_cached: false,
       persist_artifact: false,
     })
@@ -149,6 +154,7 @@ describe('analysis.context.link tool', () => {
 
     const result = await handler({
       sample_id: 'sha256:' + 'c'.repeat(64),
+      mode: 'full',
       reuse_cached: false,
       persist_artifact: false,
     })

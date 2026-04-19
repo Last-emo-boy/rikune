@@ -7,13 +7,22 @@
 
 import type { Plugin } from '../sdk.js'
 import { disasmQuickToolDefinition, createDisasmQuickHandler } from './tools/disasm-quick.js'
-import { shellcodeDisasmToolDefinition, createShellcodeDisasmHandler } from './tools/shellcode-disasm.js'
+import {
+  shellcodeDisasmToolDefinition,
+  createShellcodeDisasmHandler,
+} from './tools/shellcode-disasm.js'
 
 const capstonePlugin: Plugin = {
   id: 'capstone',
   name: 'Capstone Disassembly',
-  surfaceRules: { tier: 2, activateOn: { findings: ['shellcode', 'suspicious_imports'] }, category: 'reverse-engineering' },
-  description: 'Lightweight multi-architecture disassembly for quick analysis of code snippets and shellcode',
+  executionDomain: 'static',
+  surfaceRules: {
+    tier: 2,
+    activateOn: { findings: ['shellcode', 'suspicious_imports'] },
+    category: 'reverse-engineering',
+  },
+  description:
+    'Lightweight multi-architecture disassembly for quick analysis of code snippets and shellcode',
   version: '1.0.0',
   systemDeps: [
     {

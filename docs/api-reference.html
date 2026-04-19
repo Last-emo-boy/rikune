@@ -88,8 +88,16 @@
         <span class="endpoint__method endpoint__method--get">GET</span>
         <span class="endpoint__path">/api/v1/health</span>
         <p class="endpoint__desc">
-          <span data-lang-en>Check server health, version, and uptime.</span>
-          <span data-lang-zh>检查服务器健康状态、版本和运行时间。</span>
+          <span data-lang-en>Liveness check: server process, version, and uptime.</span>
+          <span data-lang-zh>存活检查：服务器进程、版本和运行时间。</span>
+        </p>
+      </div>
+      <div class="endpoint">
+        <span class="endpoint__method endpoint__method--get">GET</span>
+        <span class="endpoint__path">/api/v1/ready</span>
+        <p class="endpoint__desc">
+          <span data-lang-en>Profile-aware readiness check for database, queue, runtime, and enabled-plugin dependencies.</span>
+          <span data-lang-zh>Profile-aware 就绪检查，覆盖数据库、队列、运行时和已启用插件依赖。</span>
         </p>
       </div>
       <div class="code-block">
@@ -239,16 +247,16 @@
           <tr><th>URI</th><th>Type</th><th>Description</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>script://frida/api_trace.js</code></td><td><span class="badge badge--green">Frida</span></td><td>Windows API tracing</td></tr>
-          <tr><td><code>script://frida/string_decoder.js</code></td><td><span class="badge badge--green">Frida</span></td><td>Runtime string decryption</td></tr>
-          <tr><td><code>script://frida/anti_debug_bypass.js</code></td><td><span class="badge badge--green">Frida</span></td><td>Anti-debug bypass</td></tr>
-          <tr><td><code>script://frida/crypto_finder.js</code></td><td><span class="badge badge--green">Frida</span></td><td>Cryptographic API detection</td></tr>
-          <tr><td><code>script://frida/file_registry_monitor.js</code></td><td><span class="badge badge--green">Frida</span></td><td>File/registry monitoring</td></tr>
-          <tr><td><code>script://ghidra/ExtractFunctions.java</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>Function extraction</td></tr>
-          <tr><td><code>script://ghidra/DecompileFunction.java</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>Function decompilation</td></tr>
-          <tr><td><code>script://ghidra/ExtractCFG.java</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>CFG extraction</td></tr>
-          <tr><td><code>script://ghidra/AnalyzeCrossReferences.java</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>Cross-reference analysis</td></tr>
-          <tr><td><code>script://ghidra/SearchFunctionReferences.java</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>Function reference search</td></tr>
+          <tr><td><code>script://frida/api_trace</code></td><td><span class="badge badge--green">Frida</span></td><td>Windows API tracing</td></tr>
+          <tr><td><code>script://frida/string_decoder</code></td><td><span class="badge badge--green">Frida</span></td><td>Runtime string decryption</td></tr>
+          <tr><td><code>script://frida/anti_debug_bypass</code></td><td><span class="badge badge--green">Frida</span></td><td>Anti-debug bypass</td></tr>
+          <tr><td><code>script://frida/crypto_finder</code></td><td><span class="badge badge--green">Frida</span></td><td>Cryptographic API detection</td></tr>
+          <tr><td><code>script://frida/file_registry_monitor</code></td><td><span class="badge badge--green">Frida</span></td><td>File/registry monitoring</td></tr>
+          <tr><td><code>script://ghidra/ExtractFunctions</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>Function extraction</td></tr>
+          <tr><td><code>script://ghidra/DecompileFunction</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>Function decompilation</td></tr>
+          <tr><td><code>script://ghidra/ExtractCFG</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>CFG extraction</td></tr>
+          <tr><td><code>script://ghidra/AnalyzeCrossReferences</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>Cross-reference analysis</td></tr>
+          <tr><td><code>script://ghidra/SearchFunctionReferences</code></td><td><span class="badge badge--purple">Ghidra</span></td><td>Function reference search</td></tr>
         </tbody>
       </table>
     </section>

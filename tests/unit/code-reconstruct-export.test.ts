@@ -12,7 +12,7 @@ import type { ToolArgs, WorkerResult } from '../../src/types.js'
 import {
   createCodeReconstructExportHandler,
   CodeReconstructExportInputSchema,
-} from '../../src/tools/code-reconstruct-export.js'
+} from '../../src/plugins/code-analysis/tools/code-reconstruct-export.js'
 import {
   persistSemanticFunctionExplanationsArtifact,
   persistSemanticModuleReviewsArtifact,

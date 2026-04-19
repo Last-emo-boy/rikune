@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult , PluginToolDeps} from '../../sdk.js'
+import type { ToolDefinition, ToolArgs, WorkerResult, PluginToolDeps } from '../../sdk.js'
 import { generateCacheKey } from '../../../cache-manager.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
 import { extractPdataFromPE } from '../../../pe-runtime-functions.js'

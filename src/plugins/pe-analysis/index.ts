@@ -7,37 +7,42 @@
 
 import type { Plugin } from '../sdk.js'
 import {
-  peStructureAnalyzeToolDefinition, createPEStructureAnalyzeHandler,
+  peStructureAnalyzeToolDefinition,
+  createPEStructureAnalyzeHandler,
 } from './tools/pe-structure-analyze.js'
 import {
-  peImportsExtractToolDefinition, createPEImportsExtractHandler,
+  peImportsExtractToolDefinition,
+  createPEImportsExtractHandler,
 } from './tools/pe-imports-extract.js'
 import {
-  peExportsExtractToolDefinition, createPEExportsExtractHandler,
+  peExportsExtractToolDefinition,
+  createPEExportsExtractHandler,
 } from './tools/pe-exports-extract.js'
+import { peFingerprintToolDefinition, createPEFingerprintHandler } from './tools/pe-fingerprint.js'
 import {
-  peFingerprintToolDefinition, createPEFingerprintHandler,
-} from './tools/pe-fingerprint.js'
-import {
-  pePdataExtractToolDefinition, createPEPdataExtractHandler,
+  pePdataExtractToolDefinition,
+  createPEPdataExtractHandler,
 } from './tools/pe-pdata-extract.js'
 import {
-  peSymbolsRecoverToolDefinition, createPESymbolsRecoverHandler,
+  peSymbolsRecoverToolDefinition,
+  createPESymbolsRecoverHandler,
 } from './tools/pe-symbols-recover.js'
 
 const peAnalysisPlugin: Plugin = {
   id: 'pe-analysis',
   name: 'PE Analysis',
+  executionDomain: 'static',
   surfaceRules: {
     tier: 0,
     category: 'static-analysis',
     signalMap: {
-      'is_signed': 'signed',
-      'has_certificate': 'signed',
-      'suspicious_imports': 'suspicious_imports',
+      is_signed: 'signed',
+      has_certificate: 'signed',
+      suspicious_imports: 'suspicious_imports',
     },
   },
-  description: 'Windows PE structure analysis, import/export extraction, fingerprinting, and symbol recovery',
+  description:
+    'Windows PE structure analysis, import/export extraction, fingerprinting, and symbol recovery',
   version: '1.0.0',
   register(server, deps) {
     server.registerTool(peStructureAnalyzeToolDefinition, createPEStructureAnalyzeHandler(deps))
@@ -47,8 +52,12 @@ const peAnalysisPlugin: Plugin = {
     server.registerTool(pePdataExtractToolDefinition, createPEPdataExtractHandler(deps))
     server.registerTool(peSymbolsRecoverToolDefinition, createPESymbolsRecoverHandler(deps))
     return [
-      'pe.structure.analyze', 'pe.imports.extract', 'pe.exports.extract',
-      'pe.fingerprint', 'pe.pdata.extract', 'pe.symbols.recover',
+      'pe.structure.analyze',
+      'pe.imports.extract',
+      'pe.exports.extract',
+      'pe.fingerprint',
+      'pe.pdata.extract',
+      'pe.symbols.recover',
     ]
   },
 }

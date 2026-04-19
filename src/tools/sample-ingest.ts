@@ -6,16 +6,15 @@
 
 import { z } from 'zod'
 import fs from 'fs'
+import path from 'path'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { PolicyGuard } from '../policy-guard.js'
 import { withLogging, logError, logWarning } from '../logger.js'
-import {
-  MAX_SAMPLE_SIZE,
-  createSampleFinalizationService,
-} from '../sample/sample-finalization.js'
+import { MAX_SAMPLE_SIZE, createSampleFinalizationService } from '../sample/sample-finalization.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
+import { resolveRuntimeSidecarUploads } from '../runtime-client/sidecar-staging.js'
 
 // ============================================================================
 // Input/Output Schemas
@@ -32,25 +31,55 @@ export const SampleIngestInputSchema = z
       .trim()
       .min(1)
       .optional()
-      .describe('Preferred for local files. Pass an absolute local file path when the MCP client can access the file system.'),
+      .describe(
+        'Preferred for local files. Pass an absolute local file path when the MCP client can access the file system.'
+      ),
     bytes_b64: z
       .string()
       .trim()
       .min(1)
       .optional()
-      .describe('Fallback only. Use Base64 file bytes when the MCP client cannot access the local file path. Ignored when `path` is provided.'),
+      .describe(
+        'Fallback only. Use Base64 file bytes when the MCP client cannot access the local file path. Ignored when `path` is provided.'
+      ),
     // NEW: API upload support
     upload_url: z
       .string()
       .url()
       .optional()
-      .describe('Compatibility-only path for daemon-backed upload sessions. Prefer reading `sample_id` directly from the upload response and only pass `upload_url` here when an older client still expects the extra finalize step.'),
+      .describe(
+        'Compatibility-only path for daemon-backed upload sessions. Prefer reading `sample_id` directly from the upload response and only pass `upload_url` here when an older client still expects the extra finalize step.'
+      ),
     api_key: z
       .string()
       .optional()
-      .describe('Legacy compatibility field. Not required for daemon-backed upload-session lookup.'),
+      .describe(
+        'Legacy compatibility field. Not required for daemon-backed upload-session lookup.'
+      ),
     filename: z.string().optional().describe('Optional display/original filename'),
     source: z.string().optional().describe('Optional source tag, e.g. upload/email/sandbox'),
+    sidecar_paths: z
+      .array(z.string())
+      .optional()
+      .default([])
+      .describe(
+        'Optional local sidecar files, such as DLLs or config files, copied into the sample workspace/original directory.'
+      ),
+    auto_stage_sidecars: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe(
+        'When path is provided, copy common sidecar files from the same directory into workspace/original.'
+      ),
+    max_sidecars: z.number().int().min(0).max(256).optional().default(32),
+    sidecar_max_total_bytes: z
+      .number()
+      .int()
+      .min(0)
+      .max(1024 * 1024 * 1024)
+      .optional()
+      .default(128 * 1024 * 1024),
   })
   .superRefine((value, ctx) => {
     const hasPath = typeof value.path === 'string' && value.path.length > 0
@@ -61,11 +90,14 @@ export const SampleIngestInputSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['path'],
-        message: 'Provide either `path` (preferred for local files), `bytes_b64` (fallback), or `upload_url` (HTTP API upload).',
+        message:
+          'Provide either `path` (preferred for local files), `bytes_b64` (fallback), or `upload_url` (HTTP API upload).',
       })
     }
   })
-  .describe('Ingest a sample from a local file path, Base64 bytes, or HTTP API upload. Prefer `path` whenever the MCP client can access the file directly.')
+  .describe(
+    'Ingest a sample from a local file path, Base64 bytes, or HTTP API upload. Prefer `path` whenever the MCP client can access the file directly.'
+  )
 
 export type SampleIngestInput = z.infer<typeof SampleIngestInputSchema>
 
@@ -75,17 +107,21 @@ export type SampleIngestInput = z.infer<typeof SampleIngestInputSchema>
  */
 export const SampleIngestOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string(),
-    size: z.number(),
-    file_type: z.string().optional(),
-    existed: z.boolean().optional(),
-    result_mode: z.literal('sample_registered'),
-    tool_surface_role: ToolSurfaceRoleSchema,
-    preferred_primary_tools: z.array(z.string()),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string(),
+      size: z.number(),
+      file_type: z.string().optional(),
+      existed: z.boolean().optional(),
+      sidecars_staged: z.number().optional(),
+      sidecar_warnings: z.array(z.string()).optional(),
+      result_mode: z.literal('sample_registered'),
+      tool_surface_role: ToolSurfaceRoleSchema,
+      preferred_primary_tools: z.array(z.string()),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
 })
 
@@ -140,6 +176,41 @@ function extractUploadToken(uploadUrl: string): string | null {
   }
 
   return parts[parts.length - 1] || null
+}
+
+async function stageSidecarsIntoWorkspace(
+  workspaceManager: WorkspaceManager,
+  sampleId: string,
+  primaryPathForScan: string,
+  input: SampleIngestInput
+): Promise<{ count: number; warnings: string[] }> {
+  const resolved = await resolveRuntimeSidecarUploads(primaryPathForScan, {
+    sidecarPaths: input.sidecar_paths,
+    autoStageSidecars: input.auto_stage_sidecars && Boolean(input.path),
+    maxSidecars: input.max_sidecars,
+    maxTotalBytes: input.sidecar_max_total_bytes,
+  })
+  if (resolved.sidecars.length === 0) {
+    return { count: 0, warnings: resolved.warnings }
+  }
+
+  const workspace = await workspaceManager.createWorkspace(sampleId)
+  let staged = 0
+  const warnings = [...resolved.warnings]
+  for (const sidecar of resolved.sidecars) {
+    const basename = path.basename(sidecar.name || sidecar.path)
+    const destPath = path.join(workspace.original, basename)
+    try {
+      if (path.resolve(sidecar.path) === path.resolve(destPath)) {
+        continue
+      }
+      fs.copyFileSync(sidecar.path, destPath)
+      staged += 1
+    } catch (err) {
+      warnings.push(`Failed to stage sidecar ${sidecar.path}: ${(err as Error).message}`)
+    }
+  }
+  return { count: staged, warnings }
 }
 
 // ============================================================================
@@ -236,6 +307,32 @@ export function createSampleIngestHandler(
 
             if (session.status === 'registered' && session.sample_id) {
               const existingSample = database.findSample(session.sample_id)
+              let sidecarStage = { count: 0, warnings: [] as string[] }
+              try {
+                const workspaceForSidecars = await workspaceManager.createWorkspace(
+                  session.sample_id
+                )
+                const primaryFile = fs
+                  .readdirSync(workspaceForSidecars.original)
+                  .find((entry) =>
+                    fs.statSync(path.join(workspaceForSidecars.original, entry)).isFile()
+                  )
+                if (primaryFile) {
+                  sidecarStage = await stageSidecarsIntoWorkspace(
+                    workspaceManager,
+                    session.sample_id,
+                    path.join(workspaceForSidecars.original, primaryFile),
+                    { ...input, auto_stage_sidecars: false }
+                  )
+                }
+              } catch (error) {
+                sidecarStage = {
+                  count: 0,
+                  warnings: [
+                    `Failed to stage sidecars for existing upload session: ${(error as Error).message}`,
+                  ],
+                }
+              }
               return {
                 ok: true,
                 data: {
@@ -243,10 +340,21 @@ export function createSampleIngestHandler(
                   size: existingSample?.size || session.size || 0,
                   file_type: existingSample?.file_type || undefined,
                   existed: true,
+                  sidecars_staged: sidecarStage.count,
+                  sidecar_warnings:
+                    sidecarStage.warnings.length > 0 ? sidecarStage.warnings : undefined,
                   result_mode: 'sample_registered',
                   tool_surface_role: 'primary',
-                  preferred_primary_tools: ['workflow.analyze.start', 'workflow.analyze.status', 'workflow.analyze.promote'],
-                  recommended_next_tools: ['workflow.analyze.start', 'workflow.summarize', 'workflow.triage'],
+                  preferred_primary_tools: [
+                    'workflow.analyze.start',
+                    'workflow.analyze.status',
+                    'workflow.analyze.promote',
+                  ],
+                  recommended_next_tools: [
+                    'workflow.analyze.start',
+                    'workflow.summarize',
+                    'workflow.triage',
+                  ],
                   next_actions: [
                     'Use workflow.analyze.start with the returned sample_id for the primary staged-runtime path.',
                     'Use workflow.triage only when you intentionally want the compatibility quick-profile surface.',
@@ -280,6 +388,15 @@ export function createSampleIngestHandler(
                 source: input.source || session.source || 'api_upload',
                 auditOperation: 'sample.ingest',
               })
+              const workspaceForSidecars = await workspaceManager.createWorkspace(
+                finalized.sample_id
+              )
+              const sidecarStage = await stageSidecarsIntoWorkspace(
+                workspaceManager,
+                finalized.sample_id,
+                path.join(workspaceForSidecars.original, originalFilename),
+                input
+              )
 
               database.markUploadSessionRegistered(token, {
                 sample_id: finalized.sample_id,
@@ -302,10 +419,21 @@ export function createSampleIngestHandler(
                   size: finalized.size,
                   file_type: finalized.file_type,
                   existed: finalized.existed,
+                  sidecars_staged: sidecarStage.count,
+                  sidecar_warnings:
+                    sidecarStage.warnings.length > 0 ? sidecarStage.warnings : undefined,
                   result_mode: 'sample_registered',
                   tool_surface_role: 'primary',
-                  preferred_primary_tools: ['workflow.analyze.start', 'workflow.analyze.status', 'workflow.analyze.promote'],
-                  recommended_next_tools: ['workflow.analyze.start', 'workflow.summarize', 'workflow.triage'],
+                  preferred_primary_tools: [
+                    'workflow.analyze.start',
+                    'workflow.analyze.status',
+                    'workflow.analyze.promote',
+                  ],
+                  recommended_next_tools: [
+                    'workflow.analyze.start',
+                    'workflow.summarize',
+                    'workflow.triage',
+                  ],
                   next_actions: [
                     'Use workflow.analyze.start with the returned sample_id for the primary staged-runtime path.',
                     'Use workflow.triage only when you intentionally want the compatibility quick-profile surface.',
@@ -362,7 +490,7 @@ export function createSampleIngestHandler(
             return {
               ok: false,
               errors: [
-                `Sample size ${data.length} bytes exceeds maximum limit of ${MAX_SAMPLE_SIZE} bytes (500MB)`
+                `Sample size ${data.length} bytes exceeds maximum limit of ${MAX_SAMPLE_SIZE} bytes (500MB)`,
               ],
             }
           }
@@ -373,6 +501,13 @@ export function createSampleIngestHandler(
             source: input.source || 'upload',
             auditOperation: 'sample.ingest',
           })
+          const workspaceForSidecars = await workspaceManager.createWorkspace(finalized.sample_id)
+          const sidecarStage = await stageSidecarsIntoWorkspace(
+            workspaceManager,
+            finalized.sample_id,
+            input.path || path.join(workspaceForSidecars.original, originalFilename),
+            input
+          )
 
           return {
             ok: true,
@@ -381,10 +516,21 @@ export function createSampleIngestHandler(
               size: finalized.size,
               file_type: finalized.file_type,
               existed: finalized.existed,
+              sidecars_staged: sidecarStage.count,
+              sidecar_warnings:
+                sidecarStage.warnings.length > 0 ? sidecarStage.warnings : undefined,
               result_mode: 'sample_registered',
               tool_surface_role: 'primary',
-              preferred_primary_tools: ['workflow.analyze.start', 'workflow.analyze.status', 'workflow.analyze.promote'],
-              recommended_next_tools: ['workflow.analyze.start', 'workflow.summarize', 'workflow.triage'],
+              preferred_primary_tools: [
+                'workflow.analyze.start',
+                'workflow.analyze.status',
+                'workflow.analyze.promote',
+              ],
+              recommended_next_tools: [
+                'workflow.analyze.start',
+                'workflow.summarize',
+                'workflow.triage',
+              ],
               next_actions: [
                 'Use workflow.analyze.start with the returned sample_id for the primary staged-runtime path.',
                 'Use workflow.triage only when you intentionally want the compatibility quick-profile surface.',

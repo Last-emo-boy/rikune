@@ -56,9 +56,10 @@ export function createKeygenSynthesizeHandler(
       // Try constraint extraction results first
       for (const entry of evidence) {
         if (entry.evidence_family === 'constraint_extraction') {
-          const data = typeof entry.result_json === 'string'
-            ? JSON.parse(entry.result_json)
-            : entry.result_json
+          const data =
+            typeof entry.result_json === 'string'
+              ? JSON.parse(entry.result_json)
+              : entry.result_json
           if (data?.constraints) {
             constraints = data.constraints
             break
@@ -70,12 +71,14 @@ export function createKeygenSynthesizeHandler(
       if (constraints.length === 0) {
         for (const entry of evidence) {
           if (entry.evidence_family === 'vm_emulation') {
-            const data = typeof entry.result_json === 'string'
-              ? JSON.parse(entry.result_json)
-              : entry.result_json
+            const data =
+              typeof entry.result_json === 'string'
+                ? JSON.parse(entry.result_json)
+                : entry.result_json
             if (data) {
               const trace = ((data as Record<string, unknown>).steps ??
-                (data as Record<string, unknown>).trace ?? []) as never[]
+                (data as Record<string, unknown>).trace ??
+                []) as never[]
               constraints = extractConstraints(trace)
               break
             }
@@ -107,8 +110,12 @@ export function createKeygenSynthesizeHandler(
     const artifacts: ArtifactRef[] = []
     try {
       const ref = await persistStaticAnalysisJsonArtifact(
-        workspaceManager, database, input.sample_id,
-        'keygen_synthesis', 'keygen_result', result
+        workspaceManager,
+        database,
+        input.sample_id,
+        'keygen_synthesis',
+        'keygen_result',
+        result
       )
       artifacts.push(ref)
     } catch {

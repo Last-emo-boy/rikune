@@ -75,7 +75,9 @@ export function createReportHtmlGenerateHandler(deps: PluginToolDeps) {
                 ? JSON.parse(entry.result_json)
                 : entry.result_json
             allEvidence.push({ family: entry.evidence_family ?? 'unknown', data })
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
       }
 
@@ -88,7 +90,8 @@ export function createReportHtmlGenerateHandler(deps: PluginToolDeps) {
         overview += `<tr><td><strong>Sample ID</strong></td><td><code>${escapeHtml(args.sample_id)}</code></td></tr>`
         overview += `<tr><td><strong>Filename</strong></td><td>${escapeHtml(fileName)}</td></tr>`
         overview += `<tr><td><strong>File Size</strong></td><td>${escapeHtml(String(sample.size))} bytes</td></tr>`
-        if (sample.file_type) overview += `<tr><td><strong>File Type</strong></td><td>${escapeHtml(sample.file_type)}</td></tr>`
+        if (sample.file_type)
+          overview += `<tr><td><strong>File Type</strong></td><td>${escapeHtml(sample.file_type)}</td></tr>`
         overview += `<tr><td><strong>Evidence Entries</strong></td><td>${allEvidence.length}</td></tr>`
         overview += `</table>`
         sections.push(overview)
@@ -97,9 +100,18 @@ export function createReportHtmlGenerateHandler(deps: PluginToolDeps) {
       // --- Static Analysis ---
       if (args.sections.includes('static')) {
         let staticSection = `<h2>Static Analysis</h2>`
-        const staticFamilies = ['pe_fingerprint', 'pe_imports', 'pe_exports', 'pe_structure',
-          'elf_structure', 'macho_structure', 'capability_triage', 'packer_detect',
-          'compiler_detect', 'binary_role']
+        const staticFamilies = [
+          'pe_fingerprint',
+          'pe_imports',
+          'pe_exports',
+          'pe_structure',
+          'elf_structure',
+          'macho_structure',
+          'capability_triage',
+          'packer_detect',
+          'compiler_detect',
+          'binary_role',
+        ]
         const staticEvid = allEvidence.filter((e) => staticFamilies.includes(e.family))
         if (staticEvid.length === 0) {
           staticSection += `<p class="muted">No static analysis evidence available.</p>`
@@ -114,8 +126,14 @@ export function createReportHtmlGenerateHandler(deps: PluginToolDeps) {
       // --- Dynamic Behavior ---
       if (args.sections.includes('dynamic')) {
         let dynSection = `<h2>Dynamic Behavior</h2>`
-        const dynFamilies = ['dynamic_trace', 'frida_trace', 'sandbox_execution',
-          'sandbox_report', 'speakeasy_trace', 'runtime_trace']
+        const dynFamilies = [
+          'dynamic_trace',
+          'frida_trace',
+          'sandbox_execution',
+          'sandbox_report',
+          'speakeasy_trace',
+          'runtime_trace',
+        ]
         const dynEvid = allEvidence.filter((e) => dynFamilies.includes(e.family))
         if (dynEvid.length === 0) {
           dynSection += `<p class="muted">No dynamic analysis evidence available.</p>`
@@ -135,17 +153,20 @@ export function createReportHtmlGenerateHandler(deps: PluginToolDeps) {
       // --- Strings ---
       if (args.sections.includes('strings')) {
         let strSection = `<h2>Strings</h2>`
-        const strEvid = allEvidence.filter((e) => e.family === 'strings' || e.family === 'floss_strings')
+        const strEvid = allEvidence.filter(
+          (e) => e.family === 'strings' || e.family === 'floss_strings'
+        )
         if (strEvid.length === 0) {
           strSection += `<p class="muted">No string extraction evidence available.</p>`
         } else {
           for (const ev of strEvid) {
-            const strs = (ev.data?.data as Record<string, unknown>)?.strings ??
-              (ev.data as Record<string, unknown>)?.strings ?? []
+            const strs =
+              (ev.data?.data as Record<string, unknown>)?.strings ?? ev.data?.strings ?? []
             const strArr = (strs as Array<unknown>).slice(0, 200)
             strSection += `<h3>${escapeHtml(ev.family)} (showing ${strArr.length})</h3><ul>`
             for (const s of strArr) {
-              const val = typeof s === 'string' ? s : (s as Record<string, unknown>)?.value ?? String(s)
+              const val =
+                typeof s === 'string' ? s : ((s as Record<string, unknown>)?.value ?? String(s))
               strSection += `<li><code>${escapeHtml(String(val).slice(0, 200))}</code></li>`
             }
             strSection += `</ul>`
@@ -189,7 +210,14 @@ export function createReportHtmlGenerateHandler(deps: PluginToolDeps) {
         } else {
           const avg = Math.round(scores.reduce((s, e) => s + e.score, 0) / scores.length)
           const maxScore = scores.reduce((m, e) => Math.max(m, e.score), 0)
-          const maxLevel = maxScore >= 70 ? 'critical' : maxScore >= 40 ? 'high' : maxScore >= 20 ? 'medium' : 'low'
+          const maxLevel =
+            maxScore >= 70
+              ? 'critical'
+              : maxScore >= 40
+                ? 'high'
+                : maxScore >= 20
+                  ? 'medium'
+                  : 'low'
           scoreSection += `<div class="score-box"><span class="score">${avg}</span><span class="label">Average</span></div>`
           scoreSection += `<div class="score-box"><span class="score">${maxScore}</span><span class="label">Maximum</span></div>`
           scoreSection += `<p>Overall Level: ${severityBadge(maxLevel)}</p>`

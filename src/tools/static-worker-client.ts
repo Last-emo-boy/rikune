@@ -78,14 +78,15 @@ export async function callStaticWorker(
       ? 'static_python.full'
       : 'static_python.preview')
 
-  const { response, lease } = await getRuntimeWorkerPool().executeStaticWorker(request as StaticWorkerRequest & Record<string, unknown>, {
-    database: options.database,
-    family,
-    compatibilityKey,
-    timeoutMs:
-      options.timeoutMs ||
-      ((config.workers.static.timeout || 60) * 1000),
-  })
+  const { response, lease } = await getRuntimeWorkerPool().executeStaticWorker(
+    request as StaticWorkerRequest & Record<string, unknown>,
+    {
+      database: options.database,
+      family,
+      compatibilityKey,
+      timeoutMs: options.timeoutMs || (config.workers.static.timeout || 60) * 1000,
+    }
+  )
 
   return {
     job_id: typeof response.job_id === 'string' ? response.job_id : request.job_id,

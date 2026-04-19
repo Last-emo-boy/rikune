@@ -316,17 +316,13 @@ export async function resolveCanonicalEvidenceOrCache(
   }
 }
 
-export function buildEvidenceReuseWarnings(
-  resolved: ResolvedCanonicalEvidence
-): string[] {
+export function buildEvidenceReuseWarnings(resolved: ResolvedCanonicalEvidence): string[] {
   if (resolved.source === 'analysis_evidence') {
     return [
       `Reused canonical evidence (${resolved.record.evidence_family}/${resolved.record.backend}/${resolved.record.mode}).`,
     ]
   }
-  return [
-    'Result from cache',
-  ]
+  return ['Result from cache']
 }
 
 function classifyResolvedEvidenceState(
@@ -347,7 +343,12 @@ function classifyResolvedEvidenceState(
     }
   }
   const staleAfterMs = options.staleAfterMs
-  if (updatedAt && typeof staleAfterMs === 'number' && Number.isFinite(staleAfterMs) && staleAfterMs > 0) {
+  if (
+    updatedAt &&
+    typeof staleAfterMs === 'number' &&
+    Number.isFinite(staleAfterMs) &&
+    staleAfterMs > 0
+  ) {
     const ageMs = Date.now() - new Date(updatedAt).getTime()
     if (Number.isFinite(ageMs) && ageMs > staleAfterMs) {
       return {

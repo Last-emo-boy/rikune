@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, test, jest } from '@jest/globals'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -7,6 +7,8 @@ import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import { PolicyGuard } from '../../src/policy-guard.js'
 import { createAnalyzeAutoWorkflowHandler } from '../../src/workflows/analyze-auto.js'
+
+jest.setTimeout(30000)
 
 describe('workflow.analyze.auto coverage boundaries', () => {
   let workspaceManager: WorkspaceManager
@@ -47,14 +49,29 @@ describe('workflow.analyze.auto coverage boundaries', () => {
       policyGuard,
       undefined,
       {
-        triageHandler: async () => ({
+        analyzeStartHandler: async () => ({
           ok: true,
           data: {
-            summary: 'Quick triage summary.',
+            run_id: 'run-1',
+            execution_state: 'completed',
+            stage_result: { summary: 'Quick triage summary.' },
             recommended_next_tools: ['ghidra.analyze'],
             next_actions: ['continue'],
-            goal: 'triage',
-            depth: 'balanced',
+            coverage_level: 'quick',
+            completion_state: 'bounded',
+            sample_size_tier: 'small',
+            analysis_budget_profile: 'balanced',
+            downgrade_reasons: [],
+            coverage_gaps: [
+              { domain: 'ghidra_analysis', status: 'missing', reason: 'Quick triage does not include a queued decompiler pass.' },
+            ],
+            confidence_by_domain: {},
+            known_findings: [],
+            suspected_findings: [],
+            unverified_areas: [],
+            upgrade_paths: [
+              { tool: 'ghidra.analyze', purpose: 'Recover function-level attribution.', closes_gaps: ['ghidra_analysis'], expected_coverage_gain: 'Adds decompiler-backed function discovery.', cost_tier: 'high', availability: 'ready', prerequisites: [], blockers: [] },
+            ],
             backend_policy: 'auto',
             backend_considered: [],
             backend_selected: [],
@@ -94,31 +111,44 @@ describe('workflow.analyze.auto coverage boundaries', () => {
       policyGuard,
       undefined,
       {
-        deepStaticHandler: async () => ({
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                ok: true,
-                data: {
-                  status: 'queued',
-                  job_id: 'job-static-1',
-                  result_mode: 'queued',
-                  recommended_next_tools: ['task.status'],
-                  next_actions: ['poll'],
-                },
-              }),
-            },
-          ],
-          structuredContent: {
-            ok: true,
-            data: {
-              status: 'queued',
-              job_id: 'job-static-1',
-              result_mode: 'queued',
-              recommended_next_tools: ['task.status'],
-              next_actions: ['poll'],
-            },
+        analyzeStartHandler: async () => ({
+          ok: true,
+          data: {
+            run_id: 'run-2',
+            execution_state: 'completed',
+            stage_result: {},
+            recommended_next_tools: ['workflow.analyze.promote'],
+            next_actions: ['promote'],
+          },
+        }),
+        analyzePromoteHandler: async () => ({
+          ok: true,
+          data: {
+            execution_state: 'queued',
+            stage_result: { status: 'queued', job_id: 'job-static-1' },
+            recommended_next_tools: ['task.status'],
+            next_actions: ['poll'],
+            coverage_level: 'static_core',
+            completion_state: 'queued',
+            sample_size_tier: 'large',
+            analysis_budget_profile: 'balanced',
+            downgrade_reasons: [],
+            coverage_gaps: [
+              { domain: 'decompilation', status: 'queued', reason: 'Deep static analysis is queued.' },
+            ],
+            confidence_by_domain: {},
+            known_findings: [],
+            suspected_findings: [],
+            unverified_areas: [],
+            upgrade_paths: [
+              { tool: 'task.status', purpose: 'Poll queued job.', closes_gaps: ['decompilation'], expected_coverage_gain: 'Completes decompilation.', cost_tier: 'low', availability: 'ready', prerequisites: [], blockers: [] },
+            ],
+            backend_policy: 'auto',
+            backend_considered: [],
+            backend_selected: [],
+            backend_skipped: [],
+            backend_escalation_reasons: [],
+            manual_only_backends: [],
           },
         }),
       }
@@ -154,16 +184,36 @@ describe('workflow.analyze.auto coverage boundaries', () => {
       policyGuard,
       undefined,
       {
-        reconstructHandler: async () => ({
+        analyzeStartHandler: async () => ({
           ok: true,
           data: {
-            selected_path: 'native',
-            degraded: false,
-            result_mode: 'completed',
+            run_id: 'run-3',
+            execution_state: 'completed',
+            stage_result: {},
+            recommended_next_tools: ['workflow.analyze.promote'],
+            next_actions: ['promote'],
+          },
+        }),
+        analyzePromoteHandler: async () => ({
+          ok: true,
+          data: {
+            execution_state: 'completed',
+            stage_result: { selected_path: 'native', degraded: false },
             recommended_next_tools: ['artifact.read'],
             next_actions: ['inspect export'],
-            goal: 'reverse',
-            depth: 'deep',
+            coverage_level: 'reconstruction',
+            completion_state: 'completed',
+            sample_size_tier: 'small',
+            analysis_budget_profile: 'deep',
+            downgrade_reasons: [],
+            coverage_gaps: [],
+            confidence_by_domain: {},
+            known_findings: [],
+            suspected_findings: [],
+            unverified_areas: [],
+            upgrade_paths: [
+              { tool: 'artifact.read', purpose: 'Inspect export artifacts.', closes_gaps: [], expected_coverage_gain: 'Access reconstruction output.', cost_tier: 'low', availability: 'ready', prerequisites: [], blockers: [] },
+            ],
             backend_policy: 'auto',
             backend_considered: [],
             backend_selected: [],

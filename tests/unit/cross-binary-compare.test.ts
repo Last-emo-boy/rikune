@@ -24,7 +24,7 @@ describe('cross.binary.compare tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = CrossBinaryCompareInputSchema.safeParse({ sample_id: 'sha256:abc123def456' })
+      const result = CrossBinaryCompareInputSchema.safeParse({ sample_ids: ['sha256:abc123', 'sha256:def456'] })
       expect(result.success).toBe(true)
     })
 
@@ -34,7 +34,7 @@ describe('cross.binary.compare tool', () => {
     })
 
     test('should reject invalid types', () => {
-      const result = CrossBinaryCompareInputSchema.safeParse({ sample_id: 123 })
+      const result = CrossBinaryCompareInputSchema.safeParse({ sample_ids: [123, 456] })
       expect(result.success).toBe(false)
     })
   })
@@ -45,10 +45,10 @@ describe('cross.binary.compare tool', () => {
 
       mockDatabase.findSample.mockReturnValue(undefined)
 
-      const result = await handler({ sample_id: 'sha256:abc123def456' })
+      const result = await handler({ sample_ids: ['sha256:abc123def456'] })
 
       expect(result.ok).toBe(false)
-      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid/i)
+      expect(result.errors?.[0]).toMatch(/not found|unknown|invalid|at least 2/i)
     })
   })
 })

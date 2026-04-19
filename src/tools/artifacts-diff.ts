@@ -2,7 +2,10 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
-import { listArtifactInventory, normalizeRelativeArtifactPath } from '../artifacts/artifact-inventory.js'
+import {
+  listArtifactInventory,
+  normalizeRelativeArtifactPath,
+} from '../artifacts/artifact-inventory.js'
 
 const TOOL_NAME = 'artifacts.diff'
 const TOOL_VERSION = '0.1.0'
@@ -49,7 +52,9 @@ export const artifactsDiffInputSchema = z.object({
     .boolean()
     .optional()
     .default(true)
-    .describe('Keep only the newest artifact per comparison key inside each session before diffing'),
+    .describe(
+      'Keep only the newest artifact per comparison key inside each session before diffing'
+    ),
 })
 
 const ArtifactSnapshotSchema = z.object({
@@ -131,10 +136,7 @@ function toTimestamp(value: string | null): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-function makeKey(
-  item: ArtifactInventoryRow,
-  matchBy: 'type_path' | 'path' | 'type'
-): string {
+function makeKey(item: ArtifactInventoryRow, matchBy: 'type_path' | 'path' | 'type'): string {
   const normalizedPath = normalizeRelativeArtifactPath(item.path).toLowerCase()
   if (matchBy === 'path') {
     return normalizedPath
@@ -331,8 +333,12 @@ export function createArtifactsDiffHandler(
             changed_count: changed.length,
             unchanged_count: unchangedCount,
             changed_fields: changedFields,
-            left_types: Array.from(new Set(Array.from(leftItems.values()).map((item) => item.type))).sort(),
-            right_types: Array.from(new Set(Array.from(rightItems.values()).map((item) => item.type))).sort(),
+            left_types: Array.from(
+              new Set(Array.from(leftItems.values()).map((item) => item.type))
+            ).sort(),
+            right_types: Array.from(
+              new Set(Array.from(rightItems.values()).map((item) => item.type))
+            ).sort(),
           },
         },
         warnings: warnings.length > 0 ? warnings : undefined,

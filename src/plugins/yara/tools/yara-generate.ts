@@ -77,9 +77,7 @@ async function loadAnalysisEvidence(
   if (Array.isArray(evidence)) {
     for (const entry of evidence) {
       const data =
-        typeof entry.result_json === 'string'
-          ? JSON.parse(entry.result_json)
-          : entry.result_json
+        typeof entry.result_json === 'string' ? JSON.parse(entry.result_json) : entry.result_json
       if (!data || typeof data !== 'object') continue
       Object.assign(combined, data)
     }
@@ -119,7 +117,9 @@ export function createYaraGenerateHandler(
     ) {
       return {
         ok: false,
-        errors: ['Insufficient analysis evidence to generate YARA rules. Run strings.extract and pe.imports.extract first.'],
+        errors: [
+          'Insufficient analysis evidence to generate YARA rules. Run strings.extract and pe.imports.extract first.',
+        ],
       }
     }
 
@@ -140,7 +140,12 @@ export function createYaraGenerateHandler(
           ruleText = buildStringRule(evidence.unique_strings, meta)
           break
         case 'import':
-          ruleText = buildImportRule(evidence.suspicious_imports.length > 0 ? evidence.suspicious_imports : evidence.all_imports, meta)
+          ruleText = buildImportRule(
+            evidence.suspicious_imports.length > 0
+              ? evidence.suspicious_imports
+              : evidence.all_imports,
+            meta
+          )
           break
         case 'byte_pattern':
           ruleText = buildBytePatternRule(evidence.byte_patterns, meta)
@@ -190,7 +195,15 @@ export function createYaraGenerateHandler(
         input.sample_id,
         'yara_rule_generation',
         `yara_${input.strictness}`,
-        { rules, evidence_summary: { strings: evidence.unique_strings.length, imports: evidence.all_imports.length, suspicious_imports: evidence.suspicious_imports.length, byte_patterns: evidence.byte_patterns.length } }
+        {
+          rules,
+          evidence_summary: {
+            strings: evidence.unique_strings.length,
+            imports: evidence.all_imports.length,
+            suspicious_imports: evidence.suspicious_imports.length,
+            byte_patterns: evidence.byte_patterns.length,
+          },
+        }
       )
       artifacts.push(artifactRef)
     } catch {

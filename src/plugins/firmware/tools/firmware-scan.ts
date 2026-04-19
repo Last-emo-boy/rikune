@@ -7,10 +7,15 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, executeCommand,
-  persistBackendArtifact, buildMetrics,
-  resolveSampleFile, resolveExecutable,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  executeCommand,
+  persistBackendArtifact,
+  buildMetrics,
+  resolveSampleFile,
+  resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -25,18 +30,24 @@ export const firmwareScanInputSchema = z.object({
 
 export const firmwareScanOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    signature_count: z.number().optional(),
-    signatures: z.array(z.object({
-      offset: z.string(),
-      description: z.string(),
-    })).optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      signature_count: z.number().optional(),
+      signatures: z
+        .array(
+          z.object({
+            offset: z.string(),
+            description: z.string(),
+          })
+        )
+        .optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
   metrics: SharedMetricsSchema.optional(),
@@ -52,7 +63,7 @@ export const firmwareScanToolDefinition: ToolDefinition = {
 
 export function createFirmwareScanHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -60,9 +71,17 @@ export function createFirmwareScanHandler(
       const input = firmwareScanInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolveExecutable({ envPath: process.env.BINWALK_PATH, pathCandidates: ['binwalk'], versionArgSets: [['--help']] })
+      const backend = resolveExecutable({
+        envPath: process.env.BINWALK_PATH,
+        pathCandidates: ['binwalk'],
+        versionArgSets: [['--help']],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'binwalk', available: false, error: 'binwalk not installed' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend || ({ name: 'binwalk', available: false, error: 'binwalk not installed' } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const result = await executeCommand(backend.path, [samplePath], input.timeout_sec * 1000)
@@ -80,7 +99,15 @@ export function createFirmwareScanHandler(
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'firmware', 'scan', result.stdout, { extension: 'txt', mime: 'text/plain', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'firmware',
+          'scan',
+          result.stdout,
+          { extension: 'txt', mime: 'text/plain', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -102,7 +129,11 @@ export function createFirmwareScanHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

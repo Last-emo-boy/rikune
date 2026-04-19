@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createRuntimeDetectHandler, RuntimeDetectInputSchema } from '../../src/tools/runtime-detect.js'
+import { createRuntimeDetectHandler, RuntimeDetectInputSchema } from '../../src/plugins/static-triage/tools/runtime-detect.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 import type { CacheManager } from '../../src/cache-manager.js'

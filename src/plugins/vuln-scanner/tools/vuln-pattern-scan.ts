@@ -3,7 +3,13 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef , PluginToolDeps} from '../../sdk.js'
+import type {
+  ToolDefinition,
+  ToolArgs,
+  WorkerResult,
+  ArtifactRef,
+  PluginToolDeps,
+} from '../../sdk.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { loadPatterns, scanAllFunctions, type VulnScanResult } from '../vuln-patterns.js'
 
@@ -64,15 +70,9 @@ function extractDecompiledFunctions(
   if (Array.isArray(evidence)) {
     for (const entry of evidence) {
       const family = entry.evidence_family ?? ''
-      if (
-        family === 'function_map' ||
-        family === 'decompilation' ||
-        family === 'functions'
-      ) {
+      if (family === 'function_map' || family === 'decompilation' || family === 'functions') {
         const data =
-          typeof entry.result_json === 'string'
-            ? JSON.parse(entry.result_json)
-            : entry.result_json
+          typeof entry.result_json === 'string' ? JSON.parse(entry.result_json) : entry.result_json
         if (!data) continue
 
         // Extract functions array
@@ -129,11 +129,7 @@ export function createVulnPatternScanHandler(deps: PluginToolDeps) {
     }
 
     // Scan
-    const scanResult = scanAllFunctions(
-      functions,
-      patternDB.patterns,
-      input.min_confidence
-    )
+    const scanResult = scanAllFunctions(functions, patternDB.patterns, input.min_confidence)
 
     // Truncate findings
     scanResult.findings = scanResult.findings

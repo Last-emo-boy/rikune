@@ -7,10 +7,14 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  normalizeError, runPythonJson,
-  persistBackendArtifact, buildMetrics,
-  resolveSampleFile, resolvePythonModuleBackend,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  normalizeError,
+  runPythonJson,
+  persistBackendArtifact,
+  buildMetrics,
+  resolveSampleFile,
+  resolvePythonModuleBackend,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -18,26 +22,38 @@ const TOOL_NAME = 'sample.cluster.fuzzy'
 
 export const sampleClusterFuzzyInputSchema = z.object({
   sample_ids: z.array(z.string()).min(2).max(200).describe('List of sample IDs to cluster.'),
-  threshold: z.number().int().min(0).max(100).default(30).describe('Minimum ssdeep similarity % to link samples.'),
+  threshold: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .default(30)
+    .describe('Minimum ssdeep similarity % to link samples.'),
   persist_artifact: z.boolean().default(true).describe('Persist cluster results as artifact.'),
   session_tag: z.string().optional().describe('Optional artifact session tag.'),
 })
 
 export const sampleClusterFuzzyOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    cluster_count: z.number().optional(),
-    clusters: z.array(z.object({
-      id: z.number(),
-      members: z.array(z.string()),
-      avg_similarity: z.number().optional(),
-    })).optional(),
-    singleton_count: z.number().optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      cluster_count: z.number().optional(),
+      clusters: z
+        .array(
+          z.object({
+            id: z.number(),
+            members: z.array(z.string()),
+            avg_similarity: z.number().optional(),
+          })
+        )
+        .optional(),
+      singleton_count: z.number().optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
   metrics: SharedMetricsSchema.optional(),
@@ -124,15 +140,28 @@ print(json.dumps({
 
 export function createSampleClusterFuzzyHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
       const input = sampleClusterFuzzyInputSchema.parse(args)
-      const backend = resolvePythonModuleBackend({ envPythonPath: process.env.SIMILARITY_PYTHON, moduleNames: ['ppdeep'], distributionNames: ['ppdeep'] })
+      const backend = resolvePythonModuleBackend({
+        envPythonPath: process.env.SIMILARITY_PYTHON,
+        moduleNames: ['ppdeep'],
+        distributionNames: ['ppdeep'],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'similarity', available: false, error: 'ppdeep Python module not available' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend ||
+            ({
+              name: 'similarity',
+              available: false,
+              error: 'ppdeep Python module not available',
+            } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const samples: Array<{ id: string; path: string }> = []
@@ -146,21 +175,33 @@ export function createSampleClusterFuzzyHandler(
       }
 
       if (samples.length < 2) {
-        return { ok: false, errors: ['Need at least 2 resolvable samples for clustering'], metrics: buildMetrics(startTime, TOOL_NAME) }
+        return {
+          ok: false,
+          errors: ['Need at least 2 resolvable samples for clustering'],
+          metrics: buildMetrics(startTime, TOOL_NAME),
+        }
       }
 
       const result = await runPythonJson(
         backend.path,
         CLUSTER_SCRIPT,
         { samples, threshold: input.threshold },
-        120_000,
+        120_000
       )
 
       const clusters = result.parsed?.clusters || []
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_ids[0], 'similarity', 'cluster', JSON.stringify(result.parsed, null, 2), { extension: 'json', mime: 'application/json', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_ids[0],
+          'similarity',
+          'cluster',
+          JSON.stringify(result.parsed, null, 2),
+          { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -182,7 +223,11 @@ export function createSampleClusterFuzzyHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

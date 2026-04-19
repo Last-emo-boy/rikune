@@ -39,10 +39,7 @@ export const vmDetectToolDefinition: ToolDefinition = {
   outputSchema: vmDetectOutputSchema,
 }
 
-function extractDecompiledFunctions(
-  database: DatabaseManager,
-  sampleId: string
-): DecompiledFunc[] {
+function extractDecompiledFunctions(database: DatabaseManager, sampleId: string): DecompiledFunc[] {
   const functions: DecompiledFunc[] = []
   const evidence = database.findAnalysisEvidenceBySample(sampleId)
   if (!Array.isArray(evidence)) return functions
@@ -51,9 +48,7 @@ function extractDecompiledFunctions(
     const family = entry.evidence_family ?? ''
     if (family === 'function_map' || family === 'decompilation' || family === 'functions') {
       const data =
-        typeof entry.result_json === 'string'
-          ? JSON.parse(entry.result_json)
-          : entry.result_json
+        typeof entry.result_json === 'string' ? JSON.parse(entry.result_json) : entry.result_json
       if (!data) continue
 
       const fnList =
@@ -98,29 +93,32 @@ export function createVmDetectHandler(
     if (functions.length === 0) {
       return {
         ok: false,
-        errors: ['No decompiled functions found. Run function_map or code.functions.reconstruct first.'],
+        errors: [
+          'No decompiled functions found. Run function_map or code.functions.reconstruct first.',
+        ],
       }
     }
 
     // Score all functions and filter by threshold
     const candidates = functions
-      .map(fn => ({
+      .map((fn) => ({
         function: fn.name,
         address: fn.address,
         score: scoreVMCandidate(fn.decompiled_code),
       }))
-      .filter(c => c.score.total >= input.min_score)
+      .filter((c) => c.score.total >= input.min_score)
       .sort((a, b) => b.score.total - a.score.total)
 
     // Classify components for top candidates
-    const vmFunctions = candidates.length > 0
-      ? classifyVMComponents(
-          candidates.map(c => {
-            const fn = functions.find(f => f.name === c.function)!
-            return fn
-          })
-        )
-      : []
+    const vmFunctions =
+      candidates.length > 0
+        ? classifyVMComponents(
+            candidates.map((c) => {
+              const fn = functions.find((f) => f.name === c.function)
+              return fn
+            })
+          )
+        : []
 
     const result = {
       vm_detected: candidates.length > 0 && candidates[0].score.total >= 60,
@@ -134,8 +132,12 @@ export function createVmDetectHandler(
     const artifacts: ArtifactRef[] = []
     try {
       const ref = await persistStaticAnalysisJsonArtifact(
-        workspaceManager, database, input.sample_id,
-        'vm_detection', 'vm_detect_result', result
+        workspaceManager,
+        database,
+        input.sample_id,
+        'vm_detection',
+        'vm_detect_result',
+        result
       )
       artifacts.push(ref)
     } catch {

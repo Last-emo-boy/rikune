@@ -56,10 +56,9 @@ export function buildDeferredToolResponse(input: DeferredToolResponseInput): Wor
         input.summary ||
         `${input.tool} was deferred to the background queue because the requested mode is too expensive for synchronous MCP execution.`,
       recommended_next_tools: input.nextTools || ['task.status'],
-      next_actions:
-        input.nextActions || [
-          'Poll task.status using the returned job_id instead of repeating the same heavy tool call immediately.',
-        ],
+      next_actions: input.nextActions || [
+        'Poll task.status using the returned job_id instead of repeating the same heavy tool call immediately.',
+      ],
       ...(input.metadata ? { metadata: input.metadata } : {}),
     },
     warnings: [

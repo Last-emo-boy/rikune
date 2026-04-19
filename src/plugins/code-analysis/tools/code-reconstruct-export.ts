@@ -27,7 +27,10 @@ import {
 } from '../../../worker/decompiler-worker.js'
 import { findBestGhidraAnalysis } from '../../../ghidra/ghidra-analysis-status.js'
 import { ghidraConfig } from '../../../ghidra/ghidra-config.js'
-import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../../../artifacts/dynamic-trace.js'
+import {
+  loadDynamicTraceEvidence,
+  type DynamicTraceSummary,
+} from '../../../artifacts/dynamic-trace.js'
 import { getPackageRoot } from '../../../runtime-paths.js'
 import {
   correlateFunctionWithRuntimeEvidence,
@@ -55,116 +58,134 @@ const TOOL_NAME = 'code.reconstruct.export'
 const TOOL_VERSION = '0.2.15'
 const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
-export const CodeReconstructExportInputSchema = z.object({
-  sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  topk: z
-    .number()
-    .int()
-    .min(1)
-    .max(40)
-    .default(12)
-    .describe('How many high-value functions to include for module regrouping'),
-  module_limit: z
-    .number()
-    .int()
-    .min(1)
-    .max(12)
-    .default(6)
-    .describe('Maximum module count in exported skeleton'),
-  min_module_size: z
-    .number()
-    .int()
-    .min(1)
-    .max(20)
-    .default(2)
-    .describe('Modules with fewer functions than this threshold are merged into core'),
-  include_imports: z
-    .boolean()
-    .default(true)
-    .describe('Use import features for module hints'),
-  include_strings: z
-    .boolean()
-    .default(true)
-    .describe('Use high-value string clusters for module hints'),
-  export_name: z
-    .string()
-    .min(1)
-    .max(64)
-    .optional()
-    .describe('Optional export folder name; default auto-generated'),
-  validate_build: z
-    .boolean()
-    .default(true)
-    .describe('Compile the exported C skeleton with clang when available'),
-  run_harness: z
-    .boolean()
-    .default(true)
-    .describe('Execute reconstruct_harness after a successful build validation'),
-  compiler_path: z
-    .string()
-    .min(1)
-    .max(260)
-    .optional()
-    .describe('Optional explicit clang compiler path'),
-  build_timeout_ms: z
-    .number()
-    .int()
-    .min(5000)
-    .max(300000)
-    .default(60000)
-    .describe('Timeout for clang build validation in milliseconds'),
-  run_timeout_ms: z
-    .number()
-    .int()
-    .min(5000)
-    .max(300000)
-    .default(30000)
-    .describe('Timeout for reconstruct_harness execution in milliseconds'),
-  evidence_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('all')
-    .describe('Runtime evidence scope: all artifacts, only the latest artifact window, or a specific session selector'),
-  evidence_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
-  semantic_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('all')
-    .describe('Semantic review artifact scope: all artifacts, only the latest semantic artifact window, or a specific semantic review session'),
-  semantic_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional semantic review session selector used when semantic_scope=session or to narrow all/latest results'),
-  role_target: z
-    .string()
-    .min(1)
-    .max(64)
-    .optional()
-    .describe('Optional high-level binary role hint from workflow preflight, such as native_rust_executable, dll_library, or com_server'),
-  role_focus_areas: z
-    .array(z.string().min(1).max(96))
-    .max(16)
-    .default([])
-    .describe('Optional role-aware focus areas that bias module grouping and rewrite prioritization'),
-  role_priority_order: z
-    .array(z.string().min(1).max(96))
-    .max(24)
-    .default([])
-    .describe('Optional priority-order hints from role-aware planning that influence module ordering and preservation'),
-  reuse_cached: z
-    .boolean()
-    .default(true)
-    .describe('When true, reuse cached export result for identical inputs'),
-})
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
+export const CodeReconstructExportInputSchema = z
+  .object({
+    sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
+    topk: z
+      .number()
+      .int()
+      .min(1)
+      .max(40)
+      .default(12)
+      .describe('How many high-value functions to include for module regrouping'),
+    module_limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(12)
+      .default(6)
+      .describe('Maximum module count in exported skeleton'),
+    min_module_size: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(2)
+      .describe('Modules with fewer functions than this threshold are merged into core'),
+    include_imports: z.boolean().default(true).describe('Use import features for module hints'),
+    include_strings: z
+      .boolean()
+      .default(true)
+      .describe('Use high-value string clusters for module hints'),
+    export_name: z
+      .string()
+      .min(1)
+      .max(64)
+      .optional()
+      .describe('Optional export folder name; default auto-generated'),
+    validate_build: z
+      .boolean()
+      .default(true)
+      .describe('Compile the exported C skeleton with clang when available'),
+    run_harness: z
+      .boolean()
+      .default(true)
+      .describe('Execute reconstruct_harness after a successful build validation'),
+    compiler_path: z
+      .string()
+      .min(1)
+      .max(260)
+      .optional()
+      .describe('Optional explicit clang compiler path'),
+    build_timeout_ms: z
+      .number()
+      .int()
+      .min(5000)
+      .max(300000)
+      .default(60000)
+      .describe('Timeout for clang build validation in milliseconds'),
+    run_timeout_ms: z
+      .number()
+      .int()
+      .min(5000)
+      .max(300000)
+      .default(30000)
+      .describe('Timeout for reconstruct_harness execution in milliseconds'),
+    evidence_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('all')
+      .describe(
+        'Runtime evidence scope: all artifacts, only the latest artifact window, or a specific session selector'
+      ),
+    evidence_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'
+      ),
+    semantic_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('all')
+      .describe(
+        'Semantic review artifact scope: all artifacts, only the latest semantic artifact window, or a specific semantic review session'
+      ),
+    semantic_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional semantic review session selector used when semantic_scope=session or to narrow all/latest results'
+      ),
+    role_target: z
+      .string()
+      .min(1)
+      .max(64)
+      .optional()
+      .describe(
+        'Optional high-level binary role hint from workflow preflight, such as native_rust_executable, dll_library, or com_server'
+      ),
+    role_focus_areas: z
+      .array(z.string().min(1).max(96))
+      .max(16)
+      .default([])
+      .describe(
+        'Optional role-aware focus areas that bias module grouping and rewrite prioritization'
+      ),
+    role_priority_order: z
+      .array(z.string().min(1).max(96))
+      .max(24)
+      .default([])
+      .describe(
+        'Optional priority-order hints from role-aware planning that influence module ordering and preservation'
+      ),
+    reuse_cached: z
+      .boolean()
+      .default(true)
+      .describe('When true, reuse cached export result for identical inputs'),
   })
-  .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
-    message: 'semantic_session_tag is required when semantic_scope=session',
-    path: ['semantic_session_tag'],
-  })
+  .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()),
+    {
+      message: 'semantic_session_tag is required when semantic_scope=session',
+      path: ['semantic_session_tag'],
+    }
+  )
 
 export type CodeReconstructExportInput = z.infer<typeof CodeReconstructExportInputSchema>
 
@@ -652,9 +673,7 @@ function collectRoleFocusMatchesForModule(
     }
   }
   for (const priority of roleOptions.priorityOrder) {
-    if (
-      mapRoleSignalToModules(priority).some((item) => sanitizeModuleName(item) === normalized)
-    ) {
+    if (mapRoleSignalToModules(priority).some((item) => sanitizeModuleName(item) === normalized)) {
       matches.add(`priority:${priority}`)
     }
   }
@@ -784,7 +803,10 @@ function normalizeReadableHint(value: string, maxLength = 96): string {
   return value.replace(/\s+/g, ' ').trim().slice(0, maxLength)
 }
 
-function normalizeExplanationText(value: string | null | undefined, maxLength = 220): string | null {
+function normalizeExplanationText(
+  value: string | null | undefined,
+  maxLength = 220
+): string | null {
   if (!value) {
     return null
   }
@@ -812,7 +834,10 @@ function isReadableTextCandidate(value: string): boolean {
 }
 
 function sanitizeModuleName(name: string): string {
-  const cleaned = name.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '')
+  const cleaned = name
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
   return cleaned.length > 0 ? cleaned : 'core'
 }
 
@@ -870,7 +895,11 @@ function buildRoleAwareModuleOptions(input: CodeReconstructExportInput): RoleAwa
   }
   for (const focus of focusAreas) {
     addRoleModules(preferredModules, mapRoleSignalToModules(focus))
-    if (/class_factory|registration|com_activation|dllmain|lifecycle|host_callback|plugin|callback/.test(focus)) {
+    if (
+      /class_factory|registration|com_activation|dllmain|lifecycle|host_callback|plugin|callback/.test(
+        focus
+      )
+    ) {
       addRoleModules(stickyModules, mapRoleSignalToModules(focus))
     }
   }
@@ -1089,16 +1118,28 @@ function inferModulesFromText(
   }
 
   if (roleOptions) {
-    if (roleOptions.preferredModules.has('dll_lifecycle') && /\b(dll|attach|detach|module handle|dllmain)\b/i.test(lowered)) {
+    if (
+      roleOptions.preferredModules.has('dll_lifecycle') &&
+      /\b(dll|attach|detach|module handle|dllmain)\b/i.test(lowered)
+    ) {
       modules.add('dll_lifecycle')
     }
-    if (roleOptions.preferredModules.has('com_activation') && /\b(class factory|registerserver|clsid|progid|activation)\b/i.test(lowered)) {
+    if (
+      roleOptions.preferredModules.has('com_activation') &&
+      /\b(class factory|registerserver|clsid|progid|activation)\b/i.test(lowered)
+    ) {
       modules.add('com_activation')
     }
-    if (roleOptions.preferredModules.has('export_dispatch') && /\b(dispatch|export|command|invoke)\b/i.test(lowered)) {
+    if (
+      roleOptions.preferredModules.has('export_dispatch') &&
+      /\b(dispatch|export|command|invoke)\b/i.test(lowered)
+    ) {
       modules.add('export_dispatch')
     }
-    if (roleOptions.preferredModules.has('callback_surface') && /\b(callback|plugin|notify|hook|host)\b/i.test(lowered)) {
+    if (
+      roleOptions.preferredModules.has('callback_surface') &&
+      /\b(callback|plugin|notify|hook|host)\b/i.test(lowered)
+    ) {
       modules.add('callback_surface')
     }
   }
@@ -1146,7 +1187,11 @@ function detectModuleByNameOrReasons(
   ) {
     return 'callback_surface'
   }
-  if (/export dispatch|dispatch table|invokecommand|handlecommand|executecommand|runcommand|forwarded export/.test(lowered)) {
+  if (
+    /export dispatch|dispatch table|invokecommand|handlecommand|executecommand|runcommand|forwarded export/.test(
+      lowered
+    )
+  ) {
     return 'export_dispatch'
   }
   if (/socket|http|internet|dns|connect|send|recv/.test(lowered)) {
@@ -1177,13 +1222,22 @@ function detectModuleByNameOrReasons(
   if (roleOptions?.preferredModules.has('dll_lifecycle') && /\bdll\b/.test(lowered)) {
     return 'dll_lifecycle'
   }
-  if (roleOptions?.preferredModules.has('com_activation') && /\b(class factory|registration|activation)\b/.test(lowered)) {
+  if (
+    roleOptions?.preferredModules.has('com_activation') &&
+    /\b(class factory|registration|activation)\b/.test(lowered)
+  ) {
     return 'com_activation'
   }
-  if (roleOptions?.preferredModules.has('export_dispatch') && /\b(dispatch|export|command)\b/.test(lowered)) {
+  if (
+    roleOptions?.preferredModules.has('export_dispatch') &&
+    /\b(dispatch|export|command)\b/.test(lowered)
+  ) {
     return 'export_dispatch'
   }
-  if (roleOptions?.preferredModules.has('callback_surface') && /\b(callback|plugin|host)\b/.test(lowered)) {
+  if (
+    roleOptions?.preferredModules.has('callback_surface') &&
+    /\b(callback|plugin|host)\b/.test(lowered)
+  ) {
     return 'callback_surface'
   }
 
@@ -1259,7 +1313,11 @@ function scoreStringQuery(text: string, categories: string[]): number {
   if (categories.includes('network') || categories.includes('url')) {
     score += 2
   }
-  if (/\b(pack(er)? detection|protection|entropy|akasha|auto recon|recon|WriteProcessMemory|SetThreadContext)\b/i.test(text)) {
+  if (
+    /\b(pack(er)? detection|protection|entropy|akasha|auto recon|recon|WriteProcessMemory|SetThreadContext)\b/i.test(
+      text
+    )
+  ) {
     score += 5
   }
   score += Math.min(Math.floor(text.length / 16), 3)
@@ -1396,10 +1454,7 @@ function enrichFunctionsWithRuntimeContext(
           .split(/\r?\n/)
           .filter((line) => line.startsWith('// strings:'))
           .map((line) => line.replace(/^\/\/ strings:/, '').trim()),
-        callTargets: [
-          ...(func.call_context?.callers || []),
-          ...(func.call_context?.callees || []),
-        ],
+        callTargets: [...(func.call_context?.callers || []), ...(func.call_context?.callees || [])],
       },
       dynamicEvidence
     )
@@ -1423,7 +1478,10 @@ function enrichFunctionsWithRuntimeContext(
           ...(func.runtime_context.corroborated_stages || []),
           ...(runtimeContext.corroborated_stages || []),
         ]).slice(0, 6),
-        notes: dedupe([...(func.runtime_context.notes || []), ...(runtimeContext.notes || [])]).slice(0, 6),
+        notes: dedupe([
+          ...(func.runtime_context.notes || []),
+          ...(runtimeContext.notes || []),
+        ]).slice(0, 6),
         confidence: Math.max(
           Number(func.runtime_context.confidence || 0),
           Number(runtimeContext.confidence || 0)
@@ -1520,8 +1578,8 @@ function chooseModuleForFunctionWithScoring(
     func.semantic_summary || '',
     func.source_like_snippet,
     ...(func.rank_reasons || []),
-    ...((func.call_context?.callers || []).slice(0, 3)),
-    ...((func.call_context?.callees || []).slice(0, 5)),
+    ...(func.call_context?.callers || []).slice(0, 3),
+    ...(func.call_context?.callees || []).slice(0, 5),
   ].join(' ')
 
   for (const module of inferModulesFromText(textCorpus, [], roleOptions)) {
@@ -1569,7 +1627,9 @@ function chooseModuleForFunctionWithScoring(
         }
       }
     }
-    for (const module of modulesSuggestedByRuntimeStages(runtimeContext.corroborated_stages || [])) {
+    for (const module of modulesSuggestedByRuntimeStages(
+      runtimeContext.corroborated_stages || []
+    )) {
       addScore(module, 5)
     }
     for (const module of runtimeContext.suggested_modules || []) {
@@ -1604,10 +1664,16 @@ function chooseModuleForFunctionWithScoring(
       if (/file|container/i.test(protection)) {
         addScore('file_ops', 1, protection, stringHints)
       }
-      if (/image|r-x|read/i.test(protection) && roleOptions?.preferredModules.has('export_dispatch')) {
+      if (
+        /image|r-x|read/i.test(protection) &&
+        roleOptions?.preferredModules.has('export_dispatch')
+      ) {
         addScore('export_dispatch', 2, protection, stringHints)
       }
-      if (/image|r-x|read/i.test(protection) && roleOptions?.preferredModules.has('dll_lifecycle')) {
+      if (
+        /image|r-x|read/i.test(protection) &&
+        roleOptions?.preferredModules.has('dll_lifecycle')
+      ) {
         addScore('dll_lifecycle', 2, protection, stringHints)
       }
     }
@@ -1621,7 +1687,10 @@ function chooseModuleForFunctionWithScoring(
       if (/plugin|host|extension|addin/i.test(owner)) {
         addScore('callback_surface', 3, owner, stringHints)
       }
-      if (/\.dll$|\.ocx$|\.cpl$/i.test(owner) && roleOptions?.preferredModules.has('dll_lifecycle')) {
+      if (
+        /\.dll$|\.ocx$|\.cpl$/i.test(owner) &&
+        roleOptions?.preferredModules.has('dll_lifecycle')
+      ) {
         addScore('dll_lifecycle', 2, owner, stringHints)
       }
     }
@@ -1655,7 +1724,9 @@ function chooseModuleForFunctionWithScoring(
     }
     if (
       roleOptions.preferredModules.has('com_activation') &&
-      /\b(class factory|dllgetclassobject|registerserver|activation|clsid|progid)\b/i.test(textCorpus)
+      /\b(class factory|dllgetclassobject|registerserver|activation|clsid|progid)\b/i.test(
+        textCorpus
+      )
     ) {
       addScore('com_activation', 4)
     }
@@ -1719,7 +1790,7 @@ function regroupModules(
         runtimeNotes: new Set<string>(),
       })
     }
-    const bucket = moduleMap.get(moduleName)!
+    const bucket = moduleMap.get(moduleName)
     bucket.functions.push(func)
     for (const hint of decision.importHints) {
       bucket.importHints.add(hint)
@@ -1886,7 +1957,10 @@ const RESERVED_C_WRAPPER_NAMES = new Set([
   'free',
 ])
 
-function deriveRewriteEntryNames(func: ReconstructedFunction, module: ModuleBucket): RewriteEntryNames {
+function deriveRewriteEntryNames(
+  func: ReconstructedFunction,
+  module: ModuleBucket
+): RewriteEntryNames {
   const originalBaseName = sanitizeSymbolForHeader(func.function)
   const originalName = RESERVED_C_WRAPPER_NAMES.has(originalBaseName.toLowerCase())
     ? `${sanitizeModuleName(module.name)}_${originalBaseName}_wrapper`
@@ -1926,7 +2000,12 @@ function isCliNoiseCandidate(value: string): boolean {
     return true
   }
   const slashCount = (value.match(/[\\/]/g) || []).length
-  return slashCount >= 6 && !/\b(akasha|packer|protector|scan|detect|inject|dump|cmd\.exe|writeprocessmemory)\b/i.test(value)
+  return (
+    slashCount >= 6 &&
+    !/\b(akasha|packer|protector|scan|detect|inject|dump|cmd\.exe|writeprocessmemory)\b/i.test(
+      value
+    )
+  )
 }
 
 function normalizeCliFragment(value: string, maxLength = 160): string {
@@ -1963,7 +2042,9 @@ function expandCliFragments(value: string): string[] {
     fragments.push(...optionExpanded)
   }
 
-  return dedupe(fragments).filter((value) => isReadableTextCandidate(value) && !isCliNoiseCandidate(value))
+  return dedupe(fragments).filter(
+    (value) => isReadableTextCandidate(value) && !isCliNoiseCandidate(value)
+  )
 }
 
 function scoreCliBannerCandidate(value: string, module?: ModuleBucket): number {
@@ -1976,7 +2057,11 @@ function scoreCliBannerCandidate(value: string, module?: ModuleBucket): number {
   if (/\b(akasha|auto recon)\b/i.test(normalized)) {
     score += 4
   }
-  if (/\b(scan|inject|dump|recon|detect|list|enum|query|spawn|resume|suspend|probe|unpack)\b/i.test(normalized)) {
+  if (
+    /\b(scan|inject|dump|recon|detect|list|enum|query|spawn|resume|suspend|probe|unpack)\b/i.test(
+      normalized
+    )
+  ) {
     score += 4
   }
   if (normalized.length >= 12 && normalized.length <= 96) {
@@ -1996,7 +2081,11 @@ function scoreCliBannerCandidate(value: string, module?: ModuleBucket): number {
   if (module) {
     const lowered = normalized.toLowerCase()
     if (module.name === 'packer_analysis') {
-      if (/\b(packer|protector|section|entropy|entry point|upx|vmprotect|themida|aspack)\b/i.test(lowered)) {
+      if (
+        /\b(packer|protector|section|entropy|entry point|upx|vmprotect|themida|aspack)\b/i.test(
+          lowered
+        )
+      ) {
         score += 6
       }
       if (/\b(writeprocessmemory|openprocess|createprocess|cmd\.exe)\b/i.test(lowered)) {
@@ -2004,7 +2093,11 @@ function scoreCliBannerCandidate(value: string, module?: ModuleBucket): number {
       }
     }
     if (module.name === 'process_ops') {
-      if (/\b(writeprocessmemory|readprocessmemory|openprocess|createprocess|setthreadcontext|resumethread|cmd\.exe)\b/i.test(lowered)) {
+      if (
+        /\b(writeprocessmemory|readprocessmemory|openprocess|createprocess|setthreadcontext|resumethread|cmd\.exe)\b/i.test(
+          lowered
+        )
+      ) {
         score += 6
       }
       if (/\b(packer|protector|entry point|entropy)\b/i.test(lowered)) {
@@ -2029,7 +2122,13 @@ function scoreCliCommandForModule(command: CliCommandHint, module: ModuleBucket)
     }
   }
   if (module.name === 'process_ops') {
-    if (verb === 'inject' || verb === 'spawn' || verb === 'resume' || verb === 'suspend' || verb === 'query') {
+    if (
+      verb === 'inject' ||
+      verb === 'spawn' ||
+      verb === 'resume' ||
+      verb === 'suspend' ||
+      verb === 'query'
+    ) {
       score += 10
     }
     if (verb === 'scan' || verb === 'detect') {
@@ -2037,7 +2136,13 @@ function scoreCliCommandForModule(command: CliCommandHint, module: ModuleBucket)
     }
   }
   if (module.name === 'file_ops') {
-    if (verb === 'dump' || verb === 'read' || verb === 'write' || verb === 'copy' || verb === 'delete') {
+    if (
+      verb === 'dump' ||
+      verb === 'read' ||
+      verb === 'write' ||
+      verb === 'copy' ||
+      verb === 'delete'
+    ) {
       score += 8
     }
   }
@@ -2100,7 +2205,8 @@ function deriveSemanticCliDefaults(module: ModuleBucket): SemanticCliDefaults {
   if (module.name === 'dll_lifecycle') {
     return {
       toolName: 'DLL Lifecycle Surface',
-      helpBanner: 'Review DllMain attach/detach behavior, library initialization, and module-lifetime side effects.',
+      helpBanner:
+        'Review DllMain attach/detach behavior, library initialization, and module-lifetime side effects.',
     }
   }
   if (module.name === 'com_activation') {
@@ -2112,13 +2218,15 @@ function deriveSemanticCliDefaults(module: ModuleBucket): SemanticCliDefaults {
   if (module.name === 'export_dispatch') {
     return {
       toolName: 'Export Dispatch Surface',
-      helpBanner: 'Recover exported command handlers, dispatch tables, and forwarded-export routing.',
+      helpBanner:
+        'Recover exported command handlers, dispatch tables, and forwarded-export routing.',
     }
   }
   if (module.name === 'callback_surface') {
     return {
       toolName: 'Host Callback Surface',
-      helpBanner: 'Recover host-driven callbacks, plugin entrypoints, and extension notification paths.',
+      helpBanner:
+        'Recover host-driven callbacks, plugin entrypoints, and extension notification paths.',
     }
   }
   if (module.name === 'packer_analysis' || features.hasPackerScan) {
@@ -2130,7 +2238,8 @@ function deriveSemanticCliDefaults(module: ModuleBucket): SemanticCliDefaults {
   if (module.name === 'process_ops' || features.hasProcessInjection || features.hasProcessSpawn) {
     return {
       toolName: 'Remote Process Operation Dispatcher',
-      helpBanner: 'Prepare remote-process access, dynamic API resolution, and execution-transfer operations.',
+      helpBanner:
+        'Prepare remote-process access, dynamic API resolution, and execution-transfer operations.',
     }
   }
   if (
@@ -2262,14 +2371,20 @@ function collectModuleCliModel(module: ModuleBucket): CliHintModel | null {
   const bannerCandidate =
     corpus
       .slice()
-      .sort((left, right) => scoreCliBannerCandidate(right, module) - scoreCliBannerCandidate(left, module))[0] ||
+      .sort(
+        (left, right) =>
+          scoreCliBannerCandidate(right, module) - scoreCliBannerCandidate(left, module)
+      )[0] ||
     corpus.find((value) => value.length >= 24) ||
     corpus[0]
 
   const toolNameMatch =
     /\b(akasha(?:\s+auto\s+recon)?|auto recon|packer(?:\/protector)? detection|protector detection)\b/i.exec(
       rawCorpus.join(' ')
-    ) || /\b(akasha(?:\s+auto\s+recon)?|auto recon|packer(?:\/protector)? detection|protector detection)\b/i.exec(corpus.join(' '))
+    ) ||
+    /\b(akasha(?:\s+auto\s+recon)?|auto recon|packer(?:\/protector)? detection|protector detection)\b/i.exec(
+      corpus.join(' ')
+    )
   const rawToolName = toolNameMatch ? toolNameMatch[1] : sanitizeModuleName(module.name)
   const commands: CliCommandHint[] = []
   const seen = new Set<string>()
@@ -2297,7 +2412,8 @@ function collectModuleCliModel(module: ModuleBucket): CliHintModel | null {
       pushCommand(usageMatch[1], item)
     }
 
-    for (const token of item.match(/(?:^|\s)(--?[a-z0-9][a-z0-9_-]*|\/[a-z0-9][a-z0-9_-]*)\b/gi) || []) {
+    for (const token of item.match(/(?:^|\s)(--?[a-z0-9][a-z0-9_-]*|\/[a-z0-9][a-z0-9_-]*)\b/gi) ||
+      []) {
       pushCommand(token.trim(), item)
     }
 
@@ -2308,14 +2424,19 @@ function collectModuleCliModel(module: ModuleBucket): CliHintModel | null {
       continue
     }
 
-    const embedded = item.match(/\b(scan|inject|dump|recon|detect|list|enum|query|spawn|resume|suspend|probe|unpack)\b/i)
+    const embedded = item.match(
+      /\b(scan|inject|dump|recon|detect|list|enum|query|spawn|resume|suspend|probe|unpack)\b/i
+    )
     if (embedded) {
       pushCommand(embedded[1], item)
     }
   }
 
   synthesizeModuleCliCommands(module, bannerCandidate, pushCommand)
-  commands.sort((left, right) => scoreCliCommandForModule(right, module) - scoreCliCommandForModule(left, module))
+  commands.sort(
+    (left, right) =>
+      scoreCliCommandForModule(right, module) - scoreCliCommandForModule(left, module)
+  )
   const finalToolName = shouldPreferSemanticToolName(rawToolName, module)
     ? semanticDefaults.toolName
     : rawToolName
@@ -2422,7 +2543,10 @@ function deriveHarnessSeedText(func: ReconstructedFunction, module: ModuleBucket
   const cliModel = collectModuleCliModel(module)
   const firstCommand = cliModel?.commands[0]
   if (firstCommand) {
-    return normalizeReadableHint(`${cliModel?.toolName || sanitizeModuleName(module.name)} ${firstCommand.verb}`, 120)
+    return normalizeReadableHint(
+      `${cliModel?.toolName || sanitizeModuleName(module.name)} ${firstCommand.verb}`,
+      120
+    )
   }
 
   const stringHint = Array.from(module.stringHints)
@@ -2452,10 +2576,18 @@ function buildRecoveredContractHints(func: ReconstructedFunction, module: Module
     'outputs captures the stage and status exposed by the reconstructed skeleton.',
   ]
   if (features.hasProcessInjection || features.hasProcessSpawn) {
-    hints.push('inputs.string_args[0] seeds remote_request.target_selector and target routing hints.')
-    hints.push('inputs.string_args[1] seeds remote_request.launch_command_line when a recovered spawn path is present.')
-    hints.push('inputs.pointer_args[0] is treated as remote_request.payload_view for execution-transfer scaffolding.')
-    hints.push('inputs.handle_args[0..1] seed remote_request.process_handle and remote_request.thread_handle placeholders.')
+    hints.push(
+      'inputs.string_args[0] seeds remote_request.target_selector and target routing hints.'
+    )
+    hints.push(
+      'inputs.string_args[1] seeds remote_request.launch_command_line when a recovered spawn path is present.'
+    )
+    hints.push(
+      'inputs.pointer_args[0] is treated as remote_request.payload_view for execution-transfer scaffolding.'
+    )
+    hints.push(
+      'inputs.handle_args[0..1] seed remote_request.process_handle and remote_request.thread_handle placeholders.'
+    )
   } else if (features.hasFileApiTable) {
     hints.push('inputs.string_args[0] is treated as a path or file-operation hint.')
   } else if (features.hasRegistryApiTable) {
@@ -2468,14 +2600,21 @@ function buildRecoveredContractHints(func: ReconstructedFunction, module: Module
       `inputs.string_args[0] is treated as a recovered command verb or CLI token (${recoveredVerbs.join(', ')}).`
     )
   } else if (cliModel) {
-    hints.push('inputs.string_args[0] is treated as a command verb or CLI token recovered from help text.')
+    hints.push(
+      'inputs.string_args[0] is treated as a command verb or CLI token recovered from help text.'
+    )
   } else {
-    hints.push('inputs.scalar_args[0] is treated as a generic mode or flag bitfield until stronger typing exists.')
+    hints.push(
+      'inputs.scalar_args[0] is treated as a generic mode or flag bitfield until stronger typing exists.'
+    )
   }
   return hints.slice(0, 4)
 }
 
-function deriveHarnessExpectedStage(func: ReconstructedFunction, module: ModuleBucket): string | null {
+function deriveHarnessExpectedStage(
+  func: ReconstructedFunction,
+  module: ModuleBucket
+): string | null {
   const features = collectRewriteFeatures(func, module)
   if (features.hasProcessInjection || features.hasProcessSpawn) {
     return 'AK_STAGE_PREPARE_REMOTE_PROCESS_ACCESS'
@@ -2559,12 +2698,22 @@ function buildSupportHeaderContent(modules: ModuleBucket[]): string {
   lines.push('  uintptr_t handle_args[4];')
   lines.push('} AkSemanticInputs;')
   lines.push('')
-  lines.push('/* Semantic input helpers keep rewrite code readable while preserving a compact ABI. */')
+  lines.push(
+    '/* Semantic input helpers keep rewrite code readable while preserving a compact ABI. */'
+  )
   lines.push('#define AK_INPUT_PRIMARY_TEXT(inputs) ((inputs) != 0 ? (inputs)->string_args[0] : 0)')
-  lines.push('#define AK_INPUT_SECONDARY_TEXT(inputs) ((inputs) != 0 ? (inputs)->string_args[1] : 0)')
-  lines.push('#define AK_INPUT_PRIMARY_POINTER(inputs) ((inputs) != 0 ? (inputs)->pointer_args[0] : 0)')
-  lines.push('#define AK_INPUT_PRIMARY_HANDLE(inputs) ((inputs) != 0 ? (inputs)->handle_args[0] : 0)')
-  lines.push('#define AK_INPUT_SECONDARY_HANDLE(inputs) ((inputs) != 0 ? (inputs)->handle_args[1] : 0)')
+  lines.push(
+    '#define AK_INPUT_SECONDARY_TEXT(inputs) ((inputs) != 0 ? (inputs)->string_args[1] : 0)'
+  )
+  lines.push(
+    '#define AK_INPUT_PRIMARY_POINTER(inputs) ((inputs) != 0 ? (inputs)->pointer_args[0] : 0)'
+  )
+  lines.push(
+    '#define AK_INPUT_PRIMARY_HANDLE(inputs) ((inputs) != 0 ? (inputs)->handle_args[0] : 0)'
+  )
+  lines.push(
+    '#define AK_INPUT_SECONDARY_HANDLE(inputs) ((inputs) != 0 ? (inputs)->handle_args[1] : 0)'
+  )
   lines.push('#define AK_INPUT_PRIMARY_MODE(inputs) ((inputs) != 0 ? (inputs)->scalar_args[0] : 0)')
   lines.push('')
   lines.push('/* Stage labels are centralized so the rewrite reads like a named state machine. */')
@@ -2640,11 +2789,15 @@ function buildSupportHeaderContent(modules: ModuleBucket[]): string {
   lines.push('  AkPackerScanResult result;')
   lines.push('} AkPackerScanSession;')
   lines.push('')
-  lines.push('static inline AkRemoteProcessRequest ak_build_remote_process_request(const AkSemanticInputs *inputs)')
+  lines.push(
+    'static inline AkRemoteProcessRequest ak_build_remote_process_request(const AkSemanticInputs *inputs)'
+  )
   lines.push('{')
   lines.push('  AkRemoteProcessRequest request = {0};')
   lines.push('  request.target_selector = AK_INPUT_PRIMARY_TEXT(inputs);')
-  lines.push('  request.launch_command_line = AK_INPUT_SECONDARY_TEXT(inputs) != 0 ? AK_INPUT_SECONDARY_TEXT(inputs) : AK_INPUT_PRIMARY_TEXT(inputs);')
+  lines.push(
+    '  request.launch_command_line = AK_INPUT_SECONDARY_TEXT(inputs) != 0 ? AK_INPUT_SECONDARY_TEXT(inputs) : AK_INPUT_PRIMARY_TEXT(inputs);'
+  )
   lines.push('  request.payload_view = AK_INPUT_PRIMARY_POINTER(inputs);')
   lines.push('  request.process_handle = AK_INPUT_PRIMARY_HANDLE(inputs);')
   lines.push('  request.thread_handle = AK_INPUT_SECONDARY_HANDLE(inputs);')
@@ -2658,7 +2811,9 @@ function buildSupportHeaderContent(modules: ModuleBucket[]): string {
   lines.push('  return result;')
   lines.push('}')
   lines.push('')
-  lines.push('static inline AkProcessOperationSession ak_start_process_session(const AkSemanticInputs *inputs)')
+  lines.push(
+    'static inline AkProcessOperationSession ak_start_process_session(const AkSemanticInputs *inputs)'
+  )
   lines.push('{')
   lines.push('  AkProcessOperationSession session = {0};')
   lines.push('  session.remote_request = ak_build_remote_process_request(inputs);')
@@ -2666,7 +2821,9 @@ function buildSupportHeaderContent(modules: ModuleBucket[]): string {
   lines.push('  return session;')
   lines.push('}')
   lines.push('')
-  lines.push('static inline void ak_publish_process_result(AkSemanticOutputs *outputs, const AkExecutionTransferResult *result)')
+  lines.push(
+    'static inline void ak_publish_process_result(AkSemanticOutputs *outputs, const AkExecutionTransferResult *result)'
+  )
   lines.push('{')
   lines.push('  if (outputs == 0 || result == 0) {')
   lines.push('    return;')
@@ -2677,7 +2834,9 @@ function buildSupportHeaderContent(modules: ModuleBucket[]): string {
   lines.push('  outputs->observed_stage = result->stage_name;')
   lines.push('}')
   lines.push('')
-  lines.push('static inline AkCapabilityDispatchRequest ak_build_capability_request(const AkSemanticInputs *inputs)')
+  lines.push(
+    'static inline AkCapabilityDispatchRequest ak_build_capability_request(const AkSemanticInputs *inputs)'
+  )
   lines.push('{')
   lines.push('  AkCapabilityDispatchRequest request = {0};')
   lines.push('  request.primary_hint = AK_INPUT_PRIMARY_TEXT(inputs);')
@@ -2692,7 +2851,9 @@ function buildSupportHeaderContent(modules: ModuleBucket[]): string {
   lines.push('  return result;')
   lines.push('}')
   lines.push('')
-  lines.push('static inline AkCapabilityDispatchPlan ak_start_capability_plan(const AkSemanticInputs *inputs)')
+  lines.push(
+    'static inline AkCapabilityDispatchPlan ak_start_capability_plan(const AkSemanticInputs *inputs)'
+  )
   lines.push('{')
   lines.push('  AkCapabilityDispatchPlan plan = {0};')
   lines.push('  plan.request = ak_build_capability_request(inputs);')
@@ -2700,7 +2861,9 @@ function buildSupportHeaderContent(modules: ModuleBucket[]): string {
   lines.push('  return plan;')
   lines.push('}')
   lines.push('')
-  lines.push('static inline void ak_publish_capability_result(AkSemanticOutputs *outputs, const AkCapabilityDispatchResult *result)')
+  lines.push(
+    'static inline void ak_publish_capability_result(AkSemanticOutputs *outputs, const AkCapabilityDispatchResult *result)'
+  )
   lines.push('{')
   lines.push('  if (outputs == 0 || result == 0) {')
   lines.push('    return;')
@@ -2711,7 +2874,9 @@ function buildSupportHeaderContent(modules: ModuleBucket[]): string {
   lines.push('  outputs->observed_stage = result->stage_name;')
   lines.push('}')
   lines.push('')
-  lines.push('static inline AkPackerScanRequest ak_build_packer_request(const AkSemanticInputs *inputs)')
+  lines.push(
+    'static inline AkPackerScanRequest ak_build_packer_request(const AkSemanticInputs *inputs)'
+  )
   lines.push('{')
   lines.push('  AkPackerScanRequest request = {0};')
   lines.push('  request.command_hint = AK_INPUT_PRIMARY_TEXT(inputs);')
@@ -2726,7 +2891,9 @@ function buildSupportHeaderContent(modules: ModuleBucket[]): string {
   lines.push('  return result;')
   lines.push('}')
   lines.push('')
-  lines.push('static inline AkPackerScanSession ak_start_packer_session(const AkSemanticInputs *inputs)')
+  lines.push(
+    'static inline AkPackerScanSession ak_start_packer_session(const AkSemanticInputs *inputs)'
+  )
   lines.push('{')
   lines.push('  AkPackerScanSession session = {0};')
   lines.push('  session.request = ak_build_packer_request(inputs);')
@@ -2734,7 +2901,9 @@ function buildSupportHeaderContent(modules: ModuleBucket[]): string {
   lines.push('  return session;')
   lines.push('}')
   lines.push('')
-  lines.push('static inline void ak_publish_packer_result(AkSemanticOutputs *outputs, const AkPackerScanResult *result)')
+  lines.push(
+    'static inline void ak_publish_packer_result(AkSemanticOutputs *outputs, const AkPackerScanResult *result)'
+  )
   lines.push('{')
   lines.push('  if (outputs == 0 || result == 0) {')
   lines.push('    return;')
@@ -2781,7 +2950,9 @@ function buildInterfaceContent(module: ModuleBucket): string {
       `int ${names.implementationName}(AkRuntimeContext *runtime_ctx, const AkSemanticInputs *inputs, AkSemanticOutputs *outputs); /* semantic_alias=${names.semanticAlias} */`
     )
     lines.push(
-      `/* contract: ${buildRecoveredContractHints(func, module).map((item) => normalizeReadableHint(item, 96)).join(' | ')} */`
+      `/* contract: ${buildRecoveredContractHints(func, module)
+        .map((item) => normalizeReadableHint(item, 96))
+        .join(' | ')} */`
     )
     lines.push('')
   }
@@ -2823,17 +2994,15 @@ function summarizeRelationshipEntries(
       }>
     | undefined
 ): string {
-  const labels = (entries || [])
-    .slice(0, 4)
-    .map((entry) => {
-      const details = [
-        ...(entry.relation_types || []),
-        ...(entry.reference_types || []),
-        entry.resolved_by ? `resolved_by=${entry.resolved_by}` : '',
-        entry.is_exact === false ? 'heuristic' : '',
-      ].filter((item) => item.length > 0)
-      return details.length > 0 ? `${entry.target} [${details.join('; ')}]` : entry.target
-    })
+  const labels = (entries || []).slice(0, 4).map((entry) => {
+    const details = [
+      ...(entry.relation_types || []),
+      ...(entry.reference_types || []),
+      entry.resolved_by ? `resolved_by=${entry.resolved_by}` : '',
+      entry.is_exact === false ? 'heuristic' : '',
+    ].filter((item) => item.length > 0)
+    return details.length > 0 ? `${entry.target} [${details.join('; ')}]` : entry.target
+  })
   return labels.length > 0 ? labels.join(', ') : 'none'
 }
 
@@ -2874,7 +3043,10 @@ function summarizeRewriteStructInference(func: ReconstructedFunction): string {
   }
   return structs
     .slice(0, 4)
-    .map((item) => `${item.semantic_name}${item.rewrite_type_name ? `=>${item.rewrite_type_name}` : ''}`)
+    .map(
+      (item) =>
+        `${item.semantic_name}${item.rewrite_type_name ? `=>${item.rewrite_type_name}` : ''}`
+    )
     .join('; ')
 }
 
@@ -2892,7 +3064,10 @@ interface RewriteFeatures {
   hasBodyReferenceHints: boolean
 }
 
-function collectRewriteFeatures(func: ReconstructedFunction, module: ModuleBucket): RewriteFeatures {
+function collectRewriteFeatures(
+  func: ReconstructedFunction,
+  module: ModuleBucket
+): RewriteFeatures {
   const functionCorpus = [
     func.function,
     func.semantic_summary || '',
@@ -2903,10 +3078,18 @@ function collectRewriteFeatures(func: ReconstructedFunction, module: ModuleBucke
     (func.call_context?.callers || []).join(' '),
     (func.call_context?.callees || []).join(' '),
     (func.call_relationships?.callers || [])
-      .flatMap((item) => [item.target, ...(item.relation_types || []), ...(item.reference_types || [])])
+      .flatMap((item) => [
+        item.target,
+        ...(item.relation_types || []),
+        ...(item.reference_types || []),
+      ])
       .join(' '),
     (func.call_relationships?.callees || [])
-      .flatMap((item) => [item.target, ...(item.relation_types || []), ...(item.reference_types || [])])
+      .flatMap((item) => [
+        item.target,
+        ...(item.relation_types || []),
+        ...(item.reference_types || []),
+      ])
       .join(' '),
   ]
     .join('\n')
@@ -2978,7 +3161,9 @@ function collectRewriteFeatures(func: ReconstructedFunction, module: ModuleBucke
     hasNtQueryInformationProcess,
     hasNtQuerySystemInformation,
     hasCodeIntegrity,
-    hasPackerScan: packerPattern.test(functionCorpus) || (allowModulePackerBias && packerPattern.test(moduleCorpus)),
+    hasPackerScan:
+      packerPattern.test(functionCorpus) ||
+      (allowModulePackerBias && packerPattern.test(moduleCorpus)),
     hasTailJumpHints:
       (func.call_relationships?.callers || []).some((item) =>
         (item.relation_types || []).some((relation) => relation.toLowerCase() === 'tail_jump_hint')
@@ -2988,10 +3173,14 @@ function collectRewriteFeatures(func: ReconstructedFunction, module: ModuleBucke
       ),
     hasBodyReferenceHints:
       (func.call_relationships?.callers || []).some((item) =>
-        (item.relation_types || []).some((relation) => relation.toLowerCase() === 'body_reference_hint')
+        (item.relation_types || []).some(
+          (relation) => relation.toLowerCase() === 'body_reference_hint'
+        )
       ) ||
       (func.call_relationships?.callees || []).some((item) =>
-        (item.relation_types || []).some((relation) => relation.toLowerCase() === 'body_reference_hint')
+        (item.relation_types || []).some(
+          (relation) => relation.toLowerCase() === 'body_reference_hint'
+        )
       ),
   }
 }
@@ -3011,7 +3200,10 @@ function synthesizeModuleCliCommands(
 
   if (hasPackerScan) {
     pushCommand('scan', helpSummary || 'Recovered PE layout and packer/protector scan pipeline.')
-    pushCommand('detect', 'Recovered packer/protector detection flow driven by PE layout and signature hints.')
+    pushCommand(
+      'detect',
+      'Recovered packer/protector detection flow driven by PE layout and signature hints.'
+    )
   }
   if (hasProcessInjection) {
     pushCommand('inject', 'Recovered remote-process memory and thread-context operation pipeline.')
@@ -3020,7 +3212,10 @@ function synthesizeModuleCliCommands(
     pushCommand('spawn', 'Recovered process creation and launch orchestration flow.')
   }
   if (hasFileApiTable) {
-    pushCommand('dump', 'Recovered file capability table suggests dump or file materialization support.')
+    pushCommand(
+      'dump',
+      'Recovered file capability table suggests dump or file materialization support.'
+    )
   }
   if (hasRegistryApiTable) {
     pushCommand(
@@ -3179,7 +3374,9 @@ function buildModuleRewritePrelude(module: ModuleBucket): string[] {
   const lines: string[] = []
 
   if (needsResolvedApiTable || needsProcessProbe || needsPackerHeuristics || cliModel) {
-    lines.push('/* Recovered module hints used to keep this rewrite self-contained and readable. */')
+    lines.push(
+      '/* Recovered module hints used to keep this rewrite self-contained and readable. */'
+    )
     if (needsResolvedApiTable || needsProcessProbe) {
       lines.push(...buildCStringTable('AK_DYNAMIC_API_HINTS', dynamicApiHints))
       lines.push(...buildCStringTable('AK_FILE_API_HINTS', fileApiHints))
@@ -3214,7 +3411,9 @@ function buildModuleRewritePrelude(module: ModuleBucket): string[] {
     lines.push('    return 0;')
     lines.push('  }')
     lines.push('')
-    lines.push('  for (index = 0; index < source_count && copied < destination_capacity; ++index) {')
+    lines.push(
+      '  for (index = 0; index < source_count && copied < destination_capacity; ++index) {'
+    )
     lines.push("    if (source[index] == 0 || source[index][0] == '\\0') {")
     lines.push('      continue;')
     lines.push('    }')
@@ -3327,13 +3526,19 @@ function buildModuleRewritePrelude(module: ModuleBucket): string[] {
     lines.push('  if (runtime_ctx == 0) {')
     lines.push('    return 0;')
     lines.push('  }')
-    lines.push('  if (needs_dynamic_loader && !resolve_dynamic_api_table(&runtime_ctx->dynamic_apis)) {')
+    lines.push(
+      '  if (needs_dynamic_loader && !resolve_dynamic_api_table(&runtime_ctx->dynamic_apis)) {'
+    )
     lines.push('    return 0;')
     lines.push('  }')
-    lines.push('  if (needs_file_capabilities && !resolve_file_api_table(&runtime_ctx->file_apis)) {')
+    lines.push(
+      '  if (needs_file_capabilities && !resolve_file_api_table(&runtime_ctx->file_apis)) {'
+    )
     lines.push('    return 0;')
     lines.push('  }')
-    lines.push('  if (needs_registry_capabilities && !resolve_registry_api_table(&runtime_ctx->registry_apis)) {')
+    lines.push(
+      '  if (needs_registry_capabilities && !resolve_registry_api_table(&runtime_ctx->registry_apis)) {'
+    )
     lines.push('    return 0;')
     lines.push('  }')
     lines.push('  return 1;')
@@ -3358,7 +3563,9 @@ function buildModuleRewritePrelude(module: ModuleBucket): string[] {
       'static const char *ak_select_capability_observation(const AkResolvedApiTable *file_apis, const AkResolvedApiTable *registry_apis)'
     )
     lines.push('{')
-    lines.push('  if (registry_apis != 0 && registry_apis->ready && registry_apis->api_count > 0) {')
+    lines.push(
+      '  if (registry_apis != 0 && registry_apis->ready && registry_apis->api_count > 0) {'
+    )
     lines.push('    return registry_apis->apis[0];')
     lines.push('  }')
     lines.push('  if (file_apis != 0 && file_apis->ready && file_apis->api_count > 0) {')
@@ -3371,7 +3578,9 @@ function buildModuleRewritePrelude(module: ModuleBucket): string[] {
       'static int finalize_capability_dispatch(const AkResolvedApiTable *file_apis, const AkResolvedApiTable *registry_apis)'
     )
     lines.push('{')
-    lines.push('  return ak_select_capability_observation(file_apis, registry_apis) != 0 ? AK_STATUS_OK : AK_STATUS_UNSUPPORTED;')
+    lines.push(
+      '  return ak_select_capability_observation(file_apis, registry_apis) != 0 ? AK_STATUS_OK : AK_STATUS_UNSUPPORTED;'
+    )
     lines.push('}')
     lines.push('')
   }
@@ -3417,7 +3626,9 @@ function buildModuleRewritePrelude(module: ModuleBucket): string[] {
     lines.push('  if (file_apis != 0 && file_apis->ready && file_apis->api_count > 0) {')
     lines.push('    observation = file_apis->apis[0];')
     lines.push('  }')
-    lines.push('  if (observation == 0 && registry_apis != 0 && registry_apis->ready && registry_apis->api_count > 0) {')
+    lines.push(
+      '  if (observation == 0 && registry_apis != 0 && registry_apis->ready && registry_apis->api_count > 0) {'
+    )
     lines.push('    observation = registry_apis->apis[0];')
     lines.push('  }')
     lines.push('  if (observation == 0) {')
@@ -3452,10 +3663,14 @@ function buildModuleRewritePrelude(module: ModuleBucket): string[] {
     lines.push('  if (runtime_ctx == 0) {')
     lines.push('    return 0;')
     lines.push('  }')
-    lines.push('  if (needs_remote_probe && !query_remote_process_snapshot(&runtime_ctx->process_probe)) {')
+    lines.push(
+      '  if (needs_remote_probe && !query_remote_process_snapshot(&runtime_ctx->process_probe)) {'
+    )
     lines.push('    return 0;')
     lines.push('  }')
-    lines.push('  if (needs_code_integrity && !query_code_integrity_state(&runtime_ctx->process_probe)) {')
+    lines.push(
+      '  if (needs_code_integrity && !query_code_integrity_state(&runtime_ctx->process_probe)) {'
+    )
     lines.push('    return 0;')
     lines.push('  }')
     lines.push('  return 1;')
@@ -3522,11 +3737,15 @@ function buildModuleRewritePrelude(module: ModuleBucket): string[] {
     lines.push('    return;')
     lines.push('  }')
     lines.push('  runtime_ctx->last_status = recovered_status;')
-    lines.push('  runtime_ctx->last_status_detail = runtime_ctx->packer_heuristics.entrypoint_signal;')
+    lines.push(
+      '  runtime_ctx->last_status_detail = runtime_ctx->packer_heuristics.entrypoint_signal;'
+    )
     lines.push('  session->result.status_code = recovered_status;')
     lines.push('  session->result.stage_name = AK_STAGE_SCAN_PE_LAYOUT;')
     lines.push('  session->result.detail = runtime_ctx->packer_heuristics.entrypoint_signal;')
-    lines.push('  session->result.heuristic_score = (uint64_t)runtime_ctx->packer_heuristics.score;')
+    lines.push(
+      '  session->result.heuristic_score = (uint64_t)runtime_ctx->packer_heuristics.score;'
+    )
     lines.push('  ak_publish_packer_result(outputs, &session->result);')
     lines.push('}')
     lines.push('')
@@ -3587,12 +3806,20 @@ function buildSemanticRewriteBody(func: ReconstructedFunction, module: ModuleBuc
       lines.push('  AkProcessOperationSession process_session = ak_start_process_session(inputs);')
       lines.push('')
       lines.push('  if (process_session.remote_request.target_selector != 0) {')
-      lines.push('    runtime_ctx->last_status_detail = process_session.remote_request.target_selector;')
+      lines.push(
+        '    runtime_ctx->last_status_detail = process_session.remote_request.target_selector;'
+      )
       lines.push('  }')
-      lines.push('  if (process_session.remote_request.launch_command_line != 0 && runtime_ctx->last_status_detail == 0) {')
-      lines.push('    runtime_ctx->last_status_detail = process_session.remote_request.launch_command_line;')
+      lines.push(
+        '  if (process_session.remote_request.launch_command_line != 0 && runtime_ctx->last_status_detail == 0) {'
+      )
+      lines.push(
+        '    runtime_ctx->last_status_detail = process_session.remote_request.launch_command_line;'
+      )
       lines.push('  }')
-      lines.push('  if (process_session.remote_request.payload_view != 0 && runtime_ctx->last_status_detail == 0) {')
+      lines.push(
+        '  if (process_session.remote_request.payload_view != 0 && runtime_ctx->last_status_detail == 0) {'
+      )
       lines.push('    runtime_ctx->last_status_detail = "payload_view_available";')
       lines.push('  }')
     } else {
@@ -3605,7 +3832,9 @@ function buildSemanticRewriteBody(func: ReconstructedFunction, module: ModuleBuc
     lines.push('')
 
     if (features.hasDynamicResolver) {
-      lines.push('  /* Resolve loader pointers before the capability dispatch touches higher-risk APIs. */')
+      lines.push(
+        '  /* Resolve loader pointers before the capability dispatch touches higher-risk APIs. */'
+      )
       lines.push('')
     }
 
@@ -3662,7 +3891,9 @@ function buildSemanticRewriteBody(func: ReconstructedFunction, module: ModuleBuc
       }
     } else {
       lines.push('  if (runtime_ctx->process_probe.last_observation != 0) {')
-      lines.push('    runtime_ctx->last_status_detail = runtime_ctx->process_probe.last_observation;')
+      lines.push(
+        '    runtime_ctx->last_status_detail = runtime_ctx->process_probe.last_observation;'
+      )
       lines.push('  }')
       if (features.hasRegistryApiTable) {
         lines.push(
@@ -3689,7 +3920,9 @@ function buildSemanticRewriteBody(func: ReconstructedFunction, module: ModuleBuc
     lines.push('  }')
     lines.push('')
     lines.push('  recovered_status = finalize_packer_assessment(&runtime_ctx->packer_heuristics);')
-    lines.push('  ak_finalize_packer_session(runtime_ctx, outputs, &packer_session, recovered_status);')
+    lines.push(
+      '  ak_finalize_packer_session(runtime_ctx, outputs, &packer_session, recovered_status);'
+    )
     return lines
   }
 
@@ -3803,10 +4036,12 @@ function buildAnnotatedRewriteContent(module: ModuleBucket): string {
     )
   }
   lines.push(
-    ` * - prioritized_functions: ${orderedFunctions
-      .slice(0, 3)
-      .map((func) => getValidatedSemanticName(func) || func.function)
-      .join(', ') || 'none'}`
+    ` * - prioritized_functions: ${
+      orderedFunctions
+        .slice(0, 3)
+        .map((func) => getValidatedSemanticName(func) || func.function)
+        .join(', ') || 'none'
+    }`
   )
   lines.push(
     ` * - import_hints: ${Array.from(module.importHints).slice(0, 8).join(', ') || 'none'}`
@@ -3883,7 +4118,9 @@ function buildAnnotatedRewriteContent(module: ModuleBucket): string {
         )
       }
     }
-    lines.push(`  /* inferred_role: ${func.semantic_summary || 'semantic role still being refined'} */`)
+    lines.push(
+      `  /* inferred_role: ${func.semantic_summary || 'semantic role still being refined'} */`
+    )
     lines.push(
       `  /* evidence: confidence=${func.confidence.toFixed(2)} tags=${(func.behavior_tags || []).join(', ') || 'none'} xrefs=${summarizeXrefSignals(func)} */`
     )
@@ -3962,7 +4199,7 @@ function buildHarnessContent(modules: ModuleBucket[]): string {
   lines.push('')
   lines.push('static int ak_stage_matches(const char *expected_stage, const char *observed_stage)')
   lines.push('{')
-  lines.push('  if (expected_stage == 0 || expected_stage[0] == \'\\0\') {')
+  lines.push("  if (expected_stage == 0 || expected_stage[0] == '\\0') {")
   lines.push('    return 1;')
   lines.push('  }')
   lines.push('  if (observed_stage == 0) {')
@@ -3987,21 +4224,29 @@ function buildHarnessContent(modules: ModuleBucket[]): string {
   lines.push('{')
   lines.push('  size_t index = 0;')
   lines.push('  size_t mismatch_count = 0;')
-  lines.push('  for (index = 0; index < (sizeof(AK_HARNESS_ENTRIES) / sizeof(AK_HARNESS_ENTRIES[0])); ++index) {')
-    lines.push('    AkRuntimeContext runtime_ctx = {0};')
-    lines.push('    AkSemanticInputs inputs = {0};')
-    lines.push('    AkSemanticOutputs outputs = {0};')
-    lines.push('    inputs.string_args[0] = AK_HARNESS_ENTRIES[index].seed_text;')
-    lines.push('    inputs.string_args[1] = AK_HARNESS_ENTRIES[index].seed_text;')
-    lines.push('    inputs.scalar_args[0] = (uint64_t)index;')
-    lines.push('    inputs.pointer_args[0] = (void *)(uintptr_t)(0x10000000u + ((unsigned int)index * 0x1000u));')
-    lines.push('    inputs.handle_args[0] = (uintptr_t)(0x1000u + (unsigned int)index);')
-    lines.push('    inputs.handle_args[1] = (uintptr_t)(0x2000u + (unsigned int)index);')
-    lines.push('    int status = AK_HARNESS_ENTRIES[index].semantic_entry(&runtime_ctx, &inputs, &outputs);')
-    lines.push('    int stage_match = ak_stage_matches(AK_HARNESS_ENTRIES[index].expected_stage, outputs.observed_stage);')
-    lines.push('    if (!stage_match) {')
-    lines.push('      ++mismatch_count;')
-    lines.push('    }')
+  lines.push(
+    '  for (index = 0; index < (sizeof(AK_HARNESS_ENTRIES) / sizeof(AK_HARNESS_ENTRIES[0])); ++index) {'
+  )
+  lines.push('    AkRuntimeContext runtime_ctx = {0};')
+  lines.push('    AkSemanticInputs inputs = {0};')
+  lines.push('    AkSemanticOutputs outputs = {0};')
+  lines.push('    inputs.string_args[0] = AK_HARNESS_ENTRIES[index].seed_text;')
+  lines.push('    inputs.string_args[1] = AK_HARNESS_ENTRIES[index].seed_text;')
+  lines.push('    inputs.scalar_args[0] = (uint64_t)index;')
+  lines.push(
+    '    inputs.pointer_args[0] = (void *)(uintptr_t)(0x10000000u + ((unsigned int)index * 0x1000u));'
+  )
+  lines.push('    inputs.handle_args[0] = (uintptr_t)(0x1000u + (unsigned int)index);')
+  lines.push('    inputs.handle_args[1] = (uintptr_t)(0x2000u + (unsigned int)index);')
+  lines.push(
+    '    int status = AK_HARNESS_ENTRIES[index].semantic_entry(&runtime_ctx, &inputs, &outputs);'
+  )
+  lines.push(
+    '    int stage_match = ak_stage_matches(AK_HARNESS_ENTRIES[index].expected_stage, outputs.observed_stage);'
+  )
+  lines.push('    if (!stage_match) {')
+  lines.push('      ++mismatch_count;')
+  lines.push('    }')
   lines.push(
     '    printf("[%s] %s => status=%d stage=%s expected=%s match=%s detail=%s\\n", AK_HARNESS_ENTRIES[index].module_name, AK_HARNESS_ENTRIES[index].original_symbol, status, outputs.observed_stage ? outputs.observed_stage : "none", AK_HARNESS_ENTRIES[index].expected_stage ? AK_HARNESS_ENTRIES[index].expected_stage : "none", stage_match ? "ok" : "mismatch", outputs.status_detail ? outputs.status_detail : "none");'
   )
@@ -4027,7 +4272,9 @@ function buildCMakeContent(modules: ModuleBucket[]): string {
   }
   lines.push(')')
   lines.push('')
-  lines.push('target_include_directories(reconstruct_harness PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)')
+  lines.push(
+    'target_include_directories(reconstruct_harness PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)'
+  )
   lines.push('')
   return lines.join('\n')
 }
@@ -4049,7 +4296,10 @@ function scoreFunctionForDedup(func: ReconstructedFunction): number {
   )
 }
 
-function scoreFunctionForRewritePresentation(func: ReconstructedFunction, module: ModuleBucket): number {
+function scoreFunctionForRewritePresentation(
+  func: ReconstructedFunction,
+  module: ModuleBucket
+): number {
   const corpus = [
     func.function,
     func.semantic_summary || '',
@@ -4075,22 +4325,42 @@ function scoreFunctionForRewritePresentation(func: ReconstructedFunction, module
   }
 
   const lowered = corpus.toLowerCase()
-  if (module.name === 'com_activation' && /\b(dllgetclassobject|class factory|iclassfactory|cocreateinstance|inprocserver32)\b/.test(lowered)) {
+  if (
+    module.name === 'com_activation' &&
+    /\b(dllgetclassobject|class factory|iclassfactory|cocreateinstance|inprocserver32)\b/.test(
+      lowered
+    )
+  ) {
     score += 30
   }
-  if (module.name === 'dll_lifecycle' && /\b(dllmain|disablethreadlibrarycalls|attach|detach)\b/.test(lowered)) {
+  if (
+    module.name === 'dll_lifecycle' &&
+    /\b(dllmain|disablethreadlibrarycalls|attach|detach)\b/.test(lowered)
+  ) {
     score += 30
   }
-  if (module.name === 'export_dispatch' && /\b(dispatch|invokecommand|handlecommand|runcommand|export)\b/.test(lowered)) {
+  if (
+    module.name === 'export_dispatch' &&
+    /\b(dispatch|invokecommand|handlecommand|runcommand|export)\b/.test(lowered)
+  ) {
     score += 24
   }
-  if (module.name === 'callback_surface' && /\b(callback|plugin|notify|hook|host)\b/.test(lowered)) {
+  if (
+    module.name === 'callback_surface' &&
+    /\b(callback|plugin|notify|hook|host)\b/.test(lowered)
+  ) {
     score += 24
   }
-  if (module.name === 'process_ops' && /\b(writeprocessmemory|openprocess|createprocess|setthreadcontext|resumethread)\b/.test(lowered)) {
+  if (
+    module.name === 'process_ops' &&
+    /\b(writeprocessmemory|openprocess|createprocess|setthreadcontext|resumethread)\b/.test(lowered)
+  ) {
     score += 20
   }
-  if (module.name === 'packer_analysis' && /\b(packer|protector|entropy|section|signature|layout)\b/.test(lowered)) {
+  if (
+    module.name === 'packer_analysis' &&
+    /\b(packer|protector|entropy|section|signature|layout)\b/.test(lowered)
+  ) {
     score += 20
   }
 
@@ -4099,7 +4369,9 @@ function scoreFunctionForRewritePresentation(func: ReconstructedFunction, module
 
 function orderModuleFunctionsForPresentation(module: ModuleBucket): ReconstructedFunction[] {
   return [...module.functions].sort((left, right) => {
-    const scoreDelta = scoreFunctionForRewritePresentation(right, module) - scoreFunctionForRewritePresentation(left, module)
+    const scoreDelta =
+      scoreFunctionForRewritePresentation(right, module) -
+      scoreFunctionForRewritePresentation(left, module)
     if (scoreDelta !== 0) {
       return scoreDelta
     }
@@ -4125,23 +4397,21 @@ function dedupeReconstructedFunctions(functions: ReconstructedFunction[]): Recon
     }
   }
 
-  return orderedKeys.map((key) => byKey.get(key)!).filter(Boolean)
+  return orderedKeys.map((key) => byKey.get(key)).filter(Boolean)
 }
 
 function ensureNameResolution(func: ReconstructedFunction): ReconstructedFunction {
   const existing = func.name_resolution
   const validatedName = existing?.validated_name || func.suggested_name || null
   const ruleBasedName = existing?.rule_based_name || func.suggested_name || null
-  const resolutionSource =
-    existing?.resolution_source || (validatedName ? 'rule' : 'unresolved')
+  const resolutionSource = existing?.resolution_source || (validatedName ? 'rule' : 'unresolved')
 
   return {
     ...func,
     name_resolution: {
       rule_based_name: ruleBasedName,
       llm_suggested_name: existing?.llm_suggested_name || null,
-      llm_confidence:
-        typeof existing?.llm_confidence === 'number' ? existing.llm_confidence : null,
+      llm_confidence: typeof existing?.llm_confidence === 'number' ? existing.llm_confidence : null,
       llm_why: existing?.llm_why || null,
       required_assumptions: existing?.required_assumptions || [],
       evidence_used: existing?.evidence_used || func.rename_evidence || [],
@@ -4326,7 +4596,9 @@ async function collectWindowsClangCandidates(root: string): Promise<string[]> {
   return candidates
 }
 
-async function resolveClangCompilerPath(explicitCompilerPath?: string | null): Promise<string | null> {
+async function resolveClangCompilerPath(
+  explicitCompilerPath?: string | null
+): Promise<string | null> {
   const candidates: string[] = []
   if (explicitCompilerPath) {
     candidates.push(explicitCompilerPath)
@@ -4458,7 +4730,12 @@ async function runNativeBuildValidation(args: {
     harnessSource,
     ...args.moduleRewriteFiles,
   ]
-  const result = await runCommandWithTimeout(compilerPath, buildArgs, args.exportRoot, args.timeoutMs)
+  const result = await runCommandWithTimeout(
+    compilerPath,
+    buildArgs,
+    args.exportRoot,
+    args.timeoutMs
+  )
 
   return {
     attempted: true,
@@ -4519,7 +4796,8 @@ async function runHarnessValidation(args: {
     error:
       result.exitCode === 0 && mismatchedEntries === 0
         ? null
-        : result.error || `reconstruct_harness failed with exit code ${result.exitCode ?? 'unknown'}`,
+        : result.error ||
+          `reconstruct_harness failed with exit code ${result.exitCode ?? 'unknown'}`,
     stdout: result.stdout,
     stderr: result.stderr,
     log_path: null,
@@ -4568,7 +4846,9 @@ function buildGapsMarkdown(
     lines.push('- None')
   } else {
     for (const item of lowConfidenceModules) {
-      lines.push(`- ${item.name}: confidence=${item.confidence.toFixed(2)}, functions=${item.count}`)
+      lines.push(
+        `- ${item.name}: confidence=${item.confidence.toFixed(2)}, functions=${item.count}`
+      )
     }
   }
   lines.push('')
@@ -4631,25 +4911,27 @@ function buildBinaryProfile(
   const derivedCliProfile =
     cliProfile ||
     buildReconstructCliProfile(
-    modules.map((module) => ({
-      name: module.name,
-      functions: [],
-      roleHint: module.role_hint || null,
-      focusMatches: new Set(module.focus_matches || []),
-      importHints: new Set(module.import_hints || []),
-      stringHints: new Set(module.string_hints || []),
-      runtimeApis: new Set(module.runtime_apis || []),
-      runtimeStages: new Set(module.runtime_stages || []),
-      runtimeNotes: new Set<string>(),
-    })) as unknown as ModuleBucket[]
-  )
+      modules.map((module) => ({
+        name: module.name,
+        functions: [],
+        roleHint: module.role_hint || null,
+        focusMatches: new Set(module.focus_matches || []),
+        importHints: new Set(module.import_hints || []),
+        stringHints: new Set(module.string_hints || []),
+        runtimeApis: new Set(module.runtime_apis || []),
+        runtimeStages: new Set(module.runtime_stages || []),
+        runtimeNotes: new Set<string>(),
+      })) as unknown as ModuleBucket[]
+    )
   const exportEntries = exportsData?.exports || []
-  const exportCount = typeof exportsData?.total_exports === 'number'
-    ? exportsData.total_exports
-    : exportEntries.length
-  const forwarderCount = typeof exportsData?.total_forwarders === 'number'
-    ? exportsData.total_forwarders
-    : (exportsData?.forwarders || []).length
+  const exportCount =
+    typeof exportsData?.total_exports === 'number'
+      ? exportsData.total_exports
+      : exportEntries.length
+  const forwarderCount =
+    typeof exportsData?.total_forwarders === 'number'
+      ? exportsData.total_forwarders
+      : (exportsData?.forwarders || []).length
   const notableExports = exportEntries
     .map((item) => item.name || `ordinal_${item.ordinal}`)
     .filter((item, index, all) => all.indexOf(item) === index)
@@ -4677,7 +4959,10 @@ function buildBinaryProfile(
   if (modules.some((module) => module.name === 'packer_analysis')) {
     priorities.push('review_packer_or_format_analysis_logic')
   }
-  if (derivedCliProfile && (derivedCliProfile.command_count > 0 || derivedCliProfile.help_banner.length > 0)) {
+  if (
+    derivedCliProfile &&
+    (derivedCliProfile.command_count > 0 || derivedCliProfile.help_banner.length > 0)
+  ) {
     priorities.push('recover_cli_and_command_model')
   }
 
@@ -4752,7 +5037,8 @@ function buildReverseNotesMarkdown(
               refined_name: module.refined_name || null,
               summary: module.review_summary || null,
               role_hint: module.role_hint || null,
-              confidence: typeof module.review_confidence === 'number' ? module.review_confidence : null,
+              confidence:
+                typeof module.review_confidence === 'number' ? module.review_confidence : null,
               assumptions: [],
               evidence_used: [],
               rewrite_guidance: [],
@@ -4780,8 +5066,12 @@ function buildReverseNotesMarkdown(
     lines.push(`- api_count: ${runtimeEvidence.api_count}`)
     lines.push(`- stage_count: ${runtimeEvidence.stage_count}`)
     lines.push(`- observed_apis: ${runtimeEvidence.observed_apis.slice(0, 8).join(', ') || 'none'}`)
-    lines.push(`- region_types: ${(runtimeEvidence.region_types || []).slice(0, 8).join(', ') || 'none'}`)
-    lines.push(`- observed_modules: ${(runtimeEvidence.observed_modules || []).slice(0, 6).join(', ') || 'none'}`)
+    lines.push(
+      `- region_types: ${(runtimeEvidence.region_types || []).slice(0, 8).join(', ') || 'none'}`
+    )
+    lines.push(
+      `- observed_modules: ${(runtimeEvidence.observed_modules || []).slice(0, 6).join(', ') || 'none'}`
+    )
     lines.push(`- stages: ${runtimeEvidence.stages.slice(0, 6).join(', ') || 'none'}`)
     lines.push(`- summary: ${runtimeEvidence.summary}`)
     lines.push('')
@@ -4813,13 +5103,21 @@ function buildReverseNotesMarkdown(
   }
   lines.push('## Reverse-Engineering Notes')
   if (profile.binary_role.includes('dll') || profile.export_count > 0) {
-    lines.push('- Treat the export surface as an entry map and trace each exported routine into internal dispatchers.')
+    lines.push(
+      '- Treat the export surface as an entry map and trace each exported routine into internal dispatchers.'
+    )
   }
   if (profile.packed || profile.packing_confidence >= 0.45) {
-    lines.push('- Packer or obfuscation indicators are present; unpacking may be required before claiming source-equivalent recovery.')
+    lines.push(
+      '- Packer or obfuscation indicators are present; unpacking may be required before claiming source-equivalent recovery.'
+    )
   }
-  lines.push('- Generated pseudocode is reconstructed and commented for analyst use; it is not original author source.')
-  lines.push('- Export also includes a shared support header, a semantic harness, and a CMake skeleton for compile-oriented review.')
+  lines.push(
+    '- Generated pseudocode is reconstructed and commented for analyst use; it is not original author source.'
+  )
+  lines.push(
+    '- Export also includes a shared support header, a semantic harness, and a CMake skeleton for compile-oriented review.'
+  )
   lines.push('')
   if (warnings.length > 0) {
     lines.push('## Recent Warnings')
@@ -4858,11 +5156,16 @@ export function createCodeReconstructExportHandler(
   const runHarness = dependencies?.harnessValidator || runHarnessValidation
   const searchFunctions =
     dependencies?.searchFunctions ||
-    ((sampleId: string, options: { apiQuery?: string; stringQuery?: string; limit?: number; timeout?: number }) =>
-      decompilerWorker.searchFunctions(sampleId, options))
+    ((
+      sampleId: string,
+      options: { apiQuery?: string; stringQuery?: string; limit?: number; timeout?: number }
+    ) => decompilerWorker.searchFunctions(sampleId, options))
   const runtimeEvidenceLoader =
     dependencies?.runtimeEvidenceLoader ||
-    ((sampleId: string, options?: { evidenceScope?: 'all' | 'latest' | 'session'; sessionTag?: string }) =>
+    ((
+      sampleId: string,
+      options?: { evidenceScope?: 'all' | 'latest' | 'session'; sessionTag?: string }
+    ) =>
       loadDynamicTraceEvidence(workspaceManager, database, sampleId, {
         evidenceScope: options?.evidenceScope,
         sessionTag: options?.sessionTag,
@@ -4901,7 +5204,10 @@ export function createCodeReconstructExportHandler(
       ]
       const runtimeMarker =
         runtimeArtifacts.length > 0
-          ? runtimeArtifacts.map((item) => `${item.type}:${item.sha256}`).sort().join('|')
+          ? runtimeArtifacts
+              .map((item) => `${item.type}:${item.sha256}`)
+              .sort()
+              .join('|')
           : 'none'
       const semanticNameArtifacts = database.findArtifactsByType(
         input.sample_id,
@@ -4909,7 +5215,10 @@ export function createCodeReconstructExportHandler(
       )
       const semanticNameMarker =
         semanticNameArtifacts.length > 0
-          ? semanticNameArtifacts.map((item) => `${item.id}:${item.sha256}`).sort().join('|')
+          ? semanticNameArtifacts
+              .map((item) => `${item.id}:${item.sha256}`)
+              .sort()
+              .join('|')
           : 'none'
       const semanticExplanationArtifacts = database.findArtifactsByType(
         input.sample_id,
@@ -4917,7 +5226,10 @@ export function createCodeReconstructExportHandler(
       )
       const semanticExplanationMarker =
         semanticExplanationArtifacts.length > 0
-          ? semanticExplanationArtifacts.map((item) => `${item.id}:${item.sha256}`).sort().join('|')
+          ? semanticExplanationArtifacts
+              .map((item) => `${item.id}:${item.sha256}`)
+              .sort()
+              .join('|')
           : 'none'
 
       const cacheKey = generateCacheKey({
@@ -5126,8 +5438,8 @@ export function createCodeReconstructExportHandler(
           if (knownAddresses.has(func.address)) {
             continue
           }
-          const [enriched] = enrichFunctionsWithRuntimeContext([func], dynamicEvidence).map((item) =>
-            ensureNameResolution(item)
+          const [enriched] = enrichFunctionsWithRuntimeContext([func], dynamicEvidence).map(
+            (item) => ensureNameResolution(item)
           )
           mergedFunctions.push(enriched)
           knownAddresses.add(func.address)
@@ -5308,7 +5620,11 @@ export function createCodeReconstructExportHandler(
           compilerPath: input.compiler_path || null,
           timeoutMs: input.build_timeout_ms,
         })
-        if (buildValidation.status === 'passed' && input.run_harness && buildValidation.executable_path) {
+        if (
+          buildValidation.status === 'passed' &&
+          input.run_harness &&
+          buildValidation.executable_path
+        ) {
           harnessValidation = await runHarness({
             executablePath: buildValidation.executable_path,
             cwd: exportRoot,
@@ -5352,7 +5668,9 @@ export function createCodeReconstructExportHandler(
         warnings.push(`build_validation: ${buildValidation.error || buildValidation.status}`)
       }
       if (input.run_harness && harnessValidation.status === 'failed') {
-        warnings.push(`harness_validation: ${harnessValidation.error || 'reconstruct_harness reported mismatches'}`)
+        warnings.push(
+          `harness_validation: ${harnessValidation.error || 'reconstruct_harness reported mismatches'}`
+        )
       }
 
       const buildLogPath = path.join(exportRoot, 'BUILD_VALIDATION.log')

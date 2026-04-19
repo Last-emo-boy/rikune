@@ -194,9 +194,7 @@ function normalizeRankPreview(items: any[]): Array<z.infer<typeof RankPreviewSch
     address: String(item.address),
     name: item.name ? String(item.name) : null,
     score: typeof item.score === 'number' ? item.score : null,
-    tags: Array.isArray(item.tags)
-      ? item.tags.map((entry: unknown) => String(entry))
-      : undefined,
+    tags: Array.isArray(item.tags) ? item.tags.map((entry: unknown) => String(entry)) : undefined,
     summary: item.summary ? String(item.summary) : null,
   }))
 }
@@ -292,9 +290,7 @@ export function createFunctionIndexRecoverWorkflowHandler(
           : input.define_from
 
       const definitions = smartRecoverData.functions.map((item) => {
-        const symbol =
-          symbolByAddress.get(item.address.toLowerCase()) ||
-          symbolByRva.get(item.rva)
+        const symbol = symbolByAddress.get(item.address.toLowerCase()) || symbolByRva.get(item.rva)
         const useRecoveredName = defineFrom === 'symbols_recover' && symbol
         return {
           address: item.address,

@@ -10,11 +10,19 @@ import { sbomGenerateToolDefinition, createSbomGenerateHandler } from './tools/s
 const sbomPlugin: Plugin = {
   id: 'sbom',
   name: 'SBOM',
-  surfaceRules: { tier: 2, activateOn: { findings: ['dotnet', 'go'] }, category: 'static-analysis' },
+  executionDomain: 'static',
+  surfaceRules: {
+    tier: 2,
+    activateOn: { findings: ['dotnet', 'go'] },
+    category: 'static-analysis',
+  },
   description: 'Software Bill of Materials (SBOM) generation from binary analysis',
   version: '1.0.0',
   register(server, deps) {
-    server.registerTool(sbomGenerateToolDefinition, createSbomGenerateHandler(deps.workspaceManager, deps.database))
+    server.registerTool(
+      sbomGenerateToolDefinition,
+      createSbomGenerateHandler(deps.workspaceManager, deps.database)
+    )
     return ['sbom.generate']
   },
 }

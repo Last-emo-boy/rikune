@@ -490,6 +490,19 @@ class FridaWorker:
             return self._build_string_decoder_script()
         elif name == "anti_debug_bypass":
             return self._build_anti_debug_bypass_script()
+        elif name == "time_bypass":
+            return self._build_time_bypass_script(params.get("speed_factor", 100))
+        elif name == "evasion_score":
+            return self._build_evasion_score_script()
+        elif name == "combo_evasion":
+            speed = params.get("speed_factor", 100)
+            return (
+                self._build_anti_debug_bypass_script()
+                + "\n"
+                + self._build_time_bypass_script(speed)
+                + "\n"
+                + self._build_evasion_score_script()
+            )
         elif name == "crypto_finder":
             return self._build_crypto_finder_script()
         elif name == "file_registry_monitor":
@@ -595,37 +608,193 @@ class FridaWorker:
         return """
         // Neutralize common anti-debug checks
         const IsDebuggerPresent = Module.findExportByName('kernel32.dll', 'IsDebuggerPresent');
-        if (IsDebuggerPresent) {{
-            Interceptor.attach(IsDebuggerPresent, {{
+        if (IsDebuggerPresent) {
+            Interceptor.attach(IsDebuggerPresent, {
+                onLeave: function(retval) {
+                    retval.replace(0);
+                }
+            });
+        }
+
+        const CheckRemoteDebuggerPresent = Module.findExportByName('kernel32.dll', 'CheckRemoteDebuggerPresent');
+        if (CheckRemoteDebuggerPresent) {
+            Interceptor.attach(CheckRemoteDebuggerPresent, {
+                onEnter: function(args) {
+                    this.pbDebuggerPresent = args[1];
+                },
+                onLeave: function(retval) {
+                    retval.replace(0);
+                    if (this.pbDebuggerPresent) {
+                        Memory.writeU32(this.pbDebuggerPresent, 0);
+                    }
+                }
+            });
+        }
+
+        // NtQueryInformationProcess comprehensive patching
+        const NtQueryInformationProcess = Module.findExportByName('ntdll.dll', 'NtQueryInformationProcess');
+        if (NtQueryInformationProcess) {
+            Interceptor.attach(NtQueryInformationProcess, {
+                onEnter: function(args) {
+                    this.processInformationClass = args[1].toInt32();
+                    this.processInformation = args[2];
+                },
+                onLeave: function(retval) {
+                    var patched = false;
+                    if (this.processInformationClass === 7 && this.processInformation) {
+                        Memory.writeU32(this.processInformation, 0); // ProcessDebugPort
+                        patched = true;
+                    }
+                    if (this.processInformationClass === 0x1F && this.processInformation) {
+                        Memory.writeU32(this.processInformation, 1); // ProcessDebugFlags (1 = no debugger)
+                        patched = true;
+                    }
+                    if (this.processInformationClass === 0 && this.processInformation) {
+                        Memory.writeU8(this.processInformation.add(0x02), 0); // ProcessBasicInformation.BeingDebugged
+                        patched = true;
+                    }
+                    if (patched) retval.replace(0);
+                }
+            });
+        }
+
+        const NtSetInformationThread = Module.findExportByName('ntdll.dll', 'NtSetInformationThread');
+        if (NtSetInformationThread) {
+            Interceptor.attach(NtSetInformationThread, {
+                onLeave: function(retval) {
+                    retval.replace(0);
+                }
+            });
+        }
+
+        const NtClose = Module.findExportByName('ntdll.dll', 'NtClose');
+        if (NtClose) {
+            Interceptor.attach(NtClose, {
+                onLeave: function(retval) {
+                    if (retval.toInt32() === -1073741816) {
+                        retval.replace(0);
+                    }
+                }
+            });
+        }
+
+        const OutputDebugStringA = Module.findExportByName('kernel32.dll', 'OutputDebugStringA');
+        if (OutputDebugStringA) {
+            Interceptor.attach(OutputDebugStringA, {
+                onLeave: function(retval) {
+                    retval.replace(0);
+                }
+            });
+        }
+        """
+
+    def _build_time_bypass_script(self, speed_factor: int = 100) -> str:
+        """Build time-acceleration bypass script to defeat sleep loops."""
+        return f"""
+        var speedFactor = {speed_factor};
+        var startReal = Date.now();
+        var startFake = Date.now();
+        function getFakeTick() {{
+            var elapsedReal = Date.now() - startReal;
+            return startFake + (elapsedReal * speedFactor);
+        }}
+
+        var GetTickCount = Module.findExportByName('kernel32.dll', 'GetTickCount');
+        if (GetTickCount) {{
+            Interceptor.attach(GetTickCount, {{
                 onLeave: function(retval) {{
-                    retval.replace(0); // Always return FALSE
+                    retval.replace(getFakeTick() % 0xFFFFFFFF);
                 }}
             }});
         }}
 
-        const CheckRemoteDebuggerPresent = Module.findExportByName('kernel32.dll', 'CheckRemoteDebuggerPresent');
-        if (CheckRemoteDebuggerPresent) {{
-            Interceptor.attach(CheckRemoteDebuggerPresent, {{
+        var GetTickCount64 = Module.findExportByName('kernel32.dll', 'GetTickCount64');
+        if (GetTickCount64) {{
+            Interceptor.attach(GetTickCount64, {{
                 onLeave: function(retval) {{
+                    var fake = getFakeTick();
+                    retval.replace(ptr(fake.toString()));
+                }}
+            }});
+        }}
+
+        var timeGetTime = Module.findExportByName('winmm.dll', 'timeGetTime');
+        if (timeGetTime) {{
+            Interceptor.attach(timeGetTime, {{
+                onLeave: function(retval) {{
+                    retval.replace(getFakeTick() % 0xFFFFFFFF);
+                }}
+            }});
+        }}
+
+        var QueryPerformanceCounter = Module.findExportByName('kernel32.dll', 'QueryPerformanceCounter');
+        if (QueryPerformanceCounter) {{
+            Interceptor.attach(QueryPerformanceCounter, {{
+                onEnter: function(args) {{
+                    this.lpPerformanceCount = args[0];
+                }},
+                onLeave: function(retval) {{
+                    if (this.lpPerformanceCount) {{
+                        Memory.writeU64(this.lpPerformanceCount, getFakeTick() * 10000);
+                    }}
                     retval.replace(0);
                 }}
             }});
         }}
 
-        // NtQueryInformationProcess - ProcessDebugPort check
-        const NtQueryInformationProcess = Module.findExportByName('ntdll.dll', 'NtQueryInformationProcess');
-        if (NtQueryInformationProcess) {{
-            Interceptor.attach(NtQueryInformationProcess, {{
+        var Sleep = Module.findExportByName('kernel32.dll', 'Sleep');
+        if (Sleep) {{
+            Interceptor.attach(Sleep, {{
                 onEnter: function(args) {{
-                    this.isDebugPortCheck = (args[1].toInt32() === 7);
-                }},
-                onLeave: function(retval) {{
-                    if (this.isDebugPortCheck) {{
-                        retval.replace(0);
+                    var originalMs = args[0].toUInt32();
+                    var reducedMs = Math.max(1, Math.floor(originalMs / speedFactor));
+                    args[0] = ptr(reducedMs);
+                    send({{ type: 'time_bypass', api: 'Sleep', original_ms: originalMs, reduced_ms: reducedMs }});
+                }}
+            }});
+        }}
+
+        var NtDelayExecution = Module.findExportByName('ntdll.dll', 'NtDelayExecution');
+        if (NtDelayExecution) {{
+            Interceptor.attach(NtDelayExecution, {{
+                onEnter: function(args) {{
+                    var pLi = args[1];
+                    if (pLi) {{
+                        var interval = Memory.readS64(pLi);
+                        var reduced = Math.max(-1, Math.floor(interval / speedFactor));
+                        Memory.writeS64(pLi, reduced);
+                        send({{ type: 'time_bypass', api: 'NtDelayExecution', original_interval: interval.toString(), reduced_interval: reduced.toString() }});
                     }}
                 }}
             }});
         }}
+        """
+
+    def _build_evasion_score_script(self) -> str:
+        """Build script that counts anti-debug/anti-vm API calls for scoring."""
+        return """
+        var evasionCounters = {};
+        function countApi(module, name) {
+            var addr = Module.findExportByName(module, name);
+            if (addr) {
+                Interceptor.attach(addr, {
+                    onEnter: function() {
+                        evasionCounters[name] = (evasionCounters[name] || 0) + 1;
+                    }
+                });
+            }
+        }
+
+        var antiDebugApis = ['IsDebuggerPresent','CheckRemoteDebuggerPresent','NtQueryInformationProcess',
+                             'NtSetInformationThread','NtClose','OutputDebugStringA','OutputDebugStringW'];
+        var antiVmApis = ['IsProcessorFeaturePresent','GetSystemFirmwareTable','CheckTokenMembership',
+                          'EnumWindows','GetCursorPos','GetTickCount','GetTickCount64','QueryPerformanceCounter',
+                          'GetAdaptersInfo','WNetGetProviderNameA'];
+
+        antiDebugApis.forEach(function(name) { countApi('kernel32.dll', name) || countApi('ntdll.dll', name); });
+        antiVmApis.forEach(function(name) { countApi('kernel32.dll', name) || countApi('user32.dll', name) || countApi('advapi32.dll', name) || countApi('iphlpapi.dll', name) || countApi('mpr.dll', name); });
+
+        send({ type: 'evasion_hooks_installed', apis: antiDebugApis.concat(antiVmApis) });
         """
 
     def _build_crypto_finder_script(self) -> str:

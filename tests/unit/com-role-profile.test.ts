@@ -5,7 +5,7 @@ import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import type { ToolArgs, WorkerResult } from '../../src/types.js'
-import { createComRoleProfileHandler } from '../../src/tools/com-role-profile.js'
+import { createComRoleProfileHandler } from '../../src/plugins/static-triage/tools/com-role-profile.js'
 
 describe('com.role.profile tool', () => {
   let workspaceManager: WorkspaceManager

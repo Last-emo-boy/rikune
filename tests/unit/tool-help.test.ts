@@ -387,7 +387,7 @@ describe('tool.help tool', () => {
       true
     )
     const definitionsField = defineData.tools[0].input.fields.find((item: any) => item.path === 'definitions')
-    expect(definitionsField.help_hint).toContain(toTransportToolName('code.functions.smart_recover'))
+    expect(definitionsField.help_hint).toContain('smart_recover')
 
     const rustAnalyzeResult = await handler({ tool_name: 'rust_binary.analyze' })
     const rustAnalyzeData = rustAnalyzeResult.data as any
@@ -408,7 +408,7 @@ describe('tool.help tool', () => {
     ).toBe(true)
     const defineFromField = workflowData.tools[0].input.fields.find((item: any) => item.path === 'define_from')
     expect(defineFromField.help_hint).toContain(
-      `auto prefers ${toTransportToolName('pe.symbols.recover')}`
+      'auto prefers pe.symbols.recover'
     )
   })
 

@@ -7,10 +7,16 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, executeCommand,
-  persistBackendArtifact, buildMetrics, truncateText,
-  resolveSampleFile, resolveExecutable,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  executeCommand,
+  persistBackendArtifact,
+  buildMetrics,
+  truncateText,
+  resolveSampleFile,
+  resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -18,7 +24,9 @@ const TOOL_NAME = 'dotnet.decompile.type'
 
 export const dotnetDecompileTypeInputSchema = z.object({
   sample_id: z.string().describe('Target .NET assembly sample identifier.'),
-  type_name: z.string().describe('Fully qualified type name to decompile (e.g. "MyNamespace.MyClass").'),
+  type_name: z
+    .string()
+    .describe('Fully qualified type name to decompile (e.g. "MyNamespace.MyClass").'),
   language: z.enum(['CSharp', 'IL']).default('CSharp').describe('Output language.'),
   timeout_sec: z.number().int().min(5).max(120).default(30).describe('Decompilation timeout.'),
   persist_artifact: z.boolean().default(true).describe('Persist decompiled source as artifact.'),
@@ -27,16 +35,18 @@ export const dotnetDecompileTypeInputSchema = z.object({
 
 export const dotnetDecompileTypeOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    type_name: z.string().optional(),
-    source: z.string().optional(),
-    source_lines: z.number().optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      type_name: z.string().optional(),
+      source: z.string().optional(),
+      source_lines: z.number().optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
@@ -53,7 +63,7 @@ export const dotnetDecompileTypeToolDefinition: ToolDefinition = {
 
 export function createDotnetDecompileTypeHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -61,9 +71,18 @@ export function createDotnetDecompileTypeHandler(
       const input = dotnetDecompileTypeInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolveExecutable({ envPath: process.env.ILSPYCMD_PATH, pathCandidates: ['ilspycmd'], versionArgSets: [['--version']] })
+      const backend = resolveExecutable({
+        envPath: process.env.ILSPYCMD_PATH,
+        pathCandidates: ['ilspycmd'],
+        versionArgSets: [['--version']],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'ilspycmd', available: false, error: 'ilspycmd not installed' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend ||
+            ({ name: 'ilspycmd', available: false, error: 'ilspycmd not installed' } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const ilspyArgs = [samplePath, '-t', input.type_name]
@@ -72,7 +91,11 @@ export function createDotnetDecompileTypeHandler(
 
       const source = result.stdout.trim()
       if (!source && result.exitCode !== 0) {
-        return { ok: false, errors: [`ilspycmd exited ${result.exitCode}: ${result.stderr}`], metrics: buildMetrics(startTime, TOOL_NAME) }
+        return {
+          ok: false,
+          errors: [`ilspycmd exited ${result.exitCode}: ${result.stderr}`],
+          metrics: buildMetrics(startTime, TOOL_NAME),
+        }
       }
 
       const lineCount = source.split('\n').length
@@ -81,7 +104,15 @@ export function createDotnetDecompileTypeHandler(
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact && source.length > 0) {
         const ext = input.language === 'IL' ? 'il' : 'cs'
-        artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'dotnet_decompile', `type_${input.type_name}`, source, { extension: ext, mime: 'text/plain', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'dotnet_decompile',
+          `type_${input.type_name}`,
+          source,
+          { extension: ext, mime: 'text/plain', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -104,7 +135,11 @@ export function createDotnetDecompileTypeHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

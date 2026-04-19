@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createYaraScanHandler, YaraScanInputSchema } from '../../src/tools/yara-scan.js'
+import { createYaraScanHandler, YaraScanInputSchema } from '../../src/plugins/yara/tools/yara-scan.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 import type { CacheManager } from '../../src/cache-manager.js'

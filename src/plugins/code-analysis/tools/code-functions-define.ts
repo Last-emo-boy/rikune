@@ -13,31 +13,73 @@ const TOOL_NAME = 'code.functions.define'
 const FunctionDefinitionSchema = z
   .object({
     address: z.string().optional().describe('Absolute virtual address such as 0x140001000'),
-    va: z.number().int().nonnegative().optional().describe('Absolute virtual address as a numeric value'),
-    rva: z.number().int().nonnegative().optional().describe('Relative virtual address. Converted using the PE image base.'),
+    va: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe('Absolute virtual address as a numeric value'),
+    rva: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe('Relative virtual address. Converted using the PE image base.'),
     size: z.number().int().positive().optional().describe('Function size in bytes when known'),
     name: z.string().min(1).max(256).optional().describe('Preferred function name'),
-    recovered_name: z.string().min(1).max(256).optional().describe('Recovered name from pe.symbols.recover when name is not present'),
+    recovered_name: z
+      .string()
+      .min(1)
+      .max(256)
+      .optional()
+      .describe('Recovered name from pe.symbols.recover when name is not present'),
     summary: z.string().max(2000).optional().describe('Optional analyst summary for this function'),
-    tags: z.array(z.string()).optional().default([]).describe('Optional semantic or provenance tags'),
-    caller_count: z.number().int().nonnegative().optional().describe('Optional caller count estimate'),
-    callee_count: z.number().int().nonnegative().optional().describe('Optional callee count estimate'),
-    is_entry_point: z.boolean().optional().default(false).describe('Mark the function as an entry point'),
+    tags: z
+      .array(z.string())
+      .optional()
+      .default([])
+      .describe('Optional semantic or provenance tags'),
+    caller_count: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe('Optional caller count estimate'),
+    callee_count: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe('Optional callee count estimate'),
+    is_entry_point: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe('Mark the function as an entry point'),
     is_exported: z.boolean().optional().default(false).describe('Mark the function as exported'),
     callees: z.array(z.string()).optional().default([]).describe('Optional list of known callees'),
     score: z.number().min(0).max(1).optional().describe('Optional precomputed ranking score'),
-    evidence: z.array(z.string()).optional().default([]).describe('Optional evidence strings that explain why this boundary was defined'),
+    evidence: z
+      .array(z.string())
+      .optional()
+      .default([])
+      .describe('Optional evidence strings that explain why this boundary was defined'),
   })
-  .refine((value) => Boolean(value.address?.trim()) || value.va !== undefined || value.rva !== undefined, {
-    message: 'Each function definition must provide at least one of address, va, or rva.',
-  })
+  .refine(
+    (value) => Boolean(value.address?.trim()) || value.va !== undefined || value.rva !== undefined,
+    {
+      message: 'Each function definition must provide at least one of address, va, or rva.',
+    }
+  )
 
 export const codeFunctionsDefineInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
   definitions: z
     .array(FunctionDefinitionSchema)
     .min(1)
-    .describe('Function boundaries or recovered function records to import into the function index'),
+    .describe(
+      'Function boundaries or recovered function records to import into the function index'
+    ),
   source: z
     .enum(['manual', 'pdata', 'symbols_recover', 'smart_recover', 'external'])
     .optional()
@@ -47,12 +89,16 @@ export const codeFunctionsDefineInputSchema = z.object({
     .boolean()
     .optional()
     .default(false)
-    .describe('When true, replace the existing function index for this sample before importing the new definitions'),
+    .describe(
+      'When true, replace the existing function index for this sample before importing the new definitions'
+    ),
   persist_artifact: z
     .boolean()
     .optional()
     .default(true)
-    .describe('Persist the imported function definitions as a stable artifact in reports/function_definitions'),
+    .describe(
+      'Persist the imported function definitions as a stable artifact in reports/function_definitions'
+    ),
   register_analysis: z
     .boolean()
     .optional()
@@ -131,7 +177,10 @@ function normalizeHexAddress(value: string): string {
 }
 
 function sanitizePathToken(value: string | undefined): string {
-  const normalized = (value || '').trim().replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '')
+  const normalized = (value || '')
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
   return normalized.slice(0, 48)
 }
 
@@ -157,7 +206,11 @@ export function createCodeFunctionsDefineHandler(
       }
 
       let imageBase: number | null = null
-      if (input.definitions.some((item) => !item.address && item.va === undefined && item.rva !== undefined)) {
+      if (
+        input.definitions.some(
+          (item) => !item.address && item.va === undefined && item.rva !== undefined
+        )
+      ) {
         const { samplePath } = await resolvePrimarySamplePath(workspaceManager, input.sample_id)
         imageBase = extractPdataFromPE(samplePath).imageBase
       }
@@ -192,7 +245,9 @@ export function createCodeFunctionsDefineHandler(
           va = item.va
         } else if (item.rva !== undefined) {
           if (imageBase === null) {
-            throw new Error('Unable to resolve RVA definitions because the PE image base could not be determined.')
+            throw new Error(
+              'Unable to resolve RVA definitions because the PE image base could not be determined.'
+            )
           }
           va = imageBase + item.rva
         } else {
@@ -205,7 +260,11 @@ export function createCodeFunctionsDefineHandler(
 
         const address = normalizeHexAddress(`0x${va.toString(16)}`)
         const tags = Array.from(
-          new Set([`source:${input.source}`, ...(item.tags || []), ...(item.evidence?.map((e) => `evidence:${e}`) || [])])
+          new Set([
+            `source:${input.source}`,
+            ...(item.tags || []),
+            ...(item.evidence?.map((e) => `evidence:${e}`) || []),
+          ])
         )
 
         const summary =
@@ -250,7 +309,10 @@ export function createCodeFunctionsDefineHandler(
       }
 
       if (input.replace_all) {
-        database.getDatabase().prepare('DELETE FROM functions WHERE sample_id = ?').run(input.sample_id)
+        database
+          .getDatabase()
+          .prepare('DELETE FROM functions WHERE sample_id = ?')
+          .run(input.sample_id)
       }
       database.insertFunctionsBatch(imported)
 

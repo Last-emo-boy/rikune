@@ -23,8 +23,14 @@ import { findBestGhidraAnalysis } from '../../../ghidra/ghidra-analysis-status.j
 import { ghidraConfig } from '../../../ghidra/ghidra-config.js'
 import { generateCacheKey } from '../../../cache-manager.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
-import { runEntrypointFallbackDisasm, type EntrypointFallbackPayload } from '../../../tools/entrypoint-fallback-disasm.js'
-import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../../../artifacts/dynamic-trace.js'
+import {
+  runEntrypointFallbackDisasm,
+  type EntrypointFallbackPayload,
+} from '../../../tools/entrypoint-fallback-disasm.js'
+import {
+  loadDynamicTraceEvidence,
+  type DynamicTraceSummary,
+} from '../../../artifacts/dynamic-trace.js'
 import { createStringsExtractHandler } from '../../strings/tools/strings-extract.js'
 import {
   correlateFunctionWithRuntimeEvidence,
@@ -54,67 +60,82 @@ const TOOL_NAME = 'code.functions.reconstruct'
 const TOOL_VERSION = '0.2.14'
 const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
-export const CodeFunctionsReconstructInputSchema = z.object({
-  sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  address: z.string().optional().describe('Specific function address (hex)'),
-  symbol: z.string().optional().describe('Specific function symbol'),
-  topk: z
-    .number()
-    .int()
-    .min(1)
-    .max(20)
-    .default(3)
-    .describe('When address/symbol not provided, reconstruct top-K ranked functions'),
-  include_xrefs: z
-    .boolean()
-    .default(false)
-    .describe('Include xrefs when calling function decompile'),
-  max_pseudocode_lines: z
-    .number()
-    .int()
-    .min(20)
-    .max(300)
-    .default(120)
-    .describe('Maximum pseudocode lines in source-like snippet'),
-  max_assembly_lines: z
-    .number()
-    .int()
-    .min(10)
-    .max(240)
-    .default(80)
-    .describe('Maximum assembly lines in assembly excerpt'),
-  timeout: z
-    .number()
-    .int()
-    .min(5)
-    .max(300)
-    .default(30)
-    .describe('Per-function timeout in seconds'),
-  evidence_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('all')
-    .describe('Runtime evidence scope: all artifacts, only the latest artifact window, or a specific session selector'),
-  evidence_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
-  semantic_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('all')
-    .describe('Semantic review artifact scope: all artifacts, only the latest semantic artifact window, or a specific semantic review session'),
-  semantic_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional semantic review session selector used when semantic_scope=session or to narrow all/latest results'),
-})
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
+export const CodeFunctionsReconstructInputSchema = z
+  .object({
+    sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
+    address: z.string().optional().describe('Specific function address (hex)'),
+    symbol: z.string().optional().describe('Specific function symbol'),
+    topk: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(3)
+      .describe('When address/symbol not provided, reconstruct top-K ranked functions'),
+    include_xrefs: z
+      .boolean()
+      .default(false)
+      .describe('Include xrefs when calling function decompile'),
+    max_pseudocode_lines: z
+      .number()
+      .int()
+      .min(20)
+      .max(300)
+      .default(120)
+      .describe('Maximum pseudocode lines in source-like snippet'),
+    max_assembly_lines: z
+      .number()
+      .int()
+      .min(10)
+      .max(240)
+      .default(80)
+      .describe('Maximum assembly lines in assembly excerpt'),
+    timeout: z
+      .number()
+      .int()
+      .min(5)
+      .max(300)
+      .default(30)
+      .describe('Per-function timeout in seconds'),
+    evidence_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('all')
+      .describe(
+        'Runtime evidence scope: all artifacts, only the latest artifact window, or a specific session selector'
+      ),
+    evidence_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'
+      ),
+    semantic_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('all')
+      .describe(
+        'Semantic review artifact scope: all artifacts, only the latest semantic artifact window, or a specific semantic review session'
+      ),
+    semantic_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional semantic review session selector used when semantic_scope=session or to narrow all/latest results'
+      ),
   })
-  .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
-    message: 'semantic_session_tag is required when semantic_scope=session',
-    path: ['semantic_session_tag'],
-  })
+  .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()),
+    {
+      message: 'semantic_session_tag is required when semantic_scope=session',
+      path: ['semantic_session_tag'],
+    }
+  )
 
 export type CodeFunctionsReconstructInput = z.infer<typeof CodeFunctionsReconstructInputSchema>
 
@@ -593,9 +614,7 @@ function buildRelationshipSummaryEntry(
   }
 }
 
-function buildRelationshipContext(
-  decompiled: DecompiledFunction | undefined
-): RelationshipContext {
+function buildRelationshipContext(decompiled: DecompiledFunction | undefined): RelationshipContext {
   const buildEntries = (
     relationships: FunctionRelationship[] | undefined,
     directEntries: Array<{ address: string; name: string }>,
@@ -786,7 +805,8 @@ function inferBehaviorTags(decompiled: DecompiledFunction | undefined, assembly:
     { tag: 'process_spawn', regex: /\b(CreateProcess(?:A|W)?|WinExec|ShellExecute(?:A|W)?)\b/i },
     {
       tag: 'networking',
-      regex: /\b(InternetOpen(?:A|W)?|InternetConnect(?:A|W)?|HttpSendRequest(?:A|W)?|WinHttp\w*|socket|connect|WSAStartup|send|recv|bind|listen|accept)\b/i,
+      regex:
+        /\b(InternetOpen(?:A|W)?|InternetConnect(?:A|W)?|HttpSendRequest(?:A|W)?|WinHttp\w*|socket|connect|WSAStartup|send|recv|bind|listen|accept)\b/i,
     },
     { tag: 'file_io', regex: /\b(CreateFile(?:A|W)?|WriteFile|ReadFile|DeleteFile)\b/i },
     { tag: 'registry', regex: /\b(RegSetValue|RegSetValueEx|RegOpenKey|RegCreateKey)\b/i },
@@ -797,15 +817,18 @@ function inferBehaviorTags(decompiled: DecompiledFunction | undefined, assembly:
     },
     {
       tag: 'service_control',
-      regex: /\b(CreateService(?:A|W)?|StartService(?:A|W)?|OpenSCManager(?:A|W)?|ControlService|RegisterServiceCtrlHandler(?:A|W)?)\b/i,
+      regex:
+        /\b(CreateService(?:A|W)?|StartService(?:A|W)?|OpenSCManager(?:A|W)?|ControlService|RegisterServiceCtrlHandler(?:A|W)?)\b/i,
     },
     {
       tag: 'com_activation',
-      regex: /\b(CoCreateInstance|QueryInterface|RegisterClassObject|DllGetClassObject|IID_|CLSID_)\b/i,
+      regex:
+        /\b(CoCreateInstance|QueryInterface|RegisterClassObject|DllGetClassObject|IID_|CLSID_)\b/i,
     },
     {
       tag: 'dll_lifecycle',
-      regex: /\b(DllMain|DllRegisterServer|DllUnregisterServer|DllInstall|DLL_PROCESS_ATTACH|DLL_THREAD_ATTACH)\b/i,
+      regex:
+        /\b(DllMain|DllRegisterServer|DllUnregisterServer|DllInstall|DLL_PROCESS_ATTACH|DLL_THREAD_ATTACH)\b/i,
     },
     {
       tag: 'export_dispatch',
@@ -993,8 +1016,9 @@ function collectXrefSignals(
     if (!matcher.test(textCorpus)) {
       continue
     }
-    const provenance: FunctionXrefSummary['provenance'] =
-      /^GetProcAddress$|^LoadLibrary/i.test(api) ? 'dynamic_resolution_api' : 'static_named_call'
+    const provenance: FunctionXrefSummary['provenance'] = /^GetProcAddress$|^LoadLibrary/i.test(api)
+      ? 'dynamic_resolution_api'
+      : 'static_named_call'
     pushSignal({
       api,
       provenance,
@@ -1079,8 +1103,7 @@ function buildRenameSuggestion(
     .toLowerCase()
 
   const evidence: string[] = []
-  const hasApi = (...apis: string[]) =>
-    apis.some((api) => apiSet.has(api.toLowerCase()))
+  const hasApi = (...apis: string[]) => apis.some((api) => apiSet.has(api.toLowerCase()))
   const hasStage = (...stages: string[]) =>
     stages.some((stage) => stageSet.has(stage.toLowerCase()))
   const hasTag = (...tags: string[]) => tags.some((tag) => tagSet.has(tag.toLowerCase()))
@@ -1187,9 +1210,7 @@ function buildRenameSuggestion(
     if (hasApi('GetProcAddress')) {
       evidence.push('api:GetProcAddress')
     }
-    if (
-      hasApi('LoadLibraryA', 'LoadLibraryW', 'LoadLibraryExA', 'LoadLibraryExW')
-    ) {
+    if (hasApi('LoadLibraryA', 'LoadLibraryW', 'LoadLibraryExA', 'LoadLibraryExW')) {
       evidence.push('api:LoadLibrary*')
     }
     if (hasStage('resolve_dynamic_apis')) {
@@ -1206,7 +1227,8 @@ function buildRenameSuggestion(
   if (
     hasApi('OpenProcess', 'CreateProcessA', 'CreateProcessW') ||
     hasStage('prepare_remote_process_access', 'spawn_remote_target') ||
-    (hasTag('process_spawn', 'process_injection') && textHas(/\b(openprocess|createprocess|remote process)\b/i))
+    (hasTag('process_spawn', 'process_injection') &&
+      textHas(/\b(openprocess|createprocess|remote process)\b/i))
   ) {
     if (hasApi('OpenProcess')) {
       evidence.push('api:OpenProcess')
@@ -1257,9 +1279,7 @@ function buildRenameSuggestion(
     )
   }
 
-  if (
-    textHas(/\bpacker|protector|vmprotect|themida|upx|entry point in non-first section\b/i)
-  ) {
+  if (textHas(/\bpacker|protector|vmprotect|themida|upx|entry point in non-first section\b/i)) {
     evidence.push('text:packer_detection')
     return finalize(
       'scan_packer_signatures',
@@ -1364,8 +1384,9 @@ function extractSnippetBodyShape(sourceLikeSnippet: string): SnippetBodyShape {
     pseudocode,
     is_void_return_stub: /\{\s*return;\s*\}\s*$/i.test(compact),
     constant_return: Number.isFinite(constantReturn) ? constantReturn : null,
-    has_trap_tail:
-      /\bswi\s*\(\s*3\s*\)|\b(__debugbreak|debugbreak|trap|abort|unreachable)\b/i.test(compact),
+    has_trap_tail: /\bswi\s*\(\s*3\s*\)|\b(__debugbreak|debugbreak|trap|abort|unreachable)\b/i.test(
+      compact
+    ),
   }
 }
 
@@ -1385,7 +1406,8 @@ function tokenizeSemanticText(value: string): string[] {
 
 function buildCFGShape(cfg?: ControlFlowGraph): SemanticEvidencePack['cfg_shape'] {
   const blockTypes = dedupe((cfg?.nodes || []).map((node) => node.type))
-  const entryBlockType = cfg?.nodes.find((node) => node.type === 'entry')?.type || cfg?.nodes[0]?.type || null
+  const entryBlockType =
+    cfg?.nodes.find((node) => node.type === 'entry')?.type || cfg?.nodes[0]?.type || null
   const loopEdges = (cfg?.edges || []).filter((edge) => edge.from === edge.to)
   const outgoingCount = new Map<string, number>()
   for (const edge of cfg?.edges || []) {
@@ -1448,16 +1470,26 @@ function buildFunctionStringHints(
     if (xrefSignals.some((item) => lowered.includes(item.api.toLowerCase()))) {
       score += 3
     }
-    if ((runtimeContext?.corroborated_stages || []).some((item) => lowered.includes(item.toLowerCase()))) {
+    if (
+      (runtimeContext?.corroborated_stages || []).some((item) =>
+        lowered.includes(item.toLowerCase())
+      )
+    ) {
       score += 3
     }
-    if ((runtimeContext?.corroborated_apis || []).some((item) => lowered.includes(item.toLowerCase()))) {
+    if (
+      (runtimeContext?.corroborated_apis || []).some((item) => lowered.includes(item.toLowerCase()))
+    ) {
       score += 2
     }
     if (evidenceCorpus.includes(lowered)) {
       score += 1
     }
-    if (/(packer|protector|entry point|section|vmprotect|themida|upx|readprocessmemory|writeprocessmemory|getprocaddress|loadlibrary)/i.test(hint)) {
+    if (
+      /(packer|protector|entry point|section|vmprotect|themida|upx|readprocessmemory|writeprocessmemory|getprocaddress|loadlibrary)/i.test(
+        hint
+      )
+    ) {
       score += 2
     }
     scoredHints.push({ hint, score })
@@ -1520,18 +1552,23 @@ function inferParameterRoles(
   }
 
   const hasProcessOps =
-    behaviorTags.some((tag) => ['process_injection', 'process_spawn', 'anti_debug'].includes(tag)) ||
+    behaviorTags.some((tag) =>
+      ['process_injection', 'process_spawn', 'anti_debug'].includes(tag)
+    ) ||
     /(writeprocessmemory|readprocessmemory|openprocess|createremotethread|setthreadcontext|resumethread|createprocessw|createprocessa)/i.test(
       corpus
     ) ||
     (runtimeContext?.corroborated_stages || []).includes('prepare_remote_process_access')
 
-  const hasDynamicResolver =
-    /getprocaddress|loadlibrary|resolve_dynamic_apis|dynamic api/i.test(corpus)
+  const hasDynamicResolver = /getprocaddress|loadlibrary|resolve_dynamic_apis|dynamic api/i.test(
+    corpus
+  )
 
   const hasFileOps =
     behaviorTags.includes('file_io') ||
-    /(createfile|readfile|writefile|deletefile|copyfile|findfirstfile|findnextfile)/i.test(corpus) ||
+    /(createfile|readfile|writefile|deletefile|copyfile|findfirstfile|findnextfile)/i.test(
+      corpus
+    ) ||
     (runtimeContext?.corroborated_stages || []).includes('file_operations')
 
   const hasRegistryOps =
@@ -1572,8 +1609,9 @@ function inferParameterRoles(
       corpus
     )
 
-  const hasCliHints =
-    /(usage:|--help|\/\?|command|subcommand|detect|scan|dump|inject)/i.test(corpus)
+  const hasCliHints = /(usage:|--help|\/\?|command|subcommand|detect|scan|dump|inject)/i.test(
+    corpus
+  )
 
   if (hasProcessOps) {
     addRole('string_arg_0', 'target_process_selector', 'const char *', 0.78, [
@@ -1596,22 +1634,28 @@ function inferParameterRoles(
       'api:ResumeThread/SetThreadContext/CreateRemoteThread',
       'summary:execution_transfer',
     ])
-    addRole('scalar_arg_0', 'operation_mode_flags', 'uint64_t', 0.55, [
-      'summary:mode_flags',
-    ])
+    addRole('scalar_arg_0', 'operation_mode_flags', 'uint64_t', 0.55, ['summary:mode_flags'])
   }
 
   if (hasDynamicResolver) {
-    addRole('string_arg_0', hasProcessOps ? 'target_process_selector' : 'module_name_hint', 'const char *', hasProcessOps ? 0.78 : 0.76, [
-      'api:GetProcAddress/LoadLibrary*',
-    ])
+    addRole(
+      'string_arg_0',
+      hasProcessOps ? 'target_process_selector' : 'module_name_hint',
+      'const char *',
+      hasProcessOps ? 0.78 : 0.76,
+      ['api:GetProcAddress/LoadLibrary*']
+    )
     addRole('string_arg_1', 'api_name_hint', 'const char *', 0.74, [
       'api:GetProcAddress',
       'summary:dynamic_resolution',
     ])
-    addRole('handle_arg_0', hasProcessOps ? 'process_handle' : 'module_handle_hint', hasProcessOps ? 'HANDLE' : 'HMODULE', hasProcessOps ? 0.82 : 0.58, [
-      'api:LoadLibrary*/GetProcAddress',
-    ])
+    addRole(
+      'handle_arg_0',
+      hasProcessOps ? 'process_handle' : 'module_handle_hint',
+      hasProcessOps ? 'HANDLE' : 'HMODULE',
+      hasProcessOps ? 0.82 : 0.58,
+      ['api:LoadLibrary*/GetProcAddress']
+    )
   }
 
   if (hasFileOps) {
@@ -1621,12 +1665,8 @@ function inferParameterRoles(
     addRole('string_arg_1', 'secondary_path_or_pattern', 'const char *', 0.61, [
       'api:CopyFile*/FindFirstFile*',
     ])
-    addRole('pointer_arg_0', 'buffer_view', 'void *', 0.66, [
-      'api:ReadFile/WriteFile',
-    ])
-    addRole('handle_arg_0', 'file_handle', 'HANDLE', 0.74, [
-      'api:CreateFile*/ReadFile/WriteFile',
-    ])
+    addRole('pointer_arg_0', 'buffer_view', 'void *', 0.66, ['api:ReadFile/WriteFile'])
+    addRole('handle_arg_0', 'file_handle', 'HANDLE', 0.74, ['api:CreateFile*/ReadFile/WriteFile'])
     addRole('scalar_arg_0', 'file_operation_flags', 'uint64_t', 0.52, [
       'summary:file_operation_mode',
     ])
@@ -1642,9 +1682,7 @@ function inferParameterRoles(
     addRole('pointer_arg_0', 'registry_value_buffer', 'void *', 0.59, [
       'api:RegSetValue*/RegQueryValue*',
     ])
-    addRole('handle_arg_0', 'registry_key_handle', 'HKEY', 0.72, [
-      'api:RegOpenKey*/RegCreateKey*',
-    ])
+    addRole('handle_arg_0', 'registry_key_handle', 'HKEY', 0.72, ['api:RegOpenKey*/RegCreateKey*'])
   }
 
   if (hasNetworkOps) {
@@ -1654,9 +1692,7 @@ function inferParameterRoles(
     addRole('string_arg_1', 'request_path_or_header', 'const char *', 0.63, [
       'api:HttpSendRequest*/send',
     ])
-    addRole('pointer_arg_0', 'network_buffer', 'void *', 0.69, [
-      'api:send/recv/HttpSendRequest*',
-    ])
+    addRole('pointer_arg_0', 'network_buffer', 'void *', 0.69, ['api:send/recv/HttpSendRequest*'])
     addRole('handle_arg_0', 'socket_or_request_handle', 'uintptr_t', 0.76, [
       'api:InternetOpen*/InternetConnect*/socket',
     ])
@@ -1687,9 +1723,7 @@ function inferParameterRoles(
     addRole('pointer_arg_0', 'interface_or_object_pointer', 'void **', 0.71, [
       'api:QueryInterface/DllGetClassObject',
     ])
-    addRole('scalar_arg_0', 'class_context_flags', 'uint32_t', 0.56, [
-      'api:CoCreateInstance',
-    ])
+    addRole('scalar_arg_0', 'class_context_flags', 'uint32_t', 0.56, ['api:CoCreateInstance'])
   }
 
   if (hasDllEntry) {
@@ -1699,9 +1733,7 @@ function inferParameterRoles(
     addRole('scalar_arg_0', 'dll_reason_code', 'uint32_t', 0.74, [
       'summary:dll_process_or_thread_attach',
     ])
-    addRole('pointer_arg_0', 'reserved_context', 'void *', 0.61, [
-      'summary:dll_reserved_context',
-    ])
+    addRole('pointer_arg_0', 'reserved_context', 'void *', 0.61, ['summary:dll_reserved_context'])
   }
 
   if (hasExportDispatch) {
@@ -1717,15 +1749,21 @@ function inferParameterRoles(
   }
 
   if (hasPackerScan) {
-    addRole('pointer_arg_0', hasFileOps ? 'buffer_view' : 'image_view', 'void *', hasFileOps ? 0.66 : 0.81, [
-      'summary:packer_or_pe_layout_scan',
-    ])
-    addRole('string_arg_0', hasCliHints ? 'command_hint' : 'section_name_hint', 'const char *', 0.56, [
-      'strings:packer/protector/help_text',
-    ])
-    addRole('scalar_arg_0', 'scan_mode_flags', 'uint64_t', 0.58, [
-      'summary:heuristic_scan_mode',
-    ])
+    addRole(
+      'pointer_arg_0',
+      hasFileOps ? 'buffer_view' : 'image_view',
+      'void *',
+      hasFileOps ? 0.66 : 0.81,
+      ['summary:packer_or_pe_layout_scan']
+    )
+    addRole(
+      'string_arg_0',
+      hasCliHints ? 'command_hint' : 'section_name_hint',
+      'const char *',
+      0.56,
+      ['strings:packer/protector/help_text']
+    )
+    addRole('scalar_arg_0', 'scan_mode_flags', 'uint64_t', 0.58, ['summary:heuristic_scan_mode'])
   }
 
   if (hasCliHints) {
@@ -1771,69 +1809,134 @@ function inferStateRoles(
   }
 
   if (/getprocaddress|loadlibrary|resolve_dynamic_apis/i.test(corpus)) {
-    addRole('dynamic_api_table', 'Caches dynamically resolved imports or late-bound API pointers.', 0.84, [
-      'api:GetProcAddress/LoadLibrary*',
-    ])
+    addRole(
+      'dynamic_api_table',
+      'Caches dynamically resolved imports or late-bound API pointers.',
+      0.84,
+      ['api:GetProcAddress/LoadLibrary*']
+    )
   }
   if (/createfile|readfile|writefile|deletefile|copyfile|file_operations/i.test(corpus)) {
-    addRole('file_api_table', 'Tracks file-system capability pointers or file-operation state.', 0.74, [
-      'api:CreateFile*/ReadFile/WriteFile',
-    ])
+    addRole(
+      'file_api_table',
+      'Tracks file-system capability pointers or file-operation state.',
+      0.74,
+      ['api:CreateFile*/ReadFile/WriteFile']
+    )
   }
   if (/regopenkey|regsetvalue|regqueryvalue|registry_operations/i.test(corpus)) {
-    addRole('registry_api_table', 'Tracks registry capability pointers or key/value update state.', 0.74, [
-      'api:RegOpenKey*/RegSetValue*',
-    ])
+    addRole(
+      'registry_api_table',
+      'Tracks registry capability pointers or key/value update state.',
+      0.74,
+      ['api:RegOpenKey*/RegSetValue*']
+    )
   }
-  if (/ntqueryinformationprocess|ntquerysysteminformation|isdebuggerpresent|code integrity|anti_analysis_checks/i.test(corpus)) {
-    addRole('process_probe', 'Accumulates anti-analysis probes and remote-process environment observations.', 0.79, [
-      'api:NtQueryInformationProcess/NtQuerySystemInformation',
-    ])
+  if (
+    /ntqueryinformationprocess|ntquerysysteminformation|isdebuggerpresent|code integrity|anti_analysis_checks/i.test(
+      corpus
+    )
+  ) {
+    addRole(
+      'process_probe',
+      'Accumulates anti-analysis probes and remote-process environment observations.',
+      0.79,
+      ['api:NtQueryInformationProcess/NtQuerySystemInformation']
+    )
   }
-  if (/writeprocessmemory|readprocessmemory|setthreadcontext|resumethread|createprocess/i.test(corpus)) {
-    addRole('execution_transfer_result', 'Stores the currently selected process-transfer stage and observed status.', 0.77, [
-      'api:WriteProcessMemory/SetThreadContext/ResumeThread/CreateProcess*',
-    ])
+  if (
+    /writeprocessmemory|readprocessmemory|setthreadcontext|resumethread|createprocess/i.test(corpus)
+  ) {
+    addRole(
+      'execution_transfer_result',
+      'Stores the currently selected process-transfer stage and observed status.',
+      0.77,
+      ['api:WriteProcessMemory/SetThreadContext/ResumeThread/CreateProcess*']
+    )
   }
   if (/packer|protector|upx|themida|vmprotect|entry point in non-first section/i.test(corpus)) {
-    addRole('packer_heuristics', 'Accumulates packer heuristics, matched signatures, and section-layout findings.', 0.83, [
-      'strings:packer/protector',
-    ])
+    addRole(
+      'packer_heuristics',
+      'Accumulates packer heuristics, matched signatures, and section-layout findings.',
+      0.83,
+      ['strings:packer/protector']
+    )
   }
   if (/usage:|--help|command|subcommand|detect|scan|dump|inject/i.test(corpus)) {
-    addRole('cli_model', 'Captures recovered command verbs, help banners, and command summaries.', 0.63, [
-      'strings:cli_or_help_text',
-    ])
+    addRole(
+      'cli_model',
+      'Captures recovered command verbs, help banners, and command summaries.',
+      0.63,
+      ['strings:cli_or_help_text']
+    )
   }
   if (/dispatch|capability/i.test(corpus)) {
-    addRole('dispatch_plan', 'Stores intermediate routing decisions between capability-specific handlers.', 0.61, [
-      'summary:dispatch_or_capability_routing',
-    ])
+    addRole(
+      'dispatch_plan',
+      'Stores intermediate routing decisions between capability-specific handlers.',
+      0.61,
+      ['summary:dispatch_or_capability_routing']
+    )
   }
-  if (/internetopen|internetconnect|httpsendrequest|winhttp|socket|connect|send|recv|bind|listen|accept|networking/i.test(corpus)) {
-    addRole('network_session', 'Tracks socket or HTTP request state, buffers, and remote endpoint intent.', 0.76, [
-      'api:InternetConnect*/HttpSendRequest*/socket',
-    ])
+  if (
+    /internetopen|internetconnect|httpsendrequest|winhttp|socket|connect|send|recv|bind|listen|accept|networking/i.test(
+      corpus
+    )
+  ) {
+    addRole(
+      'network_session',
+      'Tracks socket or HTTP request state, buffers, and remote endpoint intent.',
+      0.76,
+      ['api:InternetConnect*/HttpSendRequest*/socket']
+    )
   }
-  if (/createservice|startservice|openscmanager|controlservice|registerservicectrlhandler|service_main/i.test(corpus)) {
-    addRole('service_control_state', 'Tracks service manager handles, lifecycle commands, and SCM-facing status.', 0.75, [
-      'api:CreateService/OpenSCManager/ControlService',
-    ])
+  if (
+    /createservice|startservice|openscmanager|controlservice|registerservicectrlhandler|service_main/i.test(
+      corpus
+    )
+  ) {
+    addRole(
+      'service_control_state',
+      'Tracks service manager handles, lifecycle commands, and SCM-facing status.',
+      0.75,
+      ['api:CreateService/OpenSCManager/ControlService']
+    )
   }
-  if (/cocreateinstance|queryinterface|registerclassobject|dllgetclassobject|clsid_|iid_|class factory/i.test(corpus)) {
-    addRole('com_class_factory', 'Tracks COM class/object activation flow and interface handoff state.', 0.73, [
-      'api:CoCreateInstance/QueryInterface/DllGetClassObject',
-    ])
+  if (
+    /cocreateinstance|queryinterface|registerclassobject|dllgetclassobject|clsid_|iid_|class factory/i.test(
+      corpus
+    )
+  ) {
+    addRole(
+      'com_class_factory',
+      'Tracks COM class/object activation flow and interface handoff state.',
+      0.73,
+      ['api:CoCreateInstance/QueryInterface/DllGetClassObject']
+    )
   }
-  if (/dllmain|dllregisterserver|dllunregisterserver|dllinstall|dllcanunloadnow|dll_process_attach|dll_thread_attach/i.test(corpus)) {
-    addRole('dll_entry_state', 'Tracks DLL entrypoint reasons, registration lifecycle, or attach/detach state.', 0.72, [
-      'summary:dll_lifecycle',
-    ])
+  if (
+    /dllmain|dllregisterserver|dllunregisterserver|dllinstall|dllcanunloadnow|dll_process_attach|dll_thread_attach/i.test(
+      corpus
+    )
+  ) {
+    addRole(
+      'dll_entry_state',
+      'Tracks DLL entrypoint reasons, registration lifecycle, or attach/detach state.',
+      0.72,
+      ['summary:dll_lifecycle']
+    )
   }
-  if (/export|ordinal|forwarder|dispatch exported|host-facing command|dllgetclassobject|dllcanunloadnow/i.test(corpus)) {
-    addRole('export_dispatch_table', 'Tracks export ordinals, forwarders, and host-facing dispatch routing.', 0.67, [
-      'summary:export_dispatch',
-    ])
+  if (
+    /export|ordinal|forwarder|dispatch exported|host-facing command|dllgetclassobject|dllcanunloadnow/i.test(
+      corpus
+    )
+  ) {
+    addRole(
+      'export_dispatch_table',
+      'Tracks export ordinals, forwarders, and host-facing dispatch routing.',
+      0.67,
+      ['summary:export_dispatch']
+    )
   }
 
   return roles
@@ -1954,12 +2057,19 @@ function inferStructInference(
       confidence: 0.75,
       fields: [
         { name: 'remote_host_or_url', inferred_type: 'const char *', source_slot: 'string_arg_0' },
-        { name: 'request_path_or_header', inferred_type: 'const char *', source_slot: 'string_arg_1' },
+        {
+          name: 'request_path_or_header',
+          inferred_type: 'const char *',
+          source_slot: 'string_arg_1',
+        },
         { name: 'buffer_view', inferred_type: 'void *', source_slot: 'pointer_arg_0' },
         { name: 'request_handle', inferred_type: 'uintptr_t', source_slot: 'handle_arg_0' },
         { name: 'option_flags', inferred_type: 'uint64_t', source_slot: 'scalar_arg_0' },
       ],
-      evidence: ['parameter_roles:remote_host_or_url/network_buffer', 'state_roles:network_session'],
+      evidence: [
+        'parameter_roles:remote_host_or_url/network_buffer',
+        'state_roles:network_session',
+      ],
     })
   }
 
@@ -1987,7 +2097,10 @@ function inferStructInference(
         },
         { name: 'control_code', inferred_type: 'uint32_t', source_slot: 'scalar_arg_0' },
       ],
-      evidence: ['parameter_roles:service_name/service_manager_or_service_handle', 'state_roles:service_control_state'],
+      evidence: [
+        'parameter_roles:service_name/service_manager_or_service_handle',
+        'state_roles:service_control_state',
+      ],
     })
   }
 
@@ -2014,7 +2127,10 @@ function inferStructInference(
         },
         { name: 'class_context', inferred_type: 'uint32_t', source_slot: 'scalar_arg_0' },
       ],
-      evidence: ['parameter_roles:class_or_interface_identifier/interface_or_object_pointer', 'state_roles:com_class_factory'],
+      evidence: [
+        'parameter_roles:class_or_interface_identifier/interface_or_object_pointer',
+        'state_roles:com_class_factory',
+      ],
     })
   }
 
@@ -2056,7 +2172,10 @@ function inferStructInference(
         { name: 'argument_block', inferred_type: 'void *', source_slot: 'pointer_arg_0' },
         { name: 'ordinal_or_flags', inferred_type: 'uint32_t', source_slot: 'scalar_arg_0' },
       ],
-      evidence: ['parameter_roles:exported_command_name_or_dispatch_key/export_argument_block', 'state_roles:export_dispatch_table'],
+      evidence: [
+        'parameter_roles:exported_command_name_or_dispatch_key/export_argument_block',
+        'state_roles:export_dispatch_table',
+      ],
     })
   }
 
@@ -2065,11 +2184,15 @@ function inferStructInference(
       hasState('dynamic_api_table')
         ? { name: 'dynamic_apis', inferred_type: 'api_resolution_table' }
         : null,
-      hasState('file_api_table') ? { name: 'file_apis', inferred_type: 'api_resolution_table' } : null,
+      hasState('file_api_table')
+        ? { name: 'file_apis', inferred_type: 'api_resolution_table' }
+        : null,
       hasState('registry_api_table')
         ? { name: 'registry_apis', inferred_type: 'api_resolution_table' }
         : null,
-      hasState('process_probe') ? { name: 'process_probe', inferred_type: 'process_probe_state' } : null,
+      hasState('process_probe')
+        ? { name: 'process_probe', inferred_type: 'process_probe_state' }
+        : null,
       hasState('network_session')
         ? { name: 'network_session', inferred_type: 'network_request_context' }
         : null,
@@ -2079,7 +2202,9 @@ function inferStructInference(
       hasState('com_class_factory')
         ? { name: 'com_activation', inferred_type: 'com_activation_context' }
         : null,
-      hasState('dll_entry_state') ? { name: 'dll_entry', inferred_type: 'dll_entry_context' } : null,
+      hasState('dll_entry_state')
+        ? { name: 'dll_entry', inferred_type: 'dll_entry_context' }
+        : null,
       hasState('export_dispatch_table')
         ? { name: 'exports', inferred_type: 'export_dispatch_table' }
         : null,
@@ -2140,40 +2265,68 @@ function inferReturnRole(
       'summary:dynamic_resolution',
     ])
   }
-  if (/\b(writeprocessmemory|readprocessmemory|setthreadcontext|resumethread|createremotethread|virtualallocex|createprocess[a-z]*)\b/i.test(corpus)) {
+  if (
+    /\b(writeprocessmemory|readprocessmemory|setthreadcontext|resumethread|createremotethread|virtualallocex|createprocess[a-z]*)\b/i.test(
+      corpus
+    )
+  ) {
     return buildRole('execution_transfer_status', 'int', 0.74, [
       'api:WriteProcessMemory/SetThreadContext/ResumeThread/CreateProcess*',
       'runtime_stage:prepare_remote_process_access',
     ])
   }
-  if (/\b(createfile[a-z]*|readfile|writefile|deletefile[a-z]*|copyfile[a-z]*|findfirstfile[a-z]*|findnextfile[a-z]*)\b/i.test(corpus)) {
+  if (
+    /\b(createfile[a-z]*|readfile|writefile|deletefile[a-z]*|copyfile[a-z]*|findfirstfile[a-z]*|findnextfile[a-z]*)\b/i.test(
+      corpus
+    )
+  ) {
     return buildRole('io_status_or_bytes', 'int', 0.69, ['api:CreateFile*/ReadFile/WriteFile'])
   }
-  if (/\b(regopenkey(?:ex)?[a-z]*|regsetvalue(?:ex)?[a-z]*|regqueryvalue(?:ex)?[a-z]*|regcreatekey(?:ex)?[a-z]*)\b/i.test(corpus)) {
+  if (
+    /\b(regopenkey(?:ex)?[a-z]*|regsetvalue(?:ex)?[a-z]*|regqueryvalue(?:ex)?[a-z]*|regcreatekey(?:ex)?[a-z]*)\b/i.test(
+      corpus
+    )
+  ) {
     return buildRole('registry_operation_status', 'int', 0.67, ['api:RegOpenKey*/RegSetValue*'])
   }
-  if (/\b(internetopen[a-z]*|internetconnect[a-z]*|httpsendrequest[a-z]*|winhttp[a-z]*|socket|connect|send|recv)\b/i.test(corpus)) {
+  if (
+    /\b(internetopen[a-z]*|internetconnect[a-z]*|httpsendrequest[a-z]*|winhttp[a-z]*|socket|connect|send|recv)\b/i.test(
+      corpus
+    )
+  ) {
     return buildRole('network_operation_status', 'int', 0.7, [
       'api:InternetConnect*/HttpSendRequest*/socket',
     ])
   }
-  if (/\b(createservice[a-z]*|startservice[a-z]*|openscmanager[a-z]*|controlservice|registerservicectrlhandler(?:ex)?[a-z]*)\b/i.test(corpus)) {
+  if (
+    /\b(createservice[a-z]*|startservice[a-z]*|openscmanager[a-z]*|controlservice|registerservicectrlhandler(?:ex)?[a-z]*)\b/i.test(
+      corpus
+    )
+  ) {
     return buildRole('service_control_status', 'int', 0.68, [
       'api:CreateService/OpenSCManager/ControlService',
     ])
   }
-  if (/\b(cocreateinstance|queryinterface|dllgetclassobject|class factory|hresult)\b/i.test(corpus)) {
+  if (
+    /\b(cocreateinstance|queryinterface|dllgetclassobject|class factory|hresult)\b/i.test(corpus)
+  ) {
     return buildRole('activation_status_or_hresult', 'HRESULT', 0.72, [
       'api:CoCreateInstance/QueryInterface/DllGetClassObject',
     ])
   }
-  if (/\b(dllmain|dllregisterserver|dllunregisterserver|dllinstall|dllcanunloadnow|dll_process_attach)\b/i.test(corpus)) {
+  if (
+    /\b(dllmain|dllregisterserver|dllunregisterserver|dllinstall|dllcanunloadnow|dll_process_attach)\b/i.test(
+      corpus
+    )
+  ) {
     return buildRole('dll_entry_decision', 'BOOL', 0.71, ['summary:dll_lifecycle'])
   }
   if (/\b(export|ordinal|forwarder|dispatch exported|host-facing command)\b/i.test(corpus)) {
     return buildRole('dispatch_status_or_result', 'int', 0.61, ['summary:export_dispatch'])
   }
-  if (/\b(packer|protector|upx|vmprotect|themida|entry point in non-first section)\b/i.test(corpus)) {
+  if (
+    /\b(packer|protector|upx|vmprotect|themida|entry point in non-first section)\b/i.test(corpus)
+  ) {
     return buildRole('heuristic_match_score', 'int', 0.66, ['strings:packer/protector'])
   }
   if (/\breturn 0\b|\breturn 1\b|\breturn true\b|\breturn false\b/i.test(corpus)) {
@@ -2222,7 +2375,10 @@ function summarizeStructInference(
   }
   return structInference
     .slice(0, 4)
-    .map((item) => `${item.semantic_name}${item.rewrite_type_name ? `=>${item.rewrite_type_name}` : ''}`)
+    .map(
+      (item) =>
+        `${item.semantic_name}${item.rewrite_type_name ? `=>${item.rewrite_type_name}` : ''}`
+    )
     .join('; ')
 }
 
@@ -2248,7 +2404,11 @@ export function buildDefaultSemanticNameSuggestion(
     }
   }
 
-  if (/(packer|protector|entry point in non-first section|section entropy|vmprotect|themida|upx)/i.test(textCorpus)) {
+  if (
+    /(packer|protector|entry point in non-first section|section entropy|vmprotect|themida|upx)/i.test(
+      textCorpus
+    )
+  ) {
     for (const hint of evidencePack.string_hints.filter((value) =>
       /(packer|protector|entry point|vmprotect|themida|upx)/i.test(value)
     )) {
@@ -2257,7 +2417,9 @@ export function buildDefaultSemanticNameSuggestion(
     if (evidencePack.cfg_shape.node_count >= 20) {
       pushEvidence(`cfg_nodes:${evidencePack.cfg_shape.node_count}`)
     }
-    assumptions.push('Assumes PE layout and packer heuristics dominate this routine over generic helper duties.')
+    assumptions.push(
+      'Assumes PE layout and packer heuristics dominate this routine over generic helper duties.'
+    )
     return {
       candidate_name: 'scan_pe_layout_or_sections',
       confidence: clamp(0.62 + Math.min(evidenceUsed.length * 0.04, 0.14), 0.55, 0.82),
@@ -2273,11 +2435,17 @@ export function buildDefaultSemanticNameSuggestion(
     )
   ) {
     for (const api of evidencePack.xref_signals.map((item) => item.api)) {
-      if (/writeprocessmemory|setthreadcontext|resumethread|createremotethread|virtualallocex/i.test(api)) {
+      if (
+        /writeprocessmemory|setthreadcontext|resumethread|createremotethread|virtualallocex/i.test(
+          api
+        )
+      ) {
         pushEvidence(`api:${api}`)
       }
     }
-    assumptions.push('Assumes remote-process mutation is the primary goal rather than a supporting capability table build.')
+    assumptions.push(
+      'Assumes remote-process mutation is the primary goal rather than a supporting capability table build.'
+    )
     return {
       candidate_name: 'orchestrate_remote_memory_transfer',
       confidence: clamp(0.6 + Math.min(evidenceUsed.length * 0.05, 0.18), 0.56, 0.84),
@@ -2287,13 +2455,17 @@ export function buildDefaultSemanticNameSuggestion(
     }
   }
 
-  if (/\b(openprocess|readprocessmemory|ntqueryinformationprocess|remote process)\b/i.test(textCorpus)) {
+  if (
+    /\b(openprocess|readprocessmemory|ntqueryinformationprocess|remote process)\b/i.test(textCorpus)
+  ) {
     for (const api of evidencePack.xref_signals.map((item) => item.api)) {
       if (/openprocess|readprocessmemory|ntqueryinformationprocess/i.test(api)) {
         pushEvidence(`api:${api}`)
       }
     }
-    assumptions.push('Assumes the routine is inspecting or preparing remote process state rather than only dispatching.')
+    assumptions.push(
+      'Assumes the routine is inspecting or preparing remote process state rather than only dispatching.'
+    )
     return {
       candidate_name: 'inspect_remote_process_state',
       confidence: clamp(0.58 + Math.min(evidenceUsed.length * 0.05, 0.16), 0.54, 0.8),
@@ -2309,7 +2481,9 @@ export function buildDefaultSemanticNameSuggestion(
         pushEvidence(`api:${api}`)
       }
     }
-    assumptions.push('Assumes recovered file APIs are part of a file-materialization path, not incidental support code.')
+    assumptions.push(
+      'Assumes recovered file APIs are part of a file-materialization path, not incidental support code.'
+    )
     return {
       candidate_name: 'prepare_file_artifact_state',
       confidence: clamp(0.57 + Math.min(evidenceUsed.length * 0.05, 0.15), 0.53, 0.78),
@@ -2326,7 +2500,9 @@ export function buildDefaultSemanticNameSuggestion(
   ) {
     pushEvidence(`cfg_nodes:${evidencePack.cfg_shape.node_count}`)
     pushEvidence(`caller_count:${evidencePack.call_relationships.callers.length}`)
-    assumptions.push('Assumes the routine is a shared helper or control-flow utility because it is tiny and heavily reused.')
+    assumptions.push(
+      'Assumes the routine is a shared helper or control-flow utility because it is tiny and heavily reused.'
+    )
     return {
       candidate_name: 'shared_control_flow_helper',
       confidence: 0.56,
@@ -2380,16 +2556,16 @@ async function finalizeLayeredNameResolution(
     runtime_context: func.runtime_context || undefined,
     string_hints: func.semantic_evidence?.string_hints || [],
     pseudocode_excerpt:
-      func.semantic_evidence?.pseudocode_excerpt || buildPseudocodeExcerpt(func.source_like_snippet),
-    cfg_shape:
-      func.semantic_evidence?.cfg_shape || {
-        node_count: func.evidence.cfg_nodes,
-        edge_count: func.evidence.cfg_edges,
-        has_loop: false,
-        has_branching: func.evidence.cfg_edges > func.evidence.cfg_nodes,
-        block_types: [],
-        entry_block_type: null,
-      },
+      func.semantic_evidence?.pseudocode_excerpt ||
+      buildPseudocodeExcerpt(func.source_like_snippet),
+    cfg_shape: func.semantic_evidence?.cfg_shape || {
+      node_count: func.evidence.cfg_nodes,
+      edge_count: func.evidence.cfg_edges,
+      has_loop: false,
+      has_branching: func.evidence.cfg_edges > func.evidence.cfg_nodes,
+      block_types: [],
+      entry_block_type: null,
+    },
     parameter_roles: func.parameter_roles || func.semantic_evidence?.parameter_roles || [],
     return_role: func.return_role || func.semantic_evidence?.return_role || null,
     state_roles: func.state_roles || func.semantic_evidence?.state_roles || [],
@@ -2495,16 +2671,16 @@ function buildLinkedSuggestedNames(
   for (const label of [
     ...(func.call_context?.callers || []),
     ...(func.call_context?.callees || []),
-    ...((func.call_relationships?.callers || []).map((item) => item.target)),
-    ...((func.call_relationships?.callees || []).map((item) => item.target)),
+    ...(func.call_relationships?.callers || []).map((item) => item.target),
+    ...(func.call_relationships?.callees || []).map((item) => item.target),
   ]) {
     const token = extractLinkedLabelToken(label)
     if (token.address && byAddress.has(token.address)) {
-      linked.push(byAddress.get(token.address) as string)
+      linked.push(byAddress.get(token.address))
       continue
     }
     if (token.name && byName.has(token.name.toLowerCase())) {
-      linked.push(byName.get(token.name.toLowerCase()) as string)
+      linked.push(byName.get(token.name.toLowerCase()))
     }
   }
 
@@ -2607,9 +2783,7 @@ function buildLinkedRefinedSuggestion(
       rename_evidence: [`linked_caller:${linked}`],
     }
   }
-  if (
-    LINKED_SUGGESTION_PRIORITY_PREFIXES.some((prefix) => linked.startsWith(prefix))
-  ) {
+  if (LINKED_SUGGESTION_PRIORITY_PREFIXES.some((prefix) => linked.startsWith(prefix))) {
     return {
       suggested_name: appendSemanticSuffix(linked, kind),
       suggested_role:
@@ -2887,31 +3061,37 @@ function buildSemanticSummary(
 
   if (
     runtimeContext &&
-    (
-      runtimeContext.corroborated_apis.length > 0 ||
+    (runtimeContext.corroborated_apis.length > 0 ||
       runtimeContext.corroborated_stages.length > 0 ||
       (runtimeContext.matched_memory_regions || []).length > 0 ||
       (runtimeContext.matched_protections || []).length > 0 ||
       (runtimeContext.matched_region_owners || []).length > 0 ||
       (runtimeContext.matched_observed_modules || []).length > 0 ||
-      (runtimeContext.matched_segment_names || []).length > 0
-    )
+      (runtimeContext.matched_segment_names || []).length > 0)
   ) {
     const runtimePhrases: string[] = []
     if (runtimeContext.corroborated_apis.length > 0) {
-      runtimePhrases.push(`runtime corroborates ${runtimeContext.corroborated_apis.slice(0, 3).join(', ')}`)
+      runtimePhrases.push(
+        `runtime corroborates ${runtimeContext.corroborated_apis.slice(0, 3).join(', ')}`
+      )
     }
     if (runtimeContext.corroborated_stages.length > 0) {
-      runtimePhrases.push(`observed runtime stages include ${runtimeContext.corroborated_stages.slice(0, 2).join(', ')}`)
+      runtimePhrases.push(
+        `observed runtime stages include ${runtimeContext.corroborated_stages.slice(0, 2).join(', ')}`
+      )
     }
     if (runtimeContext.executed) {
       runtimePhrases.push('evidence includes executed runtime trace')
     }
     if ((runtimeContext.evidence_sources || []).length > 0) {
-      runtimePhrases.push(`runtime sources=${(runtimeContext.evidence_sources || []).slice(0, 3).join(', ')}`)
+      runtimePhrases.push(
+        `runtime sources=${(runtimeContext.evidence_sources || []).slice(0, 3).join(', ')}`
+      )
     }
     if ((runtimeContext.source_names || []).length > 0) {
-      runtimePhrases.push(`runtime names=${(runtimeContext.source_names || []).slice(0, 3).join(', ')}`)
+      runtimePhrases.push(
+        `runtime names=${(runtimeContext.source_names || []).slice(0, 3).join(', ')}`
+      )
     }
     if ((runtimeContext.provenance_layers || []).length > 0) {
       runtimePhrases.push(
@@ -3017,8 +3197,7 @@ function computeConfidence(
     breakdown.context = clamp(breakdown.context + runtimeConfidence * 0.08, 0.05, 0.28)
   }
 
-  const confidence =
-    breakdown.decompile + breakdown.cfg + breakdown.assembly + breakdown.context
+  const confidence = breakdown.decompile + breakdown.cfg + breakdown.assembly + breakdown.context
 
   return {
     confidence: clamp(confidence, 0, 1),
@@ -3087,11 +3266,13 @@ function buildSourceLikeSnippet(
 
   if (relationshipContext.callers.length > 0 || relationshipContext.callees.length > 0) {
     commentLines.push(
-      `// relationship_hints=callers:${relationshipContext.callers
-        .map((item) => formatRelationshipEntry(item))
-        .join(' || ') || 'none'} | callees:${relationshipContext.callees
-        .map((item) => formatRelationshipEntry(item))
-        .join(' || ') || 'none'}`
+      `// relationship_hints=callers:${
+        relationshipContext.callers.map((item) => formatRelationshipEntry(item)).join(' || ') ||
+        'none'
+      } | callees:${
+        relationshipContext.callees.map((item) => formatRelationshipEntry(item)).join(' || ') ||
+        'none'
+      }`
     )
   }
 
@@ -3139,9 +3320,7 @@ function buildSourceLikeSnippet(
   const snippetLines = pseudocodeLines.slice(0, maxPseudocodeLines)
 
   if (snippetLines.length === 0) {
-    return [...commentLines, '// pseudocode unavailable; inspect CFG/assembly manually'].join(
-      '\n'
-    )
+    return [...commentLines, '// pseudocode unavailable; inspect CFG/assembly manually'].join('\n')
   }
 
   return [...commentLines, ...snippetLines].join('\n')
@@ -3252,11 +3431,12 @@ async function buildDegradedFallbackFunction(
   const samplePath = path.join(workspace.original, files[0])
   const sampleBuffer = fs.readFileSync(samplePath)
   const scanWindow = sampleBuffer.subarray(0, Math.min(sampleBuffer.length, 2 * 1024 * 1024))
-  const asciiCorpus = scanWindow
-    .toString('latin1')
-    .match(/[ -~]{6,}/g)
-    ?.slice(0, 500)
-    .join('\n') || ''
+  const asciiCorpus =
+    scanWindow
+      .toString('latin1')
+      .match(/[ -~]{6,}/g)
+      ?.slice(0, 500)
+      .join('\n') || ''
 
   const behaviorTags = inferBehaviorTags(undefined, asciiCorpus).slice(0, 8)
   const topHints = asciiCorpus
@@ -3323,7 +3503,11 @@ export function createCodeFunctionsReconstructHandler(
   dependencies?: CodeFunctionsReconstructDependencies
 ) {
   const decompilerWorker = new DecompilerWorker(database, workspaceManager)
-  const stringsExtractHandler = createStringsExtractHandler(workspaceManager, database, cacheManager)
+  const stringsExtractHandler = createStringsExtractHandler(
+    workspaceManager,
+    database,
+    cacheManager
+  )
   const rankFunctions =
     dependencies?.rankFunctions ||
     ((sampleId: string, topK: number) => decompilerWorker.rankFunctions(sampleId, topK))
@@ -3337,7 +3521,10 @@ export function createCodeFunctionsReconstructHandler(
       decompilerWorker.getFunctionCFG(sampleId, addressOrSymbol, timeoutMs))
   const runtimeEvidenceLoader =
     dependencies?.runtimeEvidenceLoader ||
-    ((sampleId: string, options?: { evidenceScope?: 'all' | 'latest' | 'session'; sessionTag?: string }) =>
+    ((
+      sampleId: string,
+      options?: { evidenceScope?: 'all' | 'latest' | 'session'; sessionTag?: string }
+    ) =>
       loadDynamicTraceEvidence(workspaceManager, database, sampleId, {
         evidenceScope: options?.evidenceScope,
         sessionTag: options?.sessionTag,
@@ -3368,9 +3555,7 @@ export function createCodeFunctionsReconstructHandler(
         context_windows: responseData.summary.context_windows || [],
       }
     })
-  const semanticNameSuggester =
-    dependencies?.semanticNameSuggester ||
-    (async () => null)
+  const semanticNameSuggester = dependencies?.semanticNameSuggester || (async () => null)
   const externalSemanticSuggestionLoader =
     dependencies?.externalSemanticSuggestionLoader ||
     ((sampleId: string, options?: { scope?: 'all' | 'latest' | 'session'; sessionTag?: string }) =>
@@ -3401,7 +3586,10 @@ export function createCodeFunctionsReconstructHandler(
       ]
       const runtimeMarker =
         runtimeArtifacts.length > 0
-          ? runtimeArtifacts.map((item) => `${item.type}:${item.sha256}`).sort().join('|')
+          ? runtimeArtifacts
+              .map((item) => `${item.type}:${item.sha256}`)
+              .sort()
+              .join('|')
           : 'none'
       const semanticNameArtifacts = database.findArtifactsByType(
         input.sample_id,
@@ -3409,7 +3597,10 @@ export function createCodeFunctionsReconstructHandler(
       )
       const semanticNameMarker =
         semanticNameArtifacts.length > 0
-          ? semanticNameArtifacts.map((item) => `${item.id}:${item.sha256}`).sort().join('|')
+          ? semanticNameArtifacts
+              .map((item) => `${item.id}:${item.sha256}`)
+              .sort()
+              .join('|')
           : 'none'
 
       const mode: 'single' | 'topk' = input.address || input.symbol ? 'single' : 'topk'
@@ -3569,7 +3760,9 @@ export function createCodeFunctionsReconstructHandler(
             .sort((a, b) => a.localeCompare(b))[0]
 
           if (!fallbackFile) {
-            warnings.push('fallback disassembly unavailable: sample file missing in workspace.original')
+            warnings.push(
+              'fallback disassembly unavailable: sample file missing in workspace.original'
+            )
             return null
           }
 
@@ -3630,12 +3823,7 @@ export function createCodeFunctionsReconstructHandler(
         }
 
         const gaps = dedupe([
-          ...collectGaps(
-            pseudocodeLines,
-            cfg,
-            decompiled,
-            input.max_pseudocode_lines
-          ),
+          ...collectGaps(pseudocodeLines, cfg, decompiled, input.max_pseudocode_lines),
           ...(fallbackUsedForTarget ? ['ghidra_unavailable_fallback_disasm'] : []),
         ])
 
@@ -3899,16 +4087,12 @@ export function createCodeFunctionsReconstructHandler(
             ruleBasedName: nameResolution.rule_based_name,
             validatedName: nameResolution.validated_name,
           }),
-          source_like_snippet: withNameResolutionHeader(
-            suggestionAppliedSnippet,
-            nameResolution
-          ),
+          source_like_snippet: withNameResolutionHeader(suggestionAppliedSnippet, nameResolution),
         })
       }
       layeredFunctions.sort((a, b) => b.confidence - a.confidence)
       const overallConfidence =
-        layeredFunctions.reduce((sum, item) => sum + item.confidence, 0) /
-        layeredFunctions.length
+        layeredFunctions.reduce((sum, item) => sum + item.confidence, 0) / layeredFunctions.length
 
       const outputData = {
         sample_id: input.sample_id,

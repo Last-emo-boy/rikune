@@ -125,6 +125,52 @@ describe('analysis budget scheduler', () => {
     }
   })
 
+  test('admits approved dynamic_execute stages onto the dynamic lane', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analysis-budget-scheduler-'))
+    const database = new DatabaseManager(path.join(tempDir, 'test.db'))
+    const jobQueue = new JobQueue(database)
+    const scheduler = new AnalysisBudgetScheduler(database)
+
+    try {
+      database.insertSample({
+        id: 'sha256:' + 'g'.repeat(64),
+        sha256: 'g'.repeat(64),
+        md5: 'g'.repeat(32),
+        size: 1024 * 1024,
+        file_type: 'PE32+',
+        created_at: new Date().toISOString(),
+        source: 'unit-test',
+      })
+
+      const jobId = jobQueue.enqueue({
+        type: 'static',
+        tool: 'workflow.analyze.stage',
+        sampleId: 'sha256:' + 'g'.repeat(64),
+        args: {
+          run_id: 'run-dynamic',
+          stage: 'dynamic_execute',
+          sample_size_tier: 'small',
+          allow_live_execution: true,
+          approved: true,
+        },
+        priority: JobPriority.NORMAL,
+        timeout: 60_000,
+      })
+
+      const selection = scheduler.selectNextJob(jobQueue)
+      expect(selection?.job.id).toBe(jobId)
+      expect(selection?.plan.execution_bucket).toBe('dynamic-execute')
+      expect(selection?.plan.manual_only).toBe(false)
+
+      const event = database.findLatestSchedulerEventForJob(jobId)
+      expect(event?.decision).toBe('admitted')
+      expect(event?.cost_class).toBe('expensive')
+    } finally {
+      database.close()
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
   test('defers heavy work before control-plane memory headroom is exhausted', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analysis-budget-scheduler-'))
     const database = new DatabaseManager(path.join(tempDir, 'test.db'))

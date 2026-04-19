@@ -13,7 +13,8 @@ export const moduleReconstructionReviewPromptDefinition: PromptDefinition = {
     },
     {
       name: 'analysis_goal',
-      description: 'Optional analysis goal to bias the review toward tooling, malware, library, or plugin semantics',
+      description:
+        'Optional analysis goal to bias the review toward tooling, malware, library, or plugin semantics',
       required: false,
     },
   ],

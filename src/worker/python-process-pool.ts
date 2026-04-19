@@ -52,13 +52,10 @@ export class PythonProcessPool {
   constructor(options: PythonProcessPoolOptions = {}) {
     const cpuCount = os.cpus().length
     const envWorkers = parseInt(process.env.MAX_PYTHON_WORKERS || '', 10)
-    this.maxConcurrency = options.maxConcurrency
-      ?? (envWorkers > 0 ? envWorkers : Math.max(2, Math.min(cpuCount, 8)))
+    this.maxConcurrency =
+      options.maxConcurrency ?? (envWorkers > 0 ? envWorkers : Math.max(2, Math.min(cpuCount, 8)))
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? 120_000
-    logger.info(
-      { maxConcurrency: this.maxConcurrency, cpuCount },
-      'PythonProcessPool initialized'
-    )
+    logger.info({ maxConcurrency: this.maxConcurrency, cpuCount }, 'PythonProcessPool initialized')
   }
 
   /**
@@ -159,7 +156,9 @@ export class PythonProcessPool {
       timer = setTimeout(() => {
         if (!settled) {
           proc.kill('SIGTERM')
-          setTimeout(() => { if (!settled) proc.kill('SIGKILL') }, 2000)
+          setTimeout(() => {
+            if (!settled) proc.kill('SIGKILL')
+          }, 2000)
           settle({
             ok: false,
             errors: [`Worker timed out after ${timeoutMs}ms`],
@@ -179,7 +178,7 @@ export class PythonProcessPool {
 
   private drainQueue(): void {
     while (this.active < this.maxConcurrency && this.queue.length > 0) {
-      const next = this.queue.shift()!
+      const next = this.queue.shift()
       this.execute(next)
     }
   }

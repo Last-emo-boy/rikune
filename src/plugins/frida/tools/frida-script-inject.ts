@@ -8,6 +8,7 @@ import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
 import { normalizeError } from '../../../utils/shared-helpers.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'frida.script.inject'
 const TOOL_VERSION = '0.1.0'
@@ -106,10 +107,7 @@ interface FridaScriptInjectDependencies {
   callWorker?: (request: WorkerRequest) => Promise<WorkerResponse>
 }
 
-const WINDOWS_FRIDA_EXAMPLES = [
-  'pip install frida',
-  'pip install frida-tools',
-]
+const WINDOWS_FRIDA_EXAMPLES = ['pip install frida', 'pip install frida-tools']
 
 function buildFridaSetupActions() {
   return [
@@ -129,8 +127,7 @@ function buildFridaSetupActions() {
       required: false,
       kind: 'pip_install',
       title: 'Install Frida tools package',
-      summary:
-        'Install frida-tools for additional CLI utilities and script compilation support.',
+      summary: 'Install frida-tools for additional CLI utilities and script compilation support.',
       command: 'python -m pip install frida-tools',
       examples: ['python -m pip install frida-tools'],
       applies_to: ['frida.script.inject', 'system.health'],
@@ -155,7 +152,9 @@ function buildFridaSetupActions() {
         'Optionally set FRIDA_SCRIPT_ROOT to a directory containing custom Frida scripts for reuse.',
       env_var: 'FRIDA_SCRIPT_ROOT',
       value_hint: 'Absolute path to a directory containing Frida scripts',
-      examples: WINDOWS_FRIDA_EXAMPLES.map(() => `$env:FRIDA_SCRIPT_ROOT = "C:\\tools\\frida-scripts"`),
+      examples: WINDOWS_FRIDA_EXAMPLES.map(
+        () => `$env:FRIDA_SCRIPT_ROOT = "C:\\tools\\frida-scripts"`
+      ),
       applies_to: ['frida.script.inject', 'system.health'],
     },
   ]
@@ -188,7 +187,13 @@ export function createFridaScriptInjectHandler(
   deps: PluginToolDeps,
   dependencies?: FridaScriptInjectDependencies
 ) {
-  const { workspaceManager, database, resolvePackagePath, SetupActionSchema, RequiredUserInputSchema } = deps
+  const {
+    workspaceManager,
+    database,
+    resolvePackagePath,
+    SetupActionSchema,
+    RequiredUserInputSchema,
+  } = deps
 
   const FridaScriptInjectOutputSchema = z.object({
     ok: z.boolean(),
@@ -203,8 +208,12 @@ export function createFridaScriptInjectHandler(
         results: z.array(ScriptResultSchema),
         warnings: z.array(z.string()),
         errors: z.array(z.string()),
-        setup_actions: SetupActionSchema ? z.array(SetupActionSchema).optional() : z.array(z.any()).optional(),
-        required_user_inputs: RequiredUserInputSchema ? z.array(RequiredUserInputSchema).optional() : z.array(z.any()).optional(),
+        setup_actions: SetupActionSchema
+          ? z.array(SetupActionSchema).optional()
+          : z.array(z.any()).optional(),
+        required_user_inputs: RequiredUserInputSchema
+          ? z.array(RequiredUserInputSchema).optional()
+          : z.array(z.any()).optional(),
       })
       .optional(),
     warnings: z.array(z.string()).optional(),
@@ -220,8 +229,8 @@ export function createFridaScriptInjectHandler(
 
   async function callFridaWorker(request: WorkerRequest): Promise<WorkerResponse> {
     return new Promise((resolve, reject) => {
-      const workerPath = resolvePackagePath!('workers', 'frida_worker.py')
-      const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+      const workerPath = resolvePackagePath('workers', 'frida_worker.py')
+      const pythonCommand = getPythonCommand()
       const pythonProcess = spawn(pythonCommand, [workerPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
       })
@@ -326,7 +335,13 @@ export function createFridaScriptInjectHandler(
       return await fs.readFile(scriptPath, 'utf-8')
     } catch (e) {
       // Try relative to package
-      const packageRelativePath = resolvePackagePath!('src', 'plugins', 'frida', 'scripts', path.basename(scriptPath))
+      const packageRelativePath = resolvePackagePath(
+        'src',
+        'plugins',
+        'frida',
+        'scripts',
+        path.basename(scriptPath)
+      )
       try {
         return await fs.readFile(packageRelativePath, 'utf-8')
       } catch (e2) {
@@ -428,8 +443,14 @@ export function createFridaScriptInjectHandler(
         workerResponse = await runWorker(workerRequest)
       } catch (error) {
         const errorStr = normalizeError(error)
-        if (errorStr.includes('Frida is not installed') || errorStr.includes('ModuleNotFoundError')) {
-          return buildFridaUnavailableResponse(startTime, 'Frida runtime not installed. Run: pip install frida')
+        if (
+          errorStr.includes('Frida is not installed') ||
+          errorStr.includes('ModuleNotFoundError')
+        ) {
+          return buildFridaUnavailableResponse(
+            startTime,
+            'Frida runtime not installed. Run: pip install frida'
+          )
         }
         return {
           ok: false,
@@ -443,7 +464,10 @@ export function createFridaScriptInjectHandler(
 
       if (!workerResponse.ok) {
         const errorMsg = workerResponse.errors.join('; ') || 'Frida script injection failed'
-        if (errorMsg.toLowerCase().includes('not installed') || errorMsg.toLowerCase().includes('import')) {
+        if (
+          errorMsg.toLowerCase().includes('not installed') ||
+          errorMsg.toLowerCase().includes('import')
+        ) {
           return buildFridaUnavailableResponse(startTime, errorMsg)
         }
         return {
@@ -543,4 +567,5 @@ export const fridaScriptInjectToolDefinition: ToolDefinition = {
   description:
     'Inject a custom or pre-built Frida JavaScript into a running process for dynamic analysis.',
   inputSchema: FridaScriptInjectInputSchema,
+  runtimeBackendHint: { type: 'python-worker', handler: 'frida_worker.py' },
 }

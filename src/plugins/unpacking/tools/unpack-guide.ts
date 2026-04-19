@@ -13,10 +13,7 @@ const TOOL_NAME = 'unpack.guide'
 
 export const UnpackGuideInputSchema = z.object({
   sample_id: z.string().describe('Sample identifier (sha256:<hex>)'),
-  packer_name: z
-    .string()
-    .optional()
-    .describe('Override packer name (if not auto-detected)'),
+  packer_name: z.string().optional().describe('Override packer name (if not auto-detected)'),
 })
 
 export type UnpackGuideInput = z.infer<typeof UnpackGuideInputSchema>
@@ -76,9 +73,24 @@ const PACKER_GUIDES: Record<string, PackerGuide> = {
     difficulty: 'trivial',
     automated: true,
     steps: [
-      { step: 1, title: 'Run UPX decompress', description: 'Execute `upx -d <file>` to decompress the binary in-place.', tools: ['upx.inspect'] },
-      { step: 2, title: 'Verify unpacked binary', description: 'Run packer.detect again to confirm the binary is no longer packed.', tools: ['packer.detect'] },
-      { step: 3, title: 'Analyze unpacked sample', description: 'Proceed with full static/dynamic analysis on the unpacked binary.', tools: ['workflow.analyze.start'] },
+      {
+        step: 1,
+        title: 'Run UPX decompress',
+        description: 'Execute `upx -d <file>` to decompress the binary in-place.',
+        tools: ['upx.inspect'],
+      },
+      {
+        step: 2,
+        title: 'Verify unpacked binary',
+        description: 'Run packer.detect again to confirm the binary is no longer packed.',
+        tools: ['packer.detect'],
+      },
+      {
+        step: 3,
+        title: 'Analyze unpacked sample',
+        description: 'Proceed with full static/dynamic analysis on the unpacked binary.',
+        tools: ['workflow.analyze.start'],
+      },
     ],
     tips: [
       'UPX is fully reversible unless the binary has been modified post-pack (e.g., section name changes, header corruption).',
@@ -92,11 +104,41 @@ const PACKER_GUIDES: Record<string, PackerGuide> = {
     difficulty: 'extreme',
     automated: false,
     steps: [
-      { step: 1, title: 'Identify Themida version', description: 'Check the Themida version from PE overlay or specific markers. Older versions (< 2.x) have known OEP finding techniques.', tools: ['pe.fingerprint', 'strings.extract'] },
-      { step: 2, title: 'Bypass anti-debug', description: 'Use Frida or x64dbg anti-debug plugins to bypass Themida\'s anti-debug checks (NtQueryInformationProcess, timing checks, hardware breakpoint detection).', tools: ['frida.script.generate', 'dynamic.trace'] },
-      { step: 3, title: 'Find OEP via hardware breakpoints', description: 'Set hardware breakpoints on the stack to catch the final jump to OEP. Themida typically uses VirtualAlloc for unpacking code.', tools: ['dynamic.trace'] },
-      { step: 4, title: 'Dump and fix IAT', description: 'Once at OEP, dump the process memory and fix the Import Address Table using Scylla or ImpRec.', tools: ['unpack.auto'] },
-      { step: 5, title: 'Validate unpacked binary', description: 'Run packer.detect and pe.imports.extract to verify the unpacked binary is functional.', tools: ['packer.detect', 'pe.imports.extract'] },
+      {
+        step: 1,
+        title: 'Identify Themida version',
+        description:
+          'Check the Themida version from PE overlay or specific markers. Older versions (< 2.x) have known OEP finding techniques.',
+        tools: ['pe.fingerprint', 'strings.extract'],
+      },
+      {
+        step: 2,
+        title: 'Bypass anti-debug',
+        description:
+          "Use Frida or x64dbg anti-debug plugins to bypass Themida's anti-debug checks (NtQueryInformationProcess, timing checks, hardware breakpoint detection).",
+        tools: ['frida.script.generate', 'dynamic.trace'],
+      },
+      {
+        step: 3,
+        title: 'Find OEP via hardware breakpoints',
+        description:
+          'Set hardware breakpoints on the stack to catch the final jump to OEP. Themida typically uses VirtualAlloc for unpacking code.',
+        tools: ['dynamic.trace'],
+      },
+      {
+        step: 4,
+        title: 'Dump and fix IAT',
+        description:
+          'Once at OEP, dump the process memory and fix the Import Address Table using Scylla or ImpRec.',
+        tools: ['unpack.auto'],
+      },
+      {
+        step: 5,
+        title: 'Validate unpacked binary',
+        description:
+          'Run packer.detect and pe.imports.extract to verify the unpacked binary is functional.',
+        tools: ['packer.detect', 'pe.imports.extract'],
+      },
     ],
     tips: [
       'Themida uses VM-based protection — full deobfuscation of virtualized code is often impractical.',
@@ -111,10 +153,34 @@ const PACKER_GUIDES: Record<string, PackerGuide> = {
     difficulty: 'extreme',
     automated: false,
     steps: [
-      { step: 1, title: 'Identify VMProtect version', description: 'Check for .vmp sections and VMProtect-specific signatures. Version affects deobfuscation approaches.', tools: ['pe.fingerprint', 'pe.sections'] },
-      { step: 2, title: 'Bypass anti-debug', description: 'Patch or hook anti-debug APIs. VMProtect checks IsDebuggerPresent, NtQueryInformationProcess, and uses timing-based checks.', tools: ['frida.script.generate'] },
-      { step: 3, title: 'Trace API calls', description: 'Use API monitoring to understand behavior without full unpacking. VMProtect VM bytecode is extremely difficult to devirtualize.', tools: ['dynamic.trace', 'frida.script.generate'] },
-      { step: 4, title: 'Dump at OEP (if possible)', description: 'For partially protected binaries, find and dump at Original Entry Point. Fully VM-protected binaries cannot be traditionally unpacked.', tools: ['unpack.auto'] },
+      {
+        step: 1,
+        title: 'Identify VMProtect version',
+        description:
+          'Check for .vmp sections and VMProtect-specific signatures. Version affects deobfuscation approaches.',
+        tools: ['pe.fingerprint', 'pe.sections'],
+      },
+      {
+        step: 2,
+        title: 'Bypass anti-debug',
+        description:
+          'Patch or hook anti-debug APIs. VMProtect checks IsDebuggerPresent, NtQueryInformationProcess, and uses timing-based checks.',
+        tools: ['frida.script.generate'],
+      },
+      {
+        step: 3,
+        title: 'Trace API calls',
+        description:
+          'Use API monitoring to understand behavior without full unpacking. VMProtect VM bytecode is extremely difficult to devirtualize.',
+        tools: ['dynamic.trace', 'frida.script.generate'],
+      },
+      {
+        step: 4,
+        title: 'Dump at OEP (if possible)',
+        description:
+          'For partially protected binaries, find and dump at Original Entry Point. Fully VM-protected binaries cannot be traditionally unpacked.',
+        tools: ['unpack.auto'],
+      },
     ],
     tips: [
       'VMProtect uses custom VM bytecode — devirtualization requires specialized tools like VMProtect devirtualizers (if available for the version).',
@@ -128,11 +194,39 @@ const PACKER_GUIDES: Record<string, PackerGuide> = {
     difficulty: 'moderate',
     automated: false,
     steps: [
-      { step: 1, title: 'Identify .NET Reactor features', description: 'Determine which protection features are used: native stub, string encryption, control flow obfuscation, anti-tampering.', tools: ['obfuscation.detect', 'pe.fingerprint'] },
-      { step: 2, title: 'Remove native stub', description: 'Use de4dot or similar .NET deobfuscator to remove the native unpacking stub and restore the managed assembly.', tools: ['unpack.auto'] },
-      { step: 3, title: 'Deobfuscate strings', description: 'Run string decryption using de4dot\'s built-in .NET Reactor deobfuscation module.', tools: ['strings.extract'] },
-      { step: 4, title: 'Fix control flow', description: 'Use de4dot to remove control flow obfuscation and restore readable IL code.', tools: ['obfuscation.detect'] },
-      { step: 5, title: 'Decompile cleaned assembly', description: 'Use ILSpy or dnSpy to decompile the cleaned assembly.', tools: ['dotnet.analyze'] },
+      {
+        step: 1,
+        title: 'Identify .NET Reactor features',
+        description:
+          'Determine which protection features are used: native stub, string encryption, control flow obfuscation, anti-tampering.',
+        tools: ['obfuscation.detect', 'pe.fingerprint'],
+      },
+      {
+        step: 2,
+        title: 'Remove native stub',
+        description:
+          'Use de4dot or similar .NET deobfuscator to remove the native unpacking stub and restore the managed assembly.',
+        tools: ['unpack.auto'],
+      },
+      {
+        step: 3,
+        title: 'Deobfuscate strings',
+        description:
+          "Run string decryption using de4dot's built-in .NET Reactor deobfuscation module.",
+        tools: ['strings.extract'],
+      },
+      {
+        step: 4,
+        title: 'Fix control flow',
+        description: 'Use de4dot to remove control flow obfuscation and restore readable IL code.',
+        tools: ['obfuscation.detect'],
+      },
+      {
+        step: 5,
+        title: 'Decompile cleaned assembly',
+        description: 'Use ILSpy or dnSpy to decompile the cleaned assembly.',
+        tools: ['dotnet.analyze'],
+      },
     ],
     tips: [
       'de4dot (https://github.com/de4dot/de4dot) handles most .NET Reactor versions well.',
@@ -146,11 +240,39 @@ const PACKER_GUIDES: Record<string, PackerGuide> = {
     difficulty: 'moderate',
     automated: false,
     steps: [
-      { step: 1, title: 'Identify ConfuserEx version', description: 'Check for ConfuserEx markers in metadata or resources. Look for "ConfuserEx" string or packer stub patterns.', tools: ['obfuscation.detect', 'strings.extract'] },
-      { step: 2, title: 'Run de4dot', description: 'Use de4dot with ConfuserEx deobfuscation mode to remove obfuscation layers.', tools: ['unpack.auto'] },
-      { step: 3, title: 'Decrypt strings', description: 'ConfuserEx often uses delegate-based string encryption. de4dot can handle standard variants.', tools: ['strings.extract'] },
-      { step: 4, title: 'Restore control flow', description: 'Remove switch-based control flow flattening and restore original method bodies.', tools: ['obfuscation.detect'] },
-      { step: 5, title: 'Decompile', description: 'Use ILSpy or dnSpy on the cleaned assembly.', tools: ['dotnet.analyze'] },
+      {
+        step: 1,
+        title: 'Identify ConfuserEx version',
+        description:
+          'Check for ConfuserEx markers in metadata or resources. Look for "ConfuserEx" string or packer stub patterns.',
+        tools: ['obfuscation.detect', 'strings.extract'],
+      },
+      {
+        step: 2,
+        title: 'Run de4dot',
+        description: 'Use de4dot with ConfuserEx deobfuscation mode to remove obfuscation layers.',
+        tools: ['unpack.auto'],
+      },
+      {
+        step: 3,
+        title: 'Decrypt strings',
+        description:
+          'ConfuserEx often uses delegate-based string encryption. de4dot can handle standard variants.',
+        tools: ['strings.extract'],
+      },
+      {
+        step: 4,
+        title: 'Restore control flow',
+        description:
+          'Remove switch-based control flow flattening and restore original method bodies.',
+        tools: ['obfuscation.detect'],
+      },
+      {
+        step: 5,
+        title: 'Decompile',
+        description: 'Use ILSpy or dnSpy on the cleaned assembly.',
+        tools: ['dotnet.analyze'],
+      },
     ],
     tips: [
       'Custom ConfuserEx forks (e.g., ConfuserEx2, ModifiedConfuserEx) may not be handled by de4dot.',
@@ -164,9 +286,25 @@ const PACKER_GUIDES: Record<string, PackerGuide> = {
     difficulty: 'easy',
     automated: true,
     steps: [
-      { step: 1, title: 'Find OEP', description: 'ASPack jumps to OEP via a RETN instruction. Set breakpoint on the stack push before RETN.', tools: ['dynamic.trace'] },
-      { step: 2, title: 'Try automated unpack', description: 'Use unpack.auto which may handle ASPack via Speakeasy or Qiling OEP dumping.', tools: ['unpack.auto'] },
-      { step: 3, title: 'Dump and fix', description: 'If automated fails, manually dump at OEP and fix IAT with Scylla.', tools: ['pe.fingerprint'] },
+      {
+        step: 1,
+        title: 'Find OEP',
+        description:
+          'ASPack jumps to OEP via a RETN instruction. Set breakpoint on the stack push before RETN.',
+        tools: ['dynamic.trace'],
+      },
+      {
+        step: 2,
+        title: 'Try automated unpack',
+        description: 'Use unpack.auto which may handle ASPack via Speakeasy or Qiling OEP dumping.',
+        tools: ['unpack.auto'],
+      },
+      {
+        step: 3,
+        title: 'Dump and fix',
+        description: 'If automated fails, manually dump at OEP and fix IAT with Scylla.',
+        tools: ['pe.fingerprint'],
+      },
     ],
     tips: [
       'ASPack is a relatively simple packer — most versions can be unpacked with standard OEP finding techniques.',
@@ -179,9 +317,26 @@ const PACKER_GUIDES: Record<string, PackerGuide> = {
     difficulty: 'easy',
     automated: true,
     steps: [
-      { step: 1, title: 'Automated unpack attempt', description: 'Try unpack.auto first — PECompact is well-supported by emulation-based unpackers.', tools: ['unpack.auto'] },
-      { step: 2, title: 'Manual OEP finding', description: 'If automated fails, PECompact uses a loader DLL injected into the process. Break on the final jump to code section.', tools: ['dynamic.trace'] },
-      { step: 3, title: 'Fix sections', description: 'After dumping, fix section characteristics and IAT.', tools: ['pe.fingerprint', 'pe.sections'] },
+      {
+        step: 1,
+        title: 'Automated unpack attempt',
+        description:
+          'Try unpack.auto first — PECompact is well-supported by emulation-based unpackers.',
+        tools: ['unpack.auto'],
+      },
+      {
+        step: 2,
+        title: 'Manual OEP finding',
+        description:
+          'If automated fails, PECompact uses a loader DLL injected into the process. Break on the final jump to code section.',
+        tools: ['dynamic.trace'],
+      },
+      {
+        step: 3,
+        title: 'Fix sections',
+        description: 'After dumping, fix section characteristics and IAT.',
+        tools: ['pe.fingerprint', 'pe.sections'],
+      },
     ],
     tips: [
       'PECompact modifies section names — section may be named .pec or similar.',
@@ -196,11 +351,41 @@ const DEFAULT_GUIDE: PackerGuide = {
   difficulty: 'hard',
   automated: false,
   steps: [
-    { step: 1, title: 'Identify the packer', description: 'Run packer.detect and entropy.analyze to gather more information about the protection.', tools: ['packer.detect', 'entropy.analyze'] },
-    { step: 2, title: 'Check entropy distribution', description: 'High entropy sections suggest compression/encryption. Use entropy analysis to identify which sections are protected.', tools: ['entropy.analyze'] },
-    { step: 3, title: 'Try automated unpack', description: 'Attempt unpack.auto with different backends (UPX CLI, Speakeasy dump, Qiling OEP dump).', tools: ['unpack.auto'] },
-    { step: 4, title: 'Dynamic analysis', description: 'If automated unpacking fails, use dynamic analysis to trace execution and find the OEP.', tools: ['dynamic.trace', 'frida.script.generate'] },
-    { step: 5, title: 'Memory dump', description: 'Dump the process memory after the unpacking stub has run. Fix IAT with Scylla or ImpRec.', tools: ['unpack.auto'] },
+    {
+      step: 1,
+      title: 'Identify the packer',
+      description:
+        'Run packer.detect and entropy.analyze to gather more information about the protection.',
+      tools: ['packer.detect', 'entropy.analyze'],
+    },
+    {
+      step: 2,
+      title: 'Check entropy distribution',
+      description:
+        'High entropy sections suggest compression/encryption. Use entropy analysis to identify which sections are protected.',
+      tools: ['entropy.analyze'],
+    },
+    {
+      step: 3,
+      title: 'Try automated unpack',
+      description:
+        'Attempt unpack.auto with different backends (UPX CLI, Speakeasy dump, Qiling OEP dump).',
+      tools: ['unpack.auto'],
+    },
+    {
+      step: 4,
+      title: 'Dynamic analysis',
+      description:
+        'If automated unpacking fails, use dynamic analysis to trace execution and find the OEP.',
+      tools: ['dynamic.trace', 'frida.script.generate'],
+    },
+    {
+      step: 5,
+      title: 'Memory dump',
+      description:
+        'Dump the process memory after the unpacking stub has run. Fix IAT with Scylla or ImpRec.',
+      tools: ['unpack.auto'],
+    },
   ],
   tips: [
     'Start with entropy analysis to understand the packing structure.',
@@ -235,7 +420,9 @@ function extractPackerName(database: DatabaseManager, sampleId: string): string 
         return result.detections[0].name || null
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   try {
     const runs = database.findAnalysisRunsBySample(sampleId)
@@ -249,7 +436,9 @@ function extractPackerName(database: DatabaseManager, sampleId: string): string 
         }
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   return null
 }
@@ -272,7 +461,9 @@ export function createUnpackGuideHandler(
       if (!packerName) {
         return {
           ok: false,
-          errors: ['No packer detected for this sample. Run packer.detect first or specify packer_name manually.'],
+          errors: [
+            'No packer detected for this sample. Run packer.detect first or specify packer_name manually.',
+          ],
           metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
         }
       }
@@ -294,9 +485,16 @@ export function createUnpackGuideHandler(
 
       try {
         await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, input.sample_id, 'unpack_guide', 'unpack_guide', { tool: TOOL_NAME, data }
+          workspaceManager,
+          database,
+          input.sample_id,
+          'unpack_guide',
+          'unpack_guide',
+          { tool: TOOL_NAME, data }
         )
-      } catch { /* best effort */ }
+      } catch {
+        /* best effort */
+      }
 
       return {
         ok: true,

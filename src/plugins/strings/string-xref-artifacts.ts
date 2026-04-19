@@ -41,7 +41,6 @@ export interface StringXrefArtifactSelection<TPayload = unknown> {
 
 const LATEST_ARTIFACT_WINDOW_MS = 10 * 1000
 
-
 function getArtifactRootSegment(artifactType: StringXrefArtifactType): string {
   switch (artifactType) {
     case ENRICHED_STRING_ANALYSIS_ARTIFACT_TYPE:
@@ -64,7 +63,11 @@ export async function persistStringXrefJsonArtifact(
 ): Promise<ArtifactRef> {
   const workspace = await workspaceManager.createWorkspace(sampleId)
   const sessionSegment = sanitizePathSegment(sessionTag || undefined, 'default')
-  const reportDir = path.join(workspace.reports, getArtifactRootSegment(artifactType), sessionSegment)
+  const reportDir = path.join(
+    workspace.reports,
+    getArtifactRootSegment(artifactType),
+    sessionSegment
+  )
   await fs.mkdir(reportDir, { recursive: true })
 
   const fileName = `${filePrefix}_${Date.now()}.json`

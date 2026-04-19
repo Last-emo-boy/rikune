@@ -12,7 +12,7 @@ import type { ToolArgs, WorkerResult } from '../../src/types.js'
 import {
   createDotNetMetadataExtractHandler,
   DotNetMetadataExtractInputSchema,
-} from '../../src/tools/dotnet-metadata-extract.js'
+} from '../../src/plugins/static-triage/tools/dotnet-metadata-extract.js'
 
 describe('dotnet.metadata.extract tool', () => {
   let workspaceManager: WorkspaceManager

@@ -5,6 +5,7 @@
 import { z } from 'zod'
 import { spawn } from 'child_process'
 import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'apk.packer.detect'
 
@@ -19,17 +20,31 @@ export const apkPackerDetectToolDefinition: ToolDefinition = {
   inputSchema: ApkPackerDetectInputSchema,
 }
 
-async function callApkWorker(request: Record<string, unknown>, pythonCmd: string, workerPath: string): Promise<Record<string, unknown>> {
+async function callApkWorker(
+  request: Record<string, unknown>,
+  pythonCmd: string,
+  workerPath: string
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const proc = spawn(pythonCmd, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
-    proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
-    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+    proc.stdout.on('data', (d: Buffer) => {
+      stdout += d.toString()
+    })
+    proc.stderr.on('data', (d: Buffer) => {
+      stderr += d.toString()
+    })
     proc.on('close', (code) => {
-      if (code !== 0) { reject(new Error(`Worker exited ${code}: ${stderr}`)); return }
-      try { resolve(JSON.parse(stdout.trim())) }
-      catch (e) { reject(new Error(`Parse: ${(e as Error).message}`)) }
+      if (code !== 0) {
+        reject(new Error(`Worker exited ${code}: ${stderr}`))
+        return
+      }
+      try {
+        resolve(JSON.parse(stdout.trim()))
+      } catch (e) {
+        reject(new Error(`Parse: ${(e as Error).message}`))
+      }
     })
     proc.on('error', (e) => reject(new Error(`Spawn: ${e.message}`)))
     proc.stdin.write(JSON.stringify(request) + '\n')
@@ -38,8 +53,15 @@ async function callApkWorker(request: Record<string, unknown>, pythonCmd: string
 }
 
 export function createApkPackerDetectHandler(deps: PluginToolDeps) {
-  const { workspaceManager, database, config, resolvePrimarySamplePath, persistStaticAnalysisJsonArtifact, resolvePackagePath } = deps
-  const pythonCmd = config.workers.static.pythonPath || (process.platform === 'win32' ? 'python' : 'python3')
+  const {
+    workspaceManager,
+    database,
+    config,
+    resolvePrimarySamplePath,
+    persistStaticAnalysisJsonArtifact,
+    resolvePackagePath,
+  } = deps
+  const pythonCmd = getPythonCommand(undefined, config.workers.static.pythonPath)
   const workerPath = resolvePackagePath('src', 'plugins', 'android', 'workers', 'apk_dex_worker.py')
   return async (args: z.infer<typeof ApkPackerDetectInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()
@@ -48,16 +70,26 @@ export function createApkPackerDetectHandler(deps: PluginToolDeps) {
       if (!sample) return { ok: false, errors: [`Sample not found: ${args.sample_id}`] }
 
       const { samplePath } = await resolvePrimarySamplePath(workspaceManager, args.sample_id)
-      const result = await callApkWorker({ action: 'detect_packer', file_path: samplePath }, pythonCmd, workerPath)
+      const result = await callApkWorker(
+        { action: 'detect_packer', file_path: samplePath },
+        pythonCmd,
+        workerPath
+      )
 
       const artifacts: ArtifactRef[] = []
       try {
         const artRef = await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, args.sample_id,
-          'apk_packer_detection', 'apk-packer-detect', result
+          workspaceManager,
+          database,
+          args.sample_id,
+          'apk_packer_detection',
+          'apk-packer-detect',
+          result
         )
         if (artRef) artifacts.push(artRef)
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
       return {
         ok: true,

@@ -10,6 +10,7 @@ import type { DatabaseManager } from '../../../database.js'
 import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'elf.imports.extract'
 
@@ -54,12 +55,11 @@ export function createElfImportsExtractHandler(
 
       // Extract DT_NEEDED entries
       const dynamic = (parsed.dynamic as Array<{ tag: string; value: string }>) || []
-      const needed = dynamic
-        .filter((d) => d.tag === 'DT_NEEDED')
-        .map((d) => d.value)
+      const needed = dynamic.filter((d) => d.tag === 'DT_NEEDED').map((d) => d.value)
 
       // Extract imported symbols (UND binding from dynsym)
-      const symbols = (parsed.symbols as Array<{ name: string; type: string; bind: string; value: number }>) || []
+      const symbols =
+        (parsed.symbols as Array<{ name: string; type: string; bind: string; value: number }>) || []
       const importedSymbols = symbols
         .filter((s) => s.value === 0 && s.name && s.bind !== 'LOCAL')
         .map((s) => ({ name: s.name, type: s.type, bind: s.bind }))
@@ -74,10 +74,17 @@ export function createElfImportsExtractHandler(
       const artifacts: ArtifactRef[] = []
       try {
         const artRef = await persistStaticAnalysisJsonArtifact(
-          workspaceManager, database, args.sample_id, 'elf_imports', 'elf-imports', importData
+          workspaceManager,
+          database,
+          args.sample_id,
+          'elf_imports',
+          'elf-imports',
+          importData
         )
         if (artRef) artifacts.push(artRef)
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
       return {
         ok: true,
@@ -95,17 +102,29 @@ export function createElfImportsExtractHandler(
   }
 }
 
-async function callElfMachoWorker(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function callElfMachoWorker(
+  request: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const workerPath = resolvePackagePath('src', 'plugins', 'elf-macho', 'workers', 'elf_macho_worker.py')
-    const pythonCommand = process.platform === 'win32' ? 'python' : 'python3'
+    const workerPath = resolvePackagePath(
+      'src',
+      'plugins',
+      'elf-macho',
+      'workers',
+      'elf_macho_worker.py'
+    )
+    const pythonCommand = getPythonCommand()
     const proc = spawn(pythonCommand, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'] })
 
     let stdout = ''
     let stderr = ''
 
-    proc.stdout.on('data', (d) => { stdout += d.toString() })
-    proc.stderr.on('data', (d) => { stderr += d.toString() })
+    proc.stdout.on('data', (d) => {
+      stdout += d.toString()
+    })
+    proc.stderr.on('data', (d) => {
+      stderr += d.toString()
+    })
 
     proc.on('close', (code) => {
       if (code !== 0) {

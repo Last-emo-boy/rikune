@@ -4,15 +4,30 @@
 
 import type { Plugin } from '../sdk.js'
 
-import { apkDisassembleToolDefinition, createApkDisassembleHandler } from './tools/apk-disassemble.js'
-import { apkResourcesDecodeToolDefinition, createApkResourcesDecodeHandler } from './tools/apk-resources-decode.js'
-import { apkManifestParseToolDefinition, createApkManifestParseHandler } from './tools/apk-manifest-parse.js'
+import {
+  apkDisassembleToolDefinition,
+  createApkDisassembleHandler,
+} from './tools/apk-disassemble.js'
+import {
+  apkResourcesDecodeToolDefinition,
+  createApkResourcesDecodeHandler,
+} from './tools/apk-resources-decode.js'
+import {
+  apkManifestParseToolDefinition,
+  createApkManifestParseHandler,
+} from './tools/apk-manifest-parse.js'
 
 const apkSmaliPlugin: Plugin = {
   id: 'apk-smali',
   name: 'APK Smali Analysis',
-  surfaceRules: { tier: 1, activateOn: { fileTypes: ['apk', 'android'] }, category: 'android-analysis' },
-  description: 'APK disassembly to Smali bytecode, resource decoding, and manifest parsing via apktool.',
+  executionDomain: 'static',
+  surfaceRules: {
+    tier: 1,
+    activateOn: { fileTypes: ['apk', 'android'] },
+    category: 'android-analysis',
+  },
+  description:
+    'APK disassembly to Smali bytecode, resource decoding, and manifest parsing via apktool.',
   version: '1.0.0',
 
   systemDeps: [

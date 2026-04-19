@@ -75,7 +75,7 @@ describe('ghidra.health tool', () => {
       metrics_json: JSON.stringify({}),
     })
 
-    const handler = createGhidraHealthHandler(workspaceManager, database, {
+    const handler = createGhidraHealthHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/'), findBestGhidraAnalysis: (analyses) => analyses.find(a => a.backend === 'ghidra'), getGhidraReadiness: (a) => { try { const m = JSON.parse(a.output_json || '{}'); return m.readiness || {} } catch { return {} } }, parseGhidraAnalysisMetadata: (j) => { try { return JSON.parse(j || '{}') } catch { return {} } }, checkGhidraHealth: () => ({ ok: true }), buildJavaRequiredUserInputs: () => [{ key: 'java_home', label: 'JAVA_HOME', hint: 'Path to JDK' }], buildJavaSetupActions: () => [{ id: 'set_java_home', label: 'Set JAVA_HOME', type: 'env' }], buildGhidraRequiredUserInputs: () => [{ key: 'ghidra_install_dir', label: 'Ghidra Install', hint: 'Path to Ghidra' }], buildGhidraSetupActions: () => [{ id: 'set_ghidra_path', label: 'Set Ghidra path', type: 'env' }], buildPyGhidraSetupActions: () => [{ id: 'install_pyghidra', label: 'Install PyGhidra', type: 'pip' }], mergeSetupActions: (...args) => args.flat(), mergeRequiredUserInputs: (...args) => args.flat(), DecompilerWorker: class { constructor() {} decompileFunction() { return {} } getFunctionCFG() { return {} } } } as any, {
       checkGhidra: () => ({
         ok: true,
         checked_at: new Date().toISOString(),
@@ -135,7 +135,7 @@ describe('ghidra.health tool', () => {
   })
 
   test('should report setup guidance when the Ghidra environment is not ready', async () => {
-    const handler = createGhidraHealthHandler(workspaceManager, database, {
+    const handler = createGhidraHealthHandler({ workspaceManager, database, resolvePackagePath: (...s) => s.join('/'), findBestGhidraAnalysis: (analyses) => analyses.find(a => a.backend === 'ghidra'), getGhidraReadiness: (a) => { try { const m = JSON.parse(a.output_json || '{}'); return m.readiness || {} } catch { return {} } }, parseGhidraAnalysisMetadata: (j) => { try { return JSON.parse(j || '{}') } catch { return {} } }, checkGhidraHealth: () => ({ ok: true }), buildJavaRequiredUserInputs: () => [{ key: 'java_home', label: 'JAVA_HOME', hint: 'Path to JDK' }], buildJavaSetupActions: () => [{ id: 'set_java_home', label: 'Set JAVA_HOME', type: 'env' }], buildGhidraRequiredUserInputs: () => [{ key: 'ghidra_install_dir', label: 'Ghidra Install', hint: 'Path to Ghidra' }], buildGhidraSetupActions: () => [{ id: 'set_ghidra_path', label: 'Set Ghidra path', type: 'env' }], buildPyGhidraSetupActions: () => [{ id: 'install_pyghidra', label: 'Install PyGhidra', type: 'pip' }], mergeSetupActions: (...args) => args.flat(), mergeRequiredUserInputs: (...args) => args.flat(), DecompilerWorker: class { constructor() {} decompileFunction() { return {} } getFunctionCFG() { return {} } } } as any, {
       checkGhidra: () => ({
         ok: false,
         checked_at: new Date().toISOString(),

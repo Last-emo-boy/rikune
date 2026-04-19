@@ -11,25 +11,63 @@ const TOOL_NAME = 'crackme.locate.validation'
 
 // String patterns that typically surround a validation check
 const SUCCESS_STRINGS = [
-  'correct', 'success', 'congratulation', 'well done', 'good job', 'registered',
-  'valid', 'thank', 'unlocked', 'licensed', 'accepted', 'good boy',
+  'correct',
+  'success',
+  'congratulation',
+  'well done',
+  'good job',
+  'registered',
+  'valid',
+  'thank',
+  'unlocked',
+  'licensed',
+  'accepted',
+  'good boy',
 ]
 const FAILURE_STRINGS = [
-  'wrong', 'incorrect', 'invalid', 'bad', 'nope', 'try again', 'fail',
-  'error', 'denied', 'expired', 'not valid', 'bad boy',
+  'wrong',
+  'incorrect',
+  'invalid',
+  'bad',
+  'nope',
+  'try again',
+  'fail',
+  'error',
+  'denied',
+  'expired',
+  'not valid',
+  'bad boy',
 ]
 const DIALOG_APIS = [
-  'MessageBoxA', 'MessageBoxW', 'MessageBoxExA', 'MessageBoxExW',
-  'DialogBoxParamA', 'DialogBoxParamW', 'SetDlgItemTextA', 'SetDlgItemTextW',
-  'SetWindowTextA', 'SetWindowTextW',
+  'MessageBoxA',
+  'MessageBoxW',
+  'MessageBoxExA',
+  'MessageBoxExW',
+  'DialogBoxParamA',
+  'DialogBoxParamW',
+  'SetDlgItemTextA',
+  'SetDlgItemTextW',
+  'SetWindowTextA',
+  'SetWindowTextW',
 ]
 const INPUT_APIS = [
-  'GetDlgItemTextA', 'GetDlgItemTextW', 'GetWindowTextA', 'GetWindowTextW',
-  'SendMessageA', 'SendMessageW', 'SendDlgItemMessageA', 'SendDlgItemMessageW',
+  'GetDlgItemTextA',
+  'GetDlgItemTextW',
+  'GetWindowTextA',
+  'GetWindowTextW',
+  'SendMessageA',
+  'SendMessageW',
+  'SendDlgItemMessageA',
+  'SendDlgItemMessageW',
 ]
 const CRYPTO_APIS = [
-  'CryptHashData', 'CryptDeriveKey', 'CryptEncrypt', 'CryptDecrypt',
-  'BCryptHash', 'MD5Init', 'SHA1Update',
+  'CryptHashData',
+  'CryptDeriveKey',
+  'CryptEncrypt',
+  'CryptDecrypt',
+  'BCryptHash',
+  'MD5Init',
+  'SHA1Update',
 ]
 
 export const CrackmeLocateValidationInputSchema = z.object({
@@ -60,7 +98,9 @@ interface CandidateFunction {
 export function createCrackmeLocateValidationHandler(deps: PluginToolDeps) {
   const { workspaceManager, database, persistStaticAnalysisJsonArtifact } = deps
 
-  return async (args: z.infer<typeof CrackmeLocateValidationInputSchema>): Promise<WorkerResult> => {
+  return async (
+    args: z.infer<typeof CrackmeLocateValidationInputSchema>
+  ): Promise<WorkerResult> => {
     const t0 = Date.now()
     const warnings: string[] = []
 
@@ -71,11 +111,20 @@ export function createCrackmeLocateValidationHandler(deps: PluginToolDeps) {
       // Gather evidence from existing analysis artifacts
       const evidence = database.findAnalysisEvidenceBySample(args.sample_id)
       if (!Array.isArray(evidence) || evidence.length === 0) {
-        return { ok: false, errors: ['No analysis evidence found. Run ghidra.analyze and strings.extract first.'] }
+        return {
+          ok: false,
+          errors: ['No analysis evidence found. Run ghidra.analyze and strings.extract first.'],
+        }
       }
 
       // Extract function list, string refs, imports
-      const functions: Array<{ name: string; address: string; size: number; callees?: string[]; strings?: string[] }> = []
+      const functions: Array<{
+        name: string
+        address: string
+        size: number
+        callees?: string[]
+        strings?: string[]
+      }> = []
       const allStrings: Array<{ value: string; address?: string; xrefs?: string[] }> = []
       const imports: Array<{ name: string; address?: string }> = []
 
@@ -83,8 +132,13 @@ export function createCrackmeLocateValidationHandler(deps: PluginToolDeps) {
         const family = entry.evidence_family ?? ''
         let data: any
         try {
-          data = typeof entry.result_json === 'string' ? JSON.parse(entry.result_json) : entry.result_json
-        } catch { continue }
+          data =
+            typeof entry.result_json === 'string'
+              ? JSON.parse(entry.result_json)
+              : entry.result_json
+        } catch {
+          continue
+        }
 
         if (family === 'function_map' || family === 'functions') {
           const fns = data?.functions ?? data?.data?.functions ?? []
@@ -128,16 +182,28 @@ export function createCrackmeLocateValidationHandler(deps: PluginToolDeps) {
         const foundInput: string[] = []
         const foundCrypto: string[] = []
 
-        const fnStrings = (fn.strings ?? []).map(s => typeof s === 'string' ? s.toLowerCase() : '')
-        const fnCallees = (fn.callees ?? []).map(c => typeof c === 'string' ? c : '')
+        const fnStrings = (fn.strings ?? []).map((s) =>
+          typeof s === 'string' ? s.toLowerCase() : ''
+        )
+        const fnCallees = (fn.callees ?? []).map((c) => (typeof c === 'string' ? c : ''))
 
         // Check string references
         for (const s of fnStrings) {
           for (const pat of SUCCESS_STRINGS) {
-            if (s.includes(pat)) { foundSuccess.push(s); score += 15; reasons.push(`success_string: "${s}"`); break }
+            if (s.includes(pat)) {
+              foundSuccess.push(s)
+              score += 15
+              reasons.push(`success_string: "${s}"`)
+              break
+            }
           }
           for (const pat of FAILURE_STRINGS) {
-            if (s.includes(pat)) { foundFailure.push(s); score += 15; reasons.push(`failure_string: "${s}"`); break }
+            if (s.includes(pat)) {
+              foundFailure.push(s)
+              score += 15
+              reasons.push(`failure_string: "${s}"`)
+              break
+            }
           }
         }
 
@@ -150,13 +216,25 @@ export function createCrackmeLocateValidationHandler(deps: PluginToolDeps) {
         // Check API calls
         for (const callee of fnCallees) {
           for (const api of DIALOG_APIS) {
-            if (callee.includes(api)) { foundDialog.push(api); score += 10; reasons.push(`dialog_api: ${api}`) }
+            if (callee.includes(api)) {
+              foundDialog.push(api)
+              score += 10
+              reasons.push(`dialog_api: ${api}`)
+            }
           }
           for (const api of INPUT_APIS) {
-            if (callee.includes(api)) { foundInput.push(api); score += 12; reasons.push(`input_api: ${api}`) }
+            if (callee.includes(api)) {
+              foundInput.push(api)
+              score += 12
+              reasons.push(`input_api: ${api}`)
+            }
           }
           for (const api of CRYPTO_APIS) {
-            if (callee.includes(api)) { foundCrypto.push(api); score += 8; reasons.push(`crypto_api: ${api}`) }
+            if (callee.includes(api)) {
+              foundCrypto.push(api)
+              score += 8
+              reasons.push(`crypto_api: ${api}`)
+            }
           }
         }
 
@@ -186,7 +264,9 @@ export function createCrackmeLocateValidationHandler(deps: PluginToolDeps) {
       const topCandidates = candidates.slice(0, 20)
 
       if (topCandidates.length === 0) {
-        warnings.push('No obvious validation functions detected. The binary may use obfuscated or indirect patterns.')
+        warnings.push(
+          'No obvious validation functions detected. The binary may use obfuscated or indirect patterns.'
+        )
       }
 
       const resultData = {
@@ -197,23 +277,30 @@ export function createCrackmeLocateValidationHandler(deps: PluginToolDeps) {
           strings_available: allStrings.length,
           imports_available: imports.length,
         },
-        next_steps: topCandidates.length > 0
-          ? [
-              `Decompile the top candidate: code.function.decompile(sample_id, function_name='${topCandidates[0]?.name}')`,
-              'Run symbolic execution: symbolic.explore(sample_id, target_function=...)',
-              'Extract constraints: constraint.extract(sample_id)',
-            ]
-          : ['Run ghidra.analyze first, then re-run this tool'],
+        next_steps:
+          topCandidates.length > 0
+            ? [
+                `Decompile the top candidate: code.function.decompile(sample_id, function_name='${topCandidates[0]?.name}')`,
+                'Run symbolic execution: symbolic.explore(sample_id, target_function=...)',
+                'Extract constraints: constraint.extract(sample_id)',
+              ]
+            : ['Run ghidra.analyze first, then re-run this tool'],
       }
 
       const artifacts: ArtifactRef[] = []
       try {
-        const artRef = await persistStaticAnalysisJsonArtifact!(
-          workspaceManager, database, args.sample_id,
-          'crackme_validation_candidates', 'crackme-locate', resultData
+        const artRef = await persistStaticAnalysisJsonArtifact(
+          workspaceManager,
+          database,
+          args.sample_id,
+          'crackme_validation_candidates',
+          'crackme-locate',
+          resultData
         )
         if (artRef) artifacts.push(artRef)
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
       return {
         ok: true,

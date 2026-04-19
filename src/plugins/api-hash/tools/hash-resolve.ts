@@ -10,9 +10,12 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  ArtifactRefSchema, SharedMetricsSchema,
-  normalizeError, runPythonJson,
-  persistBackendArtifact, buildMetrics,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  normalizeError,
+  runPythonJson,
+  persistBackendArtifact,
+  buildMetrics,
   resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
@@ -20,30 +23,46 @@ import {
 const TOOL_NAME = 'hash.resolve'
 
 export const hashResolveInputSchema = z.object({
-  hashes: z.array(z.string()).min(1).max(200).describe('Hex hash values to resolve (e.g. ["0x6A4ABC5B", "0xEC0E4E8E"]).'),
-  algorithm: z.enum(['ror13', 'crc32', 'djb2', 'sdbm', 'fnv1a', 'ror13_additive', 'auto']).default('auto').describe('Hash algorithm used. "auto" tries all.'),
-  unicode: z.boolean().default(false).describe('Whether to compute hashes on Unicode (UTF-16LE) API names.'),
+  hashes: z
+    .array(z.string())
+    .min(1)
+    .max(200)
+    .describe('Hex hash values to resolve (e.g. ["0x6A4ABC5B", "0xEC0E4E8E"]).'),
+  algorithm: z
+    .enum(['ror13', 'crc32', 'djb2', 'sdbm', 'fnv1a', 'ror13_additive', 'auto'])
+    .default('auto')
+    .describe('Hash algorithm used. "auto" tries all.'),
+  unicode: z
+    .boolean()
+    .default(false)
+    .describe('Whether to compute hashes on Unicode (UTF-16LE) API names.'),
   persist_artifact: z.boolean().default(true).describe('Persist resolution results.'),
   session_tag: z.string().optional().describe('Optional artifact session tag.'),
 })
 
 export const hashResolveOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    resolved_count: z.number().optional(),
-    unresolved_count: z.number().optional(),
-    results: z.array(z.object({
-      hash: z.string(),
-      algorithm: z.string().optional(),
-      api_name: z.string().optional(),
-      dll: z.string().optional(),
-      resolved: z.boolean(),
-    })).optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      resolved_count: z.number().optional(),
+      unresolved_count: z.number().optional(),
+      results: z
+        .array(
+          z.object({
+            hash: z.string(),
+            algorithm: z.string().optional(),
+            api_name: z.string().optional(),
+            dll: z.string().optional(),
+            resolved: z.boolean(),
+          })
+        )
+        .optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
   metrics: SharedMetricsSchema.optional(),
@@ -51,7 +70,8 @@ export const hashResolveOutputSchema = z.object({
 
 export const hashResolveToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
-  description: 'Resolve shellcode API hashes against known Windows API hash databases (ROR13, CRC32, DJB2, etc.).',
+  description:
+    'Resolve shellcode API hashes against known Windows API hash databases (ROR13, CRC32, DJB2, etc.).',
   inputSchema: hashResolveInputSchema,
   outputSchema: hashResolveOutputSchema,
 }
@@ -193,29 +213,45 @@ print(json.dumps({'resolved_count': resolved, 'unresolved_count': len(results) -
 
 export function createHashResolveHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
       const input = hashResolveInputSchema.parse(args)
-      const backend = resolveExecutable({ envPath: process.env.PYTHON_PATH, pathCandidates: ['python3', 'python'], versionArgSets: [['--version']] })
+      const backend = resolveExecutable({
+        envPath: process.env.PYTHON_PATH,
+        pathCandidates: ['python3', 'python'],
+        versionArgSets: [['--version']],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'python3', available: false, error: 'Python 3 not found' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend || ({ name: 'python3', available: false, error: 'Python 3 not found' } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const result = await runPythonJson(
         backend.path,
         PYTHON_SCRIPT,
         { hashes: input.hashes, algorithm: input.algorithm, unicode: input.unicode },
-        30000,
+        30000
       )
 
-      const parsed = result.parsed as any
+      const parsed = result.parsed
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact && parsed?.results?.length > 0) {
-        artifact = await persistBackendArtifact(workspaceManager, database, 'api-hash', 'hash', 'resolve', JSON.stringify(parsed.results, null, 2), { extension: 'json', mime: 'application/json', sessionTag: input.session_tag })
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          'api-hash',
+          'hash',
+          'resolve',
+          JSON.stringify(parsed.results, null, 2),
+          { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
+        )
         artifacts.push(artifact)
       }
 
@@ -229,7 +265,9 @@ export function createHashResolveHandler(
           summary: `Resolved ${parsed?.resolved_count || 0}/${input.hashes.length} API hashes.`,
           recommended_next_tools: ['hash.identify', 'disasm.quick', 'speakeasy.emulate'],
           next_actions: [
-            parsed?.resolved_count > 0 ? 'Map resolved APIs to understand shellcode behavior.' : 'Try different algorithm or check hash values.',
+            parsed?.resolved_count > 0
+              ? 'Map resolved APIs to understand shellcode behavior.'
+              : 'Try different algorithm or check hash values.',
             'Use disasm.quick to locate hash computation in shellcode.',
           ],
         },
@@ -237,7 +275,11 @@ export function createHashResolveHandler(
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }

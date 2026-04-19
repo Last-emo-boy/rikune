@@ -1,5 +1,5 @@
 /**
- * UPX inspect tool â€?inspect or decompress a sample with UPX.
+ * UPX inspect tool ï¿½?inspect or decompress a sample with UPX.
  */
 
 import { z } from 'zod'
@@ -8,12 +8,24 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { SharedBackendDependencies } from '../../docker-shared.js'
 import {
-  fs, os, path,
-  ArtifactRefSchema, BackendSchema, SharedMetricsSchema,
-  ensureSampleExists, executeCommand, truncateText, normalizeError,
-  persistBackendArtifact, buildMetrics, buildStaticSetupRequired,
-  findBackendPreviewEvidence, persistBackendPreviewEvidence, buildEvidenceReuseWarnings,
-  resolveSampleFile, resolveAnalysisBackends,
+  fs,
+  os,
+  path,
+  ArtifactRefSchema,
+  BackendSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  executeCommand,
+  truncateText,
+  normalizeError,
+  persistBackendArtifact,
+  buildMetrics,
+  buildStaticSetupRequired,
+  findBackendPreviewEvidence,
+  persistBackendPreviewEvidence,
+  buildEvidenceReuseWarnings,
+  resolveSampleFile,
+  resolveAnalysisBackends,
 } from '../../docker-shared.js'
 
 export const upxInspectInputSchema = z.object({
@@ -23,7 +35,10 @@ export const upxInspectInputSchema = z.object({
     .default('test')
     .describe('UPX list/test/decompress operation.'),
   timeout_sec: z.number().int().min(1).max(180).default(30).describe('UPX timeout in seconds.'),
-  persist_artifact: z.boolean().default(true).describe('Persist decompressed output or inspection text as an artifact.'),
+  persist_artifact: z
+    .boolean()
+    .default(true)
+    .describe('Persist decompressed output or inspection text as an artifact.'),
   session_tag: z.string().optional().describe('Optional artifact session tag.'),
 })
 
@@ -113,11 +128,7 @@ export function createUPXInspectHandler(
         commandArgs = ['-d', '-o', outputPath, samplePath]
       }
 
-      const commandResult = await runner(
-        backend.path,
-        commandArgs,
-        input.timeout_sec * 1000
-      )
+      const commandResult = await runner(backend.path, commandArgs, input.timeout_sec * 1000)
 
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
@@ -173,8 +184,12 @@ export function createUPXInspectHandler(
         recommended_next_tools: ['artifact.read', 'packer.detect', 'workflow.analyze.start'],
         next_actions:
           input.operation === 'decompress'
-            ? ['Use the persisted artifact as the unpacked binary for secondary analysis, then continue through workflow.analyze.start or workflow.analyze.promote.']
-            : ['Inspect stdout/stderr previews or read the artifact for the full UPX output before promoting deeper staged analysis.'],
+            ? [
+                'Use the persisted artifact as the unpacked binary for secondary analysis, then continue through workflow.analyze.start or workflow.analyze.promote.',
+              ]
+            : [
+                'Inspect stdout/stderr previews or read the artifact for the full UPX output before promoting deeper staged analysis.',
+              ],
       } satisfies Record<string, unknown>
 
       persistBackendPreviewEvidence(

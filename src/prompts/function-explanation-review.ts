@@ -13,7 +13,8 @@ export const functionExplanationReviewPromptDefinition: PromptDefinition = {
     },
     {
       name: 'analysis_goal',
-      description: 'Optional analysis goal to bias the explanation toward malware, tooling, or library semantics',
+      description:
+        'Optional analysis goal to bias the explanation toward malware, tooling, or library semantics',
       required: false,
     },
   ],
@@ -61,8 +62,7 @@ export function buildFunctionExplanationReviewPromptText(
 
 export function createFunctionExplanationReviewPromptHandler() {
   return async (args: PromptArgs): Promise<PromptResult> => ({
-    description:
-      'Prompt template for evidence-grounded function explanation and rewrite guidance.',
+    description: 'Prompt template for evidence-grounded function explanation and rewrite guidance.',
     messages: [
       {
         role: 'user',

@@ -16,53 +16,76 @@ import type { PluginManager } from '../plugins.js'
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const toolsDiscoverInputSchema = z.object({
-  action: z.enum(['status', 'list', 'activate']).default('list').describe(
-    'Action to perform.\n' +
-    '- `status`: Show surface state (how many tools visible vs total).\n' +
-    '- `list`: List available categories and plugins that can be activated.\n' +
-    '- `activate`: Activate a specific category or plugin.',
-  ),
-  category: z.string().optional().describe(
-    'Category to activate (with action=activate) or filter by (with action=list).\n' +
-    'Standard categories: reverse-engineering, dynamic-analysis, symbolic-execution, ' +
-    'memory-forensics, network-analysis, malware-analysis, vulnerability-research, ' +
-    'static-analysis, unpacking, dotnet-analysis, go-analysis, android-analysis.',
-  ),
-  plugin_id: z.string().optional().describe(
-    'Specific plugin ID to activate (with action=activate). Use action=list to see available IDs.',
-  ),
-  finding: z.string().optional().describe(
-    'Finding/signal tag to activate matching plugins (with action=activate).\n' +
-    'Tags: packed, dotnet, go, signed, obfuscated, vba_macros, crypto, c2, shellcode, firmware.',
-  ),
-  file_type: z.string().optional().describe(
-    'File type tag to activate matching plugins (with action=activate).\n' +
-    'Tags: pe, elf, macho, apk, office, pcap, jar, pdf.',
-  ),
+  action: z
+    .enum(['status', 'list', 'activate'])
+    .default('list')
+    .describe(
+      'Action to perform.\n' +
+        '- `status`: Show surface state (how many tools visible vs total).\n' +
+        '- `list`: List available categories and plugins that can be activated.\n' +
+        '- `activate`: Activate a specific category or plugin.'
+    ),
+  category: z
+    .string()
+    .optional()
+    .describe(
+      'Category to activate (with action=activate) or filter by (with action=list).\n' +
+        'Standard categories: reverse-engineering, dynamic-analysis, symbolic-execution, ' +
+        'memory-forensics, network-analysis, malware-analysis, vulnerability-research, ' +
+        'static-analysis, unpacking, dotnet-analysis, go-analysis, android-analysis.'
+    ),
+  plugin_id: z
+    .string()
+    .optional()
+    .describe(
+      'Specific plugin ID to activate (with action=activate). Use action=list to see available IDs.'
+    ),
+  finding: z
+    .string()
+    .optional()
+    .describe(
+      'Finding/signal tag to activate matching plugins (with action=activate).\n' +
+        'Tags: packed, dotnet, go, signed, obfuscated, vba_macros, crypto, c2, shellcode, firmware.'
+    ),
+  file_type: z
+    .string()
+    .optional()
+    .describe(
+      'File type tag to activate matching plugins (with action=activate).\n' +
+        'Tags: pe, elf, macho, apk, office, pcap, jar, pdf.'
+    ),
 })
 
 export const toolsDiscoverOutputSchema = z.object({
   ok: z.boolean(),
   data: z.object({
     action: z.string(),
-    status: z.object({
-      enabled: z.boolean(),
-      total_plugins: z.number(),
-      activated_plugins: z.number(),
-      total_tools: z.number(),
-      visible_tools: z.number(),
-    }).optional(),
-    categories: z.array(z.object({
-      category: z.string(),
-      plugins: z.array(z.object({
-        id: z.string(),
-        name: z.string(),
-        description: z.string().optional(),
-        tool_count: z.number(),
-        tier: z.number(),
-        activated: z.boolean(),
-      })),
-    })).optional(),
+    status: z
+      .object({
+        enabled: z.boolean(),
+        total_plugins: z.number(),
+        activated_plugins: z.number(),
+        total_tools: z.number(),
+        visible_tools: z.number(),
+      })
+      .optional(),
+    categories: z
+      .array(
+        z.object({
+          category: z.string(),
+          plugins: z.array(
+            z.object({
+              id: z.string(),
+              name: z.string(),
+              description: z.string().optional(),
+              tool_count: z.number(),
+              tier: z.number(),
+              activated: z.boolean(),
+            })
+          ),
+        })
+      )
+      .optional(),
     activated: z.array(z.string()).optional(),
     activated_tools: z.array(z.string()).optional(),
     message: z.string(),
@@ -126,16 +149,18 @@ export function createToolsDiscoverHandler(pluginManager: PluginManager) {
       case 'list': {
         const allCategories = surface.listCategories(pluginIndex)
         const filtered = input.category
-          ? allCategories.filter(c => c.category.toLowerCase().includes(input.category!.toLowerCase()))
+          ? allCategories.filter((c) =>
+              c.category.toLowerCase().includes(input.category.toLowerCase())
+            )
           : allCategories
 
         return {
           ok: true,
           data: {
             action: 'list',
-            categories: filtered.map(c => ({
+            categories: filtered.map((c) => ({
               category: c.category,
-              plugins: c.plugins.map(p => ({
+              plugins: c.plugins.map((p) => ({
                 id: p.id,
                 name: p.name,
                 description: p.description,
@@ -144,7 +169,8 @@ export function createToolsDiscoverHandler(pluginManager: PluginManager) {
                 activated: p.activated,
               })),
             })),
-            message: `Found ${filtered.length} categories with ${filtered.reduce((sum, c) => sum + c.plugins.length, 0)} plugins. ` +
+            message:
+              `Found ${filtered.length} categories with ${filtered.reduce((sum, c) => sum + c.plugins.length, 0)} plugins. ` +
               'Use action=activate with category=<name> or plugin_id=<id> to unlock tools.',
           },
         }
@@ -173,7 +199,7 @@ export function createToolsDiscoverHandler(pluginManager: PluginManager) {
         for (const pid of unique) {
           const categories = surface.listCategories(pluginIndex)
           for (const c of categories) {
-            const p = c.plugins.find(p => p.id === pid)
+            const p = c.plugins.find((p) => p.id === pid)
             if (p) activatedTools.push(...p.tools)
           }
         }
@@ -185,7 +211,8 @@ export function createToolsDiscoverHandler(pluginManager: PluginManager) {
               action: 'activate',
               activated: [],
               activated_tools: [],
-              message: 'No new plugins were activated. They may already be active, or no matching plugins were found. ' +
+              message:
+                'No new plugins were activated. They may already be active, or no matching plugins were found. ' +
                 'Use action=list to see available categories and plugins.',
             },
           }
@@ -197,7 +224,8 @@ export function createToolsDiscoverHandler(pluginManager: PluginManager) {
             action: 'activate',
             activated: unique,
             activated_tools: activatedTools,
-            message: `Activated ${unique.length} plugin(s): ${unique.join(', ')}. ` +
+            message:
+              `Activated ${unique.length} plugin(s): ${unique.join(', ')}. ` +
               `${activatedTools.length} new tools are now available.`,
           },
         }

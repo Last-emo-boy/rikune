@@ -24,7 +24,7 @@ describe('debug.session.inspect tool', () => {
 
   describe('Input validation', () => {
     test('should accept valid input', () => {
-      const result = DebugSessionInspectInputSchema.safeParse({ session_id: 'sess-abc123' })
+      const result = DebugSessionInspectInputSchema.safeParse({ session_id: 'sess-abc123', target: 'registers' })
       expect(result.success).toBe(true)
     })
 
@@ -43,7 +43,7 @@ describe('debug.session.inspect tool', () => {
     test('should return error for non-existent resource', async () => {
       const handler = createDebugSessionInspectHandler({ workspaceManager: mockWorkspaceManager, database: mockDatabase } as any)
 
-      const result = await handler({ session_id: 'sess-abc123' })
+      const result = await handler({ session_id: 'sess-abc123', target: 'registers' })
 
       expect(result.ok).toBe(false)
     })

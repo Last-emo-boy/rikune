@@ -21,7 +21,10 @@ import { StaticCapabilityTriageDataSchema } from '../../static-triage/tools/stat
 import { PEStructureAnalyzeDataSchema } from '../../../plugins/pe-analysis/tools/pe-structure-analyze.js'
 import { CompilerPackerDetectDataSchema } from '../../static-triage/tools/compiler-packer-detect.js'
 import { createTriageWorkflowHandler } from '../../../workflows/triage.js'
-import { loadDynamicTraceEvidence, type DynamicTraceSummary } from '../../../artifacts/dynamic-trace.js'
+import {
+  loadDynamicTraceEvidence,
+  type DynamicTraceSummary,
+} from '../../../artifacts/dynamic-trace.js'
 import {
   loadSemanticFunctionExplanationIndex,
   type SemanticFunctionExplanationIndex,
@@ -104,87 +107,122 @@ const REPORT_INLINE_PAYLOAD_BUDGET_CHARS = 180_000
 
 type ReportSummarizeData = NonNullable<z.infer<typeof ReportSummarizeOutputSchema>['data']>
 
-export const ReportSummarizeInputSchema = z.object({
-  sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
-  mode: z
-    .enum(['triage', 'dotnet'])
-    .default('triage')
-    .describe('Report mode: triage for quick assessment, dotnet for .NET-specific analysis'),
-  detail_level: z
-    .enum(['compact', 'full'])
-    .default('compact')
-    .describe(
-      'Compact is the default AI-facing digest mode and excludes heavyweight raw analysis trees. Use compact for normal and large-sample reporting; full is a bounded legacy richer mode for targeted smaller-sample review.'
-    ),
-  evidence_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('all')
-    .describe('Runtime evidence scope: all artifacts, only the latest artifact window, or a specific session selector'),
-  evidence_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'),
-  static_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('latest')
-    .describe('Static-analysis artifact scope shared by capability triage, PE structure analysis, and compiler/packer attribution selections'),
-  static_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional static-analysis session selector used when static_scope=session or to narrow all/latest results'),
-  semantic_scope: z
-    .enum(['all', 'latest', 'session'])
-    .default('all')
-    .describe('Semantic explanation artifact scope: all artifacts, latest explanation window, or a specific semantic review session'),
-  semantic_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional semantic review session selector used when semantic_scope=session or to narrow all/latest results'),
-  compare_evidence_scope: z
-    .enum(['all', 'latest', 'session'])
-    .optional()
-    .describe('Optional baseline runtime evidence scope used to compare this report against another runtime artifact selection'),
-  compare_evidence_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional baseline runtime evidence session selector used when compare_evidence_scope=session'),
-  compare_static_scope: z
-    .enum(['all', 'latest', 'session'])
-    .optional()
-    .describe('Optional baseline static-analysis scope used to compare capability, PE structure, and compiler/packer artifact selections'),
-  compare_static_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional baseline static-analysis session selector used when compare_static_scope=session'),
-  compare_semantic_scope: z
-    .enum(['all', 'latest', 'session'])
-    .optional()
-    .describe('Optional baseline semantic explanation scope used to compare this report against another semantic artifact selection'),
-  compare_semantic_session_tag: z
-    .string()
-    .optional()
-    .describe('Optional baseline semantic explanation session selector used when compare_semantic_scope=session'),
-  force_refresh: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Bypass cache in downstream analysis tools'),
-})
-  .refine((value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()), {
-    message: 'evidence_session_tag is required when evidence_scope=session',
-    path: ['evidence_session_tag'],
-  })
-  .refine((value) => value.static_scope !== 'session' || Boolean(value.static_session_tag?.trim()), {
-    message: 'static_session_tag is required when static_scope=session',
-    path: ['static_session_tag'],
-  })
-  .refine((value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()), {
-    message: 'semantic_session_tag is required when semantic_scope=session',
-    path: ['semantic_session_tag'],
+export const ReportSummarizeInputSchema = z
+  .object({
+    sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
+    mode: z
+      .enum(['triage', 'dotnet'])
+      .default('triage')
+      .describe('Report mode: triage for quick assessment, dotnet for .NET-specific analysis'),
+    detail_level: z
+      .enum(['compact', 'full'])
+      .default('compact')
+      .describe(
+        'Compact is the default AI-facing digest mode and excludes heavyweight raw analysis trees. Use compact for normal and large-sample reporting; full is a bounded legacy richer mode for targeted smaller-sample review.'
+      ),
+    evidence_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('all')
+      .describe(
+        'Runtime evidence scope: all artifacts, only the latest artifact window, or a specific session selector'
+      ),
+    evidence_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional runtime evidence session selector used when evidence_scope=session or to narrow all/latest results'
+      ),
+    static_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('latest')
+      .describe(
+        'Static-analysis artifact scope shared by capability triage, PE structure analysis, and compiler/packer attribution selections'
+      ),
+    static_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional static-analysis session selector used when static_scope=session or to narrow all/latest results'
+      ),
+    semantic_scope: z
+      .enum(['all', 'latest', 'session'])
+      .default('all')
+      .describe(
+        'Semantic explanation artifact scope: all artifacts, latest explanation window, or a specific semantic review session'
+      ),
+    semantic_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional semantic review session selector used when semantic_scope=session or to narrow all/latest results'
+      ),
+    compare_evidence_scope: z
+      .enum(['all', 'latest', 'session'])
+      .optional()
+      .describe(
+        'Optional baseline runtime evidence scope used to compare this report against another runtime artifact selection'
+      ),
+    compare_evidence_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional baseline runtime evidence session selector used when compare_evidence_scope=session'
+      ),
+    compare_static_scope: z
+      .enum(['all', 'latest', 'session'])
+      .optional()
+      .describe(
+        'Optional baseline static-analysis scope used to compare capability, PE structure, and compiler/packer artifact selections'
+      ),
+    compare_static_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional baseline static-analysis session selector used when compare_static_scope=session'
+      ),
+    compare_semantic_scope: z
+      .enum(['all', 'latest', 'session'])
+      .optional()
+      .describe(
+        'Optional baseline semantic explanation scope used to compare this report against another semantic artifact selection'
+      ),
+    compare_semantic_session_tag: z
+      .string()
+      .optional()
+      .describe(
+        'Optional baseline semantic explanation session selector used when compare_semantic_scope=session'
+      ),
+    force_refresh: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe('Bypass cache in downstream analysis tools'),
   })
   .refine(
+    (value) => value.evidence_scope !== 'session' || Boolean(value.evidence_session_tag?.trim()),
+    {
+      message: 'evidence_session_tag is required when evidence_scope=session',
+      path: ['evidence_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.static_scope !== 'session' || Boolean(value.static_session_tag?.trim()),
+    {
+      message: 'static_session_tag is required when static_scope=session',
+      path: ['static_session_tag'],
+    }
+  )
+  .refine(
+    (value) => value.semantic_scope !== 'session' || Boolean(value.semantic_session_tag?.trim()),
+    {
+      message: 'semantic_session_tag is required when semantic_scope=session',
+      path: ['semantic_session_tag'],
+    }
+  )
+  .refine(
     (value) =>
-      value.compare_evidence_scope !== 'session' || Boolean(value.compare_evidence_session_tag?.trim()),
+      value.compare_evidence_scope !== 'session' ||
+      Boolean(value.compare_evidence_session_tag?.trim()),
     {
       message: 'compare_evidence_session_tag is required when compare_evidence_scope=session',
       path: ['compare_evidence_session_tag'],
@@ -200,7 +238,8 @@ export const ReportSummarizeInputSchema = z.object({
   )
   .refine(
     (value) =>
-      value.compare_semantic_scope !== 'session' || Boolean(value.compare_semantic_session_tag?.trim()),
+      value.compare_semantic_scope !== 'session' ||
+      Boolean(value.compare_semantic_session_tag?.trim()),
     {
       message: 'compare_semantic_session_tag is required when compare_semantic_scope=session',
       path: ['compare_semantic_session_tag'],
@@ -257,9 +296,11 @@ export const ReportSummarizeOutputSchema = z.object({
       tool_surface_role: ToolSurfaceRoleSchema.describe(
         'Marks this report surface as primary, compatibility, or export-only for AI routing.'
       ),
-      preferred_primary_tools: z.array(z.string()).describe(
-        'Primary staged-runtime alternatives that should be preferred for final analyst-facing summary flows.'
-      ),
+      preferred_primary_tools: z
+        .array(z.string())
+        .describe(
+          'Primary staged-runtime alternatives that should be preferred for final analyst-facing summary flows.'
+        ),
       summary: z.string().describe('Natural language summary of the analysis'),
       confidence: z.number().min(0).max(1).describe('Confidence score (0-1)'),
       threat_level: z
@@ -270,7 +311,10 @@ export const ReportSummarizeOutputSchema = z.object({
           suspicious_imports: z.array(z.string()).describe('Suspicious imported functions'),
           suspicious_strings: z.array(z.string()).describe('Suspicious strings found'),
           yara_matches: z.array(z.string()).describe('YARA rule matches'),
-          yara_low_confidence: z.array(z.string()).optional().describe('YARA matches downgraded due to weak evidence'),
+          yara_low_confidence: z
+            .array(z.string())
+            .optional()
+            .describe('YARA matches downgraded due to weak evidence'),
           urls: z.array(z.string()).optional().describe('URLs found in strings'),
           ip_addresses: z.array(z.string()).optional().describe('IP addresses found'),
           file_paths: z.array(z.string()).optional().describe('File paths found'),
@@ -352,18 +396,28 @@ export const ReportSummarizeOutputSchema = z.object({
       unpack_state: UnpackStateSchema.optional().describe(
         'Explicit unpack progression state derived from persisted unpack planning or execution artifacts.'
       ),
-      unpack_confidence: z.number().min(0).max(1).optional().describe(
-        'Bounded unpack confidence indicating whether packed/unpacked progression is heuristic, partial, or strongly corroborated.'
-      ),
+      unpack_confidence: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .describe(
+          'Bounded unpack confidence indicating whether packed/unpacked progression is heuristic, partial, or strongly corroborated.'
+        ),
       debug_state: DebugStateSchema.optional().describe(
         'Persisted debug-session progression state, if a debug path has already been planned or executed.'
       ),
-      unpack_debug_diffs: z.array(AnalysisDiffDigestSchema).optional().describe(
-        'Bounded unpack/debug diff digests consumed as explanation inputs instead of reinlining raw dumps or raw traces.'
-      ),
-      ghidra_execution: GhidraExecutionSummarySchema.nullable().optional().describe(
-        'Latest persisted Ghidra execution summary, including project/log locations, extraction status, and recorded progress stages.'
-      ),
+      unpack_debug_diffs: z
+        .array(AnalysisDiffDigestSchema)
+        .optional()
+        .describe(
+          'Bounded unpack/debug diff digests consumed as explanation inputs instead of reinlining raw dumps or raw traces.'
+        ),
+      ghidra_execution: GhidraExecutionSummarySchema.nullable()
+        .optional()
+        .describe(
+          'Latest persisted Ghidra execution summary, including project/log locations, extraction status, and recorded progress stages.'
+        ),
       selection_diffs: AnalysisSelectionDiffSchema.optional().describe(
         'Optional comparison between the current artifact selection and a caller-provided baseline runtime/semantic selection.'
       ),
@@ -393,7 +447,9 @@ export const ReportSummarizeOutputSchema = z.object({
       function_explanations: z
         .array(FunctionExplanationSummarySchema)
         .optional()
-        .describe('Optional external LLM explanation summaries loaded from semantic explanation artifacts.'),
+        .describe(
+          'Optional external LLM explanation summaries loaded from semantic explanation artifacts.'
+        ),
       evidence_weights: z
         .object({
           import: z.number().min(0).max(1),
@@ -409,7 +465,12 @@ export const ReportSummarizeOutputSchema = z.object({
           false_positive_risks: z.array(z.string()),
           intent_assessment: z
             .object({
-              label: z.enum(['dual_use_tool', 'operator_utility', 'malware_like_payload', 'unknown']),
+              label: z.enum([
+                'dual_use_tool',
+                'operator_utility',
+                'malware_like_payload',
+                'unknown',
+              ]),
               confidence: z.number().min(0).max(1),
               evidence: z.array(z.string()),
               counter_evidence: z.array(z.string()),
@@ -567,10 +628,7 @@ function normalizeLibraryProfile(
   }
 }
 
-function artifactRefFromArtifact(
-  artifact: Artifact,
-  metadata?: Record<string, unknown>
-) {
+function artifactRefFromArtifact(artifact: Artifact, metadata?: Record<string, unknown>) {
   return buildArtifactRefFromParts({
     id: artifact.id,
     type: artifact.type,
@@ -802,7 +860,9 @@ function buildReportArtifactRefs(
   }
 }
 
-function buildBinaryProfileSummary(binaryProfile: z.infer<typeof BinaryRoleProfileDataSchema>): string {
+function buildBinaryProfileSummary(
+  binaryProfile: z.infer<typeof BinaryRoleProfileDataSchema>
+): string {
   const lifecycleSurface = binaryProfile.lifecycle_surface || []
   const classFactorySurface = binaryProfile.com_profile.class_factory_surface || []
   const callbackSurface = binaryProfile.host_interaction_profile.callback_surface || []
@@ -849,7 +909,9 @@ function buildBinaryProfileSummary(binaryProfile: z.infer<typeof BinaryRoleProfi
     parts.push('host/plugin interaction surface detected')
   }
   if (binaryProfile.host_interaction_profile.host_hints.length > 0) {
-    parts.push(`host_hints=${binaryProfile.host_interaction_profile.host_hints.slice(0, 2).join(', ')}`)
+    parts.push(
+      `host_hints=${binaryProfile.host_interaction_profile.host_hints.slice(0, 2).join(', ')}`
+    )
   }
   if (binaryProfile.packed) {
     parts.push('packing signals present')
@@ -939,7 +1001,9 @@ function augmentWithRustProfile(
   }
 
   const summaryLine = buildRustProfileSummary(rustProfile)
-  const rustPriorityLines = rustProfile.analysis_priorities.map((item) => `rust_analysis_priority: ${item}`)
+  const rustPriorityLines = rustProfile.analysis_priorities.map(
+    (item) => `rust_analysis_priority: ${item}`
+  )
   const compilerArtifacts = {
     ...(triageData.iocs.compiler_artifacts || {}),
     cargo_paths: dedupe([
@@ -966,7 +1030,12 @@ function augmentWithRustProfile(
       ...triageData.iocs,
       compiler_artifacts: compilerArtifacts,
     },
-    evidence: dedupe([summaryLine, ...triageData.evidence, ...rustProfile.evidence, ...rustPriorityLines]),
+    evidence: dedupe([
+      summaryLine,
+      ...triageData.evidence,
+      ...rustProfile.evidence,
+      ...rustPriorityLines,
+    ]),
     rust_profile: rustProfile,
     recommendation: `${triageData.recommendation}${recommendationSuffix}`.trim(),
     inference: triageData.inference
@@ -990,8 +1059,9 @@ function augmentWithRustProfile(
                   ...rustProfile.runtime_hints,
                 ]),
                 library_profile:
-                  normalizeLibraryProfile(triageData.inference.tooling_assessment.library_profile) ||
-                  normalizeLibraryProfile(rustProfile.library_profile),
+                  normalizeLibraryProfile(
+                    triageData.inference.tooling_assessment.library_profile
+                  ) || normalizeLibraryProfile(rustProfile.library_profile),
               }
             : {
                 help_text_detected: false,
@@ -1012,8 +1082,9 @@ function toolMetrics(startTime: number): { elapsed_ms: number; tool: string } {
   }
 }
 
-
-function buildEvidenceLineage(dynamicEvidence?: DynamicTraceSummary | null): z.infer<typeof EvidenceLineageSchema> {
+function buildEvidenceLineage(
+  dynamicEvidence?: DynamicTraceSummary | null
+): z.infer<typeof EvidenceLineageSchema> {
   const staticLayer = {
     layer: 'static_only' as const,
     confidence_band: 'baseline' as const,
@@ -1159,7 +1230,10 @@ function augmentWithStaticAnalysis(
   let threatLevel = triageData.threat_level
   let confidence = triageData.confidence
 
-  if (staticArtifacts.capabilities?.status === 'ready' && staticArtifacts.capabilities.capability_count > 0) {
+  if (
+    staticArtifacts.capabilities?.status === 'ready' &&
+    staticArtifacts.capabilities.capability_count > 0
+  ) {
     const topGroups = Object.entries(staticArtifacts.capabilities.capability_groups || {})
       .sort((left, right) => Number(right[1]) - Number(left[1]))
       .slice(0, 4)
@@ -1179,9 +1253,15 @@ function augmentWithStaticAnalysis(
     if (
       threatLevel === 'clean' &&
       topGroups.some((item) =>
-        ['network', 'service', 'persistence', 'execution', 'injection', 'command-and-control', 'c2'].includes(
-          item.toLowerCase()
-        )
+        [
+          'network',
+          'service',
+          'persistence',
+          'execution',
+          'injection',
+          'command-and-control',
+          'c2',
+        ].includes(item.toLowerCase())
       )
     ) {
       threatLevel = 'suspicious'
@@ -1213,7 +1293,9 @@ function augmentWithStaticAnalysis(
 
   if (staticArtifacts.compilerPacker?.status === 'ready') {
     const summary = staticArtifacts.compilerPacker.summary
-    const compilerNames = staticArtifacts.compilerPacker.compiler_findings.slice(0, 3).map((item) => item.name)
+    const compilerNames = staticArtifacts.compilerPacker.compiler_findings
+      .slice(0, 3)
+      .map((item) => item.name)
     const packerNames = [
       ...staticArtifacts.compilerPacker.packer_findings.slice(0, 3).map((item) => item.name),
       ...staticArtifacts.compilerPacker.protector_findings.slice(0, 3).map((item) => item.name),
@@ -1228,7 +1310,9 @@ function augmentWithStaticAnalysis(
       )
       evidence.push(
         `Compiler/packer attribution: compiler=${summary.compiler_count}, packer=${summary.packer_count}, protector=${summary.protector_count}.`,
-        ...(summary.likely_primary_file_type ? [`Attributed primary file type: ${summary.likely_primary_file_type}.`] : [])
+        ...(summary.likely_primary_file_type
+          ? [`Attributed primary file type: ${summary.likely_primary_file_type}.`]
+          : [])
       )
     }
     if (summary.packer_count > 0 || summary.protector_count > 0) {
@@ -1285,7 +1369,9 @@ function augmentWithDynamicEvidence(
   ])
 
   const updatedThreatLevel =
-    dynamicEvidence.executed && dynamicEvidence.high_signal_apis.length > 0 && triageData.threat_level === 'clean'
+    dynamicEvidence.executed &&
+    dynamicEvidence.high_signal_apis.length > 0 &&
+    triageData.threat_level === 'clean'
       ? 'suspicious'
       : triageData.threat_level
 
@@ -1311,18 +1397,24 @@ function augmentWithDynamicEvidence(
       buildEvidenceLayerHeadline(evidenceLineage),
       ...triageData.evidence,
       ...dynamicEvidence.evidence,
-      ...(dynamicEvidence.protections || []).length > 0
+      ...((dynamicEvidence.protections || []).length > 0
         ? [`Runtime protections: ${(dynamicEvidence.protections || []).slice(0, 4).join(', ')}.`]
-        : [],
-      ...(dynamicEvidence.region_owners || []).length > 0
-        ? [`Runtime region owners: ${(dynamicEvidence.region_owners || []).slice(0, 4).join(', ')}.`]
-        : [],
-      ...(dynamicEvidence.observed_modules || []).length > 0
-        ? [`Runtime observed modules: ${(dynamicEvidence.observed_modules || []).slice(0, 4).join(', ')}.`]
-        : [],
-      ...(dynamicEvidence.segment_names || []).length > 0
-        ? [`Runtime segment names: ${(dynamicEvidence.segment_names || []).slice(0, 4).join(', ')}.`]
-        : [],
+        : []),
+      ...((dynamicEvidence.region_owners || []).length > 0
+        ? [
+            `Runtime region owners: ${(dynamicEvidence.region_owners || []).slice(0, 4).join(', ')}.`,
+          ]
+        : []),
+      ...((dynamicEvidence.observed_modules || []).length > 0
+        ? [
+            `Runtime observed modules: ${(dynamicEvidence.observed_modules || []).slice(0, 4).join(', ')}.`,
+          ]
+        : []),
+      ...((dynamicEvidence.segment_names || []).length > 0
+        ? [
+            `Runtime segment names: ${(dynamicEvidence.segment_names || []).slice(0, 4).join(', ')}.`,
+          ]
+        : []),
     ]),
     evidence_lineage: evidenceLineage,
     evidence_weights: {
@@ -1409,17 +1501,21 @@ function createMinimalDotnetFallback(
           {
             domain: 'dotnet_structure',
             status: 'missing',
-            reason: 'No .NET-specific reconstruction or export data is present in this fallback result.',
+            reason:
+              'No .NET-specific reconstruction or export data is present in this fallback result.',
           },
         ],
         knownFindings: ['Dotnet-specific summarize mode is currently unavailable.'],
-        unverifiedAreas: ['Behavior, structure, and validation remain largely unverified in this minimal fallback.'],
+        unverifiedAreas: [
+          'Behavior, structure, and validation remain largely unverified in this minimal fallback.',
+        ],
         upgradePaths: [
           {
             tool: 'workflow.reconstruct',
             purpose: 'Recover structure through the main reconstruction workflow.',
             closes_gaps: ['dotnet_structure'],
-            expected_coverage_gain: 'Adds managed export artifacts and deeper structure than the placeholder fallback.',
+            expected_coverage_gain:
+              'Adds managed export artifacts and deeper structure than the placeholder fallback.',
             cost_tier: 'high',
           },
         ],
@@ -1452,8 +1548,7 @@ function createMinimalDotnetFallback(
         ],
         false_positive_risks: ['No triage evidence is available in this degraded fallback result.'],
       },
-      recommendation:
-        `Re-run after ensuring workspace/original sample file exists, then use workflow.reconstruct or dotnet.reconstruct.export for .NET-specific structure.${binaryProfile?.analysis_priorities?.length ? ` Binary role priorities: ${binaryProfile.analysis_priorities.join(', ')}.` : ''}${rustProfile?.analysis_priorities?.length ? ` Rust recovery priorities: ${rustProfile.analysis_priorities.join(', ')}.` : ''}`,
+      recommendation: `Re-run after ensuring workspace/original sample file exists, then use workflow.reconstruct or dotnet.reconstruct.export for .NET-specific structure.${binaryProfile?.analysis_priorities?.length ? ` Binary role priorities: ${binaryProfile.analysis_priorities.join(', ')}.` : ''}${rustProfile?.analysis_priorities?.length ? ` Rust recovery priorities: ${rustProfile.analysis_priorities.join(', ')}.` : ''}`,
       recommended_next_tools: ['workflow.summarize', 'artifact.read', 'workflow.reconstruct'],
       next_actions: [
         'Use workflow.summarize for staged reporting once deeper analysis artifacts exist.',
@@ -1480,7 +1575,11 @@ function createDynamicEvidenceFallback(
 ): WorkerResult {
   const evidenceLineage = buildEvidenceLineage(dynamicEvidence)
   const threatLevel =
-    dynamicEvidence.high_signal_apis.length > 0 ? 'suspicious' : dynamicEvidence.executed ? 'suspicious' : 'unknown'
+    dynamicEvidence.high_signal_apis.length > 0
+      ? 'suspicious'
+      : dynamicEvidence.executed
+        ? 'suspicious'
+        : 'unknown'
 
   return {
     ok: true,
@@ -1495,7 +1594,8 @@ function createDynamicEvidenceFallback(
           {
             domain: 'static_triage',
             status: 'degraded',
-            reason: 'Static triage failed, so this report is driven by imported runtime evidence only.',
+            reason:
+              'Static triage failed, so this report is driven by imported runtime evidence only.',
           },
           {
             domain: 'function_attribution',
@@ -1505,19 +1605,21 @@ function createDynamicEvidenceFallback(
         ],
         knownFindings: dynamicEvidence.evidence.slice(0, 4),
         suspectedFindings: dynamicEvidence.stages.map((item) => `Runtime stage observed: ${item}`),
-        unverifiedAreas: ['Full static attribution and code-level ownership remain unverified in the runtime-evidence fallback.'],
+        unverifiedAreas: [
+          'Full static attribution and code-level ownership remain unverified in the runtime-evidence fallback.',
+        ],
         upgradePaths: [
           {
             tool: 'workflow.reconstruct',
             purpose: 'Correlate imported runtime evidence with reconstructed ownership.',
             closes_gaps: ['function_attribution'],
-            expected_coverage_gain: 'Adds plan and export artifacts that tie runtime signals back to concrete code locations.',
+            expected_coverage_gain:
+              'Adds plan and export artifacts that tie runtime signals back to concrete code locations.',
             cost_tier: 'high',
           },
         ],
       }),
-      summary:
-        `Triage pipeline failed, but imported runtime evidence is available. ${buildEvidenceLayerHeadline(evidenceLineage)} ${dynamicEvidence.summary}${binaryProfile ? ` ${buildBinaryProfileSummary(binaryProfile)}` : ''}${rustProfile ? ` ${buildRustProfileSummary(rustProfile)}` : ''}`,
+      summary: `Triage pipeline failed, but imported runtime evidence is available. ${buildEvidenceLayerHeadline(evidenceLineage)} ${dynamicEvidence.summary}${binaryProfile ? ` ${buildBinaryProfileSummary(binaryProfile)}` : ''}${rustProfile ? ` ${buildRustProfileSummary(rustProfile)}` : ''}`,
       confidence: dynamicEvidence.executed ? 0.66 : 0.5,
       threat_level: threatLevel,
       iocs: {
@@ -1561,8 +1663,7 @@ function createDynamicEvidenceFallback(
             : 'Memory/hybrid evidence is suggestive but not equivalent to a fully executed trace.',
         ],
       },
-      recommendation:
-        `Correlate imported runtime evidence with code.functions.search, code.functions.reconstruct, and code.reconstruct.export to assign concrete function ownership.${binaryProfile?.analysis_priorities?.length ? ` Binary role priorities: ${binaryProfile.analysis_priorities.join(', ')}.` : ''}${rustProfile?.analysis_priorities?.length ? ` Rust recovery priorities: ${rustProfile.analysis_priorities.join(', ')}.` : ''}`,
+      recommendation: `Correlate imported runtime evidence with code.functions.search, code.functions.reconstruct, and code.reconstruct.export to assign concrete function ownership.${binaryProfile?.analysis_priorities?.length ? ` Binary role priorities: ${binaryProfile.analysis_priorities.join(', ')}.` : ''}${rustProfile?.analysis_priorities?.length ? ` Rust recovery priorities: ${rustProfile.analysis_priorities.join(', ')}.` : ''}`,
       recommended_next_tools: ['workflow.summarize', 'artifact.read', 'workflow.reconstruct'],
       next_actions: [
         'Use workflow.summarize for staged reporting once deeper analysis artifacts are available.',
@@ -1798,7 +1899,11 @@ async function buildPersistedExplanationGraphs(params: {
     sample_id: params.sampleId,
     completed_stages: params.persistedStateVisibility?.loaded_run_stages || [],
     deferred_requirements: params.persistedStateVisibility?.deferred_requirements || [],
-    recommended_next_tools: ['workflow.analyze.status', 'workflow.analyze.promote', 'workflow.summarize'],
+    recommended_next_tools: [
+      'workflow.analyze.status',
+      'workflow.analyze.promote',
+      'workflow.summarize',
+    ],
     coverage_gaps: (params.coverage.coverage_gaps || []).reduce<
       Array<{ domain: string; status: string; reason: string }>
     >((acc, item) => {
@@ -1856,11 +1961,14 @@ function buildCompactReportData(params: {
     explanation_graphs?: ArtifactRef[]
   }
 }) {
-  const evidenceLineage =
-    params.triageData.evidence_lineage || buildEvidenceLineage(undefined)
+  const evidenceLineage = params.triageData.evidence_lineage || buildEvidenceLineage(undefined)
   const confidenceSemantics =
     params.triageData.confidence_semantics ||
-    buildAssessmentConfidencePayload(params.triageData.confidence, params.evidenceScope, evidenceLineage)
+    buildAssessmentConfidencePayload(
+      params.triageData.confidence,
+      params.evidenceScope,
+      evidenceLineage
+    )
   const triageCoverageCandidate = CoverageEnvelopeSchema.safeParse(params.triageData)
   const triageCoverage = triageCoverageCandidate.success ? triageCoverageCandidate.data : undefined
   const triageDigest = buildTriageStageDigest({
@@ -1898,7 +2006,10 @@ function buildCompactReportData(params: {
     coverage: triageCoverage
       ? buildCoverageEnvelope({
           coverageLevel: 'static_core',
-          completionState: triageCoverage.completion_state === 'completed' ? 'bounded' : triageCoverage.completion_state,
+          completionState:
+            triageCoverage.completion_state === 'completed'
+              ? 'bounded'
+              : triageCoverage.completion_state,
           sampleSizeTier: triageCoverage.sample_size_tier,
           analysisBudgetProfile: triageCoverage.analysis_budget_profile,
           downgradeReasons: triageCoverage.downgrade_reasons,
@@ -1923,34 +2034,16 @@ function buildCompactReportData(params: {
     completionState: staticDigest.completion_state,
     sampleSizeTier: staticDigest.sample_size_tier,
     analysisBudgetProfile: staticDigest.analysis_budget_profile,
-    downgradeReasons: [
-      ...triageDigest.downgrade_reasons,
-      ...staticDigest.downgrade_reasons,
-    ],
-    coverageGaps: [
-      ...triageDigest.coverage_gaps,
-      ...staticDigest.coverage_gaps,
-    ],
+    downgradeReasons: [...triageDigest.downgrade_reasons, ...staticDigest.downgrade_reasons],
+    coverageGaps: [...triageDigest.coverage_gaps, ...staticDigest.coverage_gaps],
     confidenceByDomain: {
       ...triageDigest.confidence_by_domain,
       ...staticDigest.confidence_by_domain,
     },
-    knownFindings: [
-      ...triageDigest.known_findings,
-      ...staticDigest.known_findings,
-    ],
-    suspectedFindings: [
-      ...triageDigest.suspected_findings,
-      ...staticDigest.suspected_findings,
-    ],
-    unverifiedAreas: [
-      ...triageDigest.unverified_areas,
-      ...staticDigest.unverified_areas,
-    ],
-    upgradePaths: [
-      ...triageDigest.upgrade_paths,
-      ...staticDigest.upgrade_paths,
-    ],
+    knownFindings: [...triageDigest.known_findings, ...staticDigest.known_findings],
+    suspectedFindings: [...triageDigest.suspected_findings, ...staticDigest.suspected_findings],
+    unverifiedAreas: [...triageDigest.unverified_areas, ...staticDigest.unverified_areas],
+    upgradePaths: [...triageDigest.upgrade_paths, ...staticDigest.upgrade_paths],
   })
 
   const recommendedNextTools = [
@@ -2018,9 +2111,7 @@ function stripArtifactRefMetadata(ref: z.infer<typeof SummaryArtifactRefSchema>)
   }
 }
 
-function boundArtifactRefGroup(
-  refs: z.infer<typeof SummaryArtifactRefSchema>[] | undefined
-): {
+function boundArtifactRefGroup(refs: z.infer<typeof SummaryArtifactRefSchema>[] | undefined): {
   refs?: z.infer<typeof SummaryArtifactRefSchema>[]
   budget?: z.infer<typeof DigestTruncationSchema>[string]
 } {
@@ -2069,7 +2160,9 @@ function boundInlineReportPayload(data: ReportSummarizeData): {
   }
 
   if (bounded.artifact_refs) {
-    const artifactBudgets: Array<[string, z.infer<typeof DigestTruncationSchema>[string] | undefined]> = []
+    const artifactBudgets: Array<
+      [string, z.infer<typeof DigestTruncationSchema>[string] | undefined]
+    > = []
     const supporting = boundArtifactRefGroup(bounded.artifact_refs.supporting)
     const runtime = boundArtifactRefGroup(bounded.artifact_refs.runtime)
     const staticCapabilities = boundArtifactRefGroup(bounded.artifact_refs.static_capabilities)
@@ -2173,9 +2266,10 @@ export function createReportSummarizeHandler(
         )
       }
       const analyses = database.findAnalysesBySample(input.sample_id)
-      const latestRun = database
-        .findAnalysisRunsBySample(input.sample_id)
-        .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] || null
+      const latestRun =
+        database
+          .findAnalysisRunsBySample(input.sample_id)
+          .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] || null
       const parseRunStagePayload = (stageName: string): Record<string, unknown> | null => {
         if (!latestRun) {
           return null
@@ -2192,10 +2286,15 @@ export function createReportSummarizeHandler(
         }
       }
 
-      const dynamicEvidence = await loadDynamicTraceEvidence(workspaceManager, database, input.sample_id, {
-        evidenceScope: input.evidence_scope,
-        sessionTag: input.evidence_session_tag,
-      })
+      const dynamicEvidence = await loadDynamicTraceEvidence(
+        workspaceManager,
+        database,
+        input.sample_id,
+        {
+          evidenceScope: input.evidence_scope,
+          sessionTag: input.evidence_session_tag,
+        }
+      )
       if (input.force_refresh) {
         warnings.push(
           'report.summarize is persisted-state only in the converged runtime; force_refresh does not trigger fresh heavy analysis.'
@@ -2212,9 +2311,15 @@ export function createReportSummarizeHandler(
         persisted_run_id: latestRun?.id || null,
         reused_stage_names: reusedStageNames,
         deferred_requirements: [
-          ...(enrichStaticPayload ? [] : ['enrich_static: persisted static enrichment is not available yet.']),
-          ...(parseRunStagePayload('function_map') ? [] : ['function_map: function-level attribution has not been persisted yet.']),
-          ...(parseRunStagePayload('reconstruct') ? [] : ['reconstruct: source-like reconstruction/export remains deferred.']),
+          ...(enrichStaticPayload
+            ? []
+            : ['enrich_static: persisted static enrichment is not available yet.']),
+          ...(parseRunStagePayload('function_map')
+            ? []
+            : ['function_map: function-level attribution has not been persisted yet.']),
+          ...(parseRunStagePayload('reconstruct')
+            ? []
+            : ['reconstruct: source-like reconstruction/export remains deferred.']),
         ],
       })
       const stageStatePayloads = [
@@ -2251,7 +2356,10 @@ export function createReportSummarizeHandler(
       )
       const unpackDebugDiffs = unpackDebugDiffSelection.artifacts
         .map((item) => AnalysisDiffDigestSchema.safeParse(item.payload))
-        .filter((parsed): parsed is z.SafeParseSuccess<z.infer<typeof AnalysisDiffDigestSchema>> => parsed.success)
+        .filter(
+          (parsed): parsed is z.SafeParseSuccess<z.infer<typeof AnalysisDiffDigestSchema>> =>
+            parsed.success
+        )
         .map((parsed) => parsed.data)
         .slice(0, 4)
       const enrichStageOutputs =
@@ -2263,7 +2371,9 @@ export function createReportSummarizeHandler(
           ? (fastProfilePayload.raw_results as Record<string, unknown>)
           : {}
       const binaryProfile =
-        (enrichStageOutputs.binary_role as z.infer<typeof BinaryRoleProfileDataSchema> | undefined) ||
+        (enrichStageOutputs.binary_role as
+          | z.infer<typeof BinaryRoleProfileDataSchema>
+          | undefined) ||
         (fastRawResults.binary_role as z.infer<typeof BinaryRoleProfileDataSchema> | undefined)
       const rustProfile =
         (enrichStageOutputs.rust as z.infer<typeof RustBinaryAnalyzeDataSchema> | undefined) ||
@@ -2342,7 +2452,11 @@ export function createReportSummarizeHandler(
         workspaceManager,
         database,
         sampleId: input.sample_id,
-        sessionTag: input.semantic_session_tag || input.static_session_tag || input.evidence_session_tag || null,
+        sessionTag:
+          input.semantic_session_tag ||
+          input.static_session_tag ||
+          input.evidence_session_tag ||
+          null,
         functions: database.findFunctions(input.sample_id),
         persistedStateVisibility: {
           persisted_run_id: persistedStateVisibility.persisted_run_id,
@@ -2393,7 +2507,7 @@ export function createReportSummarizeHandler(
         )
         selectionDiffs.semantic_explanations = buildArtifactSelectionDiff(
           'semantic_explanations',
-          provenance.semantic_explanations!,
+          provenance.semantic_explanations,
           buildSemanticArtifactProvenance(
             'semantic explanation artifacts',
             baselineSemanticIndex,
@@ -2414,7 +2528,7 @@ export function createReportSummarizeHandler(
         )
         selectionDiffs.static_capabilities = buildArtifactSelectionDiff(
           'static_capabilities',
-          provenance.static_capabilities!,
+          provenance.static_capabilities,
           buildStaticArtifactProvenance(
             'static capability artifacts',
             baselineStaticSelections.capabilities,
@@ -2424,7 +2538,7 @@ export function createReportSummarizeHandler(
         )
         selectionDiffs.pe_structure = buildArtifactSelectionDiff(
           'pe_structure',
-          provenance.pe_structure!,
+          provenance.pe_structure,
           buildStaticArtifactProvenance(
             'pe structure artifacts',
             baselineStaticSelections.peStructure,
@@ -2434,7 +2548,7 @@ export function createReportSummarizeHandler(
         )
         selectionDiffs.compiler_packer = buildArtifactSelectionDiff(
           'compiler_packer',
-          provenance.compiler_packer!,
+          provenance.compiler_packer,
           buildStaticArtifactProvenance(
             'compiler/packer attribution artifacts',
             baselineStaticSelections.compilerPacker,
@@ -2475,21 +2589,21 @@ export function createReportSummarizeHandler(
         const staticEnrichedTriageData = augmentWithStaticAnalysis(triageData, {
           capabilities:
             staticSelections.capabilities.latest_payload ||
-            ((triageDataBase as { raw_results?: Record<string, unknown> }).raw_results?.static_capability as
-              | z.infer<typeof StaticCapabilityTriageDataSchema>
-              | undefined),
+            ((triageDataBase as { raw_results?: Record<string, unknown> }).raw_results
+              ?.static_capability as z.infer<typeof StaticCapabilityTriageDataSchema> | undefined),
           peStructure:
             staticSelections.peStructure.latest_payload ||
-            ((triageDataBase as { raw_results?: Record<string, unknown> }).raw_results?.pe_structure as
-              | z.infer<typeof PEStructureAnalyzeDataSchema>
-              | undefined),
+            ((triageDataBase as { raw_results?: Record<string, unknown> }).raw_results
+              ?.pe_structure as z.infer<typeof PEStructureAnalyzeDataSchema> | undefined),
           compilerPacker:
             staticSelections.compilerPacker.latest_payload ||
-            ((triageDataBase as { raw_results?: Record<string, unknown> }).raw_results?.compiler_packer as
-              | z.infer<typeof CompilerPackerDetectDataSchema>
-              | undefined),
+            ((triageDataBase as { raw_results?: Record<string, unknown> }).raw_results
+              ?.compiler_packer as z.infer<typeof CompilerPackerDetectDataSchema> | undefined),
         })
-        const binaryEnrichedTriageData = augmentWithBinaryProfile(staticEnrichedTriageData, binaryProfile)
+        const binaryEnrichedTriageData = augmentWithBinaryProfile(
+          staticEnrichedTriageData,
+          binaryProfile
+        )
         const rustEnrichedTriageData = augmentWithRustProfile(binaryEnrichedTriageData, rustProfile)
         const enrichedTriageData = augmentWithFunctionExplanations(
           rustEnrichedTriageData,
@@ -2615,8 +2729,8 @@ export function createReportSummarizeHandler(
           },
           warnings: dynamicEvidence
             ? dedupe([
-              ...warnings,
-              ...(triageResult.warnings || []),
+                ...warnings,
+                ...(triageResult.warnings || []),
                 ...inlinePayload.warnings,
                 `Merged imported runtime evidence from ${dynamicEvidence.artifact_count} artifact(s) using scope=${input.evidence_scope}${input.evidence_session_tag ? ` selector=${input.evidence_session_tag}` : ''}.`,
                 dynamicEvidence.scope_note || '',
@@ -2659,18 +2773,22 @@ export function createReportSummarizeHandler(
                 {
                   domain: 'dotnet_structure',
                   status: 'missing',
-                  reason: 'Dotnet-specific summarize mode is not implemented, so this path falls back to triage-compatible output.',
+                  reason:
+                    'Dotnet-specific summarize mode is not implemented, so this path falls back to triage-compatible output.',
                 },
               ],
               knownFindings: triageData.evidence.slice(0, 4),
               suspectedFindings: triageData.inference?.hypotheses || [],
-              unverifiedAreas: ['Managed-code structure remains unverified until workflow.reconstruct or dotnet.reconstruct.export runs.'],
+              unverifiedAreas: [
+                'Managed-code structure remains unverified until workflow.reconstruct or dotnet.reconstruct.export runs.',
+              ],
               upgradePaths: [
                 {
                   tool: 'workflow.reconstruct',
                   purpose: 'Recover .NET-aware structure through the main reconstruction workflow.',
                   closes_gaps: ['dotnet_structure'],
-                  expected_coverage_gain: 'Adds managed export artifacts and structure beyond the triage-compatible fallback.',
+                  expected_coverage_gain:
+                    'Adds managed export artifacts and structure beyond the triage-compatible fallback.',
                   cost_tier: 'high',
                 },
               ],
@@ -2696,9 +2814,9 @@ export function createReportSummarizeHandler(
             provenance,
             persisted_state_visibility: persistedStateVisibility,
             ghidra_execution: ghidraExecution,
-            selection_diffs:
-              Object.keys(selectionDiffs).length > 0 ? selectionDiffs : undefined,
-            function_explanations: functionExplanations.length > 0 ? functionExplanations : undefined,
+            selection_diffs: Object.keys(selectionDiffs).length > 0 ? selectionDiffs : undefined,
+            function_explanations:
+              functionExplanations.length > 0 ? functionExplanations : undefined,
             evidence_weights: triageData.evidence_weights,
             inference: triageData.inference,
             recommendation:

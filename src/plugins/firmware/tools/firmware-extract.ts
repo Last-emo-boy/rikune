@@ -7,10 +7,18 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
-  fs, path, os, ArtifactRefSchema, SharedMetricsSchema,
-  ensureSampleExists, normalizeError, executeCommand,
-  persistBackendArtifact, buildMetrics,
-  resolveSampleFile, resolveExecutable,
+  fs,
+  path,
+  os,
+  ArtifactRefSchema,
+  SharedMetricsSchema,
+  ensureSampleExists,
+  normalizeError,
+  executeCommand,
+  persistBackendArtifact,
+  buildMetrics,
+  resolveSampleFile,
+  resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
 
@@ -25,18 +33,24 @@ export const firmwareExtractInputSchema = z.object({
 
 export const firmwareExtractOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.object({
-    sample_id: z.string().optional(),
-    extracted_count: z.number().optional(),
-    extracted_files: z.array(z.object({
-      path: z.string(),
-      size: z.number(),
-    })).optional(),
-    artifact: ArtifactRefSchema.optional(),
-    summary: z.string(),
-    recommended_next_tools: z.array(z.string()),
-    next_actions: z.array(z.string()),
-  }).optional(),
+  data: z
+    .object({
+      sample_id: z.string().optional(),
+      extracted_count: z.number().optional(),
+      extracted_files: z
+        .array(
+          z.object({
+            path: z.string(),
+            size: z.number(),
+          })
+        )
+        .optional(),
+      artifact: ArtifactRefSchema.optional(),
+      summary: z.string(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+    })
+    .optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
   metrics: SharedMetricsSchema.optional(),
@@ -52,7 +66,7 @@ export const firmwareExtractToolDefinition: ToolDefinition = {
 
 export function createFirmwareExtractHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  database: DatabaseManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
@@ -60,16 +74,28 @@ export function createFirmwareExtractHandler(
       const input = firmwareExtractInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
-      const backend = resolveExecutable({ envPath: process.env.BINWALK_PATH, pathCandidates: ['binwalk'], versionArgSets: [['--help']] })
+      const backend = resolveExecutable({
+        envPath: process.env.BINWALK_PATH,
+        pathCandidates: ['binwalk'],
+        versionArgSets: [['--help']],
+      })
       if (!backend?.available || !backend?.path) {
-        return buildStaticSetupRequired(backend || { name: 'binwalk', available: false, error: 'binwalk not installed' } as any, startTime, TOOL_NAME)
+        return buildStaticSetupRequired(
+          backend || ({ name: 'binwalk', available: false, error: 'binwalk not installed' } as any),
+          startTime,
+          TOOL_NAME
+        )
       }
 
       const tmpDir = path.join(os.tmpdir(), `rikune-binwalk-${Date.now()}`)
       await fs.mkdir(tmpDir, { recursive: true })
 
       try {
-        const result = await executeCommand(backend.path, ['-e', '-C', tmpDir, samplePath], input.timeout_sec * 1000)
+        const result = await executeCommand(
+          backend.path,
+          ['-e', '-C', tmpDir, samplePath],
+          input.timeout_sec * 1000
+        )
 
         // List extracted files
         const extractedFiles: Array<{ path: string; size: number }> = []
@@ -78,8 +104,20 @@ export function createFirmwareExtractHandler(
         const artifacts: ArtifactRef[] = []
         let artifact: ArtifactRef | undefined
         if (input.persist_artifact) {
-          const manifest = JSON.stringify({ extracted_files: extractedFiles, binwalk_output: result.stdout }, null, 2)
-          artifact = await persistBackendArtifact(workspaceManager, database, input.sample_id, 'firmware', 'extract', manifest, { extension: 'json', mime: 'application/json', sessionTag: input.session_tag })
+          const manifest = JSON.stringify(
+            { extracted_files: extractedFiles, binwalk_output: result.stdout },
+            null,
+            2
+          )
+          artifact = await persistBackendArtifact(
+            workspaceManager,
+            database,
+            input.sample_id,
+            'firmware',
+            'extract',
+            manifest,
+            { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
+          )
           artifacts.push(artifact)
         }
 
@@ -91,7 +129,12 @@ export function createFirmwareExtractHandler(
             extracted_files: extractedFiles.slice(0, 50),
             artifact,
             summary: `Binwalk extracted ${extractedFiles.length} file(s) from firmware image.`,
-            recommended_next_tools: ['artifact.read', 'firmware.scan', 'strings.extract', 'yara.scan'],
+            recommended_next_tools: [
+              'artifact.read',
+              'firmware.scan',
+              'strings.extract',
+              'yara.scan',
+            ],
             next_actions: [
               'Review extracted files for embedded executables or configurations.',
               'Ingest interesting extracted files as new samples with sample.ingest.',
@@ -104,12 +147,20 @@ export function createFirmwareExtractHandler(
         await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {})
       }
     } catch (error) {
-      return { ok: false, errors: [normalizeError(error)], metrics: buildMetrics(startTime, TOOL_NAME) }
+      return {
+        ok: false,
+        errors: [normalizeError(error)],
+        metrics: buildMetrics(startTime, TOOL_NAME),
+      }
     }
   }
 }
 
-async function listExtracted(rootDir: string, dir: string, results: Array<{ path: string; size: number }>) {
+async function listExtracted(
+  rootDir: string,
+  dir: string,
+  results: Array<{ path: string; size: number }>
+) {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true })
     for (const entry of entries) {

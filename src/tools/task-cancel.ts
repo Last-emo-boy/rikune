@@ -88,4 +88,3 @@ export function createTaskCancelHandler(jobQueue: JobQueue): ToolHandler {
     }
   }
 }
-

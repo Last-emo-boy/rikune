@@ -12,6 +12,12 @@ import {
   buildStagePlan,
   ANALYSIS_PIPELINE_VERSION,
   createOrReuseAnalysisRun,
+  normalizeAnalysisRunStatus,
+  normalizeAnalysisStageStatus,
+  normalizeJobQueueStatus,
+  normalizeRuntimeTaskStatus,
+  normalizeRuntimeEventStatus,
+  type ControlPlaneStatus,
 } from '../../src/analysis/analysis-run-state.js'
 import type { AnalysisPipelineStage } from '../../src/analysis/analysis-run-state.js'
 import { DatabaseManager } from '../../src/database.js'
@@ -110,6 +116,36 @@ describe('nonblocking analysis pipeline - core logic', () => {
         expect(plan).toContain('fast_profile')
         expect(plan).toContain('summarize')
       }
+    })
+  })
+
+  describe('control-plane status normalization', () => {
+    test('should normalize analysis run statuses to control-plane states', () => {
+      const cases: Array<[Parameters<typeof normalizeAnalysisRunStatus>[0], ControlPlaneStatus]> = [
+        ['created', 'pending'],
+        ['queued', 'pending'],
+        ['running', 'active'],
+        ['partial', 'active'],
+        ['recoverable', 'recoverable'],
+        ['completed', 'completed'],
+        ['failed', 'failed'],
+      ]
+
+      expect(cases.map(([status]) => normalizeAnalysisRunStatus(status))).toEqual(
+        cases.map(([, expected]) => expected)
+      )
+    })
+
+    test('should normalize stage, queue, runtime task, and runtime event statuses consistently', () => {
+      expect(normalizeAnalysisStageStatus('interrupted')).toBe('recoverable')
+      expect(normalizeAnalysisStageStatus('completed')).toBe('completed')
+      expect(normalizeJobQueueStatus('cancelled')).toBe('cancelled')
+      expect(normalizeJobQueueStatus('interrupted')).toBe('recoverable')
+      expect(normalizeRuntimeTaskStatus('running')).toBe('active')
+      expect(normalizeRuntimeTaskStatus('unknown-status')).toBe('pending')
+      expect(normalizeRuntimeEventStatus('progress')).toBe('active')
+      expect(normalizeRuntimeEventStatus('completed')).toBe('completed')
+      expect(normalizeRuntimeEventStatus('snapshot', 'failed')).toBe('failed')
     })
   })
 

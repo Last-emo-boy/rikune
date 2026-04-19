@@ -6,14 +6,28 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { speakeasyEmulateToolDefinition, createSpeakeasyEmulateHandler } from './tools/speakeasy-emulate.js'
-import { speakeasyShellcodeToolDefinition, createSpeakeasyShellcodeHandler } from './tools/speakeasy-shellcode.js'
-import { speakeasyApiTraceToolDefinition, createSpeakeasyApiTraceHandler } from './tools/speakeasy-api-trace.js'
+import {
+  speakeasyEmulateToolDefinition,
+  createSpeakeasyEmulateHandler,
+} from './tools/speakeasy-emulate.js'
+import {
+  speakeasyShellcodeToolDefinition,
+  createSpeakeasyShellcodeHandler,
+} from './tools/speakeasy-shellcode.js'
+import {
+  speakeasyApiTraceToolDefinition,
+  createSpeakeasyApiTraceHandler,
+} from './tools/speakeasy-api-trace.js'
 
 const speakeasyPlugin: Plugin = {
   id: 'speakeasy',
   name: 'Speakeasy Emulator',
-  surfaceRules: { tier: 2, activateOn: { findings: ['shellcode', 'suspicious_imports', 'packed'] }, category: 'dynamic-analysis' },
+  executionDomain: 'dynamic',
+  surfaceRules: {
+    tier: 2,
+    activateOn: { findings: ['shellcode', 'suspicious_imports', 'packed'] },
+    category: 'dynamic-analysis',
+  },
   description: 'Windows user-mode emulation for PE files and shellcode via Mandiant Speakeasy',
   version: '1.0.0',
   systemDeps: [

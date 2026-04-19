@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createCodeModuleReviewPrepareHandler, codeModuleReviewPrepareInputSchema } from '../../src/tools/code-module-review-prepare.js'
+import { createCodeModuleReviewPrepareHandler, codeModuleReviewPrepareInputSchema } from '../../src/plugins/code-analysis/tools/code-module-review-prepare.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 import type { CacheManager } from '../../src/cache-manager.js'

@@ -106,7 +106,6 @@ export const ExplanationGraphArtifactSchema = ExplanationGraphDigestSchema.exten
 export type ExplanationGraphDigest = z.infer<typeof ExplanationGraphDigestSchema>
 export type ExplanationGraphArtifact = z.infer<typeof ExplanationGraphArtifactSchema>
 
-
 function artifactRefFromParts(input: {
   id: string
   path: string
@@ -173,10 +172,15 @@ export function buildRuntimeStageExplanationGraph(input: {
     ? input.stage_plan
     : ['fast_profile', 'enrich_static', 'function_map', 'reconstruct', 'summarize']
   const completed = new Set(input.completed_stages)
-  const recoverable = new Map((input.recoverable_stages || []).map((item) => [item.stage, item.reason]))
+  const recoverable = new Map(
+    (input.recoverable_stages || []).map((item) => [item.stage, item.reason])
+  )
   const deferredDomains = new Map(
     (input.coverage_gaps || [])
-      .filter((item) => item.status === 'queued' || item.status === 'missing' || item.status === 'degraded')
+      .filter(
+        (item) =>
+          item.status === 'queued' || item.status === 'missing' || item.status === 'degraded'
+      )
       .map((item) => [item.domain, item.reason])
   )
 
@@ -186,14 +190,13 @@ export function buildRuntimeStageExplanationGraph(input: {
       : recoverable.has(stage)
         ? 'correlated'
         : 'inferred'
-    const label =
-      completed.has(stage)
-        ? `${stage} (done)`
-        : recoverable.has(stage)
-          ? `${stage} (recoverable)`
-          : deferredDomains.has(stage)
-            ? `${stage} (deferred)`
-            : `${stage} (not-yet-run)`
+    const label = completed.has(stage)
+      ? `${stage} (done)`
+      : recoverable.has(stage)
+        ? `${stage} (recoverable)`
+        : deferredDomains.has(stage)
+          ? `${stage} (deferred)`
+          : `${stage} (not-yet-run)`
     return {
       id: stage,
       label,
@@ -233,7 +236,10 @@ export function buildRuntimeStageExplanationGraph(input: {
     semantic_summary:
       'Bounded staged-runtime explanation graph showing which analysis stages are completed, recoverable, deferred, or still absent.',
     confidence_state: 'observed',
-    confidence_states_present: ['observed', ...(recoverable.size > 0 || deferredDomains.size > 0 ? ['correlated', 'inferred'] : [])],
+    confidence_states_present: [
+      'observed',
+      ...(recoverable.size > 0 || deferredDomains.size > 0 ? ['correlated', 'inferred'] : []),
+    ],
     node_count: nodes.length,
     edge_count: edges.length,
     bounded: true,
@@ -242,11 +248,15 @@ export function buildRuntimeStageExplanationGraph(input: {
       {
         kind: 'stage',
         label: 'persisted_run_state',
-        detail: 'Derived from persisted run/stage status rather than from a renderer-specific export.',
+        detail:
+          'Derived from persisted run/stage status rather than from a renderer-specific export.',
       },
     ],
     omissions: omissions.length > 0 ? omissions : undefined,
-    recommended_next_tools: input.recommended_next_tools || ['workflow.analyze.status', 'workflow.analyze.promote'],
+    recommended_next_tools: input.recommended_next_tools || [
+      'workflow.analyze.status',
+      'workflow.analyze.promote',
+    ],
     nodes,
     edges,
     serializers: {

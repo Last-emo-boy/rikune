@@ -11,11 +11,7 @@ import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 import { logger } from '../logger.js'
 import { buildRawCommandLine, decodeProcessStreams } from '../process-output.js'
 import { resolvePackagePath } from '../runtime-paths.js'
-import {
-  config,
-  getDefaultGhidraLogRoot,
-  getDefaultGhidraProjectRoot,
-} from '../config.js'
+import { config, getDefaultGhidraLogRoot, getDefaultGhidraProjectRoot } from '../config.js'
 
 export interface GhidraConfig {
   installDir: string
@@ -176,7 +172,9 @@ export function probePyGhidraAvailability(timeoutMs: number = 5000): {
 }
 
 function parseJavaMajorVersion(versionText: string): number | null {
-  const match = versionText.match(/version\s+"(\d+)(?:\.(\d+))?/i) || versionText.match(/\b(\d+)\.(\d+)\.(\d+)\b/)
+  const match =
+    versionText.match(/version\s+"(\d+)(?:\.(\d+))?/i) ||
+    versionText.match(/\b(\d+)\.(\d+)\.(\d+)\b/)
   if (!match) {
     return null
   }
@@ -192,9 +190,10 @@ function parseJavaMajorVersion(versionText: string): number | null {
 }
 
 function getJavaExecutableFromHome(javaHome: string): string | null {
-  const candidates = process.platform === 'win32'
-    ? [path.join(javaHome, 'bin', 'java.exe'), path.join(javaHome, 'java.exe')]
-    : [path.join(javaHome, 'bin', 'java'), path.join(javaHome, 'java')]
+  const candidates =
+    process.platform === 'win32'
+      ? [path.join(javaHome, 'bin', 'java.exe'), path.join(javaHome, 'java.exe')]
+      : [path.join(javaHome, 'bin', 'java'), path.join(javaHome, 'java')]
 
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
@@ -235,7 +234,8 @@ export function probeJavaRuntime(
       }
     }
 
-    const combined = `${String(result.stderr || '').trim()}\n${String(result.stdout || '').trim()}`.trim()
+    const combined =
+      `${String(result.stderr || '').trim()}\n${String(result.stdout || '').trim()}`.trim()
     const major = parseJavaMajorVersion(combined)
     const versionLine = combined
       .split(/\r?\n/)
@@ -420,7 +420,7 @@ export function validateGhidraInstallation(installDir: string): boolean {
  */
 export function getAnalyzeHeadlessPath(installDir: string): string {
   const supportDir = path.join(installDir, 'support')
-  
+
   if (process.platform === 'win32') {
     return path.join(supportDir, 'analyzeHeadless.bat')
   } else {
@@ -443,7 +443,10 @@ function readGhidraVersionFromProperties(installDir: string): string | null {
     const version = versionMatch[1].trim()
     return version.length > 0 ? version : null
   } catch (error) {
-    logger.warn({ error, propertiesPath }, 'Failed to read Ghidra version from application.properties')
+    logger.warn(
+      { error, propertiesPath },
+      'Failed to read Ghidra version from application.properties'
+    )
     return null
   }
 }
@@ -502,8 +505,10 @@ export function getGhidraVersion(installDir: string): string | null {
  * Ensure Ghidra scripts directory exists
  */
 export function ensureScriptsDirectory(baseDir?: string): string {
-  const scriptsDir = path.resolve(baseDir || resolvePackagePath('src', 'plugins', 'ghidra', 'scripts'))
-  
+  const scriptsDir = path.resolve(
+    baseDir || resolvePackagePath('src', 'plugins', 'ghidra', 'scripts')
+  )
+
   if (!fs.existsSync(scriptsDir)) {
     fs.mkdirSync(scriptsDir, { recursive: true })
     logger.info({ scriptsDir }, 'Created Ghidra scripts directory')
@@ -523,7 +528,7 @@ export function initializeGhidraConfig(installDir?: string): GhidraConfig {
 
   // Detect installation directory
   const detectedInstallDir = installDir || detectGhidraInstallation()
-  
+
   if (!detectedInstallDir) {
     logger.warn('Ghidra installation not detected. Ghidra features will be disabled.')
     return {
@@ -539,7 +544,7 @@ export function initializeGhidraConfig(installDir?: string): GhidraConfig {
 
   // Validate installation
   const isValid = validateGhidraInstallation(detectedInstallDir)
-  
+
   if (!isValid) {
     logger.error('Ghidra installation validation failed. Ghidra features will be disabled.')
     return {
@@ -587,7 +592,7 @@ export function initializeGhidraConfig(installDir?: string): GhidraConfig {
  * Generate unique project key for Ghidra project
  * Format: <timestamp>_<random>
  * Ensures uniqueness for concurrent analyses
- * 
+ *
  * Requirements: 8.1, 8.7
  */
 export function generateProjectKey(): string {
@@ -599,9 +604,9 @@ export function generateProjectKey(): string {
 /**
  * Create Ghidra project directory
  * Creates isolated project space to avoid concurrent conflicts
- * 
+ *
  * Requirements: 8.1, 8.7
- * 
+ *
  * @param ghidraWorkspaceDir - Base Ghidra workspace directory (from workspace manager)
  * @param projectKey - Unique project key (optional, will be generated if not provided)
  * @returns Object with project path and project key
@@ -617,16 +622,16 @@ export function createGhidraProject(
     fs.mkdirSync(parentDir, { recursive: true })
     logger.info({ ghidraWorkspaceDir: parentDir }, 'Created Ghidra project parent directory')
   }
-  
+
   // Create project directory: workspace/ghidra/project_<key>/
   const projectPath = path.join(parentDir, `project_${key}`)
-  
+
   // Create directory if it doesn't exist
   if (!fs.existsSync(projectPath)) {
     fs.mkdirSync(projectPath, { recursive: true })
     logger.info({ projectPath, projectKey: key }, 'Created Ghidra project directory')
   }
-  
+
   return {
     projectPath,
     projectKey: key,
@@ -636,7 +641,7 @@ export function createGhidraProject(
 /**
  * Clean up old Ghidra projects
  * Removes project directories older than specified age
- * 
+ *
  * @param ghidraWorkspaceDir - Base Ghidra workspace directory
  * @param maxAgeMs - Maximum age in milliseconds (default: 7 days)
  * @returns Number of projects cleaned up
@@ -700,9 +705,7 @@ export function checkGhidraHealth(timeoutMs: number = 8000): GhidraHealthStatus 
   const logRoot = ghidraConfig.logRoot || getConfiguredGhidraLogRoot()
 
   const installDirExists = Boolean(installDir && fs.existsSync(installDir))
-  const analyzeHeadlessExists = Boolean(
-    analyzeHeadlessPath && fs.existsSync(analyzeHeadlessPath)
-  )
+  const analyzeHeadlessExists = Boolean(analyzeHeadlessPath && fs.existsSync(analyzeHeadlessPath))
   const scriptsDirExists = Boolean(scriptsDir && fs.existsSync(scriptsDir))
   const pyghidraProbe = probePyGhidra(Math.min(timeoutMs, 5000))
   const pyghidraAvailable = pyghidraProbe.available === true
@@ -756,7 +759,7 @@ export function checkGhidraHealth(timeoutMs: number = 8000): GhidraHealthStatus 
       })
       const decoded = decodeProcessStreams(result.stdout, result.stderr)
       const timedOut =
-        ((result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT') ||
+        (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT' ||
         Boolean(result.error?.message && result.error.message.includes('ETIMEDOUT'))
 
       launchProbe = {

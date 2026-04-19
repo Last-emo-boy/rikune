@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createCompilerPackerDetectHandler, compilerPackerDetectInputSchema } from '../../src/tools/compiler-packer-detect.js'
+import { createCompilerPackerDetectHandler, compilerPackerDetectInputSchema } from '../../src/plugins/static-triage/tools/compiler-packer-detect.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 
