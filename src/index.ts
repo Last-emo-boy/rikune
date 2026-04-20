@@ -25,6 +25,7 @@ import {
   type RuntimeConnection,
 } from './runtime-client/index.js'
 import { getPluginManager } from './plugins.js'
+import { shutdownRuntimeWorkerPool } from './worker/runtime-worker-pool.js'
 
 // Export public API
 export { MCPServer } from './core/server.js'
@@ -33,8 +34,70 @@ export { WorkspaceManager } from './workspace-manager.js'
 export * from './types.js'
 export { RikuneError, ErrorCode, toRikuneError, isRikuneError } from './errors.js'
 
+async function runHealthCheck(): Promise<void> {
+  const configPath = process.env.CONFIG_PATH
+  const config = loadConfig(configPath)
+
+  const workspaceManager = new WorkspaceManager(config.workspace.root)
+  const database = new DatabaseManager(config.database.path)
+  const policyGuard = new PolicyGuard(config.logging.auditPath)
+  const cacheManager = new CacheManager(config.cache.root, database)
+  const storageManager = new StorageManager({
+    root: config.api.storageRoot,
+    maxFileSize: config.api.maxFileSize,
+    retentionDays: config.api.retentionDays,
+    maxTotalBytes: config.api.maxTotalBytes,
+  })
+  await storageManager.initialize()
+
+  const jobQueue = new JobQueue(database)
+  jobQueue.restoreFromDatabase()
+  const server = new MCPServer(config, {
+    workspaceManager,
+    database,
+    policyGuard,
+    storageManager,
+  })
+
+  await registerAllTools(server, {
+    workspaceManager,
+    database,
+    policyGuard,
+    cacheManager,
+    jobQueue,
+    storageManager,
+    config,
+    server,
+    runtimeClient: null,
+    sandboxDir: null,
+  })
+
+  try {
+    process.stdout.write(
+      JSON.stringify(
+        {
+          ok: true,
+          mode: 'health-check',
+          tool_count: (await server.listTools()).length,
+          prompt_count: (await server.listPrompts()).length,
+        },
+        null,
+        2
+      ) + '\n'
+    )
+  } finally {
+    await shutdownRuntimeWorkerPool()
+    database.close()
+  }
+}
+
 async function main() {
   try {
+    if (process.argv.includes('--health-check')) {
+      await runHealthCheck()
+      process.exit(0)
+    }
+
     // Load configuration
     const configPath = process.env.CONFIG_PATH
     const config = loadConfig(configPath)
@@ -253,6 +316,7 @@ async function main() {
         await sandboxLauncher.teardown().catch(() => {})
       }
       analysisTaskRunner.stop()
+      await shutdownRuntimeWorkerPool()
       await server.stop()
       process.exit(0)
     }

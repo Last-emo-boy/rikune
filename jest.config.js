@@ -21,6 +21,7 @@ export default {
   transformIgnorePatterns: [
     'node_modules/(?!(@modelcontextprotocol|uuid)/)',
   ],
+  setupFilesAfterEnv: ['<rootDir>/tests/jest.setup.ts'],
   testMatch: ['**/__tests__/**/*.test.ts', '**/?(*.)+(spec|test).ts'],
   collectCoverageFrom: [
     'src/**/*.ts',

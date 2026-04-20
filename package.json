@@ -46,7 +46,7 @@
     "src/plugins/frida/scripts/README.md"
   ],
   "scripts": {
-    "build": "turbo run build && tsc && npm run copy-static",
+    "build": "npm run clean && turbo run build && tsc && npm run copy-static",
     "build:shared": "turbo run build --filter=@rikune/shared",
     "build:runtime": "turbo run build --filter=@rikune/runtime-node",
     "build:host-agent": "turbo run build --filter=@rikune/windows-host-agent",

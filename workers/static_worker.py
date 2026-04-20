@@ -138,6 +138,55 @@ class StaticWorker:
         self._floss_cli_cache = None
         self._dependency_status_cache = None
 
+    def _extract_mdt_row_index(self, value: Any) -> Optional[int]:
+        """Normalize a dnfile metadata table entry/index reference into a 1-based row index."""
+        if value is None:
+            return None
+        if hasattr(value, "row_index"):
+            try:
+                return int(value.row_index)
+            except Exception:
+                return None
+        try:
+            return int(value)
+        except Exception:
+            return None
+
+    def _resolve_mdt_row_indices(self, value: Any, next_value: Any = None, total_rows: int = 0) -> List[int]:
+        """
+        Resolve dnfile metadata table references into concrete 1-based row indices.
+
+        dnfile may decode TypeDef.MethodList / FieldList either as:
+        - a single start index reference, where the next TypeDef row bounds the range; or
+        - an already-expanded list of table references.
+        """
+        if value is None:
+            return []
+
+        if isinstance(value, list):
+            resolved: List[int] = []
+            for item in value:
+                idx = self._extract_mdt_row_index(item)
+                if idx is not None and idx > 0:
+                    resolved.append(idx)
+            return resolved
+
+        start_idx = self._extract_mdt_row_index(value)
+        if start_idx is None or start_idx <= 0:
+            return []
+
+        if isinstance(next_value, list):
+            next_indices = self._resolve_mdt_row_indices(next_value, None, total_rows)
+            end_idx = next_indices[0] if next_indices else (total_rows + 1)
+        else:
+            next_idx = self._extract_mdt_row_index(next_value)
+            end_idx = next_idx if next_idx is not None and next_idx > 0 else (total_rows + 1)
+
+        if end_idx <= start_idx:
+            return [start_idx]
+
+        return list(range(start_idx, min(end_idx, total_rows + 1)))
+
     def _get_python_package_version(self, package_name: str) -> Optional[str]:
         """Get installed Python package version, if available."""
         try:
@@ -6064,26 +6113,17 @@ print(json.dumps(payload))
                     if include_methods and method_table:
                         method_list_idx = getattr(row, "MethodList", None)
                         if method_list_idx is not None:
-                            try:
-                                start_idx = method_list_idx.row_index if hasattr(method_list_idx, "row_index") else int(method_list_idx)
-                            except Exception:
-                                start_idx = 0
-                            # End index is the MethodList of next typedef or end of method table
-                            if i + 1 < typedef_table.num_rows:
-                                next_ml = getattr(typedef_table.rows[i + 1], "MethodList", None)
-                                try:
-                                    end_idx = next_ml.row_index if hasattr(next_ml, "row_index") else int(next_ml)
-                                except Exception:
-                                    end_idx = total_methods + 1
-                            else:
-                                end_idx = total_methods + 1
-
-                            method_count_for_type = max(0, end_idx - start_idx)
+                            next_ml = getattr(typedef_table.rows[i + 1], "MethodList", None) if i + 1 < typedef_table.num_rows else None
+                            method_row_indices = self._resolve_mdt_row_indices(
+                                method_list_idx, next_ml, total_methods
+                            )
+                            method_count_for_type = len(method_row_indices)
                             total_method_count += method_count_for_type
 
-                            for mi in range(start_idx - 1, min(end_idx - 1, total_methods)):
+                            for method_row_index in method_row_indices:
                                 if len(methods) >= max_methods_per_type:
                                     break
+                                mi = method_row_index - 1
                                 if mi < 0 or mi >= len(method_table.rows):
                                     continue
                                 m_row = method_table.rows[mi]
@@ -6128,19 +6168,10 @@ print(json.dumps(payload))
                     if field_table:
                         field_list_idx = getattr(row, "FieldList", None)
                         if field_list_idx is not None:
-                            try:
-                                f_start = field_list_idx.row_index if hasattr(field_list_idx, "row_index") else int(field_list_idx)
-                            except Exception:
-                                f_start = 0
-                            if i + 1 < typedef_table.num_rows:
-                                next_fl = getattr(typedef_table.rows[i + 1], "FieldList", None)
-                                try:
-                                    f_end = next_fl.row_index if hasattr(next_fl, "row_index") else int(next_fl)
-                                except Exception:
-                                    f_end = total_fields + 1
-                            else:
-                                f_end = total_fields + 1
-                            field_count_for_type = max(0, f_end - f_start)
+                            next_fl = getattr(typedef_table.rows[i + 1], "FieldList", None) if i + 1 < typedef_table.num_rows else None
+                            field_count_for_type = len(
+                                self._resolve_mdt_row_indices(field_list_idx, next_fl, total_fields)
+                            )
 
                     # Build flags array
                     type_flags = []

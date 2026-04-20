@@ -43,7 +43,7 @@ describe('discoverPluginsFromDir', () => {
       `module.exports = { id: 'flat-plugin', name: 'Flat', version: '1.0.0', register: () => [] };`,
       'utf-8'
     )
-    const result = await discoverPluginsFromDir(tmpDir, 'test')
+    const result = await discoverPluginsFromDir(tmpDir, 'test', { scanFlatFiles: true })
     expect(result.length).toBe(1)
     expect(result[0].id).toBe('flat-plugin')
   })
@@ -54,9 +54,19 @@ describe('discoverPluginsFromDir', () => {
       `export default { id: 'esm-plugin', name: 'ESM', version: '1.0.0', register: () => [] };`,
       'utf-8'
     )
-    const result = await discoverPluginsFromDir(tmpDir, 'test')
+    const result = await discoverPluginsFromDir(tmpDir, 'test', { scanFlatFiles: true })
     expect(result.length).toBe(1)
     expect(result[0].id).toBe('esm-plugin')
+  })
+
+  test('should ignore flat worker files when flat plugin discovery is disabled', async () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'plugin-sandbox-worker.js'),
+      `throw new Error('plugin-sandbox-worker must be run as a worker_thread')`,
+      'utf-8'
+    )
+    const result = await discoverPluginsFromDir(tmpDir, 'built-in', { scanFlatFiles: false })
+    expect(result).toEqual([])
   })
 
   test('should skip directories without index.js', async () => {

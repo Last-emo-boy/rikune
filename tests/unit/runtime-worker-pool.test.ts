@@ -140,4 +140,39 @@ describe('runtime worker pool', () => {
       fs.rmSync(tempDir, { recursive: true, force: true })
     }
   })
+
+  test('shutdown rejects pending work and clears live workers', async () => {
+    const pool = new RuntimeWorkerPool() as any
+    const reject = jest.fn()
+    const clearTimeoutMock = jest.spyOn(global, 'clearTimeout')
+
+    pool.workers.set('worker-live', {
+      id: 'worker-live',
+      family: 'static_python.preview',
+      compatibilityKey: 'compat-live',
+      deploymentKey: 'deploy-live',
+      child: {
+        stdin: { end: jest.fn() },
+        kill: jest.fn(),
+      } as any,
+      busy: true,
+      unhealthy: false,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: new Date().toISOString(),
+      stdoutBuffer: '',
+      pending: {
+        resolve: jest.fn(),
+        reject,
+        timer: setTimeout(() => undefined, 60_000),
+      },
+    })
+
+    try {
+      await pool.shutdown({ graceMs: 10 })
+      expect(pool.workers.size).toBe(0)
+      expect(reject).toHaveBeenCalledWith(expect.any(Error))
+    } finally {
+      clearTimeoutMock.mockRestore()
+    }
+  })
 })

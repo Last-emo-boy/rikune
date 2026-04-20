@@ -97,6 +97,15 @@ export class RuntimeWorkerPool {
   private readonly workers = new Map<string, PooledWorkerState>()
   private readonly familyCounters = new Map<string, WorkerFamilyCounters>()
 
+  async shutdown(options: { graceMs?: number } = {}): Promise<void> {
+    const workers = [...this.workers.values()]
+    this.workers.clear()
+
+    await Promise.all(
+      workers.map((worker) => this.shutdownWorker(worker, options.graceMs ?? 1_000))
+    )
+  }
+
   async executeStaticWorker(
     request: StaticWorkerRequestLike & Record<string, unknown>,
     options: {
@@ -435,6 +444,75 @@ export class RuntimeWorkerPool {
     this.persistFamilyState(database, worker.family, worker.compatibilityKey, worker.deploymentKey)
   }
 
+  private async shutdownWorker(worker: PooledWorkerState, graceMs: number): Promise<void> {
+    worker.busy = false
+    worker.unhealthy = true
+
+    if (worker.pending) {
+      const pending = worker.pending
+      worker.pending = undefined
+      clearTimeout(pending.timer)
+      pending.reject(new Error('Runtime worker pool is shutting down'))
+    }
+
+    try {
+      worker.child.stdin.end()
+    } catch {
+      // ignore shutdown failures
+    }
+
+    await new Promise<void>((resolve) => {
+      let settled = false
+      let timer: ReturnType<typeof setTimeout> | null = null
+      const finish = () => {
+        if (settled) {
+          return
+        }
+        settled = true
+        if (timer) {
+          clearTimeout(timer)
+          timer = null
+        }
+        resolve()
+      }
+
+      const child = worker.child as ChildProcessWithoutNullStreams & {
+        once?: (event: string, listener: (...args: unknown[]) => void) => unknown
+        off?: (event: string, listener: (...args: unknown[]) => void) => unknown
+      }
+
+      const closeListener = () => finish()
+      const errorListener = () => finish()
+      timer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL')
+        } catch {
+          // ignore forced shutdown failures
+        }
+        finish()
+      }, graceMs)
+      if (timer.unref) {
+        timer.unref()
+      }
+
+      if (typeof child.once === 'function') {
+        child.once('close', closeListener)
+        child.once('error', errorListener)
+      }
+
+      try {
+        child.kill()
+      } catch {
+        // ignore shutdown failures
+      }
+
+      if (typeof child.once !== 'function') {
+        clearTimeout(timer)
+        finish()
+      }
+    })
+  }
+
   private persistFamilyState(
     database: DatabaseManager | undefined,
     family: string,
@@ -483,4 +561,14 @@ export function getRuntimeWorkerPool(): RuntimeWorkerPool {
     globalRuntimeWorkerPool = new RuntimeWorkerPool()
   }
   return globalRuntimeWorkerPool
+}
+
+export async function shutdownRuntimeWorkerPool(): Promise<void> {
+  if (!globalRuntimeWorkerPool) {
+    return
+  }
+
+  const pool = globalRuntimeWorkerPool
+  globalRuntimeWorkerPool = null
+  await pool.shutdown()
 }

@@ -19,7 +19,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '../..')
  */
 export async function discoverBuiltInPlugins(): Promise<Plugin[]> {
   const pluginsDir = path.join(__dirname, '../plugins')
-  return discoverPluginsFromDir(pluginsDir, 'built-in')
+  return discoverPluginsFromDir(pluginsDir, 'built-in', { scanFlatFiles: false })
 }
 
 /**
@@ -28,7 +28,7 @@ export async function discoverBuiltInPlugins(): Promise<Plugin[]> {
  */
 export async function discoverExternalPlugins(): Promise<Plugin[]> {
   const pluginsDir = path.join(PROJECT_ROOT, 'plugins')
-  return discoverPluginsFromDir(pluginsDir, 'external')
+  return discoverPluginsFromDir(pluginsDir, 'external', { scanFlatFiles: true })
 }
 
 /**
@@ -38,7 +38,10 @@ export async function discoverExternalPlugins(): Promise<Plugin[]> {
  */
 export async function discoverPluginsFromDir(
   pluginsDir: string,
-  source: string
+  source: string,
+  options: {
+    scanFlatFiles?: boolean
+  } = {}
 ): Promise<Plugin[]> {
   try {
     await fs.access(pluginsDir)
@@ -74,26 +77,28 @@ export async function discoverPluginsFromDir(
   }
 
   // Also scan flat .js/.mjs files (backward compat for external plugins)
-  const jsFiles = entries
-    .filter((e) => e.isFile() && (e.name.endsWith('.js') || e.name.endsWith('.mjs')))
-    .map((e) => path.join(pluginsDir, e.name))
+  if (options.scanFlatFiles) {
+    const jsFiles = entries
+      .filter((e) => e.isFile() && (e.name.endsWith('.js') || e.name.endsWith('.mjs')))
+      .map((e) => path.join(pluginsDir, e.name))
 
-  for (const file of jsFiles) {
-    try {
-      const mod = await import(pathToFileURL(file).href)
-      const plugin: Plugin | undefined = mod.default ?? mod.plugin
-      if (plugin && typeof plugin.id === 'string' && typeof plugin.register === 'function') {
-        discovered.push(plugin)
-        logger.info(
-          { file: path.basename(file), plugin: plugin.id, source },
-          `Discovered ${source} plugin: ${plugin.name}`
+    for (const file of jsFiles) {
+      try {
+        const mod = await import(pathToFileURL(file).href)
+        const plugin: Plugin | undefined = mod.default ?? mod.plugin
+        if (plugin && typeof plugin.id === 'string' && typeof plugin.register === 'function') {
+          discovered.push(plugin)
+          logger.info(
+            { file: path.basename(file), plugin: plugin.id, source },
+            `Discovered ${source} plugin: ${plugin.name}`
+          )
+        }
+      } catch (err) {
+        logger.warn(
+          { file: path.basename(file), err, source },
+          `Failed to load ${source} plugin file`
         )
       }
-    } catch (err) {
-      logger.warn(
-        { file: path.basename(file), err, source },
-        `Failed to load ${source} plugin file`
-      )
     }
   }
 
