@@ -22,8 +22,8 @@ export interface ToolDefinition {
   description: string
   inputSchema: JSONSchema
   outputSchema?: JSONSchema
-  /** Hint for the runtime node on how to execute this tool. */
-  runtimeBackendHint?: { type: 'python-worker' | 'spawn' | 'inline'; handler: string }
+  /** Runtime execution contract for tools delegated to a runtime node. */
+  runtime?: ToolRuntimeContract
 }
 
 /**
@@ -131,6 +131,7 @@ export type ToolHandler = (args: unknown) => Promise<ToolResult>
  */
 export interface WorkerResult {
   ok: boolean
+  status?: 'completed' | 'queued' | 'blocked' | 'degraded' | 'failed'
   data?: unknown
   errors?: string[]
   warnings?: string[]
@@ -138,21 +139,87 @@ export interface WorkerResult {
   required_user_inputs?: unknown[]
   artifacts?: ArtifactRef[]
   metrics?: Record<string, unknown>
+  execution_semantics?: {
+    requested_mode?: RuntimeExecutionMode | string
+    actual_mode?: RuntimeExecutionMode | string
+    backend?: string
+    live_execution?: boolean
+    reason?: string
+  }
 }
 
-export const RuntimeBackendHintSchema = z.object({
+export type RuntimeBackendType = 'python-worker' | 'spawn' | 'inline'
+
+export type RuntimeExecutionMode =
+  | 'plan_only'
+  | 'safe_simulation'
+  | 'emulation'
+  | 'live_sandbox'
+  | 'live_hyperv'
+  | 'manual_runtime'
+
+export interface RuntimeFallbackRule {
+  mode: RuntimeExecutionMode
+  reason?: string
+}
+
+export interface ToolRuntimeContract {
+  type: RuntimeBackendType
+  handler: string
+  modes?: RuntimeExecutionMode[]
+  requiredProfiles?: string[]
+  requiredTools?: string[]
+  optionalTools?: string[]
+  produces?: string[]
+  timeoutMs?: number
+  fallback?: RuntimeFallbackRule[]
+}
+
+export const ToolRuntimeContractSchema = z.object({
   type: z.enum(['python-worker', 'spawn', 'inline']),
   handler: z.string(),
+  modes: z
+    .array(
+      z.enum([
+        'plan_only',
+        'safe_simulation',
+        'emulation',
+        'live_sandbox',
+        'live_hyperv',
+        'manual_runtime',
+      ])
+    )
+    .optional(),
+  requiredProfiles: z.array(z.string()).optional(),
+  requiredTools: z.array(z.string()).optional(),
+  optionalTools: z.array(z.string()).optional(),
+  produces: z.array(z.string()).optional(),
+  timeoutMs: z.number().int().positive().optional(),
+  fallback: z
+    .array(
+      z.object({
+        mode: z.enum([
+          'plan_only',
+          'safe_simulation',
+          'emulation',
+          'live_sandbox',
+          'live_hyperv',
+          'manual_runtime',
+        ]),
+        reason: z.string().optional(),
+      })
+    )
+    .optional(),
 })
 
-export const RuntimeBackendCapabilitySchema = RuntimeBackendHintSchema.extend({
+export const RuntimeBackendCapabilitySchema = ToolRuntimeContractSchema.extend({
   description: z.string().optional(),
   requiresSample: z.boolean().optional(),
 })
 
 export const RuntimeDelegationFailureCategorySchema = z.enum([
   'runtime_unavailable',
-  'unsupported_runtime_backend_hint',
+  'unsupported_runtime_contract',
   'runtime_recovery_failed',
   'tool_specific_execution_failed',
 ])
@@ -168,7 +235,7 @@ export const RuntimeDelegationFailureDataSchema = z.object({
   recommended_next_tools: z.array(z.string()),
   next_actions: z.array(z.string()),
   runtime_endpoint: z.string().nullable().optional(),
-  required_runtime_backend_hint: RuntimeBackendHintSchema.optional(),
+  required_runtime_contract: ToolRuntimeContractSchema.optional(),
   available_runtime_backends: z.array(RuntimeBackendCapabilitySchema).optional(),
 })
 

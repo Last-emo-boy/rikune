@@ -42,7 +42,7 @@ export const debugSessionStartToolDefinition: ToolDefinition = {
     'Start an interactive GDB debug session for a sample. Supports ELF (direct GDB) and PE (via wine+GDB). Returns a session_id for subsequent debug commands.',
   inputSchema: DebugSessionStartInputSchema,
   outputSchema: DebugSessionStartOutputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
+  runtime: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 export function createDebugSessionStartHandler(deps: PluginToolDeps) {

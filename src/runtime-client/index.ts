@@ -12,7 +12,7 @@ export {
   type RuntimeExecuteRequest,
   type RuntimeExecuteResponse,
   type RuntimeBackendCapability,
-  type RuntimeBackendHintValidationResult,
+  type RuntimeContractValidationResult,
   type RuntimeHealthResponse,
   type RuntimeSseEvent,
   type RuntimeEventSubscription,

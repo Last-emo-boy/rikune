@@ -7,21 +7,21 @@ import { SURFACE_FILE_TYPE_TAGS } from '../../../packages/plugin-sdk/src/index.j
 import type {
   Plugin,
   PluginStatus,
-  RuntimeBackendHint,
+  ToolRuntimeContract,
   ToolDefinition,
   WorkerResult,
 } from '../../../packages/plugin-sdk/src/index.js'
 
 describe('@rikune/plugin-sdk', () => {
-  test('runtime backend hint contract supports declared backend types', () => {
-    const hints: RuntimeBackendHint[] = [
+  test('runtime contract supports declared backend types', () => {
+    const contracts: ToolRuntimeContract[] = [
       { type: 'python-worker', handler: 'worker.py' },
       { type: 'spawn', handler: 'native.sample.execute' },
       { type: 'inline', handler: 'executeSandboxExecute' },
     ]
 
-    expect(hints.map(h => h.type)).toEqual(['python-worker', 'spawn', 'inline'])
-    expect(hints.every(h => h.handler.length > 0)).toBe(true)
+    expect(contracts.map(contract => contract.type)).toEqual(['python-worker', 'spawn', 'inline'])
+    expect(contracts.every(contract => contract.handler.length > 0)).toBe(true)
   })
 
   test('tool and worker result contracts can be expressed without server internals', () => {
@@ -29,7 +29,7 @@ describe('@rikune/plugin-sdk', () => {
       name: 'dynamic.sample.run',
       description: 'Run sample dynamically',
       inputSchema: { type: 'object' },
-      runtimeBackendHint: { type: 'spawn', handler: 'dynamic.sample.run' },
+      runtime: { type: 'spawn', handler: 'dynamic.sample.run' },
     }
 
     const result: WorkerResult = {
@@ -39,7 +39,7 @@ describe('@rikune/plugin-sdk', () => {
       artifacts: [{ id: 'a1', type: 'json', path: '/tmp/out.json', sha256: 'abc' }],
     }
 
-    expect(tool.runtimeBackendHint?.handler).toBe('dynamic.sample.run')
+    expect(tool.runtime?.handler).toBe('dynamic.sample.run')
     expect(result.artifacts?.[0]?.type).toBe('json')
   })
 

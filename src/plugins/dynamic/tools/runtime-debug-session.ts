@@ -52,7 +52,7 @@ interface RuntimeBackendCapability {
   requiresSample?: boolean
 }
 
-const RuntimeBackendHintSchema = z.object({
+const ToolRuntimeContractSchema = z.object({
   type: z.enum(['python-worker', 'spawn', 'inline']),
   handler: z.string().min(1),
 })
@@ -182,8 +182,8 @@ export const RuntimeDebugCommandInputSchema = z.object({
     .optional()
     .default(128 * 1024 * 1024),
   args: z.record(z.string(), z.unknown()).optional().default({}),
-  runtime_backend_hint: RuntimeBackendHintSchema.optional().describe(
-    'Runtime backend hint. Defaults to inline/executeDebugSession for debug.session.* tools.'
+  runtime_contract: ToolRuntimeContractSchema.optional().describe(
+    'Runtime runtime contract. Defaults to inline/executeDebugSession for debug.session.* tools.'
   ),
   runtime_api_key: z.string().optional(),
   timeout_ms: z
@@ -338,9 +338,9 @@ function resolveHyperVStartPolicy(input: z.infer<typeof RuntimeDebugSessionStart
   }
 }
 
-function buildDefaultRuntimeBackendHint(
+function buildDefaultToolRuntimeContract(
   tool: string
-): z.infer<typeof RuntimeBackendHintSchema> | undefined {
+): z.infer<typeof ToolRuntimeContractSchema> | undefined {
   if (tool.startsWith('debug.session.')) {
     return { type: 'inline', handler: 'executeDebugSession' }
   }
@@ -685,7 +685,7 @@ async function runtimeCapabilities(
 
 function findRuntimeCapability(
   capabilities: RuntimeBackendCapability[] | null | undefined,
-  hint: z.infer<typeof RuntimeBackendHintSchema> | undefined
+  hint: z.infer<typeof ToolRuntimeContractSchema> | undefined
 ): RuntimeBackendCapability | undefined {
   if (!hint || !capabilities) {
     return undefined
@@ -695,16 +695,16 @@ function findRuntimeCapability(
 
 function buildUnsupportedRuntimeHintResult(
   session: RuntimeDebugSession,
-  hint: z.infer<typeof RuntimeBackendHintSchema>,
+  hint: z.infer<typeof ToolRuntimeContractSchema>,
   capabilities: RuntimeBackendCapability[],
   elapsedMs: number
 ): WorkerResult {
-  const summary = `Runtime does not advertise support for backend hint ${hint.type}/${hint.handler}.`
+  const summary = `Runtime does not advertise support for runtime contract ${hint.type}/${hint.handler}.`
   return {
     ok: false,
     data: {
       status: 'setup_required',
-      failure_category: 'unsupported_runtime_backend_hint',
+      failure_category: 'unsupported_runtime_contract',
       summary,
       recommended_next_tools: [SESSION_STATUS_TOOL, 'dynamic.dependencies', 'system.health'],
       next_actions: [
@@ -712,7 +712,7 @@ function buildUnsupportedRuntimeHintResult(
         'Reconnect a Runtime Node that advertises the required backend handler before retrying this command.',
       ],
       runtime_endpoint: session.endpoint,
-      required_runtime_backend_hint: hint,
+      required_runtime_contract: hint,
       available_runtime_backends: capabilities,
     },
     errors: [summary],
@@ -1288,8 +1288,7 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
       const taskId = randomUUID()
       let sidecarWarnings: string[] = []
       let stagedSidecarCount = 0
-      const runtimeBackendHint =
-        input.runtime_backend_hint || buildDefaultRuntimeBackendHint(input.tool)
+      const runtime = input.runtime_contract || buildDefaultToolRuntimeContract(input.tool)
       if (!input.sample_id && isSampleBoundRuntimeTool(input.tool)) {
         return {
           ok: false,
@@ -1300,21 +1299,21 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
         }
       }
 
-      if (runtimeBackendHint) {
+      if (runtime) {
         const capabilities = await runtimeCapabilities(session.endpoint, runtimeApiKey).catch(
           () => null
         )
         session.capabilities = capabilities
-        if (capabilities && !findRuntimeCapability(capabilities, runtimeBackendHint)) {
+        if (capabilities && !findRuntimeCapability(capabilities, runtime)) {
           await persistRuntimeSession(deps, session, input.sample_id || session.sampleId, {
             status: 'approval_gated',
             debugState: 'approval_gated',
             phase: 'runtime_capability_mismatch',
-            metadata: { required_runtime_backend_hint: runtimeBackendHint },
+            metadata: { required_runtime_contract: runtime },
           })
           return buildUnsupportedRuntimeHintResult(
             session,
-            runtimeBackendHint,
+            runtime,
             capabilities,
             Date.now() - start
           )
@@ -1325,7 +1324,7 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
         status: 'capturing',
         debugState: 'capturing',
         phase: `runtime_command:${input.tool}`,
-        metadata: { task_id: taskId, runtime_backend_hint: runtimeBackendHint ?? null },
+        metadata: { task_id: taskId, runtime_contract: runtime ?? null },
       })
 
       if (input.sample_id) {
@@ -1373,7 +1372,7 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
             tool: input.tool,
             args: input.args,
             timeoutMs: input.timeout_ms,
-            ...(runtimeBackendHint ? { runtimeBackendHint } : {}),
+            ...(runtime ? { runtime } : {}),
           }),
         },
         30_000
@@ -1430,7 +1429,7 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
         phase: `runtime_command_completed:${input.tool}`,
         metadata: {
           task_id: taskId,
-          runtime_backend_hint: runtimeBackendHint ?? null,
+          runtime_contract: runtime ?? null,
           staged_sidecar_count: stagedSidecarCount,
           sidecar_warnings: sidecarWarnings,
         },
@@ -1443,7 +1442,7 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
           session,
           task_id: taskId,
           tool: input.tool,
-          runtime_backend_hint: runtimeBackendHint,
+          runtime_contract: runtime,
           staged_sidecar_count: stagedSidecarCount,
           sidecar_warnings: sidecarWarnings,
           persisted_artifacts: persistedArtifacts,

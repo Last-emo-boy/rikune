@@ -55,7 +55,7 @@ export const dynamicToolkitStatusToolDefinition: ToolDefinition = {
     'Read-only Runtime Node toolkit inventory for CDB/WinDbg, ProcDump, ProcMon, Sysmon, TTD, x64dbg, dnSpyEx, Frida, dotnet, and FakeNet-style tooling. Does not start Sandbox/Hyper-V or execute samples.',
   inputSchema: DynamicToolkitStatusInputSchema,
   outputSchema: DynamicToolkitStatusOutputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeRuntimeToolProbe' },
+  runtime: { type: 'inline', handler: 'executeRuntimeToolProbe' },
 }
 
 function getRuntimeConfig(deps: PluginToolDeps): Record<string, any> {

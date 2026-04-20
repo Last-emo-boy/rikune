@@ -188,7 +188,7 @@ function safeRunTemplate(
         timeout_sec: input.timeout_sec,
         network_sinkhole: input.network_sinkhole,
       },
-      runtime_backend_hint: { type: 'inline', handler: 'executeManagedSafeRun' },
+      runtime_contract: { type: 'inline', handler: 'executeManagedSafeRun' },
       timeout_ms: Math.max(30_000, (input.timeout_sec + 45) * 1000),
     },
   }
@@ -212,7 +212,7 @@ function sosTemplate(input: z.infer<typeof DebugManagedPlanInputSchema>): Record
       ...(input.sample_id ? { sample_id: input.sample_id } : { sample_id: '<sample_id>' }),
       tool: 'debug.session.command_batch',
       args: { commands },
-      runtime_backend_hint: { type: 'inline', handler: 'executeDebugSession' },
+      runtime_contract: { type: 'inline', handler: 'executeDebugSession' },
       timeout_ms: Math.max(60_000, (input.timeout_sec + 60) * 1000),
     },
   }
@@ -233,7 +233,7 @@ function procDumpTemplate(
         seconds: Math.min(input.timeout_sec, 300),
         max_dumps: 2,
       },
-      runtime_backend_hint: { type: 'inline', handler: 'executeProcDumpCapture' },
+      runtime_contract: { type: 'inline', handler: 'executeProcDumpCapture' },
       timeout_ms: Math.max(90_000, (input.timeout_sec + 90) * 1000),
     },
   }

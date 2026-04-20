@@ -174,7 +174,7 @@ function buildRuntimeTemplate(
         capture_seconds: input.capture_seconds,
         include_cleanup: input.include_cleanup,
       },
-      runtime_backend_hint: { type: 'inline', handler: 'executeTelemetryCapture' },
+      runtime_contract: { type: 'inline', handler: 'executeTelemetryCapture' },
       timeout_ms: Math.max(30_000, (input.capture_seconds + 60) * 1000),
     },
   }

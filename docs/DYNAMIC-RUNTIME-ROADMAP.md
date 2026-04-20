@@ -46,7 +46,7 @@ Focus: make the current runtime session layer stable and recoverable.
 | ID | Item | Scope | Acceptance Criteria |
 |----|------|-------|---------------------|
 | DR-01 | Persist runtime sessions | Store `runtime.debug.session.*` state in SQLite instead of process memory only. | Implemented for sample-bound `runtime.debug.session.*`: sessions persist endpoint, backend, sandbox id, timestamps, health, capabilities, task refs, and artifact refs in `debug_sessions`. |
-| DR-02 | Capability-driven dispatch | Query Runtime Node `/capabilities` before execution. | Implemented in `runtime.debug.command`: unsupported backend hints fail before upload/execute with setup guidance and advertised runtime backends. |
+| DR-02 | Capability-driven dispatch | Query Runtime Node `/capabilities` before execution. | Implemented through `ToolDefinition.runtime`: unsupported runtime contracts fail before upload/execute with setup guidance and advertised runtime backends. |
 | DR-03 | Runtime artifact auto-import | Download Runtime Node artifacts after `runtime.debug.command`. | Implemented for Runtime Node `artifactRefs`: downloaded files are copied into `reports/runtime_debug/<session>/` and registered as `runtime_debug_artifact`. |
 | DR-04 | Sandbox and Host Agent diagnostics | Return high-signal startup diagnostics for Windows Sandbox failures. | Implemented for Host Agent start failures: responses include `.wsb` path, mapped folders, LogonCommand summary, WindowsSandbox.exe state, runtime ready file, startup/stdout/stderr log previews, and missing runtime paths. |
 

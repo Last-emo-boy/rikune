@@ -250,7 +250,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
   })
 
   describe('resolveBackendHint via executeTask', () => {
-    test('should use runtimeBackendHint when provided', async () => {
+    test('should use ToolRuntimeContract when provided', async () => {
       const originalExistsSync = fs.existsSync
       jest.spyOn(fs, 'existsSync').mockImplementation((candidate) => {
         const value = String(candidate).toLowerCase()
@@ -265,7 +265,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           tool: 'unknown.tool',
           args: {},
           timeoutMs: 1000,
-          runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
+          runtime: { type: 'inline', handler: 'executeDebugSession' },
         },
         () => {},
         () => {},
@@ -375,7 +375,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           tool: 'dynamic.behavior.capture',
           args: { network_sinkhole: false, timeout_sec: 5 },
           timeoutMs: 5000,
-          runtimeBackendHint: { type: 'inline', handler: 'executeBehaviorCapture' },
+          runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
         },
         () => {},
         () => {},
@@ -692,7 +692,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           tool: 'dynamic.spawn.native',
           args: {},
           timeoutMs: 1000,
-          runtimeBackendHint: { type: 'spawn', handler: 'native.sample.execute' },
+          runtime: { type: 'spawn', handler: 'native.sample.execute' },
         },
         () => {},
         () => {},
@@ -727,7 +727,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           tool: 'dynamic.spawn.native',
           args: { arguments: ['--flag', 'value'] },
           timeoutMs: 1000,
-          runtimeBackendHint: { type: 'spawn', handler: 'native.sample.execute' },
+          runtime: { type: 'spawn', handler: 'native.sample.execute' },
         },
         () => {},
         () => {},

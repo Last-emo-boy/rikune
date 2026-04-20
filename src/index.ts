@@ -5,7 +5,7 @@
  * Entry point
  */
 
-import { MCPServer } from './server.js'
+import { MCPServer } from './core/server.js'
 import { loadConfig } from './config.js'
 import { WorkspaceManager } from './workspace-manager.js'
 import { DatabaseManager } from './database.js'
@@ -27,7 +27,7 @@ import {
 import { getPluginManager } from './plugins.js'
 
 // Export public API
-export { MCPServer } from './server.js'
+export { MCPServer } from './core/server.js'
 export { loadConfig } from './config.js'
 export { WorkspaceManager } from './workspace-manager.js'
 export * from './types.js'

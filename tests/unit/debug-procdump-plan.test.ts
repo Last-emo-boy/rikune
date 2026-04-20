@@ -34,7 +34,7 @@ describe('debug.procdump.plan tool', () => {
     expect(data.selected_modes).toContain('launch_crash')
     expect(data.runtime_command_sequence[0].args.tool).toBe('debug.procdump.capture')
     expect(data.runtime_command_sequence[0].args.sample_id).toBe(sampleId)
-    expect(data.runtime_command_sequence[0].args.runtime_backend_hint).toMatchObject({
+    expect(data.runtime_command_sequence[0].args.runtime_contract).toMatchObject({
       type: 'inline',
       handler: 'executeProcDumpCapture',
     })

@@ -11,7 +11,7 @@ import {
 describe('dynamic.behavior.capture tool', () => {
   test('declares Runtime Node backend support', () => {
     expect(dynamicBehaviorCaptureToolDefinition.name).toBe('dynamic.behavior.capture')
-    expect(dynamicBehaviorCaptureToolDefinition.runtimeBackendHint).toEqual({
+    expect(dynamicBehaviorCaptureToolDefinition.runtime).toEqual({
       type: 'inline',
       handler: 'executeBehaviorCapture',
     })
@@ -25,7 +25,7 @@ describe('dynamic.behavior.capture tool', () => {
     expect(result.ok).toBe(false)
     expect((result.data as any).status).toBe('setup_required')
     expect((result.data as any).recommended_next_tools).toContain('dynamic.runtime.status')
-    expect((result.data as any).required_runtime_backend_hint).toEqual({
+    expect((result.data as any).required_runtime_contract).toEqual({
       type: 'inline',
       handler: 'executeBehaviorCapture',
     })

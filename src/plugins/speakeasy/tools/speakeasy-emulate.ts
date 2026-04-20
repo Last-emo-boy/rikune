@@ -72,7 +72,7 @@ export const speakeasyEmulateToolDefinition: ToolDefinition = {
     'Emulate a Windows PE file using Mandiant Speakeasy. Captures API calls, file/registry/network activity without native execution.',
   inputSchema: speakeasyEmulateInputSchema,
   outputSchema: speakeasyEmulateOutputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeSpeakeasyEmulate' },
+  runtime: { type: 'inline', handler: 'executeSpeakeasyEmulate' },
 }
 
 const SPEAKEASY_EMULATE_SCRIPT = `

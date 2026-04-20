@@ -18,7 +18,7 @@ describe('dynamic.toolkit.status tool', () => {
 
   test('exports a read-only toolkit status definition with runtime probe hint', () => {
     expect(dynamicToolkitStatusToolDefinition.name).toBe('dynamic.toolkit.status')
-    expect(dynamicToolkitStatusToolDefinition.runtimeBackendHint).toEqual({
+    expect(dynamicToolkitStatusToolDefinition.runtime).toEqual({
       type: 'inline',
       handler: 'executeRuntimeToolProbe',
     })

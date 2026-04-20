@@ -559,5 +559,5 @@ export const fridaRuntimeInstrumentToolDefinition: ToolDefinition = {
     'Instrument a Windows PE sample at runtime using Frida for dynamic API tracing and behavior analysis. Supports spawn and attach modes with pre-built or custom scripts.',
   inputSchema: FridaRuntimeInstrumentInputSchema,
   outputSchema: FridaRuntimeInstrumentOutputSchema,
-  runtimeBackendHint: { type: 'python-worker', handler: 'frida_worker.py' },
+  runtime: { type: 'python-worker', handler: 'frida_worker.py' },
 }

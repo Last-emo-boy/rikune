@@ -120,6 +120,10 @@ interface PluginConfigField {
 Use `plugin.list` with `include_config: true` to discover required environment
 variables and their current set/unset status.
 
+Use `plugin.list` with `execution_domain: "static"` or `"dynamic"` to inspect one
+side of the plugin surface. Static plugins run on analyzer nodes. Dynamic plugins
+are delegated to a Runtime Node when live execution or instrumentation is needed.
+
 ### Examples
 
 ```bash
@@ -235,6 +239,7 @@ interface Plugin {
   name: string                      // human-readable display name
   description?: string              // short capability description
   version?: string                  // semver string
+  executionDomain?: 'static' | 'dynamic' | 'both'
   dependencies?: string[]           // IDs of plugins that must load first
   configSchema?: PluginConfigField[] // declarative config fields
   hooks?: PluginHooks               // lifecycle hooks
@@ -242,7 +247,24 @@ interface Plugin {
   register: (server: MCPServer, deps: ToolDeps) => string[] | void  // register tools
   teardown?: () => void | Promise<void>     // cleanup on unload
 }
+```
 
+Runtime-delegated tool definitions use a `runtime` contract, not an execution hint:
+
+```typescript
+interface ToolRuntimeContract {
+  type: 'python-worker' | 'spawn' | 'inline'
+  handler: string
+  modes?: Array<'plan_only' | 'safe_simulation' | 'emulation' | 'live_sandbox' | 'live_hyperv' | 'manual_runtime'>
+  requiredProfiles?: string[]
+  requiredTools?: string[]
+  optionalTools?: string[]
+  produces?: string[]
+  timeoutMs?: number
+}
+```
+
+```typescript
 interface PluginHooks {
   onBeforeToolCall?: (toolName: string, args: Record<string, unknown>) => void | Promise<void>
   onAfterToolCall?: (toolName: string, args: Record<string, unknown>, elapsedMs: number) => void | Promise<void>

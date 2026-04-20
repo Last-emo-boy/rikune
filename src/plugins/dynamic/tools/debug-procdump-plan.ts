@@ -127,7 +127,7 @@ function buildRuntimeTemplate(
       ...(input.sample_id && mode !== 'pid_snapshot' ? { sample_id: input.sample_id } : {}),
       tool: 'debug.procdump.capture',
       args,
-      runtime_backend_hint: { type: 'inline', handler: 'executeProcDumpCapture' },
+      runtime_contract: { type: 'inline', handler: 'executeProcDumpCapture' },
       timeout_ms: input.timeout_ms,
     },
   }

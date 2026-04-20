@@ -171,7 +171,7 @@ export const sandboxExecuteToolDefinition: ToolDefinition = {
     'Execute dynamic-analysis workflow in safe simulation mode (default), memory-guided mode, or Speakeasy user-mode emulation and return timeline/IOC/risk outputs.',
   inputSchema: SandboxExecuteInputSchema,
   outputSchema: SandboxExecuteOutputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeSandboxExecute' },
+  runtime: { type: 'inline', handler: 'executeSandboxExecute' },
 }
 
 interface WorkerRequest {

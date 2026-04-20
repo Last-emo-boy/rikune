@@ -7,12 +7,18 @@ import { createServer, request } from 'http'
 import type { AddressInfo } from 'net'
 import fs from 'fs'
 import path from 'path'
-import type { RuntimeBackendCapability, RuntimeBackendHint } from '../../../packages/runtime-node/src/executor.js'
+import type { RuntimeBackendCapability, ToolRuntimeContract } from '../../../packages/runtime-node/src/executor.js'
 import { createRuntimeRouter } from '../../../packages/runtime-node/src/router.js'
+import { config as runtimeConfig } from '../../../packages/runtime-node/src/config.js'
 
 process.env.RUNTIME_API_KEY = 'runtime-test-key'
 process.env.RUNTIME_INBOX = 'C:\\rikune-test-inbox-router'
 process.env.RUNTIME_OUTBOX = 'C:\\rikune-test-outbox-router'
+process.env.RUNTIME_MIN_DISK_SPACE_BYTES = '0'
+runtimeConfig.runtime.minDiskSpaceBytes = 0
+runtimeConfig.runtime.apiKey = 'runtime-test-key'
+runtimeConfig.runtime.inbox = 'C:\\rikune-test-inbox-router'
+runtimeConfig.runtime.outbox = 'C:\\rikune-test-outbox-router'
 
 const runtimeCapabilities: RuntimeBackendCapability[] = [
   {
@@ -39,10 +45,10 @@ const runtimeSupport = {
   listRuntimeBackendCapabilities(): RuntimeBackendCapability[] {
     return runtimeCapabilities
   },
-  isRuntimeBackendHintSupported(hint: RuntimeBackendHint): boolean {
+  isRuntimeContractSupported(hint: ToolRuntimeContract): boolean {
     return runtimeCapabilities.some((capability) => capability.type === hint.type && capability.handler === hint.handler)
   },
-  getRuntimeBackendCapability(hint: RuntimeBackendHint): RuntimeBackendCapability | undefined {
+  getRuntimeBackendCapability(hint: ToolRuntimeContract): RuntimeBackendCapability | undefined {
     return runtimeCapabilities.find((capability) => capability.type === hint.type && capability.handler === hint.handler)
   },
   buildRuntimeToolInventory() {
@@ -281,7 +287,7 @@ describe('runtime-node router capability and execute contract', () => {
         tool: 'dynamic.spawn.native',
         args: {},
         timeoutMs: 1000,
-        runtimeBackendHint: { type: 'spawn', handler: 'native.sample.execute' },
+        runtime: { type: 'spawn', handler: 'native.sample.execute' },
       }))
       req.end()
     })
@@ -324,7 +330,7 @@ describe('runtime-node router capability and execute contract', () => {
         tool: '',
         args: [],
         timeoutMs: 0,
-        runtimeBackendHint: { type: 'spawn', handler: 'missing.handler' },
+        runtime: { type: 'spawn', handler: 'missing.handler' },
       }))
       req.end()
     })
@@ -373,7 +379,7 @@ describe('runtime-node router capability and execute contract', () => {
     expect(response.body).toContain('Request body must be valid JSON')
   })
 
-  test('rejects malformed runtime backend hints during schema validation', async () => {
+  test('rejects malformed runtime runtime contracts during schema validation', async () => {
     const { port } = await startRuntimeServer()
 
     const response = await new Promise<{ statusCode?: number; body: string }>((resolve, reject) => {
@@ -406,7 +412,7 @@ describe('runtime-node router capability and execute contract', () => {
         tool: 'dynamic.spawn.native',
         args: {},
         timeoutMs: 1000,
-        runtimeBackendHint: { type: 'ssh', handler: '' },
+        runtime: { type: 'ssh', handler: '' },
       }))
       req.end()
     })
@@ -417,7 +423,7 @@ describe('runtime-node router capability and execute contract', () => {
     expect(response.body).toContain('String must contain at least 1 character')
   })
 
-  test('rejects unsupported runtime backend hints', async () => {
+  test('rejects Unsupported runtime contracts', async () => {
     const { port } = await startRuntimeServer()
 
     const response = await new Promise<{ statusCode?: number; body: string }>((resolve, reject) => {
@@ -450,18 +456,18 @@ describe('runtime-node router capability and execute contract', () => {
         tool: 'spawn.sample.exec',
         args: {},
         timeoutMs: 1000,
-        runtimeBackendHint: { type: 'spawn', handler: 'missing.handler' },
+        runtime: { type: 'spawn', handler: 'missing.handler' },
       }))
       req.end()
     })
 
     expect(response.statusCode).toBe(400)
-    expect(response.body).toContain('unsupported_runtime_backend_hint')
-    expect(response.body).toContain('Unsupported runtime backend hint')
+    expect(response.body).toContain('unsupported_runtime_contract')
+    expect(response.body).toContain('Unsupported runtime contract')
     expect(response.body).toContain('native.sample.execute')
   })
 
-  test('falls back to null runtime backend details when no backend hint is provided', async () => {
+  test('falls back to null runtime backend details when no runtime contract is provided', async () => {
     const { port } = await startRuntimeServer()
 
     const response = await new Promise<{ statusCode?: number; body: string }>((resolve, reject) => {

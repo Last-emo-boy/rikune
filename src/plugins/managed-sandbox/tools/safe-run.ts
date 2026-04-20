@@ -92,7 +92,7 @@ export const safeRunToolDefinition: ToolDefinition = {
     'Supports configurable timeout, memory limit, and custom sinkhole responses.',
   inputSchema: SafeRunInputSchema,
   outputSchema: SafeRunOutputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeManagedSafeRun' },
+  runtime: { type: 'inline', handler: 'executeManagedSafeRun' },
 }
 
 /* ── Worker bridge ─────────────────────────────────────────────────────── */

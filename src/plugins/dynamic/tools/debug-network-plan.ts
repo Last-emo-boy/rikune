@@ -106,7 +106,7 @@ function behaviorCaptureTemplate(
         network_sinkhole: true,
         capture_network_snapshot: true,
       },
-      runtime_backend_hint: { type: 'inline', handler: 'executeBehaviorCapture' },
+      runtime_contract: { type: 'inline', handler: 'executeBehaviorCapture' },
       timeout_ms: Math.max(30_000, (Math.min(input.capture_seconds, 300) + 45) * 1000),
     },
   }
@@ -126,7 +126,7 @@ function etwDnsTemplate(
         capture_seconds: input.capture_seconds,
         include_cleanup: true,
       },
-      runtime_backend_hint: { type: 'inline', handler: 'executeTelemetryCapture' },
+      runtime_contract: { type: 'inline', handler: 'executeTelemetryCapture' },
       timeout_ms: Math.max(60_000, (input.capture_seconds + 75) * 1000),
     },
   }

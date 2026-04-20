@@ -15,6 +15,8 @@ import type { ToolRegistrar } from '../core/registrar.js'
 const inputSchema = z.object({
   /** Optional: filter to a specific plugin ID. */
   plugin_id: z.string().optional(),
+  /** Optional: filter plugins by execution domain. */
+  execution_domain: z.enum(['static', 'dynamic', 'both']).optional(),
   /** If true, include config schema details for each plugin. */
   include_config: z.boolean().optional(),
 })
@@ -45,15 +47,25 @@ export function createPluginListHandler(_server: ToolRegistrar) {
       }
     }
 
+    if (args.execution_domain) {
+      statuses = statuses.filter((s) => (s.executionDomain ?? 'both') === args.execution_domain)
+    }
+
     const summary = {
       total: statuses.length,
       loaded: statuses.filter((s) => s.status === 'loaded').length,
       skipped: statuses.filter((s) => s.status.startsWith('skipped')).length,
       errored: statuses.filter((s) => s.status === 'error').length,
+      by_execution_domain: {
+        static: statuses.filter((s) => (s.executionDomain ?? 'both') === 'static').length,
+        dynamic: statuses.filter((s) => (s.executionDomain ?? 'both') === 'dynamic').length,
+        both: statuses.filter((s) => (s.executionDomain ?? 'both') === 'both').length,
+      },
       plugins: statuses.map((s) => {
         const entry: Record<string, unknown> = {
           id: s.id,
           name: s.name,
+          execution_domain: s.executionDomain ?? 'both',
           status: s.status,
           version: s.version ?? null,
           description: s.description ?? null,

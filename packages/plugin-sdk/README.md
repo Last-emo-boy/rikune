@@ -17,6 +17,7 @@ export default definePlugin({
   id: 'my-custom-tool',
   name: 'My Custom Analysis Tool',
   version: '1.0.0',
+  executionDomain: 'static',
   description: 'Custom binary analysis plugin',
 
   configSchema: [
@@ -47,6 +48,35 @@ export default definePlugin({
   },
 })
 ```
+
+## Static and Dynamic Domains
+
+Every plugin should declare `executionDomain`:
+
+- `static` — analyzer-side tools that inspect files, artifacts, metadata, or persisted traces.
+- `dynamic` — runtime-side tools that execute or instrument samples through a Runtime Node.
+- `both` — cross-cutting plugins such as observability or reporting.
+
+Dynamic tools that are delegated to a Runtime Node declare a `runtime` contract on each
+`ToolDefinition`:
+
+```typescript
+const tool: ToolDefinition = {
+  name: 'sample.runtime.capture',
+  description: 'Capture runtime behavior',
+  inputSchema: { type: 'object' },
+  runtime: {
+    type: 'inline',
+    handler: 'executeBehaviorCapture',
+    modes: ['live_sandbox', 'live_hyperv', 'manual_runtime'],
+    requiredProfiles: ['behavior_capture'],
+    produces: ['dynamic_trace_json'],
+  },
+}
+```
+
+The contract is used for capability checks, runtime routing, setup diagnostics, and
+clear execution semantics in tool results.
 
 ## API
 

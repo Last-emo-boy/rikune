@@ -41,7 +41,7 @@ export const dynamicMemoryDumpToolDefinition: ToolDefinition = {
     '(RWX allocation, W→RX protection changes) and auto-dump memory regions at strategic moments. ' +
     'Useful for extracting unpacked code from packed/encrypted binaries.',
   inputSchema: DynamicMemoryDumpInputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeDynamicMemoryDump' },
+  runtime: { type: 'inline', handler: 'executeDynamicMemoryDump' },
 }
 
 const FRIDA_DUMP_SCRIPT = `

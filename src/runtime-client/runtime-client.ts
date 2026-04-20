@@ -7,17 +7,17 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { logger } from '../logger.js'
-import type { WorkerResult, ArtifactRef, RuntimeBackendHint } from '../plugins/sdk.js'
+import type { WorkerResult, ArtifactRef, ToolRuntimeContract } from '../plugins/sdk.js'
 import type { RuntimeSidecarUpload } from './sidecar-staging.js'
 
 export interface RuntimeBackendCapability {
-  type: RuntimeBackendHint['type']
+  type: ToolRuntimeContract['type']
   handler: string
   description: string
   requiresSample: boolean
 }
 
-export interface RuntimeBackendHintValidationResult {
+export interface RuntimeContractValidationResult {
   supported: boolean | null
   capability?: RuntimeBackendCapability
   capabilities?: RuntimeBackendCapability[]
@@ -30,7 +30,7 @@ export interface RuntimeExecuteRequest {
   args: Record<string, unknown>
   timeoutMs: number
   sampleInboxPath?: string
-  runtimeBackendHint?: RuntimeBackendHint
+  runtime?: ToolRuntimeContract
 }
 
 export interface RuntimeUploadOptions {
@@ -193,17 +193,17 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     }
   }
 
-  async function validateRuntimeBackendHint(
-    hint: RuntimeBackendHint,
+  async function validateRuntimeContract(
+    contract: ToolRuntimeContract,
     options: { forceRefresh?: boolean } = {}
-  ): Promise<RuntimeBackendHintValidationResult> {
+  ): Promise<RuntimeContractValidationResult> {
     const capabilities = await getCapabilities(options)
     if (!capabilities) {
       return { supported: null }
     }
 
     const capability = capabilities.find(
-      (entry) => entry.type === hint.type && entry.handler === hint.handler
+      (entry) => entry.type === contract.type && entry.handler === contract.handler
     )
     return {
       supported: capability !== undefined,
@@ -216,8 +216,8 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     req: RuntimeExecuteRequest,
     opts?: { onProgress?: (progress: number, message?: string) => void }
   ): Promise<RuntimeExecuteResponse> {
-    if (req.runtimeBackendHint) {
-      const validation = await validateRuntimeBackendHint(req.runtimeBackendHint)
+    if (req.runtime) {
+      const validation = await validateRuntimeContract(req.runtime)
       if (validation.supported === false) {
         if (validation.capabilities) {
           replaceCapabilitiesCache(validation.capabilities)
@@ -225,9 +225,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
         return {
           ok: false,
           taskId: req.taskId,
-          errors: [
-            `Unsupported runtime backend hint: ${req.runtimeBackendHint.type}/${req.runtimeBackendHint.handler}`,
-          ],
+          errors: [`Unsupported runtime contract: ${req.runtime.type}/${req.runtime.handler}`],
           capabilities: validation.capabilities,
         }
       }
@@ -249,7 +247,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
         replaceCapabilitiesCache(responseCapabilities)
       } else if (
         typeof submitBody.error === 'string' &&
-        submitBody.error.startsWith('Unsupported runtime backend hint:')
+        submitBody.error.startsWith('Unsupported runtime contract:')
       ) {
         invalidateCapabilitiesCache()
       }
@@ -751,7 +749,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
   return {
     health,
     getCapabilities,
-    validateRuntimeBackendHint,
+    validateRuntimeContract,
     execute,
     uploadSample,
     downloadArtifacts,

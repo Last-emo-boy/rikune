@@ -35,6 +35,7 @@ export interface ToolResult {
 /** Worker-style result used by most analysis tools. */
 export interface WorkerResult {
   ok: boolean
+  status?: 'completed' | 'queued' | 'blocked' | 'degraded' | 'failed'
   data?: unknown
   errors?: string[]
   warnings?: string[]
@@ -42,16 +43,45 @@ export interface WorkerResult {
   required_user_inputs?: unknown[]
   artifacts?: ArtifactRef[]
   metrics?: Record<string, unknown>
+  execution_semantics?: {
+    requested_mode?: RuntimeExecutionMode | string
+    actual_mode?: RuntimeExecutionMode | string
+    backend?: string
+    live_execution?: boolean
+    reason?: string
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Tool Definition
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Execution backend hint for the runtime node. */
-export interface RuntimeBackendHint {
-  type: 'python-worker' | 'spawn' | 'inline'
+export type RuntimeBackendType = 'python-worker' | 'spawn' | 'inline'
+
+export type RuntimeExecutionMode =
+  | 'plan_only'
+  | 'safe_simulation'
+  | 'emulation'
+  | 'live_sandbox'
+  | 'live_hyperv'
+  | 'manual_runtime'
+
+export interface RuntimeFallbackRule {
+  mode: RuntimeExecutionMode
+  reason?: string
+}
+
+/** Execution contract for tools delegated to the runtime node. */
+export interface ToolRuntimeContract {
+  type: RuntimeBackendType
   handler: string
+  modes?: RuntimeExecutionMode[]
+  requiredProfiles?: string[]
+  requiredTools?: string[]
+  optionalTools?: string[]
+  produces?: string[]
+  timeoutMs?: number
+  fallback?: RuntimeFallbackRule[]
 }
 
 /** Schema for a tool's inputs. */
@@ -61,8 +91,8 @@ export interface ToolDefinition {
   description: string
   inputSchema: any
   outputSchema?: any
-  /** Hint for the runtime node on how to execute this tool. */
-  runtimeBackendHint?: RuntimeBackendHint
+  /** Runtime execution contract for tools delegated to a runtime node. */
+  runtime?: ToolRuntimeContract
 }
 
 /** Generic tool arguments (for tools that don't use Zod parsing). */
@@ -358,6 +388,7 @@ export interface PluginStatus {
   name: string
   description?: string
   version?: string
+  executionDomain?: 'static' | 'dynamic' | 'both'
   status: 'loaded' | 'skipped-disabled' | 'skipped-check' | 'skipped-deps' | 'error'
   tools: string[]
   configFields?: PluginConfigField[]

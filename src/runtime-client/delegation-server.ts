@@ -9,17 +9,14 @@ import type {
   ToolDefinition,
   WorkerResult,
   ArtifactRef,
-  RuntimeBackendHint,
+  ToolRuntimeContract,
 } from '../plugins/sdk.js'
 import {
   RuntimeDelegationFailureDataSchema,
   type RuntimeDelegationFailureCategory,
   type WorkerResult as CoreWorkerResult,
 } from '../types.js'
-import type {
-  RuntimeBackendCapability,
-  RuntimeBackendHintValidationResult,
-} from './runtime-client.js'
+import type { RuntimeBackendCapability, RuntimeContractValidationResult } from './runtime-client.js'
 import type { ProgressReporter } from '../streaming-progress.js'
 import { logger } from '../logger.js'
 import { resolveRuntimeSidecarUploads, type RuntimeSidecarUpload } from './sidecar-staging.js'
@@ -42,7 +39,7 @@ export interface RuntimeClientLike {
       args: Record<string, unknown>
       timeoutMs: number
       sampleInboxPath?: string
-      runtimeBackendHint?: RuntimeBackendHint
+      runtime?: ToolRuntimeContract
     },
     opts?: { onProgress?: (progress: number, message?: string) => void }
   ): Promise<any>
@@ -58,10 +55,10 @@ export interface RuntimeClientLike {
     artifactNames: string[]
   ): Promise<string[]>
   getCapabilities?(options?: { forceRefresh?: boolean }): Promise<RuntimeBackendCapability[] | null>
-  validateRuntimeBackendHint?(
-    hint: RuntimeBackendHint,
+  validateRuntimeContract?(
+    contract: ToolRuntimeContract,
     options?: { forceRefresh?: boolean }
-  ): Promise<RuntimeBackendHintValidationResult>
+  ): Promise<RuntimeContractValidationResult>
   getEndpoint?(): string
   recover?(options?: { forceRefreshCapabilities?: boolean }): Promise<boolean>
 }
@@ -108,7 +105,7 @@ function buildRuntimeDelegationGuidance(
         nextActions: [
           category === 'runtime_recovery_failed'
             ? 'Call dynamic.runtime.status to check Host Agent health, Runtime Node health, advertised capabilities, and whether Sandbox/Hyper-V has an active runtime endpoint.'
-            : category === 'unsupported_runtime_backend_hint'
+            : category === 'unsupported_runtime_contract'
               ? 'Connect a Runtime Node that advertises inline/executeSandboxExecute support before retrying live sandbox execution.'
               : 'Verify dynamic-analysis runtime availability and dependency readiness before retrying live sandbox execution.',
           'Start Windows Host Agent in the logged-on user session for Windows Sandbox/Hyper-V work, or configure RUNTIME_HOST_AGENT_ENDPOINT to a reachable Host Agent.',
@@ -191,21 +188,22 @@ function buildRuntimeDiagnostic(params: {
   availableRuntimeBackends: RuntimeBackendCapability[]
 }) {
   const hasEndpoint = Boolean(params.runtimeEndpoint)
-  const requiredHint = params.definition.runtimeBackendHint
+  const requiredContract = params.definition.runtime
   const matchingBackend =
-    requiredHint &&
+    requiredContract &&
     params.availableRuntimeBackends.some(
-      (backend) => backend.type === requiredHint.type && backend.handler === requiredHint.handler
+      (backend) =>
+        backend.type === requiredContract.type && backend.handler === requiredContract.handler
     )
 
   return {
     runtime_endpoint_configured: hasEndpoint,
     runtime_endpoint: params.runtimeEndpoint ?? null,
-    required_backend: requiredHint || null,
+    required_backend: requiredContract || null,
     required_backend_advertised: Boolean(matchingBackend),
     available_backend_count: params.availableRuntimeBackends.length,
     likely_missing_plane:
-      params.category === 'unsupported_runtime_backend_hint'
+      params.category === 'unsupported_runtime_contract'
         ? 'runtime_node_capability'
         : !hasEndpoint
           ? 'runtime_endpoint'
@@ -225,7 +223,7 @@ function buildRuntimeFailureResult(
     errors?: string[]
     warnings?: string[]
     runtimeEndpoint?: string | null
-    runtimeBackendHint?: RuntimeBackendHint
+    runtime?: ToolRuntimeContract
     availableRuntimeBackends?: RuntimeBackendCapability[]
     setupActions?: unknown[]
     requiredUserInputs?: unknown[]
@@ -234,12 +232,12 @@ function buildRuntimeFailureResult(
 ): CoreWorkerResult {
   const guidance = buildRuntimeDelegationGuidance(definition, category)
   const runtimeEndpoint = params.runtimeEndpoint ?? null
-  const runtimeBackendHint = params.runtimeBackendHint ?? definition.runtimeBackendHint
+  const runtime = params.runtime ?? definition.runtime
   const availableRuntimeBackends = params.availableRuntimeBackends ?? []
 
   const failureData = RuntimeDelegationFailureDataSchema.parse({
     status:
-      category === 'runtime_unavailable' || category === 'unsupported_runtime_backend_hint'
+      category === 'runtime_unavailable' || category === 'unsupported_runtime_contract'
         ? 'setup_required'
         : 'failed',
     failure_category: category,
@@ -247,7 +245,7 @@ function buildRuntimeFailureResult(
     recommended_next_tools: guidance.recommendedNextTools,
     next_actions: guidance.nextActions,
     runtime_endpoint: runtimeEndpoint,
-    ...(runtimeBackendHint ? { required_runtime_backend_hint: runtimeBackendHint } : {}),
+    ...(runtime ? { required_runtime_contract: runtime } : {}),
     available_runtime_backends: availableRuntimeBackends,
   })
 
@@ -284,8 +282,8 @@ function normalizeRuntimeExecuteResponse(
       )
     : []
 
-  if (runtimeErrors.some((entry) => entry.startsWith('Unsupported runtime backend hint:'))) {
-    return buildRuntimeFailureResult(definition, 'unsupported_runtime_backend_hint', {
+  if (runtimeErrors.some((entry) => entry.startsWith('Unsupported runtime contract:'))) {
+    return buildRuntimeFailureResult(definition, 'unsupported_runtime_contract', {
       summary: `Runtime does not advertise the backend required by ${definition.name}.`,
       errors: runtimeErrors,
       runtimeEndpoint,
@@ -308,23 +306,21 @@ function normalizeRuntimeExecuteResponse(
   return { ok: true, data: result }
 }
 
-function buildUnsupportedRuntimeBackendHintResult(
+function buildUnsupportedToolRuntimeContractResult(
   definition: ToolDefinition,
-  validation: RuntimeBackendHintValidationResult,
+  validation: RuntimeContractValidationResult,
   runtimeEndpoint?: string | null
 ): CoreWorkerResult {
-  const runtimeBackendHint = definition.runtimeBackendHint
-  const hintSummary = runtimeBackendHint
-    ? `${runtimeBackendHint.type}/${runtimeBackendHint.handler}`
-    : 'unknown'
+  const runtime = definition.runtime
+  const contractSummary = runtime ? `${runtime.type}/${runtime.handler}` : 'unknown'
 
-  return buildRuntimeFailureResult(definition, 'unsupported_runtime_backend_hint', {
-    summary: `Runtime does not advertise support for backend hint ${hintSummary} required by tool ${definition.name}.`,
+  return buildRuntimeFailureResult(definition, 'unsupported_runtime_contract', {
+    summary: `Runtime does not advertise support for runtime contract ${contractSummary} required by tool ${definition.name}.`,
     errors: [
-      `Runtime does not advertise support for backend hint ${hintSummary} required by tool ${definition.name}.`,
+      `Runtime does not advertise support for runtime contract ${contractSummary} required by tool ${definition.name}.`,
     ],
     runtimeEndpoint,
-    runtimeBackendHint,
+    runtime,
     availableRuntimeBackends: validation.capabilities ?? [],
   })
 }
@@ -472,7 +468,7 @@ export function createDelegatingServer(
         const sampleId = args?.sample_id as string | undefined
         const progressToken = args?._meta?.progressToken as string | number | undefined
         const progressReporter = inner.getProgressReporter?.(progressToken)
-        const runtimeBackendHint = definition.runtimeBackendHint
+        const runtime = definition.runtime
         let stagedUpload: {
           samplePath: string
           inboxHostDir: string
@@ -480,10 +476,10 @@ export function createDelegatingServer(
         } | null = null
 
         try {
-          if (runtimeBackendHint && runtimeClient.validateRuntimeBackendHint) {
-            const validation = await runtimeClient.validateRuntimeBackendHint(runtimeBackendHint)
+          if (runtime && runtimeClient.validateRuntimeContract) {
+            const validation = await runtimeClient.validateRuntimeContract(runtime)
             if (validation.supported === false) {
-              return buildUnsupportedRuntimeBackendHintResult(
+              return buildUnsupportedToolRuntimeContractResult(
                 definition,
                 validation,
                 runtimeEndpoint
@@ -523,7 +519,7 @@ export function createDelegatingServer(
               tool: definition.name,
               args,
               timeoutMs: 120_000,
-              runtimeBackendHint,
+              runtime,
             },
             {
               onProgress: (progress, message) => {
@@ -604,7 +600,7 @@ export function createDelegatingServer(
                     tool: definition.name,
                     args,
                     timeoutMs: 120_000,
-                    runtimeBackendHint,
+                    runtime,
                   },
                   {
                     onProgress: (progress, message) => {

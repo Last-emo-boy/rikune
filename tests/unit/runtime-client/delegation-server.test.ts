@@ -11,7 +11,7 @@ import type {
   PluginServerInterface,
   ToolDefinition,
   WorkerResult,
-  RuntimeBackendHint,
+  ToolRuntimeContract,
 } from '../../../src/plugins/sdk.js'
 import type { RuntimeBackendCapability } from '../../../src/runtime-client/runtime-client.js'
 import type { WorkspaceManager } from '../../../src/workspace-manager.js'
@@ -84,7 +84,7 @@ describe('createDelegatingServer', () => {
     name: 'frida.runtime.instrument',
     description: 'test',
     inputSchema: {},
-    runtimeBackendHint: { type: 'python-worker', handler: 'frida_worker.py' },
+    runtime: { type: 'python-worker', handler: 'frida_worker.py' },
   }
 
   const availableRuntimeBackends: RuntimeBackendCapability[] = [
@@ -106,7 +106,7 @@ describe('createDelegatingServer', () => {
 
   const runtimeBackedToolCases: Array<{
     tool: string
-    hint: RuntimeBackendHint
+    hint: ToolRuntimeContract
     expectedNextTool: string
   }> = [
     {
@@ -153,7 +153,7 @@ describe('createDelegatingServer', () => {
     expect(runtimeClient.execute).not.toHaveBeenCalled()
   })
 
-  test('should wrap remote dynamic tools and forward runtimeBackendHint', async () => {
+  test('should wrap remote dynamic tools and forward ToolRuntimeContract', async () => {
     const server = createServer(runtimeClient)
     let wrappedHandler: any
     inner.registerTool = jest.fn((_def, handler) => {
@@ -171,7 +171,7 @@ describe('createDelegatingServer', () => {
     expect(runtimeClient.execute).toHaveBeenCalledWith(
       expect.objectContaining({
         tool: 'frida.runtime.instrument',
-        runtimeBackendHint: { type: 'python-worker', handler: 'frida_worker.py' },
+        runtime: { type: 'python-worker', handler: 'frida_worker.py' },
       }),
       expect.anything()
     )
@@ -287,7 +287,7 @@ describe('createDelegatingServer', () => {
       makeRuntimeResponse({
         ok: false,
         result: undefined,
-        errors: ['Unsupported runtime backend hint: inline/missing.handler'],
+        errors: ['Unsupported runtime contract: inline/missing.handler'],
       })
     )
 
@@ -301,11 +301,11 @@ describe('createDelegatingServer', () => {
     const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
 
     expect(result.ok).toBe(false)
-    expect(result.errors).toEqual(['Unsupported runtime backend hint: inline/missing.handler'])
+    expect(result.errors).toEqual(['Unsupported runtime contract: inline/missing.handler'])
   })
 
-  test('should short-circuit unsupported backend hints before upload and execution', async () => {
-    runtimeClient.validateRuntimeBackendHint = jest.fn().mockResolvedValue({
+  test('should short-circuit unsupported runtime contracts before upload and execution', async () => {
+    runtimeClient.validateRuntimeContract = jest.fn().mockResolvedValue({
       supported: false,
       capabilities: availableRuntimeBackends,
     })
@@ -319,23 +319,23 @@ describe('createDelegatingServer', () => {
     server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
     const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
 
-    expect(runtimeClient.validateRuntimeBackendHint).toHaveBeenCalledWith(
-      remoteDynamicTool.runtimeBackendHint
+    expect(runtimeClient.validateRuntimeContract).toHaveBeenCalledWith(
+      remoteDynamicTool.runtime
     )
     expect(runtimeClient.uploadSample).not.toHaveBeenCalled()
     expect(runtimeClient.execute).not.toHaveBeenCalled()
     expect(result.ok).toBe(false)
     expect(result.errors?.[0]).toMatch(
-      /does not advertise support for backend hint python-worker\/frida_worker.py/
+      /does not advertise support for runtime contract python-worker\/frida_worker.py/
     )
     expect(result.data).toEqual(
       expect.objectContaining({
         status: 'setup_required',
-        failure_category: 'unsupported_runtime_backend_hint',
+        failure_category: 'unsupported_runtime_contract',
         summary:
-          'Runtime does not advertise support for backend hint python-worker/frida_worker.py required by tool frida.runtime.instrument.',
+          'Runtime does not advertise support for runtime contract python-worker/frida_worker.py required by tool frida.runtime.instrument.',
         runtime_endpoint: null,
-        required_runtime_backend_hint: remoteDynamicTool.runtimeBackendHint,
+        required_runtime_contract: remoteDynamicTool.runtime,
         available_runtime_backends: availableRuntimeBackends,
       })
     )
@@ -358,7 +358,7 @@ describe('createDelegatingServer', () => {
   test.each(runtimeBackedToolCases)(
     'should provide capability-aware fallback guidance for %s',
     async ({ tool, hint, expectedNextTool }) => {
-      runtimeClient.validateRuntimeBackendHint = jest.fn().mockResolvedValue({
+      runtimeClient.validateRuntimeContract = jest.fn().mockResolvedValue({
         supported: false,
         capabilities: availableRuntimeBackends,
       })
@@ -374,7 +374,7 @@ describe('createDelegatingServer', () => {
           name: tool,
           description: 'test',
           inputSchema: {},
-          runtimeBackendHint: hint,
+          runtime: hint,
         },
         async () => ({ ok: true }) as WorkerResult
       )
@@ -382,8 +382,8 @@ describe('createDelegatingServer', () => {
       const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
 
       expect(result.ok).toBe(false)
-      expect((result.data as any)?.failure_category).toBe('unsupported_runtime_backend_hint')
-      expect((result.data as any)?.required_runtime_backend_hint).toEqual(hint)
+      expect((result.data as any)?.failure_category).toBe('unsupported_runtime_contract')
+      expect((result.data as any)?.required_runtime_contract).toEqual(hint)
       expect((result.data as any)?.available_runtime_backends).toEqual(availableRuntimeBackends)
       expect((result.data as any)?.recommended_next_tools).toContain(expectedNextTool)
       expect(() => RuntimeDelegationFailureResultSchema.parse(result)).not.toThrow()

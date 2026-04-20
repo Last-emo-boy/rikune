@@ -62,7 +62,7 @@ export const speakeasyShellcodeToolDefinition: ToolDefinition = {
     'Emulate raw shellcode bytes from a sample using Speakeasy. Specify architecture and optional offset.',
   inputSchema: speakeasyShellcodeInputSchema,
   outputSchema: speakeasyShellcodeOutputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeSpeakeasyShellcode' },
+  runtime: { type: 'inline', handler: 'executeSpeakeasyShellcode' },
 }
 
 const SPEAKEASY_SHELLCODE_SCRIPT = `

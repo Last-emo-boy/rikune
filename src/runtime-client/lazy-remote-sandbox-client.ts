@@ -11,7 +11,7 @@ import { logger } from '../logger.js'
 import {
   createRuntimeClient,
   type RuntimeBackendCapability,
-  type RuntimeBackendHintValidationResult,
+  type RuntimeContractValidationResult,
   type RuntimeEventStreamOptions,
   type RuntimeEventSubscription,
   type RuntimeExecuteRequest,
@@ -134,11 +134,11 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
       return (await startSandbox()).getCapabilities(options)
     },
 
-    async validateRuntimeBackendHint(
-      hint: Parameters<RuntimeClient['validateRuntimeBackendHint']>[0],
+    async validateRuntimeContract(
+      hint: Parameters<RuntimeClient['validateRuntimeContract']>[0],
       options: { forceRefresh?: boolean } = {}
-    ): Promise<RuntimeBackendHintValidationResult> {
-      return (await startSandbox()).validateRuntimeBackendHint(hint, options)
+    ): Promise<RuntimeContractValidationResult> {
+      return (await startSandbox()).validateRuntimeContract(hint, options)
     },
 
     async execute(

@@ -102,7 +102,7 @@ export const wineRunToolDefinition: ToolDefinition = {
     'Preflight or run a sample under Wine or winedbg. Use this only when you explicitly request Linux-hosted Wine debugging or execution; run/debug modes require approved=true.',
   inputSchema: wineRunInputSchema,
   outputSchema: wineRunOutputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeWineRun' },
+  runtime: { type: 'inline', handler: 'executeWineRun' },
 }
 
 export function createWineRunHandler(

@@ -292,11 +292,11 @@ describe('Workflow Integration', () => {
         ok: true,
         data: {
           status: 'setup_required',
-          failure_category: 'unsupported_runtime_backend_hint',
-          summary: 'Runtime does not advertise support for backend hint inline/executeSandboxExecute.',
+          failure_category: 'unsupported_runtime_contract',
+          summary: 'Runtime does not advertise support for runtime contract inline/executeSandboxExecute.',
           recommended_next_tools: ['dynamic.dependencies', 'system.health', 'workflow.analyze.start'],
           next_actions: ['Connect a runtime that advertises inline/executeSandboxExecute support before retrying sandbox execution.'],
-          required_runtime_backend_hint: { type: 'inline', handler: 'executeSandboxExecute' },
+          required_runtime_contract: { type: 'inline', handler: 'executeSandboxExecute' },
           available_runtime_backends: [
             {
               type: 'spawn',
@@ -385,7 +385,7 @@ describe('Workflow Integration', () => {
     expect((dynamicExecuteResult.data as any)?.execution_state).toBe('partial')
     expect((dynamicExecuteResult.data as any)?.stage_outputs?.sandbox).toMatchObject({
       status: 'setup_required',
-      failure_category: 'unsupported_runtime_backend_hint',
+      failure_category: 'unsupported_runtime_contract',
     })
 
     const dynamicExecuteStage = database.findAnalysisRunStage(started.run_id, 'dynamic_execute')
@@ -398,7 +398,7 @@ describe('Workflow Integration', () => {
     expect(current.run.latest_stage).toBe('dynamic_execute')
     expect(current.stage_result.stage).toBe('dynamic_execute')
     expect(current.stage_result.status).toBe('partial')
-    expect(current.stage_result.stage_outputs.sandbox.failure_category).toBe('unsupported_runtime_backend_hint')
+    expect(current.stage_result.stage_outputs.sandbox.failure_category).toBe('unsupported_runtime_contract')
     expect(current.stage_result.stage_outputs.sandbox.recommended_next_tools).toContain('workflow.analyze.start')
   })
 })

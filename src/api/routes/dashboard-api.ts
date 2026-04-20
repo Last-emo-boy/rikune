@@ -21,7 +21,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
 import type { DatabaseManager } from '../../database.js'
-import type { MCPServer } from '../../server.js'
+import type { ToolDefinition, PromptDefinition } from '../../types.js'
 import type { WorkspaceManager } from '../../workspace-manager.js'
 import { validateConfig, type ValidationReport } from '../../config-validator.js'
 import { config } from '../../config.js'
@@ -51,7 +51,10 @@ const RUNTIME_TASK_LIFECYCLE = {
 } as const
 
 export interface DashboardDeps {
-  server: MCPServer | null
+  server: {
+    getToolDefinitions(): ToolDefinition[]
+    getPromptDefinitions(): PromptDefinition[]
+  } | null
   database: DatabaseManager
   workspaceManager?: WorkspaceManager
   runtimeClient?: {

@@ -623,7 +623,7 @@ async function getHyperVRuntimeStatus(): Promise<Record<string, unknown> | null>
     const result = await runPowerShell(script, 30_000)
     return JSON.parse(result.stdout) as Record<string, unknown>
   } catch (err) {
-    logger.warn('Failed to get Hyper-V runtime status', err)
+    logger.warn({ err }, 'Failed to get Hyper-V runtime status')
     return {
       configured: true,
       vmName,
@@ -670,10 +670,13 @@ async function listHyperVCheckpoints(): Promise<{
     const checkpoints = Array.isArray(parsed) ? parsed : parsed ? [parsed] : []
     return { ok: true, backend: 'hyperv-vm', vmName, checkpoints }
   } catch (err) {
-    logger.error('Failed to list Hyper-V checkpoints', {
-      vmName,
-      error: err instanceof Error ? err.message : String(err),
-    })
+    logger.error(
+      {
+        vmName,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      'Failed to list Hyper-V checkpoints'
+    )
     return {
       ok: false,
       backend: 'hyperv-vm',

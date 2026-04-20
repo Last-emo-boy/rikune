@@ -32,7 +32,7 @@ describe('debug.network.plan tool', () => {
     expect(data.schema).toBe('rikune.debug_network_plan.v1')
     expect(data.selected_profiles).toEqual(expect.arrayContaining(['proxy_sinkhole', 'etw_dns']))
     expect(data.runtime_command_sequence).toHaveLength(2)
-    expect(data.runtime_command_sequence[0].args.runtime_backend_hint.handler).toBe('executeBehaviorCapture')
+    expect(data.runtime_command_sequence[0].args.runtime_contract.handler).toBe('executeBehaviorCapture')
     expect(data.safety.starts_services).toBe(false)
   })
 

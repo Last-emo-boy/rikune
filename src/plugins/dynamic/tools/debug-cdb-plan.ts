@@ -168,7 +168,7 @@ function runtimeCommandTemplate(
       ...(sampleId ? { sample_id: sampleId } : { sample_id: '<sample_id>' }),
       tool: 'debug.session.command_batch',
       args: { commands },
-      runtime_backend_hint: { type: 'inline', handler: 'executeDebugSession' },
+      runtime_contract: { type: 'inline', handler: 'executeDebugSession' },
       timeout_ms: timeoutMs,
     },
   }
