@@ -79,6 +79,7 @@ openspec/
 # Scripts (not needed in runtime)
 # -----------------------------------------------------------------------------
 scripts/*
+!scripts/copy-static-assets.mjs
 !scripts/validate-docker-full-stack.sh
 
 # -----------------------------------------------------------------------------
