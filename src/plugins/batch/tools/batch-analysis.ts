@@ -11,7 +11,6 @@ import { z } from 'zod'
 import crypto from 'crypto'
 import type { ToolDefinition, ToolResult } from '../../../types.js'
 import type { MCPServer } from '../../../server.js'
-import type { DatabaseManager } from '../../../database.js'
 import { logger } from '../../../logger.js'
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -58,7 +57,7 @@ export const batchSubmitToolDefinition: ToolDefinition = {
   inputSchema: submitSchema as any,
 }
 
-export function createBatchSubmitHandler(server: MCPServer, database: DatabaseManager) {
+export function createBatchSubmitHandler(server: MCPServer) {
   return async (args: z.infer<typeof submitSchema>): Promise<ToolResult> => {
     const batchId = crypto.randomUUID()
     const now = new Date().toISOString()

@@ -8,16 +8,17 @@
  */
 
 import { z } from 'zod'
-import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import type { RuntimeBackendCapability } from '@rikune/shared'
+import {
+  getDatabase,
+  getRuntimeConfig,
+  type ArtifactRef,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'dynamic.runtime.status'
-
-interface RuntimeBackendCapability {
-  type: 'python-worker' | 'spawn' | 'inline'
-  handler: string
-  description?: string
-  requiresSample?: boolean
-}
 
 interface RuntimeSessionSummary {
   session_id: string
@@ -92,10 +93,6 @@ export const dynamicRuntimeStatusToolDefinition: ToolDefinition = {
     'Read-only dynamic runtime control-plane status. Aggregates configured Runtime Node health, Runtime Node capabilities, Windows Host Agent health, Hyper-V/Sandbox diagnostics, and persisted runtime debug sessions without launching a sandbox.',
   inputSchema: DynamicRuntimeStatusInputSchema,
   outputSchema: DynamicRuntimeStatusOutputSchema,
-}
-
-function getRuntimeConfig(deps: PluginToolDeps): Record<string, any> {
-  return deps.config?.runtime || {}
 }
 
 function getAuthHeader(apiKey?: string): Record<string, string> {
@@ -233,7 +230,7 @@ function findPersistedSessions(
   deps: PluginToolDeps,
   input: z.infer<typeof DynamicRuntimeStatusInputSchema>
 ): RuntimeSessionSummary[] {
-  const db = deps.database
+  const db = getDatabase(deps)
   const rows: any[] = []
 
   if (input.session_id && typeof db?.findDebugSession === 'function') {

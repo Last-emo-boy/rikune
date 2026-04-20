@@ -4,7 +4,7 @@
  * Function signature matching and analysis template management.
  */
 
-import type { Plugin } from '../sdk.js'
+import { requireDatabase, requireWorkspaceManager, type Plugin } from '../sdk.js'
 import {
   kbFunctionMatchToolDefinition,
   createKbFunctionMatchHandler,
@@ -29,24 +29,17 @@ const kbCollaborationPlugin: Plugin = {
     'Function signature matching, analysis templates, and knowledge base import/export/management',
   version: '1.0.0',
   register(server, deps) {
+    const workspaceManager = requireWorkspaceManager(deps, 'kb-collaboration')
+    const database = requireDatabase(deps, 'kb-collaboration')
     server.registerTool(kbFunctionMatchToolDefinition, createKbFunctionMatchHandler(deps))
     server.registerTool(analysisTemplateToolDefinition, createAnalysisTemplateHandler(deps))
     server.registerTool(
       kbImportBulkToolDefinition,
-      createKbImportBulkHandler(deps.workspaceManager, deps.database)
+      createKbImportBulkHandler(workspaceManager, database)
     )
-    server.registerTool(
-      kbExportToolDefinition,
-      createKbExportHandler(deps.workspaceManager, deps.database)
-    )
-    server.registerTool(
-      kbImportToolDefinition,
-      createKbImportHandler(deps.workspaceManager, deps.database)
-    )
-    server.registerTool(
-      kbStatsToolDefinition,
-      createKbStatsHandler(deps.workspaceManager, deps.database)
-    )
+    server.registerTool(kbExportToolDefinition, createKbExportHandler(workspaceManager, database))
+    server.registerTool(kbImportToolDefinition, createKbImportHandler(workspaceManager, database))
+    server.registerTool(kbStatsToolDefinition, createKbStatsHandler(workspaceManager, database))
     server.registerTool(analysisNotesToolDefinition, createAnalysisNotesHandler(deps))
     server.registerTool(ruleLibraryToolDefinition, createRuleLibraryHandler(deps))
     return [

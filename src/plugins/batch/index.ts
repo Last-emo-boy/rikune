@@ -4,7 +4,7 @@
  * Submit, monitor, and retrieve results for multi-sample batch analysis.
  */
 
-import type { Plugin } from '../sdk.js'
+import { requirePlatformServer, type Plugin } from '../sdk.js'
 import {
   batchSubmitToolDefinition,
   createBatchSubmitHandler,
@@ -22,10 +22,8 @@ const batchPlugin: Plugin = {
   description: 'Multi-sample batch submission, monitoring, and result retrieval',
   version: '1.0.0',
   register(server, deps) {
-    server.registerTool(
-      batchSubmitToolDefinition,
-      createBatchSubmitHandler(deps.server, deps.database)
-    )
+    const platformServer = requirePlatformServer(deps, 'batch.submit')
+    server.registerTool(batchSubmitToolDefinition, createBatchSubmitHandler(platformServer))
     server.registerTool(batchStatusToolDefinition, createBatchStatusHandler())
     server.registerTool(batchResultsToolDefinition, createBatchResultsHandler())
     return ['batch.submit', 'batch.status', 'batch.results']

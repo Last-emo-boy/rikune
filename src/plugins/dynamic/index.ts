@@ -5,6 +5,7 @@
  */
 
 import type { Plugin } from '../sdk.js'
+import { getPlatformServices, getWorkspaceServices } from '../sdk.js'
 import {
   dynamicAutoHookToolDefinition,
   createDynamicAutoHookHandler,
@@ -116,6 +117,8 @@ const dynamicPlugin: Plugin = {
     },
   ],
   register(server, deps) {
+    const workspace = getWorkspaceServices(deps)
+    const platform = getPlatformServices(deps)
     server.registerTool(dynamicAutoHookToolDefinition, createDynamicAutoHookHandler(deps))
     server.registerTool(
       dynamicTraceAttributeToolDefinition,
@@ -124,19 +127,19 @@ const dynamicPlugin: Plugin = {
     server.registerTool(dynamicMemoryDumpToolDefinition, createDynamicMemoryDumpHandler(deps))
     server.registerTool(
       dynamicDependenciesToolDefinition,
-      createDynamicDependenciesHandler(deps.workspaceManager, deps.database)
+      createDynamicDependenciesHandler(workspace.manager, workspace.database)
     )
     server.registerTool(
       dynamicTraceImportToolDefinition,
-      createDynamicTraceImportHandler(deps.workspaceManager, deps.database)
+      createDynamicTraceImportHandler(workspace.manager, workspace.database)
     )
     server.registerTool(
       dynamicMemoryImportToolDefinition,
-      createDynamicMemoryImportHandler(deps.workspaceManager, deps.database)
+      createDynamicMemoryImportHandler(workspace.manager, workspace.database)
     )
     server.registerTool(
       sandboxExecuteToolDefinition,
-      createSandboxExecuteHandler(deps.workspaceManager, deps.database, deps.policyGuard)
+      createSandboxExecuteHandler(workspace.manager, workspace.database, platform.policyGuard)
     )
     server.registerTool(
       runtimeDebugSessionStartToolDefinition,

@@ -7,7 +7,13 @@
  */
 
 import { z } from 'zod'
-import type { PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  getDatabase,
+  getRuntimeConfig,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'dynamic.toolkit.status'
 
@@ -55,11 +61,6 @@ export const dynamicToolkitStatusToolDefinition: ToolDefinition = {
     'Read-only Runtime Node toolkit inventory for CDB/WinDbg, ProcDump, ProcMon, Sysmon, TTD, x64dbg, dnSpyEx, Frida, dotnet, and FakeNet-style tooling. Does not start Sandbox/Hyper-V or execute samples.',
   inputSchema: DynamicToolkitStatusInputSchema,
   outputSchema: DynamicToolkitStatusOutputSchema,
-  runtime: { type: 'inline', handler: 'executeRuntimeToolProbe' },
-}
-
-function getRuntimeConfig(deps: PluginToolDeps): Record<string, any> {
-  return deps.config?.runtime || {}
 }
 
 function getAuthHeader(apiKey?: string): Record<string, string> {
@@ -121,7 +122,7 @@ function persistedSessionRows(
   deps: PluginToolDeps,
   input: z.infer<typeof DynamicToolkitStatusInputSchema>
 ): any[] {
-  const db = deps.database
+  const db = getDatabase(deps)
   const rows: any[] = []
   if (input.session_id && typeof db?.findDebugSession === 'function') {
     const row = db.findDebugSession(input.session_id)

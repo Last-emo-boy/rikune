@@ -8,15 +8,18 @@ import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
 import { z } from 'zod'
+import {
+  ToolRuntimeContractSchema,
+  type RuntimeConnectedEventData,
+  type RuntimeBackendCapability,
+  type RuntimeSnapshotEventData,
+  type RuntimeTaskSnapshot,
+  type ToolRuntimeContract,
+} from '@rikune/shared'
 import { logger } from './logger.js'
 import { config } from './config.js'
 import { isIsolatedEnvironment } from './isolation.js'
-import type {
-  ExecuteTask,
-  RuntimeBackendCapability,
-  ToolRuntimeContract,
-  RuntimeToolInventory,
-} from './executor.js'
+import type { ExecuteTask, RuntimeToolInventory } from './executor.js'
 import {
   submitTask,
   getTask,
@@ -28,17 +31,6 @@ import {
 
 export interface Router {
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>
-}
-
-interface TaskSnapshot {
-  taskId: string
-  status: string
-  submittedAt: number
-  startedAt?: number
-  completedAt?: number
-  progressPercent?: number
-  lastMessage?: string
-  result?: unknown
 }
 
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024 // 500MB
@@ -58,18 +50,6 @@ interface TaskUploadManifest {
     uploadedAt: string
   }>
 }
-
-const ToolRuntimeContractSchema = z.object({
-  type: z.enum(['python-worker', 'spawn', 'inline']),
-  handler: z.string().min(1),
-  modes: z.array(z.string()).optional(),
-  requiredProfiles: z.array(z.string()).optional(),
-  requiredTools: z.array(z.string()).optional(),
-  optionalTools: z.array(z.string()).optional(),
-  produces: z.array(z.string()).optional(),
-  timeoutMs: z.number().int().positive().optional(),
-  fallback: z.array(z.object({ mode: z.string(), reason: z.string().optional() })).optional(),
-})
 
 const ExecutePayloadSchema = z.object({
   taskId: z
@@ -496,16 +476,18 @@ export function createRuntimeRouter(
           unsubscribe()
         }
 
-        writeEvent('connected', {
+        const connectedPayload: RuntimeConnectedEventData = {
           ok: true,
           subscribedAt: Date.now(),
           taskId: taskIdFilter ?? null,
-        })
-        writeEvent('snapshot', {
+        }
+        const snapshotPayload: RuntimeSnapshotEventData = {
           tasks: listTasks()
             .filter((state) => !taskIdFilter || state.taskId === taskIdFilter)
             .map(toTaskSnapshot),
-        })
+        }
+        writeEvent('connected', connectedPayload)
+        writeEvent('snapshot', snapshotPayload)
 
         unsubscribe = subscribeTaskEvents((event) => {
           if (taskIdFilter && event.taskId !== taskIdFilter) {
@@ -679,7 +661,7 @@ function writeJson(
   res.end(JSON.stringify(payload))
 }
 
-function toTaskSnapshot(state: TaskSnapshot): TaskSnapshot {
+function toTaskSnapshot(state: RuntimeTaskSnapshot): RuntimeTaskSnapshot {
   return {
     taskId: state.taskId,
     status: state.status,

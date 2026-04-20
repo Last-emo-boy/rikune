@@ -7,7 +7,14 @@
  */
 
 import { z } from 'zod'
-import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  getDatabase,
+  getWorkspaceServices,
+  type ArtifactRef,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 import {
   buildBehaviorDiff,
   loadCorrelationEvidence,
@@ -38,7 +45,9 @@ export function createDynamicBehaviorDiffHandler(deps: PluginToolDeps) {
     const started = Date.now()
     try {
       const input = DynamicBehaviorDiffInputSchema.parse(args || {})
-      const sample = deps.database.findSample(input.sample_id)
+      const db = getDatabase(deps)
+      const workspace = getWorkspaceServices(deps)
+      const sample = db.findSample(input.sample_id)
       if (!sample) {
         return {
           ok: false,
@@ -47,16 +56,11 @@ export function createDynamicBehaviorDiffHandler(deps: PluginToolDeps) {
         }
       }
 
-      const bundle = await loadCorrelationEvidence(
-        deps.workspaceManager,
-        deps.database,
-        input.sample_id,
-        {
-          evidenceScope: input.evidence_scope,
-          sessionTag: input.evidence_session_tag,
-          maxStaticArtifacts: input.max_static_artifacts,
-        }
-      )
+      const bundle = await loadCorrelationEvidence(workspace.manager, db, input.sample_id, {
+        evidenceScope: input.evidence_scope,
+        sessionTag: input.evidence_session_tag,
+        maxStaticArtifacts: input.max_static_artifacts,
+      })
       const diff = buildBehaviorDiff(bundle)
       const data = {
         schema: 'rikune.dynamic_behavior_diff.v1',
@@ -86,8 +90,8 @@ export function createDynamicBehaviorDiffHandler(deps: PluginToolDeps) {
       if (input.persist_artifact) {
         artifacts.push(
           await persistStaticAnalysisJsonArtifact(
-            deps.workspaceManager,
-            deps.database,
+            workspace.manager,
+            db,
             input.sample_id,
             'dynamic_behavior_diff',
             'behavior_diff',

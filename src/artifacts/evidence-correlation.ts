@@ -509,6 +509,8 @@ export function buildEvidenceGraph(bundle: EvidenceCorrelationBundle): EvidenceG
       category: 'dynamic_trace',
       details: {
         artifact_count: bundle.dynamic_summary.artifact_count,
+        artifact_types: bundle.dynamic_summary.artifact_types,
+        artifact_families: bundle.dynamic_summary.artifact_families,
         executed: bundle.dynamic_summary.executed,
         scope_note: bundle.dynamic_summary.scope_note,
       },

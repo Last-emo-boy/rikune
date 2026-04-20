@@ -1,7 +1,8 @@
 import fs from 'fs'
 import path from 'path'
+import { fileURLToPath } from 'url'
 
-const repoRoot = path.resolve(__dirname, '../..')
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const pluginsRoot = path.join(repoRoot, 'src', 'plugins')
 
 function walk(dir: string): string[] {

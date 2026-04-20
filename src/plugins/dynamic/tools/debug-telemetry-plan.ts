@@ -7,7 +7,14 @@
  */
 
 import { z } from 'zod'
-import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  getDatabase,
+  getWorkspaceServices,
+  type ArtifactRef,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 import {
   loadStaticAnalysisArtifactSelection,
   persistStaticAnalysisJsonArtifact,
@@ -100,10 +107,11 @@ async function loadStaticTelemetryHints(
   suggested_profiles: string[]
   warnings: string[]
 }> {
+  const workspace = getWorkspaceServices(deps)
   if (!input.use_static_behavior_artifacts || !input.sample_id) {
     return { artifact_ids: [], scope_note: null, suggested_profiles: [], warnings: [] }
   }
-  if (!deps.workspaceManager || !deps.database) {
+  if (!workspace.manager || !workspace.database) {
     return {
       artifact_ids: [],
       scope_note: null,
@@ -114,8 +122,8 @@ async function loadStaticTelemetryHints(
 
   try {
     const selection = await loadStaticAnalysisArtifactSelection<StaticBehaviorClassifierPayload>(
-      deps.workspaceManager,
-      deps.database,
+      workspace.manager,
+      workspace.database,
       input.sample_id,
       'static_behavior_classifier',
       {
@@ -366,19 +374,21 @@ export function createDebugTelemetryPlanHandler(deps: PluginToolDeps) {
     try {
       const input = DebugTelemetryPlanInputSchema.parse(args || {})
       const staticHints = await loadStaticTelemetryHints(deps, input)
+      const workspace = getWorkspaceServices(deps)
+      const db = getDatabase(deps)
       const selectedProfiles = dedupe([
         ...expandProfiles(input.profiles),
         ...staticHints.suggested_profiles,
       ])
       const data = buildTelemetryPlan(input, selectedProfiles, staticHints)
       const artifacts: ArtifactRef[] = []
-      if (input.persist_artifact && input.sample_id && deps.workspaceManager && deps.database) {
-        const sample = deps.database.findSample?.(input.sample_id)
+      if (input.persist_artifact && input.sample_id && workspace.manager && db) {
+        const sample = db.findSample?.(input.sample_id)
         if (sample) {
           artifacts.push(
             await persistStaticAnalysisJsonArtifact(
-              deps.workspaceManager,
-              deps.database,
+              workspace.manager,
+              db,
               input.sample_id,
               'debug_telemetry_plan',
               'debug_telemetry_plan',

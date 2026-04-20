@@ -4,7 +4,7 @@
  * Software Bill of Materials generation.
  */
 
-import type { Plugin } from '../sdk.js'
+import { requireDatabase, requireWorkspaceManager, type Plugin } from '../sdk.js'
 import { sbomGenerateToolDefinition, createSbomGenerateHandler } from './tools/sbom-generate.js'
 
 const sbomPlugin: Plugin = {
@@ -19,9 +19,11 @@ const sbomPlugin: Plugin = {
   description: 'Software Bill of Materials (SBOM) generation from binary analysis',
   version: '1.0.0',
   register(server, deps) {
+    const workspaceManager = requireWorkspaceManager(deps, 'sbom.generate')
+    const database = requireDatabase(deps, 'sbom.generate')
     server.registerTool(
       sbomGenerateToolDefinition,
-      createSbomGenerateHandler(deps.workspaceManager, deps.database)
+      createSbomGenerateHandler(workspaceManager, database)
     )
     return ['sbom.generate']
   },

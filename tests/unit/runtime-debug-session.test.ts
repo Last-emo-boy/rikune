@@ -191,6 +191,17 @@ describe('runtime debug session tools', () => {
         mime: 'application/json',
       }))
       expect(command.artifacts).toHaveLength(1)
+      expect(command.artifacts?.[0]).toEqual(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            runtime_schema: 'rikune.runtime_artifact.v1',
+            artifact_family: 'runtime_debug',
+            runtime_debug_session_id: sessionId,
+            runtime_task_id: expect.any(String),
+            runtime_tool: 'debug.session.inspect',
+          }),
+        })
+      )
       const persistedPath = path.join(tmpDir, (command.artifacts?.[0] as any).path)
       expect(fs.existsSync(persistedPath)).toBe(true)
 

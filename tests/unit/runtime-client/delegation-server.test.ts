@@ -7,6 +7,9 @@ import {
   createDelegatingServer,
   type RuntimeClientLike,
 } from '../../../src/runtime-client/delegation-server.js'
+import fs from 'fs/promises'
+import os from 'os'
+import path from 'path'
 import type {
   PluginServerInterface,
   ToolDefinition,
@@ -220,6 +223,60 @@ describe('createDelegatingServer', () => {
       expect.stringContaining('outbox'),
       ['report.json']
     )
+  })
+
+  test('should classify persisted Frida JSON artifacts as dynamic traces', async () => {
+    const insertArtifact = jest.fn()
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'rikune-delegation-artifacts-'))
+    const runtimeArtifactPath = path.join(tempRoot, 'trace.json')
+    await fs.writeFile(runtimeArtifactPath, '{}', 'utf8')
+    workspaceManager = {
+      createWorkspace: jest.fn().mockResolvedValue({
+        root: tempRoot,
+        reports: path.join(tempRoot, 'reports'),
+      }),
+    } as any
+    database = { insertArtifact } as any
+    runtimeClient.execute = jest.fn().mockResolvedValue(
+      makeRuntimeResponse({
+        result: { ok: true, data: {} },
+        artifactRefs: [{ name: 'trace.json', path: 'C:\\rikune-outbox\\task-123\\trace.json' }],
+      })
+    )
+    runtimeClient.downloadArtifacts = jest.fn().mockResolvedValue([runtimeArtifactPath])
+
+    try {
+      const server = createServer(runtimeClient)
+      let wrappedHandler: any
+      inner.registerTool = jest.fn((_def, handler) => {
+        wrappedHandler = handler
+      })
+
+      server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
+      const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
+
+      expect(insertArtifact).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'dynamic_trace_json',
+          path: expect.stringContaining('runtime_analysis/frida.runtime.instrument/'),
+        })
+      )
+      expect(result.artifacts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'dynamic_trace_json',
+            metadata: expect.objectContaining({
+              runtime_schema: 'rikune.runtime_artifact.v1',
+              artifact_family: 'dynamic_trace',
+              source_runtime_tool: 'frida.runtime.instrument',
+              effective_runtime_tool: 'frida.runtime.instrument',
+            }),
+          }),
+        ])
+      )
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true })
+    }
   })
 
   test('should retry on network error when recover succeeds', async () => {

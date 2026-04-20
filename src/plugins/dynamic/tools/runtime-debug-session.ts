@@ -13,7 +13,21 @@ import os from 'os'
 import path from 'path'
 import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
-import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  buildRuntimeArtifactControlPlaneMetadata,
+  ToolRuntimeContractSchema,
+  type RuntimeBackendCapability,
+} from '@rikune/shared'
+import {
+  getDatabase,
+  getRuntimeConfig,
+  getWorkspaceManager,
+  getWorkspaceServices,
+  type ArtifactRef,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 import {
   resolveRuntimeSidecarUploads,
   type RuntimeSidecarUpload,
@@ -44,18 +58,6 @@ interface RuntimeDebugSession {
 }
 
 const sessions = new Map<string, RuntimeDebugSession>()
-
-interface RuntimeBackendCapability {
-  type: 'python-worker' | 'spawn' | 'inline'
-  handler: string
-  description?: string
-  requiresSample?: boolean
-}
-
-const ToolRuntimeContractSchema = z.object({
-  type: z.enum(['python-worker', 'spawn', 'inline']),
-  handler: z.string().min(1),
-})
 
 export const RuntimeDebugSessionStartInputSchema = z.object({
   host_agent_endpoint: z
@@ -234,10 +236,6 @@ export const runtimeDebugCommandToolDefinition: ToolDefinition = {
     'Dispatch a Runtime Node command into an existing debug session. This reuses the Runtime Node /execute contract and supports debug.session.*, sandbox.execute, dynamic.behavior.capture, dynamic.memory_dump, managed.safe_run, and other advertised runtime handlers.',
   inputSchema: RuntimeDebugCommandInputSchema,
   outputSchema: RuntimeDebugOutputSchema,
-}
-
-function getRuntimeConfig(deps: PluginToolDeps) {
-  return deps.config?.runtime || {}
 }
 
 function getAuthHeader(apiKey?: string): Record<string, string> {
@@ -478,12 +476,13 @@ function resolveSampleMetadata(
   deps: PluginToolDeps,
   sampleId: string
 ): { sampleId: string; sha256: string } | null {
-  const sample = deps.database?.findSample?.(sampleId)
+  const db = getDatabase(deps)
+  const sample = db?.findSample?.(sampleId)
   if (sample && typeof sample.sha256 === 'string') {
     return { sampleId, sha256: sample.sha256 }
   }
 
-  if (deps.database?.findSample) {
+  if (db?.findSample) {
     return null
   }
 
@@ -503,7 +502,7 @@ async function persistRuntimeSession(
     metadata?: Record<string, unknown>
   } = {}
 ): Promise<void> {
-  const db = deps.database
+  const db = getDatabase(deps)
   if (!db?.insertDebugSession || !db?.updateDebugSession || !sampleId) {
     return
   }
@@ -568,7 +567,7 @@ function restorePersistedSession(
   deps: PluginToolDeps,
   sessionId: string
 ): RuntimeDebugSession | undefined {
-  const row = deps.database?.findDebugSession?.(sessionId)
+  const row = getDatabase(deps)?.findDebugSession?.(sessionId)
   if (!row) {
     return undefined
   }
@@ -820,17 +819,14 @@ async function persistRuntimeDebugArtifacts(
   toolName: string,
   downloadedPaths: string[]
 ): Promise<ArtifactRef[]> {
-  if (
-    !sampleId ||
-    downloadedPaths.length === 0 ||
-    !deps.workspaceManager ||
-    !deps.database?.insertArtifact
-  ) {
+  const workspaceManager = getWorkspaceManager(deps)
+  const db = getDatabase(deps)
+  if (!sampleId || downloadedPaths.length === 0 || !workspaceManager || !db?.insertArtifact) {
     return []
   }
 
   const persisted: ArtifactRef[] = []
-  const workspace = await deps.workspaceManager.createWorkspace(sampleId)
+  const workspace = await workspaceManager.createWorkspace(sampleId)
   const reportDir = path.join(workspace.reports, 'runtime_debug', sanitizePathSegment(sessionId))
   await fs.promises.mkdir(reportDir, { recursive: true })
 
@@ -846,7 +842,7 @@ async function persistRuntimeDebugArtifacts(
     const createdAt = new Date().toISOString()
     const mime = guessMime(basename)
 
-    deps.database.insertArtifact({
+    db.insertArtifact({
       id: artifactId,
       sample_id: sampleId,
       type: 'runtime_debug_artifact',
@@ -862,11 +858,12 @@ async function persistRuntimeDebugArtifacts(
       path: relativePath,
       sha256,
       mime,
-      metadata: {
-        runtime_debug_session_id: sessionId,
-        runtime_task_id: taskId,
-        runtime_tool: toolName,
-      },
+      metadata: buildRuntimeArtifactControlPlaneMetadata({
+        artifactType: 'runtime_debug_artifact',
+        runtimeTool: toolName,
+        runtimeTaskId: taskId,
+        runtimeDebugSessionId: sessionId,
+      }),
     })
   }
 
@@ -1171,12 +1168,14 @@ export function createRuntimeDebugSessionStatusHandler(deps: PluginToolDeps) {
           session: selected || null,
           runtime,
           host_agent: hostAgent,
-          persisted_sessions:
-            input.sample_id && deps.database?.findDebugSessionsBySample
-              ? deps.database
+          persisted_sessions: (() => {
+            const db = getDatabase(deps)
+            return input.sample_id && db?.findDebugSessionsBySample
+              ? db
                   .findDebugSessionsBySample(input.sample_id, input.limit)
                   .map(normalizePersistedDebugSession)
-              : [],
+              : []
+          })(),
           tracked_sessions: Array.from(sessions.values()),
         },
         metrics: { elapsed_ms: Date.now() - start, tool: SESSION_STATUS_TOOL },
@@ -1328,7 +1327,9 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
       })
 
       if (input.sample_id) {
-        if (!deps.resolvePrimarySamplePath || !deps.workspaceManager) {
+        const workspaceServices = getWorkspaceServices(deps)
+        const workspaceManager = getWorkspaceManager(deps)
+        if (!workspaceServices.resolvePrimarySamplePath || !workspaceManager) {
           return {
             ok: false,
             errors: [
@@ -1337,7 +1338,10 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
             metrics: { elapsed_ms: Date.now() - start, tool: COMMAND_TOOL },
           }
         }
-        const resolved = await deps.resolvePrimarySamplePath(deps.workspaceManager, input.sample_id)
+        const resolved = await workspaceServices.resolvePrimarySamplePath(
+          workspaceManager,
+          input.sample_id
+        )
         const sidecarResolution = await resolveRuntimeSidecarUploads(resolved.samplePath, {
           sidecarPaths: input.sidecar_paths,
           autoStageSidecars: input.auto_stage_sidecars,

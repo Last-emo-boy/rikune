@@ -6,7 +6,13 @@
  */
 
 import { z } from 'zod'
-import type { PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import { PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE } from '@rikune/shared'
+import {
+  getWorkspaceServices,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 import {
   loadStaticAnalysisArtifactSelection,
   type StaticArtifactScope,
@@ -134,7 +140,11 @@ function buildProfiles(sampleId: string | undefined): DynamicPlanProfile[] {
         'dynamic.trace.import',
         'dynamic.behavior.diff',
       ],
-      artifacts: ['behavior_capture.json', 'dynamic_trace_json', 'dynamic_behavior_diff'],
+      artifacts: [
+        'behavior_capture.json',
+        PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+        'dynamic_behavior_diff',
+      ],
       notes: [
         'Use first for process/module/file/TCP/stdout/stderr evidence.',
         'ProcMon, Sysmon, ETW, and FakeNet are optional upgrades on top of this baseline.',
@@ -453,10 +463,11 @@ async function loadStaticBehaviorContext(
   deps: PluginToolDeps,
   input: z.infer<typeof DynamicDeepPlanInputSchema>
 ): Promise<StaticBehaviorContext> {
+  const workspace = getWorkspaceServices(deps)
   if (!input.use_static_behavior_artifacts || !input.sample_id) {
     return emptyStaticBehaviorContext(false)
   }
-  if (!deps.workspaceManager || !deps.database) {
+  if (!workspace.manager || !workspace.database) {
     return emptyStaticBehaviorContext(
       false,
       'Static behavior artifact lookup is unavailable in this handler context.'
@@ -465,8 +476,8 @@ async function loadStaticBehaviorContext(
 
   try {
     const selection = await loadStaticAnalysisArtifactSelection<StaticBehaviorClassifierPayload>(
-      deps.workspaceManager,
-      deps.database,
+      workspace.manager,
+      workspace.database,
       input.sample_id,
       'static_behavior_classifier',
       {

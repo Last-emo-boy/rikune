@@ -30,6 +30,7 @@ import { logger, logRingBuffer, type LogEntry } from '../../logger.js'
 import type { PluginStatus } from '../../plugins/sdk.js'
 import type { RuntimeSseEvent } from '../../runtime-client/index.js'
 import type { JobQueue } from '../../job-queue.js'
+import { extractRuntimeTaskStatusFromEvent } from '@rikune/shared'
 import {
   normalizeJobQueueStatus,
   normalizeRuntimeEventStatus,
@@ -519,23 +520,6 @@ function normalizePluginControlPlaneStatus(
   }
 }
 
-function extractRuntimeStatusFromEvent(event: RuntimeSseEvent): RuntimeTaskStatus | undefined {
-  const status = (event.data as { status?: unknown } | undefined)?.status
-  if (typeof status !== 'string') {
-    return undefined
-  }
-  if (
-    status === 'queued' ||
-    status === 'running' ||
-    status === 'completed' ||
-    status === 'failed' ||
-    status === 'cancelled'
-  ) {
-    return status
-  }
-  return undefined
-}
-
 function toRuntimeEventView(event: RuntimeSseEvent | null): RuntimeEventView | null {
   if (!event) {
     return null
@@ -544,7 +528,7 @@ function toRuntimeEventView(event: RuntimeSseEvent | null): RuntimeEventView | n
     ...event,
     normalized_status: normalizeRuntimeEventStatus(
       event.event,
-      extractRuntimeStatusFromEvent(event) ?? null
+      extractRuntimeTaskStatusFromEvent(event) ?? null
     ),
   }
 }

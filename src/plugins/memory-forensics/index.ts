@@ -8,7 +8,7 @@
 
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import type { Plugin, ToolResult, PluginToolDeps } from '../sdk.js'
+import { getWorkspaceManager, type Plugin, type ToolResult, type PluginToolDeps } from '../sdk.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -33,7 +33,7 @@ async function resolveDumpPath(
   if (args.dump_path) return args.dump_path
   if (!args.sample_id) throw new Error('Either sample_id or dump_path must be provided')
 
-  const wm = deps.workspaceManager
+  const wm = getWorkspaceManager(deps)
   if (typeof wm.getSamplePath === 'function') {
     return wm.getSamplePath(args.sample_id)
   }

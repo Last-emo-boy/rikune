@@ -3,9 +3,16 @@
  */
 
 import { describe, expect, test } from '@jest/globals'
-import { SURFACE_FILE_TYPE_TAGS } from '../../../packages/plugin-sdk/src/index.js'
+import {
+  SURFACE_FILE_TYPE_TAGS,
+  getRuntimeConfig,
+  getWorkspaceServices,
+  requireDatabase,
+  requirePlatformServer,
+} from '../../../packages/plugin-sdk/src/index.js'
 import type {
   Plugin,
+  PluginServices,
   PluginStatus,
   ToolRuntimeContract,
   ToolDefinition,
@@ -84,5 +91,63 @@ describe('@rikune/plugin-sdk', () => {
 
     expect(plugin.executionDomain).toBe('dynamic')
     expect(plugin.register({ registerTool() {}, unregisterTool() {} }, {})).toEqual(['test.tool'])
+  })
+
+  test('plugin deps expose grouped services without removing legacy fields', () => {
+    const services: PluginServices = {
+      workspace: {
+        manager: { kind: 'workspace' },
+        database: { kind: 'db' },
+      },
+      runtime: {
+        client: { execute: async () => ({ ok: true }) },
+        mode: 'remote-sandbox',
+      },
+      platform: {
+        logger: { info() {} },
+      },
+    }
+
+    expect(services.workspace?.manager).toEqual({ kind: 'workspace' })
+    expect(services.runtime?.mode).toBe('remote-sandbox')
+    expect(typeof services.platform?.logger?.info).toBe('function')
+  })
+
+  test('service helpers prefer grouped services and fall back to legacy fields', () => {
+    const deps = {
+      workspaceManager: { kind: 'legacy-workspace' },
+      database: { kind: 'legacy-db' },
+      config: { runtime: { mode: 'legacy' } },
+      services: {
+        workspace: {
+          manager: { kind: 'grouped-workspace' },
+          database: { kind: 'grouped-db' },
+        },
+        runtime: {
+          mode: 'remote-sandbox',
+          config: { mode: 'grouped', endpoint: 'http://127.0.0.1:18081' },
+        },
+      },
+    }
+
+    expect(getWorkspaceServices(deps as any)).toEqual(
+      expect.objectContaining({
+        manager: { kind: 'grouped-workspace' },
+        database: { kind: 'grouped-db' },
+      })
+    )
+    expect(getRuntimeConfig(deps as any)).toEqual({
+      mode: 'grouped',
+      endpoint: 'http://127.0.0.1:18081',
+    })
+  })
+
+  test('require helpers fail fast with actionable dependency labels', () => {
+    expect(() => requireDatabase({} as any, 'analysis.notes')).toThrow(
+      'database is required for analysis.notes'
+    )
+    expect(() => requirePlatformServer({} as any, 'batch.submit')).toThrow(
+      'platform server is required for batch.submit'
+    )
   })
 })

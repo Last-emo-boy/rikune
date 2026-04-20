@@ -16,9 +16,19 @@ import {
   findRuntimeToolById,
   type RuntimeToolInventory,
 } from './toolkit/inventory.js'
-import { getPythonCommand } from '@rikune/shared'
+import {
+  getPythonCommand,
+  type RuntimeBackendCapability,
+  type RuntimeBackendType,
+  type ToolRuntimeContract,
+} from '@rikune/shared'
 
 export { buildRuntimeToolInventory }
+export type {
+  RuntimeBackendCapability,
+  RuntimeBackendType,
+  ToolRuntimeContract,
+} from '@rikune/shared'
 export type {
   RuntimeToolCategory,
   RuntimeToolInventory,
@@ -34,13 +44,6 @@ export function setSpawnImplementationForTests(mockSpawn?: typeof spawn): void {
 }
 
 const moduleDirname = typeof __dirname === 'string' ? __dirname : process.cwd()
-
-export type RuntimeBackendType = 'python-worker' | 'spawn' | 'inline'
-
-export interface ToolRuntimeContract {
-  type: RuntimeBackendType
-  handler: string
-}
 
 export interface ExecuteTask {
   taskId: string
@@ -491,13 +494,6 @@ const spawnHandlers: Record<string, SpawnBackendHandler> = {
       }
     },
   },
-}
-
-export interface RuntimeBackendCapability {
-  type: RuntimeBackendType
-  handler: string
-  description: string
-  requiresSample: boolean
 }
 
 interface RuntimeBackendCapabilityDetails extends RuntimeBackendCapability {

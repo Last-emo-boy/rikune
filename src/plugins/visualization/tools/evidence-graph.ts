@@ -6,7 +6,14 @@
  */
 
 import { z } from 'zod'
-import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  getDatabase,
+  getWorkspaceServices,
+  type ArtifactRef,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 import {
   buildEvidenceGraph,
   loadCorrelationEvidence,
@@ -37,7 +44,9 @@ export function createEvidenceGraphHandler(deps: PluginToolDeps) {
     const started = Date.now()
     try {
       const input = EvidenceGraphInputSchema.parse(args || {})
-      const sample = deps.database.findSample(input.sample_id)
+      const db = getDatabase(deps)
+      const workspace = getWorkspaceServices(deps)
+      const sample = db.findSample(input.sample_id)
       if (!sample) {
         return {
           ok: false,
@@ -46,16 +55,11 @@ export function createEvidenceGraphHandler(deps: PluginToolDeps) {
         }
       }
 
-      const bundle = await loadCorrelationEvidence(
-        deps.workspaceManager,
-        deps.database,
-        input.sample_id,
-        {
-          evidenceScope: input.evidence_scope,
-          sessionTag: input.evidence_session_tag,
-          maxStaticArtifacts: input.max_static_artifacts,
-        }
-      )
+      const bundle = await loadCorrelationEvidence(workspace.manager, db, input.sample_id, {
+        evidenceScope: input.evidence_scope,
+        sessionTag: input.evidence_session_tag,
+        maxStaticArtifacts: input.max_static_artifacts,
+      })
       const graph = buildEvidenceGraph(bundle)
       const data = {
         schema: 'rikune.analysis_evidence_graph.v1',
@@ -74,6 +78,15 @@ export function createEvidenceGraphHandler(deps: PluginToolDeps) {
           corroboration_edge_count: graph.edges.filter((edge) => edge.label === 'corroborated_by')
             .length,
         },
+        dynamic_summary: bundle.dynamic_summary
+          ? {
+              artifact_count: bundle.dynamic_summary.artifact_count,
+              artifact_types: bundle.dynamic_summary.artifact_types || [],
+              artifact_families: bundle.dynamic_summary.artifact_families || [],
+              executed: bundle.dynamic_summary.executed,
+              scope_note: bundle.dynamic_summary.scope_note,
+            }
+          : null,
         graph,
         warnings: bundle.warnings,
         recommended_next_tools: [
@@ -89,8 +102,8 @@ export function createEvidenceGraphHandler(deps: PluginToolDeps) {
       if (input.persist_artifact) {
         artifacts.push(
           await persistStaticAnalysisJsonArtifact(
-            deps.workspaceManager,
-            deps.database,
+            workspace.manager,
+            db,
             input.sample_id,
             'analysis_evidence_graph',
             'evidence_graph',

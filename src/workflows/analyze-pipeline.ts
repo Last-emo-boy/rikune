@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { z } from 'zod'
+import { PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE } from '@rikune/shared'
 import type { ToolArgs, ToolDefinition, ToolResult, WorkerResult, ArtifactRef } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { AnalysisRun, DatabaseManager, Sample } from '../database.js'
@@ -2183,7 +2184,7 @@ async function runDynamicExecuteStage(
       diff_type: dynamicDiff.diff_type,
     },
     provenance: {
-      sources: ['sandbox.execute', 'dynamic_trace_json'],
+      sources: ['sandbox.execute', PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE],
     },
   })
 

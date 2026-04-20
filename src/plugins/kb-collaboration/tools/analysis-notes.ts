@@ -6,7 +6,14 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, PluginToolDeps, ArtifactRef } from '../../sdk.js'
+import {
+  getDatabase,
+  getWorkspaceServices,
+  type ToolDefinition,
+  type WorkerResult,
+  type PluginToolDeps,
+  type ArtifactRef,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'analysis.notes'
 
@@ -52,7 +59,8 @@ export const analysisNotesToolDefinition: ToolDefinition = {
 }
 
 export function createAnalysisNotesHandler(deps: PluginToolDeps) {
-  const { database } = deps
+  const database = getDatabase(deps)
+  const workspace = getWorkspaceServices(deps)
 
   return async (args: Record<string, unknown>): Promise<WorkerResult> => {
     const input = AnalysisNotesInputSchema.parse(args)
@@ -86,10 +94,10 @@ export function createAnalysisNotesHandler(deps: PluginToolDeps) {
 
           // Store as artifact
           const artifacts: ArtifactRef[] = []
-          if (deps.persistStaticAnalysisJsonArtifact && deps.workspaceManager) {
+          if (workspace.persistStaticAnalysisJsonArtifact && workspace.manager) {
             try {
-              const artifact = await deps.persistStaticAnalysisJsonArtifact(
-                deps.workspaceManager,
+              const artifact = await workspace.persistStaticAnalysisJsonArtifact(
+                workspace.manager,
                 database,
                 input.sample_id,
                 'analysis_note',

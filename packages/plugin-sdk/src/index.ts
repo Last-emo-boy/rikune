@@ -11,19 +11,48 @@
  *   - PluginServerInterface — what the server exposes to plugins
  */
 
+import type {
+  ArtifactRef,
+  RuntimeBackendCapability,
+  RuntimeBackendType,
+  RuntimeDelegationFailureCategory,
+  RuntimeExecutionMode,
+  RuntimeExecutionSemantics,
+  RuntimeFallbackRule,
+  ToolRuntimeContract,
+  WorkerResult,
+} from '@rikune/shared'
+export {
+  PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+  SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+  RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPES,
+  RuntimeBackendCapabilitySchema,
+  RuntimeDelegationFailureCategorySchema,
+  RuntimeDelegationFailureDataSchema,
+  RuntimeDelegationFailureResultSchema,
+  RuntimeExecutionModeSchema,
+  RuntimeFallbackRuleSchema,
+  ToolRuntimeContractSchema,
+  buildRuntimeArtifactControlPlaneMetadata,
+  inferRuntimeArtifactFamily,
+  inferRuntimeArtifactType,
+  listRuntimeDynamicTraceArtifactTypes,
+} from '@rikune/shared'
+export type {
+  ArtifactRef,
+  RuntimeBackendCapability,
+  RuntimeBackendType,
+  RuntimeDelegationFailureCategory,
+  RuntimeExecutionMode,
+  RuntimeExecutionSemantics,
+  RuntimeFallbackRule,
+  ToolRuntimeContract,
+  WorkerResult,
+} from '@rikune/shared'
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Result Types
 // ═══════════════════════════════════════════════════════════════════════════
-
-/** Reference to a persisted analysis artifact. */
-export interface ArtifactRef {
-  id: string
-  type: string
-  path: string
-  sha256: string
-  mime?: string
-  metadata?: Record<string, unknown>
-}
 
 /** Standard tool result (MCP protocol). */
 export interface ToolResult {
@@ -32,57 +61,9 @@ export interface ToolResult {
   structuredContent?: Record<string, unknown>
 }
 
-/** Worker-style result used by most analysis tools. */
-export interface WorkerResult {
-  ok: boolean
-  status?: 'completed' | 'queued' | 'blocked' | 'degraded' | 'failed'
-  data?: unknown
-  errors?: string[]
-  warnings?: string[]
-  setup_actions?: unknown[]
-  required_user_inputs?: unknown[]
-  artifacts?: ArtifactRef[]
-  metrics?: Record<string, unknown>
-  execution_semantics?: {
-    requested_mode?: RuntimeExecutionMode | string
-    actual_mode?: RuntimeExecutionMode | string
-    backend?: string
-    live_execution?: boolean
-    reason?: string
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Tool Definition
 // ═══════════════════════════════════════════════════════════════════════════
-
-export type RuntimeBackendType = 'python-worker' | 'spawn' | 'inline'
-
-export type RuntimeExecutionMode =
-  | 'plan_only'
-  | 'safe_simulation'
-  | 'emulation'
-  | 'live_sandbox'
-  | 'live_hyperv'
-  | 'manual_runtime'
-
-export interface RuntimeFallbackRule {
-  mode: RuntimeExecutionMode
-  reason?: string
-}
-
-/** Execution contract for tools delegated to the runtime node. */
-export interface ToolRuntimeContract {
-  type: RuntimeBackendType
-  handler: string
-  modes?: RuntimeExecutionMode[]
-  requiredProfiles?: string[]
-  requiredTools?: string[]
-  optionalTools?: string[]
-  produces?: string[]
-  timeoutMs?: number
-  fallback?: RuntimeFallbackRule[]
-}
 
 /** Schema for a tool's inputs. */
 export interface ToolDefinition {
@@ -167,6 +148,7 @@ export interface PluginToolDeps {
   jobQueue?: any
   storageManager?: any
   server?: any
+  services?: PluginServices
 
   // ── Utility functions ──────────────────────────────────────────────────
   /** Resolve a sample_id to its primary file path on disk. */
@@ -213,6 +195,154 @@ export interface PluginToolDeps {
 
   /** Allow additional properties for extensibility. */
   [key: string]: any
+}
+
+export interface PluginWorkspaceServices {
+  manager?: any
+  database?: any
+  storage?: any
+  resolvePrimarySamplePath?: PluginToolDeps['resolvePrimarySamplePath']
+  persistStaticAnalysisJsonArtifact?: PluginToolDeps['persistStaticAnalysisJsonArtifact']
+}
+
+export interface PluginPlatformServices {
+  cacheManager?: any
+  jobQueue?: any
+  logger?: any
+  policyGuard?: any
+  resolvePackagePath?: PluginToolDeps['resolvePackagePath']
+  generateCacheKey?: PluginToolDeps['generateCacheKey']
+  server?: any
+}
+
+export interface PluginRuntimeServices {
+  client?: any
+  mode?: string
+  sandboxDir?: string | null
+  config?: any
+}
+
+export interface PluginGhidraServices {
+  DecompilerWorker?: any
+  getDiagnostics?: any
+  normalizeError?: any
+  findBestAnalysis?: any
+  getReadiness?: any
+  parseAnalysisMetadata?: any
+  buildPollingGuidance?: any
+  PollingGuidanceSchema?: any
+  SetupActionSchema?: any
+  RequiredUserInputSchema?: any
+}
+
+export interface PluginServices {
+  workspace?: PluginWorkspaceServices
+  platform?: PluginPlatformServices
+  runtime?: PluginRuntimeServices
+  ghidra?: PluginGhidraServices
+}
+
+export function getWorkspaceServices(deps: PluginToolDeps): PluginWorkspaceServices {
+  return {
+    manager: deps.services?.workspace?.manager ?? deps.workspaceManager,
+    database: deps.services?.workspace?.database ?? deps.database,
+    storage: deps.services?.workspace?.storage ?? deps.storageManager,
+    resolvePrimarySamplePath:
+      deps.services?.workspace?.resolvePrimarySamplePath ?? deps.resolvePrimarySamplePath,
+    persistStaticAnalysisJsonArtifact:
+      deps.services?.workspace?.persistStaticAnalysisJsonArtifact ??
+      deps.persistStaticAnalysisJsonArtifact,
+  }
+}
+
+export function getPlatformServices(deps: PluginToolDeps): PluginPlatformServices {
+  return {
+    cacheManager: deps.services?.platform?.cacheManager ?? deps.cacheManager,
+    jobQueue: deps.services?.platform?.jobQueue ?? deps.jobQueue,
+    logger: deps.services?.platform?.logger ?? deps.logger,
+    policyGuard: deps.services?.platform?.policyGuard ?? deps.policyGuard,
+    resolvePackagePath: deps.services?.platform?.resolvePackagePath ?? deps.resolvePackagePath,
+    generateCacheKey: deps.services?.platform?.generateCacheKey ?? deps.generateCacheKey,
+    server: deps.services?.platform?.server ?? deps.server,
+  }
+}
+
+export function getRuntimeServices(deps: PluginToolDeps): PluginRuntimeServices {
+  return {
+    client: deps.services?.runtime?.client ?? deps.runtimeClient,
+    mode: deps.services?.runtime?.mode ?? deps.config?.runtime?.mode,
+    sandboxDir: deps.services?.runtime?.sandboxDir ?? deps.sandboxDir ?? null,
+    config: deps.services?.runtime?.config ?? deps.config?.runtime ?? {},
+  }
+}
+
+export function getGhidraServices(deps: PluginToolDeps): PluginGhidraServices {
+  return {
+    DecompilerWorker: deps.services?.ghidra?.DecompilerWorker ?? deps.DecompilerWorker,
+    getDiagnostics: deps.services?.ghidra?.getDiagnostics ?? deps.getGhidraDiagnostics,
+    normalizeError: deps.services?.ghidra?.normalizeError ?? deps.normalizeGhidraError,
+    findBestAnalysis: deps.services?.ghidra?.findBestAnalysis ?? deps.findBestGhidraAnalysis,
+    getReadiness: deps.services?.ghidra?.getReadiness ?? deps.getGhidraReadiness,
+    parseAnalysisMetadata:
+      deps.services?.ghidra?.parseAnalysisMetadata ?? deps.parseGhidraAnalysisMetadata,
+    buildPollingGuidance: deps.services?.ghidra?.buildPollingGuidance ?? deps.buildPollingGuidance,
+    PollingGuidanceSchema:
+      deps.services?.ghidra?.PollingGuidanceSchema ?? deps.PollingGuidanceSchema,
+    SetupActionSchema: deps.services?.ghidra?.SetupActionSchema ?? deps.SetupActionSchema,
+    RequiredUserInputSchema:
+      deps.services?.ghidra?.RequiredUserInputSchema ?? deps.RequiredUserInputSchema,
+  }
+}
+
+export function getWorkspaceManager(deps: PluginToolDeps): any {
+  return getWorkspaceServices(deps).manager
+}
+
+export function getDatabase(deps: PluginToolDeps): any {
+  return getWorkspaceServices(deps).database
+}
+
+export function getRuntimeConfig(deps: PluginToolDeps): any {
+  return getRuntimeServices(deps).config ?? {}
+}
+
+export function getPlatformServer(deps: PluginToolDeps): any {
+  return getPlatformServices(deps).server
+}
+
+export function getRuntimeClient(deps: PluginToolDeps): any {
+  return getRuntimeServices(deps).client
+}
+
+function requireInjectedDependency<T>(
+  value: T | null | undefined,
+  label: string,
+  consumer?: string
+): T {
+  if (value !== null && value !== undefined) {
+    return value
+  }
+  throw new Error(
+    consumer
+      ? `${label} is required for ${consumer}`
+      : `${label} is required by this plugin handler`
+  )
+}
+
+export function requireWorkspaceManager(deps: PluginToolDeps, consumer?: string): any {
+  return requireInjectedDependency(getWorkspaceManager(deps), 'workspace manager', consumer)
+}
+
+export function requireDatabase(deps: PluginToolDeps, consumer?: string): any {
+  return requireInjectedDependency(getDatabase(deps), 'database', consumer)
+}
+
+export function requirePlatformServer(deps: PluginToolDeps, consumer?: string): any {
+  return requireInjectedDependency(getPlatformServer(deps), 'platform server', consumer)
+}
+
+export function requireRuntimeClient(deps: PluginToolDeps, consumer?: string): any {
+  return requireInjectedDependency(getRuntimeClient(deps), 'runtime client', consumer)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

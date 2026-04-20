@@ -97,11 +97,19 @@ describe('analysis.evidence.graph tool', () => {
     expect(data.schema).toBe('rikune.analysis_evidence_graph.v1')
     expect(data.summary.static_artifact_count).toBe(2)
     expect(data.summary.dynamic_artifact_count).toBe(1)
+    expect(data.dynamic_summary.artifact_families).toContain('dynamic_trace')
     expect(data.summary.expectation_count).toBeGreaterThanOrEqual(3)
     expect(data.summary.observation_count).toBeGreaterThanOrEqual(2)
     expect(data.summary.corroboration_edge_count).toBeGreaterThan(0)
     expect(data.graph.nodes.some((node: any) => node.kind === 'expectation' && node.category === 'network')).toBe(true)
     expect(data.graph.nodes.some((node: any) => node.kind === 'observation' && node.category === 'registry')).toBe(true)
+    expect(
+      data.graph.nodes.some(
+        (node: any) =>
+          node.id === 'artifact:dynamic_trace_summary' &&
+          node.details?.artifact_families?.includes('dynamic_trace')
+      )
+    ).toBe(true)
     expect(result.artifacts?.[0]?.type).toBe('analysis_evidence_graph')
   })
 })

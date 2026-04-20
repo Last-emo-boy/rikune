@@ -4,7 +4,13 @@
  * Report summarization, generation, and workflow summaries.
  */
 
-import type { Plugin } from '../sdk.js'
+import {
+  getPlatformServices,
+  requireDatabase,
+  requirePlatformServer,
+  requireWorkspaceManager,
+  type Plugin,
+} from '../sdk.js'
 import {
   reportSummarizeToolDefinition,
   createReportSummarizeHandler,
@@ -26,13 +32,23 @@ const reportingPlugin: Plugin = {
   description: 'Report summarization, generation, and workflow summaries',
   version: '1.0.0',
   register(server, deps) {
-    const { workspaceManager: wm, database: db, cacheManager: cm } = deps
+    const workspaceManager = requireWorkspaceManager(deps, 'reporting')
+    const database = requireDatabase(deps, 'reporting')
+    const platformServer = requirePlatformServer(deps, 'workflow.summarize')
+    const platform = getPlatformServices(deps)
+    const cacheManager = platform.cacheManager
 
-    server.registerTool(reportSummarizeToolDefinition, createReportSummarizeHandler(wm, db, cm))
-    server.registerTool(reportGenerateToolDefinition, createReportGenerateHandler(wm, db, cm))
+    server.registerTool(
+      reportSummarizeToolDefinition,
+      createReportSummarizeHandler(workspaceManager, database, cacheManager)
+    )
+    server.registerTool(
+      reportGenerateToolDefinition,
+      createReportGenerateHandler(workspaceManager, database, cacheManager)
+    )
     server.registerTool(
       workflowSummarizeToolDefinition,
-      createWorkflowSummarizeHandler(wm, db, cm, deps.server)
+      createWorkflowSummarizeHandler(workspaceManager, database, cacheManager, platformServer)
     )
 
     return ['report.summarize', 'report.generate', 'workflow.summarize']

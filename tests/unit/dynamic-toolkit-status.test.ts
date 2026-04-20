@@ -16,12 +16,9 @@ describe('dynamic.toolkit.status tool', () => {
     jest.restoreAllMocks()
   })
 
-  test('exports a read-only toolkit status definition with runtime probe hint', () => {
+  test('exports a read-only toolkit status definition without delegated runtime execution', () => {
     expect(dynamicToolkitStatusToolDefinition.name).toBe('dynamic.toolkit.status')
-    expect(dynamicToolkitStatusToolDefinition.runtime).toEqual({
-      type: 'inline',
-      handler: 'executeRuntimeToolProbe',
-    })
+    expect(dynamicToolkitStatusToolDefinition.runtime).toBeUndefined()
   })
 
   test('aggregates runtime toolkit inventory from a configured Runtime Node endpoint', async () => {

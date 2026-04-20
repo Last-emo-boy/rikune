@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod'
+import { listRuntimeDynamicTraceArtifactTypes } from '@rikune/shared'
 import fs from 'fs'
 import path from 'path'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../../../types.js'
@@ -3580,10 +3581,9 @@ export function createCodeFunctionsReconstructHandler(
       )
       const analysisMarker =
         completedGhidraAnalysis?.finished_at || completedGhidraAnalysis?.id || 'none'
-      const runtimeArtifacts = [
-        ...database.findArtifactsByType(input.sample_id, 'dynamic_trace_json'),
-        ...database.findArtifactsByType(input.sample_id, 'sandbox_trace_json'),
-      ]
+      const runtimeArtifacts = listRuntimeDynamicTraceArtifactTypes().flatMap((artifactType) =>
+        database.findArtifactsByType(input.sample_id, artifactType)
+      )
       const runtimeMarker =
         runtimeArtifacts.length > 0
           ? runtimeArtifacts

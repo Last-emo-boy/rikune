@@ -7,15 +7,18 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { logger } from '../logger.js'
-import type { WorkerResult, ArtifactRef, ToolRuntimeContract } from '../plugins/sdk.js'
+import type {
+  ArtifactRef,
+  RuntimeBackendCapability,
+  RuntimeSseEvent,
+  RuntimeTaskSnapshot,
+  ToolRuntimeContract,
+  WorkerResult,
+} from '@rikune/shared'
 import type { RuntimeSidecarUpload } from './sidecar-staging.js'
 
-export interface RuntimeBackendCapability {
-  type: ToolRuntimeContract['type']
-  handler: string
-  description: string
-  requiresSample: boolean
-}
+export type { RuntimeBackendCapability } from '@rikune/shared'
+export type { RuntimeSseEvent, RuntimeTaskSnapshot } from '@rikune/shared'
 
 export interface RuntimeContractValidationResult {
   supported: boolean | null
@@ -60,12 +63,6 @@ export interface RuntimeHealthResponse {
     runtimeBackendCapabilities?: boolean
     taskEvents?: boolean
   }
-}
-
-export interface RuntimeSseEvent {
-  event: string
-  id?: string
-  data: unknown
 }
 
 export interface RuntimeEventSubscription {
@@ -266,13 +263,10 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
 
     while (Date.now() - started < maxWaitMs) {
       const statusRes = await get(`/tasks/${req.taskId}`)
-      const statusBody = JSON.parse(statusRes.body) as {
+      const statusBody = JSON.parse(statusRes.body) as RuntimeTaskSnapshot & {
         ok?: boolean
-        status?: string
         result?: RuntimeExecuteResponse
         error?: string
-        progressPercent?: number
-        lastMessage?: string
       }
       if (!statusBody.ok) {
         return {

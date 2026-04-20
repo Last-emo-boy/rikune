@@ -81,7 +81,10 @@ export async function registerAllTools(
   registerWorkflowTools(server, deps)
   registerTaskTools(server, deps)
   registerSystemTools(server, deps)
-  registerUtilityTools(server)
+  registerUtilityTools(server, {
+    runtimeClient: deps.runtimeClient ?? null,
+    runtimeMode: deps.config?.runtime?.mode ?? 'disabled',
+  })
 
   const coreToolNames = Array.from(server.getToolDefinitions()).map((d) => d.name)
   getToolSurfaceManager().registerCoreTools(coreToolNames)
@@ -105,6 +108,42 @@ export async function registerAllTools(
     logger: serverLogger,
     runtimeClient: deps.runtimeClient ?? null,
     sandboxDir: deps.sandboxDir ?? null,
+    services: {
+      workspace: {
+        manager: deps.workspaceManager,
+        database: deps.database,
+        storage: deps.storageManager,
+        resolvePrimarySamplePath,
+        persistStaticAnalysisJsonArtifact,
+      },
+      platform: {
+        cacheManager: deps.cacheManager,
+        jobQueue: deps.jobQueue,
+        logger: serverLogger,
+        policyGuard: deps.policyGuard,
+        resolvePackagePath,
+        generateCacheKey,
+        server,
+      },
+      runtime: {
+        client: deps.runtimeClient ?? null,
+        mode: deps.config?.runtime?.mode ?? 'disabled',
+        sandboxDir: deps.sandboxDir ?? null,
+        config: deps.config?.runtime ?? {},
+      },
+      ghidra: {
+        DecompilerWorker,
+        getDiagnostics: getGhidraDiagnostics,
+        normalizeError: normalizeGhidraError,
+        findBestAnalysis: findBestGhidraAnalysis,
+        getReadiness: getGhidraReadiness,
+        parseAnalysisMetadata: parseGhidraAnalysisMetadata,
+        buildPollingGuidance,
+        PollingGuidanceSchema,
+        SetupActionSchema,
+        RequiredUserInputSchema,
+      },
+    },
   }
   await loadPlugins(server, pluginDeps)
   server.setPluginManager(getPluginManager())

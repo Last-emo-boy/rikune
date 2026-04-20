@@ -9,6 +9,7 @@
     "declaration": true,
     "declarationMap": true
   },
+  "references": [{ "path": "../shared" }],
   "include": ["src/**/*"],
   "exclude": ["dist", "node_modules"]
 }

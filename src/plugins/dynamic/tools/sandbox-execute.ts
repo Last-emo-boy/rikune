@@ -11,7 +11,9 @@ import { createHash, randomUUID } from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import {
+  PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
   RuntimeDelegationFailureResultSchema,
+  SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
   type ToolDefinition,
   type ToolArgs,
   type WorkerResult,
@@ -511,7 +513,7 @@ export function createSandboxExecuteHandler(
         database.insertArtifact({
           id: artifactId,
           sample_id: input.sample_id,
-          type: 'sandbox_trace_json',
+          type: SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
           path: relativePath,
           sha256: artifactSha256,
           mime: 'application/json',
@@ -520,7 +522,7 @@ export function createSandboxExecuteHandler(
 
         const persistedArtifact: ArtifactRef = {
           id: artifactId,
-          type: 'sandbox_trace_json',
+          type: SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
           path: relativePath,
           sha256: artifactSha256,
           mime: 'application/json',
@@ -542,7 +544,7 @@ export function createSandboxExecuteHandler(
           database.insertArtifact({
             id: normalizedArtifactId,
             sample_id: input.sample_id,
-            type: 'dynamic_trace_json',
+            type: PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
             path: normalizedRelativePath,
             sha256: normalizedSha256,
             mime: 'application/json',
@@ -551,7 +553,7 @@ export function createSandboxExecuteHandler(
 
           const normalizedArtifact: ArtifactRef = {
             id: normalizedArtifactId,
-            type: 'dynamic_trace_json',
+            type: PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
             path: normalizedRelativePath,
             sha256: normalizedSha256,
             mime: 'application/json',

@@ -1,5 +1,6 @@
 import fs from 'fs/promises'
 import path from 'path'
+import { inferRuntimeArtifactFamily, listRuntimeDynamicTraceArtifactTypes } from '@rikune/shared'
 import type { DatabaseManager } from '../database.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import { deriveArtifactSessionTag } from './artifact-inventory.js'
@@ -79,6 +80,8 @@ export interface DynamicEvidenceLayerSummary {
 export interface DynamicTraceSummary {
   artifact_count: number
   artifact_ids?: string[]
+  artifact_types?: string[]
+  artifact_families?: string[]
   executed: boolean
   executed_artifact_count?: number
   api_count: number
@@ -711,10 +714,9 @@ export async function loadDynamicTraceEvidence(
   sampleId: string,
   options: LoadDynamicTraceEvidenceOptions = {}
 ): Promise<DynamicTraceSummary | null> {
-  const artifacts = [
-    ...database.findArtifactsByType(sampleId, 'dynamic_trace_json'),
-    ...database.findArtifactsByType(sampleId, 'sandbox_trace_json'),
-  ]
+  const artifacts = listRuntimeDynamicTraceArtifactTypes().flatMap((artifactType) =>
+    database.findArtifactsByType(sampleId, artifactType)
+  )
 
   if (artifacts.length === 0) {
     return null
@@ -798,6 +800,15 @@ export async function loadDynamicTraceEvidence(
 
   const aggregated = {
     artifact_count: normalizedTraces.length,
+    artifact_ids: selectedTraces.map((item) => item.artifact.id),
+    artifact_types: dedupeStrings(
+      selectedTraces.map((item) => item.artifact.type),
+      8
+    ),
+    artifact_families: dedupeStrings(
+      selectedTraces.map((item) => inferRuntimeArtifactFamily(item.artifact.type) || ''),
+      8
+    ),
     executed: normalizedTraces.some((item) => item.executed),
     executed_artifact_count: normalizedTraces.filter((item) => item.executed).length,
     observed_apis: dedupeStrings(
@@ -988,6 +999,8 @@ export async function loadDynamicTraceEvidence(
   return {
     artifact_count: aggregated.artifact_count,
     artifact_ids: Array.from(new Set(selectedTraces.map((item) => item.artifact.id))),
+    artifact_types: aggregated.artifact_types,
+    artifact_families: aggregated.artifact_families,
     executed: aggregated.executed,
     executed_artifact_count: aggregated.executed_artifact_count,
     api_count: aggregated.observed_apis.length,

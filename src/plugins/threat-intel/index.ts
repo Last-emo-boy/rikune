@@ -4,7 +4,7 @@
  * MITRE ATT&CK mapping and IOC export (JSON/CSV/STIX2).
  */
 
-import type { Plugin } from '../sdk.js'
+import { requireDatabase, requireWorkspaceManager, type Plugin } from '../sdk.js'
 import { attackMapToolDefinition, createAttackMapHandler } from './tools/attack-map.js'
 import { iocExportToolDefinition, createIOCExportHandler } from './tools/ioc-export.js'
 import {
@@ -21,11 +21,13 @@ const threatIntelPlugin: Plugin = {
     'MITRE ATT&CK technique mapping, IOC export (JSON, CSV, STIX2), and Sigma rule generation',
   version: '1.0.0',
   register(server, deps) {
+    const workspaceManager = requireWorkspaceManager(deps, 'sigma.rule.generate')
+    const database = requireDatabase(deps, 'sigma.rule.generate')
     server.registerTool(attackMapToolDefinition, createAttackMapHandler(deps))
     server.registerTool(iocExportToolDefinition, createIOCExportHandler(deps))
     server.registerTool(
       sigmaRuleGenerateToolDefinition,
-      createSigmaRuleGenerateHandler(deps.workspaceManager, deps.database)
+      createSigmaRuleGenerateHandler(workspaceManager, database)
     )
     return ['attack.map', 'ioc.export', 'sigma.rule.generate']
   },

@@ -12,7 +12,9 @@ import type {
   ToolRuntimeContract,
 } from '../plugins/sdk.js'
 import {
+  buildRuntimeArtifactControlPlaneMetadata,
   RuntimeDelegationFailureDataSchema,
+  inferRuntimeArtifactType,
   type RuntimeDelegationFailureCategory,
   type WorkerResult as CoreWorkerResult,
 } from '../types.js'
@@ -453,7 +455,8 @@ export function createDelegatingServer(
 ): PluginServerInterface {
   return {
     registerTool(definition, handler) {
-      if (LOCAL_DYNAMIC_TOOLS.has(definition.name)) {
+      const runtime = definition.runtime
+      if (!runtime || LOCAL_DYNAMIC_TOOLS.has(definition.name)) {
         inner.registerTool(definition, handler)
         return
       }
@@ -468,7 +471,6 @@ export function createDelegatingServer(
         const sampleId = args?.sample_id as string | undefined
         const progressToken = args?._meta?.progressToken as string | number | undefined
         const progressReporter = inner.getProgressReporter?.(progressToken)
-        const runtime = definition.runtime
         let stagedUpload: {
           samplePath: string
           inboxHostDir: string
@@ -549,6 +551,7 @@ export function createDelegatingServer(
               sampleId,
               taskId,
               definition.name,
+              args,
               downloadedPaths
             )
           }
@@ -631,6 +634,7 @@ export function createDelegatingServer(
                     sampleId,
                     taskId,
                     definition.name,
+                    args,
                     downloadedPaths
                   )
                 }
@@ -686,6 +690,7 @@ async function persistRuntimeArtifacts(
   sampleId: string,
   taskId: string,
   toolName: string,
+  args: Record<string, unknown>,
   downloadedPaths: string[]
 ): Promise<ArtifactRef[]> {
   const persisted: ArtifactRef[] = []
@@ -695,10 +700,11 @@ async function persistRuntimeArtifacts(
 
   try {
     const workspace = await workspaceManager.createWorkspace(sampleId)
+    const effectiveToolName = resolveEffectiveRuntimeToolName(toolName, args)
     const reportDir = path.join(
       workspace.reports,
       'runtime_analysis',
-      sanitizePathSegment(toolName)
+      sanitizePathSegment(effectiveToolName)
     )
     await fs.mkdir(reportDir, { recursive: true })
 
@@ -715,7 +721,7 @@ async function persistRuntimeArtifacts(
         const artifactId = randomUUID()
         const createdAt = new Date().toISOString()
         const mime = guessMime(basename)
-        const artifactType = inferRuntimeArtifactType(toolName, basename)
+        const artifactType = inferRuntimeArtifactType(effectiveToolName, basename)
 
         database.insertArtifact({
           id: artifactId,
@@ -733,6 +739,12 @@ async function persistRuntimeArtifacts(
           path: relativePath,
           sha256,
           mime,
+          metadata: buildRuntimeArtifactControlPlaneMetadata({
+            artifactType,
+            sourceRuntimeTool: toolName,
+            effectiveRuntimeTool: effectiveToolName,
+            runtimeTaskId: taskId,
+          }),
         })
         logger.debug(
           { sampleId, taskId, tool: toolName, path: relativePath },
@@ -756,15 +768,15 @@ function sanitizePathSegment(segment: string): string {
   return segment.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64)
 }
 
-function inferRuntimeArtifactType(toolName: string, filename: string): string {
-  const lowerName = filename.toLowerCase()
-  if (toolName === 'dynamic.behavior.capture' && lowerName.endsWith('.json')) {
-    return 'dynamic_trace_json'
+function resolveEffectiveRuntimeToolName(toolName: string, args: Record<string, unknown>): string {
+  if (toolName !== 'runtime.debug.command') {
+    return toolName
   }
-  if (toolName === 'sandbox.execute' && lowerName.endsWith('.json')) {
-    return 'sandbox_trace_json'
-  }
-  return 'runtime_analysis'
+
+  const delegatedTool = args.tool
+  return typeof delegatedTool === 'string' && delegatedTool.trim().length > 0
+    ? delegatedTool
+    : toolName
 }
 
 function guessMime(filename: string): string {
