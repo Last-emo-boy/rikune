@@ -174,6 +174,49 @@ function Invoke-Request {
     }
 }
 
+function Start-HostAgentProcess {
+    param(
+        [string]$NodeExecutable,
+        [string]$EntryPath,
+        [string]$WorkingDirectory,
+        [string]$WorkspaceRoot
+    )
+
+    $logDir = Join-Path $WorkspaceRoot "workspace\logs"
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+
+    $stdoutLog = Join-Path $logDir "host-agent.log"
+    $stderrLog = Join-Path $logDir "host-agent.error.log"
+    New-Item -ItemType File -Path $stdoutLog -Force | Out-Null
+    New-Item -ItemType File -Path $stderrLog -Force | Out-Null
+
+    try {
+        $proc = Start-Process `
+            -FilePath $NodeExecutable `
+            -ArgumentList @($EntryPath) `
+            -WorkingDirectory $WorkingDirectory `
+            -WindowStyle Hidden `
+            -PassThru `
+            -RedirectStandardOutput $stdoutLog `
+            -RedirectStandardError $stderrLog `
+            -ErrorAction Stop
+    } catch {
+        Exit-WithError "Failed to start Host Agent process: $($_.Exception.Message)"
+    }
+
+    if (-not $proc -or -not $proc.Id) {
+        Exit-WithError "Host Agent process did not return a valid PID."
+    }
+
+    return @{
+        Process = $proc
+        StdoutLog = $stdoutLog
+        StderrLog = $stderrLog
+    }
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main Script
 # ─────────────────────────────────────────────────────────────────────────────
@@ -531,21 +574,17 @@ if ($Service) {
     Write-Info "Keep this Windows user logged in while using Windows Sandbox dynamic execution."
     Write-Host ""
 
-    # If headless, start detached process and return
-    if ($Headless) {
-        $logFile = Join-Path $WorkspaceRoot "workspace\logs\host-agent.log"
-        $proc = Start-Process -FilePath "node" -ArgumentList "`"$hostAgentEntry`"" -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $logFile -RedirectStandardError $logFile
-        Write-Success "Host Agent started as background process (PID: $($proc.Id))"
-        Write-Info "Logs: $logFile"
-        Start-Sleep -Seconds 2
-    } else {
-        # Interactive user-session process: required for Windows Sandbox launch.
-        $logFile = Join-Path $WorkspaceRoot "workspace\logs\host-agent.log"
-        $proc = Start-Process -FilePath "node" -ArgumentList "`"$hostAgentEntry`"" -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $logFile -RedirectStandardError $logFile
-        Write-Success "Host Agent started as background process (PID: $($proc.Id))"
-        Write-Info "Logs: $logFile"
-        Start-Sleep -Seconds 2
-    }
+    # Interactive user-session process: required for Windows Sandbox launch.
+    # Headless mode uses the same detached process model, but skips prompts.
+    $startResult = Start-HostAgentProcess `
+        -NodeExecutable $nodePath `
+        -EntryPath $hostAgentEntry `
+        -WorkingDirectory $ProjectRoot `
+        -WorkspaceRoot $WorkspaceRoot
+    Write-Success "Host Agent started as background process (PID: $($startResult.Process.Id))"
+    Write-Info "Stdout log: $($startResult.StdoutLog)"
+    Write-Info "Stderr log: $($startResult.StderrLog)"
+    Start-Sleep -Seconds 2
 }
 
 # =============================================================================
@@ -573,7 +612,8 @@ if ($healthOk) {
     Write-Success "Host Agent is healthy and responding"
 } else {
     Write-Warning-Message "Host Agent did not respond to health check. It may still be starting up."
-    Write-Info "Check logs: $(Join-Path $WorkspaceRoot "workspace\logs\host-agent.log")"
+    Write-Info "Check stdout log: $(Join-Path $WorkspaceRoot "workspace\logs\host-agent.log")"
+    Write-Info "Check stderr log: $(Join-Path $WorkspaceRoot "workspace\logs\host-agent.error.log")"
 }
 
 # =============================================================================
@@ -612,7 +652,8 @@ if ($Service) {
     Write-Host "    pm2 logs rikune-host-agent" -ForegroundColor $ColorInfo
     Write-Host "    pm2 stop rikune-host-agent" -ForegroundColor $ColorInfo
 } else {
-    Write-Host "    Logs: $(Join-Path $WorkspaceRoot "workspace\logs\host-agent.log")" -ForegroundColor $ColorInfo
+    Write-Host "    Stdout: $(Join-Path $WorkspaceRoot "workspace\logs\host-agent.log")" -ForegroundColor $ColorInfo
+    Write-Host "    Stderr: $(Join-Path $WorkspaceRoot "workspace\logs\host-agent.error.log")" -ForegroundColor $ColorInfo
     Write-Host "    Stop: taskkill /F /IM node.exe   (or find PID in Resource Monitor)" -ForegroundColor $ColorInfo
 }
 
