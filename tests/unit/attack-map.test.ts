@@ -6,7 +6,11 @@ import crypto from 'crypto'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
-import { createAttackMapHandler, mapIndicatorsToAttack } from '../../src/plugins/threat-intel/tools/attack-map.js'
+import { JobQueue } from '../../src/job-queue.js'
+import {
+  createAttackMapHandler,
+  mapIndicatorsToAttack,
+} from '../../src/plugins/threat-intel/tools/attack-map.js'
 
 jest.setTimeout(15000)
 
@@ -72,6 +76,57 @@ describe('attack.map tool', () => {
     expect(Object.keys(data.tactic_summary).length).toBeGreaterThan(0)
   })
 
+  test('should reuse cached ATT&CK mapping for compatible repeated requests', async () => {
+    const sample = Buffer.concat([
+      Buffer.from('MZ', 'ascii'),
+      Buffer.from('\x00'.repeat(256), 'binary'),
+      Buffer.from('powershell.exe http://cached.example/a', 'utf-8'),
+    ])
+    const sampleId = await ingestSample(workspaceManager, database, sample)
+
+    const first = await handler({
+      sample_id: sampleId,
+      include_low_confidence: true,
+    })
+    expect(first.ok).toBe(true)
+
+    const second = await handler({
+      sample_id: sampleId,
+      include_low_confidence: true,
+    })
+
+    expect(second.ok).toBe(true)
+    expect((second.metrics as any)?.cached).toBe(true)
+    expect(second.warnings).toEqual(expect.arrayContaining(['Result from cache']))
+  })
+
+  test('should defer medium samples to the background queue when allowed', async () => {
+    const jobQueue = new JobQueue(database)
+    const deferredHandler = createAttackMapHandler({
+      workspaceManager,
+      database,
+      cacheManager,
+      jobQueue,
+    } as any)
+    const sample = Buffer.concat([
+      Buffer.from('MZ', 'ascii'),
+      Buffer.alloc(1024 * 1024 + 1, 0),
+      Buffer.from('http://large.example/a', 'utf-8'),
+    ])
+    const sampleId = await ingestSample(workspaceManager, database, sample)
+
+    const result = await deferredHandler({
+      sample_id: sampleId,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.status).toBe('queued')
+    expect(data.result_mode).toBe('queued')
+    expect(data.job_id).toBeDefined()
+    expect(jobQueue.getStatus(data.job_id)?.status).toBe('queued')
+  })
+
   test('should suppress weak ransomware mapping by default for dual-use tooling', () => {
     const indicators = {
       suspiciousImports: ['kernel32.dll!WriteProcessMemory', 'kernel32.dll!CreateProcessW'],
@@ -92,7 +147,9 @@ describe('attack.map tool', () => {
       includeLowConfidence: false,
       maxTechniques: 20,
     })
-    expect(withoutLowConfidence.techniques.some((item) => item.technique_id === 'T1486')).toBe(false)
+    expect(withoutLowConfidence.techniques.some((item) => item.technique_id === 'T1486')).toBe(
+      false
+    )
 
     const withLowConfidence = mapIndicatorsToAttack(indicators, {
       includeLowConfidence: true,

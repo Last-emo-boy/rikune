@@ -2,7 +2,7 @@ import { buildPollingGuidance } from '../polling-guidance.js'
 import { classifySampleSizeTier, type SampleSizeTier } from './analysis-coverage.js'
 import type { Sample } from '../database.js'
 import type { JobQueue } from '../job-queue.js'
-import { JobPriority } from '../job-queue.js'
+import { JobPriority, TOOL_DURATION_ESTIMATES } from '../job-queue.js'
 import type { WorkerResult } from '../types.js'
 
 export interface DeferredToolResponseInput {
@@ -15,6 +15,8 @@ export interface DeferredToolResponseInput {
   nextActions?: string[]
   summary?: string
   priority?: JobPriority
+  resultMode?: string
+  estimatedDurationMs?: number
   metadata?: Record<string, unknown>
 }
 
@@ -38,13 +40,17 @@ export function buildDeferredToolResponse(input: DeferredToolResponseInput): Wor
     args: input.args,
     priority: input.priority || JobPriority.NORMAL,
     timeout: input.timeoutMs,
+    estimatedDurationMs:
+      input.estimatedDurationMs ||
+      TOOL_DURATION_ESTIMATES[input.tool] ||
+      TOOL_DURATION_ESTIMATES.default,
   })
   return {
     ok: true,
     data: {
       status: 'queued',
       sample_id: input.sampleId,
-      result_mode: 'full',
+      result_mode: input.resultMode || 'full',
       execution_state: 'queued',
       job_id: jobId,
       polling_guidance: buildPollingGuidance({

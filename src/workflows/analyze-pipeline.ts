@@ -37,7 +37,9 @@ import {
   createOrReuseAnalysisRun,
   getAnalysisRunSummary,
   upsertAnalysisRunStage,
+  type AnalysisExecutionState,
   type AnalysisPipelineStage,
+  type AnalysisStageStatus,
 } from '../analysis/analysis-run-state.js'
 import {
   ExplanationGraphDigestSchema,
@@ -70,6 +72,9 @@ import { createStaticBehaviorClassifyHandler } from '../plugins/static-triage/to
 import { createSandboxExecuteHandler } from '../plugins/dynamic/tools/sandbox-execute.js'
 import { createWorkflowSummarizeHandler } from './summarize.js'
 import { createReconstructWorkflowHandler } from './reconstruct.js'
+import { createSemanticNameReviewWorkflowHandler } from './semantic-name-review.js'
+import { createFunctionExplanationReviewWorkflowHandler } from './function-explanation-review.js'
+import { createModuleReconstructionReviewWorkflowHandler } from './module-reconstruction-review.js'
 import { createGhidraAnalyzeHandler } from '../plugins/ghidra/tools/ghidra-analyze.js'
 import { createAngrAnalyzeHandler } from '../plugins/angr/tools/angr-analyze.js'
 import { createRetDecDecompileHandler } from '../plugins/retdec/tools/retdec-decompile.js'
@@ -126,6 +131,7 @@ const FAST_PROFILE_TIMEOUT_MS = 90_000
 const ENRICH_STAGE_TIMEOUT_MS = 10 * 60 * 1000
 const FUNCTION_MAP_TIMEOUT_MS = 20 * 60 * 1000
 const RECONSTRUCT_TIMEOUT_MS = 30 * 60 * 1000
+const SEMANTIC_REVIEW_TIMEOUT_MS = 60 * 60 * 1000
 const DYNAMIC_PLAN_TIMEOUT_MS = 5 * 60 * 1000
 const SUMMARIZE_TIMEOUT_MS = 5 * 60 * 1000
 const YARA_DEFAULT_RULE_SET = 'malware_families'
@@ -342,6 +348,9 @@ export interface AnalyzePipelineDependencies {
   sandboxExecute?: (args: ToolArgs) => Promise<WorkerResult>
   workflowSummarize?: (args: ToolArgs) => Promise<WorkerResult>
   reconstructWorkflow?: (args: ToolArgs) => Promise<WorkerResult>
+  semanticNameReviewWorkflow?: (args: ToolArgs) => Promise<WorkerResult>
+  functionExplanationReviewWorkflow?: (args: ToolArgs) => Promise<WorkerResult>
+  moduleReconstructionReviewWorkflow?: (args: ToolArgs) => Promise<WorkerResult>
   ghidraAnalyze?: (args: ToolArgs) => Promise<ToolResult | WorkerResult>
   rizinAnalyze?: (args: ToolArgs) => Promise<WorkerResult>
   yaraXScan?: (args: ToolArgs) => Promise<WorkerResult>
@@ -360,6 +369,16 @@ interface StageExecutionContext {
   policyGuard: PolicyGuard
   server?: SamplingClient
   dependencies: AnalyzePipelineDependencies
+}
+
+interface StageExecutionOutput {
+  result: Record<string, unknown>
+  artifacts: ArtifactRef[]
+  stageStatus?: AnalysisStageStatus
+  executionState?: AnalysisExecutionState
+  metadata?: Record<string, unknown>
+  warnings?: string[]
+  errors?: string[]
 }
 
 function collectArtifactsFromResult(result: WorkerResult | undefined): ArtifactRef[] {
@@ -948,6 +967,25 @@ function createDependencies(
     reconstructWorkflow:
       dependencies.reconstructWorkflow ||
       createReconstructWorkflowHandler(workspaceManager, database, cacheManager),
+    semanticNameReviewWorkflow:
+      dependencies.semanticNameReviewWorkflow ||
+      createSemanticNameReviewWorkflowHandler(workspaceManager, database, cacheManager, server),
+    functionExplanationReviewWorkflow:
+      dependencies.functionExplanationReviewWorkflow ||
+      createFunctionExplanationReviewWorkflowHandler(
+        workspaceManager,
+        database,
+        cacheManager,
+        server
+      ),
+    moduleReconstructionReviewWorkflow:
+      dependencies.moduleReconstructionReviewWorkflow ||
+      createModuleReconstructionReviewWorkflowHandler(
+        workspaceManager,
+        database,
+        cacheManager,
+        server
+      ),
     ghidraAnalyze:
       dependencies.ghidraAnalyze ||
       (createGhidraAnalyzeHandler({
@@ -983,7 +1021,7 @@ async function buildFastProfileStage(
   runId: string,
   sample: Sample,
   input: z.infer<typeof analyzeStartInputSchema>
-): Promise<{ result: Record<string, unknown>; artifacts: ArtifactRef[] }> {
+): Promise<StageExecutionOutput> {
   const deps = context.dependencies
   const readiness = (deps.resolveBackends || resolveAnalysisBackends)()
   const defaultYaraXRulesPath = resolveDefaultYaraXRulesPath()
@@ -1300,7 +1338,7 @@ async function runEnrichStaticStage(
   context: StageExecutionContext,
   sampleId: string,
   forceRefresh: boolean
-): Promise<{ result: Record<string, unknown>; artifacts: ArtifactRef[] }> {
+): Promise<StageExecutionOutput> {
   const deps = context.dependencies
 
   // Format-aware structural analysis: route to the correct tool based on file_type
@@ -1410,7 +1448,7 @@ async function runEnrichStaticStage(
 async function runFunctionMapStage(
   context: StageExecutionContext,
   sampleId: string
-): Promise<{ result: Record<string, unknown>; artifacts: ArtifactRef[] }> {
+): Promise<StageExecutionOutput> {
   const ghidraResult = normalizeToolLikeResult(
     await context.dependencies.ghidraAnalyze({
       sample_id: sampleId,
@@ -1461,7 +1499,7 @@ async function runFunctionMapStage(
 async function runReconstructStage(
   context: StageExecutionContext,
   sampleId: string
-): Promise<{ result: Record<string, unknown>; artifacts: ArtifactRef[] }> {
+): Promise<StageExecutionOutput> {
   const reconstructResult = await context.dependencies.reconstructWorkflow({
     sample_id: sampleId,
     path: 'auto',
@@ -1509,11 +1547,245 @@ async function runReconstructStage(
   }
 }
 
+function isSemanticReviewStage(stage: AnalysisPipelineStage): boolean {
+  return (
+    stage === 'semantic_name_review' ||
+    stage === 'semantic_explain_review' ||
+    stage === 'semantic_module_review'
+  )
+}
+
+function semanticReviewSessionTag(runId: string, stage: AnalysisPipelineStage): string {
+  return `analysis_${runId}_${stage}`
+}
+
+function getNestedRecord(value: unknown, key: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {}
+  }
+  const nested = (value as Record<string, unknown>)[key]
+  return nested && typeof nested === 'object' && !Array.isArray(nested)
+    ? (nested as Record<string, unknown>)
+    : {}
+}
+
+function getNestedNumber(value: Record<string, unknown>, key: string): number {
+  const raw = value[key]
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0
+}
+
+function classifySemanticReviewStage(workflowResult: WorkerResult): {
+  stageStatus: AnalysisStageStatus
+  executionState: AnalysisExecutionState
+  semanticState: string
+  reviewStatus: string
+} {
+  const data =
+    workflowResult.data && typeof workflowResult.data === 'object' ? workflowResult.data : {}
+  const review = getNestedRecord(data, 'review')
+  const reviewStatus =
+    typeof review.review_status === 'string'
+      ? review.review_status
+      : typeof (data as Record<string, unknown>).review_status === 'string'
+        ? String((data as Record<string, unknown>).review_status)
+        : workflowResult.ok
+          ? 'unknown'
+          : 'failed'
+
+  if (!workflowResult.ok) {
+    return {
+      stageStatus: 'recoverable',
+      executionState: 'partial',
+      semanticState: 'recoverable',
+      reviewStatus,
+    }
+  }
+  if (reviewStatus === 'prompt_contract_only') {
+    return {
+      stageStatus: 'partial',
+      executionState: 'partial',
+      semanticState: 'waiting_for_llm',
+      reviewStatus,
+    }
+  }
+  if (reviewStatus === 'sampled_only') {
+    return {
+      stageStatus: 'partial',
+      executionState: 'partial',
+      semanticState: 'waiting_for_apply',
+      reviewStatus,
+    }
+  }
+  if (reviewStatus === 'sampling_parse_failed' || reviewStatus === 'apply_failed') {
+    return {
+      stageStatus: 'recoverable',
+      executionState: 'partial',
+      semanticState: 'recoverable',
+      reviewStatus,
+    }
+  }
+  return {
+    stageStatus: 'completed',
+    executionState: 'completed',
+    semanticState:
+      reviewStatus === 'sampled_and_applied'
+        ? 'applied'
+        : reviewStatus === 'no_targets'
+          ? 'no_targets'
+          : 'completed',
+    reviewStatus,
+  }
+}
+
+async function runSemanticReviewStage(
+  context: StageExecutionContext,
+  runId: string,
+  sampleId: string,
+  stage: AnalysisPipelineStage
+): Promise<StageExecutionOutput> {
+  const sessionTag = semanticReviewSessionTag(runId, stage)
+  const commonArgs = {
+    sample_id: sampleId,
+    session_tag: sessionTag,
+    evidence_scope: 'all',
+    semantic_scope: 'all',
+    persist_artifact: true,
+    auto_apply: true,
+    rerun_export: false,
+    reuse_cached: true,
+  }
+  const workflowTool =
+    stage === 'semantic_name_review'
+      ? 'workflow.semantic_name_review'
+      : stage === 'semantic_explain_review'
+        ? 'workflow.function_explanation_review'
+        : 'workflow.module_reconstruction_review'
+  const applyTool =
+    stage === 'semantic_name_review'
+      ? 'code.function.rename.apply'
+      : stage === 'semantic_explain_review'
+        ? 'code.function.explain.apply'
+        : 'code.module.review'
+  const workflowResult =
+    stage === 'semantic_name_review'
+      ? await context.dependencies.semanticNameReviewWorkflow({
+          ...commonArgs,
+          topk: 12,
+          max_functions: 10,
+          include_resolved: false,
+          rerun_reconstruct: true,
+          analysis_goal:
+            'Review high-value reconstructed functions and propose evidence-grounded semantic names for this staged analysis run.',
+        })
+      : stage === 'semantic_explain_review'
+        ? await context.dependencies.functionExplanationReviewWorkflow({
+            ...commonArgs,
+            topk: 12,
+            max_functions: 10,
+            include_resolved: true,
+            analysis_goal:
+              'Explain high-value reconstructed functions and produce evidence-grounded behavior summaries for this staged analysis run.',
+          })
+        : await context.dependencies.moduleReconstructionReviewWorkflow({
+            ...commonArgs,
+            topk: 12,
+            module_limit: 6,
+            min_module_size: 2,
+            include_imports: true,
+            include_strings: true,
+            analysis_goal:
+              'Review reconstructed modules and refine module roles for this staged analysis run.',
+          })
+
+  const artifacts = collectArtifactsFromResult(workflowResult)
+  const data =
+    workflowResult.data && typeof workflowResult.data === 'object'
+      ? (workflowResult.data as Record<string, unknown>)
+      : {}
+  const review = getNestedRecord(data, 'review')
+  const prepare = getNestedRecord(review, 'prepare')
+  const apply = getNestedRecord(review, 'apply')
+  const sampling = getNestedRecord(review, 'sampling')
+  const classification = classifySemanticReviewStage(workflowResult)
+  const prepareArtifactId =
+    typeof prepare.artifact_id === 'string' && prepare.artifact_id.trim()
+      ? prepare.artifact_id
+      : null
+  const applyArtifactId =
+    typeof apply.artifact_id === 'string' && apply.artifact_id.trim() ? apply.artifact_id : null
+  const metadata = {
+    semantic_review_stage: stage,
+    semantic_review_state: classification.semanticState,
+    review_status: classification.reviewStatus,
+    workflow_tool: workflowTool,
+    session_tag: sessionTag,
+    prepare_artifact_id: prepareArtifactId,
+    apply_artifact_id: applyArtifactId,
+    accepted_count: getNestedNumber(apply, 'accepted_count'),
+    rejected_count: getNestedNumber(apply, 'rejected_count'),
+    sampling_attempted: Boolean(sampling.attempted),
+    sampling_model: typeof sampling.model === 'string' ? sampling.model : null,
+  }
+  const summary =
+    classification.semanticState === 'waiting_for_llm'
+      ? `${workflowTool} prepared an MCP prompt contract and is waiting for LLM sampling/apply.`
+      : classification.semanticState === 'applied'
+        ? `${workflowTool} applied semantic review artifacts to the sample.`
+        : classification.semanticState === 'recoverable'
+          ? `${workflowTool} did not complete cleanly and can be re-promoted after inspecting warnings/errors.`
+          : `${workflowTool} completed with review_status=${classification.reviewStatus}.`
+
+  return {
+    result: {
+      stage,
+      status:
+        classification.stageStatus === 'completed'
+          ? 'ready'
+          : classification.stageStatus === 'partial'
+            ? classification.semanticState
+            : classification.stageStatus,
+      execution_state: classification.executionState,
+      summary,
+      semantic_review: metadata,
+      stage_outputs: {
+        [stage]: data,
+      },
+      recommended_next_tools:
+        classification.semanticState === 'waiting_for_llm'
+          ? ['prompts/get', applyTool, 'workflow.analyze.promote']
+          : classification.semanticState === 'waiting_for_apply'
+            ? [applyTool, 'workflow.analyze.promote', 'workflow.analyze.status']
+            : ['workflow.analyze.promote', 'workflow.analyze.status'],
+      next_actions:
+        classification.semanticState === 'waiting_for_llm'
+          ? [
+              'Use the prepare bundle artifact or prompt arguments with an MCP-capable LLM client.',
+              'Apply the returned JSON with the matching semantic apply/review tool, then re-promote this semantic stage or continue to summarize.',
+            ]
+          : classification.semanticState === 'waiting_for_apply'
+            ? [
+                'Apply the sampled semantic JSON with the matching semantic apply/review tool.',
+                'Re-promote this semantic stage or continue to summarize after the apply artifact is persisted.',
+              ]
+            : [
+                'Promote the next staged semantic review or summarize stage to continue the pipeline.',
+              ],
+      artifact_refs: artifacts,
+    },
+    artifacts,
+    stageStatus: classification.stageStatus,
+    executionState: classification.executionState,
+    metadata,
+    warnings: workflowResult.warnings,
+    errors: workflowResult.errors,
+  }
+}
+
 async function runDynamicPlanStage(
   context: StageExecutionContext,
   runId: string,
   sampleId: string
-): Promise<{ result: Record<string, unknown>; artifacts: ArtifactRef[] }> {
+): Promise<StageExecutionOutput> {
   const sample = context.database.findSample(sampleId)
   const run = context.database.findAnalysisRun(runId)
   if (!sample || !run) {
@@ -1704,7 +1976,7 @@ async function runDynamicExecuteStage(
   context: StageExecutionContext,
   runId: string,
   sampleId: string
-): Promise<{ result: Record<string, unknown>; artifacts: ArtifactRef[] }> {
+): Promise<StageExecutionOutput> {
   const sample = context.database.findSample(sampleId)
   const run = context.database.findAnalysisRun(runId)
   if (!sample || !run) {
@@ -2228,7 +2500,7 @@ async function runDynamicExecuteStage(
 async function runSummarizeStage(
   context: StageExecutionContext,
   sampleId: string
-): Promise<{ result: Record<string, unknown>; artifacts: ArtifactRef[] }> {
+): Promise<StageExecutionOutput> {
   const summarizeResult = await context.dependencies.workflowSummarize({
     sample_id: sampleId,
     through_stage: 'final',
@@ -2295,6 +2567,10 @@ export async function executeQueuedAnalysisStage(
           return runFunctionMapStage(context, run.sample_id)
         case 'reconstruct':
           return runReconstructStage(context, run.sample_id)
+        case 'semantic_name_review':
+        case 'semantic_explain_review':
+        case 'semantic_module_review':
+          return runSemanticReviewStage(context, run.id, run.sample_id, input.stage)
         case 'dynamic_plan':
           return runDynamicPlanStage(context, run.id, run.sample_id)
         case 'dynamic_execute':
@@ -2321,24 +2597,29 @@ export async function executeQueuedAnalysisStage(
     })()
 
     const stageOutput = await runner
+    const stageStatus = stageOutput.stageStatus || 'completed'
+    const executionState =
+      stageOutput.executionState || (stageStatus === 'completed' ? 'completed' : 'partial')
     appendAnalysisRunArtifactRefs(context.database, run.id, stageOutput.artifacts)
     upsertAnalysisRunStage(context.database, {
       runId: run.id,
       stage: input.stage,
-      status: 'completed',
-      executionState: 'completed',
+      status: stageStatus,
+      executionState,
       tool: ANALYSIS_STAGE_JOB_TOOL,
       result: stageOutput.result,
       artifactRefs: stageOutput.artifacts,
+      metadata: stageOutput.metadata,
       finishedAt: new Date().toISOString(),
     })
+    const jobOk = stageStatus !== 'failed' && stageStatus !== 'recoverable'
 
     return {
       jobId: run.id,
-      ok: true,
+      ok: jobOk,
       data: stageOutput.result,
-      errors: [],
-      warnings: [],
+      errors: jobOk ? [] : stageOutput.errors || [`Stage ${input.stage} is recoverable`],
+      warnings: stageOutput.warnings || [],
       artifacts: stageOutput.artifacts,
       metrics: { elapsedMs: Date.now() - startTime, peakRssMb: 0 },
     }
@@ -2524,11 +2805,13 @@ function queueStage(
         ? FUNCTION_MAP_TIMEOUT_MS
         : stage === 'reconstruct'
           ? RECONSTRUCT_TIMEOUT_MS
-          : stage === 'summarize'
-            ? SUMMARIZE_TIMEOUT_MS
-            : stage === 'fast_profile'
-              ? FAST_PROFILE_TIMEOUT_MS
-              : DYNAMIC_PLAN_TIMEOUT_MS
+          : isSemanticReviewStage(stage)
+            ? SEMANTIC_REVIEW_TIMEOUT_MS
+            : stage === 'summarize'
+              ? SUMMARIZE_TIMEOUT_MS
+              : stage === 'fast_profile'
+                ? FAST_PROFILE_TIMEOUT_MS
+                : DYNAMIC_PLAN_TIMEOUT_MS
 
   const run = database.findAnalysisRun(runId)
   const executionPolicy = run
@@ -2555,7 +2838,9 @@ function queueStage(
     sampleId,
     args: stageArgs,
     priority:
-      stage === 'function_map' || stage === 'reconstruct' ? JobPriority.HIGH : JobPriority.NORMAL,
+      stage === 'function_map' || stage === 'reconstruct' || isSemanticReviewStage(stage)
+        ? JobPriority.HIGH
+        : JobPriority.NORMAL,
     timeout,
   })
 

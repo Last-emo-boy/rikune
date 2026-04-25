@@ -21,6 +21,7 @@ import { createStringsFlossDecodeHandler } from '../plugins/strings/tools/string
 import { createBinaryRoleProfileHandler } from '../plugins/static-triage/tools/binary-role-profile.js'
 import { createAnalysisContextLinkHandler } from '../plugins/static-triage/tools/analysis-context-link.js'
 import { createCryptoIdentifyHandler } from '../plugins/static-triage/tools/crypto-identify.js'
+import { createAttackMapHandler } from '../plugins/threat-intel/tools/attack-map.js'
 import {
   AnalysisBudgetScheduler,
   findWorkerReuseTelemetry,
@@ -32,6 +33,7 @@ import {
   createAnalyzePipelineStageContext,
   executeQueuedAnalysisStage,
 } from '../workflows/analyze-pipeline.js'
+import type { AnalysisPipelineStage } from './analysis-run-state.js'
 import { sandboxExecuteToolDefinition } from '../plugins/dynamic/tools/sandbox-execute.js'
 import {
   createRuntimeDelegatedToolHandler,
@@ -393,14 +395,7 @@ export class AnalysisTaskRunner {
       )
       const input = job.args as {
         run_id: string
-        stage:
-          | 'fast_profile'
-          | 'enrich_static'
-          | 'function_map'
-          | 'reconstruct'
-          | 'dynamic_plan'
-          | 'dynamic_execute'
-          | 'summarize'
+        stage: AnalysisPipelineStage
         force_refresh?: boolean
       }
       return executeQueuedAnalysisStage(stageContext, input)
@@ -467,6 +462,23 @@ export class AnalysisTaskRunner {
         { allowDeferred: false }
       )
       return this.normalizeWorkerResult(job.id, await handler(job.args || {}))
+    })
+
+    executors.set('attack.map', async (job) => {
+      const cacheManager = this.requireCacheManager('attack.map')
+      this.jobQueue.updateProgress(job.id, 5)
+      const handler = createAttackMapHandler(
+        {
+          workspaceManager: this.workspaceManager,
+          database: this.database,
+          cacheManager,
+          jobQueue: this.jobQueue,
+        } as any,
+        { allowDeferred: false }
+      )
+      const result = await handler({ ...(job.args || {}), allow_deferred: false })
+      this.jobQueue.updateProgress(job.id, 100)
+      return this.normalizeWorkerResult(job.id, result)
     })
 
     executors.set('workflow.semantic_name_review', async (job) => {
@@ -603,6 +615,14 @@ export class AnalysisTaskRunner {
     }
 
     if (job.tool === 'crypto.identify') {
+      const executor = this.queuedExecutors.get(job.tool)
+      if (!executor) {
+        throw new Error(`Unsupported queued tool: ${job.tool}`)
+      }
+      return executor(job, abortSignal)
+    }
+
+    if (job.tool === 'attack.map') {
       const executor = this.queuedExecutors.get(job.tool)
       if (!executor) {
         throw new Error(`Unsupported queued tool: ${job.tool}`)

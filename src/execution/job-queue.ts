@@ -44,6 +44,9 @@ export const TOOL_DURATION_ESTIMATES: Record<string, number> = {
   // String tools (2-10 minutes)
   'strings.floss.decode': 5 * 60 * 1000,
 
+  // Threat intelligence enrichment (5-15 minutes)
+  'attack.map': 10 * 60 * 1000,
+
   // Default estimate (5 minutes)
   default: 5 * 60 * 1000,
 } as const

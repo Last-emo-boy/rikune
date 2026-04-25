@@ -13,8 +13,10 @@ import { formatDuration } from '../async-tool-wrapper.js'
 import { ANALYSIS_STAGE_JOB_TOOL } from '../workflows/analyze-pipeline.js'
 import { getAnalysisRunSummary } from '../analysis/analysis-run-state.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
+import { buildSampleReuseHints } from '../analysis/reuse-hints.js'
 
 const TOOL_NAME = 'task.status'
+const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'cancelled', 'interrupted'])
 
 export const taskStatusInputSchema = z.object({
   job_id: z.string().optional().describe('Optional job id for single-job lookup'),
@@ -57,6 +59,7 @@ export const taskStatusOutputSchema = z.object({
       preferred_primary_tools: z.array(z.string()).optional(),
       recommended_next_tools: z.array(z.string()).optional(),
       next_actions: z.array(z.string()).optional(),
+      reuse_hints: z.record(z.any()).optional(),
     })
     .optional(),
   errors: z.array(z.string()).optional(),
@@ -183,6 +186,22 @@ export function createTaskStatusHandler(
           isAnalysisStageJob && stageRunId && database
             ? getAnalysisRunSummary(database, stageRunId, jobQueue)
             : null
+        const sampleId =
+          typeof statusRecord.sampleId === 'string'
+            ? statusRecord.sampleId
+            : typeof (statusRecord as Record<string, unknown>).sample_id === 'string'
+              ? String((statusRecord as Record<string, unknown>).sample_id)
+              : null
+        const reuseHints =
+          database && sampleId && TERMINAL_JOB_STATUSES.has(statusRecord.status)
+            ? await buildSampleReuseHints({
+                database,
+                jobQueue,
+                sampleId,
+                intendedTool: typeof statusRecord.tool === 'string' ? statusRecord.tool : null,
+                limit: 5,
+              })
+            : undefined
         const schedulerEvent = database?.findLatestSchedulerEventForJob(input.job_id) || null
         const schedulerMetadata = parseSchedulerMetadata(schedulerEvent?.metadata_json)
 
@@ -270,6 +289,7 @@ export function createTaskStatusHandler(
               input.include_result && statusRecord.status === 'completed'
                 ? jobQueue.getResult(input.job_id)
                 : undefined,
+            reuse_hints: reuseHints,
             result_mode: 'job_lookup',
             tool_surface_role: 'compatibility',
             preferred_primary_tools: ['workflow.analyze.status'],

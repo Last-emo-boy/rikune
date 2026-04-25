@@ -9,9 +9,13 @@ import {
   sampleProfileGetToolDefinition,
   createSampleProfileGetHandler,
 } from '../../tools/sample-profile-get.js'
+import {
+  analysisContextGetToolDefinition,
+  createAnalysisContextGetHandler,
+} from '../../tools/analysis-context-get.js'
 
 export function registerSampleTools(server: ToolRegistrar, deps: ToolDeps): void {
-  const { workspaceManager, database, policyGuard, config } = deps
+  const { workspaceManager, database, policyGuard, config, jobQueue, cacheManager } = deps
   server.registerTool(
     sampleIngestToolDefinition,
     createSampleIngestHandler(workspaceManager, database, policyGuard)
@@ -22,6 +26,10 @@ export function registerSampleTools(server: ToolRegistrar, deps: ToolDeps): void
   )
   server.registerTool(
     sampleProfileGetToolDefinition,
-    createSampleProfileGetHandler(database, workspaceManager)
+    createSampleProfileGetHandler(database, workspaceManager, { jobQueue, cacheManager })
+  )
+  server.registerTool(
+    analysisContextGetToolDefinition,
+    createAnalysisContextGetHandler(database, jobQueue)
   )
 }

@@ -79,6 +79,9 @@ function extractStage(args: Record<string, unknown>): AnalysisPipelineStage | nu
     stage === 'enrich_static' ||
     stage === 'function_map' ||
     stage === 'reconstruct' ||
+    stage === 'semantic_name_review' ||
+    stage === 'semantic_explain_review' ||
+    stage === 'semantic_module_review' ||
     stage === 'dynamic_plan' ||
     stage === 'dynamic_execute' ||
     stage === 'summarize'
@@ -314,6 +317,17 @@ export function buildSchedulerExecutionPlan(input: {
           stage,
           sample_size_tier: sampleSizeTier,
         })
+      case 'semantic_name_review':
+      case 'semantic_explain_review':
+      case 'semantic_module_review':
+        return withExpectedRss({
+          execution_bucket: 'artifact-only',
+          cost_class: 'moderate',
+          worker_family: 'stage.semantic_review',
+          manual_only: false,
+          stage,
+          sample_size_tier: sampleSizeTier,
+        })
       case 'dynamic_plan':
         return withExpectedRss({
           execution_bucket: 'dynamic-plan',
@@ -391,6 +405,7 @@ export function buildSchedulerExecutionPlan(input: {
     input.tool === 'binary.role.profile' ||
     input.tool === 'analysis.context.link' ||
     input.tool === 'crypto.identify' ||
+    input.tool === 'attack.map' ||
     input.tool === 'rust_binary.analyze' ||
     input.tool === 'static.capability.triage' ||
     input.tool === 'pe.structure.analyze'
@@ -398,7 +413,10 @@ export function buildSchedulerExecutionPlan(input: {
     const fullMode =
       args.mode === 'full' || args.result_mode === 'full' || args.analysis_mode === 'full'
     const enrichPreferred =
-      fullMode || input.tool === 'static.capability.triage' || input.tool === 'pe.structure.analyze'
+      fullMode ||
+      input.tool === 'attack.map' ||
+      input.tool === 'static.capability.triage' ||
+      input.tool === 'pe.structure.analyze'
     return withExpectedRss({
       execution_bucket: enrichPreferred ? 'enrich-static' : 'preview-static',
       cost_class: enrichPreferred ? 'expensive' : 'moderate',
@@ -407,7 +425,9 @@ export function buildSchedulerExecutionPlan(input: {
           ? 'analysis_context'
           : input.tool === 'crypto.identify'
             ? 'crypto_identify'
-            : 'static_python.full',
+            : input.tool === 'attack.map'
+              ? 'attack_map'
+              : 'static_python.full',
       manual_only: false,
       stage,
       sample_size_tier: sampleSizeTier,

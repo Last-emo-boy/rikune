@@ -22,6 +22,9 @@ export const AnalysisPipelineStageSchema = z.enum([
   'enrich_static',
   'function_map',
   'reconstruct',
+  'semantic_name_review',
+  'semantic_explain_review',
+  'semantic_module_review',
   'dynamic_plan',
   'dynamic_execute',
   'summarize',
@@ -352,11 +355,29 @@ export function buildStagePlan(goal: AnalysisIntentGoal): AnalysisPipelineStage[
     case 'static':
       return ['fast_profile', 'enrich_static', 'function_map', 'summarize']
     case 'reverse':
-      return ['fast_profile', 'enrich_static', 'function_map', 'reconstruct', 'summarize']
+      return [
+        'fast_profile',
+        'enrich_static',
+        'function_map',
+        'reconstruct',
+        'semantic_name_review',
+        'semantic_explain_review',
+        'semantic_module_review',
+        'summarize',
+      ]
     case 'dynamic':
       return ['fast_profile', 'dynamic_plan', 'dynamic_execute', 'summarize']
     case 'report':
-      return ['fast_profile', 'enrich_static', 'function_map', 'reconstruct', 'summarize']
+      return [
+        'fast_profile',
+        'enrich_static',
+        'function_map',
+        'reconstruct',
+        'semantic_name_review',
+        'semantic_explain_review',
+        'semantic_module_review',
+        'summarize',
+      ]
   }
 }
 

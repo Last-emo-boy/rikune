@@ -114,6 +114,8 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
 .badge-skipped::before,.badge-queued::before,.badge-warn::before,.badge-running::before{background:var(--yellow)}
 .badge-error,.badge-failed{background:var(--red-bg);color:var(--red)}
 .badge-error::before,.badge-failed::before{background:var(--red)}
+.badge-muted{background:var(--bg3);color:var(--text3)}
+.badge-muted::before{background:var(--text3)}
 .badge-type{background:var(--purple-bg);color:var(--purple);display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
 
 /* ── Tool categories ── */
@@ -164,8 +166,8 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
 .drawer h2{font-size:18px;font-weight:600;margin-bottom:20px;padding-right:48px}
 .drawer .drawer-section{margin-bottom:24px}
 .drawer .drawer-section h3{font-size:12px;font-weight:600;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em}
-.drawer .meta-grid{display:grid;grid-template-columns:140px 1fr;gap:6px 16px;font-size:13px}
-.drawer .meta-grid .label{color:var(--text3)}
+.meta-grid{display:grid;grid-template-columns:140px 1fr;gap:6px 16px;font-size:13px}
+.meta-grid .label{color:var(--text3)}
 
 /* ── Report viewer ── */
 .report-viewer{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;max-height:70vh;overflow-y:auto;font-size:14px;line-height:1.7}
@@ -397,6 +399,10 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="18" r="1" fill="currentColor"/></svg>
       System
     </button>
+    <button data-tab="runtime">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h10"/><path d="M4 18h7"/><circle cx="18" cy="12" r="3"/><path d="M18 9v3l2 1"/></svg>
+      Runtime
+    </button>
     <div class="nav-group">Registry</div>
     <button data-tab="tools">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
@@ -415,9 +421,17 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
       Analyses
     </button>
+    <button data-tab="runs">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M3 12h18"/><path d="M3 18h18"/><circle cx="7" cy="6" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>
+      Runs
+    </button>
     <button data-tab="reports">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
       Reports
+    </button>
+    <button data-tab="semantic">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16"/><path d="M4 19h16"/><path d="M7 5v14"/><path d="M17 5v14"/><path d="M9 9h6"/><path d="M9 15h6"/></svg>
+      Semantic Review
     </button>
     <div class="nav-group">Settings</div>
     <button data-tab="config">
@@ -488,6 +502,41 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
       <div class="card log-container" id="logViewer">
         <div style="color:var(--text2)">Loading logs…</div>
       </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ RUNTIME TAB ═══════════ -->
+  <div class="tab-content" id="tab-runtime">
+    <div class="section">
+      <div class="section-title">Jobs &amp; Runtime <span class="refresh-indicator"><span class="live-dot"></span> live</span></div>
+      <div class="grid grid-4">
+        <div class="card"><h3>Runtime</h3><div class="value" id="rt-status">—</div><div class="sub" id="rt-endpoint">—</div></div>
+        <div class="card"><h3>Queue Depth</h3><div class="value" id="rt-queue-depth">—</div><div class="sub" id="rt-job-total">jobs tracked</div></div>
+        <div class="card"><h3>Running</h3><div class="value" id="rt-running">—</div><div class="sub" id="rt-queued">queued</div></div>
+        <div class="card"><h3>Terminal</h3><div class="value" id="rt-terminal">—</div><div class="sub" id="rt-last-event">last event</div></div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Recent Jobs <span class="badge" id="rt-job-count">0</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>Tool</th><th>Sample</th><th>Status</th><th>Attempts</th><th>Updated</th></tr></thead>
+          <tbody id="runtimeJobsBody"><tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Runtime Events <span class="badge" id="rt-event-count">0</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Event</th><th>Task</th><th>Status</th><th>Progress</th><th>Payload</th></tr></thead>
+          <tbody id="runtimeEventsBody"><tr><td colspan="5" class="loading"><div class="spinner"></div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="grid grid-2">
+      <div class="card"><h3>Process</h3><div class="meta-grid" id="runtimeProcess"><span class="label">PID</span><span>—</span></div></div>
+      <div class="card"><h3>System</h3><div class="meta-grid" id="runtimeSystem"><span class="label">Memory</span><span>—</span></div></div>
     </div>
   </div>
 
@@ -572,6 +621,42 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
     </div>
   </div>
 
+  <!-- ═══════════ STAGED RUNS TAB ═══════════ -->
+  <div class="tab-content" id="tab-runs">
+    <div class="section">
+      <div class="section-title">Staged Analysis Runs <span class="badge" id="runCount">0</span></div>
+      <div class="grid grid-4">
+        <div class="card"><h3>Active</h3><div class="value" id="run-active">—</div><div class="sub">running / queued / partial</div></div>
+        <div class="card"><h3>Completed</h3><div class="value" id="run-completed">—</div><div class="sub">finished runs</div></div>
+        <div class="card"><h3>Recoverable</h3><div class="value" id="run-recoverable">—</div><div class="sub">needs promotion</div></div>
+        <div class="card"><h3>Semantic Used</h3><div class="value" id="run-semantic-used">—</div><div class="sub">runs consuming LLM artifacts</div></div>
+      </div>
+      <div class="filter-bar">
+        <select id="runStatusFilter">
+          <option value="">All Statuses</option>
+          <option value="running">Running</option>
+          <option value="queued">Queued</option>
+          <option value="partial">Partial</option>
+          <option value="recoverable">Recoverable</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+        </select>
+        <input class="search-box" id="runSearch" placeholder="Search runs, samples, stages…" style="max-width:280px;margin:0" />
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Run</th><th>Sample</th><th>Goal</th><th>Status</th><th>Stages</th><th>Semantic</th><th>Updated</th></tr></thead>
+          <tbody id="runTableBody"><tr><td colspan="7" class="loading"><div class="spinner"></div></td></tr></tbody>
+        </table>
+      </div>
+      <div class="page-controls">
+        <button id="runPrev" class="back-btn">← Prev</button>
+        <span style="font-size:13px;color:var(--text2)" id="runPageInfo">—</span>
+        <button id="runNext" class="back-btn">Next →</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══════════ REPORTS / ARTIFACTS TAB ═══════════ -->
   <div class="tab-content" id="tab-reports">
     <div class="section" id="reportListSection">
@@ -611,6 +696,36 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
         <div class="report-viewer" id="reportViewer">
           <div class="loading"><div class="spinner"></div> Loading artifact content…</div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ SEMANTIC REVIEW TAB ═══════════ -->
+  <div class="tab-content" id="tab-semantic">
+    <div class="section">
+      <div class="section-title">Semantic Review <span class="badge" id="semanticCount">0</span></div>
+      <div class="grid grid-4">
+        <div class="card"><h3>Total</h3><div class="value" id="sem-total">—</div><div class="sub">semantic artifacts</div></div>
+        <div class="card"><h3>Names</h3><div class="value" id="sem-names">—</div><div class="sub">suggestions and bundles</div></div>
+        <div class="card"><h3>Explanations</h3><div class="value" id="sem-explanations">—</div><div class="sub">function reviews</div></div>
+        <div class="card"><h3>Modules</h3><div class="value" id="sem-modules">—</div><div class="sub">module reviews</div></div>
+      </div>
+      <div class="filter-bar">
+        <select id="semanticTypeFilter">
+          <option value="">All Types</option>
+        </select>
+        <input class="search-box" id="semanticSearch" placeholder="Search semantic artifacts…" style="max-width:280px;margin:0" />
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Type</th><th>Session</th><th>Run</th><th>Entries</th><th>Client / Model</th><th>Sample</th><th>Created</th><th>Action</th></tr></thead>
+          <tbody id="semanticTableBody"><tr><td colspan="9" class="loading"><div class="spinner"></div></td></tr></tbody>
+        </table>
+      </div>
+      <div class="page-controls">
+        <button id="semanticPrev" class="back-btn">← Prev</button>
+        <span style="font-size:13px;color:var(--text2)" id="semanticPageInfo">—</span>
+        <button id="semanticNext" class="back-btn">Next →</button>
       </div>
     </div>
   </div>
@@ -802,6 +917,74 @@ async function loadPlugins() {
   })
 }
 
+// ── Runtime / Jobs ────────────────────────────────────────────────────
+async function loadRuntime() {
+  const d = await api('/workers')
+  if (!d) return
+
+  const runtime = d.runtime || {}
+  const jobs = d.jobs || {}
+  const recentJobs = jobs.recent || []
+  const recentEvents = runtime.recent_events || []
+
+  $('#rt-status').textContent = runtime.connected ? 'Connected' : 'Offline'
+  $('#rt-status').style.color = runtime.connected ? 'var(--green)' : 'var(--yellow)'
+  $('#rt-endpoint').textContent = runtime.endpoint || runtime.last_error || 'runtime stream unavailable'
+  $('#rt-queue-depth').textContent = jobs.queue_depth ?? 0
+  $('#rt-job-total').textContent = `${jobs.total ?? 0} jobs tracked`
+  $('#rt-running').textContent = jobs.running ?? 0
+  $('#rt-queued').textContent = `${jobs.queued ?? 0} queued`
+  $('#rt-terminal').textContent = jobs.terminal ?? 0
+  $('#rt-last-event').textContent = runtime.last_event_at ? new Date(runtime.last_event_at).toLocaleString() : 'no events'
+  $('#rt-job-count').textContent = recentJobs.length
+  $('#rt-event-count').textContent = recentEvents.length
+
+  let jobRows = ''
+  for (const job of recentJobs) {
+    const status = job.normalized_status || job.status || 'unknown'
+    const shortSample = job.sampleId ? String(job.sampleId).replace('sha256:','').substring(0,12)+'…' : '—'
+    jobRows += `<tr>
+      <td class="mono" title="${esc(job.id || '')}">${esc(shortId(job.id))}</td>
+      <td class="mono" style="font-size:11px">${esc(job.tool || '—')}</td>
+      <td class="mono" style="font-size:11px" title="${esc(job.sampleId || '')}">${esc(shortSample)}</td>
+      <td>${statusBadge(status)}</td>
+      <td>${job.attempts ?? 0}</td>
+      <td>${job.updatedAt ? new Date(job.updatedAt).toLocaleString() : '—'}</td>
+    </tr>`
+  }
+  $('#runtimeJobsBody').innerHTML = jobRows || '<tr><td colspan="6" style="color:var(--text2)">No jobs tracked</td></tr>'
+
+  let eventRows = ''
+  for (const event of [...recentEvents].reverse()) {
+    const payload = event.data || {}
+    const progress = payload.progressPercent ?? payload.progress_percent ?? payload.progress ?? null
+    const status = event.normalized_status || payload.status || 'unknown'
+    eventRows += `<tr>
+      <td class="mono">${esc(event.event || 'message')}</td>
+      <td class="mono" style="font-size:11px" title="${esc(event.id || payload.taskId || '')}">${esc(shortId(event.id || payload.taskId))}</td>
+      <td>${statusBadge(status)}</td>
+      <td>${progress == null ? '—' : esc(String(progress)) + '%'}</td>
+      <td class="mono" style="font-size:11px;max-width:420px;overflow:hidden;text-overflow:ellipsis" title="${esc(JSON.stringify(payload))}">${esc(JSON.stringify(payload).substring(0,160))}</td>
+    </tr>`
+  }
+  $('#runtimeEventsBody').innerHTML = eventRows || '<tr><td colspan="5" style="color:var(--text2)">No runtime events captured</td></tr>'
+
+  const processInfo = d.process || {}
+  $('#runtimeProcess').innerHTML = `
+    <span class="label">PID</span><span class="mono">${esc(processInfo.pid ?? '—')}</span>
+    <span class="label">Uptime</span><span>${formatDuration(processInfo.uptime_seconds)}</span>
+    <span class="label">CPU User</span><span class="mono">${esc(processInfo.cpu_usage?.user ?? '—')}</span>
+    <span class="label">CPU System</span><span class="mono">${esc(processInfo.cpu_usage?.system ?? '—')}</span>
+  `
+
+  const system = d.system || {}
+  $('#runtimeSystem').innerHTML = `
+    <span class="label">Memory</span><span>${esc(system.free_memory_gb ?? '—')} / ${esc(system.total_memory_gb ?? '—')} GB free</span>
+    <span class="label">CPUs</span><span>${esc(system.cpus ?? '—')}</span>
+    <span class="label">Load</span><span class="mono">${esc((system.load_average || []).map(v => Number(v).toFixed(2)).join(' / ') || '—')}</span>
+  `
+}
+
 // ── Samples ────────────────────────────────────────────────────────────
 let sampleOffset = 0
 
@@ -965,6 +1148,146 @@ $('#analysisPrev').addEventListener('click', ()=>{ analysisOffset = Math.max(0, 
 $('#analysisNext').addEventListener('click', ()=>{ analysisOffset += perPageState.analyses; loadAnalyses() })
 $('#analysisStatusFilter').addEventListener('change', ()=>{ analysisOffset = 0; loadAnalyses() })
 
+// ── Staged Runs ───────────────────────────────────────────────────────
+let runOffset = 0
+const RUN_LIMIT = 20
+
+async function loadRuns() {
+  const status = $('#runStatusFilter').value
+  const search = $('#runSearch').value.trim()
+  const params = `limit=${RUN_LIMIT}&offset=${runOffset}${status ? '&status='+encodeURIComponent(status) : ''}${search ? '&search='+encodeURIComponent(search) : ''}`
+  const d = await api(`/runs?${params}`)
+  if (!d) return
+
+  const byStatus = d.counts?.by_status || {}
+  const activeCount = (byStatus.running || 0) + (byStatus.queued || 0) + (byStatus.partial || 0)
+  $('#runCount').textContent = d.total
+  $('#run-active').textContent = activeCount
+  $('#run-completed').textContent = byStatus.completed || 0
+  $('#run-recoverable').textContent = byStatus.recoverable || 0
+  $('#run-semantic-used').textContent = (d.runs || []).filter(r => r.semantic?.reconstruct_consumed).length
+
+  let rows = ''
+  ;(d.runs || []).forEach(run => {
+    const shortSample = run.sample_id ? run.sample_id.replace('sha256:','').substring(0,12)+'…' : '—'
+    const semantic = run.semantic || {}
+    const semanticLabel = semantic.waiting_for_llm_stages > 0
+      ? `${semantic.waiting_for_llm_stages} waiting LLM`
+      : semantic.reconstruct_consumed
+      ? `${semantic.consumed_session_tags?.join(', ') || semantic.consumed_artifact_ids?.length + ' artifact(s)'}`
+      : semantic.artifact_count > 0
+        ? `${semantic.artifact_count} available`
+        : 'none'
+    rows += `<tr class="clickable" data-run-id="${esc(run.id)}">
+      <td><span class="mono">${esc(shortId(run.id))}</span><br><span style="font-size:11px;color:var(--text3)">${esc(run.latest_stage || 'no stage')}</span></td>
+      <td class="mono" style="font-size:11px;cursor:pointer;color:var(--accent)" title="${esc(run.sample_id)}" onclick="event.stopPropagation();openSampleDetail('${esc(run.sample_id)}')">${esc(shortSample)}</td>
+      <td>${esc(run.goal)}<br><span style="font-size:11px;color:var(--text3)">${esc(run.depth)} / ${esc(run.backend_policy)}</span></td>
+      <td>${statusBadge(run.normalized_status || run.status)}<br><span style="font-size:11px;color:var(--text3)">${esc(run.status)}</span></td>
+      <td>${renderStagePills(run.stage_plan || [], run.stages || [])}</td>
+      <td><span style="color:${semantic.reconstruct_consumed || semantic.applied_stages > 0 ? 'var(--green)' : semantic.artifact_count > 0 || semantic.waiting_for_llm_stages > 0 ? 'var(--yellow)' : 'var(--text3)'}">${esc(semanticLabel)}</span></td>
+      <td>${run.updated_at ? new Date(run.updated_at).toLocaleString() : '—'}</td>
+    </tr>`
+  })
+  $('#runTableBody').innerHTML = rows || '<tr><td colspan="7" style="color:var(--text2)">No staged runs found</td></tr>'
+  $$('#runTableBody tr.clickable').forEach(row => {
+    row.addEventListener('click', () => openRunDetail(row.dataset.runId))
+  })
+
+  const totalPages = Math.ceil(d.total / RUN_LIMIT) || 1
+  const currentPage = Math.floor(runOffset / RUN_LIMIT) + 1
+  $('#runPageInfo').textContent = `Page ${currentPage} / ${totalPages} (${d.total} total)`
+  $('#runPrev').disabled = runOffset === 0
+  $('#runNext').disabled = runOffset + RUN_LIMIT >= d.total
+}
+
+function renderStagePills(stagePlan, stages) {
+  const byStage = new Map((stages || []).map(s => [s.stage, s]))
+  const plan = stagePlan && stagePlan.length ? stagePlan : (stages || []).map(s => s.stage)
+  if (!plan.length) return '<span style="color:var(--text3)">—</span>'
+  return `<div style="display:flex;gap:4px;flex-wrap:wrap;max-width:360px">${plan.map(stage => {
+    const item = byStage.get(stage)
+    const status = item?.normalized_status || item?.status || 'pending'
+    const color = status === 'completed' ? 'var(--green)' : status === 'failed' ? 'var(--red)' : status === 'active' ? 'var(--yellow)' : status === 'recoverable' ? 'var(--yellow)' : 'var(--text3)'
+    return `<span title="${esc(stage)}: ${esc(item?.status || 'pending')}" style="border:1px solid var(--border);border-radius:999px;padding:2px 7px;font-size:10px;color:${color};background:var(--bg3)">${esc(stage.replace(/_/g,' '))}</span>`
+  }).join('')}</div>`
+}
+
+async function openRunDetail(runId) {
+  openDrawer('<div class="loading"><div class="spinner"></div> Loading analysis run…</div>')
+  const d = await api(`/runs/${encodeURIComponent(runId)}`)
+  if (!d || !d.run) {
+    openDrawer('<div class="empty-state"><div class="empty-icon">❌</div><p>Analysis run not found</p></div>')
+    return
+  }
+  const run = d.run
+  const semantic = run.semantic || {}
+  let html = `<h2>Analysis Run</h2>`
+  html += `<div class="drawer-section"><h3>Run</h3><div class="meta-grid">
+    <span class="label">ID</span><span class="mono">${esc(run.id)}</span>
+    <span class="label">Sample</span><span class="mono" style="word-break:break-all">${esc(run.sample_id)}</span>
+    <span class="label">Goal</span><span>${esc(run.goal)} / ${esc(run.depth)}</span>
+    <span class="label">Status</span><span>${statusBadge(run.normalized_status || run.status)} <span style="color:var(--text3)">${esc(run.status)}</span></span>
+    <span class="label">Latest Stage</span><span>${esc(run.latest_stage || '—')}</span>
+    <span class="label">Updated</span><span>${run.updated_at ? new Date(run.updated_at).toLocaleString() : '—'}</span>
+  </div></div>`
+
+  html += `<div class="drawer-section"><h3>Semantic Review</h3><div class="meta-grid">
+    <span class="label">Artifacts</span><span>${semantic.artifact_count || 0}</span>
+    <span class="label">Names</span><span>${semantic.name_suggestion_artifacts || 0}</span>
+    <span class="label">Explanations</span><span>${semantic.explanation_artifacts || 0}</span>
+    <span class="label">Modules</span><span>${semantic.module_review_artifacts || 0}</span>
+    <span class="label">Waiting LLM</span><span>${semantic.waiting_for_llm_stages || 0}</span>
+    <span class="label">Applied Stages</span><span>${semantic.applied_stages || 0}</span>
+    <span class="label">Accepted / Rejected</span><span>${semantic.accepted_count || 0} / ${semantic.rejected_count || 0}</span>
+    <span class="label">Consumed</span><span>${semantic.reconstruct_consumed ? 'yes' : 'no'}</span>
+    <span class="label">Sessions</span><span class="mono">${esc((semantic.session_tags || []).join(', ') || '—')}</span>
+    <span class="label">Prepare Artifacts</span><span class="mono">${esc((semantic.prepare_artifact_ids || []).join(', ') || '—')}</span>
+    <span class="label">Apply Artifacts</span><span class="mono">${esc((semantic.apply_artifact_ids || []).join(', ') || '—')}</span>
+    <span class="label">Usage</span><span class="mono">${esc((semantic.usage_notes || []).join(' | ') || '—')}</span>
+  </div></div>`
+
+  if ((semantic.semantic_stages || []).length) {
+    html += '<div class="drawer-section"><h3>Semantic Stages</h3><div class="table-wrap"><table><thead><tr><th>Stage</th><th>State</th><th>Review</th><th>Accepted</th><th>Updated</th></tr></thead><tbody>'
+    for (const stage of semantic.semantic_stages) {
+      html += `<tr>
+        <td>${esc(stage.stage)}</td>
+        <td>${statusBadge(stage.review_state || stage.status)}<br><span style="font-size:11px;color:var(--text3)">${esc(stage.status || '—')}</span></td>
+        <td>${esc(stage.review_status || '—')}<br><span class="mono" style="font-size:11px">${esc(stage.session_tag || '—')}</span></td>
+        <td>${stage.accepted_count || 0} / ${stage.rejected_count || 0}</td>
+        <td>${stage.updated_at ? new Date(stage.updated_at).toLocaleString() : '—'}</td>
+      </tr>`
+    }
+    html += '</tbody></table></div></div>'
+  }
+
+  html += `<div class="drawer-section"><h3>Stages (${(run.stages || []).length})</h3>`
+  if ((run.stages || []).length) {
+    html += '<div class="table-wrap"><table><thead><tr><th>Stage</th><th>Status</th><th>Tool</th><th>Artifacts</th><th>Updated</th></tr></thead><tbody>'
+    for (const stage of run.stages) {
+      html += `<tr>
+        <td>${esc(stage.stage)}</td>
+        <td>${statusBadge(stage.normalized_status || stage.status)}<br><span style="font-size:11px;color:var(--text3)">${esc(stage.execution_state || '—')}</span></td>
+        <td class="mono" style="font-size:11px">${esc(stage.tool || '—')}</td>
+        <td>${stage.artifact_count || 0}</td>
+        <td>${stage.updated_at ? new Date(stage.updated_at).toLocaleString() : '—'}</td>
+      </tr>`
+      if (stage.result_summary?.summary || stage.result?.summary) {
+        html += `<tr><td></td><td colspan="4" style="color:var(--text2);font-size:12px">${esc(stage.result_summary?.summary || stage.result?.summary || '')}</td></tr>`
+      }
+    }
+    html += '</tbody></table></div>'
+  } else {
+    html += '<div style="color:var(--text2);font-size:13px">No stages recorded</div>'
+  }
+  html += '</div>'
+  openDrawer(html)
+}
+
+$('#runPrev').addEventListener('click', ()=>{ runOffset = Math.max(0, runOffset - RUN_LIMIT); loadRuns() })
+$('#runNext').addEventListener('click', ()=>{ runOffset += RUN_LIMIT; loadRuns() })
+$('#runStatusFilter').addEventListener('change', ()=>{ runOffset = 0; loadRuns() })
+$('#runSearch').addEventListener('input', ()=>{ runOffset = 0; loadRuns() })
+
 // ── Reports / Artifacts ────────────────────────────────────────────────
 let artifactOffset = 0
 let artifactTypesLoaded = false
@@ -973,7 +1296,7 @@ async function loadArtifacts() {
   const ARTIFACT_LIMIT = perPageState.artifacts
   const type = $('#artifactTypeFilter').value
   const search = $('#artifactSearch').value.trim()
-  const params = `limit=${ARTIFACT_LIMIT}&offset=${artifactOffset}${type ? '&type='+encodeURIComponent(type) : ''}`
+  const params = `limit=${ARTIFACT_LIMIT}&offset=${artifactOffset}${type ? '&type='+encodeURIComponent(type) : ''}${search ? '&search='+encodeURIComponent(search) : ''}`
   const d = await api(`/artifacts?${params}`)
   if (!d) return
   $('#artifactCount').textContent = d.total
@@ -991,9 +1314,7 @@ async function loadArtifacts() {
   }
 
   let rows = ''
-  const lf = search.toLowerCase()
-  const filtered = lf ? d.artifacts.filter(a => a.path.toLowerCase().includes(lf) || a.type.toLowerCase().includes(lf)) : d.artifacts
-  filtered.forEach((a,i) => {
+  d.artifacts.forEach((a,i) => {
     const shortSample = a.sample_id ? a.sample_id.replace('sha256:','').substring(0,12)+'…' : '—'
     const shortPath = a.path.length > 50 ? '…'+a.path.slice(-47) : a.path
     const viewable = isViewableArtifact(a.mime, a.path)
@@ -1019,6 +1340,74 @@ $('#artifactPrev').addEventListener('click', ()=>{ artifactOffset = Math.max(0, 
 $('#artifactNext').addEventListener('click', ()=>{ artifactOffset += perPageState.artifacts; loadArtifacts() })
 $('#artifactTypeFilter').addEventListener('change', ()=>{ artifactOffset = 0; loadArtifacts() })
 $('#artifactSearch').addEventListener('input', ()=>{ loadArtifacts() })
+
+// ── Semantic Review ───────────────────────────────────────────────────
+let semanticOffset = 0
+let semanticTypesLoaded = false
+const SEMANTIC_LIMIT = 30
+
+async function loadSemantic() {
+  const type = $('#semanticTypeFilter').value
+  const search = $('#semanticSearch').value.trim()
+  const params = `limit=${SEMANTIC_LIMIT}&offset=${semanticOffset}${type ? '&type='+encodeURIComponent(type) : ''}${search ? '&search='+encodeURIComponent(search) : ''}`
+  const d = await api(`/semantic?${params}`)
+  if (!d) return
+
+  const byType = d.counts?.by_type || {}
+  const nameCount = (byType.semantic_name_suggestions || 0) + (byType.semantic_name_prepare_bundle || 0)
+  const explanationCount = (byType.semantic_function_explanations || 0) + (byType.semantic_explanation_prepare_bundle || 0)
+  const moduleCount = (byType.semantic_module_reviews || 0) + (byType.semantic_module_review_prepare_bundle || 0)
+
+  $('#semanticCount').textContent = d.total
+  $('#sem-total').textContent = d.total
+  $('#sem-names').textContent = nameCount
+  $('#sem-explanations').textContent = explanationCount
+  $('#sem-modules').textContent = moduleCount
+
+  if (!semanticTypesLoaded && d.types && d.types.length > 0) {
+    const sel = $('#semanticTypeFilter')
+    for (const t of d.types) {
+      const opt = document.createElement('option')
+      opt.value = t.type
+      opt.textContent = `${t.type} (${t.cnt})`
+      sel.appendChild(opt)
+    }
+    semanticTypesLoaded = true
+  }
+
+  let rows = ''
+  ;(d.artifacts || []).forEach((a, i) => {
+    const sem = a.semantic || {}
+    const runLink = a.run_link || null
+    const typeLabel = sem.payload_kind || a.type
+    const shortSample = a.sample_id ? a.sample_id.replace('sha256:','').substring(0,12)+'…' : '—'
+    const clientModel = [sem.client_name, sem.model_name].filter(Boolean).join(' / ') || (sem.read_error ? `read: ${sem.read_error}` : '—')
+    const runLabel = runLink ? `${shortId(runLink.run_id)} / ${runLink.stage.replace(/semantic_/,'')}` : '—'
+    rows += `<tr>
+      <td>${semanticOffset+i+1}</td>
+      <td><span class="badge-type" title="${esc(a.type)}">${esc(typeLabel)}</span></td>
+      <td class="mono" style="font-size:11px">${esc(sem.session_tag || '—')}</td>
+      <td class="mono" style="font-size:11px" title="${esc(runLink ? runLink.run_id : '')}">${esc(runLabel)}</td>
+      <td>${sem.entry_count == null ? '—' : sem.entry_count}</td>
+      <td class="mono" style="font-size:11px" title="${esc(clientModel)}">${esc(clientModel)}</td>
+      <td class="mono" style="font-size:11px;cursor:pointer;color:var(--accent)" title="${esc(a.sample_id)}" onclick="openSampleDetail('${esc(a.sample_id)}')">${esc(shortSample)}</td>
+      <td>${a.created_at ? new Date(a.created_at).toLocaleString() : '—'}</td>
+      <td><button class="back-btn" onclick="viewArtifact('${esc(a.id)}')">View</button></td>
+    </tr>`
+  })
+  $('#semanticTableBody').innerHTML = rows || '<tr><td colspan="9" style="color:var(--text2)">No semantic review artifacts found</td></tr>'
+
+  const totalPages = Math.ceil(d.total / SEMANTIC_LIMIT) || 1
+  const currentPage = Math.floor(semanticOffset / SEMANTIC_LIMIT) + 1
+  $('#semanticPageInfo').textContent = `Page ${currentPage} / ${totalPages} (${d.total} total)`
+  $('#semanticPrev').disabled = semanticOffset === 0
+  $('#semanticNext').disabled = semanticOffset + SEMANTIC_LIMIT >= d.total
+}
+
+$('#semanticPrev').addEventListener('click', ()=>{ semanticOffset = Math.max(0, semanticOffset - SEMANTIC_LIMIT); loadSemantic() })
+$('#semanticNext').addEventListener('click', ()=>{ semanticOffset += SEMANTIC_LIMIT; loadSemantic() })
+$('#semanticTypeFilter').addEventListener('change', ()=>{ semanticOffset = 0; loadSemantic() })
+$('#semanticSearch').addEventListener('input', ()=>{ semanticOffset = 0; loadSemantic() })
 
 // ── Artifact / Report Viewer ───────────────────────────────────────────
 async function viewArtifact(artifactId) {
@@ -1413,11 +1802,14 @@ function addLogEntry(container, text, color) {
 function loadTab(tab) {
   switch(tab) {
     case 'overview': loadOverview(); break
+    case 'runtime': loadRuntime(); break
     case 'tools': loadTools(); break
     case 'plugins': loadPlugins(); break
     case 'samples': loadSamples(); break
     case 'analyses': loadAnalyses(); break
+    case 'runs': loadRuns(); break
     case 'reports': loadArtifacts(); showReportList(); break
+    case 'semantic': loadSemantic(); break
     case 'config': loadConfig(); break
     case 'system': loadSystem(); break
   }
@@ -1433,6 +1825,19 @@ function esc(s) { const d=document.createElement('div'); d.textContent=s; return
 function formatBytes(b) { if(b==null) return '—'; if(b<1024) return b+'B'; if(b<1048576) return (b/1024).toFixed(1)+'KB'; return (b/1048576).toFixed(1)+'MB' }
 function formatDuration(s) { if(s==null||isNaN(s)) return '—'; s=Math.floor(s); const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60); return (d?d+'d ':'')+(h?h+'h ':'')+(m?m+'m ':'')+(s%60)+'s' }
 function tryParse(s) { try{return JSON.parse(s)}catch{return null} }
+function shortId(id) { if(!id) return '—'; id=String(id); return id.length>12 ? id.substring(0,12)+'…' : id }
+function statusBadge(status) {
+  const s = String(status || 'unknown')
+  const normalized = s.toLowerCase()
+  const cls = ['completed','done','ok','success'].includes(normalized) ? 'badge-done'
+    : ['failed','error','fatal'].includes(normalized) ? 'badge-failed'
+    : ['running','active'].includes(normalized) ? 'badge-running'
+    : ['queued','pending'].includes(normalized) ? 'badge-queued'
+    : ['recoverable','interrupted'].includes(normalized) ? 'badge-warn'
+    : ['cancelled','canceled','skipped'].includes(normalized) ? 'badge-skipped'
+    : 'badge-muted'
+  return `<span class="badge-status ${cls}">${esc(s)}</span>`
+}
 
 // ── Toast Notifications ────────────────────────────────────────────────
 function toast(type, message, durationMs) {
@@ -1532,9 +1937,9 @@ async function runGlobalSearch(query) {
 
   resultsEl.innerHTML = results.slice(0, 20).map((r, i) =>
     `<div class="search-result" data-idx="${i}">
-      <span class="search-result-type">${esc(r.type)}</span>
-      <span class="search-result-name">${esc(r.name)}</span>
-      <span class="search-result-desc">${esc(r.desc)}</span>
+      <span class="sr-type">${esc(r.type)}</span>
+      <span class="sr-name">${esc(r.name)}</span>
+      <span class="sr-desc">${esc(r.desc)}</span>
     </div>`
   ).join('')
 

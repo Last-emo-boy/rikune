@@ -90,9 +90,26 @@ describe('nonblocking analysis pipeline - core logic', () => {
 
     test('should build stage plan for reverse goal', () => {
       const plan = buildStagePlan('reverse')
-      expect(plan).toContain('fast_profile')
-      expect(plan).toContain('function_map')
-      expect(plan).toContain('reconstruct')
+      expect(plan).toEqual([
+        'fast_profile',
+        'enrich_static',
+        'function_map',
+        'reconstruct',
+        'semantic_name_review',
+        'semantic_explain_review',
+        'semantic_module_review',
+        'summarize',
+      ])
+    })
+
+    test('should include semantic review stages before summarize for report goal', () => {
+      const plan = buildStagePlan('report')
+      expect(plan.slice(-4)).toEqual([
+        'semantic_name_review',
+        'semantic_explain_review',
+        'semantic_module_review',
+        'summarize',
+      ])
     })
 
     test('should build stage plan for dynamic goal', () => {
