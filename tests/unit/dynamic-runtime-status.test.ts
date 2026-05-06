@@ -73,6 +73,11 @@ describe('dynamic.runtime.status tool', () => {
                 { type: 'inline', handler: 'executeSandboxExecute', requiresSample: true },
                 { type: 'inline', handler: 'executeBehaviorCapture', requiresSample: true },
                 { type: 'python-worker', handler: 'frida_worker.py', requiresSample: true },
+                {
+                  type: 'python-worker',
+                  handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+                  requiresSample: true,
+                },
               ],
             },
           })
@@ -137,7 +142,7 @@ describe('dynamic.runtime.status tool', () => {
       expect((result.data as any).host_agent_endpoint).toBe(hostAgentEndpoint)
       expect((result.data as any).runtime_health).toEqual({ ok: true, role: 'runtime-node' })
       expect((result.data as any).host_agent_health.backend).toBe('windows-sandbox')
-      expect((result.data as any).runtime_capabilities).toHaveLength(4)
+      expect((result.data as any).runtime_capabilities).toHaveLength(5)
       expect((result.data as any).sessions).toHaveLength(1)
       expect((result.data as any).artifact_count).toBe(1)
       expect((result.data as any).backend_interface.supported_backends).toEqual(
@@ -146,6 +151,7 @@ describe('dynamic.runtime.status tool', () => {
           sandbox_execute: true,
           behavior_capture: true,
           frida_runtime: true,
+          runtime_deobfuscation: true,
         })
       )
       expect((result.data as any).execution_semantics).toEqual(
@@ -158,6 +164,7 @@ describe('dynamic.runtime.status tool', () => {
       )
       expect((result.data as any).recommended_next_tools).toContain('runtime.debug.command')
       expect((result.data as any).recommended_next_tools).toContain('frida.runtime.instrument')
+      expect((result.data as any).recommended_next_tools).toContain('deobf.strings')
       expect((result.data as any).recommended_next_tools).toContain('dynamic.behavior.capture')
     } finally {
       await new Promise<void>((resolve) => runtimeServer.close(() => resolve()))

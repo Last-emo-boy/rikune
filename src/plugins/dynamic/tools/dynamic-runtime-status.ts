@@ -365,6 +365,11 @@ function buildBackendInterface(params: {
       managed_safe_run: hasCapability(params.capabilities, 'inline', 'executeManagedSafeRun'),
       runtime_tool_probe: hasCapability(params.capabilities, 'inline', 'executeRuntimeToolProbe'),
       frida_runtime: hasCapability(params.capabilities, 'python-worker', 'frida_worker.py'),
+      runtime_deobfuscation: hasCapability(
+        params.capabilities,
+        'python-worker',
+        'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py'
+      ),
     },
   }
 }
@@ -408,6 +413,9 @@ function buildGuidance(params: {
     ]
     if (params.backendInterface.supported_backends.frida_runtime) {
       recommended.push('frida.runtime.instrument')
+    }
+    if (params.backendInterface.supported_backends.runtime_deobfuscation) {
+      recommended.push('deobf.strings')
     }
     if (params.backendInterface.supported_backends.sandbox_execute) {
       recommended.push('sandbox.execute')

@@ -209,6 +209,44 @@ describe('tool.readiness', () => {
     })
   })
 
+  test('treats runtime deobfuscation tools as runtime-delegated', async () => {
+    const handler = createToolReadinessHandler(
+      () =>
+        [
+          {
+            name: 'deobf.strings',
+            description: 'runtime strings',
+            inputSchema: {},
+            runtime: {
+              type: 'python-worker',
+              handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+            },
+          },
+        ] as ToolDefinition[],
+      createPluginManagerMock as any,
+      {
+        runtimeMode: 'remote-sandbox',
+        runtimeClient: {
+          getEndpoint: jest.fn(() => ''),
+          validateRuntimeContract: jest.fn(),
+        },
+      }
+    )
+
+    const result = await handler({ tool_name: 'deobf.strings', force_refresh: false })
+
+    expect(result.ok).toBe(false)
+    expect(result.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/not runtime-delegated yet/i)])
+    )
+    expect((result.data as any)?.readiness).toBe('runtime_not_started')
+    expect((result.data as any)?.execution_path).toBe('delegated')
+    expect((result.data as any)?.required_runtime_contract).toEqual({
+      type: 'python-worker',
+      handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+    })
+  })
+
   test('returns ready when runtime advertises the required contract', async () => {
     const validateRuntimeContract = jest.fn().mockResolvedValue({
       supported: true,

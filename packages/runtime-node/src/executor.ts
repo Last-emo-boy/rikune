@@ -365,6 +365,10 @@ const pythonWorkerHandlers: Record<string, { description: string }> = {
   'frida_worker.py': {
     description: 'Execute Frida-backed runtime instrumentation through the Python worker bridge.',
   },
+  'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py': {
+    description:
+      'Run runtime deobfuscation workers for decrypted strings, API resolution, CFG trace, and .NET deobfuscation.',
+  },
 }
 
 const inlineHandlerMetadata: Record<string, { description: string; requiresSample?: boolean }> = {
@@ -738,10 +742,15 @@ async function executeSpawnBackend(
 
 function resolveWorkerPath(workerName: string): string | null {
   const mappedWorkersDir = 'C:\\rikune-workers'
+  const normalizedWorkerName = workerName.replace(/[\\/]+/g, path.sep)
   const candidates = [
-    path.join(mappedWorkersDir, workerName),
-    path.join(moduleDirname, '..', '..', '..', 'workers', workerName),
-    path.join(moduleDirname, '..', '..', '..', '..', 'workers', workerName),
+    path.join(mappedWorkersDir, normalizedWorkerName),
+    path.join(process.cwd(), 'workers', normalizedWorkerName),
+    path.join(process.cwd(), normalizedWorkerName),
+    path.join(moduleDirname, '..', '..', '..', 'workers', normalizedWorkerName),
+    path.join(moduleDirname, '..', '..', '..', '..', 'workers', normalizedWorkerName),
+    path.join(moduleDirname, '..', '..', '..', normalizedWorkerName),
+    path.join(moduleDirname, '..', '..', '..', '..', normalizedWorkerName),
   ]
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {

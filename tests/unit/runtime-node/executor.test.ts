@@ -192,6 +192,11 @@ describe('runtime-node executor backend pre-flight checks', () => {
           handler: 'executeBehaviorCapture',
           requiresSample: true,
         }),
+        expect.objectContaining({
+          type: 'python-worker',
+          handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+          requiresSample: true,
+        }),
       ]))
 
       expect(getRuntimeBackendCapability({ type: 'spawn', handler: 'native.sample.execute' })).toMatchObject({
@@ -204,6 +209,16 @@ describe('runtime-node executor backend pre-flight checks', () => {
         type: 'inline',
         handler: 'executeRuntimeToolProbe',
         requiresSample: false,
+      })
+      expect(
+        getRuntimeBackendCapability({
+          type: 'python-worker',
+          handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+        })
+      ).toMatchObject({
+        type: 'python-worker',
+        handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+        requiresSample: true,
       })
     })
   })
@@ -316,6 +331,78 @@ describe('runtime-node executor backend pre-flight checks', () => {
       )
       expect(result.ok).toBe(false)
       expect(result.errors?.[0]).toMatch(/Unknown tool/)
+    })
+
+    test('should execute plugin Python workers through the runtime envelope', async () => {
+      const workerPath = path.resolve(
+        'src',
+        'plugins',
+        'runtime-deobfuscate',
+        'workers',
+        'deobfuscate_worker.py'
+      )
+      const artifactPath = path.join(testInbox, 'task-sample', 'artifacts', 'strings_runtime.json')
+      fs.mkdirSync(path.dirname(artifactPath), { recursive: true })
+      fs.writeFileSync(artifactPath, JSON.stringify({ unique_strings: 1 }))
+      let stdinPayload: any = null
+
+      spawnMock.mockImplementation((cmd: string, args: string[]) => {
+        if (args?.[0] === '--version') {
+          return makeMockProcess({ stdout: 'Python 3.12.0\n', code: 0 })
+        }
+        expect(path.resolve(args[0])).toBe(workerPath)
+        const proc = makeMockProcess({
+          stdout:
+            JSON.stringify({
+              ok: true,
+              data: {
+                unique_strings: 1,
+                recommended_next_tools: ['deobf.api_resolve'],
+              },
+              artifacts: [{ name: 'strings_runtime.json', path: artifactPath }],
+            }) + '\n',
+          code: 0,
+        }) as any
+        proc.stdin.write = jest.fn((chunk: string) => {
+          stdinPayload = JSON.parse(chunk)
+        })
+        return proc
+      })
+
+      const result = await executeTask(
+        {
+          taskId: 'task-sample',
+          sampleId: 'sha256:abc123',
+          tool: 'deobf.strings',
+          args: { timeout: 45 },
+          timeoutMs: 1000,
+          runtime: {
+            type: 'python-worker',
+            handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+          },
+        },
+        () => {},
+        () => {}
+      )
+
+      expect(result.ok).toBe(true)
+      expect(stdinPayload).toEqual(
+        expect.objectContaining({
+          job_id: 'task-sample',
+          tool: 'deobf.strings',
+          args: { timeout: 45 },
+          sample: expect.objectContaining({
+            sample_id: 'sha256:abc123',
+            path: samplePath,
+          }),
+        })
+      )
+      expect((result.result?.data as any)?.recommended_next_tools).toEqual([
+        'deobf.api_resolve',
+      ])
+      expect(result.artifactRefs).toEqual([
+        expect.objectContaining({ name: 'strings_runtime.json' }),
+      ])
     })
   })
 

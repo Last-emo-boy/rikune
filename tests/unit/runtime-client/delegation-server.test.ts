@@ -27,6 +27,7 @@ import { wineRunOutputSchema } from '../../../src/plugins/wine/tools/wine-run.js
 import { FridaRuntimeInstrumentOutputSchema } from '../../../src/plugins/frida/tools/frida-runtime-instrument.js'
 import { DebugSessionStartOutputSchema } from '../../../src/plugins/debug-session/tools/debug-session-start.js'
 import { behaviorCaptureToolDefinition } from '../../../src/plugins/behavior-first/tools/behavior-capture.js'
+import { deobfStringsToolDefinition } from '../../../src/plugins/runtime-deobfuscate/tools/deobf-strings.js'
 
 describe('createDelegatingServer', () => {
   let inner: PluginServerInterface & { getProgressReporter?: jest.Mock }
@@ -107,6 +108,7 @@ describe('createDelegatingServer', () => {
     'frida.runtime.instrument': FridaRuntimeInstrumentOutputSchema,
     'debug.session.start': DebugSessionStartOutputSchema,
     'behavior.capture': behaviorCaptureToolDefinition.outputSchema,
+    'deobf.strings': deobfStringsToolDefinition.outputSchema,
   }
 
   const runtimeBackedToolCases: Array<{
@@ -142,6 +144,14 @@ describe('createDelegatingServer', () => {
     {
       tool: 'behavior.capture',
       hint: { type: 'inline', handler: 'executeBehaviorCapture' },
+      expectedNextTool: 'dynamic.runtime.status',
+    },
+    {
+      tool: 'deobf.strings',
+      hint: {
+        type: 'python-worker',
+        handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+      },
       expectedNextTool: 'dynamic.runtime.status',
     },
   ]
@@ -210,6 +220,32 @@ describe('createDelegatingServer', () => {
         tool: 'behavior.capture',
         args: expect.objectContaining({ timeout: 45 }),
         runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
+      }),
+      expect.anything()
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  test('should wrap runtime deobfuscation tools with the plugin worker contract', async () => {
+    const server = createServer(runtimeClient)
+    let wrappedHandler: any
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
+
+    server.registerTool(deobfStringsToolDefinition, async () => ({ ok: true }) as WorkerResult)
+    const result = await wrappedHandler({ sample_id: 'sha256:abc123', timeout: 45 })
+
+    expect(runtimeClient.uploadSample).toHaveBeenCalled()
+    expect(runtimeClient.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: 'deobf.strings',
+        args: expect.objectContaining({ timeout: 45 }),
+        timeoutMs: 75_000,
+        runtime: {
+          type: 'python-worker',
+          handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+        },
       }),
       expect.anything()
     )

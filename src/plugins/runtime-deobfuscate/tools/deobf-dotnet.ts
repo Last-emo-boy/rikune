@@ -50,6 +50,10 @@ export const deobfDotnetToolDefinition: ToolDefinition = {
     'Produces a clean deobfuscated assembly for further static analysis.',
   inputSchema: deobfDotnetInputSchema,
   outputSchema: deobfuscateOutputSchema,
+  runtime: {
+    type: 'python-worker',
+    handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+  },
 }
 
 export function createDeobfDotnetHandler(

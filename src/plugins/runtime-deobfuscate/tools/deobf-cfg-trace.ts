@@ -60,6 +60,10 @@ export const deobfCfgTraceToolDefinition: ToolDefinition = {
     'only paths that were actually taken during execution.',
   inputSchema: deobfCfgTraceInputSchema,
   outputSchema: deobfuscateOutputSchema,
+  runtime: {
+    type: 'python-worker',
+    handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+  },
 }
 
 export function createDeobfCfgTraceHandler(

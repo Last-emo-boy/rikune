@@ -458,6 +458,21 @@ function readNumberArg(args: any, key: string, defaultValue: number): number {
   return Number.isFinite(value) && value > 0 ? value : defaultValue
 }
 
+function resolveRuntimeTimeoutMs(definition: ToolDefinition, args: any): number {
+  if (definition.runtime?.timeoutMs && definition.runtime.timeoutMs > 0) {
+    return definition.runtime.timeoutMs
+  }
+  const timeoutSeconds = Math.max(
+    readNumberArg(args, 'timeout_seconds', 0),
+    readNumberArg(args, 'timeout_sec', 0),
+    readNumberArg(args, 'timeout', 0)
+  )
+  if (timeoutSeconds > 0) {
+    return Math.max(30_000, Math.ceil(timeoutSeconds * 1000) + 30_000)
+  }
+  return 120_000
+}
+
 async function buildRuntimeUploadOptions(
   definition: ToolDefinition,
   args: any,
@@ -549,7 +564,7 @@ export function createDelegatingServer(
               sampleId: sampleId || '',
               tool: definition.name,
               args,
-              timeoutMs: 120_000,
+              timeoutMs: resolveRuntimeTimeoutMs(definition, args),
               runtime,
             },
             {
@@ -631,7 +646,7 @@ export function createDelegatingServer(
                     sampleId: sampleId || '',
                     tool: definition.name,
                     args,
-                    timeoutMs: 120_000,
+                    timeoutMs: resolveRuntimeTimeoutMs(definition, args),
                     runtime,
                   },
                   {
