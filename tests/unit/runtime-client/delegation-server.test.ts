@@ -208,6 +208,34 @@ describe('createDelegatingServer', () => {
     expect(result.ok).toBe(true)
   })
 
+  test('should let runtime contracts override explicit local dynamic policy', async () => {
+    const server = createServer(runtimeClient)
+    let wrappedHandler: any
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
+    const originalHandler = jest.fn<() => Promise<WorkerResult>>().mockResolvedValue({ ok: true })
+    const tool: ToolDefinition = {
+      name: 'runtime.debug.command',
+      description: 'runtime command with delegated contract',
+      inputSchema: {},
+      runtime: { type: 'inline', handler: 'executeDebugSession' },
+    }
+
+    server.registerTool(tool, originalHandler)
+    const result = await wrappedHandler({ tool: 'debug.session.status' })
+
+    expect(originalHandler).not.toHaveBeenCalled()
+    expect(runtimeClient.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: 'runtime.debug.command',
+        runtime: { type: 'inline', handler: 'executeDebugSession' },
+      }),
+      expect.anything()
+    )
+    expect(result.ok).toBe(true)
+  })
+
   test('should wrap migrated behavior.capture and preserve legacy timeout argument', async () => {
     const server = createServer(runtimeClient)
     let wrappedHandler: any

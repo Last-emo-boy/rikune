@@ -31,7 +31,6 @@ import {
   mergeRequiredUserInputs,
   buildDynamicDependencyRequiredUserInputs,
 } from '../plugins/docker-shared.js'
-import { isExplicitLocalDynamicTool } from './dynamic-tool-policy.js'
 
 export interface RuntimeClientLike {
   execute(
@@ -500,7 +499,7 @@ export function createDelegatingServer(
   return {
     registerTool(definition, handler) {
       const runtime = definition.runtime
-      if (!runtime || isExplicitLocalDynamicTool(definition.name)) {
+      if (!runtime) {
         inner.registerTool(definition, handler)
         return
       }

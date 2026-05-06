@@ -37,10 +37,6 @@ export function getLocalDynamicToolPolicy(toolName: string): LocalDynamicToolPol
   return LOCAL_DYNAMIC_TOOL_POLICIES.get(toolName)
 }
 
-export function isExplicitLocalDynamicTool(toolName: string): boolean {
-  return LOCAL_DYNAMIC_TOOL_POLICIES.has(toolName)
-}
-
 export function listExplicitLocalDynamicTools(): Array<{
   name: string
   policy: LocalDynamicToolPolicy
