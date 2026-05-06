@@ -3,7 +3,6 @@ export type LocalDynamicToolPolicy =
   | 'artifact-import'
   | 'control-plane'
   | 'dependency-report'
-  | 'legacy-local-worker'
   | 'planning'
   | 'post-processing'
 

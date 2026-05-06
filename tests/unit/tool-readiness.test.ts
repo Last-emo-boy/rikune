@@ -198,9 +198,6 @@ describe('tool.readiness', () => {
     const result = await handler({ tool_name: 'behavior.capture', force_refresh: false })
 
     expect(result.ok).toBe(false)
-    expect(result.warnings).not.toEqual(
-      expect.arrayContaining([expect.stringMatching(/not runtime-delegated yet/i)])
-    )
     expect((result.data as any)?.readiness).toBe('runtime_not_started')
     expect((result.data as any)?.execution_path).toBe('delegated')
     expect((result.data as any)?.required_runtime_contract).toEqual({
@@ -236,9 +233,6 @@ describe('tool.readiness', () => {
     const result = await handler({ tool_name: 'deobf.strings', force_refresh: false })
 
     expect(result.ok).toBe(false)
-    expect(result.warnings).not.toEqual(
-      expect.arrayContaining([expect.stringMatching(/not runtime-delegated yet/i)])
-    )
     expect((result.data as any)?.readiness).toBe('runtime_not_started')
     expect((result.data as any)?.execution_path).toBe('delegated')
     expect((result.data as any)?.required_runtime_contract).toEqual({
@@ -274,9 +268,6 @@ describe('tool.readiness', () => {
     const result = await handler({ tool_name: 'managed.fake_c2', force_refresh: false })
 
     expect(result.ok).toBe(false)
-    expect(result.warnings).not.toEqual(
-      expect.arrayContaining([expect.stringMatching(/not runtime-delegated yet/i)])
-    )
     expect((result.data as any)?.readiness).toBe('runtime_not_started')
     expect((result.data as any)?.execution_path).toBe('delegated')
     expect((result.data as any)?.required_runtime_contract).toEqual({

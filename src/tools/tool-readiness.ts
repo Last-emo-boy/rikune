@@ -140,8 +140,6 @@ function localRuntimePlane(policy: LocalDynamicToolPolicy | null): string {
       return 'local_control_plane'
     case 'dependency-report':
       return 'local_dependency_report'
-    case 'legacy-local-worker':
-      return 'local_dynamic_worker'
     case 'planning':
       return 'local_planning'
     case 'post-processing':
@@ -192,18 +190,6 @@ function localDynamicPolicyGuidance(policy: LocalDynamicToolPolicy | null): {
         recommendedNextTools: ['dynamic.runtime.status', 'system.health', 'tool.help'],
         nextActions: [
           'Use the dependency report to prepare the runtime environment before live execution.',
-        ],
-      }
-    case 'legacy-local-worker':
-      return {
-        reason:
-          'This dynamic-domain tool currently uses an analyzer-side local worker/helper rather than a delegated Runtime Node backend.',
-        warnings: [
-          'This dynamic tool is not runtime-delegated yet; confirm host isolation policy before running it on untrusted samples.',
-        ],
-        recommendedNextTools: ['dynamic.runtime.status', 'dynamic.behavior.capture', 'tool.help'],
-        nextActions: [
-          'Prefer runtime-delegated tools when live sample execution or strict isolation is required.',
         ],
       }
     case 'planning':
