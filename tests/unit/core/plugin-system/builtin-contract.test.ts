@@ -16,6 +16,7 @@ import {
   getLocalDynamicToolPolicy,
   listExplicitLocalDynamicTools,
 } from '../../../../src/runtime-client/dynamic-tool-policy.js'
+import { listRuntimeDelegatedToolContracts } from '../../../../src/plugins/dynamic/tools/dynamic-runtime-status.js'
 
 const logger = {
   info() {},
@@ -115,6 +116,7 @@ describe('built-in plugin SDK contract', () => {
     const runtimeErrors: string[] = []
     const localDynamicPolicyErrors: string[] = []
     const toolsByName = new Map<string, string[]>()
+    const toolDefinitionsByName = new Map<string, any>()
     const dynamicToolsWithoutRuntime = new Set<string>()
     let runtimeToolCount = 0
     const deps = createDeps()
@@ -157,6 +159,7 @@ describe('built-in plugin SDK contract', () => {
           const owners = toolsByName.get(definition?.name) ?? []
           owners.push(plugin.id)
           toolsByName.set(definition?.name, owners)
+          toolDefinitionsByName.set(definition?.name, definition)
 
           const toolValidation = validateTool(definition)
           if (!toolValidation.ok) {
@@ -224,6 +227,35 @@ describe('built-in plugin SDK contract', () => {
       .map((entry) => entry.name)
       .filter((name) => !dynamicToolsWithoutRuntime.has(name))
       .map((name) => `${name}: stale explicit local policy`)
+    const runtimeStatusToolContracts = listRuntimeDelegatedToolContracts()
+    const runtimeStatusToolContractsByName = new Map(
+      runtimeStatusToolContracts.map((entry) => [entry.tool_name, entry.runtime_contract])
+    )
+    const missingRuntimeStatusToolContracts = [...toolDefinitionsByName.entries()]
+      .filter(([, definition]) => Boolean(definition?.runtime))
+      .filter(([name]) => !runtimeStatusToolContractsByName.has(name))
+      .map(([name]) => `${name}: missing dynamic.runtime.status tool support contract`)
+    const mismatchedRuntimeStatusToolContracts = [...toolDefinitionsByName.entries()]
+      .filter(([, definition]) => Boolean(definition?.runtime))
+      .filter(([name, definition]) => {
+        const statusContract = runtimeStatusToolContractsByName.get(name)
+        return (
+          statusContract &&
+          runtimeCapabilityKey(statusContract) !== runtimeCapabilityKey(definition.runtime)
+        )
+      })
+      .map(
+        ([name, definition]) =>
+          `${name}: dynamic.runtime.status contract ${
+            runtimeStatusToolContractsByName.get(name)
+              ? runtimeCapabilityKey(runtimeStatusToolContractsByName.get(name)!)
+              : 'missing'
+          } does not match tool runtime ${runtimeCapabilityKey(definition.runtime)}`
+      )
+    const staleRuntimeStatusToolContracts = runtimeStatusToolContracts
+      .map((entry) => entry.tool_name)
+      .filter((name) => !toolsByName.has(name))
+      .map((name) => `${name}: stale dynamic.runtime.status tool support contract`)
 
     expect(pluginErrors).toEqual([])
     expect(toolErrors).toEqual([])
@@ -232,6 +264,9 @@ describe('built-in plugin SDK contract', () => {
     expect(runtimeErrors).toEqual([])
     expect(localDynamicPolicyErrors).toEqual([])
     expect(staleLocalDynamicPolicies).toEqual([])
+    expect(missingRuntimeStatusToolContracts).toEqual([])
+    expect(mismatchedRuntimeStatusToolContracts).toEqual([])
+    expect(staleRuntimeStatusToolContracts).toEqual([])
     expect(duplicateTools).toEqual([])
     expect(runtimeToolCount).toBeGreaterThan(20)
     expect(toolsByName.size).toBeGreaterThan(200)
