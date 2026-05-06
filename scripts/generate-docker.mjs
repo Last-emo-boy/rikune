@@ -552,7 +552,7 @@ function generateDockerCompose(requirements, buildPluginIds, runtimePluginIds, p
   volumeYaml += `
       - type: volume
         source: root-config
-        target: /root/.rikune`
+        target: /app/cache/home/.rikune`
 
   const namedVol = `  root-config:\n    driver: local\n  storage:\n    driver: local`
 
@@ -578,6 +578,7 @@ services:
       dockerfile: ${profile.dockerfile}
       args:${buildArgsYaml}
     container_name: ${profile.container}
+    user: appuser
     stdin_open: true
     tty: true
     security_opt:

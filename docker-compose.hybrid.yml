@@ -35,6 +35,7 @@ services:
         RIZIN_VERSION: "0.8.2"
         UPX_VERSION: "5.1.1"
     container_name: rikune-analyzer
+    user: appuser
     stdin_open: true
     tty: true
     security_opt:
@@ -62,7 +63,7 @@ services:
       - "${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-logs:/ghidra-logs:rw"
       - type: volume
         source: root-config
-        target: /root/.rikune
+        target: /app/cache/home/.rikune
     environment:
       - NODE_ENV=production
       - PYTHONUNBUFFERED=1

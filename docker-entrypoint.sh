@@ -33,6 +33,12 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
+RUNNING_UID="$(id -u 2>/dev/null || echo 0)"
+
+is_root() {
+    [ "$RUNNING_UID" = "0" ]
+}
+
 # Check if an environment variable is set
 check_env() {
     local var_name=$1
@@ -89,8 +95,10 @@ ensure_dir() {
         fi
     fi
 
-    if ! chown "$owner:$owner" "$dir_path" 2>/dev/null; then
-        log_warn "Could not chown $dir_path"
+    if is_root; then
+        if ! chown "$owner:$owner" "$dir_path" 2>/dev/null; then
+            log_warn "Could not chown $dir_path"
+        fi
     fi
 }
 
@@ -234,17 +242,13 @@ fi
 
 log_info "=== Creating Runtime Directories ==="
 
-# Create appuser home directory to avoid mkdir errors
-if [ ! -d "/root/.rikune" ]; then
-    mkdir -p /root/.rikune 2>/dev/null || true
-fi
-
 # Create directories (will be mounted as volumes or created if not mounted)
 ensure_dir "$WORKSPACE_ROOT" "appuser"
 ensure_dir "$(dirname $DB_PATH)" "appuser"
 ensure_dir "$CACHE_ROOT" "appuser"
 if [ -n "$HOME" ]; then
     ensure_dir "$HOME" "appuser"
+    ensure_dir "$HOME/.rikune" "appuser"
     ensure_dir "$HOME/.cache" "appuser"
 fi
 ensure_dir "/app/logs" "appuser"
@@ -269,7 +273,9 @@ DB_DIR=$(dirname "$DB_PATH")
 if [ ! -d "$DB_DIR" ]; then
     log_info "Creating database directory: $DB_DIR"
     mkdir -p "$DB_DIR"
-    chown appuser:appuser "$DB_DIR" 2>/dev/null || log_warn "Could not chown $DB_DIR"
+    if is_root; then
+        chown appuser:appuser "$DB_DIR" 2>/dev/null || log_warn "Could not chown $DB_DIR"
+    fi
 fi
 
 # =============================================================================
@@ -278,13 +284,17 @@ fi
 
 log_info "=== Setting Permissions ==="
 
-# Ensure appuser owns all application directories
-chown -R appuser:appuser /app 2>/dev/null || log_warn "Could not chown /app"
-chown -R appuser:appuser /ghidra-projects 2>/dev/null || log_warn "Could not chown /ghidra-projects"
-chown -R appuser:appuser /ghidra-logs 2>/dev/null || log_warn "Could not chown /ghidra-logs"
+if is_root; then
+    # Ensure appuser owns all application directories
+    chown -R appuser:appuser /app 2>/dev/null || log_warn "Could not chown /app"
+    chown -R appuser:appuser /ghidra-projects 2>/dev/null || log_warn "Could not chown /ghidra-projects"
+    chown -R appuser:appuser /ghidra-logs 2>/dev/null || log_warn "Could not chown /ghidra-logs"
 
-# Set proper permissions on tmp
-chmod 1777 /tmp
+    # Set proper permissions on tmp
+    chmod 1777 /tmp 2>/dev/null || log_warn "Could not chmod /tmp"
+else
+    log_info "Skipping root-only permission adjustments for non-root container user"
+fi
 
 # =============================================================================
 # Step 5: Pre-flight Checks
