@@ -6,7 +6,12 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type PluginToolDeps,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'rule.library'
 
@@ -28,6 +33,14 @@ export const RuleLibraryInputSchema = z.object({
   search_query: z.string().optional().describe('Search rule names and descriptions'),
 })
 
+export const RuleLibraryOutputSchema = createWorkerResultOutputSchema(
+  z
+    .object({
+      action: z.enum(['list', 'get', 'tag', 'export', 'stats']),
+    })
+    .passthrough()
+)
+
 export const ruleLibraryToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -35,6 +48,7 @@ export const ruleLibraryToolDefinition: ToolDefinition = {
     'get rule details, add tags/status labels, export in native formats, ' +
     'and view statistics. Integrates with yara.generate and sigma.rule.generate tools.',
   inputSchema: RuleLibraryInputSchema,
+  outputSchema: RuleLibraryOutputSchema,
 }
 
 export function createRuleLibraryHandler(deps: PluginToolDeps) {

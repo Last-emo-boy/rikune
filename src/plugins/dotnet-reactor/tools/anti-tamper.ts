@@ -21,6 +21,17 @@ export const AntiTamperInputSchema = z.object({
     .describe('Scan all method bodies for integrity-check patterns'),
 })
 
+const reactorOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.object({}).passthrough().optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(z.any()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).passthrough().optional(),
+  })
+  .passthrough()
+
 export const antiTamperToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -28,6 +39,7 @@ export const antiTamperToolDefinition: ToolDefinition = {
     'native code patches, integrity-check patterns, and module initializer hooks. ' +
     'Reports protection version estimate, stub offsets, and removal guidance.',
   inputSchema: AntiTamperInputSchema,
+  outputSchema: reactorOutputSchema,
 }
 
 async function callReactorWorker(

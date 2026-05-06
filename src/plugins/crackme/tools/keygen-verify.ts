@@ -5,7 +5,13 @@
 
 import { z } from 'zod'
 import { spawn } from 'child_process'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'keygen.verify'
@@ -22,12 +28,15 @@ export const KeygenVerifyInputSchema = z.object({
   timeout_sec: z.number().int().min(5).max(120).optional().default(30),
 })
 
+export const KeygenVerifyOutputSchema = createWorkerResultOutputSchema(z.record(z.any()))
+
 export const keygenVerifyToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Verify a keygen-produced serial by emulating the target binary validation function. ' +
     'Feeds the serial (and optional username) into the binary via emulation and checks if the success path is taken.',
   inputSchema: KeygenVerifyInputSchema,
+  outputSchema: KeygenVerifyOutputSchema,
 }
 
 async function callVerifyWorker(

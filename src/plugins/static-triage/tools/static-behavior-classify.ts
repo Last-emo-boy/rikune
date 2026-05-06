@@ -12,6 +12,7 @@ import { z } from 'zod'
 import type { ArtifactRef, ToolArgs, ToolDefinition, WorkerResult } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
+import { createWorkerResultOutputSchema } from '../../sdk.js'
 import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import {
   loadStaticAnalysisArtifactSelection,
@@ -74,11 +75,60 @@ export const StaticBehaviorClassifyInputSchema = z.object({
   session_tag: z.string().optional(),
 })
 
+export const StaticBehaviorClassifyOutputSchema = createWorkerResultOutputSchema(
+  z
+    .object({
+      schema: z.string(),
+      tool_version: z.string(),
+      sample_id: z.string(),
+      source: z.object({
+        file_size: z.number().int().nonnegative(),
+        sha256: z.string(),
+        string_count: z.number().int().nonnegative(),
+      }),
+      evidence_sources: z
+        .object({
+          config_artifacts: z.array(z.string()),
+          config_scope_note: z.string(),
+          dynamic_artifacts: z.array(z.string()),
+          dynamic_scope_note: z.string().nullable(),
+        })
+        .passthrough(),
+      summary: z.object({
+        finding_count: z.number().int().nonnegative(),
+        high_or_critical_count: z.number().int().nonnegative(),
+        by_category: z.record(z.number()),
+        by_severity: z.record(z.number()),
+        max_confidence: z.number(),
+      }),
+      findings: z.array(
+        z
+          .object({
+            id: z.string(),
+            category: z.enum(['persistence', 'injection', 'anti_analysis', 'execution']),
+            technique: z.string(),
+            severity: z.enum(['low', 'medium', 'high', 'critical']),
+            confidence: z.number(),
+            evidence: z.array(z.any()),
+            rationale: z.string(),
+            recommended_next_tools: z.array(z.string()),
+          })
+          .passthrough()
+      ),
+      dynamic_summary: z.any().nullable(),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+      warnings: z.array(z.string()),
+    })
+    .passthrough()
+)
+
 export const staticBehaviorClassifyToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Classify static persistence, service install, scheduled task, WMI, process injection, DLL injection, APC injection, and hollowing indicators from strings, config artifacts, and optional imported runtime evidence. Does not execute the sample.',
   inputSchema: StaticBehaviorClassifyInputSchema,
+  outputSchema: StaticBehaviorClassifyOutputSchema,
 }
 
 const RULES: BehaviorRule[] = [

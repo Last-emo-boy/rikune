@@ -5,7 +5,13 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'behavior.timeline'
 
@@ -19,6 +25,41 @@ export const BehaviorTimelineInputSchema = z.object({
   max_events: z.number().optional().default(2000).describe('Maximum events to process'),
 })
 
+export const BehaviorTimelineOutputSchema = createWorkerResultOutputSchema(
+  z.object({
+    sample_id: z.string(),
+    total_events: z.number().int().nonnegative(),
+    time_span_ms: z.number(),
+    bucket_count: z.number().int().nonnegative(),
+    bucket_ms: z.number(),
+    phase_sequence: z.array(
+      z.object({
+        phase: z.string(),
+        start_ms: z.number(),
+        end_ms: z.number(),
+        event_count: z.number().int().nonnegative(),
+      })
+    ),
+    bursts: z.array(
+      z.object({
+        start_ms: z.number(),
+        event_count: z.number().int().nonnegative(),
+        dominant_phase: z.string(),
+      })
+    ),
+    phase_distribution: z.record(z.number()),
+    timeline_buckets: z.array(
+      z.object({
+        start_ms: z.number(),
+        end_ms: z.number(),
+        event_count: z.number().int().nonnegative(),
+        phases: z.record(z.number()),
+        top_apis: z.array(z.object({ api: z.string(), count: z.number().int().nonnegative() })),
+      })
+    ),
+  })
+)
+
 export const behaviorTimelineToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -26,6 +67,7 @@ export const behaviorTimelineToolDefinition: ToolDefinition = {
     'Groups API calls by time intervals, highlights phase transitions (init → ' +
     'network → persistence → payload), and identifies behavioral bursts.',
   inputSchema: BehaviorTimelineInputSchema,
+  outputSchema: BehaviorTimelineOutputSchema,
 }
 
 const PHASE_KEYWORDS: Record<string, string[]> = {

@@ -8,7 +8,13 @@
 
 import { z } from 'zod'
 import { spawn } from 'child_process'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'managed.token_xrefs'
@@ -35,6 +41,8 @@ export const TokenXrefsInputSchema = z.object({
   max_nodes: z.number().min(1).max(2000).default(500).describe('Maximum graph nodes to return'),
 })
 
+export const TokenXrefsOutputSchema = createWorkerResultOutputSchema(z.record(z.any()))
+
 export const tokenXrefsToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -43,6 +51,7 @@ export const tokenXrefsToolDefinition: ToolDefinition = {
     'Supports transitive traversal up to 5 levels. Useful for call-chain analysis, ' +
     'field usage tracking, and type dependency mapping.',
   inputSchema: TokenXrefsInputSchema,
+  outputSchema: TokenXrefsOutputSchema,
 }
 
 async function callTokenXrefsWorker(

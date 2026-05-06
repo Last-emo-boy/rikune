@@ -40,6 +40,7 @@ const hostCorrelationPlugin: Plugin = {
       dockerInstall: 'pip install pefile',
     },
   ],
+  resources: { workers: 'workers' },
   register(server, deps) {
     server.registerTool(hostCorrelateToolDefinition, createHostCorrelateHandler(deps))
     return ['host.correlate']

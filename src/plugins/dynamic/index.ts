@@ -171,9 +171,9 @@ const dynamicPlugin: Plugin = {
     server.registerTool(dynamicPersonaPlanToolDefinition, createDynamicPersonaPlanHandler(deps))
     server.registerTool(dynamicBehaviorDiffToolDefinition, createDynamicBehaviorDiffHandler(deps))
     return [
-      'dynamic.auto_hook',
-      'dynamic.trace_attribute',
-      'dynamic.memory_dump',
+      'dynamic.auto.hook',
+      'dynamic.trace.attribute',
+      'dynamic.memory.dump',
       'dynamic.dependencies',
       'dynamic.trace.import',
       'dynamic.memory.import',

@@ -5,7 +5,13 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'kb.function.match'
 
@@ -23,6 +29,27 @@ export const KbFunctionMatchInputSchema = z.object({
   max_matches: z.number().optional().default(100).describe('Maximum matches to return'),
 })
 
+export const KbFunctionMatchOutputSchema = createWorkerResultOutputSchema(
+  z.object({
+    sample_id: z.string(),
+    target_function_count: z.number().int().nonnegative(),
+    reference_function_count: z.number().int().nonnegative(),
+    match_count: z.number().int().nonnegative(),
+    exact_matches: z.number().int().nonnegative(),
+    high_confidence_matches: z.number().int().nonnegative(),
+    matches: z.array(
+      z.object({
+        target_function: z.string(),
+        target_address: z.string(),
+        matched_function: z.string(),
+        matched_sample_id: z.string(),
+        matched_address: z.string(),
+        confidence: z.number(),
+      })
+    ),
+  })
+)
+
 export const kbFunctionMatchToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -30,6 +57,7 @@ export const kbFunctionMatchToolDefinition: ToolDefinition = {
     'analyzed samples. Uses byte-pattern hashing and API-call fingerprinting to ' +
     'find reused code and propagate function names and annotations.',
   inputSchema: KbFunctionMatchInputSchema,
+  outputSchema: KbFunctionMatchOutputSchema,
 }
 
 interface FunctionSig {

@@ -28,6 +28,7 @@ const kbCollaborationPlugin: Plugin = {
   description:
     'Function signature matching, analysis templates, and knowledge base import/export/management',
   version: '1.0.0',
+  resources: { data: 'data' },
   register(server, deps) {
     const workspaceManager = requireWorkspaceManager(deps, 'kb-collaboration')
     const database = requireDatabase(deps, 'kb-collaboration')
@@ -43,7 +44,7 @@ const kbCollaborationPlugin: Plugin = {
     server.registerTool(analysisNotesToolDefinition, createAnalysisNotesHandler(deps))
     server.registerTool(ruleLibraryToolDefinition, createRuleLibraryHandler(deps))
     return [
-      'kb.function_match',
+      'kb.function.match',
       'analysis.template',
       'kb.import.bulk',
       'kb.export',

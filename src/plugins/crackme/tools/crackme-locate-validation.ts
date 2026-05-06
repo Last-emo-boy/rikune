@@ -5,7 +5,13 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'crackme.locate.validation'
 
@@ -74,6 +80,31 @@ export const CrackmeLocateValidationInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
 })
 
+const CrackmeValidationCandidateSchema = z.object({
+  name: z.string(),
+  address: z.string(),
+  score: z.number(),
+  reasons: z.array(z.string()),
+  success_strings: z.array(z.string()),
+  failure_strings: z.array(z.string()),
+  dialog_apis: z.array(z.string()),
+  input_apis: z.array(z.string()),
+  crypto_apis: z.array(z.string()),
+})
+
+export const CrackmeLocateValidationOutputSchema = createWorkerResultOutputSchema(
+  z.object({
+    candidate_count: z.number().int().nonnegative(),
+    candidates: z.array(CrackmeValidationCandidateSchema),
+    search_stats: z.object({
+      functions_scanned: z.number().int().nonnegative(),
+      strings_available: z.number().int().nonnegative(),
+      imports_available: z.number().int().nonnegative(),
+    }),
+    next_steps: z.array(z.string()),
+  })
+)
+
 export const crackmeLocateValidationToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -81,6 +112,7 @@ export const crackmeLocateValidationToolDefinition: ToolDefinition = {
     'Analyses string references ("Wrong"/"Correct"), dialog/input API imports, crypto API calls, ' +
     'and conditional branch patterns to rank candidate functions.',
   inputSchema: CrackmeLocateValidationInputSchema,
+  outputSchema: CrackmeLocateValidationOutputSchema,
 }
 
 interface CandidateFunction {

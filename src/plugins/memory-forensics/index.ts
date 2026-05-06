@@ -8,9 +8,21 @@
 
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import { z } from 'zod'
 import { getWorkspaceManager, type Plugin, type ToolResult, type PluginToolDeps } from '../sdk.js'
 
 const execFileAsync = promisify(execFile)
+
+const dumpInputSchema = z.object({
+  sample_id: z.string().optional().describe('Sample ID of the memory dump'),
+  dump_path: z.string().optional().describe('Direct path to memory dump file'),
+})
+
+const pidDumpInputSchema = dumpInputSchema.extend({
+  pid: z.number().int().positive().optional().describe('Filter by Process ID'),
+})
+
+const volatilityOutputSchema = z.object({}).passthrough()
 
 function getVolatilityPath(): string {
   return process.env.VOLATILITY3_PATH || process.env.VOL3_PATH || 'vol3'
@@ -102,16 +114,8 @@ const memoryForensicsPlugin: Plugin = {
       {
         name: 'memory-forensics.pslist',
         description: 'List processes from a memory dump using Volatility 3.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            sample_id: { type: 'string', description: 'Sample ID of the memory dump' },
-            dump_path: {
-              type: 'string',
-              description: 'Direct path to memory dump file (alternative to sample_id)',
-            },
-          },
-        } as any,
+        inputSchema: dumpInputSchema,
+        outputSchema: volatilityOutputSchema,
       },
       async (args: { sample_id?: string; dump_path?: string }): Promise<ToolResult> => {
         const dumpPath = await resolveDumpPath(args, deps)
@@ -130,14 +134,8 @@ const memoryForensicsPlugin: Plugin = {
       {
         name: 'memory-forensics.dlllist',
         description: 'List loaded DLLs from a memory dump.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            sample_id: { type: 'string' },
-            dump_path: { type: 'string' },
-            pid: { type: 'number', description: 'Filter by Process ID' },
-          },
-        } as any,
+        inputSchema: pidDumpInputSchema,
+        outputSchema: volatilityOutputSchema,
       },
       async (args: {
         sample_id?: string
@@ -162,14 +160,8 @@ const memoryForensicsPlugin: Plugin = {
       {
         name: 'memory-forensics.malfind',
         description: 'Detect injected code and suspicious memory regions in a memory dump.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            sample_id: { type: 'string' },
-            dump_path: { type: 'string' },
-            pid: { type: 'number', description: 'Filter by Process ID' },
-          },
-        } as any,
+        inputSchema: pidDumpInputSchema,
+        outputSchema: volatilityOutputSchema,
       },
       async (args: {
         sample_id?: string
@@ -194,13 +186,8 @@ const memoryForensicsPlugin: Plugin = {
       {
         name: 'memory-forensics.netscan',
         description: 'Scan for network connections in a memory dump.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            sample_id: { type: 'string' },
-            dump_path: { type: 'string' },
-          },
-        } as any,
+        inputSchema: dumpInputSchema,
+        outputSchema: volatilityOutputSchema,
       },
       async (args: { sample_id?: string; dump_path?: string }): Promise<ToolResult> => {
         const dumpPath = await resolveDumpPath(args, deps)
@@ -225,13 +212,8 @@ const memoryForensicsPlugin: Plugin = {
       {
         name: 'memory-forensics.hivelist',
         description: 'List registry hives found in a memory dump.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            sample_id: { type: 'string' },
-            dump_path: { type: 'string' },
-          },
-        } as any,
+        inputSchema: dumpInputSchema,
+        outputSchema: volatilityOutputSchema,
       },
       async (args: { sample_id?: string; dump_path?: string }): Promise<ToolResult> => {
         const dumpPath = await resolveDumpPath(args, deps)
@@ -256,14 +238,8 @@ const memoryForensicsPlugin: Plugin = {
       {
         name: 'memory-forensics.cmdline',
         description: 'Extract command-line arguments for all processes in a memory dump.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            sample_id: { type: 'string' },
-            dump_path: { type: 'string' },
-            pid: { type: 'number', description: 'Filter by Process ID' },
-          },
-        } as any,
+        inputSchema: pidDumpInputSchema,
+        outputSchema: volatilityOutputSchema,
       },
       async (args: {
         sample_id?: string

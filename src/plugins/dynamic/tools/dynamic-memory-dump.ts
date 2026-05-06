@@ -6,7 +6,13 @@
 import { z } from 'zod'
 import { spawn } from 'child_process'
 import path from 'path'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 import { resolveExecutable } from '../../../static-backend-discovery.js'
 import { buildDynamicSetupRequired } from '../../docker-shared.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
@@ -34,6 +40,26 @@ export const DynamicMemoryDumpInputSchema = z.object({
   timeout_sec: z.number().int().min(5).max(120).optional().default(30),
 })
 
+export const DynamicMemoryDumpOutputSchema = createWorkerResultOutputSchema(
+  z.union([
+    z
+      .object({
+        trigger: z.enum(['alloc_rwx', 'protect_rx', 'on_entry', 'timed']),
+        script_path: z.string(),
+      })
+      .passthrough(),
+    z
+      .object({
+        status: z.literal('setup_required'),
+        backend: z.any(),
+        summary: z.string(),
+        recommended_next_tools: z.array(z.string()),
+        next_actions: z.array(z.string()),
+      })
+      .passthrough(),
+  ])
+)
+
 export const dynamicMemoryDumpToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -41,6 +67,7 @@ export const dynamicMemoryDumpToolDefinition: ToolDefinition = {
     '(RWX allocation, W→RX protection changes) and auto-dump memory regions at strategic moments. ' +
     'Useful for extracting unpacked code from packed/encrypted binaries.',
   inputSchema: DynamicMemoryDumpInputSchema,
+  outputSchema: DynamicMemoryDumpOutputSchema,
   runtime: { type: 'inline', handler: 'executeDynamicMemoryDump' },
 }
 

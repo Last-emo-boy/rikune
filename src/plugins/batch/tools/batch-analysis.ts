@@ -50,11 +50,21 @@ const submitSchema = z.object({
     .describe('Max concurrent analyses'),
 })
 
+const BatchStatusSchema = z.enum(['pending', 'running', 'completed', 'failed'])
+
+const batchSubmitOutputSchema = z.object({
+  batch_id: z.string(),
+  sample_count: z.number().int().nonnegative(),
+  pipeline: z.array(z.string()),
+  status: BatchStatusSchema,
+})
+
 export const batchSubmitToolDefinition: ToolDefinition = {
   name: 'batch.submit',
   description:
     'Submit a batch of samples for parallel analysis through a tool pipeline. Returns a batch ID for tracking.',
   inputSchema: submitSchema as any,
+  outputSchema: batchSubmitOutputSchema,
 }
 
 export function createBatchSubmitHandler(server: MCPServer) {
@@ -108,10 +118,24 @@ const statusSchema = z.object({
   batch_id: z.string().describe('Batch ID returned from batch.submit'),
 })
 
+const batchStatusOutputSchema = z.object({
+  batch_id: z.string(),
+  status: BatchStatusSchema,
+  progress: z.object({
+    completed: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    percent: z.number().int().min(0).max(100),
+    error_count: z.number().int().nonnegative(),
+  }),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+
 export const batchStatusToolDefinition: ToolDefinition = {
   name: 'batch.status',
   description: 'Check the progress of a batch analysis job.',
   inputSchema: statusSchema as any,
+  outputSchema: batchStatusOutputSchema,
 }
 
 export function createBatchStatusHandler() {
@@ -157,10 +181,25 @@ const resultsSchema = z.object({
   sample_id: z.string().optional().describe('Filter results by a specific sample ID'),
 })
 
+const batchResultsOutputSchema = z.object({
+  batch_id: z.string(),
+  status: BatchStatusSchema,
+  total_results: z.number().int().nonnegative(),
+  errors: z.array(z.string()),
+  results: z.array(
+    z
+      .object({
+        key: z.string(),
+      })
+      .passthrough()
+  ),
+})
+
 export const batchResultsToolDefinition: ToolDefinition = {
   name: 'batch.results',
   description: 'Retrieve results of a completed batch analysis job.',
   inputSchema: resultsSchema as any,
+  outputSchema: batchResultsOutputSchema,
 }
 
 export function createBatchResultsHandler() {

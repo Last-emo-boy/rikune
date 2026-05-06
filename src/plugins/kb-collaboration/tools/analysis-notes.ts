@@ -9,6 +9,7 @@ import { z } from 'zod'
 import {
   getDatabase,
   getWorkspaceServices,
+  createWorkerResultOutputSchema,
   type ToolDefinition,
   type WorkerResult,
   type PluginToolDeps,
@@ -48,6 +49,15 @@ export const AnalysisNotesInputSchema = z.object({
     .describe('Export format (for "export" action)'),
 })
 
+export const AnalysisNotesOutputSchema = createWorkerResultOutputSchema(
+  z
+    .object({
+      action: z.enum(['add', 'list', 'search', 'export']),
+      sample_id: z.string().optional(),
+    })
+    .passthrough()
+)
+
 export const analysisNotesToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -56,6 +66,7 @@ export const analysisNotesToolDefinition: ToolDefinition = {
     'technique, verdict), severity levels, tags, and cross-sample references. ' +
     'Findings are automatically indexed in the knowledge base for future reuse.',
   inputSchema: AnalysisNotesInputSchema,
+  outputSchema: AnalysisNotesOutputSchema,
 }
 
 export function createAnalysisNotesHandler(deps: PluginToolDeps) {

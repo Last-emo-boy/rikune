@@ -29,6 +29,17 @@ export const deobfDotnetInputSchema = z.object({
   session_tag: z.string().optional(),
 })
 
+const deobfuscateOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.object({}).passthrough().optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(z.any()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).passthrough().optional(),
+  })
+  .passthrough()
+
 export const deobfDotnetToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -38,6 +49,7 @@ export const deobfDotnetToolDefinition: ToolDefinition = {
     'DeepSea, Agile, Goliath, MaxtoCode, Eazfuscator, and SmartAssembly. ' +
     'Produces a clean deobfuscated assembly for further static analysis.',
   inputSchema: deobfDotnetInputSchema,
+  outputSchema: deobfuscateOutputSchema,
 }
 
 export function createDeobfDotnetHandler(

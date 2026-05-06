@@ -12,7 +12,8 @@ import { defineManifestPlugin, validatePlugin } from '../../plugins/sdk.js'
 import { logger } from '../../logger.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const PROJECT_ROOT = path.resolve(__dirname, '../..')
+const RUNTIME_ROOT = path.resolve(__dirname, '../..')
+const PROJECT_ROOT = path.resolve(RUNTIME_ROOT, '..')
 
 function isPluginCandidate(value: unknown): value is Plugin {
   if (!value || typeof value !== 'object') {
@@ -68,13 +69,37 @@ async function loadPluginFromDirectory(
   return defineManifestPlugin(manifest, resolveHandlers(mod))
 }
 
+async function resolveDirectoryEntrypoint(pluginDir: string): Promise<string | null> {
+  for (const fileName of ['index.js', 'index.mjs', 'index.ts']) {
+    const candidate = path.join(pluginDir, fileName)
+    try {
+      await fs.access(candidate)
+      return candidate
+    } catch {
+      // Try the next supported entrypoint.
+    }
+  }
+  return null
+}
+
 /**
  * Discover built-in plugins from `src/plugins/` (compiled to `dist/plugins/`).
  * Each subdirectory with an `index.js` entry point is loaded as a plugin.
  */
 export async function discoverBuiltInPlugins(): Promise<Plugin[]> {
-  const pluginsDir = path.join(__dirname, '../plugins')
-  return discoverPluginsFromDir(pluginsDir, 'built-in', { scanFlatFiles: false })
+  for (const pluginsDir of [
+    path.join(RUNTIME_ROOT, 'plugins'),
+    path.join(PROJECT_ROOT, 'dist', 'plugins'),
+    path.join(PROJECT_ROOT, 'src', 'plugins'),
+  ]) {
+    try {
+      await fs.access(pluginsDir)
+      return discoverPluginsFromDir(pluginsDir, 'built-in', { scanFlatFiles: false })
+    } catch {
+      // Try the next runtime layout.
+    }
+  }
+  return []
 }
 
 /**
@@ -110,10 +135,13 @@ export async function discoverPluginsFromDir(
   // Scan subdirectories for index.js entry points
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      const indexPath = path.join(pluginsDir, entry.name, 'index.js')
+      const pluginDir = path.join(pluginsDir, entry.name)
+      const indexPath = await resolveDirectoryEntrypoint(pluginDir)
       const manifestPath = path.join(pluginsDir, entry.name, 'plugin.json')
+      if (!indexPath) {
+        continue
+      }
       try {
-        await fs.access(indexPath)
         const plugin = await loadPluginFromDirectory(indexPath, manifestPath)
         if (plugin) {
           discovered.push(plugin)

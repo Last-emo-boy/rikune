@@ -13,11 +13,21 @@ export const DexClassesListInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
 })
 
+export const DexClassesListOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.object({}).passthrough().optional(),
+    errors: z.array(z.string()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),
+  })
+  .passthrough()
+
 export const dexClassesListToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'List all class names defined in DEX bytecode. Works on standalone .dex or .apk (parses all embedded classes.dex files).',
   inputSchema: DexClassesListInputSchema,
+  outputSchema: DexClassesListOutputSchema,
 }
 
 async function callApkWorker(

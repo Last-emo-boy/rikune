@@ -30,6 +30,17 @@ export const behaviorIocInputSchema = z.object({
   session_tag: z.string().optional(),
 })
 
+const behaviorIocOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.object({}).passthrough().optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(z.any()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).passthrough().optional(),
+  })
+  .passthrough()
+
 export const behaviorIocToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -39,6 +50,7 @@ export const behaviorIocToolDefinition: ToolDefinition = {
     '(IPs, domains, URLs), file indicators (dropped/deleted files), registry keys, ' +
     'and spawned processes. Feed behavior.capture output as behavior_data.',
   inputSchema: behaviorIocInputSchema,
+  outputSchema: behaviorIocOutputSchema,
 }
 
 export function createBehaviorIocHandler(

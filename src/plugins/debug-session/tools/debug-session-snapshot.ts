@@ -37,6 +37,22 @@ export const DebugSessionSnapshotInputSchema = z.object({
     .describe('Additional memory regions to dump'),
 })
 
+export const DebugSessionSnapshotOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z
+      .object({
+        session_id: z.string(),
+        timestamp: z.string(),
+        snapshot_version: z.string(),
+      })
+      .passthrough()
+      .optional(),
+    errors: z.array(z.string()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),
+  })
+  .passthrough()
+
 export const debugSessionSnapshotToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -45,6 +61,7 @@ export const debugSessionSnapshotToolDefinition: ToolDefinition = {
     'Designed for LLM consumption — all values are annotated with human-readable labels ' +
     'and semantic context.',
   inputSchema: DebugSessionSnapshotInputSchema,
+  outputSchema: DebugSessionSnapshotOutputSchema,
   runtime: { type: 'inline', handler: 'executeDebugSession' },
 }
 

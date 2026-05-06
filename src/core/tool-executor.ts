@@ -114,8 +114,10 @@ export class ToolExecutor {
       // Check if result is ToolResult or WorkerResult
       if ('content' in result) {
         // It's a ToolResult - use directly
+        const inferredStructuredContent =
+          result.structuredContent ?? this.structuredContentFromText(result.content)
         const structuredContent = this.normalizeStructuredContent(
-          this.rewriteToolReferences(result.structuredContent, registry),
+          this.rewriteToolReferences(inferredStructuredContent, registry),
           definition.outputSchema
         )
         this.logger.info(
@@ -258,6 +260,23 @@ export class ToolExecutor {
     }
 
     return parsed.data as Record<string, unknown>
+  }
+
+  private structuredContentFromText(content: TextContent[]): Record<string, unknown> | undefined {
+    for (const item of content) {
+      if (!('text' in item) || typeof item.text !== 'string') {
+        continue
+      }
+      try {
+        const parsed = JSON.parse(item.text) as unknown
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>
+        }
+      } catch {
+        // Legacy text output is often not JSON; keep it as plain text.
+      }
+    }
+    return undefined
   }
 
   private rewriteToolReferences<T>(value: T, registry: MCPRegistry): T {

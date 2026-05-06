@@ -10,6 +10,7 @@ import { z } from 'zod'
 import {
   getDatabase,
   getWorkspaceServices,
+  createWorkerResultOutputSchema,
   type ArtifactRef,
   type PluginToolDeps,
   type ToolDefinition,
@@ -33,11 +34,36 @@ export const DynamicBehaviorDiffInputSchema = z.object({
   session_tag: z.string().optional(),
 })
 
+export const DynamicBehaviorDiffOutputSchema = createWorkerResultOutputSchema(
+  z
+    .object({
+      schema: z.string(),
+      tool_version: z.string(),
+      sample_id: z.string(),
+      evidence_scope: z.enum(['all', 'latest', 'session']),
+      evidence_session_tag: z.string().nullable(),
+      static_artifacts: z.array(z.object({ id: z.string(), type: z.string(), path: z.string() })),
+      dynamic_summary: z
+        .object({
+          artifact_count: z.number().int().nonnegative(),
+          executed: z.boolean(),
+          observed_apis: z.array(z.string()),
+          stages: z.array(z.string()),
+          scope_note: z.string(),
+        })
+        .nullable(),
+      diff: z.any(),
+      warnings: z.array(z.string()),
+    })
+    .passthrough()
+)
+
 export const dynamicBehaviorDiffToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Compare static behavior expectations from config/resource artifacts against runtime observations from dynamic traces. Produces confirmed behavior, dormant/missing expectations, unexpected runtime observations, and next runtime steps without executing the sample.',
   inputSchema: DynamicBehaviorDiffInputSchema,
+  outputSchema: DynamicBehaviorDiffOutputSchema,
 }
 
 export function createDynamicBehaviorDiffHandler(deps: PluginToolDeps) {

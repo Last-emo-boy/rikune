@@ -10,6 +10,7 @@ import { z } from 'zod'
 import {
   getDatabase,
   getWorkspaceServices,
+  createWorkerResultOutputSchema,
   type ArtifactRef,
   type PluginToolDeps,
   type ToolDefinition,
@@ -67,11 +68,50 @@ export const CryptoLifecycleGraphInputSchema = z.object({
   session_tag: z.string().optional(),
 })
 
+export const CryptoLifecycleGraphOutputSchema = createWorkerResultOutputSchema(
+  z
+    .object({
+      schema: z.string(),
+      tool_version: z.string(),
+      sample_id: z.string(),
+      crypto_scope: z.enum(['all', 'latest', 'session']),
+      crypto_session_tag: z.string().nullable(),
+      runtime_evidence_scope: z.enum(['all', 'latest', 'session']),
+      runtime_evidence_session_tag: z.string().nullable(),
+      summary: z.object({
+        crypto_artifact_count: z.number().int().nonnegative(),
+        algorithm_count: z.number().int().nonnegative(),
+        constant_count: z.number().int().nonnegative(),
+        runtime_api_count: z.number().int().nonnegative(),
+        runtime_stage_count: z.number().int().nonnegative(),
+        runtime_memory_region_count: z.number().int().nonnegative(),
+        dynamic_executed: z.boolean(),
+        static_api_count: z.number().int().nonnegative(),
+        corroborated_api_count: z.number().int().nonnegative(),
+        node_count: z.number().int().nonnegative(),
+        edge_count: z.number().int().nonnegative(),
+      }),
+      crypto_selection: z.any(),
+      dynamic_summary: z.any().nullable(),
+      graph: z.object({
+        nodes: z.array(z.any()),
+        edges: z.array(z.any()),
+        corroborated_apis: z.array(z.string()),
+        static_api_count: z.number().int().nonnegative(),
+      }),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+      warnings: z.array(z.string()),
+    })
+    .passthrough()
+)
+
 export const cryptoLifecycleGraphToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Build a crypto lifecycle graph from crypto.identify artifacts and imported runtime evidence, linking algorithms, functions, APIs, constants, stages, and memory regions. Does not execute the sample.',
   inputSchema: CryptoLifecycleGraphInputSchema,
+  outputSchema: CryptoLifecycleGraphOutputSchema,
 }
 
 function normalizeApiName(value: string): string {

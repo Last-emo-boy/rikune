@@ -24,6 +24,27 @@ export const codeFunctionsListInputSchema = z.object({
 
 export type CodeFunctionsListInput = z.infer<typeof codeFunctionsListInputSchema>
 
+export const codeFunctionsListOutputSchema = z.object({
+  ok: z.boolean(),
+  data: z
+    .object({
+      functions: z.array(
+        z
+          .object({
+            name: z.string(),
+            address: z.string(),
+            size: z.number(),
+            callers: z.number(),
+            callees: z.number(),
+          })
+          .passthrough()
+      ),
+      count: z.number().int().nonnegative(),
+    })
+    .optional(),
+  errors: z.array(z.string()).optional(),
+})
+
 /**
  * Tool definition for code.functions.list
  */
@@ -32,6 +53,7 @@ export const codeFunctionsListToolDefinition: ToolDefinition = {
   description:
     'List all indexed functions for a binary sample. Supports Ghidra-extracted, PE metadata-recovered, or manually defined function indexes.',
   inputSchema: codeFunctionsListInputSchema,
+  outputSchema: codeFunctionsListOutputSchema,
 }
 
 /**

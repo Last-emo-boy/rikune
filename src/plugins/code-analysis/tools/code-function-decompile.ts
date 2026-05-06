@@ -34,6 +34,49 @@ export const codeFunctionDecompileInputSchema = z
 
 export type CodeFunctionDecompileInput = z.infer<typeof codeFunctionDecompileInputSchema>
 
+const FunctionRelationshipSchema = z
+  .object({
+    address: z.string(),
+    name: z.string(),
+    relation_types: z.array(z.string()),
+    reference_types: z.array(z.string()),
+    reference_addresses: z.array(z.string()),
+    target_addresses: z.array(z.string()).optional(),
+    resolved_by: z.string().optional(),
+    is_exact: z.boolean().optional(),
+  })
+  .passthrough()
+
+const CrossReferenceSchema = z
+  .object({
+    from_address: z.string(),
+    type: z.string(),
+    is_call: z.boolean(),
+    is_data: z.boolean(),
+    from_function: z.string().optional(),
+  })
+  .passthrough()
+
+export const codeFunctionDecompileOutputSchema = z.object({
+  ok: z.boolean(),
+  data: z
+    .object({
+      function: z.string(),
+      address: z.string(),
+      pseudocode: z.string(),
+      callers: z.array(z.object({ address: z.string(), name: z.string() }).passthrough()),
+      callees: z.array(z.object({ address: z.string(), name: z.string() }).passthrough()),
+      caller_relationships: z.array(FunctionRelationshipSchema).optional(),
+      callee_relationships: z.array(FunctionRelationshipSchema).optional(),
+      xrefs: z.array(CrossReferenceSchema).optional(),
+    })
+    .passthrough()
+    .optional(),
+  errors: z.array(z.string()).optional(),
+  diagnostics: z.any().optional(),
+  normalized_error: z.any().optional(),
+})
+
 /**
  * Tool definition for code.function.decompile
  */
@@ -42,6 +85,7 @@ export const codeFunctionDecompileToolDefinition: ToolDefinition = {
   description:
     'Decompile a specific function to pseudocode. Requires prior Ghidra analysis. Provide either address or symbol name.',
   inputSchema: codeFunctionDecompileInputSchema,
+  outputSchema: codeFunctionDecompileOutputSchema,
 }
 
 /**

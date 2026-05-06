@@ -5,7 +5,13 @@
 
 import { z } from 'zod'
 import { spawn } from 'child_process'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'symbolic.explore'
@@ -41,6 +47,8 @@ export const SymbolicExploreInputSchema = z.object({
   argv_mode: z.boolean().optional().default(false).describe('Use symbolic argv[1] as input'),
 })
 
+export const SymbolicExploreOutputSchema = createWorkerResultOutputSchema(z.record(z.any()))
+
 export const symbolicExploreToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -48,6 +56,7 @@ export const symbolicExploreToolDefinition: ToolDefinition = {
     'Specify find_addresses (success path) and avoid_addresses (failure path). ' +
     'Returns concrete input values that satisfy path constraints.',
   inputSchema: SymbolicExploreInputSchema,
+  outputSchema: SymbolicExploreOutputSchema,
 }
 
 async function callWorker(

@@ -9,6 +9,7 @@ import { z } from 'zod'
 import {
   getDatabase,
   getWorkspaceServices,
+  createWorkerResultOutputSchema,
   type ArtifactRef,
   type PluginToolDeps,
   type ToolDefinition,
@@ -32,11 +33,38 @@ export const EvidenceGraphInputSchema = z.object({
   session_tag: z.string().optional(),
 })
 
+export const EvidenceGraphOutputSchema = createWorkerResultOutputSchema(
+  z
+    .object({
+      schema: z.string(),
+      tool_version: z.string(),
+      sample_id: z.string(),
+      evidence_scope: z.enum(['all', 'latest', 'session']),
+      evidence_session_tag: z.string().nullable(),
+      summary: z.object({
+        static_artifact_count: z.number().int().nonnegative(),
+        dynamic_artifact_count: z.number().int().nonnegative(),
+        dynamic_executed: z.boolean(),
+        expectation_count: z.number().int().nonnegative(),
+        observation_count: z.number().int().nonnegative(),
+        node_count: z.number().int().nonnegative(),
+        edge_count: z.number().int().nonnegative(),
+        corroboration_edge_count: z.number().int().nonnegative(),
+      }),
+      dynamic_summary: z.any().nullable(),
+      graph: z.any(),
+      warnings: z.array(z.string()),
+      recommended_next_tools: z.array(z.string()),
+    })
+    .passthrough()
+)
+
 export const evidenceGraphToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Build a compact evidence graph that links specialist static artifacts, static expectations, dynamic trace observations, and corroboration edges. Does not execute the sample.',
   inputSchema: EvidenceGraphInputSchema,
+  outputSchema: EvidenceGraphOutputSchema,
 }
 
 export function createEvidenceGraphHandler(deps: PluginToolDeps) {

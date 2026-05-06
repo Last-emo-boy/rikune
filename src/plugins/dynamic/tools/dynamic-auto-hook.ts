@@ -5,7 +5,13 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'dynamic.auto.hook'
 
@@ -87,6 +93,24 @@ export const DynamicAutoHookInputSchema = z.object({
   max_hooks: z.number().int().min(1).max(100).optional().default(30),
 })
 
+export const DynamicAutoHookOutputSchema = createWorkerResultOutputSchema(
+  z.object({
+    capabilities_detected: z.array(z.string()),
+    hooks_generated: z.number().int().nonnegative(),
+    hooks: z.array(
+      z.object({
+        api: z.string(),
+        module: z.string(),
+        reason: z.string(),
+        capability: z.string(),
+      })
+    ),
+    script_path: z.string(),
+    script_preview: z.string(),
+    next_steps: z.array(z.string()),
+  })
+)
+
 export const dynamicAutoHookToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -94,6 +118,7 @@ export const dynamicAutoHookToolDefinition: ToolDefinition = {
     'Maps detected capabilities (file_manipulation, network_communication, etc.) to ' +
     'relevant API hooks with argument logging. Output can be directly used with frida.script.inject.',
   inputSchema: DynamicAutoHookInputSchema,
+  outputSchema: DynamicAutoHookOutputSchema,
 }
 
 function generateFridaScript(

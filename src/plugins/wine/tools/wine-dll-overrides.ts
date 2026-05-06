@@ -36,12 +36,41 @@ const inputSchema = z.object({
   dlls: z.array(z.string()).optional().describe('DLL names to query. Used with action=get.'),
 })
 
+const wineDllOverridesOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z
+      .union([
+        z.object({
+          prefix: z.string(),
+          overrides: z.record(z.string()),
+          count: z.number().int().nonnegative(),
+        }),
+        z.object({
+          prefix: z.string(),
+          overrides: z.record(z.string().nullable()),
+        }),
+        z.object({
+          prefix: z.string(),
+          applied: z.record(overrideMode),
+          env_string: z.string(),
+          hint: z.string(),
+        }),
+      ])
+      .optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    metrics: SharedMetricsSchema.optional(),
+  })
+  .passthrough()
+
 export const wineDllOverridesToolDefinition: ToolDefinition = {
   name: 'wine.dll_overrides',
   description:
     'Configure DLL load-order overrides in a Wine prefix. ' +
     'Set native/builtin/disabled per DLL — useful for hooking, anti-analysis bypass, or forcing specific API implementations.',
   inputSchema: inputSchema,
+  outputSchema: wineDllOverridesOutputSchema,
   runtime: { type: 'inline', handler: 'executeWineDllOverrides' },
 }
 

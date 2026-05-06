@@ -910,6 +910,43 @@ export interface ToolResultOptions {
   isError?: boolean
 }
 
+export const ArtifactRefSchema = z
+  .object({
+    id: z.string(),
+    type: z.string(),
+    path: z.string(),
+    sha256: z.string(),
+    mime: z.string().optional(),
+    metadata: z.record(z.any()).optional(),
+  })
+  .passthrough()
+
+export const WorkerResultMetricsSchema = z
+  .object({
+    elapsed_ms: z.number().optional(),
+    tool: z.string().optional(),
+  })
+  .passthrough()
+
+export function createWorkerResultOutputSchema<TData extends z.ZodTypeAny = z.ZodAny>(
+  dataSchema: TData = z.any() as unknown as TData
+) {
+  return z
+    .object({
+      ok: z.boolean(),
+      data: dataSchema.optional(),
+      warnings: z.array(z.string()).optional(),
+      errors: z.array(z.string()).optional(),
+      artifacts: z.array(ArtifactRefSchema).optional(),
+      metrics: WorkerResultMetricsSchema.optional(),
+      setup_actions: z.array(z.any()).optional(),
+      required_user_inputs: z.array(z.any()).optional(),
+    })
+    .passthrough()
+}
+
+export const WorkerResultOutputSchema = createWorkerResultOutputSchema()
+
 export interface DefinePluginConfig extends Omit<Plugin, 'register' | 'tools'> {
   tools?: DefinedTool[]
   register?: Plugin['register']

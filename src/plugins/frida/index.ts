@@ -47,6 +47,7 @@ const fridaPlugin: Plugin = {
       dockerValidation: ['frida-ps --help >/dev/null 2>&1'],
     },
   ],
+  resources: { scripts: 'scripts' },
   check() {
     try {
       execFileSync('frida', ['--version'], { stdio: 'ignore', timeout: 3000 })

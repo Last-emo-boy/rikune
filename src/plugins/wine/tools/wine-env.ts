@@ -44,12 +44,51 @@ const inputSchema = z.object({
     .describe('Timeout for wineboot initialisation.'),
 })
 
+const wineEnvOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z
+      .union([
+        z.object({
+          prefixes: z.array(z.string()),
+          count: z.number().int().nonnegative(),
+          root: z.string(),
+        }),
+        z.object({
+          prefix: z.string(),
+          path: z.string(),
+          arch: z.enum(['win32', 'win64']),
+          initialised: z.boolean(),
+        }),
+        z.object({
+          prefix: z.string(),
+          path: z.string(),
+          created: z.string(),
+          modified: z.string(),
+          has_drive_c: z.boolean(),
+          size_hint: z.string(),
+        }),
+        z.object({
+          prefix: z.string(),
+          removed: z.boolean(),
+        }),
+      ])
+      .optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    setup_actions: z.array(z.any()).optional(),
+    required_user_inputs: z.array(z.any()).optional(),
+    metrics: SharedMetricsSchema.optional(),
+  })
+  .passthrough()
+
 export const wineEnvToolDefinition: ToolDefinition = {
   name: 'wine.env',
   description:
     'Manage Wine prefixes — create isolated environments, inspect existing ones, list all, or remove. ' +
     'Each prefix is a separate Windows filesystem for clean analysis.',
   inputSchema: inputSchema,
+  outputSchema: wineEnvOutputSchema,
   runtime: { type: 'inline', handler: 'executeWineEnv' },
 }
 

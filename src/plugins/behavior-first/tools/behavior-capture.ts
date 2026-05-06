@@ -32,6 +32,19 @@ export const behaviorCaptureInputSchema = z.object({
   session_tag: z.string().optional(),
 })
 
+const behaviorCaptureOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.object({}).passthrough().optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(z.any()).optional(),
+    setup_actions: z.array(z.any()).optional(),
+    required_user_inputs: z.array(z.any()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).passthrough().optional(),
+  })
+  .passthrough()
+
 export const behaviorCaptureToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -41,6 +54,7 @@ export const behaviorCaptureToolDefinition: ToolDefinition = {
     '(persistence, process_injection, anti_debug, etc.). ' +
     'Use when static analysis is impossible due to heavy obfuscation/packing.',
   inputSchema: behaviorCaptureInputSchema,
+  outputSchema: behaviorCaptureOutputSchema,
 }
 
 export function createBehaviorCaptureHandler(

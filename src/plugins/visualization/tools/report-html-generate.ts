@@ -5,7 +5,13 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 
@@ -21,6 +27,17 @@ export const ReportHtmlGenerateInputSchema = z.object({
     .describe('Sections to include'),
 })
 
+export const ReportHtmlGenerateOutputSchema = createWorkerResultOutputSchema(
+  z.object({
+    report_path: z.string(),
+    sections_included: z.array(
+      z.enum(['overview', 'static', 'dynamic', 'strings', 'iocs', 'threat_score'])
+    ),
+    evidence_used: z.number().int().nonnegative(),
+    html_size: z.number().int().nonnegative(),
+  })
+)
+
 export const reportHtmlGenerateToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -28,6 +45,7 @@ export const reportHtmlGenerateToolDefinition: ToolDefinition = {
     'available evidence into a professional report with overview, static analysis, ' +
     'dynamic behavior, strings, IoCs, and threat scoring sections.',
   inputSchema: ReportHtmlGenerateInputSchema,
+  outputSchema: ReportHtmlGenerateOutputSchema,
 }
 
 function escapeHtml(text: string): string {

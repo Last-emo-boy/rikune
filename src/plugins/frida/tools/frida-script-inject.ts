@@ -6,7 +6,13 @@
 import { spawn } from 'child_process'
 import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 import { normalizeError } from '../../../utils/shared-helpers.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
@@ -74,6 +80,24 @@ const ScriptResultSchema = z.object({
   timestamp: z.number().optional(),
   thread_id: z.number().optional(),
 })
+
+export const FridaScriptInjectOutputSchema = createWorkerResultOutputSchema(
+  z
+    .object({
+      session_id: z.string().nullable(),
+      pid: z.number().nullable(),
+      script_name: z.string(),
+      script_path: z.string().optional(),
+      status: z.enum(['completed', 'failed', 'timeout', 'error']),
+      messages_captured: z.number().int().nonnegative(),
+      results: z.array(ScriptResultSchema),
+      warnings: z.array(z.string()),
+      errors: z.array(z.string()),
+      setup_actions: z.array(z.any()).optional(),
+      required_user_inputs: z.array(z.any()).optional(),
+    })
+    .passthrough()
+)
 
 interface WorkerRequest {
   job_id: string
@@ -195,37 +219,8 @@ export function createFridaScriptInjectHandler(
     RequiredUserInputSchema,
   } = deps
 
-  const FridaScriptInjectOutputSchema = z.object({
-    ok: z.boolean(),
-    data: z
-      .object({
-        session_id: z.string(),
-        pid: z.number(),
-        script_name: z.string(),
-        script_path: z.string().optional(),
-        status: z.enum(['completed', 'failed', 'timeout', 'error']),
-        messages_captured: z.number(),
-        results: z.array(ScriptResultSchema),
-        warnings: z.array(z.string()),
-        errors: z.array(z.string()),
-        setup_actions: SetupActionSchema
-          ? z.array(SetupActionSchema).optional()
-          : z.array(z.any()).optional(),
-        required_user_inputs: RequiredUserInputSchema
-          ? z.array(RequiredUserInputSchema).optional()
-          : z.array(z.any()).optional(),
-      })
-      .optional(),
-    warnings: z.array(z.string()).optional(),
-    errors: z.array(z.string()).optional(),
-    artifacts: z.array(z.any()).optional(),
-    metrics: z
-      .object({
-        elapsed_ms: z.number(),
-        tool: z.string(),
-      })
-      .optional(),
-  })
+  void SetupActionSchema
+  void RequiredUserInputSchema
 
   async function callFridaWorker(request: WorkerRequest): Promise<WorkerResponse> {
     return new Promise((resolve, reject) => {
@@ -567,5 +562,6 @@ export const fridaScriptInjectToolDefinition: ToolDefinition = {
   description:
     'Inject a custom or pre-built Frida JavaScript into a running process for dynamic analysis.',
   inputSchema: FridaScriptInjectInputSchema,
+  outputSchema: FridaScriptInjectOutputSchema,
   runtime: { type: 'python-worker', handler: 'frida_worker.py' },
 }

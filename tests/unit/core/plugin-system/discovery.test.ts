@@ -2,11 +2,23 @@
  * Unit tests for core/plugin-system/discovery.ts
  */
 
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
+import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { discoverPluginsFromDir } from '../../../../src/core/plugin-system/discovery.js'
+import {
+  discoverBuiltInPlugins,
+  discoverExternalPlugins,
+  discoverPluginsFromDir,
+} from '../../../../src/core/plugin-system/discovery.js'
+
+jest.unstable_mockModule('../../../../src/logger.js', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+  logDebug: jest.fn(),
+  logWarning: jest.fn(),
+  logError: jest.fn(),
+  logRingBuffer: [],
+}))
 
 describe('discoverPluginsFromDir', () => {
   let tmpDir: string
@@ -118,6 +130,20 @@ describe('discoverPluginsFromDir', () => {
       'utf-8'
     )
     const result = await discoverPluginsFromDir(tmpDir, 'test')
+    expect(result).toEqual([])
+  })
+
+  test('should discover built-in plugins from the runtime plugin directory', async () => {
+    const result = await discoverBuiltInPlugins()
+
+    expect(result.length).toBeGreaterThan(50)
+    expect(result.some((plugin) => plugin.id === 'pe-analysis')).toBe(true)
+    expect(result.some((plugin) => plugin.id === 'dynamic')).toBe(true)
+  })
+
+  test('should not treat built-in dist plugins as external plugins', async () => {
+    const result = await discoverExternalPlugins()
+
     expect(result).toEqual([])
   })
 })

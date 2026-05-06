@@ -8,7 +8,13 @@ import { z } from 'zod'
 import fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'patch.generate'
 
@@ -57,12 +63,30 @@ export const PatchGenerateInputSchema = z.object({
     ),
 })
 
+export const PatchGenerateOutputSchema = createWorkerResultOutputSchema(
+  z.object({
+    patches_applied: z.number().int().nonnegative(),
+    patches_requested: z.number().int().nonnegative(),
+    patched_sample_id: z.string().nullable(),
+    patch_details: z.array(
+      z.object({
+        file_offset: z.string(),
+        bytes_hex: z.string(),
+        size: z.number().int().nonnegative(),
+        comment: z.string().optional(),
+      })
+    ),
+    image_base: z.string(),
+  })
+)
+
 export const patchGenerateToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Generate binary patches (NOP, JMP-always, invert-branch, custom bytes) for CrackMe bypass. ' +
     'Outputs IPS patch file and/or patched binary registered as a child sample.',
   inputSchema: PatchGenerateInputSchema,
+  outputSchema: PatchGenerateOutputSchema,
 }
 
 function parseHexAddr(s: string): number {

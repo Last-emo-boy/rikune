@@ -66,6 +66,7 @@ const managedSandboxPlugin: Plugin = {
       dockerValidation: ['dotnet --info >/dev/null 2>&1'],
     },
   ],
+  resources: { workers: 'workers' },
   register(server, deps) {
     server.registerTool(safeRunToolDefinition, createSafeRunHandler(deps))
     return ['managed.safe_run']

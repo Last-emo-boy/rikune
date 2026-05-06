@@ -29,6 +29,40 @@ export const codeFunctionsRankInputSchema = z.object({
 
 export type CodeFunctionsRankInput = z.infer<typeof codeFunctionsRankInputSchema>
 
+const RankedFunctionSchema = z
+  .object({
+    address: z.string(),
+    name: z.string(),
+    score: z.number(),
+    reasons: z.array(z.string()),
+    xref_summary: z
+      .array(
+        z
+          .object({
+            api: z.string(),
+            provenance: z.string(),
+            confidence: z.number(),
+            evidence: z.array(z.string()),
+          })
+          .passthrough()
+      )
+      .optional(),
+    vuln_risk_boost: z.number().optional(),
+  })
+  .passthrough()
+
+export const codeFunctionsRankOutputSchema = z.object({
+  ok: z.boolean(),
+  data: z
+    .object({
+      functions: z.array(RankedFunctionSchema),
+      count: z.number().int().nonnegative(),
+      vuln_risk_applied: z.boolean(),
+    })
+    .optional(),
+  errors: z.array(z.string()).optional(),
+})
+
 /**
  * Tool definition for code.functions.rank
  */
@@ -37,6 +71,7 @@ export const codeFunctionsRankToolDefinition: ToolDefinition = {
   description:
     'Rank indexed functions by interest score based on size, callers, sensitive API calls, and entry points. Works with Ghidra, recovered, or manually defined function indexes.',
   inputSchema: codeFunctionsRankInputSchema,
+  outputSchema: codeFunctionsRankOutputSchema,
 }
 
 /**

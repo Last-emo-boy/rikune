@@ -117,11 +117,44 @@ export const hashResolverPlanInputSchema = z.object({
   session_tag: z.string().optional(),
 })
 
+export const hashResolverPlanOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z
+      .object({
+        schema: z.string(),
+        tool_version: z.string(),
+        sample_id: z.string(),
+        source: z.object({
+          file_name: z.string(),
+          total_size: z.number().int().nonnegative(),
+          scanned_bytes: z.number().int().nonnegative(),
+          truncated: z.boolean(),
+        }),
+        resolver_indicators: z.array(z.any()),
+        hash_candidates: z.array(z.any()),
+        recommended_hashes: z.array(z.string()),
+        algorithm_hints: z.array(z.any()),
+        confidence_summary: z.object({}).passthrough(),
+        recommended_next_tools: z.array(z.string()),
+        next_actions: z.array(z.string()),
+        warnings: z.array(z.string()),
+      })
+      .passthrough()
+      .optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(z.any()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),
+  })
+  .passthrough()
+
 export const hashResolverPlanToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Statically scan a sample for API resolver strings, PEB/module-walk hints, and hash-like constants, then produce a bounded resolver plan for hash.identify/hash.resolve and runtime breakpoint follow-up. Does not execute the sample.',
   inputSchema: hashResolverPlanInputSchema,
+  outputSchema: hashResolverPlanOutputSchema,
 }
 
 async function readSamplePrefix(

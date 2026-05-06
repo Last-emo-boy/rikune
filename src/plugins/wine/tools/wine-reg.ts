@@ -13,6 +13,7 @@ import type { WorkerResult, ToolDefinition, ToolArgs } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import {
+  ArtifactRefSchema,
   SharedMetricsSchema,
   executeCommand,
   normalizeError,
@@ -45,12 +46,46 @@ const inputSchema = z.object({
   timeout_sec: z.number().int().min(5).max(60).default(15).describe('Timeout.'),
 })
 
+const wineRegOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z
+      .union([
+        z.object({
+          key: z.string(),
+          output: z.string(),
+        }),
+        z.object({
+          key: z.string(),
+          value_name: z.string(),
+          value_data: z.string(),
+          value_type: z.enum([
+            'REG_SZ',
+            'REG_DWORD',
+            'REG_BINARY',
+            'REG_EXPAND_SZ',
+            'REG_MULTI_SZ',
+          ]),
+          written: z.boolean(),
+        }),
+      ])
+      .optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(ArtifactRefSchema).optional(),
+    setup_actions: z.array(z.any()).optional(),
+    required_user_inputs: z.array(z.any()).optional(),
+    metrics: SharedMetricsSchema.optional(),
+  })
+  .passthrough()
+
 export const wineRegToolDefinition: ToolDefinition = {
   name: 'wine.reg',
   description:
     'Query, set, or export Wine registry keys in a prefix. ' +
     'Useful for pre-populating environment data (anti-VM bypass) or inspecting registry changes after execution.',
   inputSchema: inputSchema,
+  outputSchema: wineRegOutputSchema,
   runtime: { type: 'inline', handler: 'executeWineReg' },
 }
 

@@ -5,7 +5,13 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'data.flow.map'
 
@@ -18,6 +24,39 @@ export const DataFlowMapInputSchema = z.object({
     .describe('Focus area for data flow tracing'),
 })
 
+export const DataFlowMapOutputSchema = createWorkerResultOutputSchema(
+  z.object({
+    sample_id: z.string(),
+    focus: z.enum(['crypto', 'network', 'file_io', 'all']),
+    static_api_count: z.number().int().nonnegative(),
+    dynamic_api_count: z.number().int().nonnegative(),
+    flow_node_count: z.number().int().nonnegative(),
+    flow_edge_count: z.number().int().nonnegative(),
+    detected_patterns: z.array(
+      z.object({
+        name: z.string(),
+        description: z.string(),
+        severity: z.string(),
+        matched_apis: z.array(z.string()),
+      })
+    ),
+    flow_graph: z.object({
+      nodes: z.array(
+        z.object({
+          id: z.string(),
+          api: z.string(),
+          category: z.string(),
+          direction: z.enum(['source', 'transform', 'sink']),
+        })
+      ),
+      edges: z.array(z.object({ from: z.string(), to: z.string(), label: z.string() })),
+    }),
+    data_sources: z.array(z.string()),
+    data_sinks: z.array(z.string()),
+    data_transforms: z.array(z.string()),
+  })
+)
+
 export const dataFlowMapToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -25,6 +64,7 @@ export const dataFlowMapToolDefinition: ToolDefinition = {
     'static imports and dynamic traces. Identifies data transformation chains ' +
     '(read → decrypt → decompress → execute) and data exfiltration paths.',
   inputSchema: DataFlowMapInputSchema,
+  outputSchema: DataFlowMapOutputSchema,
 }
 
 interface FlowNode {

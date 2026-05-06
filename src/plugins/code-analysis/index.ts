@@ -156,7 +156,7 @@ const codeAnalysisPlugin: Plugin = {
     return [
       'code.functions.list',
       'code.functions.rank',
-      'code.functions.smart.recover',
+      'code.functions.smart_recover',
       'code.functions.define',
       'code.functions.search',
       'code.xrefs.analyze',

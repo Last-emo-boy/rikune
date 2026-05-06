@@ -8,7 +8,13 @@
 
 import { z } from 'zod'
 import { spawn } from 'child_process'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'managed.il_xrefs'
@@ -31,6 +37,8 @@ export const IlXrefsInputSchema = z.object({
     .describe('Maximum cross-references to return'),
 })
 
+export const IlXrefsOutputSchema = createWorkerResultOutputSchema(z.record(z.any()))
+
 export const ilXrefsToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -38,6 +46,7 @@ export const ilXrefsToolDefinition: ToolDefinition = {
     'Reports stfld/stsfld/ldfld/ldsfld (fields), call/callvirt/newobj (methods), ' +
     'ldtoken/typeof (types). Handles generic context resolution.',
   inputSchema: IlXrefsInputSchema,
+  outputSchema: IlXrefsOutputSchema,
 }
 
 async function callIlXrefsWorker(

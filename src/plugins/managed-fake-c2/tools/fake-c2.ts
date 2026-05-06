@@ -9,7 +9,13 @@
 
 import { z } from 'zod'
 import { spawn } from 'child_process'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'managed.fake_c2'
@@ -67,6 +73,8 @@ export const FakeC2InputSchema = z.object({
     .describe('Domain names to redirect to the fake C2 (via hosts-file patching in sandbox)'),
 })
 
+export const FakeC2OutputSchema = createWorkerResultOutputSchema(z.record(z.any()))
+
 export const fakeC2ToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -75,6 +83,7 @@ export const fakeC2ToolDefinition: ToolDefinition = {
     'the sample into deeper operational logic. Captures all incoming requests ' +
     'for analysis. Supports TLS, response delays, and DNS redirection in sandbox.',
   inputSchema: FakeC2InputSchema,
+  outputSchema: FakeC2OutputSchema,
 }
 
 /* ── Worker bridge ─────────────────────────────────────────────────────── */

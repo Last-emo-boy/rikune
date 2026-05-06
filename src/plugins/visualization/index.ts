@@ -37,7 +37,7 @@ const visualizationPlugin: Plugin = {
     return [
       'report.html.generate',
       'behavior.timeline',
-      'data_flow.map',
+      'data.flow.map',
       'analysis.evidence.graph',
       'crypto.lifecycle.graph',
     ]

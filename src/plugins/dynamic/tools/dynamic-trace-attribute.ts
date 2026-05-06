@@ -4,7 +4,13 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'dynamic.trace.attribute'
 
@@ -16,12 +22,32 @@ export const DynamicTraceAttributeInputSchema = z.object({
     .describe('Specific trace artifact to attribute. Uses latest if omitted.'),
 })
 
+export const DynamicTraceAttributeOutputSchema = createWorkerResultOutputSchema(
+  z.object({
+    attributed_functions: z.number().int().nonnegative(),
+    total_trace_events: z.number().int().nonnegative(),
+    attributed_events: z.number().int().nonnegative(),
+    unattributed_events: z.number().int().nonnegative(),
+    functions: z.array(
+      z.object({
+        name: z.string(),
+        address: z.string(),
+        api_calls: z.array(z.object({ api: z.string(), count: z.number().int().nonnegative() })),
+        total_events: z.number().int().nonnegative(),
+        behavior_tags: z.array(z.string()),
+      })
+    ),
+    behavior_summary: z.array(z.string()),
+  })
+)
+
 export const dynamicTraceAttributeToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Attribute dynamic trace events (API calls, memory operations) to static analysis functions. ' +
     'Correlates return addresses in traces with Ghidra function boundaries to produce per-function behavior profiles.',
   inputSchema: DynamicTraceAttributeInputSchema,
+  outputSchema: DynamicTraceAttributeOutputSchema,
 }
 
 interface FunctionRange {

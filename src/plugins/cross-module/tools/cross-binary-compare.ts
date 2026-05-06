@@ -5,7 +5,13 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'cross.binary.compare'
 
@@ -22,6 +28,34 @@ export const CrossBinaryCompareInputSchema = z.object({
     .describe('Comparison strategy'),
 })
 
+export const CrossBinaryCompareOutputSchema = createWorkerResultOutputSchema(
+  z.object({
+    sample_count: z.number().int().nonnegative(),
+    comparison_mode: z.string(),
+    pairwise_similarities: z.array(
+      z.object({
+        a: z.string(),
+        b: z.string(),
+        function_similarity: z.number(),
+        import_similarity: z.number(),
+        string_similarity: z.number(),
+        overall: z.number(),
+        shared_imports: z.array(z.string()),
+        shared_strings: z.array(z.string()),
+      })
+    ),
+    clusters: z.array(z.array(z.string())).optional(),
+    per_sample_stats: z.array(
+      z.object({
+        sample_id: z.string(),
+        function_count: z.number().int().nonnegative(),
+        import_count: z.number().int().nonnegative(),
+        string_count: z.number().int().nonnegative(),
+      })
+    ),
+  })
+)
+
 export const crossBinaryCompareToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -29,6 +63,7 @@ export const crossBinaryCompareToolDefinition: ToolDefinition = {
     'common imported APIs, overlapping strings, and possible lineage/versioning ' +
     'relationships. Useful for malware family clustering and multi-component analysis.',
   inputSchema: CrossBinaryCompareInputSchema,
+  outputSchema: CrossBinaryCompareOutputSchema,
 }
 
 interface SampleEvidence {
