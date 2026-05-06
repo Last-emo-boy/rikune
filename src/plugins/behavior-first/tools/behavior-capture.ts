@@ -55,6 +55,7 @@ export const behaviorCaptureToolDefinition: ToolDefinition = {
     'Use when static analysis is impossible due to heavy obfuscation/packing.',
   inputSchema: behaviorCaptureInputSchema,
   outputSchema: behaviorCaptureOutputSchema,
+  runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
 }
 
 export function createBehaviorCaptureHandler(

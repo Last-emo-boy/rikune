@@ -26,6 +26,7 @@ import { SafeRunOutputSchema } from '../../../src/plugins/managed-sandbox/tools/
 import { wineRunOutputSchema } from '../../../src/plugins/wine/tools/wine-run.js'
 import { FridaRuntimeInstrumentOutputSchema } from '../../../src/plugins/frida/tools/frida-runtime-instrument.js'
 import { DebugSessionStartOutputSchema } from '../../../src/plugins/debug-session/tools/debug-session-start.js'
+import { behaviorCaptureToolDefinition } from '../../../src/plugins/behavior-first/tools/behavior-capture.js'
 
 describe('createDelegatingServer', () => {
   let inner: PluginServerInterface & { getProgressReporter?: jest.Mock }
@@ -105,6 +106,7 @@ describe('createDelegatingServer', () => {
     'wine.run': wineRunOutputSchema,
     'frida.runtime.instrument': FridaRuntimeInstrumentOutputSchema,
     'debug.session.start': DebugSessionStartOutputSchema,
+    'behavior.capture': behaviorCaptureToolDefinition.outputSchema,
   }
 
   const runtimeBackedToolCases: Array<{
@@ -136,6 +138,11 @@ describe('createDelegatingServer', () => {
       tool: 'debug.session.start',
       hint: { type: 'inline', handler: 'executeDebugSession' },
       expectedNextTool: 'sample.profile.get',
+    },
+    {
+      tool: 'behavior.capture',
+      hint: { type: 'inline', handler: 'executeBehaviorCapture' },
+      expectedNextTool: 'dynamic.runtime.status',
     },
   ]
 
@@ -175,6 +182,34 @@ describe('createDelegatingServer', () => {
       expect.objectContaining({
         tool: 'frida.runtime.instrument',
         runtime: { type: 'python-worker', handler: 'frida_worker.py' },
+      }),
+      expect.anything()
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  test('should wrap migrated behavior.capture and preserve legacy timeout argument', async () => {
+    const server = createServer(runtimeClient)
+    let wrappedHandler: any
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
+    const behaviorTool: ToolDefinition = {
+      name: 'behavior.capture',
+      description: 'behavior',
+      inputSchema: {},
+      runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
+    }
+
+    server.registerTool(behaviorTool, async () => ({ ok: true }) as WorkerResult)
+    const result = await wrappedHandler({ sample_id: 'sha256:abc123', timeout: 45 })
+
+    expect(runtimeClient.uploadSample).toHaveBeenCalled()
+    expect(runtimeClient.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: 'behavior.capture',
+        args: expect.objectContaining({ timeout: 45 }),
+        runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
       }),
       expect.anything()
     )

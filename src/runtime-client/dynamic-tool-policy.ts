@@ -8,7 +8,6 @@ export type LocalDynamicToolPolicy =
   | 'post-processing'
 
 const LOCAL_DYNAMIC_TOOL_POLICIES = new Map<string, LocalDynamicToolPolicy>([
-  ['behavior.capture', 'legacy-local-worker'],
   ['behavior.ioc', 'post-processing'],
   ['behavior.network', 'post-processing'],
   ['debug.cdb.plan', 'planning'],

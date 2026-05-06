@@ -104,36 +104,6 @@ describe('tool.readiness', () => {
     expect((result.data as any)?.next_actions?.[0]).toMatch(/control-plane/i)
   })
 
-  test('warns for dynamic tools that still use analyzer-side local workers', async () => {
-    const handler = createToolReadinessHandler(
-      () =>
-        [
-          {
-            name: 'behavior.capture',
-            description: 'legacy behavior capture',
-            inputSchema: {},
-          },
-        ] as ToolDefinition[],
-      createPluginManagerMock as any
-    )
-
-    const result = await handler({ tool_name: 'behavior.capture', force_refresh: false })
-
-    expect(result.ok).toBe(true)
-    expect(result.warnings).toEqual(
-      expect.arrayContaining([expect.stringMatching(/not runtime-delegated yet/i)])
-    )
-    expect((result.data as any)?.runtime_plane).toBe('local_dynamic_worker')
-    expect((result.data as any)?.local_dynamic_policy).toBe('legacy-local-worker')
-    expect((result.data as any)?.execution_semantics).toEqual(
-      expect.objectContaining({
-        actual_mode: 'local',
-        live_execution: false,
-        local_dynamic_policy: 'legacy-local-worker',
-      })
-    )
-  })
-
   test('adds primary-surface guidance for compatibility tools', async () => {
     const handler = createToolReadinessHandler(
       () =>
@@ -202,6 +172,41 @@ describe('tool.readiness', () => {
     expect((result.data as any)?.recommended_next_tools).toEqual(
       expect.arrayContaining(['dynamic.runtime.status', 'runtime.debug.session.start'])
     )
+  })
+
+  test('treats behavior.capture as runtime-delegated after migration', async () => {
+    const handler = createToolReadinessHandler(
+      () =>
+        [
+          {
+            name: 'behavior.capture',
+            description: 'behavior capture',
+            inputSchema: {},
+            runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
+          },
+        ] as ToolDefinition[],
+      createPluginManagerMock as any,
+      {
+        runtimeMode: 'remote-sandbox',
+        runtimeClient: {
+          getEndpoint: jest.fn(() => ''),
+          validateRuntimeContract: jest.fn(),
+        },
+      }
+    )
+
+    const result = await handler({ tool_name: 'behavior.capture', force_refresh: false })
+
+    expect(result.ok).toBe(false)
+    expect(result.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/not runtime-delegated yet/i)])
+    )
+    expect((result.data as any)?.readiness).toBe('runtime_not_started')
+    expect((result.data as any)?.execution_path).toBe('delegated')
+    expect((result.data as any)?.required_runtime_contract).toEqual({
+      type: 'inline',
+      handler: 'executeBehaviorCapture',
+    })
   })
 
   test('returns ready when runtime advertises the required contract', async () => {

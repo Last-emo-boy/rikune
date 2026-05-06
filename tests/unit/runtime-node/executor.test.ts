@@ -338,6 +338,37 @@ describe('runtime-node executor backend pre-flight checks', () => {
   })
 
   describe('executeBehaviorCapture', () => {
+    test('accepts legacy behavior.capture timeout argument as timeout_sec', async () => {
+      if (process.platform === 'win32') {
+        const processRowsBefore = JSON.stringify([{ ProcessId: 4, Name: 'System' }])
+        const processRowsAfter = JSON.stringify([{ ProcessId: 4, Name: 'System' }])
+        const fileRows = JSON.stringify([])
+        const psOutputs = [processRowsBefore, processRowsAfter, fileRows]
+
+        spawnMock.mockImplementation((cmd: string) => {
+          if (cmd === 'powershell.exe') {
+            return makeMockProcess({ stdout: psOutputs.shift() || '[]', code: 0 })
+          }
+          return makeMockProcess({ pid: 4242, stdout: '', code: 0, closeDelayMs: 5 })
+        })
+      }
+
+      const result = await executeTask(
+        {
+          taskId: 'task-sample',
+          sampleId: 's1',
+          tool: 'behavior.capture',
+          args: { timeout: 45 },
+          timeoutMs: 1000,
+          runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
+        },
+        () => {},
+        () => {},
+      )
+
+      expect((result.result?.data as any)?.timeout_sec).toBe(45)
+    })
+
     test('captures TCP connection observations into behavior artifacts on Windows', async () => {
       if (process.platform !== 'win32') {
         expect(true).toBe(true)

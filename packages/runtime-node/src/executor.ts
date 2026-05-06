@@ -2345,7 +2345,10 @@ export async function executeBehaviorCapture(
     }
   }
 
-  const timeoutSec = Math.max(5, Math.min(Number(task.args.timeout_sec || 30), 300))
+  const timeoutSec = Math.max(
+    5,
+    Math.min(Number(task.args.timeout_sec ?? task.args.timeout ?? 30), 300)
+  )
   const timeoutMs = timeoutSec * 1000
   const commandArgs = readStringArrayArg(task.args, 'arguments', 'args')
   const networkSinkhole = Boolean(task.args.network_sinkhole ?? true)
@@ -2365,6 +2368,7 @@ export async function executeBehaviorCapture(
       backend: process.platform,
       started_at: startedAt,
       finished_at: new Date().toISOString(),
+      timeout_sec: timeoutSec,
       errors: [
         'dynamic.behavior.capture currently requires a Windows Runtime Node such as Windows Sandbox or Hyper-V VM.',
       ],
