@@ -16,7 +16,7 @@ import {
   getLocalDynamicToolPolicy,
   listExplicitLocalDynamicTools,
 } from '../../../../src/runtime-client/dynamic-tool-policy.js'
-import { listRuntimeDelegatedToolContracts } from '../../../../src/plugins/dynamic/tools/dynamic-runtime-status.js'
+import { listRuntimeDelegatedToolContracts } from '../../../../src/runtime-client/runtime-tool-support.js'
 
 const logger = {
   info() {},

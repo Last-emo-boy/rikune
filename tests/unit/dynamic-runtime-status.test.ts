@@ -5,11 +5,13 @@
 import { describe, test, expect, afterEach, jest } from '@jest/globals'
 import http from 'http'
 import {
-  buildRuntimeToolSupport,
   createDynamicRuntimeStatusHandler,
   dynamicRuntimeStatusToolDefinition,
-  listRuntimeDelegatedToolContracts,
 } from '../../src/plugins/dynamic/tools/dynamic-runtime-status.js'
+import {
+  buildRuntimeToolSupport,
+  listRuntimeDelegatedToolContracts,
+} from '../../src/runtime-client/runtime-tool-support.js'
 
 const SAMPLE_SHA256 = 'b'.repeat(64)
 const SAMPLE_ID = `sha256:${SAMPLE_SHA256}`

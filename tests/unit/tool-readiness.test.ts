@@ -311,9 +311,28 @@ describe('tool.readiness', () => {
       type: 'python-worker',
       handler: 'frida_worker.py',
     })
+    expect((result.data as any)?.runtime_tool_contract).toEqual({
+      tool_name: 'frida.runtime.instrument',
+      runtime_contract: { type: 'python-worker', handler: 'frida_worker.py' },
+    })
     expect((result.data as any)?.available_runtime_backends).toEqual([
       { type: 'python-worker', handler: 'frida_worker.py' },
     ])
+    expect((result.data as any)?.supported_runtime_tools).toEqual(
+      expect.arrayContaining([
+        'frida.runtime.instrument',
+        'frida.script.inject',
+        'frida.trace.capture',
+      ])
+    )
+    expect((result.data as any)?.missing_runtime_tools).toContain('managed.fake_c2')
+    expect((result.data as any)?.runtime_tool_summary).toEqual(
+      expect.objectContaining({
+        supported_count: expect.any(Number),
+        missing_count: expect.any(Number),
+        total_count: expect.any(Number),
+      })
+    )
     expect((result.data as any)?.execution_semantics).toEqual(
       expect.objectContaining({
         actual_mode: 'delegated_ready',

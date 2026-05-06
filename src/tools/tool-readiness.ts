@@ -9,6 +9,10 @@ import {
   getLocalDynamicToolPolicy,
   type LocalDynamicToolPolicy,
 } from '../runtime-client/dynamic-tool-policy.js'
+import {
+  buildRuntimeToolSupportSummary,
+  getRuntimeDelegatedToolContract,
+} from '../runtime-client/runtime-tool-support.js'
 import { ToolSurfaceRoleSchema, buildToolSurfaceGuidance } from '../tool-surface-guidance.js'
 
 const TOOL_NAME = 'tool.readiness'
@@ -52,6 +56,11 @@ const ToolReadinessDataSchema = z
     tool_surface_role: ToolSurfaceRoleSchema.nullable(),
     preferred_primary_tools: z.array(z.string()),
     required_runtime_contract: z.any().nullable(),
+    runtime_tool_contract: z.any().nullable().optional(),
+    runtime_tool_support: z.array(z.any()).optional(),
+    runtime_tool_summary: z.any().optional(),
+    supported_runtime_tools: z.array(z.string()).optional(),
+    missing_runtime_tools: z.array(z.string()).optional(),
     local_dynamic_policy: z.string().nullable().optional(),
     available_runtime_backends: z.array(z.any()),
     execution_semantics: z.record(z.any()),
@@ -393,6 +402,7 @@ export function createToolReadinessHandler(
     const runtimeClient = options.runtimeClient ?? null
     const runtimeEndpoint = runtimeClient?.getEndpoint?.() || null
     const surfaceGuidance = buildToolSurfaceGuidance(tool.name)
+    const runtimeToolContract = getRuntimeDelegatedToolContract(tool.name)
 
     if (runtimeMode === 'remote-sandbox' && !runtimeEndpoint) {
       const guidance = buildRuntimeGuidance('runtime_not_started', tool, runtimeEndpoint, [])
@@ -413,6 +423,8 @@ export function createToolReadinessHandler(
           plugin: pluginPayload,
           runtime_contract: tool.runtime,
           required_runtime_contract: tool.runtime,
+          runtime_tool_contract: runtimeToolContract,
+          ...buildRuntimeToolSupportSummary([]),
           available_runtime_backends: [],
           runtime: {
             required: true,
@@ -457,6 +469,8 @@ export function createToolReadinessHandler(
           plugin: pluginPayload,
           runtime_contract: tool.runtime,
           required_runtime_contract: tool.runtime,
+          runtime_tool_contract: runtimeToolContract,
+          ...buildRuntimeToolSupportSummary([]),
           available_runtime_backends: [],
           runtime: {
             required: true,
@@ -495,6 +509,7 @@ export function createToolReadinessHandler(
           : 'runtime_unreachable'
     const guidance = buildRuntimeGuidance(readiness, tool, runtimeEndpoint, capabilities)
     const runtimePlane = classifyRuntimeReadinessPlane(readiness, runtimeEndpoint)
+    const runtimeToolSupportSummary = buildRuntimeToolSupportSummary(capabilities)
 
     return {
       ok: readiness === 'ready',
@@ -513,6 +528,8 @@ export function createToolReadinessHandler(
         plugin: pluginPayload,
         runtime_contract: tool.runtime,
         required_runtime_contract: tool.runtime,
+        runtime_tool_contract: runtimeToolContract,
+        ...runtimeToolSupportSummary,
         available_runtime_backends: capabilities,
         runtime: {
           required: true,
