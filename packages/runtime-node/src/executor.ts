@@ -369,6 +369,10 @@ const pythonWorkerHandlers: Record<string, { description: string }> = {
     description:
       'Run runtime deobfuscation workers for decrypted strings, API resolution, CFG trace, and .NET deobfuscation.',
   },
+  'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py': {
+    description:
+      'Run a managed fake C2 listener inside the runtime node and capture inbound sample traffic.',
+  },
 }
 
 const inlineHandlerMetadata: Record<string, { description: string; requiresSample?: boolean }> = {

@@ -28,6 +28,7 @@ import { FridaRuntimeInstrumentOutputSchema } from '../../../src/plugins/frida/t
 import { DebugSessionStartOutputSchema } from '../../../src/plugins/debug-session/tools/debug-session-start.js'
 import { behaviorCaptureToolDefinition } from '../../../src/plugins/behavior-first/tools/behavior-capture.js'
 import { deobfStringsToolDefinition } from '../../../src/plugins/runtime-deobfuscate/tools/deobf-strings.js'
+import { fakeC2ToolDefinition } from '../../../src/plugins/managed-fake-c2/tools/fake-c2.js'
 
 describe('createDelegatingServer', () => {
   let inner: PluginServerInterface & { getProgressReporter?: jest.Mock }
@@ -109,6 +110,7 @@ describe('createDelegatingServer', () => {
     'debug.session.start': DebugSessionStartOutputSchema,
     'behavior.capture': behaviorCaptureToolDefinition.outputSchema,
     'deobf.strings': deobfStringsToolDefinition.outputSchema,
+    'managed.fake_c2': fakeC2ToolDefinition.outputSchema,
   }
 
   const runtimeBackedToolCases: Array<{
@@ -151,6 +153,14 @@ describe('createDelegatingServer', () => {
       hint: {
         type: 'python-worker',
         handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+      },
+      expectedNextTool: 'dynamic.runtime.status',
+    },
+    {
+      tool: 'managed.fake_c2',
+      hint: {
+        type: 'python-worker',
+        handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
       },
       expectedNextTool: 'dynamic.runtime.status',
     },
@@ -245,6 +255,37 @@ describe('createDelegatingServer', () => {
         runtime: {
           type: 'python-worker',
           handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+        },
+      }),
+      expect.anything()
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  test('should wrap managed fake C2 with the plugin worker contract', async () => {
+    const server = createServer(runtimeClient)
+    let wrappedHandler: any
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
+
+    server.registerTool(fakeC2ToolDefinition, async () => ({ ok: true }) as WorkerResult)
+    const result = await wrappedHandler({
+      sample_id: 'sha256:abc123',
+      endpoints: [{ path: '/ping', response_body: '{"ok":true}' }],
+      use_tls: false,
+      timeout_seconds: 20,
+    })
+
+    expect(runtimeClient.uploadSample).toHaveBeenCalled()
+    expect(runtimeClient.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: 'managed.fake_c2',
+        args: expect.objectContaining({ timeout_seconds: 20 }),
+        timeoutMs: 50_000,
+        runtime: {
+          type: 'python-worker',
+          handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
         },
       }),
       expect.anything()

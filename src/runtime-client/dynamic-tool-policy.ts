@@ -27,7 +27,6 @@ const LOCAL_DYNAMIC_TOOL_POLICIES = new Map<string, LocalDynamicToolPolicy>([
   ['dynamic.trace.attribute', 'post-processing'],
   ['dynamic.trace.import', 'artifact-import'],
   ['frida.script.generate', 'artifact-generation'],
-  ['managed.fake_c2', 'legacy-local-worker'],
   ['runtime.debug.command', 'control-plane'],
   ['runtime.debug.session.start', 'control-plane'],
   ['runtime.debug.session.status', 'control-plane'],

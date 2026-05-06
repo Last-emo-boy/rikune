@@ -78,6 +78,11 @@ describe('dynamic.runtime.status tool', () => {
                   handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
                   requiresSample: true,
                 },
+                {
+                  type: 'python-worker',
+                  handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
+                  requiresSample: true,
+                },
               ],
             },
           })
@@ -142,7 +147,7 @@ describe('dynamic.runtime.status tool', () => {
       expect((result.data as any).host_agent_endpoint).toBe(hostAgentEndpoint)
       expect((result.data as any).runtime_health).toEqual({ ok: true, role: 'runtime-node' })
       expect((result.data as any).host_agent_health.backend).toBe('windows-sandbox')
-      expect((result.data as any).runtime_capabilities).toHaveLength(5)
+      expect((result.data as any).runtime_capabilities).toHaveLength(6)
       expect((result.data as any).sessions).toHaveLength(1)
       expect((result.data as any).artifact_count).toBe(1)
       expect((result.data as any).backend_interface.supported_backends).toEqual(
@@ -152,6 +157,7 @@ describe('dynamic.runtime.status tool', () => {
           behavior_capture: true,
           frida_runtime: true,
           runtime_deobfuscation: true,
+          managed_fake_c2: true,
         })
       )
       expect((result.data as any).execution_semantics).toEqual(
@@ -165,6 +171,7 @@ describe('dynamic.runtime.status tool', () => {
       expect((result.data as any).recommended_next_tools).toContain('runtime.debug.command')
       expect((result.data as any).recommended_next_tools).toContain('frida.runtime.instrument')
       expect((result.data as any).recommended_next_tools).toContain('deobf.strings')
+      expect((result.data as any).recommended_next_tools).toContain('managed.fake_c2')
       expect((result.data as any).recommended_next_tools).toContain('dynamic.behavior.capture')
     } finally {
       await new Promise<void>((resolve) => runtimeServer.close(() => resolve()))

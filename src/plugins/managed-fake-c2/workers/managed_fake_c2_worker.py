@@ -172,6 +172,7 @@ def handle_start_fake_c2(request: Dict[str, Any]) -> Dict[str, Any]:
 
     # Start HTTP(S) server
     server = HTTPServer(('127.0.0.1', listen_port), FakeC2Handler)
+    actual_listen_port = server.server_port
 
     if use_tls:
         # Create temporary cert
@@ -245,7 +246,7 @@ def handle_start_fake_c2(request: Dict[str, Any]) -> Dict[str, Any]:
     return {
         'ok': True,
         'data': {
-            'listen_address': f'{protocol}://127.0.0.1:{listen_port}',
+            'listen_address': f'{protocol}://127.0.0.1:{actual_listen_port}',
             'endpoints_configured': len(_endpoint_config),
             'tls_enabled': use_tls,
             'dns_redirect': dns_info,
@@ -266,6 +267,59 @@ ACTIONS = {
 }
 
 
+def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Accept both the legacy direct request and the runtime-node worker envelope."""
+    args = payload.get('args')
+    sample = payload.get('sample')
+    if not isinstance(args, dict) and not isinstance(sample, dict):
+        return {**payload, 'runtime_envelope': False}
+
+    args = args if isinstance(args, dict) else {}
+    sample = sample if isinstance(sample, dict) else {}
+    return {
+        'action': args.get('action', 'start_fake_c2'),
+        'file_path': sample.get('path') or args.get('file_path', ''),
+        'endpoints': args.get('endpoints', []),
+        'listen_port': args.get('listen_port', 8443),
+        'use_tls': args.get('use_tls', True),
+        'capture_requests': args.get('capture_requests', True),
+        'default_response': args.get('default_response', '{"status":"ok"}'),
+        'timeout_seconds': args.get('timeout_seconds', 120),
+        'auto_run_sample': args.get('auto_run_sample', False),
+        'dns_redirect': args.get('dns_redirect', []),
+        'working_dir': sample.get('working_dir') or args.get('working_dir', ''),
+        'runtime_envelope': True,
+    }
+
+
+def normalize_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    if not result.get('ok') and 'errors' not in result and result.get('error'):
+        result['errors'] = [str(result.get('error'))]
+    return result
+
+
+def write_runtime_artifact(result: Dict[str, Any], working_dir: str) -> Dict[str, Any]:
+    if not result.get('ok') or not working_dir:
+        return result
+
+    artifact_dir = os.path.join(working_dir, 'artifacts')
+    os.makedirs(artifact_dir, exist_ok=True)
+    artifact_name = 'managed_fake_c2.json'
+    artifact_path = os.path.join(artifact_dir, artifact_name)
+    with open(artifact_path, 'w', encoding='utf-8') as f:
+        json.dump(result.get('data', result), f, ensure_ascii=False, default=str, indent=2)
+
+    artifacts = result.setdefault('artifacts', [])
+    if isinstance(artifacts, list):
+        artifacts.append({
+            'name': artifact_name,
+            'path': artifact_path,
+            'type': 'runtime_analysis',
+            'mime': 'application/json',
+        })
+    return result
+
+
 def main():
     raw = sys.stdin.readline()
     if not raw.strip():
@@ -274,7 +328,7 @@ def main():
         sys.exit(1)
 
     try:
-        request = json.loads(raw)
+        request = normalize_payload(json.loads(raw))
     except json.JSONDecodeError as e:
         json.dump({'ok': False, 'error': f'Invalid JSON: {e}'}, sys.stdout)
         sys.stdout.flush()
@@ -291,6 +345,10 @@ def main():
         result = handler(request)
     except Exception as e:
         result = {'ok': False, 'error': f'{action} failed: {e}'}
+
+    result = normalize_result(result)
+    if request.get('runtime_envelope'):
+        result = write_runtime_artifact(result, request.get('working_dir', ''))
 
     json.dump(result, sys.stdout)
     sys.stdout.flush()

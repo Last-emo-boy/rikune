@@ -84,6 +84,10 @@ export const fakeC2ToolDefinition: ToolDefinition = {
     'for analysis. Supports TLS, response delays, and DNS redirection in sandbox.',
   inputSchema: FakeC2InputSchema,
   outputSchema: FakeC2OutputSchema,
+  runtime: {
+    type: 'python-worker',
+    handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
+  },
 }
 
 /* ── Worker bridge ─────────────────────────────────────────────────────── */

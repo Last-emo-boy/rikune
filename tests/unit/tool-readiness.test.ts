@@ -247,6 +247,44 @@ describe('tool.readiness', () => {
     })
   })
 
+  test('treats managed.fake_c2 as runtime-delegated after migration', async () => {
+    const handler = createToolReadinessHandler(
+      () =>
+        [
+          {
+            name: 'managed.fake_c2',
+            description: 'fake c2',
+            inputSchema: {},
+            runtime: {
+              type: 'python-worker',
+              handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
+            },
+          },
+        ] as ToolDefinition[],
+      createPluginManagerMock as any,
+      {
+        runtimeMode: 'remote-sandbox',
+        runtimeClient: {
+          getEndpoint: jest.fn(() => ''),
+          validateRuntimeContract: jest.fn(),
+        },
+      }
+    )
+
+    const result = await handler({ tool_name: 'managed.fake_c2', force_refresh: false })
+
+    expect(result.ok).toBe(false)
+    expect(result.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/not runtime-delegated yet/i)])
+    )
+    expect((result.data as any)?.readiness).toBe('runtime_not_started')
+    expect((result.data as any)?.execution_path).toBe('delegated')
+    expect((result.data as any)?.required_runtime_contract).toEqual({
+      type: 'python-worker',
+      handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
+    })
+  })
+
   test('returns ready when runtime advertises the required contract', async () => {
     const validateRuntimeContract = jest.fn().mockResolvedValue({
       supported: true,

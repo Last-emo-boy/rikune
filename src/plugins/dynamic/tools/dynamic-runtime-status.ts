@@ -370,6 +370,11 @@ function buildBackendInterface(params: {
         'python-worker',
         'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py'
       ),
+      managed_fake_c2: hasCapability(
+        params.capabilities,
+        'python-worker',
+        'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py'
+      ),
     },
   }
 }
@@ -416,6 +421,9 @@ function buildGuidance(params: {
     }
     if (params.backendInterface.supported_backends.runtime_deobfuscation) {
       recommended.push('deobf.strings')
+    }
+    if (params.backendInterface.supported_backends.managed_fake_c2) {
+      recommended.push('managed.fake_c2')
     }
     if (params.backendInterface.supported_backends.sandbox_execute) {
       recommended.push('sandbox.execute')
