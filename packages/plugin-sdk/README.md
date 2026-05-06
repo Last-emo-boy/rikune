@@ -1,70 +1,96 @@
 # Plugin SDK for Rikune
 
-Type-safe SDK for building third-party plugins for `rikune`.
+Type-safe SDK for building compiled JavaScript plugins for `rikune`.
 
 ## Installation
 
 ```bash
-npm install @w33d/rikune-plugin-sdk
+npm install @rikune/plugin-sdk zod
 ```
 
-## Quick Start
+## Recommended Plugin Shape
 
 ```typescript
-import { definePlugin } from '@w33d/rikune-plugin-sdk'
+import { z } from 'zod'
+import { definePlugin, defineTool, ok } from '@rikune/plugin-sdk'
 
 export default definePlugin({
   id: 'my-custom-tool',
   name: 'My Custom Analysis Tool',
-  version: '1.0.0',
+  version: '0.1.0',
   executionDomain: 'static',
-  description: 'Custom binary analysis plugin',
-
+  surfaceRules: { tier: 3, category: 'static-analysis' },
   configSchema: [
-    { envVar: 'MY_TOOL_PATH', description: 'Path to custom tool binary', required: true },
+    { envVar: 'MY_TOOL_PATH', description: 'Path to custom tool binary', required: false },
   ],
-
-  check() {
-    return Boolean(process.env.MY_TOOL_PATH)
-  },
-
-  register(server, deps, ctx) {
-    // Use ctx.logger for scoped logging
-    ctx?.logger.info('Registering my-tool.analyze')
-    // Use ctx.getConfig() for type-safe config
-    const toolPath = ctx?.getConfig('MY_TOOL_PATH')
-
-    server.registerTool(
-      {
-        name: 'my-tool.analyze',
-        description: 'Run custom analysis',
-        inputSchema: { type: 'object', properties: { sample_id: { type: 'string' } }, required: ['sample_id'] }
-      },
-      async (args: { sample_id: string }) => ({
-        content: [{ type: 'text' as const, text: `Analyzed ${args.sample_id} with ${toolPath}` }]
-      })
-    )
-    return ['my-tool.analyze']
-  },
+  tools: [
+    defineTool({
+      name: 'my_custom_tool.analyze',
+      description: 'Run custom analysis',
+      inputSchema: z.object({ sample_id: z.string() }),
+      handler: async (args, deps, ctx) =>
+        ok({
+          sample_id: args.sample_id,
+          plugin: ctx?.pluginId,
+          configured_path: ctx?.getConfig('MY_TOOL_PATH') ?? null,
+        }),
+    }),
+  ],
 })
 ```
 
-## Static and Dynamic Domains
+Build the plugin to JavaScript and place the compiled `index.js` under `plugins/<id>/`.
 
-Every plugin should declare `executionDomain`:
+## Manifest-Backed Plugins
 
-- `static` — analyzer-side tools that inspect files, artifacts, metadata, or persisted traces.
-- `dynamic` — runtime-side tools that execute or instrument samples through a Runtime Node.
-- `both` — cross-cutting plugins such as observability or reporting.
+Plugins may keep metadata in `plugin.json` and export handlers from `index.js`:
 
-Dynamic tools that are delegated to a Runtime Node declare a `runtime` contract on each
-`ToolDefinition`:
+```json
+{
+  "id": "my-custom-tool",
+  "name": "My Custom Analysis Tool",
+  "version": "0.1.0",
+  "executionDomain": "static",
+  "surfaceRules": { "tier": 3, "category": "static-analysis" },
+  "tools": [
+    {
+      "name": "my_custom_tool.analyze",
+      "description": "Run custom analysis",
+      "inputSchema": { "type": "object" }
+    }
+  ]
+}
+```
 
 ```typescript
-const tool: ToolDefinition = {
-  name: 'sample.runtime.capture',
+import { ok } from '@rikune/plugin-sdk'
+
+export const handlers = {
+  'my_custom_tool.analyze': async () => ok({ completed: true }),
+}
+```
+
+## API
+
+- `definePlugin(config)` - defines a plugin and auto-registers declarative tools.
+- `defineTool(config)` - defines one MCP tool plus its handler.
+- `defineManifestPlugin(manifest, handlers)` - binds `plugin.json` metadata to handlers.
+- `ok(data, options)` / `fail(errors, options)` - build standard `WorkerResult` payloads.
+- `toolText(payload, options)` - build text MCP `ToolResult` payloads.
+- `validatePlugin(plugin)` / `validateTool(tool)` - return field-level validation results.
+- `pathExists(path)` / `envIsSet(name)` - small helpers for prerequisite checks.
+- `getWorkspaceServices`, `getPlatformServices`, `getRuntimeServices`, `getGhidraServices` - grouped service accessors with fallback to existing dependency fields.
+- `requireServices(deps, paths, consumer)` - fail fast when required injected services are missing.
+
+## Runtime Contracts
+
+Dynamic tools that are delegated to a Runtime Node declare a `runtime` contract:
+
+```typescript
+defineTool({
+  name: 'sample_runtime.capture',
   description: 'Capture runtime behavior',
-  inputSchema: { type: 'object' },
+  inputSchema: z.object({ sample_id: z.string() }),
   runtime: {
     type: 'inline',
     handler: 'executeBehaviorCapture',
@@ -72,69 +98,16 @@ const tool: ToolDefinition = {
     requiredProfiles: ['behavior_capture'],
     produces: ['dynamic_trace_json'],
   },
-}
-```
-
-The contract is used for capability checks, runtime routing, setup diagnostics, and
-clear execution semantics in tool results.
-
-## API
-
-### `definePlugin(plugin: Plugin): Plugin`
-Type-safe helper to define a plugin with full inference.
-
-### `pathExists(path: string): boolean`
-Synchronous path existence check — useful in `check()` functions.
-
-### `envIsSet(varName: string): boolean`
-Check whether an environment variable is set and non-empty.
-
-## Plugin Lifecycle
-
-1. **Discovery** — plugins are loaded from the `plugins/` directory
-2. **check()** — optional prerequisite validation
-3. **configSchema** — required fields are validated (warnings logged for missing)
-4. **register(server, deps, ctx)** — register MCP tools; receives a `PluginContext` with scoped logger and config
-5. **hooks** — optional before/after/error callbacks (set `globalHooks: true` to observe ALL tool calls)
-6. **teardown()** — cleanup on unload
-
-## PluginContext
-
-The third argument to `register()` provides:
-
-```typescript
-interface PluginContext {
-  pluginId: string                                // Plugin's unique ID
-  logger: PluginLogger                           // Scoped logger (prefixed with plugin ID)
-  getConfig(envVar: string): string | undefined  // Read config from configSchema
-  getRequiredConfig(envVar: string): string       // Read required config (throws if missing)
-  dataDir: string                                 // Persistent data directory for this plugin
-}
-```
-
-## Global Hooks
-
-Set `globalHooks: true` on your plugin to receive hook callbacks for ALL tool invocations,
-not just your own tools. Useful for observability, logging, and monitoring plugins.
-
-```typescript
-export default definePlugin({
-  id: 'my-observer',
-  globalHooks: true,
-  hooks: {
-    onBeforeToolCall(toolName, args) { console.log(`Calling ${toolName}`) },
-    onAfterToolCall(toolName, args, elapsedMs) { console.log(`${toolName} took ${elapsedMs}ms`) },
-  },
-  register() { return [] },
+  handler: async () => ok({ status: 'queued' }),
 })
 ```
 
-## Types
+The server uses this contract for readiness checks, runtime routing, setup diagnostics, and execution semantics.
 
-- `Plugin` — the core plugin contract
-- `PluginContext` — scoped runtime context
-- `PluginLogger` — structured logging interface
-- `PluginConfigField` — config field descriptor
-- `PluginHooks` — lifecycle hook interfaces
-- `ToolDefinition` — MCP tool registration shape
-- `ToolResult` — standard tool return type
+## Lifecycle
+
+1. Discovery loads compiled plugins from `plugins/`.
+2. Optional `check()` and `systemDeps` validate prerequisites.
+3. `definePlugin()` auto-registers declarative tools, or a plugin can provide `register()` for advanced registration.
+4. Hooks can observe tool calls.
+5. Optional `teardown()` runs when the plugin unloads.

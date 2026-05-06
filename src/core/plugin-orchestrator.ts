@@ -16,7 +16,14 @@ import { PluginRuntimeBridge } from './plugin-runtime-bridge.js'
 import { createPluginContext } from './plugin-system/plugin-context.js'
 import { checkSystemDeps } from './plugin-system/system-deps.js'
 import { discoverBuiltInPlugins, discoverExternalPlugins } from './plugin-system/discovery.js'
-import type { Plugin, PluginStatus, PluginSystemDep } from '../plugins/sdk.js'
+import type {
+  Plugin,
+  PluginContext,
+  PluginServerInterface,
+  PluginStatus,
+  PluginSystemDep,
+} from '../plugins/sdk.js'
+import { validatePlugin } from '../plugins/sdk.js'
 
 type PluginServer = ToolRegistrar & PromptRegistrar & ResourceRegistrar & SamplingClient
 
@@ -30,9 +37,10 @@ const DELEGATED_EXECUTION_DOCKER_FEATURES = new Set([
 ])
 
 function isRemoteRuntimeAnalyzer(): boolean {
+  const runtimeMode = config.runtime?.mode ?? 'disabled'
   return (
     config.node.role === 'analyzer' &&
-    ['remote-sandbox', 'manual', 'auto-sandbox'].includes(config.runtime.mode)
+    ['remote-sandbox', 'manual', 'auto-sandbox'].includes(runtimeMode)
   )
 }
 
@@ -339,6 +347,21 @@ export class PluginOrchestrator {
       statusDetail: 'Plugin loaded successfully',
     }
 
+    const pluginValidation = validatePlugin(plugin)
+    if (!pluginValidation.ok) {
+      status.status = 'error'
+      status.reasonCode = 'registration-failed'
+      status.controlPlaneStatus = 'failed'
+      status.statusDetail = `Invalid plugin contract: ${pluginValidation.errors.join('; ')}`
+      status.error = status.statusDetail
+      this.plugins.push(status)
+      logger.error(
+        { plugin: plugin.id, errors: pluginValidation.errors },
+        `Plugin failed validation: ${plugin.name}`
+      )
+      return status
+    }
+
     // Check dependencies are loaded
     if (plugin.dependencies) {
       for (const dep of plugin.dependencies) {
@@ -473,7 +496,7 @@ export class PluginOrchestrator {
       const bridge = new PluginRuntimeBridge(deps)
       const targetServer = bridge.createServerForPlugin(server, plugin.id, plugin.executionDomain)
 
-      const toolNames = plugin.register(targetServer, deps, ctx)
+      const toolNames = this.registerPlugin(plugin, targetServer, deps, ctx)
       const names: string[] = Array.isArray(toolNames) ? toolNames : []
       status.tools = names
       status.controlPlaneStatus = 'completed'
@@ -509,6 +532,26 @@ export class PluginOrchestrator {
     }
 
     return status
+  }
+
+  private registerPlugin(
+    plugin: Plugin,
+    targetServer: PluginServerInterface,
+    deps: ToolDeps,
+    ctx: PluginContext
+  ): string[] | void {
+    if (plugin.register) {
+      return plugin.register(targetServer, deps, ctx)
+    }
+
+    const names: string[] = []
+    for (const tool of plugin.tools ?? []) {
+      targetServer.registerTool(tool.definition, async (args: unknown) =>
+        tool.handler(args as never, deps, ctx)
+      )
+      names.push(tool.definition.name)
+    }
+    return names
   }
 
   /**

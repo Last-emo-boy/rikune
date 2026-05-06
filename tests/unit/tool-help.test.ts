@@ -16,10 +16,7 @@ describe('tool.help tool', () => {
             .enum(['safe_simulation', 'memory_guided', 'speakeasy'])
             .default('safe_simulation')
             .describe('Dynamic backend mode'),
-          network: z
-            .enum(['block', 'simulate'])
-            .optional()
-            .describe('Network policy'),
+          network: z.enum(['block', 'simulate']).optional().describe('Network policy'),
         }),
         outputSchema: z.object({
           ok: z.boolean(),
@@ -66,7 +63,9 @@ describe('tool.help tool', () => {
     expect(networkField.required).toBe(false)
     expect(networkField.enum_values).toEqual(['block', 'simulate'])
 
-    const outputField = data.tools[0].output.fields.find((item: any) => item.path === 'data.executed')
+    const outputField = data.tools[0].output.fields.find(
+      (item: any) => item.path === 'data.executed'
+    )
     expect(outputField.type).toBe('boolean')
     expect(outputField.required).toBe(false)
   })
@@ -96,14 +95,32 @@ describe('tool.help tool', () => {
 
     expect(result.ok).toBe(true)
     const data = result.data as any
-    expect(data.tools[0].usage_notes.some((item: string) => item.includes('runtime, static-analysis, and semantic artifact scopes'))).toBe(true)
-    expect(data.tools[0].usage_notes.some((item: string) => item.includes('static-analysis artifacts'))).toBe(true)
-    expect(data.tools[0].usage_notes.some((item: string) => item.includes('naming/explanation artifacts'))).toBe(true)
+    expect(
+      data.tools[0].usage_notes.some((item: string) =>
+        item.includes('runtime, static-analysis, and semantic artifact scopes')
+      )
+    ).toBe(true)
+    expect(
+      data.tools[0].usage_notes.some((item: string) => item.includes('static-analysis artifacts'))
+    ).toBe(true)
+    expect(
+      data.tools[0].usage_notes.some((item: string) =>
+        item.includes('naming/explanation artifacts')
+      )
+    ).toBe(true)
 
-    const evidenceScopeField = data.tools[0].input.fields.find((item: any) => item.path === 'evidence_scope')
-    const staticScopeField = data.tools[0].input.fields.find((item: any) => item.path === 'static_scope')
-    const semanticScopeField = data.tools[0].input.fields.find((item: any) => item.path === 'semantic_scope')
-    const sessionTagField = data.tools[0].input.fields.find((item: any) => item.path === 'session_tag')
+    const evidenceScopeField = data.tools[0].input.fields.find(
+      (item: any) => item.path === 'evidence_scope'
+    )
+    const staticScopeField = data.tools[0].input.fields.find(
+      (item: any) => item.path === 'static_scope'
+    )
+    const semanticScopeField = data.tools[0].input.fields.find(
+      (item: any) => item.path === 'semantic_scope'
+    )
+    const sessionTagField = data.tools[0].input.fields.find(
+      (item: any) => item.path === 'session_tag'
+    )
 
     expect(evidenceScopeField.help_hint).toContain('runtime evidence')
     expect(staticScopeField.help_hint).toContain('static-analysis artifact selection')
@@ -187,20 +204,34 @@ describe('tool.help tool', () => {
           item.includes(toTransportToolName('workflow.analyze.promote'))
       )
     ).toBe(true)
-    expect(data.tools[0].usage_notes.some((item: string) => item.includes('small samples'))).toBe(true)
-    expect(data.tools[0].usage_notes.some((item: string) => item.includes('medium/large samples'))).toBe(true)
-    expect(data.tools[0].usage_notes.some((item: string) => item.includes('manual-only'))).toBe(true)
-    expect(data.tools[0].usage_notes.some((item: string) => item.includes('coverage_level'))).toBe(true)
+    expect(data.tools[0].usage_notes.some((item: string) => item.includes('small samples'))).toBe(
+      true
+    )
+    expect(
+      data.tools[0].usage_notes.some((item: string) => item.includes('medium/large samples'))
+    ).toBe(true)
+    expect(data.tools[0].usage_notes.some((item: string) => item.includes('manual-only'))).toBe(
+      true
+    )
+    expect(data.tools[0].usage_notes.some((item: string) => item.includes('coverage_level'))).toBe(
+      true
+    )
     const goalField = data.tools[0].input.fields.find((item: any) => item.path === 'goal')
     const depthField = data.tools[0].input.fields.find((item: any) => item.path === 'depth')
-    const policyField = data.tools[0].input.fields.find((item: any) => item.path === 'backend_policy')
-    const liveField = data.tools[0].input.fields.find((item: any) => item.path === 'allow_live_execution')
+    const policyField = data.tools[0].input.fields.find(
+      (item: any) => item.path === 'backend_policy'
+    )
+    const liveField = data.tools[0].input.fields.find(
+      (item: any) => item.path === 'allow_live_execution'
+    )
 
     expect(goalField.help_hint).toContain('triage')
     expect(depthField.help_hint).toContain('balanced')
     expect(policyField.help_hint).toContain('prefer_new')
     expect(liveField.help_hint).toContain('approved=true')
-    const coverageField = data.tools[0].output.fields.find((item: any) => item.path === 'data.coverage_level')
+    const coverageField = data.tools[0].output.fields.find(
+      (item: any) => item.path === 'data.coverage_level'
+    )
     expect(coverageField.help_hint).toContain('workflow-style outputs')
   })
 
@@ -208,8 +239,7 @@ describe('tool.help tool', () => {
     const definitions: ToolDefinition[] = [
       {
         name: 'sample.request_upload',
-        description:
-          'Primary host-file upload entrypoint for containerized MCP workers.',
+        description: 'Primary host-file upload entrypoint for containerized MCP workers.',
         inputSchema: z.object({
           filename: z.string().optional(),
           ttl_seconds: z.number().default(300),
@@ -234,7 +264,9 @@ describe('tool.help tool', () => {
 
     expect(result.ok).toBe(true)
     const data = result.data as any
-    expect(data.tools[0].usage_notes.some((item: string) => item.includes('Prefer path'))).toBe(true)
+    expect(data.tools[0].usage_notes.some((item: string) => item.includes('Prefer path'))).toBe(
+      true
+    )
 
     const pathField = data.tools[0].input.fields.find((item: any) => item.path === 'path')
     const bytesField = data.tools[0].input.fields.find((item: any) => item.path === 'bytes_b64')
@@ -248,8 +280,14 @@ describe('tool.help tool', () => {
       tool_name: 'sample.request_upload',
     })
     const uploadData = uploadResult.data as any
-    expect(uploadData.tools[0].usage_notes.some((item: string) => item.includes('host-file ingest entrypoint'))).toBe(true)
-    const ttlField = uploadData.tools[0].input.fields.find((item: any) => item.path === 'ttl_seconds')
+    expect(
+      uploadData.tools[0].usage_notes.some((item: string) =>
+        item.includes('host-file ingest entrypoint')
+      )
+    ).toBe(true)
+    const ttlField = uploadData.tools[0].input.fields.find(
+      (item: any) => item.path === 'ttl_seconds'
+    )
     expect(ttlField.help_hint).toContain('upload-session lifetime')
   })
 
@@ -278,11 +316,15 @@ describe('tool.help tool', () => {
     expect(taskStatusData.tools[0].preferred_primary_tools).toContain(
       toTransportToolName('workflow.analyze.status')
     )
-    expect(taskStatusData.tools[0].usage_notes.some((item: string) => item.includes('polling_guidance'))).toBe(true)
+    expect(
+      taskStatusData.tools[0].usage_notes.some((item: string) => item.includes('polling_guidance'))
+    ).toBe(true)
 
     const workflowResult = await handler({ tool_name: 'workflow.reconstruct' })
     const workflowData = workflowResult.data as any
-    expect(workflowData.tools[0].usage_notes.some((item: string) => item.includes('sleep or wait'))).toBe(true)
+    expect(
+      workflowData.tools[0].usage_notes.some((item: string) => item.includes('sleep or wait'))
+    ).toBe(true)
   })
 
   test('should explain Rust recovery paths for ghidra.analyze and pdata-based tools', async () => {
@@ -328,9 +370,13 @@ describe('tool.help tool', () => {
         description: 'Import recovered function boundaries',
         inputSchema: z.object({
           sample_id: z.string(),
-          source: z.enum(['manual', 'pdata', 'symbols_recover', 'smart_recover', 'external']).default('manual'),
+          source: z
+            .enum(['manual', 'pdata', 'symbols_recover', 'smart_recover', 'external'])
+            .default('manual'),
           replace_all: z.boolean().default(false),
-          definitions: z.array(z.object({ address: z.string().optional(), rva: z.number().optional() })),
+          definitions: z.array(
+            z.object({ address: z.string().optional(), rva: z.number().optional() })
+          ),
         }),
       },
       {
@@ -357,7 +403,9 @@ describe('tool.help tool', () => {
     const handler = createToolHelpHandler(() => definitions)
     const ghidraResult = await handler({ tool_name: 'ghidra.analyze' })
     const ghidraData = ghidraResult.data as any
-    const languageIdField = ghidraData.tools[0].input.fields.find((item: any) => item.path === 'options.language_id')
+    const languageIdField = ghidraData.tools[0].input.fields.find(
+      (item: any) => item.path === 'options.language_id'
+    )
     expect(languageIdField.help_hint).toContain('Rust/Go/C++')
     expect(
       ghidraData.tools[0].usage_notes.some((item: string) =>
@@ -367,11 +415,15 @@ describe('tool.help tool', () => {
 
     const pdataResult = await handler({ tool_name: 'pe.pdata.extract' })
     const pdataData = pdataResult.data as any
-    expect(pdataData.tools[0].usage_notes.some((item: string) => item.includes('zero functions'))).toBe(true)
+    expect(
+      pdataData.tools[0].usage_notes.some((item: string) => item.includes('zero functions'))
+    ).toBe(true)
 
     const smartRecoverResult = await handler({ tool_name: 'code.functions.smart_recover' })
     const smartRecoverData = smartRecoverResult.data as any
-    expect(smartRecoverData.tools[0].usage_notes.some((item: string) => item.includes('Rust/Go/C++'))).toBe(true)
+    expect(
+      smartRecoverData.tools[0].usage_notes.some((item: string) => item.includes('Rust/Go/C++'))
+    ).toBe(true)
 
     const symbolsResult = await handler({ tool_name: 'pe.symbols.recover' })
     const symbolsData = symbolsResult.data as any
@@ -383,10 +435,14 @@ describe('tool.help tool', () => {
 
     const defineResult = await handler({ tool_name: 'code.functions.define' })
     const defineData = defineResult.data as any
-    expect(defineData.tools[0].usage_notes.some((item: string) => item.includes('function-index readiness'))).toBe(
-      true
+    expect(
+      defineData.tools[0].usage_notes.some((item: string) =>
+        item.includes('function-index readiness')
+      )
+    ).toBe(true)
+    const definitionsField = defineData.tools[0].input.fields.find(
+      (item: any) => item.path === 'definitions'
     )
-    const definitionsField = defineData.tools[0].input.fields.find((item: any) => item.path === 'definitions')
     expect(definitionsField.help_hint).toContain('smart_recover')
 
     const rustAnalyzeResult = await handler({ tool_name: 'rust_binary.analyze' })
@@ -396,7 +452,9 @@ describe('tool.help tool', () => {
         item.includes(toTransportToolName('runtime.detect'))
       )
     ).toBe(true)
-    const maxStringsField = rustAnalyzeData.tools[0].input.fields.find((item: any) => item.path === 'max_strings')
+    const maxStringsField = rustAnalyzeData.tools[0].input.fields.find(
+      (item: any) => item.path === 'max_strings'
+    )
     expect(maxStringsField.help_hint).toContain('crate paths')
 
     const workflowResult = await handler({ tool_name: 'workflow.function_index_recover' })
@@ -406,10 +464,10 @@ describe('tool.help tool', () => {
         item.includes(toTransportToolName('code.functions.smart_recover'))
       )
     ).toBe(true)
-    const defineFromField = workflowData.tools[0].input.fields.find((item: any) => item.path === 'define_from')
-    expect(defineFromField.help_hint).toContain(
-      'auto prefers pe.symbols.recover'
+    const defineFromField = workflowData.tools[0].input.fields.find(
+      (item: any) => item.path === 'define_from'
     )
+    expect(defineFromField.help_hint).toContain('auto prefers pe.symbols.recover')
   })
 
   test('should explain DLL and COM profiling entrypoints', async () => {
@@ -437,13 +495,17 @@ describe('tool.help tool', () => {
     const dllResult = await handler({ tool_name: 'dll.export.profile' })
     const dllData = dllResult.data as any
     expect(dllData.tools[0].usage_notes.some((item: string) => item.includes('DllMain'))).toBe(true)
-    const dllSampleField = dllData.tools[0].input.fields.find((item: any) => item.path === 'sample_id')
+    const dllSampleField = dllData.tools[0].input.fields.find(
+      (item: any) => item.path === 'sample_id'
+    )
     expect(dllSampleField.help_hint).toContain('DLL-first view')
 
     const comResult = await handler({ tool_name: 'com.role.profile' })
     const comData = comResult.data as any
     expect(comData.tools[0].usage_notes.some((item: string) => item.includes('COM'))).toBe(true)
-    const maxStringsField = comData.tools[0].input.fields.find((item: any) => item.path === 'max_strings')
+    const maxStringsField = comData.tools[0].input.fields.find(
+      (item: any) => item.path === 'max_strings'
+    )
     expect(maxStringsField.help_hint).toContain('CLSID')
   })
 
@@ -473,20 +535,28 @@ describe('tool.help tool', () => {
     const result = await handler({ tool_name: 'system.setup.guide' })
     const data = result.data as any
 
-    expect(data.tools[0].usage_notes.some((item: string) => item.includes('pip install commands'))).toBe(true)
+    expect(
+      data.tools[0].usage_notes.some((item: string) => item.includes('pip install commands'))
+    ).toBe(true)
     const focusField = data.tools[0].input.fields.find((item: any) => item.path === 'focus')
-    const includeOptionalField = data.tools[0].input.fields.find((item: any) => item.path === 'include_optional')
+    const includeOptionalField = data.tools[0].input.fields.find(
+      (item: any) => item.path === 'include_optional'
+    )
 
     expect(focusField.help_hint).toContain('first-run bootstrap guide')
     expect(includeOptionalField.help_hint).toContain('only required setup steps')
 
     const dynamicResult = await handler({ tool_name: 'dynamic.dependencies' })
     const dynamicData = dynamicResult.data as any
-    expect(dynamicData.tools[0].usage_notes.some((item: string) => item.includes('QILING_ROOTFS'))).toBe(true)
+    expect(
+      dynamicData.tools[0].usage_notes.some((item: string) => item.includes('QILING_ROOTFS'))
+    ).toBe(true)
 
     const healthResult = await handler({ tool_name: 'system.health' })
     const healthData = healthResult.data as any
-    expect(healthData.tools[0].usage_notes.some((item: string) => item.includes('RetDec'))).toBe(true)
+    expect(healthData.tools[0].usage_notes.some((item: string) => item.includes('RetDec'))).toBe(
+      true
+    )
   })
 
   test('should explain compact string-context and xref entrypoints', async () => {
@@ -515,13 +585,23 @@ describe('tool.help tool', () => {
 
     const contextResult = await handler({ tool_name: 'analysis.context.link' })
     const contextData = contextResult.data as any
-    expect(contextData.tools[0].usage_notes.some((item: string) => item.includes('bounded indicator-to-function correlation'))).toBe(true)
-    const contextModeField = contextData.tools[0].input.fields.find((item: any) => item.path === 'mode')
+    expect(
+      contextData.tools[0].usage_notes.some((item: string) =>
+        item.includes('bounded indicator-to-function correlation')
+      )
+    ).toBe(true)
+    const contextModeField = contextData.tools[0].input.fields.find(
+      (item: any) => item.path === 'mode'
+    )
     expect(contextModeField.help_hint).toContain('preview first')
 
     const xrefResult = await handler({ tool_name: 'code.xrefs.analyze' })
     const xrefData = xrefResult.data as any
-    expect(xrefData.tools[0].usage_notes.some((item: string) => item.includes('bounded indicator-to-function correlation'))).toBe(true)
+    expect(
+      xrefData.tools[0].usage_notes.some((item: string) =>
+        item.includes('bounded indicator-to-function correlation')
+      )
+    ).toBe(true)
   })
 
   test('should explain graph-export and render guidance for code.function.cfg', async () => {
@@ -574,9 +654,19 @@ describe('tool.help tool', () => {
         inputSchema: z.object({ sample_id: z.string() }),
       },
       {
+        name: 'workflow.analyze.auto',
+        description: 'Primary staged analysis router',
+        inputSchema: z.object({ sample_id: z.string() }),
+      },
+      {
         name: 'workflow.triage',
         description: 'Compatibility quick-profile workflow',
         inputSchema: z.object({ sample_id: z.string() }),
+      },
+      {
+        name: 'tool.readiness',
+        description: 'Tool readiness probe',
+        inputSchema: z.object({ tool_name: z.string() }),
       },
       {
         name: 'report.generate',
@@ -598,6 +688,8 @@ describe('tool.help tool', () => {
     const byName = new Map<string, any>(data.tools.map((item: any) => [item.name, item]))
 
     expect(byName.get(toTransportToolName('workflow.analyze.start')).surface_role).toBe('primary')
+    expect(byName.get(toTransportToolName('workflow.analyze.auto')).surface_role).toBe('primary')
+    expect(byName.get(toTransportToolName('tool.readiness')).surface_role).toBe('primary')
     expect(byName.get(toTransportToolName('workflow.triage')).surface_role).toBe('compatibility')
     expect(byName.get(toTransportToolName('workflow.triage')).preferred_primary_tools).toContain(
       toTransportToolName('workflow.analyze.start')
@@ -643,13 +735,23 @@ describe('tool.help tool', () => {
     const handler = createToolHelpHandler(() => definitions)
     const rizinResult = await handler({ tool_name: 'rizin.analyze' })
     const rizinData = rizinResult.data as any
-    expect(rizinData.tools[0].usage_notes.some((item: string) => item.includes('explicitly requests Rizin'))).toBe(true)
-    expect(rizinData.tools[0].usage_notes.some((item: string) => item.includes('medium/large samples'))).toBe(true)
+    expect(
+      rizinData.tools[0].usage_notes.some((item: string) =>
+        item.includes('explicitly requests Rizin')
+      )
+    ).toBe(true)
+    expect(
+      rizinData.tools[0].usage_notes.some((item: string) => item.includes('medium/large samples'))
+    ).toBe(true)
 
     const wineResult = await handler({ tool_name: 'wine.run' })
     const wineData = wineResult.data as any
-    expect(wineData.tools[0].usage_notes.some((item: string) => item.includes('approved=true'))).toBe(true)
-    const approvedField = wineData.tools[0].input.fields.find((item: any) => item.path === 'approved')
+    expect(
+      wineData.tools[0].usage_notes.some((item: string) => item.includes('approved=true'))
+    ).toBe(true)
+    const approvedField = wineData.tools[0].input.fields.find(
+      (item: any) => item.path === 'approved'
+    )
     expect(approvedField.help_hint).toContain('must be true')
 
     const toolHelpResult = await handler({ tool_name: 'tool.help' })
@@ -702,24 +804,44 @@ describe('tool.help tool', () => {
 
     const cryptoResult = await handler({ tool_name: 'crypto.identify' })
     const cryptoData = cryptoResult.data as any
-    expect(cryptoData.tools[0].usage_notes.some((item: string) => item.includes('correlation layer'))).toBe(true)
-    expect(cryptoData.tools[0].usage_notes.some((item: string) => item.includes('larger samples'))).toBe(true)
-    const cryptoModeField = cryptoData.tools[0].input.fields.find((item: any) => item.path === 'mode')
+    expect(
+      cryptoData.tools[0].usage_notes.some((item: string) => item.includes('correlation layer'))
+    ).toBe(true)
+    expect(
+      cryptoData.tools[0].usage_notes.some((item: string) => item.includes('larger samples'))
+    ).toBe(true)
+    const cryptoModeField = cryptoData.tools[0].input.fields.find(
+      (item: any) => item.path === 'mode'
+    )
     expect(cryptoModeField.help_hint).toContain('preview first')
-    const cryptoRuntimeScope = cryptoData.tools[0].input.fields.find((item: any) => item.path === 'runtime_evidence_scope')
+    const cryptoRuntimeScope = cryptoData.tools[0].input.fields.find(
+      (item: any) => item.path === 'runtime_evidence_scope'
+    )
     expect(cryptoRuntimeScope.help_hint).toContain('latest is the normal AI-facing mode')
 
     const breakpointResult = await handler({ tool_name: 'breakpoint.smart' })
     const breakpointData = breakpointResult.data as any
-    expect(breakpointData.tools[0].usage_notes.some((item: string) => item.includes('planning-only'))).toBe(true)
-    const maxCandidatesField = breakpointData.tools[0].input.fields.find((item: any) => item.path === 'max_candidates')
+    expect(
+      breakpointData.tools[0].usage_notes.some((item: string) => item.includes('planning-only'))
+    ).toBe(true)
+    const maxCandidatesField = breakpointData.tools[0].input.fields.find(
+      (item: any) => item.path === 'max_candidates'
+    )
     expect(maxCandidatesField.help_hint).toContain('compact high-confidence candidates')
 
     const traceResult = await handler({ tool_name: 'trace.condition' })
     const traceData = traceResult.data as any
-    expect(traceData.tools[0].usage_notes.some((item: string) => item.includes('does not execute instrumentation'))).toBe(true)
-    const conditionField = traceData.tools[0].input.fields.find((item: any) => item.path === 'condition')
-    const memoryField = traceData.tools[0].input.fields.find((item: any) => item.path === 'max_memory_bytes')
+    expect(
+      traceData.tools[0].usage_notes.some((item: string) =>
+        item.includes('does not execute instrumentation')
+      )
+    ).toBe(true)
+    const conditionField = traceData.tools[0].input.fields.find(
+      (item: any) => item.path === 'condition'
+    )
+    const memoryField = traceData.tools[0].input.fields.find(
+      (item: any) => item.path === 'max_memory_bytes'
+    )
     expect(conditionField.help_hint).toContain('bounded planning DSL')
     expect(memoryField.help_hint).toContain('total serialization budget')
   })
@@ -736,7 +858,9 @@ describe('tool.help tool', () => {
         outputSchema: z.object({
           ok: z.boolean(),
           data: z.object({
-            packed_state: z.enum(['unknown', 'not_packed', 'suspected_packed', 'confirmed_packed']).optional(),
+            packed_state: z
+              .enum(['unknown', 'not_packed', 'suspected_packed', 'confirmed_packed'])
+              .optional(),
             unpack_state: z
               .enum([
                 'not_applicable',
@@ -750,9 +874,11 @@ describe('tool.help tool', () => {
                 'approval_gated',
               ])
               .optional(),
-            unpack_plan: z.object({
-              strategy: z.string(),
-            }).optional(),
+            unpack_plan: z
+              .object({
+                strategy: z.string(),
+              })
+              .optional(),
           }),
         }),
       },
@@ -765,7 +891,9 @@ describe('tool.help tool', () => {
         outputSchema: z.object({
           ok: z.boolean(),
           data: z.object({
-            packed_state: z.enum(['unknown', 'not_packed', 'suspected_packed', 'confirmed_packed']).optional(),
+            packed_state: z
+              .enum(['unknown', 'not_packed', 'suspected_packed', 'confirmed_packed'])
+              .optional(),
             unpack_state: z.string().optional(),
             debug_state: z
               .enum([
@@ -821,41 +949,59 @@ describe('tool.help tool', () => {
 
     const startResult = await handler({ tool_name: 'workflow.analyze.start' })
     const startData = startResult.data as any
-    expect(startData.tools[0].usage_notes.some((item: string) => item.includes('packed_state'))).toBe(true)
+    expect(
+      startData.tools[0].usage_notes.some((item: string) => item.includes('packed_state'))
+    ).toBe(true)
     expect(
       startData.tools[0].usage_notes.some((item: string) => item.includes('allow_transformations'))
     ).toBe(true)
-    const packedField = startData.tools[0].output.fields.find((item: any) => item.path === 'data.packed_state')
-    const unpackPlanField = startData.tools[0].output.fields.find((item: any) => item.path === 'data.unpack_plan.strategy')
+    const packedField = startData.tools[0].output.fields.find(
+      (item: any) => item.path === 'data.packed_state'
+    )
+    const unpackPlanField = startData.tools[0].output.fields.find(
+      (item: any) => item.path === 'data.unpack_plan.strategy'
+    )
     expect(packedField.help_hint).toContain('suspected_packed')
     expect(unpackPlanField.help_hint).toContain('upx_decompress')
 
     const statusResult = await handler({ tool_name: 'workflow.analyze.status' })
     const statusData = statusResult.data as any
-    expect(statusData.tools[0].usage_notes.some((item: string) => item.includes('debug_state'))).toBe(true)
-    const debugField = statusData.tools[0].output.fields.find((item: any) => item.path === 'data.debug_state')
-    const diffField = statusData.tools[0].output.fields.find((item: any) => item.path === 'data.diff_digests')
+    expect(
+      statusData.tools[0].usage_notes.some((item: string) => item.includes('debug_state'))
+    ).toBe(true)
+    const debugField = statusData.tools[0].output.fields.find(
+      (item: any) => item.path === 'data.debug_state'
+    )
+    const diffField = statusData.tools[0].output.fields.find(
+      (item: any) => item.path === 'data.diff_digests'
+    )
     expect(debugField.help_hint).toContain('persisted debug progression')
     expect(diffField.help_hint).toContain('before/after digests')
 
     const promoteResult = await handler({ tool_name: 'workflow.analyze.promote' })
     const promoteData = promoteResult.data as any
-    expect(promoteData.tools[0].usage_notes.some((item: string) => item.includes('dynamic_plan first'))).toBe(
-      true
-    )
+    expect(
+      promoteData.tools[0].usage_notes.some((item: string) => item.includes('dynamic_plan first'))
+    ).toBe(true)
 
     const upxResult = await handler({ tool_name: 'upx.inspect' })
     const upxData = upxResult.data as any
-    expect(upxData.tools[0].usage_notes.some((item: string) => item.includes('safe unpack probe'))).toBe(true)
+    expect(
+      upxData.tools[0].usage_notes.some((item: string) => item.includes('safe unpack probe'))
+    ).toBe(true)
 
     const breakpointResult = await handler({ tool_name: 'breakpoint.smart' })
     const breakpointData = breakpointResult.data as any
-    expect(breakpointData.tools[0].usage_notes.some((item: string) => item.includes('persisted debug session'))).toBe(true)
+    expect(
+      breakpointData.tools[0].usage_notes.some((item: string) =>
+        item.includes('persisted debug session')
+      )
+    ).toBe(true)
 
     const traceResult = await handler({ tool_name: 'trace.condition' })
     const traceData = traceResult.data as any
-    expect(traceData.tools[0].usage_notes.some((item: string) => item.includes('debug-session artifact'))).toBe(
-      true
-    )
+    expect(
+      traceData.tools[0].usage_notes.some((item: string) => item.includes('debug-session artifact'))
+    ).toBe(true)
   })
 })

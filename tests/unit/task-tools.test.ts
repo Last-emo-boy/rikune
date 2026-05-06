@@ -33,6 +33,9 @@ describe('task tools', () => {
     expect(payload.data.jobs[0].polling_guidance.recommended_wait_seconds).toBeGreaterThan(0)
     expect(payload.data.polling_guidance.prefer_sleep).toBe(true)
     expect(payload.data.result_mode).toBe('queue_summary')
+    expect(payload.data.tool_surface_role).toBe('compatibility')
+    expect(payload.data.preferred_primary_tools).toEqual(['workflow.analyze.status'])
+    expect(payload.data.recommended_next_tools).toContain('task.status')
     expect(payload.data.next_actions[0]).toContain('polling_guidance')
     expect((result as any).structuredContent.data.result_mode).toBe('queue_summary')
   })
@@ -62,6 +65,8 @@ describe('task tools', () => {
     expect(statusPayload.data.job.error).toContain('Cancelled')
     expect(statusPayload.data.job.polling_guidance).toBeNull()
     expect(statusPayload.data.result_mode).toBe('job_lookup')
+    expect(statusPayload.data.tool_surface_role).toBe('compatibility')
+    expect(statusPayload.data.preferred_primary_tools).toEqual(['workflow.analyze.status'])
   })
 
   test('task.sweep should clear old finished records', async () => {

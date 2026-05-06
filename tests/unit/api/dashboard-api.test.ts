@@ -548,6 +548,29 @@ describe('dashboard-api local dashboard data', () => {
         result_json: JSON.stringify({
           summary: 'Semantic name review is waiting for LLM sampling',
           status: 'waiting_for_llm',
+          recommended_next_tools: ['prompts/get', 'code.function.rename.apply'],
+          next_actions: ['Review the prepared LLM prompt bundle.'],
+          coverage_level: 'reconstruction',
+          completion_state: 'partial',
+          coverage_gaps: [
+            {
+              domain: 'semantic_name_review',
+              status: 'queued',
+              reason: 'LLM sampling has not returned suggestions yet.',
+            },
+          ],
+          upgrade_paths: [
+            {
+              tool: 'prompts/get',
+              purpose: 'Review semantic name prompt.',
+              closes_gaps: ['semantic_name_review'],
+              expected_coverage_gain: 'Allows analyst or LLM completion of semantic naming.',
+              cost_tier: 'low',
+              availability: 'ready',
+              prerequisites: [],
+              blockers: [],
+            },
+          ],
           semantic_review: {
             semantic_review_state: 'waiting_for_llm',
             prepare_artifact_id: 'sem-prepare-1',
@@ -640,6 +663,15 @@ describe('dashboard-api local dashboard data', () => {
     expect(body.runs[0].semantic.consumed_session_tags).toEqual(['reviewA'])
     expect(body.runs[0].semantic.waiting_for_llm_stages).toBe(1)
     expect(body.runs[0].semantic.prepare_artifact_ids).toEqual(['sem-prepare-1'])
+    expect(body.runs[0].coverage_level).toBe('reconstruction')
+    expect(body.runs[0].completion_state).toBe('partial')
+    expect(body.runs[0].coverage_gaps[0]).toMatchObject({
+      domain: 'semantic_name_review',
+      status: 'queued',
+    })
+    expect(body.runs[0].recommended_next_tools).toEqual(
+      expect.arrayContaining(['prompts/get', 'code.function.rename.apply'])
+    )
     expect(body.runs[0].semantic.semantic_stages).toEqual([
       expect.objectContaining({
         stage: 'semantic_name_review',

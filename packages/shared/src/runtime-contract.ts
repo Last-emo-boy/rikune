@@ -108,6 +108,18 @@ export const RuntimeDelegationFailureDataSchema = z.object({
   status: z.enum(['setup_required', 'failed']),
   failure_category: RuntimeDelegationFailureCategorySchema,
   summary: z.string(),
+  runtime_plane: z
+    .enum(['runtime_endpoint', 'host_agent', 'runtime_node', 'runtime_capability', 'tool_backend'])
+    .optional(),
+  execution_semantics: z
+    .object({
+      requested_mode: z.string().optional(),
+      actual_mode: z.string().optional(),
+      backend: z.string().optional(),
+      live_execution: z.boolean().optional(),
+      reason: z.string().optional(),
+    })
+    .optional(),
   recommended_next_tools: z.array(z.string()),
   next_actions: z.array(z.string()),
   runtime_endpoint: z.string().nullable().optional(),

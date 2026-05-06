@@ -27,6 +27,7 @@ request timeouts on large or expensive samples:
 - `workflow.analyze.start` initiates or reuses a persisted staged analysis run. Only the `fast_profile` stage executes inline; heavier stages are queued by default.
 - `workflow.analyze.status` queries aggregate run status, including deferred jobs, completed stages, and reusable artifact refs.
 - `workflow.analyze.promote` promotes an existing run to deeper stages without rerunning completed work.
+- `workflow.analyze.auto` is now a staged router over `workflow.analyze.start/promote`; it does not launch heavyweight workflows directly.
 - Heavy tools (`strings.extract`, `binary.role.profile`, `analysis.context.link`, `crypto.identify`) now provide explicit bounded preview modes before deeper queued execution.
 - `workflow.summarize` consumes persisted run state and stage artifacts instead of rerunning hidden heavy analysis.
 - Coverage envelope fields (`coverage_level`, `completion_state`, `coverage_gaps`, `upgrade_paths`) provide machine-readable analysis boundaries and next-step guidance.
@@ -75,9 +76,9 @@ workflow.analyze.start(sample_id, goal='triage')
 **For deep analysis:**
 ```
 workflow.analyze.start(sample_id, goal='reverse')
-→ Returns queued status with job_id
+→ Returns fast_profile plus run_id
+→ workflow.analyze.promote(run_id, through_stage='function_map' or 'reconstruct')
 → Poll workflow.analyze.status(run_id) until completed
-→ Promote to deeper stages as needed
 ```
 
 **For large or oversized samples:**
@@ -242,6 +243,7 @@ It is designed to help MCP clients:
 - `artifact.read`
 - `artifacts.diff`
 - `tool.help`
+- `tool.readiness`
 
 ### Android / APK analysis
 
@@ -527,7 +529,7 @@ See [`docs/EXAMPLES.md`](./docs/EXAMPLES.md#场景 -9-frida-运行时 instrument
 - Frida dynamic instrumentation (`frida.runtime.instrument`, `frida.script.inject`, `frida.trace.capture`)
 - HTTP File Server with REST API (port 18080) — sample upload, artifact CRUD, SSE events
 - **Web Dashboard** at `http://localhost:18080/dashboard` — real-time monitoring of tools, plugins, samples, config, system
-- **Plugin SDK** with 55 built-in plugins, hot-load/unload, third-party auto-discovery
+- **Plugin SDK** with 55 built-in plugins, `definePlugin`/`defineTool` helpers, manifest-backed plugins, hot-load/unload, and third-party auto-discovery
 - **Production infrastructure**: Rate limiting, config validation, pagination, retry, batch analysis, SBOM generation
 - **SSE real-time events**: Server-Sent Events for live analysis progress streaming
 
@@ -907,6 +909,7 @@ Runtime rules that matter:
 - Hyper-V runtime sessions can choose a release policy. Use `hyperv_retention_policy='clean_rollback'` on `runtime.debug.session.start` to restore the checkpoint after release, `stop_only` to power off and keep disk state, or `preserve_dirty` to leave the VM available for manual inspection. The installer flag `-HyperVRestoreOnRelease` sets the Host Agent default.
 - Runtime sessions are explicit. Use `workflow.analyze.promote(dynamic_plan)` when you want the staged workflow to run `static.behavior.classify`, build an evidence-aware `dynamic.deep_plan`, and keep live execution gated. Use `dynamic.runtime.status` to inspect Runtime Node and Host Agent readiness, `dynamic.toolkit.status` to inspect runtime-side debugger/telemetry/dump/manual-GUI tool inventory, `dynamic.deep_plan` to choose a bounded live-analysis profile, `debug.network.plan`, `debug.managed.plan`, and `debug.gui.handoff` when you need network lab, .NET runtime, or manual GUI handoff detail, `dynamic.persona.plan` to prepare a planning-only Sandbox/Hyper-V persona checklist, `runtime.hyperv.control` when you need Hyper-V status/checkpoint create/restore/stop operations, `runtime.debug.session.start` to create or attach to a Windows runtime, `runtime.debug.command` to dispatch `debug.session.*`, `sandbox.execute`, `dynamic.behavior.capture`, telemetry, ProcDump, managed safe-run, or memory-dump work inside it, then use `dynamic.behavior.diff`, `analysis.evidence.graph`, and `crypto.lifecycle.graph` to correlate runtime observations back to static expectations before `runtime.debug.session.stop` releases the backend.
 - `sandbox.execute` reports `data.execution_semantics`, including whether the run was live Windows Sandbox, live Hyper-V, safe simulation, or emulation. Treat safe simulation as non-live evidence.
+- `tool.readiness(tool_name)` is a passive preflight probe. It returns `result_mode`, `tool_surface_role`, `preferred_primary_tools`, `runtime_plane`, `execution_semantics`, `required_runtime_contract`, and `available_runtime_backends` so clients can choose the primary staged path or fix the missing runtime plane before dispatching live work.
 - Runtime tool cache lookup is read-only and can use `RUNTIME_TOOL_DIRS`, `RUNTIME_TOOL_CACHE_DIR`, `RIKUNE_RUNTIME_TOOLS`, or the default `C:\rikune-tools` mount. Put optional tools such as Windows Debugging Tools `cdb.exe`, Sysinternals ProcDump/ProcMon/Sysmon, TTD helpers, x64dbg, dnSpyEx, Frida, dotnet, or FakeNet-style harnesses there when you want deeper dynamic profiles.
 - The Windows Sandbox window may appear during dynamic analysis. That is expected; install/start does not need to keep a Sandbox GUI open.
 - Docker and WSL analyzers cannot use `auto-sandbox` directly. `auto-sandbox` is only for a Windows-native analyzer process.

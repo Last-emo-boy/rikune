@@ -16,7 +16,9 @@ describe('discoverPluginsFromDir', () => {
   })
 
   afterEach(() => {
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    } catch {}
   })
 
   test('should return empty array for non-existent directory', async () => {
@@ -35,6 +37,38 @@ describe('discoverPluginsFromDir', () => {
     const result = await discoverPluginsFromDir(tmpDir, 'test')
     expect(result.length).toBe(1)
     expect(result[0].id).toBe('my-plugin')
+  })
+
+  test('should discover manifest-backed directory plugins with exported handlers', async () => {
+    const pluginDir = path.join(tmpDir, 'manifest-plugin')
+    fs.mkdirSync(pluginDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(pluginDir, 'plugin.json'),
+      JSON.stringify({
+        id: 'manifest-plugin',
+        name: 'Manifest Plugin',
+        executionDomain: 'static',
+        tools: [
+          {
+            name: 'manifest_plugin.echo',
+            description: 'Echo through manifest handler',
+            inputSchema: { type: 'object' },
+          },
+        ],
+      }),
+      'utf-8'
+    )
+    fs.writeFileSync(
+      path.join(pluginDir, 'index.js'),
+      `module.exports = { handlers: { 'manifest_plugin.echo': async () => ({ ok: true }) } };`,
+      'utf-8'
+    )
+
+    const result = await discoverPluginsFromDir(tmpDir, 'test')
+
+    expect(result.length).toBe(1)
+    expect(result[0].id).toBe('manifest-plugin')
+    expect(result[0].tools?.[0].definition.name).toBe('manifest_plugin.echo')
   })
 
   test('should discover flat .js plugin files', async () => {

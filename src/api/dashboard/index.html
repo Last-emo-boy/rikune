@@ -1228,8 +1228,39 @@ async function openRunDetail(runId) {
     <span class="label">Goal</span><span>${esc(run.goal)} / ${esc(run.depth)}</span>
     <span class="label">Status</span><span>${statusBadge(run.normalized_status || run.status)} <span style="color:var(--text3)">${esc(run.status)}</span></span>
     <span class="label">Latest Stage</span><span>${esc(run.latest_stage || '—')}</span>
+    <span class="label">Coverage</span><span>${esc(run.coverage_level || '—')} / ${esc(run.completion_state || '—')}</span>
     <span class="label">Updated</span><span>${run.updated_at ? new Date(run.updated_at).toLocaleString() : '—'}</span>
   </div></div>`
+
+  html += `<div class="drawer-section"><h3>Next Steps</h3><div class="meta-grid">
+    <span class="label">Tools</span><span>${(run.recommended_next_tools || []).map(t => `<span class="badge-type">${esc(t)}</span>`).join(' ') || '—'}</span>
+    <span class="label">Actions</span><span>${(run.next_actions || []).map(a => esc(a)).join('<br>') || '—'}</span>
+    <span class="label">Queued Jobs</span><span>${(run.deferred_jobs || []).length}</span>
+    <span class="label">Recoverable</span><span>${(run.recoverable_stages || []).length}</span>
+  </div></div>`
+
+  if ((run.coverage_gaps || []).length || (run.upgrade_paths || []).length) {
+    html += '<div class="drawer-section"><h3>Coverage Gaps</h3><div class="table-wrap"><table><thead><tr><th>Domain</th><th>Status</th><th>Reason</th><th>Upgrade</th></tr></thead><tbody>'
+    const upgradesByGap = {}
+    ;(run.upgrade_paths || []).forEach(path => {
+      ;(path.closes_gaps || []).forEach(gap => {
+        if (!upgradesByGap[gap]) upgradesByGap[gap] = []
+        upgradesByGap[gap].push(path.tool)
+      })
+    })
+    for (const gap of run.coverage_gaps || []) {
+      html += `<tr>
+        <td>${esc(gap.domain || '—')}</td>
+        <td>${statusBadge(gap.status || 'missing')}</td>
+        <td style="color:var(--text2);font-size:12px">${esc(gap.reason || '—')}</td>
+        <td class="mono" style="font-size:11px">${esc((upgradesByGap[gap.domain] || []).join(', ') || '—')}</td>
+      </tr>`
+    }
+    if (!(run.coverage_gaps || []).length) {
+      html += '<tr><td colspan="4" style="color:var(--text2)">No coverage gaps reported by the latest stage</td></tr>'
+    }
+    html += '</tbody></table></div></div>'
+  }
 
   html += `<div class="drawer-section"><h3>Semantic Review</h3><div class="meta-grid">
     <span class="label">Artifacts</span><span>${semantic.artifact_count || 0}</span>

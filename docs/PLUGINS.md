@@ -10,7 +10,7 @@ modifying core code. Third-party developers can drop `.js`/`.mjs` files into a
 Each plugin:
 
 - Has a unique `id` (kebab-case) and human-readable `name`
-- Implements a `register(server, deps)` function that registers its MCP tools and returns their names
+- Defines tools with `definePlugin` / `defineTool`, or implements `register(server, deps)` for advanced registration
 - Can optionally declare a `check()` prerequisite that must pass before loading
 - Can declare `configSchema` fields for environment-based configuration
 - Can declare `dependencies` on other plugins (topologically sorted)
@@ -155,13 +155,13 @@ services:
 ## Plugin lifecycle
 
 1. `registerAllTools()` calls `loadPlugins(server, deps)`
-2. `discoverExternalPlugins()` scans `plugins/` directory for `.js`/`.mjs` files
+2. `discoverExternalPlugins()` scans `plugins/` for compiled `.js`/`.mjs` plugins and directory plugins with optional `plugin.json`
 3. `PluginManager.loadAll()` resolves enabled plugins via `PLUGINS` env var
 4. Plugins are topologically sorted by `dependencies`
 5. For each enabled plugin in dependency order:
    - Dependency check: all declared dependencies must be loaded
    - If `check()` is defined, it is called. If it returns `false`, the plugin is skipped.
-   - `register(server, deps)` is called, tool names are recorded.
+   - Declarative tools are registered, or `register(server, deps)` is called.
    - Plugin status is recorded as `loaded`, `skipped-check`, `skipped-deps`, or `error`
 6. `server.setPluginManager(mgr)` wires in lifecycle hooks for `callTool()`
 7. Plugin introspection tools (`plugin.list`, `.enable`, `.disable`) are registered
@@ -184,47 +184,77 @@ Hook errors are caught and logged but never propagate to the client.
 
 ## Writing a plugin
 
-### Option A: External plugin (auto-discovered)
+Use the scaffold when starting from scratch:
 
-Create a `.js` or `.mjs` file in the `plugins/` directory at project root:
+```bash
+node scripts/create-plugin.js my-feature --name "My Feature"
+cd plugins/my-feature
+npm install
+npm run build
+```
 
-```javascript
-// plugins/my-feature.mjs
-export default {
+The server discovers the compiled `plugins/my-feature/index.js` on restart.
+
+Recommended TypeScript shape:
+
+```typescript
+import { z } from 'zod'
+import { definePlugin, defineTool, ok } from '@rikune/plugin-sdk'
+
+export default definePlugin({
   id: 'my-feature',
   name: 'My Feature',
-  version: '1.0.0',
+  version: '0.1.0',
+  executionDomain: 'static',
   description: 'Does something cool',
-
-  configSchema: [
-    { envVar: 'MY_TOOL_PATH', description: 'Path to my-tool binary', required: true },
+  surfaceRules: { tier: 3, category: 'static-analysis' },
+  tools: [
+    defineTool({
+      name: 'my_feature.analyze',
+      description: 'Analyze a sample with my feature',
+      inputSchema: z.object({ sample_id: z.string() }),
+      handler: async (args) => ok({ sample_id: args.sample_id }),
+    }),
   ],
+})
+```
 
-  check() {
-    return !!process.env.MY_TOOL_PATH
-  },
+Manifest-backed plugins can keep metadata in `plugin.json` and export handlers from `index.js`:
 
-  register(server, deps) {
-    // Import your tool definition and handler factory, then register
-    // server.registerTool(myToolDefinition, myHandler)
-    return ['my.tool.name']  // return registered tool names
-  },
+```json
+{
+  "id": "my-feature",
+  "name": "My Feature",
+  "version": "0.1.0",
+  "executionDomain": "static",
+  "surfaceRules": { "tier": 3, "category": "static-analysis" },
+  "tools": [
+    {
+      "name": "my_feature.analyze",
+      "description": "Analyze a sample with my feature",
+      "inputSchema": { "type": "object" }
+    }
+  ]
+}
+```
 
-  teardown() {
-    // cleanup if needed
-  },
+```javascript
+import { ok } from '@rikune/plugin-sdk'
+
+export const handlers = {
+  'my_feature.analyze': async () => ok({ completed: true }),
 }
 ```
 
 External plugins are discovered automatically at startup — no code changes needed.
 
-### Option B: Built-in plugin
+### Built-in plugin
 
-1. Define the plugin in `src/plugins.ts` alongside existing plugins
-2. Add it to the `BUILT_IN_PLUGINS` array
+1. Create `src/plugins/<id>/index.ts`
+2. Export a plugin object with `definePlugin()`
 3. Rebuild: `npm run build`
 
-### Option C: Runtime extra plugin
+### Runtime extra plugin
 
 ```typescript
 import { loadPlugins } from './plugins.js'
@@ -244,7 +274,8 @@ interface Plugin {
   configSchema?: PluginConfigField[] // declarative config fields
   hooks?: PluginHooks               // lifecycle hooks
   check?: () => boolean | Promise<boolean>  // prerequisite gate
-  register: (server: MCPServer, deps: ToolDeps) => string[] | void  // register tools
+  tools?: DefinedTool[]             // declarative tools
+  register?: (server: MCPServer, deps: ToolDeps) => string[] | void  // advanced registration
   teardown?: () => void | Promise<void>     // cleanup on unload
 }
 ```
@@ -290,10 +321,10 @@ interface PluginConfigField {
 
 ### Tool not appearing after adding a plugin
 
-1. Ensure the tool file exports both the definition and handler factory.
-2. Ensure `register()` calls `server.registerTool(definition, handler)` and returns tool names.
-3. For external plugins, ensure the file is in `plugins/` and default-exports a `Plugin` object.
-4. Rebuild: `npm run build`
+1. Ensure the compiled `index.js` is under `plugins/<id>/` or a `.js`/`.mjs` file is directly under `plugins/`.
+2. Ensure `defineTool()` names are unique and handlers are functions.
+3. If using `plugin.json`, ensure every tool has a matching exported handler.
+4. Rebuild the plugin and restart the server.
 
 ### Hot-load not working
 

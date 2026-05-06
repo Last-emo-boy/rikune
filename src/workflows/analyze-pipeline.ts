@@ -265,6 +265,7 @@ const runEnvelopeSchema = z
     run_id: z.string(),
     reused: z.boolean(),
     execution_state: z.enum(['inline', 'queued', 'reused', 'partial', 'completed']),
+    result_mode: z.enum(['queued', 'completed']),
     current_stage: AnalysisPipelineStageSchema,
     run: AnalysisRunSummarySchema,
     recovery_state: z.enum(['none', 'interrupted', 'recoverable']).optional(),
@@ -2751,6 +2752,7 @@ function buildRunEnvelope(
         run_id: runSummary.run_id,
         reused,
         execution_state: executionState,
+        result_mode: executionState === 'queued' ? 'queued' : 'completed',
         current_stage: (runSummary.latest_stage || FAST_PROFILE_STAGE) as AnalysisPipelineStage,
         // Strip raw_results from historical stage results to keep response
         // within LLM token budgets. The current stage_result (below) retains

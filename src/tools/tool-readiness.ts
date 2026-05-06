@@ -5,6 +5,7 @@ import type {
   RuntimeBackendCapability,
   RuntimeContractValidationResult,
 } from '../runtime-client/runtime-client.js'
+import { ToolSurfaceRoleSchema, buildToolSurfaceGuidance } from '../tool-surface-guidance.js'
 
 const TOOL_NAME = 'tool.readiness'
 
@@ -17,19 +18,101 @@ export const toolReadinessInputSchema = z.object({
     .describe('Force-refresh runtime capability cache when safe to do so'),
 })
 
-export const toolReadinessOutputSchema = z.object({
-  ok: z.boolean(),
-  data: z.record(z.any()).optional(),
-  errors: z.array(z.string()).optional(),
-  warnings: z.array(z.string()).optional(),
-})
-
 type RuntimeClientLike = {
   getEndpoint?(): string
   validateRuntimeContract?(
     contract: NonNullable<ToolDefinition['runtime']>,
     options?: { forceRefresh?: boolean }
   ): Promise<RuntimeContractValidationResult>
+}
+
+type RuntimeReadiness =
+  | 'ready'
+  | 'runtime_not_started'
+  | 'runtime_unreachable'
+  | 'runtime_capability_missing'
+
+const ToolReadinessDataSchema = z
+  .object({
+    tool_name: z.string(),
+    result_mode: z.literal('tool_readiness'),
+    readiness: z.enum([
+      'ready',
+      'unknown_tool',
+      'runtime_not_started',
+      'runtime_unreachable',
+      'runtime_capability_missing',
+    ]),
+    execution_path: z.enum(['local', 'delegated', 'none']),
+    runtime_plane: z.string().nullable(),
+    tool_surface_role: ToolSurfaceRoleSchema.nullable(),
+    preferred_primary_tools: z.array(z.string()),
+    required_runtime_contract: z.any().nullable(),
+    available_runtime_backends: z.array(z.any()),
+    execution_semantics: z.record(z.any()),
+    recommended_next_tools: z.array(z.string()),
+    next_actions: z.array(z.string()),
+  })
+  .passthrough()
+
+export const toolReadinessOutputSchema = z.object({
+  ok: z.boolean(),
+  data: ToolReadinessDataSchema.optional(),
+  errors: z.array(z.string()).optional(),
+  warnings: z.array(z.string()).optional(),
+})
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim().length > 0)))
+}
+
+function runtimeContractLabel(contract: ToolDefinition['runtime'] | null | undefined): string {
+  return contract ? `${contract.type}/${contract.handler}` : 'none'
+}
+
+function classifyRuntimeReadinessPlane(
+  readiness: RuntimeReadiness,
+  runtimeEndpoint: string | null
+): 'runtime_endpoint' | 'runtime_node' | 'runtime_capability' {
+  if (readiness === 'runtime_not_started') {
+    return 'runtime_endpoint'
+  }
+
+  if (readiness === 'runtime_capability_missing' || readiness === 'ready') {
+    return 'runtime_capability'
+  }
+
+  return runtimeEndpoint ? 'runtime_node' : 'runtime_endpoint'
+}
+
+function buildExecutionSemantics(params: {
+  tool: ToolDefinition
+  readiness: RuntimeReadiness | 'unknown_tool'
+  executionPath: 'local' | 'delegated' | 'none'
+  runtimeMode?: string
+  runtimeEndpoint?: string | null
+  runtimePlane?: string | null
+  reason: string
+}) {
+  const contract = params.tool.runtime ?? null
+  return {
+    readiness_probe: 'passive',
+    requested_mode:
+      params.runtimeMode || (params.executionPath === 'local' ? 'local' : 'manual_runtime'),
+    actual_mode:
+      params.executionPath === 'local'
+        ? 'local'
+        : params.readiness === 'ready'
+          ? 'delegated_ready'
+          : 'plan_only',
+    execution_path: params.executionPath,
+    backend: contract ? runtimeContractLabel(contract) : params.tool.name,
+    live_execution: false,
+    target_requires_delegated_runtime: Boolean(contract),
+    runtime_endpoint: params.runtimeEndpoint ?? null,
+    runtime_plane: params.runtimePlane ?? null,
+    reason: params.reason,
+  }
 }
 
 export const toolReadinessToolDefinition: ToolDefinition = {
@@ -41,21 +124,41 @@ export const toolReadinessToolDefinition: ToolDefinition = {
 }
 
 function buildLocalReadyPayload(tool: ToolDefinition, pluginStatus?: Record<string, unknown>) {
+  const surfaceGuidance = buildToolSurfaceGuidance(tool.name)
+
   return {
     ok: true,
     data: {
       tool_name: tool.name,
+      result_mode: 'tool_readiness',
       readiness: 'ready',
       execution_path: 'local',
+      runtime_plane: 'local_tool',
+      tool_surface_role: surfaceGuidance.tool_surface_role,
+      preferred_primary_tools: surfaceGuidance.preferred_primary_tools,
       plugin: pluginStatus ?? null,
       runtime_contract: null,
+      required_runtime_contract: null,
+      available_runtime_backends: [],
       runtime: {
         required: false,
         endpoint: null,
         capability_advertised: null,
         available_runtime_backends: [],
       },
-      recommended_next_tools: ['tool.help', 'plugin.list'],
+      execution_semantics: buildExecutionSemantics({
+        tool,
+        readiness: 'ready',
+        executionPath: 'local',
+        runtimePlane: 'local_tool',
+        reason:
+          'This readiness probe only inspected registration and plugin state; it did not execute the target tool.',
+      }),
+      recommended_next_tools: uniqueStrings([
+        ...surfaceGuidance.preferred_primary_tools,
+        'tool.help',
+        'plugin.list',
+      ]),
       next_actions: [
         'This tool executes on the current MCP server and does not require a delegated runtime backend.',
       ],
@@ -64,7 +167,7 @@ function buildLocalReadyPayload(tool: ToolDefinition, pluginStatus?: Record<stri
 }
 
 function buildRuntimeGuidance(
-  readiness: 'ready' | 'runtime_not_started' | 'runtime_unreachable' | 'runtime_capability_missing',
+  readiness: RuntimeReadiness,
   tool: ToolDefinition,
   runtimeEndpoint: string | null,
   capabilities: RuntimeBackendCapability[]
@@ -126,7 +229,26 @@ export function createToolReadinessHandler(
         errors: [`Tool not found: ${args.tool_name}`],
         data: {
           tool_name: args.tool_name,
+          result_mode: 'tool_readiness',
           readiness: 'unknown_tool',
+          execution_path: 'none',
+          runtime_plane: 'tool_registry',
+          tool_surface_role: null,
+          preferred_primary_tools: [],
+          required_runtime_contract: null,
+          available_runtime_backends: [],
+          execution_semantics: {
+            readiness_probe: 'passive',
+            requested_mode: 'tool_registry_lookup',
+            actual_mode: 'not_registered',
+            execution_path: 'none',
+            backend: args.tool_name,
+            live_execution: false,
+            target_requires_delegated_runtime: false,
+            runtime_endpoint: null,
+            runtime_plane: 'tool_registry',
+            reason: 'The requested tool is not registered in the current MCP surface.',
+          },
           recommended_next_tools: ['tool.help', 'plugin.list', 'tools.discover'],
           next_actions: [
             'Verify the canonical tool name and whether the corresponding plugin is loaded.',
@@ -157,9 +279,11 @@ export function createToolReadinessHandler(
     const runtimeMode = options.runtimeMode || 'disabled'
     const runtimeClient = options.runtimeClient ?? null
     const runtimeEndpoint = runtimeClient?.getEndpoint?.() || null
+    const surfaceGuidance = buildToolSurfaceGuidance(tool.name)
 
     if (runtimeMode === 'remote-sandbox' && !runtimeEndpoint) {
       const guidance = buildRuntimeGuidance('runtime_not_started', tool, runtimeEndpoint, [])
+      const runtimePlane = classifyRuntimeReadinessPlane('runtime_not_started', runtimeEndpoint)
       return {
         ok: false,
         warnings: [
@@ -167,10 +291,16 @@ export function createToolReadinessHandler(
         ],
         data: {
           tool_name: tool.name,
+          result_mode: 'tool_readiness',
           readiness: 'runtime_not_started',
           execution_path: 'delegated',
+          runtime_plane: runtimePlane,
+          tool_surface_role: surfaceGuidance.tool_surface_role,
+          preferred_primary_tools: surfaceGuidance.preferred_primary_tools,
           plugin: pluginPayload,
           runtime_contract: tool.runtime,
+          required_runtime_contract: tool.runtime,
+          available_runtime_backends: [],
           runtime: {
             required: true,
             mode: runtimeMode,
@@ -178,22 +308,43 @@ export function createToolReadinessHandler(
             capability_advertised: null,
             available_runtime_backends: [],
           },
-          ...guidance,
+          execution_semantics: buildExecutionSemantics({
+            tool,
+            readiness: 'runtime_not_started',
+            executionPath: 'delegated',
+            runtimeMode,
+            runtimeEndpoint,
+            runtimePlane,
+            reason:
+              'The tool requires a delegated runtime backend, but no runtime endpoint is attached.',
+          }),
+          recommended_next_tools: uniqueStrings([
+            ...surfaceGuidance.preferred_primary_tools,
+            ...guidance.recommended_next_tools,
+          ]),
+          next_actions: guidance.next_actions,
         },
       }
     }
 
     if (!runtimeClient?.validateRuntimeContract) {
       const guidance = buildRuntimeGuidance('runtime_unreachable', tool, runtimeEndpoint, [])
+      const runtimePlane = classifyRuntimeReadinessPlane('runtime_unreachable', runtimeEndpoint)
       return {
         ok: false,
         warnings: ['No runtime client is configured for delegated runtime validation.'],
         data: {
           tool_name: tool.name,
+          result_mode: 'tool_readiness',
           readiness: 'runtime_unreachable',
           execution_path: 'delegated',
+          runtime_plane: runtimePlane,
+          tool_surface_role: surfaceGuidance.tool_surface_role,
+          preferred_primary_tools: surfaceGuidance.preferred_primary_tools,
           plugin: pluginPayload,
           runtime_contract: tool.runtime,
+          required_runtime_contract: tool.runtime,
+          available_runtime_backends: [],
           runtime: {
             required: true,
             mode: runtimeMode,
@@ -201,7 +352,20 @@ export function createToolReadinessHandler(
             capability_advertised: null,
             available_runtime_backends: [],
           },
-          ...guidance,
+          execution_semantics: buildExecutionSemantics({
+            tool,
+            readiness: 'runtime_unreachable',
+            executionPath: 'delegated',
+            runtimeMode,
+            runtimeEndpoint,
+            runtimePlane,
+            reason: 'No runtime client is configured for delegated runtime validation.',
+          }),
+          recommended_next_tools: uniqueStrings([
+            ...surfaceGuidance.preferred_primary_tools,
+            ...guidance.recommended_next_tools,
+          ]),
+          next_actions: guidance.next_actions,
         },
       }
     }
@@ -217,6 +381,7 @@ export function createToolReadinessHandler(
           ? 'runtime_capability_missing'
           : 'runtime_unreachable'
     const guidance = buildRuntimeGuidance(readiness, tool, runtimeEndpoint, capabilities)
+    const runtimePlane = classifyRuntimeReadinessPlane(readiness, runtimeEndpoint)
 
     return {
       ok: readiness === 'ready',
@@ -226,10 +391,16 @@ export function createToolReadinessHandler(
           : undefined,
       data: {
         tool_name: tool.name,
+        result_mode: 'tool_readiness',
         readiness,
         execution_path: 'delegated',
+        runtime_plane: runtimePlane,
+        tool_surface_role: surfaceGuidance.tool_surface_role,
+        preferred_primary_tools: surfaceGuidance.preferred_primary_tools,
         plugin: pluginPayload,
         runtime_contract: tool.runtime,
+        required_runtime_contract: tool.runtime,
+        available_runtime_backends: capabilities,
         runtime: {
           required: true,
           mode: runtimeMode,
@@ -238,7 +409,25 @@ export function createToolReadinessHandler(
           matched_runtime_backend: validation.capability ?? null,
           available_runtime_backends: capabilities,
         },
-        ...guidance,
+        execution_semantics: buildExecutionSemantics({
+          tool,
+          readiness,
+          executionPath: 'delegated',
+          runtimeMode,
+          runtimeEndpoint,
+          runtimePlane,
+          reason:
+            readiness === 'ready'
+              ? `Runtime contract ${runtimeContractLabel(tool.runtime)} is advertised by the active runtime endpoint.`
+              : readiness === 'runtime_capability_missing'
+                ? `The active runtime does not advertise ${runtimeContractLabel(tool.runtime)}.`
+                : 'Runtime capability validation failed or returned no definitive answer.',
+        }),
+        recommended_next_tools: uniqueStrings([
+          ...surfaceGuidance.preferred_primary_tools,
+          ...guidance.recommended_next_tools,
+        ]),
+        next_actions: guidance.next_actions,
       },
     }
   }

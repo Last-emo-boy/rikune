@@ -91,7 +91,7 @@ describe('PluginOrchestrator', () => {
       process.env.PLUGINS = 'a'
       const plugins = [makePlugin('a'), makePlugin('b')]
       const result = orchestrator.resolveEnabledPlugins(plugins)
-      expect(result.map(p => p.id)).toEqual(['a'])
+      expect(result.map((p) => p.id)).toEqual(['a'])
       process.env.PLUGINS = original ?? ''
     })
 
@@ -100,7 +100,7 @@ describe('PluginOrchestrator', () => {
       process.env.PLUGINS = '-b'
       const plugins = [makePlugin('a'), makePlugin('b')]
       const result = orchestrator.resolveEnabledPlugins(plugins)
-      expect(result.map(p => p.id)).toEqual(['a'])
+      expect(result.map((p) => p.id)).toEqual(['a'])
       process.env.PLUGINS = original ?? ''
     })
   })
@@ -108,14 +108,20 @@ describe('PluginOrchestrator', () => {
   describe('resolvePluginsByRole', () => {
     test('hybrid keeps all', () => {
       ;(config as any).node.role = 'hybrid'
-      const plugins = [makePlugin('a', { executionDomain: 'static' }), makePlugin('b', { executionDomain: 'dynamic' })]
+      const plugins = [
+        makePlugin('a', { executionDomain: 'static' }),
+        makePlugin('b', { executionDomain: 'dynamic' }),
+      ]
       expect(orchestrator.resolvePluginsByRole(plugins)).toEqual(plugins)
     })
 
     test('analyzer keeps all', () => {
       ;(config as any).node.role = 'analyzer'
-      const plugins = [makePlugin('a', { executionDomain: 'static' }), makePlugin('b', { executionDomain: 'dynamic' })]
-      expect(orchestrator.resolvePluginsByRole(plugins).map(p => p.id)).toEqual(['a', 'b'])
+      const plugins = [
+        makePlugin('a', { executionDomain: 'static' }),
+        makePlugin('b', { executionDomain: 'dynamic' }),
+      ]
+      expect(orchestrator.resolvePluginsByRole(plugins).map((p) => p.id)).toEqual(['a', 'b'])
     })
 
     test('runtime keeps only dynamic plugins', () => {
@@ -125,7 +131,7 @@ describe('PluginOrchestrator', () => {
         makePlugin('b', { executionDomain: 'dynamic' }),
         makePlugin('c', { executionDomain: 'both' }),
       ]
-      expect(orchestrator.resolvePluginsByRole(plugins).map(p => p.id)).toEqual(['b', 'c'])
+      expect(orchestrator.resolvePluginsByRole(plugins).map((p) => p.id)).toEqual(['b', 'c'])
     })
   })
 
@@ -134,7 +140,7 @@ describe('PluginOrchestrator', () => {
       const a = makePlugin('a')
       const b = makePlugin('b', { dependencies: ['a'] })
       const c = makePlugin('c', { dependencies: ['b'] })
-      expect(orchestrator.topoSort([c, a, b]).map(p => p.id)).toEqual(['a', 'b', 'c'])
+      expect(orchestrator.topoSort([c, a, b]).map((p) => p.id)).toEqual(['a', 'b', 'c'])
     })
 
     test('should throw on cycles', () => {
@@ -178,6 +184,40 @@ describe('PluginOrchestrator', () => {
       expect(status.statusDetail).toContain('tool')
       expect(status.tools).toContain('a.tool')
       expect(mockServer.registerTool).not.toHaveBeenCalled() // register is called inside plugin.register, not orchestrator directly
+    })
+
+    test('should auto-register declarative plugin tools', async () => {
+      const p = makePlugin('a', {
+        register: undefined,
+        tools: [
+          {
+            definition: {
+              name: 'a.tool',
+              description: 'Declarative tool',
+              inputSchema: {},
+            },
+            handler: async () => ({ ok: true }),
+          },
+        ],
+      } as Partial<Plugin>)
+
+      const status = await orchestrator.loadOne(p, mockServer as any, mockDeps)
+
+      expect(status.status).toBe('loaded')
+      expect(status.tools).toEqual(['a.tool'])
+      expect(mockServer.registerTool).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'a.tool' }),
+        expect.any(Function)
+      )
+    })
+
+    test('should report invalid plugin contracts before registration', async () => {
+      const p = makePlugin('bad plugin', { register: undefined } as Partial<Plugin>)
+      const status = await orchestrator.loadOne(p, mockServer as any, mockDeps)
+
+      expect(status.status).toBe('error')
+      expect(status.reasonCode).toBe('registration-failed')
+      expect(status.statusDetail).toContain('Invalid plugin contract')
     })
   })
 

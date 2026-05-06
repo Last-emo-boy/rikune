@@ -2,13 +2,24 @@
  * Unit tests for @rikune/plugin-sdk contracts.
  */
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 import {
   SURFACE_FILE_TYPE_TAGS,
+  defineManifestPlugin,
+  definePlugin,
+  defineTool,
+  envIsSet,
+  fail,
   getRuntimeConfig,
   getWorkspaceServices,
+  ok,
+  pathExists,
   requireDatabase,
   requirePlatformServer,
+  requireServices,
+  toolText,
+  validatePlugin,
+  validateTool,
 } from '../../../packages/plugin-sdk/src/index.js'
 import type {
   Plugin,
@@ -27,8 +38,8 @@ describe('@rikune/plugin-sdk', () => {
       { type: 'inline', handler: 'executeSandboxExecute' },
     ]
 
-    expect(contracts.map(contract => contract.type)).toEqual(['python-worker', 'spawn', 'inline'])
-    expect(contracts.every(contract => contract.handler.length > 0)).toBe(true)
+    expect(contracts.map((contract) => contract.type)).toEqual(['python-worker', 'spawn', 'inline'])
+    expect(contracts.every((contract) => contract.handler.length > 0)).toBe(true)
   })
 
   test('tool and worker result contracts can be expressed without server internals', () => {
@@ -90,10 +101,125 @@ describe('@rikune/plugin-sdk', () => {
     }
 
     expect(plugin.executionDomain).toBe('dynamic')
-    expect(plugin.register({ registerTool() {}, unregisterTool() {} }, {})).toEqual(['test.tool'])
+    expect(plugin.register?.({ registerTool() {}, unregisterTool() {} }, {})).toEqual(['test.tool'])
   })
 
-  test('plugin deps expose grouped services without removing legacy fields', () => {
+  test('defineTool and definePlugin auto-register declarative tools', async () => {
+    const handler = jest.fn(async () => ok({ completed: true }))
+    const tool = defineTool({
+      name: 'demo.echo',
+      description: 'Echo demo input',
+      inputSchema: { type: 'object' },
+      handler,
+    })
+    const plugin = definePlugin({
+      id: 'demo',
+      name: 'Demo',
+      executionDomain: 'static',
+      tools: [tool],
+    })
+    const registered: Array<{ name: string; handler: (args: unknown) => Promise<unknown> }> = []
+    const server = {
+      registerTool(
+        definition: ToolDefinition,
+        registeredHandler: (args: unknown) => Promise<unknown>
+      ) {
+        registered.push({ name: definition.name, handler: registeredHandler })
+      },
+      unregisterTool() {},
+    }
+
+    expect(plugin.register?.(server, {})).toEqual(['demo.echo'])
+    expect(registered.map((item) => item.name)).toEqual(['demo.echo'])
+    await registered[0].handler({ sample_id: 'sha256:test' })
+    expect(handler).toHaveBeenCalledWith({ sample_id: 'sha256:test' }, {}, undefined)
+  })
+
+  test('defineManifestPlugin binds manifest tools to named handlers', async () => {
+    const plugin = defineManifestPlugin(
+      {
+        id: 'manifest-demo',
+        name: 'Manifest Demo',
+        executionDomain: 'static',
+        tools: [
+          {
+            name: 'manifest_demo.echo',
+            description: 'Manifest-backed echo',
+            inputSchema: { type: 'object' },
+          },
+        ],
+      },
+      {
+        'manifest_demo.echo': async () => ok({ source: 'manifest' }),
+      }
+    )
+    const registered: Array<{ name: string }> = []
+    plugin.register?.(
+      {
+        registerTool(definition: ToolDefinition) {
+          registered.push({ name: definition.name })
+        },
+        unregisterTool() {},
+      },
+      {}
+    )
+
+    expect(registered).toEqual([{ name: 'manifest_demo.echo' }])
+  })
+
+  test('manifest plugins fail fast when a handler is missing', () => {
+    expect(() =>
+      defineManifestPlugin(
+        {
+          id: 'manifest-demo',
+          name: 'Manifest Demo',
+          tools: [{ name: 'manifest_demo.echo', description: 'Manifest-backed echo' }],
+        },
+        {}
+      )
+    ).toThrow(/Missing handler/)
+  })
+
+  test('validation reports actionable plugin and tool errors', () => {
+    expect(validateTool({ name: 'Bad Tool', description: '', inputSchema: {} }).ok).toBe(false)
+    const plugin = {
+      id: 'bad plugin',
+      name: 'Bad',
+      tools: [
+        defineTool({
+          name: 'bad.tool',
+          description: 'Bad tool',
+          inputSchema: {},
+          handler: async () => ok({}),
+        }),
+        defineTool({
+          name: 'bad.tool',
+          description: 'Duplicate tool',
+          inputSchema: {},
+          handler: async () => ok({}),
+        }),
+      ],
+    } as Plugin
+
+    const result = validatePlugin(plugin)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toContain('Duplicate tool name')
+  })
+
+  test('result helpers produce compatible tool and worker results', () => {
+    expect(ok({ status: 'ready' })).toEqual({ ok: true, data: { status: 'ready' } })
+    expect(fail('missing dependency')).toEqual({
+      ok: false,
+      status: 'failed',
+      errors: ['missing dependency'],
+    })
+    expect(toolText({ ok: true, data: { value: 1 } }).structuredContent).toEqual({
+      ok: true,
+      data: { value: 1 },
+    })
+  })
+
+  test('plugin deps expose grouped services alongside top-level fields', () => {
     const services: PluginServices = {
       workspace: {
         manager: { kind: 'workspace' },
@@ -113,11 +239,11 @@ describe('@rikune/plugin-sdk', () => {
     expect(typeof services.platform?.logger?.info).toBe('function')
   })
 
-  test('service helpers prefer grouped services and fall back to legacy fields', () => {
+  test('service helpers prefer grouped services and fall back to top-level fields', () => {
     const deps = {
-      workspaceManager: { kind: 'legacy-workspace' },
-      database: { kind: 'legacy-db' },
-      config: { runtime: { mode: 'legacy' } },
+      workspaceManager: { kind: 'top-level-workspace' },
+      database: { kind: 'top-level-db' },
+      config: { runtime: { mode: 'top-level' } },
       services: {
         workspace: {
           manager: { kind: 'grouped-workspace' },
@@ -149,5 +275,37 @@ describe('@rikune/plugin-sdk', () => {
     expect(() => requirePlatformServer({} as any, 'batch.submit')).toThrow(
       'platform server is required for batch.submit'
     )
+  })
+
+  test('requireServices resolves grouped service paths', () => {
+    const deps = {
+      services: {
+        workspace: { database: { kind: 'db' } },
+        platform: { server: { kind: 'server' } },
+      },
+    }
+    const services = requireServices(
+      deps as any,
+      ['workspace.database', 'platform.server'],
+      'demo.tool'
+    )
+
+    expect(services['workspace.database']).toEqual({ kind: 'db' })
+    expect(services['platform.server']).toEqual({ kind: 'server' })
+    expect(() => requireServices({} as any, ['runtime.client'], 'demo.tool')).toThrow(
+      'runtime.client is required for demo.tool'
+    )
+  })
+
+  test('environment and path helpers expose simple checks', () => {
+    const original = process.env.RIKUNE_PLUGIN_TEST
+    process.env.RIKUNE_PLUGIN_TEST = '1'
+    expect(envIsSet('RIKUNE_PLUGIN_TEST')).toBe(true)
+    expect(pathExists(process.cwd())).toBe(true)
+    if (original === undefined) {
+      delete process.env.RIKUNE_PLUGIN_TEST
+    } else {
+      process.env.RIKUNE_PLUGIN_TEST = original
+    }
   })
 })

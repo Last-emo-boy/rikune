@@ -63,14 +63,27 @@ describe('workflow.analyze.auto coverage boundaries', () => {
             analysis_budget_profile: 'balanced',
             downgrade_reasons: [],
             coverage_gaps: [
-              { domain: 'ghidra_analysis', status: 'missing', reason: 'Quick triage does not include a queued decompiler pass.' },
+              {
+                domain: 'ghidra_analysis',
+                status: 'missing',
+                reason: 'Quick triage does not include a queued decompiler pass.',
+              },
             ],
             confidence_by_domain: {},
             known_findings: [],
             suspected_findings: [],
             unverified_areas: [],
             upgrade_paths: [
-              { tool: 'ghidra.analyze', purpose: 'Recover function-level attribution.', closes_gaps: ['ghidra_analysis'], expected_coverage_gain: 'Adds decompiler-backed function discovery.', cost_tier: 'high', availability: 'ready', prerequisites: [], blockers: [] },
+              {
+                tool: 'ghidra.analyze',
+                purpose: 'Recover function-level attribution.',
+                closes_gaps: ['ghidra_analysis'],
+                expected_coverage_gain: 'Adds decompiler-backed function discovery.',
+                cost_tier: 'high',
+                availability: 'ready',
+                prerequisites: [],
+                blockers: [],
+              },
             ],
             backend_policy: 'auto',
             backend_considered: [],
@@ -86,6 +99,8 @@ describe('workflow.analyze.auto coverage boundaries', () => {
     const result = await handler({ sample_id: sampleId, goal: 'triage' })
     expect(result.ok).toBe(true)
     const data = result.data as any
+    expect(data.routed_tool).toBe('workflow.analyze.start')
+    expect(data.result_mode).toBe('completed')
     expect(data.coverage_level).toBe('quick')
     expect(data.completion_state).toBe('bounded')
     expect(data.coverage_gaps.some((item: any) => item.domain === 'ghidra_analysis')).toBe(true)
@@ -134,14 +149,27 @@ describe('workflow.analyze.auto coverage boundaries', () => {
             analysis_budget_profile: 'balanced',
             downgrade_reasons: [],
             coverage_gaps: [
-              { domain: 'decompilation', status: 'queued', reason: 'Deep static analysis is queued.' },
+              {
+                domain: 'decompilation',
+                status: 'queued',
+                reason: 'Deep static analysis is queued.',
+              },
             ],
             confidence_by_domain: {},
             known_findings: [],
             suspected_findings: [],
             unverified_areas: [],
             upgrade_paths: [
-              { tool: 'task.status', purpose: 'Poll queued job.', closes_gaps: ['decompilation'], expected_coverage_gain: 'Completes decompilation.', cost_tier: 'low', availability: 'ready', prerequisites: [], blockers: [] },
+              {
+                tool: 'task.status',
+                purpose: 'Poll queued job.',
+                closes_gaps: ['decompilation'],
+                expected_coverage_gain: 'Completes decompilation.',
+                cost_tier: 'low',
+                availability: 'ready',
+                prerequisites: [],
+                blockers: [],
+              },
             ],
             backend_policy: 'auto',
             backend_considered: [],
@@ -157,6 +185,8 @@ describe('workflow.analyze.auto coverage boundaries', () => {
     const result = await handler({ sample_id: sampleId, goal: 'static', depth: 'deep' })
     expect(result.ok).toBe(true)
     const data = result.data as any
+    expect(data.routed_tool).toBe('workflow.analyze.promote')
+    expect(data.result_mode).toBe('queued')
     expect(data.coverage_level).toBe('static_core')
     expect(data.completion_state).toBe('queued')
     expect(data.sample_size_tier).toBe('large')
@@ -212,7 +242,16 @@ describe('workflow.analyze.auto coverage boundaries', () => {
             suspected_findings: [],
             unverified_areas: [],
             upgrade_paths: [
-              { tool: 'artifact.read', purpose: 'Inspect export artifacts.', closes_gaps: [], expected_coverage_gain: 'Access reconstruction output.', cost_tier: 'low', availability: 'ready', prerequisites: [], blockers: [] },
+              {
+                tool: 'artifact.read',
+                purpose: 'Inspect export artifacts.',
+                closes_gaps: [],
+                expected_coverage_gain: 'Access reconstruction output.',
+                cost_tier: 'low',
+                availability: 'ready',
+                prerequisites: [],
+                blockers: [],
+              },
             ],
             backend_policy: 'auto',
             backend_considered: [],
@@ -228,6 +267,8 @@ describe('workflow.analyze.auto coverage boundaries', () => {
     const result = await handler({ sample_id: sampleId, goal: 'reverse', depth: 'deep' })
     expect(result.ok).toBe(true)
     const data = result.data as any
+    expect(data.routed_tool).toBe('workflow.analyze.promote')
+    expect(data.result_mode).toBe('completed')
     expect(data.coverage_level).toBe('reconstruction')
     expect(data.completion_state).toBe('completed')
     expect(data.sample_size_tier).toBe('small')

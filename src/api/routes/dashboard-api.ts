@@ -1000,6 +1000,7 @@ function buildRunView(run: DashboardRunRow, includeStageResults: boolean) {
     ) ?? []
   const stageViews = stages.map((stage) => buildRunStageView(stage, includeStageResults))
   const semantic = buildSemanticRunSummary(run.sample_id, stages)
+  const control = buildRunControlSummary(run, stages, stageViews)
 
   return {
     id: run.id,
@@ -1028,6 +1029,7 @@ function buildRunView(run: DashboardRunRow, includeStageResults: boolean) {
       acc[stage.normalized_status] = (acc[stage.normalized_status] ?? 0) + 1
       return acc
     }, {}),
+    ...control,
     semantic,
   }
 }
@@ -1035,11 +1037,9 @@ function buildRunView(run: DashboardRunRow, includeStageResults: boolean) {
 function buildRunStageView(stage: DashboardRunStageRow, includeResult: boolean) {
   const artifactRefs = parseDashboardJson<ArtifactRef[]>(stage.artifact_refs_json, [])
   const metadata = parseDashboardJson<Record<string, unknown>>(stage.metadata_json, {})
-  const result = includeResult ? parseDashboardJson<unknown>(stage.result_json, null) : undefined
-  const resultSummary =
-    !includeResult && stage.result_json
-      ? summarizeStageResult(parseDashboardJson<Record<string, unknown>>(stage.result_json, {}))
-      : undefined
+  const parsedResult = parseDashboardJson<Record<string, unknown>>(stage.result_json, {})
+  const result = includeResult ? parsedResult : undefined
+  const resultSummary = stage.result_json ? summarizeStageResult(parsedResult) : undefined
 
   return {
     stage: stage.stage,
@@ -1058,6 +1058,113 @@ function buildRunStageView(stage: DashboardRunStageRow, includeResult: boolean) 
     started_at: stage.started_at,
     finished_at: stage.finished_at,
   }
+}
+
+function buildRunControlSummary(
+  run: DashboardRunRow,
+  stages: DashboardRunStageRow[],
+  stageViews: Array<ReturnType<typeof buildRunStageView>>
+) {
+  const latestStage =
+    stages.find((stage) => stage.stage === run.latest_stage) ?? stages[stages.length - 1]
+  const latestStageView =
+    stageViews.find((stage) => stage.stage === latestStage?.stage) ??
+    stageViews[stageViews.length - 1]
+  const latestResult = latestStage
+    ? parseDashboardJson<Record<string, unknown>>(latestStage.result_json, {})
+    : {}
+  const latestCoverage = latestStage
+    ? extractDashboardCoverage(latestStage.coverage_json, latestResult)
+    : null
+  const latestSummary =
+    latestStage && latestStage.result_json ? summarizeStageResult(latestResult) : null
+  const deferredJobs = stageViews
+    .filter((stage) => stage.status === 'queued' || stage.status === 'running')
+    .map((stage) => ({
+      stage: stage.stage,
+      status: stage.status,
+      normalized_status: stage.normalized_status,
+      job_id: stage.job_id,
+      tool: stage.tool,
+      updated_at: stage.updated_at,
+    }))
+  const recoverableStages = stages
+    .filter((stage) => stage.status === 'recoverable' || stage.status === 'interrupted')
+    .map((stage) => {
+      const metadata = parseDashboardJson<Record<string, unknown>>(stage.metadata_json, {})
+      const result = parseDashboardJson<Record<string, unknown>>(stage.result_json, {})
+      return {
+        stage: stage.stage,
+        status: stage.status,
+        job_id: stage.job_id,
+        reason:
+          asNonEmptyString(metadata.recovery_reason) ||
+          asNonEmptyString(result.summary) ||
+          asNonEmptyString(result.error) ||
+          'Stage can be resumed or re-promoted from persisted run state.',
+        updated_at: stage.updated_at,
+      }
+    })
+  const upgradeTools = Array.isArray(latestCoverage?.upgrade_paths)
+    ? latestCoverage.upgrade_paths
+        .map((item) => (isRecord(item) ? asNonEmptyString(item.tool) : null))
+        .filter((item): item is string => Boolean(item))
+    : []
+  const recommendedNextTools = uniqueDashboardStrings([
+    ...(latestSummary?.recommended_next_tools || []),
+    ...upgradeTools,
+    ...(deferredJobs.length > 0 ? ['workflow.analyze.status'] : []),
+    ...(recoverableStages.length > 0 ? ['workflow.analyze.promote'] : []),
+    'workflow.analyze.status',
+  ]).slice(0, 10)
+  const nextActions = uniqueDashboardStrings([
+    ...(latestSummary?.next_actions || []),
+    ...(deferredJobs.length > 0
+      ? ['Poll workflow.analyze.status until queued stages leave the active set.']
+      : []),
+    ...(recoverableStages.length > 0
+      ? ['Re-promote only the recoverable stages that are still needed.']
+      : []),
+    latestCoverage?.completion_state && latestCoverage.completion_state !== 'completed'
+      ? 'Inspect coverage_gaps before treating this run as complete.'
+      : null,
+  ]).slice(0, 8)
+
+  return {
+    current_stage_summary: latestStageView?.result_summary ?? latestSummary,
+    coverage_level: asNonEmptyString(latestCoverage?.coverage_level),
+    completion_state: asNonEmptyString(latestCoverage?.completion_state),
+    coverage_gaps: Array.isArray(latestCoverage?.coverage_gaps) ? latestCoverage.coverage_gaps : [],
+    upgrade_paths: Array.isArray(latestCoverage?.upgrade_paths) ? latestCoverage.upgrade_paths : [],
+    recommended_next_tools: recommendedNextTools,
+    next_actions: nextActions,
+    deferred_jobs: deferredJobs,
+    recoverable_stages: recoverableStages,
+  }
+}
+
+function extractDashboardCoverage(
+  coverageJson: string | null | undefined,
+  result: Record<string, unknown>
+): Record<string, unknown> | null {
+  const coverage = parseDashboardJson<Record<string, unknown> | null>(coverageJson, null)
+  if (coverage && typeof coverage.coverage_level === 'string') {
+    return coverage
+  }
+  if (typeof result.coverage_level === 'string') {
+    return result
+  }
+  return null
+}
+
+function uniqueDashboardStrings(values: Array<string | null | undefined>): string[] {
+  return Array.from(
+    new Set(
+      values.filter(
+        (value): value is string => typeof value === 'string' && value.trim().length > 0
+      )
+    )
+  )
 }
 
 function summarizeStageResult(result: Record<string, unknown>) {

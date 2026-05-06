@@ -4,13 +4,13 @@
  * Universal file metadata extraction using exiftool.
  */
 
-import type { Plugin } from '../sdk.js'
+import { definePlugin, defineTool, requireDatabase, requireWorkspaceManager } from '../sdk.js'
 import {
   metadataExtractToolDefinition,
   createMetadataExtractHandler,
 } from './tools/metadata-extract.js'
 
-const metadataPlugin: Plugin = {
+const metadataPlugin = definePlugin({
   id: 'metadata',
   name: 'File Metadata',
   executionDomain: 'static',
@@ -41,13 +41,16 @@ const metadataPlugin: Plugin = {
       dockerValidation: ['exiftool -ver >/dev/null 2>&1'],
     },
   ],
-  register(server, deps) {
-    const { workspaceManager: wm, database: db } = deps
-
-    server.registerTool(metadataExtractToolDefinition, createMetadataExtractHandler(wm, db))
-
-    return ['metadata.extract']
-  },
-}
+  tools: [
+    defineTool({
+      ...metadataExtractToolDefinition,
+      handler: (args, deps) =>
+        createMetadataExtractHandler(
+          requireWorkspaceManager(deps, 'metadata.extract'),
+          requireDatabase(deps, 'metadata.extract')
+        )(args),
+    }),
+  ],
+})
 
 export default metadataPlugin

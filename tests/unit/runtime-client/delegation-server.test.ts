@@ -376,9 +376,7 @@ describe('createDelegatingServer', () => {
     server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
     const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
 
-    expect(runtimeClient.validateRuntimeContract).toHaveBeenCalledWith(
-      remoteDynamicTool.runtime
-    )
+    expect(runtimeClient.validateRuntimeContract).toHaveBeenCalledWith(remoteDynamicTool.runtime)
     expect(runtimeClient.uploadSample).not.toHaveBeenCalled()
     expect(runtimeClient.execute).not.toHaveBeenCalled()
     expect(result.ok).toBe(false)
@@ -392,6 +390,11 @@ describe('createDelegatingServer', () => {
         summary:
           'Runtime does not advertise support for runtime contract python-worker/frida_worker.py required by tool frida.runtime.instrument.',
         runtime_endpoint: null,
+        runtime_plane: 'runtime_capability',
+        execution_semantics: expect.objectContaining({
+          actual_mode: 'plan_only',
+          live_execution: false,
+        }),
         required_runtime_contract: remoteDynamicTool.runtime,
         available_runtime_backends: availableRuntimeBackends,
       })
@@ -467,6 +470,11 @@ describe('createDelegatingServer', () => {
     expect(result.ok).toBe(false)
     expect((result.data as any)?.failure_category).toBe('runtime_recovery_failed')
     expect((result.data as any)?.runtime_endpoint).toBe('http://127.0.0.1:4010')
+    expect((result.data as any)?.runtime_plane).toBe('runtime_node')
+    expect((result.data as any)?.execution_semantics).toMatchObject({
+      actual_mode: 'plan_only',
+      live_execution: false,
+    })
     expect((result.data as any)?.runtime_diagnostic).toEqual(
       expect.objectContaining({
         runtime_endpoint_configured: true,

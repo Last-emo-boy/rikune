@@ -217,6 +217,46 @@ function buildRuntimeDiagnostic(params: {
   }
 }
 
+function classifyRuntimePlane(
+  category: RuntimeDelegationFailureCategory,
+  runtimeEndpoint: string | null,
+  availableRuntimeBackends: RuntimeBackendCapability[]
+): 'runtime_endpoint' | 'host_agent' | 'runtime_node' | 'runtime_capability' | 'tool_backend' {
+  if (category === 'unsupported_runtime_contract') {
+    return 'runtime_capability'
+  }
+  if (!runtimeEndpoint) {
+    return 'runtime_endpoint'
+  }
+  if (category === 'runtime_recovery_failed') {
+    return availableRuntimeBackends.length > 0 ? 'host_agent' : 'runtime_node'
+  }
+  if (category === 'runtime_unavailable') {
+    return 'runtime_node'
+  }
+  return 'tool_backend'
+}
+
+function buildFailureExecutionSemantics(params: {
+  definition: ToolDefinition
+  runtime?: ToolRuntimeContract
+  summary: string
+}) {
+  const runtime = params.runtime ?? params.definition.runtime
+  const requestedMode =
+    runtime?.modes?.find((mode) => mode === 'live_sandbox' || mode === 'live_hyperv') ??
+    runtime?.modes?.[0] ??
+    (params.definition.name === 'sandbox.execute' ? 'live_sandbox' : 'manual_runtime')
+
+  return {
+    requested_mode: requestedMode,
+    actual_mode: 'plan_only',
+    backend: runtime ? `${runtime.type}/${runtime.handler}` : params.definition.name,
+    live_execution: false,
+    reason: params.summary,
+  }
+}
+
 function buildRuntimeFailureResult(
   definition: ToolDefinition,
   category: RuntimeDelegationFailureCategory,
@@ -236,6 +276,7 @@ function buildRuntimeFailureResult(
   const runtimeEndpoint = params.runtimeEndpoint ?? null
   const runtime = params.runtime ?? definition.runtime
   const availableRuntimeBackends = params.availableRuntimeBackends ?? []
+  const runtimePlane = classifyRuntimePlane(category, runtimeEndpoint, availableRuntimeBackends)
 
   const failureData = RuntimeDelegationFailureDataSchema.parse({
     status:
@@ -244,6 +285,12 @@ function buildRuntimeFailureResult(
         : 'failed',
     failure_category: category,
     summary: params.summary,
+    runtime_plane: runtimePlane,
+    execution_semantics: buildFailureExecutionSemantics({
+      definition,
+      runtime,
+      summary: params.summary,
+    }),
     recommended_next_tools: guidance.recommendedNextTools,
     next_actions: guidance.nextActions,
     runtime_endpoint: runtimeEndpoint,

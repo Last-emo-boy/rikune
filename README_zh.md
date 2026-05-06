@@ -27,7 +27,8 @@
 - `pe.structure.analyze`：把 `pefile` 和 `LIEF` 风格的 PE 结构解析合并成一个统一输出，同时保留后端细节块。
 - `compiler.packer.detect`：补上编译器、保护器和壳归因，并在 Detect It Easy 缺失时优雅降级成 setup guidance。
 - `static.resource.graph`、`static.config.carver`、`static.behavior.classify` 和 `unpack.child.handoff`：在真实运行前补齐 payload、配置、持久化/注入和 child sample handoff 证据。
-- `workflow.triage`、`report.summarize` 和 `report.generate` 现在会直接消费这三类结果，并支持 static artifact 的 provenance、scope 和 compare/baseline。
+- `workflow.analyze.start/status/promote` 是主分析编排面；`workflow.analyze.auto` 现在只路由到这条 staged 路径，不再直接启动旧的重型 workflow。
+- `workflow.triage`、`report.summarize` 和 `report.generate` 仍作为报告面消费这些结果，并支持 static artifact 的 provenance、scope 和 compare/baseline。
 
 ## 典型使用路径
 
@@ -37,8 +38,9 @@
 2. `static.capability.triage`
 3. `pe.structure.analyze`
 4. `compiler.packer.detect`
-5. `workflow.triage`
-6. `report.summarize`
+5. `workflow.analyze.start`
+6. `workflow.analyze.status` / `workflow.analyze.promote`
+7. `report.summarize`
 
 ### 困难 native 恢复
 
@@ -153,6 +155,7 @@
 - `artifact.read`
 - `artifacts.diff`
 - `tool.help`
+- `tool.readiness`
 
 ### Android / APK 分析
 
@@ -224,7 +227,7 @@
 
 ### `workflow.triage`
 
-适合第一轮快速初筛，在深入恢复前先获得 PE 画像和分析方向。
+快速初筛视图。新的主路径应优先使用 `workflow.analyze.start`，再用 `workflow.analyze.status/promote` 进入更深阶段。
 
 ### `workflow.deep_static`
 
@@ -525,7 +528,7 @@ Docker 现在按 profile 部署：`static` 是默认纯静态 analyzer，`hybrid
 | YARA | `yara` | 3 | YARA 规则扫描与生成 |
 | YARA-X | `yara-x` | 1 | YARA-X 新一代规则引擎 |
 
-插件通过 `PLUGINS` 环境变量控制（`*` = 全部, `android,malware` = 指定, `-dynamic` = 排除）。详见 [`docs/PLUGINS.md`](./docs/PLUGINS.md)。
+插件通过 `PLUGINS` 环境变量控制（`*` = 全部, `android,malware` = 指定, `-dynamic` = 排除）。`packages/plugin-sdk` 提供 `definePlugin`、`defineTool`、manifest-backed 插件、结果 helper 和服务注入 helper；`scripts/create-plugin.js` 可生成可编译的外部插件骨架。详见 [`docs/PLUGINS.md`](./docs/PLUGINS.md)。
 
 ### 开发中（beta 后续迭代）
 
@@ -678,6 +681,7 @@ npm run docker:generate:all
 - Hyper-V 运行时会话可以选择释放策略：`runtime.debug.session.start` 里使用 `hyperv_retention_policy='clean_rollback'` 会在释放后恢复 checkpoint，`stop_only` 会关机并保留磁盘状态，`preserve_dirty` 会保留 VM 现场供人工检查。安装参数 `-HyperVRestoreOnRelease` 会设置 Host Agent 默认策略。
 - 运行时会话是显式的：如果希望走 staged workflow，先用 `workflow.analyze.promote(dynamic_plan)` 自动运行 `static.behavior.classify`、生成证据感知的 `dynamic.deep_plan`，并保持 live execution 显式门控；也可以手动调用 `dynamic.runtime.status` 检查 Runtime Node 和 Host Agent 就绪状态，用 `dynamic.toolkit.status` 查看 runtime 内调试器、遥测、dump、手动 GUI 工具库存，用 `dynamic.deep_plan` 选择受限的动态分析方案，需要网络实验、.NET runtime 或 GUI 交接细节时再用 `debug.network.plan`、`debug.managed.plan`、`debug.gui.handoff`，用 `dynamic.persona.plan` 生成只规划不启动的 Sandbox/Hyper-V persona 清单；需要 Hyper-V 状态、checkpoint 创建/恢复或停止时调用 `runtime.hyperv.control`，再调用 `runtime.debug.session.start` 创建或附着 Windows runtime，然后用 `runtime.debug.command` 分发 `debug.session.*`、`sandbox.execute`、`dynamic.behavior.capture`、遥测、ProcDump、managed safe-run 或内存转储类任务，再用 `dynamic.behavior.diff`、`analysis.evidence.graph` 和 `crypto.lifecycle.graph` 把运行时观察关联回静态预期，最后用 `runtime.debug.session.stop` 释放。
 - `sandbox.execute` 会返回 `data.execution_semantics`，明确本次是 live Windows Sandbox、live Hyper-V、safe simulation 还是 emulation。safe simulation 不能当作真实运行时证据。
+- `tool.readiness(tool_name)` 是被动 preflight 探针，会返回 `result_mode`、`tool_surface_role`、`preferred_primary_tools`、`runtime_plane`、`execution_semantics`、`required_runtime_contract` 和 `available_runtime_backends`，方便客户端优先选择 staged 主路径，或在 live work 分发前修复缺失的 runtime plane。
 - Runtime 工具缓存查询是只读的，可使用 `RUNTIME_TOOL_DIRS`、`RUNTIME_TOOL_CACHE_DIR`、`RIKUNE_RUNTIME_TOOLS` 或默认 `C:\rikune-tools` 挂载。需要更深动态方案时，把 Windows Debugging Tools 的 `cdb.exe`、Sysinternals ProcDump/ProcMon/Sysmon、TTD helper、x64dbg、dnSpyEx、Frida、dotnet 或 FakeNet 风格 harness 放到这里。
 - Docker/WSL analyzer 不能使用 `auto-sandbox`；`auto-sandbox` 只适用于 Windows 原生 analyzer。
 - `RUNTIME_HOST_AGENT_API_KEY` 用于 Analyzer -> Host Agent 控制面，`RUNTIME_API_KEY` 只在 Runtime Node 自身需要鉴权时使用。

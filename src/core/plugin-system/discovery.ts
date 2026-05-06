@@ -7,11 +7,66 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { pathToFileURL, fileURLToPath } from 'url'
-import type { Plugin } from '../../plugins/sdk.js'
+import type { ManifestHandlers, Plugin, PluginManifest } from '../../plugins/sdk.js'
+import { defineManifestPlugin, validatePlugin } from '../../plugins/sdk.js'
 import { logger } from '../../logger.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(__dirname, '../..')
+
+function isPluginCandidate(value: unknown): value is Plugin {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as Partial<Plugin>
+  return (
+    typeof candidate.id === 'string' &&
+    (typeof candidate.register === 'function' || Array.isArray(candidate.tools))
+  )
+}
+
+function isValidPlugin(value: unknown): value is Plugin {
+  return isPluginCandidate(value) && validatePlugin(value).ok
+}
+
+function resolveHandlers(mod: Record<string, unknown>): ManifestHandlers {
+  const defaultExport = mod.default
+  if (
+    defaultExport &&
+    typeof defaultExport === 'object' &&
+    'handlers' in defaultExport &&
+    typeof (defaultExport as { handlers?: unknown }).handlers === 'object'
+  ) {
+    return (defaultExport as { handlers: ManifestHandlers }).handlers
+  }
+  if (mod.handlers && typeof mod.handlers === 'object') {
+    return mod.handlers as ManifestHandlers
+  }
+  if (defaultExport && typeof defaultExport === 'object') {
+    return defaultExport as ManifestHandlers
+  }
+  return mod as ManifestHandlers
+}
+
+async function loadPluginFromDirectory(
+  indexPath: string,
+  manifestPath: string
+): Promise<Plugin | null> {
+  const mod = (await import(pathToFileURL(indexPath).href)) as Record<string, unknown>
+  const directPlugin = mod.default ?? mod.plugin
+  if (isValidPlugin(directPlugin)) {
+    return directPlugin
+  }
+
+  try {
+    await fs.access(manifestPath)
+  } catch {
+    return null
+  }
+
+  const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as PluginManifest
+  return defineManifestPlugin(manifest, resolveHandlers(mod))
+}
 
 /**
  * Discover built-in plugins from `src/plugins/` (compiled to `dist/plugins/`).
@@ -56,11 +111,11 @@ export async function discoverPluginsFromDir(
   for (const entry of entries) {
     if (entry.isDirectory()) {
       const indexPath = path.join(pluginsDir, entry.name, 'index.js')
+      const manifestPath = path.join(pluginsDir, entry.name, 'plugin.json')
       try {
         await fs.access(indexPath)
-        const mod = await import(pathToFileURL(indexPath).href)
-        const plugin: Plugin | undefined = mod.default ?? mod.plugin
-        if (plugin && typeof plugin.id === 'string' && typeof plugin.register === 'function') {
+        const plugin = await loadPluginFromDirectory(indexPath, manifestPath)
+        if (plugin) {
           discovered.push(plugin)
           logger.info(
             { dir: entry.name, plugin: plugin.id, source },
@@ -86,7 +141,7 @@ export async function discoverPluginsFromDir(
       try {
         const mod = await import(pathToFileURL(file).href)
         const plugin: Plugin | undefined = mod.default ?? mod.plugin
-        if (plugin && typeof plugin.id === 'string' && typeof plugin.register === 'function') {
+        if (isValidPlugin(plugin)) {
           discovered.push(plugin)
           logger.info(
             { file: path.basename(file), plugin: plugin.id, source },

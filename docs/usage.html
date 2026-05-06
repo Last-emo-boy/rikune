@@ -124,6 +124,8 @@
         </thead>
         <tbody>
           <tr><td><code>sample.ingest</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Ingest &amp; triage a PE sample</span><span data-lang-zh>导入并分诊 PE 样本</span></td></tr>
+          <tr><td><code>tool.help</code></td><td><span class="badge badge--green">Utility</span></td><td><span data-lang-en>Inspect schema fields, usage notes, surface role, and preferred primary tools</span><span data-lang-zh>查看 schema 字段、使用提示、工具面角色和首选主路径工具</span></td></tr>
+          <tr><td><code>tool.readiness</code></td><td><span class="badge badge--green">Utility</span></td><td><span data-lang-en>Passively check local/runtime readiness, runtime plane, execution semantics, and next actions before dispatch</span><span data-lang-zh>分发前被动检查本地/运行时就绪、runtime plane、执行语义和下一步动作</span></td></tr>
           <tr><td><code>pe.headers</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Parse PE headers (DOS, COFF, Optional)</span><span data-lang-zh>解析 PE 头（DOS、COFF、可选头）</span></td></tr>
           <tr><td><code>pe.imports</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Extract import table</span><span data-lang-zh>提取导入表</span></td></tr>
           <tr><td><code>pe.exports</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Extract export table</span><span data-lang-zh>提取导出表</span></td></tr>
@@ -154,9 +156,9 @@
         <tbody>
           <tr><td><code>workflow.analyze.start</code></td><td><span data-lang-en>Start a staged analysis run</span><span data-lang-zh>启动分阶段分析运行</span></td></tr>
           <tr><td><code>workflow.analyze.status</code></td><td><span data-lang-en>Check analysis run status</span><span data-lang-zh>检查分析运行状态</span></td></tr>
+          <tr><td><code>workflow.analyze.promote</code></td><td><span data-lang-en>Queue deeper stages for an existing run</span><span data-lang-zh>为已有运行排队更深阶段</span></td></tr>
+          <tr><td><code>workflow.analyze.auto</code></td><td><span data-lang-en>Intent router over start/promote; does not launch legacy heavyweight workflows directly</span><span data-lang-zh>基于 start/promote 的意图路由；不会直接启动旧重型 workflow</span></td></tr>
           <tr><td><code>workflow.summarize</code></td><td><span data-lang-en>Generate final summary report</span><span data-lang-zh>生成最终摘要报告</span></td></tr>
-          <tr><td><code>workflow.stage.preview</code></td><td><span data-lang-en>Preview a stage before execution</span><span data-lang-zh>执行前预览阶段</span></td></tr>
-          <tr><td><code>workflow.stage.advance</code></td><td><span data-lang-en>Advance to the next stage</span><span data-lang-zh>推进到下一阶段</span></td></tr>
         </tbody>
       </table>
     </section>

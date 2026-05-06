@@ -45,9 +45,46 @@ describe('tool.readiness', () => {
 
     expect(result.ok).toBe(true)
     expect((result.data as any)?.readiness).toBe('ready')
+    expect((result.data as any)?.result_mode).toBe('tool_readiness')
     expect((result.data as any)?.execution_path).toBe('local')
+    expect((result.data as any)?.runtime_plane).toBe('local_tool')
+    expect((result.data as any)?.tool_surface_role).toBe('primary')
+    expect((result.data as any)?.preferred_primary_tools).toEqual([])
+    expect((result.data as any)?.required_runtime_contract).toBeNull()
+    expect((result.data as any)?.available_runtime_backends).toEqual([])
+    expect((result.data as any)?.execution_semantics).toEqual(
+      expect.objectContaining({
+        readiness_probe: 'passive',
+        actual_mode: 'local',
+        live_execution: false,
+        target_requires_delegated_runtime: false,
+      })
+    )
     expect((result.data as any)?.plugin).toEqual(
       expect.objectContaining({ id: 'dynamic', status: 'loaded' })
+    )
+  })
+
+  test('adds primary-surface guidance for compatibility tools', async () => {
+    const handler = createToolReadinessHandler(
+      () =>
+        [
+          {
+            name: 'task.status',
+            description: 'raw job status',
+            inputSchema: {},
+          },
+        ] as ToolDefinition[],
+      createPluginManagerMock as any
+    )
+
+    const result = await handler({ tool_name: 'task.status', force_refresh: false })
+
+    expect(result.ok).toBe(true)
+    expect((result.data as any)?.tool_surface_role).toBe('compatibility')
+    expect((result.data as any)?.preferred_primary_tools).toEqual(['workflow.analyze.status'])
+    expect((result.data as any)?.recommended_next_tools).toEqual(
+      expect.arrayContaining(['workflow.analyze.status', 'tool.help', 'plugin.list'])
     )
   })
 
@@ -76,6 +113,22 @@ describe('tool.readiness', () => {
 
     expect(result.ok).toBe(false)
     expect((result.data as any)?.readiness).toBe('runtime_not_started')
+    expect((result.data as any)?.result_mode).toBe('tool_readiness')
+    expect((result.data as any)?.runtime_plane).toBe('runtime_endpoint')
+    expect((result.data as any)?.required_runtime_contract).toEqual({
+      type: 'inline',
+      handler: 'executeSandboxExecute',
+    })
+    expect((result.data as any)?.available_runtime_backends).toEqual([])
+    expect((result.data as any)?.execution_semantics).toEqual(
+      expect.objectContaining({
+        readiness_probe: 'passive',
+        actual_mode: 'plan_only',
+        execution_path: 'delegated',
+        live_execution: false,
+        target_requires_delegated_runtime: true,
+      })
+    )
     expect((result.data as any)?.runtime?.endpoint).toBeNull()
     expect((result.data as any)?.recommended_next_tools).toEqual(
       expect.arrayContaining(['dynamic.runtime.status', 'runtime.debug.session.start'])
@@ -112,6 +165,21 @@ describe('tool.readiness', () => {
 
     expect(result.ok).toBe(true)
     expect((result.data as any)?.readiness).toBe('ready')
+    expect((result.data as any)?.runtime_plane).toBe('runtime_capability')
+    expect((result.data as any)?.required_runtime_contract).toEqual({
+      type: 'python-worker',
+      handler: 'frida_worker.py',
+    })
+    expect((result.data as any)?.available_runtime_backends).toEqual([
+      { type: 'python-worker', handler: 'frida_worker.py' },
+    ])
+    expect((result.data as any)?.execution_semantics).toEqual(
+      expect.objectContaining({
+        actual_mode: 'delegated_ready',
+        backend: 'python-worker/frida_worker.py',
+        live_execution: false,
+      })
+    )
     expect(validateRuntimeContract).toHaveBeenCalledWith(
       { type: 'python-worker', handler: 'frida_worker.py' },
       { forceRefresh: true }
@@ -146,8 +214,40 @@ describe('tool.readiness', () => {
 
     expect(result.ok).toBe(false)
     expect((result.data as any)?.readiness).toBe('runtime_capability_missing')
+    expect((result.data as any)?.runtime_plane).toBe('runtime_capability')
+    expect((result.data as any)?.available_runtime_backends).toEqual([
+      { type: 'spawn', handler: 'native.sample.execute' },
+    ])
+    expect((result.data as any)?.execution_semantics).toEqual(
+      expect.objectContaining({
+        actual_mode: 'plan_only',
+        backend: 'python-worker/frida_worker.py',
+        target_requires_delegated_runtime: true,
+      })
+    )
     expect((result.data as any)?.runtime?.available_runtime_backends).toEqual([
       { type: 'spawn', handler: 'native.sample.execute' },
     ])
+  })
+
+  test('returns contract metadata for unknown tools', async () => {
+    const handler = createToolReadinessHandler(
+      () => [] as ToolDefinition[],
+      createPluginManagerMock as any
+    )
+
+    const result = await handler({ tool_name: 'missing.tool', force_refresh: false })
+
+    expect(result.ok).toBe(false)
+    expect((result.data as any)?.result_mode).toBe('tool_readiness')
+    expect((result.data as any)?.readiness).toBe('unknown_tool')
+    expect((result.data as any)?.runtime_plane).toBe('tool_registry')
+    expect((result.data as any)?.preferred_primary_tools).toEqual([])
+    expect((result.data as any)?.execution_semantics).toEqual(
+      expect.objectContaining({
+        actual_mode: 'not_registered',
+        live_execution: false,
+      })
+    )
   })
 })
