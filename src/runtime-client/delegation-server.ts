@@ -31,6 +31,7 @@ import {
   mergeRequiredUserInputs,
   buildDynamicDependencyRequiredUserInputs,
 } from '../plugins/docker-shared.js'
+import { isExplicitLocalDynamicTool } from './dynamic-tool-policy.js'
 
 export interface RuntimeClientLike {
   execute(
@@ -442,25 +443,6 @@ export function createRuntimeDelegatedToolHandler(
   return registeredHandler
 }
 
-/**
- * Dynamic tools that do NOT require actual sample execution and can stay
- * on the Analyzer node (pure static planning / attribution).
- */
-const LOCAL_DYNAMIC_TOOLS = new Set([
-  'dynamic.auto_hook',
-  'dynamic.trace.attribute',
-  'dynamic.dependencies',
-  'dynamic.trace.import',
-  'dynamic.memory.import',
-  'runtime.debug.session.start',
-  'runtime.debug.session.status',
-  'runtime.debug.session.stop',
-  'runtime.debug.command',
-  'dynamic.runtime.status',
-  'runtime.hyperv.control',
-  'frida.script.generate',
-])
-
 function readBooleanArg(args: any, key: string, defaultValue: boolean): boolean {
   if (!args || typeof args !== 'object' || !(key in args)) {
     return defaultValue
@@ -503,7 +485,7 @@ export function createDelegatingServer(
   return {
     registerTool(definition, handler) {
       const runtime = definition.runtime
-      if (!runtime || LOCAL_DYNAMIC_TOOLS.has(definition.name)) {
+      if (!runtime || isExplicitLocalDynamicTool(definition.name)) {
         inner.registerTool(definition, handler)
         return
       }

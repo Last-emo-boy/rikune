@@ -8,13 +8,26 @@ import type { ToolDefinition } from '../../src/types.js'
 function createPluginManagerMock() {
   return {
     getPluginForTool: jest.fn((toolName: string) =>
-      toolName === 'dynamic.runtime.status' ? 'dynamic' : undefined
+      toolName === 'dynamic.runtime.status' ||
+      toolName === 'behavior.capture' ||
+      toolName === 'task.status'
+        ? toolName === 'task.status'
+          ? 'workflow'
+          : 'dynamic'
+        : undefined
     ),
     getStatuses: jest.fn(() => [
       {
         id: 'dynamic',
         status: 'loaded',
         executionDomain: 'dynamic',
+        reasonCode: null,
+        statusDetail: 'loaded',
+      },
+      {
+        id: 'workflow',
+        status: 'loaded',
+        executionDomain: 'static',
         reasonCode: null,
         statusDetail: 'loaded',
       },
@@ -33,15 +46,15 @@ describe('tool.readiness', () => {
       () =>
         [
           {
-            name: 'dynamic.runtime.status',
-            description: 'status',
+            name: 'tool.help',
+            description: 'help',
             inputSchema: {},
           },
         ] as ToolDefinition[],
       createPluginManagerMock as any
     )
 
-    const result = await handler({ tool_name: 'dynamic.runtime.status', force_refresh: false })
+    const result = await handler({ tool_name: 'tool.help', force_refresh: false })
 
     expect(result.ok).toBe(true)
     expect((result.data as any)?.readiness).toBe('ready')
@@ -60,8 +73,64 @@ describe('tool.readiness', () => {
         target_requires_delegated_runtime: false,
       })
     )
-    expect((result.data as any)?.plugin).toEqual(
-      expect.objectContaining({ id: 'dynamic', status: 'loaded' })
+    expect((result.data as any)?.plugin).toBeNull()
+  })
+
+  test('explains local dynamic control-plane readiness without implying live execution', async () => {
+    const handler = createToolReadinessHandler(
+      () =>
+        [
+          {
+            name: 'dynamic.runtime.status',
+            description: 'status',
+            inputSchema: {},
+          },
+        ] as ToolDefinition[],
+      createPluginManagerMock as any
+    )
+
+    const result = await handler({ tool_name: 'dynamic.runtime.status', force_refresh: false })
+
+    expect(result.ok).toBe(true)
+    expect((result.data as any)?.runtime_plane).toBe('local_control_plane')
+    expect((result.data as any)?.local_dynamic_policy).toBe('control-plane')
+    expect((result.data as any)?.execution_semantics).toEqual(
+      expect.objectContaining({
+        actual_mode: 'local',
+        live_execution: false,
+        local_dynamic_policy: 'control-plane',
+      })
+    )
+    expect((result.data as any)?.next_actions?.[0]).toMatch(/control-plane/i)
+  })
+
+  test('warns for dynamic tools that still use analyzer-side local workers', async () => {
+    const handler = createToolReadinessHandler(
+      () =>
+        [
+          {
+            name: 'behavior.capture',
+            description: 'legacy behavior capture',
+            inputSchema: {},
+          },
+        ] as ToolDefinition[],
+      createPluginManagerMock as any
+    )
+
+    const result = await handler({ tool_name: 'behavior.capture', force_refresh: false })
+
+    expect(result.ok).toBe(true)
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringMatching(/not runtime-delegated yet/i)])
+    )
+    expect((result.data as any)?.runtime_plane).toBe('local_dynamic_worker')
+    expect((result.data as any)?.local_dynamic_policy).toBe('legacy-local-worker')
+    expect((result.data as any)?.execution_semantics).toEqual(
+      expect.objectContaining({
+        actual_mode: 'local',
+        live_execution: false,
+        local_dynamic_policy: 'legacy-local-worker',
+      })
     )
   })
 

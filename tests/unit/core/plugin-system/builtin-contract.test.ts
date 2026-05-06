@@ -11,12 +11,21 @@ import path from 'path'
 import { validatePlugin, validateTool } from '../../../../src/plugins/sdk.js'
 import { discoverBuiltInPlugins } from '../../../../src/core/plugin-system/discovery.js'
 import { zodToJsonSchema } from '../../../../src/core/zod-schema-converter.js'
+import { listRuntimeBackendCapabilities } from '../../../../packages/runtime-node/src/executor.js'
+import {
+  getLocalDynamicToolPolicy,
+  listExplicitLocalDynamicTools,
+} from '../../../../src/runtime-client/dynamic-tool-policy.js'
 
 const logger = {
   info() {},
   warn() {},
   error() {},
   debug() {},
+}
+
+function runtimeCapabilityKey(value: { type?: string; handler?: string }): string {
+  return `${value.type ?? 'unknown'}/${value.handler ?? 'unknown'}`
 }
 
 function createDeps() {
@@ -103,10 +112,17 @@ describe('built-in plugin SDK contract', () => {
     const toolErrors: string[] = []
     const schemaErrors: string[] = []
     const resourceErrors: string[] = []
+    const runtimeErrors: string[] = []
+    const localDynamicPolicyErrors: string[] = []
     const toolsByName = new Map<string, string[]>()
+    const dynamicToolsWithoutRuntime = new Set<string>()
+    let runtimeToolCount = 0
     const deps = createDeps()
     const pluginsRoot = path.join(process.cwd(), 'src', 'plugins')
     const resourceKinds = ['workers', 'scripts', 'data'] as const
+    const runtimeCapabilities = new Set(
+      listRuntimeBackendCapabilities().map((capability) => runtimeCapabilityKey(capability))
+    )
 
     for (const plugin of plugins) {
       const pluginValidation = validatePlugin(plugin)
@@ -163,6 +179,22 @@ describe('built-in plugin SDK contract', () => {
           if (typeof handler !== 'function') {
             toolErrors.push(`${plugin.id}:${definition?.name}: handler must be a function`)
           }
+          if (definition?.runtime) {
+            runtimeToolCount += 1
+            const key = runtimeCapabilityKey(definition.runtime)
+            if (!runtimeCapabilities.has(key)) {
+              runtimeErrors.push(
+                `${plugin.id}:${definition?.name}: unsupported runtime contract ${key}`
+              )
+            }
+          } else if (plugin.executionDomain === 'dynamic') {
+            dynamicToolsWithoutRuntime.add(definition?.name)
+            if (!getLocalDynamicToolPolicy(definition?.name)) {
+              localDynamicPolicyErrors.push(
+                `${plugin.id}:${definition?.name}: dynamic-domain tool must declare runtime or explicit local policy`
+              )
+            }
+          }
         },
         unregisterTool() {},
       }
@@ -188,12 +220,20 @@ describe('built-in plugin SDK contract', () => {
     const duplicateTools = [...toolsByName.entries()]
       .filter(([name, owners]) => Boolean(name) && owners.length > 1)
       .map(([name, owners]) => `${name}: ${owners.join(', ')}`)
+    const staleLocalDynamicPolicies = listExplicitLocalDynamicTools()
+      .map((entry) => entry.name)
+      .filter((name) => !dynamicToolsWithoutRuntime.has(name))
+      .map((name) => `${name}: stale explicit local policy`)
 
     expect(pluginErrors).toEqual([])
     expect(toolErrors).toEqual([])
     expect(schemaErrors).toEqual([])
     expect(resourceErrors).toEqual([])
+    expect(runtimeErrors).toEqual([])
+    expect(localDynamicPolicyErrors).toEqual([])
+    expect(staleLocalDynamicPolicies).toEqual([])
     expect(duplicateTools).toEqual([])
+    expect(runtimeToolCount).toBeGreaterThan(20)
     expect(toolsByName.size).toBeGreaterThan(200)
   })
 })

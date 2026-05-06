@@ -5,6 +5,10 @@ import type {
   RuntimeBackendCapability,
   RuntimeContractValidationResult,
 } from '../runtime-client/runtime-client.js'
+import {
+  getLocalDynamicToolPolicy,
+  type LocalDynamicToolPolicy,
+} from '../runtime-client/dynamic-tool-policy.js'
 import { ToolSurfaceRoleSchema, buildToolSurfaceGuidance } from '../tool-surface-guidance.js'
 
 const TOOL_NAME = 'tool.readiness'
@@ -48,6 +52,7 @@ const ToolReadinessDataSchema = z
     tool_surface_role: ToolSurfaceRoleSchema.nullable(),
     preferred_primary_tools: z.array(z.string()),
     required_runtime_contract: z.any().nullable(),
+    local_dynamic_policy: z.string().nullable().optional(),
     available_runtime_backends: z.array(z.any()),
     execution_semantics: z.record(z.any()),
     recommended_next_tools: z.array(z.string()),
@@ -89,6 +94,7 @@ function buildExecutionSemantics(params: {
   tool: ToolDefinition
   readiness: RuntimeReadiness | 'unknown_tool'
   executionPath: 'local' | 'delegated' | 'none'
+  localDynamicPolicy?: LocalDynamicToolPolicy | null
   runtimeMode?: string
   runtimeEndpoint?: string | null
   runtimePlane?: string | null
@@ -109,6 +115,7 @@ function buildExecutionSemantics(params: {
     backend: contract ? runtimeContractLabel(contract) : params.tool.name,
     live_execution: false,
     target_requires_delegated_runtime: Boolean(contract),
+    local_dynamic_policy: params.localDynamicPolicy ?? null,
     runtime_endpoint: params.runtimeEndpoint ?? null,
     runtime_plane: params.runtimePlane ?? null,
     reason: params.reason,
@@ -123,45 +130,161 @@ export const toolReadinessToolDefinition: ToolDefinition = {
   outputSchema: toolReadinessOutputSchema,
 }
 
-function buildLocalReadyPayload(tool: ToolDefinition, pluginStatus?: Record<string, unknown>) {
+function localRuntimePlane(policy: LocalDynamicToolPolicy | null): string {
+  switch (policy) {
+    case 'artifact-generation':
+      return 'local_artifact_generation'
+    case 'artifact-import':
+      return 'local_artifact_import'
+    case 'control-plane':
+      return 'local_control_plane'
+    case 'dependency-report':
+      return 'local_dependency_report'
+    case 'legacy-local-worker':
+      return 'local_dynamic_worker'
+    case 'planning':
+      return 'local_planning'
+    case 'post-processing':
+      return 'local_post_processing'
+    default:
+      return 'local_tool'
+  }
+}
+
+function localDynamicPolicyGuidance(policy: LocalDynamicToolPolicy | null): {
+  reason: string
+  warnings?: string[]
+  recommendedNextTools: string[]
+  nextActions: string[]
+} {
+  switch (policy) {
+    case 'artifact-generation':
+      return {
+        reason:
+          'This dynamic-domain tool generates reusable scripts or artifacts locally; it does not execute the sample.',
+        recommendedNextTools: ['tool.help', 'dynamic.runtime.status'],
+        nextActions: [
+          'Use the generated artifact with a runtime-delegated tool when live sample execution is required.',
+        ],
+      }
+    case 'artifact-import':
+      return {
+        reason:
+          'This dynamic-domain tool imports previously captured runtime artifacts locally; it does not attach to a runtime backend.',
+        recommendedNextTools: ['dynamic.runtime.status', 'tool.help'],
+        nextActions: [
+          'Collect the source runtime artifact first, then use this tool to normalize it into the workspace.',
+        ],
+      }
+    case 'control-plane':
+      return {
+        reason:
+          'This dynamic-domain tool inspects or controls runtime state locally; it does not run a sample by itself.',
+        recommendedNextTools: ['dynamic.runtime.status', 'tool.help', 'plugin.list'],
+        nextActions: [
+          'Use this tool for runtime control-plane work; call a runtime-delegated sample execution tool for live analysis.',
+        ],
+      }
+    case 'dependency-report':
+      return {
+        reason:
+          'This dynamic-domain tool reports dependency setup locally; it does not run a sample.',
+        recommendedNextTools: ['dynamic.runtime.status', 'system.health', 'tool.help'],
+        nextActions: [
+          'Use the dependency report to prepare the runtime environment before live execution.',
+        ],
+      }
+    case 'legacy-local-worker':
+      return {
+        reason:
+          'This dynamic-domain tool currently uses an analyzer-side local worker/helper rather than a delegated Runtime Node backend.',
+        warnings: [
+          'This dynamic tool is not runtime-delegated yet; confirm host isolation policy before running it on untrusted samples.',
+        ],
+        recommendedNextTools: ['dynamic.runtime.status', 'dynamic.behavior.capture', 'tool.help'],
+        nextActions: [
+          'Prefer runtime-delegated tools when live sample execution or strict isolation is required.',
+        ],
+      }
+    case 'planning':
+      return {
+        reason:
+          'This dynamic-domain tool builds a plan or command template locally; it does not execute the sample.',
+        recommendedNextTools: [
+          'dynamic.runtime.status',
+          'runtime.debug.session.start',
+          'tool.help',
+        ],
+        nextActions: [
+          'Review the plan output, then dispatch the chosen runtime-delegated tool when execution is required.',
+        ],
+      }
+    case 'post-processing':
+      return {
+        reason:
+          'This dynamic-domain tool post-processes existing evidence locally; it does not execute the sample.',
+        recommendedNextTools: ['dynamic.runtime.status', 'tool.help'],
+        nextActions: [
+          'Capture or import the source evidence first, then use this tool for attribution or summarization.',
+        ],
+      }
+    default:
+      return {
+        reason:
+          'This readiness probe only inspected registration and plugin state; it did not execute the target tool.',
+        recommendedNextTools: ['tool.help', 'plugin.list'],
+        nextActions: [
+          'This tool executes on the current MCP server and does not require a delegated runtime backend.',
+        ],
+      }
+  }
+}
+
+function buildLocalReadyPayload(
+  tool: ToolDefinition,
+  pluginStatus?: Record<string, unknown>,
+  localDynamicPolicy: LocalDynamicToolPolicy | null = null
+) {
   const surfaceGuidance = buildToolSurfaceGuidance(tool.name)
+  const guidance = localDynamicPolicyGuidance(localDynamicPolicy)
+  const runtimePlane = localRuntimePlane(localDynamicPolicy)
 
   return {
     ok: true,
+    warnings: guidance.warnings,
     data: {
       tool_name: tool.name,
       result_mode: 'tool_readiness',
       readiness: 'ready',
       execution_path: 'local',
-      runtime_plane: 'local_tool',
+      runtime_plane: runtimePlane,
       tool_surface_role: surfaceGuidance.tool_surface_role,
       preferred_primary_tools: surfaceGuidance.preferred_primary_tools,
       plugin: pluginStatus ?? null,
       runtime_contract: null,
       required_runtime_contract: null,
+      local_dynamic_policy: localDynamicPolicy,
       available_runtime_backends: [],
       runtime: {
         required: false,
         endpoint: null,
         capability_advertised: null,
+        local_dynamic_policy: localDynamicPolicy,
         available_runtime_backends: [],
       },
       execution_semantics: buildExecutionSemantics({
         tool,
         readiness: 'ready',
         executionPath: 'local',
-        runtimePlane: 'local_tool',
-        reason:
-          'This readiness probe only inspected registration and plugin state; it did not execute the target tool.',
+        runtimePlane,
+        localDynamicPolicy,
+        reason: guidance.reason,
       }),
       recommended_next_tools: uniqueStrings([
         ...surfaceGuidance.preferred_primary_tools,
-        'tool.help',
-        'plugin.list',
+        ...guidance.recommendedNextTools,
       ]),
-      next_actions: [
-        'This tool executes on the current MCP server and does not require a delegated runtime backend.',
-      ],
+      next_actions: guidance.nextActions,
     },
   } satisfies WorkerResult
 }
@@ -273,7 +396,11 @@ export function createToolReadinessHandler(
       : null
 
     if (!tool.runtime) {
-      return buildLocalReadyPayload(tool, pluginPayload ?? undefined)
+      const localDynamicPolicy =
+        pluginPayload?.execution_domain === 'dynamic'
+          ? (getLocalDynamicToolPolicy(tool.name) ?? null)
+          : null
+      return buildLocalReadyPayload(tool, pluginPayload ?? undefined, localDynamicPolicy)
     }
 
     const runtimeMode = options.runtimeMode || 'disabled'
