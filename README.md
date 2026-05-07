@@ -1238,11 +1238,11 @@ Current non-goals:
 
 ## Using the published package
 
-The published npm package is best treated as a thin MCP launcher, while Docker
-carries the persistent analyzer service. The recommended daemon is the static
-analyzer profile unless you intentionally deploy `full` or `hybrid`.
+The published npm package provides the client-facing `rikune-agent` connector,
+while Docker carries the persistent analyzer service. The recommended daemon is
+the static analyzer profile unless you intentionally deploy `full` or `hybrid`.
 
-- `npm` / `npx` provides the client-facing executable and versioned launcher
+- `npm` / `npx` provides `rikune-agent`, a small MCP gateway with connection status/config tools
 - `docker compose -f docker-compose.analyzer.yml up -d analyzer` provides the persistent analyzer, storage, upload API, and static toolchain
 
 This does **not** remove the existing source checkout or direct Docker client paths. If you are running from a cloned repo, `node dist/index.js` and direct `docker exec ... node dist/index.js` still work.
@@ -1264,16 +1264,44 @@ docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up 
   "mcpServers": {
     "rikune": {
       "command": "npx",
-      "args": ["-y", "rikune", "docker-stdio"]
+      "args": ["-y", "rikune", "agent", "stdio"]
     }
   }
 }
 ```
 
-Optional overrides for the launcher:
+Or install the connector command once:
+
+```bash
+npm install -g rikune
+```
+
+If `rikune-agent` is installed globally, use:
+
+```json
+{
+  "command": "rikune-agent",
+  "args": ["stdio"],
+  "timeout": 300000
+}
+```
+
+The connector always exposes `rikune_connection_status`,
+`rikune_connection_configure`, and `rikune_connection_refresh`. When it reaches
+the analyzer MCP upstream, it pulls the analyzer tool list and proxies those
+tools through the same MCP connection. VM/Runtime endpoints are configurable and
+queried for health; runtime MCP tools are proxied when a runtime MCP endpoint is
+configured.
+
+Optional overrides for the connector:
 
 - `RIKUNE_DOCKER_CONTAINER`
 - `RIKUNE_DOCKER_IMAGE`
+- `RIKUNE_ANALYZER_ENDPOINT`
+- `RUNTIME_HOST_AGENT_ENDPOINT`
+- `RUNTIME_HOST_AGENT_API_KEY`
+- `RUNTIME_ENDPOINT`
+- `RUNTIME_API_KEY`
 
 For local clone/native mode instead, keep using the earlier examples in this README that call `node /absolute/path/to/dist/index.js` directly.
 

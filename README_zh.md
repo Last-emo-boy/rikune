@@ -858,27 +858,44 @@ npm run docker:generate:static
 docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d analyzer
 ```
 
-然后在 MCP 客户端中使用已发布的 npm launcher：
+然后在 MCP 客户端中使用已发布的 `rikune-agent` 连接器：
 
 ```json
 {
   "mcpServers": {
     "rikune": {
       "command": "npx",
-      "args": ["-y", "rikune", "docker-stdio"],
-      "env": {
-        "GHIDRA_PATH": "C:/path/to/ghidra",
-        "GHIDRA_INSTALL_DIR": "C:/path/to/ghidra"
-      }
+      "args": ["-y", "rikune", "agent", "stdio"]
     }
   }
 }
 ```
 
+也可以先全局安装连接器：
+
+```bash
+npm install -g rikune
+```
+
+如果已经全局安装，可以直接配置：
+
+```json
+{
+  "command": "rikune-agent",
+  "args": ["stdio"],
+  "timeout": 300000
+}
+```
+
 发布态的职责划分是：
 
-- `npm/npx` 只负责启动 MCP launcher
+- `rikune-agent` 负责 MCP 连接、连接状态查询、endpoint/key 配置和上游工具代理
 - Docker Compose 容器负责持久化 analyzer、HTTP API、上传存储和静态工具链
+
+`rikune-agent` 会固定暴露 `rikune_connection_status`、
+`rikune_connection_configure` 和 `rikune_connection_refresh`。当 static
+analyzer 连接成功后，它会拉取 analyzer 的 MCP tool list 并代理这些工具；
+VM/Runtime endpoint 会先做健康检查，后续配置 runtime MCP endpoint 后也会拉取并代理其工具。
 
 现有源码直跑方式和直接 `docker exec` 方式仍然可用。
 

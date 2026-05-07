@@ -9,4 +9,10 @@ if (subcommand === 'docker-stdio' || subcommand === 'docker-run') {
   process.exit(exitCode)
 }
 
+if (subcommand === 'agent' || subcommand === 'rikune-agent') {
+  const { runRikuneAgentCli } = await import('../dist/rikune-agent-gateway.js')
+  const exitCode = await runRikuneAgentCli(rawArgs.slice(1), process.env)
+  process.exit(exitCode)
+}
+
 await import('../dist/index.js')

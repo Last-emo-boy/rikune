@@ -169,6 +169,12 @@ function Convert-ProxyForDocker {
     return ($Proxy -replace "://127\.0\.0\.1:", "://host.docker.internal:" -replace "://localhost:", "://host.docker.internal:")
 }
 
+function Convert-EndpointForHostAgent {
+    param([string]$Endpoint)
+    if ([string]::IsNullOrWhiteSpace($Endpoint)) { return "" }
+    return ($Endpoint -replace "://host\.docker\.internal:", "://localhost:")
+}
+
 function Get-SystemProxy {
     try {
         $registryPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
@@ -212,27 +218,29 @@ function Set-CodexMcpConfig {
         New-Item -ItemType Directory -Path $configDir -Force | Out-Null
     }
 
-    $mcpArgs = @(
-        "exec",
-        "-i",
-        "-e",
-        "API_ENABLED=false",
-        "-e",
-        "NODE_ENV=production",
-        "-e",
-        "PYTHONUNBUFFERED=1",
-        $ProfileConfig.Container,
-        "node",
-        "dist/index.js"
-    )
+    $mcpArgs = @("stdio")
 
     $block = @"
 [mcp_servers.rikune]
 type = "stdio"
-command = "docker"
+command = "rikune-agent"
 startup_timeout_sec = 180
 args = $(ConvertTo-TomlArray $mcpArgs)
+
+[mcp_servers.rikune.env]
+RIKUNE_DOCKER_CONTAINER = $(ConvertTo-TomlString $ProfileConfig.Container)
+RIKUNE_ANALYZER_ENDPOINT = "http://localhost:18080"
 "@
+
+    if ($ProfileConfig.RuntimeMode -eq "remote-sandbox") {
+        $agentHostEndpoint = Convert-EndpointForHostAgent $HostAgentEndpoint
+        $block += @"
+RIKUNE_VM_ENDPOINT = $(ConvertTo-TomlString $agentHostEndpoint)
+RUNTIME_HOST_AGENT_ENDPOINT = $(ConvertTo-TomlString $HostAgentEndpoint)
+RUNTIME_HOST_AGENT_API_KEY = $(ConvertTo-TomlString $HostAgentApiKey)
+RUNTIME_API_KEY = $(ConvertTo-TomlString $RuntimeApiKey)
+"@
+    }
 
     $content = ""
     if (Test-Path $ConfigFile) {
@@ -320,32 +328,23 @@ function Configure-McpClient {
     $config = @{
         mcpServers = @{
             rikune = @{
-                command = "docker"
-                args = @(
-                    "exec",
-                    "-i",
-                    "-e",
-                    "API_ENABLED=false",
-                    "-e",
-                    "NODE_ENV=production",
-                    "-e",
-                    "PYTHONUNBUFFERED=1",
-                    $ProfileConfig.Container,
-                    "node",
-                    "dist/index.js"
-                )
+                command = "rikune-agent"
+                args = @("stdio")
                 env = @{
-                    NODE_ENV = "production"
-                    PYTHONUNBUFFERED = "1"
-                    WORKSPACE_ROOT = "/app/workspaces"
-                    DB_PATH = "/app/data/database.db"
-                    CACHE_ROOT = "/app/cache"
-                    GHIDRA_PROJECT_ROOT = "/ghidra-projects"
-                    GHIDRA_LOG_ROOT = "/ghidra-logs"
+                    RIKUNE_DOCKER_CONTAINER = $ProfileConfig.Container
+                    RIKUNE_ANALYZER_ENDPOINT = "http://localhost:18080"
                 }
                 timeout = 300000
             }
         }
+    }
+
+    if ($ProfileConfig.RuntimeMode -eq "remote-sandbox") {
+        $agentHostEndpoint = Convert-EndpointForHostAgent $HostAgentEndpoint
+        $config.mcpServers.rikune.env.RIKUNE_VM_ENDPOINT = $agentHostEndpoint
+        $config.mcpServers.rikune.env.RUNTIME_HOST_AGENT_ENDPOINT = $HostAgentEndpoint
+        $config.mcpServers.rikune.env.RUNTIME_HOST_AGENT_API_KEY = $HostAgentApiKey
+        $config.mcpServers.rikune.env.RUNTIME_API_KEY = $RuntimeApiKey
     }
 
     switch ($Client) {
