@@ -155,7 +155,7 @@ export async function handleHealthCheck(res: ServerResponse, version?: string): 
     status: 'healthy',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    version: version || '1.0.0-beta.3',
+    version: version || '1.1.0',
   }
 
   res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -227,7 +227,7 @@ export async function handleReadinessCheck(res: ServerResponse, version?: string
     status: overall,
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    version: version || '1.0.0-beta.3',
+    version: version || '1.1.0',
     checks,
   }
 

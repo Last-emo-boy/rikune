@@ -346,6 +346,9 @@ See [SECURITY.md](SECURITY.md) and [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 - [DEPLOYMENT.md](DEPLOYMENT.md): deployment profiles and runtime topology.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): current code architecture.
 - [docs/PLUGINS.md](docs/PLUGINS.md): plugin list, SDK concepts, lifecycle, discovery.
+- [docs/ANALYSIS-RUNTIME.md](docs/ANALYSIS-RUNTIME.md): staged runtime and analysis execution model.
+- [docs/ASYNC-JOB-PATTERN.md](docs/ASYNC-JOB-PATTERN.md): async job and polling pattern.
+- [docs/MIGRATION-ASYNC.md](docs/MIGRATION-ASYNC.md): migration notes for staged async workflows.
 - [docs/DYNAMIC-RUNTIME-ROADMAP.md](docs/DYNAMIC-RUNTIME-ROADMAP.md): runtime roadmap and status.
 - [CONTRIBUTING.md](CONTRIBUTING.md): development and contribution flow.
 - [packages/plugin-sdk/README.md](packages/plugin-sdk/README.md): plugin authoring package.

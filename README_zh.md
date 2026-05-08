@@ -346,6 +346,9 @@ Rikune 面向恶意样本和不可信二进制分析，但它本身不是万能�
 - [DEPLOYMENT.md](DEPLOYMENT.md)：部署 profile 和 runtime topology。
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：当前代码架构。
 - [docs/PLUGINS.md](docs/PLUGINS.md)：插件列表、SDK、生命周期、发现机制。
+- [docs/ANALYSIS-RUNTIME.md](docs/ANALYSIS-RUNTIME.md)：staged runtime 和分析执行模型。
+- [docs/ASYNC-JOB-PATTERN.md](docs/ASYNC-JOB-PATTERN.md)：异步 job 和轮询模式。
+- [docs/MIGRATION-ASYNC.md](docs/MIGRATION-ASYNC.md)：迁移到 staged async workflow 的说明。
 - [docs/DYNAMIC-RUNTIME-ROADMAP.md](docs/DYNAMIC-RUNTIME-ROADMAP.md)：runtime roadmap 和状态。
 - [CONTRIBUTING.md](CONTRIBUTING.md)：开发和贡献流程。
 - [packages/plugin-sdk/README.md](packages/plugin-sdk/README.md)：插件作者 SDK。
