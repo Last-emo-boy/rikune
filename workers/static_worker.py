@@ -18,8 +18,10 @@ import subprocess
 import importlib.metadata
 import traceback
 import warnings
+import signal
+import tempfile
 from typing import Dict, List, Any, Optional, Tuple
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, is_dataclass
 from datetime import datetime, timezone
 
 try:
@@ -137,6 +139,154 @@ class StaticWorker:
         }
         self._floss_cli_cache = None
         self._dependency_status_cache = None
+        self._active_child_pids = set()
+        if os.name != 'nt':
+            signal.signal(signal.SIGTERM, self._handle_shutdown_signal)
+            signal.signal(signal.SIGINT, self._handle_shutdown_signal)
+
+    def _handle_shutdown_signal(self, signum, _frame):
+        self._cleanup_active_children()
+        raise SystemExit(128 + int(signum))
+
+    def _terminate_child_tree(self, pid: int) -> None:
+        if not pid:
+            return
+        if os.name == 'nt':
+            try:
+                subprocess.run(
+                    ['taskkill', '/T', '/F', '/PID', str(pid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=5,
+                    check=False,
+                )
+            except Exception:
+                pass
+            return
+
+        try:
+            os.killpg(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except Exception:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except Exception:
+                return
+
+        time.sleep(0.25)
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        except Exception:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except Exception:
+                pass
+
+    def _cleanup_active_children(self) -> None:
+        for pid in list(self._active_child_pids):
+            self._terminate_child_tree(pid)
+            self._active_child_pids.discard(pid)
+
+    def _run_external_command_to_files(
+        self,
+        command: List[str],
+        timeout: int,
+    ) -> Tuple[int, str, str, bool]:
+        """Run an external analyzer with stdout/stderr spooled to disk and hard tree cleanup."""
+        stdout_path = None
+        stderr_path = None
+        process = None
+        try:
+            with tempfile.NamedTemporaryFile('w+', encoding='utf-8', errors='replace', delete=False) as stdout_file:
+                stdout_path = stdout_file.name
+            with tempfile.NamedTemporaryFile('w+', encoding='utf-8', errors='replace', delete=False) as stderr_file:
+                stderr_path = stderr_file.name
+
+            with open(stdout_path, 'w+', encoding='utf-8', errors='replace') as stdout_file, open(
+                stderr_path, 'w+', encoding='utf-8', errors='replace'
+            ) as stderr_file:
+                process = subprocess.Popen(
+                    command,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                    text=True,
+                    start_new_session=os.name != 'nt',
+                )
+                self._active_child_pids.add(process.pid)
+                timed_out = False
+                try:
+                    returncode = process.wait(timeout=max(1, int(timeout)))
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    self._terminate_child_tree(process.pid)
+                    returncode = -9
+                finally:
+                    self._active_child_pids.discard(process.pid)
+
+            with open(stdout_path, 'r', encoding='utf-8', errors='replace') as stdout_file:
+                stdout = stdout_file.read()
+            with open(stderr_path, 'r', encoding='utf-8', errors='replace') as stderr_file:
+                stderr = stderr_file.read()
+            return returncode, stdout, stderr, timed_out
+        finally:
+            for path in (stdout_path, stderr_path):
+                if path:
+                    try:
+                        os.unlink(path)
+                    except Exception:
+                        pass
+
+    def _extract_mdt_row_index(self, value: Any) -> Optional[int]:
+        """Normalize a dnfile metadata table entry/index reference into a 1-based row index."""
+        if value is None:
+            return None
+        if hasattr(value, "row_index"):
+            try:
+                return int(value.row_index)
+            except Exception:
+                return None
+        try:
+            return int(value)
+        except Exception:
+            return None
+
+    def _resolve_mdt_row_indices(self, value: Any, next_value: Any = None, total_rows: int = 0) -> List[int]:
+        """
+        Resolve dnfile metadata table references into concrete 1-based row indices.
+
+        dnfile may decode TypeDef.MethodList / FieldList either as:
+        - a single start index reference, where the next TypeDef row bounds the range; or
+        - an already-expanded list of table references.
+        """
+        if value is None:
+            return []
+
+        if isinstance(value, list):
+            resolved: List[int] = []
+            for item in value:
+                idx = self._extract_mdt_row_index(item)
+                if idx is not None and idx > 0:
+                    resolved.append(idx)
+            return resolved
+
+        start_idx = self._extract_mdt_row_index(value)
+        if start_idx is None or start_idx <= 0:
+            return []
+
+        if isinstance(next_value, list):
+            next_indices = self._resolve_mdt_row_indices(next_value, None, total_rows)
+            end_idx = next_indices[0] if next_indices else (total_rows + 1)
+        else:
+            next_idx = self._extract_mdt_row_index(next_value)
+            end_idx = next_idx if next_idx is not None and next_idx > 0 else (total_rows + 1)
+
+        if end_idx <= start_idx:
+            return [start_idx]
+
+        return list(range(start_idx, min(end_idx, total_rows + 1)))
 
     def _get_python_package_version(self, package_name: str) -> Optional[str]:
         """Get installed Python package version, if available."""
@@ -3555,79 +3705,36 @@ print(json.dumps(payload))
         partial_results = False
         decoded_strings = []
         
-        try:
-            # 鎵ц FLOSS 鍛戒护锛岃缃秴鏃?
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False  # 涓嶈嚜鍔ㄦ姏鍑哄紓甯革紝鎵嬪姩妫€鏌ヨ繑鍥炵爜
-            )
-            
-            # 妫€鏌ヨ繑鍥炵爜
-            if result.returncode != 0:
-                # FLOSS 鍙兘杩斿洖闈為浂閫€鍑虹爜浣嗕粛鏈夐儴鍒嗙粨鏋?
-                if result.stdout:
-                    partial_results = True
-                else:
-                    error_output = (result.stderr or "").strip()
-                    detector_text = f"{result.stdout}\n{result.stderr}".lower()
-                    if (
-                        "fault localization with spectrum-based scoring" in detector_text
-                        or (
-                            "--json" in detector_text
-                            and ("unrecognized arguments" in detector_text or "no such option" in detector_text)
-                        )
-                    ):
-                        raise Exception(
-                            "Incompatible `floss` CLI detected. Install FLARE-FLOSS (`pip install flare-floss`) and ensure it appears first in PATH."
-                        )
-                    raise Exception(f"FLOSS failed with exit code {result.returncode}: {error_output}")
-            
-            # 瑙ｆ瀽 JSON 杈撳嚭
-            if result.stdout:
-                try:
-                    floss_output = json.loads(result.stdout)
-                    decoded_strings = self._parse_floss_output(floss_output, modes)
-                except json.JSONDecodeError as e:
-                    raise Exception(f"Failed to parse FLOSS JSON output: {str(e)}")
-            
-        except subprocess.TimeoutExpired:
-            # 瓒呮椂锛屽皾璇曡幏鍙栭儴鍒嗙粨鏋?
+        returncode, stdout, stderr, timed_out = self._run_external_command_to_files(command, timeout)
+        if timed_out:
             timeout_occurred = True
             partial_results = True
-            
-            # 娉ㄦ剰锛歴ubprocess.TimeoutExpired 涓嶅寘鍚?stdout/stderr
-            # 鎴戜滑闇€瑕佷娇鐢?Popen 鏉ヨ幏鍙栭儴鍒嗚緭鍑?
-            # 閲嶆柊鎵ц浠ヨ幏鍙栭儴鍒嗙粨鏋?
+
+        if returncode != 0 and not timed_out:
+            if stdout:
+                partial_results = True
+            else:
+                error_output = (stderr or "").strip()
+                detector_text = f"{stdout}\n{stderr}".lower()
+                if (
+                    "fault localization with spectrum-based scoring" in detector_text
+                    or (
+                        "--json" in detector_text
+                        and ("unrecognized arguments" in detector_text or "no such option" in detector_text)
+                    )
+                ):
+                    raise Exception(
+                        "Incompatible `floss` CLI detected. Install FLARE-FLOSS (`pip install flare-floss`) and ensure it appears first in PATH."
+                    )
+                raise Exception(f"FLOSS failed with exit code {returncode}: {error_output}")
+
+        if stdout:
             try:
-                process = subprocess.Popen(
-                    command,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
-                
-                # 绛夊緟瓒呮椂
-                try:
-                    stdout, stderr = process.communicate(timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    # 缁堟杩涚▼
-                    process.kill()
-                    stdout, stderr = process.communicate()
-                    
-                    # 灏濊瘯瑙ｆ瀽閮ㄥ垎杈撳嚭
-                    if stdout:
-                        try:
-                            floss_output = json.loads(stdout)
-                            decoded_strings = self._parse_floss_output(floss_output, modes)
-                        except json.JSONDecodeError:
-                            # 鏃犳硶瑙ｆ瀽閮ㄥ垎杈撳嚭
-                            pass
-            except Exception:
-                # 鏃犳硶鑾峰彇閮ㄥ垎缁撴灉
-                pass
+                floss_output = json.loads(stdout)
+                decoded_strings = self._parse_floss_output(floss_output, modes)
+            except json.JSONDecodeError as e:
+                if not timeout_occurred:
+                    raise Exception(f"Failed to parse FLOSS JSON output: {str(e)}")
         
         return {
             "decoded_strings": decoded_strings,
@@ -4760,20 +4867,19 @@ print(json.dumps(payload))
             command.extend(["-r", str(rules_info.get("path"))])
         command.append(sample_path)
 
-        capa_result = subprocess.run(
+        returncode, stdout, stderr, timed_out = self._run_external_command_to_files(
             command,
-            capture_output=True,
-            text=True,
-            timeout=max(5, timeout),
-            check=False,
+            max(5, timeout),
         )
-        combined_output = f"{capa_result.stdout}\n{capa_result.stderr}".strip()
-        if capa_result.returncode != 0:
+        combined_output = f"{stdout}\n{stderr}".strip()
+        if timed_out:
+            raise Exception(f"capa execution timed out after {max(5, timeout)}s: {combined_output}")
+        if returncode != 0:
             raise Exception(
-                f"capa execution failed with exit code {capa_result.returncode}: {combined_output}"
+                f"capa execution failed with exit code {returncode}: {combined_output}"
             )
 
-        raw_report = json.loads(capa_result.stdout)
+        raw_report = json.loads(stdout)
         normalized = self._normalize_capa_capabilities(raw_report)
         return {
             "status": "ready",
@@ -4786,7 +4892,11 @@ print(json.dumps(payload))
                 f"Recovered {len(normalized['capabilities'])} capa capability rule(s) across "
                 f"{len(normalized['behavior_namespaces'])} namespace(s)."
             ),
-            "raw_backend": raw_report,
+            "raw_backend": None,
+            "raw_backend_summary": {
+                "spooled_output_bytes": len(stdout.encode("utf-8", errors="replace")),
+                "rules_path": rules_info.get("path"),
+            },
             "warnings": [],
         }
 
@@ -5809,6 +5919,34 @@ print(json.dumps(payload))
             
             # 璁＄畻鎵ц鏃堕棿
             elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+
+            if (
+                isinstance(result, dict)
+                and "ok" in result
+                and "data" in result
+                and (
+                    "warnings" in result
+                    or "errors" in result
+                    or "metrics" in result
+                    or "artifacts" in result
+                )
+            ):
+                metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
+                metrics = dict(metrics)
+                metrics.setdefault("elapsed_ms", elapsed_ms)
+                metrics.setdefault("tool", request.tool)
+                warnings = result.get("warnings") if isinstance(result.get("warnings"), list) else []
+                errors = result.get("errors") if isinstance(result.get("errors"), list) else []
+                artifacts = result.get("artifacts") if isinstance(result.get("artifacts"), list) else []
+                return WorkerResponse(
+                    job_id=request.job_id,
+                    ok=bool(result.get("ok")),
+                    warnings=[str(item) for item in warnings],
+                    errors=[str(item) for item in errors],
+                    data=result.get("data"),
+                    artifacts=artifacts,
+                    metrics=metrics
+                )
             
             return WorkerResponse(
                 job_id=request.job_id,
@@ -6064,26 +6202,17 @@ print(json.dumps(payload))
                     if include_methods and method_table:
                         method_list_idx = getattr(row, "MethodList", None)
                         if method_list_idx is not None:
-                            try:
-                                start_idx = method_list_idx.row_index if hasattr(method_list_idx, "row_index") else int(method_list_idx)
-                            except Exception:
-                                start_idx = 0
-                            # End index is the MethodList of next typedef or end of method table
-                            if i + 1 < typedef_table.num_rows:
-                                next_ml = getattr(typedef_table.rows[i + 1], "MethodList", None)
-                                try:
-                                    end_idx = next_ml.row_index if hasattr(next_ml, "row_index") else int(next_ml)
-                                except Exception:
-                                    end_idx = total_methods + 1
-                            else:
-                                end_idx = total_methods + 1
-
-                            method_count_for_type = max(0, end_idx - start_idx)
+                            next_ml = getattr(typedef_table.rows[i + 1], "MethodList", None) if i + 1 < typedef_table.num_rows else None
+                            method_row_indices = self._resolve_mdt_row_indices(
+                                method_list_idx, next_ml, total_methods
+                            )
+                            method_count_for_type = len(method_row_indices)
                             total_method_count += method_count_for_type
 
-                            for mi in range(start_idx - 1, min(end_idx - 1, total_methods)):
+                            for method_row_index in method_row_indices:
                                 if len(methods) >= max_methods_per_type:
                                     break
+                                mi = method_row_index - 1
                                 if mi < 0 or mi >= len(method_table.rows):
                                     continue
                                 m_row = method_table.rows[mi]
@@ -6128,19 +6257,10 @@ print(json.dumps(payload))
                     if field_table:
                         field_list_idx = getattr(row, "FieldList", None)
                         if field_list_idx is not None:
-                            try:
-                                f_start = field_list_idx.row_index if hasattr(field_list_idx, "row_index") else int(field_list_idx)
-                            except Exception:
-                                f_start = 0
-                            if i + 1 < typedef_table.num_rows:
-                                next_fl = getattr(typedef_table.rows[i + 1], "FieldList", None)
-                                try:
-                                    f_end = next_fl.row_index if hasattr(next_fl, "row_index") else int(next_fl)
-                                except Exception:
-                                    f_end = total_fields + 1
-                            else:
-                                f_end = total_fields + 1
-                            field_count_for_type = max(0, f_end - f_start)
+                            next_fl = getattr(typedef_table.rows[i + 1], "FieldList", None) if i + 1 < typedef_table.num_rows else None
+                            field_count_for_type = len(
+                                self._resolve_mdt_row_indices(field_list_idx, next_fl, total_fields)
+                            )
 
                     # Build flags array
                     type_flags = []
@@ -6841,13 +6961,16 @@ def response_to_dict(response: WorkerResponse) -> Dict[str, Any]:
     Returns:
         Dict: 鍝嶅簲瀛楀吀
     """
+    def artifact_to_dict(artifact: Any) -> Any:
+        return asdict(artifact) if is_dataclass(artifact) else artifact
+
     return {
         "job_id": response.job_id,
         "ok": response.ok,
         "warnings": response.warnings,
         "errors": response.errors,
         "data": response.data,
-        "artifacts": [asdict(artifact) for artifact in response.artifacts],
+        "artifacts": [artifact_to_dict(artifact) for artifact in response.artifacts],
         "metrics": response.metrics
     }
 

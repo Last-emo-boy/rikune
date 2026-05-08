@@ -7,7 +7,14 @@
  */
 
 import { z } from 'zod'
-import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  getDatabase,
+  getWorkspaceServices,
+  type ArtifactRef,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 
 const TOOL_NAME = 'debug.gui.handoff'
@@ -186,6 +193,8 @@ export function createDebugGuiHandoffHandler(deps: PluginToolDeps) {
     try {
       const input = DebugGuiHandoffInputSchema.parse(args || {})
       const selectedTools = expandTools(input.tools)
+      const workspace = getWorkspaceServices(deps)
+      const db = getDatabase(deps)
       const data = {
         schema: 'rikune.debug_gui_handoff.v1',
         tool_version: TOOL_VERSION,
@@ -213,13 +222,13 @@ export function createDebugGuiHandoffHandler(deps: PluginToolDeps) {
       if (
         input.persist_artifact &&
         input.sample_id &&
-        deps.workspaceManager &&
-        deps.database?.findSample?.(input.sample_id)
+        workspace.manager &&
+        db?.findSample?.(input.sample_id)
       ) {
         artifacts.push(
           await persistStaticAnalysisJsonArtifact(
-            deps.workspaceManager,
-            deps.database,
+            workspace.manager,
+            db,
             input.sample_id,
             'debug_gui_handoff',
             'debug_gui_handoff',

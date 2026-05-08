@@ -1,60 +1,118 @@
 # Security Policy
 
+Rikune is a reverse-engineering and malware-analysis tool. Treat every input sample as hostile.
+
 ## Scope
 
-This repository provides an MCP server for reverse-engineering and malware
-analysis workflows. It is intended for controlled analysis environments.
+Security-sensitive areas include:
 
-## Reporting a vulnerability
+- MCP tool execution and argument validation;
+- sample upload, artifact download, and HTTP API auth;
+- workspace path handling;
+- command execution helpers;
+- Python/Ghidra worker launchers;
+- Docker images and install scripts;
+- runtime delegation;
+- Windows Host Agent control endpoints;
+- sandbox or VM lifecycle;
+- plugin loading and external plugin discovery.
 
-Do not open a public GitHub issue for a security-sensitive report.
+## Reporting A Vulnerability
 
-Instead, report:
+Open a private security advisory or contact the maintainers through the repository's configured security channel. Do not attach live malware samples to public issues.
 
-- the affected version or commit
-- the impacted MCP tool or workflow
-- reproduction steps
-- whether the issue can expose local files, execute unintended commands, or
-  corrupt analysis results
+Include:
 
-If you plan to publish the repository, add your preferred private disclosure
-channel before accepting public contributions.
+- affected version or commit;
+- deployment mode;
+- reproduction steps;
+- whether runtime execution, external plugins, or HTTP API were enabled;
+- logs with secrets removed.
 
-## What is considered security-sensitive here
+## Security Boundaries
 
-- unintended command execution
-- path traversal or arbitrary file overwrite
-- unsafe sample handling outside the intended analysis boundary
-- privilege boundary bypass in packaging, install scripts, or worker launchers
-- exposure of secrets through logs, reports, or generated artifacts
+Static Docker mode is the safest default. It should not execute samples.
 
-## Command injection prevention
+Live execution must be isolated:
 
-All external command invocations use `src/safe-command.ts`:
+- Windows Sandbox;
+- dedicated Hyper-V VM;
+- another intentionally isolated runtime backend.
 
-- **Whitelist validation**: Command names are checked against
-  `SAFE_COMMAND_NAME_RE = /^[a-zA-Z0-9._/:\-]+$/` before execution.
-- **Array arguments**: `execFileSync` and `spawnSync` are called with argument
-  arrays — never with shell string interpolation.
-- **Safe helpers**: `safeCommandExists()`, `safeGetCommandVersion()`, and
-  `validateGraphvizFormat()` replace the previous `execSync` invocations.
+Runtime Node performs isolation checks and should not be started directly on a workstation for unknown samples. Any unsafe override is for controlled development only.
 
-When adding new external command calls, always use these wrappers rather than
-calling `execSync` or `child_process.exec` directly.
+## Dangerous Actions
 
-## CI/CD security scanning
+`PolicyGuard` gates operations such as:
 
-The CI pipeline (`.github/workflows/ci.yml`) runs a dedicated `security` job:
+- dynamic execution;
+- network access;
+- external upload;
+- bulk decompilation.
 
-1. **npm audit** — known vulnerabilities in Node.js dependencies
-2. **pip-audit** — CVE checks for Python dependencies
-3. **CodeQL SAST** — static application security testing
+Approvals are intentionally explicit and time-bounded. Do not treat an approval as a general trust decision for the sample.
 
-## Operational guidance
+## Command Injection Prevention
 
-- Run the server in a dedicated analysis environment.
-- Do not analyze untrusted samples on a production workstation.
-- Review install scripts before using them in shared environments.
-- Keep Ghidra, Python packages, and Node dependencies current.
-- Set `PLUGINS` to limit loaded tool categories in restricted environments.
-- Set `MAX_PYTHON_WORKERS` to limit concurrent Python processes.
+The project uses structured process APIs and safe command helpers instead of shell-built command strings where possible. Command names, output formats, and tool-specific arguments should remain validated and allowlisted.
+
+When adding tools:
+
+1. Avoid `shell: true`.
+2. Use `execFile` or `spawn` with argument arrays.
+3. Validate file paths stay inside the expected workspace or storage root.
+4. Do not pass user-controlled strings through a shell.
+5. Keep external tool output parsing defensive.
+
+## Upload And Storage Safety
+
+Sample uploads are stored under managed upload and sample roots. Imported samples are finalized by hash and should be treated as immutable originals.
+
+Do not:
+
+- mount unknown sample directories over the source tree;
+- expose artifact directories without API auth;
+- trust original filenames for paths;
+- copy live samples into shared or synchronized folders.
+
+## Plugin Safety
+
+External plugins are executable code. Only load plugins from trusted sources.
+
+Before enabling external plugins:
+
+- review `plugin.json` and `index.js`;
+- inspect declared `systemDeps`;
+- check runtime contracts;
+- check whether the plugin requests live execution or network access;
+- prefer running in static Docker or an isolated development environment first.
+
+## HTTP API
+
+When exposed beyond localhost:
+
+- configure `API_KEY`;
+- place the service behind a trusted network boundary;
+- keep rate limiting enabled;
+- avoid permissive CORS;
+- do not expose upload endpoints publicly without additional controls.
+
+## Operational Guidance
+
+- Prefer `static` Docker for routine triage.
+- Use `hybrid` only when live runtime evidence is required.
+- Keep Windows Sandbox or Hyper-V runtime disposable.
+- Revert Hyper-V VMs to clean checkpoints after live analysis.
+- Do not reuse dirty runtime state across unrelated samples unless that is an intentional investigation.
+- Keep Node.js, Docker, Java, Ghidra, and Python dependencies patched.
+
+## CI/CD Security
+
+CI should continue to check:
+
+- TypeScript build and type checks;
+- tests;
+- Docker generation;
+- dependency vulnerability scanning where available;
+- no committed secrets;
+- install script behavior on supported platforms.

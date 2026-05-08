@@ -109,7 +109,6 @@ export function registerWorkflowTools(
       {
         analyzeStartHandler,
         analyzePromoteHandler,
-        sandboxExecuteHandler: runtimeDependencies.sandboxExecute,
       },
       jobQueue
     )

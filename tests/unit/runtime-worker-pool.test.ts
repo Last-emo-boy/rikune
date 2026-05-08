@@ -140,4 +140,75 @@ describe('runtime worker pool', () => {
       fs.rmSync(tempDir, { recursive: true, force: true })
     }
   })
+
+  test('automatically evicts idle workers after the configured TTL', () => {
+    jest.useFakeTimers()
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'runtime-worker-pool-'))
+    const database = new DatabaseManager(path.join(tempDir, 'test.db'))
+    const pool = new RuntimeWorkerPool() as any
+    const kill = jest.fn()
+
+    try {
+      const worker = {
+        id: 'worker-idle',
+        family: 'static_python.preview',
+        compatibilityKey: 'compat-idle',
+        deploymentKey: 'deploy-idle',
+        child: { kill } as any,
+        busy: false,
+        unhealthy: false,
+        createdAt: new Date().toISOString(),
+        lastUsedAt: new Date().toISOString(),
+        stdoutBuffer: '',
+      }
+
+      pool.workers.set(worker.id, worker)
+      pool.scheduleIdleEviction(worker, database, 1_000)
+      expect(pool.workers.has(worker.id)).toBe(true)
+
+      jest.advanceTimersByTime(1_000)
+
+      expect(pool.workers.has(worker.id)).toBe(false)
+      expect(kill).toHaveBeenCalled()
+    } finally {
+      jest.useRealTimers()
+      database.close()
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  test('shutdown rejects pending work and clears live workers', async () => {
+    const pool = new RuntimeWorkerPool() as any
+    const reject = jest.fn()
+    const clearTimeoutMock = jest.spyOn(global, 'clearTimeout')
+
+    pool.workers.set('worker-live', {
+      id: 'worker-live',
+      family: 'static_python.preview',
+      compatibilityKey: 'compat-live',
+      deploymentKey: 'deploy-live',
+      child: {
+        stdin: { end: jest.fn() },
+        kill: jest.fn(),
+      } as any,
+      busy: true,
+      unhealthy: false,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: new Date().toISOString(),
+      stdoutBuffer: '',
+      pending: {
+        resolve: jest.fn(),
+        reject,
+        timer: setTimeout(() => undefined, 60_000),
+      },
+    })
+
+    try {
+      await pool.shutdown({ graceMs: 10 })
+      expect(pool.workers.size).toBe(0)
+      expect(reject).toHaveBeenCalledWith(expect.any(Error))
+    } finally {
+      clearTimeoutMock.mockRestore()
+    }
+  })
 })

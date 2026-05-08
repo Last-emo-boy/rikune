@@ -5,6 +5,7 @@ import type {
   ResourceRegistrar,
   SamplingClient,
 } from './registrar.js'
+import { config } from '../config.js'
 import { createDelegatingServer } from '../runtime-client/delegation-server.js'
 
 export interface RuntimeBridgeDeps {
@@ -21,9 +22,9 @@ export class PluginRuntimeBridge {
   createServerForPlugin(
     baseServer: ToolRegistrar & PromptRegistrar & ResourceRegistrar & SamplingClient,
     pluginId: string,
-    executionDomain?: string
+    _executionDomain?: string
   ): PluginServerInterface {
-    if (executionDomain === 'dynamic') {
+    if (config.node.role === 'analyzer') {
       return createDelegatingServer(
         baseServer,
         pluginId,

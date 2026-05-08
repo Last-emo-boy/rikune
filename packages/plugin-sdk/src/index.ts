@@ -11,19 +11,51 @@
  *   - PluginServerInterface — what the server exposes to plugins
  */
 
+import { existsSync } from 'node:fs'
+import { z } from 'zod'
+import { ToolRuntimeContractSchema } from '@rikune/shared'
+import type {
+  ArtifactRef,
+  RuntimeBackendCapability,
+  RuntimeBackendType,
+  RuntimeDelegationFailureCategory,
+  RuntimeExecutionMode,
+  RuntimeExecutionSemantics,
+  RuntimeFallbackRule,
+  ToolRuntimeContract,
+  WorkerResult,
+} from '@rikune/shared'
+export {
+  PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+  SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+  RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPES,
+  RuntimeBackendCapabilitySchema,
+  RuntimeDelegationFailureCategorySchema,
+  RuntimeDelegationFailureDataSchema,
+  RuntimeDelegationFailureResultSchema,
+  RuntimeExecutionModeSchema,
+  RuntimeFallbackRuleSchema,
+  ToolRuntimeContractSchema,
+  buildRuntimeArtifactControlPlaneMetadata,
+  inferRuntimeArtifactFamily,
+  inferRuntimeArtifactType,
+  listRuntimeDynamicTraceArtifactTypes,
+} from '@rikune/shared'
+export type {
+  ArtifactRef,
+  RuntimeBackendCapability,
+  RuntimeBackendType,
+  RuntimeDelegationFailureCategory,
+  RuntimeExecutionMode,
+  RuntimeExecutionSemantics,
+  RuntimeFallbackRule,
+  ToolRuntimeContract,
+  WorkerResult,
+} from '@rikune/shared'
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Result Types
 // ═══════════════════════════════════════════════════════════════════════════
-
-/** Reference to a persisted analysis artifact. */
-export interface ArtifactRef {
-  id: string
-  type: string
-  path: string
-  sha256: string
-  mime?: string
-  metadata?: Record<string, unknown>
-}
 
 /** Standard tool result (MCP protocol). */
 export interface ToolResult {
@@ -32,27 +64,9 @@ export interface ToolResult {
   structuredContent?: Record<string, unknown>
 }
 
-/** Worker-style result used by most analysis tools. */
-export interface WorkerResult {
-  ok: boolean
-  data?: unknown
-  errors?: string[]
-  warnings?: string[]
-  setup_actions?: unknown[]
-  required_user_inputs?: unknown[]
-  artifacts?: ArtifactRef[]
-  metrics?: Record<string, unknown>
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Tool Definition
 // ═══════════════════════════════════════════════════════════════════════════
-
-/** Execution backend hint for the runtime node. */
-export interface RuntimeBackendHint {
-  type: 'python-worker' | 'spawn' | 'inline'
-  handler: string
-}
 
 /** Schema for a tool's inputs. */
 export interface ToolDefinition {
@@ -61,12 +75,27 @@ export interface ToolDefinition {
   description: string
   inputSchema: any
   outputSchema?: any
-  /** Hint for the runtime node on how to execute this tool. */
-  runtimeBackendHint?: RuntimeBackendHint
+  /** Runtime execution contract for tools delegated to a runtime node. */
+  runtime?: ToolRuntimeContract
 }
 
 /** Generic tool arguments (for tools that don't use Zod parsing). */
 export type ToolArgs = Record<string, unknown>
+
+export type ToolHandler<TArgs = ToolArgs, TResult = WorkerResult | ToolResult | unknown> = (
+  args: TArgs,
+  deps: PluginToolDeps,
+  ctx?: PluginContext
+) => TResult | Promise<TResult>
+
+export interface DefinedTool<TArgs = ToolArgs> {
+  definition: ToolDefinition
+  handler: ToolHandler<TArgs>
+}
+
+export interface DefineToolConfig<TArgs = ToolArgs> extends ToolDefinition {
+  handler: ToolHandler<TArgs>
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Server Interface (what plugins see)
@@ -137,6 +166,7 @@ export interface PluginToolDeps {
   jobQueue?: any
   storageManager?: any
   server?: any
+  services?: PluginServices
 
   // ── Utility functions ──────────────────────────────────────────────────
   /** Resolve a sample_id to its primary file path on disk. */
@@ -183,6 +213,154 @@ export interface PluginToolDeps {
 
   /** Allow additional properties for extensibility. */
   [key: string]: any
+}
+
+export interface PluginWorkspaceServices {
+  manager?: any
+  database?: any
+  storage?: any
+  resolvePrimarySamplePath?: PluginToolDeps['resolvePrimarySamplePath']
+  persistStaticAnalysisJsonArtifact?: PluginToolDeps['persistStaticAnalysisJsonArtifact']
+}
+
+export interface PluginPlatformServices {
+  cacheManager?: any
+  jobQueue?: any
+  logger?: any
+  policyGuard?: any
+  resolvePackagePath?: PluginToolDeps['resolvePackagePath']
+  generateCacheKey?: PluginToolDeps['generateCacheKey']
+  server?: any
+}
+
+export interface PluginRuntimeServices {
+  client?: any
+  mode?: string
+  sandboxDir?: string | null
+  config?: any
+}
+
+export interface PluginGhidraServices {
+  DecompilerWorker?: any
+  getDiagnostics?: any
+  normalizeError?: any
+  findBestAnalysis?: any
+  getReadiness?: any
+  parseAnalysisMetadata?: any
+  buildPollingGuidance?: any
+  PollingGuidanceSchema?: any
+  SetupActionSchema?: any
+  RequiredUserInputSchema?: any
+}
+
+export interface PluginServices {
+  workspace?: PluginWorkspaceServices
+  platform?: PluginPlatformServices
+  runtime?: PluginRuntimeServices
+  ghidra?: PluginGhidraServices
+}
+
+export function getWorkspaceServices(deps: PluginToolDeps): PluginWorkspaceServices {
+  return {
+    manager: deps.services?.workspace?.manager ?? deps.workspaceManager,
+    database: deps.services?.workspace?.database ?? deps.database,
+    storage: deps.services?.workspace?.storage ?? deps.storageManager,
+    resolvePrimarySamplePath:
+      deps.services?.workspace?.resolvePrimarySamplePath ?? deps.resolvePrimarySamplePath,
+    persistStaticAnalysisJsonArtifact:
+      deps.services?.workspace?.persistStaticAnalysisJsonArtifact ??
+      deps.persistStaticAnalysisJsonArtifact,
+  }
+}
+
+export function getPlatformServices(deps: PluginToolDeps): PluginPlatformServices {
+  return {
+    cacheManager: deps.services?.platform?.cacheManager ?? deps.cacheManager,
+    jobQueue: deps.services?.platform?.jobQueue ?? deps.jobQueue,
+    logger: deps.services?.platform?.logger ?? deps.logger,
+    policyGuard: deps.services?.platform?.policyGuard ?? deps.policyGuard,
+    resolvePackagePath: deps.services?.platform?.resolvePackagePath ?? deps.resolvePackagePath,
+    generateCacheKey: deps.services?.platform?.generateCacheKey ?? deps.generateCacheKey,
+    server: deps.services?.platform?.server ?? deps.server,
+  }
+}
+
+export function getRuntimeServices(deps: PluginToolDeps): PluginRuntimeServices {
+  return {
+    client: deps.services?.runtime?.client ?? deps.runtimeClient,
+    mode: deps.services?.runtime?.mode ?? deps.config?.runtime?.mode,
+    sandboxDir: deps.services?.runtime?.sandboxDir ?? deps.sandboxDir ?? null,
+    config: deps.services?.runtime?.config ?? deps.config?.runtime ?? {},
+  }
+}
+
+export function getGhidraServices(deps: PluginToolDeps): PluginGhidraServices {
+  return {
+    DecompilerWorker: deps.services?.ghidra?.DecompilerWorker ?? deps.DecompilerWorker,
+    getDiagnostics: deps.services?.ghidra?.getDiagnostics ?? deps.getGhidraDiagnostics,
+    normalizeError: deps.services?.ghidra?.normalizeError ?? deps.normalizeGhidraError,
+    findBestAnalysis: deps.services?.ghidra?.findBestAnalysis ?? deps.findBestGhidraAnalysis,
+    getReadiness: deps.services?.ghidra?.getReadiness ?? deps.getGhidraReadiness,
+    parseAnalysisMetadata:
+      deps.services?.ghidra?.parseAnalysisMetadata ?? deps.parseGhidraAnalysisMetadata,
+    buildPollingGuidance: deps.services?.ghidra?.buildPollingGuidance ?? deps.buildPollingGuidance,
+    PollingGuidanceSchema:
+      deps.services?.ghidra?.PollingGuidanceSchema ?? deps.PollingGuidanceSchema,
+    SetupActionSchema: deps.services?.ghidra?.SetupActionSchema ?? deps.SetupActionSchema,
+    RequiredUserInputSchema:
+      deps.services?.ghidra?.RequiredUserInputSchema ?? deps.RequiredUserInputSchema,
+  }
+}
+
+export function getWorkspaceManager(deps: PluginToolDeps): any {
+  return getWorkspaceServices(deps).manager
+}
+
+export function getDatabase(deps: PluginToolDeps): any {
+  return getWorkspaceServices(deps).database
+}
+
+export function getRuntimeConfig(deps: PluginToolDeps): any {
+  return getRuntimeServices(deps).config ?? {}
+}
+
+export function getPlatformServer(deps: PluginToolDeps): any {
+  return getPlatformServices(deps).server
+}
+
+export function getRuntimeClient(deps: PluginToolDeps): any {
+  return getRuntimeServices(deps).client
+}
+
+function requireInjectedDependency<T>(
+  value: T | null | undefined,
+  label: string,
+  consumer?: string
+): T {
+  if (value !== null && value !== undefined) {
+    return value
+  }
+  throw new Error(
+    consumer
+      ? `${label} is required for ${consumer}`
+      : `${label} is required by this plugin handler`
+  )
+}
+
+export function requireWorkspaceManager(deps: PluginToolDeps, consumer?: string): any {
+  return requireInjectedDependency(getWorkspaceManager(deps), 'workspace manager', consumer)
+}
+
+export function requireDatabase(deps: PluginToolDeps, consumer?: string): any {
+  return requireInjectedDependency(getDatabase(deps), 'database', consumer)
+}
+
+export function requirePlatformServer(deps: PluginToolDeps, consumer?: string): any {
+  return requireInjectedDependency(getPlatformServer(deps), 'platform server', consumer)
+}
+
+export function requireRuntimeClient(deps: PluginToolDeps, consumer?: string): any {
+  return requireInjectedDependency(getRuntimeClient(deps), 'runtime client', consumer)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -358,6 +536,7 @@ export interface PluginStatus {
   name: string
   description?: string
   version?: string
+  executionDomain?: 'static' | 'dynamic' | 'both'
   status: 'loaded' | 'skipped-disabled' | 'skipped-check' | 'skipped-deps' | 'error'
   tools: string[]
   configFields?: PluginConfigField[]
@@ -531,6 +710,106 @@ export const SURFACE_FILE_TYPE_TAGS: Record<string, string[]> = {
   pcap: ['pcap', 'pcapng', 'network'],
 }
 
+const PluginIdSchema = z
+  .string()
+  .regex(/^[a-z][a-z0-9-]*$/, 'Plugin id must be kebab-case, for example my-plugin')
+
+const ToolNameSchema = z
+  .string()
+  .regex(
+    /^[a-z][a-z0-9_]*(?:[.-][a-z0-9_]+)*$/,
+    'Tool name must use lowercase dot-separated segments'
+  )
+
+export const PluginConfigFieldSchema = z
+  .object({
+    envVar: z.string().min(1),
+    description: z.string(),
+    required: z.boolean(),
+    defaultValue: z.string().optional(),
+  })
+  .passthrough()
+
+export const PluginSystemDepSchema = z
+  .object({
+    type: z.enum(['binary', 'python', 'python-venv', 'env-var', 'directory', 'file']),
+    name: z.string().min(1),
+    target: z.string().optional(),
+    importName: z.string().optional(),
+    versionFlag: z.string().optional(),
+    envVar: z.string().optional(),
+    dockerDefault: z.string().optional(),
+    required: z.boolean(),
+    description: z.string().optional(),
+    dockerInstall: z.string().optional(),
+    dockerFeature: z.string().optional(),
+    aptPackages: z.array(z.string()).optional(),
+    dockerValidation: z.array(z.string()).optional(),
+    extraEnv: z.record(z.string()).optional(),
+    buildArgs: z.record(z.string()).optional(),
+    directories: z.array(z.object({ path: z.string(), chown: z.string().optional() })).optional(),
+    volumes: z
+      .array(
+        z.object({
+          source: z.string(),
+          target: z.string(),
+          mode: z.enum(['ro', 'rw']).optional(),
+        })
+      )
+      .optional(),
+  })
+  .passthrough()
+
+export const SurfaceRulesSchema = z
+  .object({
+    tier: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+    activateOn: z
+      .object({
+        fileTypes: z.array(z.string()).optional(),
+        findings: z.array(z.string()).optional(),
+      })
+      .optional(),
+    category: z.string().optional(),
+    signalMap: z.record(z.union([z.string(), z.array(z.string())])).optional(),
+  })
+  .passthrough()
+
+export const ToolManifestSchema = z
+  .object({
+    name: ToolNameSchema,
+    description: z.string().min(1),
+    inputSchema: z.any().default({ type: 'object', properties: {} }),
+    outputSchema: z.any().optional(),
+    runtime: ToolRuntimeContractSchema.optional(),
+    handler: z.string().optional(),
+  })
+  .passthrough()
+
+export const PluginManifestSchema = z
+  .object({
+    id: PluginIdSchema,
+    name: z.string().min(1),
+    description: z.string().optional(),
+    version: z.string().optional(),
+    executionDomain: z.enum(['static', 'dynamic', 'both']).optional(),
+    dependencies: z.array(PluginIdSchema).optional(),
+    configSchema: z.array(PluginConfigFieldSchema).optional(),
+    systemDeps: z.array(PluginSystemDepSchema).optional(),
+    resources: z
+      .object({
+        workers: z.string().optional(),
+        scripts: z.string().optional(),
+        data: z.string().optional(),
+      })
+      .optional(),
+    surfaceRules: SurfaceRulesSchema.optional(),
+    tools: z.array(ToolManifestSchema).default([]),
+  })
+  .passthrough()
+
+export type ToolManifest = z.infer<typeof ToolManifestSchema>
+export type PluginManifest = z.infer<typeof PluginManifestSchema>
+
 export interface Plugin {
   /** Unique kebab-case identifier, e.g. `'android'`, `'ghidra'`. */
   id: string
@@ -593,12 +872,422 @@ export interface Plugin {
   globalHooks?: boolean
   /** Optional prerequisite check; return false to skip loading. */
   check?: () => boolean | Promise<boolean>
+  /**
+   * Declarative tools belonging to this plugin. Plugins created with
+   * definePlugin() can use this instead of hand-writing register().
+   */
+  tools?: DefinedTool[]
   /** Register all tools belonging to this plugin. Return tool names registered. */
-  register: (
+  register?: (
     server: PluginServerInterface,
     deps: PluginToolDeps,
     ctx?: PluginContext
   ) => string[] | void
   /** Optional cleanup when the plugin is unloaded at runtime. */
   teardown?: () => void | Promise<void>
+}
+
+export interface ValidationIssue {
+  path: string
+  message: string
+}
+
+export interface ValidationResult<T = unknown> {
+  ok: boolean
+  value?: T
+  errors: string[]
+  issues: ValidationIssue[]
+}
+
+export interface WorkerResultOptions extends Omit<
+  WorkerResult,
+  'ok' | 'data' | 'errors' | 'warnings'
+> {
+  warnings?: string[]
+}
+
+export interface ToolResultOptions {
+  isError?: boolean
+}
+
+export const ArtifactRefSchema = z
+  .object({
+    id: z.string(),
+    type: z.string(),
+    path: z.string(),
+    sha256: z.string(),
+    mime: z.string().optional(),
+    metadata: z.record(z.any()).optional(),
+  })
+  .passthrough()
+
+export const WorkerResultMetricsSchema = z
+  .object({
+    elapsed_ms: z.number().optional(),
+    tool: z.string().optional(),
+  })
+  .passthrough()
+
+export function createWorkerResultOutputSchema<TData extends z.ZodTypeAny = z.ZodAny>(
+  dataSchema: TData = z.any() as unknown as TData
+) {
+  return z
+    .object({
+      ok: z.boolean(),
+      data: dataSchema.optional(),
+      warnings: z.array(z.string()).optional(),
+      errors: z.array(z.string()).optional(),
+      artifacts: z.array(ArtifactRefSchema).optional(),
+      metrics: WorkerResultMetricsSchema.optional(),
+      setup_actions: z.array(z.any()).optional(),
+      required_user_inputs: z.array(z.any()).optional(),
+    })
+    .passthrough()
+}
+
+export const WorkerResultOutputSchema = createWorkerResultOutputSchema()
+
+export interface DefinePluginConfig extends Omit<Plugin, 'register' | 'tools'> {
+  tools?: DefinedTool[]
+  register?: Plugin['register']
+}
+
+export type ManifestHandlers = Record<string, ToolHandler>
+
+export type PluginServicePath =
+  | 'workspace.manager'
+  | 'workspace.database'
+  | 'workspace.storage'
+  | 'workspace.resolvePrimarySamplePath'
+  | 'workspace.persistStaticAnalysisJsonArtifact'
+  | 'platform.cacheManager'
+  | 'platform.jobQueue'
+  | 'platform.logger'
+  | 'platform.policyGuard'
+  | 'platform.resolvePackagePath'
+  | 'platform.generateCacheKey'
+  | 'platform.server'
+  | 'runtime.client'
+  | 'runtime.mode'
+  | 'runtime.sandboxDir'
+  | 'runtime.config'
+  | 'ghidra.DecompilerWorker'
+  | 'ghidra.getDiagnostics'
+  | 'ghidra.normalizeError'
+  | 'ghidra.findBestAnalysis'
+  | 'ghidra.getReadiness'
+  | 'ghidra.parseAnalysisMetadata'
+  | 'ghidra.buildPollingGuidance'
+
+const PluginShapeSchema = z
+  .object({
+    id: PluginIdSchema,
+    name: z.string().min(1),
+    description: z.string().optional(),
+    version: z.string().optional(),
+    executionDomain: z.enum(['static', 'dynamic', 'both']).optional(),
+    dependencies: z.array(PluginIdSchema).optional(),
+    configSchema: z.array(PluginConfigFieldSchema).optional(),
+    systemDeps: z.array(PluginSystemDepSchema).optional(),
+    resources: z
+      .object({
+        workers: z.string().optional(),
+        scripts: z.string().optional(),
+        data: z.string().optional(),
+      })
+      .optional(),
+    surfaceRules: SurfaceRulesSchema.optional(),
+    tools: z.array(z.any()).optional(),
+    register: z.any().optional(),
+  })
+  .passthrough()
+
+function zodIssues(error: z.ZodError): ValidationIssue[] {
+  return error.issues.map((issue) => ({
+    path: issue.path.length > 0 ? issue.path.join('.') : '$',
+    message: issue.message,
+  }))
+}
+
+function validationFailure<T>(issues: ValidationIssue[]): ValidationResult<T> {
+  return {
+    ok: false,
+    errors: issues.map((issue) => `${issue.path}: ${issue.message}`),
+    issues,
+  }
+}
+
+function validationSuccess<T>(value: T): ValidationResult<T> {
+  return {
+    ok: true,
+    value,
+    errors: [],
+    issues: [],
+  }
+}
+
+function isDefinedTool(value: unknown): value is DefinedTool {
+  return value !== null && typeof value === 'object' && 'definition' in value && 'handler' in value
+}
+
+function toolDefinitionFrom(
+  value: ToolDefinition | DefinedTool<any> | ToolManifest
+): ToolDefinition {
+  return isDefinedTool(value) ? value.definition : (value as ToolDefinition)
+}
+
+function registerDefinedTools(
+  tools: DefinedTool[] | undefined,
+  server: PluginServerInterface,
+  deps: PluginToolDeps,
+  ctx?: PluginContext
+): string[] {
+  const names: string[] = []
+  for (const tool of tools ?? []) {
+    server.registerTool(tool.definition, async (args: unknown) =>
+      tool.handler(args as never, deps, ctx)
+    )
+    names.push(tool.definition.name)
+  }
+  return names
+}
+
+export function defineTool<TArgs = ToolArgs>(config: DefineToolConfig<TArgs>): DefinedTool<TArgs> {
+  const definition: ToolDefinition = {
+    name: config.name,
+    canonicalName: config.canonicalName,
+    description: config.description,
+    inputSchema: config.inputSchema,
+    outputSchema: config.outputSchema,
+    runtime: config.runtime,
+  }
+  const definedTool: DefinedTool<TArgs> = {
+    definition,
+    handler: config.handler,
+  }
+  const validation = validateTool(definedTool as DefinedTool<any>)
+  if (!validation.ok) {
+    throw new Error(`Invalid tool ${config.name}: ${validation.errors.join('; ')}`)
+  }
+  return definedTool
+}
+
+export function definePlugin(config: DefinePluginConfig): Plugin {
+  const customRegister = config.register
+  const tools = config.tools ?? []
+  const plugin: Plugin = {
+    ...config,
+    tools,
+    register(server, deps, ctx) {
+      const names = registerDefinedTools(tools, server, deps, ctx)
+      const customNames = customRegister?.(server, deps, ctx)
+      if (Array.isArray(customNames)) {
+        names.push(...customNames)
+      }
+      return Array.from(new Set(names))
+    },
+  }
+  const validation = validatePlugin(plugin)
+  if (!validation.ok) {
+    throw new Error(`Invalid plugin ${config.id}: ${validation.errors.join('; ')}`)
+  }
+  return plugin
+}
+
+export function defineManifestPlugin(
+  manifestInput: PluginManifest,
+  handlers: ManifestHandlers
+): Plugin {
+  const manifest = PluginManifestSchema.parse(manifestInput) as PluginManifest
+  const tools = manifest.tools.map((toolManifest: ToolManifest) => {
+    const handlerName = String(toolManifest.handler ?? toolManifest.name)
+    const handler = handlers[handlerName]
+    if (typeof handler !== 'function') {
+      throw new Error(
+        `Missing handler '${handlerName}' for manifest tool '${toolManifest.name}' in plugin '${manifest.id}'`
+      )
+    }
+    return defineTool({
+      name: toolManifest.name,
+      description: toolManifest.description,
+      inputSchema: toolManifest.inputSchema,
+      outputSchema: toolManifest.outputSchema,
+      runtime: toolManifest.runtime as ToolRuntimeContract | undefined,
+      handler,
+    })
+  })
+
+  return definePlugin({
+    id: manifest.id,
+    name: manifest.name,
+    description: manifest.description,
+    version: manifest.version,
+    executionDomain: manifest.executionDomain,
+    dependencies: manifest.dependencies,
+    configSchema: manifest.configSchema,
+    systemDeps: manifest.systemDeps,
+    resources: manifest.resources,
+    surfaceRules: manifest.surfaceRules,
+    tools,
+  })
+}
+
+export function validateTool(
+  value: ToolDefinition | DefinedTool<any> | ToolManifest
+): ValidationResult<ToolDefinition> {
+  const definition = toolDefinitionFrom(value)
+  const result = ToolManifestSchema.safeParse({
+    name: definition.name,
+    description: definition.description,
+    inputSchema: definition.inputSchema,
+    outputSchema: definition.outputSchema,
+    runtime: definition.runtime,
+  })
+  const issues = result.success ? [] : zodIssues(result.error)
+  if (isDefinedTool(value) && typeof value.handler !== 'function') {
+    issues.push({ path: 'handler', message: 'Tool handler must be a function' })
+  }
+  if (issues.length > 0) {
+    return validationFailure(issues)
+  }
+  return validationSuccess(definition)
+}
+
+export function validatePlugin(plugin: Plugin): ValidationResult<Plugin> {
+  const result = PluginShapeSchema.safeParse(plugin)
+  const issues = result.success ? [] : zodIssues(result.error)
+
+  const hasRegister = typeof plugin.register === 'function'
+  const tools = Array.isArray(plugin.tools) ? plugin.tools : []
+  if (!hasRegister && tools.length === 0) {
+    issues.push({
+      path: 'register',
+      message: 'Plugin must provide register() or at least one declarative tool',
+    })
+  }
+
+  const seenToolNames = new Set<string>()
+  for (let index = 0; index < tools.length; index += 1) {
+    const validation = validateTool(tools[index])
+    for (const issue of validation.issues) {
+      issues.push({ path: `tools.${index}.${issue.path}`, message: issue.message })
+    }
+    const name = tools[index]?.definition?.name
+    if (typeof name === 'string') {
+      if (seenToolNames.has(name)) {
+        issues.push({ path: `tools.${index}.name`, message: `Duplicate tool name '${name}'` })
+      }
+      seenToolNames.add(name)
+    }
+  }
+
+  if (issues.length > 0) {
+    return validationFailure(issues)
+  }
+  return validationSuccess(plugin)
+}
+
+export function ok(data?: unknown, options: WorkerResultOptions = {}): WorkerResult {
+  return {
+    ok: true,
+    ...options,
+    data,
+  }
+}
+
+export function fail(
+  errors: string | string[],
+  options: WorkerResultOptions & { data?: unknown } = {}
+): WorkerResult {
+  return {
+    ok: false,
+    status: options.status ?? 'failed',
+    ...options,
+    errors: Array.isArray(errors) ? errors : [errors],
+  }
+}
+
+export function toolText(payload: unknown, options: ToolResultOptions = {}): ToolResult {
+  const text = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2)
+  const structuredContent =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : undefined
+  return {
+    content: [{ type: 'text', text }],
+    structuredContent,
+    isError: options.isError || undefined,
+  }
+}
+
+export function pathExists(filePath: string | null | undefined): boolean {
+  return Boolean(filePath && existsSync(filePath))
+}
+
+export function envIsSet(varName: string): boolean {
+  const value = process.env[varName]
+  return value !== undefined && value.trim().length > 0
+}
+
+function getServiceByPath(deps: PluginToolDeps, path: PluginServicePath): unknown {
+  switch (path) {
+    case 'workspace.manager':
+      return getWorkspaceServices(deps).manager
+    case 'workspace.database':
+      return getWorkspaceServices(deps).database
+    case 'workspace.storage':
+      return getWorkspaceServices(deps).storage
+    case 'workspace.resolvePrimarySamplePath':
+      return getWorkspaceServices(deps).resolvePrimarySamplePath
+    case 'workspace.persistStaticAnalysisJsonArtifact':
+      return getWorkspaceServices(deps).persistStaticAnalysisJsonArtifact
+    case 'platform.cacheManager':
+      return getPlatformServices(deps).cacheManager
+    case 'platform.jobQueue':
+      return getPlatformServices(deps).jobQueue
+    case 'platform.logger':
+      return getPlatformServices(deps).logger
+    case 'platform.policyGuard':
+      return getPlatformServices(deps).policyGuard
+    case 'platform.resolvePackagePath':
+      return getPlatformServices(deps).resolvePackagePath
+    case 'platform.generateCacheKey':
+      return getPlatformServices(deps).generateCacheKey
+    case 'platform.server':
+      return getPlatformServices(deps).server
+    case 'runtime.client':
+      return getRuntimeServices(deps).client
+    case 'runtime.mode':
+      return getRuntimeServices(deps).mode
+    case 'runtime.sandboxDir':
+      return getRuntimeServices(deps).sandboxDir
+    case 'runtime.config':
+      return getRuntimeServices(deps).config
+    case 'ghidra.DecompilerWorker':
+      return getGhidraServices(deps).DecompilerWorker
+    case 'ghidra.getDiagnostics':
+      return getGhidraServices(deps).getDiagnostics
+    case 'ghidra.normalizeError':
+      return getGhidraServices(deps).normalizeError
+    case 'ghidra.findBestAnalysis':
+      return getGhidraServices(deps).findBestAnalysis
+    case 'ghidra.getReadiness':
+      return getGhidraServices(deps).getReadiness
+    case 'ghidra.parseAnalysisMetadata':
+      return getGhidraServices(deps).parseAnalysisMetadata
+    case 'ghidra.buildPollingGuidance':
+      return getGhidraServices(deps).buildPollingGuidance
+  }
+}
+
+export function requireServices<const TPath extends PluginServicePath>(
+  deps: PluginToolDeps,
+  paths: readonly TPath[],
+  consumer?: string
+): Record<TPath, unknown> {
+  const result = {} as Record<TPath, unknown>
+  for (const path of paths) {
+    result[path] = requireInjectedDependency(getServiceByPath(deps, path), path, consumer)
+  }
+  return result
 }

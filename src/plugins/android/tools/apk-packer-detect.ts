@@ -13,11 +13,22 @@ export const ApkPackerDetectInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
 })
 
+export const ApkPackerDetectOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.object({}).passthrough().optional(),
+    artifacts: z.array(z.any()).optional(),
+    errors: z.array(z.string()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),
+  })
+  .passthrough()
+
 export const apkPackerDetectToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Detect Android packer/hardening solutions (360, Bangbang, Legu, iJiaMi, Ali, DexProtector, etc.) by checking native library signatures and DEX structure anomalies.',
   inputSchema: ApkPackerDetectInputSchema,
+  outputSchema: ApkPackerDetectOutputSchema,
 }
 
 async function callApkWorker(

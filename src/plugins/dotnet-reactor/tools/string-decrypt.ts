@@ -27,6 +27,17 @@ export const StringDecryptInputSchema = z.object({
   max_strings: z.number().min(1).max(10000).default(2000).describe('Maximum strings to decrypt'),
 })
 
+const reactorOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.object({}).passthrough().optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(z.any()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).passthrough().optional(),
+  })
+  .passthrough()
+
 export const stringDecryptToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -35,6 +46,7 @@ export const stringDecryptToolDefinition: ToolDefinition = {
     'static pattern matching or dynamic sandbox execution. Returns original and ' +
     'decrypted string pairs with call-site locations.',
   inputSchema: StringDecryptInputSchema,
+  outputSchema: reactorOutputSchema,
 }
 
 async function callReactorWorker(

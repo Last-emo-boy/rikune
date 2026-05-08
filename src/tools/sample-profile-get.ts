@@ -8,7 +8,10 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
 import type { DatabaseManager } from '../database.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
+import type { JobQueue } from '../job-queue.js'
+import type { CacheManager } from '../cache-manager.js'
 import { inspectSampleWorkspace } from '../sample/sample-workspace.js'
+import { buildSampleReuseHints } from '../analysis/reuse-hints.js'
 
 const DEFAULT_ANALYSIS_DETAIL = 'compact' as const
 const DEFAULT_MAX_ANALYSES = 25
@@ -130,6 +133,7 @@ export const SampleProfileGetOutputSchema = z.object({
           remediation: z.array(z.string()),
         })
         .optional(),
+      reuse_hints: z.record(z.any()).optional(),
     })
     .optional(),
   errors: z.array(z.string()).optional(),
@@ -181,7 +185,8 @@ function limitInlineFiles(files: string[], limit: number): { files: string[]; tr
 
 export function createSampleProfileGetHandler(
   database: DatabaseManager,
-  workspaceManager?: WorkspaceManager
+  workspaceManager?: WorkspaceManager,
+  options: { jobQueue?: JobQueue; cacheManager?: CacheManager } = {}
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     try {
@@ -202,6 +207,13 @@ export function createSampleProfileGetHandler(
       const workspace = workspaceManager
         ? await inspectSampleWorkspace(workspaceManager, input.sample_id)
         : undefined
+      const reuseHints = await buildSampleReuseHints({
+        database,
+        jobQueue: options.jobQueue,
+        sampleId: input.sample_id,
+        sampleSha256: sample.sha256,
+        limit: Math.min(input.max_analyses, 10),
+      })
       const boundedAnalyses = analyses.slice(0, input.max_analyses)
       const limitedWorkspace = workspace
         ? (() => {
@@ -268,6 +280,7 @@ export function createSampleProfileGetHandler(
             }
           }),
           workspace: limitedWorkspace,
+          reuse_hints: reuseHints,
         },
       }
     } catch (error) {

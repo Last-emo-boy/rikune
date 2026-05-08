@@ -24,20 +24,111 @@ const policyGuard = new PolicyGuard(auditPath)
 
 function createReadyBackends() {
   return {
-    capa_cli: { available: false, source: 'none', path: null, version: null, checked_candidates: [], error: null },
+    capa_cli: {
+      available: false,
+      source: 'none',
+      path: null,
+      version: null,
+      checked_candidates: [],
+      error: null,
+    },
     capa_rules: { available: false, source: 'none', path: null, error: null },
-    die: { available: false, source: 'none', path: null, version: null, checked_candidates: [], error: null },
-    graphviz: { available: false, source: 'none', path: null, version: null, checked_candidates: [], error: null },
-    rizin: { available: true, source: 'path', path: '/tool/rizin', version: '1', checked_candidates: ['rizin'], error: null },
-    upx: { available: true, source: 'path', path: '/tool/upx', version: '1', checked_candidates: ['upx'], error: null },
-    wine: { available: true, source: 'path', path: '/tool/wine', version: '1', checked_candidates: ['wine'], error: null },
-    winedbg: { available: true, source: 'path', path: '/tool/winedbg', version: '1', checked_candidates: ['winedbg'], error: null },
-    frida_cli: { available: false, source: 'none', path: null, version: null, checked_candidates: [], error: null },
-    yara_x: { available: true, source: 'path', path: '/tool/python', version: '1', checked_candidates: ['python3'], error: null },
-    qiling: { available: true, source: 'path', path: '/tool/qiling', version: '1', checked_candidates: ['python3'], error: null },
-    angr: { available: true, source: 'path', path: '/tool/angr', version: '1', checked_candidates: ['python3'], error: null },
-    panda: { available: true, source: 'path', path: '/tool/panda', version: '1', checked_candidates: ['python3'], error: null },
-    retdec: { available: true, source: 'path', path: '/tool/retdec', version: '1', checked_candidates: ['retdec'], error: null },
+    die: {
+      available: false,
+      source: 'none',
+      path: null,
+      version: null,
+      checked_candidates: [],
+      error: null,
+    },
+    graphviz: {
+      available: false,
+      source: 'none',
+      path: null,
+      version: null,
+      checked_candidates: [],
+      error: null,
+    },
+    rizin: {
+      available: true,
+      source: 'path',
+      path: '/tool/rizin',
+      version: '1',
+      checked_candidates: ['rizin'],
+      error: null,
+    },
+    upx: {
+      available: true,
+      source: 'path',
+      path: '/tool/upx',
+      version: '1',
+      checked_candidates: ['upx'],
+      error: null,
+    },
+    wine: {
+      available: true,
+      source: 'path',
+      path: '/tool/wine',
+      version: '1',
+      checked_candidates: ['wine'],
+      error: null,
+    },
+    winedbg: {
+      available: true,
+      source: 'path',
+      path: '/tool/winedbg',
+      version: '1',
+      checked_candidates: ['winedbg'],
+      error: null,
+    },
+    frida_cli: {
+      available: false,
+      source: 'none',
+      path: null,
+      version: null,
+      checked_candidates: [],
+      error: null,
+    },
+    yara_x: {
+      available: true,
+      source: 'path',
+      path: '/tool/python',
+      version: '1',
+      checked_candidates: ['python3'],
+      error: null,
+    },
+    qiling: {
+      available: true,
+      source: 'path',
+      path: '/tool/qiling',
+      version: '1',
+      checked_candidates: ['python3'],
+      error: null,
+    },
+    angr: {
+      available: true,
+      source: 'path',
+      path: '/tool/angr',
+      version: '1',
+      checked_candidates: ['python3'],
+      error: null,
+    },
+    panda: {
+      available: true,
+      source: 'path',
+      path: '/tool/panda',
+      version: '1',
+      checked_candidates: ['python3'],
+      error: null,
+    },
+    retdec: {
+      available: true,
+      source: 'path',
+      path: '/tool/retdec',
+      version: '1',
+      checked_candidates: ['retdec'],
+      error: null,
+    },
   }
 }
 
@@ -132,82 +223,148 @@ async function runAutoRoutingCases() {
     policyGuard,
     undefined,
     {
-      triageHandler: async () => ({
+      analyzeStartHandler: async (args) => ({
         ok: true,
         data: {
-          summary: 'quick triage',
-          recommended_next_tools: ['ghidra.analyze'],
-          next_actions: ['continue triage'],
-          goal: 'triage',
-          depth: 'balanced',
-          backend_policy: 'auto',
+          run_id: `run-${args.goal || 'triage'}`,
+          execution_state: 'completed',
+          stage_result: { summary: 'staged fast profile' },
+          recommended_next_tools: ['workflow.analyze.promote'],
+          next_actions: ['promote'],
+          coverage_level: 'quick',
+          completion_state: 'bounded',
+          sample_size_tier: 'small',
+          analysis_budget_profile: 'balanced',
+          downgrade_reasons: [],
+          coverage_gaps: [],
+          confidence_by_domain: {},
+          known_findings: [],
+          suspected_findings: [],
+          unverified_areas: [],
+          upgrade_paths: [],
+          goal: args.goal || 'triage',
+          depth: args.depth || 'balanced',
+          backend_policy: args.backend_policy || 'auto',
           backend_considered: [{ backend: 'rizin', tool: 'rizin.analyze', reason: 'considered' }],
           backend_selected: [{ backend: 'rizin', tool: 'rizin.analyze', reason: 'selected' }],
           backend_skipped: [],
           backend_escalation_reasons: ['selected'],
           manual_only_backends: [],
+          omitted_backend_reasons: [],
+          stage_backend_roles: [],
         },
       }),
-      deepStaticHandler: async () => ({
-        content: [{ type: 'text', text: JSON.stringify({ ok: true, data: { status: 'queued', job_id: 'job-1', result_mode: 'queued', recommended_next_tools: ['task.status'], next_actions: ['poll'] } }) }],
-        structuredContent: { ok: true, data: { status: 'queued', job_id: 'job-1', result_mode: 'queued', recommended_next_tools: ['task.status'], next_actions: ['poll'] } },
-      }),
-      reconstructHandler: async () => ({
-        ok: true,
-        data: {
-          selected_path: 'native',
-          result_mode: 'completed',
-          recommended_next_tools: ['artifact.read'],
-          next_actions: ['inspect export'],
-          goal: 'reverse',
-          depth: 'deep',
-          backend_policy: 'prefer_new',
-          backend_considered: [{ backend: 'angr', tool: 'angr.analyze', reason: 'considered' }],
-          backend_selected: [{ backend: 'angr', tool: 'angr.analyze', reason: 'selected' }],
-          backend_skipped: [],
-          backend_escalation_reasons: ['selected'],
-          manual_only_backends: [],
-        },
-      }),
-      dynamicDependenciesHandler: async () => ({
-        ok: true,
-        data: {
-          status: 'ready',
-          components: {
-            speakeasy: { available: false },
-            qiling: { available: true, rootfs_exists: true },
-            panda: { available: true },
+      analyzePromoteHandler: async (args) => {
+        if (args.through_stage === 'function_map') {
+          return {
+            ok: true,
+            data: {
+              execution_state: 'queued',
+              job_id: 'job-1',
+              stage_result: { status: 'queued', job_id: 'job-1' },
+              recommended_next_tools: ['workflow.analyze.status'],
+              next_actions: ['poll'],
+              coverage_level: 'static_core',
+              completion_state: 'queued',
+              sample_size_tier: 'small',
+              analysis_budget_profile: 'balanced',
+              downgrade_reasons: [],
+              coverage_gaps: [{ domain: 'function_map', status: 'queued', reason: 'stage queued' }],
+              confidence_by_domain: {},
+              known_findings: [],
+              suspected_findings: [],
+              unverified_areas: [],
+              upgrade_paths: [],
+              goal: 'static',
+              depth: 'balanced',
+              backend_policy: 'auto',
+              backend_considered: [],
+              backend_selected: [],
+              backend_skipped: [],
+              backend_escalation_reasons: [],
+              manual_only_backends: [],
+              omitted_backend_reasons: [],
+              stage_backend_roles: [],
+            },
+          }
+        }
+        if (args.through_stage === 'reconstruct') {
+          return {
+            ok: true,
+            data: {
+              execution_state: 'completed',
+              stage_result: { selected_path: 'native' },
+              recommended_next_tools: ['artifact.read'],
+              next_actions: ['inspect export'],
+              coverage_level: 'reconstruction',
+              completion_state: 'completed',
+              sample_size_tier: 'small',
+              analysis_budget_profile: 'deep',
+              downgrade_reasons: [],
+              coverage_gaps: [],
+              confidence_by_domain: {},
+              known_findings: [],
+              suspected_findings: [],
+              unverified_areas: [],
+              upgrade_paths: [],
+              goal: 'reverse',
+              depth: 'deep',
+              backend_policy: 'prefer_new',
+              backend_considered: [{ backend: 'angr', tool: 'angr.analyze', reason: 'considered' }],
+              backend_selected: [{ backend: 'angr', tool: 'angr.analyze', reason: 'selected' }],
+              backend_skipped: [],
+              backend_escalation_reasons: ['selected'],
+              manual_only_backends: [],
+              omitted_backend_reasons: [],
+              stage_backend_roles: [],
+            },
+          }
+        }
+        return {
+          ok: true,
+          data: {
+            execution_state: 'completed',
+            stage_result: { status: 'planned' },
+            recommended_next_tools: ['workflow.analyze.status', 'dynamic.runtime.status'],
+            next_actions: ['inspect dynamic plan'],
+            coverage_level: 'dynamic_verified',
+            completion_state: 'bounded',
+            sample_size_tier: 'small',
+            analysis_budget_profile: 'balanced',
+            downgrade_reasons: [],
+            coverage_gaps: [
+              { domain: 'dynamic_behavior', status: 'degraded', reason: 'safe planning only' },
+            ],
+            confidence_by_domain: {},
+            known_findings: [],
+            suspected_findings: [],
+            unverified_areas: [],
+            upgrade_paths: [],
+            goal: 'dynamic',
+            depth: 'balanced',
+            backend_policy: 'auto',
+            backend_considered: [],
+            backend_selected: [{ backend: 'qiling', tool: 'qiling.inspect', reason: 'selected' }],
+            backend_skipped: [],
+            backend_escalation_reasons: ['selected'],
+            manual_only_backends: [{ backend: 'wine', tool: 'wine.run', reason: 'manual only' }],
+            omitted_backend_reasons: [],
+            stage_backend_roles: [],
           },
-        },
-      }),
-      sandboxExecuteHandler: async () => ({
-        ok: true,
-        data: {
-          status: 'completed',
-          mode: 'safe_simulation',
-          simulated: true,
-        },
-      }),
-      qilingInspectHandler: async () => ({
-        ok: true,
-        data: { status: 'ready', summary: 'qiling ready' },
-      }),
-      pandaInspectHandler: async () => ({
-        ok: true,
-        data: { status: 'ready', summary: 'panda ready' },
-      }),
+        }
+      },
       resolveBackends: createReadyBackends,
     }
   )
 
   const triageResult = await handler({ sample_id: sampleId, goal: 'triage' })
   assert.equal(triageResult.ok, true)
-  assert.equal(triageResult.data.routed_tool, 'workflow.triage')
+  assert.equal(triageResult.data.routed_tool, 'workflow.analyze.start')
   assert.equal(triageResult.data.backend_selected[0].tool, 'rizin.analyze')
 
   const staticResult = await handler({ sample_id: sampleId, goal: 'static' })
   assert.equal(staticResult.ok, true)
-  assert.equal(staticResult.data.routed_tool, 'workflow.deep_static')
+  assert.equal(staticResult.data.routed_tool, 'workflow.analyze.promote')
   assert.equal(staticResult.data.result_mode, 'queued')
   assert.equal(staticResult.data.job_id, 'job-1')
 
@@ -218,15 +375,14 @@ async function runAutoRoutingCases() {
     backend_policy: 'prefer_new',
   })
   assert.equal(reverseResult.ok, true)
-  assert.equal(reverseResult.data.routed_tool, 'workflow.reconstruct')
+  assert.equal(reverseResult.data.routed_tool, 'workflow.analyze.promote')
   assert.equal(reverseResult.data.backend_selected[0].tool, 'angr.analyze')
 
   const dynamicResult = await handler({ sample_id: sampleId, goal: 'dynamic', depth: 'balanced' })
   assert.equal(dynamicResult.ok, true)
-  assert.equal(dynamicResult.data.routed_tool, 'dynamic.dependencies+sandbox.execute')
+  assert.equal(dynamicResult.data.routed_tool, 'workflow.analyze.promote')
   assert.ok(dynamicResult.data.manual_only_backends.some((item) => item.tool === 'wine.run'))
-  assert.equal(dynamicResult.data.backend_enrichments.qiling.summary, 'qiling ready')
-  assert.equal(dynamicResult.data.backend_enrichments.panda.summary, 'panda ready')
+  assert.equal(dynamicResult.data.coverage_level, 'dynamic_verified')
 }
 
 async function runTriageEnrichmentCase() {
@@ -234,18 +390,117 @@ async function runTriageEnrichmentCase() {
   await setupSample(sampleId, 'b')
 
   const handler = createTriageWorkflowHandler(workspaceManager, database, cacheManager, {
-    peFingerprint: async () => ({ ok: true, data: { machine_name: 'IMAGE_FILE_MACHINE_AMD64', sections: [] } }),
-    runtimeDetect: async () => ({ ok: true, data: { suspected: [{ runtime: 'native', confidence: 0.7, evidence: ['imports'] }], import_dlls: ['KERNEL32.dll'] } }),
-    peImportsExtract: async () => ({ ok: true, data: { imports: { 'KERNEL32.dll': ['WriteProcessMemory'] }, delay_imports: {} } }),
-    stringsExtract: async () => ({ ok: true, data: { strings: [{ string: 'http://evil.example', offset: 16, encoding: 'ascii' }], summary: { cluster_counts: {}, context_windows: [] } } }),
+    peFingerprint: async () => ({
+      ok: true,
+      data: { machine_name: 'IMAGE_FILE_MACHINE_AMD64', sections: [] },
+    }),
+    runtimeDetect: async () => ({
+      ok: true,
+      data: {
+        suspected: [{ runtime: 'native', confidence: 0.7, evidence: ['imports'] }],
+        import_dlls: ['KERNEL32.dll'],
+      },
+    }),
+    peImportsExtract: async () => ({
+      ok: true,
+      data: { imports: { 'KERNEL32.dll': ['WriteProcessMemory'] }, delay_imports: {} },
+    }),
+    stringsExtract: async () => ({
+      ok: true,
+      data: {
+        strings: [{ string: 'http://evil.example', offset: 16, encoding: 'ascii' }],
+        summary: { cluster_counts: {}, context_windows: [] },
+      },
+    }),
     yaraScan: async () => ({ ok: true, data: { matches: [], quality_notes: [] } }),
-    staticCapabilityTriage: async () => ({ ok: true, data: { status: 'ready', capability_count: 0, capability_groups: {}, capabilities: [] } }),
-    peStructureAnalyze: async () => ({ ok: true, data: { status: 'partial', summary: { section_count: 3, resource_count: 0, forwarder_count: 0, parser_preference: 'lief', overlay_present: true } } }),
-    compilerPackerDetect: async () => ({ ok: true, data: { status: 'ready', compiler_findings: [], packer_findings: [{ name: 'UPX' }], protector_findings: [], file_type_findings: [], summary: { compiler_count: 0, packer_count: 1, protector_count: 0, file_type_count: 0, likely_primary_file_type: 'pe32+' } } }),
-    analysisContextLink: async () => ({ ok: true, data: { status: 'partial', xref_status: 'unavailable', merged_strings: { analyst_relevant_count: 1, total_records: 1, kept_records: 1, runtime_noise_count: 0, encoded_candidate_count: 0, merged_sources: true, truncated: false, top_suspicious: [], top_iocs: [], top_decoded: [], context_windows: [] }, function_contexts: [], source_artifact_refs: [] } }),
-    upxInspect: async () => ({ ok: true, data: { status: 'ready', operation: 'test', summary: 'UPX validation completed.', recommended_next_tools: [], next_actions: [] } }),
-    yaraXScan: async () => ({ ok: true, data: { status: 'ready', match_count: 1, matches: [{ identifier: 'triage_match' }], summary: 'YARA-X found one rule match.', recommended_next_tools: [], next_actions: [] } }),
-    rizinAnalyze: async () => ({ ok: true, data: { status: 'ready', operation: 'sections', preview: [{ name: '.text' }], summary: 'Rizin section inspection complete.', recommended_next_tools: [], next_actions: [] } }),
+    staticCapabilityTriage: async () => ({
+      ok: true,
+      data: { status: 'ready', capability_count: 0, capability_groups: {}, capabilities: [] },
+    }),
+    peStructureAnalyze: async () => ({
+      ok: true,
+      data: {
+        status: 'partial',
+        summary: {
+          section_count: 3,
+          resource_count: 0,
+          forwarder_count: 0,
+          parser_preference: 'lief',
+          overlay_present: true,
+        },
+      },
+    }),
+    compilerPackerDetect: async () => ({
+      ok: true,
+      data: {
+        status: 'ready',
+        compiler_findings: [],
+        packer_findings: [{ name: 'UPX' }],
+        protector_findings: [],
+        file_type_findings: [],
+        summary: {
+          compiler_count: 0,
+          packer_count: 1,
+          protector_count: 0,
+          file_type_count: 0,
+          likely_primary_file_type: 'pe32+',
+        },
+      },
+    }),
+    analysisContextLink: async () => ({
+      ok: true,
+      data: {
+        status: 'partial',
+        xref_status: 'unavailable',
+        merged_strings: {
+          analyst_relevant_count: 1,
+          total_records: 1,
+          kept_records: 1,
+          runtime_noise_count: 0,
+          encoded_candidate_count: 0,
+          merged_sources: true,
+          truncated: false,
+          top_suspicious: [],
+          top_iocs: [],
+          top_decoded: [],
+          context_windows: [],
+        },
+        function_contexts: [],
+        source_artifact_refs: [],
+      },
+    }),
+    upxInspect: async () => ({
+      ok: true,
+      data: {
+        status: 'ready',
+        operation: 'test',
+        summary: 'UPX validation completed.',
+        recommended_next_tools: [],
+        next_actions: [],
+      },
+    }),
+    yaraXScan: async () => ({
+      ok: true,
+      data: {
+        status: 'ready',
+        match_count: 1,
+        matches: [{ identifier: 'triage_match' }],
+        summary: 'YARA-X found one rule match.',
+        recommended_next_tools: [],
+        next_actions: [],
+      },
+    }),
+    rizinAnalyze: async () => ({
+      ok: true,
+      data: {
+        status: 'ready',
+        operation: 'sections',
+        preview: [{ name: '.text' }],
+        summary: 'Rizin section inspection complete.',
+        recommended_next_tools: [],
+        next_actions: [],
+      },
+    }),
     resolveBackends: createReadyBackends,
   })
 
@@ -274,7 +529,10 @@ async function runReconstructCorroborationCase() {
         suspected: [{ runtime: 'native', confidence: 0.81, evidence: ['imports'] }],
       },
     }),
-    binaryRoleProfileHandler: async () => ({ ok: true, data: createBinaryProfilePayload(sampleId) }),
+    binaryRoleProfileHandler: async () => ({
+      ok: true,
+      data: createBinaryProfilePayload(sampleId),
+    }),
     dllExportProfileHandler: async () => ({
       ok: true,
       data: {
@@ -370,15 +628,38 @@ async function runReconstructCorroborationCase() {
     }),
     rizinAnalyzeHandler: async () => ({
       ok: true,
-      data: { status: 'ready', operation: 'functions', item_count: 12, preview: [{ name: 'sub_140001000' }], summary: 'Rizin function inspection complete.', recommended_next_tools: [], next_actions: [] },
+      data: {
+        status: 'ready',
+        operation: 'functions',
+        item_count: 12,
+        preview: [{ name: 'sub_140001000' }],
+        summary: 'Rizin function inspection complete.',
+        recommended_next_tools: [],
+        next_actions: [],
+      },
     }),
     angrAnalyzeHandler: async () => ({
       ok: true,
-      data: { status: 'ready', analysis: 'cfg_fast', function_count: 18, functions: [{ name: 'entry', address: '0x401000' }], summary: 'angr CFGFast complete.', recommended_next_tools: [], next_actions: [] },
+      data: {
+        status: 'ready',
+        analysis: 'cfg_fast',
+        function_count: 18,
+        functions: [{ name: 'entry', address: '0x401000' }],
+        summary: 'angr CFGFast complete.',
+        recommended_next_tools: [],
+        next_actions: [],
+      },
     }),
     retdecDecompileHandler: async () => ({
       ok: true,
-      data: { status: 'ready', output_format: 'plain', preview: { inline_text: 'int main() {}', truncated: false, char_count: 14 }, summary: 'RetDec output ready.', recommended_next_tools: [], next_actions: [] },
+      data: {
+        status: 'ready',
+        output_format: 'plain',
+        preview: { inline_text: 'int main() {}', truncated: false, char_count: 14 },
+        summary: 'RetDec output ready.',
+        recommended_next_tools: [],
+        next_actions: [],
+      },
     }),
     resolveBackends: createReadyBackends,
   })

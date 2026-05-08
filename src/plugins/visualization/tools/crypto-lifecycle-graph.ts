@@ -7,7 +7,15 @@
  */
 
 import { z } from 'zod'
-import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  getDatabase,
+  getWorkspaceServices,
+  createWorkerResultOutputSchema,
+  type ArtifactRef,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 import {
   loadDynamicTraceEvidence,
   type DynamicEvidenceScope,
@@ -60,11 +68,50 @@ export const CryptoLifecycleGraphInputSchema = z.object({
   session_tag: z.string().optional(),
 })
 
+export const CryptoLifecycleGraphOutputSchema = createWorkerResultOutputSchema(
+  z
+    .object({
+      schema: z.string(),
+      tool_version: z.string(),
+      sample_id: z.string(),
+      crypto_scope: z.enum(['all', 'latest', 'session']),
+      crypto_session_tag: z.string().nullable(),
+      runtime_evidence_scope: z.enum(['all', 'latest', 'session']),
+      runtime_evidence_session_tag: z.string().nullable(),
+      summary: z.object({
+        crypto_artifact_count: z.number().int().nonnegative(),
+        algorithm_count: z.number().int().nonnegative(),
+        constant_count: z.number().int().nonnegative(),
+        runtime_api_count: z.number().int().nonnegative(),
+        runtime_stage_count: z.number().int().nonnegative(),
+        runtime_memory_region_count: z.number().int().nonnegative(),
+        dynamic_executed: z.boolean(),
+        static_api_count: z.number().int().nonnegative(),
+        corroborated_api_count: z.number().int().nonnegative(),
+        node_count: z.number().int().nonnegative(),
+        edge_count: z.number().int().nonnegative(),
+      }),
+      crypto_selection: z.any(),
+      dynamic_summary: z.any().nullable(),
+      graph: z.object({
+        nodes: z.array(z.any()),
+        edges: z.array(z.any()),
+        corroborated_apis: z.array(z.string()),
+        static_api_count: z.number().int().nonnegative(),
+      }),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+      warnings: z.array(z.string()),
+    })
+    .passthrough()
+)
+
 export const cryptoLifecycleGraphToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Build a crypto lifecycle graph from crypto.identify artifacts and imported runtime evidence, linking algorithms, functions, APIs, constants, stages, and memory regions. Does not execute the sample.',
   inputSchema: CryptoLifecycleGraphInputSchema,
+  outputSchema: CryptoLifecycleGraphOutputSchema,
 }
 
 function normalizeApiName(value: string): string {
@@ -380,7 +427,9 @@ export function createCryptoLifecycleGraphHandler(deps: PluginToolDeps) {
     const started = Date.now()
     try {
       const input = CryptoLifecycleGraphInputSchema.parse(args || {})
-      const sample = deps.database.findSample(input.sample_id)
+      const db = getDatabase(deps)
+      const workspace = getWorkspaceServices(deps)
+      const sample = db.findSample(input.sample_id)
       if (!sample) {
         return {
           ok: false,
@@ -391,8 +440,8 @@ export function createCryptoLifecycleGraphHandler(deps: PluginToolDeps) {
 
       const cryptoSelection =
         await loadCryptoPlanningArtifactSelection<CryptoIdentificationPayload>(
-          deps.workspaceManager,
-          deps.database,
+          workspace.manager,
+          db,
           input.sample_id,
           CRYPTO_IDENTIFICATION_ARTIFACT_TYPE,
           {
@@ -401,8 +450,8 @@ export function createCryptoLifecycleGraphHandler(deps: PluginToolDeps) {
           }
         )
       const runtimeEvidence = await loadDynamicTraceEvidence(
-        deps.workspaceManager,
-        deps.database,
+        workspace.manager,
+        db,
         input.sample_id,
         {
           evidenceScope: input.runtime_evidence_scope as DynamicEvidenceScope,
@@ -466,6 +515,8 @@ export function createCryptoLifecycleGraphHandler(deps: PluginToolDeps) {
         dynamic_summary: runtimeEvidence
           ? {
               artifact_count: runtimeEvidence.artifact_count,
+              artifact_types: runtimeEvidence.artifact_types || [],
+              artifact_families: runtimeEvidence.artifact_families || [],
               executed: runtimeEvidence.executed,
               observed_apis: runtimeEvidence.observed_apis,
               stages: runtimeEvidence.stages,
@@ -498,8 +549,8 @@ export function createCryptoLifecycleGraphHandler(deps: PluginToolDeps) {
       if (input.persist_artifact) {
         artifacts.push(
           await persistStaticAnalysisJsonArtifact(
-            deps.workspaceManager,
-            deps.database,
+            workspace.manager,
+            db,
             input.sample_id,
             'crypto_lifecycle_graph',
             'crypto_lifecycle_graph',

@@ -33,7 +33,7 @@ const crossModulePlugin: Plugin = {
     server.registerTool(crossBinaryCompareToolDefinition, createCrossBinaryCompareHandler(deps))
     server.registerTool(callGraphCrossModuleToolDefinition, createCallGraphCrossModuleHandler(deps))
     server.registerTool(dllDependencyTreeToolDefinition, createDllDependencyTreeHandler(deps))
-    return ['cross_binary.compare', 'call_graph.cross_module', 'dll.dependency_tree']
+    return ['cross.binary.compare', 'call.graph.cross.module', 'dll.dependency.tree']
   },
 }
 

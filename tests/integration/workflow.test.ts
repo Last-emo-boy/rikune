@@ -11,6 +11,7 @@ import { DatabaseManager } from '../../src/database.js'
 import { JobQueue } from '../../src/job-queue.js'
 import { PolicyGuard } from '../../src/policy-guard.js'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
+import { createOrReuseAnalysisRun } from '../../src/analysis/analysis-run-state.js'
 import {
   ANALYSIS_STAGE_JOB_TOOL,
   createAnalyzePipelineStageContext,
@@ -117,10 +118,7 @@ describe('Workflow Integration', () => {
       stringsExtract: async () => ({
         ok: true,
         data: {
-          strings: [
-            { string: 'http://example.invalid/c2' },
-            { string: 'cmd.exe /c whoami' },
-          ],
+          strings: [{ string: 'http://example.invalid/c2' }, { string: 'cmd.exe /c whoami' }],
         },
       }),
       yaraScan: async () => ({
@@ -277,7 +275,10 @@ describe('Workflow Integration', () => {
       stringsExtract: async () => ({ ok: true, data: { strings: [] } }),
       yaraScan: async () => ({ ok: true, data: { matches: [] } }),
       packerDetect: async () => ({ ok: true, data: { packed: false, confidence: 0.01 } }),
-      compilerPackerDetect: async () => ({ ok: true, data: { summary: null, packer_findings: [] } }),
+      compilerPackerDetect: async () => ({
+        ok: true,
+        data: { summary: null, packer_findings: [] },
+      }),
       binaryRoleProfile: async () => ({ ok: true, data: { role: 'loader', confidence: 0.72 } }),
       resolveBackends: () => makeUnavailableBackendResolution(),
       dynamicDependencies: async () => ({
@@ -292,11 +293,18 @@ describe('Workflow Integration', () => {
         ok: true,
         data: {
           status: 'setup_required',
-          failure_category: 'unsupported_runtime_backend_hint',
-          summary: 'Runtime does not advertise support for backend hint inline/executeSandboxExecute.',
-          recommended_next_tools: ['dynamic.dependencies', 'system.health', 'workflow.analyze.start'],
-          next_actions: ['Connect a runtime that advertises inline/executeSandboxExecute support before retrying sandbox execution.'],
-          required_runtime_backend_hint: { type: 'inline', handler: 'executeSandboxExecute' },
+          failure_category: 'unsupported_runtime_contract',
+          summary:
+            'Runtime does not advertise support for runtime contract inline/executeSandboxExecute.',
+          recommended_next_tools: [
+            'dynamic.dependencies',
+            'system.health',
+            'workflow.analyze.start',
+          ],
+          next_actions: [
+            'Connect a runtime that advertises inline/executeSandboxExecute support before retrying sandbox execution.',
+          ],
+          required_runtime_contract: { type: 'inline', handler: 'executeSandboxExecute' },
           available_runtime_backends: [
             {
               type: 'spawn',
@@ -349,7 +357,12 @@ describe('Workflow Integration', () => {
     })
     expect(startResult.ok).toBe(true)
     const started = startResult.data as any
-    expect(started.run.stage_plan).toEqual(['fast_profile', 'dynamic_plan', 'dynamic_execute', 'summarize'])
+    expect(started.run.stage_plan).toEqual([
+      'fast_profile',
+      'dynamic_plan',
+      'dynamic_execute',
+      'summarize',
+    ])
 
     const promoteResult = await promote({
       run_id: started.run_id,
@@ -358,7 +371,9 @@ describe('Workflow Integration', () => {
     })
     expect(promoteResult.ok).toBe(true)
 
-    const queuedDynamicPlan = jobQueue.listQueuedJobs().find((job) => job.args.stage === 'dynamic_plan')
+    const queuedDynamicPlan = jobQueue
+      .listQueuedJobs()
+      .find((job) => job.args.stage === 'dynamic_plan')
     expect(queuedDynamicPlan).toBeDefined()
     jobQueue.startQueuedJob(queuedDynamicPlan!.id)
     const dynamicPlanResult = await executeQueuedAnalysisStage(stageContext, {
@@ -369,7 +384,9 @@ describe('Workflow Integration', () => {
     jobQueue.complete(queuedDynamicPlan!.id, dynamicPlanResult)
     expect(dynamicPlanResult.ok).toBe(true)
 
-    const queuedDynamicExecute = jobQueue.listQueuedJobs().find((job) => job.args.stage === 'dynamic_execute')
+    const queuedDynamicExecute = jobQueue
+      .listQueuedJobs()
+      .find((job) => job.args.stage === 'dynamic_execute')
     expect(queuedDynamicExecute).toBeDefined()
     jobQueue.startQueuedJob(queuedDynamicExecute!.id)
     const dynamicExecuteResult = await executeQueuedAnalysisStage(stageContext, {
@@ -385,7 +402,7 @@ describe('Workflow Integration', () => {
     expect((dynamicExecuteResult.data as any)?.execution_state).toBe('partial')
     expect((dynamicExecuteResult.data as any)?.stage_outputs?.sandbox).toMatchObject({
       status: 'setup_required',
-      failure_category: 'unsupported_runtime_backend_hint',
+      failure_category: 'unsupported_runtime_contract',
     })
 
     const dynamicExecuteStage = database.findAnalysisRunStage(started.run_id, 'dynamic_execute')
@@ -398,7 +415,98 @@ describe('Workflow Integration', () => {
     expect(current.run.latest_stage).toBe('dynamic_execute')
     expect(current.stage_result.stage).toBe('dynamic_execute')
     expect(current.stage_result.status).toBe('partial')
-    expect(current.stage_result.stage_outputs.sandbox.failure_category).toBe('unsupported_runtime_backend_hint')
-    expect(current.stage_result.stage_outputs.sandbox.recommended_next_tools).toContain('workflow.analyze.start')
+    expect(current.stage_result.stage_outputs.sandbox.failure_category).toBe(
+      'unsupported_runtime_contract'
+    )
+    expect(current.stage_result.stage_outputs.sandbox.recommended_next_tools).toContain(
+      'workflow.analyze.start'
+    )
+  })
+
+  test('records queued semantic review stages as partial while waiting for LLM sampling', async () => {
+    const sampleId = `sha256:${'a'.repeat(64)}`
+    const sample = database.findSample(sampleId)
+    if (!sample) {
+      throw new Error('sample fixture missing')
+    }
+    const { run } = createOrReuseAnalysisRun(database, {
+      sample,
+      goal: 'reverse',
+      depth: 'balanced',
+      backendPolicy: 'auto',
+    })
+    let capturedArgs: Record<string, unknown> | null = null
+    const prepareArtifact = {
+      id: 'semantic-prepare-1',
+      type: 'semantic_name_prepare_bundle',
+      path: 'reports/semantic_naming/reviewA/prepare.json',
+      sha256: 'prepare-sha',
+      mime: 'application/json',
+    }
+    const stageContext = createAnalyzePipelineStageContext(
+      workspaceManager,
+      database,
+      cacheManager,
+      policyGuard,
+      undefined,
+      {
+        semanticNameReviewWorkflow: async (args) => {
+          capturedArgs = args
+          return {
+            ok: true,
+            data: {
+              review: {
+                review_status: 'prompt_contract_only',
+                prepare: { artifact_id: prepareArtifact.id },
+                sampling: { attempted: false },
+                apply: { accepted_count: 0, rejected_count: 0 },
+              },
+            },
+            warnings: ['MCP sampling client unavailable'],
+            artifacts: [prepareArtifact],
+          }
+        },
+      },
+      jobQueue
+    )
+
+    const result = await executeQueuedAnalysisStage(stageContext, {
+      run_id: run.id,
+      stage: 'semantic_name_review',
+      force_refresh: false,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.warnings).toContain('MCP sampling client unavailable')
+    expect((result.data as any).status).toBe('waiting_for_llm')
+    expect((result.data as any).execution_state).toBe('partial')
+    expect((result.data as any).semantic_review.semantic_review_state).toBe('waiting_for_llm')
+    expect((result.data as any).recommended_next_tools).toEqual([
+      'prompts/get',
+      'code.function.rename.apply',
+      'workflow.analyze.promote',
+    ])
+    expect(capturedArgs).toMatchObject({
+      sample_id: sampleId,
+      session_tag: `analysis_${run.id}_semantic_name_review`,
+      auto_apply: true,
+      reuse_cached: true,
+    })
+
+    const stage = database.findAnalysisRunStage(run.id, 'semantic_name_review')
+    expect(stage?.status).toBe('partial')
+    expect(stage?.execution_state).toBe('partial')
+    expect(stage?.tool).toBe(ANALYSIS_STAGE_JOB_TOOL)
+    expect(JSON.parse(stage?.artifact_refs_json || '[]')).toEqual([prepareArtifact])
+    const metadata = JSON.parse(stage?.metadata_json || '{}')
+    expect(metadata).toMatchObject({
+      semantic_review_stage: 'semantic_name_review',
+      semantic_review_state: 'waiting_for_llm',
+      review_status: 'prompt_contract_only',
+      workflow_tool: 'workflow.semantic_name_review',
+      prepare_artifact_id: prepareArtifact.id,
+      accepted_count: 0,
+      rejected_count: 0,
+    })
   })
 })

@@ -1,293 +1,302 @@
 # Architecture
 
-This document describes the internal architecture of the MCP server, covering
-the tool registry, plugin system, command safety layer, concurrency model,
-streaming support, and MCP resource exposure.
+This document describes the current Rikune architecture as implemented in the repository.
 
-## High-level component diagram
+## System Shape
 
-```
-┌─────────────────────────────────────────────────────┐
-│  MCP Client (Claude / Copilot / Codex / …)          │
-└─────────────┬───────────────────────────────────────┘
-              │ JSON-RPC over stdio
-┌─────────────▼───────────────────────────────────────┐
-│  MCPServer  (src/server.ts)                         │
-│  ┌────────────┐  ┌────────────┐  ┌───────────────┐ │
-│  │ Tools      │  │ Prompts    │  │ Resources     │ │
-│  └─────┬──────┘  └─────┬──────┘  └──────┬────────┘ │
-│        └───────────┬────┘               │           │
-│              ┌─────▼─────────────────────▼────┐     │
-│              │  Tool Registry                 │     │
-│              │  (src/tool-registry.ts)        │     │
-│              └─────┬──────────────────────────┘     │
-│                    │                                │
-│        ┌───────────┼────────────────┐               │
-│        ▼           ▼                ▼               │
-│  226 Tool      3 Prompt      16 Resource            │
-│  Handlers      Handlers      Handlers               │
-│        │           │                │               │
-│  ┌─────▼───┐ ┌─────▼───┐   ┌──────▼──────┐        │
-│  │ Plugins │ │ LLM     │   │ Frida/Ghidra│        │
-│  │ android │ │ Prompts │   │ Script Files│        │
-│  │ malware │ └─────────┘   └─────────────┘        │
-│  │ crackme │                                       │
-│  │ dynamic │                                       │
-│  └─────────┘                                       │
-└─────────────────────────────────────────────────────┘
-         │              │               │
-    ┌────▼────┐   ┌─────▼─────┐   ┌────▼────────────┐
-    │ Python  │   │ Workspace │   │ Database        │
-    │ Process │   │ Manager   │   │ (SQLite)        │
-    │ Pool    │   └───────────┘   └─────────────────┘
-    └─────────┘
+```text
+MCP client
+  |
+  | stdio
+  v
+Analyzer process
+  src/index.ts
+  src/core/server.ts
+  src/core/mcp-registry.ts
+  src/core/tool-executor.ts
+  src/core/tool-registry.ts
+  |
+  | optional HTTP API / dashboard
+  v
+Persistence and artifacts
+  SQLite
+  sample workspaces
+  storage manager
+  job queue
+  cache
+  audit log
+  |
+  | optional runtime delegation
+  v
+Windows Host Agent
+  packages/windows-host-agent
+  |
+  v
+Runtime Node
+  packages/runtime-node
+  inside Windows Sandbox or Hyper-V VM
 ```
 
-## Entry point
+The Analyzer owns MCP, storage, plugin orchestration, static analysis, and workflow state. Runtime Node owns isolated execution. The Windows Host Agent owns sandbox or VM lifecycle.
 
-[src/index.ts](../src/index.ts) is kept minimal (~90 lines). It:
+## Entry Point
 
-1. Loads configuration via `loadConfig()`
-2. Instantiates core components (WorkspaceManager, DatabaseManager, PolicyGuard,
-   CacheManager, StorageManager, JobQueue, AnalysisTaskRunner)
-3. Creates the `MCPServer` instance
-4. Calls `await registerAllTools(server, deps)` — the single point of tool/prompt/resource registration
-5. Starts the server and wires graceful shutdown handlers
+The main entry is `src/index.ts`.
 
-## Deployment planes
+Startup sequence:
 
-Runtime deployment is intentionally split from the analyzer:
+1. Load configuration with `loadConfig()`.
+2. Create `WorkspaceManager`, `DatabaseManager`, `PolicyGuard`, `CacheManager`, `StorageManager`, and `JobQueue`.
+3. Start `AnalysisTaskRunner`.
+4. Configure runtime mode:
+   - `disabled`
+   - `manual`
+   - `remote-sandbox`
+   - `auto-sandbox`
+5. Create `MCPServer`.
+6. Register all core tools, prompts, resources, and plugins through `registerAllTools()`.
+7. Start MCP stdio transport.
+8. Handle graceful shutdown for runtime clients, sandbox processes, worker pools, and server resources.
 
-| Plane | Responsibility | Typical process |
-|-------|----------------|-----------------|
-| Analyzer | MCP stdio server, dashboard/API, static analysis, database, Ghidra projects, artifacts | `node dist/index.js` or Docker `rikune-analyzer` |
-| Host Agent | Windows-side control plane for creating and supervising runtime backends | `packages/windows-host-agent/dist/index.js` |
-| Runtime Node | Execution API used by dynamic/sandbox tools | `packages/runtime-node/dist/index.js` inside Windows Sandbox or a managed VM |
+Root files such as `src/server.ts`, `src/tool-registry.ts`, and `src/plugins.ts` are compatibility forwarders. New implementation work should target `src/core/*`.
 
-Docker profiles map onto these planes:
+## Core Modules
 
-- `static`: analyzer container only, `RUNTIME_MODE=disabled`.
-- `hybrid`: analyzer container with `RUNTIME_MODE=remote-sandbox`; runtime work is delegated to the Windows Host Agent, which starts the selected backend on demand.
-- `full`: heavier Linux analyzer image for all-in-one toolchain experiments; real Windows Sandbox execution still belongs to Windows native / hybrid runtime paths.
-- Windows native `auto-sandbox`: analyzer runs directly on Windows and may launch local Windows Sandbox without Docker.
+| Module | Responsibility |
+| --- | --- |
+| `src/core/server.ts` | MCP SDK server wrapper, stdio transport, optional HTTP file server, handler registration |
+| `src/core/mcp-registry.ts` | Internal registry for tools, prompts, resources, aliases, Zod-to-JSON-Schema conversion |
+| `src/core/tool-executor.ts` | Tool lookup, argument validation, plugin hooks, result normalization, output-schema validation |
+| `src/core/tool-registry.ts` | Registration orchestration for core tools, prompts, resources, plugins, diagnostics |
+| `src/core/tool-registry/*.ts` | Domain slices for sample, artifact, workflow, task, system, utility, plugin, diagnostics, scripts |
+| `src/core/plugins.ts` | Plugin manager facade and singleton access |
+| `src/core/plugin-orchestrator.ts` | Built-in/external plugin discovery, dependency sort, load/unload, status tracking |
+| `src/core/plugin-system/discovery.ts` | Plugin discovery from `src/plugins`, `dist/plugins`, and external `plugins/` |
+| `src/core/tool-surface-manager.ts` | Progressive exposure of plugin tools |
 
-Host Agent runtime backends:
+## MCP Registry And Names
 
-- `windows-sandbox` (default): starts Windows Sandbox from a logged-on Windows user session. This backend must not run as a traditional Windows Service because Windows Sandbox requires an interactive desktop session for the runtime startup command to execute. In Docker/WSL deployments, the Host Agent binds to `0.0.0.0` by default and the installer creates best-effort Hyper-V firewall rules so the analyzer can reach it through `host.docker.internal:18082` and the runtime portproxy range; the API key remains required.
-- `hyperv-vm`: starts a pre-provisioned Hyper-V VM, optionally restores a named checkpoint, waits for the Runtime Node endpoint to become healthy, and returns that endpoint to the analyzer. This is useful for debugging, snapshot rollback, and unattended-style runtime experiments.
+Tool definitions are registered with canonical dotted names, for example `workflow.analyze.start`. The MCP transport also exposes normalized aliases where needed. `MCPRegistry` keeps both canonical and transport-safe names so older clients can still resolve many underscore aliases.
 
-Runtime execution is explicit at the tool level. `dynamic.runtime.status` and
-`dynamic.toolkit.status` are read-only probes, `dynamic.deep_plan` builds a
-planning-only profile, `debug.network.plan`, `debug.managed.plan`, and
-`debug.gui.handoff` refine network, .NET, and manual GUI paths, `runtime.debug.session.start`
-creates or attaches a Windows runtime session, `runtime.debug.command`
-dispatches approved Runtime Node commands such as `debug.session.*`,
-`sandbox.execute`, `dynamic.behavior.capture`, telemetry, ProcDump, managed
-safe-run, or `dynamic.memory_dump`, and `runtime.debug.session.stop` releases
-the backend.
+`ToolExecutor` performs these steps for every call:
 
-MCP clients do not connect to the dashboard HTTP server. They use JSON-RPC over
-stdio. In Docker deployments, clients normally run the MCP child with
-`API_ENABLED=false` so it does not attempt to bind the dashboard port already
-owned by the daemon container:
+1. Resolve canonical name or alias.
+2. Validate input with the tool's Zod schema.
+3. Fire plugin `before` hooks.
+4. Run the handler.
+5. Normalize return shape.
+6. Validate `structuredContent` against an output schema when present.
+7. Rewrite tool references for transport-visible names.
+8. Enforce response-size guards.
+9. Fire plugin `after` or `error` hooks.
 
-```bash
-docker exec -i -e API_ENABLED=false rikune-analyzer node dist/index.js
-```
+## Core Tool Groups
 
-## Tool Registry
+Core tools are registered before plugins and are always part of the baseline surface.
 
-**File:** `src/tool-registry.ts`
+| Group | Examples |
+| --- | --- |
+| Sample intake | `sample.ingest`, `sample.request_upload`, `sample.profile.get`, `analysis.context.get` |
+| Artifacts | `artifact.list`, `artifact.read`, `artifact.diff`, `artifact.download` |
+| Workflow | `workflow.analyze.start`, `workflow.analyze.status`, `workflow.analyze.promote`, `workflow.analyze.auto`, `workflow.triage`, `workflow.deep_static`, `workflow.reconstruct` |
+| Semantic review | `workflow.semantic_name_review`, `workflow.function_explanation_review`, `workflow.module_reconstruction_review` |
+| Tasks | `task.status`, `task.cancel`, `task.sweep` |
+| System | `system.health`, `system.setup.guide`, `setup.remediate` |
+| Utility | `tool.help`, `tool.readiness`, `tools.discover` |
+| Plugins | `plugin.list`, `plugin.enable`, `plugin.disable` |
+| Diagnostics | `system.config.validate` |
 
-The tool registry is the centralised place where every MCP tool, prompt, and
-resource is imported and wired to its handler factory. This replaces the earlier
-pattern of registering tools inline in `index.ts`.
+## Staged Analysis Pipeline
 
-### `ToolDeps` interface
+The primary analysis path is implemented in `src/workflows/analyze-pipeline.ts`.
 
-Every handler factory receives a subset of these dependencies:
+Stages:
 
-```typescript
-interface ToolDeps {
-  workspaceManager: WorkspaceManager
-  database: DatabaseManager
-  policyGuard: PolicyGuard
-  cacheManager: CacheManager
-  jobQueue: JobQueue
-  storageManager: StorageManager
-  config: Config
-  server: MCPServer
-}
-```
+1. `fast_profile`
+2. `enrich_static`
+3. `function_map`
+4. `reconstruct`
+5. `semantic_reviews`
+6. `dynamic_plan`
+7. `dynamic_execute`
+8. `summarize`
 
-### `registerAllTools(server, deps)`
+`workflow.analyze.start` creates or reuses an analysis run and executes the initial profile. `workflow.analyze.promote` queues or runs deeper stages. `workflow.analyze.status` returns run state, stage state, evidence, coverage, pending work, and polling guidance.
 
-An `async` function that:
+Long-running stages use `JobQueue` and `AnalysisTaskRunner`. Jobs are persisted in SQLite and restored after restart; interrupted running jobs are made visible for recovery.
 
-1. Registers 31 core MCP tools plus 212 plugin tools (243 total), grouped by category:
-   - Core (ingest, profile, triage)
-   - LLM-assisted review (naming, explanation, reconstruction)
-   - PE analysis (structure, headers, sections, exports)
-   - Strings and static analysis
-   - Workflows (analyze, summarize, reconstruct)
-   - Reports and exports
-   - Ghidra integration
-   - Dynamic analysis (Frida, trace, memory)
-   - Docker backend tools
-   - Threat intelligence
-   - Code analysis (CFG, decompile, diff)
-   - Unpacking and packer detection
-   - Vulnerability analysis
-   - Knowledge base
-   - ELF/Mach-O, Debug, VM detection
-   - **Plugin-managed categories** (Android, CrackMe, Dynamic automation, Malware)
-2. Registers 3 MCP prompts (semantic name review, function explanation, module reconstruction)
-3. Registers 16 MCP resources via `registerScriptResources()` (8 Frida + 8 Ghidra scripts)
-4. Calls `loadPlugins(server, deps)` for plugin-managed tool categories
+The run-state layer preserves the queue `job_id` while a stage transitions from queued to running and completed. This lets `workflow.analyze.status`, `task.status`, scheduler telemetry, and restart recovery describe the same underlying worker instead of treating active work as lost context.
 
-### Adding a new tool
+Large workflow responses are bounded by `src/core/response-guard.ts`. The guard prunes heavyweight `raw_results` and historical stage payloads while keeping schema-valid structured content. When pruning occurs, the tool returns a top-level warning and callers should use `artifact.read` or a stage-specific tool for full detail.
 
-1. Create the tool in the appropriate plugin directory (e.g. `src/plugins/<plugin-id>/tools/my-new-tool.ts`) exporting `myNewToolDefinition` (schema) and `createMyNewToolHandler(deps…)` (factory)
-2. Import both in `src/tool-registry.ts`
-3. Add `server.registerTool(myNewToolDefinition, createMyNewToolHandler(…))` in the appropriate category section
-4. Add a test file at `tests/unit/my-new-tool.test.ts`
+## Runtime Worker Pool and Process Visibility
+
+Persistent helper processes are managed by `src/worker/runtime-worker-pool.ts`. The pool keys workers by family, deployment, and compatibility, then reuses warm workers for compatible static requests. Idle workers are automatically evicted after their configured TTL; eviction does not depend on a later tool call.
+
+The scheduler and status surfaces distinguish three related concepts:
+
+| Concept | Surface |
+| --- | --- |
+| Queue state | `JobQueue`, persisted jobs, `task.status` |
+| Stage state | `analysis_run_stages`, `workflow.analyze.status` |
+| External subprocess pressure | scheduler snapshots, `task.status.external_active_*` |
+
+`task.status` reports bounded external analyzer subprocess telemetry (`external_active_rss_mb`, `external_active_process_count`, `external_active_processes`) so operators can see FLOSS, capa, Ghidra, Rizin, or similar work that is still consuming memory even when the in-memory queue is empty.
+
+PE runtime function metadata is also materialized into the function index: `pe.pdata.extract` imports `.pdata` boundaries into `functions` by default, so `code.functions.list` can serve a useful function map before or without a successful Ghidra extraction.
+
+## Persistence
+
+Persistence is split by responsibility:
+
+| Area | File |
+| --- | --- |
+| SQLite schema and CRUD | `src/persistence/database.ts` |
+| Workspace layout and retention | `src/persistence/workspace-manager.ts` |
+| Sample finalization | `src/sample/sample-finalization.ts` |
+| Sample workspace integrity | `src/sample/sample-workspace.ts` |
+| Uploads and artifacts | `src/storage/storage-manager.ts` |
+| Job queue | `src/execution/job-queue.ts` |
+| Analysis run state | `src/analysis/analysis-run-state.ts` |
+
+Samples are identified by SHA-256. Workspaces are bucketed by hash prefix and contain immutable originals plus analysis-specific subdirectories.
 
 ## Plugin Architecture
 
-**File:** `src/plugins.ts` — Full guide: [PLUGINS.md](./PLUGINS.md)
+Built-in plugins live under `src/plugins/<id>/`. External plugins can be discovered from the repository-level `plugins/` directory after build.
 
-All 56 plugin directories under `src/plugins/` are auto-discovered at startup.
-Each plugin exports a `register()` function that receives a `PluginContext` and
-calls `ctx.registerTool()` for every tool it provides. Plugins declare their
-system dependencies (binaries, Python packages, env vars) and are automatically
-disabled when required dependencies are missing.
+Plugins can:
 
-Plugins are controlled via the `PLUGINS` environment variable:
+- register tools;
+- declare dependencies on other plugins;
+- declare system dependencies;
+- expose configuration schema;
+- provide lifecycle hooks;
+- provide Docker build metadata;
+- attach runtime contracts for delegated execution;
+- define progressive-surface rules.
 
-```bash
-PLUGINS=*                           # all (default)
-PLUGINS=pe-analysis,ghidra,yara     # specific
-PLUGINS=*,-docker-backends          # exclude
-```
+Plugin contracts are defined in `packages/plugin-sdk/src/index.ts` and re-exported for compatibility through `src/plugins/sdk.ts`.
 
-See [PLUGINS.md](./PLUGINS.md) for the full plugin list and custom plugin development.
+See [PLUGINS.md](./PLUGINS.md).
 
-## MCP Resources
+## Progressive Tool Surface
 
-The server exposes analysis helper scripts as MCP resources. Clients can
-discover them via `resources/list` and read their content via `resources/read`.
+`ToolSurfaceManager` keeps the initial MCP surface small while preserving access to specialist tools.
 
-### Registered resources
+Tiers:
 
-**Frida scripts** (8):
+| Tier | Meaning |
+| --- | --- |
+| 0 | Gateway/core-like plugin tools visible immediately |
+| 1 | File-type activated tools |
+| 2 | Finding/signal activated tools |
+| 3 | Expert tools, normally exposed through `tools.discover` or explicit readiness checks |
 
-| URI | Description |
-|-----|-------------|
-| `script://frida/api_trace` | Windows API tracing with argument logging |
-| `script://frida/string_decoder` | Runtime string decryption |
-| `script://frida/anti_debug_bypass` | Anti-debug bypass |
-| `script://frida/crypto_finder` | Cryptographic API detection |
-| `script://frida/file_registry_monitor` | File/registry monitoring |
+Tool results can activate later tools by returning file-type, findings, or recommended-next-tool signals. The server can notify clients that the tool list changed.
 
-**Ghidra scripts** (8):
+## Runtime Delegation
 
-| URI | Description |
-|-----|-------------|
-| `script://ghidra/ExtractFunctions` | Function extraction |
-| `script://ghidra/DecompileFunction` | Function decompilation |
-| `script://ghidra/ExtractCFG` | Control flow graph extraction |
-| `script://ghidra/AnalyzeCrossReferences` | Cross-reference analysis |
-| `script://ghidra/SearchFunctionReferences` | Function reference search |
+Runtime delegation uses a contract defined in `packages/shared/src/runtime-contract.ts`.
 
-The resource handler reads script files from disk on demand and returns their
-content as `text/javascript` or `text/x-java-source`.
+Analyzer-side client:
+
+- `src/runtime-client/runtime-client.ts`
+- `src/runtime-client/delegation-server.ts`
+
+Runtime-side server:
+
+- `packages/runtime-node/src/index.ts`
+- `packages/runtime-node/src/router.ts`
+- `packages/runtime-node/src/executor.ts`
+
+Host lifecycle:
+
+- `packages/windows-host-agent/src/index.ts`
+
+Execution modes include plan-only, safe simulation, emulation, live sandbox, live Hyper-V, and manual runtime. Live execution is gated by policy and should run only in an isolated runtime environment.
+
+## HTTP API And Dashboard
+
+`src/api/file-server.ts` hosts the dashboard and API when enabled.
+
+Important endpoints:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `/api/v1/health` | Liveness |
+| `/api/v1/ready` | Database, queue, runtime, and plugin readiness |
+| `/api/v1/events` | SSE events |
+| `/api/v1/samples` | Multipart/direct upload |
+| `/api/v1/uploads/:token` | Durable upload session |
+| `/api/v1/artifacts` | Artifact listing |
+| `/api/v1/artifacts/:id` | Artifact read/delete |
+
+The API layer includes optional API key authentication, rate limiting, security headers, and CORS constraints.
 
 ## Safe Command Execution
 
-**File:** `src/safe-command.ts`
+`src/infrastructure/safe-command.ts` centralizes command execution helpers. The project favors structured process APIs such as `execFile` and `spawn` over shell strings, validates command names, and keeps format-specific allowlists where needed.
 
-All external command invocations go through a command safety layer that prevents
-injection attacks:
+Policy-sensitive actions are guarded by `src/routing/policy-guard.ts`.
 
-- **Whitelist regex validation**: Command names are validated against
-  `SAFE_COMMAND_NAME_RE = /^[a-zA-Z0-9._/:\\-]+$/` before execution.
-- **Array-based arguments**: Uses `execFileSync` / `spawnSync` with argument
-  arrays instead of string interpolation — eliminating shell injection vectors.
-- **`safeCommandExists(cmd)`**: Checks whether a command is available on PATH
-  without shell evaluation.
-- **`safeGetCommandVersion(cmd, args)`**: Safely retrieves version output from
-  external tools.
-- **`validateGraphvizFormat(fmt)`**: Whitelist-based validation for Graphviz
-  output format parameters.
+## Worker Processes
 
-All callers in `env-validator.ts`, `cfg-visual-exports.ts`, and tool handlers
-use these safe wrappers.
+Python and Ghidra work are isolated from MCP request handling:
 
-## Python Process Pool
+- `src/worker/python-process-pool.ts` manages Python process execution with concurrency, queueing, timeouts, and kill behavior.
+- `src/worker/decompiler-worker.ts` integrates Ghidra headless analysis, function extraction, decompilation, CFG, xrefs, diagnostics, and project lock retries.
+- `workers/` contains Python analysis workers and rules.
 
-**File:** `src/worker/python-process-pool.ts`
+## Docker Generation
 
-Python workers (static analysis, APK parsing, symbolic execution, etc.) are
-executed through a concurrency-limited process pool:
+Docker files are generated from templates and plugin metadata.
 
-- **Queue-based**: Incoming requests are queued FIFO when the pool is at capacity.
-- **Configurable**: `MAX_PYTHON_WORKERS` env var (default: `min(cpu_count, 8)`).
-- **Lifecycle**: Workers are tracked from spawn to completion; on timeout,
-  `SIGTERM` is sent with a fallback to `SIGKILL`.
-- **Observable**: `pythonProcessPool.getStats()` returns `{ active, queued, max, total_completed }`,
-  surfaced through `system.health`.
+Key files:
 
-## Streaming / Progress Notifications
+- `scripts/generate-docker.mjs`
+- `docker/Dockerfile.template`
+- `docker-compose.analyzer.yml`
+- `docker-compose.hybrid.yml`
+- `docker-compose.yml`
 
-**File:** `src/streaming-progress.ts`
+Profiles:
 
-Long-running tools can report progress to clients via the MCP `notifications/progress`
-mechanism:
+| Profile | Analyzer | Runtime |
+| --- | --- | --- |
+| `static` | Linux Docker analyzer | runtime disabled |
+| `hybrid` | Linux Docker analyzer | Windows Host Agent plus Sandbox or Hyper-V |
+| `full` | Linux Docker full toolchain | runtime disabled unless configured |
+| Windows native | Windows Node process | local `auto-sandbox` possible |
 
-```typescript
-interface ProgressReporter {
-  report(progress: number, message?: string): void
-}
+## Prompts And Resources
+
+Prompt definitions are registered in `src/core/tool-registry/prompts.ts`.
+
+Registered prompt families:
+
+- `reverse.semantic_name_review`
+- `reverse.function_explanation_review`
+- `reverse.module_reconstruction_review`
+
+Script resources are registered from `src/core/tool-registry/script-resource-manifest.ts`. They expose Frida and Ghidra helper scripts through MCP `resources/list` and `resources/read`.
+
+## Testing Surface
+
+Test configuration:
+
+- `jest.config.js`
+- `tests/jest.setup.ts`
+- unit tests under `tests/unit`
+- integration tests under `tests/integration`
+- e2e tests under `tests/e2e`
+
+Common commands:
+
+```bash
+npm test
+npm run test:unit
+npm run test:integration
+npm run test:e2e
+npm run typecheck
 ```
-
-- When a client sends `_meta.progressToken` with a tool call, the server
-  creates a real `ProgressReporter` that emits `notifications/progress`
-  notifications.
-- Without a token, a no-op reporter is returned — zero overhead.
-- The `MCPServer.getProgressReporter(token?)` public method is available to any
-  tool handler.
-
-### Example usage in a handler
-
-```typescript
-const reporter = server.getProgressReporter(progressToken)
-reporter.report(0, 'Starting analysis…')
-// … do work …
-reporter.report(50, 'Halfway done')
-// … finish …
-reporter.report(100, 'Complete')
-```
-
-## Structured Logging
-
-**File:** `src/logger.ts`
-
-All server components use [Pino](https://github.com/pinojs/pino) structured
-JSON logging:
-
-- Child loggers per component: `logger.child({ component: 'ghidra' })`
-- `logOperationStart / logOperationComplete / logOperationError` helpers
-- Audit events via `AuditEvent` type for security-relevant operations
-- No `console.log` / `console.error` in production code paths
-
-## CI/CD Security Scanning
-
-**File:** `.github/workflows/ci.yml`
-
-The CI pipeline includes a dedicated `security` job:
-
-1. **npm audit** — Checks for known vulnerabilities in Node.js dependencies
-2. **pip-audit** — Checks Python dependencies for CVEs
-3. **CodeQL SAST** — Static application security testing via GitHub's CodeQL engine
-
-This runs on every push and pull request alongside the existing build and test jobs.

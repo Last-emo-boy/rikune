@@ -3,6 +3,99 @@
  */
 
 import { z } from 'zod'
+import {
+  RuntimeArtifactControlPlaneMetadataSchema,
+  RuntimeBackendCapabilitySchema,
+  RuntimeConnectedEventDataSchema,
+  RuntimeDynamicArtifactFamilySchema,
+  RuntimeDynamicArtifactTypeSchema,
+  RuntimeDelegationFailureCategorySchema,
+  RuntimeDelegationFailureDataSchema,
+  RuntimeDelegationFailureResultSchema,
+  RuntimeSseEventSchema,
+  RuntimeSnapshotEventDataSchema,
+  RuntimeTaskArtifactRefSchema,
+  RuntimeTaskEventSchema,
+  RuntimeTaskResultSchema,
+  RuntimeTaskSnapshotSchema,
+  RuntimeTaskStatusSchema,
+  ToolRuntimeContractSchema,
+  type ArtifactRef,
+  type RuntimeArtifactControlPlaneMetadata,
+  type RuntimeBackendType,
+  type RuntimeConnectedEventData,
+  type RuntimeControlPlaneEvent,
+  type RuntimeDynamicArtifactFamily,
+  type RuntimeDynamicArtifactType,
+  type RuntimeDelegationFailureCategory,
+  type RuntimeExecutionMode,
+  type RuntimeExecutionSemantics,
+  type RuntimeFallbackRule,
+  type RuntimeSseEvent,
+  type RuntimeSnapshotEventData,
+  type RuntimeTaskArtifactRef,
+  type RuntimeTaskEvent,
+  type RuntimeTaskResult,
+  type RuntimeTaskSnapshot,
+  type RuntimeTaskStatus,
+  type ToolRuntimeContract,
+  type WorkerResult,
+  PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+  SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+  RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPES,
+  buildRuntimeArtifactControlPlaneMetadata,
+  extractRuntimeTaskStatusFromEvent,
+  inferRuntimeArtifactFamily,
+  inferRuntimeArtifactType,
+} from '@rikune/shared'
+
+export {
+  RuntimeArtifactControlPlaneMetadataSchema,
+  RuntimeBackendCapabilitySchema,
+  RuntimeConnectedEventDataSchema,
+  RuntimeDynamicArtifactFamilySchema,
+  RuntimeDynamicArtifactTypeSchema,
+  RuntimeDelegationFailureCategorySchema,
+  RuntimeDelegationFailureDataSchema,
+  RuntimeDelegationFailureResultSchema,
+  RuntimeSseEventSchema,
+  RuntimeSnapshotEventDataSchema,
+  RuntimeTaskArtifactRefSchema,
+  RuntimeTaskEventSchema,
+  RuntimeTaskResultSchema,
+  RuntimeTaskSnapshotSchema,
+  RuntimeTaskStatusSchema,
+  ToolRuntimeContractSchema,
+  PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+  SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+  RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPES,
+  buildRuntimeArtifactControlPlaneMetadata,
+  extractRuntimeTaskStatusFromEvent,
+  inferRuntimeArtifactFamily,
+  inferRuntimeArtifactType,
+}
+export type {
+  ArtifactRef,
+  RuntimeArtifactControlPlaneMetadata,
+  RuntimeBackendType,
+  RuntimeConnectedEventData,
+  RuntimeControlPlaneEvent,
+  RuntimeDynamicArtifactFamily,
+  RuntimeDynamicArtifactType,
+  RuntimeDelegationFailureCategory,
+  RuntimeExecutionMode,
+  RuntimeExecutionSemantics,
+  RuntimeFallbackRule,
+  RuntimeSseEvent,
+  RuntimeTaskArtifactRef,
+  RuntimeTaskEvent,
+  RuntimeTaskResult,
+  RuntimeTaskSnapshot,
+  RuntimeTaskStatus,
+  RuntimeSnapshotEventData,
+  ToolRuntimeContract,
+  WorkerResult,
+}
 
 // ============================================================================
 // MCP Protocol Types
@@ -22,8 +115,8 @@ export interface ToolDefinition {
   description: string
   inputSchema: JSONSchema
   outputSchema?: JSONSchema
-  /** Hint for the runtime node on how to execute this tool. */
-  runtimeBackendHint?: { type: 'python-worker' | 'spawn' | 'inline'; handler: string }
+  /** Runtime execution contract for tools delegated to a runtime node. */
+  runtime?: ToolRuntimeContract
 }
 
 /**
@@ -126,63 +219,6 @@ export type ToolArgs = Record<string, unknown>
  */
 export type ToolHandler = (args: unknown) => Promise<ToolResult>
 
-/**
- * Worker result from analysis workers
- */
-export interface WorkerResult {
-  ok: boolean
-  data?: unknown
-  errors?: string[]
-  warnings?: string[]
-  setup_actions?: unknown[]
-  required_user_inputs?: unknown[]
-  artifacts?: ArtifactRef[]
-  metrics?: Record<string, unknown>
-}
-
-export const RuntimeBackendHintSchema = z.object({
-  type: z.enum(['python-worker', 'spawn', 'inline']),
-  handler: z.string(),
-})
-
-export const RuntimeBackendCapabilitySchema = RuntimeBackendHintSchema.extend({
-  description: z.string().optional(),
-  requiresSample: z.boolean().optional(),
-})
-
-export const RuntimeDelegationFailureCategorySchema = z.enum([
-  'runtime_unavailable',
-  'unsupported_runtime_backend_hint',
-  'runtime_recovery_failed',
-  'tool_specific_execution_failed',
-])
-
-export type RuntimeDelegationFailureCategory = z.infer<
-  typeof RuntimeDelegationFailureCategorySchema
->
-
-export const RuntimeDelegationFailureDataSchema = z.object({
-  status: z.enum(['setup_required', 'failed']),
-  failure_category: RuntimeDelegationFailureCategorySchema,
-  summary: z.string(),
-  recommended_next_tools: z.array(z.string()),
-  next_actions: z.array(z.string()),
-  runtime_endpoint: z.string().nullable().optional(),
-  required_runtime_backend_hint: RuntimeBackendHintSchema.optional(),
-  available_runtime_backends: z.array(RuntimeBackendCapabilitySchema).optional(),
-})
-
-export const RuntimeDelegationFailureResultSchema = z.object({
-  ok: z.boolean(),
-  data: RuntimeDelegationFailureDataSchema,
-  warnings: z.array(z.string()).optional(),
-  errors: z.array(z.string()).optional(),
-  artifacts: z.array(z.any()).optional(),
-  setup_actions: z.array(z.any()).optional(),
-  required_user_inputs: z.array(z.any()).optional(),
-  metrics: z.record(z.any()).optional(),
-})
-
 // ============================================================================
 // Domain Types
 // ============================================================================
@@ -201,15 +237,6 @@ export interface WorkspacePath {
   cache: string
   ghidra: string
   reports: string
-}
-
-export interface ArtifactRef {
-  id: string
-  type: string
-  path: string
-  sha256: string
-  mime?: string
-  metadata?: Record<string, unknown>
 }
 
 // ============================================================================

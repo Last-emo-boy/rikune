@@ -36,6 +36,7 @@ const managedIlXrefsPlugin: Plugin = {
       dockerInstall: 'pip install dnfile',
     },
   ],
+  resources: { workers: 'workers' },
   register(server, deps) {
     server.registerTool(ilXrefsToolDefinition, createIlXrefsHandler(deps))
     server.registerTool(tokenXrefsToolDefinition, createTokenXrefsHandler(deps))

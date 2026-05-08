@@ -35,6 +35,19 @@ export const deobfStringsInputSchema = z.object({
   session_tag: z.string().optional(),
 })
 
+const deobfuscateOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.object({}).passthrough().optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(z.any()).optional(),
+    setup_actions: z.array(z.any()).optional(),
+    required_user_inputs: z.array(z.any()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).passthrough().optional(),
+  })
+  .passthrough()
+
 export const deobfStringsToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -43,6 +56,11 @@ export const deobfStringsToolDefinition: ToolDefinition = {
     'Use when static FLOSS/string extraction returns only encrypted/obfuscated strings. ' +
     'Requires Frida + Wine (Docker recommended).',
   inputSchema: deobfStringsInputSchema,
+  outputSchema: deobfuscateOutputSchema,
+  runtime: {
+    type: 'python-worker',
+    handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+  },
 }
 
 export function createDeobfStringsHandler(

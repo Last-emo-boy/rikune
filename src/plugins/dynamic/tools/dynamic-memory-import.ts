@@ -7,6 +7,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
+import { PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE } from '@rikune/shared'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
@@ -754,7 +755,7 @@ export function createDynamicMemoryImportHandler(
         database.insertArtifact({
           id: traceArtifactId,
           sample_id: input.sample_id,
-          type: 'dynamic_trace_json',
+          type: PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
           path: traceRelativePath,
           sha256: traceSha256,
           mime: 'application/json',
@@ -762,7 +763,7 @@ export function createDynamicMemoryImportHandler(
         })
         traceArtifact = {
           id: traceArtifactId,
-          type: 'dynamic_trace_json',
+          type: PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
           path: traceRelativePath,
           sha256: traceSha256,
           mime: 'application/json',

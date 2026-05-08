@@ -57,6 +57,16 @@ export const HostCorrelateInputSchema = z.object({
     .describe('Maximum directory traversal depth when recursive is enabled'),
 })
 
+export const HostCorrelateOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.object({}).passthrough().optional(),
+    artifacts: z.array(z.any()).optional(),
+    errors: z.array(z.string()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).passthrough().optional(),
+  })
+  .passthrough()
+
 export const hostCorrelateToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -65,6 +75,7 @@ export const hostCorrelateToolDefinition: ToolDefinition = {
     'scheduled tasks, services, startup entries, DLL sideloading configs, and COM ' +
     'registration to build a complete picture of how the sample is loaded and executed.',
   inputSchema: HostCorrelateInputSchema,
+  outputSchema: HostCorrelateOutputSchema,
 }
 
 async function callHostCorrelationWorker(

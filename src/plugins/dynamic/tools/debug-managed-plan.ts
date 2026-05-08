@@ -7,7 +7,14 @@
  */
 
 import { z } from 'zod'
-import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  getDatabase,
+  getWorkspaceServices,
+  type ArtifactRef,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 import {
   loadStaticAnalysisArtifactSelection,
   persistStaticAnalysisJsonArtifact,
@@ -110,6 +117,7 @@ async function loadDotNetMetadataContext(
   resources: string[]
   warnings: string[]
 }> {
+  const workspace = getWorkspaceServices(deps)
   if (!input.use_dotnet_metadata_artifacts || !input.sample_id) {
     return {
       artifact_ids: [],
@@ -120,7 +128,7 @@ async function loadDotNetMetadataContext(
       warnings: [],
     }
   }
-  if (!deps.workspaceManager || !deps.database) {
+  if (!workspace.manager || !workspace.database) {
     return {
       artifact_ids: [],
       scope_note: null,
@@ -132,8 +140,8 @@ async function loadDotNetMetadataContext(
   }
   try {
     const selection = await loadStaticAnalysisArtifactSelection<DotNetMetadataPayload>(
-      deps.workspaceManager,
-      deps.database,
+      workspace.manager,
+      workspace.database,
       input.sample_id,
       'dotnet_metadata',
       {
@@ -188,7 +196,7 @@ function safeRunTemplate(
         timeout_sec: input.timeout_sec,
         network_sinkhole: input.network_sinkhole,
       },
-      runtime_backend_hint: { type: 'inline', handler: 'executeManagedSafeRun' },
+      runtime_contract: { type: 'inline', handler: 'executeManagedSafeRun' },
       timeout_ms: Math.max(30_000, (input.timeout_sec + 45) * 1000),
     },
   }
@@ -212,7 +220,7 @@ function sosTemplate(input: z.infer<typeof DebugManagedPlanInputSchema>): Record
       ...(input.sample_id ? { sample_id: input.sample_id } : { sample_id: '<sample_id>' }),
       tool: 'debug.session.command_batch',
       args: { commands },
-      runtime_backend_hint: { type: 'inline', handler: 'executeDebugSession' },
+      runtime_contract: { type: 'inline', handler: 'executeDebugSession' },
       timeout_ms: Math.max(60_000, (input.timeout_sec + 60) * 1000),
     },
   }
@@ -233,7 +241,7 @@ function procDumpTemplate(
         seconds: Math.min(input.timeout_sec, 300),
         max_dumps: 2,
       },
-      runtime_backend_hint: { type: 'inline', handler: 'executeProcDumpCapture' },
+      runtime_contract: { type: 'inline', handler: 'executeProcDumpCapture' },
       timeout_ms: Math.max(90_000, (input.timeout_sec + 90) * 1000),
     },
   }
@@ -320,6 +328,8 @@ export function createDebugManagedPlanHandler(deps: PluginToolDeps) {
     try {
       const input = DebugManagedPlanInputSchema.parse(args || {})
       const metadata = await loadDotNetMetadataContext(deps, input)
+      const workspace = getWorkspaceServices(deps)
+      const db = getDatabase(deps)
       const selectedProfiles = expandProfiles(input.profiles)
       const profiles = selectedProfiles.map((profile) => buildProfile(profile, input, metadata))
       const data = {
@@ -363,13 +373,13 @@ export function createDebugManagedPlanHandler(deps: PluginToolDeps) {
       if (
         input.persist_artifact &&
         input.sample_id &&
-        deps.workspaceManager &&
-        deps.database?.findSample?.(input.sample_id)
+        workspace.manager &&
+        db?.findSample?.(input.sample_id)
       ) {
         artifacts.push(
           await persistStaticAnalysisJsonArtifact(
-            deps.workspaceManager,
-            deps.database,
+            workspace.manager,
+            db,
             input.sample_id,
             'debug_managed_plan',
             'debug_managed_plan',

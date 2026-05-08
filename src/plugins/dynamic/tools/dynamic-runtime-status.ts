@@ -8,16 +8,18 @@
  */
 
 import { z } from 'zod'
-import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import type { RuntimeBackendCapability } from '@rikune/shared'
+import {
+  getDatabase,
+  getRuntimeConfig,
+  type ArtifactRef,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
+import { buildRuntimeToolSupportSummary } from '../../../runtime-client/runtime-tool-support.js'
 
 const TOOL_NAME = 'dynamic.runtime.status'
-
-interface RuntimeBackendCapability {
-  type: 'python-worker' | 'spawn' | 'inline'
-  handler: string
-  description?: string
-  requiresSample?: boolean
-}
 
 interface RuntimeSessionSummary {
   session_id: string
@@ -92,10 +94,6 @@ export const dynamicRuntimeStatusToolDefinition: ToolDefinition = {
     'Read-only dynamic runtime control-plane status. Aggregates configured Runtime Node health, Runtime Node capabilities, Windows Host Agent health, Hyper-V/Sandbox diagnostics, and persisted runtime debug sessions without launching a sandbox.',
   inputSchema: DynamicRuntimeStatusInputSchema,
   outputSchema: DynamicRuntimeStatusOutputSchema,
-}
-
-function getRuntimeConfig(deps: PluginToolDeps): Record<string, any> {
-  return deps.config?.runtime || {}
 }
 
 function getAuthHeader(apiKey?: string): Record<string, string> {
@@ -233,7 +231,7 @@ function findPersistedSessions(
   deps: PluginToolDeps,
   input: z.infer<typeof DynamicRuntimeStatusInputSchema>
 ): RuntimeSessionSummary[] {
-  const db = deps.database
+  const db = getDatabase(deps)
   const rows: any[] = []
 
   if (input.session_id && typeof db?.findDebugSession === 'function') {
@@ -368,6 +366,16 @@ function buildBackendInterface(params: {
       managed_safe_run: hasCapability(params.capabilities, 'inline', 'executeManagedSafeRun'),
       runtime_tool_probe: hasCapability(params.capabilities, 'inline', 'executeRuntimeToolProbe'),
       frida_runtime: hasCapability(params.capabilities, 'python-worker', 'frida_worker.py'),
+      runtime_deobfuscation: hasCapability(
+        params.capabilities,
+        'python-worker',
+        'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py'
+      ),
+      managed_fake_c2: hasCapability(
+        params.capabilities,
+        'python-worker',
+        'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py'
+      ),
     },
   }
 }
@@ -411,6 +419,12 @@ function buildGuidance(params: {
     ]
     if (params.backendInterface.supported_backends.frida_runtime) {
       recommended.push('frida.runtime.instrument')
+    }
+    if (params.backendInterface.supported_backends.runtime_deobfuscation) {
+      recommended.push('deobf.strings')
+    }
+    if (params.backendInterface.supported_backends.managed_fake_c2) {
+      recommended.push('managed.fake_c2')
     }
     if (params.backendInterface.supported_backends.sandbox_execute) {
       recommended.push('sandbox.execute')
@@ -510,6 +524,7 @@ export function createDynamicRuntimeStatusHandler(deps: PluginToolDeps) {
     const runtimeCapabilities = runtimeCapabilitiesResult?.ok
       ? normalizeRuntimeCapabilities(runtimeCapabilitiesResult.body)
       : []
+    const runtimeToolSupportSummary = buildRuntimeToolSupportSummary(runtimeCapabilities)
     const status = buildStatus({
       runtimeEndpoint: runtimeResolution.endpoint,
       runtimeHealth,
@@ -554,6 +569,7 @@ export function createDynamicRuntimeStatusHandler(deps: PluginToolDeps) {
             : null),
         runtime_capabilities: runtimeCapabilities,
         runtime_capabilities_raw: runtimeCapabilitiesResult?.body || null,
+        ...runtimeToolSupportSummary,
         host_agent_endpoint: hostAgentResolution.endpoint || null,
         host_agent_endpoint_source: hostAgentResolution.source,
         host_agent_health:

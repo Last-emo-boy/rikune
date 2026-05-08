@@ -22,5 +22,8 @@
     "lint": "cmd /d /s /c \"pushd ..\\.. && eslint packages/shared/src --ext .ts && popd\"",
     "test": "cmd /d /s /c \"pushd ..\\.. && node --experimental-vm-modules node_modules\\jest\\bin\\jest.js --runInBand tests\\unit\\packages\\shared.test.ts && popd\""
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^3.25.76"
+  }
 }

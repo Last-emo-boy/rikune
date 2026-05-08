@@ -491,6 +491,71 @@ describe('dotnet.reconstruct.export tool', () => {
     expect((result.warnings || []).join(' ')).toContain('build validation failed')
   })
 
+  test('should skip build validation when validate_build is disabled', async () => {
+    const sampleId = 'sha256:' + '6'.repeat(64)
+    await setupSample(sampleId, '6')
+
+    const buildValidator = jest
+      .fn<(csprojPath: string, cwd: string, timeoutMs: number) => Promise<any>>()
+      .mockResolvedValue({
+        attempted: true,
+        status: 'passed',
+        command: 'dotnet build',
+        dotnet_cli_available: true,
+        exit_code: 0,
+        timed_out: false,
+        stdout: 'Build succeeded.',
+        stderr: '',
+        error: null,
+      })
+
+    const handler = createDotNetReconstructExportHandler(
+      workspaceManager,
+      database,
+      cacheManager,
+      {
+        runtimeDetectHandler: jest
+          .fn<(args: ToolArgs) => Promise<WorkerResult>>()
+          .mockResolvedValue({
+            ok: true,
+            data: {
+              is_dotnet: true,
+              dotnet_version: '8.0',
+              target_framework: '.NET 8.0',
+            },
+          }),
+        packerDetectHandler: jest
+          .fn<(args: ToolArgs) => Promise<WorkerResult>>()
+          .mockResolvedValue({
+            ok: true,
+            data: {
+              packed: false,
+              confidence: 0.1,
+            },
+          }),
+        reconstructExportHandler: jest
+          .fn<(args: ToolArgs) => Promise<WorkerResult>>()
+          .mockResolvedValue(buildReconstructExportResult()),
+        dotNetMetadataHandler: jest
+          .fn<(args: ToolArgs) => Promise<WorkerResult>>()
+          .mockResolvedValue(buildManagedMetadataResult()),
+        buildValidator,
+      }
+    )
+
+    const result = await handler({
+      sample_id: sampleId,
+      export_name: 'dotnet_no_build',
+      validate_build: false,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.build_validation.status).toBe('skipped')
+    expect(data.build_validation.log_path).toBeNull()
+    expect(buildValidator).not.toHaveBeenCalled()
+  })
+
   test('should still export metadata-driven skeletons when native reconstruction is unavailable', async () => {
     const sampleId = 'sha256:' + '5'.repeat(64)
     await setupSample(sampleId, '5')

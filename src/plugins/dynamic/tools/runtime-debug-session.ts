@@ -13,7 +13,21 @@ import os from 'os'
 import path from 'path'
 import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
-import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  buildRuntimeArtifactControlPlaneMetadata,
+  ToolRuntimeContractSchema,
+  type RuntimeBackendCapability,
+} from '@rikune/shared'
+import {
+  getDatabase,
+  getRuntimeConfig,
+  getWorkspaceManager,
+  getWorkspaceServices,
+  type ArtifactRef,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 import {
   resolveRuntimeSidecarUploads,
   type RuntimeSidecarUpload,
@@ -44,18 +58,6 @@ interface RuntimeDebugSession {
 }
 
 const sessions = new Map<string, RuntimeDebugSession>()
-
-interface RuntimeBackendCapability {
-  type: 'python-worker' | 'spawn' | 'inline'
-  handler: string
-  description?: string
-  requiresSample?: boolean
-}
-
-const RuntimeBackendHintSchema = z.object({
-  type: z.enum(['python-worker', 'spawn', 'inline']),
-  handler: z.string().min(1),
-})
 
 export const RuntimeDebugSessionStartInputSchema = z.object({
   host_agent_endpoint: z
@@ -182,8 +184,8 @@ export const RuntimeDebugCommandInputSchema = z.object({
     .optional()
     .default(128 * 1024 * 1024),
   args: z.record(z.string(), z.unknown()).optional().default({}),
-  runtime_backend_hint: RuntimeBackendHintSchema.optional().describe(
-    'Runtime backend hint. Defaults to inline/executeDebugSession for debug.session.* tools.'
+  runtime_contract: ToolRuntimeContractSchema.optional().describe(
+    'Runtime runtime contract. Defaults to inline/executeDebugSession for debug.session.* tools.'
   ),
   runtime_api_key: z.string().optional(),
   timeout_ms: z
@@ -234,10 +236,6 @@ export const runtimeDebugCommandToolDefinition: ToolDefinition = {
     'Dispatch a Runtime Node command into an existing debug session. This reuses the Runtime Node /execute contract and supports debug.session.*, sandbox.execute, dynamic.behavior.capture, dynamic.memory_dump, managed.safe_run, and other advertised runtime handlers.',
   inputSchema: RuntimeDebugCommandInputSchema,
   outputSchema: RuntimeDebugOutputSchema,
-}
-
-function getRuntimeConfig(deps: PluginToolDeps) {
-  return deps.config?.runtime || {}
 }
 
 function getAuthHeader(apiKey?: string): Record<string, string> {
@@ -338,9 +336,9 @@ function resolveHyperVStartPolicy(input: z.infer<typeof RuntimeDebugSessionStart
   }
 }
 
-function buildDefaultRuntimeBackendHint(
+function buildDefaultToolRuntimeContract(
   tool: string
-): z.infer<typeof RuntimeBackendHintSchema> | undefined {
+): z.infer<typeof ToolRuntimeContractSchema> | undefined {
   if (tool.startsWith('debug.session.')) {
     return { type: 'inline', handler: 'executeDebugSession' }
   }
@@ -478,12 +476,13 @@ function resolveSampleMetadata(
   deps: PluginToolDeps,
   sampleId: string
 ): { sampleId: string; sha256: string } | null {
-  const sample = deps.database?.findSample?.(sampleId)
+  const db = getDatabase(deps)
+  const sample = db?.findSample?.(sampleId)
   if (sample && typeof sample.sha256 === 'string') {
     return { sampleId, sha256: sample.sha256 }
   }
 
-  if (deps.database?.findSample) {
+  if (db?.findSample) {
     return null
   }
 
@@ -503,7 +502,7 @@ async function persistRuntimeSession(
     metadata?: Record<string, unknown>
   } = {}
 ): Promise<void> {
-  const db = deps.database
+  const db = getDatabase(deps)
   if (!db?.insertDebugSession || !db?.updateDebugSession || !sampleId) {
     return
   }
@@ -568,7 +567,7 @@ function restorePersistedSession(
   deps: PluginToolDeps,
   sessionId: string
 ): RuntimeDebugSession | undefined {
-  const row = deps.database?.findDebugSession?.(sessionId)
+  const row = getDatabase(deps)?.findDebugSession?.(sessionId)
   if (!row) {
     return undefined
   }
@@ -685,7 +684,7 @@ async function runtimeCapabilities(
 
 function findRuntimeCapability(
   capabilities: RuntimeBackendCapability[] | null | undefined,
-  hint: z.infer<typeof RuntimeBackendHintSchema> | undefined
+  hint: z.infer<typeof ToolRuntimeContractSchema> | undefined
 ): RuntimeBackendCapability | undefined {
   if (!hint || !capabilities) {
     return undefined
@@ -695,16 +694,16 @@ function findRuntimeCapability(
 
 function buildUnsupportedRuntimeHintResult(
   session: RuntimeDebugSession,
-  hint: z.infer<typeof RuntimeBackendHintSchema>,
+  hint: z.infer<typeof ToolRuntimeContractSchema>,
   capabilities: RuntimeBackendCapability[],
   elapsedMs: number
 ): WorkerResult {
-  const summary = `Runtime does not advertise support for backend hint ${hint.type}/${hint.handler}.`
+  const summary = `Runtime does not advertise support for runtime contract ${hint.type}/${hint.handler}.`
   return {
     ok: false,
     data: {
       status: 'setup_required',
-      failure_category: 'unsupported_runtime_backend_hint',
+      failure_category: 'unsupported_runtime_contract',
       summary,
       recommended_next_tools: [SESSION_STATUS_TOOL, 'dynamic.dependencies', 'system.health'],
       next_actions: [
@@ -712,7 +711,7 @@ function buildUnsupportedRuntimeHintResult(
         'Reconnect a Runtime Node that advertises the required backend handler before retrying this command.',
       ],
       runtime_endpoint: session.endpoint,
-      required_runtime_backend_hint: hint,
+      required_runtime_contract: hint,
       available_runtime_backends: capabilities,
     },
     errors: [summary],
@@ -820,17 +819,14 @@ async function persistRuntimeDebugArtifacts(
   toolName: string,
   downloadedPaths: string[]
 ): Promise<ArtifactRef[]> {
-  if (
-    !sampleId ||
-    downloadedPaths.length === 0 ||
-    !deps.workspaceManager ||
-    !deps.database?.insertArtifact
-  ) {
+  const workspaceManager = getWorkspaceManager(deps)
+  const db = getDatabase(deps)
+  if (!sampleId || downloadedPaths.length === 0 || !workspaceManager || !db?.insertArtifact) {
     return []
   }
 
   const persisted: ArtifactRef[] = []
-  const workspace = await deps.workspaceManager.createWorkspace(sampleId)
+  const workspace = await workspaceManager.createWorkspace(sampleId)
   const reportDir = path.join(workspace.reports, 'runtime_debug', sanitizePathSegment(sessionId))
   await fs.promises.mkdir(reportDir, { recursive: true })
 
@@ -846,7 +842,7 @@ async function persistRuntimeDebugArtifacts(
     const createdAt = new Date().toISOString()
     const mime = guessMime(basename)
 
-    deps.database.insertArtifact({
+    db.insertArtifact({
       id: artifactId,
       sample_id: sampleId,
       type: 'runtime_debug_artifact',
@@ -862,11 +858,12 @@ async function persistRuntimeDebugArtifacts(
       path: relativePath,
       sha256,
       mime,
-      metadata: {
-        runtime_debug_session_id: sessionId,
-        runtime_task_id: taskId,
-        runtime_tool: toolName,
-      },
+      metadata: buildRuntimeArtifactControlPlaneMetadata({
+        artifactType: 'runtime_debug_artifact',
+        runtimeTool: toolName,
+        runtimeTaskId: taskId,
+        runtimeDebugSessionId: sessionId,
+      }),
     })
   }
 
@@ -1171,12 +1168,14 @@ export function createRuntimeDebugSessionStatusHandler(deps: PluginToolDeps) {
           session: selected || null,
           runtime,
           host_agent: hostAgent,
-          persisted_sessions:
-            input.sample_id && deps.database?.findDebugSessionsBySample
-              ? deps.database
+          persisted_sessions: (() => {
+            const db = getDatabase(deps)
+            return input.sample_id && db?.findDebugSessionsBySample
+              ? db
                   .findDebugSessionsBySample(input.sample_id, input.limit)
                   .map(normalizePersistedDebugSession)
-              : [],
+              : []
+          })(),
           tracked_sessions: Array.from(sessions.values()),
         },
         metrics: { elapsed_ms: Date.now() - start, tool: SESSION_STATUS_TOOL },
@@ -1288,8 +1287,7 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
       const taskId = randomUUID()
       let sidecarWarnings: string[] = []
       let stagedSidecarCount = 0
-      const runtimeBackendHint =
-        input.runtime_backend_hint || buildDefaultRuntimeBackendHint(input.tool)
+      const runtime = input.runtime_contract || buildDefaultToolRuntimeContract(input.tool)
       if (!input.sample_id && isSampleBoundRuntimeTool(input.tool)) {
         return {
           ok: false,
@@ -1300,21 +1298,21 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
         }
       }
 
-      if (runtimeBackendHint) {
+      if (runtime) {
         const capabilities = await runtimeCapabilities(session.endpoint, runtimeApiKey).catch(
           () => null
         )
         session.capabilities = capabilities
-        if (capabilities && !findRuntimeCapability(capabilities, runtimeBackendHint)) {
+        if (capabilities && !findRuntimeCapability(capabilities, runtime)) {
           await persistRuntimeSession(deps, session, input.sample_id || session.sampleId, {
             status: 'approval_gated',
             debugState: 'approval_gated',
             phase: 'runtime_capability_mismatch',
-            metadata: { required_runtime_backend_hint: runtimeBackendHint },
+            metadata: { required_runtime_contract: runtime },
           })
           return buildUnsupportedRuntimeHintResult(
             session,
-            runtimeBackendHint,
+            runtime,
             capabilities,
             Date.now() - start
           )
@@ -1325,11 +1323,13 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
         status: 'capturing',
         debugState: 'capturing',
         phase: `runtime_command:${input.tool}`,
-        metadata: { task_id: taskId, runtime_backend_hint: runtimeBackendHint ?? null },
+        metadata: { task_id: taskId, runtime_contract: runtime ?? null },
       })
 
       if (input.sample_id) {
-        if (!deps.resolvePrimarySamplePath || !deps.workspaceManager) {
+        const workspaceServices = getWorkspaceServices(deps)
+        const workspaceManager = getWorkspaceManager(deps)
+        if (!workspaceServices.resolvePrimarySamplePath || !workspaceManager) {
           return {
             ok: false,
             errors: [
@@ -1338,7 +1338,10 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
             metrics: { elapsed_ms: Date.now() - start, tool: COMMAND_TOOL },
           }
         }
-        const resolved = await deps.resolvePrimarySamplePath(deps.workspaceManager, input.sample_id)
+        const resolved = await workspaceServices.resolvePrimarySamplePath(
+          workspaceManager,
+          input.sample_id
+        )
         const sidecarResolution = await resolveRuntimeSidecarUploads(resolved.samplePath, {
           sidecarPaths: input.sidecar_paths,
           autoStageSidecars: input.auto_stage_sidecars,
@@ -1373,7 +1376,7 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
             tool: input.tool,
             args: input.args,
             timeoutMs: input.timeout_ms,
-            ...(runtimeBackendHint ? { runtimeBackendHint } : {}),
+            ...(runtime ? { runtime } : {}),
           }),
         },
         30_000
@@ -1430,7 +1433,7 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
         phase: `runtime_command_completed:${input.tool}`,
         metadata: {
           task_id: taskId,
-          runtime_backend_hint: runtimeBackendHint ?? null,
+          runtime_contract: runtime ?? null,
           staged_sidecar_count: stagedSidecarCount,
           sidecar_warnings: sidecarWarnings,
         },
@@ -1443,7 +1446,7 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
           session,
           task_id: taskId,
           tool: input.tool,
-          runtime_backend_hint: runtimeBackendHint,
+          runtime_contract: runtime,
           staged_sidecar_count: stagedSidecarCount,
           sidecar_warnings: sidecarWarnings,
           persisted_artifacts: persistedArtifacts,

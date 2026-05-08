@@ -28,6 +28,49 @@ export const DebugSessionWatchInputSchema = z.object({
   watch_id: z.string().optional().describe('Watch ID (for remove/history actions)'),
 })
 
+export const DebugSessionWatchOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z
+      .union([
+        z.object({
+          action: z.literal('add'),
+          watch_id: z.string(),
+          session_id: z.string(),
+          watch_type: z.enum(['memory', 'register', 'expression']),
+          target: z.string(),
+          size: z.number().int(),
+          access_type: z.enum(['write', 'read', 'readwrite']),
+          status: z.string(),
+          gdb_command: z.string(),
+          note: z.string().optional(),
+        }),
+        z.object({
+          action: z.literal('remove'),
+          watch_id: z.string(),
+          session_id: z.string(),
+          status: z.string(),
+        }),
+        z.object({
+          action: z.literal('list'),
+          session_id: z.string(),
+          watches: z.array(z.any()),
+          note: z.string().optional(),
+        }),
+        z.object({
+          action: z.literal('history'),
+          watch_id: z.string(),
+          session_id: z.string(),
+          changes: z.array(z.any()),
+          note: z.string().optional(),
+        }),
+      ])
+      .optional(),
+    errors: z.array(z.string()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),
+  })
+  .passthrough()
+
 export const debugSessionWatchToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -36,7 +79,8 @@ export const debugSessionWatchToolDefinition: ToolDefinition = {
     'Actions: add (create watchpoint), remove (delete), list (show active), ' +
     'history (show value changes for a watch).',
   inputSchema: DebugSessionWatchInputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
+  outputSchema: DebugSessionWatchOutputSchema,
+  runtime: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 export function createDebugSessionWatchHandler(deps: PluginToolDeps) {

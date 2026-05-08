@@ -38,6 +38,19 @@ export const deobfCfgTraceInputSchema = z.object({
   session_tag: z.string().optional(),
 })
 
+const deobfuscateOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.object({}).passthrough().optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(z.any()).optional(),
+    setup_actions: z.array(z.any()).optional(),
+    required_user_inputs: z.array(z.any()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).passthrough().optional(),
+  })
+  .passthrough()
+
 export const deobfCfgTraceToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -46,6 +59,11 @@ export const deobfCfgTraceToolDefinition: ToolDefinition = {
     'Defeats control-flow flattening, opaque predicates, and bogus branches by showing ' +
     'only paths that were actually taken during execution.',
   inputSchema: deobfCfgTraceInputSchema,
+  outputSchema: deobfuscateOutputSchema,
+  runtime: {
+    type: 'python-worker',
+    handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+  },
 }
 
 export function createDeobfCfgTraceHandler(

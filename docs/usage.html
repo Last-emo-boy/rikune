@@ -46,8 +46,8 @@
     <div class="breadcrumb"><a href="index.html">Rikune</a> / <span data-lang-en>Usage</span><span data-lang-zh>使用指南</span></div>
     <h1><span data-lang-en>Usage Guide</span><span data-lang-zh>使用指南</span></h1>
     <p>
-      <span data-lang-en>Learn how to ingest samples, launch analysis workflows, and use the 243 MCP tools.</span>
-      <span data-lang-zh>了解如何导入样本、启动分析工作流以及使用 243 个 MCP 工具。</span>
+      <span data-lang-en>Learn how to ingest samples, launch staged analysis workflows, and discover the startup-generated MCP tool surface.</span>
+      <span data-lang-zh>了解如何导入样本、启动 staged analysis workflow，并发现启动时生成的 MCP 工具面。</span>
     </p>
   </div>
 </div>
@@ -124,6 +124,8 @@
         </thead>
         <tbody>
           <tr><td><code>sample.ingest</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Ingest &amp; triage a PE sample</span><span data-lang-zh>导入并分诊 PE 样本</span></td></tr>
+          <tr><td><code>tool.help</code></td><td><span class="badge badge--green">Utility</span></td><td><span data-lang-en>Inspect schema fields, usage notes, surface role, and preferred primary tools</span><span data-lang-zh>查看 schema 字段、使用提示、工具面角色和首选主路径工具</span></td></tr>
+          <tr><td><code>tool.readiness</code></td><td><span class="badge badge--green">Utility</span></td><td><span data-lang-en>Passively check local/runtime readiness, runtime plane, execution semantics, and next actions before dispatch</span><span data-lang-zh>分发前被动检查本地/运行时就绪、runtime plane、执行语义和下一步动作</span></td></tr>
           <tr><td><code>pe.headers</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Parse PE headers (DOS, COFF, Optional)</span><span data-lang-zh>解析 PE 头（DOS、COFF、可选头）</span></td></tr>
           <tr><td><code>pe.imports</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Extract import table</span><span data-lang-zh>提取导入表</span></td></tr>
           <tr><td><code>pe.exports</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Extract export table</span><span data-lang-zh>提取导出表</span></td></tr>
@@ -154,9 +156,9 @@
         <tbody>
           <tr><td><code>workflow.analyze.start</code></td><td><span data-lang-en>Start a staged analysis run</span><span data-lang-zh>启动分阶段分析运行</span></td></tr>
           <tr><td><code>workflow.analyze.status</code></td><td><span data-lang-en>Check analysis run status</span><span data-lang-zh>检查分析运行状态</span></td></tr>
+          <tr><td><code>workflow.analyze.promote</code></td><td><span data-lang-en>Queue deeper stages for an existing run</span><span data-lang-zh>为已有运行排队更深阶段</span></td></tr>
+          <tr><td><code>workflow.analyze.auto</code></td><td><span data-lang-en>Intent router over start/promote; does not launch legacy heavyweight workflows directly</span><span data-lang-zh>基于 start/promote 的意图路由；不会直接启动旧重型 workflow</span></td></tr>
           <tr><td><code>workflow.summarize</code></td><td><span data-lang-en>Generate final summary report</span><span data-lang-zh>生成最终摘要报告</span></td></tr>
-          <tr><td><code>workflow.stage.preview</code></td><td><span data-lang-en>Preview a stage before execution</span><span data-lang-zh>执行前预览阶段</span></td></tr>
-          <tr><td><code>workflow.stage.advance</code></td><td><span data-lang-en>Advance to the next stage</span><span data-lang-zh>推进到下一阶段</span></td></tr>
         </tbody>
       </table>
     </section>
@@ -364,6 +366,7 @@ workflow.analyze.status(run_id)</code></pre>
 
       <h3><span data-lang-en>Polling Guidance</span><span data-lang-zh>轮询指南</span></h3>
       <p><span data-lang-en>When a stage is queued: (1) prefer <code>workflow.analyze.status(run_id)</code>; (2) only use <code>task.status(job_id)</code> for raw job details; (3) respect <code>polling_guidance</code> wait recommendations.</span><span data-lang-zh>当阶段排队时：(1) 优先使用 <code>workflow.analyze.status(run_id)</code>；(2) 仅在需要原始任务详情时用 <code>task.status(job_id)</code>；(3) 遵守 <code>polling_guidance</code> 等待建议。</span></p>
+      <p><span data-lang-en>Large staged responses may prune historical stage payloads and report this in top-level <code>warnings</code>. Use <code>artifact.read</code> for the full artifact payload. <code>task.status</code> also reports <code>external_active_*</code> memory telemetry for analyzer subprocesses that are still running outside the queue view.</span><span data-lang-zh>大型 staged 响应可能会裁剪历史阶段结果，并在顶层 <code>warnings</code> 中说明。完整内容请使用 <code>artifact.read</code>。<code>task.status</code> 还会通过 <code>external_active_*</code> 暴露仍在队列视图之外运行的 analyzer 子进程内存遥测。</span></p>
     </section>
 
   </div>

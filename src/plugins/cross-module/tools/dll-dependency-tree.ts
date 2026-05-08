@@ -5,7 +5,13 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'dll.dependency.tree'
 
@@ -17,6 +23,27 @@ export const DllDependencyTreeInputSchema = z.object({
     .describe('Additional sample IDs for DLLs that may be dependencies'),
 })
 
+export const DllDependencyTreeOutputSchema = createWorkerResultOutputSchema(
+  z.object({
+    sample_id: z.string(),
+    total_dependencies: z.number().int().nonnegative(),
+    system_deps: z.number().int().nonnegative(),
+    known_sample_deps: z.number().int().nonnegative(),
+    unknown_deps: z.number().int().nonnegative(),
+    sideload_candidates: z.array(z.string()),
+    dependencies: z.array(
+      z.object({
+        dll: z.string(),
+        classification: z.enum(['system', 'known_sample', 'unknown']),
+        sample_id: z.string().optional(),
+        function_count: z.number().int().nonnegative(),
+        sideload_risk: z.boolean(),
+        functions: z.array(z.string()),
+      })
+    ),
+  })
+)
+
 export const dllDependencyTreeToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -24,6 +51,7 @@ export const dllDependencyTreeToolDefinition: ToolDefinition = {
     'Classifies each dependency as known-system, known-sample (in your collection), ' +
     'or unknown/suspicious. Flags potential DLL side-loading vectors.',
   inputSchema: DllDependencyTreeInputSchema,
+  outputSchema: DllDependencyTreeOutputSchema,
 }
 
 const KNOWN_SYSTEM_DLLS = new Set([

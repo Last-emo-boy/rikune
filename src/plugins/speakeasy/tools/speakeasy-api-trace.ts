@@ -70,7 +70,7 @@ export const speakeasyApiTraceToolDefinition: ToolDefinition = {
     'Run Speakeasy emulation and extract a focused API call trace with optional module/API name filtering.',
   inputSchema: speakeasyApiTraceInputSchema,
   outputSchema: speakeasyApiTraceOutputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeSpeakeasyApiTrace' },
+  runtime: { type: 'inline', handler: 'executeSpeakeasyApiTrace' },
 }
 
 const SPEAKEASY_TRACE_SCRIPT = `

@@ -28,6 +28,17 @@ export const ResourceExportInputSchema = z.object({
     .describe('Save exported assemblies to the sample workspace'),
 })
 
+const reactorOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.object({}).passthrough().optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(z.any()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).passthrough().optional(),
+  })
+  .passthrough()
+
 export const resourceExportToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -36,6 +47,7 @@ export const resourceExportToolDefinition: ToolDefinition = {
     'and packed dependencies. Attempts decryption and decompression, then saves ' +
     'recovered assemblies to the workspace for further analysis.',
   inputSchema: ResourceExportInputSchema,
+  outputSchema: reactorOutputSchema,
 }
 
 async function callReactorWorker(

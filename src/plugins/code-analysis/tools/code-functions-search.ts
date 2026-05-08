@@ -33,12 +33,59 @@ export const codeFunctionsSearchInputSchema = z
 
 export type CodeFunctionsSearchInput = z.infer<typeof codeFunctionsSearchInputSchema>
 
+const GhidraDiagnosticsSchema = z.any()
+const NormalizedGhidraErrorSchema = z.any()
+
+export const codeFunctionsSearchOutputSchema = z.object({
+  ok: z.boolean(),
+  data: z
+    .object({
+      query: z
+        .object({
+          api: z.string().optional(),
+          string: z.string().optional(),
+          limit: z.number(),
+        })
+        .passthrough(),
+      matches: z.array(
+        z
+          .object({
+            function: z.string(),
+            address: z.string(),
+            caller_count: z.number(),
+            callee_count: z.number(),
+            api_matches: z.array(z.string()).optional(),
+            string_matches: z
+              .array(
+                z
+                  .object({
+                    value: z.string(),
+                    data_address: z.string().optional(),
+                    referenced_from: z.string().optional(),
+                  })
+                  .passthrough()
+              )
+              .optional(),
+            match_types: z.array(z.string()),
+          })
+          .passthrough()
+      ),
+      count: z.number().int().nonnegative(),
+    })
+    .passthrough()
+    .optional(),
+  errors: z.array(z.string()).optional(),
+  diagnostics: GhidraDiagnosticsSchema.optional(),
+  normalized_error: NormalizedGhidraErrorSchema.optional(),
+})
+
 export const codeFunctionsSearchToolDefinition: ToolDefinition = {
   name: 'code.functions.search',
   description:
     'Search functions by referenced API names or string literals. Uses Ghidra when available for string-to-function mapping and falls back to function-index API search otherwise. ' +
     'Use code.xrefs.analyze when you need bounded inbound/outbound relationship summaries instead of a simple function match list.',
   inputSchema: codeFunctionsSearchInputSchema,
+  outputSchema: codeFunctionsSearchOutputSchema,
 }
 
 export function createCodeFunctionsSearchHandler(

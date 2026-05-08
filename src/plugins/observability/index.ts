@@ -78,11 +78,45 @@ const metricsInputSchema = z.object({
   sort_by: z.enum(['calls', 'errors', 'avg_ms', 'max_ms']).default('calls').describe('Sort key'),
 })
 
+const metricEntrySchema = z.object({
+  tool: z.string(),
+  calls: z.number().int().nonnegative(),
+  errors: z.number().int().nonnegative(),
+  error_rate: z.number().min(0),
+  avg_ms: z.number().nonnegative(),
+  min_ms: z.number().nonnegative(),
+  max_ms: z.number().nonnegative(),
+  last_called_at: z.string().nullable(),
+  last_error: z.string().nullable().optional(),
+})
+
+const metricsOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z
+      .union([
+        metricEntrySchema.nullable(),
+        z.object({
+          summary: z.object({
+            total_tools_tracked: z.number().int().nonnegative(),
+            total_calls: z.number().int().nonnegative(),
+            total_errors: z.number().int().nonnegative(),
+            global_error_rate: z.number().min(0),
+          }),
+          tools: z.array(metricEntrySchema.omit({ last_error: true })),
+        }),
+      ])
+      .optional(),
+    message: z.string().optional(),
+  })
+  .passthrough()
+
 const metricsToolDefinition: ToolDefinition = {
   name: 'observability.metrics',
   description:
     'Query tool invocation metrics — call counts, latencies, error rates. Powered by the plugin hook system.',
   inputSchema: metricsInputSchema,
+  outputSchema: metricsOutputSchema,
 }
 
 function createMetricsHandler() {
@@ -180,6 +214,7 @@ function createMetricsHandler() {
 const plugin: Plugin = {
   id: 'observability',
   name: 'Observability',
+  executionDomain: 'both',
   surfaceRules: { tier: 0, category: 'static-analysis' },
   description: 'Tool invocation metrics and monitoring via lifecycle hooks',
   version: '1.0.0',

@@ -7,7 +7,12 @@
  */
 
 import { z } from 'zod'
-import type { PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  getWorkspaceServices,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 import {
   loadStaticAnalysisArtifactSelection,
   type StaticArtifactScope,
@@ -168,7 +173,7 @@ function runtimeCommandTemplate(
       ...(sampleId ? { sample_id: sampleId } : { sample_id: '<sample_id>' }),
       tool: 'debug.session.command_batch',
       args: { commands },
-      runtime_backend_hint: { type: 'inline', handler: 'executeDebugSession' },
+      runtime_contract: { type: 'inline', handler: 'executeDebugSession' },
       timeout_ms: timeoutMs,
     },
   }
@@ -183,10 +188,11 @@ async function loadStaticBehaviorApis(
   scope_note: string | null
   warnings: string[]
 }> {
+  const workspace = getWorkspaceServices(deps)
   if (!input.use_static_behavior_artifacts || !input.sample_id) {
     return { apis: [], artifact_ids: [], scope_note: null, warnings: [] }
   }
-  if (!deps.workspaceManager || !deps.database) {
+  if (!workspace.manager || !workspace.database) {
     return {
       apis: [],
       artifact_ids: [],
@@ -197,8 +203,8 @@ async function loadStaticBehaviorApis(
 
   try {
     const selection = await loadStaticAnalysisArtifactSelection<StaticBehaviorClassifierPayload>(
-      deps.workspaceManager,
-      deps.database,
+      workspace.manager,
+      workspace.database,
       input.sample_id,
       'static_behavior_classifier',
       {

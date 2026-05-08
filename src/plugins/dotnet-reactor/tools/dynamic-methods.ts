@@ -33,6 +33,17 @@ export const DynamicMethodsInputSchema = z.object({
     .describe('Sandbox execution timeout if use_sandbox is enabled'),
 })
 
+const reactorOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.object({}).passthrough().optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(z.any()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).passthrough().optional(),
+  })
+  .passthrough()
+
 export const dynamicMethodsToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -40,6 +51,7 @@ export const dynamicMethodsToolDefinition: ToolDefinition = {
     'at runtime. Combines static IL analysis with optional sandbox execution. ' +
     'Returns recovered method signatures, IL disassembly, and decompiled C# where possible.',
   inputSchema: DynamicMethodsInputSchema,
+  outputSchema: reactorOutputSchema,
 }
 
 async function callReactorWorker(

@@ -345,6 +345,47 @@ async function stageRuntimeBundle(sandboxDir: string, runtimeEntryHost: string):
   return path.join(runtimeStageDir, path.basename(runtimeEntryHost))
 }
 
+function shouldStageWorkerPath(sourcePath: string): boolean {
+  const name = path.basename(sourcePath).toLowerCase()
+  return !['venv', 'qiling-venv', '__pycache__', '.pytest_cache'].includes(name)
+}
+
+async function stageRuntimeWorkers(sandboxDir: string): Promise<string> {
+  const workersStageDir = path.join(sandboxDir, 'workers')
+  const rootWorkersDir = path.join(projectRoot, 'workers')
+  const pluginWorkersRoot = path.join(projectRoot, 'src', 'plugins')
+
+  await fs.rm(workersStageDir, { recursive: true, force: true })
+  await fs.mkdir(workersStageDir, { recursive: true })
+
+  if (existsSync(rootWorkersDir)) {
+    await fs.cp(rootWorkersDir, workersStageDir, {
+      recursive: true,
+      filter: (sourcePath) => shouldStageWorkerPath(sourcePath),
+    })
+  }
+
+  if (existsSync(pluginWorkersRoot)) {
+    const pluginEntries = await fs.readdir(pluginWorkersRoot, { withFileTypes: true })
+    for (const entry of pluginEntries) {
+      if (!entry.isDirectory()) continue
+      const pluginWorkerDir = path.join(pluginWorkersRoot, entry.name, 'workers')
+      if (!existsSync(pluginWorkerDir)) continue
+      const stagedPluginWorkerDir = path.join(
+        workersStageDir,
+        'src',
+        'plugins',
+        entry.name,
+        'workers'
+      )
+      await fs.mkdir(path.dirname(stagedPluginWorkerDir), { recursive: true })
+      await fs.cp(pluginWorkerDir, stagedPluginWorkerDir, { recursive: true })
+    }
+  }
+
+  return workersStageDir
+}
+
 function requireAuth(req: IncomingMessage, res: ServerResponse): boolean {
   if (!API_KEY) return true
   const auth = req.headers.authorization || ''
@@ -400,7 +441,7 @@ async function writeWsbConfig(
   const stagedRuntimeEntryHost = await stageRuntimeBundle(sandboxDir, runtimeEntryHost)
   const runtimeDirHost = path.dirname(stagedRuntimeEntryHost)
   const runtimeFileName = path.basename(stagedRuntimeEntryHost)
-  const workersDirHost = path.join(projectRoot, 'workers')
+  const workersDirHost = await stageRuntimeWorkers(sandboxDir)
   const nodeModulesDirHost = path.join(projectRoot, 'node_modules')
   const readyFileSandbox = 'C:\\rikune-outbox\\runtime.ready.json'
   const hostNodePath =
@@ -623,7 +664,7 @@ async function getHyperVRuntimeStatus(): Promise<Record<string, unknown> | null>
     const result = await runPowerShell(script, 30_000)
     return JSON.parse(result.stdout) as Record<string, unknown>
   } catch (err) {
-    logger.warn('Failed to get Hyper-V runtime status', err)
+    logger.warn({ err }, 'Failed to get Hyper-V runtime status')
     return {
       configured: true,
       vmName,
@@ -670,10 +711,13 @@ async function listHyperVCheckpoints(): Promise<{
     const checkpoints = Array.isArray(parsed) ? parsed : parsed ? [parsed] : []
     return { ok: true, backend: 'hyperv-vm', vmName, checkpoints }
   } catch (err) {
-    logger.error('Failed to list Hyper-V checkpoints', {
-      vmName,
-      error: err instanceof Error ? err.message : String(err),
-    })
+    logger.error(
+      {
+        vmName,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      'Failed to list Hyper-V checkpoints'
+    )
     return {
       ok: false,
       backend: 'hyperv-vm',

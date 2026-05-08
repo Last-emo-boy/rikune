@@ -168,7 +168,7 @@ const staticTriagePlugin: Plugin = {
       'trace.condition',
       'dll.export.profile',
       'com.role.profile',
-      'rust.binary.analyze',
+      'rust_binary.analyze',
       'entropy.analyze',
       'obfuscation.detect',
       'taint.track',

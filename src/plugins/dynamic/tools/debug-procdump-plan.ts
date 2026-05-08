@@ -7,7 +7,12 @@
  */
 
 import { z } from 'zod'
-import type { PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  getWorkspaceServices,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 import {
   loadStaticAnalysisArtifactSelection,
   type StaticArtifactScope,
@@ -127,7 +132,7 @@ function buildRuntimeTemplate(
       ...(input.sample_id && mode !== 'pid_snapshot' ? { sample_id: input.sample_id } : {}),
       tool: 'debug.procdump.capture',
       args,
-      runtime_backend_hint: { type: 'inline', handler: 'executeProcDumpCapture' },
+      runtime_contract: { type: 'inline', handler: 'executeProcDumpCapture' },
       timeout_ms: input.timeout_ms,
     },
   }
@@ -142,10 +147,11 @@ async function loadStaticBehaviorHint(
   suggested_modes: string[]
   warnings: string[]
 }> {
+  const workspace = getWorkspaceServices(deps)
   if (!input.use_static_behavior_artifacts || !input.sample_id) {
     return { artifact_ids: [], scope_note: null, suggested_modes: [], warnings: [] }
   }
-  if (!deps.workspaceManager || !deps.database) {
+  if (!workspace.manager || !workspace.database) {
     return {
       artifact_ids: [],
       scope_note: null,
@@ -156,8 +162,8 @@ async function loadStaticBehaviorHint(
 
   try {
     const selection = await loadStaticAnalysisArtifactSelection<StaticBehaviorClassifierPayload>(
-      deps.workspaceManager,
-      deps.database,
+      workspace.manager,
+      workspace.database,
       input.sample_id,
       'static_behavior_classifier',
       {

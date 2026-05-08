@@ -41,7 +41,7 @@ const yaraXPlugin: Plugin = {
   register(server, deps) {
     const { workspaceManager: wm, database: db } = deps
     server.registerTool(yaraXScanToolDefinition, createYaraXScanHandler(wm, db))
-    return ['yaraX.scan']
+    return ['yara_x.scan']
   },
 }
 

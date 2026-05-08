@@ -22,7 +22,11 @@ function rebuildResult(original: CallToolResult, data: Record<string, unknown>):
   }
 }
 
-function hardTruncateResult(original: CallToolResult, text: string): CallToolResult {
+function hardTruncateResult(
+  original: CallToolResult,
+  text: string,
+  structuredData?: Record<string, unknown>
+): CallToolResult {
   const maxBytes = MAX_RESPONSE_BYTES
   // Binary-search a safe UTF-8 cut point
   let lo = 0,
@@ -42,8 +46,83 @@ function hardTruncateResult(original: CallToolResult, text: string): CallToolRes
   return {
     ...original,
     content: [{ type: 'text' as const, text: finalText }],
-    structuredContent: undefined,
+    structuredContent:
+      structuredData ||
+      ({
+        ok: false,
+        warnings: [
+          'Response exceeded the MCP response size budget and could not be structurally pruned.',
+        ],
+      } as Record<string, unknown>),
   }
+}
+
+function payloadRoot(data: Record<string, unknown>): Record<string, unknown> {
+  const nested = data.data
+  return nested && typeof nested === 'object' && !Array.isArray(nested)
+    ? (nested as Record<string, unknown>)
+    : data
+}
+
+function setTrimmedMarker(data: Record<string, unknown>, message: string): void {
+  if (Array.isArray(data.warnings)) {
+    data.warnings = [...data.warnings.map(String), message]
+    return
+  }
+  data.warnings = [message]
+}
+
+function pruneRunStageRawResults(root: Record<string, unknown>): void {
+  const run = root.run as Record<string, unknown> | undefined
+  if (!run || !Array.isArray(run.stages)) {
+    return
+  }
+  for (const stage of run.stages as Array<Record<string, unknown>>) {
+    if (stage.result && typeof stage.result === 'object' && !Array.isArray(stage.result)) {
+      delete (stage.result as Record<string, unknown>).raw_results
+    }
+  }
+}
+
+function pruneTopLevelRawResults(root: Record<string, unknown>): void {
+  const stageResult = root.stage_result as Record<string, unknown> | undefined
+  if (stageResult && typeof stageResult === 'object' && !Array.isArray(stageResult)) {
+    delete stageResult.raw_results
+  }
+  delete root.raw_results
+}
+
+function omitRunStageResults(root: Record<string, unknown>): void {
+  const run = root.run as Record<string, unknown> | undefined
+  if (!run || !Array.isArray(run.stages)) {
+    return
+  }
+  for (const stage of run.stages as Array<Record<string, unknown>>) {
+    if (stage.result) {
+      stage.result = { _omitted: 'stage result removed to fit token budget' }
+    }
+  }
+}
+
+function omitLiveStageResult(root: Record<string, unknown>): void {
+  if (root.stage_result) {
+    root.stage_result = {
+      _omitted:
+        'latest stage result removed to fit token budget; query the specific stage artifact or rerun with narrower output',
+    }
+  }
+  const run = root.run as Record<string, unknown> | undefined
+  if (run && Array.isArray(run.stages)) {
+    for (const stage of run.stages as Array<Record<string, unknown>>) {
+      if (Array.isArray(stage.artifact_refs) && stage.artifact_refs.length > 20) {
+        stage.artifact_refs = stage.artifact_refs.slice(0, 20)
+      }
+    }
+  }
+  delete root.runtime_explanation_graph
+  delete root.unpack_plan
+  delete root.unpack_execution
+  delete root.diff_digests
 }
 
 /**
@@ -73,51 +152,48 @@ export function guardResponseSize(result: CallToolResult, logger: pino.Logger): 
     logger.debug({ err: e }, 'Result text is not valid JSON, applying hard truncation')
     return hardTruncateResult(result, text)
   }
+  const root = payloadRoot(data)
 
   // Phase 1: Strip raw_results from historical run.stages[].result
-  const run = data.run as Record<string, unknown> | undefined
-  if (run && Array.isArray(run.stages)) {
-    for (const stage of run.stages as Array<Record<string, unknown>>) {
-      if (stage.result && typeof stage.result === 'object' && !Array.isArray(stage.result)) {
-        delete (stage.result as Record<string, unknown>).raw_results
-      }
-    }
-  }
+  pruneRunStageRawResults(root)
   let pruned = JSON.stringify(data)
   if (Buffer.byteLength(pruned, 'utf8') <= MAX_RESPONSE_BYTES) {
-    data._response_trimmed = 'raw_results removed from historical stages to fit token budget'
+    setTrimmedMarker(data, 'raw_results removed from historical stages to fit token budget')
     return rebuildResult(result, data)
   }
 
   // Phase 2: Strip top-level raw_results from stage_result
-  const stageResult = data.stage_result as Record<string, unknown> | undefined
-  if (stageResult && typeof stageResult === 'object') {
-    delete stageResult.raw_results
-  }
-  // Also strip top-level data.raw_results
-  delete data.raw_results
+  pruneTopLevelRawResults(root)
   pruned = JSON.stringify(data)
   if (Buffer.byteLength(pruned, 'utf8') <= MAX_RESPONSE_BYTES) {
-    data._response_trimmed = 'raw_results removed from response to fit token budget'
+    setTrimmedMarker(data, 'raw_results removed from response to fit token budget')
     return rebuildResult(result, data)
   }
 
   // Phase 3: Strip all stage results entirely (keep metadata)
-  if (run && Array.isArray(run.stages)) {
-    for (const stage of run.stages as Array<Record<string, unknown>>) {
-      if (stage.result) {
-        stage.result = { _omitted: 'stage result removed to fit token budget' }
-      }
-    }
-  }
+  omitRunStageResults(root)
   pruned = JSON.stringify(data)
   if (Buffer.byteLength(pruned, 'utf8') <= MAX_RESPONSE_BYTES) {
-    data._response_trimmed =
+    setTrimmedMarker(
+      data,
       'stage results omitted from run history to fit token budget; use workflow.analyze.status with include_stage_results=false or query individual stages'
+    )
     return rebuildResult(result, data)
   }
 
-  // Phase 4: Hard truncate
-  data._response_trimmed = 'response heavily truncated to fit token budget'
-  return hardTruncateResult(result, JSON.stringify(data))
+  // Phase 4: Strip latest stage result and optional heavyweight digests.
+  omitLiveStageResult(root)
+  pruned = JSON.stringify(data)
+  if (Buffer.byteLength(pruned, 'utf8') <= MAX_RESPONSE_BYTES) {
+    setTrimmedMarker(
+      data,
+      'latest stage result and heavyweight digests omitted to fit token budget; use artifact.read or a stage-specific tool for details'
+    )
+    return rebuildResult(result, data)
+  }
+
+  // Phase 5: Hard truncate text, but keep structuredContent present so MCP tools with
+  // outputSchema do not fail with "did not return structured content".
+  setTrimmedMarker(data, 'response heavily truncated to fit token budget')
+  return hardTruncateResult(result, JSON.stringify(data), data)
 }

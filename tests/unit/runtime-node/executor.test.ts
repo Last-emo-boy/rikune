@@ -192,6 +192,16 @@ describe('runtime-node executor backend pre-flight checks', () => {
           handler: 'executeBehaviorCapture',
           requiresSample: true,
         }),
+        expect.objectContaining({
+          type: 'python-worker',
+          handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+          requiresSample: true,
+        }),
+        expect.objectContaining({
+          type: 'python-worker',
+          handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
+          requiresSample: true,
+        }),
       ]))
 
       expect(getRuntimeBackendCapability({ type: 'spawn', handler: 'native.sample.execute' })).toMatchObject({
@@ -204,6 +214,26 @@ describe('runtime-node executor backend pre-flight checks', () => {
         type: 'inline',
         handler: 'executeRuntimeToolProbe',
         requiresSample: false,
+      })
+      expect(
+        getRuntimeBackendCapability({
+          type: 'python-worker',
+          handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+        })
+      ).toMatchObject({
+        type: 'python-worker',
+        handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+        requiresSample: true,
+      })
+      expect(
+        getRuntimeBackendCapability({
+          type: 'python-worker',
+          handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
+        })
+      ).toMatchObject({
+        type: 'python-worker',
+        handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
+        requiresSample: true,
       })
     })
   })
@@ -250,7 +280,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
   })
 
   describe('resolveBackendHint via executeTask', () => {
-    test('should use runtimeBackendHint when provided', async () => {
+    test('should use ToolRuntimeContract when provided', async () => {
       const originalExistsSync = fs.existsSync
       jest.spyOn(fs, 'existsSync').mockImplementation((candidate) => {
         const value = String(candidate).toLowerCase()
@@ -265,7 +295,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           tool: 'unknown.tool',
           args: {},
           timeoutMs: 1000,
-          runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
+          runtime: { type: 'inline', handler: 'executeDebugSession' },
         },
         () => {},
         () => {},
@@ -317,6 +347,149 @@ describe('runtime-node executor backend pre-flight checks', () => {
       expect(result.ok).toBe(false)
       expect(result.errors?.[0]).toMatch(/Unknown tool/)
     })
+
+    test('should execute plugin Python workers through the runtime envelope', async () => {
+      const workerPath = path.resolve(
+        'src',
+        'plugins',
+        'runtime-deobfuscate',
+        'workers',
+        'deobfuscate_worker.py'
+      )
+      const artifactPath = path.join(testInbox, 'task-sample', 'artifacts', 'strings_runtime.json')
+      fs.mkdirSync(path.dirname(artifactPath), { recursive: true })
+      fs.writeFileSync(artifactPath, JSON.stringify({ unique_strings: 1 }))
+      let stdinPayload: any = null
+
+      spawnMock.mockImplementation((cmd: string, args: string[]) => {
+        if (args?.[0] === '--version') {
+          return makeMockProcess({ stdout: 'Python 3.12.0\n', code: 0 })
+        }
+        expect(path.resolve(args[0])).toBe(workerPath)
+        const proc = makeMockProcess({
+          stdout:
+            JSON.stringify({
+              ok: true,
+              data: {
+                unique_strings: 1,
+                recommended_next_tools: ['deobf.api_resolve'],
+              },
+              artifacts: [{ name: 'strings_runtime.json', path: artifactPath }],
+            }) + '\n',
+          code: 0,
+        }) as any
+        proc.stdin.write = jest.fn((chunk: string) => {
+          stdinPayload = JSON.parse(chunk)
+        })
+        return proc
+      })
+
+      const result = await executeTask(
+        {
+          taskId: 'task-sample',
+          sampleId: 'sha256:abc123',
+          tool: 'deobf.strings',
+          args: { timeout: 45 },
+          timeoutMs: 1000,
+          runtime: {
+            type: 'python-worker',
+            handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+          },
+        },
+        () => {},
+        () => {}
+      )
+
+      expect(result.ok).toBe(true)
+      expect(stdinPayload).toEqual(
+        expect.objectContaining({
+          job_id: 'task-sample',
+          tool: 'deobf.strings',
+          args: { timeout: 45 },
+          sample: expect.objectContaining({
+            sample_id: 'sha256:abc123',
+            path: samplePath,
+          }),
+        })
+      )
+      expect((result.result?.data as any)?.recommended_next_tools).toEqual([
+        'deobf.api_resolve',
+      ])
+      expect(result.artifactRefs).toEqual([
+        expect.objectContaining({ name: 'strings_runtime.json' }),
+      ])
+    })
+
+    test('should execute managed fake C2 worker through the runtime envelope', async () => {
+      const workerPath = path.resolve(
+        'src',
+        'plugins',
+        'managed-fake-c2',
+        'workers',
+        'managed_fake_c2_worker.py'
+      )
+      const artifactPath = path.join(testInbox, 'task-sample', 'artifacts', 'managed_fake_c2.json')
+      fs.mkdirSync(path.dirname(artifactPath), { recursive: true })
+      fs.writeFileSync(artifactPath, JSON.stringify({ total_requests_captured: 0 }))
+      let stdinPayload: any = null
+
+      spawnMock.mockImplementation((cmd: string, args: string[]) => {
+        if (args?.[0] === '--version') {
+          return makeMockProcess({ stdout: 'Python 3.12.0\n', code: 0 })
+        }
+        expect(path.resolve(args[0])).toBe(workerPath)
+        const proc = makeMockProcess({
+          stdout:
+            JSON.stringify({
+              ok: true,
+              data: { listen_address: 'http://127.0.0.1:4444', total_requests_captured: 0 },
+              artifacts: [{ name: 'managed_fake_c2.json', path: artifactPath }],
+            }) + '\n',
+          code: 0,
+        }) as any
+        proc.stdin.write = jest.fn((chunk: string) => {
+          stdinPayload = JSON.parse(chunk)
+        })
+        return proc
+      })
+
+      const result = await executeTask(
+        {
+          taskId: 'task-sample',
+          sampleId: 'sha256:abc123',
+          tool: 'managed.fake_c2',
+          args: {
+            endpoints: [{ path: '/ping', response_body: '{"ok":true}' }],
+            use_tls: false,
+            timeout_seconds: 20,
+          },
+          timeoutMs: 1000,
+          runtime: {
+            type: 'python-worker',
+            handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
+          },
+        },
+        () => {},
+        () => {}
+      )
+
+      expect(result.ok).toBe(true)
+      expect(stdinPayload).toEqual(
+        expect.objectContaining({
+          job_id: 'task-sample',
+          tool: 'managed.fake_c2',
+          args: expect.objectContaining({ timeout_seconds: 20 }),
+          sample: expect.objectContaining({
+            sample_id: 'sha256:abc123',
+            path: samplePath,
+          }),
+        })
+      )
+      expect((result.result?.data as any)?.listen_address).toBe('http://127.0.0.1:4444')
+      expect(result.artifactRefs).toEqual([
+        expect.objectContaining({ name: 'managed_fake_c2.json' }),
+      ])
+    })
   })
 
   describe('executeDynamicMemoryDump', () => {
@@ -338,6 +511,37 @@ describe('runtime-node executor backend pre-flight checks', () => {
   })
 
   describe('executeBehaviorCapture', () => {
+    test('accepts legacy behavior.capture timeout argument as timeout_sec', async () => {
+      if (process.platform === 'win32') {
+        const processRowsBefore = JSON.stringify([{ ProcessId: 4, Name: 'System' }])
+        const processRowsAfter = JSON.stringify([{ ProcessId: 4, Name: 'System' }])
+        const fileRows = JSON.stringify([])
+        const psOutputs = [processRowsBefore, processRowsAfter, fileRows]
+
+        spawnMock.mockImplementation((cmd: string) => {
+          if (cmd === 'powershell.exe') {
+            return makeMockProcess({ stdout: psOutputs.shift() || '[]', code: 0 })
+          }
+          return makeMockProcess({ pid: 4242, stdout: '', code: 0, closeDelayMs: 5 })
+        })
+      }
+
+      const result = await executeTask(
+        {
+          taskId: 'task-sample',
+          sampleId: 's1',
+          tool: 'behavior.capture',
+          args: { timeout: 45 },
+          timeoutMs: 1000,
+          runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
+        },
+        () => {},
+        () => {},
+      )
+
+      expect((result.result?.data as any)?.timeout_sec).toBe(45)
+    })
+
     test('captures TCP connection observations into behavior artifacts on Windows', async () => {
       if (process.platform !== 'win32') {
         expect(true).toBe(true)
@@ -375,7 +579,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           tool: 'dynamic.behavior.capture',
           args: { network_sinkhole: false, timeout_sec: 5 },
           timeoutMs: 5000,
-          runtimeBackendHint: { type: 'inline', handler: 'executeBehaviorCapture' },
+          runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
         },
         () => {},
         () => {},
@@ -692,7 +896,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           tool: 'dynamic.spawn.native',
           args: {},
           timeoutMs: 1000,
-          runtimeBackendHint: { type: 'spawn', handler: 'native.sample.execute' },
+          runtime: { type: 'spawn', handler: 'native.sample.execute' },
         },
         () => {},
         () => {},
@@ -727,7 +931,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           tool: 'dynamic.spawn.native',
           args: { arguments: ['--flag', 'value'] },
           timeoutMs: 1000,
-          runtimeBackendHint: { type: 'spawn', handler: 'native.sample.execute' },
+          runtime: { type: 'spawn', handler: 'native.sample.execute' },
         },
         () => {},
         () => {},

@@ -18,6 +18,7 @@ const LONG_RUNNING_TOOLS = new Set([
   'workflow.semantic_name_review',
   'workflow.function_explanation_review',
   'workflow.module_reconstruction_review',
+  'attack.map',
 ])
 
 function roundToWholeSeconds(ms: number): number {

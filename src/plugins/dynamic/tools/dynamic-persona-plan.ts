@@ -7,7 +7,14 @@
  */
 
 import { z } from 'zod'
-import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  getDatabase,
+  getWorkspaceServices,
+  type ArtifactRef,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 
 const TOOL_NAME = 'dynamic.persona.plan'
@@ -198,14 +205,16 @@ export function createDynamicPersonaPlanHandler(deps: PluginToolDeps) {
     try {
       const input = DynamicPersonaPlanInputSchema.parse(args || {})
       const data = buildPersonaPlan(input)
+      const workspace = getWorkspaceServices(deps)
+      const db = getDatabase(deps)
       const artifacts: ArtifactRef[] = []
-      if (input.persist_artifact && input.sample_id && deps.workspaceManager && deps.database) {
-        const sample = deps.database.findSample?.(input.sample_id)
+      if (input.persist_artifact && input.sample_id && workspace.manager && db) {
+        const sample = db.findSample?.(input.sample_id)
         if (sample) {
           artifacts.push(
             await persistStaticAnalysisJsonArtifact(
-              deps.workspaceManager,
-              deps.database,
+              workspace.manager,
+              db,
               input.sample_id,
               'dynamic_persona_plan',
               'dynamic_persona_plan',

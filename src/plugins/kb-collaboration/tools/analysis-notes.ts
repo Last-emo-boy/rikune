@@ -6,7 +6,15 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, PluginToolDeps, ArtifactRef } from '../../sdk.js'
+import {
+  getDatabase,
+  getWorkspaceServices,
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type PluginToolDeps,
+  type ArtifactRef,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'analysis.notes'
 
@@ -41,6 +49,15 @@ export const AnalysisNotesInputSchema = z.object({
     .describe('Export format (for "export" action)'),
 })
 
+export const AnalysisNotesOutputSchema = createWorkerResultOutputSchema(
+  z
+    .object({
+      action: z.enum(['add', 'list', 'search', 'export']),
+      sample_id: z.string().optional(),
+    })
+    .passthrough()
+)
+
 export const analysisNotesToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -49,10 +66,12 @@ export const analysisNotesToolDefinition: ToolDefinition = {
     'technique, verdict), severity levels, tags, and cross-sample references. ' +
     'Findings are automatically indexed in the knowledge base for future reuse.',
   inputSchema: AnalysisNotesInputSchema,
+  outputSchema: AnalysisNotesOutputSchema,
 }
 
 export function createAnalysisNotesHandler(deps: PluginToolDeps) {
-  const { database } = deps
+  const database = getDatabase(deps)
+  const workspace = getWorkspaceServices(deps)
 
   return async (args: Record<string, unknown>): Promise<WorkerResult> => {
     const input = AnalysisNotesInputSchema.parse(args)
@@ -86,10 +105,10 @@ export function createAnalysisNotesHandler(deps: PluginToolDeps) {
 
           // Store as artifact
           const artifacts: ArtifactRef[] = []
-          if (deps.persistStaticAnalysisJsonArtifact && deps.workspaceManager) {
+          if (workspace.persistStaticAnalysisJsonArtifact && workspace.manager) {
             try {
-              const artifact = await deps.persistStaticAnalysisJsonArtifact(
-                deps.workspaceManager,
+              const artifact = await workspace.persistStaticAnalysisJsonArtifact(
+                workspace.manager,
                 database,
                 input.sample_id,
                 'analysis_note',

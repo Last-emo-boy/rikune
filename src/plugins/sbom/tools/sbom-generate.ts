@@ -21,11 +21,14 @@ const inputSchema = z.object({
   include_hashes: z.boolean().optional().default(true).describe('Include file hashes'),
 })
 
+const sbomGenerateOutputSchema = z.object({}).passthrough()
+
 export const sbomGenerateToolDefinition: ToolDefinition = {
   name: 'sbom.generate',
   description:
     'Generate a Software Bill of Materials (SBOM) for a binary sample. Extracts component dependencies from PE imports, .NET assemblies, embedded resources, and static analysis results. Output in CycloneDX JSON or SPDX-lite format.',
   inputSchema: inputSchema as any,
+  outputSchema: sbomGenerateOutputSchema,
 }
 
 interface SbomComponent {

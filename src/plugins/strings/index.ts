@@ -5,6 +5,7 @@
  */
 
 import type { Plugin } from '../sdk.js'
+import { getPlatformServices, getWorkspaceServices } from '../sdk.js'
 import {
   stringsExtractToolDefinition,
   createStringsExtractHandler,
@@ -22,22 +23,24 @@ const stringsPlugin: Plugin = {
   description: 'Extract printable strings and decode obfuscated strings via FLOSS',
   version: '1.0.0',
   register(server, deps) {
+    const workspace = getWorkspaceServices(deps)
+    const platform = getPlatformServices(deps)
     server.registerTool(
       stringsExtractToolDefinition,
       createStringsExtractHandler(
-        deps.workspaceManager,
-        deps.database,
-        deps.cacheManager,
-        deps.jobQueue
+        workspace.manager,
+        workspace.database,
+        platform.cacheManager,
+        platform.jobQueue
       )
     )
     server.registerTool(
       stringsFlossDecodeToolDefinition,
       createStringsFlossDecodeHandler(
-        deps.workspaceManager,
-        deps.database,
-        deps.cacheManager,
-        deps.jobQueue
+        workspace.manager,
+        workspace.database,
+        platform.cacheManager,
+        platform.jobQueue
       )
     )
     return ['strings.extract', 'strings.floss.decode']

@@ -75,6 +75,7 @@ const ghidraPlugin: Plugin = {
       dockerFeature: 'ghidra',
     },
   ],
+  resources: { scripts: 'scripts' },
   check() {
     const ghidraDir = process.env.GHIDRA_INSTALL_DIR
     if (!ghidraDir) return false

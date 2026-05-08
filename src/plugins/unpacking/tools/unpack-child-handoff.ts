@@ -14,6 +14,7 @@ import { z } from 'zod'
 import type { ArtifactRef, ToolArgs, ToolDefinition, WorkerResult } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
+import { createWorkerResultOutputSchema } from '../../sdk.js'
 import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import {
   loadStaticAnalysisArtifactSelection,
@@ -90,11 +91,64 @@ export const UnpackChildHandoffInputSchema = z.object({
   session_tag: z.string().optional(),
 })
 
+export const UnpackChildHandoffOutputSchema = createWorkerResultOutputSchema(
+  z
+    .object({
+      schema: z.string(),
+      tool_version: z.string(),
+      sample_id: z.string(),
+      source: z.object({
+        sample_path: z.string(),
+        sample_size: z.number().int().nonnegative(),
+        sample_sha256: z.string(),
+      }),
+      summary: z.object({
+        candidate_count: z.number().int().nonnegative(),
+        registered_child_count: z.number().int().nonnegative(),
+        executable_like_count: z.number().int().nonnegative(),
+        archive_like_count: z.number().int().nonnegative(),
+        by_source: z.record(z.number()),
+        by_magic: z.record(z.number()),
+      }),
+      resource_artifact_ids: z.array(z.string()),
+      candidates: z.array(
+        z
+          .object({
+            candidate_id: z.string(),
+            source: z.enum(['resource_graph', 'sample_scan', 'raw_dump_scan']),
+            offset: z.number().int().nonnegative(),
+            size: z.number().int().nonnegative(),
+            magic: z.string(),
+            sha256: z.string(),
+            confidence: z.number(),
+            evidence: z.array(z.string()),
+            registered_child_sample_id: z.string().nullable(),
+            payload_artifact: z.any().nullable(),
+          })
+          .passthrough()
+      ),
+      registered_children: z.array(
+        z.object({
+          sample_id: z.string(),
+          sha256: z.string(),
+          size: z.number().int().nonnegative(),
+          filename: z.string(),
+          existed: z.boolean(),
+        })
+      ),
+      recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
+      warnings: z.array(z.string()),
+    })
+    .passthrough()
+)
+
 export const unpackChildHandoffToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Carve embedded payload candidates from static resource graph artifacts, raw sample bytes, and imported memory/raw dump artifacts, then optionally register bounded child samples with provenance. Does not execute the sample.',
   inputSchema: UnpackChildHandoffInputSchema,
+  outputSchema: UnpackChildHandoffOutputSchema,
 }
 
 function sha256(data: Buffer): string {

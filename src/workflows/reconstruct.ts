@@ -679,6 +679,7 @@ interface DotNetExportData {
   degraded_mode?: boolean
   build_validation?: {
     status?: 'passed' | 'failed' | 'skipped' | 'unavailable'
+    log_path?: string | null
   }
   managed_profile?: z.infer<typeof ManagedProfileSchema> | null
   classes: unknown[]
@@ -1580,6 +1581,8 @@ export function createReconstructWorkflowHandler(
             topk: input.topk,
             export_name: input.export_name,
             include_obfuscation_fallback: input.include_obfuscation_fallback,
+            validate_build: input.validate_build,
+            build_timeout_ms: input.build_timeout_ms,
             evidence_scope: input.evidence_scope,
             evidence_session_tag: input.evidence_session_tag,
             reuse_cached: input.reuse_cached && !functionIndexRecoveryApplied,
@@ -1611,7 +1614,7 @@ export function createReconstructWorkflowHandler(
               fallback_notes_path: data.fallback_notes_path,
               build_validation_status: data.build_validation?.status || null,
               harness_validation_status: null,
-              build_log_path: null,
+              build_log_path: data.build_validation?.log_path || null,
               harness_log_path: null,
               executable_path: null,
               degraded_mode: data.degraded_mode ?? null,

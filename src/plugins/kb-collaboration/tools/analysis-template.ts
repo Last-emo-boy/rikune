@@ -5,7 +5,12 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type PluginToolDeps,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'analysis.template'
 
@@ -29,6 +34,28 @@ export const AnalysisTemplateInputSchema = z.object({
     .describe('Custom tool names to run in sequence (only for "custom" template)'),
 })
 
+const TemplateStepOutputSchema = z
+  .object({
+    tool: z.string(),
+    description: z.string(),
+    required: z.boolean(),
+    depends_on: z.array(z.string()).optional(),
+    args_hint: z.record(z.any()).optional(),
+    status: z.enum(['completed', 'pending']),
+  })
+  .passthrough()
+
+export const AnalysisTemplateOutputSchema = createWorkerResultOutputSchema(
+  z.object({
+    template: z.string(),
+    sample_id: z.string(),
+    total_steps: z.number().int().nonnegative(),
+    pending_steps: z.number().int().nonnegative(),
+    completed_steps: z.number().int().nonnegative(),
+    plan: z.array(TemplateStepOutputSchema),
+  })
+)
+
 export const analysisTemplateToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -36,6 +63,7 @@ export const analysisTemplateToolDefinition: ToolDefinition = {
     'list of tools to call for common workflows like malware triage, CrackMe solving, ' +
     'or APK analysis. Use with analyze.pipeline for automated execution.',
   inputSchema: AnalysisTemplateInputSchema,
+  outputSchema: AnalysisTemplateOutputSchema,
 }
 
 interface TemplateStep {

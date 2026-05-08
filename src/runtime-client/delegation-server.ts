@@ -9,17 +9,16 @@ import type {
   ToolDefinition,
   WorkerResult,
   ArtifactRef,
-  RuntimeBackendHint,
+  ToolRuntimeContract,
 } from '../plugins/sdk.js'
 import {
+  buildRuntimeArtifactControlPlaneMetadata,
   RuntimeDelegationFailureDataSchema,
+  inferRuntimeArtifactType,
   type RuntimeDelegationFailureCategory,
   type WorkerResult as CoreWorkerResult,
 } from '../types.js'
-import type {
-  RuntimeBackendCapability,
-  RuntimeBackendHintValidationResult,
-} from './runtime-client.js'
+import type { RuntimeBackendCapability, RuntimeContractValidationResult } from './runtime-client.js'
 import type { ProgressReporter } from '../streaming-progress.js'
 import { logger } from '../logger.js'
 import { resolveRuntimeSidecarUploads, type RuntimeSidecarUpload } from './sidecar-staging.js'
@@ -42,7 +41,7 @@ export interface RuntimeClientLike {
       args: Record<string, unknown>
       timeoutMs: number
       sampleInboxPath?: string
-      runtimeBackendHint?: RuntimeBackendHint
+      runtime?: ToolRuntimeContract
     },
     opts?: { onProgress?: (progress: number, message?: string) => void }
   ): Promise<any>
@@ -58,10 +57,10 @@ export interface RuntimeClientLike {
     artifactNames: string[]
   ): Promise<string[]>
   getCapabilities?(options?: { forceRefresh?: boolean }): Promise<RuntimeBackendCapability[] | null>
-  validateRuntimeBackendHint?(
-    hint: RuntimeBackendHint,
+  validateRuntimeContract?(
+    contract: ToolRuntimeContract,
     options?: { forceRefresh?: boolean }
-  ): Promise<RuntimeBackendHintValidationResult>
+  ): Promise<RuntimeContractValidationResult>
   getEndpoint?(): string
   recover?(options?: { forceRefreshCapabilities?: boolean }): Promise<boolean>
 }
@@ -108,7 +107,7 @@ function buildRuntimeDelegationGuidance(
         nextActions: [
           category === 'runtime_recovery_failed'
             ? 'Call dynamic.runtime.status to check Host Agent health, Runtime Node health, advertised capabilities, and whether Sandbox/Hyper-V has an active runtime endpoint.'
-            : category === 'unsupported_runtime_backend_hint'
+            : category === 'unsupported_runtime_contract'
               ? 'Connect a Runtime Node that advertises inline/executeSandboxExecute support before retrying live sandbox execution.'
               : 'Verify dynamic-analysis runtime availability and dependency readiness before retrying live sandbox execution.',
           'Start Windows Host Agent in the logged-on user session for Windows Sandbox/Hyper-V work, or configure RUNTIME_HOST_AGENT_ENDPOINT to a reachable Host Agent.',
@@ -191,21 +190,22 @@ function buildRuntimeDiagnostic(params: {
   availableRuntimeBackends: RuntimeBackendCapability[]
 }) {
   const hasEndpoint = Boolean(params.runtimeEndpoint)
-  const requiredHint = params.definition.runtimeBackendHint
+  const requiredContract = params.definition.runtime
   const matchingBackend =
-    requiredHint &&
+    requiredContract &&
     params.availableRuntimeBackends.some(
-      (backend) => backend.type === requiredHint.type && backend.handler === requiredHint.handler
+      (backend) =>
+        backend.type === requiredContract.type && backend.handler === requiredContract.handler
     )
 
   return {
     runtime_endpoint_configured: hasEndpoint,
     runtime_endpoint: params.runtimeEndpoint ?? null,
-    required_backend: requiredHint || null,
+    required_backend: requiredContract || null,
     required_backend_advertised: Boolean(matchingBackend),
     available_backend_count: params.availableRuntimeBackends.length,
     likely_missing_plane:
-      params.category === 'unsupported_runtime_backend_hint'
+      params.category === 'unsupported_runtime_contract'
         ? 'runtime_node_capability'
         : !hasEndpoint
           ? 'runtime_endpoint'
@@ -217,6 +217,46 @@ function buildRuntimeDiagnostic(params: {
   }
 }
 
+function classifyRuntimePlane(
+  category: RuntimeDelegationFailureCategory,
+  runtimeEndpoint: string | null,
+  availableRuntimeBackends: RuntimeBackendCapability[]
+): 'runtime_endpoint' | 'host_agent' | 'runtime_node' | 'runtime_capability' | 'tool_backend' {
+  if (category === 'unsupported_runtime_contract') {
+    return 'runtime_capability'
+  }
+  if (!runtimeEndpoint) {
+    return 'runtime_endpoint'
+  }
+  if (category === 'runtime_recovery_failed') {
+    return availableRuntimeBackends.length > 0 ? 'host_agent' : 'runtime_node'
+  }
+  if (category === 'runtime_unavailable') {
+    return 'runtime_node'
+  }
+  return 'tool_backend'
+}
+
+function buildFailureExecutionSemantics(params: {
+  definition: ToolDefinition
+  runtime?: ToolRuntimeContract
+  summary: string
+}) {
+  const runtime = params.runtime ?? params.definition.runtime
+  const requestedMode =
+    runtime?.modes?.find((mode) => mode === 'live_sandbox' || mode === 'live_hyperv') ??
+    runtime?.modes?.[0] ??
+    (params.definition.name === 'sandbox.execute' ? 'live_sandbox' : 'manual_runtime')
+
+  return {
+    requested_mode: requestedMode,
+    actual_mode: 'plan_only',
+    backend: runtime ? `${runtime.type}/${runtime.handler}` : params.definition.name,
+    live_execution: false,
+    reason: params.summary,
+  }
+}
+
 function buildRuntimeFailureResult(
   definition: ToolDefinition,
   category: RuntimeDelegationFailureCategory,
@@ -225,7 +265,7 @@ function buildRuntimeFailureResult(
     errors?: string[]
     warnings?: string[]
     runtimeEndpoint?: string | null
-    runtimeBackendHint?: RuntimeBackendHint
+    runtime?: ToolRuntimeContract
     availableRuntimeBackends?: RuntimeBackendCapability[]
     setupActions?: unknown[]
     requiredUserInputs?: unknown[]
@@ -234,20 +274,27 @@ function buildRuntimeFailureResult(
 ): CoreWorkerResult {
   const guidance = buildRuntimeDelegationGuidance(definition, category)
   const runtimeEndpoint = params.runtimeEndpoint ?? null
-  const runtimeBackendHint = params.runtimeBackendHint ?? definition.runtimeBackendHint
+  const runtime = params.runtime ?? definition.runtime
   const availableRuntimeBackends = params.availableRuntimeBackends ?? []
+  const runtimePlane = classifyRuntimePlane(category, runtimeEndpoint, availableRuntimeBackends)
 
   const failureData = RuntimeDelegationFailureDataSchema.parse({
     status:
-      category === 'runtime_unavailable' || category === 'unsupported_runtime_backend_hint'
+      category === 'runtime_unavailable' || category === 'unsupported_runtime_contract'
         ? 'setup_required'
         : 'failed',
     failure_category: category,
     summary: params.summary,
+    runtime_plane: runtimePlane,
+    execution_semantics: buildFailureExecutionSemantics({
+      definition,
+      runtime,
+      summary: params.summary,
+    }),
     recommended_next_tools: guidance.recommendedNextTools,
     next_actions: guidance.nextActions,
     runtime_endpoint: runtimeEndpoint,
-    ...(runtimeBackendHint ? { required_runtime_backend_hint: runtimeBackendHint } : {}),
+    ...(runtime ? { required_runtime_contract: runtime } : {}),
     available_runtime_backends: availableRuntimeBackends,
   })
 
@@ -284,8 +331,8 @@ function normalizeRuntimeExecuteResponse(
       )
     : []
 
-  if (runtimeErrors.some((entry) => entry.startsWith('Unsupported runtime backend hint:'))) {
-    return buildRuntimeFailureResult(definition, 'unsupported_runtime_backend_hint', {
+  if (runtimeErrors.some((entry) => entry.startsWith('Unsupported runtime contract:'))) {
+    return buildRuntimeFailureResult(definition, 'unsupported_runtime_contract', {
       summary: `Runtime does not advertise the backend required by ${definition.name}.`,
       errors: runtimeErrors,
       runtimeEndpoint,
@@ -308,23 +355,21 @@ function normalizeRuntimeExecuteResponse(
   return { ok: true, data: result }
 }
 
-function buildUnsupportedRuntimeBackendHintResult(
+function buildUnsupportedToolRuntimeContractResult(
   definition: ToolDefinition,
-  validation: RuntimeBackendHintValidationResult,
+  validation: RuntimeContractValidationResult,
   runtimeEndpoint?: string | null
 ): CoreWorkerResult {
-  const runtimeBackendHint = definition.runtimeBackendHint
-  const hintSummary = runtimeBackendHint
-    ? `${runtimeBackendHint.type}/${runtimeBackendHint.handler}`
-    : 'unknown'
+  const runtime = definition.runtime
+  const contractSummary = runtime ? `${runtime.type}/${runtime.handler}` : 'unknown'
 
-  return buildRuntimeFailureResult(definition, 'unsupported_runtime_backend_hint', {
-    summary: `Runtime does not advertise support for backend hint ${hintSummary} required by tool ${definition.name}.`,
+  return buildRuntimeFailureResult(definition, 'unsupported_runtime_contract', {
+    summary: `Runtime does not advertise support for runtime contract ${contractSummary} required by tool ${definition.name}.`,
     errors: [
-      `Runtime does not advertise support for backend hint ${hintSummary} required by tool ${definition.name}.`,
+      `Runtime does not advertise support for runtime contract ${contractSummary} required by tool ${definition.name}.`,
     ],
     runtimeEndpoint,
-    runtimeBackendHint,
+    runtime,
     availableRuntimeBackends: validation.capabilities ?? [],
   })
 }
@@ -397,25 +442,6 @@ export function createRuntimeDelegatedToolHandler(
   return registeredHandler
 }
 
-/**
- * Dynamic tools that do NOT require actual sample execution and can stay
- * on the Analyzer node (pure static planning / attribution).
- */
-const LOCAL_DYNAMIC_TOOLS = new Set([
-  'dynamic.auto_hook',
-  'dynamic.trace.attribute',
-  'dynamic.dependencies',
-  'dynamic.trace.import',
-  'dynamic.memory.import',
-  'runtime.debug.session.start',
-  'runtime.debug.session.status',
-  'runtime.debug.session.stop',
-  'runtime.debug.command',
-  'dynamic.runtime.status',
-  'runtime.hyperv.control',
-  'frida.script.generate',
-])
-
 function readBooleanArg(args: any, key: string, defaultValue: boolean): boolean {
   if (!args || typeof args !== 'object' || !(key in args)) {
     return defaultValue
@@ -429,6 +455,21 @@ function readNumberArg(args: any, key: string, defaultValue: number): number {
   }
   const value = Number(args[key])
   return Number.isFinite(value) && value > 0 ? value : defaultValue
+}
+
+function resolveRuntimeTimeoutMs(definition: ToolDefinition, args: any): number {
+  if (definition.runtime?.timeoutMs && definition.runtime.timeoutMs > 0) {
+    return definition.runtime.timeoutMs
+  }
+  const timeoutSeconds = Math.max(
+    readNumberArg(args, 'timeout_seconds', 0),
+    readNumberArg(args, 'timeout_sec', 0),
+    readNumberArg(args, 'timeout', 0)
+  )
+  if (timeoutSeconds > 0) {
+    return Math.max(30_000, Math.ceil(timeoutSeconds * 1000) + 30_000)
+  }
+  return 120_000
 }
 
 async function buildRuntimeUploadOptions(
@@ -457,7 +498,8 @@ export function createDelegatingServer(
 ): PluginServerInterface {
   return {
     registerTool(definition, handler) {
-      if (LOCAL_DYNAMIC_TOOLS.has(definition.name)) {
+      const runtime = definition.runtime
+      if (!runtime) {
         inner.registerTool(definition, handler)
         return
       }
@@ -472,7 +514,6 @@ export function createDelegatingServer(
         const sampleId = args?.sample_id as string | undefined
         const progressToken = args?._meta?.progressToken as string | number | undefined
         const progressReporter = inner.getProgressReporter?.(progressToken)
-        const runtimeBackendHint = definition.runtimeBackendHint
         let stagedUpload: {
           samplePath: string
           inboxHostDir: string
@@ -480,10 +521,10 @@ export function createDelegatingServer(
         } | null = null
 
         try {
-          if (runtimeBackendHint && runtimeClient.validateRuntimeBackendHint) {
-            const validation = await runtimeClient.validateRuntimeBackendHint(runtimeBackendHint)
+          if (runtime && runtimeClient.validateRuntimeContract) {
+            const validation = await runtimeClient.validateRuntimeContract(runtime)
             if (validation.supported === false) {
-              return buildUnsupportedRuntimeBackendHintResult(
+              return buildUnsupportedToolRuntimeContractResult(
                 definition,
                 validation,
                 runtimeEndpoint
@@ -522,8 +563,8 @@ export function createDelegatingServer(
               sampleId: sampleId || '',
               tool: definition.name,
               args,
-              timeoutMs: 120_000,
-              runtimeBackendHint,
+              timeoutMs: resolveRuntimeTimeoutMs(definition, args),
+              runtime,
             },
             {
               onProgress: (progress, message) => {
@@ -553,6 +594,7 @@ export function createDelegatingServer(
               sampleId,
               taskId,
               definition.name,
+              args,
               downloadedPaths
             )
           }
@@ -603,8 +645,8 @@ export function createDelegatingServer(
                     sampleId: sampleId || '',
                     tool: definition.name,
                     args,
-                    timeoutMs: 120_000,
-                    runtimeBackendHint,
+                    timeoutMs: resolveRuntimeTimeoutMs(definition, args),
+                    runtime,
                   },
                   {
                     onProgress: (progress, message) => {
@@ -635,6 +677,7 @@ export function createDelegatingServer(
                     sampleId,
                     taskId,
                     definition.name,
+                    args,
                     downloadedPaths
                   )
                 }
@@ -690,6 +733,7 @@ async function persistRuntimeArtifacts(
   sampleId: string,
   taskId: string,
   toolName: string,
+  args: Record<string, unknown>,
   downloadedPaths: string[]
 ): Promise<ArtifactRef[]> {
   const persisted: ArtifactRef[] = []
@@ -699,10 +743,11 @@ async function persistRuntimeArtifacts(
 
   try {
     const workspace = await workspaceManager.createWorkspace(sampleId)
+    const effectiveToolName = resolveEffectiveRuntimeToolName(toolName, args)
     const reportDir = path.join(
       workspace.reports,
       'runtime_analysis',
-      sanitizePathSegment(toolName)
+      sanitizePathSegment(effectiveToolName)
     )
     await fs.mkdir(reportDir, { recursive: true })
 
@@ -719,7 +764,7 @@ async function persistRuntimeArtifacts(
         const artifactId = randomUUID()
         const createdAt = new Date().toISOString()
         const mime = guessMime(basename)
-        const artifactType = inferRuntimeArtifactType(toolName, basename)
+        const artifactType = inferRuntimeArtifactType(effectiveToolName, basename)
 
         database.insertArtifact({
           id: artifactId,
@@ -737,6 +782,12 @@ async function persistRuntimeArtifacts(
           path: relativePath,
           sha256,
           mime,
+          metadata: buildRuntimeArtifactControlPlaneMetadata({
+            artifactType,
+            sourceRuntimeTool: toolName,
+            effectiveRuntimeTool: effectiveToolName,
+            runtimeTaskId: taskId,
+          }),
         })
         logger.debug(
           { sampleId, taskId, tool: toolName, path: relativePath },
@@ -760,15 +811,15 @@ function sanitizePathSegment(segment: string): string {
   return segment.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64)
 }
 
-function inferRuntimeArtifactType(toolName: string, filename: string): string {
-  const lowerName = filename.toLowerCase()
-  if (toolName === 'dynamic.behavior.capture' && lowerName.endsWith('.json')) {
-    return 'dynamic_trace_json'
+function resolveEffectiveRuntimeToolName(toolName: string, args: Record<string, unknown>): string {
+  if (toolName !== 'runtime.debug.command') {
+    return toolName
   }
-  if (toolName === 'sandbox.execute' && lowerName.endsWith('.json')) {
-    return 'sandbox_trace_json'
-  }
-  return 'runtime_analysis'
+
+  const delegatedTool = args.tool
+  return typeof delegatedTool === 'string' && delegatedTool.trim().length > 0
+    ? delegatedTool
+    : toolName
 }
 
 function guessMime(filename: string): string {

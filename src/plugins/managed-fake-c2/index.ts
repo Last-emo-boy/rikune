@@ -43,6 +43,7 @@ const managedFakeC2Plugin: Plugin = {
       description: 'Python 3 for fake C2 server worker',
     },
   ],
+  resources: { workers: 'workers' },
   register(server, deps) {
     server.registerTool(fakeC2ToolDefinition, createFakeC2Handler(deps))
     return ['managed.fake_c2']

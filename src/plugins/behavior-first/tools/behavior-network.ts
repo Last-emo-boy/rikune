@@ -28,6 +28,17 @@ export const behaviorNetworkInputSchema = z.object({
   session_tag: z.string().optional(),
 })
 
+const behaviorNetworkOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.object({}).passthrough().optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(z.any()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).passthrough().optional(),
+  })
+  .passthrough()
+
 export const behaviorNetworkToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -36,6 +47,7 @@ export const behaviorNetworkToolDefinition: ToolDefinition = {
     'and applies C2 detection heuristics (single-IP beaconing, suspicious ports). ' +
     'Feed behavior.capture output as behavior_data.',
   inputSchema: behaviorNetworkInputSchema,
+  outputSchema: behaviorNetworkOutputSchema,
 }
 
 export function createBehaviorNetworkHandler(

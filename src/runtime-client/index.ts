@@ -12,9 +12,10 @@ export {
   type RuntimeExecuteRequest,
   type RuntimeExecuteResponse,
   type RuntimeBackendCapability,
-  type RuntimeBackendHintValidationResult,
+  type RuntimeContractValidationResult,
   type RuntimeHealthResponse,
   type RuntimeSseEvent,
+  type RuntimeTaskSnapshot,
   type RuntimeEventSubscription,
   type RuntimeEventStreamOptions,
 } from './runtime-client.js'

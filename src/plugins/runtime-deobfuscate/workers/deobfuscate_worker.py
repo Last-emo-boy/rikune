@@ -36,12 +36,105 @@ import hashlib
 from pathlib import Path
 
 
+TOOL_COMMANDS = {
+    "deobf.strings": "strings_runtime",
+    "deobf.api_resolve": "api_resolve",
+    "deobf.cfg_trace": "cfg_trace",
+    "deobf.dotnet": "dotnet_deobfuscate",
+}
+
+RECOMMENDED_NEXT_TOOLS = {
+    "strings_runtime": ["deobf.api_resolve", "deobf.cfg_trace", "deep.unpack.pipeline"],
+    "api_resolve": ["deep.unpack.pe_reconstruct", "deobf.strings", "deobf.cfg_trace"],
+    "cfg_trace": ["graphviz.render", "deobf.strings", "deobf.api_resolve"],
+    "dotnet_deobfuscate": {
+        True: ["unpack.reingest", "managed.safe_run", "il.xrefs", "pe.fingerprint"],
+        False: ["anti.tamper", "string.decrypt", "deobf.strings"],
+    },
+}
+
+
 def sha256_file(filepath: str) -> str:
     h = hashlib.sha256()
     with open(filepath, "rb") as f:
         for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def normalize_payload(payload: dict) -> dict:
+    """Accept both the legacy direct worker request and the runtime-node envelope."""
+    args = payload.get("args")
+    sample = payload.get("sample")
+    if isinstance(args, dict) or isinstance(sample, dict):
+        args = args if isinstance(args, dict) else {}
+        sample = sample if isinstance(sample, dict) else {}
+        tool = payload.get("tool", "")
+        command = args.get("command") or TOOL_COMMANDS.get(tool, "strings_runtime")
+        return {
+            **args,
+            "command": command,
+            "sample_path": sample.get("path") or args.get("sample_path", ""),
+            "working_dir": sample.get("working_dir") or args.get("working_dir"),
+            "runtime_envelope": True,
+        }
+    return {**payload, "runtime_envelope": False}
+
+
+def add_recommendations(result: dict, command: str) -> dict:
+    data = result.get("data")
+    if not isinstance(data, dict):
+        data = {}
+        result["data"] = data
+
+    recommendation = RECOMMENDED_NEXT_TOOLS.get(command)
+    if isinstance(recommendation, dict):
+        next_tools = recommendation.get(bool(result.get("ok")), [])
+    else:
+        next_tools = recommendation or []
+    data.setdefault("recommended_next_tools", next_tools)
+    return result
+
+
+def write_json_artifact(result: dict, command: str, working_dir: str) -> dict:
+    data = result.get("data")
+    if not result.get("ok") or not isinstance(data, dict) or not working_dir:
+        return result
+
+    artifact_dir = os.path.join(working_dir, "artifacts")
+    os.makedirs(artifact_dir, exist_ok=True)
+    artifact_name = f"{command}.json"
+    artifact_path = os.path.join(artifact_dir, artifact_name)
+    with open(artifact_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, default=str, indent=2)
+
+    artifacts = result.setdefault("artifacts", [])
+    if isinstance(artifacts, list):
+        artifacts.append({
+            "name": artifact_name,
+            "path": artifact_path,
+            "type": "runtime_analysis",
+            "mime": "application/json",
+        })
+    return result
+
+
+def add_dotnet_artifact(result: dict) -> dict:
+    data = result.get("data")
+    if not result.get("ok") or not isinstance(data, dict):
+        return result
+    deobfuscated_path = data.get("deobfuscated_path")
+    if not deobfuscated_path or not os.path.exists(deobfuscated_path):
+        return result
+    artifacts = result.setdefault("artifacts", [])
+    if isinstance(artifacts, list):
+        artifacts.append({
+            "name": os.path.basename(deobfuscated_path),
+            "path": deobfuscated_path,
+            "type": "runtime_analysis",
+            "mime": "application/vnd.microsoft.portable-executable",
+        })
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -576,9 +669,11 @@ def main():
         print(json.dumps({"ok": False, "errors": [f"Invalid JSON input: {e}"]}))
         return
 
+    payload = normalize_payload(payload)
     command = payload.get("command", "strings_runtime")
     sample_path = payload.get("sample_path", "")
     timeout = payload.get("timeout", 60)
+    working_dir = payload.get("working_dir", "")
 
     if command == "strings_runtime":
         result = strings_runtime(
@@ -604,6 +699,12 @@ def main():
         )
     else:
         result = {"ok": False, "errors": [f"Unknown command: {command}"]}
+
+    result = add_recommendations(result, command)
+    if payload.get("runtime_envelope"):
+        if command == "dotnet_deobfuscate":
+            result = add_dotnet_artifact(result)
+        result = write_json_artifact(result, command, working_dir)
 
     print(json.dumps(result, ensure_ascii=False, default=str))
 

@@ -8,15 +8,18 @@ import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
 import { z } from 'zod'
+import {
+  ToolRuntimeContractSchema,
+  type RuntimeConnectedEventData,
+  type RuntimeBackendCapability,
+  type RuntimeSnapshotEventData,
+  type RuntimeTaskSnapshot,
+  type ToolRuntimeContract,
+} from '@rikune/shared'
 import { logger } from './logger.js'
 import { config } from './config.js'
 import { isIsolatedEnvironment } from './isolation.js'
-import type {
-  ExecuteTask,
-  RuntimeBackendCapability,
-  RuntimeBackendHint,
-  RuntimeToolInventory,
-} from './executor.js'
+import type { ExecuteTask, RuntimeToolInventory } from './executor.js'
 import {
   submitTask,
   getTask,
@@ -28,17 +31,6 @@ import {
 
 export interface Router {
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>
-}
-
-interface TaskSnapshot {
-  taskId: string
-  status: string
-  submittedAt: number
-  startedAt?: number
-  completedAt?: number
-  progressPercent?: number
-  lastMessage?: string
-  result?: unknown
 }
 
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024 // 500MB
@@ -59,11 +51,6 @@ interface TaskUploadManifest {
   }>
 }
 
-const RuntimeBackendHintSchema = z.object({
-  type: z.enum(['python-worker', 'spawn', 'inline']),
-  handler: z.string().min(1),
-})
-
 const ExecutePayloadSchema = z.object({
   taskId: z
     .string()
@@ -77,7 +64,7 @@ const ExecutePayloadSchema = z.object({
     .min(1)
     .max(30 * 60 * 1000)
     .default(120_000),
-  runtimeBackendHint: RuntimeBackendHintSchema.optional(),
+  runtime: ToolRuntimeContractSchema.optional(),
 })
 
 type ExecutePayload = z.infer<typeof ExecutePayloadSchema>
@@ -86,7 +73,7 @@ type RuntimeErrorCode =
   | 'invalid_json'
   | 'payload_too_large'
   | 'schema_validation_failed'
-  | 'unsupported_runtime_backend_hint'
+  | 'unsupported_runtime_contract'
   | 'insufficient_disk_space'
 
 interface RuntimeErrorResponse {
@@ -99,8 +86,8 @@ interface RuntimeErrorResponse {
 
 interface RuntimeBackendSupport {
   listRuntimeBackendCapabilities(): RuntimeBackendCapability[]
-  isRuntimeBackendHintSupported(hint: RuntimeBackendHint): boolean
-  getRuntimeBackendCapability?(hint: RuntimeBackendHint): RuntimeBackendCapability | undefined
+  isRuntimeContractSupported(contract: ToolRuntimeContract): boolean
+  getRuntimeBackendCapability?(contract: ToolRuntimeContract): RuntimeBackendCapability | undefined
   buildRuntimeToolInventory?(): RuntimeToolInventory
 }
 
@@ -352,16 +339,16 @@ export function createRuntimeRouter(
           }
           const payload = payloadResult.data
           const {
-            isRuntimeBackendHintSupported,
+            isRuntimeContractSupported,
             listRuntimeBackendCapabilities,
             getRuntimeBackendCapability,
           } = await loadRuntimeBackendSupport()
-          const runtimeBackendHint = payload.runtimeBackendHint as RuntimeBackendHint | undefined
-          if (runtimeBackendHint && !isRuntimeBackendHintSupported(runtimeBackendHint)) {
+          const runtime = payload.runtime as ToolRuntimeContract | undefined
+          if (runtime && !isRuntimeContractSupported(runtime)) {
             writeJson(res, 400, {
               ok: false,
-              code: 'unsupported_runtime_backend_hint',
-              error: `Unsupported runtime backend hint: ${payload.runtimeBackendHint.type}/${payload.runtimeBackendHint.handler}`,
+              code: 'unsupported_runtime_contract',
+              error: `Unsupported runtime contract: ${runtime.type}/${runtime.handler}`,
               capabilities: listRuntimeBackendCapabilities(),
             })
             return
@@ -372,16 +359,14 @@ export function createRuntimeRouter(
             tool: payload.tool,
             args: payload.args,
             timeoutMs: payload.timeoutMs,
-            runtimeBackendHint,
+            runtime,
           }
           const result = submitTask(executeTaskPayload)
           writeJson(res, 202, {
             ok: true,
             taskId: result.taskId,
             status: result.status,
-            runtimeBackend: runtimeBackendHint
-              ? (getRuntimeBackendCapability?.(runtimeBackendHint) ?? runtimeBackendHint)
-              : null,
+            runtimeBackend: runtime ? (getRuntimeBackendCapability?.(runtime) ?? runtime) : null,
           })
         } catch (e) {
           if (e instanceof RequestBodyReadError) {
@@ -491,16 +476,18 @@ export function createRuntimeRouter(
           unsubscribe()
         }
 
-        writeEvent('connected', {
+        const connectedPayload: RuntimeConnectedEventData = {
           ok: true,
           subscribedAt: Date.now(),
           taskId: taskIdFilter ?? null,
-        })
-        writeEvent('snapshot', {
+        }
+        const snapshotPayload: RuntimeSnapshotEventData = {
           tasks: listTasks()
             .filter((state) => !taskIdFilter || state.taskId === taskIdFilter)
             .map(toTaskSnapshot),
-        })
+        }
+        writeEvent('connected', connectedPayload)
+        writeEvent('snapshot', snapshotPayload)
 
         unsubscribe = subscribeTaskEvents((event) => {
           if (taskIdFilter && event.taskId !== taskIdFilter) {
@@ -674,7 +661,7 @@ function writeJson(
   res.end(JSON.stringify(payload))
 }
 
-function toTaskSnapshot(state: TaskSnapshot): TaskSnapshot {
+function toTaskSnapshot(state: RuntimeTaskSnapshot): RuntimeTaskSnapshot {
   return {
     taskId: state.taskId,
     status: state.status,

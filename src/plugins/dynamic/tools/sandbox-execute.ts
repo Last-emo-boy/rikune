@@ -11,7 +11,9 @@ import { createHash, randomUUID } from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import {
+  PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
   RuntimeDelegationFailureResultSchema,
+  SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
   type ToolDefinition,
   type ToolArgs,
   type WorkerResult,
@@ -171,7 +173,7 @@ export const sandboxExecuteToolDefinition: ToolDefinition = {
     'Execute dynamic-analysis workflow in safe simulation mode (default), memory-guided mode, or Speakeasy user-mode emulation and return timeline/IOC/risk outputs.',
   inputSchema: SandboxExecuteInputSchema,
   outputSchema: SandboxExecuteOutputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeSandboxExecute' },
+  runtime: { type: 'inline', handler: 'executeSandboxExecute' },
 }
 
 interface WorkerRequest {
@@ -261,6 +263,10 @@ interface SandboxPayload {
   }
   warnings?: string[]
   metrics?: Record<string, unknown>
+}
+
+interface SandboxExecuteDependencies {
+  callWorker?: (request: WorkerRequest) => Promise<WorkerResponse>
 }
 
 async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse> {
@@ -365,8 +371,10 @@ function enrichSandboxPayload(payload: SandboxPayload): SandboxPayload & {
 export function createSandboxExecuteHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
-  policyGuard: PolicyGuard
+  policyGuard: PolicyGuard,
+  dependencies?: SandboxExecuteDependencies
 ) {
+  const runWorker = dependencies?.callWorker || callStaticWorker
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
     // Backend gate
@@ -476,7 +484,7 @@ export function createSandboxExecuteHandler(
         },
       }
 
-      const workerResponse = await callStaticWorker(request)
+      const workerResponse = await runWorker(request)
       if (!workerResponse.ok) {
         return {
           ok: false,
@@ -511,7 +519,7 @@ export function createSandboxExecuteHandler(
         database.insertArtifact({
           id: artifactId,
           sample_id: input.sample_id,
-          type: 'sandbox_trace_json',
+          type: SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
           path: relativePath,
           sha256: artifactSha256,
           mime: 'application/json',
@@ -520,7 +528,7 @@ export function createSandboxExecuteHandler(
 
         const persistedArtifact: ArtifactRef = {
           id: artifactId,
-          type: 'sandbox_trace_json',
+          type: SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
           path: relativePath,
           sha256: artifactSha256,
           mime: 'application/json',
@@ -542,7 +550,7 @@ export function createSandboxExecuteHandler(
           database.insertArtifact({
             id: normalizedArtifactId,
             sample_id: input.sample_id,
-            type: 'dynamic_trace_json',
+            type: PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
             path: normalizedRelativePath,
             sha256: normalizedSha256,
             mime: 'application/json',
@@ -551,7 +559,7 @@ export function createSandboxExecuteHandler(
 
           const normalizedArtifact: ArtifactRef = {
             id: normalizedArtifactId,
-            type: 'dynamic_trace_json',
+            type: PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
             path: normalizedRelativePath,
             sha256: normalizedSha256,
             mime: 'application/json',

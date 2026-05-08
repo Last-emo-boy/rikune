@@ -38,6 +38,35 @@ export const DebugSessionSmartBreakpointInputSchema = z.object({
     .describe('Allow conditional breakpoints (may slow execution)'),
 })
 
+export const DebugSessionSmartBreakpointOutputSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z
+      .object({
+        session_id: z.string(),
+        sample_id: z.string(),
+        strategies_applied: z.array(z.string()),
+        breakpoints_planned: z.number().int().nonnegative(),
+        breakpoints: z.array(
+          z.object({
+            index: z.number().int().positive(),
+            category: z.string(),
+            target: z.string(),
+            description: z.string(),
+            condition: z.string().optional(),
+            priority: z.number().int(),
+            status: z.string(),
+          })
+        ),
+        static_context_available: z.boolean(),
+        recommended_next: z.array(z.string()),
+      })
+      .optional(),
+    errors: z.array(z.string()).optional(),
+    metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),
+  })
+  .passthrough()
+
 export const debugSessionSmartBreakpointToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -47,7 +76,8 @@ export const debugSessionSmartBreakpointToolDefinition: ToolDefinition = {
     '(break on IsDebuggerPresent/NtQueryInformationProcess), string_decrypt ' +
     '(break at XOR/RC4 decryption loops), auto (all applicable).',
   inputSchema: DebugSessionSmartBreakpointInputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
+  outputSchema: DebugSessionSmartBreakpointOutputSchema,
+  runtime: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 // ── Breakpoint strategy knowledge base ────────────────────────────────────

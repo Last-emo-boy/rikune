@@ -33,6 +33,32 @@ export const codeFunctionDisassembleInputSchema = z
 
 export type CodeFunctionDisassembleInput = z.infer<typeof codeFunctionDisassembleInputSchema>
 
+export const codeFunctionDisassembleOutputSchema = z.object({
+  ok: z.boolean(),
+  data: z
+    .object({
+      function: z.string(),
+      address: z.string(),
+      assembly: z.string(),
+      fallback: z.boolean(),
+      fallback_metadata: z
+        .object({
+          backend: z.string(),
+          parser: z.string(),
+          entry_section: z.string(),
+          resolved_from: z.string().optional(),
+          requested_address: z.string().nullable().optional(),
+        })
+        .passthrough()
+        .optional(),
+    })
+    .optional(),
+  warnings: z.array(z.string()).optional(),
+  errors: z.array(z.string()).optional(),
+  diagnostics: z.any().optional(),
+  normalized_error: z.any().optional(),
+})
+
 /**
  * Tool definition for code.function.disassemble
  */
@@ -41,6 +67,7 @@ export const codeFunctionDisassembleToolDefinition: ToolDefinition = {
   description:
     'Get assembly code for a function. Requires prior Ghidra analysis. Provide either address or symbol name.',
   inputSchema: codeFunctionDisassembleInputSchema,
+  outputSchema: codeFunctionDisassembleOutputSchema,
 }
 
 function normalizeAddress(address: string | undefined): string | undefined {

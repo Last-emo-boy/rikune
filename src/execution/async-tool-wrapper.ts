@@ -84,6 +84,7 @@ export const LONG_RUNNING_TOOLS = [
   'workflow.reconstruct',
   'workflow.summarize',
   'strings.floss.decode',
+  'attack.map',
 ] as const
 
 export type LongRunningTool = (typeof LONG_RUNNING_TOOLS)[number]

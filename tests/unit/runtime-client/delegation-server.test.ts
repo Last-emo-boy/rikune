@@ -7,11 +7,14 @@ import {
   createDelegatingServer,
   type RuntimeClientLike,
 } from '../../../src/runtime-client/delegation-server.js'
+import fs from 'fs/promises'
+import os from 'os'
+import path from 'path'
 import type {
   PluginServerInterface,
   ToolDefinition,
   WorkerResult,
-  RuntimeBackendHint,
+  ToolRuntimeContract,
 } from '../../../src/plugins/sdk.js'
 import type { RuntimeBackendCapability } from '../../../src/runtime-client/runtime-client.js'
 import type { WorkspaceManager } from '../../../src/workspace-manager.js'
@@ -23,6 +26,9 @@ import { SafeRunOutputSchema } from '../../../src/plugins/managed-sandbox/tools/
 import { wineRunOutputSchema } from '../../../src/plugins/wine/tools/wine-run.js'
 import { FridaRuntimeInstrumentOutputSchema } from '../../../src/plugins/frida/tools/frida-runtime-instrument.js'
 import { DebugSessionStartOutputSchema } from '../../../src/plugins/debug-session/tools/debug-session-start.js'
+import { behaviorCaptureToolDefinition } from '../../../src/plugins/behavior-first/tools/behavior-capture.js'
+import { deobfStringsToolDefinition } from '../../../src/plugins/runtime-deobfuscate/tools/deobf-strings.js'
+import { fakeC2ToolDefinition } from '../../../src/plugins/managed-fake-c2/tools/fake-c2.js'
 
 describe('createDelegatingServer', () => {
   let inner: PluginServerInterface & { getProgressReporter?: jest.Mock }
@@ -84,7 +90,7 @@ describe('createDelegatingServer', () => {
     name: 'frida.runtime.instrument',
     description: 'test',
     inputSchema: {},
-    runtimeBackendHint: { type: 'python-worker', handler: 'frida_worker.py' },
+    runtime: { type: 'python-worker', handler: 'frida_worker.py' },
   }
 
   const availableRuntimeBackends: RuntimeBackendCapability[] = [
@@ -102,11 +108,14 @@ describe('createDelegatingServer', () => {
     'wine.run': wineRunOutputSchema,
     'frida.runtime.instrument': FridaRuntimeInstrumentOutputSchema,
     'debug.session.start': DebugSessionStartOutputSchema,
+    'behavior.capture': behaviorCaptureToolDefinition.outputSchema,
+    'deobf.strings': deobfStringsToolDefinition.outputSchema,
+    'managed.fake_c2': fakeC2ToolDefinition.outputSchema,
   }
 
   const runtimeBackedToolCases: Array<{
     tool: string
-    hint: RuntimeBackendHint
+    hint: ToolRuntimeContract
     expectedNextTool: string
   }> = [
     {
@@ -134,6 +143,27 @@ describe('createDelegatingServer', () => {
       hint: { type: 'inline', handler: 'executeDebugSession' },
       expectedNextTool: 'sample.profile.get',
     },
+    {
+      tool: 'behavior.capture',
+      hint: { type: 'inline', handler: 'executeBehaviorCapture' },
+      expectedNextTool: 'dynamic.runtime.status',
+    },
+    {
+      tool: 'deobf.strings',
+      hint: {
+        type: 'python-worker',
+        handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+      },
+      expectedNextTool: 'dynamic.runtime.status',
+    },
+    {
+      tool: 'managed.fake_c2',
+      hint: {
+        type: 'python-worker',
+        handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
+      },
+      expectedNextTool: 'dynamic.runtime.status',
+    },
   ]
 
   test.each([
@@ -153,7 +183,7 @@ describe('createDelegatingServer', () => {
     expect(runtimeClient.execute).not.toHaveBeenCalled()
   })
 
-  test('should wrap remote dynamic tools and forward runtimeBackendHint', async () => {
+  test('should wrap remote dynamic tools and forward ToolRuntimeContract', async () => {
     const server = createServer(runtimeClient)
     let wrappedHandler: any
     inner.registerTool = jest.fn((_def, handler) => {
@@ -171,7 +201,120 @@ describe('createDelegatingServer', () => {
     expect(runtimeClient.execute).toHaveBeenCalledWith(
       expect.objectContaining({
         tool: 'frida.runtime.instrument',
-        runtimeBackendHint: { type: 'python-worker', handler: 'frida_worker.py' },
+        runtime: { type: 'python-worker', handler: 'frida_worker.py' },
+      }),
+      expect.anything()
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  test('should let runtime contracts override explicit local dynamic policy', async () => {
+    const server = createServer(runtimeClient)
+    let wrappedHandler: any
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
+    const originalHandler = jest.fn<() => Promise<WorkerResult>>().mockResolvedValue({ ok: true })
+    const tool: ToolDefinition = {
+      name: 'runtime.debug.command',
+      description: 'runtime command with delegated contract',
+      inputSchema: {},
+      runtime: { type: 'inline', handler: 'executeDebugSession' },
+    }
+
+    server.registerTool(tool, originalHandler)
+    const result = await wrappedHandler({ tool: 'debug.session.status' })
+
+    expect(originalHandler).not.toHaveBeenCalled()
+    expect(runtimeClient.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: 'runtime.debug.command',
+        runtime: { type: 'inline', handler: 'executeDebugSession' },
+      }),
+      expect.anything()
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  test('should wrap migrated behavior.capture and preserve legacy timeout argument', async () => {
+    const server = createServer(runtimeClient)
+    let wrappedHandler: any
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
+    const behaviorTool: ToolDefinition = {
+      name: 'behavior.capture',
+      description: 'behavior',
+      inputSchema: {},
+      runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
+    }
+
+    server.registerTool(behaviorTool, async () => ({ ok: true }) as WorkerResult)
+    const result = await wrappedHandler({ sample_id: 'sha256:abc123', timeout: 45 })
+
+    expect(runtimeClient.uploadSample).toHaveBeenCalled()
+    expect(runtimeClient.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: 'behavior.capture',
+        args: expect.objectContaining({ timeout: 45 }),
+        runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
+      }),
+      expect.anything()
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  test('should wrap runtime deobfuscation tools with the plugin worker contract', async () => {
+    const server = createServer(runtimeClient)
+    let wrappedHandler: any
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
+
+    server.registerTool(deobfStringsToolDefinition, async () => ({ ok: true }) as WorkerResult)
+    const result = await wrappedHandler({ sample_id: 'sha256:abc123', timeout: 45 })
+
+    expect(runtimeClient.uploadSample).toHaveBeenCalled()
+    expect(runtimeClient.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: 'deobf.strings',
+        args: expect.objectContaining({ timeout: 45 }),
+        timeoutMs: 75_000,
+        runtime: {
+          type: 'python-worker',
+          handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+        },
+      }),
+      expect.anything()
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  test('should wrap managed fake C2 with the plugin worker contract', async () => {
+    const server = createServer(runtimeClient)
+    let wrappedHandler: any
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
+
+    server.registerTool(fakeC2ToolDefinition, async () => ({ ok: true }) as WorkerResult)
+    const result = await wrappedHandler({
+      sample_id: 'sha256:abc123',
+      endpoints: [{ path: '/ping', response_body: '{"ok":true}' }],
+      use_tls: false,
+      timeout_seconds: 20,
+    })
+
+    expect(runtimeClient.uploadSample).toHaveBeenCalled()
+    expect(runtimeClient.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: 'managed.fake_c2',
+        args: expect.objectContaining({ timeout_seconds: 20 }),
+        timeoutMs: 50_000,
+        runtime: {
+          type: 'python-worker',
+          handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
+        },
       }),
       expect.anything()
     )
@@ -220,6 +363,60 @@ describe('createDelegatingServer', () => {
       expect.stringContaining('outbox'),
       ['report.json']
     )
+  })
+
+  test('should classify persisted Frida JSON artifacts as dynamic traces', async () => {
+    const insertArtifact = jest.fn()
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'rikune-delegation-artifacts-'))
+    const runtimeArtifactPath = path.join(tempRoot, 'trace.json')
+    await fs.writeFile(runtimeArtifactPath, '{}', 'utf8')
+    workspaceManager = {
+      createWorkspace: jest.fn().mockResolvedValue({
+        root: tempRoot,
+        reports: path.join(tempRoot, 'reports'),
+      }),
+    } as any
+    database = { insertArtifact } as any
+    runtimeClient.execute = jest.fn().mockResolvedValue(
+      makeRuntimeResponse({
+        result: { ok: true, data: {} },
+        artifactRefs: [{ name: 'trace.json', path: 'C:\\rikune-outbox\\task-123\\trace.json' }],
+      })
+    )
+    runtimeClient.downloadArtifacts = jest.fn().mockResolvedValue([runtimeArtifactPath])
+
+    try {
+      const server = createServer(runtimeClient)
+      let wrappedHandler: any
+      inner.registerTool = jest.fn((_def, handler) => {
+        wrappedHandler = handler
+      })
+
+      server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
+      const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
+
+      expect(insertArtifact).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'dynamic_trace_json',
+          path: expect.stringContaining('runtime_analysis/frida.runtime.instrument/'),
+        })
+      )
+      expect(result.artifacts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'dynamic_trace_json',
+            metadata: expect.objectContaining({
+              runtime_schema: 'rikune.runtime_artifact.v1',
+              artifact_family: 'dynamic_trace',
+              source_runtime_tool: 'frida.runtime.instrument',
+              effective_runtime_tool: 'frida.runtime.instrument',
+            }),
+          }),
+        ])
+      )
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true })
+    }
   })
 
   test('should retry on network error when recover succeeds', async () => {
@@ -287,7 +484,7 @@ describe('createDelegatingServer', () => {
       makeRuntimeResponse({
         ok: false,
         result: undefined,
-        errors: ['Unsupported runtime backend hint: inline/missing.handler'],
+        errors: ['Unsupported runtime contract: inline/missing.handler'],
       })
     )
 
@@ -301,11 +498,11 @@ describe('createDelegatingServer', () => {
     const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
 
     expect(result.ok).toBe(false)
-    expect(result.errors).toEqual(['Unsupported runtime backend hint: inline/missing.handler'])
+    expect(result.errors).toEqual(['Unsupported runtime contract: inline/missing.handler'])
   })
 
-  test('should short-circuit unsupported backend hints before upload and execution', async () => {
-    runtimeClient.validateRuntimeBackendHint = jest.fn().mockResolvedValue({
+  test('should short-circuit unsupported runtime contracts before upload and execution', async () => {
+    runtimeClient.validateRuntimeContract = jest.fn().mockResolvedValue({
       supported: false,
       capabilities: availableRuntimeBackends,
     })
@@ -319,23 +516,26 @@ describe('createDelegatingServer', () => {
     server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
     const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
 
-    expect(runtimeClient.validateRuntimeBackendHint).toHaveBeenCalledWith(
-      remoteDynamicTool.runtimeBackendHint
-    )
+    expect(runtimeClient.validateRuntimeContract).toHaveBeenCalledWith(remoteDynamicTool.runtime)
     expect(runtimeClient.uploadSample).not.toHaveBeenCalled()
     expect(runtimeClient.execute).not.toHaveBeenCalled()
     expect(result.ok).toBe(false)
     expect(result.errors?.[0]).toMatch(
-      /does not advertise support for backend hint python-worker\/frida_worker.py/
+      /does not advertise support for runtime contract python-worker\/frida_worker.py/
     )
     expect(result.data).toEqual(
       expect.objectContaining({
         status: 'setup_required',
-        failure_category: 'unsupported_runtime_backend_hint',
+        failure_category: 'unsupported_runtime_contract',
         summary:
-          'Runtime does not advertise support for backend hint python-worker/frida_worker.py required by tool frida.runtime.instrument.',
+          'Runtime does not advertise support for runtime contract python-worker/frida_worker.py required by tool frida.runtime.instrument.',
         runtime_endpoint: null,
-        required_runtime_backend_hint: remoteDynamicTool.runtimeBackendHint,
+        runtime_plane: 'runtime_capability',
+        execution_semantics: expect.objectContaining({
+          actual_mode: 'plan_only',
+          live_execution: false,
+        }),
+        required_runtime_contract: remoteDynamicTool.runtime,
         available_runtime_backends: availableRuntimeBackends,
       })
     )
@@ -358,7 +558,7 @@ describe('createDelegatingServer', () => {
   test.each(runtimeBackedToolCases)(
     'should provide capability-aware fallback guidance for %s',
     async ({ tool, hint, expectedNextTool }) => {
-      runtimeClient.validateRuntimeBackendHint = jest.fn().mockResolvedValue({
+      runtimeClient.validateRuntimeContract = jest.fn().mockResolvedValue({
         supported: false,
         capabilities: availableRuntimeBackends,
       })
@@ -374,7 +574,7 @@ describe('createDelegatingServer', () => {
           name: tool,
           description: 'test',
           inputSchema: {},
-          runtimeBackendHint: hint,
+          runtime: hint,
         },
         async () => ({ ok: true }) as WorkerResult
       )
@@ -382,8 +582,8 @@ describe('createDelegatingServer', () => {
       const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
 
       expect(result.ok).toBe(false)
-      expect((result.data as any)?.failure_category).toBe('unsupported_runtime_backend_hint')
-      expect((result.data as any)?.required_runtime_backend_hint).toEqual(hint)
+      expect((result.data as any)?.failure_category).toBe('unsupported_runtime_contract')
+      expect((result.data as any)?.required_runtime_contract).toEqual(hint)
       expect((result.data as any)?.available_runtime_backends).toEqual(availableRuntimeBackends)
       expect((result.data as any)?.recommended_next_tools).toContain(expectedNextTool)
       expect(() => RuntimeDelegationFailureResultSchema.parse(result)).not.toThrow()
@@ -410,6 +610,11 @@ describe('createDelegatingServer', () => {
     expect(result.ok).toBe(false)
     expect((result.data as any)?.failure_category).toBe('runtime_recovery_failed')
     expect((result.data as any)?.runtime_endpoint).toBe('http://127.0.0.1:4010')
+    expect((result.data as any)?.runtime_plane).toBe('runtime_node')
+    expect((result.data as any)?.execution_semantics).toMatchObject({
+      actual_mode: 'plan_only',
+      live_execution: false,
+    })
     expect((result.data as any)?.runtime_diagnostic).toEqual(
       expect.objectContaining({
         runtime_endpoint_configured: true,

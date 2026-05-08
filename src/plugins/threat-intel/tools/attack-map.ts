@@ -8,8 +8,17 @@ import type { ToolDefinition, ToolArgs, WorkerResult, PluginToolDeps } from '../
 import { toStringArray } from '../../../utils/shared-helpers.js'
 import { createTriageWorkflowHandler } from '../../../workflows/triage.js'
 import { createPackerDetectHandler } from '../../static-triage/tools/packer-detect.js'
+import { generateSmartCacheKey } from '../../../cache-manager.js'
+import { TOOL_DURATION_ESTIMATES } from '../../../job-queue.js'
+import {
+  buildDeferredToolResponse,
+  shouldDeferLargeSample,
+} from '../../../analysis/nonblocking-analysis.js'
+import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
+import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 
 const TOOL_NAME = 'attack.map'
+const TOOL_VERSION = '1.1.0'
 
 export const AttackMapInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
@@ -24,6 +33,16 @@ export const AttackMapInputSchema = z.object({
     .optional()
     .default(false)
     .describe('Bypass cache in upstream analysis tools'),
+  reuse_cached: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe('Reuse a compatible cached ATT&CK map when available'),
+  allow_deferred: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe('Allow medium and larger samples to run in the background queue'),
 })
 
 export type AttackMapInput = z.infer<typeof AttackMapInputSchema>
@@ -53,16 +72,34 @@ const CapabilityClusterSchema = z.object({
 export const AttackMapOutputSchema = z.object({
   ok: z.boolean(),
   data: z
-    .object({
-      sample_id: z.string(),
-      techniques: z.array(AttackTechniqueSchema),
-      capability_clusters: z.array(CapabilityClusterSchema),
-      tactic_summary: z.record(z.number()),
-      inference: z.object({
-        classification: z.enum(['benign', 'suspicious', 'malicious', 'unknown']),
-        summary: z.string(),
+    .union([
+      z.object({
+        sample_id: z.string(),
+        techniques: z.array(AttackTechniqueSchema),
+        capability_clusters: z.array(CapabilityClusterSchema),
+        tactic_summary: z.record(z.number()),
+        inference: z.object({
+          classification: z.enum(['benign', 'suspicious', 'malicious', 'unknown']),
+          summary: z.string(),
+        }),
+        result_mode: z.literal('completed').optional(),
+        execution_state: z.literal('completed').optional(),
+        recommended_next_tools: z.array(z.string()).optional(),
+        next_actions: z.array(z.string()).optional(),
       }),
-    })
+      z.object({
+        status: z.literal('queued'),
+        sample_id: z.string(),
+        result_mode: z.literal('queued'),
+        execution_state: z.literal('queued'),
+        job_id: z.string(),
+        polling_guidance: z.any(),
+        summary: z.string(),
+        recommended_next_tools: z.array(z.string()),
+        next_actions: z.array(z.string()),
+        metadata: z.record(z.any()).optional(),
+      }),
+    ])
     .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
@@ -70,6 +107,13 @@ export const AttackMapOutputSchema = z.object({
     .object({
       elapsed_ms: z.number(),
       tool: z.string(),
+      cached: z.boolean().optional(),
+      deferred: z.boolean().optional(),
+      cache_key: z.string().optional(),
+      cache_tier: z.string().optional(),
+      cache_created_at: z.string().optional(),
+      cache_expires_at: z.string().optional(),
+      cache_hit_at: z.string().optional(),
     })
     .optional(),
 })
@@ -77,7 +121,7 @@ export const AttackMapOutputSchema = z.object({
 export const attackMapToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Generate MITRE ATT&CK technique mapping from triage indicators with evidence-linked confidence scoring.',
+    'Generate MITRE ATT&CK technique mapping from triage indicators with evidence-linked confidence scoring. Medium and larger samples may return a background job_id; use analysis.context.get before rerunning to discover prior ATT&CK maps, active jobs, and cached context.',
   inputSchema: AttackMapInputSchema,
   outputSchema: AttackMapOutputSchema,
 }
@@ -574,8 +618,11 @@ function getClassification(
   return 'unknown'
 }
 
-export function createAttackMapHandler(deps: PluginToolDeps) {
-  const { workspaceManager, database, cacheManager } = deps
+export function createAttackMapHandler(
+  deps: PluginToolDeps,
+  options: { allowDeferred?: boolean } = {}
+) {
+  const { workspaceManager, database, cacheManager, jobQueue } = deps
   const triageHandler = createTriageWorkflowHandler(workspaceManager, database, cacheManager)
   const packerHandler = createPackerDetectHandler(workspaceManager, database, cacheManager)
 
@@ -594,6 +641,77 @@ export function createAttackMapHandler(deps: PluginToolDeps) {
             tool: TOOL_NAME,
           },
         }
+      }
+
+      const cacheKey = generateSmartCacheKey({
+        sampleSha256: sample.sha256,
+        toolName: TOOL_NAME,
+        toolVersion: TOOL_VERSION,
+        args: {
+          include_low_confidence: input.include_low_confidence,
+          max_techniques: input.max_techniques,
+        },
+      })
+
+      if (input.reuse_cached && !input.force_refresh) {
+        const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
+        if (cachedLookup) {
+          return {
+            ok: true,
+            data: {
+              ...(cachedLookup.data as Record<string, unknown>),
+              result_mode: 'completed',
+              execution_state: 'completed',
+              recommended_next_tools: ['analysis.context.get', 'report.summarize'],
+              next_actions: [
+                'Reuse this cached ATT&CK mapping unless the sample evidence changed.',
+                'Use analysis.context.get before rerunning expensive analysis for this sample.',
+              ],
+            },
+            warnings: ['Result from cache', formatCacheWarning(cachedLookup.metadata)],
+            metrics: {
+              elapsed_ms: Date.now() - startTime,
+              tool: TOOL_NAME,
+              cached: true,
+              cache_key: cachedLookup.metadata.key,
+              cache_tier: cachedLookup.metadata.tier,
+              cache_created_at: cachedLookup.metadata.createdAt,
+              cache_expires_at: cachedLookup.metadata.expiresAt,
+              cache_hit_at: cachedLookup.metadata.fetchedAt,
+            },
+          }
+        }
+      }
+
+      if (
+        input.allow_deferred !== false &&
+        options.allowDeferred !== false &&
+        jobQueue &&
+        shouldDeferLargeSample(sample, 'full')
+      ) {
+        return buildDeferredToolResponse({
+          jobQueue,
+          tool: TOOL_NAME,
+          sampleId: input.sample_id,
+          args: {
+            ...input,
+            allow_deferred: false,
+          },
+          timeoutMs: 20 * 60 * 1000,
+          estimatedDurationMs: TOOL_DURATION_ESTIMATES[TOOL_NAME],
+          resultMode: 'queued',
+          summary:
+            'ATT&CK mapping was deferred because correlated triage and packer analysis can exceed synchronous MCP client timeouts on medium or larger samples.',
+          nextTools: ['task.status', 'analysis.context.get'],
+          nextActions: [
+            'Poll task.status with the returned job_id instead of repeating attack.map immediately.',
+            'Use analysis.context.get to inspect prior jobs, staged runs, and cache hints for this sample.',
+          ],
+          metadata: {
+            cache_key: cacheKey,
+            sample_size: sample.size,
+          },
+        })
       }
 
       const triageResult = await triageHandler({
@@ -688,24 +806,40 @@ export function createAttackMapHandler(deps: PluginToolDeps) {
         indicators.intentLabel && indicators.intentLabel !== 'unknown'
           ? ` Triage intent=${indicators.intentLabel}(${Number(indicators.intentConfidence || 0).toFixed(2)}).`
           : ''
+      const data = {
+        sample_id: input.sample_id,
+        techniques: mapping.techniques,
+        capability_clusters: mapping.capabilityClusters,
+        tactic_summary: tacticSummary,
+        inference: {
+          classification,
+          summary:
+            mapping.techniques.length > 0
+              ? `Mapped ${mapping.techniques.length} ATT&CK technique(s) from correlated indicators; ` +
+                `applied ${counterEvidenceCount} counter-evidence factor(s).${intentSummary}`
+              : 'No strong ATT&CK technique mapping from current evidence.',
+        },
+      }
+
+      await cacheManager.setCachedResult(cacheKey, data, CACHE_TTL_30_DAYS, sample.sha256)
 
       return {
         ok: true,
         data: {
-          sample_id: input.sample_id,
-          techniques: mapping.techniques,
-          capability_clusters: mapping.capabilityClusters,
-          tactic_summary: tacticSummary,
-          inference: {
-            classification,
-            summary:
-              mapping.techniques.length > 0
-                ? `Mapped ${mapping.techniques.length} ATT&CK technique(s) from correlated indicators; ` +
-                  `applied ${counterEvidenceCount} counter-evidence factor(s).${intentSummary}`
-                : 'No strong ATT&CK technique mapping from current evidence.',
-          },
+          ...data,
+          result_mode: 'completed',
+          execution_state: 'completed',
+          recommended_next_tools: ['analysis.context.get', 'report.summarize'],
+          next_actions: [
+            'Use analysis.context.get before rerunning attack.map for this sample.',
+            'Continue to report.summarize if you need this mapping folded into a narrative report.',
+          ],
         },
-        warnings: [...(triageResult.warnings || []), ...(packerResult.warnings || [])],
+        warnings: [
+          ...(input.force_refresh ? ['force_refresh=true; bypassed attack.map cache lookup'] : []),
+          ...(triageResult.warnings || []),
+          ...(packerResult.warnings || []),
+        ],
         metrics: {
           elapsed_ms: Date.now() - startTime,
           tool: TOOL_NAME,

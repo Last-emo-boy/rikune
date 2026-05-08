@@ -67,7 +67,7 @@ export const dynamicBehaviorCaptureToolDefinition: ToolDefinition = {
     'Execute a sample inside the configured Runtime Node and collect coarse behavior evidence: process observations, module loads, file snapshot deltas, stdout/stderr, and normalized runtime artifacts. Requires Sandbox, Hyper-V VM, or another Runtime Node backend.',
   inputSchema: DynamicBehaviorCaptureInputSchema,
   outputSchema: DynamicBehaviorCaptureOutputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeBehaviorCapture' },
+  runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
 }
 
 export function createDynamicBehaviorCaptureHandler(_deps: PluginToolDeps) {
@@ -89,7 +89,7 @@ export function createDynamicBehaviorCaptureHandler(_deps: PluginToolDeps) {
         'Call dynamic.runtime.status to verify Runtime Node capabilities.',
         'Use runtime.debug.session.start to launch or attach to Sandbox/Hyper-V before behavior capture.',
       ],
-      required_runtime_backend_hint: { type: 'inline', handler: 'executeBehaviorCapture' },
+      required_runtime_contract: { type: 'inline', handler: 'executeBehaviorCapture' },
     },
     errors: ['Runtime Node is required for dynamic.behavior.capture.'],
     metrics: { elapsed_ms: 0, tool: TOOL_NAME },

@@ -7,17 +7,20 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { logger } from '../logger.js'
-import type { WorkerResult, ArtifactRef, RuntimeBackendHint } from '../plugins/sdk.js'
+import type {
+  ArtifactRef,
+  RuntimeBackendCapability,
+  RuntimeSseEvent,
+  RuntimeTaskSnapshot,
+  ToolRuntimeContract,
+  WorkerResult,
+} from '@rikune/shared'
 import type { RuntimeSidecarUpload } from './sidecar-staging.js'
 
-export interface RuntimeBackendCapability {
-  type: RuntimeBackendHint['type']
-  handler: string
-  description: string
-  requiresSample: boolean
-}
+export type { RuntimeBackendCapability } from '@rikune/shared'
+export type { RuntimeSseEvent, RuntimeTaskSnapshot } from '@rikune/shared'
 
-export interface RuntimeBackendHintValidationResult {
+export interface RuntimeContractValidationResult {
   supported: boolean | null
   capability?: RuntimeBackendCapability
   capabilities?: RuntimeBackendCapability[]
@@ -30,7 +33,7 @@ export interface RuntimeExecuteRequest {
   args: Record<string, unknown>
   timeoutMs: number
   sampleInboxPath?: string
-  runtimeBackendHint?: RuntimeBackendHint
+  runtime?: ToolRuntimeContract
 }
 
 export interface RuntimeUploadOptions {
@@ -60,12 +63,6 @@ export interface RuntimeHealthResponse {
     runtimeBackendCapabilities?: boolean
     taskEvents?: boolean
   }
-}
-
-export interface RuntimeSseEvent {
-  event: string
-  id?: string
-  data: unknown
 }
 
 export interface RuntimeEventSubscription {
@@ -193,17 +190,17 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     }
   }
 
-  async function validateRuntimeBackendHint(
-    hint: RuntimeBackendHint,
+  async function validateRuntimeContract(
+    contract: ToolRuntimeContract,
     options: { forceRefresh?: boolean } = {}
-  ): Promise<RuntimeBackendHintValidationResult> {
+  ): Promise<RuntimeContractValidationResult> {
     const capabilities = await getCapabilities(options)
     if (!capabilities) {
       return { supported: null }
     }
 
     const capability = capabilities.find(
-      (entry) => entry.type === hint.type && entry.handler === hint.handler
+      (entry) => entry.type === contract.type && entry.handler === contract.handler
     )
     return {
       supported: capability !== undefined,
@@ -216,8 +213,8 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     req: RuntimeExecuteRequest,
     opts?: { onProgress?: (progress: number, message?: string) => void }
   ): Promise<RuntimeExecuteResponse> {
-    if (req.runtimeBackendHint) {
-      const validation = await validateRuntimeBackendHint(req.runtimeBackendHint)
+    if (req.runtime) {
+      const validation = await validateRuntimeContract(req.runtime)
       if (validation.supported === false) {
         if (validation.capabilities) {
           replaceCapabilitiesCache(validation.capabilities)
@@ -225,9 +222,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
         return {
           ok: false,
           taskId: req.taskId,
-          errors: [
-            `Unsupported runtime backend hint: ${req.runtimeBackendHint.type}/${req.runtimeBackendHint.handler}`,
-          ],
+          errors: [`Unsupported runtime contract: ${req.runtime.type}/${req.runtime.handler}`],
           capabilities: validation.capabilities,
         }
       }
@@ -249,7 +244,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
         replaceCapabilitiesCache(responseCapabilities)
       } else if (
         typeof submitBody.error === 'string' &&
-        submitBody.error.startsWith('Unsupported runtime backend hint:')
+        submitBody.error.startsWith('Unsupported runtime contract:')
       ) {
         invalidateCapabilitiesCache()
       }
@@ -268,13 +263,10 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
 
     while (Date.now() - started < maxWaitMs) {
       const statusRes = await get(`/tasks/${req.taskId}`)
-      const statusBody = JSON.parse(statusRes.body) as {
+      const statusBody = JSON.parse(statusRes.body) as RuntimeTaskSnapshot & {
         ok?: boolean
-        status?: string
         result?: RuntimeExecuteResponse
         error?: string
-        progressPercent?: number
-        lastMessage?: string
       }
       if (!statusBody.ok) {
         return {
@@ -751,7 +743,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
   return {
     health,
     getCapabilities,
-    validateRuntimeBackendHint,
+    validateRuntimeContract,
     execute,
     uploadSample,
     downloadArtifacts,

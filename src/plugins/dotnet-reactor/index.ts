@@ -57,6 +57,7 @@ const dotnetReactorPlugin: Plugin = {
       dockerInstall: 'pip install dnfile',
     },
   ],
+  resources: { workers: 'workers' },
   register(server, deps) {
     server.registerTool(antiTamperToolDefinition, createAntiTamperHandler(deps))
     server.registerTool(stringDecryptToolDefinition, createStringDecryptHandler(deps))

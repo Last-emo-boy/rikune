@@ -124,7 +124,7 @@ describe('runtime-client capability negotiation', () => {
     expect(capabilityRequests).toBe(1)
   })
 
-  test('execute short-circuits unsupported runtime backend hints using runtime capabilities', async () => {
+  test('execute short-circuits Unsupported runtime contracts using runtime capabilities', async () => {
     let capabilityRequests = 0
     let executeRequests = 0
 
@@ -166,11 +166,11 @@ describe('runtime-client capability negotiation', () => {
       tool: 'dynamic.inline.test',
       args: {},
       timeoutMs: 1_000,
-      runtimeBackendHint: { type: 'inline', handler: 'missing.handler' },
+      runtime: { type: 'inline', handler: 'missing.handler' },
     })
 
     expect(result.ok).toBe(false)
-    expect(result.errors).toEqual(['Unsupported runtime backend hint: inline/missing.handler'])
+    expect(result.errors).toEqual(['Unsupported runtime contract: inline/missing.handler'])
     expect(result.capabilities).toEqual([
       expect.objectContaining({
         type: 'spawn',
@@ -233,7 +233,7 @@ describe('runtime-client capability negotiation', () => {
 
     const client = createRuntimeClient({ endpoint: first.endpoint })
 
-    const firstValidation = await client.validateRuntimeBackendHint({
+    const firstValidation = await client.validateRuntimeContract({
       type: 'spawn',
       handler: 'native.sample.execute',
     })
@@ -242,7 +242,7 @@ describe('runtime-client capability negotiation', () => {
 
     client.setEndpoint(second.endpoint)
 
-    const secondValidation = await client.validateRuntimeBackendHint({
+    const secondValidation = await client.validateRuntimeContract({
       type: 'spawn',
       handler: 'native.sample.execute',
     })
@@ -341,7 +341,7 @@ describe('runtime-client capability negotiation', () => {
       expect(client.getEndpoint()).toBe(second.endpoint)
       expect(secondCapabilityRequests).toBe(1)
 
-      const validation = await client.validateRuntimeBackendHint({
+      const validation = await client.validateRuntimeContract({
         type: 'inline',
         handler: 'executeDebugSession',
       })

@@ -8,6 +8,11 @@ import type { ExecuteTask, ExecuteResult } from './executor.js'
 import { logger } from './logger.js'
 import { killTaskProcesses, cleanupTaskOutbox } from './process-registry.js'
 import { config } from './config.js'
+import type {
+  RuntimeTaskEvent as SharedRuntimeTaskEvent,
+  RuntimeTaskSnapshot,
+  RuntimeTaskStatus,
+} from '@rikune/shared'
 
 export type TaskExecutor = (
   task: ExecuteTask,
@@ -15,31 +20,17 @@ export type TaskExecutor = (
   onProgress?: (progress: number, message?: string) => void
 ) => Promise<ExecuteResult>
 
-export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type TaskStatus = RuntimeTaskStatus
 
-export interface TaskState {
-  taskId: string
-  status: TaskStatus
+export interface TaskState extends Omit<RuntimeTaskSnapshot, 'result'> {
   result?: ExecuteResult
   logs: string[]
-  submittedAt: number
-  startedAt?: number
-  completedAt?: number
   cancelled: boolean
-  progressPercent?: number
-  lastMessage?: string
 }
 
-export interface TaskEvent {
-  id: number
-  type: 'submitted' | 'started' | 'progress' | 'log' | 'completed' | 'failed' | 'cancelled'
-  taskId: string
-  status: TaskStatus
-  timestamp: number
-  progressPercent?: number
-  lastMessage?: string
-  log?: string
+export interface TaskEvent extends Omit<SharedRuntimeTaskEvent, 'result'> {
   result?: ExecuteResult
+  log?: string
 }
 
 const tasks = new Map<string, TaskState>()
@@ -200,8 +191,12 @@ function emitTaskEvent(
     taskId: state.taskId,
     status: state.status,
     timestamp: Date.now(),
+    submittedAt: state.submittedAt,
+    startedAt: state.startedAt,
+    completedAt: state.completedAt,
     progressPercent: state.progressPercent,
     lastMessage: state.lastMessage,
+    result: state.result,
     ...extras,
   }
   for (const subscriber of subscribers) {

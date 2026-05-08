@@ -31,7 +31,7 @@ export const debugSessionStepToolDefinition: ToolDefinition = {
     'Single-step execution in a debug session. Supports instruction-level stepping (into) and step-over mode.',
   inputSchema: DebugSessionStepInputSchema,
   outputSchema: DebugSessionStepOutputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
+  runtime: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 export function createDebugSessionStepHandler(deps: PluginToolDeps) {

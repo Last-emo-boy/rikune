@@ -57,7 +57,7 @@ const crackmePlugin: Plugin = {
     server.registerTool(symbolicExploreToolDefinition, createSymbolicExploreHandler(deps))
     server.registerTool(patchGenerateToolDefinition, createPatchGenerateHandler(deps))
     server.registerTool(keygenVerifyToolDefinition, createKeygenVerifyHandler(deps))
-    return ['crackme.locate_validation', 'symbolic.explore', 'patch.generate', 'keygen.verify']
+    return ['crackme.locate.validation', 'symbolic.explore', 'patch.generate', 'keygen.verify']
   },
 }
 

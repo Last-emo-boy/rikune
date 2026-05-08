@@ -7,7 +7,14 @@
  */
 
 import { z } from 'zod'
-import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  getDatabase,
+  getWorkspaceServices,
+  type ArtifactRef,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 import {
   loadStaticAnalysisArtifactSelection,
   persistStaticAnalysisJsonArtifact,
@@ -106,7 +113,7 @@ function behaviorCaptureTemplate(
         network_sinkhole: true,
         capture_network_snapshot: true,
       },
-      runtime_backend_hint: { type: 'inline', handler: 'executeBehaviorCapture' },
+      runtime_contract: { type: 'inline', handler: 'executeBehaviorCapture' },
       timeout_ms: Math.max(30_000, (Math.min(input.capture_seconds, 300) + 45) * 1000),
     },
   }
@@ -126,7 +133,7 @@ function etwDnsTemplate(
         capture_seconds: input.capture_seconds,
         include_cleanup: true,
       },
-      runtime_backend_hint: { type: 'inline', handler: 'executeTelemetryCapture' },
+      runtime_contract: { type: 'inline', handler: 'executeTelemetryCapture' },
       timeout_ms: Math.max(60_000, (input.capture_seconds + 75) * 1000),
     },
   }
@@ -150,10 +157,11 @@ async function loadNetworkIndicators(
   indicators: string[]
   warnings: string[]
 }> {
+  const workspace = getWorkspaceServices(deps)
   if (!input.use_static_config_artifacts || !input.sample_id) {
     return { artifact_ids: [], scope_note: null, indicators: [], warnings: [] }
   }
-  if (!deps.workspaceManager || !deps.database) {
+  if (!workspace.manager || !workspace.database) {
     return {
       artifact_ids: [],
       scope_note: null,
@@ -163,8 +171,8 @@ async function loadNetworkIndicators(
   }
   try {
     const selection = await loadStaticAnalysisArtifactSelection<StaticConfigCarverPayload>(
-      deps.workspaceManager,
-      deps.database,
+      workspace.manager,
+      workspace.database,
       input.sample_id,
       'static_config_carver',
       {
@@ -273,6 +281,8 @@ export function createDebugNetworkPlanHandler(deps: PluginToolDeps) {
     try {
       const input = DebugNetworkPlanInputSchema.parse(args || {})
       const staticContext = await loadNetworkIndicators(deps, input)
+      const workspace = getWorkspaceServices(deps)
+      const db = getDatabase(deps)
       const selectedProfiles = expandProfiles(input.profiles)
       const profiles = selectedProfiles.map((profile) =>
         buildProfile(profile, input, staticContext.indicators)
@@ -317,13 +327,13 @@ export function createDebugNetworkPlanHandler(deps: PluginToolDeps) {
       if (
         input.persist_artifact &&
         input.sample_id &&
-        deps.workspaceManager &&
-        deps.database?.findSample?.(input.sample_id)
+        workspace.manager &&
+        db?.findSample?.(input.sample_id)
       ) {
         artifacts.push(
           await persistStaticAnalysisJsonArtifact(
-            deps.workspaceManager,
-            deps.database,
+            workspace.manager,
+            db,
             input.sample_id,
             'debug_network_plan',
             'debug_network_plan',

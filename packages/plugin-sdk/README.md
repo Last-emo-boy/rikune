@@ -1,110 +1,207 @@
-# Plugin SDK for Rikune
+# Plugin SDK For Rikune
 
-Type-safe SDK for building third-party plugins for `rikune`.
+`@rikune/plugin-sdk` is the public contract for Rikune plugins. Plugins should import SDK types and helpers from this package instead of importing Analyzer internals.
 
 ## Installation
 
+Inside this monorepo the package is available through npm workspaces.
+
+For external plugins:
+
 ```bash
-npm install @w33d/rikune-plugin-sdk
+npm install @rikune/plugin-sdk zod
 ```
 
-## Quick Start
+## Core Concepts
 
-```typescript
-import { definePlugin } from '@w33d/rikune-plugin-sdk'
+| Concept | Purpose |
+| --- | --- |
+| `Plugin` | The object exported by a plugin |
+| `ToolDefinition` | MCP tool metadata, input schema, optional output schema, optional runtime contract |
+| `PluginToolDeps` | Services injected by the Analyzer during registration |
+| `PluginServerInterface` | Minimal server facade exposed to plugins |
+| `ToolRuntimeContract` | Runtime Node delegation contract |
+| `ok`, `fail`, `toolText` | Result helpers |
+
+## Recommended Plugin Shape
+
+```ts
+import { z } from 'zod'
+import { definePlugin, defineTool, ok } from '@rikune/plugin-sdk'
+
+const inspectTool = defineTool({
+  name: 'example.inspect',
+  description: 'Inspect a sample with the example plugin',
+  inputSchema: z.object({
+    sample_id: z.string(),
+  }),
+  handler: () => async (args, deps) => {
+    const workspace = deps.services?.workspace
+    return ok({
+      sample_id: args.sample_id,
+      has_workspace_service: Boolean(workspace?.manager),
+    })
+  },
+})
 
 export default definePlugin({
-  id: 'my-custom-tool',
-  name: 'My Custom Analysis Tool',
+  id: 'example',
+  name: 'Example',
+  description: 'Example Rikune plugin',
   version: '1.0.0',
-  description: 'Custom binary analysis plugin',
-
-  configSchema: [
-    { envVar: 'MY_TOOL_PATH', description: 'Path to custom tool binary', required: true },
-  ],
-
-  check() {
-    return Boolean(process.env.MY_TOOL_PATH)
-  },
-
-  register(server, deps, ctx) {
-    // Use ctx.logger for scoped logging
-    ctx?.logger.info('Registering my-tool.analyze')
-    // Use ctx.getConfig() for type-safe config
-    const toolPath = ctx?.getConfig('MY_TOOL_PATH')
-
-    server.registerTool(
-      {
-        name: 'my-tool.analyze',
-        description: 'Run custom analysis',
-        inputSchema: { type: 'object', properties: { sample_id: { type: 'string' } }, required: ['sample_id'] }
-      },
-      async (args: { sample_id: string }) => ({
-        content: [{ type: 'text' as const, text: `Analyzed ${args.sample_id} with ${toolPath}` }]
-      })
-    )
-    return ['my-tool.analyze']
+  executionDomain: 'static',
+  surfaceRules: { tier: 3, category: 'example' },
+  register(server, deps) {
+    server.registerTool(inspectTool.definition, (args) => inspectTool.handler(args, deps))
+    return ['example.inspect']
   },
 })
 ```
 
-## API
+## Plugin Object
 
-### `definePlugin(plugin: Plugin): Plugin`
-Type-safe helper to define a plugin with full inference.
+Important fields:
 
-### `pathExists(path: string): boolean`
-Synchronous path existence check — useful in `check()` functions.
-
-### `envIsSet(varName: string): boolean`
-Check whether an environment variable is set and non-empty.
-
-## Plugin Lifecycle
-
-1. **Discovery** — plugins are loaded from the `plugins/` directory
-2. **check()** — optional prerequisite validation
-3. **configSchema** — required fields are validated (warnings logged for missing)
-4. **register(server, deps, ctx)** — register MCP tools; receives a `PluginContext` with scoped logger and config
-5. **hooks** — optional before/after/error callbacks (set `globalHooks: true` to observe ALL tool calls)
-6. **teardown()** — cleanup on unload
-
-## PluginContext
-
-The third argument to `register()` provides:
-
-```typescript
-interface PluginContext {
-  pluginId: string                                // Plugin's unique ID
-  logger: PluginLogger                           // Scoped logger (prefixed with plugin ID)
-  getConfig(envVar: string): string | undefined  // Read config from configSchema
-  getRequiredConfig(envVar: string): string       // Read required config (throws if missing)
-  dataDir: string                                 // Persistent data directory for this plugin
+```ts
+interface Plugin {
+  id: string
+  name: string
+  description?: string
+  version?: string
+  executionDomain?: 'static' | 'dynamic' | 'both'
+  dependencies?: string[]
+  configSchema?: PluginConfigField[]
+  systemDeps?: PluginSystemDependency[]
+  surfaceRules?: PluginSurfaceRules
+  register(server: PluginServerInterface, deps: PluginToolDeps, ctx?: PluginContext): string[] | void | Promise<string[] | void>
+  check?(deps: PluginToolDeps, ctx?: PluginContext): boolean | Promise<boolean>
+  teardown?(deps: PluginToolDeps, ctx?: PluginContext): void | Promise<void>
+  hooks?: PluginHooks
 }
 ```
 
-## Global Hooks
+## Dependency Injection
 
-Set `globalHooks: true` on your plugin to receive hook callbacks for ALL tool invocations,
-not just your own tools. Useful for observability, logging, and monitoring plugins.
+Plugins receive services through `PluginToolDeps`.
 
-```typescript
-export default definePlugin({
-  id: 'my-observer',
-  globalHooks: true,
-  hooks: {
-    onBeforeToolCall(toolName, args) { console.log(`Calling ${toolName}`) },
-    onAfterToolCall(toolName, args, elapsedMs) { console.log(`${toolName} took ${elapsedMs}ms`) },
-  },
-  register() { return [] },
+Common services:
+
+- `workspaceManager`
+- `database`
+- `cacheManager`
+- `jobQueue`
+- `storageManager`
+- `policyGuard`
+- `runtimeClient`
+- `services.workspace`
+- `services.platform`
+- `services.runtime`
+- `services.ghidra`
+
+Prefer service helpers such as `requireWorkspaceManager`, `requireDatabase`, and `getRuntimeServices` where available. Avoid importing from `src/core`, `src/persistence`, or other Analyzer internals directly.
+
+## Manifest-Backed Plugins
+
+External plugins can declare metadata in `plugin.json` and export handlers from `index.js`.
+
+```json
+{
+  "id": "example",
+  "name": "Example",
+  "version": "1.0.0",
+  "description": "Example external plugin",
+  "executionDomain": "static",
+  "tools": [
+    {
+      "name": "example.inspect",
+      "description": "Inspect a sample"
+    }
+  ]
+}
+```
+
+The SDK includes manifest validation helpers used by the Analyzer loader.
+
+## Runtime Contracts
+
+Tools delegated to Runtime Node can attach a `runtime` contract to their `ToolDefinition`.
+
+Contracts describe:
+
+- supported execution modes;
+- required backend capabilities;
+- timeout;
+- expected artifact inputs and outputs;
+- fallback behavior;
+- failure categories.
+
+Execution modes include:
+
+- `plan_only`
+- `safe_simulation`
+- `emulation`
+- `live_sandbox`
+- `live_hyperv`
+- `manual_runtime`
+
+Live execution should remain explicit and policy-gated.
+
+## Results
+
+Use result helpers for consistent MCP output:
+
+```ts
+return ok({
+  summary: 'analysis complete',
+  findings: [],
 })
 ```
 
-## Types
+Return errors as structured tool results when the failure is expected and user-actionable. Throw only for unexpected implementation failures.
 
-- `Plugin` — the core plugin contract
-- `PluginContext` — scoped runtime context
-- `PluginLogger` — structured logging interface
-- `PluginConfigField` — config field descriptor
-- `PluginHooks` — lifecycle hook interfaces
-- `ToolDefinition` — MCP tool registration shape
-- `ToolResult` — standard tool return type
+## Surface Rules
+
+`surfaceRules` controls when plugin tools are visible.
+
+| Tier | Meaning |
+| --- | --- |
+| 0 | Visible gateway tools |
+| 1 | File-type activated |
+| 2 | Finding/signal activated |
+| 3 | Expert/manual discovery |
+
+Use `tools.discover` and `tool.readiness` to help clients find tier 1-3 tools.
+
+## External Plugin Placement
+
+Compiled external plugins can be placed in:
+
+```text
+plugins/<id>/index.js
+plugins/<id>/plugin.json
+```
+
+or as a direct `.js` / `.mjs` module under `plugins/`.
+
+The repository scaffold helper is:
+
+```bash
+node scripts/create-plugin.js my-feature --name "My Feature"
+```
+
+## Testing Plugins
+
+Recommended checks:
+
+```bash
+npm run build
+npm run test:unit
+npm run typecheck
+```
+
+Then validate runtime behavior with:
+
+- `plugin.list`
+- `tools.discover`
+- `tool.readiness`
+- the plugin's own tools

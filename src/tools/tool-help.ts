@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import type { ToolArgs, ToolDefinition, WorkerResult } from '../types.js'
-import { ToolSurfaceRoleSchema, buildPreferredPrimaryTools } from '../tool-surface-guidance.js'
+import {
+  ToolSurfaceRoleSchema,
+  classifyToolSurfaceRole,
+  preferredPrimaryToolsFor,
+} from '../tool-surface-guidance.js'
 import {
   rewriteToolReferencesInValue,
   rewriteToolReferencesInText,
@@ -65,52 +69,6 @@ export const toolHelpToolDefinition: ToolDefinition = {
     'Query normalized schema/help for registered MCP tools, including enum values, defaults, field descriptions, and primary-versus-compatibility surface roles.',
   inputSchema: toolHelpInputSchema,
   outputSchema: toolHelpOutputSchema,
-}
-
-function classifyToolSurfaceRole(toolName: string): z.infer<typeof ToolSurfaceRoleSchema> {
-  if (
-    [
-      'workflow.analyze.start',
-      'workflow.analyze.status',
-      'workflow.analyze.promote',
-      'workflow.summarize',
-      'sample.ingest',
-      'sample.request_upload',
-    ].includes(toolName)
-  ) {
-    return 'primary'
-  }
-
-  if (['report.generate'].includes(toolName)) {
-    return 'export_only'
-  }
-
-  if (['graphviz.render'].includes(toolName)) {
-    return 'renderer_helper'
-  }
-
-  if (['workflow.triage', 'task.status', 'report.summarize'].includes(toolName)) {
-    return 'compatibility'
-  }
-
-  return 'primary'
-}
-
-function preferredPrimaryToolsFor(toolName: string) {
-  switch (toolName) {
-    case 'workflow.triage':
-      return ['workflow.analyze.start', 'workflow.analyze.status', 'workflow.analyze.promote']
-    case 'task.status':
-      return ['workflow.analyze.status']
-    case 'report.summarize':
-      return ['workflow.summarize']
-    case 'report.generate':
-      return ['workflow.summarize', 'report.summarize']
-    case 'graphviz.render':
-      return ['code.function.cfg', 'workflow.summarize', 'report.summarize']
-    default:
-      return []
-  }
 }
 
 type FieldSummary = z.infer<typeof ToolFieldSchema>
@@ -1397,10 +1355,9 @@ export function createToolHelpHandler(
           name: toTransportToolName(definition.name),
           description: definition.description,
           surface_role: classifyToolSurfaceRole(definition.name),
-          preferred_primary_tools: buildPreferredPrimaryTools(
-            classifyToolSurfaceRole(definition.name),
-            preferredPrimaryToolsFor(definition.name)
-          ).map((item) => toTransportToolName(item)),
+          preferred_primary_tools: preferredPrimaryToolsFor(definition.name).map((item) =>
+            toTransportToolName(item)
+          ),
           usage_notes: buildUsageNotes(definition).map((item) =>
             rewriteToolReferencesInText(item, nameMappings)
           ),

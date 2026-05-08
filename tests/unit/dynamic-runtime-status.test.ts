@@ -8,6 +8,10 @@ import {
   createDynamicRuntimeStatusHandler,
   dynamicRuntimeStatusToolDefinition,
 } from '../../src/plugins/dynamic/tools/dynamic-runtime-status.js'
+import {
+  buildRuntimeToolSupport,
+  listRuntimeDelegatedToolContracts,
+} from '../../src/runtime-client/runtime-tool-support.js'
 
 const SAMPLE_SHA256 = 'b'.repeat(64)
 const SAMPLE_ID = `sha256:${SAMPLE_SHA256}`
@@ -54,6 +58,30 @@ describe('dynamic.runtime.status tool', () => {
     expect(dynamicRuntimeStatusToolDefinition.name).toBe('dynamic.runtime.status')
   })
 
+  test('maps runtime capabilities to delegated MCP tools', () => {
+    const contracts = listRuntimeDelegatedToolContracts()
+
+    const support = buildRuntimeToolSupport([
+      { type: 'inline', handler: 'executeDebugSession', requiresSample: true },
+      { type: 'python-worker', handler: 'frida_worker.py', requiresSample: true },
+    ])
+
+    expect(contracts.length).toBeGreaterThan(20)
+    expect(support.find((entry) => entry.tool_name === 'debug.session.start')).toEqual(
+      expect.objectContaining({
+        supported: true,
+        requires_sample: true,
+        runtime_contract: { type: 'inline', handler: 'executeDebugSession' },
+      })
+    )
+    expect(support.find((entry) => entry.tool_name === 'frida.runtime.instrument')).toEqual(
+      expect.objectContaining({ supported: true })
+    )
+    expect(support.find((entry) => entry.tool_name === 'managed.fake_c2')).toEqual(
+      expect.objectContaining({ supported: false, capability: null, requires_sample: null })
+    )
+  })
+
   test('aggregates Runtime Node, Host Agent, capabilities, and persisted sessions', async () => {
     const runtimeServer = http.createServer((req, res) => {
       const requestUrl = new URL(req.url || '/', 'http://127.0.0.1')
@@ -73,6 +101,16 @@ describe('dynamic.runtime.status tool', () => {
                 { type: 'inline', handler: 'executeSandboxExecute', requiresSample: true },
                 { type: 'inline', handler: 'executeBehaviorCapture', requiresSample: true },
                 { type: 'python-worker', handler: 'frida_worker.py', requiresSample: true },
+                {
+                  type: 'python-worker',
+                  handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+                  requiresSample: true,
+                },
+                {
+                  type: 'python-worker',
+                  handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
+                  requiresSample: true,
+                },
               ],
             },
           })
@@ -137,7 +175,38 @@ describe('dynamic.runtime.status tool', () => {
       expect((result.data as any).host_agent_endpoint).toBe(hostAgentEndpoint)
       expect((result.data as any).runtime_health).toEqual({ ok: true, role: 'runtime-node' })
       expect((result.data as any).host_agent_health.backend).toBe('windows-sandbox')
-      expect((result.data as any).runtime_capabilities).toHaveLength(4)
+      expect((result.data as any).runtime_capabilities).toHaveLength(6)
+      expect((result.data as any).runtime_tool_summary).toEqual(
+        expect.objectContaining({
+          supported_count: expect.any(Number),
+          missing_count: expect.any(Number),
+          total_count: expect.any(Number),
+        })
+      )
+      expect((result.data as any).supported_runtime_tools).toEqual(
+        expect.arrayContaining([
+          'debug.session.start',
+          'sandbox.execute',
+          'behavior.capture',
+          'dynamic.behavior.capture',
+          'frida.runtime.instrument',
+          'deobf.strings',
+          'managed.fake_c2',
+        ])
+      )
+      expect((result.data as any).missing_runtime_tools).toContain('managed.safe_run')
+      expect((result.data as any).runtime_tool_support).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            tool_name: 'managed.fake_c2',
+            supported: true,
+            runtime_contract: {
+              type: 'python-worker',
+              handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
+            },
+          }),
+        ])
+      )
       expect((result.data as any).sessions).toHaveLength(1)
       expect((result.data as any).artifact_count).toBe(1)
       expect((result.data as any).backend_interface.supported_backends).toEqual(
@@ -146,6 +215,8 @@ describe('dynamic.runtime.status tool', () => {
           sandbox_execute: true,
           behavior_capture: true,
           frida_runtime: true,
+          runtime_deobfuscation: true,
+          managed_fake_c2: true,
         })
       )
       expect((result.data as any).execution_semantics).toEqual(
@@ -158,6 +229,8 @@ describe('dynamic.runtime.status tool', () => {
       )
       expect((result.data as any).recommended_next_tools).toContain('runtime.debug.command')
       expect((result.data as any).recommended_next_tools).toContain('frida.runtime.instrument')
+      expect((result.data as any).recommended_next_tools).toContain('deobf.strings')
+      expect((result.data as any).recommended_next_tools).toContain('managed.fake_c2')
       expect((result.data as any).recommended_next_tools).toContain('dynamic.behavior.capture')
     } finally {
       await new Promise<void>((resolve) => runtimeServer.close(() => resolve()))

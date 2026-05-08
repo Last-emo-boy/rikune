@@ -161,7 +161,7 @@ async function writeWsbConfig(
   const outboxDir = path.join(sandboxDir, 'outbox')
   const runtimeDirHost = path.dirname(stagedRuntimeEntryHost)
   const runtimeFileName = path.basename(stagedRuntimeEntryHost)
-  const workersDirHost = path.resolve(projectRoot, 'workers')
+  const workersDirHost = await stageRuntimeWorkers(projectRoot, sandboxDir)
   const nodeModulesDirHost = path.resolve(projectRoot, 'node_modules')
 
   // B1.2 / B1.3: registry and filesystem decoys
@@ -196,6 +196,54 @@ foreach ($f in $folders) {
     nodeModulesDirHost,
   })
   await fs.writeFile(wsbPath, wsb, 'utf-8')
+}
+
+function shouldStageWorkerPath(sourcePath: string): boolean {
+  const name = path.basename(sourcePath).toLowerCase()
+  return !['venv', 'qiling-venv', '__pycache__', '.pytest_cache'].includes(name)
+}
+
+async function stageRuntimeWorkers(projectRoot: string, sandboxDir: string): Promise<string> {
+  const workersStageDir = path.join(sandboxDir, 'workers')
+  const rootWorkersDir = path.join(projectRoot, 'workers')
+  const pluginWorkersRoot = path.join(projectRoot, 'src', 'plugins')
+
+  await fs.rm(workersStageDir, { recursive: true, force: true })
+  await fs.mkdir(workersStageDir, { recursive: true })
+
+  try {
+    await fs.cp(rootWorkersDir, workersStageDir, {
+      recursive: true,
+      filter: (sourcePath) => shouldStageWorkerPath(sourcePath),
+    })
+  } catch {
+    // The runtime can still start; Python-backed tools will report missing workers.
+  }
+
+  try {
+    const pluginEntries = await fs.readdir(pluginWorkersRoot, { withFileTypes: true })
+    for (const entry of pluginEntries) {
+      if (!entry.isDirectory()) continue
+      const pluginWorkerDir = path.join(pluginWorkersRoot, entry.name, 'workers')
+      try {
+        const stagedPluginWorkerDir = path.join(
+          workersStageDir,
+          'src',
+          'plugins',
+          entry.name,
+          'workers'
+        )
+        await fs.mkdir(path.dirname(stagedPluginWorkerDir), { recursive: true })
+        await fs.cp(pluginWorkerDir, stagedPluginWorkerDir, { recursive: true })
+      } catch {
+        // Plugins without worker resources are expected.
+      }
+    }
+  } catch {
+    // Plugin workers are optional for basic runtime startup.
+  }
+
+  return workersStageDir
 }
 
 async function stageRuntimeBundle(

@@ -549,7 +549,7 @@ $config = @{
                 CACHE_ROOT = (Join-Path $DataRoot "cache") -replace '\\', '/'
                 AUDIT_LOG_PATH = (Join-Path $DataRoot "logs/audit.log") -replace '\\', '/'
                 SANDBOX_PYTHON_PATH = $venvPython -replace '\\', '/'
-                API_ENABLED = "true"
+                API_ENABLED = "false"
                 API_PORT = "18080"
                 API_STORAGE_ROOT = (Join-Path $DataRoot "storage") -replace '\\', '/'
             }

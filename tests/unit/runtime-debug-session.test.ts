@@ -172,7 +172,7 @@ describe('runtime debug session tools', () => {
       })
 
       expect(command.ok).toBe(true)
-      expect((command.data as any).runtime_backend_hint).toEqual({
+      expect((command.data as any).runtime_contract).toEqual({
         type: 'inline',
         handler: 'executeDebugSession',
       })
@@ -182,7 +182,7 @@ describe('runtime debug session tools', () => {
         sampleId: SAMPLE_ID,
         tool: 'debug.session.inspect',
         args: { inspect: 'registers' },
-        runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
+        runtime: { type: 'inline', handler: 'executeDebugSession' },
       }))
       expect(database.updateDebugSession).toHaveBeenCalled()
       expect(database.insertArtifact).toHaveBeenCalledWith(expect.objectContaining({
@@ -191,6 +191,17 @@ describe('runtime debug session tools', () => {
         mime: 'application/json',
       }))
       expect(command.artifacts).toHaveLength(1)
+      expect(command.artifacts?.[0]).toEqual(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            runtime_schema: 'rikune.runtime_artifact.v1',
+            artifact_family: 'runtime_debug',
+            runtime_debug_session_id: sessionId,
+            runtime_task_id: expect.any(String),
+            runtime_tool: 'debug.session.inspect',
+          }),
+        })
+      )
       const persistedPath = path.join(tmpDir, (command.artifacts?.[0] as any).path)
       expect(fs.existsSync(persistedPath)).toBe(true)
 
@@ -313,7 +324,7 @@ describe('runtime debug session tools', () => {
     }
   })
 
-  test('fails before upload when Runtime Node does not advertise the required backend hint', async () => {
+  test('fails before upload when Runtime Node does not advertise the required runtime contract', async () => {
     const requests: Array<{ url: string; method?: string }> = []
     const server = http.createServer((req, res) => {
       const requestUrl = new URL(req.url || '/', 'http://127.0.0.1')
@@ -369,7 +380,7 @@ describe('runtime debug session tools', () => {
       })
 
       expect(command.ok).toBe(false)
-      expect((command.data as any).failure_category).toBe('unsupported_runtime_backend_hint')
+      expect((command.data as any).failure_category).toBe('unsupported_runtime_contract')
       expect(deps.resolvePrimarySamplePath).not.toHaveBeenCalled()
       expect(requests.some((entry) => entry.url === '/upload')).toBe(false)
       expect(requests.some((entry) => entry.url === '/execute')).toBe(false)

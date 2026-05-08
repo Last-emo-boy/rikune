@@ -1,198 +1,135 @@
 # Integration Tests
 
-This directory contains integration tests that verify end-to-end functionality of the Rikune.
+Integration tests exercise MCP tools, upload/session flows, file server behavior, plugin workflows, and end-to-end analysis paths.
+
+Use Node.js 22+ for repository tests.
 
 ## Test Files
 
-### triage-workflow.test.ts
+| File | Focus |
+| --- | --- |
+| `workflow.test.ts` | Workflow behavior |
+| `triage-workflow.test.ts` | Compatibility triage workflow |
+| `full-pipeline.test.ts` | Ingest-to-analysis path |
+| `mcp-tools.test.ts` | MCP tool exposure and calls |
+| `file-server-api.test.ts` | HTTP upload/artifact API |
+| `upload-session-workflow.test.ts` | Durable upload sessions |
+| `frida-workflow.test.ts` | Frida-related workflow behavior |
+| `frida-script-generator.test.ts` | Frida script generation |
+| `visualization.test.ts` | Visualization/report artifacts |
+| `kb-integration.test.ts` | Knowledge-base integration |
+| `beta2-tools.test.ts`, `v02-tools.test.ts`, `v0.1-acceptance.test.ts` | Regression coverage for older public surfaces |
 
-Integration tests for the quick triage workflow (Task 9.3).
-
-**Requirements Tested:**
-- 15.3: Workflow completes within 5 minutes
-- 26.7: Performance metrics are collected
-- 15.2: Report format is correct
-- 15.5: IOCs are detected
-
-**Test Cases:**
-1. **should complete triage workflow within 5 minutes** - Verifies the workflow meets the 5-minute performance requirement
-2. **should generate complete report structure** - Validates the report format includes all required fields (summary, confidence, threat_level, iocs, evidence, recommendation)
-3. **should detect suspicious strings in sample** - Tests IOC detection for URLs, IPs, file paths, and registry keys
-4. **should handle multiple samples concurrently** - Verifies concurrent execution without interference
-5. **should provide appropriate threat assessment** - Tests threat level calculation and confidence scoring
-6. **should include performance metrics** - Validates metrics collection
-7. **should handle partial tool failures gracefully** - Tests resilience when some analysis tools fail
-8. **should cache results for repeated analysis** - Verifies caching improves performance on repeated runs
-
-## Setup Requirements
-
-### Prerequisites
-
-1. **Node.js**: Version 18 or later (Note: Node.js 24 may have compatibility issues with better-sqlite3)
-2. **Python**: Version 3.9 or later with required packages
-3. **Build Tools**: Required for compiling native modules
-   - Windows: Visual Studio Build Tools or Visual Studio with C++ development tools
-   - Linux: gcc, g++, make
-   - macOS: Xcode Command Line Tools
-
-### Installing Dependencies
+## Setup
 
 ```bash
-# Install Node.js dependencies
 npm install
+npm run build
+python -m pip install -r requirements.txt
+python -m pip install -r workers/requirements.txt
+python -m pip install -r workers/requirements-dynamic.txt
+```
 
-# Rebuild native modules (if needed)
+If native modules fail after changing Node versions:
+
+```bash
 npm rebuild better-sqlite3
-
-# Install Python dependencies
-cd workers
-pip install -r requirements.txt
 ```
-
-### Known Issues
-
-#### better-sqlite3 Native Module
-
-The `better-sqlite3` package requires native compilation. If you encounter errors like:
-
-```
-Could not locate the bindings file
-```
-
-This means the native module is not properly compiled. Solutions:
-
-1. **Rebuild the module:**
-   ```bash
-   npm rebuild better-sqlite3
-   ```
-
-2. **Use a compatible Node.js version:**
-   - Node.js 18 LTS is recommended
-   - Node.js 24 may have compatibility issues
-
-3. **Install build tools:**
-   - Windows: Install Visual Studio Build Tools with C++ support
-   - Ensure Python is available in PATH
-
-4. **Use prebuilt binaries:**
-   ```bash
-   npm install --build-from-source=false
-   ```
 
 ## Running Tests
 
-### Run All Integration Tests
+All integration tests:
 
 ```bash
-npm test -- tests/integration/
+npm run test:integration
 ```
 
-### Run Specific Test File
+One file:
 
 ```bash
-npm test -- tests/integration/triage-workflow.test.ts
+npx jest tests/integration/file-server-api.test.ts
 ```
 
-### Run with Verbose Output
+Verbose:
 
 ```bash
-npm test -- tests/integration/triage-workflow.test.ts --verbose
+npx jest tests/integration --verbose
 ```
 
-### Run with Extended Timeout
-
-Some integration tests may take several minutes to complete:
+Extended timeout:
 
 ```bash
-npm test -- tests/integration/triage-workflow.test.ts --testTimeout=600000
+npx jest tests/integration --testTimeout=60000
+```
+
+## Docker And E2E
+
+Some e2e tests expect Docker. The e2e setup skips when Docker is unavailable.
+
+```bash
+npm run test:e2e
+```
+
+For Docker profile validation:
+
+```bash
+npm run build
+npm run docker:generate:all
+docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
 ```
 
 ## Test Data
 
-The integration tests create minimal PE files programmatically for testing. No external test samples are required.
-
-### Minimal PE Structure
-
-Tests use helper functions to create valid PE files:
-- `createMinimalPE()`: Creates a basic valid PE file
-- `createSuspiciousPE()`: Creates a PE with suspicious strings for IOC detection
-
-## Performance Expectations
-
-- **Triage workflow**: Should complete in < 5 minutes (Requirement 15.3)
-- **Individual tools**: Vary based on sample size and complexity
-- **Concurrent execution**: Multiple workflows can run simultaneously
+Tests use small synthetic fixtures and generated minimal binaries where possible. Do not commit live malware samples. If a real sample is needed, keep it outside the repository and document how to obtain or generate a safe equivalent.
 
 ## Troubleshooting
 
-### Tests Timeout
+### better-sqlite3 Errors
 
-If tests timeout, check:
-1. Python worker is properly installed and accessible
-2. YARA rules are available in `workers/yara_rules/`
-3. System has sufficient resources (CPU, memory)
+Use Node.js 22+ and rebuild native modules:
 
-### Database Errors
+```bash
+npm rebuild better-sqlite3
+```
 
-If you see SQLite errors:
-1. Ensure write permissions in test directories
-2. Check that no other process is locking the database
-3. Verify better-sqlite3 is properly installed
+### Worker Errors
 
-### Worker Communication Errors
+Check Python dependency installation and run:
 
-If Python worker communication fails:
-1. Verify Python is in PATH
-2. Check that `workers/static_worker.py` is executable
-3. Ensure all Python dependencies are installed
+```bash
+python -m pytest workers
+```
 
-## CI/CD Considerations
+### Timeouts
 
-For continuous integration:
+Prefer staged workflow polling:
 
-1. **Pre-install native modules:**
-   ```yaml
-   - name: Install dependencies
-     run: |
-       npm ci
-       npm rebuild better-sqlite3
-   ```
+- `workflow.analyze.start`
+- `workflow.analyze.status`
+- `workflow.analyze.promote`
+- `task.status`
 
-2. **Use appropriate Node.js version:**
-   ```yaml
-   - uses: actions/setup-node@v3
-     with:
-       node-version: '18'
-   ```
+Increase Jest timeout only when the backend work is expected to take longer.
 
-3. **Install Python dependencies:**
-   ```yaml
-   - uses: actions/setup-python@v4
-     with:
-       python-version: '3.9'
-   - run: pip install -r workers/requirements.txt
-   ```
+### Runtime Failures
 
-4. **Set appropriate timeouts:**
-   ```yaml
-   - name: Run integration tests
-     run: npm test -- tests/integration/ --testTimeout=600000
-     timeout-minutes: 15
-   ```
+Static integration tests should not require live Windows runtime. For hybrid/runtime tests, collect:
 
-## Contributing
+- `dynamic.runtime.status`;
+- `/api/v1/ready`;
+- Host Agent logs;
+- Runtime Node logs;
+- relevant environment variables without secrets.
 
-When adding new integration tests:
+## CI Notes
 
-1. Follow the existing test structure
-2. Use descriptive test names
-3. Include requirement references in comments
-4. Set appropriate timeouts for long-running tests
-5. Clean up resources in `afterAll` hooks
-6. Document any special setup requirements
+CI should run:
 
-## References
+```bash
+npm run typecheck
+npm run test:unit
+npm run test:integration
+npm run build
+```
 
-- Requirements: `.kiro/specs/rikune/requirements.md`
-- Design: `.kiro/specs/rikune/design.md`
-- Tasks: `.kiro/specs/rikune/tasks.md`
+Docker and live runtime tests should be separated from fast unit/integration checks unless the runner has the required environment.

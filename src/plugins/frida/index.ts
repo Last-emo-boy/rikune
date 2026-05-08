@@ -6,6 +6,7 @@
 
 import { execFileSync } from 'child_process'
 import type { Plugin } from '../sdk.js'
+import { getWorkspaceServices } from '../sdk.js'
 import {
   fridaRuntimeInstrumentToolDefinition,
   createFridaRuntimeInstrumentHandler,
@@ -46,6 +47,7 @@ const fridaPlugin: Plugin = {
       dockerValidation: ['frida-ps --help >/dev/null 2>&1'],
     },
   ],
+  resources: { scripts: 'scripts' },
   check() {
     try {
       execFileSync('frida', ['--version'], { stdio: 'ignore', timeout: 3000 })
@@ -55,6 +57,7 @@ const fridaPlugin: Plugin = {
     }
   },
   register(server, deps) {
+    const workspace = getWorkspaceServices(deps)
     server.registerTool(
       fridaRuntimeInstrumentToolDefinition,
       createFridaRuntimeInstrumentHandler(deps)
@@ -63,7 +66,7 @@ const fridaPlugin: Plugin = {
     server.registerTool(fridaTraceCaptureToolDefinition, createFridaTraceCaptureHandler(deps))
     server.registerTool(
       fridaScriptGenerateToolDefinition,
-      createFridaScriptGenerateHandler(deps.workspaceManager, deps.database)
+      createFridaScriptGenerateHandler(workspace.manager, workspace.database)
     )
     return [
       'frida.runtime.instrument',

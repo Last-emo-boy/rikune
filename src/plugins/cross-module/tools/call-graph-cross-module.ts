@@ -5,7 +5,13 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, WorkerResult, ArtifactRef, PluginToolDeps } from '../../sdk.js'
+import {
+  createWorkerResultOutputSchema,
+  type ToolDefinition,
+  type WorkerResult,
+  type ArtifactRef,
+  type PluginToolDeps,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'call.graph.cross.module'
 
@@ -22,6 +28,39 @@ export const CallGraphCrossModuleInputSchema = z.object({
     .describe('Attempt to resolve ordinal imports'),
 })
 
+export const CallGraphCrossModuleOutputSchema = createWorkerResultOutputSchema(
+  z.object({
+    module_count: z.number().int().nonnegative(),
+    total_edges: z.number().int().nonnegative(),
+    resolved_edges: z.number().int().nonnegative(),
+    unresolved_edges: z.number().int().nonnegative(),
+    modules: z.array(
+      z.object({
+        sample_id: z.string(),
+        module_name: z.string(),
+        export_count: z.number().int().nonnegative(),
+        import_dll_count: z.number().int().nonnegative(),
+      })
+    ),
+    dependency_graph: z.array(
+      z.object({
+        module: z.string(),
+        depends_on: z.array(z.string()),
+      })
+    ),
+    edges: z.array(
+      z.object({
+        caller_module: z.string(),
+        caller_sample_id: z.string(),
+        callee_module: z.string(),
+        callee_sample_id: z.string(),
+        function_name: z.string(),
+        resolved: z.boolean(),
+      })
+    ),
+  })
+)
+
 export const callGraphCrossModuleToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
@@ -29,6 +68,7 @@ export const callGraphCrossModuleToolDefinition: ToolDefinition = {
     'to export entries in other binaries of the set. Produces a directed graph of ' +
     'inter-module dependencies with resolved function-level edges when available.',
   inputSchema: CallGraphCrossModuleInputSchema,
+  outputSchema: CallGraphCrossModuleOutputSchema,
 }
 
 interface ModuleInfo {

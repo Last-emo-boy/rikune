@@ -7,7 +7,12 @@
  */
 
 import { z } from 'zod'
-import type { PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  getRuntimeConfig,
+  type PluginToolDeps,
+  type ToolDefinition,
+  type WorkerResult,
+} from '../../sdk.js'
 
 const TOOL_NAME = 'runtime.hyperv.control'
 
@@ -67,10 +72,6 @@ export const runtimeHyperVControlToolDefinition: ToolDefinition = {
     'Control a configured Hyper-V Runtime VM through Windows Host Agent. Supports status, checkpoint listing, checkpoint creation, checkpoint restore, and VM stop without running a sample.',
   inputSchema: RuntimeHyperVControlInputSchema,
   outputSchema: RuntimeHyperVControlOutputSchema,
-}
-
-function getRuntimeConfig(deps: PluginToolDeps): Record<string, any> {
-  return deps.config?.runtime || {}
 }
 
 function getAuthHeader(apiKey?: string): Record<string, string> {

@@ -60,7 +60,7 @@ export const pandaInspectToolDefinition: ToolDefinition = {
     'Inspect PANDA/pandare runtime readiness and record/replay caveats. Use this when you explicitly request PANDA-oriented dynamic analysis support from the MCP server.',
   inputSchema: pandaInspectInputSchema,
   outputSchema: pandaInspectOutputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executePandaInspect' },
+  runtime: { type: 'inline', handler: 'executePandaInspect' },
 }
 
 const PANDA_INSPECT_SCRIPT = `

@@ -113,7 +113,7 @@ export const fridaTraceCaptureToolDefinition: ToolDefinition = {
     'Capture and normalize Frida traces with canonical schema, filtering, and aggregation.',
   inputSchema: FridaTraceCaptureInputSchema,
   outputSchema: FridaTraceCaptureOutputSchema,
-  runtimeBackendHint: { type: 'python-worker', handler: 'frida_worker.py' },
+  runtime: { type: 'python-worker', handler: 'frida_worker.py' },
 }
 
 interface WorkerRequest {

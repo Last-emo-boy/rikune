@@ -10,7 +10,8 @@
   ],
   "bin": {
     "rikune": "./bin/rikune.js",
-    "rikune-docker": "./bin/rikune-docker.js"
+    "rikune-docker": "./bin/rikune-docker.js",
+    "rikune-agent": "./bin/rikune-agent.js"
   },
   "exports": {
     ".": "./dist/index.js"
@@ -22,6 +23,7 @@
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "dist/**/*.html",
+    "dist/resources/**/*",
     "src/plugins/kb-collaboration/data/*.json",
     "workers/frida_worker.py",
     "workers/rizin_preview_worker.py",
@@ -45,11 +47,11 @@
     "src/plugins/frida/scripts/README.md"
   ],
   "scripts": {
-    "build": "turbo run build && tsc && npm run copy-static",
+    "build": "npm run clean && turbo run build && tsc && npm run copy-static",
     "build:shared": "turbo run build --filter=@rikune/shared",
     "build:runtime": "turbo run build --filter=@rikune/runtime-node",
     "build:host-agent": "turbo run build --filter=@rikune/windows-host-agent",
-    "copy-static": "node -e \"const fs=require('fs'),p=require('path');const s='src/api/dashboard',d='dist/api/dashboard';fs.mkdirSync(d,{recursive:true});fs.readdirSync(s).forEach(f=>fs.copyFileSync(p.join(s,f),p.join(d,f)));\"",
+    "copy-static": "node scripts/copy-static-assets.mjs",
     "clean": "node -e \"const fs=require('fs'); for (const p of ['dist']) { fs.rmSync(p,{recursive:true,force:true}); }\"",
     "dev": "tsx watch src/index.ts",
     "dev:dashboard": "node -e \"const fs=require('fs'),p=require('path');const s='src/api/dashboard',d='dist/api/dashboard';fs.mkdirSync(d,{recursive:true});const cp=()=>{fs.readdirSync(s).forEach(f=>fs.copyFileSync(p.join(s,f),p.join(d,f)));console.log('Dashboard copied',new Date().toLocaleTimeString())};cp();fs.watch(s,{recursive:true},cp)\"",
@@ -112,6 +114,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@rikune/plugin-sdk": "1.0.0-beta.3",
+    "@rikune/shared": "1.0.0-beta.3",
     "better-sqlite3": "^12.6.2",
     "node-windows": "^1.0.0-beta.8",
     "pino": "^10.3.1",

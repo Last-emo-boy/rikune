@@ -46,7 +46,7 @@ export const debugSessionInspectToolDefinition: ToolDefinition = {
     'Inspect debug session state: registers, memory (up to 4096 bytes), stack frames (up to 20), or disassembly window.',
   inputSchema: DebugSessionInspectInputSchema,
   outputSchema: DebugSessionInspectOutputSchema,
-  runtimeBackendHint: { type: 'inline', handler: 'executeDebugSession' },
+  runtime: { type: 'inline', handler: 'executeDebugSession' },
 }
 
 export function createDebugSessionInspectHandler(deps: PluginToolDeps) {

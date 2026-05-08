@@ -418,6 +418,95 @@ describe('workflow.reconstruct tool', () => {
     expect(nativeExportHandler).toHaveBeenCalledTimes(0)
   })
 
+  test('should forward dotnet build validation options to dotnet export path', async () => {
+    const sampleId = 'sha256:' + '7'.repeat(64)
+    await setupSample(sampleId, '7')
+
+    const runtimeDetectHandler = jest
+      .fn<(args: ToolArgs) => Promise<WorkerResult>>()
+      .mockResolvedValue({
+        ok: true,
+        data: {
+          is_dotnet: true,
+          dotnet_version: '8.0',
+          target_framework: '.NET 8.0',
+          suspected: [{ runtime: '.NET', confidence: 0.95, evidence: ['CLR'] }],
+        },
+      })
+    const planHandler = jest
+      .fn<(args: ToolArgs) => Promise<WorkerResult>>()
+      .mockResolvedValue({
+        ok: true,
+        data: {
+          feasibility: 'high',
+          confidence: 0.9,
+          restoration_expectation: 'Managed reconstruction is feasible.',
+          blockers: [],
+          recommendations: ['Use metadata-first export'],
+        },
+      })
+    const dotnetExportHandler = jest
+      .fn<(args: ToolArgs) => Promise<WorkerResult>>()
+      .mockResolvedValue({
+        ok: true,
+        data: {
+          export_root: 'reports/dotnet_reconstruct/forwarded',
+          csproj_path: 'reports/dotnet_reconstruct/forwarded/RecoveredDotNet.csproj',
+          readme_path: 'reports/dotnet_reconstruct/forwarded/README.md',
+          metadata_path: 'reports/dotnet_reconstruct/forwarded/MANAGED_METADATA.json',
+          reverse_notes_path: 'reports/dotnet_reconstruct/forwarded/REVERSE_NOTES.md',
+          fallback_notes_path: null,
+          build_validation: {
+            status: 'skipped',
+            log_path: null,
+          },
+          managed_profile: {
+            assembly_name: 'Recovered.Sample',
+            assembly_version: '1.0.0.0',
+            module_name: 'Recovered.Sample.dll',
+            metadata_version: 'v4.0.30319',
+            is_library: true,
+            entry_point_token: null,
+            type_count: 4,
+            method_count: 12,
+            namespace_count: 1,
+            assembly_reference_count: 2,
+            resource_count: 0,
+            dominant_namespaces: ['Recovered.Sample'],
+            notable_types: ['Recovered.Sample.Runner'],
+            assembly_references: ['System.Runtime'],
+            resources: [],
+            analysis_priorities: ['prefer_managed_metadata_and_il_recovery'],
+          },
+          classes: [],
+        },
+      })
+
+    const handler = createReconstructWorkflowHandler(workspaceManager, database, cacheManager, {
+      runtimeDetectHandler,
+      planHandler,
+      dotnetExportHandler,
+    })
+
+    const result = await handler({
+      sample_id: sampleId,
+      path: 'dotnet',
+      validate_build: false,
+      build_timeout_ms: 12345,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(dotnetExportHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validate_build: false,
+        build_timeout_ms: 12345,
+      })
+    )
+    const data = result.data as any
+    expect(data.export.tool).toBe('dotnet.reconstruct.export')
+    expect(data.export.build_validation_status).toBe('skipped')
+  })
+
   test('should auto-route to native export path', async () => {
     const sampleId = 'sha256:' + '2'.repeat(64)
     await setupSample(sampleId, '2')
