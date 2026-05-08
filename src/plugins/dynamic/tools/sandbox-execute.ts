@@ -265,6 +265,10 @@ interface SandboxPayload {
   metrics?: Record<string, unknown>
 }
 
+interface SandboxExecuteDependencies {
+  callWorker?: (request: WorkerRequest) => Promise<WorkerResponse>
+}
+
 async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse> {
   return new Promise((resolve, reject) => {
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
@@ -367,8 +371,10 @@ function enrichSandboxPayload(payload: SandboxPayload): SandboxPayload & {
 export function createSandboxExecuteHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
-  policyGuard: PolicyGuard
+  policyGuard: PolicyGuard,
+  dependencies?: SandboxExecuteDependencies
 ) {
+  const runWorker = dependencies?.callWorker || callStaticWorker
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
     // Backend gate
@@ -478,7 +484,7 @@ export function createSandboxExecuteHandler(
         },
       }
 
-      const workerResponse = await callStaticWorker(request)
+      const workerResponse = await runWorker(request)
       if (!workerResponse.ok) {
         return {
           ok: false,

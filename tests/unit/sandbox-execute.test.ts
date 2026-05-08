@@ -7,7 +7,6 @@ import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { PolicyGuard } from '../../src/policy-guard.js'
 import { createSandboxExecuteHandler } from '../../src/plugins/dynamic/tools/sandbox-execute.js'
-import { createDynamicDependenciesHandler } from '../../src/plugins/dynamic/tools/dynamic-dependencies.js'
 
 describe('sandbox.execute tool', () => {
   let tempDir: string
@@ -151,54 +150,93 @@ describe('sandbox.execute tool', () => {
     ).toBe(true)
   })
 
-  test('should execute speakeasy mode when emulator is available', async () => {
-    const dependencyHandler = createDynamicDependenciesHandler(workspaceManager, database)
-    const dependencyResult = await dependencyHandler({})
-
-    expect(dependencyResult.ok).toBe(true)
-    const dependencyData = dependencyResult.data as {
-      components?: {
-        speakeasy?: {
-          available?: boolean
-          distribution?: string
+  test('should execute speakeasy mode with an emulator worker response', async () => {
+    let capturedRequest:
+      | {
+          job_id: string
+          tool: string
+          sample: { sample_id: string; path: string }
+          args: Record<string, unknown>
         }
-      }
-    }
+      | undefined
 
-    const speakeasyAvailable = Boolean(dependencyData.components?.speakeasy?.available)
-    if (
-      !speakeasyAvailable ||
-      process.platform !== 'win32' ||
-      !process.execPath.toLowerCase().endsWith('.exe')
-    ) {
-      expect(true).toBe(true)
-      return
-    }
+    const speakeasyHandler = createSandboxExecuteHandler(workspaceManager, database, policyGuard, {
+      callWorker: async (request) => {
+        capturedRequest = request
+        return {
+          job_id: request.job_id,
+          ok: true,
+          warnings: [],
+          errors: [],
+          data: {
+            run_id: 'speakeasy-run-1',
+            status: 'completed',
+            mode: 'speakeasy',
+            backend: 'speakeasy-emulator',
+            simulated: false,
+            timeout_sec: 40,
+            event_count: 2,
+            timeline: [
+              {
+                event_type: 'api_call',
+                category: 'instrumentation',
+                indicator: 'VirtualAlloc',
+                confidence: 0.95,
+              },
+              {
+                event_type: 'return',
+                category: 'completion',
+                indicator: 'analysis_complete',
+                confidence: 0.8,
+              },
+            ],
+            iocs: {},
+            capabilities: [
+              {
+                name: 'runtime_api_trace',
+                evidence_count: 2,
+                confidence: 0.91,
+              },
+            ],
+            risk: {
+              score: 18,
+              level: 'low',
+              confidence: 0.82,
+            },
+            environment: {
+              network_policy: 'disabled',
+              executed: true,
+              isolation: 'user_mode_emulation',
+            },
+            evidence: {
+              runtime_api_calls: [
+                { api: 'VirtualAlloc', provider: 'speakeasy' },
+                { api: 'CreateFileW', provider: 'speakeasy' },
+              ],
+            },
+            inference: {
+              classification: 'suspicious',
+              summary: 'Speakeasy emulation completed',
+            },
+            metrics: {
+              runtime_api_call_count: 2,
+            },
+          },
+          artifacts: [],
+          metrics: {
+            worker_ms: 17,
+          },
+        }
+      },
+    })
 
-    const preferredFixture = path.join(
-      process.cwd(),
-      'src',
-      'plugins',
-      'static-triage',
-      'helpers',
-      'DotNetMetadataProbe',
-      'bin',
-      'Debug',
-      'net10.0',
-      'DotNetMetadataProbe.exe'
+    const sampleId = await ingestSample(
+      workspaceManager,
+      database,
+      Buffer.from('MZ speakeasy test sample')
     )
-    let samplePath = process.execPath
-    try {
-      await fs.access(preferredFixture)
-      samplePath = preferredFixture
-    } catch {
-      samplePath = process.execPath
-    }
 
-    const sampleBuffer = await fs.readFile(samplePath)
-    const sampleId = await ingestSample(workspaceManager, database, sampleBuffer)
-
-    const result = await handler({
+    const result = await speakeasyHandler({
       sample_id: sampleId,
       approved: true,
       mode: 'speakeasy',
@@ -208,6 +246,18 @@ describe('sandbox.execute tool', () => {
     })
 
     expect(result.ok).toBe(true)
+    expect(capturedRequest).toEqual(
+      expect.objectContaining({
+        tool: 'sandbox.execute',
+        sample: expect.objectContaining({
+          sample_id: sampleId,
+        }),
+        args: expect.objectContaining({
+          mode: 'speakeasy',
+        }),
+      })
+    )
+
     const data = result.data as {
       mode: string
       backend: string
@@ -232,7 +282,7 @@ describe('sandbox.execute tool', () => {
     expect((data.metrics?.runtime_api_call_count || 0) > 0).toBe(true)
     expect((data.evidence.runtime_api_calls || []).length).toBeGreaterThan(0)
     expect(data.timeline.some((item) => item.event_type === 'api_call')).toBe(true)
-  }, 30000)
+  })
 })
 
 async function ingestSample(

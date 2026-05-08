@@ -78,7 +78,7 @@ export const RuntimeFallbackRuleSchema = z.object({
 
 export const ToolRuntimeContractSchema = z.object({
   type: z.enum(['python-worker', 'spawn', 'inline']),
-  handler: z.string(),
+  handler: z.string().min(1, 'String must contain at least 1 character'),
   modes: z.array(RuntimeExecutionModeSchema).optional(),
   requiredProfiles: z.array(z.string()).optional(),
   requiredTools: z.array(z.string()).optional(),

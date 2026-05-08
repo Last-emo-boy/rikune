@@ -1,10 +1,12 @@
 import fs from 'fs'
 import path from 'path'
+import { fileURLToPath } from 'url'
 import {
   RUNTIME_TOOL_PROFILE_DEFINITIONS,
   RUNTIME_TOOL_SPECS,
 } from '../../../packages/runtime-node/src/toolkit/manifest.js'
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '../../..')
 
 describe('runtime toolkit manifest', () => {
