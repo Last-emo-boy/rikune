@@ -141,6 +141,42 @@ describe('runtime worker pool', () => {
     }
   })
 
+  test('automatically evicts idle workers after the configured TTL', () => {
+    jest.useFakeTimers()
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'runtime-worker-pool-'))
+    const database = new DatabaseManager(path.join(tempDir, 'test.db'))
+    const pool = new RuntimeWorkerPool() as any
+    const kill = jest.fn()
+
+    try {
+      const worker = {
+        id: 'worker-idle',
+        family: 'static_python.preview',
+        compatibilityKey: 'compat-idle',
+        deploymentKey: 'deploy-idle',
+        child: { kill } as any,
+        busy: false,
+        unhealthy: false,
+        createdAt: new Date().toISOString(),
+        lastUsedAt: new Date().toISOString(),
+        stdoutBuffer: '',
+      }
+
+      pool.workers.set(worker.id, worker)
+      pool.scheduleIdleEviction(worker, database, 1_000)
+      expect(pool.workers.has(worker.id)).toBe(true)
+
+      jest.advanceTimersByTime(1_000)
+
+      expect(pool.workers.has(worker.id)).toBe(false)
+      expect(kill).toHaveBeenCalled()
+    } finally {
+      jest.useRealTimers()
+      database.close()
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
   test('shutdown rejects pending work and clears live workers', async () => {
     const pool = new RuntimeWorkerPool() as any
     const reject = jest.fn()

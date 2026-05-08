@@ -492,13 +492,14 @@ export function upsertAnalysisRunStage(
   const existing = database.findAnalysisRunStage(options.runId, options.stage)
   const createdAt = existing?.created_at || nowIso()
   const updatedAt = nowIso()
+  const existingMetadata = parseJsonRecord<Record<string, unknown>>(existing?.metadata_json, {})
   const stage: AnalysisRunStage = {
     run_id: options.runId,
     stage: options.stage,
     status: options.status,
     execution_state: options.executionState || null,
-    tool: options.tool || null,
-    job_id: options.jobId || null,
+    tool: options.tool !== undefined ? options.tool : existing?.tool || null,
+    job_id: options.jobId !== undefined ? options.jobId : existing?.job_id || null,
     result_json:
       options.result !== undefined ? JSON.stringify(options.result) : existing?.result_json || null,
     artifact_refs_json: JSON.stringify(
@@ -510,7 +511,7 @@ export function upsertAnalysisRunStage(
         : existing?.coverage_json || null,
     metadata_json:
       options.metadata !== undefined
-        ? JSON.stringify(options.metadata)
+        ? JSON.stringify({ ...existingMetadata, ...options.metadata })
         : existing?.metadata_json || null,
     created_at: createdAt,
     updated_at: updatedAt,

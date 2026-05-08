@@ -1,115 +1,115 @@
-# Install in GitHub Copilot
+# Install In GitHub Copilot
 
-Use the unified installer script, which includes a GitHub Copilot option:
+Use the local installer when you want to register Rikune as an MCP server for GitHub Copilot or VS Code.
 
 ```powershell
 .\install-local.ps1
 ```
 
-Select **[2] GitHub Copilot** when prompted to write the MCP configuration.
+The installer can build the project, check dependencies, and update supported MCP client configuration files.
 
-By default, the script writes a stable `WORKSPACE_ROOT` under your user profile:
+## Recommended Flow
 
-- `%USERPROFILE%/.rikune/workspaces`
-
-It also pins:
-
-- `DB_PATH`
-- `CACHE_ROOT`
-- `AUDIT_LOG_PATH`
-- `GHIDRA_PROJECT_ROOT`
-- `GHIDRA_LOG_ROOT`
-
-Optional static-analysis inputs can also be provided through:
-
-- `CAPA_RULES_PATH`
-- `DIE_PATH`
-
-The server's bundled `src/plugins/ghidra/scripts/` directory is resolved from the installed
-package or repository root, not from the shell's current working directory. You
-do not need to separately point Copilot at `ExtractFunctions.py`.
-
-For Ghidra 12.0.4, keep Java 21+ available. If Java is installed outside the
-default system location, set `JAVA_HOME` before launching Copilot clients.
-
-Build the project first:
+1. Install Node.js 22+.
+2. Clone or unpack this repository.
+3. Run:
 
 ```powershell
-npm run build
-```
-
-If Ghidra is not already configured in the environment, set `GHIDRA_INSTALL_DIR`
-before running the installer, or set it in your shell profile:
-
-```powershell
-$env:GHIDRA_INSTALL_DIR = "C:\tools\ghidra"
 .\install-local.ps1
 ```
 
-If you want to pin Ghidra projects and logs under a fixed location, set:
+4. Select the GitHub Copilot / VS Code MCP option when prompted.
+5. Restart VS Code or reload the MCP client.
+6. Ask the client to call `tool.help`, `sample.ingest`, or `workflow.analyze.start`.
 
-- `GHIDRA_PROJECT_ROOT`
-- `GHIDRA_LOG_ROOT`
+For Docker-based use, prefer:
 
-## What the script updates
+```powershell
+.\rikune.ps1 install -Profile static -DataRoot "D:\Docker\rikune"
+```
 
-- workspace config: `.vscode/mcp.json`
-- Copilot CLI config: `~/.copilot/mcp-config.json`
+or, when live Windows runtime is required:
+
+```powershell
+.\rikune.ps1 install -Profile hybrid -InstallRuntime
+```
+
+## What The Script Updates
+
+Depending on selected options, the installer can:
+
+- run `npm install`;
+- run `npm run build`;
+- verify Node, npm, Python, Java, and Ghidra paths;
+- configure local MCP stdio command;
+- configure Docker stdio command;
+- preserve existing client configuration where possible.
+
+## Example MCP Config
+
+Local build:
+
+```json
+{
+  "mcpServers": {
+    "rikune": {
+      "command": "node",
+      "args": ["D:/Playground/windows-exe-decompiler-mcp-server/dist/index.js"],
+      "env": {
+        "API_ENABLED": "true",
+        "API_PORT": "18080",
+        "PLUGINS": "*"
+      }
+    }
+  }
+}
+```
+
+Docker stdio:
+
+```json
+{
+  "mcpServers": {
+    "rikune": {
+      "command": "docker",
+      "args": ["exec", "-i", "rikune-analyzer", "node", "dist/index.js"]
+    }
+  }
+}
+```
 
 ## Verify
 
-### VS Code / GitHub Copilot
+In Copilot or another MCP client:
 
-1. Open the repository in VS Code.
-2. Confirm that `.vscode/mcp.json` contains `rikune`.
-3. Trust the MCP server when VS Code prompts you.
-4. Ask Copilot to call `tool.help` or `workflow.triage`.
+1. List tools.
+2. Call `tool.help`.
+3. Call `system.health`.
+4. Import a benign test sample with `sample.ingest`.
+5. Start the staged workflow with `workflow.analyze.start`.
+6. Poll `workflow.analyze.status`.
 
-### Copilot CLI
+## First-Run Setup Guidance
 
-Run:
+Useful tools:
 
-```text
-/mcp list
-```
-
-or:
-
-```text
-/mcp show rikune
-```
-
-## First-run setup guidance
-
-If Copilot can reach the MCP server but the server reports missing Python
-packages, dynamic-analysis extras, or Ghidra configuration, ask Copilot to call:
-
-- `system.setup.guide`
 - `system.health`
-- `ghidra.health`
+- `system.setup.guide`
+- `system.config.validate`
+- `plugin.list`
+- `tool.readiness`
+- `tools.discover`
 
-These tools return structured setup actions and missing user inputs.
+For Ghidra, keep Java 21+ available and set `GHIDRA_INSTALL_DIR` if auto-detection fails.
 
-For the static capability / PE structure / compiler attribution layer, the most
-common optional requirements are:
+For Python workers:
 
-- `python -m pip install flare-capa pefile lief`
-- a capa rules bundle referenced by `CAPA_RULES_PATH`
-- Detect It Easy CLI referenced by `DIE_PATH`
-
-## References
-
-- https://code.visualstudio.com/docs/copilot/customization/mcp-servers
-- https://code.visualstudio.com/docs/copilot/reference/mcp-configuration
-- https://docs.github.com/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers
-- https://docs.github.com/en/enterprise-cloud@latest/copilot/reference/cli-command-reference
-- https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/extend-coding-agent-with-mcp
+```powershell
+python -m pip install -r requirements.txt
+python -m pip install -r workers/requirements.txt
+python -m pip install -r workers/requirements-dynamic.txt
+```
 
 ## Scope
 
-These instructions are for local Copilot clients such as:
-
-- VS Code with GitHub Copilot
-- GitHub Copilot CLI
-
-They do not configure GitHub.com hosted coding agents. For hosted coding-agent MCP setup, use the GitHub MCP coding-agent documentation linked above.
+This guide covers local Copilot/MCP configuration. For deployment topology, see [DEPLOYMENT.md](DEPLOYMENT.md). For Docker installation, see [INSTALL.md](INSTALL.md).

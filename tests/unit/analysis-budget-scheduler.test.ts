@@ -2,14 +2,37 @@ import { describe, expect, test } from '@jest/globals'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { spawn } from 'child_process'
 import { DatabaseManager } from '../../src/database.js'
 import {
   AnalysisBudgetScheduler,
   buildSchedulerExecutionPlan,
+  listExternalAnalysisProcesses,
 } from '../../src/analysis/analysis-budget-scheduler.js'
 import { JobQueue, JobPriority } from '../../src/job-queue.js'
 
 describe('analysis budget scheduler', () => {
+  test('discovers external analyzer processes from procfs on Linux', async () => {
+    if (process.platform === 'win32' || !fs.existsSync('/proc')) {
+      expect(listExternalAnalysisProcesses()).toEqual([])
+      return
+    }
+
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)', 'capa.main'], {
+      stdio: 'ignore',
+    })
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      const processes = listExternalAnalysisProcesses()
+      expect(
+        processes.some((item) => item.pid === child.pid && item.command.includes('capa.main'))
+      ).toBe(true)
+    } finally {
+      child.kill('SIGKILL')
+    }
+  })
+
   test('classifies semantic review pipeline stages as artifact-only moderate work', () => {
     for (const stage of [
       'semantic_name_review',

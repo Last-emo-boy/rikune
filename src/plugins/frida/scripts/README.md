@@ -1,90 +1,50 @@
-# Frida Scripts Library
+# Frida Script Resources
 
-预建的 Frida 注入脚本库，用于 Windows 逆向分析中的运行时监控和数据提取。
+This directory contains bundled Frida JavaScript helpers. They are exposed through MCP resources when the server registers script resources.
 
-## 可用脚本
+## Resource URIs
 
-### api_trace.js
-**用途**: Windows API 追踪与参数日志
+| URI | File | Purpose |
+| --- | --- | --- |
+| `script://frida/anti_debug_bypass` | `anti_debug_bypass.js` | Bypass common anti-debug checks |
+| `script://frida/api_trace` | `api_trace.js` | Trace Windows API calls |
+| `script://frida/crypto_finder` | `crypto_finder.js` | Detect crypto API usage |
+| `script://frida/file_registry_monitor` | `file_registry_monitor.js` | Monitor file and registry access |
+| `script://frida/string_decoder` | `string_decoder.js` | Assist runtime string decoding |
 
-**功能**:
-- 追踪常用 Windows API 调用
-- 记录函数参数和返回值
-- 支持模块过滤
+Android Frida helper resources are defined in `src/plugins/android/scripts/` and registered by the same script manifest.
 
-**使用示例**:
-```bash
-frida -n target.exe -l api_trace.js
-```
+## Resolution
 
-### string_decoder.js
-**用途**: 运行时字符串解密
+Resource paths are resolved by `src/core/tool-registry/script-resource-manifest.ts`.
 
-**功能**:
-- 解密运行时动态生成的字符串
-- 监控字符串相关的内存操作
-- 输出解密的字符串内容
+The resolver checks:
 
-**使用示例**:
-```bash
-frida -n target.exe -l string_decoder.js
-```
+1. `RIKUNE_RESOURCE_ROOT` when set.
+2. The package or repository root discovered from the entry point.
+3. Source paths such as `src/plugins/frida/scripts/*.js`.
+4. Built package paths such as `dist/resources/scripts/frida/*.js`.
 
-### anti_debug_bypass.js
-**用途**: 反调试检测中和
+## Usage
 
-**功能**:
-- 绕过常见反调试检查
-- 修改 `IsDebuggerPresent` 返回值
-- 处理时间检测
+MCP clients can list and read these scripts through `resources/list` and `resources/read`. Tools may also use them as templates for Frida instrumentation plans.
 
-**使用示例**:
-```bash
-frida -n target.exe -l anti_debug_bypass.js
-```
+These scripts are helpers. Live instrumentation still requires an available Frida backend, a runtime plan, and the appropriate execution semantics.
 
-### crypto_finder.js
-**用途**: 加密 API 检测
+## Adding Scripts
 
-**功能**:
-- 检测加密库调用（AES, RSA, 等）
-- 识别加密密钥和参数
-- 追踪加密/解密操作
+1. Add the script file in this directory.
+2. Add an entry in `script-resource-manifest.ts`.
+3. Ensure `scripts/copy-static-assets.mjs` copies the asset into the built package if needed.
+4. Add or update tests for resource registration.
+5. Document the new URI here.
 
-**使用示例**:
-```bash
-frida -n target.exe -l crypto_finder.js
-```
+## Troubleshooting
 
-### file_registry_monitor.js
-**用途**: 文件/注册表操作追踪
+If a resource is missing:
 
-**功能**:
-- 监控文件创建、读取、写入操作
-- 追踪注册表查询和修改
-- 记录持久化相关行为
-
-**使用示例**:
-```bash
-frida -n target.exe -l file_registry_monitor.js
-```
-
-## 自定义脚本
-
-可以通过 `frida.script.inject` MCP 工具注入自定义 Frida 脚本：
-
-```json
-{
-  "tool": "frida.script.inject",
-  "arguments": {
-    "sample_id": "sha256:...",
-    "script_type": "custom",
-    "custom_script_path": "/path/to/script.js",
-    "mode": "spawn"
-  }
-}
-```
-
-## 故障排除
-
-详见 [`docs/EXAMPLES.md`](../docs/EXAMPLES.md#frida-故障排除) 中的 Frida 故障排除指南。
+- run `npm run build`;
+- check `RIKUNE_RESOURCE_ROOT`;
+- verify the source and `dist/resources/scripts` paths;
+- call `resources/list` to confirm the URI;
+- check package installation paths when running from a global install.

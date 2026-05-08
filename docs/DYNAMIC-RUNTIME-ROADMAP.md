@@ -1,160 +1,142 @@
 # Dynamic Runtime Roadmap
 
-This roadmap tracks the next iterations for Rikune dynamic execution, runtime
-debugging, Windows Sandbox, Hyper-V VM, and runtime evidence workflows. The goal
-is to make runtime work explicit, diagnosable, resumable, and reusable by
-staged analysis workflows.
+This document tracks the dynamic-runtime direction after the Analyzer/Runtime split. It is a product and engineering roadmap, not a guarantee that every item is fully implemented in every profile.
+
+## Current Baseline
+
+Implemented baseline:
+
+- Analyzer-side runtime client.
+- Runtime Node HTTP API with health, capabilities, upload, execute, task status, download, cancel, logs, and SSE routes.
+- Windows Host Agent with Windows Sandbox and Hyper-V control paths.
+- Runtime contracts in `packages/shared`.
+- Dynamic plugin surfaces for planning, sandbox execution, runtime debug sessions, toolkit status, Hyper-V control, behavior capture, behavior diff, Frida support, Wine, Qiling, PANDA, Speakeasy, managed sandbox, and runtime deobfuscation.
+- Staged workflow integration through `dynamic_plan` and `dynamic_execute`.
+- Policy gates for live execution and network-sensitive behavior.
+- Readiness checks through `dynamic.runtime.status`, `dynamic.toolkit.status`, `tool.readiness`, `/api/v1/ready`, and `plugin.list`.
 
 ## Design Principles
 
-- Runtime execution is explicit. Connecting an MCP client must not execute a
-  sample or open Windows Sandbox by itself.
-- The analyzer owns orchestration and persistence. The Windows runtime owns
-  sample execution, debugging, tracing, dumps, and isolated artifacts.
-- Every dynamic action should have a readiness check, a capability check, a
-  bounded execution budget, and a structured artifact result.
-- Windows Sandbox is the quick isolation backend. Hyper-V VM is the repeatable
-  debugging backend with checkpoint rollback.
-- Dynamic evidence must feed back into `workflow.analyze.*`,
-  `workflow.reconstruct`, `workflow.summarize`, and reports.
+1. Live execution must be explicit.
+2. Runtime evidence must identify its execution semantics.
+3. Safe simulation and emulation are useful, but they are not live Windows evidence.
+4. Analyzer and Runtime Node must exchange structured contracts, not ad hoc commands.
+5. Runtime artifacts should be importable into static evidence graphs.
+6. Host Agent control must remain authenticated and operationally visible.
+7. Hyper-V dirty-state handling must be intentional.
 
-## Iteration Phases
+## Execution Semantics
 
-### Phase 0: Tool Stability Tasks From Beta Usage
+Runtime-facing tools should describe one of:
 
-Focus: convert the tool failures observed during beta use into explicit
-product tasks before expanding the runtime surface.
+| Mode | Meaning |
+| --- | --- |
+| `plan_only` | No sample execution, only a plan |
+| `safe_simulation` | Safe synthetic or static approximation |
+| `emulation` | Emulator-backed behavior |
+| `live_sandbox` | Real execution inside Windows Sandbox |
+| `live_hyperv` | Real execution inside a Hyper-V VM |
+| `manual_runtime` | Human-operated runtime or attached external runtime |
 
-| ID | Item | Scope | Acceptance Criteria |
-|----|------|-------|---------------------|
-| TS-01 | Runtime failure diagnostics | Make `runtime_recovery_failed`, Host Agent unreachable, Runtime Node unreachable, and unsupported backend errors explain the exact missing plane. | Runtime delegation failures recommend `dynamic.runtime.status`, include endpoint/backend state, and tell users whether Host Agent, Runtime Node, or live Sandbox/Hyper-V execution is missing. |
-| TS-02 | Sandbox execution semantics | Make `sandbox.execute` state whether it performed safe simulation, emulation, or live Sandbox/Hyper-V execution. | Tool output includes explicit execution semantics; AI clients do not treat safe simulation as live Windows Sandbox execution. |
-| TS-03 | MCP resource smoke test | Prevent `resources/list` from advertising resources that fail `resources/read` inside Docker/npm package layouts. | Unit or integration smoke test registers all script resources and reads each handler result. |
-| TS-04 | Host Agent startup guidance | Prefer logged-on user session startup and clearly separate foreground, Task Scheduler, and service modes. | Install/runtime docs and failure guidance explain that Windows Sandbox needs an interactive user session; service mode is advanced. |
-| TS-05 | Dynamic tool availability gating | Avoid presenting runtime execution tools as fully runnable when backend dependencies are missing. | `dynamic.runtime.status` reports supported backends and next tools; execution tools point to status/guidance before retry. |
-| TS-06 | Docker health check reliability | Remove false-negative install success reports when Dashboard/API is already reachable. | Installer waits for the correct endpoint, retries with clear logs, and reports degraded vs failed states. |
-| TS-07 | Proxy propagation | Propagate system/Git/npm proxy settings into Docker build args, npm, pip, apt, and compose env. | Docker builds can fetch base images and dependencies behind a configured proxy without manual global setup. |
-| TS-08 | Long-task transport hardening | Reduce `Transport closed` during workflow promotion and parallel tool calls. | Long tasks are queued, output stays on stderr/artifacts, and failures return structured results instead of killing MCP stdio. |
-| TS-09 | Sidecar and AV interference handling | Detect missing sidecars and changed/deleted sample files during upload and dynamic staging. | Upload/profile results report missing sidecars, staged file hashes, and derived-sample provenance. |
-| TS-10 | Profile-specific dependency checks | Do not require Ghidra/Java/dynamic tools for profiles that do not include them. | Entrypoint and health checks distinguish required, optional, and delegated dependencies per profile. |
-| TS-11 | Public contract drift tests | Keep README/docs examples aligned with MCP resource and deployment contracts. | Tests fail when public docs advertise stale MCP resource URIs or copy-paste commands that no longer match runtime behavior. |
+Clients should not merge safe simulation with live runtime evidence without preserving provenance.
+
+## Roadmap Phases
 
 ### Phase 1: Runtime Control Plane Hardening
 
-Focus: make the current runtime session layer stable and recoverable.
+Goal: make Runtime Node and Host Agent easier to diagnose and safer to operate.
 
-| ID | Item | Scope | Acceptance Criteria |
-|----|------|-------|---------------------|
-| DR-01 | Persist runtime sessions | Store `runtime.debug.session.*` state in SQLite instead of process memory only. | Implemented for sample-bound `runtime.debug.session.*`: sessions persist endpoint, backend, sandbox id, timestamps, health, capabilities, task refs, and artifact refs in `debug_sessions`. |
-| DR-02 | Capability-driven dispatch | Query Runtime Node `/capabilities` before execution. | Implemented through `ToolDefinition.runtime`: unsupported runtime contracts fail before upload/execute with setup guidance and advertised runtime backends. |
-| DR-03 | Runtime artifact auto-import | Download Runtime Node artifacts after `runtime.debug.command`. | Implemented for Runtime Node `artifactRefs`: downloaded files are copied into `reports/runtime_debug/<session>/` and registered as `runtime_debug_artifact`. |
-| DR-04 | Sandbox and Host Agent diagnostics | Return high-signal startup diagnostics for Windows Sandbox failures. | Implemented for Host Agent start failures: responses include `.wsb` path, mapped folders, LogonCommand summary, WindowsSandbox.exe state, runtime ready file, startup/stdout/stderr log previews, and missing runtime paths. |
+Tasks:
 
-### Phase 2: Real Debugging Runtime
+- richer Host Agent health payloads;
+- endpoint/API-key mismatch diagnostics;
+- stale portproxy cleanup guidance;
+- runtime task cancellation visibility;
+- runtime log download through Analyzer artifacts;
+- dashboard runtime status page.
 
-Focus: move from one-shot CDB commands to reusable debugging sessions.
+### Phase 2: Evidence Import
 
-| ID | Item | Scope | Acceptance Criteria |
-|----|------|-------|---------------------|
-| DR-05 | Long-lived Windows debug sessions | Keep CDB/DbgEng state alive across `start`, `breakpoint`, `continue`, `step`, `inspect`, `snapshot`, and `end`. | Breakpoints and process state persist across commands inside one runtime session. |
-| DR-06 | Debug session transcript | Persist debugger commands, hits, registers, stack snapshots, module list, and errors. | Partially implemented: Runtime Node `executeDebugSession` writes `debug_session_trace.json` artifact refs for every command, including missing-debugger failures and CDB stdout/stderr previews. |
-| DR-07 | Debug safety budgets | Add timeout, max breakpoint hits, max stdout/stderr, and max memory capture limits. | Partially implemented: Runtime Node debug commands now record timeout/stdout/stderr budgets in transcripts and cap returned CDB output. Breakpoint hit and memory capture budgets remain pending. |
+Goal: make runtime artifacts first-class evidence.
 
-### Phase 3: Hyper-V VM as a First-Class Backend
+Tasks:
 
-Focus: make Hyper-V the preferred repeatable runtime backend for deep debugging.
+- normalize runtime behavior traces;
+- import memory dumps, module lists, process trees, registry/file/network events;
+- connect runtime observations to static function, string, import, and config evidence;
+- expose provenance in `analysis.context.get` and report tools.
 
-| ID | Item | Scope | Acceptance Criteria |
-|----|------|-------|---------------------|
-| DR-08 | Hyper-V VM lifecycle tools | Add status/list/checkpoint/restore helpers through Host Agent. | Implemented for status, list, create checkpoint, restore checkpoint, and stop: Host Agent exposes `/hyperv/status`, GET/POST `/hyperv/checkpoints`, `/hyperv/restore`, and `/hyperv/stop`, and MCP clients can use `runtime.hyperv.control`. |
-| DR-09 | Runtime VM bootstrap guide | Document and script Runtime Node setup inside the VM. | A clean Windows VM can be prepared with Node, runtime package, firewall rule, startup command, and health endpoint. |
-| DR-10 | Dirty checkpoint retention | Optionally preserve post-execution VM state for manual review. | Implemented: `runtime.debug.session.start` accepts `hyperv_retention_policy` with `clean_rollback`, `stop_only`, and `preserve_dirty`, plus low-level Hyper-V lifecycle overrides. Host Agent can restore the configured checkpoint, stop the VM, or leave the dirty VM state available on release. |
+### Phase 3: Debug Session Maturity
 
-### Phase 4: Runtime Evidence Capture
+Goal: support longer, auditable debug sessions.
 
-Focus: broaden the runtime evidence surface beyond debugger output.
+Tasks:
 
-| ID | Item | Scope | Acceptance Criteria |
-|----|------|-------|---------------------|
-| DR-11 | Frida Runtime Node execution | Run generated Frida scripts inside Sandbox/VM rather than only generating plans. | Runtime can spawn/attach, capture API calls, decrypted strings, dynamic API resolution, allocation/write/execute events, and JSONL traces. |
-| DR-12 | ETW/ProcMon/Sysmon-style behavior capture | Add coarse process/file/registry/network/module-load capture. | Partially implemented: `dynamic.behavior.capture` runs inside Windows Runtime Node, captures process/module/file/TCP/module/stdout/stderr observations, writes `behavior_capture.json`, and exposes an embedded normalized trace. Registry, DNS, ETW, and ProcMon-grade capture remain pending. |
-| DR-13 | Memory dump workflow | Promote `dynamic.memory_dump` into a full dump/analyze/re-ingest path. | Runtime enumerates process/modules/regions, captures selected dumps, scans for PE/shellcode/URLs/config/keys, and can ingest derived unpacked samples. |
+- persistent debug session records;
+- explicit attach/spawn semantics;
+- command audit trail;
+- debugger inventory and readiness checks;
+- manual GUI handoff metadata;
+- controlled artifact extraction.
 
-### Phase 5: Workflow and Product Integration
+### Phase 4: Hyper-V First-Class Backend
 
-Focus: make dynamic work easy for AI clients and visible to users.
+Goal: make Hyper-V behavior equivalent to Sandbox where practical.
 
-| ID | Item | Scope | Acceptance Criteria |
-|----|------|-------|---------------------|
-| DR-14 | Staged workflow integration | Wire runtime sessions, task refs, and dynamic artifacts into `dynamic_plan` and `dynamic_execute`. | Partially implemented: `workflow.analyze.start/status/promote` now include `runtime_sessions` and `runtime_readiness` with session refs, endpoints, artifact counts, capabilities, and next-step guidance. `dynamic_plan` now runs static behavior classification, embeds an evidence-aware `dynamic.deep_plan`, recommends `dynamic.runtime.status`, and keeps live behavior capture gated behind explicit runtime calls. |
-| DR-15 | Dashboard runtime page | Add a Runtime tab to the dashboard. | Users can see Host Agent health, selected backend, active sessions, capabilities, VM/Sandbox status, recent tasks, startup logs, and stop/release controls. |
-| DR-16 | AI-facing runtime guidance | Improve `tool.help`, `dynamic.runtime.status`, and failure guidance. | Partially implemented: `dynamic.runtime.status` is available and aggregates Runtime Node health, capabilities, Host Agent health, Hyper-V/Sandbox diagnostics, persisted sessions, backend-interface flags, and next actions. |
-| DR-17 | Unified runtime backend interface | Normalize Sandbox, Hyper-V VM, manual runtime, Wine-local, and future remote backends. | Partially implemented: `dynamic.runtime.status` reports normalized `start`, `health`, `capabilities`, `upload`, `execute`, `download`, `stop`, and backend-support booleans across configured Runtime Node and Host Agent surfaces. |
+Tasks:
 
-### Phase 6: Deep Dynamic Plugin Expansion
+- checkpoint validation;
+- configurable release policy;
+- VM capability inventory;
+- dirty-state warnings;
+- restore failure diagnostics;
+- per-session resource accounting.
 
-Focus: turn advanced runtime debugging ideas into capability-driven plugins.
+### Phase 5: Workflow Productization
 
-| ID | Item | Scope | Acceptance Criteria |
-|----|------|-------|---------------------|
-| DR-18 | Runtime tool inventory | Detect CDB/WinDbg, ProcDump, ProcMon, Sysmon, TTD helpers, x64dbg, dnSpyEx, Frida, dotnet, and FakeNet-style helpers inside Runtime Node/tool-cache paths. | Implemented: Runtime Node exposes read-only `/toolkit` plus `executeRuntimeToolProbe`; MCP clients use `dynamic.toolkit.status`. The probe searches `RUNTIME_TOOL_DIRS`, `RUNTIME_TOOL_CACHE_DIR`, `RIKUNE_RUNTIME_TOOLS`, `RIKUNE_TOOL_CACHE_DIR`, default `C:\rikune-tools`, PATH, and common Windows SDK locations. |
-| DR-19 | Deep dynamic plan surface | Convert behavior/debugger/memory/telemetry/network/.NET/anti-evasion/TTD/manual-GUI directions into explicit MCP tool sequences. | Implemented: `dynamic.deep_plan` returns planning-only profiles, recommended tools, artifact expectations, and safety flags without launching or executing anything. |
-| DR-20 | CDB automation pack | Add higher-level CDB actions for API breakpoints, exception tracing, dump-on-break, module breakpoints, and script templates. | Implemented: `debug.cdb.plan` creates planning-only CDB command batches and `runtime.debug.command` templates, and Runtime Node accepts bounded `debug.session.command_batch` / `debug.session.cdb_script` batches through the existing transcript and artifact path. |
-| DR-21 | ProcDump integration | Capture crash, timeout, and trigger-based dumps with ProcDump, then import and scan them as runtime artifacts. | Implemented: `debug.procdump.plan` creates planning-only crash, first-chance, timeout, and PID-snapshot templates, and Runtime Node exposes `debug.procdump.capture` through `executeProcDumpCapture` with metadata, dump artifact discovery, setup guidance, and timeout/stdout/stderr budgets. |
-| DR-22 | ProcMon/Sysmon/ETW telemetry plugins | Capture file, registry, process, network, image-load, and DNS telemetry beyond coarse snapshots. | Implemented: `debug.telemetry.plan` creates planning-only ProcMon, Sysmon, ETW process/DNS, and PowerShell event-log profiles with backend fit, cleanup/rollback requirements, static behavior hints, and correlation guidance. Runtime Node exposes `debug.telemetry.capture` through `executeTelemetryCapture`, with ProcMon/Sysmon setup detection, ETW process/DNS capture, PowerShell event-log snapshot fallback, artifact discovery, cleanup, setup guidance, and timeout/stdout/stderr budgets. |
-| DR-23 | Fake network lab | Add FakeNet/INetSim-style service emulation, DNS/HTTP sinkholing, and future PCAP import. | Implemented as an explicit planning surface: `debug.network.plan` builds proxy sinkhole, DNS/HTTP sinkhole, FakeNet-style, and ETW DNS profiles, reads `static.config.carver` network indicators, emits safe runtime command templates for behavior capture and telemetry capture, and keeps DNS/hosts/service mutation gated behind explicit runtime setup. |
-| DR-24 | Managed runtime debug profile | Add CLRMD/dotnet-dump/SOS-style managed object, stack, module, and resource inspection; keep dnSpyEx as a manual profile. | Implemented as a managed debug planner: `debug.managed.plan` builds managed safe-run, SOS/CDB, ProcDump, resource review, and dnSpyEx handoff profiles, can merge persisted `.NET` metadata context, and emits runtime command templates for `managed.safe_run`, `debug.session.command_batch`, and `debug.procdump.capture`. |
-| DR-25 | Manual GUI debug handoff | Launch or prepare x64dbg/WinDbg/dnSpy sessions in visible Sandbox or preserved Hyper-V VMs. | Implemented as artifact-backed preparation: `debug.gui.handoff` creates x64dbg, WinDbg, and dnSpyEx handoff profiles, recommends Hyper-V `preserve_dirty` retention, records user-session constraints, and points manual outputs back into `dynamic.memory.import`, `unpack.child.handoff`, and evidence graph workflows. |
+Goal: make staged workflows choose dynamic depth safely.
 
-### Phase 7: Purpose-Built Static and Dynamic Plugins
+Tasks:
 
-Focus: add small, specialist plugins that are useful before, during, and after
-runtime execution instead of relying only on broad decompilers or generic
-sandbox output.
+- richer `dynamic_plan` recommendations from static findings;
+- explicit policy prompts before `dynamic_execute`;
+- cost and time estimates;
+- sample-family reuse of runtime hypotheses;
+- failure-tolerant fallback from live runtime to emulation or plan-only results.
 
-| ID | Item | Scope | Acceptance Criteria |
-|----|------|-------|---------------------|
-| DR-26 | Runtime persona planning | Build user-profile, RecentDocs, Office, locale, network, and interaction-timing plans for Sandbox/Hyper-V without mutating the runtime. | Implemented: `dynamic.persona.plan` returns a planning-only persona checklist and can persist `dynamic_persona_plan` artifacts. |
-| DR-27 | Static resource graph | Extract PE resource leaves, payload magic, entropy, hashes, sizes, and string previews before live execution. | Implemented: `static.resource.graph` persists `static_resource_graph` artifacts and recommends config, entropy, strings, .NET, and dynamic follow-up tools. |
-| DR-28 | Static config carver | Family-agnostic carving of URLs, domains, IP/port pairs, registry paths, mutex-like strings, HTTP clients, config keywords, and encoded blobs. | Implemented: `static.config.carver` persists `static_config_carver` artifacts and feeds dynamic planning. |
-| DR-29 | Evidence graph | Correlate static strings/imports/resources, runtime traces, memory dumps, and report findings into one explainable graph. | Implemented: `analysis.evidence.graph` links specialist static artifacts, runtime observations, expectation nodes, observation nodes, and corroboration edges into `analysis_evidence_graph` artifacts. |
-| DR-30 | Behavior contract and diff | Compare expected static behaviors against runtime observations to show what executed, what stayed dormant, and what requires a different persona/backend. | Implemented: `dynamic.behavior.diff` consumes `static.config.carver`, `static.resource.graph`, and dynamic trace artifacts to report confirmed behavior, missing expectations, unexpected observations, hypotheses, and next tools. |
-| DR-31 | API hash and dynamic resolver deepening | Strengthen API hash detection, resolver-loop localization, and runtime breakpoint recommendations. | Implemented: `hash.resolver.plan` scans sample prefixes for resolver strings, PEB/module-walk hints, hex/hash-like constants, algorithm-family hints, and direct handoff to `hash.identify`, `hash.resolve`, `breakpoint.smart`, and `trace.condition`. |
-| DR-32 | Crypto/key lifecycle graph | Track candidate keys, IVs, S-boxes, decrypt buffers, and call sites across static and runtime evidence. | Implemented: `crypto.lifecycle.graph` merges `crypto.identify` artifacts with imported dynamic traces to graph algorithms, functions, APIs, constants, runtime stages, memory-region hints, and corroborated crypto APIs. |
-| DR-33 | Persistence and injection classifiers | Add dedicated classifiers for autostart, service install, scheduled task, WMI, process injection, and hollowing patterns. | Implemented: `static.behavior.classify` combines strings, `static.config.carver` artifacts, and optional dynamic trace imports to classify Run key, service, scheduled task, WMI, startup folder, IFEO, remote-thread injection, hollowing, APC, DLL injection, thread hijack, and anti-debug probes with runtime follow-up tools. |
-| DR-34 | Unpack and child-sample handoff | Turn unpacked resource/memory payload candidates into staged child samples with provenance. | Implemented: `unpack.child.handoff` carves payload candidates from `static.resource.graph`, raw sample bytes, and `raw_dump` artifacts, persists payload artifacts, and registers bounded child samples with parent/source/offset provenance. |
+### Phase 6: Deep Dynamic Plugins
 
-## Proposed Milestones
+Goal: expand specialist runtime tools without bloating the default surface.
 
-| Milestone | Target Items | Outcome |
-|-----------|--------------|---------|
-| M1 Runtime Control | DR-01 to DR-04 | Runtime sessions become recoverable, capability-aware, and diagnosable. |
-| M2 Debugger Core | DR-05 to DR-07 | Windows debugging becomes a real multi-command session. |
-| M3 Hyper-V Runtime | DR-08 to DR-10 | Hyper-V VM becomes the repeatable debug backend. |
-| M4 Evidence Capture | DR-11 to DR-13 | Runtime traces, behavior, and memory dumps become normalized evidence. |
-| M5 Product Integration | DR-14 to DR-17 | Dynamic execution is visible in workflow status, dashboard, and AI guidance. |
-| M6 Deep Dynamic Plugins | DR-18 to DR-25 | Advanced runtime tools become discoverable, profile-driven, and explicitly gated. |
-| M7 Specialist Plugin Pack | DR-26 to DR-34 | Static and dynamic specialist tools produce small, composable evidence artifacts for deeper workflows. |
+Candidates:
+
+- debugger breakpoint planning;
+- ProcDump and memory capture playbooks;
+- ETW or equivalent telemetry plans;
+- network experiment plans;
+- managed runtime inspection;
+- runtime string and config extraction;
+- anti-debug and anti-VM behavior correlation.
+
+### Phase 7: Cross-Evidence Graphs
+
+Goal: unify static, emulated, and live observations.
+
+Tasks:
+
+- behavior-first summary graph;
+- crypto/key lifecycle graph;
+- persistence and injection classifiers;
+- unpacking before/after diffs;
+- function-to-runtime-event correlation;
+- report-level confidence and provenance.
 
 ## Recommended Build Order
 
-1. DR-01 session persistence.
-2. DR-02 capability-driven dispatch.
-3. DR-03 runtime artifact auto-import.
-4. DR-04 Sandbox/Host Agent diagnostics.
-5. DR-14 workflow integration for the stable control-plane fields.
-6. DR-05 long-lived debug sessions.
-7. DR-08 Hyper-V lifecycle tools.
-8. DR-11 Frida Runtime Node execution.
-9. DR-13 memory dump workflow.
-10. DR-15 dashboard runtime page.
-11. DR-18 runtime tool inventory.
-12. DR-19 deep dynamic planning.
-13. DR-20 CDB automation pack.
-14. DR-21 to DR-24 deep capture plugins.
-15. DR-25 manual GUI handoff.
-16. DR-26 to DR-28 first specialist plugin pack.
-17. DR-29 to DR-34 graph, diff, resolver, crypto, classifier, and unpack handoff tools.
-
-This order keeps early work low-risk while producing immediate improvements for
-the current Docker + Windows Host Agent + Sandbox/Hyper-V chain.
+1. Stabilize runtime health and Host Agent diagnostics.
+2. Improve runtime artifact import.
+3. Strengthen debug session persistence.
+4. Expand Hyper-V parity.
+5. Add workflow-level policy/cost guidance.
+6. Add specialist dynamic plugins behind tier 2 and tier 3 discovery.
+7. Build evidence graphs that make runtime provenance visible in summaries and reviews.

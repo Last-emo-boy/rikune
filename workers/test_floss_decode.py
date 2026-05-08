@@ -16,6 +16,14 @@ from unittest.mock import Mock, patch, MagicMock
 from static_worker import StaticWorker, WorkerRequest, SampleInfo, WorkerContext, PolicyContext
 
 
+def mock_external_command(worker, returncode=0, stdout="", stderr="", timed_out=False):
+    return patch.object(
+        worker,
+        '_run_external_command_to_files',
+        return_value=(returncode, stdout, stderr, timed_out),
+    )
+
+
 # Mock shutil.which at module level for all tests
 @pytest.fixture(autouse=True)
 def mock_floss_available():
@@ -66,13 +74,7 @@ class TestFlossDecoding:
             }
         }
         
-        with patch('subprocess.run') as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout=json.dumps(mock_output),
-                stderr=""
-            )
-            
+        with mock_external_command(worker, stdout=json.dumps(mock_output)):
             result = worker.floss_decode(sample_file, {})
             
             # 验证结果
@@ -97,44 +99,24 @@ class TestFlossDecoding:
     
     def test_floss_decode_with_timeout(self, worker, sample_file):
         """测试 FLOSS 解码超时控制"""
-        import subprocess
-        
-        with patch('subprocess.run') as mock_run:
-            # 模拟超时
-            mock_run.side_effect = subprocess.TimeoutExpired(
-                cmd=['floss'],
-                timeout=60
-            )
-            
-            with patch('subprocess.Popen') as mock_popen:
-                # 模拟部分结果
-                mock_process = Mock()
-                mock_process.communicate.side_effect = subprocess.TimeoutExpired(
-                    cmd=['floss'],
-                    timeout=60
-                )
-                mock_process.kill.return_value = None
-                
-                # 第二次 communicate 返回部分输出
-                partial_output = {
-                    "strings": {
-                        "decoded_strings": [
-                            {
-                                "string": "partial_result",
-                                "offset": 0x1000,
-                                "decoding_routine": "decode_xor"
-                            }
-                        ]
+        partial_output = {
+            "strings": {
+                "decoded_strings": [
+                    {
+                        "string": "partial_result",
+                        "offset": 0x1000,
+                        "decoding_routine": "decode_xor"
                     }
-                }
-                mock_process.communicate.return_value = (json.dumps(partial_output), "")
-                mock_popen.return_value = mock_process
-                
-                result = worker.floss_decode(sample_file, {'timeout': 60})
-                
-                # 验证超时标志
-                assert result['timeout_occurred'] is True
-                assert result['partial_results'] is True
+                ]
+            }
+        }
+
+        with mock_external_command(worker, returncode=-9, stdout=json.dumps(partial_output), timed_out=True):
+            result = worker.floss_decode(sample_file, {'timeout': 60})
+
+            # 验证超时标志
+            assert result['timeout_occurred'] is True
+            assert result['partial_results'] is True
     
     def test_floss_decode_multiple_modes(self, worker, sample_file):
         """测试多种解码模式"""
@@ -155,13 +137,7 @@ class TestFlossDecoding:
             }
         }
         
-        with patch('subprocess.run') as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout=json.dumps(mock_output),
-                stderr=""
-            )
-            
+        with mock_external_command(worker, stdout=json.dumps(mock_output)):
             result = worker.floss_decode(
                 sample_file,
                 {'modes': ['static', 'stack', 'tight', 'decoded']}
@@ -185,19 +161,12 @@ class TestFlossDecoding:
             }
         }
         
-        with patch('subprocess.run') as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout=json.dumps(mock_output),
-                stderr=""
-            )
-            
+        with mock_external_command(worker, stdout=json.dumps(mock_output)) as mock_runner:
             result = worker.floss_decode(sample_file, {'timeout': 30})
             
-            # 验证 subprocess.run 被调用时使用了正确的超时
-            mock_run.assert_called_once()
-            call_kwargs = mock_run.call_args[1]
-            assert call_kwargs['timeout'] == 30
+            # 验证外部命令调用时使用了正确的超时
+            mock_runner.assert_called_once()
+            assert mock_runner.call_args[0][1] == 30
     
     def test_floss_decode_invalid_timeout(self, worker, sample_file):
         """测试无效的超时参数"""
@@ -218,13 +187,7 @@ class TestFlossDecoding:
     
     def test_floss_decode_json_parse_error(self, worker, sample_file):
         """测试 JSON 解析错误"""
-        with patch('subprocess.run') as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout="invalid json",
-                stderr=""
-            )
-            
+        with mock_external_command(worker, stdout="invalid json"):
             with pytest.raises(Exception, match="Failed to parse FLOSS JSON output"):
                 worker.floss_decode(sample_file, {})
     
@@ -238,14 +201,7 @@ class TestFlossDecoding:
             }
         }
         
-        with patch('subprocess.run') as mock_run:
-            # 返回非零退出码但有输出
-            mock_run.return_value = Mock(
-                returncode=1,
-                stdout=json.dumps(mock_output),
-                stderr="Some error occurred"
-            )
-            
+        with mock_external_command(worker, returncode=1, stdout=json.dumps(mock_output), stderr="Some error occurred"):
             result = worker.floss_decode(sample_file, {})
             
             # 应该返回部分结果
@@ -261,13 +217,7 @@ class TestFlossDecoding:
             }
         }
         
-        with patch('subprocess.run') as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout=json.dumps(mock_output),
-                stderr=""
-            )
-            
+        with mock_external_command(worker, stdout=json.dumps(mock_output)):
             result = worker.floss_decode(sample_file, {})
             
             assert result['count'] == 0
@@ -288,13 +238,7 @@ class TestFlossDecoding:
             }
         }
         
-        with patch('subprocess.run') as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout=json.dumps(mock_output),
-                stderr=""
-            )
-            
+        with mock_external_command(worker, stdout=json.dumps(mock_output)):
             # 不指定 modes，应该只返回 decoded
             result = worker.floss_decode(sample_file, {})
             
@@ -333,13 +277,7 @@ class TestFlossIntegration:
             }
         }
         
-        with patch('subprocess.run') as mock_run:
-            mock_run.return_value = Mock(
-                returncode=0,
-                stdout=json.dumps(mock_output),
-                stderr=""
-            )
-            
+        with mock_external_command(worker, stdout=json.dumps(mock_output)):
             request = WorkerRequest(
                 job_id="test-job-1",
                 tool="strings.floss.decode",

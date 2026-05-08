@@ -50,6 +50,7 @@ interface PooledWorkerState {
   createdAt: string
   lastUsedAt: string
   stdoutBuffer: string
+  idleTimer?: NodeJS.Timeout
   pending?: {
     resolve: (value: StaticWorkerResponseLike) => void
     reject: (error: Error) => void
@@ -66,6 +67,46 @@ interface WorkerFamilyCounters {
 
 const DEFAULT_IDLE_TTL_MS = 2 * 60 * 1000
 const DEFAULT_POOL_CAP = 4
+
+function terminateProcessTree(
+  child: ChildProcessWithoutNullStreams,
+  signal: NodeJS.Signals = 'SIGTERM'
+): void {
+  const pid = child.pid
+  if (!pid) {
+    try {
+      child.kill(signal)
+    } catch {
+      // ignore shutdown failures
+    }
+    return
+  }
+
+  if (process.platform === 'win32') {
+    const killer = spawn('taskkill', ['/T', '/F', '/PID', String(pid)], {
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    killer.on('error', () => {
+      try {
+        child.kill(signal)
+      } catch {
+        // ignore shutdown failures
+      }
+    })
+    return
+  }
+
+  try {
+    process.kill(-pid, signal)
+  } catch {
+    try {
+      child.kill(signal)
+    } catch {
+      // ignore shutdown failures
+    }
+  }
+}
 
 export function buildStaticWorkerCompatibilityKey(request: StaticWorkerRequestLike): string {
   const payload = JSON.stringify({
@@ -169,6 +210,7 @@ export class RuntimeWorkerPool {
 
     if (worker) {
       warmReuse = true
+      this.clearIdleEviction(worker)
       const counters = this.getCounters(family, compatibilityKey)
       counters.warmReuseCount += 1
       this.persistFamilyState(options.database, family, compatibilityKey, deploymentKey)
@@ -188,6 +230,7 @@ export class RuntimeWorkerPool {
     }
 
     worker.busy = true
+    this.clearIdleEviction(worker)
     worker.lastUsedAt = new Date().toISOString()
     this.persistFamilyState(options.database, family, compatibilityKey, deploymentKey)
 
@@ -195,6 +238,7 @@ export class RuntimeWorkerPool {
       const response = await this.sendRequest(worker, request, options.timeoutMs)
       worker.busy = false
       worker.lastUsedAt = new Date().toISOString()
+      this.scheduleIdleEviction(worker, options.database, idleTtlMs)
       this.persistFamilyState(options.database, family, compatibilityKey, deploymentKey)
       return {
         response,
@@ -288,6 +332,7 @@ export class RuntimeWorkerPool {
   ): PooledWorkerState {
     const child = spawn(spawnConfig.command, spawnConfig.args, {
       stdio: ['pipe', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
       windowsHide: true,
     })
 
@@ -376,6 +421,7 @@ export class RuntimeWorkerPool {
       const timer = setTimeout(
         () => {
           worker.pending = undefined
+          terminateProcessTree(worker.child, 'SIGTERM')
           reject(
             new Error(
               `Static worker timed out after ${timeoutMs || config.workers.static.timeout * 1000}ms`
@@ -425,13 +471,43 @@ export class RuntimeWorkerPool {
     }
   }
 
+  private clearIdleEviction(worker: PooledWorkerState): void {
+    if (!worker.idleTimer) {
+      return
+    }
+    clearTimeout(worker.idleTimer)
+    worker.idleTimer = undefined
+  }
+
+  private scheduleIdleEviction(
+    worker: PooledWorkerState,
+    database?: DatabaseManager,
+    idleTtlMs: number = DEFAULT_IDLE_TTL_MS
+  ): void {
+    this.clearIdleEviction(worker)
+    if (idleTtlMs <= 0 || worker.busy || worker.unhealthy) {
+      return
+    }
+    worker.idleTimer = setTimeout(() => {
+      worker.idleTimer = undefined
+      if (!this.workers.has(worker.id) || worker.busy) {
+        return
+      }
+      this.disposeWorker(worker, database, worker.unhealthy)
+    }, idleTtlMs)
+    if (worker.idleTimer.unref) {
+      worker.idleTimer.unref()
+    }
+  }
+
   private disposeWorker(
     worker: PooledWorkerState,
     database?: DatabaseManager,
     unhealthy: boolean = false
   ): void {
+    this.clearIdleEviction(worker)
     try {
-      worker.child.kill()
+      terminateProcessTree(worker.child, 'SIGTERM')
     } catch {
       // ignore shutdown failures
     }
@@ -447,6 +523,7 @@ export class RuntimeWorkerPool {
   private async shutdownWorker(worker: PooledWorkerState, graceMs: number): Promise<void> {
     worker.busy = false
     worker.unhealthy = true
+    this.clearIdleEviction(worker)
 
     if (worker.pending) {
       const pending = worker.pending
@@ -484,11 +561,7 @@ export class RuntimeWorkerPool {
       const closeListener = () => finish()
       const errorListener = () => finish()
       timer = setTimeout(() => {
-        try {
-          child.kill('SIGKILL')
-        } catch {
-          // ignore forced shutdown failures
-        }
+        terminateProcessTree(child, 'SIGKILL')
         finish()
       }, graceMs)
       if (timer.unref) {
@@ -500,11 +573,7 @@ export class RuntimeWorkerPool {
         child.once('error', errorListener)
       }
 
-      try {
-        child.kill()
-      } catch {
-        // ignore shutdown failures
-      }
+      terminateProcessTree(child, 'SIGTERM')
 
       if (typeof child.once !== 'function') {
         clearTimeout(timer)

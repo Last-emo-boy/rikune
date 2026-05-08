@@ -309,7 +309,12 @@ async function main() {
     await server.start()
 
     // Handle graceful shutdown
+    let shuttingDown = false
     const shutdown = async (signal: string) => {
+      if (shuttingDown) {
+        return
+      }
+      shuttingDown = true
       server.getLogger().info(`Received ${signal}, shutting down gracefully`)
       if (sandboxLauncher) {
         sandboxLauncher.stopHealthCheck()
@@ -323,6 +328,10 @@ async function main() {
 
     process.on('SIGINT', () => shutdown('SIGINT'))
     process.on('SIGTERM', () => shutdown('SIGTERM'))
+    if (!process.stdin.isTTY) {
+      process.stdin.once('end', () => shutdown('STDIN_END'))
+      process.stdin.once('close', () => shutdown('STDIN_CLOSE'))
+    }
   } catch (error) {
     process.stderr.write(`Failed to start MCP Server: ${error}\n`)
     process.exit(1)

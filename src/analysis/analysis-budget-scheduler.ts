@@ -119,6 +119,27 @@ const CGROUP_LIMIT_PATHS = [
   '/sys/fs/cgroup/memory/memory.limit_in_bytes',
 ]
 
+export interface ExternalAnalysisProcess {
+  pid: number
+  ppid: number | null
+  rss_mb: number
+  command: string
+}
+
+const EXTERNAL_ANALYSIS_COMMAND_MARKERS = [
+  'floss',
+  'flare-floss',
+  'capa.main',
+  '/capa',
+  'ghidra',
+  'analyzeheadless',
+  'retdec',
+  'rizin',
+  'rizin_preview_worker.py',
+  'angr',
+  'speakeasy',
+]
+
 function parsePositiveInt(value: string | undefined): number | null {
   if (!value) {
     return null
@@ -154,6 +175,82 @@ export function getRuntimeMemoryUsageMb(): number {
     readFileNumberMb(CGROUP_USAGE_PATHS) ||
     Math.max(1, Math.round(process.memoryUsage().rss / (1024 * 1024)))
   )
+}
+
+function readProcCommand(pid: string): string | null {
+  try {
+    const raw = fs.readFileSync(`/proc/${pid}/cmdline`)
+    const cmdline = raw.toString('utf8').replace(/\0/g, ' ').trim()
+    if (cmdline) {
+      return cmdline
+    }
+  } catch {
+    // ignore procfs races
+  }
+
+  try {
+    return fs.readFileSync(`/proc/${pid}/comm`, 'utf8').trim()
+  } catch {
+    return null
+  }
+}
+
+function readProcRssMb(pid: string): number | null {
+  try {
+    const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8')
+    const match = status.match(/^VmRSS:\s+(\d+)\s+kB/m)
+    if (!match) {
+      return null
+    }
+    return Math.max(1, Math.round(Number.parseInt(match[1], 10) / 1024))
+  } catch {
+    return null
+  }
+}
+
+function readProcParentPid(pid: string): number | null {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
+    const match = stat.match(/^\d+\s+\(.+\)\s+\S+\s+(\d+)/)
+    return match ? Number.parseInt(match[1], 10) : null
+  } catch {
+    return null
+  }
+}
+
+function isExternalAnalysisCommand(command: string): boolean {
+  const lowered = command.toLowerCase()
+  return EXTERNAL_ANALYSIS_COMMAND_MARKERS.some((marker) => lowered.includes(marker))
+}
+
+export function listExternalAnalysisProcesses(): ExternalAnalysisProcess[] {
+  if (process.platform === 'win32' || !fs.existsSync('/proc')) {
+    return []
+  }
+
+  const currentPid = process.pid
+  const processes: ExternalAnalysisProcess[] = []
+  for (const entry of fs.readdirSync('/proc')) {
+    if (!/^\d+$/.test(entry) || Number.parseInt(entry, 10) === currentPid) {
+      continue
+    }
+    const command = readProcCommand(entry)
+    if (!command || !isExternalAnalysisCommand(command)) {
+      continue
+    }
+    const rssMb = readProcRssMb(entry)
+    if (!rssMb) {
+      continue
+    }
+    processes.push({
+      pid: Number.parseInt(entry, 10),
+      ppid: readProcParentPid(entry),
+      rss_mb: rssMb,
+      command,
+    })
+  }
+
+  return processes.sort((left, right) => right.rss_mb - left.rss_mb)
 }
 
 function getConfiguredMemoryLimitMb(): number {
@@ -561,6 +658,11 @@ export class AnalysisBudgetScheduler {
 
   private buildMemorySnapshot(plans: SchedulerExecutionPlan[]) {
     const currentRssMb = getRuntimeMemoryUsageMb()
+    const externalProcesses = listExternalAnalysisProcesses()
+    const externalActiveRssMb = externalProcesses.reduce(
+      (sum, proc) => sum + Math.max(0, proc.rss_mb || 0),
+      0
+    )
     const activeExpectedRssMb = plans.reduce(
       (sum, plan) => sum + Math.max(0, plan.expected_rss_mb || 0),
       0
@@ -571,6 +673,9 @@ export class AnalysisBudgetScheduler {
       memory_limit_mb: this.memoryLimitMb,
       control_plane_headroom_mb: this.controlPlaneHeadroomMb,
       active_expected_rss_mb: activeExpectedRssMb,
+      external_active_rss_mb: externalActiveRssMb,
+      external_active_process_count: externalProcesses.length,
+      external_active_processes: externalProcesses.slice(0, 8),
       usable_budget_mb: usableBudgetMb,
     }
   }
@@ -790,6 +895,9 @@ export class AnalysisBudgetScheduler {
       memory_limit_mb: number
       control_plane_headroom_mb: number
       active_expected_rss_mb: number
+      external_active_rss_mb?: number
+      external_active_process_count?: number
+      external_active_processes?: ExternalAnalysisProcess[]
       usable_budget_mb: number
     }
   ): void {

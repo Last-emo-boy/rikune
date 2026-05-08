@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult, PluginToolDeps } from '../../sdk.js'
+import { randomUUID } from 'crypto'
+import type { Function as DbFunction } from '../../../database.js'
 import { generateCacheKey } from '../../../cache-manager.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
 import { extractPdataFromPE } from '../../../pe-runtime-functions.js'
@@ -17,6 +19,16 @@ export const pePdataExtractInputSchema = z.object({
     .optional()
     .default(false)
     .describe('Bypass cache lookup and recompute from source sample'),
+  materialize_functions: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe('Import .pdata runtime function boundaries into the function index'),
+  replace_existing_functions: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Replace existing function index entries before materializing .pdata functions'),
 })
 
 export type PEPdataExtractInput = z.infer<typeof pePdataExtractInputSchema>
@@ -89,6 +101,10 @@ export const pePdataExtractOutputSchema = z.object({
         })
       ),
       warnings: z.array(z.string()),
+      materialized_function_count: z.number().int().nonnegative().optional(),
+      skipped_existing_function_count: z.number().int().nonnegative().optional(),
+      function_index_status: z.enum(['ready', 'unchanged', 'empty', 'skipped']).optional(),
+      analysis_id: z.string().optional(),
     })
     .optional(),
   warnings: z.array(z.string()).optional(),
@@ -98,6 +114,7 @@ export const pePdataExtractOutputSchema = z.object({
       elapsed_ms: z.number(),
       tool: z.string(),
     })
+    .passthrough()
     .optional(),
 })
 
@@ -109,10 +126,131 @@ export const pePdataExtractToolDefinition: ToolDefinition = {
   outputSchema: pePdataExtractOutputSchema,
 }
 
+type PdataExtractData = NonNullable<z.infer<typeof pePdataExtractOutputSchema>['data']>
+
+function normalizeAddress(address: string): string {
+  return address.toLowerCase()
+}
+
+function materializePdataFunctions(
+  database: PluginToolDeps['database'],
+  sampleId: string,
+  data: PdataExtractData,
+  replaceExisting: boolean
+): {
+  materialized_function_count: number
+  skipped_existing_function_count: number
+  function_index_status: 'ready' | 'unchanged' | 'empty' | 'skipped'
+  analysis_id?: string
+} {
+  if (!data.entries.length) {
+    return {
+      materialized_function_count: 0,
+      skipped_existing_function_count: 0,
+      function_index_status: 'empty',
+    }
+  }
+
+  const db = database.getDatabase()
+  if (replaceExisting) {
+    db.prepare('DELETE FROM functions WHERE sample_id = ?').run(sampleId)
+  }
+  const existingRows = db
+    .prepare('SELECT address FROM functions WHERE sample_id = ?')
+    .all(sampleId) as Array<{ address: string }>
+  const existingAddresses = new Set(existingRows.map((row) => normalizeAddress(row.address)))
+  const exportByRva = new Map(
+    data.exports
+      .filter((entry) => !entry.is_forwarder)
+      .map((entry) => [entry.rva, entry.name] as const)
+  )
+  const imported: DbFunction[] = []
+  let skippedExisting = 0
+
+  for (const entry of data.entries) {
+    const address = normalizeAddress(entry.begin_address)
+    if (!replaceExisting && existingAddresses.has(address)) {
+      skippedExisting += 1
+      continue
+    }
+
+    const exportedName = exportByRva.get(entry.begin_rva)
+    const name = exportedName || `sub_${entry.begin_rva.toString(16).padStart(8, '0')}`
+    const tags = [
+      'source:pdata',
+      'evidence:pe_exception_directory',
+      ...(entry.executable_section ? ['section:executable'] : []),
+      ...(entry.section_name ? [`section:${entry.section_name}`] : []),
+    ]
+    imported.push({
+      sample_id: sampleId,
+      address,
+      name,
+      size: entry.size > 0 ? entry.size : null,
+      score: entry.confidence,
+      tags: JSON.stringify(tags),
+      summary: `Function boundary recovered from PE .pdata: RVA 0x${entry.begin_rva.toString(16)}-0x${entry.end_rva.toString(16)}.`,
+      caller_count: 0,
+      callee_count: 0,
+      is_entry_point: entry.begin_rva === data.entry_point_rva ? 1 : 0,
+      is_exported: exportedName ? 1 : 0,
+      callees: JSON.stringify([]),
+    })
+    existingAddresses.add(address)
+  }
+
+  if (imported.length > 0) {
+    database.insertFunctionsBatch(imported)
+  }
+
+  const analysisId = randomUUID()
+  const now = new Date().toISOString()
+  database.insertAnalysis({
+    id: analysisId,
+    sample_id: sampleId,
+    stage: 'function_definition',
+    backend: 'pdata',
+    status: 'completed',
+    started_at: now,
+    finished_at: now,
+    output_json: JSON.stringify({
+      source: 'pdata',
+      runtime_function_count: data.entries.length,
+      imported_count: imported.length,
+      skipped_existing_count: skippedExisting,
+      replace_existing_functions: replaceExisting,
+    }),
+    metrics_json: JSON.stringify({
+      imported_count: imported.length,
+      skipped_existing_count: skippedExisting,
+    }),
+  })
+
+  return {
+    materialized_function_count: imported.length,
+    skipped_existing_function_count: skippedExisting,
+    function_index_status:
+      imported.length > 0 ? 'ready' : skippedExisting > 0 ? 'unchanged' : 'empty',
+    analysis_id: analysisId,
+  }
+}
+
+function skippedMaterializationSummary(): {
+  materialized_function_count: number
+  skipped_existing_function_count: number
+  function_index_status: 'skipped'
+} {
+  return {
+    materialized_function_count: 0,
+    skipped_existing_function_count: 0,
+    function_index_status: 'skipped',
+  }
+}
+
 export function createPEPdataExtractHandler(deps: PluginToolDeps) {
   const { workspaceManager, database, cacheManager } = deps
   return async (args: ToolArgs): Promise<WorkerResult> => {
-    const input = args as PEPdataExtractInput
+    const input = pePdataExtractInputSchema.parse(args)
     const startTime = Date.now()
 
     try {
@@ -134,9 +272,21 @@ export function createPEPdataExtractHandler(deps: PluginToolDeps) {
       if (!input.force_refresh) {
         const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
         if (cachedLookup) {
+          const cachedData = cachedLookup.data as PdataExtractData
+          const materialization = input.materialize_functions
+            ? materializePdataFunctions(
+                database,
+                input.sample_id,
+                cachedData,
+                input.replace_existing_functions
+              )
+            : skippedMaterializationSummary()
           return {
             ok: true,
-            data: cachedLookup.data,
+            data: {
+              ...cachedData,
+              ...materialization,
+            },
             warnings: ['Result from cache', formatCacheWarning(cachedLookup.metadata)],
             metrics: {
               elapsed_ms: Date.now() - startTime,
@@ -154,7 +304,7 @@ export function createPEPdataExtractHandler(deps: PluginToolDeps) {
 
       const { samplePath } = await resolvePrimarySamplePath(workspaceManager, input.sample_id)
       const result = extractPdataFromPE(samplePath)
-      const normalized = {
+      const normalized: PdataExtractData = {
         machine: result.machine,
         machine_name: result.machineName,
         image_base: result.imageBase,
@@ -216,10 +366,21 @@ export function createPEPdataExtractHandler(deps: PluginToolDeps) {
       }
 
       await cacheManager.setCachedResult(cacheKey, normalized, CACHE_TTL_MS, sample.sha256)
+      const materialization = input.materialize_functions
+        ? materializePdataFunctions(
+            database,
+            input.sample_id,
+            normalized,
+            input.replace_existing_functions
+          )
+        : skippedMaterializationSummary()
 
       return {
         ok: true,
-        data: normalized,
+        data: {
+          ...normalized,
+          ...materialization,
+        },
         warnings: result.warnings.length > 0 ? result.warnings : undefined,
         metrics: {
           elapsed_ms: Date.now() - startTime,

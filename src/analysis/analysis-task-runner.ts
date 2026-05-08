@@ -398,7 +398,10 @@ export class AnalysisTaskRunner {
         stage: AnalysisPipelineStage
         force_refresh?: boolean
       }
-      return executeQueuedAnalysisStage(stageContext, input)
+      return executeQueuedAnalysisStage(stageContext, {
+        ...input,
+        job_id: job.id,
+      })
     })
 
     executors.set('strings.extract', async (job) => {

@@ -1345,58 +1345,55 @@ async function runEnrichStaticStage(
   // Format-aware structural analysis: route to the correct tool based on file_type
   const sample = context.database.findSample(sampleId)
   const fileType = sample?.file_type ?? 'PE'
-  let structureAnalyzePromise: Promise<WorkerResult>
-  if (fileType === 'ELF' && deps.elfStructureAnalyze) {
-    structureAnalyzePromise = deps.elfStructureAnalyze({ sample_id: sampleId })
-  } else if ((fileType === 'Mach-O' || fileType === 'Mach-O-Fat') && deps.machoStructureAnalyze) {
-    structureAnalyzePromise = deps.machoStructureAnalyze({ sample_id: sampleId })
-  } else {
-    structureAnalyzePromise = deps.peStructureAnalyze({ sample_id: sampleId })
+  const runStructureAnalyze = () => {
+    if (fileType === 'ELF' && deps.elfStructureAnalyze) {
+      return deps.elfStructureAnalyze({ sample_id: sampleId })
+    }
+    if ((fileType === 'Mach-O' || fileType === 'Mach-O-Fat') && deps.machoStructureAnalyze) {
+      return deps.machoStructureAnalyze({ sample_id: sampleId })
+    }
+    return deps.peStructureAnalyze({ sample_id: sampleId })
   }
 
-  const [
-    stringsResult,
-    flossResult,
-    binaryRoleResult,
-    capabilityResult,
-    peStructureResult,
-    contextLinkResult,
-    cryptoResult,
-    rustResult,
-  ] = await Promise.all([
-    deps.stringsExtract({
-      sample_id: sampleId,
-      mode: 'full',
-      force_refresh: forceRefresh,
-      defer_if_slow: false,
-    }),
-    deps.stringsFlossDecode({
-      sample_id: sampleId,
-      force_refresh: forceRefresh,
-      defer_if_slow: false,
-    }),
-    deps.binaryRoleProfile({
-      sample_id: sampleId,
-      mode: 'full',
-      force_refresh: forceRefresh,
-      defer_if_slow: false,
-    }),
-    deps.staticCapabilityTriage({ sample_id: sampleId }),
-    structureAnalyzePromise,
-    deps.analysisContextLink({
-      sample_id: sampleId,
-      mode: 'full',
-      force_refresh: forceRefresh,
-      defer_if_slow: false,
-    }),
-    deps.cryptoIdentify({
-      sample_id: sampleId,
-      mode: 'full',
-      force_refresh: forceRefresh,
-      defer_if_slow: false,
-    }),
-    deps.rustBinaryAnalyze({ sample_id: sampleId, force_refresh: forceRefresh }),
-  ])
+  const stringsResult = await deps.stringsExtract({
+    sample_id: sampleId,
+    mode: 'full',
+    force_refresh: forceRefresh,
+    defer_if_slow: false,
+  })
+  const binaryRoleResult = await deps.binaryRoleProfile({
+    sample_id: sampleId,
+    mode: 'full',
+    force_refresh: forceRefresh,
+    defer_if_slow: false,
+  })
+  const peStructureResult = await runStructureAnalyze()
+
+  // FLOSS, capa, context-linking, and crypto correlation can each spawn heavyweight
+  // static backends. Keep them sequential so one enrich_static stage cannot
+  // overrun the container by overlapping multiple multi-GB analyzers.
+  const flossResult = await deps.stringsFlossDecode({
+    sample_id: sampleId,
+    force_refresh: forceRefresh,
+    defer_if_slow: false,
+  })
+  const capabilityResult = await deps.staticCapabilityTriage({ sample_id: sampleId })
+  const contextLinkResult = await deps.analysisContextLink({
+    sample_id: sampleId,
+    mode: 'full',
+    force_refresh: forceRefresh,
+    defer_if_slow: false,
+  })
+  const cryptoResult = await deps.cryptoIdentify({
+    sample_id: sampleId,
+    mode: 'full',
+    force_refresh: forceRefresh,
+    defer_if_slow: false,
+  })
+  const rustResult = await deps.rustBinaryAnalyze({
+    sample_id: sampleId,
+    force_refresh: forceRefresh,
+  })
 
   const artifacts = [
     ...collectArtifactsFromResult(stringsResult),
@@ -2533,6 +2530,7 @@ export async function executeQueuedAnalysisStage(
   input: {
     run_id: string
     stage: AnalysisPipelineStage
+    job_id?: string
     force_refresh?: boolean
   }
 ): Promise<JobResult> {
@@ -2555,6 +2553,7 @@ export async function executeQueuedAnalysisStage(
     status: 'running',
     executionState: 'queued',
     tool: ANALYSIS_STAGE_JOB_TOOL,
+    jobId: input.job_id,
     startedAt: new Date().toISOString(),
     metadata: { force_refresh: Boolean(input.force_refresh) },
   })
@@ -2608,6 +2607,7 @@ export async function executeQueuedAnalysisStage(
       status: stageStatus,
       executionState,
       tool: ANALYSIS_STAGE_JOB_TOOL,
+      jobId: input.job_id,
       result: stageOutput.result,
       artifactRefs: stageOutput.artifacts,
       metadata: stageOutput.metadata,
@@ -2633,6 +2633,7 @@ export async function executeQueuedAnalysisStage(
       status: memoryRelated ? 'recoverable' : 'failed',
       executionState: 'partial',
       tool: ANALYSIS_STAGE_JOB_TOOL,
+      jobId: input.job_id,
       result: { error: message },
       metadata: memoryRelated
         ? {

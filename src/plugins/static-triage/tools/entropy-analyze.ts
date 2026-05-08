@@ -42,46 +42,46 @@ export const EntropyAnalyzeInputSchema = z.object({
 
 export type EntropyAnalyzeInput = z.infer<typeof EntropyAnalyzeInputSchema>
 
+const EntropyAnalyzeDataSchema = z.object({
+  file_size: z.number(),
+  overall_entropy: z.number(),
+  block_size: z.number(),
+  block_count: z.number(),
+  histogram: z.array(z.number()),
+  sections: z.array(
+    z.object({
+      name: z.string(),
+      entropy: z.number(),
+      raw_size: z.number(),
+      virtual_size: z.number(),
+      vsize_ratio: z.number(),
+      characteristics: z.string(),
+      suspicious: z.boolean(),
+    })
+  ),
+  high_entropy_regions: z.array(
+    z.object({
+      offset: z.number(),
+      end_offset: z.number(),
+      length: z.number(),
+      avg_entropy: z.number(),
+    })
+  ),
+  classification: z.object({
+    packing_likelihood: z.string(),
+    crypto_data_likelihood: z.string(),
+    is_pe: z.boolean(),
+  }),
+  recommended_next_tools: z.array(z.string()),
+})
+
 export const EntropyAnalyzeOutputSchema = z.object({
   ok: z.boolean(),
-  data: z
-    .object({
-      file_size: z.number(),
-      overall_entropy: z.number(),
-      block_size: z.number(),
-      block_count: z.number(),
-      histogram: z.array(z.number()),
-      sections: z.array(
-        z.object({
-          name: z.string(),
-          entropy: z.number(),
-          raw_size: z.number(),
-          virtual_size: z.number(),
-          vsize_ratio: z.number(),
-          characteristics: z.string(),
-          suspicious: z.boolean(),
-        })
-      ),
-      high_entropy_regions: z.array(
-        z.object({
-          offset: z.number(),
-          end_offset: z.number(),
-          length: z.number(),
-          avg_entropy: z.number(),
-        })
-      ),
-      classification: z.object({
-        packing_likelihood: z.string(),
-        crypto_data_likelihood: z.string(),
-        is_pe: z.boolean(),
-      }),
-      recommended_next_tools: z.array(z.string()),
-    })
-    .optional(),
+  data: EntropyAnalyzeDataSchema.optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(z.any()).optional(),
-  metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),
+  metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).passthrough().optional(),
 })
 
 export const entropyAnalyzeToolDefinition: ToolDefinition = {
@@ -92,6 +92,34 @@ export const entropyAnalyzeToolDefinition: ToolDefinition = {
     'Outputs per-section entropy, a block histogram, and packing/crypto likelihood classification.',
   inputSchema: EntropyAnalyzeInputSchema,
   outputSchema: EntropyAnalyzeOutputSchema,
+}
+
+function unwrapWorkerEnvelope(payload: unknown): {
+  data: unknown
+  warnings: string[]
+  errors: string[]
+  metrics: Record<string, unknown>
+} {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { data: payload, warnings: [], errors: [], metrics: {} }
+  }
+  const record = payload as Record<string, unknown>
+  if (
+    'ok' in record &&
+    'data' in record &&
+    ('warnings' in record || 'errors' in record || 'metrics' in record)
+  ) {
+    return {
+      data: record.data,
+      warnings: Array.isArray(record.warnings) ? record.warnings.map(String) : [],
+      errors: Array.isArray(record.errors) ? record.errors.map(String) : [],
+      metrics:
+        record.metrics && typeof record.metrics === 'object' && !Array.isArray(record.metrics)
+          ? (record.metrics as Record<string, unknown>)
+          : {},
+    }
+  }
+  return { data: payload, warnings: [], errors: [], metrics: {} }
 }
 
 export function createEntropyAnalyzeHandler(
@@ -122,10 +150,16 @@ export function createEntropyAnalyzeHandler(
       if (!input.force_refresh) {
         const cached = await lookupCachedResult(cacheManager, cacheKey)
         if (cached) {
+          const normalized = unwrapWorkerEnvelope(cached.data)
+          const data = EntropyAnalyzeDataSchema.parse(normalized.data)
           return {
             ok: true,
-            data: cached.data,
-            warnings: ['Result from cache', formatCacheWarning(cached.metadata)],
+            data,
+            warnings: [
+              'Result from cache',
+              formatCacheWarning(cached.metadata),
+              ...normalized.warnings,
+            ],
             metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME, cached: true },
           }
         }
@@ -154,7 +188,16 @@ export function createEntropyAnalyzeHandler(
         }
       }
 
-      const data = workerResponse.data as Record<string, unknown>
+      const normalized = unwrapWorkerEnvelope(workerResponse.data)
+      if (normalized.errors.length > 0) {
+        return {
+          ok: false,
+          errors: normalized.errors,
+          warnings: [...(workerResponse.warnings || []), ...normalized.warnings],
+          metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
+        }
+      }
+      const data = EntropyAnalyzeDataSchema.parse(normalized.data)
       await cacheManager.setCachedResult(cacheKey, data, CACHE_TTL_MS, sample.sha256)
 
       const artifacts: ArtifactRef[] = []
@@ -175,9 +218,13 @@ export function createEntropyAnalyzeHandler(
       return {
         ok: true,
         data,
-        warnings: workerResponse.warnings,
+        warnings: [...(workerResponse.warnings || []), ...normalized.warnings],
         artifacts,
-        metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
+        metrics: {
+          ...normalized.metrics,
+          elapsed_ms: Date.now() - startTime,
+          tool: TOOL_NAME,
+        },
       }
     } catch (error) {
       return {

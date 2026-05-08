@@ -46,8 +46,8 @@
     <div class="breadcrumb"><a href="index.html">Rikune</a> / <span data-lang-en>Usage</span><span data-lang-zh>使用指南</span></div>
     <h1><span data-lang-en>Usage Guide</span><span data-lang-zh>使用指南</span></h1>
     <p>
-      <span data-lang-en>Learn how to ingest samples, launch analysis workflows, and use the 243 MCP tools.</span>
-      <span data-lang-zh>了解如何导入样本、启动分析工作流以及使用 243 个 MCP 工具。</span>
+      <span data-lang-en>Learn how to ingest samples, launch staged analysis workflows, and discover the startup-generated MCP tool surface.</span>
+      <span data-lang-zh>了解如何导入样本、启动 staged analysis workflow，并发现启动时生成的 MCP 工具面。</span>
     </p>
   </div>
 </div>
@@ -366,6 +366,7 @@ workflow.analyze.status(run_id)</code></pre>
 
       <h3><span data-lang-en>Polling Guidance</span><span data-lang-zh>轮询指南</span></h3>
       <p><span data-lang-en>When a stage is queued: (1) prefer <code>workflow.analyze.status(run_id)</code>; (2) only use <code>task.status(job_id)</code> for raw job details; (3) respect <code>polling_guidance</code> wait recommendations.</span><span data-lang-zh>当阶段排队时：(1) 优先使用 <code>workflow.analyze.status(run_id)</code>；(2) 仅在需要原始任务详情时用 <code>task.status(job_id)</code>；(3) 遵守 <code>polling_guidance</code> 等待建议。</span></p>
+      <p><span data-lang-en>Large staged responses may prune historical stage payloads and report this in top-level <code>warnings</code>. Use <code>artifact.read</code> for the full artifact payload. <code>task.status</code> also reports <code>external_active_*</code> memory telemetry for analyzer subprocesses that are still running outside the queue view.</span><span data-lang-zh>大型 staged 响应可能会裁剪历史阶段结果，并在顶层 <code>warnings</code> 中说明。完整内容请使用 <code>artifact.read</code>。<code>task.status</code> 还会通过 <code>external_active_*</code> 暴露仍在队列视图之外运行的 analyzer 子进程内存遥测。</span></p>
     </section>
 
   </div>

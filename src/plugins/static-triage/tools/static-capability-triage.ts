@@ -101,6 +101,7 @@ export const StaticCapabilityTriageDataSchema = z.object({
     })
     .optional(),
   raw_backend: z.any().nullable().optional(),
+  raw_backend_summary: z.record(z.unknown()).optional(),
 })
 
 export const staticCapabilityTriageOutputSchema = z.object({
@@ -291,6 +292,10 @@ export function createStaticCapabilityTriageHandler(
           backend,
           confidence_semantics: confidenceSemantics,
           raw_backend: workerData.raw_backend ?? null,
+          raw_backend_summary:
+            workerData.raw_backend_summary && typeof workerData.raw_backend_summary === 'object'
+              ? workerData.raw_backend_summary
+              : undefined,
           created_at: new Date().toISOString(),
         }
         artifact = await persistStaticAnalysisJsonArtifact(
@@ -347,6 +352,10 @@ export function createStaticCapabilityTriageHandler(
           analysis_id: analysisId,
           artifact,
           raw_backend: workerData.raw_backend ?? null,
+          raw_backend_summary:
+            workerData.raw_backend_summary && typeof workerData.raw_backend_summary === 'object'
+              ? workerData.raw_backend_summary
+              : undefined,
         },
         warnings: warnings.length > 0 ? warnings : undefined,
         setup_actions: setupActions,

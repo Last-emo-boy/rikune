@@ -14,6 +14,7 @@ import { ANALYSIS_STAGE_JOB_TOOL } from '../workflows/analyze-pipeline.js'
 import { getAnalysisRunSummary } from '../analysis/analysis-run-state.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
 import { buildSampleReuseHints } from '../analysis/reuse-hints.js'
+import { listExternalAnalysisProcesses } from '../analysis/analysis-budget-scheduler.js'
 
 const TOOL_NAME = 'task.status'
 const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'cancelled', 'interrupted'])
@@ -60,6 +61,9 @@ export const taskStatusOutputSchema = z.object({
       recommended_next_tools: z.array(z.string()).optional(),
       next_actions: z.array(z.string()).optional(),
       reuse_hints: z.record(z.any()).optional(),
+      external_active_rss_mb: z.number().nonnegative().optional(),
+      external_active_process_count: z.number().int().nonnegative().optional(),
+      external_active_processes: z.array(z.record(z.any())).optional(),
     })
     .optional(),
   errors: z.array(z.string()).optional(),
@@ -260,6 +264,17 @@ export function createTaskStatusHandler(
                 typeof schedulerMetadata.active_expected_rss_mb === 'number'
                   ? schedulerMetadata.active_expected_rss_mb
                   : undefined,
+              external_active_rss_mb:
+                typeof schedulerMetadata.external_active_rss_mb === 'number'
+                  ? schedulerMetadata.external_active_rss_mb
+                  : undefined,
+              external_active_process_count:
+                typeof schedulerMetadata.external_active_process_count === 'number'
+                  ? schedulerMetadata.external_active_process_count
+                  : undefined,
+              external_active_processes: Array.isArray(schedulerMetadata.external_active_processes)
+                ? schedulerMetadata.external_active_processes
+                : undefined,
               latency_ms:
                 typeof schedulerMetadata.latency_ms === 'number'
                   ? schedulerMetadata.latency_ms
@@ -347,7 +362,27 @@ export function createTaskStatusHandler(
         }
         mergedRows.set(key, row)
       }
-      const rows = [...mergedRows.values()]
+      const liveExternalProcesses = listExternalAnalysisProcesses()
+      const liveExternalRssMb = liveExternalProcesses.reduce(
+        (sum, proc) => sum + Math.max(0, proc.rss_mb || 0),
+        0
+      )
+      const externalRows =
+        !input.status || input.status === 'running'
+          ? liveExternalProcesses.map((proc) => ({
+              id: `external:${proc.pid}`,
+              status: 'running',
+              tool: 'external.analysis.process',
+              pid: proc.pid,
+              ppid: proc.ppid,
+              rss_mb: proc.rss_mb,
+              command: proc.command,
+              source: 'procfs',
+              message:
+                'Analysis subprocess is running outside the in-memory job queue; it is included for runtime visibility.',
+            }))
+          : []
+      const rows = [...mergedRows.values(), ...externalRows]
       const limitedRows = rows.slice(0, input.limit).map((row: any) => ({
         ...row,
         ...(database
@@ -386,6 +421,18 @@ export function createTaskStatusHandler(
                     ...(typeof schedulerMetadata.active_expected_rss_mb === 'number'
                       ? { active_expected_rss_mb: schedulerMetadata.active_expected_rss_mb }
                       : {}),
+                    ...(typeof schedulerMetadata.external_active_rss_mb === 'number'
+                      ? { external_active_rss_mb: schedulerMetadata.external_active_rss_mb }
+                      : {}),
+                    ...(typeof schedulerMetadata.external_active_process_count === 'number'
+                      ? {
+                          external_active_process_count:
+                            schedulerMetadata.external_active_process_count,
+                        }
+                      : {}),
+                    ...(Array.isArray(schedulerMetadata.external_active_processes)
+                      ? { external_active_processes: schedulerMetadata.external_active_processes }
+                      : {}),
                     ...(typeof schedulerMetadata.latency_ms === 'number'
                       ? { latency_ms: schedulerMetadata.latency_ms }
                       : {}),
@@ -422,7 +469,6 @@ export function createTaskStatusHandler(
               timeout_ms: activeRows[0].timeout,
             })
           : null
-
       return buildJsonResult({
         ok: true,
         data: {
@@ -430,6 +476,9 @@ export function createTaskStatusHandler(
           total_jobs: jobQueue.getTotalJobs(),
           count: limitedRows.length,
           jobs: limitedRows,
+          external_active_rss_mb: liveExternalRssMb,
+          external_active_process_count: liveExternalProcesses.length,
+          external_active_processes: liveExternalProcesses.slice(0, 8),
           polling_guidance: summaryGuidance,
           result_mode: 'queue_summary',
           tool_surface_role: 'compatibility',

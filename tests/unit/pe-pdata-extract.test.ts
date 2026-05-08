@@ -5,6 +5,7 @@ import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import { createPEPdataExtractHandler } from '../../src/plugins/pe-analysis/tools/pe-pdata-extract.js'
+import { createCodeFunctionsListHandler } from '../../src/plugins/code-analysis/tools/code-functions-list.js'
 
 function createMinimalAmd64PdataPE(): Buffer {
   const dosHeader = Buffer.alloc(0x80, 0)
@@ -157,5 +158,25 @@ describe('pe.pdata.extract tool', () => {
     expect(data.entries[0].end_rva).toBe(0x1100)
     expect(data.entries[0].unwind.version).toBe(1)
     expect(data.entries[0].section_name).toBe('.text')
+    expect(data.materialized_function_count).toBe(1)
+    expect(data.skipped_existing_function_count).toBe(0)
+    expect(data.function_index_status).toBe('ready')
+
+    const rows = database
+      .getDatabase()
+      .prepare('SELECT address, name, size, is_entry_point FROM functions WHERE sample_id = ?')
+      .all(sampleId) as any[]
+    expect(rows).toHaveLength(1)
+    expect(rows[0].address).toBe('0x0000000140001000')
+    expect(rows[0].name).toBe('sub_00001000')
+    expect(rows[0].size).toBe(0x100)
+    expect(rows[0].is_entry_point).toBe(1)
+
+    const listHandler = createCodeFunctionsListHandler(workspaceManager, database)
+    const listResult = await listHandler({ sample_id: sampleId })
+    const listPayload = JSON.parse((listResult.content[0] as any).text)
+    expect(listPayload.ok).toBe(true)
+    expect(listPayload.data.count).toBe(1)
+    expect(listPayload.data.functions[0].address).toBe('0x0000000140001000')
   })
 })
