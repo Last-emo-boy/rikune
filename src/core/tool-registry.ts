@@ -152,10 +152,10 @@ export async function registerAllTools(
   registerDiagnosticsTools(server)
 
   getToolSurfaceManager().registerCoreTools([
-    'plugin_list',
-    'plugin_enable',
-    'plugin_disable',
-    'config_validate',
+    'plugin.list',
+    'plugin.enable',
+    'plugin.disable',
+    'system.config.validate',
   ])
 
   registerScriptResources(server)

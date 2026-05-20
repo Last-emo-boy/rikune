@@ -10,7 +10,7 @@
 import { z } from 'zod'
 import crypto from 'crypto'
 import type { ToolDefinition, ToolResult } from '../../../types.js'
-import type { MCPServer } from '../../../server.js'
+import type { MCPServer } from '../../../core/server.js'
 import { logger } from '../../../logger.js'
 
 // ══════════════════════════════════════════════════════════════════════════

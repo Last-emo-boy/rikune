@@ -79,6 +79,20 @@ describe('MCPRegistry', () => {
       expect(tools.length).toBe(1)
       expect(tools[0].name).toBe('sample_ingest')
     })
+
+    test('should expose canonical core tools through transport names when visible', async () => {
+      registry.registerTool(makeTool('plugin.list'), async () => ({ ok: true }))
+      registry.registerTool(makeTool('system.config.validate'), async () => ({ ok: true }))
+
+      const tools = await registry.listTools(
+        new Set(['plugin.list', 'system.config.validate'])
+      )
+
+      expect(tools.map((tool) => tool.name).sort()).toEqual([
+        'plugin_list',
+        'system_config_validate',
+      ])
+    })
   })
 
   describe('getToolDefinitions / getToolDefinition', () => {
