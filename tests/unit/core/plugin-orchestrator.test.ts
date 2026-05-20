@@ -211,6 +211,36 @@ describe('PluginOrchestrator', () => {
       )
     })
 
+    test('reports quality warnings without blocking plugin loading', async () => {
+      const p = makePlugin('dynamic-no-schema', {
+        executionDomain: 'dynamic',
+        register: undefined,
+        tools: [
+          {
+            definition: {
+              name: 'dynamic_no_schema.tool',
+              description: 'Dynamic tool with intentionally sparse metadata',
+              inputSchema: {},
+            },
+            handler: async () => ({ ok: true }),
+          },
+        ],
+      } as Partial<Plugin>)
+
+      const status = await orchestrator.loadOne(p, mockServer as any, mockDeps)
+
+      expect(status.status).toBe('loaded')
+      expect(status.qualityWarnings?.map((warning) => warning.code)).toEqual(
+        expect.arrayContaining([
+          'missing-output-schema',
+          'missing-surface-rules',
+          'missing-system-deps',
+          'missing-readiness-check',
+          'dynamic-runtime-contract-missing',
+        ])
+      )
+    })
+
     test('should report invalid plugin contracts before registration', async () => {
       const p = makePlugin('bad plugin', { register: undefined } as Partial<Plugin>)
       const status = await orchestrator.loadOne(p, mockServer as any, mockDeps)

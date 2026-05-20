@@ -300,3 +300,11 @@ npm run test:integration
 npm run test:e2e
 npm run typecheck
 ```
+
+Golden fixture policy:
+
+- `tests/fixtures/golden-samples.manifest.json` is the default regression corpus contract.
+- Default CI fixtures are synthetic or metadata-only and must not require host execution.
+- The manifest covers PE fast profile, suspected packed PE, .NET, DLL, ELF, Mach-O, APK, and missing optional backend degradation.
+- Integration tests should prefer generated minimal samples and mocked backend readiness so optional tools such as Ghidra, Docker, Windows Sandbox, Hyper-V, YARA-X, and Rizin are not required for the default path.
+- Real samples and live runtime validation are opt-in only and must stay outside the repository unless they are benign, reproducible, and documented with generation steps.

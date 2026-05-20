@@ -1354,10 +1354,12 @@ export function createToolHelpHandler(
         tools: filtered.map((definition) => ({
           name: toTransportToolName(definition.name),
           description: definition.description,
-          surface_role: classifyToolSurfaceRole(definition.name),
-          preferred_primary_tools: preferredPrimaryToolsFor(definition.name).map((item) =>
-            toTransportToolName(item)
-          ),
+          surface_role: classifyToolSurfaceRole(definition.name, {
+            runtimeRequired: Boolean(definition.runtime),
+          }),
+          preferred_primary_tools: preferredPrimaryToolsFor(definition.name, {
+            runtimeRequired: Boolean(definition.runtime),
+          }).map((item) => toTransportToolName(item)),
           usage_notes: buildUsageNotes(definition).map((item) =>
             rewriteToolReferencesInText(item, nameMappings)
           ),

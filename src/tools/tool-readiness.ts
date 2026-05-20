@@ -240,7 +240,9 @@ function buildLocalReadyPayload(
   pluginStatus?: Record<string, unknown>,
   localDynamicPolicy: LocalDynamicToolPolicy | null = null
 ) {
-  const surfaceGuidance = buildToolSurfaceGuidance(tool.name)
+      const surfaceGuidance = buildToolSurfaceGuidance(tool.name, {
+        runtimeRequired: Boolean(tool.runtime),
+      })
   const guidance = localDynamicPolicyGuidance(localDynamicPolicy)
   const runtimePlane = localRuntimePlane(localDynamicPolicy)
 
@@ -401,7 +403,9 @@ export function createToolReadinessHandler(
     const runtimeMode = options.runtimeMode || 'disabled'
     const runtimeClient = options.runtimeClient ?? null
     const runtimeEndpoint = runtimeClient?.getEndpoint?.() || null
-    const surfaceGuidance = buildToolSurfaceGuidance(tool.name)
+    const surfaceGuidance = buildToolSurfaceGuidance(tool.name, {
+      runtimeRequired: Boolean(tool.runtime),
+    })
     const runtimeToolContract = getRuntimeDelegatedToolContract(tool.name)
 
     if (runtimeMode === 'remote-sandbox' && !runtimeEndpoint) {

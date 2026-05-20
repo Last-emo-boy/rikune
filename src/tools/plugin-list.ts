@@ -56,6 +56,10 @@ export function createPluginListHandler(_server: ToolRegistrar) {
       loaded: statuses.filter((s) => s.status === 'loaded').length,
       skipped: statuses.filter((s) => s.status.startsWith('skipped')).length,
       errored: statuses.filter((s) => s.status === 'error').length,
+      quality_warning_count: statuses.reduce(
+        (sum, s) => sum + (s.qualityWarnings?.length ?? 0),
+        0
+      ),
       by_execution_domain: {
         static: statuses.filter((s) => (s.executionDomain ?? 'both') === 'static').length,
         dynamic: statuses.filter((s) => (s.executionDomain ?? 'both') === 'dynamic').length,
@@ -71,6 +75,8 @@ export function createPluginListHandler(_server: ToolRegistrar) {
           description: s.description ?? null,
           tools: s.tools,
           tool_count: s.tools.length,
+          quality_warning_count: s.qualityWarnings?.length ?? 0,
+          quality_warnings: s.qualityWarnings ?? [],
         }
         if (s.error) entry.error = s.error
         if (args.include_config && s.configFields) {

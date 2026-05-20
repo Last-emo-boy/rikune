@@ -510,6 +510,10 @@ function handlePlugins(res: ServerResponse, req?: IncomingMessage): void {
     loaded: statuses.filter((s) => s.status === 'loaded').length,
     skipped: statuses.filter((s) => s.status.startsWith('skipped')).length,
     errored: statuses.filter((s) => s.status === 'error').length,
+    quality_warning_count: statuses.reduce(
+      (sum, s) => sum + (s.qualityWarnings?.length ?? 0),
+      0
+    ),
     plugins: statuses.map((s) => ({
       id: s.id,
       name: s.name,
@@ -522,6 +526,8 @@ function handlePlugins(res: ServerResponse, req?: IncomingMessage): void {
       tool_count: s.tools.length,
       tools: s.tools,
       error: s.error ?? null,
+      quality_warning_count: s.qualityWarnings?.length ?? 0,
+      quality_warnings: s.qualityWarnings ?? [],
       dependency_checks:
         s.depChecks?.map((dep) => ({
           name: dep.dep.name,
@@ -1024,6 +1030,8 @@ function buildRunView(run: DashboardRunRow, includeStageResults: boolean) {
     reused_from_run_id: run.reused_from_run_id,
     last_accessed_at: run.last_accessed_at,
     stages: stageViews,
+    stage_summary: buildDashboardStageSummary(stageViews),
+    provenance_digest: buildDashboardRunProvenanceDigest(run, stages),
     stage_counts: stageViews.reduce<Record<string, number>>((acc, stage) => {
       acc[stage.status] = (acc[stage.status] ?? 0) + 1
       acc[stage.normalized_status] = (acc[stage.normalized_status] ?? 0) + 1
@@ -1031,6 +1039,44 @@ function buildRunView(run: DashboardRunRow, includeStageResults: boolean) {
     }, {}),
     ...control,
     semantic,
+  }
+}
+
+function buildDashboardStageSummary(stageViews: Array<ReturnType<typeof buildRunStageView>>) {
+  return stageViews.slice(0, 16).map((stage) => ({
+    stage: stage.stage,
+    status: stage.status,
+    normalized_status: stage.normalized_status,
+    execution_state: stage.execution_state,
+    summary: stage.result_summary?.summary ?? null,
+    artifact_count: stage.artifact_count,
+    recommended_next_tools: stage.result_summary?.recommended_next_tools ?? [],
+  }))
+}
+
+function buildDashboardRunProvenanceDigest(
+  run: DashboardRunRow,
+  stages: DashboardRunStageRow[]
+) {
+  const artifactIds = new Set<string>()
+  for (const ref of parseDashboardJson<ArtifactRef[]>(run.artifact_refs_json, [])) {
+    if (ref.id) artifactIds.add(ref.id)
+  }
+  for (const stage of stages) {
+    for (const ref of parseDashboardJson<ArtifactRef[]>(stage.artifact_refs_json, [])) {
+      if (ref.id) artifactIds.add(ref.id)
+    }
+    collectArtifactIdsFromPayload(
+      parseDashboardJson<unknown>(stage.result_json, null),
+      artifactIds
+    )
+  }
+
+  return {
+    stage_count: stages.length,
+    completed_stage_count: stages.filter((stage) => stage.status === 'completed').length,
+    artifact_ref_count: artifactIds.size,
+    selected_artifact_ids: Array.from(artifactIds).slice(0, 24),
   }
 }
 

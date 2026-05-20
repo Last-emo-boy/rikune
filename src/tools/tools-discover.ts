@@ -10,6 +10,7 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
 import { getToolSurfaceManager } from '../tool-surface-manager.js'
 import type { PluginManager } from '../plugins.js'
+import { buildToolSurfaceGuidance, ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Schema
@@ -81,6 +82,8 @@ export const toolsDiscoverOutputSchema = z.object({
               tool_count: z.number(),
               tier: z.number(),
               activated: z.boolean(),
+              tool_surface_role: ToolSurfaceRoleSchema,
+              preferred_primary_tools: z.array(z.string()),
             })
           ),
         })
@@ -163,11 +166,25 @@ export function createToolsDiscoverHandler(pluginManager: PluginManager) {
               plugins: c.plugins.map((p) => ({
                 id: p.id,
                 name: p.name,
-                description: p.description,
-                tool_count: p.tools.length,
-                tier: p.tier,
-                activated: p.activated,
-              })),
+              description: p.description,
+              tool_count: p.tools.length,
+              tier: p.tier,
+              activated: p.activated,
+              tool_surface_role: p.tools.some(
+                (tool) => buildToolSurfaceGuidance(tool).tool_surface_role === 'runtime_gated'
+              )
+                ? 'runtime_gated'
+                : p.tier === 3
+                  ? 'expert'
+                  : p.tools.some(
+                        (tool) => buildToolSurfaceGuidance(tool).tool_surface_role === 'specialist'
+                      )
+                    ? 'specialist'
+                    : 'primary',
+              preferred_primary_tools: Array.from(
+                new Set(p.tools.flatMap((tool) => buildToolSurfaceGuidance(tool).preferred_primary_tools))
+              ),
+            })),
             })),
             message:
               `Found ${filtered.length} categories with ${filtered.reduce((sum, c) => sum + c.plugins.length, 0)} plugins. ` +

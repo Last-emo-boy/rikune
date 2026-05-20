@@ -38,6 +38,71 @@ const SESSION_STATUS_TOOL = 'runtime.debug.session.status'
 const SESSION_STOP_TOOL = 'runtime.debug.session.stop'
 const COMMAND_TOOL = 'runtime.debug.command'
 
+export const RUNTIME_DEBUG_SESSION_STATES = [
+  'not_requested',
+  'planned',
+  'approval_gated',
+  'armed',
+  'capturing',
+  'importing',
+  'captured',
+  'correlated',
+  'finished',
+  'failed',
+  'cancelled',
+] as const
+
+export const RuntimeDebugSessionStateSchema = z.enum(RUNTIME_DEBUG_SESSION_STATES)
+export type RuntimeDebugSessionState = z.infer<typeof RuntimeDebugSessionStateSchema>
+
+const RUNTIME_DEBUG_SESSION_TRANSITIONS: Record<
+  RuntimeDebugSessionState,
+  RuntimeDebugSessionState[]
+> = {
+  not_requested: ['planned', 'approval_gated', 'armed', 'cancelled'],
+  planned: ['approval_gated', 'armed', 'cancelled'],
+  approval_gated: ['planned', 'armed', 'failed', 'cancelled'],
+  armed: ['capturing', 'approval_gated', 'failed', 'cancelled', 'finished'],
+  capturing: ['importing', 'captured', 'failed', 'cancelled'],
+  importing: ['captured', 'failed', 'cancelled'],
+  captured: ['correlated', 'finished', 'failed'],
+  correlated: ['finished', 'failed'],
+  finished: [],
+  failed: [],
+  cancelled: [],
+}
+
+export function normalizeRuntimeDebugSessionState(
+  status?: string | null,
+  debugState?: string | null
+): RuntimeDebugSessionState {
+  const candidate = debugState || status || 'not_requested'
+  if (candidate === 'completed' || candidate === 'released') {
+    return 'finished'
+  }
+  if (candidate === 'interrupted' || candidate === 'interrupted_recoverable') {
+    return 'failed'
+  }
+  const parsed = RuntimeDebugSessionStateSchema.safeParse(candidate)
+  return parsed.success ? parsed.data : 'not_requested'
+}
+
+export function canTransitionRuntimeDebugSessionState(
+  from: RuntimeDebugSessionState | string | null | undefined,
+  to: RuntimeDebugSessionState | string | null | undefined
+): boolean {
+  const current = normalizeRuntimeDebugSessionState(from)
+  const next = normalizeRuntimeDebugSessionState(to)
+  return current === next || RUNTIME_DEBUG_SESSION_TRANSITIONS[current].includes(next)
+}
+
+function deriveRuntimeDebugState(status: RuntimeDebugSessionState): RuntimeDebugSessionState {
+  if (status === 'finished') {
+    return 'captured'
+  }
+  return status
+}
+
 interface RuntimeDebugSession {
   sessionId: string
   sandboxId?: string
@@ -514,10 +579,16 @@ async function persistRuntimeSession(
 
   const now = new Date().toISOString()
   const artifactRefs = session.artifactRefs || []
-  const status = updates.status || 'armed'
-  const debugState =
-    updates.debugState ||
-    (status === 'captured' ? 'captured' : status === 'capturing' ? 'capturing' : 'armed')
+  const previousState = normalizeRuntimeDebugSessionState(session.status, session.debugState)
+  const status = normalizeRuntimeDebugSessionState(updates.status || session.status || 'armed')
+  const debugState = normalizeRuntimeDebugSessionState(
+    updates.debugState || deriveRuntimeDebugState(status)
+  )
+  if (!canTransitionRuntimeDebugSessionState(previousState, debugState)) {
+    throw new Error(
+      `Invalid runtime debug session transition: ${previousState} -> ${debugState}`
+    )
+  }
   const phase = updates.phase || 'runtime_ready'
   const metadataJson = JSON.stringify(buildSessionMetadata(session, updates.metadata), null, 2)
   const guidanceJson = JSON.stringify(buildRuntimeDebugGuidance(status), null, 2)
@@ -623,6 +694,7 @@ function normalizePersistedDebugSession(row: any): Record<string, unknown> {
     sample_sha256: row?.sample_sha256,
     status: row?.status,
     debug_state: row?.debug_state,
+    lifecycle_state: normalizeRuntimeDebugSessionState(row?.status, row?.debug_state),
     backend: row?.backend,
     current_phase: row?.current_phase,
     session_tag: row?.session_tag,
@@ -1139,7 +1211,10 @@ export function createRuntimeDebugSessionStatusHandler(deps: PluginToolDeps) {
         ) {
           await persistRuntimeSession(deps, selected, selected.sampleId, {
             status: selected.status || 'armed',
-            debugState: selected.debugState || 'armed',
+            debugState: normalizeRuntimeDebugSessionState(
+              selected.status || 'armed',
+              selected.debugState || 'armed'
+            ),
             phase: 'runtime_health_checked',
             metadata: { status_checked_at: new Date().toISOString() },
           })

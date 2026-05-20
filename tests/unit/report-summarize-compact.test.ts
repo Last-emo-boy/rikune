@@ -284,6 +284,20 @@ describe('report.summarize compact mode', () => {
     expect(data.static_capability_summary.capability_count).toBe(20)
     expect(data.compiler_packer_summary.packer_names).toContain('UPX')
     expect(data.semantic_explanation_summary.count).toBe(5)
+    expect(data.stage_summary).toEqual([
+      expect.objectContaining({
+        stage: 'fast_profile',
+        status: 'completed',
+        artifact_count: 0,
+      }),
+    ])
+    expect(data.provenance_digest).toEqual(
+      expect.objectContaining({
+        static_artifact_count: 3,
+        semantic_artifact_count: 1,
+        artifact_ref_count: expect.any(Number),
+      })
+    )
     expect(data.artifact_refs.supporting.length).toBeGreaterThanOrEqual(4)
     expect(data.artifact_refs.static_capabilities.length).toBe(1)
     expect(data.artifact_refs.compiler_packer.length).toBe(1)
@@ -519,6 +533,10 @@ describe('report.summarize compact mode', () => {
     expect(JSON.stringify(data).length).toBeLessThan(180000)
     expect(result.warnings?.some((item) => item.includes('Inline report payload was bounded'))).toBe(true)
     expect(data.truncation.inline_payload_budget.truncated).toBe(true)
+    expect(data.stage_summary).toEqual([
+      expect.objectContaining({ stage: 'fast_profile', status: 'completed' }),
+    ])
+    expect(data.provenance_digest.static_artifact_count).toBe(3)
     expect(data.static_capabilities).toBeUndefined()
     expect(data.pe_structure).toBeUndefined()
     expect(data.artifact_refs.supporting.length).toBeLessThanOrEqual(4)

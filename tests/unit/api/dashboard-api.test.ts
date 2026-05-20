@@ -655,6 +655,32 @@ describe('dashboard-api local dashboard data', () => {
     expect(body.runs).toHaveLength(1)
     expect(body.runs[0].normalized_status).toBe('completed')
     expect(body.runs[0].stages[0].normalized_status).toBe('completed')
+    expect(body.runs[0].stage_summary).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stage: 'reconstruct',
+          status: 'completed',
+          artifact_count: 1,
+        }),
+        expect.objectContaining({
+          stage: 'semantic_name_review',
+          status: 'partial',
+          artifact_count: 1,
+          recommended_next_tools: expect.arrayContaining([
+            'prompts/get',
+            'code.function.rename.apply',
+          ]),
+        }),
+      ])
+    )
+    expect(body.runs[0].provenance_digest).toEqual(
+      expect.objectContaining({
+        stage_count: 2,
+        completed_stage_count: 1,
+        artifact_ref_count: expect.any(Number),
+        selected_artifact_ids: expect.arrayContaining(['recon-1', 'sem-prepare-1']),
+      })
+    )
     expect(body.runs[0].semantic.artifact_count).toBe(2)
     expect(body.runs[0].semantic.name_suggestion_artifacts).toBe(1)
     expect(body.runs[0].semantic.explanation_artifacts).toBe(1)

@@ -517,6 +517,19 @@ export interface DepCheckResult {
   error?: string
 }
 
+export interface PluginQualityWarning {
+  code:
+    | 'missing-output-schema'
+    | 'missing-surface-rules'
+    | 'dynamic-runtime-contract-missing'
+    | 'missing-system-deps'
+    | 'missing-tools'
+    | 'missing-readiness-check'
+  message: string
+  tool?: string
+  severity?: 'info' | 'warning'
+}
+
 /** Lifecycle hooks a plugin can implement. */
 export interface PluginHooks {
   onBeforeToolCall?: (toolName: string, args: Record<string, unknown>) => void | Promise<void>
@@ -542,6 +555,8 @@ export interface PluginStatus {
   configFields?: PluginConfigField[]
   /** Results of system dependency checks (populated at load time). */
   depChecks?: DepCheckResult[]
+  /** Non-blocking plugin quality contract warnings exposed for maintenance. */
+  qualityWarnings?: PluginQualityWarning[]
   /** Short machine-friendly reason code for skips/errors exposed to control-plane views. */
   reasonCode?:
     | 'disabled-by-config'

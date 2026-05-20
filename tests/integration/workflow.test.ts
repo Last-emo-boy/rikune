@@ -21,6 +21,13 @@ import {
   executeQueuedAnalysisStage,
 } from '../../src/workflows/analyze-pipeline.js'
 
+const goldenManifest = JSON.parse(
+  fs.readFileSync(
+    path.join(process.cwd(), 'tests', 'fixtures', 'golden-samples.manifest.json'),
+    'utf8'
+  )
+) as { fixtures: Array<Record<string, any>> }
+
 function makeUnavailableBackendResolution() {
   return {
     capa_cli: { available: false },
@@ -93,6 +100,16 @@ describe('Workflow Integration', () => {
   })
 
   test('starts, reuses, and promotes a persisted staged analysis run', async () => {
+    const peFixture = goldenManifest.fixtures.find(
+      (fixture) => fixture.id === 'synthetic-pe-fast-profile'
+    )
+    expect(peFixture?.expected_signals.stage_plan).toEqual([
+      'fast_profile',
+      'enrich_static',
+      'function_map',
+      'summarize',
+    ])
+
     const sharedDependencies = {
       peFingerprint: async () => ({
         ok: true,
@@ -196,6 +213,25 @@ describe('Workflow Integration', () => {
     ])
     expect(started.stage_result.summary).toContain('Fast profile completed')
     expect(started.recommended_next_tools).toContain('workflow.analyze.promote')
+    expect(started.recommended_next_tools).toContain('artifacts.list')
+    expect(started.recommended_next_tools).toContain('artifact.read')
+    expect(started.recommended_next_tools).toContain('report.summarize')
+    expect(started.evidence_state).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          evidence_family: 'backend_preview',
+          backend: 'workflow.analyze.start',
+          state: 'fresh',
+          provenance: expect.objectContaining({
+            source_tool: 'workflow.analyze.start',
+            validation_tools: expect.arrayContaining(['workflow.analyze.status']),
+          }),
+        }),
+      ])
+    )
+    expect(started.evidence_state.map((entry: any) => entry.evidence_family)).toEqual(
+      expect.arrayContaining(peFixture?.expected_signals.evidence_families)
+    )
     expect(started.deferred_jobs).toEqual([])
 
     const reuseResult = await start({
@@ -254,6 +290,7 @@ describe('Workflow Integration', () => {
       'function_map',
     ])
     expect(current.recommended_next_tools).toContain('workflow.analyze.status')
+    expect(current.next_actions[0]).toContain('workflow.analyze.status')
   })
 
   test('records bounded dynamic_execute output when runtime-backed sandbox execution is unsupported', async () => {
@@ -383,6 +420,11 @@ describe('Workflow Integration', () => {
     })
     jobQueue.complete(queuedDynamicPlan!.id, dynamicPlanResult)
     expect(dynamicPlanResult.ok).toBe(true)
+    expect((dynamicPlanResult.data as any)?.execution_semantics).toMatchObject({
+      actual_mode: 'plan_only',
+      live_execution_started: false,
+      allow_live_execution: true,
+    })
 
     const queuedDynamicExecute = jobQueue
       .listQueuedJobs()
@@ -404,6 +446,11 @@ describe('Workflow Integration', () => {
       status: 'setup_required',
       failure_category: 'unsupported_runtime_contract',
     })
+    expect((dynamicExecuteResult.data as any)?.execution_semantics).toMatchObject({
+      actual_mode: 'setup_required',
+      live_execution_started: false,
+      allow_live_execution: true,
+    })
 
     const dynamicExecuteStage = database.findAnalysisRunStage(started.run_id, 'dynamic_execute')
     expect(dynamicExecuteStage?.status).toBe('completed')
@@ -421,6 +468,7 @@ describe('Workflow Integration', () => {
     expect(current.stage_result.stage_outputs.sandbox.recommended_next_tools).toContain(
       'workflow.analyze.start'
     )
+    expect(current.runtime_sessions.length).toBeGreaterThanOrEqual(1)
   })
 
   test('records queued semantic review stages as partial while waiting for LLM sampling', async () => {

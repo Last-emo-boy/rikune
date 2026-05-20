@@ -97,7 +97,10 @@ import {
 } from '../ghidra/ghidra-analysis-status.js'
 import { loadDynamicTraceEvidence } from '../artifacts/dynamic-trace.js'
 import { createSampleFinalizationService } from '../sample/sample-finalization.js'
-import { persistCanonicalEvidence } from '../analysis/analysis-evidence.js'
+import {
+  buildFreshEvidenceState,
+  persistCanonicalEvidence,
+} from '../analysis/analysis-evidence.js'
 import {
   ANALYSIS_DIFF_DIGEST_ARTIFACT_TYPE,
   AnalysisDiffDigestSchema,
@@ -1278,9 +1281,16 @@ async function buildFastProfileStage(
             ip_addresses: ipAddresses,
           },
           evidence,
-          evidence_state: uniqueEvidenceStates(
-            collectEvidenceStatesFromPayload([stringsResult.data, binaryRoleResult.data])
-          ),
+          evidence_state: uniqueEvidenceStates([
+            buildFreshEvidenceState({
+              evidenceFamily: 'backend_preview',
+              backend: TOOL_NAME_START,
+              mode: FAST_PROFILE_STAGE,
+              reason:
+                'Fast profile completed during this request and produced the current staged preview.',
+            }),
+            ...collectEvidenceStatesFromPayload([stringsResult.data, binaryRoleResult.data]),
+          ]),
           packed_state: unpackPlan.packed_state,
           unpack_state: unpackPlan.unpack_state,
           unpack_confidence: unpackPlan.unpack_confidence,
@@ -1942,6 +1952,12 @@ async function runDynamicPlanStage(
       stage: 'dynamic_plan',
       status: 'ready',
       execution_state: 'completed',
+      execution_semantics: {
+        actual_mode: 'plan_only',
+        live_execution_started: false,
+        approval_required: !executionPolicy.allowLiveExecution,
+        allow_live_execution: executionPolicy.allowLiveExecution,
+      },
       summary:
         'Dynamic-plan stage completed using readiness probes and planning-only breakpoint analysis; no live execution was started.',
       packed_state: unpackPlan?.packed_state || 'unknown',
@@ -2470,6 +2486,16 @@ async function runDynamicExecuteStage(
         unpackExecution?.unpack_state === 'unpacked' || afterDynamicEvidence || sandboxExecuted
           ? 'completed'
           : 'partial',
+      execution_semantics: {
+        actual_mode: sandboxExecuted
+          ? 'live_runtime'
+          : executionPolicy.allowLiveExecution
+            ? 'setup_required'
+            : 'approval_gated',
+        live_execution_started: sandboxExecuted,
+        approval_required: !executionPolicy.allowLiveExecution,
+        allow_live_execution: executionPolicy.allowLiveExecution,
+      },
       summary: unpackedSampleId
         ? 'Dynamic execute completed a bounded unpack/debug pass, persisted an unpacked sample, and recorded compact pre/post diff artifacts.'
         : sandboxExecuted
@@ -2729,8 +2755,20 @@ function buildRunEnvelope(
       : ['workflow.analyze.status', 'task.status']
   const completedPreferredTools =
     unpackDebugEnvelope.packed_state && unpackDebugEnvelope.packed_state !== 'not_packed'
-      ? ['workflow.analyze.promote', 'workflow.analyze.status', 'workflow.summarize']
-      : ['workflow.analyze.promote', 'workflow.analyze.status']
+      ? [
+          'workflow.analyze.promote',
+          'workflow.analyze.status',
+          'workflow.summarize',
+          'artifacts.list',
+          'artifact.read',
+        ]
+      : [
+          'workflow.analyze.promote',
+          'workflow.analyze.status',
+          'artifacts.list',
+          'artifact.read',
+          'report.summarize',
+        ]
   const queuedNextActions =
     unpackDebugEnvelope.packed_state && unpackDebugEnvelope.packed_state !== 'not_packed'
       ? [
@@ -2743,9 +2781,11 @@ function buildRunEnvelope(
     unpackDebugEnvelope.packed_state && unpackDebugEnvelope.packed_state !== 'not_packed'
       ? [
           'Promote the persisted run through unpack/debug-aware stages before assuming the original packed binary is ready for deep reconstruction.',
+          'Use artifacts.list or artifact.read to inspect persisted unpack/debug artifacts before rerunning heavy stages.',
         ]
       : [
           'Promote the persisted run instead of repeating fast-profile analysis when you need deeper stages.',
+          'Use artifacts.list, artifact.read, or report.summarize to review persisted evidence before requesting more analysis.',
         ]
   return mergeRoutingMetadata(
     mergeCoverageEnvelope(
