@@ -54,5 +54,14 @@
   "notes": [
     "Keep KB as local-first; external intel imports should use fixtures in tests."
   ],
-  "status": "pending"
+  "status": "completed",
+  "completed_at": "2026-05-23T02:31:51.5498907+08:00",
+  "summary": "Added kb.context.suggest as a local-first analysis-memory recommendation tool that uses existing sample evidence and artifacts to suggest KB, notes, rule library, and export follow-ups with provenance and stale-data caveats. kb-collaboration now declares analysis-memory, knowledge-reuse, workflow, and provenance aspects.",
+  "verification": [
+    "npm test -- --runTestsByPath tests/unit/memory-forensics-correlation.test.ts tests/unit/vm-workflow-plan.test.ts tests/unit/kb-context-suggest.test.ts tests/unit/runtime-session-templates.test.ts tests/unit/android-runtime-readiness.test.ts tests/unit/ios-runtime-readiness.test.ts tests/unit/macos-runtime-readiness.test.ts",
+    "npm test -- --runTestsByPath tests/unit/tool-readiness.test.ts tests/unit/tool-help.test.ts",
+    "npm test -- --runTestsByPath tests/unit/plugin-format-matrix.test.ts",
+    "npm run typecheck",
+    "npm run lint"
+  ]
 }

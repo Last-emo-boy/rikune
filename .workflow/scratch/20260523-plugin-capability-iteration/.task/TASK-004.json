@@ -57,5 +57,14 @@
     "Do not add heavy solver dependencies to startup.",
     "Prefer metadata and workflow orchestration over rewriting VM internals."
   ],
-  "status": "pending"
+  "status": "completed",
+  "completed_at": "2026-05-23T02:31:51.5498907+08:00",
+  "summary": "Added vm.workflow.plan to expose the VM detection, pattern analysis, opcode extraction, disassembler build, bounded emulation, constraint extraction, SMT solving, keygen synthesis, and MBA simplification chain as a passive planning workflow. vm-analysis now declares plugin-level aspects and optional Python/Z3 system dependency metadata without making solver backends mandatory at startup.",
+  "verification": [
+    "npm test -- --runTestsByPath tests/unit/memory-forensics-correlation.test.ts tests/unit/vm-workflow-plan.test.ts tests/unit/kb-context-suggest.test.ts tests/unit/runtime-session-templates.test.ts tests/unit/android-runtime-readiness.test.ts tests/unit/ios-runtime-readiness.test.ts tests/unit/macos-runtime-readiness.test.ts",
+    "npm test -- --runTestsByPath tests/unit/tool-readiness.test.ts tests/unit/tool-help.test.ts",
+    "npm test -- --runTestsByPath tests/unit/plugin-format-matrix.test.ts",
+    "npm run typecheck",
+    "npm run lint"
+  ]
 }

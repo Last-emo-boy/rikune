@@ -1,10 +1,10 @@
 id,title,wave,depends_on,scope,status
 TASK-001,Define cross-plugin evidence workflow backplane,1,,shared evidence workflow and routing contracts,completed
 TASK-002,Audit current advanced plugin gaps and execution safety,1,TASK-001,plugin audit baseline and risk map,completed
-TASK-003,Build offline memory forensics correlation chain,2,TASK-001;TASK-002,memory-forensics behavior threat-intel reporting,pending
-TASK-004,Modernize VM analysis and symbolic workflow,2,TASK-001;TASK-002,vm-analysis symbolic constraints,pending
-TASK-005,Promote KB collaboration into analysis memory layer,2,TASK-001;TASK-002,kb-collaboration rule and sample knowledge,pending
-TASK-006,Deepen runtime readiness and opt-in session templates,2,TASK-001;TASK-002,runtime plan and dynamic control plane,pending
+TASK-003,Build offline memory forensics correlation chain,2,TASK-001;TASK-002,memory-forensics behavior threat-intel reporting,completed
+TASK-004,Modernize VM analysis and symbolic workflow,2,TASK-001;TASK-002,vm-analysis symbolic constraints,completed
+TASK-005,Promote KB collaboration into analysis memory layer,2,TASK-001;TASK-002,kb-collaboration rule and sample knowledge,completed
+TASK-006,Deepen runtime readiness and opt-in session templates,2,TASK-001;TASK-002,runtime plan and dynamic control plane,completed
 TASK-007,Create supply-chain SBOM provenance graph,3,TASK-001;TASK-002,SBOM package container installer firmware,pending
 TASK-008,Expand Android static behavior graph,3,TASK-001;TASK-002,android apk smali dex native correlation,pending
 TASK-009,Expand Apple macOS iOS signing and runtime chain,3,TASK-001;TASK-002,apple container signing runtime planning,pending

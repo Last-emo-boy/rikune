@@ -19,11 +19,29 @@ import { kbImportToolDefinition, createKbImportHandler } from './tools/kb-import
 import { kbStatsToolDefinition, createKbStatsHandler } from './tools/kb-stats.js'
 import { analysisNotesToolDefinition, createAnalysisNotesHandler } from './tools/analysis-notes.js'
 import { ruleLibraryToolDefinition, createRuleLibraryHandler } from './tools/rule-library.js'
+import {
+  kbContextSuggestToolDefinition,
+  createKbContextSuggestHandler,
+} from './tools/kb-context-suggest.js'
 
 const kbCollaborationPlugin: Plugin = {
   id: 'kb-collaboration',
   name: 'Knowledge Base & Collaboration',
   executionDomain: 'static',
+  aspects: {
+    formats: ['artifact', 'analysis-evidence', 'function', 'rule'],
+    platforms: ['cross-platform'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: [
+      'analysis-memory',
+      'knowledge-reuse',
+      'function-matching',
+      'rule-library',
+      'workflow-recommendation',
+    ],
+    evidence: ['analysis-memory', 'workflow', 'provenance'],
+  },
   surfaceRules: { tier: 0, category: 'static-analysis' },
   description:
     'Function signature matching, analysis templates, and knowledge base import/export/management',
@@ -43,6 +61,7 @@ const kbCollaborationPlugin: Plugin = {
     server.registerTool(kbStatsToolDefinition, createKbStatsHandler(workspaceManager, database))
     server.registerTool(analysisNotesToolDefinition, createAnalysisNotesHandler(deps))
     server.registerTool(ruleLibraryToolDefinition, createRuleLibraryHandler(deps))
+    server.registerTool(kbContextSuggestToolDefinition, createKbContextSuggestHandler(deps))
     return [
       'kb.function.match',
       'analysis.template',
@@ -52,6 +71,7 @@ const kbCollaborationPlugin: Plugin = {
       'kb.stats',
       'analysis.notes',
       'rule.library',
+      'kb.context.suggest',
     ]
   },
 }

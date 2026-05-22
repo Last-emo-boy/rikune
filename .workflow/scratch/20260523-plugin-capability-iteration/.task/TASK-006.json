@@ -62,5 +62,14 @@
     "This task may create missing windows/linux/wasm runtime readiness tests.",
     "Do not add live runtime execution here; templates are opt-in only."
   ],
-  "status": "pending"
+  "status": "completed",
+  "completed_at": "2026-05-23T02:31:51.5498907+08:00",
+  "summary": "Extended the shared runtime plan helper with passive opt-in session_templates and runtime workflow recipe metadata. Windows, Linux, macOS, iOS, Android, and WASM runtime plan tools now expose consistent backend, isolation, network, mount, artifact, readiness, execution, and teardown template fields while remaining plan-only by default.",
+  "verification": [
+    "npm test -- --runTestsByPath tests/unit/memory-forensics-correlation.test.ts tests/unit/vm-workflow-plan.test.ts tests/unit/kb-context-suggest.test.ts tests/unit/runtime-session-templates.test.ts tests/unit/android-runtime-readiness.test.ts tests/unit/ios-runtime-readiness.test.ts tests/unit/macos-runtime-readiness.test.ts",
+    "npm test -- --runTestsByPath tests/unit/tool-readiness.test.ts tests/unit/tool-help.test.ts",
+    "npm test -- --runTestsByPath tests/unit/plugin-format-matrix.test.ts",
+    "npm run typecheck",
+    "npm run lint"
+  ]
 }

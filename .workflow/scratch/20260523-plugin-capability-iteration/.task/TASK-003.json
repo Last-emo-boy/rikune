@@ -59,5 +59,14 @@
     "If no memory-specific tests exist yet, create small fixture-only tests.",
     "Keep raw vol3 execution paths unchanged unless needed for safer parsing."
   ],
-  "status": "pending"
+  "status": "completed",
+  "completed_at": "2026-05-23T02:31:51.5498907+08:00",
+  "summary": "Added memory-forensics.correlate as an offline correlation workflow tool that consumes existing Volatility JSON or fixture rows, emits a finding bundle, IOC candidates, behavior timeline, correlation graph, provenance graph, artifact/evidence declarations, and workflow recipe metadata without invoking Volatility or touching live memory.",
+  "verification": [
+    "npm test -- --runTestsByPath tests/unit/memory-forensics-correlation.test.ts tests/unit/vm-workflow-plan.test.ts tests/unit/kb-context-suggest.test.ts tests/unit/runtime-session-templates.test.ts tests/unit/android-runtime-readiness.test.ts tests/unit/ios-runtime-readiness.test.ts tests/unit/macos-runtime-readiness.test.ts",
+    "npm test -- --runTestsByPath tests/unit/tool-readiness.test.ts tests/unit/tool-help.test.ts",
+    "npm test -- --runTestsByPath tests/unit/plugin-format-matrix.test.ts",
+    "npm run typecheck",
+    "npm run lint"
+  ]
 }

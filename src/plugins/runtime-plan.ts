@@ -11,6 +11,40 @@ export interface RuntimeBackendPlan {
   limitations?: string[]
 }
 
+export interface RuntimeSessionTemplate {
+  id: string
+  backend: string
+  purpose: string
+  template_only: true
+  explicit_opt_in_required: true
+  live_execution: false
+  isolation: {
+    required: true
+    profile: string
+    notes: string[]
+  }
+  network: {
+    default_policy: 'disabled'
+    allowed_after_opt_in: string[]
+  }
+  mounts: Array<{
+    name: string
+    mode: 'ro' | 'rw'
+    required: boolean
+    path_template: string
+  }>
+  artifacts: Array<{
+    type: string
+    evidence: string[]
+    required: boolean
+  }>
+  readiness_checks: string[]
+  setup_tools: string[]
+  execution_tools: string[]
+  teardown: string[]
+  safety_notes: string[]
+}
+
 export interface RuntimePlanSpec {
   pluginId: string
   toolName: string
@@ -121,6 +155,34 @@ export function createRuntimePlanToolDefinition(spec: RuntimePlanSpec): ToolDefi
       category,
       artifactTypes: [artifactType],
     })),
+    workflowRecipes: [
+      {
+        id: `${spec.platform}.runtime.opt-in`,
+        title: `${spec.platform} runtime opt-in session template`,
+        startsWith: [spec.toolName, 'tool.readiness'],
+        nextTools: uniqueStrings([
+          ...spec.recommendedControlTools,
+          ...spec.backends.flatMap((backend) => [
+            ...backend.setup_tools,
+            ...backend.execution_tools,
+          ]),
+        ]),
+        requiredArtifacts: spec.recommendedStaticTools,
+        producesArtifacts: [
+          artifactType,
+          ...spec.evidence.map((item) => `${spec.platform}_${item}`),
+        ],
+        evidence: spec.evidence,
+        safety: [
+          'passive',
+          'opt_in_dynamic',
+          'requires_isolation',
+          'no_live_sample_by_default',
+          'no_network_by_default',
+        ],
+        runtimeBackends: spec.runtimes,
+      },
+    ],
     runtimePolicy: buildRuntimePlanPolicy(spec),
   }
 }
@@ -160,6 +222,69 @@ function commandTemplatesFor(
   }))
 }
 
+function sessionTemplatesFor(
+  spec: RuntimePlanSpec,
+  backends: RuntimeBackendPlan[],
+  sampleId?: string
+): RuntimeSessionTemplate[] {
+  return backends.map((backend) => ({
+    id: `${spec.platform}.${backend.backend}.opt-in-session`,
+    backend: backend.backend,
+    purpose: backend.purpose,
+    template_only: true,
+    explicit_opt_in_required: true,
+    live_execution: false,
+    isolation: {
+      required: true,
+      profile: `${spec.platform}-${backend.backend}-isolated`,
+      notes: [
+        'Create or select an isolated runtime before executing this template.',
+        'Do not reuse analyst host state as the runtime workspace.',
+      ],
+    },
+    network: {
+      default_policy: 'disabled',
+      allowed_after_opt_in: ['disabled', 'record_only', 'simulated'],
+    },
+    mounts: [
+      {
+        name: 'sample',
+        mode: 'ro',
+        required: Boolean(sampleId),
+        path_template: sampleId
+          ? `workspace://samples/${sampleId}`
+          : 'workspace://samples/{sample_id}',
+      },
+      {
+        name: 'artifacts',
+        mode: 'rw',
+        required: true,
+        path_template: `workspace://artifacts/runtime/${spec.platform}/${backend.backend}/{session_id}`,
+      },
+    ],
+    artifacts: [
+      {
+        type: `${spec.platform}_${backend.backend.replace(/-/g, '_')}_runtime_session`,
+        evidence: backend.evidence,
+        required: true,
+      },
+    ],
+    readiness_checks: backend.readiness_checks,
+    setup_tools: backend.setup_tools,
+    execution_tools: backend.execution_tools,
+    teardown: [
+      'Stop runtime task and collect declared artifacts.',
+      'Restore snapshot or discard ephemeral runtime workspace.',
+      'Keep network logs and runtime traces attached to provenance metadata.',
+    ],
+    safety_notes: [
+      'This is a non-executed template for an explicit later handoff.',
+      ...(backend.limitations ?? []),
+      ...spec.safetyNotes,
+    ],
+  }))
+}
+
 export function buildRuntimePlan(spec: RuntimePlanSpec, input: RuntimePlanInput) {
   const goals = uniqueStrings(input.goals ?? [])
   const staticEvidence = uniqueStrings(input.static_evidence ?? [])
@@ -167,6 +292,10 @@ export function buildRuntimePlan(spec: RuntimePlanSpec, input: RuntimePlanInput)
   const evidencePlan = uniqueStrings(backends.flatMap((backend) => backend.evidence))
   const setupTools = uniqueStrings(backends.flatMap((backend) => backend.setup_tools))
   const executionTools = uniqueStrings(backends.flatMap((backend) => backend.execution_tools))
+  const includeTemplates = input.include_command_templates !== false
+  const sessionTemplates = includeTemplates
+    ? sessionTemplatesFor(spec, backends, input.sample_id)
+    : []
 
   return {
     sample_id: input.sample_id ?? null,
@@ -194,10 +323,8 @@ export function buildRuntimePlan(spec: RuntimePlanSpec, input: RuntimePlanInput)
       recommended_static_tools: spec.recommendedStaticTools,
     },
     evidence_plan: evidencePlan,
-    command_templates:
-      input.include_command_templates === false
-        ? []
-        : commandTemplatesFor(spec, backends, input.sample_id),
+    session_templates: sessionTemplates,
+    command_templates: includeTemplates ? commandTemplatesFor(spec, backends, input.sample_id) : [],
     recommended_next_tools: uniqueStrings([
       ...spec.recommendedStaticTools,
       ...spec.recommendedControlTools,

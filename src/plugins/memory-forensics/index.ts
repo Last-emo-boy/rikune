@@ -10,6 +10,11 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { z } from 'zod'
 import { getWorkspaceManager, type Plugin, type ToolResult, type PluginToolDeps } from '../sdk.js'
+import {
+  buildMemoryForensicsCorrelation,
+  MemoryCorrelationInputSchema,
+  MemoryCorrelationOutputSchema,
+} from './memory-correlation.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -76,8 +81,20 @@ const memoryForensicsPlugin: Plugin = {
       'network-scan',
       'registry-scan',
       'command-line-extraction',
+      'offline-correlation',
+      'workflow-plan',
     ],
-    evidence: ['memory', 'process', 'filesystem', 'registry', 'network', 'provenance'],
+    evidence: [
+      'memory',
+      'process',
+      'filesystem',
+      'registry',
+      'network',
+      'behavior',
+      'workflow',
+      'correlation-graph',
+      'provenance',
+    ],
   },
   surfaceRules: { tier: 3, category: 'memory-forensics' },
   description:
@@ -385,6 +402,104 @@ const memoryForensicsPlugin: Plugin = {
       }
     )
     tools.push('memory-forensics.cmdline')
+
+    // -- memory-forensics.correlate -----------------------------------------
+    server.registerTool(
+      {
+        name: 'memory-forensics.correlate',
+        description:
+          'Correlate existing Volatility JSON or fixture rows into an offline memory-forensics finding bundle with process, module, malfind, netscan, registry, command-line, IOC, timeline, and provenance views. This tool never invokes Volatility or touches live memory.',
+        inputSchema: MemoryCorrelationInputSchema,
+        outputSchema: MemoryCorrelationOutputSchema,
+        aspects: {
+          formats: ['memory-dump', 'memory-image', 'vmem', 'dmp', 'elf-core'],
+          platforms: ['windows', 'linux', 'macos'],
+          execution: ['static', 'correlation'],
+          safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+          capabilities: [
+            'offline-correlation',
+            'process-tree',
+            'ioc-candidates',
+            'behavior-timeline',
+            'workflow-plan',
+          ],
+          evidence: [
+            'memory',
+            'process',
+            'network',
+            'registry',
+            'behavior',
+            'workflow',
+            'correlation-graph',
+            'provenance',
+          ],
+        },
+        artifacts: [
+          {
+            type: 'memory_forensics_correlation',
+            description: 'Offline correlation bundle from Volatility-derived memory-forensics rows',
+            mime: 'application/json',
+          },
+          {
+            type: 'behavior_timeline',
+            description: 'Behavior timeline derived from memory-forensics evidence',
+            mime: 'application/json',
+          },
+          {
+            type: 'ioc_candidates',
+            description: 'Network and process IOC candidates derived from memory evidence',
+            mime: 'application/json',
+          },
+        ],
+        evidence: [
+          { category: 'memory', artifactTypes: ['memory_forensics_correlation'] },
+          { category: 'process', artifactTypes: ['memory_forensics_correlation'] },
+          { category: 'network', artifactTypes: ['ioc_candidates'] },
+          { category: 'registry', artifactTypes: ['memory_forensics_correlation'] },
+          { category: 'behavior', artifactTypes: ['behavior_timeline'] },
+          { category: 'correlation-graph', artifactTypes: ['memory_forensics_correlation'] },
+          { category: 'provenance', artifactTypes: ['memory_forensics_correlation'] },
+        ],
+        workflowRecipes: [
+          {
+            id: 'memory-forensics.offline-correlation',
+            title: 'Offline memory forensics correlation',
+            startsWith: [
+              'memory-forensics.pslist',
+              'memory-forensics.malfind',
+              'memory-forensics.netscan',
+              'memory-forensics.correlate',
+            ],
+            nextTools: [
+              'threat-intel.ioc-export',
+              'analysis.evidence.graph',
+              'behavior.timeline',
+              'report.generate',
+            ],
+            requiredArtifacts: [
+              'memory_process_list',
+              'memory_suspicious_regions',
+              'memory_network_scan',
+            ],
+            producesArtifacts: [
+              'memory_forensics_correlation',
+              'behavior_timeline',
+              'ioc_candidates',
+            ],
+            evidence: ['memory', 'process', 'network', 'registry', 'behavior', 'provenance'],
+            safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+          },
+        ],
+      },
+      async (args: unknown): Promise<ToolResult> => {
+        const data = buildMemoryForensicsCorrelation(args)
+        return {
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+          structuredContent: data,
+        }
+      }
+    )
+    tools.push('memory-forensics.correlate')
 
     return tools
   },
