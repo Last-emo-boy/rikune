@@ -18,14 +18,26 @@ import {
   officeOleAnalyzeToolDefinition,
   createOfficeOleAnalyzeHandler,
 } from './tools/office-ole-analyze.js'
+import {
+  officeBehaviorProfileToolDefinition,
+  createOfficeBehaviorProfileHandler,
+} from './tools/office-behavior-profile.js'
 
 const officeAnalysisPlugin: Plugin = {
   id: 'office-analysis',
   name: 'Office Analysis',
   executionDomain: 'static',
+  aspects: {
+    formats: ['office', 'doc', 'docm', 'xls', 'xlsm', 'ppt', 'pptm', 'ole', 'ooxml'],
+    platforms: ['windows', 'macos', 'cross-platform'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    capabilities: ['macro-analysis', 'ole-structure', 'vba-extraction', 'ioc-extraction'],
+    evidence: ['structure', 'strings', 'behavior', 'network', 'filesystem', 'provenance'],
+  },
   surfaceRules: {
     tier: 1,
-    activateOn: { fileTypes: ['office', 'doc', 'xls'] },
+    activateOn: { fileTypes: ['office', 'doc', 'docm', 'xls', 'xlsm', 'ppt', 'pptm', 'ole'] },
     category: 'static-analysis',
     signalMap: {
       has_macros: 'vba_macros',
@@ -52,8 +64,14 @@ const officeAnalysisPlugin: Plugin = {
     server.registerTool(officeVbaExtractToolDefinition, createOfficeVbaExtractHandler(wm, db))
     server.registerTool(officeMacroDetectToolDefinition, createOfficeMacroDetectHandler(wm, db))
     server.registerTool(officeOleAnalyzeToolDefinition, createOfficeOleAnalyzeHandler(wm, db))
+    server.registerTool(officeBehaviorProfileToolDefinition, createOfficeBehaviorProfileHandler())
 
-    return ['office.vba.extract', 'office.macro.detect', 'office.ole.analyze']
+    return [
+      'office.vba.extract',
+      'office.macro.detect',
+      'office.ole.analyze',
+      'office.behavior.profile',
+    ]
   },
 }
 

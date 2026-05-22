@@ -13,11 +13,23 @@ import {
   sampleClusterFuzzyToolDefinition,
   createSampleClusterFuzzyHandler,
 } from './tools/sample-cluster-fuzzy.js'
+import {
+  sampleFamilyClusterToolDefinition,
+  createSampleFamilyClusterHandler,
+} from './tools/sample-family-cluster.js'
 
 const similarityPlugin: Plugin = {
   id: 'similarity',
   name: 'Sample Similarity',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'apk', 'dotnet', 'wasm', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'android', 'embedded', 'cross-platform'],
+    execution: ['static'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['similarity', 'family-clustering', 'fuzzy-hashing', 'binary-diff'],
+    evidence: ['hashes', 'imports', 'strings', 'functions', 'provenance'],
+  },
   surfaceRules: {
     tier: 2,
     activateOn: { findings: ['packed', 'obfuscated'] },
@@ -51,8 +63,9 @@ const similarityPlugin: Plugin = {
 
     server.registerTool(sampleSimilarityToolDefinition, createSampleSimilarityHandler(wm, db))
     server.registerTool(sampleClusterFuzzyToolDefinition, createSampleClusterFuzzyHandler(wm, db))
+    server.registerTool(sampleFamilyClusterToolDefinition, createSampleFamilyClusterHandler())
 
-    return ['sample.similarity', 'sample.cluster.fuzzy']
+    return ['sample.similarity', 'sample.cluster.fuzzy', 'sample.family.cluster']
   },
 }
 

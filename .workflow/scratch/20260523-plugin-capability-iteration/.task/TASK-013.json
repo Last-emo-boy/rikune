@@ -63,5 +63,14 @@
   "notes": [
     "Do not add automatic dump execution in this task."
   ],
-  "status": "pending"
+  "status": "completed",
+  "completed_at": "2026-05-23T03:17:41.4905787+08:00",
+  "summary": "Added unpack.workflow.plan as a passive detect-plan-dump-reconstruct-retriage workflow that turns static packer/protector evidence into readiness-gated dump strategy, runtime constraints, reconstruction guidance, and static reanalysis requests without launching a debugger or sample.",
+  "verification": [
+    "npm test -- --runTestsByPath tests/unit/office-behavior-profile.test.ts tests/unit/unpack-workflow-plan.test.ts tests/unit/sample-family-cluster.test.ts tests/unit/malware-intel-loop.test.ts",
+    "npm test -- --runTestsByPath tests/unit/unpack-auto.test.ts tests/unit/unpack-child-handoff.test.ts tests/unit/unpack-debug-runtime.test.ts tests/unit/malware-config-extract.test.ts tests/unit/malware-classify.test.ts tests/unit/c2-extract.test.ts tests/unit/ioc-export.test.ts tests/unit/attack-map.test.ts tests/unit/yara-generate.test.ts tests/unit/yara-scan.test.ts tests/unit/vuln-pattern-scan.test.ts tests/unit/binary-diff-summary.test.ts tests/unit/binary-diff.test.ts",
+    "npm test -- --runTestsByPath tests/unit/tool-readiness.test.ts tests/unit/tool-help.test.ts tests/unit/plugin-format-matrix.test.ts",
+    "npm run typecheck",
+    "npm run lint"
+  ]
 }
