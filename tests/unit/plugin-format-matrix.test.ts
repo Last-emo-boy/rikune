@@ -1226,6 +1226,14 @@ describe('built-in plugin format matrix discovery', () => {
     const lief = requirePlugin(plugins, 'lief')
     const radare2 = requirePlugin(plugins, 'radare2')
     const wabt = requirePlugin(plugins, 'wabt')
+    const jsimplifier = requirePlugin(plugins, 'jsimplifier')
+    const jsirCascade = requirePlugin(plugins, 'jsir-cascade')
+    const restringer = requirePlugin(plugins, 'restringer')
+    const remill = requirePlugin(plugins, 'remill')
+    const gtirb = requirePlugin(plugins, 'gtirb')
+    const qbdi = requirePlugin(plugins, 'qbdi')
+    const manifold = requirePlugin(plugins, 'manifold')
+    const culifter = requirePlugin(plugins, 'culifter')
 
     expect(jsvmpAnalysis.aspects?.capabilities).toEqual(
       expect.arrayContaining([
@@ -1253,8 +1261,48 @@ describe('built-in plugin format matrix discovery', () => {
     expect(wabt.aspects?.capabilities).toEqual(
       expect.arrayContaining(['wasm-disassembly-plan', 'wasm2c-plan'])
     )
+    expect(jsimplifier.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['javascript-deobfuscation-pipeline', 'ast-static-analysis-plan'])
+    )
+    expect(jsirCascade.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['javascript-ir-normalization', 'ast-deobfuscation-plan'])
+    )
+    expect(restringer.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['string-array-recovery', 'javascript-expression-simplification'])
+    )
+    expect(remill.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['llvm-bitcode-lifting', 'instruction-semantics'])
+    )
+    expect(gtirb.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['binary-ir', 'binary-rewriting-plan'])
+    )
+    expect(qbdi.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['dynamic-binary-instrumentation-plan', 'instruction-trace-plan'])
+    )
+    expect(manifold.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['superset-decompilation-plan', 'declarative-reverse-engineering'])
+    )
+    expect(culifter.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['gpu-binary-lifting-plan', 'sass-lifting-plan'])
+    )
 
-    for (const plugin of [jsvmpAnalysis, revng, triton, miasm, lief, radare2, wabt]) {
+    for (const plugin of [
+      jsvmpAnalysis,
+      revng,
+      triton,
+      miasm,
+      lief,
+      radare2,
+      wabt,
+      jsimplifier,
+      jsirCascade,
+      restringer,
+      remill,
+      gtirb,
+      qbdi,
+      manifold,
+      culifter,
+    ]) {
       expect(plugin.executionDomain).toBe('static')
       expect(plugin.aspects?.safety).toEqual(
         expect.arrayContaining(['passive', 'no_live_sample_by_default', 'no_network_by_default'])
@@ -1262,7 +1310,22 @@ describe('built-in plugin format matrix discovery', () => {
     }
 
     expect(jsvmpAnalysis.surfaceRules?.tier).toBe(2)
-    for (const plugin of [revng, triton, miasm, lief, radare2, wabt]) {
+    for (const plugin of [
+      revng,
+      triton,
+      miasm,
+      lief,
+      radare2,
+      wabt,
+      jsimplifier,
+      jsirCascade,
+      restringer,
+      remill,
+      gtirb,
+      qbdi,
+      manifold,
+      culifter,
+    ]) {
       expect(plugin.surfaceRules?.tier).toBe(3)
     }
 
@@ -1300,6 +1363,46 @@ describe('built-in plugin format matrix discovery', () => {
       formats: ['wasm', 'wasi', 'wat'],
       artifacts: ['wabt_toolchain_plan'],
       evidence: ['structure', 'imports', 'exports', 'workflow'],
+    })
+    expectToolMetadata(jsimplifier, 'jsimplifier.pipeline.plan', {
+      formats: ['js', 'javascript', 'source-map'],
+      artifacts: ['jsimplifier_pipeline_plan'],
+      evidence: ['structure', 'strings', 'behavior', 'workflow'],
+    })
+    expectToolMetadata(jsirCascade, 'jsir.cascade.plan', {
+      formats: ['js', 'javascript', 'source-map'],
+      artifacts: ['jsir_cascade_plan'],
+      evidence: ['structure', 'strings', 'behavior', 'workflow'],
+    })
+    expectToolMetadata(restringer, 'restringer.deobfuscation.plan', {
+      formats: ['js', 'javascript', 'typescript'],
+      artifacts: ['restringer_deobfuscation_plan'],
+      evidence: ['structure', 'strings', 'behavior', 'workflow'],
+    })
+    expectToolMetadata(remill, 'remill.lift.plan', {
+      formats: ['pe', 'elf', 'macho'],
+      artifacts: ['remill_lift_plan'],
+      evidence: ['structure', 'symbols', 'behavior', 'workflow'],
+    })
+    expectToolMetadata(gtirb, 'gtirb.ir.plan', {
+      formats: ['pe', 'elf', 'macho'],
+      artifacts: ['gtirb_ir_plan'],
+      evidence: ['structure', 'symbols', 'artifact', 'workflow'],
+    })
+    expectToolMetadata(qbdi, 'qbdi.instrumentation.plan', {
+      formats: ['pe', 'elf', 'macho'],
+      artifacts: ['qbdi_instrumentation_plan'],
+      evidence: ['structure', 'behavior', 'memory', 'timeline', 'workflow'],
+    })
+    expectToolMetadata(manifold, 'manifold.decompilation.plan', {
+      formats: ['pe', 'elf', 'macho'],
+      artifacts: ['manifold_decompilation_plan'],
+      evidence: ['structure', 'symbols', 'behavior', 'workflow'],
+    })
+    expectToolMetadata(culifter, 'culifter.gpu.plan', {
+      formats: ['elf', 'linux-binary', 'object'],
+      artifacts: ['culifter_gpu_plan'],
+      evidence: ['structure', 'symbols', 'imports', 'exports', 'workflow'],
     })
   })
 
@@ -1610,6 +1713,87 @@ describe('built-in plugin format matrix discovery', () => {
         nextTools: ['strings.extract', 'sbom.generate', 'wasm.runtime.plan'],
         producesArtifacts: ['wabt_toolchain_plan', 'wat_disassembly_plan'],
         evidence: ['structure', 'imports', 'exports', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'jsimplifier',
+        toolName: 'jsimplifier.pipeline.plan',
+        recipeId: 'jsimplifier.javascript.pipeline-plan',
+        startsWith: ['javascript.obfuscation.profile', 'jsimplifier.pipeline.plan'],
+        nextTools: ['restringer.deobfuscation.plan', 'jsir.cascade.plan'],
+        producesArtifacts: ['jsimplifier_pipeline_plan', 'javascript_static_pass_plan'],
+        evidence: ['structure', 'strings', 'behavior', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'jsir-cascade',
+        toolName: 'jsir.cascade.plan',
+        recipeId: 'jsir.cascade.normalization-plan',
+        startsWith: ['javascript.obfuscation.profile', 'jsir.cascade.plan'],
+        nextTools: ['jsvmp.bytecode.plan', 'strings.extract'],
+        producesArtifacts: ['jsir_cascade_plan', 'javascript_ir_plan'],
+        evidence: ['structure', 'strings', 'behavior', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'restringer',
+        toolName: 'restringer.deobfuscation.plan',
+        recipeId: 'restringer.javascript.preprocess-plan',
+        startsWith: ['javascript.obfuscation.profile', 'restringer.deobfuscation.plan'],
+        nextTools: ['jsir.cascade.plan', 'jsvmp.bytecode.plan'],
+        producesArtifacts: ['restringer_deobfuscation_plan', 'javascript_string_array_plan'],
+        evidence: ['structure', 'strings', 'behavior', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'remill',
+        toolName: 'remill.lift.plan',
+        recipeId: 'remill.llvm.lift-plan',
+        startsWith: ['remill.lift.plan', 'code.function.disassemble'],
+        nextTools: ['revng.pipeline.plan', 'gtirb.ir.plan'],
+        producesArtifacts: ['remill_lift_plan', 'llvm_bitcode_lift_plan'],
+        evidence: ['structure', 'symbols', 'behavior', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'gtirb',
+        toolName: 'gtirb.ir.plan',
+        recipeId: 'gtirb.binary.ir-plan',
+        startsWith: ['gtirb.ir.plan', 'pe.structure.analyze'],
+        nextTools: ['remill.lift.plan', 'revng.pipeline.plan'],
+        producesArtifacts: ['gtirb_ir_plan', 'gtirb_cfg_plan'],
+        evidence: ['structure', 'symbols', 'artifact', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'qbdi',
+        toolName: 'qbdi.instrumentation.plan',
+        recipeId: 'qbdi.dbi.opt-in-plan',
+        startsWith: ['qbdi.instrumentation.plan', 'dynamic.runtime.status'],
+        nextTools: ['windows.runtime.plan', 'linux.runtime.plan', 'dynamic.runtime.status'],
+        producesArtifacts: ['qbdi_instrumentation_plan', 'dbi_trace_plan'],
+        evidence: ['structure', 'behavior', 'memory', 'timeline', 'workflow', 'provenance'],
+        safety: ['passive', 'opt_in_dynamic', 'requires_isolation', 'no_live_sample_by_default'],
+        runtimeBackends: ['qbdi'],
+      },
+      {
+        pluginId: 'manifold',
+        toolName: 'manifold.decompilation.plan',
+        recipeId: 'manifold.superset.decompilation-plan',
+        startsWith: ['manifold.decompilation.plan', 'code.function.cfg'],
+        nextTools: ['revng.pipeline.plan', 'gtirb.ir.plan', 'miasm.ir.plan'],
+        producesArtifacts: ['manifold_decompilation_plan', 'declarative_fact_plan'],
+        evidence: ['structure', 'symbols', 'behavior', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'culifter',
+        toolName: 'culifter.gpu.plan',
+        recipeId: 'culifter.gpu.lift-plan',
+        startsWith: ['culifter.gpu.plan', 'linux.binary.inventory'],
+        nextTools: ['linux.binary.inventory', 'native.object.inventory'],
+        producesArtifacts: ['culifter_gpu_plan', 'sass_lift_plan'],
+        evidence: ['structure', 'symbols', 'imports', 'exports', 'workflow', 'provenance'],
         safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
       },
     ]

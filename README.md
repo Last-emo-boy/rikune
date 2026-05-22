@@ -18,7 +18,7 @@ The current server is organized around a staged analysis pipeline:
 - Optional HTTP API and dashboard for uploads, downloads, health checks, SSE events, and artifact access.
 - SHA-256 based sample workspaces with durable original files, cache directories, analysis artifacts, and upload sessions.
 - SQLite-backed persistence for samples, analyses, jobs, evidence, artifacts, batches, debug sessions, and scheduler telemetry.
-- Plugin architecture with 56 built-in plugins and external plugin discovery.
+- Plugin architecture with 92 built-in plugins and external plugin discovery.
 - Progressive tool surface: core tools are always visible, specialist tools are exposed according to sample type, findings, or explicit discovery.
 - Static analysis and enrichment for PE, ELF, Mach-O, APK/DEX, Office, firmware, strings, YARA, SBOM, signatures, packers, .NET, Go, Rust, and more.
 - Ghidra, Rizin, RetDec, angr, Capstone, Graphviz, Qiling, PANDA, Speakeasy, Wine, Frida, and dynamic-runtime integration where available.
@@ -169,7 +169,7 @@ Docker/WSL analyzers should use `remote-sandbox`, not `auto-sandbox`.
 
 ## Plugin System
 
-Rikune currently includes 56 built-in plugins under `src/plugins/<id>/`. Plugins can register tools, declare dependencies, expose configuration schema, participate in lifecycle hooks, and provide Docker metadata.
+Rikune currently includes 92 built-in plugins under `src/plugins/<id>/`. Plugins can register tools, declare dependencies, expose configuration schema, participate in lifecycle hooks, and provide Docker metadata.
 
 Plugin loading is controlled by `PLUGINS`:
 
@@ -232,7 +232,7 @@ src/
   tools/                      core tool implementations
   workflows/                  staged analysis, triage, reconstruction, review workflows
   analysis/                   run state and background task runner
-  plugins/                    56 built-in plugins
+  plugins/                    92 built-in plugins
   persistence/                SQLite and workspace persistence
   sample/                     sample finalization and workspace inspection
   storage/                    artifacts, uploads, retention

@@ -76,7 +76,7 @@ const spec: BackendPlanSpec = {
     {
       id: 'google-jsir-cascade',
       name: 'Google JSIR / CASCADE',
-      source: 'https://github.com/google/jsir',
+      source: 'local-roadmap',
       role: 'Normalize JavaScript into IR and support structured deobfuscation passes after passive VM triage.',
       readiness: 'optional_external',
       notes: [

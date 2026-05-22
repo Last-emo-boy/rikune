@@ -20,7 +20,7 @@ A plugin can:
 
 ## Built-In Plugins
 
-The repository currently contains 84 built-in plugins.
+The repository currently contains 92 built-in plugins.
 
 | ID | Name | Domain | Surface tier |
 | --- | --- | --- | --- |
@@ -41,6 +41,7 @@ The repository currently contains 84 built-in plugins.
 | `container-analysis` | Container / Archive Inventory | static | 1 |
 | `crackme` | CrackMe Automation | static | 3 |
 | `cross-module` | Cross-Module Analysis | static | 2 |
+| `culifter` | CuLifter GPU Plan | static | 3 |
 | `debug-session` | Debug Session | dynamic | 3 |
 | `deep-unpack` | Deep Unpack | static | 2 |
 | `die` | Detect It Easy | static | 0 |
@@ -54,8 +55,11 @@ The repository currently contains 84 built-in plugins.
 | `ghidra` | Ghidra Integration | static | 3 |
 | `go-analysis` | Go Analysis | static | 2 |
 | `graphviz` | Graphviz | static | 0 |
+| `gtirb` | GTIRB IR Plan | static | 3 |
 | `host-correlation` | Host Correlation | static | 2 |
 | `ios-runtime` | iOS Runtime Plan | dynamic | 2 |
+| `jsimplifier` | JSIMPLIFIER Pipeline Plan | static | 3 |
+| `jsir-cascade` | JSIR/CASCADE Plan | static | 3 |
 | `jsvmp-analysis` | JSVMP Analysis Plan | static | 2 |
 | `jvm` | JVM Bytecode Inventory | static | 1 |
 | `javascript-deobfuscation` | JavaScript Deobfuscation | static | 2 |
@@ -69,6 +73,7 @@ The repository currently contains 84 built-in plugins.
 | `managed-fake-c2` | Managed Fake C2 | dynamic | 2 |
 | `managed-il-xrefs` | Managed IL Cross-References | static | 2 |
 | `managed-sandbox` | Managed Sandbox | dynamic | 2 |
+| `manifold` | Manifold Decompilation Plan | static | 3 |
 | `memory-forensics` | Memory Forensics (Volatility 3) | static | 3 |
 | `metadata` | File Metadata | static | 0 |
 | `miasm` | Miasm IR Plan | static | 3 |
@@ -79,9 +84,12 @@ The repository currently contains 84 built-in plugins.
 | `pcap-analysis` | PCAP Analysis | static | 1 |
 | `pe-analysis` | PE Analysis | static | 0 |
 | `pe-signature` | PE Authenticode Signature | static | 2 |
+| `qbdi` | QBDI Instrumentation Plan | static | 3 |
 | `qiling` | Qiling | dynamic | 3 |
 | `radare2` | radare2 Pipeline Plan | static | 3 |
+| `remill` | Remill Lift Plan | static | 3 |
 | `reporting` | Reporting | both | 0 |
+| `restringer` | REstringer Plan | static | 3 |
 | `retdec` | RetDec | static | 3 |
 | `revng` | rev.ng Pipeline Plan | static | 3 |
 | `rizin` | Rizin | static | 3 |
@@ -222,11 +230,19 @@ emulators, or attach debuggers.
 | `malware.intel.feedback-loop` | `malware` | `malware.intel.loop` | `ioc.export`, `attack.map`, `sigma.rule.generate`, `yara.generate` | Offline evidence loop; no threat-intel network lookup by default. |
 | `javascript.deobfuscation.jsvmp-triage` | `javascript-deobfuscation` | `javascript.obfuscation.profile` | `strings.extract`, `yara.generate`, `analysis.evidence.graph`, `report.generate` | Passive source/profile triage only; no JavaScript execution, Node/V8 start, network, or external deobfuscator invocation. |
 | `jsvmp.bytecode.recovery-plan` | `jsvmp-analysis` | `jsvmp.bytecode.plan` | `strings.extract`, `yara.generate`, `analysis.evidence.graph`, `report.generate` | Plan-only bytecode/handler-map recovery; no JavaScript evaluation, interpreter-assisted normalization, Node/V8/browser start, or external backend invocation. |
+| `jsimplifier.javascript.pipeline-plan` | `jsimplifier` | `jsimplifier.pipeline.plan` | `restringer.deobfuscation.plan`, `jsir.cascade.plan`, `jsvmp.bytecode.plan`, `analysis.evidence.graph` | Plan-only staged JavaScript deobfuscation; no dynamic trace, LLM call, JavaScript execution, Node/V8 start, or network. |
+| `jsir.cascade.normalization-plan` | `jsir-cascade` | `jsir.cascade.plan` | `jsvmp.bytecode.plan`, `strings.extract`, `yara.generate`, `analysis.evidence.graph` | Plan-only IR normalization; no JavaScript execution, browser automation, Node/V8 start, or external deobfuscator invocation. |
+| `restringer.javascript.preprocess-plan` | `restringer` | `restringer.deobfuscation.plan` | `jsir.cascade.plan`, `jsvmp.bytecode.plan`, `strings.extract`, `yara.generate` | Plan-only string-array/expression deobfuscation planning; no REstringer process, Node/V8 start, or source evaluation. |
 | `revng.lift-decompile.plan` | `revng` | `revng.pipeline.plan` | `rizin.analyze`, `ghidra.analyze`, `retdec.decompile`, `analysis.evidence.graph` | Plan-only backend integration; no rev.ng process, lifting, decompile, execution, mount, or network. |
+| `remill.llvm.lift-plan` | `remill` | `remill.lift.plan` | `revng.pipeline.plan`, `gtirb.ir.plan`, `ghidra.analyze`, `analysis.evidence.graph` | Plan-only LLVM lifting workflow; no Remill process, loader, emulator, solver, debugger, or network. |
+| `gtirb.binary.ir-plan` | `gtirb` | `gtirb.ir.plan` | `remill.lift.plan`, `revng.pipeline.plan`, `rizin.analyze`, `analysis.evidence.graph` | Plan-only binary IR and rewrite-boundary planning; no GTIRB tooling, binary rewriting, mutation, loader, or network. |
 | `triton.symbolic.recovery-plan` | `triton` | `triton.symbolic.plan` | `constraint.extract`, `smt.solve`, `vm.workflow.plan`, `analysis.evidence.graph` | Plan-only symbolic workflow; no Triton/Unicorn emulation, solver run, live execution, or network. |
 | `miasm.ir.deobfuscation-plan` | `miasm` | `miasm.ir.plan` | `code.function.cfg`, `constraint.extract`, `smt.solve`, `analysis.evidence.graph` | Plan-only IR/data-flow workflow; no Python backend start, IR lifting, symbolic execution, or network. |
 | `lief.binary.structure-plan` | `lief` | `lief.binary.plan` | `pe.signature.verify`, `native.object.inventory`, `sbom.provenance.graph` | Plan-only LIEF integration; no binary modification, backend parsing, signing mutation, or network. |
 | `radare2.cross-backend.plan` | `radare2` | `radare2.pipeline.plan` | `rizin.analyze`, `ghidra.analyze`, `retdec.decompile`, `analysis.evidence.graph` | Plan-only compatibility backend; no radare2 process, r2pipe command execution, debugger attach, or network. |
+| `qbdi.dbi.opt-in-plan` | `qbdi` | `qbdi.instrumentation.plan` | `windows.runtime.plan`, `linux.runtime.plan`, `macos.runtime.plan`, `dynamic.runtime.status` | Plan-only DBI handoff; no QBDI load, process launch, instrumentation injection, debugger attach, or live execution. |
+| `manifold.superset.decompilation-plan` | `manifold` | `manifold.decompilation.plan` | `revng.pipeline.plan`, `gtirb.ir.plan`, `miasm.ir.plan`, `analysis.evidence.graph` | Plan-only superset-decompilation workflow; no decompiler, fact engine, lifter, solver, or network. |
+| `culifter.gpu.lift-plan` | `culifter` | `culifter.gpu.plan` | `linux.binary.inventory`, `native.object.inventory`, `strings.extract`, `sbom.provenance.graph` | Plan-only GPU binary lifting workflow; no GPU driver, profiler, emulator, lifter, or sample execution. |
 | `wabt.wasm.toolchain-plan` | `wabt` | `wabt.toolchain.plan` | `strings.extract`, `sbom.generate`, `wasm.runtime.plan`, `analysis.evidence.graph` | Plan-only WABT toolchain routing; no wasm2wat/wasm-objdump process, module instantiation, WASI grant, or network. |
 
 ## Advanced Safety Categories
@@ -255,8 +271,8 @@ The current plugin matrix is organized by `formats`, `platforms`, `execution`, `
 | iOS IPA, Mach-O, provisioning, entitlements | `apple-container`, `apple-signing`, `elf-macho` | `ios-runtime`, `frida`, `debug-session` | No IPA install, device connection, simulator start, Frida attach, or LLDB attach by default. |
 | Android APK, AAB, APKS, XAPK, DEX/OAT/VDEX, AAR | `android-package`, `android`, `apk-smali`, `jvm`, `linux-binary` | `android-runtime`, `frida`, `behavior-first` | No emulator start, ADB install, APK launch, frida-server deployment, or device connection by default. |
 | JVM, .NET, Unity, script bytecode | `jvm`, `dotnet-managed`, `dotnet-decompile`, `unity-managed`, `bytecode`, `strings` | `managed-sandbox`, `runtime-deobfuscate`, `behavior-first` | Runtime work is opt-in and delegated; metadata and bytecode inventory stay passive. |
-| JavaScript, Node/browser bundles, source maps, JSVMP-like obfuscation | `javascript-deobfuscation`, `jsvmp-analysis`, `strings`, `yara`, `yara-x`, `bytecode` | Future JSIR/CASCADE, JSIMPLIFIER-style, REstringer, and handler-map workers must remain explicit opt-in backends | No JavaScript evaluation, Node/V8 start, browser automation, network lookup, or external deobfuscator invocation by default. |
-| Advanced native lifting, symbolic execution, IR, and backend comparison workflows | `revng`, `triton`, `miasm`, `lief`, `radare2`, `vm-analysis`, `rizin`, `ghidra`, `retdec` | Future bounded workers only; runtime/emulation must be opt-in | Default tools emit backend plans and readiness metadata only; no heavy backend process, solver, emulator, binary mutation, or sample execution starts during discovery. |
+| JavaScript, Node/browser bundles, source maps, JSVMP-like obfuscation | `javascript-deobfuscation`, `jsvmp-analysis`, `jsimplifier`, `jsir-cascade`, `restringer`, `strings`, `yara`, `yara-x`, `bytecode` | Future JSIR/CASCADE, JSIMPLIFIER-style, REstringer, and handler-map workers must remain explicit opt-in backends | No JavaScript evaluation, Node/V8 start, browser automation, dynamic trace, LLM call, network lookup, or external deobfuscator invocation by default. |
+| Advanced native lifting, symbolic execution, IR, and backend comparison workflows | `revng`, `triton`, `miasm`, `lief`, `radare2`, `remill`, `gtirb`, `manifold`, `culifter`, `vm-analysis`, `rizin`, `ghidra`, `retdec` | Future bounded workers only; runtime/emulation must be opt-in | Default tools emit backend plans and readiness metadata only; no heavy backend process, solver, emulator, fact engine, binary mutation, GPU access, or sample execution starts during discovery. |
 | Firmware, containers, archives, native objects | `firmware`, `container-analysis`, `native-object`, `linux-package`, `windows-installer` | `qiling`, `linux-runtime`, `wasm-runtime` when applicable | No mount, extraction-to-execute path, package install, module insertion, or payload launch by default. |
 | WASM/WASI | `wasm`, `wabt`, `strings`, `sbom` | `wasm-runtime` | No module instantiation, WABT process, wasmtime start, filesystem preopen, or network grant by default. |
 | Network, host, memory, reports | `pcap-analysis`, `host-correlation`, `memory-forensics`, `visualization`, `reporting` | `behavior-first`, `dynamic.behavior.diff`, `analysis.evidence.graph` | Correlation tools operate on existing artifacts and do not start live collection. |

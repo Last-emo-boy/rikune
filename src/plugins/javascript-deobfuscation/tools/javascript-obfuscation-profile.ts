@@ -38,6 +38,27 @@ const JavascriptToolCandidateSchema = z.object({
   notes: z.array(z.string()),
 })
 
+const JavascriptBytecodeMetricsSchema = z.object({
+  numeric_array_count: z.number(),
+  numeric_array_value_count: z.number(),
+  max_numeric_array_length: z.number(),
+  dense_numeric_array_count: z.number(),
+  encoded_string_array_count: z.number(),
+  opcode_case_density: z.number(),
+  handler_table_score: z.number(),
+  vm_state_identifier_count: z.number(),
+})
+
+const JavascriptDispatcherModelSchema = z.object({
+  model: z.enum(['loop_switch', 'handler_table', 'threaded_dispatch', 'mixed', 'unknown']),
+  confidence: z.number(),
+  loop_count: z.number(),
+  switch_count: z.number(),
+  handler_table_hint_count: z.number(),
+  state_variables: z.array(z.string()),
+  evidence: z.array(z.string()),
+})
+
 const JavascriptProfileSchema = z.object({
   sample_id: z.string().optional(),
   filename: z.string().optional(),
@@ -62,6 +83,16 @@ const JavascriptProfileSchema = z.object({
     handler_hints: z.array(z.string()),
     bytecode_container_hints: z.array(z.string()),
     dispatch_hints: z.array(z.string()),
+  }),
+  bytecode_metrics: JavascriptBytecodeMetricsSchema,
+  dispatcher_model: JavascriptDispatcherModelSchema,
+  risk_tags: z.array(z.string()),
+  confidence_breakdown: z.object({
+    lexical: z.number(),
+    bytecode_container: z.number(),
+    dispatcher: z.number(),
+    handler_model: z.number(),
+    codegen: z.number(),
   }),
   deobfuscation_plan: z.object({
     status: z.literal('plan_only'),
@@ -168,6 +199,40 @@ function regexHints(source: string, pattern: RegExp, limit = 20): string[] {
   return uniqueStrings(hints, limit)
 }
 
+function scoreFromCount(count: number, divisor: number): number {
+  return clampRatio(count / Math.max(divisor, 1))
+}
+
+function buildNumericArrayStats(source: string) {
+  let numericArrayCount = 0
+  let numericArrayValueCount = 0
+  let maxNumericArrayLength = 0
+  let denseNumericArrayCount = 0
+
+  for (const match of source.matchAll(/\[([\s\S]{0,20000}?)\]/g)) {
+    const body = match[1] ?? ''
+    const numbers = body.match(/\b(?:0x[0-9a-fA-F]+|\d{1,10})\b/g) ?? []
+    if (numbers.length < 8) continue
+    numericArrayCount += 1
+    numericArrayValueCount += numbers.length
+    maxNumericArrayLength = Math.max(maxNumericArrayLength, numbers.length)
+    const separators = countMatches(body, /,/g)
+    const nonNumericTokens = body
+      .replace(/\b(?:0x[0-9a-fA-F]+|\d{1,10})\b/g, '')
+      .replace(/[,\s]/g, '').length
+    if (numbers.length >= 16 && separators >= numbers.length - 1 && nonNumericTokens === 0) {
+      denseNumericArrayCount += 1
+    }
+  }
+
+  return {
+    numericArrayCount,
+    numericArrayValueCount,
+    maxNumericArrayLength,
+    denseNumericArrayCount,
+  }
+}
+
 function buildSignal(
   id: string,
   label: string,
@@ -189,7 +254,7 @@ function buildToolCandidates(): z.infer<typeof JavascriptToolCandidateSchema>[] 
     {
       id: 'google-jsir-cascade',
       name: 'Google JSIR / CASCADE pipeline',
-      source: 'https://github.com/google/jsir',
+      source: 'local-roadmap',
       role: 'Normalize JavaScript into an IR suitable for structured deobfuscation passes.',
       readiness: 'optional_external',
       notes: [
@@ -255,6 +320,26 @@ export function buildJavascriptObfuscationProfileFromSource(
     /\b(?:eval|Function|setTimeout|setInterval|atob|btoa|unescape)\s*\(/g
   )
   const whileTrueCount = countMatches(source, /\bwhile\s*\(\s*(?:true|!!\[\]|1)\s*\)/g)
+  const genericLoopCount = countMatches(source, /\b(?:while|for)\s*\(/g)
+  const switchCount = countMatches(source, /\bswitch\s*\(/g)
+  const numericArrayStats = buildNumericArrayStats(source)
+  const encodedStringArrayCount = countMatches(
+    source,
+    /\[(?:\s*["'][A-Za-z0-9+/=_$%.-]{12,}["']\s*,){6,}[\s\S]{0,4000}?\]/g
+  )
+  const handlerTableHintCount = countMatches(
+    source,
+    /\b(?:handlers?|opcodes?|dispatch|vm|bytecode)\s*[:=]\s*(?:\{|\[|new\s+Map)/gi
+  )
+  const stateVariableHints = uniqueStrings(
+    regexHints(source, /\b(?:pc|ip|sp|stack|regs?|registers?|state|ctx|vm)\b/gi, 40).map((hint) =>
+      hint.toLowerCase()
+    ),
+    12
+  )
+  const opcodeCaseDensity = clampRatio(
+    switchCaseCount / Math.max(numericArrayStats.maxNumericArrayLength, 1)
+  )
   const dispatchHints = regexHints(
     source,
     /\b(?:while\s*\(\s*(?:true|!!\[\]|1)\s*\)|switch\s*\([^)]+\)|case\s+(?:0x[0-9a-fA-F]+|\d+)\s*:)/g,
@@ -269,6 +354,9 @@ export function buildJavascriptObfuscationProfileFromSource(
     source,
     /\b(?:handlers?|opcodes?|dispatch|stack|registers?|pc|ip)\b|(?:function\s+[$A-Za-z_][$\w]*\s*\([^)]{0,80}\)\s*\{)/gi,
     16
+  )
+  const handlerTableScore = clampRatio(
+    handlerTableHintCount * 0.18 + handlerHints.length * 0.035 + switchCaseCount * 0.018
   )
 
   const signals = [
@@ -310,6 +398,23 @@ export function buildJavascriptObfuscationProfileFromSource(
     ),
   ].filter((signal): signal is z.infer<typeof JavascriptSignalSchema> => Boolean(signal))
 
+  const lexicalConfidence = clampRatio(
+    longLines / Math.max(nonEmptyLines.length, 1) +
+      longIdentifierCount * 0.015 +
+      shortIdentifiers / Math.max(identifiers.length, 1)
+  )
+  const bytecodeContainerConfidence = clampRatio(
+    numericArrayStats.denseNumericArrayCount * 0.24 +
+      numericArrayStats.numericArrayValueCount * 0.003 +
+      encodedStringArrayCount * 0.18 +
+      bytecodeContainerHints.length * 0.035
+  )
+  const dispatcherConfidence = clampRatio(
+    switchCount * 0.14 + whileTrueCount * 0.22 + switchCaseCount * 0.024
+  )
+  const codegenConfidence = scoreFromCount(evalLikeCallCount, 4)
+  const handlerModelConfidence = handlerTableScore
+
   const jsvmpScore = clampRatio(
     Math.min(
       1,
@@ -317,14 +422,42 @@ export function buildJavascriptObfuscationProfileFromSource(
         whileTrueCount * 0.15 +
         bytecodeContainerHints.length * 0.04 +
         handlerHints.length * 0.025 +
-        largeArrayCount * 0.08
+        largeArrayCount * 0.08 +
+        numericArrayStats.denseNumericArrayCount * 0.12 +
+        encodedStringArrayCount * 0.08 +
+        handlerTableHintCount * 0.08
     )
   )
   const suspectedJsvmp = jsvmpScore >= 0.45
   const optionalToolCandidates = buildToolCandidates()
   const recommendedNextTools = suspectedJsvmp
-    ? ['strings.extract', 'yara.generate', 'analysis.evidence.graph', 'report.generate']
+    ? [
+        'jsvmp.bytecode.plan',
+        'strings.extract',
+        'yara.generate',
+        'analysis.evidence.graph',
+        'report.generate',
+      ]
     : ['strings.extract', 'yara.generate', 'report.generate']
+  const dispatcherModel =
+    whileTrueCount > 0 && switchCaseCount >= 4
+      ? 'loop_switch'
+      : handlerTableHintCount >= 2
+        ? 'handler_table'
+        : switchCaseCount >= 4 && numericArrayStats.numericArrayCount > 0
+          ? 'threaded_dispatch'
+          : handlerTableHintCount > 0 && switchCaseCount > 0
+            ? 'mixed'
+            : 'unknown'
+  const riskTags = uniqueStrings([
+    suspectedJsvmp ? 'suspected_jsvmp' : '',
+    evalLikeCallCount > 0 ? 'eval_like_codegen' : '',
+    numericArrayStats.denseNumericArrayCount > 0 ? 'dense_numeric_bytecode_array' : '',
+    encodedStringArrayCount > 0 ? 'encoded_string_pool' : '',
+    switchCaseCount >= 8 ? 'large_opcode_switch' : '',
+    handlerTableHintCount > 0 ? 'handler_table_hints' : '',
+    longLines > 0 ? 'minified_or_packed' : '',
+  ])
 
   return {
     sample_id: options.sampleId,
@@ -350,6 +483,33 @@ export function buildJavascriptObfuscationProfileFromSource(
       handler_hints: handlerHints,
       bytecode_container_hints: bytecodeContainerHints,
       dispatch_hints: dispatchHints,
+    },
+    bytecode_metrics: {
+      numeric_array_count: numericArrayStats.numericArrayCount,
+      numeric_array_value_count: numericArrayStats.numericArrayValueCount,
+      max_numeric_array_length: numericArrayStats.maxNumericArrayLength,
+      dense_numeric_array_count: numericArrayStats.denseNumericArrayCount,
+      encoded_string_array_count: encodedStringArrayCount,
+      opcode_case_density: opcodeCaseDensity,
+      handler_table_score: handlerTableScore,
+      vm_state_identifier_count: stateVariableHints.length,
+    },
+    dispatcher_model: {
+      model: dispatcherModel,
+      confidence: clampRatio(Math.max(dispatcherConfidence, handlerModelConfidence)),
+      loop_count: genericLoopCount,
+      switch_count: switchCount,
+      handler_table_hint_count: handlerTableHintCount,
+      state_variables: stateVariableHints,
+      evidence: uniqueStrings([...dispatchHints.slice(0, 8), ...handlerHints.slice(0, 8)]),
+    },
+    risk_tags: riskTags,
+    confidence_breakdown: {
+      lexical: lexicalConfidence,
+      bytecode_container: bytecodeContainerConfidence,
+      dispatcher: dispatcherConfidence,
+      handler_model: handlerModelConfidence,
+      codegen: codegenConfidence,
     },
     deobfuscation_plan: {
       status: 'plan_only',
