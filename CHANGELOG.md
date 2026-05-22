@@ -13,6 +13,8 @@ Versioning where practical.
 - Added passive static plugin coverage for common binary families including Windows installers/debug symbols, Linux packages/binaries, macOS/iOS containers/signing, Android packages, JVM, .NET/Unity, firmware filesystems, containers, WASM, and script bytecode.
 - Added plan-only dynamic runtime plugins for Windows, Linux, macOS, iOS, Android, and WASM with opt-in isolation policy and no live runtime startup by default.
 - Updated plugin matrix documentation and release quality gates for `qualityWarnings`, aspect metadata, output schemas, and runtime policy compatibility.
+- Completed release-guarded workflow recipes across memory forensics, VM/symbolic analysis, KB analysis memory, runtime opt-in plans, SBOM provenance, Android behavior graphing, Apple security profiling, firmware/IoT planning, Office macro profiling, unpacking retriage, sample family clustering, and malware intel feedback loops.
+- Added release guard coverage so completed vertical workflow recipes remain visible through plugin discovery metadata, tool help/readiness surfaces, and the documented plugin matrix without invoking runtime, network, mount, install, emulator, or debugger paths.
 
 ### Runtime Stability
 

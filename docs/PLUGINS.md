@@ -185,6 +185,34 @@ Workflow-capable tools usually declare `execution: ["correlation"]`, `capabiliti
 `provenance-graph`. When such a tool lacks `workflowRecipes`, `auditPluginQuality()` reports
 `missing-workflow-recipe` with a `suggested_task_owner` pointing at the relevant Maestro task.
 
+### Completed Capability Workflow Recipes
+
+The current capability iteration fixed the following workflow recipes as release-guarded metadata.
+These recipes are discoverable through `plugin.list`, `tools.discover`, `tool.help`,
+`tool.readiness`, and the plugin aspect matrix. Default recipe paths are passive: they do not start
+runtime backends, execute samples, perform network lookups, mount images, install packages, launch
+emulators, or attach debuggers.
+
+| Recipe | Plugin | Entry tool | Primary follow-up tools | Default safety boundary |
+| --- | --- | --- | --- | --- |
+| `memory-forensics.offline-correlation` | `memory-forensics` | `memory-forensics.correlate` | `analysis.evidence.graph`, `report.generate` | Existing Volatility rows only; no live memory, no network. |
+| `vm.symbolic.workflow` | `vm-analysis` | `vm.workflow.plan` | `constraint.extract`, `smt.solve`, `keygen.synthesize` | Planner only; no solver or emulator is started. |
+| `kb.analysis-memory.reuse` | `kb-collaboration` | `kb.context.suggest` | `kb.function.match`, `rule.library`, `kb.export` | Local analysis memory only; no network. |
+| `windows.runtime.opt-in` | `windows-runtime` | `windows.runtime.plan` | `dynamic.runtime.status`, runtime-backed tools after approval | Plan-only, opt-in, isolated, network disabled. |
+| `linux.runtime.opt-in` | `linux-runtime` | `linux.runtime.plan` | `dynamic.runtime.status`, `qiling`/debug tooling after approval | Plan-only, opt-in, isolated, network disabled. |
+| `macos.runtime.opt-in` | `macos-runtime` | `macos.runtime.plan` | `dynamic.runtime.status`, LLDB/DTrace tooling after approval | Plan-only, opt-in, isolated, network disabled. |
+| `ios.runtime.opt-in` | `ios-runtime` | `ios.runtime.plan` | `tool.readiness`, Frida/LLDB tooling after approval | Plan-only; no install, device attach, or simulator start. |
+| `android.runtime.opt-in` | `android-runtime` | `android.runtime.plan` | `dynamic.toolkit.status`, ADB/emulator/Frida tooling after approval | Plan-only; no install, launch, device connection, or Frida attach. |
+| `wasm.runtime.opt-in` | `wasm-runtime` | `wasm.runtime.plan` | `tool.readiness`, wasmtime tooling after approval | Plan-only; no module instantiation or WASI grant. |
+| `supply-chain.sbom.provenance` | `sbom` | `sbom.provenance.graph` | `sbom.generate`, `vuln.pattern.summary`, `report.generate` | Local inventories only; no install, mount, execute, or network lookup. |
+| `android.static.behavior-graph` | `android` | `android.behavior.graph` | `dex.classes.list`, `android.runtime.plan` | Static graph only; no APK launch, device connection, or runtime start. |
+| `apple.security.runtime-profile` | `apple-signing` | `apple.security.profile` | `macho.structure.analyze`, `macos.runtime.plan`, `ios.runtime.plan` | Static profile only; no mount, install, keychain, codesign, or device action. |
+| `firmware.iot.passive-workflow` | `firmware` | `firmware.workflow.plan` | `firmware.entropy`, `sbom.provenance.graph`, `qiling.inspect` | Passive workflow plan; no extraction-to-execute, mount, module load, or emulation. |
+| `office.macro.static-profile` | `office-analysis` | `office.behavior.profile` | `ioc.export`, `yara.generate`, `sigma.rule.generate`, `report.generate` | Static macro profile only; no Office automation or macro execution. |
+| `unpacking.detect-plan-retriage` | `unpacking` | `unpack.workflow.plan` | `unpack.auto`, `runtime.deobfuscate.plan`, `static.triage` | Passive plan with opt-in runtime gates; no live unpacking by default. |
+| `similarity.family-cluster` | `similarity` | `sample.family.cluster` | `binary.diff.summary`, `kb.context.suggest`, `report.generate` | Corpus-local clustering; no private dataset or network requirement. |
+| `malware.intel.feedback-loop` | `malware` | `malware.intel.loop` | `ioc.export`, `attack.map`, `sigma.rule.generate`, `yara.generate` | Offline evidence loop; no threat-intel network lookup by default. |
+
 ## Advanced Safety Categories
 
 Advanced plugin iteration is grouped by risk so CI can audit contracts without invoking heavy or

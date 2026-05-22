@@ -66,5 +66,13 @@
   "notes": [
     "This task should not hide blockers. If a backend-dependent task cannot be verified safely, document the blocker and keep default behavior passive."
   ],
-  "status": "pending"
+  "status": "completed",
+  "completed_at": "2026-05-23T03:37:53.6950147+08:00",
+  "summary": "Release guard documents the completed capability workflow recipes and covers their plugin discovery metadata, runtime opt-in recipes, evidence tags, and passive safety boundaries.",
+  "verification": [
+    "npm test -- --runTestsByPath tests/unit/plugin-format-matrix.test.ts",
+    "npm test -- --runTestsByPath tests/unit/plugin-format-matrix.test.ts tests/unit/tool-readiness.test.ts tests/unit/tools-discover.test.ts tests/unit/tool-help.test.ts tests/unit/plugin-list.test.ts",
+    "npm run typecheck",
+    "npm run lint"
+  ]
 }

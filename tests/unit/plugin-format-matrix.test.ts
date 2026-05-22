@@ -1,7 +1,13 @@
 import { describe, expect, test } from '@jest/globals'
 import { detectFileType } from '../../src/sample/sample-finalization.js'
 import { discoverBuiltInPlugins } from '../../src/core/plugin-system/discovery.js'
-import { createPluginTestHarness, type Plugin } from '../../src/plugins/sdk.js'
+import {
+  createPluginTestHarness,
+  type Plugin,
+  type PluginTestHarnessOptions,
+  type ToolDefinition,
+  type WorkflowRecipeSpec,
+} from '../../src/plugins/sdk.js'
 import { buildLinuxPackageInventoryFromBuffer } from '../../src/plugins/linux-package/tools/linux-package-inventory.js'
 import { buildAppleContainerInventoryFromBuffer } from '../../src/plugins/apple-container/tools/apple-container-inventory.js'
 import { buildJvmStructureFromBuffer } from '../../src/plugins/jvm/tools/jvm-structure-analyze.js'
@@ -137,10 +143,67 @@ function requirePlugin(plugins: Plugin[], id: string): Plugin {
   return plugin as Plugin
 }
 
-function registeredToolDefinitions(plugin: Plugin) {
-  const harness = createPluginTestHarness()
+function registeredToolDefinitions(plugin: Plugin, options?: PluginTestHarnessOptions) {
+  const harness = createPluginTestHarness(options)
   harness.registerPlugin(plugin)
   return new Map(harness.registeredTools.map((tool) => [tool.definition.name, tool.definition]))
+}
+
+function requireRegisteredTool(
+  plugins: Plugin[],
+  pluginId: string,
+  toolName: string,
+  options?: PluginTestHarnessOptions
+): ToolDefinition {
+  const plugin = requirePlugin(plugins, pluginId)
+  const tools = registeredToolDefinitions(plugin, options)
+  const definition = tools.get(toolName)
+  expect(definition).toBeDefined()
+  return definition as ToolDefinition
+}
+
+function requireWorkflowRecipe(
+  definition: ToolDefinition,
+  recipeId: string
+): WorkflowRecipeSpec {
+  const recipe = definition.workflowRecipes?.find((candidate) => candidate.id === recipeId)
+  expect(recipe).toBeDefined()
+  return recipe as WorkflowRecipeSpec
+}
+
+function expectWorkflowRecipeMetadata(
+  plugins: Plugin[],
+  expected: {
+    pluginId: string
+    toolName: string
+    recipeId: string
+    startsWith?: string[]
+    nextTools?: string[]
+    producesArtifacts?: string[]
+    evidence?: string[]
+    safety?: string[]
+    runtimeBackends?: string[]
+    harnessOptions?: PluginTestHarnessOptions
+  }
+) {
+  const definition = requireRegisteredTool(
+    plugins,
+    expected.pluginId,
+    expected.toolName,
+    expected.harnessOptions
+  )
+  const recipe = requireWorkflowRecipe(definition, expected.recipeId)
+
+  expect(recipe.startsWith ?? []).toEqual(expect.arrayContaining(expected.startsWith ?? []))
+  expect(recipe.nextTools ?? []).toEqual(expect.arrayContaining(expected.nextTools ?? []))
+  expect(recipe.producesArtifacts ?? []).toEqual(
+    expect.arrayContaining(expected.producesArtifacts ?? [])
+  )
+  expect(recipe.evidence ?? []).toEqual(expect.arrayContaining(expected.evidence ?? []))
+  expect(recipe.safety ?? []).toEqual(expect.arrayContaining(expected.safety ?? []))
+  expect(recipe.runtimeBackends ?? []).toEqual(
+    expect.arrayContaining(expected.runtimeBackends ?? [])
+  )
 }
 
 function expectToolMetadata(
@@ -1231,6 +1294,140 @@ describe('built-in plugin format matrix discovery', () => {
     )
   })
 
+  test('release guard covers completed capability workflow recipes', async () => {
+    const plugins = await discoverBuiltInPlugins()
+    const passiveDeps = {
+      deps: {
+        workspaceManager: {},
+        database: {},
+        config: { workers: { static: { pythonPath: 'python3' } } },
+        cacheManager: {},
+        generateCacheKey: () => 'cache-key',
+        resolvePackagePath: (...parts: string[]) => parts.join('/'),
+      },
+    }
+
+    const expectations = [
+      {
+        pluginId: 'memory-forensics',
+        toolName: 'memory-forensics.correlate',
+        recipeId: 'memory-forensics.offline-correlation',
+        startsWith: ['memory-forensics.correlate'],
+        nextTools: ['analysis.evidence.graph', 'report.generate'],
+        producesArtifacts: ['memory_forensics_correlation', 'behavior_timeline'],
+        evidence: ['memory', 'process', 'network', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'vm-analysis',
+        toolName: 'vm.workflow.plan',
+        recipeId: 'vm.symbolic.workflow',
+        startsWith: ['vm.detect', 'vm.workflow.plan'],
+        nextTools: ['constraint.extract', 'smt.solve', 'keygen.synthesize'],
+        producesArtifacts: ['vm_workflow_plan', 'smt_solution'],
+        evidence: ['structure', 'behavior', 'workflow', 'provenance'],
+        safety: ['passive'],
+      },
+      {
+        pluginId: 'kb-collaboration',
+        toolName: 'kb.context.suggest',
+        recipeId: 'kb.analysis-memory.reuse',
+        startsWith: ['kb.context.suggest', 'analysis.notes'],
+        nextTools: ['kb.function.match', 'rule.library', 'kb.export'],
+        producesArtifacts: ['analysis_memory'],
+        evidence: ['analysis-memory', 'workflow', 'provenance'],
+        safety: ['passive', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'sbom',
+        toolName: 'sbom.provenance.graph',
+        recipeId: 'supply-chain.sbom.provenance',
+        startsWith: ['container.structure.analyze', 'firmware.workflow.plan'],
+        nextTools: ['sbom.generate', 'vuln.pattern.summary', 'report.generate'],
+        producesArtifacts: ['sbom_provenance_graph'],
+        evidence: ['sbom', 'package-metadata', 'nested-binaries', 'provenance'],
+        safety: ['passive', 'no_installer_execution', 'no_auto_mount', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'android',
+        toolName: 'android.behavior.graph',
+        recipeId: 'android.static.behavior-graph',
+        startsWith: ['android.package.inventory', 'android.behavior.graph'],
+        nextTools: ['dex.classes.list', 'android.runtime.plan'],
+        producesArtifacts: ['android_behavior_graph'],
+        evidence: ['manifest', 'classes', 'behavior', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default'],
+        harnessOptions: passiveDeps,
+      },
+      {
+        pluginId: 'apple-signing',
+        toolName: 'apple.security.profile',
+        recipeId: 'apple.security.runtime-profile',
+        startsWith: ['apple.container.inventory', 'apple.signing.inspect'],
+        nextTools: ['macho.structure.analyze', 'macos.runtime.plan', 'ios.runtime.plan'],
+        producesArtifacts: ['apple_security_profile'],
+        evidence: ['manifest', 'certificates', 'package-metadata', 'workflow', 'provenance'],
+        safety: ['passive', 'no_auto_mount', 'no_installer_execution', 'no_live_sample_by_default'],
+      },
+      {
+        pluginId: 'firmware',
+        toolName: 'firmware.workflow.plan',
+        recipeId: 'firmware.iot.passive-workflow',
+        startsWith: ['firmware.scan', 'firmware.workflow.plan'],
+        nextTools: ['firmware.entropy', 'sbom.provenance.graph', 'qiling.inspect'],
+        producesArtifacts: ['firmware_workflow_plan'],
+        evidence: ['signatures', 'filesystem', 'package-metadata', 'workflow', 'provenance'],
+        safety: ['passive', 'no_installer_execution', 'no_auto_mount', 'no_live_sample_by_default'],
+      },
+      {
+        pluginId: 'office-analysis',
+        toolName: 'office.behavior.profile',
+        recipeId: 'office.macro.static-profile',
+        startsWith: ['office.ole.analyze', 'office.behavior.profile'],
+        nextTools: ['ioc.export', 'yara.generate', 'sigma.rule.generate', 'report.generate'],
+        producesArtifacts: ['office_behavior_profile'],
+        evidence: ['structure', 'strings', 'behavior', 'network', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default'],
+      },
+      {
+        pluginId: 'unpacking',
+        toolName: 'unpack.workflow.plan',
+        recipeId: 'unpacking.detect-plan-retriage',
+        startsWith: ['die.scan', 'unpack.workflow.plan'],
+        nextTools: ['unpack.auto', 'runtime.deobfuscate.plan', 'static.triage'],
+        producesArtifacts: ['unpack_plan', 'reanalysis_request'],
+        evidence: ['signatures', 'workflow', 'provenance'],
+        safety: ['passive', 'opt_in_dynamic', 'requires_isolation', 'no_live_sample_by_default'],
+        runtimeBackends: ['debugger', 'sandbox', 'qiling', 'frida'],
+      },
+      {
+        pluginId: 'similarity',
+        toolName: 'sample.family.cluster',
+        recipeId: 'similarity.family-cluster',
+        startsWith: ['sample.similarity', 'binary.diff', 'sample.family.cluster'],
+        nextTools: ['binary.diff.summary', 'kb.context.suggest', 'report.generate'],
+        producesArtifacts: ['sample_family_cluster'],
+        evidence: ['hashes', 'imports', 'strings', 'functions', 'provenance'],
+        safety: ['passive', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'malware',
+        toolName: 'malware.intel.loop',
+        recipeId: 'malware.intel.feedback-loop',
+        startsWith: ['malware.config.extract', 'c2.extract', 'malware.intel.loop'],
+        nextTools: ['ioc.export', 'attack.map', 'sigma.rule.generate', 'yara.generate'],
+        producesArtifacts: ['malware_intel_loop'],
+        evidence: ['behavior', 'network', 'strings', 'signatures', 'provenance'],
+        safety: ['passive', 'no_network_by_default'],
+        harnessOptions: passiveDeps,
+      },
+    ]
+
+    for (const expected of expectations) {
+      expectWorkflowRecipeMetadata(plugins, expected)
+    }
+  })
+
   test('discovers platform runtime plan plugins as passive dynamic planning tools', async () => {
     const plugins = await discoverBuiltInPlugins()
     const windowsRuntime = requirePlugin(plugins, 'windows-runtime')
@@ -1293,6 +1490,18 @@ describe('built-in plugin format matrix discovery', () => {
           requiresUserOptIn: true,
         })
       )
+      const recipe = requireWorkflowRecipe(tool as ToolDefinition, `${plugin.id.replace('-runtime', '')}.runtime.opt-in`)
+      expect(recipe.startsWith).toEqual(expect.arrayContaining([tool?.name, 'tool.readiness']))
+      expect(recipe.safety).toEqual(
+        expect.arrayContaining([
+          'passive',
+          'opt_in_dynamic',
+          'requires_isolation',
+          'no_live_sample_by_default',
+          'no_network_by_default',
+        ])
+      )
+      expect(recipe.runtimeBackends).toEqual(expect.arrayContaining(plugin.aspects?.runtimes ?? []))
       expect(tool?.artifacts?.[0]?.type).toMatch(/_runtime_plan$/)
       expect(tool?.evidence?.map((entry) => entry.category)).toContain('timeline')
     }
