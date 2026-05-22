@@ -70,6 +70,24 @@ export const pcapExtractStreamsToolDefinition: ToolDefinition = {
   description: 'Reassemble and extract TCP/UDP streams from a PCAP file.',
   inputSchema: pcapExtractStreamsInputSchema,
   outputSchema: pcapExtractStreamsOutputSchema,
+  aspects: {
+    formats: ['pcap', 'pcapng', 'network-capture'],
+    platforms: ['cross-platform'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_network_by_default'],
+    evidence: ['network', 'artifact'],
+  },
+  artifacts: [
+    {
+      type: 'pcap_streams',
+      description: 'Extracted or summarized TCP/UDP streams',
+      mime: 'text/plain',
+    },
+  ],
+  evidence: [
+    { category: 'network', artifactTypes: ['pcap_streams'] },
+    { category: 'artifact', artifactTypes: ['pcap_streams'] },
+  ],
 }
 
 export function createPcapExtractStreamsHandler(

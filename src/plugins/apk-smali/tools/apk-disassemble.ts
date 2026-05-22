@@ -75,6 +75,27 @@ export const apkDisassembleToolDefinition: ToolDefinition = {
     'Disassemble an APK file into Smali bytecode via apktool. Lists Smali class files and provides previews.',
   inputSchema: apkDisassembleInputSchema,
   outputSchema: apkDisassembleOutputSchema,
+  aspects: {
+    formats: ['apk', 'aab', 'apks', 'xapk', 'split-apk', 'aar'],
+    platforms: ['android'],
+    architectures: ['arm', 'arm64', 'x86', 'x64'],
+    execution: ['static', 'decompilation'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    capabilities: ['smali', 'classes', 'resources'],
+    evidence: ['structure', 'strings', 'artifact', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'backend_apk_smali-listing',
+      description: 'Smali class listing generated from APKTool output',
+    },
+  ],
+  evidence: [
+    {
+      category: 'structure',
+      artifactTypes: ['backend_apk_smali-listing'],
+    },
+  ],
 }
 
 function collectSmaliFiles(

@@ -19,6 +19,28 @@ const winePlugin: Plugin = {
   id: 'wine',
   name: 'Wine',
   executionDomain: 'dynamic',
+  aspects: {
+    formats: ['pe', 'dll', 'dotnet', 'pe-clr', 'msi', 'installer'],
+    platforms: ['windows', 'linux'],
+    architectures: ['x86', 'x64', 'arm64'],
+    execution: ['dynamic', 'emulation'],
+    runtimes: ['wine'],
+    safety: ['passive', 'opt_in_dynamic', 'requires_isolation', 'no_live_sample_by_default'],
+    capabilities: ['wine-prefix', 'dll-overrides', 'registry', 'execution-plan', 'behavior-hints'],
+    evidence: ['process', 'filesystem', 'registry', 'network', 'api-calls', 'timeline'],
+  },
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: true,
+    requiresIsolation: true,
+    allowedBackends: ['wine'],
+    maxRuntimeMs: 120000,
+    networkPolicy: 'disabled',
+    notes: [
+      'Wine behavior is a compatibility/emulation signal and must not be treated as native Windows ground truth.',
+      'Readiness and planning paths must not launch Wine or execute PE payloads.',
+    ],
+  },
   surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description:
     'Wine Windows compatibility layer — prefix management, DLL overrides, registry manipulation, and supervised execution of PE binaries',

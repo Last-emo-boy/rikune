@@ -61,6 +61,35 @@ export const yaraGenerateToolDefinition: ToolDefinition = {
     'Auto-generate YARA detection rules from sample analysis evidence (strings, imports, byte patterns). Supports tight/balanced/loose strictness levels.',
   inputSchema: YaraGenerateInputSchema,
   outputSchema: YaraGenerateOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'apk', 'dex', 'jar', 'dotnet', 'wasm', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'android', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['rule-generation', 'strings', 'imports', 'byte-patterns'],
+    evidence: ['signatures', 'strings', 'imports', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'yara_rule_generation',
+      description: 'Generated YARA rules with evidence summary and quality score',
+    },
+  ],
+  evidence: [
+    {
+      category: 'signatures',
+      artifactTypes: ['yara_rule_generation'],
+    },
+    {
+      category: 'strings',
+      artifactTypes: ['yara_rule_generation'],
+    },
+    {
+      category: 'imports',
+      artifactTypes: ['yara_rule_generation'],
+    },
+  ],
 }
 
 // ============================================================================

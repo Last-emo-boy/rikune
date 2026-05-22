@@ -81,6 +81,27 @@ export const disasmQuickToolDefinition: ToolDefinition = {
     'Quickly disassemble bytes from a sample at a given offset. Uses Capstone — no Ghidra/Rizin needed. Ideal for entrypoints, shellcode snippets, and quick inspection.',
   inputSchema: disasmQuickInputSchema,
   outputSchema: disasmQuickOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['disassembly', 'entrypoint-preview'],
+    evidence: ['structure', 'artifact'],
+  },
+  artifacts: [
+    {
+      type: 'backend_capstone_disasm',
+      description: 'Bounded Capstone disassembly preview',
+    },
+  ],
+  evidence: [
+    {
+      category: 'structure',
+      artifactTypes: ['backend_capstone_disasm'],
+    },
+  ],
 }
 
 const CAPSTONE_DISASM_SCRIPT = `

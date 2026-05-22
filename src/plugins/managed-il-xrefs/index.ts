@@ -13,6 +13,15 @@ const managedIlXrefsPlugin: Plugin = {
   id: 'managed-il-xrefs',
   name: 'Managed IL Cross-References',
   executionDomain: 'static',
+  aspects: {
+    formats: ['dotnet', 'pe-clr', 'mono', 'winmd'],
+    platforms: ['dotnet', 'windows', 'linux', 'macos'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['il-xrefs', 'tokens', 'dependency-graph', 'routing'],
+    evidence: ['symbols', 'resources', 'provenance'],
+  },
   surfaceRules: { tier: 2, activateOn: { findings: ['dotnet'] }, category: 'dotnet-analysis' },
   description:
     'IL-level cross-reference analysis — scan method bodies for stfld/ldfld/call sites, ' +

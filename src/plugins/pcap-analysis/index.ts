@@ -16,6 +16,14 @@ const pcapAnalysisPlugin: Plugin = {
   id: 'pcap-analysis',
   name: 'PCAP Analysis',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pcap', 'pcapng', 'network-capture'],
+    platforms: ['cross-platform'],
+    execution: ['static', 'triage', 'correlation'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+    capabilities: ['packet-analysis', 'dns-analysis', 'stream-extraction', 'ioc-routing'],
+    evidence: ['network', 'timeline', 'artifact', 'provenance'],
+  },
   surfaceRules: {
     tier: 1,
     activateOn: { fileTypes: ['pcap', 'pcapng', 'network'] },

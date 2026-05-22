@@ -184,7 +184,8 @@ export function buildEvidenceProvenanceSummary(input: {
     record?.result && typeof record.result === 'object'
       ? (record.result as Record<string, unknown>).confidence
       : undefined
-  const artifactRefs = input.artifactRefs || (record?.artifact_refs as ArtifactRef[] | undefined) || []
+  const artifactRefs =
+    input.artifactRefs || (record?.artifact_refs as ArtifactRef[] | undefined) || []
   return AnalysisEvidenceProvenanceSummarySchema.parse({
     source_tool:
       (record?.provenance?.tool as string | undefined) ||

@@ -32,6 +32,31 @@ export const machoStructureAnalyzeToolDefinition: ToolDefinition = {
     'Analyze Mach-O binary structure: load commands, sections, symbols. Handles fat (universal) binaries by listing all architectures.',
   inputSchema: MachoStructureAnalyzeInputSchema,
   outputSchema: MachoStructureAnalyzeOutputSchema,
+  aspects: {
+    formats: [
+      'macho',
+      'fat',
+      'universal',
+      'macho-object',
+      'dylib',
+      'framework',
+      'app-bundle',
+      'dsym',
+    ],
+    platforms: ['macos', 'ios'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['structure', 'symbols', 'imports', 'exports', 'routing'],
+    evidence: ['structure', 'symbols', 'imports', 'exports', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'macho_structure',
+      description: 'Mach-O load commands, segments, sections, symbols, and universal slices',
+    },
+  ],
+  evidence: [{ category: 'structure', artifactTypes: ['macho_structure'] }],
 }
 
 export function createMachoStructureAnalyzeHandler(

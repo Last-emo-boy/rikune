@@ -87,6 +87,67 @@ export const rizinAnalyzeToolDefinition: ToolDefinition = {
     'Run bounded Rizin inspection on a sample for info, sections, imports, exports, entrypoints, functions, or strings. Use this when you explicitly want Rizin-backed inspection instead of the default workflow backends.',
   inputSchema: rizinAnalyzeInputSchema,
   outputSchema: rizinAnalyzeOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'wasm', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'ios', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'ppc', 'riscv', 'wasm'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['info', 'sections', 'imports', 'exports', 'entrypoints', 'functions', 'strings'],
+    evidence: ['structure', 'symbols', 'imports', 'exports', 'strings'],
+  },
+  artifacts: [
+    {
+      type: 'backend_rizin_info',
+      description: 'Bounded Rizin binary info JSON preview',
+    },
+    {
+      type: 'backend_rizin_sections',
+      description: 'Bounded Rizin sections JSON preview',
+    },
+    {
+      type: 'backend_rizin_imports',
+      description: 'Bounded Rizin imports JSON preview',
+    },
+    {
+      type: 'backend_rizin_exports',
+      description: 'Bounded Rizin exports JSON preview',
+    },
+    {
+      type: 'backend_rizin_entrypoints',
+      description: 'Bounded Rizin entrypoints JSON preview',
+    },
+    {
+      type: 'backend_rizin_functions',
+      description: 'Bounded Rizin functions JSON preview',
+    },
+    {
+      type: 'backend_rizin_strings',
+      description: 'Bounded Rizin strings JSON preview',
+    },
+  ],
+  evidence: [
+    {
+      category: 'structure',
+      artifactTypes: ['backend_rizin_info', 'backend_rizin_sections', 'backend_rizin_entrypoints'],
+    },
+    {
+      category: 'symbols',
+      artifactTypes: ['backend_rizin_functions'],
+    },
+    {
+      category: 'imports',
+      artifactTypes: ['backend_rizin_imports'],
+    },
+    {
+      category: 'exports',
+      artifactTypes: ['backend_rizin_exports'],
+    },
+    {
+      category: 'strings',
+      artifactTypes: ['backend_rizin_strings'],
+    },
+  ],
 }
 
 function getRizinCommand(operation: z.infer<typeof rizinAnalyzeInputSchema>['operation']): string {

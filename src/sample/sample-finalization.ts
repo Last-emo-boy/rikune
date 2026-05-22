@@ -32,9 +32,247 @@ function computeMD5(data: Buffer): string {
   return crypto.createHash('md5').update(data).digest('hex')
 }
 
-export function detectFileType(data: Buffer): string {
+function normalizeFileExtension(filename?: string): string | null {
+  if (!filename) return null
+  const basename = path.posix.basename(filename.replace(/\\/g, '/')).trim().toLowerCase()
+  if (!basename.includes('.')) return null
+  if (basename.endsWith('.appimage')) return 'appimage'
+  return basename.slice(basename.lastIndexOf('.') + 1)
+}
+
+function normalizeFileBasename(filename?: string): string {
+  if (!filename) return ''
+  return path.posix.basename(filename.replace(/\\/g, '/')).trim().toLowerCase()
+}
+
+function detectZipFileType(data: Buffer, extension: string | null): string {
+  switch (extension) {
+    case 'apk':
+      return 'APK'
+    case 'aab':
+      return 'AAB'
+    case 'apks':
+      return 'APKS'
+    case 'xapk':
+      return 'XAPK'
+    case 'ipa':
+      return 'IPA'
+    case 'aar':
+      return 'AAR'
+    case 'jar':
+      return 'JAR'
+    case 'war':
+      return 'WAR'
+    case 'jmod':
+      return 'JMOD'
+    case 'msix':
+      return 'MSIX'
+    case 'appx':
+      return 'APPX'
+    case 'nupkg':
+      return 'NUPKG'
+    default:
+      break
+  }
+
+  const preview = data.subarray(0, Math.min(data.length, 1024 * 1024)).toString('latin1')
+  if (preview.includes('oci-layout')) return 'OCI-Image'
+  if (preview.includes('manifest.json') && preview.includes('layer')) return 'Docker-Image'
+  if (preview.includes('Payload/') && preview.includes('.app/')) return 'IPA'
+  if (preview.includes('AndroidManifest.xml') && preview.includes('classes.dex')) return 'APK'
+  if (preview.includes('AndroidManifest.xml') && preview.includes('classes.jar')) return 'AAR'
+  if (preview.includes('AppxManifest.xml')) return 'APPX'
+  if (preview.includes('.nuspec')) return 'NUPKG'
+  if (preview.includes('META-INF/MANIFEST.MF')) return 'JAR'
+  return 'ZIP'
+}
+
+export function detectFileType(data: Buffer, filename?: string): string {
+  const extension = normalizeFileExtension(filename)
+  const basename = normalizeFileBasename(filename)
+
+  if (extension === 'mobileprovision') {
+    return 'MobileProvision'
+  }
+
+  if (extension === 'dsym' || basename.endsWith('.dsym')) {
+    return 'dSYM'
+  }
+
+  if (extension === 'app') {
+    return 'App-Bundle'
+  }
+
+  if (extension === 'framework') {
+    return 'Framework'
+  }
+
+  if (extension === 'xcframework') {
+    return 'XCFramework'
+  }
+
+  if (
+    basename === 'global-metadata.dat' ||
+    (data.length >= 4 &&
+      data[0] === 0xfa &&
+      data[1] === 0xb1 &&
+      data[2] === 0x1b &&
+      data[3] === 0xaf)
+  ) {
+    return 'Unity-Metadata'
+  }
+
+  if (
+    data.length >= 6 &&
+    data[0] === 0x37 &&
+    data[1] === 0x7a &&
+    data[2] === 0xbc &&
+    data[3] === 0xaf &&
+    data[4] === 0x27 &&
+    data[5] === 0x1c
+  ) {
+    return '7z'
+  }
+
+  if (data.length >= 7 && data.subarray(0, 4).toString('ascii') === 'Rar!') {
+    return 'RAR'
+  }
+
+  if (
+    data.length >= 6 &&
+    data[0] === 0xfd &&
+    data[1] === 0x37 &&
+    data[2] === 0x7a &&
+    data[3] === 0x58 &&
+    data[4] === 0x5a &&
+    data[5] === 0x00
+  ) {
+    return 'XZ'
+  }
+
+  if (
+    data.length >= 4 &&
+    data[0] === 0x28 &&
+    data[1] === 0xb5 &&
+    data[2] === 0x2f &&
+    data[3] === 0xfd
+  ) {
+    return 'ZSTD'
+  }
+
+  if (data.length >= 262 && data.subarray(257, 262).toString('ascii') === 'ustar') {
+    const preview = data.subarray(0, Math.min(data.length, 1024 * 1024)).toString('latin1')
+    if (preview.includes('oci-layout')) return 'OCI-Image'
+    if (preview.includes('manifest.json') && preview.includes('layer')) return 'Docker-Image'
+    return 'TAR'
+  }
+
+  if (data.length >= 0x8006 && data.subarray(0x8001, 0x8006).toString('ascii') === 'CD001') {
+    return 'ISO'
+  }
+
+  if (
+    data.length >= 24 &&
+    data.subarray(0, 24).toString('ascii').startsWith('Microsoft C/C++ MSF')
+  ) {
+    return 'PDB'
+  }
+
+  if (data.length >= 4 && data.subarray(0, 4).toString('ascii') === 'MSCF') {
+    return 'CAB'
+  }
+
+  if (data.length >= 4 && data.readUInt32BE(0) === 0x27051956) {
+    return 'U-Boot-uImage'
+  }
+
+  if (data.length >= 4 && data.readUInt32BE(0) === 0xd00dfeed) {
+    return extension === 'itb' ? 'FIT-Image' : 'DTB'
+  }
+
+  if (data.length >= 4 && data.subarray(0, 4).toString('ascii') === 'hsqs') {
+    return 'SquashFS'
+  }
+
+  if (data.length >= 4 && data.readUInt32LE(0) === 0x28cd3d45) {
+    return 'CramFS'
+  }
+
+  if (
+    data.length >= 2 &&
+    ((data[0] === 0x85 && data[1] === 0x19) || (data[0] === 0x19 && data[1] === 0x85))
+  ) {
+    return 'JFFS2'
+  }
+
+  if (data.length >= 4 && data.subarray(0, 4).toString('ascii') === 'UBI#') {
+    return 'UBI'
+  }
+
+  if (data.length >= 4 && data.readUInt32LE(0) === 0x06101831) {
+    return 'UBIFS'
+  }
+
+  if (data.length >= 8 && data.subarray(0, 8).toString('ascii') === '-rom1fs-') {
+    return 'ROMFS'
+  }
+
+  if (
+    data.length >= 6 &&
+    ['070701', '070702', '070707'].includes(data.subarray(0, 6).toString('ascii'))
+  ) {
+    return 'CPIO'
+  }
+
+  if (
+    data.length >= 8 &&
+    data[0] === 0xd0 &&
+    data[1] === 0xcf &&
+    data[2] === 0x11 &&
+    data[3] === 0xe0 &&
+    data[4] === 0xa1 &&
+    data[5] === 0xb1 &&
+    data[6] === 0x1a &&
+    data[7] === 0xe1 &&
+    ['msi', 'msp', 'msm'].includes(extension ?? '')
+  ) {
+    return 'MSI'
+  }
+
   if (data.length >= 2 && data[0] === 0x4d && data[1] === 0x5a) {
+    const preview = data.subarray(0, Math.min(data.length, 1024 * 1024)).toString('latin1')
+    if (basename === 'gameassembly.dll' || preview.includes('il2cpp')) return 'IL2CPP'
+    if (extension === 'efi') return 'EFI'
+    if (extension === 'sys') return 'SYS'
+    if (extension === 'winmd') return 'WinMD'
+    if (preview.includes('BSJB') || preview.toLowerCase().includes('mscoree.dll')) {
+      return 'PE-CLR'
+    }
+    if (preview.includes('NullsoftInst')) return 'NSIS'
+    if (preview.includes('Inno Setup')) return 'Inno'
     return 'PE'
+  }
+
+  if (
+    data.length >= 11 &&
+    data[0] === 0x7f &&
+    data[1] === 0x45 &&
+    data[2] === 0x4c &&
+    data[3] === 0x46 &&
+    (extension === 'appimage' || data.subarray(8, 10).toString('ascii') === 'AI')
+  ) {
+    return 'AppImage'
+  }
+
+  if (
+    data.length >= 4 &&
+    data[0] === 0x7f &&
+    data[1] === 0x45 &&
+    data[2] === 0x4c &&
+    data[3] === 0x46 &&
+    basename.includes('il2cpp')
+  ) {
+    return 'IL2CPP'
   }
 
   if (
@@ -44,7 +282,92 @@ export function detectFileType(data: Buffer): string {
     data[2] === 0x4c &&
     data[3] === 0x46
   ) {
+    const preview = data.subarray(0, Math.min(data.length, 1024 * 1024)).toString('latin1')
+    const endian = data[5] === 2 ? 'be' : 'le'
+    const readUInt16 = (offset: number) =>
+      endian === 'be' ? data.readUInt16BE(offset) : data.readUInt16LE(offset)
+    const elfType = data.length >= 18 ? readUInt16(16) : 0
+    if (extension === 'ko' || basename.endsWith('.ko') || preview.includes('vermagic=')) {
+      return 'Linux-Kernel-Module'
+    }
+    if (elfType === 1) return 'ELF-Object'
+    if (elfType === 3 && ['so', 'dylib'].includes(extension ?? '')) return 'ELF-SO'
+    if (elfType === 4 || extension === 'core') return 'ELF-Core'
+    if (elfType === 2) return 'ELF-Executable'
     return 'ELF'
+  }
+
+  if (data.length >= 4 && data.subarray(0, 4).toString('ascii') === 'dex\n') {
+    return 'DEX'
+  }
+
+  if (
+    data.length >= 4 &&
+    data[0] === 0xca &&
+    data[1] === 0xfe &&
+    data[2] === 0xba &&
+    data[3] === 0xbe &&
+    extension === 'class'
+  ) {
+    return 'CLASS'
+  }
+
+  if (data.length >= 4 && data.subarray(0, 4).toString('ascii') === 'vdex') {
+    return 'VDEX'
+  }
+
+  if (data.length >= 4 && data.subarray(0, 4).toString('ascii') === 'oat\n') {
+    return 'OAT'
+  }
+
+  if (data.length >= 4 && data.subarray(0, 4).toString('ascii') === 'dey\n') {
+    return 'ODEX'
+  }
+
+  if (data.length >= 4 && data.subarray(0, 4).toString('ascii') === 'art\n') {
+    return 'ART'
+  }
+
+  if (
+    data.length >= 4 &&
+    data[0] === 0x00 &&
+    data[1] === 0x61 &&
+    data[2] === 0x73 &&
+    data[3] === 0x6d
+  ) {
+    return 'WASM'
+  }
+
+  if (
+    data.length >= 4 &&
+    data[0] === 0x1b &&
+    data[1] === 0x4c &&
+    data[2] === 0x75 &&
+    data[3] === 0x61
+  ) {
+    return 'Lua-Bytecode'
+  }
+
+  if (data.length >= 4 && data[0] === 0x50 && data[1] === 0x4b) {
+    return detectZipFileType(data, extension)
+  }
+
+  if (data.length >= 8 && data.subarray(0, 8).toString('ascii') === '!<arch>\n') {
+    const preview = data.subarray(8, Math.min(data.length, 4096)).toString('latin1')
+    if (extension === 'lib') return 'COFF-LIB'
+    if (extension === 'a') return 'AR-Static-Lib'
+    if (preview.includes('debian-binary')) return 'DEB'
+    return 'AR'
+  }
+
+  if (
+    data.length >= 4 &&
+    data[0] === 0xed &&
+    data[1] === 0xab &&
+    data[2] === 0xee &&
+    data[3] === 0xdb
+  ) {
+    return 'RPM'
   }
 
   if (data.length >= 4) {
@@ -56,11 +379,187 @@ export function detectFileType(data: Buffer): string {
       magic32 === 0xcefaedfe ||
       magic32 === 0xcffaedfe
     ) {
+      const fileType =
+        data.length >= 16 && (magic32 === 0xfeedface || magic32 === 0xfeedfacf)
+          ? data.readUInt32BE(12)
+          : data.length >= 16
+            ? data.readUInt32LE(12)
+            : 0
+      if (fileType === 1 || extension === 'o') return 'Mach-O-Object'
       return 'Mach-O'
     }
     if (magic32 === 0xcafebabe || magic32 === 0xbebafeca) {
       return 'Mach-O-Fat'
     }
+  }
+
+  if (data.length >= 4 && data.subarray(0, 4).toString('ascii') === 'xar!') {
+    return 'PKG'
+  }
+
+  if (data.length >= 2 && data[0] === 0x1f && data[1] === 0x8b && extension === 'apk') {
+    return 'APK-Alpine'
+  }
+
+  if (data.length >= 2 && data[0] === 0x1f && data[1] === 0x8b) {
+    return 'GZ'
+  }
+
+  if (
+    data.length >= 512 &&
+    data.subarray(data.length - 512, data.length - 508).toString('ascii') === 'koly'
+  ) {
+    return 'DMG'
+  }
+
+  switch (extension) {
+    case 'deb':
+      return 'DEB'
+    case 'rpm':
+      return 'RPM'
+    case 'apk':
+      return 'APK'
+    case 'snap':
+      return 'Snap'
+    case 'flatpak':
+      return 'Flatpak'
+    case 'zip':
+      return 'ZIP'
+    case '7z':
+      return '7z'
+    case 'rar':
+      return 'RAR'
+    case 'tar':
+      return 'TAR'
+    case 'gz':
+    case 'tgz':
+      return 'GZ'
+    case 'xz':
+      return 'XZ'
+    case 'zst':
+    case 'zstd':
+      return 'ZSTD'
+    case 'iso':
+      return 'ISO'
+    case 'oci':
+      return 'OCI-Image'
+    case 'docker':
+      return 'Docker-Image'
+    case 'dmg':
+      return 'DMG'
+    case 'pkg':
+      return 'PKG'
+    case 'mobileprovision':
+      return 'MobileProvision'
+    case 'app':
+      return 'App-Bundle'
+    case 'framework':
+      return 'Framework'
+    case 'xcframework':
+      return 'XCFramework'
+    case 'dsym':
+      return 'dSYM'
+    case 'msi':
+    case 'msp':
+    case 'msm':
+      return 'MSI'
+    case 'msix':
+      return 'MSIX'
+    case 'appx':
+      return 'APPX'
+    case 'cab':
+      return 'CAB'
+    case 'nsis':
+      return 'NSIS'
+    case 'inno':
+      return 'Inno'
+    case 'pdb':
+      return 'PDB'
+    case 'obj':
+      return 'COFF'
+    case 'lib':
+      return 'COFF-LIB'
+    case 'o':
+      return 'Object'
+    case 'a':
+      return 'AR-Static-Lib'
+    case 'ko':
+      return 'Linux-Kernel-Module'
+    case 'nupkg':
+      return 'NUPKG'
+    case 'winmd':
+      return 'WinMD'
+    case 'dll':
+    case 'exe':
+      if (basename === 'gameassembly.dll') return 'IL2CPP'
+      return 'PE'
+    case 'efi':
+      return 'EFI'
+    case 'sys':
+      return 'SYS'
+    case 'ipa':
+      return 'IPA'
+    case 'wasm':
+      return 'WASM'
+    case 'pyc':
+      return 'PYC'
+    case 'luac':
+      return 'Lua-Bytecode'
+    case 'jsc':
+    case 'blob':
+      return 'V8-Cache'
+    case 'class':
+      return 'CLASS'
+    case 'jar':
+      return 'JAR'
+    case 'war':
+      return 'WAR'
+    case 'jmod':
+      return 'JMOD'
+    case 'dex':
+      return 'DEX'
+    case 'vdex':
+      return 'VDEX'
+    case 'oat':
+      return 'OAT'
+    case 'odex':
+      return 'ODEX'
+    case 'art':
+      return 'ART'
+    case 'aab':
+      return 'AAB'
+    case 'apks':
+      return 'APKS'
+    case 'xapk':
+      return 'XAPK'
+    case 'aar':
+      return 'AAR'
+    case 'unity':
+      return 'Unity'
+    case 'uimage':
+    case 'img':
+      return 'Firmware'
+    case 'fit':
+    case 'itb':
+      return 'FIT-Image'
+    case 'dtb':
+      return 'DTB'
+    case 'cpio':
+      return 'CPIO'
+    case 'squashfs':
+      return 'SquashFS'
+    case 'cramfs':
+      return 'CramFS'
+    case 'jffs2':
+      return 'JFFS2'
+    case 'ubi':
+      return 'UBI'
+    case 'ubifs':
+      return 'UBIFS'
+    case 'romfs':
+      return 'ROMFS'
+    default:
+      break
   }
 
   return 'unknown'
@@ -130,7 +629,7 @@ export class SampleFinalizationService {
       })
     }
 
-    const fileType = detectFileType(input.data)
+    const fileType = detectFileType(input.data, filename)
     const sample = {
       id: sampleId,
       sha256,

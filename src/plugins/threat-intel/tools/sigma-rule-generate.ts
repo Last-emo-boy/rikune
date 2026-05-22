@@ -66,6 +66,44 @@ export const sigmaRuleGenerateToolDefinition: ToolDefinition = {
     'Uses strings, imports, and behavioral evidence to build detection logic.',
   inputSchema: SigmaRuleGenerateInputSchema,
   outputSchema: SigmaRuleGenerateOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'dotnet', 'apk', 'jar', 'firmware'],
+    platforms: [
+      'windows',
+      'linux',
+      'macos',
+      'android',
+      'jvm',
+      'dotnet',
+      'embedded',
+      'cross-platform',
+    ],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['sigma-generation', 'ioc', 'detection-rule-generation'],
+    evidence: ['behavior', 'network', 'filesystem', 'registry', 'strings', 'imports'],
+  },
+  artifacts: [
+    {
+      type: 'sigma_rules',
+      description: 'Generated Sigma detection rule metadata',
+    },
+  ],
+  evidence: [
+    {
+      category: 'behavior',
+      artifactTypes: ['sigma_rules'],
+    },
+    {
+      category: 'network',
+      artifactTypes: ['sigma_rules'],
+    },
+    {
+      category: 'registry',
+      artifactTypes: ['sigma_rules'],
+    },
+  ],
 }
 
 // --------------------------------------------------------------------------

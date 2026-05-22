@@ -64,6 +64,26 @@ export const apkManifestParseToolDefinition: ToolDefinition = {
     'Parse and decode AndroidManifest.xml from an APK, extracting permissions, components, and metadata.',
   inputSchema: apkManifestParseInputSchema,
   outputSchema: apkManifestParseOutputSchema,
+  aspects: {
+    formats: ['apk', 'aab', 'apks', 'xapk', 'split-apk', 'aar'],
+    platforms: ['android'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    capabilities: ['manifest', 'permissions', 'components', 'routing'],
+    evidence: ['manifest', 'package-metadata', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'backend_apk_manifest',
+      description: 'Decoded AndroidManifest.xml and extracted component metadata',
+    },
+  ],
+  evidence: [
+    {
+      category: 'manifest',
+      artifactTypes: ['backend_apk_manifest'],
+    },
+  ],
 }
 
 export function createApkManifestParseHandler(

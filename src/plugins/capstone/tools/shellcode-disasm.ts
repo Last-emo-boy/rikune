@@ -63,6 +63,27 @@ export const shellcodeDisasmToolDefinition: ToolDefinition = {
     'Disassemble raw shellcode from a sample using Capstone. Includes heuristic API call detection from call/jmp patterns.',
   inputSchema: shellcodeDisasmInputSchema,
   outputSchema: shellcodeDisasmOutputSchema,
+  aspects: {
+    formats: ['shellcode', 'pe', 'elf', 'macho', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['disassembly', 'shellcode', 'api-dispatch-heuristic'],
+    evidence: ['structure', 'artifact'],
+  },
+  artifacts: [
+    {
+      type: 'backend_capstone_shellcode',
+      description: 'Bounded shellcode disassembly and API dispatch heuristic preview',
+    },
+  ],
+  evidence: [
+    {
+      category: 'structure',
+      artifactTypes: ['backend_capstone_shellcode'],
+    },
+  ],
 }
 
 const SHELLCODE_DISASM_SCRIPT = `

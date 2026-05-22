@@ -68,6 +68,26 @@ export const apkResourcesDecodeToolDefinition: ToolDefinition = {
   description: 'Decode and list resources from an APK (layouts, strings, drawables, etc.).',
   inputSchema: apkResourcesDecodeInputSchema,
   outputSchema: apkResourcesDecodeOutputSchema,
+  aspects: {
+    formats: ['apk', 'aab', 'apks', 'xapk', 'split-apk', 'aar'],
+    platforms: ['android'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    capabilities: ['resources', 'strings', 'manifest'],
+    evidence: ['resources', 'strings', 'filesystem', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'backend_apk_resources-listing',
+      description: 'APK resource listing generated from APKTool output',
+    },
+  ],
+  evidence: [
+    {
+      category: 'resources',
+      artifactTypes: ['backend_apk_resources-listing'],
+    },
+  ],
 }
 
 function collectResourceFiles(

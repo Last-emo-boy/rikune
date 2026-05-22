@@ -17,6 +17,15 @@ const peSignaturePlugin: Plugin = {
   id: 'pe-signature',
   name: 'PE Authenticode Signature',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'pe-clr'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['signatures', 'certificates', 'timestamp', 'routing'],
+    evidence: ['signatures', 'certificates', 'provenance'],
+  },
   surfaceRules: { tier: 2, activateOn: { findings: ['signed'] }, category: 'static-analysis' },
   description:
     'Verify PE Authenticode signatures and extract embedded certificates via osslsigncode.',

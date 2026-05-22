@@ -237,6 +237,21 @@ export const workflowSummarizeToolDefinition: ToolDefinition = {
     '- Common mistake: expecting the workflow to inline raw backend payloads instead of returning digest artifacts.',
   inputSchema: WorkflowSummarizeInputSchema,
   outputSchema: WorkflowSummarizeOutputSchema,
+  aspects: {
+    formats: ['artifact', 'report', 'analysis-evidence'],
+    platforms: ['all', 'cross-platform'],
+    execution: ['static', 'correlation'],
+    safety: ['passive'],
+    evidence: ['artifact', 'provenance', 'timeline', 'behavior', 'structure'],
+  },
+  artifacts: [
+    {
+      type: 'workflow_summary',
+      description: 'Staged triage/static/deep/final summary digest artifacts',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [{ category: 'artifact', artifactTypes: ['workflow_summary'] }],
 }
 
 function extractCoverage(payload: unknown): z.infer<typeof CoverageEnvelopeSchema> | null {

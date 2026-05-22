@@ -15,6 +15,7 @@ const LOCAL_DYNAMIC_TOOL_POLICIES = new Map<string, LocalDynamicToolPolicy>([
   ['debug.network.plan', 'planning'],
   ['debug.procdump.plan', 'planning'],
   ['debug.telemetry.plan', 'planning'],
+  ['android.runtime.plan', 'planning'],
   ['dynamic.auto.hook', 'artifact-generation'],
   ['dynamic.behavior.diff', 'post-processing'],
   ['dynamic.deep_plan', 'planning'],
@@ -26,11 +27,16 @@ const LOCAL_DYNAMIC_TOOL_POLICIES = new Map<string, LocalDynamicToolPolicy>([
   ['dynamic.trace.attribute', 'post-processing'],
   ['dynamic.trace.import', 'artifact-import'],
   ['frida.script.generate', 'artifact-generation'],
+  ['ios.runtime.plan', 'planning'],
+  ['linux.runtime.plan', 'planning'],
+  ['macos.runtime.plan', 'planning'],
   ['runtime.debug.command', 'control-plane'],
   ['runtime.debug.session.start', 'control-plane'],
   ['runtime.debug.session.status', 'control-plane'],
   ['runtime.debug.session.stop', 'control-plane'],
   ['runtime.hyperv.control', 'control-plane'],
+  ['wasm.runtime.plan', 'planning'],
+  ['windows.runtime.plan', 'planning'],
 ])
 
 export function getLocalDynamicToolPolicy(toolName: string): LocalDynamicToolPolicy | undefined {

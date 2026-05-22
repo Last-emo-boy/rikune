@@ -170,9 +170,7 @@ export async function buildSampleReuseHints(
 ): Promise<SampleReuseHints> {
   const limit = Math.max(1, Math.min(input.limit ?? 10, 50))
   const sample =
-    input.sampleSha256 !== undefined
-      ? null
-      : ((input.database.findSample?.(input.sampleId) as Sample | undefined) ?? null)
+    input.sampleSha256 !== undefined ? null : (input.database.findSample?.(input.sampleId) ?? null)
   const sampleSha256 = input.sampleSha256 ?? sample?.sha256 ?? null
 
   const persistedJobs =

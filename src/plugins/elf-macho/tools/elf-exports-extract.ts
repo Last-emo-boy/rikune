@@ -31,6 +31,22 @@ export const elfExportsExtractToolDefinition: ToolDefinition = {
   description: 'Extract ELF exported symbols: globally visible symbols with non-zero addresses.',
   inputSchema: ElfExportsExtractInputSchema,
   outputSchema: ElfExportsExtractOutputSchema,
+  aspects: {
+    formats: ['elf', 'so'],
+    platforms: ['linux'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['exports', 'symbols'],
+    evidence: ['exports', 'symbols', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'elf_exports',
+      description: 'ELF globally visible exported symbols and symbol metadata',
+    },
+  ],
+  evidence: [{ category: 'exports', artifactTypes: ['elf_exports'] }],
 }
 
 export function createElfExportsExtractHandler(

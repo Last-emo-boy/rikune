@@ -13,19 +13,24 @@
 
 import { existsSync } from 'node:fs'
 import { z } from 'zod'
-import { ToolRuntimeContractSchema } from '@rikune/shared'
+import { DynamicRuntimePolicySchema, ToolRuntimeContractSchema } from '@rikune/shared'
 import type {
   ArtifactRef,
+  DynamicRuntimePolicy,
   RuntimeBackendCapability,
   RuntimeBackendType,
   RuntimeDelegationFailureCategory,
   RuntimeExecutionMode,
   RuntimeExecutionSemantics,
   RuntimeFallbackRule,
+  RuntimeIsolationBackend,
+  RuntimeIsolationRequirement,
+  RuntimeNetworkPolicy,
   ToolRuntimeContract,
   WorkerResult,
 } from '@rikune/shared'
 export {
+  DynamicRuntimePolicySchema,
   PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
   SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
   RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPES,
@@ -35,6 +40,9 @@ export {
   RuntimeDelegationFailureResultSchema,
   RuntimeExecutionModeSchema,
   RuntimeFallbackRuleSchema,
+  RuntimeIsolationBackendSchema,
+  RuntimeIsolationRequirementSchema,
+  RuntimeNetworkPolicySchema,
   ToolRuntimeContractSchema,
   buildRuntimeArtifactControlPlaneMetadata,
   inferRuntimeArtifactFamily,
@@ -43,12 +51,16 @@ export {
 } from '@rikune/shared'
 export type {
   ArtifactRef,
+  DynamicRuntimePolicy,
   RuntimeBackendCapability,
   RuntimeBackendType,
   RuntimeDelegationFailureCategory,
   RuntimeExecutionMode,
   RuntimeExecutionSemantics,
   RuntimeFallbackRule,
+  RuntimeIsolationBackend,
+  RuntimeIsolationRequirement,
+  RuntimeNetworkPolicy,
   ToolRuntimeContract,
   WorkerResult,
 } from '@rikune/shared'
@@ -75,6 +87,14 @@ export interface ToolDefinition {
   description: string
   inputSchema: any
   outputSchema?: any
+  /** Aspect metadata used by sample profiling and progressive discovery. */
+  aspects?: PluginAspects
+  /** Artifact families this tool may write. */
+  artifacts?: ToolArtifactSpec[]
+  /** Evidence families this tool may produce. */
+  evidence?: ToolEvidenceSpec[]
+  /** Dynamic execution policy surfaced by readiness and scaffold templates. */
+  runtimePolicy?: DynamicRuntimePolicy
   /** Runtime execution contract for tools delegated to a runtime node. */
   runtime?: ToolRuntimeContract
 }
@@ -95,6 +115,351 @@ export interface DefinedTool<TArgs = ToolArgs> {
 
 export interface DefineToolConfig<TArgs = ToolArgs> extends ToolDefinition {
   handler: ToolHandler<TArgs>
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Plugin aspects — shared taxonomy for routing and discovery
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const PLUGIN_ASPECT_FORMATS = [
+  'pe',
+  'efi',
+  'sys',
+  'coff',
+  'coff-lib',
+  'pdb',
+  'msi',
+  'msix',
+  'appx',
+  'cab',
+  'nsis',
+  'inno',
+  'linux-binary',
+  'elf',
+  'elf-executable',
+  'so',
+  'core',
+  'elf-core',
+  'elf-object',
+  'linux-kernel-module',
+  'dwarf',
+  'object',
+  'static-lib',
+  'ar',
+  'ar-static-lib',
+  'deb',
+  'rpm',
+  'apk-alpine',
+  'snap',
+  'flatpak',
+  'appimage',
+  'macho',
+  'fat',
+  'universal',
+  'macho-object',
+  'dylib',
+  'framework',
+  'xcframework',
+  'app-bundle',
+  'dsym',
+  'dmg',
+  'pkg',
+  'ipa',
+  'apple-signing',
+  'codesignature',
+  'entitlements',
+  'plist',
+  'mobileprovision',
+  'android-package',
+  'android-bytecode',
+  'apk',
+  'aab',
+  'apks',
+  'dex',
+  'multi-dex',
+  'oat',
+  'art',
+  'odex',
+  'vdex',
+  'aar',
+  'xapk',
+  'split-apk',
+  'apk-signature',
+  'arsc',
+  'jar',
+  'class',
+  'war',
+  'jmod',
+  'kotlin-metadata',
+  'dotnet',
+  'pe-clr',
+  'nupkg',
+  'mono',
+  'winmd',
+  'unity',
+  'unity-metadata',
+  'il2cpp',
+  'wasm',
+  'wasi',
+  'pyc',
+  'lua-bytecode',
+  'v8-cache',
+  'firmware',
+  'uimage',
+  'fit',
+  'dtb',
+  'itb',
+  'initramfs',
+  'cpio',
+  'squashfs',
+  'cramfs',
+  'jffs2',
+  'ubi',
+  'ubifs',
+  'romfs',
+  'archive',
+  'zip',
+  '7z',
+  'rar',
+  'tar',
+  'gz',
+  'xz',
+  'zstd',
+  'iso',
+  'installer',
+  'container',
+  'docker-image',
+  'oci-image',
+] as const
+
+export const PLUGIN_ASPECT_PLATFORMS = [
+  'windows',
+  'linux',
+  'macos',
+  'ios',
+  'android',
+  'jvm',
+  'dotnet',
+  'wasm',
+  'python',
+  'lua',
+  'node',
+  'embedded',
+  'cross-platform',
+  'all',
+] as const
+
+export const PLUGIN_ASPECT_ARCHITECTURES = [
+  'x86',
+  'x64',
+  'arm',
+  'arm64',
+  'mips',
+  'mipsel',
+  'ppc',
+  'riscv',
+  'wasm',
+] as const
+
+export const PLUGIN_ASPECT_EXECUTIONS = [
+  'static',
+  'dynamic',
+  'emulation',
+  'decompilation',
+  'triage',
+  'correlation',
+] as const
+
+export const PLUGIN_ASPECT_SAFETY = [
+  'passive',
+  'opt_in_dynamic',
+  'requires_isolation',
+  'no_live_sample_by_default',
+  'no_installer_execution',
+  'no_auto_mount',
+  'no_network_by_default',
+] as const
+
+export const PLUGIN_ASPECT_EVIDENCE = [
+  'structure',
+  'symbols',
+  'imports',
+  'exports',
+  'strings',
+  'resources',
+  'signatures',
+  'behavior',
+  'network',
+  'filesystem',
+  'registry',
+  'memory',
+  'timeline',
+  'artifact',
+  'manifest',
+  'certificates',
+  'package-metadata',
+  'nested-binaries',
+  'sbom',
+  'vulnerabilities',
+  'provenance',
+] as const
+
+export type PluginAspectFormat = (typeof PLUGIN_ASPECT_FORMATS)[number] | string
+export type PluginAspectPlatform = (typeof PLUGIN_ASPECT_PLATFORMS)[number] | string
+export type PluginAspectArchitecture = (typeof PLUGIN_ASPECT_ARCHITECTURES)[number] | string
+export type PluginAspectExecution = (typeof PLUGIN_ASPECT_EXECUTIONS)[number] | string
+export type PluginAspectSafety = (typeof PLUGIN_ASPECT_SAFETY)[number] | string
+export type PluginAspectEvidence = (typeof PLUGIN_ASPECT_EVIDENCE)[number] | string
+
+const AspectTagsSchema = z.array(z.string().min(1)).default([])
+
+export const PluginAspectsSchema = z
+  .object({
+    formats: AspectTagsSchema.optional(),
+    platforms: AspectTagsSchema.optional(),
+    architectures: AspectTagsSchema.optional(),
+    execution: AspectTagsSchema.optional(),
+    runtimes: AspectTagsSchema.optional(),
+    safety: AspectTagsSchema.optional(),
+    capabilities: AspectTagsSchema.optional(),
+    evidence: AspectTagsSchema.optional(),
+  })
+  .passthrough()
+
+export type PluginAspects = z.infer<typeof PluginAspectsSchema>
+
+export interface SampleProfileAspectInput {
+  fileTypes?: string[]
+  findings?: string[]
+  platforms?: string[]
+  architectures?: string[]
+  execution?: string[]
+  runtimes?: string[]
+  evidence?: string[]
+}
+
+export interface AspectMatchResult {
+  matched: boolean
+  score: number
+  matchedAspects: Record<string, string[]>
+  missingAspects: Record<string, string[]>
+  reasons: string[]
+}
+
+function normalizeAspectTag(tag: unknown): string | null {
+  if (typeof tag !== 'string') {
+    return null
+  }
+  const normalized = tag.trim().toLowerCase().replace(/_/g, '-')
+  return normalized.length > 0 ? normalized : null
+}
+
+function normalizeAspectTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) {
+    return []
+  }
+  return Array.from(
+    new Set(tags.map(normalizeAspectTag).filter((tag): tag is string => Boolean(tag)))
+  )
+}
+
+export function normalizePluginAspects(aspects: PluginAspects | null | undefined): PluginAspects {
+  return {
+    ...((aspects ?? {}) as Record<string, unknown>),
+    formats: normalizeAspectTags(aspects?.formats),
+    platforms: normalizeAspectTags(aspects?.platforms),
+    architectures: normalizeAspectTags(aspects?.architectures),
+    execution: normalizeAspectTags(aspects?.execution),
+    runtimes: normalizeAspectTags(aspects?.runtimes),
+    safety: normalizeAspectTags(aspects?.safety),
+    capabilities: normalizeAspectTags(aspects?.capabilities),
+    evidence: normalizeAspectTags(aspects?.evidence),
+  }
+}
+
+export function buildSampleProfileAspects(profile: SampleProfileAspectInput): PluginAspects {
+  const fileTypeTags = normalizeAspectTags(profile.fileTypes).flatMap(
+    (tag) => SURFACE_FILE_TYPE_TAGS[tag] ?? [tag]
+  )
+  return normalizePluginAspects({
+    formats: fileTypeTags,
+    platforms: profile.platforms,
+    architectures: profile.architectures,
+    execution: profile.execution,
+    runtimes: profile.runtimes,
+    capabilities: profile.findings,
+    evidence: profile.evidence,
+  })
+}
+
+function matchAspectGroup(pluginTags: string[], sampleTags: string[]): string[] {
+  if (pluginTags.length === 0 || sampleTags.length === 0) {
+    return []
+  }
+  const sample = new Set(sampleTags)
+  return pluginTags.filter((tag) => sample.has(tag))
+}
+
+export function matchSampleProfile(
+  pluginAspects: PluginAspects | null | undefined,
+  sampleProfile: SampleProfileAspectInput | PluginAspects
+): AspectMatchResult {
+  const plugin = normalizePluginAspects(pluginAspects)
+  const sample =
+    'fileTypes' in sampleProfile || 'findings' in sampleProfile
+      ? buildSampleProfileAspects(sampleProfile as SampleProfileAspectInput)
+      : normalizePluginAspects(sampleProfile as PluginAspects)
+
+  const groups: Array<keyof PluginAspects> = [
+    'formats',
+    'platforms',
+    'architectures',
+    'execution',
+    'runtimes',
+    'capabilities',
+    'evidence',
+  ]
+  const matchedAspects: Record<string, string[]> = {}
+  const missingAspects: Record<string, string[]> = {}
+  let declaredGroups = 0
+  let matchedGroups = 0
+
+  for (const group of groups) {
+    const pluginTags = normalizeAspectTags(plugin[group])
+    if (pluginTags.length === 0) {
+      continue
+    }
+    declaredGroups += 1
+    const sampleTags = normalizeAspectTags(sample[group])
+    const matches = matchAspectGroup(pluginTags, sampleTags)
+    if (matches.length > 0) {
+      matchedAspects[group] = matches
+      matchedGroups += 1
+    } else if (sampleTags.length > 0) {
+      missingAspects[group] = pluginTags.filter((tag) => !sampleTags.includes(tag))
+    }
+  }
+
+  const matched = declaredGroups === 0 || matchedGroups > 0
+  return {
+    matched,
+    score: declaredGroups === 0 ? 0 : matchedGroups / declaredGroups,
+    matchedAspects,
+    missingAspects,
+    reasons:
+      declaredGroups === 0
+        ? ['plugin has no declared aspects']
+        : matched
+          ? Object.entries(matchedAspects).map(([group, tags]) => `${group}: ${tags.join(', ')}`)
+          : ['no declared plugin aspects matched the sample profile'],
+  }
+}
+
+export function describeAspectCoverage(aspects: PluginAspects | null | undefined): string[] {
+  const normalized = normalizePluginAspects(aspects)
+  return Object.entries(normalized)
+    .filter(([, value]) => Array.isArray(value) && value.length > 0)
+    .map(([group, value]) => `${group}: ${(value as string[]).join(', ')}`)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -521,6 +886,9 @@ export interface PluginQualityWarning {
   code:
     | 'missing-output-schema'
     | 'missing-surface-rules'
+    | 'missing-aspects'
+    | 'missing-evidence'
+    | 'missing-runtime-policy'
     | 'dynamic-runtime-contract-missing'
     | 'missing-system-deps'
     | 'missing-tools'
@@ -528,6 +896,115 @@ export interface PluginQualityWarning {
   message: string
   tool?: string
   severity?: 'info' | 'warning'
+}
+
+function hasDeclaredAspects(aspects: PluginAspects | null | undefined): boolean {
+  return Boolean(
+    aspects && Object.values(aspects).some((value) => Array.isArray(value) && value.length > 0)
+  )
+}
+
+export function auditPluginQuality(plugin: Plugin): PluginQualityWarning[] {
+  const warnings: PluginQualityWarning[] = []
+  const tools = plugin.tools ?? []
+  const pluginHasAspects = hasDeclaredAspects(plugin.aspects)
+  const pluginHasRuntimePolicy = Boolean(plugin.runtimePolicy)
+
+  if (tools.length === 0 && typeof plugin.register !== 'function') {
+    warnings.push({
+      code: 'missing-tools',
+      message: 'Plugin declares no tools or register() handler.',
+      severity: 'warning',
+    })
+  }
+
+  if (!plugin.surfaceRules) {
+    warnings.push({
+      code: 'missing-surface-rules',
+      message: 'Plugin does not declare progressive surfaceRules; it defaults to always visible.',
+      severity: 'info',
+    })
+  }
+
+  if (!pluginHasAspects) {
+    warnings.push({
+      code: 'missing-aspects',
+      message: 'Plugin does not declare aspect metadata for routing and progressive discovery.',
+      severity: 'info',
+    })
+  }
+
+  if ((plugin.systemDeps ?? []).length === 0 && plugin.executionDomain !== 'static') {
+    warnings.push({
+      code: 'missing-system-deps',
+      message:
+        'Plugin has no declared systemDeps, so runtime/dependency degradation cannot be reported.',
+      severity: 'info',
+    })
+  }
+
+  if (
+    !plugin.check &&
+    (plugin.systemDeps ?? []).length === 0 &&
+    plugin.executionDomain === 'dynamic'
+  ) {
+    warnings.push({
+      code: 'missing-readiness-check',
+      message: 'Dynamic plugin has neither check() nor systemDeps readiness metadata.',
+      severity: 'warning',
+    })
+  }
+
+  for (const tool of tools) {
+    const definition = tool.definition
+    if (!definition.outputSchema) {
+      warnings.push({
+        code: 'missing-output-schema',
+        message: `Tool ${definition.name} has no outputSchema.`,
+        tool: definition.name,
+        severity: 'warning',
+      })
+    }
+    if (!pluginHasAspects && !definition.aspects) {
+      warnings.push({
+        code: 'missing-aspects',
+        message: `Tool ${definition.name} has no aspect metadata.`,
+        tool: definition.name,
+        severity: 'info',
+      })
+    }
+    if ((definition.evidence ?? []).length === 0 && (definition.artifacts ?? []).length === 0) {
+      warnings.push({
+        code: 'missing-evidence',
+        message: `Tool ${definition.name} does not declare artifact or evidence output metadata.`,
+        tool: definition.name,
+        severity: 'info',
+      })
+    }
+    if (plugin.executionDomain === 'dynamic' && !definition.runtime) {
+      warnings.push({
+        code: 'dynamic-runtime-contract-missing',
+        message: `Dynamic tool ${definition.name} has no runtime delegation contract.`,
+        tool: definition.name,
+        severity: 'info',
+      })
+    }
+    if (
+      (plugin.executionDomain === 'dynamic' || definition.runtime) &&
+      !pluginHasRuntimePolicy &&
+      !definition.runtimePolicy &&
+      !definition.runtime?.policy
+    ) {
+      warnings.push({
+        code: 'missing-runtime-policy',
+        message: `Runtime-backed tool ${definition.name} has no dynamic runtime policy.`,
+        tool: definition.name,
+        severity: 'info',
+      })
+    }
+  }
+
+  return warnings
 }
 
 /** Lifecycle hooks a plugin can implement. */
@@ -713,13 +1190,112 @@ export interface SurfaceRules {
  */
 export const SURFACE_FILE_TYPE_TAGS: Record<string, string[]> = {
   pe: ['pe', 'pe32', 'pe64', 'dll', 'exe', 'windows'],
-  elf: ['elf', 'linux'],
-  'mach-o': ['macho', 'mach-o', 'macos', 'ios'],
-  'mach-o-fat': ['macho', 'mach-o', 'mach-o-fat', 'macos', 'ios'],
-  apk: ['apk', 'android', 'dex'],
-  dex: ['dex', 'android'],
-  jar: ['jar', 'java', 'class'],
-  class: ['class', 'java'],
+  dll: ['pe', 'dll', 'windows'],
+  exe: ['pe', 'exe', 'windows'],
+  efi: ['efi', 'pe', 'windows', 'firmware'],
+  sys: ['sys', 'pe', 'windows', 'driver'],
+  'pe-clr': ['pe-clr', 'dotnet', 'pe', 'windows'],
+  msi: ['msi', 'installer', 'windows'],
+  msix: ['msix', 'appx', 'installer', 'windows'],
+  appx: ['appx', 'msix', 'installer', 'windows'],
+  cab: ['cab', 'installer', 'archive', 'windows'],
+  nsis: ['nsis', 'installer', 'windows'],
+  inno: ['inno', 'installer', 'windows'],
+  pdb: ['pdb', 'symbols', 'debug-metadata', 'windows'],
+  coff: ['coff', 'symbols', 'windows'],
+  'coff-lib': ['coff', 'coff-lib', 'symbols', 'windows', 'archive'],
+  object: ['object', 'native', 'symbols'],
+  'static-lib': ['static-lib', 'archive', 'symbols', 'native'],
+  'linux-binary': ['linux-binary', 'elf', 'linux'],
+  elf: ['elf', 'linux', 'linux-binary'],
+  'elf-executable': ['elf-executable', 'elf', 'linux', 'linux-binary'],
+  so: ['elf', 'so', 'linux', 'linux-binary'],
+  'elf-so': ['elf', 'so', 'linux', 'linux-binary'],
+  'elf-core': ['elf-core', 'core', 'elf', 'linux', 'memory', 'linux-binary'],
+  'elf-object': ['elf-object', 'object', 'elf', 'linux', 'symbols'],
+  'linux-kernel-module': ['linux-kernel-module', 'elf', 'linux', 'driver', 'linux-binary'],
+  'ar-static-lib': ['ar-static-lib', 'static-lib', 'ar', 'archive', 'object'],
+  deb: ['deb', 'linux', 'package'],
+  rpm: ['rpm', 'linux', 'package'],
+  'apk-alpine': ['apk-alpine', 'linux', 'package'],
+  snap: ['snap', 'linux', 'package'],
+  flatpak: ['flatpak', 'linux', 'package'],
+  appimage: ['appimage', 'linux', 'package'],
+  'mach-o': ['macho', 'mach-o', 'macos', 'ios', 'apple-signing'],
+  'mach-o-fat': ['macho', 'mach-o', 'mach-o-fat', 'macos', 'ios', 'apple-signing'],
+  macho: ['macho', 'mach-o', 'macos', 'ios', 'apple-signing'],
+  'macho-object': ['macho-object', 'object', 'macho', 'macos', 'ios'],
+  dylib: ['dylib', 'macho', 'macos', 'ios', 'apple-signing'],
+  framework: ['framework', 'macho', 'macos', 'ios', 'container', 'apple-signing'],
+  xcframework: ['xcframework', 'macho', 'macos', 'ios', 'container', 'apple-signing'],
+  'app-bundle': ['app-bundle', 'macho', 'macos', 'ios', 'container', 'apple-signing'],
+  dsym: ['dsym', 'macho', 'symbols', 'debug-metadata', 'macos', 'ios'],
+  'apple-signing': ['apple-signing', 'macos', 'ios', 'certificates', 'package-metadata'],
+  codesignature: ['codesignature', 'apple-signing', 'macos', 'ios', 'certificates'],
+  entitlements: ['entitlements', 'apple-signing', 'macos', 'ios', 'manifest'],
+  plist: ['plist', 'apple-signing', 'macos', 'ios', 'manifest'],
+  mobileprovision: ['mobileprovision', 'ios', 'certificates', 'package-metadata', 'apple-signing'],
+  ipa: ['ipa', 'ios', 'macho', 'apple-signing'],
+  dmg: ['dmg', 'macos', 'container'],
+  pkg: ['pkg', 'macos', 'installer'],
+  'android-package': ['android-package', 'android', 'apk', 'dex'],
+  'android-bytecode': ['android-bytecode', 'android', 'dex'],
+  apk: ['apk', 'android', 'dex', 'android-package'],
+  aab: ['aab', 'android', 'dex', 'android-package'],
+  apks: ['apks', 'android', 'split-apk', 'android-package'],
+  xapk: ['xapk', 'android', 'apk', 'android-package'],
+  'split-apk': ['split-apk', 'android', 'apk', 'android-package'],
+  dex: ['dex', 'android', 'android-bytecode'],
+  'multi-dex': ['multi-dex', 'dex', 'android', 'android-bytecode'],
+  oat: ['oat', 'android', 'android-bytecode'],
+  odex: ['odex', 'android', 'android-bytecode'],
+  art: ['art', 'android', 'android-bytecode'],
+  vdex: ['vdex', 'android', 'android-bytecode'],
+  aar: ['aar', 'android', 'jvm', 'java', 'archive', 'android-package'],
+  'apk-signature': ['apk-signature', 'android', 'certificates', 'android-package'],
+  arsc: ['arsc', 'android', 'resources', 'android-package'],
+  jar: ['jar', 'jvm', 'java', 'class'],
+  war: ['war', 'jvm', 'java', 'archive'],
+  jmod: ['jmod', 'jvm', 'java', 'archive'],
+  class: ['class', 'jvm', 'java'],
+  'kotlin-metadata': ['kotlin-metadata', 'jvm', 'java'],
+  dotnet: ['dotnet', 'pe-clr'],
+  nupkg: ['nupkg', 'dotnet', 'archive'],
+  mono: ['mono', 'dotnet'],
+  winmd: ['winmd', 'dotnet', 'pe-clr'],
+  unity: ['unity', 'unity-metadata', 'dotnet'],
+  'unity-metadata': ['unity-metadata', 'unity', 'il2cpp'],
+  il2cpp: ['il2cpp', 'unity', 'native'],
+  wasm: ['wasm', 'wasi'],
+  pyc: ['pyc', 'python'],
+  'lua-bytecode': ['lua-bytecode', 'lua'],
+  'v8-cache': ['v8-cache', 'node'],
+  firmware: ['firmware', 'embedded'],
+  uimage: ['uimage', 'firmware', 'embedded', 'linux'],
+  fit: ['fit', 'firmware', 'embedded', 'linux'],
+  dtb: ['dtb', 'firmware', 'embedded', 'linux'],
+  itb: ['itb', 'fit', 'firmware', 'embedded', 'linux'],
+  initramfs: ['initramfs', 'firmware', 'archive', 'linux', 'linux-binary'],
+  cpio: ['cpio', 'initramfs', 'archive', 'linux', 'linux-binary'],
+  squashfs: ['squashfs', 'firmware', 'filesystem', 'embedded'],
+  cramfs: ['cramfs', 'firmware', 'filesystem', 'embedded'],
+  jffs2: ['jffs2', 'firmware', 'filesystem', 'embedded'],
+  ubi: ['ubi', 'firmware', 'filesystem', 'embedded'],
+  ubifs: ['ubifs', 'firmware', 'filesystem', 'embedded'],
+  romfs: ['romfs', 'firmware', 'filesystem', 'embedded'],
+  zip: ['zip', 'archive', 'container'],
+  '7z': ['7z', 'archive', 'container'],
+  rar: ['rar', 'archive', 'container'],
+  tar: ['tar', 'archive', 'container'],
+  gz: ['gz', 'archive', 'container'],
+  xz: ['xz', 'archive', 'container'],
+  zstd: ['zstd', 'archive', 'container'],
+  iso: ['iso', 'archive', 'container'],
+  ar: ['ar', 'archive', 'container'],
+  archive: ['archive', 'container'],
+  container: ['container', 'archive'],
+  'docker-image': ['docker-image', 'container', 'archive'],
+  'oci-image': ['oci-image', 'container', 'archive'],
   office: ['office', 'doc', 'xls', 'ppt', 'docx', 'xlsx'],
   pdf: ['pdf'],
   pcap: ['pcap', 'pcapng', 'network'],
@@ -789,12 +1365,37 @@ export const SurfaceRulesSchema = z
   })
   .passthrough()
 
+export const ToolArtifactSpecSchema = z
+  .object({
+    type: z.string().min(1),
+    description: z.string().optional(),
+    mime: z.string().optional(),
+    required: z.boolean().optional(),
+  })
+  .passthrough()
+
+export const ToolEvidenceSpecSchema = z
+  .object({
+    category: z.string().min(1),
+    description: z.string().optional(),
+    artifactTypes: z.array(z.string()).optional(),
+    required: z.boolean().optional(),
+  })
+  .passthrough()
+
+export type ToolArtifactSpec = z.infer<typeof ToolArtifactSpecSchema>
+export type ToolEvidenceSpec = z.infer<typeof ToolEvidenceSpecSchema>
+
 export const ToolManifestSchema = z
   .object({
     name: ToolNameSchema,
     description: z.string().min(1),
     inputSchema: z.any().default({ type: 'object', properties: {} }),
     outputSchema: z.any().optional(),
+    aspects: PluginAspectsSchema.optional(),
+    artifacts: z.array(ToolArtifactSpecSchema).optional(),
+    evidence: z.array(ToolEvidenceSpecSchema).optional(),
+    runtimePolicy: DynamicRuntimePolicySchema.optional(),
     runtime: ToolRuntimeContractSchema.optional(),
     handler: z.string().optional(),
   })
@@ -810,6 +1411,8 @@ export const PluginManifestSchema = z
     dependencies: z.array(PluginIdSchema).optional(),
     configSchema: z.array(PluginConfigFieldSchema).optional(),
     systemDeps: z.array(PluginSystemDepSchema).optional(),
+    aspects: PluginAspectsSchema.optional(),
+    runtimePolicy: DynamicRuntimePolicySchema.optional(),
     resources: z
       .object({
         workers: z.string().optional(),
@@ -852,6 +1455,10 @@ export interface Plugin {
    * will auto-generate a check from these declarations.
    */
   systemDeps?: PluginSystemDep[]
+  /** Aspect metadata used by sample profiling and progressive discovery. */
+  aspects?: PluginAspects
+  /** Dynamic execution policy applied to this plugin's runtime-backed tools by default. */
+  runtimePolicy?: DynamicRuntimePolicy
   /**
    * Declares co-located resource directories relative to the plugin root.
    * Used by the Docker generator and build tooling to discover plugin assets.
@@ -943,6 +1550,68 @@ export const WorkerResultMetricsSchema = z
   })
   .passthrough()
 
+export const EvidenceRefSchema = z
+  .object({
+    id: z.string(),
+    category: z.string(),
+    source: z.string(),
+    toolName: z.string().optional(),
+    sampleId: z.string().optional(),
+    artifactRefs: z.array(ArtifactRefSchema).optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    metadata: z.record(z.any()).optional(),
+  })
+  .passthrough()
+
+export const EvidenceTimelineEntrySchema = z
+  .object({
+    timestamp: z.string().optional(),
+    source: z.string(),
+    toolName: z.string(),
+    sampleId: z.string().optional(),
+    category: z.string(),
+    subject: z.string().optional(),
+    action: z.string().optional(),
+    target: z.string().optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    artifactRefs: z.array(ArtifactRefSchema).optional(),
+    metadata: z.record(z.any()).optional(),
+  })
+  .passthrough()
+
+export const ToolOutputEnvelopeSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.any().optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(ArtifactRefSchema).optional(),
+    evidence: z.array(EvidenceRefSchema).optional(),
+    timeline: z.array(EvidenceTimelineEntrySchema).optional(),
+    metrics: WorkerResultMetricsSchema.optional(),
+  })
+  .passthrough()
+
+export type EvidenceRef = z.infer<typeof EvidenceRefSchema>
+export type EvidenceTimelineEntry = z.infer<typeof EvidenceTimelineEntrySchema>
+export type ToolOutputEnvelope = z.infer<typeof ToolOutputEnvelopeSchema>
+
+export function createEvidenceRef(input: z.input<typeof EvidenceRefSchema>): EvidenceRef {
+  return EvidenceRefSchema.parse(input)
+}
+
+export function createEvidenceTimelineEntry(
+  input: z.input<typeof EvidenceTimelineEntrySchema>
+): EvidenceTimelineEntry {
+  return EvidenceTimelineEntrySchema.parse(input)
+}
+
+export function createToolOutputEnvelope(
+  input: z.input<typeof ToolOutputEnvelopeSchema>
+): ToolOutputEnvelope {
+  return ToolOutputEnvelopeSchema.parse(input)
+}
+
 export function createWorkerResultOutputSchema<TData extends z.ZodTypeAny = z.ZodAny>(
   dataSchema: TData = z.any() as unknown as TData
 ) {
@@ -953,6 +1622,8 @@ export function createWorkerResultOutputSchema<TData extends z.ZodTypeAny = z.Zo
       warnings: z.array(z.string()).optional(),
       errors: z.array(z.string()).optional(),
       artifacts: z.array(ArtifactRefSchema).optional(),
+      evidence: z.array(EvidenceRefSchema).optional(),
+      timeline: z.array(EvidenceTimelineEntrySchema).optional(),
       metrics: WorkerResultMetricsSchema.optional(),
       setup_actions: z.array(z.any()).optional(),
       required_user_inputs: z.array(z.any()).optional(),
@@ -968,6 +1639,25 @@ export interface DefinePluginConfig extends Omit<Plugin, 'register' | 'tools'> {
 }
 
 export type ManifestHandlers = Record<string, ToolHandler>
+
+export interface RegisteredHarnessTool {
+  definition: ToolDefinition
+  handler: (args: unknown) => Promise<unknown>
+}
+
+export interface PluginTestHarnessOptions {
+  deps?: Partial<PluginToolDeps>
+  ctx?: Partial<PluginContext>
+  server?: Partial<PluginServerInterface>
+}
+
+export interface PluginTestHarness {
+  deps: PluginToolDeps
+  ctx: PluginContext
+  registeredTools: RegisteredHarnessTool[]
+  server: PluginServerInterface
+  registerPlugin(plugin: Plugin): string[]
+}
 
 export type PluginServicePath =
   | 'workspace.manager'
@@ -1004,6 +1694,8 @@ const PluginShapeSchema = z
     dependencies: z.array(PluginIdSchema).optional(),
     configSchema: z.array(PluginConfigFieldSchema).optional(),
     systemDeps: z.array(PluginSystemDepSchema).optional(),
+    aspects: PluginAspectsSchema.optional(),
+    runtimePolicy: DynamicRuntimePolicySchema.optional(),
     resources: z
       .object({
         workers: z.string().optional(),
@@ -1067,6 +1759,73 @@ function registerDefinedTools(
   return names
 }
 
+function createHarnessLogger(): PluginLogger {
+  return {
+    info() {},
+    warn() {},
+    error() {},
+    debug() {},
+  }
+}
+
+export function createPluginTestHarness(options: PluginTestHarnessOptions = {}): PluginTestHarness {
+  const registeredTools: RegisteredHarnessTool[] = []
+  const deps = {
+    workspaceManager: {},
+    database: {},
+    config: {},
+    services: {
+      workspace: {},
+      platform: {},
+      runtime: {},
+      ghidra: {},
+    },
+    ...options.deps,
+  } as PluginToolDeps
+  const ctx: PluginContext = {
+    pluginId: 'test-plugin',
+    logger: createHarnessLogger(),
+    getConfig(envVar: string) {
+      return process.env[envVar]
+    },
+    getRequiredConfig(envVar: string) {
+      const value = process.env[envVar]
+      if (value === undefined || value.trim().length === 0) {
+        throw new Error(`${envVar} is required`)
+      }
+      return value
+    },
+    dataDir: '.',
+    ...options.ctx,
+  }
+  const server: PluginServerInterface = {
+    registerTool(definition, handler) {
+      registeredTools.push({ definition, handler })
+    },
+    unregisterTool(canonicalName) {
+      const index = registeredTools.findIndex(
+        (tool) =>
+          tool.definition.canonicalName === canonicalName || tool.definition.name === canonicalName
+      )
+      if (index >= 0) {
+        registeredTools.splice(index, 1)
+      }
+    },
+    ...options.server,
+  }
+
+  return {
+    deps,
+    ctx,
+    registeredTools,
+    server,
+    registerPlugin(plugin) {
+      const names = plugin.register?.(server, deps, ctx)
+      return Array.isArray(names) ? names : registeredTools.map((tool) => tool.definition.name)
+    },
+  }
+}
+
 export function defineTool<TArgs = ToolArgs>(config: DefineToolConfig<TArgs>): DefinedTool<TArgs> {
   const definition: ToolDefinition = {
     name: config.name,
@@ -1074,6 +1833,10 @@ export function defineTool<TArgs = ToolArgs>(config: DefineToolConfig<TArgs>): D
     description: config.description,
     inputSchema: config.inputSchema,
     outputSchema: config.outputSchema,
+    aspects: config.aspects,
+    artifacts: config.artifacts,
+    evidence: config.evidence,
+    runtimePolicy: config.runtimePolicy,
     runtime: config.runtime,
   }
   const definedTool: DefinedTool<TArgs> = {
@@ -1113,7 +1876,7 @@ export function defineManifestPlugin(
   manifestInput: PluginManifest,
   handlers: ManifestHandlers
 ): Plugin {
-  const manifest = PluginManifestSchema.parse(manifestInput) as PluginManifest
+  const manifest = PluginManifestSchema.parse(manifestInput)
   const tools = manifest.tools.map((toolManifest: ToolManifest) => {
     const handlerName = String(toolManifest.handler ?? toolManifest.name)
     const handler = handlers[handlerName]
@@ -1127,6 +1890,10 @@ export function defineManifestPlugin(
       description: toolManifest.description,
       inputSchema: toolManifest.inputSchema,
       outputSchema: toolManifest.outputSchema,
+      aspects: toolManifest.aspects,
+      artifacts: toolManifest.artifacts,
+      evidence: toolManifest.evidence,
+      runtimePolicy: toolManifest.runtimePolicy,
       runtime: toolManifest.runtime as ToolRuntimeContract | undefined,
       handler,
     })
@@ -1141,6 +1908,8 @@ export function defineManifestPlugin(
     dependencies: manifest.dependencies,
     configSchema: manifest.configSchema,
     systemDeps: manifest.systemDeps,
+    aspects: manifest.aspects,
+    runtimePolicy: manifest.runtimePolicy,
     resources: manifest.resources,
     surfaceRules: manifest.surfaceRules,
     tools,
@@ -1156,6 +1925,10 @@ export function validateTool(
     description: definition.description,
     inputSchema: definition.inputSchema,
     outputSchema: definition.outputSchema,
+    aspects: definition.aspects,
+    artifacts: definition.artifacts,
+    evidence: definition.evidence,
+    runtimePolicy: definition.runtimePolicy,
     runtime: definition.runtime,
   })
   const issues = result.success ? [] : zodIssues(result.error)

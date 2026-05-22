@@ -16,6 +16,15 @@ const capstonePlugin: Plugin = {
   id: 'capstone',
   name: 'Capstone Disassembly',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'shellcode', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['disassembly', 'shellcode', 'entrypoint-preview'],
+    evidence: ['structure', 'symbols', 'artifact'],
+  },
   surfaceRules: {
     tier: 2,
     activateOn: { findings: ['shellcode', 'suspicious_imports'] },

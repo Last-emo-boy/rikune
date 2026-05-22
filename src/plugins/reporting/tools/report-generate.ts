@@ -231,6 +231,20 @@ export const reportGenerateToolDefinition: ToolDefinition = {
     'Prefer workflow.summarize for staged analyst synthesis and report.summarize for deterministic compact compatibility snapshots.',
   inputSchema: reportGenerateInputSchema,
   outputSchema: reportGenerateOutputSchema,
+  aspects: {
+    formats: ['artifact', 'report'],
+    platforms: ['all', 'cross-platform'],
+    execution: ['static', 'correlation'],
+    safety: ['passive'],
+    evidence: ['artifact', 'provenance', 'timeline', 'behavior'],
+  },
+  artifacts: [
+    {
+      type: 'analysis_report',
+      description: 'Archival report artifact in Markdown, JSON, or HTML',
+    },
+  ],
+  evidence: [{ category: 'artifact', artifactTypes: ['analysis_report'] }],
 }
 
 /**

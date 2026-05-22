@@ -407,9 +407,12 @@ export const ReportSummarizeOutputSchema = z.object({
       persisted_state_visibility: PersistedStateVisibilitySchema.optional().describe(
         'Machine-readable persisted-state and deferred-work explanation showing which run stages were reused and which prerequisites remain deferred.'
       ),
-      stage_summary: z.array(ReportStageSummaryEntrySchema).optional().describe(
-        'Compact staged-run digest with status, evidence artifact counts, and next-tool guidance per persisted stage.'
-      ),
+      stage_summary: z
+        .array(ReportStageSummaryEntrySchema)
+        .optional()
+        .describe(
+          'Compact staged-run digest with status, evidence artifact counts, and next-tool guidance per persisted stage.'
+        ),
       provenance_digest: ReportProvenanceDigestSchema.optional().describe(
         'Compact provenance counts and selected artifact IDs used by dashboard/report consumers.'
       ),
@@ -557,6 +560,21 @@ export const reportSummarizeToolDefinition: ToolDefinition = {
     '- Common mistake: expecting compact mode to inline full static capability arrays, PE trees, or raw backend payloads.',
   inputSchema: ReportSummarizeInputSchema,
   outputSchema: ReportSummarizeOutputSchema,
+  aspects: {
+    formats: ['artifact', 'report', 'analysis-evidence'],
+    platforms: ['all', 'cross-platform'],
+    execution: ['static', 'correlation'],
+    safety: ['passive'],
+    evidence: ['artifact', 'provenance', 'structure', 'signatures', 'strings', 'behavior'],
+  },
+  artifacts: [
+    {
+      type: 'report_summary',
+      description: 'Bounded analyst-facing report summary digest',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [{ category: 'artifact', artifactTypes: ['report_summary'] }],
 }
 
 type TriageSummaryData = {

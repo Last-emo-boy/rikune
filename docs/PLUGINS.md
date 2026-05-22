@@ -20,25 +20,32 @@ A plugin can:
 
 ## Built-In Plugins
 
-The repository currently contains 56 built-in plugins.
+The repository currently contains 76 built-in plugins.
 
 | ID | Name | Domain | Surface tier |
 | --- | --- | --- | --- |
 | `android` | Android / APK Analysis | static | 1 |
+| `android-package` | Android Package Inventory | static | 1 |
+| `android-runtime` | Android Runtime Plan | dynamic | 2 |
 | `angr` | angr | static | 3 |
 | `api-hash` | API Hash Resolution | static | 2 |
 | `apk-smali` | APK Smali Analysis | static | 1 |
+| `apple-container` | Apple Container Inventory | static | 1 |
+| `apple-signing` | Apple Signing Inventory | static | 1 |
 | `batch` | Batch Analysis | both | 0 |
 | `behavior-first` | Behavior-First Analysis | dynamic | 2 |
 | `binary-diff` | Binary Diff | static | 2 |
+| `bytecode` | Script Bytecode Inventory | static | 1 |
 | `capstone` | Capstone Disassembly | static | 2 |
 | `code-analysis` | Code Analysis | static | 0 |
+| `container-analysis` | Container / Archive Inventory | static | 1 |
 | `crackme` | CrackMe Automation | static | 3 |
 | `cross-module` | Cross-Module Analysis | static | 2 |
 | `debug-session` | Debug Session | dynamic | 3 |
 | `deep-unpack` | Deep Unpack | static | 2 |
 | `die` | Detect It Easy | static | 0 |
 | `dotnet-decompile` | .NET Decompile | static | 2 |
+| `dotnet-managed` | .NET Managed Inventory | static | 1 |
 | `dotnet-reactor` | .NET Reactor Deobfuscation | static | 2 |
 | `dynamic` | Dynamic Analysis Automation | dynamic | 3 |
 | `elf-macho` | ELF / Mach-O | static | 1 |
@@ -48,13 +55,20 @@ The repository currently contains 56 built-in plugins.
 | `go-analysis` | Go Analysis | static | 2 |
 | `graphviz` | Graphviz | static | 0 |
 | `host-correlation` | Host Correlation | static | 2 |
+| `ios-runtime` | iOS Runtime Plan | dynamic | 2 |
+| `jvm` | JVM Bytecode Inventory | static | 1 |
 | `kb-collaboration` | Knowledge Base & Collaboration | static | 0 |
+| `linux-binary` | Linux Binary Inventory | static | 1 |
+| `linux-package` | Linux Package Inventory | static | 1 |
+| `linux-runtime` | Linux Runtime Plan | dynamic | 2 |
+| `macos-runtime` | macOS Runtime Plan | dynamic | 2 |
 | `malware` | Malware Analysis | static | 0 |
 | `managed-fake-c2` | Managed Fake C2 | dynamic | 2 |
 | `managed-il-xrefs` | Managed IL Cross-References | static | 2 |
 | `managed-sandbox` | Managed Sandbox | dynamic | 2 |
 | `memory-forensics` | Memory Forensics (Volatility 3) | static | 3 |
 | `metadata` | File Metadata | static | 0 |
+| `native-object` | Native Object Inventory | static | 1 |
 | `observability` | observability.metrics | both | 0 |
 | `office-analysis` | Office Analysis | static | 1 |
 | `panda` | PANDA | dynamic | 3 |
@@ -72,11 +86,17 @@ The repository currently contains 56 built-in plugins.
 | `static-triage` | Static Triage | static | 0 |
 | `strings` | Strings Extraction | static | 0 |
 | `threat-intel` | Threat Intelligence | static | 0 |
+| `unity-managed` | Unity Managed Inventory | static | 1 |
 | `unpacking` | Unpacking | static | 2 |
 | `upx` | UPX | static | 2 |
 | `visualization` | Visualization & Reporting | static | 0 |
 | `vm-analysis` | VM Analysis & Symbolic | static | 3 |
 | `vuln-scanner` | Vulnerability Scanner | static | 2 |
+| `wasm` | WebAssembly Inventory | static | 1 |
+| `wasm-runtime` | WASM Runtime Plan | dynamic | 2 |
+| `windows-debug-symbols` | Windows Debug Symbols Inventory | static | 1 |
+| `windows-installer` | Windows Installer Inventory | static | 1 |
+| `windows-runtime` | Windows Runtime Plan | dynamic | 2 |
 | `wine` | Wine | dynamic | 3 |
 | `yara` | YARA | static | 0 |
 | `yara-x` | YARA-X | static | 2 |
@@ -87,6 +107,89 @@ Surface tier meanings:
 - `1`: file-type activated tools.
 - `2`: finding/signal activated tools.
 - `3`: expert tools, usually surfaced by `tools.discover` or explicit readiness checks.
+
+## Plugin Standard v2
+
+Plugin Standard v2 is the non-breaking contract for built-in and external plugins. During the
+migration window, missing metadata is reported as `qualityWarnings`; it does not prevent plugin
+loading unless the plugin shape itself is invalid.
+
+Required plugin-level fields:
+
+- `id`, `name`, `description`, `version`
+- `executionDomain`: `static`, `dynamic`, or `both`
+- `aspects`: at least one useful routing group, usually `formats`, `platforms`, `execution`,
+  `safety`, `capabilities`, or `evidence`
+- `surfaceRules`: tier and category, plus `activateOn` rules for tier 1 or tier 2 plugins
+- `tools` or `register()`
+
+Required tool-level fields:
+
+- `definition.name`, `description`, `inputSchema`, and `outputSchema`
+- `aspects` when the tool has narrower scope than the plugin
+- `artifacts` or `evidence` when the tool emits analysis results
+- `runtimePolicy` and either a `runtime` contract or explicit plan-only semantics for dynamic
+  and runtime-backed tools
+
+Quality warning severities are intentionally warning-first:
+
+| Code | Meaning | Migration action |
+| --- | --- | --- |
+| `missing-output-schema` | Tool output is not machine-described | Add `outputSchema` or a shared worker-result schema |
+| `missing-surface-rules` | Plugin defaults to always visible | Add tier/category and activation rules |
+| `missing-aspects` | Plugin or tool cannot be routed by profile | Add aspect metadata |
+| `missing-evidence` | Tool result provenance is unclear | Add artifact or evidence declarations |
+| `missing-runtime-policy` | Runtime behavior is not policy-described | Add `runtimePolicy` |
+| `dynamic-runtime-contract-missing` | Dynamic tool has no delegation contract | Add `runtime` or make the tool clearly plan-only |
+| `missing-system-deps` | Dependency readiness cannot be explained | Add `systemDeps` or a `check()` hook |
+| `missing-readiness-check` | Dynamic plugin lacks readiness metadata | Add `systemDeps`, `check()`, or plan-only readiness semantics |
+| `missing-tools` | Plugin has no tools or register handler | Add declarative tools or `register()` |
+
+The canonical audit helper is `auditPluginQuality()` from `@rikune/plugin-sdk`. The core
+orchestrator uses it to populate `plugin.list`, `tools.discover`, `tool.help`, and
+`tool.readiness` quality metadata.
+
+## Plugin Matrix
+
+The current plugin matrix is organized by `formats`, `platforms`, `execution`, `runtimes`, `safety`, `capabilities`, and `evidence` aspects. `plugin.list`, `tools.discover`, `tool.help`, `tool.readiness`, and `sample.profile.get` expose these fields so clients can route from a file type to the right static inventory, dynamic plan, or runtime-gated tool.
+
+| Coverage | Static plugins | Dynamic or runtime-plan plugins | Safety boundary |
+| --- | --- | --- | --- |
+| Windows PE, DLL, SYS, EFI, MSI/MSIX/APPX/CAB/PDB | `pe-analysis`, `pe-signature`, `windows-installer`, `windows-debug-symbols`, `dotnet-managed`, `retdec`, `rizin`, `ghidra` | `windows-runtime`, `debug-session`, `wine`, `speakeasy`, `behavior-first`, `frida` | Static inventory is passive. Dynamic tools require opt-in, isolation, and runtime readiness. |
+| Linux ELF, SO, core, modules, packages | `linux-binary`, `linux-package`, `elf-macho`, `native-object`, `container-analysis` | `linux-runtime`, `qiling`, `debug-session`, `behavior-first` | No ELF execution, ptrace, kernel module loading, package install, or eBPF collection by default. |
+| macOS Mach-O, app bundles, frameworks, DMG, PKG, dSYM | `apple-container`, `apple-signing`, `elf-macho`, `native-object` | `macos-runtime`, `debug-session`, `frida`, `behavior-first` | No DMG mount, app launch, LLDB attach, DTrace, or fs_usage capture by default. |
+| iOS IPA, Mach-O, provisioning, entitlements | `apple-container`, `apple-signing`, `elf-macho` | `ios-runtime`, `frida`, `debug-session` | No IPA install, device connection, simulator start, Frida attach, or LLDB attach by default. |
+| Android APK, AAB, APKS, XAPK, DEX/OAT/VDEX, AAR | `android-package`, `android`, `apk-smali`, `jvm`, `linux-binary` | `android-runtime`, `frida`, `behavior-first` | No emulator start, ADB install, APK launch, frida-server deployment, or device connection by default. |
+| JVM, .NET, Unity, script bytecode | `jvm`, `dotnet-managed`, `dotnet-decompile`, `unity-managed`, `bytecode`, `strings` | `managed-sandbox`, `runtime-deobfuscate`, `behavior-first` | Runtime work is opt-in and delegated; metadata and bytecode inventory stay passive. |
+| Firmware, containers, archives, native objects | `firmware`, `container-analysis`, `native-object`, `linux-package`, `windows-installer` | `qiling`, `linux-runtime`, `wasm-runtime` when applicable | No mount, extraction-to-execute path, package install, module insertion, or payload launch by default. |
+| WASM/WASI | `wasm`, `strings`, `sbom` | `wasm-runtime` | No module instantiation, wasmtime start, filesystem preopen, or network grant by default. |
+| Network, host, memory, reports | `pcap-analysis`, `host-correlation`, `memory-forensics`, `visualization`, `reporting` | `behavior-first`, `dynamic.behavior.diff`, `analysis.evidence.graph` | Correlation tools operate on existing artifacts and do not start live collection. |
+
+## Aspect Authoring
+
+Every new plugin should declare plugin-level aspects and tool-level metadata when a tool has a narrower scope:
+
+- `formats`: file and container tags such as `pe`, `elf`, `macho`, `apk`, `ipa`, `wasm`, `deb`, `msi`, `firmware`.
+- `platforms`: `windows`, `linux`, `macos`, `ios`, `android`, `wasm`, `jvm`, `dotnet`, `embedded`, or `cross-platform`.
+- `execution`: `static`, `dynamic`, `emulation`, `decompilation`, `triage`, or `correlation`.
+- `runtimes`: runtime backends such as `windows-sandbox`, `hyperv`, `wine`, `speakeasy`, `qiling`, `gdb`, `lldb`, `dtrace`, `adb`, `android-emulator`, `frida`, `idevice-tools`, `wasmtime`.
+- `safety`: `passive`, `opt_in_dynamic`, `requires_isolation`, `no_live_sample_by_default`, `no_network_by_default`, `no_auto_mount`, `no_installer_execution`.
+- `evidence`: `structure`, `imports`, `exports`, `strings`, `signatures`, `timeline`, `behavior`, `process`, `filesystem`, `registry`, `network`, `memory`, `method-calls`, `syscalls`, `provenance`.
+
+## Dynamic Policy
+
+Dynamic plugins are passive by default. A dynamic plugin or tool should declare `runtimePolicy` with:
+
+The dynamic policy contract is additive metadata: it is reported by discovery and readiness tools before any runtime backend is contacted.
+
+- `passiveByDefault: true`
+- `requiresUserOptIn: true`
+- `requiresIsolation: true`
+- `allowedBackends`: explicit backend list
+- `networkPolicy: "disabled"` unless a tool is explicitly designed for record-only or restricted networking
+- `notes`: backend and confidence caveats
+
+`tool.readiness` reports `runtime_policy_status`, `opt_in_required`, `policy_denied`, `isolation_missing`, and `backend_missing` without executing the target tool. Plan-only dynamic tools such as `windows.runtime.plan`, `linux.runtime.plan`, `macos.runtime.plan`, `ios.runtime.plan`, `android.runtime.plan`, and `wasm.runtime.plan` are local planning tools: they generate runtime guidance and command templates, but they do not start backends.
 
 ## Runtime Management Tools
 

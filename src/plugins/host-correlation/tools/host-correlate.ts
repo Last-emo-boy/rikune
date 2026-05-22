@@ -76,6 +76,27 @@ export const hostCorrelateToolDefinition: ToolDefinition = {
     'registration to build a complete picture of how the sample is loaded and executed.',
   inputSchema: HostCorrelateInputSchema,
   outputSchema: HostCorrelateOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll', 'windows-host-artifacts', 'manifest', 'registry'],
+    platforms: ['windows'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    evidence: ['process', 'filesystem', 'registry', 'imports', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'host_correlation',
+      description: 'Host process, loader, persistence, and sideloading correlation results',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    { category: 'process', artifactTypes: ['host_correlation'] },
+    { category: 'filesystem', artifactTypes: ['host_correlation'] },
+    { category: 'registry', artifactTypes: ['host_correlation'] },
+    { category: 'imports', artifactTypes: ['host_correlation'] },
+    { category: 'provenance', artifactTypes: ['host_correlation'] },
+  ],
 }
 
 async function callHostCorrelationWorker(

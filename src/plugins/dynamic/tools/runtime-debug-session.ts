@@ -585,9 +585,7 @@ async function persistRuntimeSession(
     updates.debugState || deriveRuntimeDebugState(status)
   )
   if (!canTransitionRuntimeDebugSessionState(previousState, debugState)) {
-    throw new Error(
-      `Invalid runtime debug session transition: ${previousState} -> ${debugState}`
-    )
+    throw new Error(`Invalid runtime debug session transition: ${previousState} -> ${debugState}`)
   }
   const phase = updates.phase || 'runtime_ready'
   const metadataJson = JSON.stringify(buildSessionMetadata(session, updates.metadata), null, 2)

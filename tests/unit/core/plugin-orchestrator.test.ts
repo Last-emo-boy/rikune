@@ -236,6 +236,9 @@ describe('PluginOrchestrator', () => {
           'missing-surface-rules',
           'missing-system-deps',
           'missing-readiness-check',
+          'missing-aspects',
+          'missing-evidence',
+          'missing-runtime-policy',
           'dynamic-runtime-contract-missing',
         ])
       )

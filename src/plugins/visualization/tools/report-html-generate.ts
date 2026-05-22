@@ -46,6 +46,21 @@ export const reportHtmlGenerateToolDefinition: ToolDefinition = {
     'dynamic behavior, strings, IoCs, and threat scoring sections.',
   inputSchema: ReportHtmlGenerateInputSchema,
   outputSchema: ReportHtmlGenerateOutputSchema,
+  aspects: {
+    formats: ['artifact', 'report', 'html-report'],
+    platforms: ['all', 'cross-platform'],
+    execution: ['static', 'correlation'],
+    safety: ['passive'],
+    evidence: ['artifact', 'provenance', 'behavior', 'network', 'strings'],
+  },
+  artifacts: [
+    {
+      type: 'html_report',
+      description: 'Self-contained HTML analysis report',
+      mime: 'text/html',
+    },
+  ],
+  evidence: [{ category: 'artifact', artifactTypes: ['html_report'] }],
 }
 
 function escapeHtml(text: string): string {

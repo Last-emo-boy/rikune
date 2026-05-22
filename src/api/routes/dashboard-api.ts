@@ -510,10 +510,7 @@ function handlePlugins(res: ServerResponse, req?: IncomingMessage): void {
     loaded: statuses.filter((s) => s.status === 'loaded').length,
     skipped: statuses.filter((s) => s.status.startsWith('skipped')).length,
     errored: statuses.filter((s) => s.status === 'error').length,
-    quality_warning_count: statuses.reduce(
-      (sum, s) => sum + (s.qualityWarnings?.length ?? 0),
-      0
-    ),
+    quality_warning_count: statuses.reduce((sum, s) => sum + (s.qualityWarnings?.length ?? 0), 0),
     plugins: statuses.map((s) => ({
       id: s.id,
       name: s.name,
@@ -1054,10 +1051,7 @@ function buildDashboardStageSummary(stageViews: Array<ReturnType<typeof buildRun
   }))
 }
 
-function buildDashboardRunProvenanceDigest(
-  run: DashboardRunRow,
-  stages: DashboardRunStageRow[]
-) {
+function buildDashboardRunProvenanceDigest(run: DashboardRunRow, stages: DashboardRunStageRow[]) {
   const artifactIds = new Set<string>()
   for (const ref of parseDashboardJson<ArtifactRef[]>(run.artifact_refs_json, [])) {
     if (ref.id) artifactIds.add(ref.id)
@@ -1066,10 +1060,7 @@ function buildDashboardRunProvenanceDigest(
     for (const ref of parseDashboardJson<ArtifactRef[]>(stage.artifact_refs_json, [])) {
       if (ref.id) artifactIds.add(ref.id)
     }
-    collectArtifactIdsFromPayload(
-      parseDashboardJson<unknown>(stage.result_json, null),
-      artifactIds
-    )
+    collectArtifactIdsFromPayload(parseDashboardJson<unknown>(stage.result_json, null), artifactIds)
   }
 
   return {

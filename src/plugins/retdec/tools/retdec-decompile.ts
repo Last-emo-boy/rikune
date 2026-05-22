@@ -80,6 +80,31 @@ export const retdecDecompileToolDefinition: ToolDefinition = {
     'Decompile a sample with RetDec and persist the generated high-level output as an artifact. Use this when you explicitly want a RetDec alternative to the default Ghidra-oriented flow.',
   inputSchema: retdecDecompileInputSchema,
   outputSchema: retdecDecompileOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho'],
+    platforms: ['windows', 'linux', 'macos', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips'],
+    execution: ['static', 'decompilation'],
+    safety: ['passive'],
+    capabilities: ['decompile', 'source-reconstruction'],
+    evidence: ['artifact', 'symbols', 'structure'],
+  },
+  artifacts: [
+    {
+      type: 'backend_retdec_decompile_plain',
+      description: 'RetDec plain C-like high-level decompilation output',
+    },
+    {
+      type: 'backend_retdec_decompile_json-human',
+      description: 'RetDec JSON high-level decompilation output',
+    },
+  ],
+  evidence: [
+    {
+      category: 'artifact',
+      artifactTypes: ['backend_retdec_decompile_plain', 'backend_retdec_decompile_json-human'],
+    },
+  ],
 }
 
 export function createRetDecDecompileHandler(

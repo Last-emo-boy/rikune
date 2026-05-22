@@ -55,6 +55,50 @@ export const metadataExtractToolDefinition: ToolDefinition = {
     'Extract universal file metadata using exiftool. Works on PE, ELF, Office docs, PDFs, images, archives, and more.',
   inputSchema: metadataExtractInputSchema,
   outputSchema: metadataExtractOutputSchema,
+  aspects: {
+    formats: [
+      'pe',
+      'coff',
+      'pdb',
+      'elf',
+      'elf-object',
+      'linux-kernel-module',
+      'macho',
+      'macho-object',
+      'dsym',
+      'apk',
+      'ipa',
+      'dmg',
+      'pkg',
+      'deb',
+      'rpm',
+      'appimage',
+      'jar',
+      'wasm',
+      'firmware',
+      'archive',
+      'container',
+      'office',
+      'pdf',
+    ],
+    platforms: ['windows', 'linux', 'macos', 'ios', 'android', 'cross-platform'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['metadata', 'package-metadata', 'manifest', 'routing'],
+    evidence: ['package-metadata', 'manifest', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'metadata',
+      description: 'Universal file metadata extracted by ExifTool',
+    },
+  ],
+  evidence: [
+    {
+      category: 'package-metadata',
+      artifactTypes: ['metadata'],
+    },
+  ],
 }
 
 export function createMetadataExtractHandler(

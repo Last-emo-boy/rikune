@@ -263,6 +263,64 @@ export const stringsExtractToolDefinition: ToolDefinition = {
     'On medium/large samples, prefer mode=preview first and only escalate to mode=full when the workflow explicitly needs complete extraction.',
   inputSchema: StringsExtractInputSchema,
   outputSchema: StringsExtractOutputSchema,
+  aspects: {
+    formats: [
+      'pe',
+      'elf',
+      'macho',
+      'apk',
+      'dex',
+      'jar',
+      'dotnet',
+      'wasm',
+      'firmware',
+      'archive',
+      'container',
+      'pyc',
+      'lua-bytecode',
+      'v8-cache',
+    ],
+    platforms: [
+      'windows',
+      'linux',
+      'macos',
+      'android',
+      'jvm',
+      'dotnet',
+      'wasm',
+      'embedded',
+      'cross-platform',
+    ],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['strings', 'ioc', 'context-windows'],
+    evidence: ['strings', 'network', 'filesystem', 'registry', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'enriched_string_analysis',
+      description: 'Enriched string extraction output with IOC categories and bounded chunks',
+    },
+  ],
+  evidence: [
+    {
+      category: 'strings',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'network',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'filesystem',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'registry',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+  ],
 }
 
 // ============================================================================

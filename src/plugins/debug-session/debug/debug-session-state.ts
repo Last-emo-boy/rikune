@@ -38,6 +38,9 @@ export class DebugSessionManager {
 
   constructor() {
     this.cleanupTimer = setInterval(() => this.sweepIdleSessions(), 60_000)
+    if (this.cleanupTimer.unref) {
+      this.cleanupTimer.unref()
+    }
   }
 
   get activeCount(): number {

@@ -3,8 +3,21 @@
  */
 
 import { describe, expect, jest, test } from '@jest/globals'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import {
+  DynamicRuntimePolicySchema,
+  PluginAspectsSchema,
   SURFACE_FILE_TYPE_TAGS,
+  ToolRuntimeContractSchema,
+  auditPluginQuality,
+  buildSampleProfileAspects,
+  createEvidenceRef,
+  createEvidenceTimelineEntry,
+  createPluginTestHarness,
+  createToolOutputEnvelope,
+  describeAspectCoverage,
   defineManifestPlugin,
   definePlugin,
   defineTool,
@@ -12,6 +25,8 @@ import {
   fail,
   getRuntimeConfig,
   getWorkspaceServices,
+  matchSampleProfile,
+  normalizePluginAspects,
   ok,
   pathExists,
   requireDatabase,
@@ -30,6 +45,8 @@ import type {
   WorkerResult,
 } from '../../../packages/plugin-sdk/src/index.js'
 
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
+
 describe('@rikune/plugin-sdk', () => {
   test('runtime contract supports declared backend types', () => {
     const contracts: ToolRuntimeContract[] = [
@@ -40,6 +57,31 @@ describe('@rikune/plugin-sdk', () => {
 
     expect(contracts.map((contract) => contract.type)).toEqual(['python-worker', 'spawn', 'inline'])
     expect(contracts.every((contract) => contract.handler.length > 0)).toBe(true)
+  })
+
+  test('runtime policy schema accepts expanded dynamic backends safely', () => {
+    const policy = DynamicRuntimePolicySchema.parse({
+      passiveByDefault: true,
+      requiresUserOptIn: true,
+      requiresIsolation: true,
+      allowedBackends: ['windows-host-agent', 'android-emulator', 'frida-server', 'wasmtime'],
+      networkPolicy: 'disabled',
+      maxRuntimeMs: 30000,
+    })
+    const contract = ToolRuntimeContractSchema.parse({
+      type: 'spawn',
+      handler: 'android.runtime.plan',
+      modes: ['plan_only'],
+      policy,
+      isolation: { required: true, backends: ['android-emulator'] },
+      capabilities: ['readiness', 'behavior-plan'],
+      safety: ['passive', 'opt_in_dynamic'],
+    })
+
+    expect(contract.policy?.allowedBackends).toEqual(
+      expect.arrayContaining(['android-emulator', 'wasmtime'])
+    )
+    expect(contract.isolation?.backends).toEqual(['android-emulator'])
   })
 
   test('tool and worker result contracts can be expressed without server internals', () => {
@@ -89,6 +131,34 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS.pe).toEqual(expect.arrayContaining(['pe', 'windows']))
     expect(SURFACE_FILE_TYPE_TAGS['mach-o']).toContain('macos')
     expect(SURFACE_FILE_TYPE_TAGS.apk).toContain('android')
+    expect(SURFACE_FILE_TYPE_TAGS.apks).toEqual(expect.arrayContaining(['android', 'split-apk']))
+    expect(SURFACE_FILE_TYPE_TAGS.ipa).toEqual(expect.arrayContaining(['ios', 'macho']))
+    expect(SURFACE_FILE_TYPE_TAGS.wasm).toContain('wasi')
+  })
+
+  test('aspect helpers normalize, describe, and match sample profiles', () => {
+    const pluginAspects = normalizePluginAspects({
+      formats: ['APK', 'DEX', 'native_lib'],
+      platforms: ['Android'],
+      execution: ['Static'],
+      evidence: ['Manifest', 'Certificates'],
+    })
+    const sampleAspects = buildSampleProfileAspects({
+      fileTypes: ['apk'],
+      platforms: ['android'],
+      execution: ['static'],
+      findings: ['permissions'],
+    })
+    const match = matchSampleProfile(pluginAspects, sampleAspects)
+
+    expect(PluginAspectsSchema.parse(pluginAspects).formats).toEqual(
+      expect.arrayContaining(['apk', 'dex', 'native-lib'])
+    )
+    expect(match.matched).toBe(true)
+    expect(match.matchedAspects.formats).toEqual(expect.arrayContaining(['apk', 'dex']))
+    expect(describeAspectCoverage(pluginAspects)).toEqual(
+      expect.arrayContaining(['platforms: android', 'execution: static'])
+    )
   })
 
   test('plugin contract can describe dependencies and registration', () => {
@@ -167,6 +237,117 @@ describe('@rikune/plugin-sdk', () => {
     expect(registered).toEqual([{ name: 'manifest_demo.echo' }])
   })
 
+  test('manifest plugin preserves aspects, evidence, artifacts, and runtime policy', async () => {
+    const plugin = defineManifestPlugin(
+      {
+        id: 'manifest-dynamic-demo',
+        name: 'Manifest Dynamic Demo',
+        executionDomain: 'dynamic',
+        aspects: {
+          formats: ['apk'],
+          platforms: ['android'],
+          execution: ['dynamic'],
+          safety: ['passive', 'opt_in_dynamic'],
+        },
+        runtimePolicy: {
+          passiveByDefault: true,
+          requiresUserOptIn: true,
+          requiresIsolation: true,
+          allowedBackends: ['android-emulator'],
+          networkPolicy: 'disabled',
+        },
+        tools: [
+          {
+            name: 'manifest_dynamic.plan',
+            description: 'Manifest-backed dynamic plan',
+            inputSchema: { type: 'object' },
+            outputSchema: { type: 'object' },
+            aspects: { formats: ['apk'], platforms: ['android'], execution: ['dynamic'] },
+            artifacts: [{ type: 'manifest-dynamic.json' }],
+            evidence: [{ category: 'timeline', artifactTypes: ['manifest-dynamic.json'] }],
+            runtimePolicy: {
+              passiveByDefault: true,
+              requiresUserOptIn: true,
+              allowedBackends: ['android-emulator'],
+            },
+            runtime: {
+              type: 'spawn',
+              handler: 'manifest_dynamic.runtime.plan',
+              modes: ['plan_only'],
+              policy: {
+                passiveByDefault: true,
+                requiresUserOptIn: true,
+                allowedBackends: ['android-emulator'],
+              },
+            },
+          },
+        ],
+      },
+      {
+        'manifest_dynamic.plan': async () => ok({ source: 'manifest' }),
+      }
+    )
+
+    expect(plugin.aspects?.formats).toEqual(['apk'])
+    expect(plugin.runtimePolicy?.networkPolicy).toBe('disabled')
+    expect(plugin.tools?.[0].definition.evidence?.[0].category).toBe('timeline')
+    expect(plugin.tools?.[0].definition.runtime?.policy?.allowedBackends).toEqual([
+      'android-emulator',
+    ])
+  })
+
+  test('artifact/evidence fixture can be loaded as a manifest v2 plugin', async () => {
+    const fixturePath = path.join(
+      repoRoot,
+      'tests',
+      'fixtures',
+      'plugins',
+      'artifact-evidence',
+      'plugin.json'
+    )
+    const manifest = JSON.parse(fs.readFileSync(fixturePath, 'utf8'))
+    const plugin = defineManifestPlugin(manifest, {
+      'fixture.artifact.evidence': async () =>
+        ok(
+          { fixture: true },
+          {
+            artifacts: [
+              {
+                id: 'fixture-artifact',
+                type: 'fixture_analysis',
+                path: 'fixtures/fixture.json',
+                sha256: '0'.repeat(64),
+              },
+            ],
+            evidence: [
+              createEvidenceRef({
+                id: 'fixture-evidence',
+                category: 'timeline',
+                source: 'fixture',
+                toolName: 'fixture.artifact.evidence',
+              }),
+            ],
+          }
+        ),
+    })
+    const harness = createPluginTestHarness()
+
+    harness.registerPlugin(plugin)
+    const tool = harness.registeredTools.find(
+      (candidate) => candidate.definition.name === 'fixture.artifact.evidence'
+    )
+    const result = (await tool?.handler({ sample_id: 'sha256:fixture' })) as WorkerResult
+
+    expect(plugin.aspects?.evidence).toEqual(expect.arrayContaining(['structure', 'timeline']))
+    expect(plugin.runtimePolicy?.requiresUserOptIn).toBe(true)
+    expect(tool?.definition.artifacts?.[0].type).toBe('fixture_analysis')
+    expect(tool?.definition.evidence?.map((entry) => entry.category)).toEqual(
+      expect.arrayContaining(['structure', 'timeline'])
+    )
+    expect(result.artifacts?.[0].type).toBe('fixture_analysis')
+    expect(result.evidence?.[0].category).toBe('timeline')
+  })
+
   test('manifest plugins fail fast when a handler is missing', () => {
     expect(() =>
       defineManifestPlugin(
@@ -206,6 +387,41 @@ describe('@rikune/plugin-sdk', () => {
     expect(result.errors.join('\n')).toContain('Duplicate tool name')
   })
 
+  test('auditPluginQuality reports warning-first plugin standard gaps', () => {
+    const plugin = definePlugin({
+      id: 'audit-demo',
+      name: 'Audit Demo',
+      executionDomain: 'dynamic',
+      tools: [
+        defineTool({
+          name: 'audit_demo.run',
+          description: 'Audit demo runtime-like tool',
+          inputSchema: { type: 'object' },
+          handler: async () => ok({}),
+        }),
+      ],
+    })
+
+    const warnings = auditPluginQuality(plugin)
+    const codes = warnings.map((warning) => warning.code)
+
+    expect(codes).toEqual(
+      expect.arrayContaining([
+        'missing-surface-rules',
+        'missing-aspects',
+        'missing-system-deps',
+        'missing-readiness-check',
+        'missing-output-schema',
+        'missing-evidence',
+        'dynamic-runtime-contract-missing',
+        'missing-runtime-policy',
+      ])
+    )
+    expect(warnings.every((warning) => warning.severity === 'info' || warning.severity === 'warning')).toBe(
+      true
+    )
+  })
+
   test('result helpers produce compatible tool and worker results', () => {
     expect(ok({ status: 'ready' })).toEqual({ ok: true, data: { status: 'ready' } })
     expect(fail('missing dependency')).toEqual({
@@ -217,6 +433,70 @@ describe('@rikune/plugin-sdk', () => {
       ok: true,
       data: { value: 1 },
     })
+  })
+
+  test('evidence helpers produce tool output envelopes and worker-compatible refs', () => {
+    const evidence = createEvidenceRef({
+      id: 'ev-1',
+      category: 'structure',
+      source: 'unit-test',
+      toolName: 'demo.tool',
+      confidence: 0.9,
+    })
+    const timeline = createEvidenceTimelineEntry({
+      source: 'unit-test',
+      toolName: 'demo.tool',
+      category: 'filesystem',
+      action: 'read',
+      target: '/tmp/sample',
+      confidence: 0.8,
+    })
+    const envelope = createToolOutputEnvelope({
+      ok: true,
+      data: { status: 'ready' },
+      evidence: [evidence],
+      timeline: [timeline],
+    })
+
+    expect(envelope.evidence?.[0].id).toBe('ev-1')
+    expect(envelope.timeline?.[0].category).toBe('filesystem')
+    expect(ok({ status: 'ready' }, { evidence: [evidence] }).evidence).toEqual([evidence])
+  })
+
+  test('plugin test harness registers tools with deps and context', async () => {
+    const handler = jest.fn(async (_args: { sample_id: string }, deps, ctx) =>
+      ok({ db: deps.database.kind, plugin: ctx?.pluginId })
+    )
+    const plugin = definePlugin({
+      id: 'harness-demo',
+      name: 'Harness Demo',
+      executionDomain: 'static',
+      tools: [
+        defineTool({
+          name: 'harness_demo.run',
+          description: 'Harness demo',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
+          aspects: { formats: ['pe'], platforms: ['windows'], execution: ['static'] },
+          artifacts: [{ type: 'harness-demo.json' }],
+          evidence: [{ category: 'structure' }],
+          handler,
+        }),
+      ],
+    })
+    const harness = createPluginTestHarness({
+      deps: { database: { kind: 'test-db' } },
+      ctx: { pluginId: 'harness-demo' },
+    })
+
+    expect(harness.registerPlugin(plugin)).toEqual(['harness_demo.run'])
+    expect(harness.registeredTools[0].definition.aspects?.formats).toEqual(['pe'])
+    await harness.registeredTools[0].handler({ sample_id: 'sha256:test' })
+    expect(handler).toHaveBeenCalledWith(
+      { sample_id: 'sha256:test' },
+      expect.objectContaining({ database: { kind: 'test-db' } }),
+      expect.objectContaining({ pluginId: 'harness-demo' })
+    )
   })
 
   test('plugin deps expose grouped services alongside top-level fields', () => {

@@ -23,6 +23,28 @@ const speakeasyPlugin: Plugin = {
   id: 'speakeasy',
   name: 'Speakeasy Emulator',
   executionDomain: 'dynamic',
+  aspects: {
+    formats: ['pe', 'dll', 'shellcode'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64'],
+    execution: ['dynamic', 'emulation'],
+    runtimes: ['speakeasy'],
+    safety: ['passive', 'opt_in_dynamic', 'requires_isolation', 'no_live_sample_by_default'],
+    capabilities: ['api-trace', 'shellcode-emulation', 'behavior-hints', 'unsupported-summary'],
+    evidence: ['api-calls', 'memory', 'process', 'timeline', 'provenance'],
+  },
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: true,
+    requiresIsolation: true,
+    allowedBackends: ['speakeasy'],
+    maxRuntimeMs: 120000,
+    networkPolicy: 'disabled',
+    notes: [
+      'Speakeasy emulation is coverage-limited and should emit backend confidence with behavior evidence.',
+      'Readiness checks must not emulate payloads by default.',
+    ],
+  },
   surfaceRules: {
     tier: 2,
     activateOn: { findings: ['shellcode', 'suspicious_imports', 'packed'] },

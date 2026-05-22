@@ -31,6 +31,27 @@ export const dexDecompileToolDefinition: ToolDefinition = {
     'Decompile DEX bytecode to Java source using jadx. Supports APK files (auto-extracts DEX) and standalone .dex files. Optional class_filter to narrow output.',
   inputSchema: DexDecompileInputSchema,
   outputSchema: DexDecompileOutputSchema,
+  aspects: {
+    formats: ['dex', 'multi-dex', 'apk', 'aab', 'apks', 'xapk', 'aar'],
+    platforms: ['android', 'jvm'],
+    execution: ['static', 'decompilation'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    capabilities: ['classes', 'decompile-plan', 'resources'],
+    evidence: ['classes', 'strings', 'artifact', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'dex_decompilation',
+      description: 'JADX decompilation output and class-filtered DEX/APK source inventory',
+    },
+  ],
+  evidence: [
+    {
+      category: 'classes',
+      description: 'Recovered Android/JVM class names and decompiled source evidence',
+      artifactTypes: ['dex_decompilation'],
+    },
+  ],
 }
 
 async function callApkWorker(

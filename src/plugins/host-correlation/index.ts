@@ -13,6 +13,20 @@ const hostCorrelationPlugin: Plugin = {
   id: 'host-correlation',
   name: 'Host Correlation',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'dll', 'windows-host-artifacts', 'manifest', 'registry'],
+    platforms: ['windows'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    capabilities: [
+      'host-correlation',
+      'sideloading-analysis',
+      'scheduled-task-correlation',
+      'service-correlation',
+      'com-correlation',
+    ],
+    evidence: ['process', 'filesystem', 'registry', 'imports', 'provenance'],
+  },
   surfaceRules: {
     tier: 2,
     activateOn: { findings: ['suspicious_imports'] },

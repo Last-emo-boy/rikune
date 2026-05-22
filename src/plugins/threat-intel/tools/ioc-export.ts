@@ -94,6 +94,69 @@ export const iocExportToolDefinition: ToolDefinition = {
     'Export normalized IOC data and optional ATT&CK mapping as JSON, CSV, or STIX 2.1 bundle.',
   inputSchema: IOCExportInputSchema,
   outputSchema: IOCExportOutputSchema,
+  aspects: {
+    formats: [
+      'pe',
+      'elf',
+      'macho',
+      'apk',
+      'dex',
+      'jar',
+      'dotnet',
+      'wasm',
+      'firmware',
+      'archive',
+      'container',
+    ],
+    platforms: [
+      'windows',
+      'linux',
+      'macos',
+      'android',
+      'jvm',
+      'dotnet',
+      'wasm',
+      'embedded',
+      'cross-platform',
+    ],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['ioc', 'stix-export', 'csv-export', 'json-export'],
+    evidence: ['network', 'filesystem', 'registry', 'signatures', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'ioc_export_json',
+      description: 'IOC export as JSON',
+    },
+    {
+      type: 'ioc_export_csv',
+      description: 'IOC export as CSV',
+    },
+    {
+      type: 'ioc_export_stix2',
+      description: 'IOC export as STIX 2.1 JSON bundle',
+    },
+  ],
+  evidence: [
+    {
+      category: 'network',
+      artifactTypes: ['ioc_export_json', 'ioc_export_csv', 'ioc_export_stix2'],
+    },
+    {
+      category: 'filesystem',
+      artifactTypes: ['ioc_export_json', 'ioc_export_csv', 'ioc_export_stix2'],
+    },
+    {
+      category: 'registry',
+      artifactTypes: ['ioc_export_json', 'ioc_export_csv', 'ioc_export_stix2'],
+    },
+    {
+      category: 'signatures',
+      artifactTypes: ['ioc_export_json', 'ioc_export_csv', 'ioc_export_stix2'],
+    },
+  ],
 }
 
 interface IOCRecord {

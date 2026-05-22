@@ -59,6 +59,42 @@ export const firmwareScanToolDefinition: ToolDefinition = {
     'Scan a file with binwalk for embedded firmware signatures (file systems, kernels, compressed archives, etc.).',
   inputSchema: firmwareScanInputSchema,
   outputSchema: firmwareScanOutputSchema,
+  aspects: {
+    formats: [
+      'firmware',
+      'uimage',
+      'fit',
+      'dtb',
+      'itb',
+      'initramfs',
+      'cpio',
+      'squashfs',
+      'cramfs',
+      'jffs2',
+      'ubi',
+      'ubifs',
+      'romfs',
+      'archive',
+    ],
+    platforms: ['embedded', 'linux'],
+    architectures: ['arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv', 'x86', 'x64'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_installer_execution'],
+    capabilities: ['signatures', 'filesystem', 'nested-binaries', 'routing'],
+    evidence: ['signatures', 'filesystem', 'nested-binaries', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'firmware_scan',
+      description: 'Binwalk firmware signature scan output and embedded filesystem hints',
+    },
+  ],
+  evidence: [
+    {
+      category: 'signatures',
+      artifactTypes: ['firmware_scan'],
+    },
+  ],
 }
 
 export function createFirmwareScanHandler(

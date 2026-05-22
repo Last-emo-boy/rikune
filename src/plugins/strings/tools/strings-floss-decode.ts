@@ -153,6 +153,27 @@ export const stringsFlossDecodeToolDefinition: ToolDefinition = {
     'Use this when you suspect stack/tight/decoded strings; use analysis.context.link to merge FLOSS output with raw strings and function attribution.',
   inputSchema: StringsFlossDecodeInputSchema,
   outputSchema: StringsFlossDecodeOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'dotnet', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'dotnet', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['strings', 'floss-decode', 'obfuscation'],
+    evidence: ['strings', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'enriched_string_analysis',
+      description: 'Decoded and enriched FLOSS string output',
+    },
+  ],
+  evidence: [
+    {
+      category: 'strings',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+  ],
 }
 
 // ============================================================================

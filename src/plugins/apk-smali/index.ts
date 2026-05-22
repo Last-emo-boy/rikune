@@ -21,9 +21,18 @@ const apkSmaliPlugin: Plugin = {
   id: 'apk-smali',
   name: 'APK Smali Analysis',
   executionDomain: 'static',
+  aspects: {
+    formats: ['apk', 'aab', 'apks', 'xapk', 'split-apk', 'dex', 'aar'],
+    platforms: ['android'],
+    architectures: ['arm', 'arm64', 'x86', 'x64'],
+    execution: ['static', 'triage', 'decompilation'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    capabilities: ['smali', 'manifest', 'resources', 'classes', 'routing'],
+    evidence: ['structure', 'manifest', 'resources', 'strings', 'provenance'],
+  },
   surfaceRules: {
     tier: 1,
-    activateOn: { fileTypes: ['apk', 'android'] },
+    activateOn: { fileTypes: ['apk', 'aab', 'apks', 'xapk', 'split-apk', 'aar', 'android'] },
     category: 'android-analysis',
   },
   description:

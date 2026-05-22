@@ -91,6 +91,43 @@ export const yaraXScanToolDefinition: ToolDefinition = {
     'Scan a sample with YARA-X using inline rules or a rules file. Use this when you explicitly want the newer YARA-X engine instead of the legacy yara.scan path.',
   inputSchema: yaraXScanInputSchema,
   outputSchema: yaraXScanOutputSchema,
+  aspects: {
+    formats: [
+      'pe',
+      'elf',
+      'macho',
+      'apk',
+      'dex',
+      'jar',
+      'dotnet',
+      'wasm',
+      'firmware',
+      'archive',
+      'container',
+    ],
+    platforms: ['windows', 'linux', 'macos', 'android', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['signatures', 'pattern-matching', 'rule-matching'],
+    evidence: ['signatures', 'strings', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'backend_yara_x_scan',
+      description: 'YARA-X rule match payload with bounded preview and persisted full JSON',
+    },
+  ],
+  evidence: [
+    {
+      category: 'signatures',
+      artifactTypes: ['backend_yara_x_scan'],
+    },
+    {
+      category: 'strings',
+      artifactTypes: ['backend_yara_x_scan'],
+    },
+  ],
 }
 
 const YARAX_SCAN_SCRIPT = `

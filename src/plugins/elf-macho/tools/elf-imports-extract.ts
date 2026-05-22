@@ -31,6 +31,22 @@ export const elfImportsExtractToolDefinition: ToolDefinition = {
   description: 'Extract ELF imports: DT_NEEDED shared libraries and imported symbols from .dynsym.',
   inputSchema: ElfImportsExtractInputSchema,
   outputSchema: ElfImportsExtractOutputSchema,
+  aspects: {
+    formats: ['elf', 'so'],
+    platforms: ['linux'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['imports', 'libraries', 'symbols'],
+    evidence: ['imports', 'symbols', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'elf_imports',
+      description: 'ELF DT_NEEDED libraries and imported dynamic symbols',
+    },
+  ],
+  evidence: [{ category: 'imports', artifactTypes: ['elf_imports'] }],
 }
 
 export function createElfImportsExtractHandler(

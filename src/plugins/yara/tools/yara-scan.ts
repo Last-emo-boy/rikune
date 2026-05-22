@@ -175,6 +175,37 @@ export const yaraScanToolDefinition: ToolDefinition = {
   description: '使用 YARA 规则扫描样本，识别已知的恶意软件家族和加壳器',
   inputSchema: YaraScanInputSchema,
   outputSchema: YaraScanOutputSchema,
+  aspects: {
+    formats: [
+      'pe',
+      'elf',
+      'macho',
+      'apk',
+      'dex',
+      'jar',
+      'dotnet',
+      'wasm',
+      'firmware',
+      'archive',
+      'container',
+    ],
+    platforms: ['windows', 'linux', 'macos', 'android', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['signatures', 'malware-family', 'packer', 'rule-matching'],
+    evidence: ['signatures', 'strings', 'imports', 'provenance'],
+  },
+  evidence: [
+    {
+      category: 'signatures',
+      description: 'YARA rule matches, matched offsets, confidence, and rule provenance',
+    },
+    {
+      category: 'imports',
+      description: 'Import evidence used to score YARA matches',
+    },
+  ],
 }
 
 // ============================================================================

@@ -19,6 +19,15 @@ const vulnScannerPlugin: Plugin = {
   id: 'vuln-scanner',
   name: 'Vulnerability Scanner',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'dotnet', 'jar', 'wasm', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'jvm', 'dotnet', 'wasm', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['cwe-patterns', 'decompiled-code-scan', 'risk-summary'],
+    evidence: ['vulnerabilities', 'symbols', 'strings', 'provenance'],
+  },
   surfaceRules: {
     tier: 2,
     activateOn: { findings: ['suspicious_imports'] },

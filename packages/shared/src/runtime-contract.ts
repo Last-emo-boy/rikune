@@ -26,6 +26,7 @@ export interface WorkerResult {
   setup_actions?: unknown[]
   required_user_inputs?: unknown[]
   artifacts?: ArtifactRef[]
+  evidence?: unknown[]
   metrics?: Record<string, unknown>
   execution_semantics?: RuntimeExecutionSemantics
 }
@@ -45,6 +46,52 @@ export interface RuntimeFallbackRule {
   reason?: string
 }
 
+export type RuntimeIsolationBackend =
+  | 'local'
+  | 'docker'
+  | 'windows-sandbox'
+  | 'hyperv'
+  | 'windows-host-agent'
+  | 'wine'
+  | 'speakeasy'
+  | 'qiling'
+  | 'unicorn'
+  | 'frida'
+  | 'frida-server'
+  | 'adb'
+  | 'android-emulator'
+  | 'lldb'
+  | 'gdb'
+  | 'strace'
+  | 'ltrace'
+  | 'dtrace'
+  | 'fs-usage'
+  | 'sandbox-exec'
+  | 'codesign-runtime'
+  | 'idevice-tools'
+  | 'ebpf'
+  | 'seccomp'
+  | 'ptrace'
+  | 'wasmtime'
+
+export type RuntimeNetworkPolicy = 'disabled' | 'record_only' | 'restricted' | 'allowed'
+
+export interface DynamicRuntimePolicy {
+  passiveByDefault?: boolean
+  requiresUserOptIn?: boolean
+  requiresIsolation?: boolean
+  allowedBackends?: RuntimeIsolationBackend[]
+  maxRuntimeMs?: number
+  networkPolicy?: RuntimeNetworkPolicy
+  notes?: string[]
+}
+
+export interface RuntimeIsolationRequirement {
+  required?: boolean
+  backends?: RuntimeIsolationBackend[]
+  reason?: string
+}
+
 export interface ToolRuntimeContract {
   type: RuntimeBackendType
   handler: string
@@ -53,6 +100,10 @@ export interface ToolRuntimeContract {
   requiredTools?: string[]
   optionalTools?: string[]
   produces?: string[]
+  capabilities?: string[]
+  safety?: string[]
+  policy?: DynamicRuntimePolicy
+  isolation?: RuntimeIsolationRequirement
   timeoutMs?: number
   fallback?: RuntimeFallbackRule[]
 }
@@ -76,22 +127,84 @@ export const RuntimeFallbackRuleSchema = z.object({
   reason: z.string().optional(),
 })
 
-export const ToolRuntimeContractSchema = z.object({
-  type: z.enum(['python-worker', 'spawn', 'inline']),
-  handler: z.string().min(1, 'String must contain at least 1 character'),
-  modes: z.array(RuntimeExecutionModeSchema).optional(),
-  requiredProfiles: z.array(z.string()).optional(),
-  requiredTools: z.array(z.string()).optional(),
-  optionalTools: z.array(z.string()).optional(),
-  produces: z.array(z.string()).optional(),
-  timeoutMs: z.number().int().positive().optional(),
-  fallback: z.array(RuntimeFallbackRuleSchema).optional(),
-})
+export const RuntimeIsolationBackendSchema = z.enum([
+  'local',
+  'docker',
+  'windows-sandbox',
+  'hyperv',
+  'windows-host-agent',
+  'wine',
+  'speakeasy',
+  'qiling',
+  'unicorn',
+  'frida',
+  'frida-server',
+  'adb',
+  'android-emulator',
+  'lldb',
+  'gdb',
+  'strace',
+  'ltrace',
+  'dtrace',
+  'fs-usage',
+  'sandbox-exec',
+  'codesign-runtime',
+  'idevice-tools',
+  'ebpf',
+  'seccomp',
+  'ptrace',
+  'wasmtime',
+])
+
+export const RuntimeNetworkPolicySchema = z.enum([
+  'disabled',
+  'record_only',
+  'restricted',
+  'allowed',
+])
+
+export const DynamicRuntimePolicySchema = z
+  .object({
+    passiveByDefault: z.boolean().optional(),
+    requiresUserOptIn: z.boolean().optional(),
+    requiresIsolation: z.boolean().optional(),
+    allowedBackends: z.array(RuntimeIsolationBackendSchema).optional(),
+    maxRuntimeMs: z.number().int().positive().optional(),
+    networkPolicy: RuntimeNetworkPolicySchema.optional(),
+    notes: z.array(z.string()).optional(),
+  })
+  .passthrough()
+
+export const RuntimeIsolationRequirementSchema = z
+  .object({
+    required: z.boolean().optional(),
+    backends: z.array(RuntimeIsolationBackendSchema).optional(),
+    reason: z.string().optional(),
+  })
+  .passthrough()
+
+export const ToolRuntimeContractSchema = z
+  .object({
+    type: z.enum(['python-worker', 'spawn', 'inline']),
+    handler: z.string().min(1, 'String must contain at least 1 character'),
+    modes: z.array(RuntimeExecutionModeSchema).optional(),
+    requiredProfiles: z.array(z.string()).optional(),
+    requiredTools: z.array(z.string()).optional(),
+    optionalTools: z.array(z.string()).optional(),
+    produces: z.array(z.string()).optional(),
+    capabilities: z.array(z.string()).optional(),
+    safety: z.array(z.string()).optional(),
+    policy: DynamicRuntimePolicySchema.optional(),
+    isolation: RuntimeIsolationRequirementSchema.optional(),
+    timeoutMs: z.number().int().positive().optional(),
+    fallback: z.array(RuntimeFallbackRuleSchema).optional(),
+  })
+  .passthrough()
 
 export const RuntimeBackendCapabilitySchema = ToolRuntimeContractSchema.extend({
   description: z.string().optional(),
   requiresSample: z.boolean().optional(),
-})
+}).passthrough()
 
 export const RuntimeDelegationFailureCategorySchema = z.enum([
   'runtime_unavailable',

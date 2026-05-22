@@ -97,10 +97,7 @@ import {
 } from '../ghidra/ghidra-analysis-status.js'
 import { loadDynamicTraceEvidence } from '../artifacts/dynamic-trace.js'
 import { createSampleFinalizationService } from '../sample/sample-finalization.js'
-import {
-  buildFreshEvidenceState,
-  persistCanonicalEvidence,
-} from '../analysis/analysis-evidence.js'
+import { buildFreshEvidenceState, persistCanonicalEvidence } from '../analysis/analysis-evidence.js'
 import {
   ANALYSIS_DIFF_DIGEST_ARTIFACT_TYPE,
   AnalysisDiffDigestSchema,

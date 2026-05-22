@@ -59,6 +59,27 @@ export const peCertificateExtractToolDefinition: ToolDefinition = {
   description: 'Extract the Authenticode certificate chain from a signed PE file.',
   inputSchema: peCertificateExtractInputSchema,
   outputSchema: peCertificateExtractOutputSchema,
+  aspects: {
+    formats: ['pe', 'pe-clr'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['certificates', 'signature-chain'],
+    evidence: ['certificates', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'backend_pe-sig_certificate',
+      description: 'Bounded extracted Authenticode certificate material',
+    },
+  ],
+  evidence: [
+    {
+      category: 'certificates',
+      artifactTypes: ['backend_pe-sig_certificate'],
+    },
+  ],
 }
 
 export function createPeCertificateExtractHandler(

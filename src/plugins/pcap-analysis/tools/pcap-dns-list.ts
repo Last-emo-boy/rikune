@@ -60,6 +60,21 @@ export const pcapDnsListToolDefinition: ToolDefinition = {
   description: 'Extract DNS queries and responses from a PCAP file.',
   inputSchema: pcapDnsListInputSchema,
   outputSchema: pcapDnsListOutputSchema,
+  aspects: {
+    formats: ['pcap', 'pcapng', 'network-capture'],
+    platforms: ['cross-platform'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_network_by_default'],
+    evidence: ['network', 'artifact'],
+  },
+  artifacts: [
+    {
+      type: 'pcap_dns_records',
+      description: 'Extracted DNS query and response records',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [{ category: 'network', artifactTypes: ['pcap_dns_records'] }],
 }
 
 export function createPcapDnsListHandler(

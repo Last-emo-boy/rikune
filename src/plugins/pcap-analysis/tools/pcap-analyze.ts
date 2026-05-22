@@ -53,6 +53,24 @@ export const pcapAnalyzeToolDefinition: ToolDefinition = {
   description: 'Analyze a PCAP file: protocol hierarchy, conversations, endpoints, packet count.',
   inputSchema: pcapAnalyzeInputSchema,
   outputSchema: pcapAnalyzeOutputSchema,
+  aspects: {
+    formats: ['pcap', 'pcapng', 'network-capture'],
+    platforms: ['cross-platform'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_network_by_default'],
+    evidence: ['network', 'timeline', 'artifact'],
+  },
+  artifacts: [
+    {
+      type: 'pcap_analysis',
+      description: 'Protocol hierarchy, conversations, endpoint, and packet-count summary',
+      mime: 'text/plain',
+    },
+  ],
+  evidence: [
+    { category: 'network', artifactTypes: ['pcap_analysis'] },
+    { category: 'timeline', artifactTypes: ['pcap_analysis'] },
+  ],
 }
 
 export function createPcapAnalyzeHandler(

@@ -67,6 +67,31 @@ export const dieScanToolDefinition: ToolDefinition = {
     'Run a full Detect It Easy signature scan. Returns detailed compiler, packer, linker, and crypto detections with version info.',
   inputSchema: dieScanInputSchema,
   outputSchema: dieScanOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'dotnet', 'apk', 'firmware', 'archive'],
+    platforms: ['windows', 'linux', 'macos', 'android', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['compiler-detect', 'packer', 'linker-detect', 'crypto-detect'],
+    evidence: ['signatures', 'provenance', 'structure'],
+  },
+  artifacts: [
+    {
+      type: 'backend_die_scan',
+      description: 'Detect It Easy JSON compiler, packer, linker, and crypto signature scan',
+    },
+  ],
+  evidence: [
+    {
+      category: 'signatures',
+      artifactTypes: ['backend_die_scan'],
+    },
+    {
+      category: 'structure',
+      artifactTypes: ['backend_die_scan'],
+    },
+  ],
 }
 
 export function createDieScanHandler(

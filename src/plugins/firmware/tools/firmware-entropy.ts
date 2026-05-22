@@ -57,6 +57,42 @@ export const firmwareEntropyToolDefinition: ToolDefinition = {
     'Compute block-level entropy of a firmware image using binwalk. Helps identify encrypted/compressed regions.',
   inputSchema: firmwareEntropyInputSchema,
   outputSchema: firmwareEntropyOutputSchema,
+  aspects: {
+    formats: [
+      'firmware',
+      'uimage',
+      'fit',
+      'dtb',
+      'itb',
+      'initramfs',
+      'cpio',
+      'squashfs',
+      'cramfs',
+      'jffs2',
+      'ubi',
+      'ubifs',
+      'romfs',
+      'archive',
+    ],
+    platforms: ['embedded', 'linux'],
+    architectures: ['arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv', 'x86', 'x64'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['entropy', 'signatures', 'routing'],
+    evidence: ['artifact', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'firmware_entropy',
+      description: 'Block-level firmware entropy output for compressed or encrypted region triage',
+    },
+  ],
+  evidence: [
+    {
+      category: 'artifact',
+      artifactTypes: ['firmware_entropy'],
+    },
+  ],
 }
 
 export function createFirmwareEntropyHandler(

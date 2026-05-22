@@ -65,7 +65,8 @@ export function buildDockerLauncherCommand(
     return { command: docker, args: dockerArgs }
   }
 
-  const container = env.RIKUNE_DOCKER_CONTAINER || env.RIKUNE_ANALYZER_CONTAINER || DEFAULT_CONTAINER
+  const container =
+    env.RIKUNE_DOCKER_CONTAINER || env.RIKUNE_ANALYZER_CONTAINER || DEFAULT_CONTAINER
   const dockerArgs = ['exec', '-i']
   appendEnvArgs(dockerArgs, env)
   dockerArgs.push(container, 'node', 'dist/index.js', ...options.passthroughArgs)

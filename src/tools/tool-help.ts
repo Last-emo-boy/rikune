@@ -10,6 +10,7 @@ import {
   rewriteToolReferencesInText,
   toTransportToolName,
 } from '../tool-name-normalization.js'
+import { buildToolAspectSummary } from './tool-aspect-matrix.js'
 
 const TOOL_NAME = 'tool.help'
 
@@ -55,6 +56,13 @@ export const toolHelpOutputSchema = z.object({
         surface_role: ToolSurfaceRoleSchema,
         preferred_primary_tools: z.array(z.string()).optional(),
         usage_notes: z.array(z.string()).optional(),
+        aspects: z.record(z.array(z.string())).nullable().optional(),
+        aspect_coverage: z.array(z.string()).optional(),
+        format_matrix: z.record(z.any()).optional(),
+        artifact_declarations: z.array(z.any()).optional(),
+        evidence_declarations: z.array(z.any()).optional(),
+        runtime_policy: z.any().nullable().optional(),
+        runtime_contract: z.any().nullable().optional(),
         input: ToolSchemaSummarySchema.optional(),
         output: ToolSchemaSummarySchema.optional(),
       })
@@ -1363,6 +1371,7 @@ export function createToolHelpHandler(
           usage_notes: buildUsageNotes(definition).map((item) =>
             rewriteToolReferencesInText(item, nameMappings)
           ),
+          ...buildToolAspectSummary(definition),
           input: input.include_fields
             ? buildSchemaSummary(definition.inputSchema, definition.name)
             : undefined,

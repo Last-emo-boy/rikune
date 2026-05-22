@@ -124,6 +124,51 @@ export const attackMapToolDefinition: ToolDefinition = {
     'Generate MITRE ATT&CK technique mapping from triage indicators with evidence-linked confidence scoring. Medium and larger samples may return a background job_id; use analysis.context.get before rerunning to discover prior ATT&CK maps, active jobs, and cached context.',
   inputSchema: AttackMapInputSchema,
   outputSchema: AttackMapOutputSchema,
+  aspects: {
+    formats: [
+      'pe',
+      'elf',
+      'macho',
+      'apk',
+      'dex',
+      'jar',
+      'dotnet',
+      'wasm',
+      'firmware',
+      'archive',
+      'container',
+    ],
+    platforms: [
+      'windows',
+      'linux',
+      'macos',
+      'android',
+      'jvm',
+      'dotnet',
+      'wasm',
+      'embedded',
+      'cross-platform',
+    ],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['attack-map', 'capability-clustering', 'ioc-correlation'],
+    evidence: ['behavior', 'network', 'filesystem', 'registry', 'signatures', 'provenance'],
+  },
+  evidence: [
+    {
+      category: 'behavior',
+      description: 'ATT&CK technique mapping inferred from static triage evidence',
+    },
+    {
+      category: 'network',
+      description: 'Network IOC evidence contributing to ATT&CK mapping',
+    },
+    {
+      category: 'registry',
+      description: 'Registry IOC evidence contributing to ATT&CK mapping',
+    },
+  ],
 }
 
 export interface AttackIndicators {

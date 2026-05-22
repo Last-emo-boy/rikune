@@ -12,6 +12,7 @@ import type { JobQueue } from '../job-queue.js'
 import type { CacheManager } from '../cache-manager.js'
 import { inspectSampleWorkspace } from '../sample/sample-workspace.js'
 import { buildSampleReuseHints } from '../analysis/reuse-hints.js'
+import { normalizeFileTypeTags } from './tool-aspect-matrix.js'
 
 const DEFAULT_ANALYSIS_DETAIL = 'compact' as const
 const DEFAULT_MAX_ANALYSES = 25
@@ -104,6 +105,27 @@ export const SampleProfileGetOutputSchema = z.object({
           metrics_json_truncated: z.boolean().optional(),
         })
       ),
+      sample_profile: z
+        .object({
+          file_type_tags: z.array(z.string()),
+          formats: z.array(z.string()),
+          platforms: z.array(z.string()),
+          architectures: z.array(z.string()),
+          evidence_signals: z.array(z.string()),
+          nested_route_hints: z.array(
+            z.object({
+              source_analysis_id: z.string(),
+              source_stage: z.string(),
+              path: z.string().optional(),
+              format: z.string().optional(),
+              recommended_tools: z.array(z.string()),
+            })
+          ),
+          recommended_tools: z.array(z.string()),
+          next_actions: z.array(z.string()),
+        })
+        .optional(),
+      routing_profile: z.record(z.any()).optional(),
       workspace: z
         .object({
           status: z.enum([
@@ -183,6 +205,250 @@ function limitInlineFiles(files: string[], limit: number): { files: string[]; tr
   }
 }
 
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim().length > 0)))
+}
+
+function parseJson(value: string | null): unknown {
+  if (!value) return null
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+function collectAspectSignals(value: unknown): {
+  formats: string[]
+  platforms: string[]
+  architectures: string[]
+  evidence: string[]
+  recommendedTools: string[]
+} {
+  const formats: string[] = []
+  const platforms: string[] = []
+  const architectures: string[] = []
+  const evidence: string[] = []
+  const recommendedTools: string[] = []
+  const seen = new Set<unknown>()
+
+  function visit(node: unknown, key = '', depth = 0): void {
+    if (!node || depth > 8 || seen.has(node)) return
+    if (typeof node === 'object') seen.add(node)
+
+    if (typeof node === 'string') {
+      const normalized = node.toLowerCase().trim().replace(/_/g, '-')
+      if (!normalized) return
+      const keyName = key.toLowerCase().replace(/_/g, '-')
+      if (keyName.includes('format') || keyName.includes('file-type') || keyName === 'type') {
+        formats.push(...normalizeFileTypeTags(normalized))
+      }
+      if (keyName.includes('platform') || keyName.includes('os')) {
+        platforms.push(normalized)
+      }
+      if (keyName.includes('arch') || keyName.includes('machine') || keyName.includes('cpu')) {
+        architectures.push(normalized)
+      }
+      if (
+        keyName.includes('evidence') ||
+        keyName.includes('category') ||
+        keyName.includes('signal') ||
+        keyName.includes('finding')
+      ) {
+        evidence.push(normalized)
+      }
+      if (keyName.includes('tool')) {
+        recommendedTools.push(normalized)
+      }
+      return
+    }
+
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item, key, depth + 1)
+      return
+    }
+
+    if (typeof node === 'object') {
+      for (const [childKey, childValue] of Object.entries(node)) {
+        if (childKey === 'recommended_next_tools' || childKey === 'recommended_tools') {
+          recommendedTools.push(...stringArray(childValue))
+        } else if (childKey === 'artifact_refs' || childKey === 'artifacts') {
+          evidence.push('artifact')
+        } else if (childKey === 'evidence' || childKey === 'evidence_state') {
+          evidence.push('evidence')
+        }
+        visit(childValue, childKey, depth + 1)
+      }
+    }
+  }
+
+  visit(value)
+  return {
+    formats: uniqueStrings(formats),
+    platforms: uniqueStrings(platforms),
+    architectures: uniqueStrings(architectures),
+    evidence: uniqueStrings(evidence),
+    recommendedTools: uniqueStrings(recommendedTools),
+  }
+}
+
+function collectNestedRouteHints(
+  analysis: { id: string; stage: string; output_json: string | null },
+  parsed: unknown
+): Array<{
+  source_analysis_id: string
+  source_stage: string
+  path?: string
+  format?: string
+  recommended_tools: string[]
+}> {
+  const hints: Array<{
+    source_analysis_id: string
+    source_stage: string
+    path?: string
+    format?: string
+    recommended_tools: string[]
+  }> = []
+  const seen = new Set<unknown>()
+
+  function visit(node: unknown, depth = 0): void {
+    if (!node || depth > 8 || seen.has(node)) return
+    if (typeof node === 'object') seen.add(node)
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item, depth + 1)
+      return
+    }
+    if (typeof node !== 'object') return
+
+    const obj = objectValue(node)
+    const recommendedTools = uniqueStrings([
+      ...stringArray(obj.recommended_tools),
+      ...stringArray(obj.recommended_next_tools),
+    ])
+    const path =
+      typeof obj.path === 'string'
+        ? obj.path
+        : typeof obj.file === 'string'
+          ? obj.file
+          : typeof obj.name === 'string'
+            ? obj.name
+            : undefined
+    const format =
+      typeof obj.format === 'string'
+        ? obj.format
+        : typeof obj.type === 'string'
+          ? obj.type
+          : typeof obj.file_type === 'string'
+            ? obj.file_type
+            : undefined
+
+    if (recommendedTools.length > 0 || /nested|candidate/i.test(Object.keys(obj).join(' '))) {
+      hints.push({
+        source_analysis_id: analysis.id,
+        source_stage: analysis.stage,
+        path,
+        format,
+        recommended_tools: recommendedTools,
+      })
+    }
+
+    for (const value of Object.values(obj)) visit(value, depth + 1)
+  }
+
+  visit(parsed)
+  return hints
+}
+
+function buildSampleRoutingProfile(params: {
+  fileType: string | null
+  analyses: Array<{ id: string; stage: string; output_json: string | null }>
+}) {
+  const fileTypeTags = normalizeFileTypeTags(params.fileType)
+  const formats = [...fileTypeTags]
+  const platforms: string[] = []
+  const architectures: string[] = []
+  const evidenceSignals: string[] = []
+  const recommendedTools: string[] = []
+  const nestedRouteHints: Array<{
+    source_analysis_id: string
+    source_stage: string
+    path?: string
+    format?: string
+    recommended_tools: string[]
+  }> = []
+
+  for (const analysis of params.analyses) {
+    const parsed = parseJson(analysis.output_json)
+    const signals = collectAspectSignals(parsed)
+    formats.push(...signals.formats)
+    platforms.push(...signals.platforms)
+    architectures.push(...signals.architectures)
+    evidenceSignals.push(...signals.evidence)
+    recommendedTools.push(...signals.recommendedTools)
+    nestedRouteHints.push(...collectNestedRouteHints(analysis, parsed))
+  }
+
+  const normalizedFormats = uniqueStrings(formats)
+  const normalizedPlatforms = uniqueStrings([
+    ...platforms,
+    ...fileTypeTags.filter((tag) =>
+      [
+        'windows',
+        'linux',
+        'macos',
+        'ios',
+        'android',
+        'java',
+        'dotnet',
+        'wasm',
+        'embedded',
+      ].includes(tag)
+    ),
+    ...normalizedFormats.filter((tag) =>
+      [
+        'windows',
+        'linux',
+        'macos',
+        'ios',
+        'android',
+        'java',
+        'dotnet',
+        'wasm',
+        'embedded',
+      ].includes(tag)
+    ),
+  ])
+  const nextActions = [
+    normalizedFormats.length > 0
+      ? `Use tools.discover action=activate file_type=${normalizedFormats[0]} to expose matching static plugins.`
+      : 'Use tools.discover action=list to inspect available format plugins.',
+    nestedRouteHints.length > 0
+      ? 'Review nested_route_hints before selecting deep static or extraction tools.'
+      : 'Run a passive inventory tool first when the sample is an archive, package, container, or bundle.',
+  ]
+
+  return {
+    file_type_tags: fileTypeTags,
+    formats: normalizedFormats,
+    platforms: normalizedPlatforms,
+    architectures: uniqueStrings(architectures),
+    evidence_signals: uniqueStrings(evidenceSignals),
+    nested_route_hints: nestedRouteHints.slice(0, 50),
+    recommended_tools: uniqueStrings(recommendedTools).slice(0, 50),
+    next_actions: uniqueStrings(nextActions),
+  }
+}
+
 export function createSampleProfileGetHandler(
   database: DatabaseManager,
   workspaceManager?: WorkspaceManager,
@@ -215,6 +481,10 @@ export function createSampleProfileGetHandler(
         limit: Math.min(input.max_analyses, 10),
       })
       const boundedAnalyses = analyses.slice(0, input.max_analyses)
+      const sampleProfile = buildSampleRoutingProfile({
+        fileType: sample.file_type,
+        analyses: boundedAnalyses,
+      })
       const limitedWorkspace = workspace
         ? (() => {
             const originalFiles = limitInlineFiles(
@@ -279,6 +549,8 @@ export function createSampleProfileGetHandler(
                 input.analysis_detail === 'compact' ? metrics.truncated : undefined,
             }
           }),
+          sample_profile: sampleProfile,
+          routing_profile: sampleProfile,
           workspace: limitedWorkspace,
           reuse_hints: reuseHints,
         },

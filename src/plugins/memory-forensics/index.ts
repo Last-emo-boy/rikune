@@ -64,6 +64,21 @@ const memoryForensicsPlugin: Plugin = {
   id: 'memory-forensics',
   name: 'Memory Forensics (Volatility 3)',
   executionDomain: 'static',
+  aspects: {
+    formats: ['memory-dump', 'memory-image', 'vmem', 'dmp', 'elf-core'],
+    platforms: ['windows', 'linux', 'macos'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    capabilities: [
+      'process-list',
+      'module-list',
+      'memory-region-scan',
+      'network-scan',
+      'registry-scan',
+      'command-line-extraction',
+    ],
+    evidence: ['memory', 'process', 'filesystem', 'registry', 'network', 'provenance'],
+  },
   surfaceRules: { tier: 3, category: 'memory-forensics' },
   description:
     'Memory dump analysis using Volatility 3 — process listing, DLL extraction, registry analysis, and memory-resident malware detection.',
@@ -116,6 +131,24 @@ const memoryForensicsPlugin: Plugin = {
         description: 'List processes from a memory dump using Volatility 3.',
         inputSchema: dumpInputSchema,
         outputSchema: volatilityOutputSchema,
+        aspects: {
+          formats: ['memory-dump', 'memory-image', 'vmem', 'dmp'],
+          platforms: ['windows', 'linux', 'macos'],
+          execution: ['static', 'triage'],
+          safety: ['passive'],
+          evidence: ['memory', 'process'],
+        },
+        artifacts: [
+          {
+            type: 'memory_process_list',
+            description: 'Process listing recovered from a memory dump',
+            mime: 'application/json',
+          },
+        ],
+        evidence: [
+          { category: 'memory', artifactTypes: ['memory_process_list'] },
+          { category: 'process', artifactTypes: ['memory_process_list'] },
+        ],
       },
       async (args: { sample_id?: string; dump_path?: string }): Promise<ToolResult> => {
         const dumpPath = await resolveDumpPath(args, deps)
@@ -136,6 +169,25 @@ const memoryForensicsPlugin: Plugin = {
         description: 'List loaded DLLs from a memory dump.',
         inputSchema: pidDumpInputSchema,
         outputSchema: volatilityOutputSchema,
+        aspects: {
+          formats: ['memory-dump', 'memory-image', 'vmem', 'dmp'],
+          platforms: ['windows'],
+          execution: ['static', 'triage'],
+          safety: ['passive'],
+          evidence: ['memory', 'filesystem', 'process'],
+        },
+        artifacts: [
+          {
+            type: 'memory_module_list',
+            description: 'Loaded module and DLL listing recovered from a memory dump',
+            mime: 'application/json',
+          },
+        ],
+        evidence: [
+          { category: 'memory', artifactTypes: ['memory_module_list'] },
+          { category: 'filesystem', artifactTypes: ['memory_module_list'] },
+          { category: 'process', artifactTypes: ['memory_module_list'] },
+        ],
       },
       async (args: {
         sample_id?: string
@@ -162,6 +214,25 @@ const memoryForensicsPlugin: Plugin = {
         description: 'Detect injected code and suspicious memory regions in a memory dump.',
         inputSchema: pidDumpInputSchema,
         outputSchema: volatilityOutputSchema,
+        aspects: {
+          formats: ['memory-dump', 'memory-image', 'vmem', 'dmp'],
+          platforms: ['windows'],
+          execution: ['static', 'triage'],
+          safety: ['passive'],
+          evidence: ['memory', 'process', 'behavior'],
+        },
+        artifacts: [
+          {
+            type: 'memory_suspicious_regions',
+            description: 'Suspicious injected or executable memory-region findings',
+            mime: 'application/json',
+          },
+        ],
+        evidence: [
+          { category: 'memory', artifactTypes: ['memory_suspicious_regions'] },
+          { category: 'process', artifactTypes: ['memory_suspicious_regions'] },
+          { category: 'behavior', artifactTypes: ['memory_suspicious_regions'] },
+        ],
       },
       async (args: {
         sample_id?: string
@@ -188,6 +259,25 @@ const memoryForensicsPlugin: Plugin = {
         description: 'Scan for network connections in a memory dump.',
         inputSchema: dumpInputSchema,
         outputSchema: volatilityOutputSchema,
+        aspects: {
+          formats: ['memory-dump', 'memory-image', 'vmem', 'dmp'],
+          platforms: ['windows'],
+          execution: ['static', 'triage'],
+          safety: ['passive', 'no_network_by_default'],
+          evidence: ['memory', 'network', 'process'],
+        },
+        artifacts: [
+          {
+            type: 'memory_network_scan',
+            description: 'Network connection scan recovered from a memory dump',
+            mime: 'application/json',
+          },
+        ],
+        evidence: [
+          { category: 'memory', artifactTypes: ['memory_network_scan'] },
+          { category: 'network', artifactTypes: ['memory_network_scan'] },
+          { category: 'process', artifactTypes: ['memory_network_scan'] },
+        ],
       },
       async (args: { sample_id?: string; dump_path?: string }): Promise<ToolResult> => {
         const dumpPath = await resolveDumpPath(args, deps)
@@ -214,6 +304,24 @@ const memoryForensicsPlugin: Plugin = {
         description: 'List registry hives found in a memory dump.',
         inputSchema: dumpInputSchema,
         outputSchema: volatilityOutputSchema,
+        aspects: {
+          formats: ['memory-dump', 'memory-image', 'vmem', 'dmp'],
+          platforms: ['windows'],
+          execution: ['static', 'triage'],
+          safety: ['passive'],
+          evidence: ['memory', 'registry'],
+        },
+        artifacts: [
+          {
+            type: 'memory_registry_hives',
+            description: 'Registry hive listing recovered from a memory dump',
+            mime: 'application/json',
+          },
+        ],
+        evidence: [
+          { category: 'memory', artifactTypes: ['memory_registry_hives'] },
+          { category: 'registry', artifactTypes: ['memory_registry_hives'] },
+        ],
       },
       async (args: { sample_id?: string; dump_path?: string }): Promise<ToolResult> => {
         const dumpPath = await resolveDumpPath(args, deps)
@@ -240,6 +348,25 @@ const memoryForensicsPlugin: Plugin = {
         description: 'Extract command-line arguments for all processes in a memory dump.',
         inputSchema: pidDumpInputSchema,
         outputSchema: volatilityOutputSchema,
+        aspects: {
+          formats: ['memory-dump', 'memory-image', 'vmem', 'dmp'],
+          platforms: ['windows'],
+          execution: ['static', 'triage'],
+          safety: ['passive'],
+          evidence: ['memory', 'process', 'behavior'],
+        },
+        artifacts: [
+          {
+            type: 'memory_cmdline',
+            description: 'Process command lines recovered from a memory dump',
+            mime: 'application/json',
+          },
+        ],
+        evidence: [
+          { category: 'memory', artifactTypes: ['memory_cmdline'] },
+          { category: 'process', artifactTypes: ['memory_cmdline'] },
+          { category: 'behavior', artifactTypes: ['memory_cmdline'] },
+        ],
       },
       async (args: {
         sample_id?: string

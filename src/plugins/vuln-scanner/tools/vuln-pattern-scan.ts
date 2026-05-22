@@ -53,6 +53,27 @@ export const vulnPatternScanToolDefinition: ToolDefinition = {
     'Scan decompiled functions for CWE vulnerability patterns (buffer overflow, format string, command injection, DLL hijacking, integer overflow, use-after-free).',
   inputSchema: VulnPatternScanInputSchema,
   outputSchema: VulnPatternScanOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'dotnet', 'jar', 'wasm', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'jvm', 'dotnet', 'wasm', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['cwe-patterns', 'decompiled-code-scan', 'risk-summary'],
+    evidence: ['vulnerabilities', 'symbols', 'strings', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'vuln_pattern_scan',
+      description: 'CWE vulnerability findings over decompiled functions',
+    },
+  ],
+  evidence: [
+    {
+      category: 'vulnerabilities',
+      artifactTypes: ['vuln_pattern_scan'],
+    },
+  ],
 }
 
 // ============================================================================

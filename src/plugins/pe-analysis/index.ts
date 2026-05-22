@@ -32,6 +32,15 @@ const peAnalysisPlugin: Plugin = {
   id: 'pe-analysis',
   name: 'PE Analysis',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'pe-clr'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['structure', 'imports', 'exports', 'resources', 'symbols', 'routing'],
+    evidence: ['structure', 'imports', 'exports', 'resources', 'symbols', 'provenance'],
+  },
   surfaceRules: {
     tier: 0,
     category: 'static-analysis',

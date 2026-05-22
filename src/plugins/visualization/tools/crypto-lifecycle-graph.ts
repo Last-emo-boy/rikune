@@ -112,6 +112,26 @@ export const cryptoLifecycleGraphToolDefinition: ToolDefinition = {
     'Build a crypto lifecycle graph from crypto.identify artifacts and imported runtime evidence, linking algorithms, functions, APIs, constants, stages, and memory regions. Does not execute the sample.',
   inputSchema: CryptoLifecycleGraphInputSchema,
   outputSchema: CryptoLifecycleGraphOutputSchema,
+  aspects: {
+    formats: ['artifact', 'analysis-evidence', 'runtime-trace'],
+    platforms: ['windows', 'linux', 'macos', 'ios', 'android', 'cross-platform'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    evidence: ['behavior', 'memory', 'timeline', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'crypto_lifecycle_graph',
+      description:
+        'Crypto lifecycle graph derived from static crypto artifacts and runtime evidence',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    { category: 'behavior', artifactTypes: ['crypto_lifecycle_graph'] },
+    { category: 'memory', artifactTypes: ['crypto_lifecycle_graph'] },
+    { category: 'timeline', artifactTypes: ['crypto_lifecycle_graph'] },
+  ],
 }
 
 function normalizeApiName(value: string): string {

@@ -65,6 +65,25 @@ export const evidenceGraphToolDefinition: ToolDefinition = {
     'Build a compact evidence graph that links specialist static artifacts, static expectations, dynamic trace observations, and corroboration edges. Does not execute the sample.',
   inputSchema: EvidenceGraphInputSchema,
   outputSchema: EvidenceGraphOutputSchema,
+  aspects: {
+    formats: ['artifact', 'analysis-evidence', 'runtime-trace'],
+    platforms: ['all', 'cross-platform'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    evidence: ['provenance', 'timeline', 'behavior', 'network', 'memory', 'artifact'],
+  },
+  artifacts: [
+    {
+      type: 'analysis_evidence_graph',
+      description: 'Correlated evidence graph across static artifacts and imported runtime traces',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    { category: 'provenance', artifactTypes: ['analysis_evidence_graph'] },
+    { category: 'timeline', artifactTypes: ['analysis_evidence_graph'] },
+    { category: 'behavior', artifactTypes: ['analysis_evidence_graph'] },
+  ],
 }
 
 export function createEvidenceGraphHandler(deps: PluginToolDeps) {

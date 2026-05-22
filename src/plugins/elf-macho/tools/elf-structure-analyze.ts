@@ -32,6 +32,22 @@ export const elfStructureAnalyzeToolDefinition: ToolDefinition = {
     'Analyze ELF binary structure: headers, sections, segments, symbols, dynamic entries.',
   inputSchema: ElfStructureAnalyzeInputSchema,
   outputSchema: ElfStructureAnalyzeOutputSchema,
+  aspects: {
+    formats: ['elf', 'so', 'core', 'elf-core', 'elf-object', 'linux-kernel-module', 'dwarf'],
+    platforms: ['linux'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['structure', 'symbols', 'imports', 'exports', 'routing'],
+    evidence: ['structure', 'symbols', 'imports', 'exports', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'elf_structure',
+      description: 'ELF headers, sections, segments, symbols, dynamic entries, and notes',
+    },
+  ],
+  evidence: [{ category: 'structure', artifactTypes: ['elf_structure'] }],
 }
 
 export function createElfStructureAnalyzeHandler(

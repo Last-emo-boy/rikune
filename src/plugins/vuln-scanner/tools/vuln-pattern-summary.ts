@@ -38,6 +38,21 @@ export const vulnPatternSummaryToolDefinition: ToolDefinition = {
     'Summarize vulnerability scan findings: aggregate by CWE, rank most vulnerable functions, compute severity distribution.',
   inputSchema: VulnPatternSummaryInputSchema,
   outputSchema: VulnPatternSummaryOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'dotnet', 'jar', 'wasm', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'jvm', 'dotnet', 'wasm', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['cwe-patterns', 'risk-summary'],
+    evidence: ['vulnerabilities', 'provenance'],
+  },
+  evidence: [
+    {
+      category: 'vulnerabilities',
+      artifactTypes: ['vuln_pattern_scan'],
+    },
+  ],
 }
 
 // ============================================================================

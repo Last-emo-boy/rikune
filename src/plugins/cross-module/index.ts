@@ -22,6 +22,15 @@ const crossModulePlugin: Plugin = {
   id: 'cross-module',
   name: 'Cross-Module Analysis',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'elf', 'macho'],
+    platforms: ['windows', 'linux', 'macos'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'correlation'],
+    safety: ['passive'],
+    capabilities: ['dependencies', 'call-graph', 'diffing', 'routing'],
+    evidence: ['imports', 'exports', 'symbols', 'nested-binaries', 'provenance'],
+  },
   surfaceRules: {
     tier: 2,
     activateOn: { findings: ['suspicious_imports'] },

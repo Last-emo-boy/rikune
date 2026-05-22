@@ -13,6 +13,15 @@ const diePlugin: Plugin = {
   id: 'die',
   name: 'Detect It Easy',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'dotnet', 'apk', 'firmware', 'archive'],
+    platforms: ['windows', 'linux', 'macos', 'android', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['compiler-detect', 'packer', 'linker-detect', 'crypto-detect'],
+    evidence: ['signatures', 'provenance', 'structure'],
+  },
   surfaceRules: {
     tier: 0,
     category: 'static-analysis',

@@ -37,10 +37,8 @@ function normalizeFileTypeTags(rawType: string): string[] {
   const lower = rawType.toLowerCase().trim()
   if (SURFACE_FILE_TYPE_TAGS[lower]) return SURFACE_FILE_TYPE_TAGS[lower]
   // Extension-based fallback
-  if (lower.endsWith('.apk') && SURFACE_FILE_TYPE_TAGS.apk) return SURFACE_FILE_TYPE_TAGS.apk
-  if ((lower.endsWith('.pcap') || lower.endsWith('.pcapng')) && SURFACE_FILE_TYPE_TAGS.pcap)
-    return SURFACE_FILE_TYPE_TAGS.pcap
-  if (lower.endsWith('.jar') && SURFACE_FILE_TYPE_TAGS.jar) return SURFACE_FILE_TYPE_TAGS.jar
+  const extension = lower.includes('.') ? lower.slice(lower.lastIndexOf('.') + 1) : lower
+  if (extension && SURFACE_FILE_TYPE_TAGS[extension]) return SURFACE_FILE_TYPE_TAGS[extension]
   return [lower]
 }
 

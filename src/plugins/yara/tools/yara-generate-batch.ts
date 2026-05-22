@@ -51,6 +51,27 @@ export const yaraGenerateBatchToolDefinition: ToolDefinition = {
     'Generate YARA family detection rules by finding common unique features across multiple samples.',
   inputSchema: YaraGenerateBatchInputSchema,
   outputSchema: YaraGenerateBatchOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'apk', 'dex', 'jar', 'dotnet', 'wasm', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'android', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['family-rule-generation', 'cluster-common-features'],
+    evidence: ['signatures', 'strings', 'imports', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'yara_family_rule',
+      description: 'Generated YARA family rule derived from common multi-sample features',
+    },
+  ],
+  evidence: [
+    {
+      category: 'signatures',
+      artifactTypes: ['yara_family_rule'],
+    },
+  ],
 }
 
 // ============================================================================

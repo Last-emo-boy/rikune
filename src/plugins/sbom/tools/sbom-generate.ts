@@ -29,6 +29,50 @@ export const sbomGenerateToolDefinition: ToolDefinition = {
     'Generate a Software Bill of Materials (SBOM) for a binary sample. Extracts component dependencies from PE imports, .NET assemblies, embedded resources, and static analysis results. Output in CycloneDX JSON or SPDX-lite format.',
   inputSchema: inputSchema as any,
   outputSchema: sbomGenerateOutputSchema,
+  aspects: {
+    formats: [
+      'pe',
+      'elf',
+      'macho',
+      'apk',
+      'jar',
+      'dotnet',
+      'nupkg',
+      'deb',
+      'rpm',
+      'apk-alpine',
+      'firmware',
+      'archive',
+      'container',
+      'docker-image',
+      'oci-image',
+    ],
+    platforms: [
+      'windows',
+      'linux',
+      'macos',
+      'android',
+      'jvm',
+      'dotnet',
+      'embedded',
+      'cross-platform',
+    ],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['sbom', 'dependency-inventory', 'provenance'],
+    evidence: ['sbom', 'package-metadata', 'imports', 'strings', 'provenance'],
+  },
+  evidence: [
+    {
+      category: 'sbom',
+      description: 'CycloneDX or SPDX-lite SBOM returned as structured content',
+    },
+    {
+      category: 'package-metadata',
+      description: 'Dependency evidence derived from imports, .NET metadata, and strings',
+    },
+  ],
 }
 
 interface SbomComponent {

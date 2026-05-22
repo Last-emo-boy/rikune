@@ -158,7 +158,8 @@ const CONTROL_TOOLS: Tool[] = [
         },
         api_key: {
           type: 'string',
-          description: 'API key for the selected endpoint. Status output only reports whether it is set.',
+          description:
+            'API key for the selected endpoint. Status output only reports whether it is set.',
         },
         timeout_ms: {
           type: 'number',
@@ -166,11 +167,13 @@ const CONTROL_TOOLS: Tool[] = [
         },
         persist: {
           type: 'boolean',
-          description: 'Persist the setting to the local Rikune agent config file. Defaults to true.',
+          description:
+            'Persist the setting to the local Rikune agent config file. Defaults to true.',
         },
         refresh: {
           type: 'boolean',
-          description: 'Refresh the selected upstream after applying the setting. Defaults to true.',
+          description:
+            'Refresh the selected upstream after applying the setting. Defaults to true.',
         },
       },
       required: ['target'],
@@ -312,7 +315,7 @@ export class RikuneAgentGateway {
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const name = request.params.name
-      const args = (request.params.arguments || {}) as Record<string, unknown>
+      const args = request.params.arguments || {}
 
       if (name === 'rikune_connection_status') {
         return this.asToolResult(await this.handleStatus(args))
@@ -773,8 +776,7 @@ function savePersistedConfig(configPath: string, config: AgentConfig): void {
 }
 
 function buildAgentConfig(env: NodeJS.ProcessEnv, persisted: Partial<AgentConfig>): AgentConfig {
-  const analyzerEndpoint =
-    env.RIKUNE_ANALYZER_ENDPOINT || env.ANALYZER_ENDPOINT || ''
+  const analyzerEndpoint = env.RIKUNE_ANALYZER_ENDPOINT || env.ANALYZER_ENDPOINT || ''
   const vmEndpoint = env.RIKUNE_VM_ENDPOINT || env.RUNTIME_HOST_AGENT_ENDPOINT || ''
   const runtimeEndpoint = env.RIKUNE_RUNTIME_ENDPOINT || env.RUNTIME_ENDPOINT || ''
 
@@ -848,11 +850,9 @@ function buildTransportConfig(
   target: AgentTarget,
   config: UpstreamConfig,
   env: NodeJS.ProcessEnv
-):
-  | {
-      transport: StdioClientTransport | StreamableHTTPClientTransport
-    }
-  | null {
+): {
+  transport: StdioClientTransport | StreamableHTTPClientTransport
+} | null {
   const transport = config.transport || (target === 'analyzer' ? 'docker-stdio' : undefined)
   if (!transport) {
     return null

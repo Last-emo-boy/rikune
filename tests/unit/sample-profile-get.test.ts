@@ -527,4 +527,88 @@ describe('sample.profile.get tool', () => {
     expect(data.workspace.original_files).toHaveLength(2)
     expect(data.workspace.original_file_list_truncated).toBe(true)
   })
+
+  test('should build passive routing profile from file type and analysis previews', async () => {
+    const sample: Sample = {
+      id: 'sha256:apkprofile',
+      sha256: 'apkprofile',
+      md5: 'apkprofile-md5',
+      size: 8192,
+      file_type: 'APK',
+      created_at: '2024-01-07T00:00:00Z',
+      source: 'upload',
+    }
+    database.insertSample(sample)
+
+    database.insertAnalysis({
+      id: 'analysis-android-inventory',
+      sample_id: sample.id,
+      stage: 'android.package.inventory',
+      backend: 'static',
+      status: 'done',
+      started_at: '2024-01-07T00:01:00Z',
+      finished_at: '2024-01-07T00:01:05Z',
+      output_json: JSON.stringify({
+        package_format: 'apk',
+        platforms: ['android'],
+        evidence: [{ category: 'manifest' }, { category: 'signatures' }],
+        native_library_candidates: [
+          {
+            path: 'lib/arm64-v8a/libdemo.so',
+            format: 'ELF-Executable',
+            architecture: 'arm64',
+            recommended_tools: ['linux.binary.inventory', 'elf.structure.analyze'],
+          },
+        ],
+        nested_package_candidates: [
+          {
+            path: 'splits/base.apk',
+            format: 'APK',
+            recommended_tools: ['android.package.inventory'],
+          },
+        ],
+        recommended_next_tools: ['android.package.inventory', 'apple.signing.inspect'],
+      }),
+      metrics_json: JSON.stringify({ elapsed_ms: 50 }),
+    })
+
+    const result = await handler({ sample_id: sample.id })
+
+    expect(result.ok).toBe(true)
+    const profile = (result.data as any).sample_profile
+    expect(profile.file_type_tags).toEqual(
+      expect.arrayContaining(['apk', 'android', 'dex', 'android-package'])
+    )
+    expect(profile.formats).toEqual(
+      expect.arrayContaining(['apk', 'android-package', 'elf-executable', 'linux-binary'])
+    )
+    expect(profile.platforms).toEqual(expect.arrayContaining(['android', 'linux']))
+    expect(profile.architectures).toEqual(expect.arrayContaining(['arm64']))
+    expect(profile.evidence_signals).toEqual(
+      expect.arrayContaining(['evidence', 'manifest', 'signatures'])
+    )
+    expect(profile.recommended_tools).toEqual(
+      expect.arrayContaining([
+        'android.package.inventory',
+        'linux.binary.inventory',
+        'elf.structure.analyze',
+        'apple.signing.inspect',
+      ])
+    )
+    expect(profile.nested_route_hints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source_analysis_id: 'analysis-android-inventory',
+          source_stage: 'android.package.inventory',
+          path: 'lib/arm64-v8a/libdemo.so',
+          recommended_tools: expect.arrayContaining(['linux.binary.inventory']),
+        }),
+        expect.objectContaining({
+          path: 'splits/base.apk',
+          recommended_tools: expect.arrayContaining(['android.package.inventory']),
+        }),
+      ])
+    )
+    expect((result.data as any).routing_profile).toEqual(profile)
+  })
 })

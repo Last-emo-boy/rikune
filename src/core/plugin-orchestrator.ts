@@ -19,12 +19,11 @@ import { discoverBuiltInPlugins, discoverExternalPlugins } from './plugin-system
 import type {
   Plugin,
   PluginContext,
-  PluginQualityWarning,
   PluginServerInterface,
   PluginStatus,
   PluginSystemDep,
 } from '../plugins/sdk.js'
-import { validatePlugin } from '../plugins/sdk.js'
+import { auditPluginQuality, validatePlugin } from '../plugins/sdk.js'
 
 type PluginServer = ToolRegistrar & PromptRegistrar & ResourceRegistrar & SamplingClient
 
@@ -65,70 +64,6 @@ function localSystemDepsForNode(plugin: Plugin): PluginSystemDep[] {
     }
     return true
   })
-}
-
-function buildPluginQualityWarnings(plugin: Plugin): PluginQualityWarning[] {
-  const warnings: PluginQualityWarning[] = []
-  const tools = plugin.tools ?? []
-
-  if (tools.length === 0 && typeof plugin.register !== 'function') {
-    warnings.push({
-      code: 'missing-tools',
-      message: 'Plugin declares no tools or register() handler.',
-      severity: 'warning',
-    })
-  }
-
-  if (!plugin.surfaceRules) {
-    warnings.push({
-      code: 'missing-surface-rules',
-      message: 'Plugin does not declare progressive surfaceRules; it defaults to always visible.',
-      severity: 'info',
-    })
-  }
-
-  if ((plugin.systemDeps ?? []).length === 0 && plugin.executionDomain !== 'static') {
-    warnings.push({
-      code: 'missing-system-deps',
-      message:
-        'Plugin has no declared systemDeps, so runtime/dependency degradation cannot be reported.',
-      severity: 'info',
-    })
-  }
-
-  if (
-    !plugin.check &&
-    (plugin.systemDeps ?? []).length === 0 &&
-    plugin.executionDomain === 'dynamic'
-  ) {
-    warnings.push({
-      code: 'missing-readiness-check',
-      message: 'Dynamic plugin has neither check() nor systemDeps readiness metadata.',
-      severity: 'warning',
-    })
-  }
-
-  for (const tool of tools) {
-    const definition = tool.definition
-    if (!definition.outputSchema) {
-      warnings.push({
-        code: 'missing-output-schema',
-        message: `Tool ${definition.name} has no outputSchema.`,
-        tool: definition.name,
-        severity: 'warning',
-      })
-    }
-    if (plugin.executionDomain === 'dynamic' && !definition.runtime) {
-      warnings.push({
-        code: 'dynamic-runtime-contract-missing',
-        message: `Dynamic tool ${definition.name} has no runtime delegation contract.`,
-        tool: definition.name,
-        severity: 'info',
-      })
-    }
-  }
-
-  return warnings
 }
 
 export class PluginOrchestrator {
@@ -408,7 +343,7 @@ export class PluginOrchestrator {
       status: 'loaded',
       tools: [],
       configFields: plugin.configSchema,
-      qualityWarnings: buildPluginQualityWarnings(plugin),
+      qualityWarnings: auditPluginQuality(plugin),
       controlPlaneStatus: 'completed',
       statusDetail: 'Plugin loaded successfully',
     }

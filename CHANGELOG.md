@@ -7,6 +7,13 @@ Versioning where practical.
 
 ## [Unreleased]
 
+### Plugin Matrix and SDK
+
+- Expanded the plugin SDK contract with manifest v2 authoring helpers, aspect taxonomy, artifact/evidence helpers, dynamic runtime policy metadata, and fixture-backed harness coverage.
+- Added passive static plugin coverage for common binary families including Windows installers/debug symbols, Linux packages/binaries, macOS/iOS containers/signing, Android packages, JVM, .NET/Unity, firmware filesystems, containers, WASM, and script bytecode.
+- Added plan-only dynamic runtime plugins for Windows, Linux, macOS, iOS, Android, and WASM with opt-in isolation policy and no live runtime startup by default.
+- Updated plugin matrix documentation and release quality gates for `qualityWarnings`, aspect metadata, output schemas, and runtime policy compatibility.
+
 ### Runtime Stability
 
 - Fixed oversized `workflow.analyze.status` responses so response pruning keeps schema-valid structured content and reports pruning through top-level warnings.

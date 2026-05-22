@@ -1004,4 +1004,67 @@ describe('tool.help tool', () => {
       traceData.tools[0].usage_notes.some((item: string) => item.includes('debug-session artifact'))
     ).toBe(true)
   })
+
+  test('should expose aspect, artifact, evidence, and runtime metadata for format tools', async () => {
+    const definitions: ToolDefinition[] = [
+      {
+        name: 'android.package.inventory',
+        description: 'Inventory Android APK/AAB packages without installing them',
+        inputSchema: z.object({ sample_id: z.string() }),
+        aspects: {
+          formats: ['APK', 'AAB', 'DEX'],
+          platforms: ['Android'],
+          execution: ['static'],
+          evidence: ['manifest', 'signatures'],
+        },
+        artifacts: [{ type: 'android_package_inventory', description: 'Android inventory' }],
+        evidence: [{ category: 'manifest', artifactTypes: ['android_package_inventory'] }],
+      },
+      {
+        name: 'linux.binary.inventory',
+        description: 'Inventory ELF executables, shared objects, and core dumps',
+        inputSchema: z.object({ sample_id: z.string() }),
+        aspects: {
+          formats: ['ELF-Executable', 'ELF-Core'],
+          platforms: ['Linux'],
+          execution: ['static'],
+          evidence: ['structure', 'symbols'],
+        },
+        artifacts: [{ type: 'linux_binary_inventory' }],
+        evidence: [{ category: 'structure' }, { category: 'symbols' }],
+      },
+    ]
+
+    const handler = createToolHelpHandler(() => definitions)
+    const result = await handler({ tool_name: 'android.package.inventory' })
+
+    expect(result.ok).toBe(true)
+    const tool = (result.data as any).tools[0]
+    expect(tool.aspects).toEqual(
+      expect.objectContaining({
+        formats: ['apk', 'aab', 'dex'],
+        platforms: ['android'],
+        execution: ['static'],
+      })
+    )
+    expect(tool.aspect_coverage).toEqual(
+      expect.arrayContaining(['formats: apk, aab, dex', 'platforms: android'])
+    )
+    expect(tool.format_matrix.apk).toEqual(
+      expect.objectContaining({
+        platforms: ['android'],
+        execution: ['static'],
+        evidence: ['manifest', 'signatures'],
+        artifacts: ['android_package_inventory'],
+      })
+    )
+    expect(tool.artifact_declarations).toEqual([
+      { type: 'android_package_inventory', description: 'Android inventory' },
+    ])
+    expect(tool.evidence_declarations).toEqual([
+      { category: 'manifest', artifactTypes: ['android_package_inventory'] },
+    ])
+    expect(tool.runtime_policy).toBeNull()
+    expect(tool.runtime_contract).toBeNull()
+  })
 })

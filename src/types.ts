@@ -21,6 +21,7 @@ import {
   RuntimeTaskStatusSchema,
   ToolRuntimeContractSchema,
   type ArtifactRef,
+  type DynamicRuntimePolicy,
   type RuntimeArtifactControlPlaneMetadata,
   type RuntimeBackendType,
   type RuntimeConnectedEventData,
@@ -76,6 +77,7 @@ export {
 }
 export type {
   ArtifactRef,
+  DynamicRuntimePolicy,
   RuntimeArtifactControlPlaneMetadata,
   RuntimeBackendType,
   RuntimeConnectedEventData,
@@ -107,6 +109,41 @@ export type {
 export type JSONSchema = z.ZodTypeAny
 
 /**
+ * Plugin aspect metadata used for sample routing, discovery, and readiness.
+ * This mirrors the public SDK taxonomy while staying permissive for future
+ * plugin-defined aspect groups.
+ */
+export interface PluginAspects {
+  formats?: string[]
+  platforms?: string[]
+  architectures?: string[]
+  execution?: string[]
+  runtimes?: string[]
+  safety?: string[]
+  capabilities?: string[]
+  evidence?: string[]
+  [group: string]: string[] | undefined
+}
+
+/** Declaration of artifact families a tool may produce. */
+export interface ToolArtifactSpec {
+  type: string
+  description?: string
+  mimeTypes?: string[]
+  required?: boolean
+  [key: string]: unknown
+}
+
+/** Declaration of evidence families a tool may produce. */
+export interface ToolEvidenceSpec {
+  category: string
+  description?: string
+  artifactTypes?: string[]
+  required?: boolean
+  [key: string]: unknown
+}
+
+/**
  * Tool definition following MCP protocol
  */
 export interface ToolDefinition {
@@ -115,6 +152,14 @@ export interface ToolDefinition {
   description: string
   inputSchema: JSONSchema
   outputSchema?: JSONSchema
+  /** Aspect metadata used by sample profiling and progressive discovery. */
+  aspects?: PluginAspects
+  /** Artifact families this tool may write. */
+  artifacts?: ToolArtifactSpec[]
+  /** Evidence families this tool may produce. */
+  evidence?: ToolEvidenceSpec[]
+  /** Dynamic execution policy surfaced by readiness and scaffold templates. */
+  runtimePolicy?: DynamicRuntimePolicy
   /** Runtime execution contract for tools delegated to a runtime node. */
   runtime?: ToolRuntimeContract
 }

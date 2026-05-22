@@ -463,7 +463,7 @@ export function zodFieldToJsonSchema(schema: z.ZodTypeAny): Record<string, unkno
 
   // Handle discriminated union
   if (schema instanceof z.ZodDiscriminatedUnion) {
-    const options = Array.from(schema.options.values()) as z.ZodTypeAny[]
+    const options = Array.from(schema.options.values())
     return withSchemaMetadata(
       {
         anyOf: options.map((option) => zodFieldToJsonSchema(option)),

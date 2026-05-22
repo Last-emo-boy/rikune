@@ -57,6 +57,31 @@ export const peSignatureVerifyToolDefinition: ToolDefinition = {
   description: 'Verify PE Authenticode digital signature and show signer/issuer details.',
   inputSchema: peSignatureVerifyInputSchema,
   outputSchema: peSignatureVerifyOutputSchema,
+  aspects: {
+    formats: ['pe', 'pe-clr'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['signatures', 'certificates', 'timestamp'],
+    evidence: ['signatures', 'certificates', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'backend_pe-sig_verify',
+      description: 'Bounded osslsigncode Authenticode verification report',
+    },
+  ],
+  evidence: [
+    {
+      category: 'signatures',
+      artifactTypes: ['backend_pe-sig_verify'],
+    },
+    {
+      category: 'certificates',
+      artifactTypes: ['backend_pe-sig_verify'],
+    },
+  ],
 }
 
 export function createPeSignatureVerifyHandler(
