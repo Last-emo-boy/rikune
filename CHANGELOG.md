@@ -15,6 +15,8 @@ Versioning where practical.
 - Updated plugin matrix documentation and release quality gates for `qualityWarnings`, aspect metadata, output schemas, and runtime policy compatibility.
 - Completed release-guarded workflow recipes across memory forensics, VM/symbolic analysis, KB analysis memory, runtime opt-in plans, SBOM provenance, Android behavior graphing, Apple security profiling, firmware/IoT planning, Office macro profiling, unpacking retriage, sample family clustering, and malware intel feedback loops.
 - Added release guard coverage so completed vertical workflow recipes remain visible through plugin discovery metadata, tool help/readiness surfaces, and the documented plugin matrix without invoking runtime, network, mount, install, emulator, or debugger paths.
+- Added passive next-wave plugins for JavaScript/JSVMP deobfuscation planning, rev.ng lift/decompile planning, Triton symbolic planning, and Miasm IR/data-flow planning, grounded in current JSIR/CASCADE, REstringer, rev.ng, Triton, and Miasm ecosystem signals while keeping all new backends plan-only by default.
+- Expanded the next-wave reverse-engineering suite with plan-only JSVMP bytecode/handler-map recovery, LIEF binary structure/transformation planning, radare2 cross-backend compatibility planning, and WABT WebAssembly toolchain planning; all remain passive and opt-in before any external backend process exists.
 
 ### Runtime Stability
 
@@ -31,7 +33,7 @@ Versioning where practical.
 
 ### Documentation
 
-- Reworked active documentation to match the current `src/core/*` architecture, staged `workflow.analyze.start/status/promote` pipeline, 56 built-in plugin inventory, Docker profile model, and Analyzer/Runtime split.
+- Reworked active documentation to match the current `src/core/*` architecture, staged `workflow.analyze.start/status/promote` pipeline, built-in plugin inventory, Docker profile model, and Analyzer/Runtime split.
 - Updated installation, deployment, plugin, architecture, troubleshooting, SDK, worker, script-resource, and MCP client setup docs.
 
 ## [1.0.0-beta.3] - 2025-07-14

@@ -162,10 +162,7 @@ function requireRegisteredTool(
   return definition as ToolDefinition
 }
 
-function requireWorkflowRecipe(
-  definition: ToolDefinition,
-  recipeId: string
-): WorkflowRecipeSpec {
+function requireWorkflowRecipe(definition: ToolDefinition, recipeId: string): WorkflowRecipeSpec {
   const recipe = definition.workflowRecipes?.find((candidate) => candidate.id === recipeId)
   expect(recipe).toBeDefined()
   return recipe as WorkflowRecipeSpec
@@ -271,9 +268,7 @@ test('aspect matrix indexes workflow recipe metadata', () => {
     },
   ])
   expect(matrix.summary.workflow_recipe_count).toBe(1)
-  expect(matrix.by_workflow['fixture.workflow.review'].tools).toEqual([
-    'fixture.workflow.seed',
-  ])
+  expect(matrix.by_workflow['fixture.workflow.review'].tools).toEqual(['fixture.workflow.seed'])
 })
 
 describe('cross-platform file type detection', () => {
@@ -296,9 +291,9 @@ describe('cross-platform file type detection', () => {
   test('detects Apple and Linux package formats', () => {
     expect(detectFileType(localZip(['Payload/App.app/Info.plist']), 'sample.ipa')).toBe('IPA')
     expect(detectFileType(Buffer.from('xar!0000'), 'sample.pkg')).toBe('PKG')
-    expect(detectFileType(Buffer.concat([Buffer.alloc(512), Buffer.from('koly')]), 'sample.dmg')).toBe(
-      'DMG'
-    )
+    expect(
+      detectFileType(Buffer.concat([Buffer.alloc(512), Buffer.from('koly')]), 'sample.dmg')
+    ).toBe('DMG')
     expect(
       detectFileType(Buffer.concat([Buffer.from('!<arch>\n'), arMember('debian-binary')]), 'x.deb')
     ).toBe('DEB')
@@ -332,9 +327,9 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(localZip(['META-INF/MANIFEST.MF', 'demo/Main.class']), 'demo.jar')).toBe(
       'JAR'
     )
-    expect(detectFileType(localZip(['WEB-INF/web.xml', 'WEB-INF/classes/demo/Main.class']), 'demo.war')).toBe(
-      'WAR'
-    )
+    expect(
+      detectFileType(localZip(['WEB-INF/web.xml', 'WEB-INF/classes/demo/Main.class']), 'demo.war')
+    ).toBe('WAR')
     expect(detectFileType(localZip(['classes/module-info.class']), 'demo.jmod')).toBe('JMOD')
     expect(detectFileType(Buffer.from([0xca, 0xfe, 0xba, 0xbe]), 'Main.class')).toBe('CLASS')
     expect(detectFileType(Buffer.alloc(16), 'module.pyc')).toBe('PYC')
@@ -342,6 +337,11 @@ describe('cross-platform file type detection', () => {
       'Lua-Bytecode'
     )
     expect(detectFileType(Buffer.alloc(16), 'cache.jsc')).toBe('V8-Cache')
+    expect(detectFileType(Buffer.from('function demo(){}'), 'demo.js')).toBe('JavaScript')
+    expect(detectFileType(Buffer.from('export const demo = 1'), 'demo.mjs')).toBe('MJS')
+    expect(detectFileType(Buffer.from('module.exports = {}'), 'demo.cjs')).toBe('CJS')
+    expect(detectFileType(Buffer.from('{"version":3}'), 'bundle.map')).toBe('Source-Map')
+    expect(detectFileType(Buffer.from('(module)'), 'module.wat')).toBe('WAT')
   })
 
   test('detects Windows installer, debug symbol, and managed runtime formats', () => {
@@ -363,9 +363,12 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(localZip(['AppxManifest.xml', 'VFS/Demo.exe']), 'sample.msix')).toBe(
       'MSIX'
     )
-    expect(detectFileType(localZip(['package/services/metadata/core-properties/1.psmdcp']), 'sample.appx')).toBe(
-      'APPX'
-    )
+    expect(
+      detectFileType(
+        localZip(['package/services/metadata/core-properties/1.psmdcp']),
+        'sample.appx'
+      )
+    ).toBe('APPX')
     expect(detectFileType(cabFixture(), 'payload.cab')).toBe('CAB')
     expect(detectFileType(nsis, 'setup.exe')).toBe('NSIS')
     expect(detectFileType(inno, 'setup.exe')).toBe('Inno')
@@ -380,9 +383,7 @@ describe('cross-platform file type detection', () => {
   })
 
   test('detects generic archive and container formats', () => {
-    expect(detectFileType(localZip(['bin/tool.exe', 'lib/libdemo.so']), 'bundle.zip')).toBe(
-      'ZIP'
-    )
+    expect(detectFileType(localZip(['bin/tool.exe', 'lib/libdemo.so']), 'bundle.zip')).toBe('ZIP')
     expect(detectFileType(Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]), 'bundle.7z')).toBe(
       '7z'
     )
@@ -390,9 +391,9 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(tarFixture(['manifest.json', 'layer.tar']), 'image.tar')).toBe(
       'Docker-Image'
     )
-    expect(detectFileType(tarFixture(['oci-layout', 'blobs/sha256/config.json']), 'image.tar')).toBe(
-      'OCI-Image'
-    )
+    expect(
+      detectFileType(tarFixture(['oci-layout', 'blobs/sha256/config.json']), 'image.tar')
+    ).toBe('OCI-Image')
     expect(detectFileType(Buffer.from([0x1f, 0x8b, 0x08, 0x00]), 'bundle.gz')).toBe('GZ')
     expect(detectFileType(Buffer.from([0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]), 'bundle.xz')).toBe(
       'XZ'
@@ -412,13 +413,13 @@ describe('cross-platform file type detection', () => {
     ubifs.writeUInt32LE(0x06101831, 0)
 
     expect(detectFileType(elfFixture(1), 'demo.o')).toBe('ELF-Object')
-    expect(detectFileType(Buffer.concat([elfFixture(1), Buffer.from('vermagic=6.1')]), 'demo.ko')).toBe(
-      'Linux-Kernel-Module'
-    )
+    expect(
+      detectFileType(Buffer.concat([elfFixture(1), Buffer.from('vermagic=6.1')]), 'demo.ko')
+    ).toBe('Linux-Kernel-Module')
     expect(detectFileType(machoObjectFixture(), 'demo.o')).toBe('Mach-O-Object')
-    expect(detectFileType(Buffer.concat([Buffer.from('!<arch>\n'), arMember('demo.o')]), 'libdemo.a')).toBe(
-      'AR-Static-Lib'
-    )
+    expect(
+      detectFileType(Buffer.concat([Buffer.from('!<arch>\n'), arMember('demo.o')]), 'libdemo.a')
+    ).toBe('AR-Static-Lib')
     expect(detectFileType(uimage, 'firmware.uImage')).toBe('U-Boot-uImage')
     expect(detectFileType(dtb, 'board.dtb')).toBe('DTB')
     expect(detectFileType(dtb, 'kernel.itb')).toBe('FIT-Image')
@@ -458,7 +459,9 @@ describe('passive package and Apple container inventory', () => {
       })
     )
     expect(inventory.manifest_candidates).toContain('AndroidManifest.xml')
-    expect(inventory.dex_candidates).toEqual(expect.arrayContaining(['classes.dex', 'classes2.dex']))
+    expect(inventory.dex_candidates).toEqual(
+      expect.arrayContaining(['classes.dex', 'classes2.dex'])
+    )
     expect(inventory.signing_candidates).toContain('META-INF/CERT.RSA')
     expect(inventory.native_library_candidates).toEqual(
       expect.arrayContaining([
@@ -491,7 +494,9 @@ describe('passive package and Apple container inventory', () => {
     expect(inventory.policy).toEqual(
       expect.objectContaining({ passive: true, no_execute: true, no_install: true })
     )
-    expect(inventory.archive_members).toEqual(expect.arrayContaining(['debian-binary', 'control.tar']))
+    expect(inventory.archive_members).toEqual(
+      expect.arrayContaining(['debian-binary', 'control.tar'])
+    )
     expect(inventory.nested_binary_candidates).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -545,7 +550,9 @@ describe('passive package and Apple container inventory', () => {
     const inventory = buildAppleSigningInspectFromBuffer(
       Buffer.concat([
         data,
-        Buffer.from('application-identifier com.apple.developer.team-identifier Apple Distribution'),
+        Buffer.from(
+          'application-identifier com.apple.developer.team-identifier Apple Distribution'
+        ),
       ]),
       { filename: 'Demo.ipa' }
     )
@@ -593,7 +600,9 @@ describe('passive package and Apple container inventory', () => {
     ])
 
     const elfInventory = buildLinuxBinaryInventoryFromBuffer(elf, { filename: 'tool' })
-    const moduleInventory = buildLinuxBinaryInventoryFromBuffer(kernelModule, { filename: 'demo.ko' })
+    const moduleInventory = buildLinuxBinaryInventoryFromBuffer(kernelModule, {
+      filename: 'demo.ko',
+    })
     const initramfsInventory = buildLinuxBinaryInventoryFromBuffer(initramfs, {
       filename: 'initramfs.cpio',
     })
@@ -652,19 +661,7 @@ describe('passive bytecode and portable runtime inventory', () => {
   })
 
   test('builds WASM inventory without starting a runtime', () => {
-    const wasm = Buffer.from([
-      0x00,
-      0x61,
-      0x73,
-      0x6d,
-      0x01,
-      0x00,
-      0x00,
-      0x00,
-      0x07,
-      0x01,
-      0x00,
-    ])
+    const wasm = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x07, 0x01, 0x00])
     const inventory = buildWasmStructureFromBuffer(wasm, { filename: 'module.wasm' })
 
     expect(inventory.format).toBe('wasm')
@@ -844,11 +841,17 @@ describe('passive generic container inventory', () => {
         }),
         expect.objectContaining({
           path: 'bin/tool.elf',
-          recommended_tools: expect.arrayContaining(['linux.binary.inventory', 'elf.structure.analyze']),
+          recommended_tools: expect.arrayContaining([
+            'linux.binary.inventory',
+            'elf.structure.analyze',
+          ]),
         }),
         expect.objectContaining({
           path: 'lib/module.ko',
-          recommended_tools: expect.arrayContaining(['linux.binary.inventory', 'native.object.inventory']),
+          recommended_tools: expect.arrayContaining([
+            'linux.binary.inventory',
+            'native.object.inventory',
+          ]),
         }),
         expect.objectContaining({
           path: 'obj/demo.o',
@@ -860,7 +863,10 @@ describe('passive generic container inventory', () => {
         }),
         expect.objectContaining({
           path: 'Payload/App.app/Frameworks/libDemo.dylib',
-          recommended_tools: expect.arrayContaining(['apple.signing.inspect', 'macho.structure.analyze']),
+          recommended_tools: expect.arrayContaining([
+            'apple.signing.inspect',
+            'macho.structure.analyze',
+          ]),
         }),
         expect.objectContaining({
           path: 'Payload/App.app.dSYM',
@@ -991,9 +997,7 @@ describe('built-in plugin format matrix discovery', () => {
     expect(windowsInstaller?.tools?.map((tool) => tool.definition.name)).toContain(
       'installer.inventory'
     )
-    expect(windowsDebugSymbols?.aspects?.formats).toEqual(
-      expect.arrayContaining(['pdb', 'coff'])
-    )
+    expect(windowsDebugSymbols?.aspects?.formats).toEqual(expect.arrayContaining(['pdb', 'coff']))
     expect(windowsDebugSymbols?.tools?.map((tool) => tool.definition.name)).toContain(
       'windows.debug.metadata.inspect'
     )
@@ -1156,6 +1160,7 @@ describe('built-in plugin format matrix discovery', () => {
     const sbom = requirePlugin(plugins, 'sbom')
     const vulnScanner = requirePlugin(plugins, 'vuln-scanner')
     const threatIntel = requirePlugin(plugins, 'threat-intel')
+    const javascriptDeobfuscation = requirePlugin(plugins, 'javascript-deobfuscation')
 
     expect(yara.aspects?.formats).toEqual(expect.arrayContaining(['pe', 'elf', 'macho', 'apk']))
     expect(strings.aspects?.formats).toEqual(expect.arrayContaining(['apk', 'wasm', 'pyc']))
@@ -1163,6 +1168,12 @@ describe('built-in plugin format matrix discovery', () => {
       expect.arrayContaining(['apk', 'nupkg', 'deb', 'docker-image'])
     )
     expect(threatIntel.aspects?.safety).toEqual(expect.arrayContaining(['no_network_by_default']))
+    expect(javascriptDeobfuscation.aspects?.formats).toEqual(
+      expect.arrayContaining(['js', 'javascript', 'source-map', 'v8-cache'])
+    )
+    expect(javascriptDeobfuscation.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['javascript-deobfuscation', 'jsvmp-triage'])
+    )
 
     expectToolMetadata(yara, 'yara.scan', {
       formats: ['pe', 'elf', 'macho'],
@@ -1198,6 +1209,97 @@ describe('built-in plugin format matrix discovery', () => {
     expectToolMetadata(threatIntel, 'sigma.rule.generate', {
       artifacts: ['sigma_rules'],
       evidence: ['behavior', 'network', 'registry'],
+    })
+    expectToolMetadata(javascriptDeobfuscation, 'javascript.obfuscation.profile', {
+      formats: ['js', 'javascript', 'source-map'],
+      artifacts: ['javascript_obfuscation_profile'],
+      evidence: ['structure', 'strings', 'behavior', 'workflow'],
+    })
+  })
+
+  test('discovers advanced external backend planning plugins as passive plan-only surfaces', async () => {
+    const plugins = await discoverBuiltInPlugins()
+    const jsvmpAnalysis = requirePlugin(plugins, 'jsvmp-analysis')
+    const revng = requirePlugin(plugins, 'revng')
+    const triton = requirePlugin(plugins, 'triton')
+    const miasm = requirePlugin(plugins, 'miasm')
+    const lief = requirePlugin(plugins, 'lief')
+    const radare2 = requirePlugin(plugins, 'radare2')
+    const wabt = requirePlugin(plugins, 'wabt')
+
+    expect(jsvmpAnalysis.aspects?.capabilities).toEqual(
+      expect.arrayContaining([
+        'jsvmp-bytecode-recovery',
+        'handler-map-recovery',
+        'vm-dispatch-analysis',
+      ])
+    )
+
+    expect(revng.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['binary-lifting', 'decompilation', 'cross-backend-comparison'])
+    )
+    expect(triton.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['symbolic-execution', 'taint-analysis', 'constraint-solving'])
+    )
+    expect(miasm.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['ir-lifting', 'data-flow', 'deobfuscation-plan'])
+    )
+    expect(lief.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['binary-format-abstraction', 'patch-plan'])
+    )
+    expect(radare2.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['r2pipe-integration-plan', 'cross-backend-comparison'])
+    )
+    expect(wabt.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['wasm-disassembly-plan', 'wasm2c-plan'])
+    )
+
+    for (const plugin of [jsvmpAnalysis, revng, triton, miasm, lief, radare2, wabt]) {
+      expect(plugin.executionDomain).toBe('static')
+      expect(plugin.aspects?.safety).toEqual(
+        expect.arrayContaining(['passive', 'no_live_sample_by_default', 'no_network_by_default'])
+      )
+    }
+
+    expect(jsvmpAnalysis.surfaceRules?.tier).toBe(2)
+    for (const plugin of [revng, triton, miasm, lief, radare2, wabt]) {
+      expect(plugin.surfaceRules?.tier).toBe(3)
+    }
+
+    expectToolMetadata(jsvmpAnalysis, 'jsvmp.bytecode.plan', {
+      formats: ['js', 'javascript', 'source-map'],
+      artifacts: ['jsvmp_bytecode_plan'],
+      evidence: ['structure', 'strings', 'behavior', 'workflow'],
+    })
+    expectToolMetadata(revng, 'revng.pipeline.plan', {
+      formats: ['pe', 'elf', 'macho'],
+      artifacts: ['revng_pipeline_plan'],
+      evidence: ['structure', 'symbols', 'artifact', 'workflow'],
+    })
+    expectToolMetadata(triton, 'triton.symbolic.plan', {
+      formats: ['pe', 'elf', 'macho'],
+      artifacts: ['triton_symbolic_plan'],
+      evidence: ['structure', 'behavior', 'memory', 'workflow'],
+    })
+    expectToolMetadata(miasm, 'miasm.ir.plan', {
+      formats: ['pe', 'elf', 'macho'],
+      artifacts: ['miasm_ir_plan'],
+      evidence: ['structure', 'behavior', 'artifact', 'workflow'],
+    })
+    expectToolMetadata(lief, 'lief.binary.plan', {
+      formats: ['pe', 'elf', 'macho'],
+      artifacts: ['lief_binary_plan'],
+      evidence: ['structure', 'symbols', 'imports', 'exports', 'workflow'],
+    })
+    expectToolMetadata(radare2, 'radare2.pipeline.plan', {
+      formats: ['pe', 'elf', 'macho'],
+      artifacts: ['radare2_pipeline_plan'],
+      evidence: ['structure', 'symbols', 'strings', 'workflow'],
+    })
+    expectToolMetadata(wabt, 'wabt.toolchain.plan', {
+      formats: ['wasm', 'wasi', 'wat'],
+      artifacts: ['wabt_toolchain_plan'],
+      evidence: ['structure', 'imports', 'exports', 'workflow'],
     })
   })
 
@@ -1421,6 +1523,95 @@ describe('built-in plugin format matrix discovery', () => {
         safety: ['passive', 'no_network_by_default'],
         harnessOptions: passiveDeps,
       },
+      {
+        pluginId: 'javascript-deobfuscation',
+        toolName: 'javascript.obfuscation.profile',
+        recipeId: 'javascript.deobfuscation.jsvmp-triage',
+        startsWith: ['javascript.obfuscation.profile', 'strings.extract'],
+        nextTools: ['strings.extract', 'yara.generate', 'analysis.evidence.graph'],
+        producesArtifacts: ['javascript_obfuscation_profile'],
+        evidence: ['structure', 'strings', 'behavior', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'jsvmp-analysis',
+        toolName: 'jsvmp.bytecode.plan',
+        recipeId: 'jsvmp.bytecode.recovery-plan',
+        startsWith: ['javascript.obfuscation.profile', 'jsvmp.bytecode.plan'],
+        nextTools: ['strings.extract', 'yara.generate', 'analysis.evidence.graph'],
+        producesArtifacts: ['jsvmp_bytecode_plan', 'jsvmp_handler_map'],
+        evidence: ['structure', 'strings', 'behavior', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'revng',
+        toolName: 'revng.pipeline.plan',
+        recipeId: 'revng.lift-decompile.plan',
+        startsWith: ['revng.pipeline.plan', 'pe.structure.analyze'],
+        nextTools: ['rizin.analyze', 'ghidra.analyze', 'retdec.decompile'],
+        producesArtifacts: ['revng_pipeline_plan', 'revng_lift_model'],
+        evidence: ['structure', 'symbols', 'artifact', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'triton',
+        toolName: 'triton.symbolic.plan',
+        recipeId: 'triton.symbolic.recovery-plan',
+        startsWith: ['triton.symbolic.plan', 'vm.workflow.plan'],
+        nextTools: ['constraint.extract', 'smt.solve', 'vm.workflow.plan'],
+        producesArtifacts: ['triton_symbolic_plan', 'path_constraints'],
+        evidence: ['structure', 'behavior', 'memory', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+        runtimeBackends: ['unicorn'],
+      },
+      {
+        pluginId: 'miasm',
+        toolName: 'miasm.ir.plan',
+        recipeId: 'miasm.ir.deobfuscation-plan',
+        startsWith: ['miasm.ir.plan', 'obfuscation.detect'],
+        nextTools: ['code.function.cfg', 'constraint.extract', 'smt.solve'],
+        producesArtifacts: ['miasm_ir_plan', 'miasm_ir_graph'],
+        evidence: ['structure', 'behavior', 'artifact', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'lief',
+        toolName: 'lief.binary.plan',
+        recipeId: 'lief.binary.structure-plan',
+        startsWith: ['lief.binary.plan', 'pe.structure.analyze'],
+        nextTools: ['pe.signature.verify', 'native.object.inventory', 'sbom.provenance.graph'],
+        producesArtifacts: ['lief_binary_plan', 'binary_transformation_plan'],
+        evidence: [
+          'structure',
+          'symbols',
+          'imports',
+          'exports',
+          'certificates',
+          'workflow',
+          'provenance',
+        ],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'radare2',
+        toolName: 'radare2.pipeline.plan',
+        recipeId: 'radare2.cross-backend.plan',
+        startsWith: ['radare2.pipeline.plan', 'rizin.analyze'],
+        nextTools: ['rizin.analyze', 'ghidra.analyze', 'retdec.decompile'],
+        producesArtifacts: ['radare2_pipeline_plan', 'radare2_function_index'],
+        evidence: ['structure', 'symbols', 'strings', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'wabt',
+        toolName: 'wabt.toolchain.plan',
+        recipeId: 'wabt.wasm.toolchain-plan',
+        startsWith: ['wasm.structure.analyze', 'wabt.toolchain.plan'],
+        nextTools: ['strings.extract', 'sbom.generate', 'wasm.runtime.plan'],
+        producesArtifacts: ['wabt_toolchain_plan', 'wat_disassembly_plan'],
+        evidence: ['structure', 'imports', 'exports', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
     ]
 
     for (const expected of expectations) {
@@ -1441,7 +1632,9 @@ describe('built-in plugin format matrix discovery', () => {
     expect(windowsRuntime.aspects?.runtimes).toEqual(
       expect.arrayContaining(['windows-sandbox', 'hyperv', 'wine', 'speakeasy'])
     )
-    expect(linuxRuntime.aspects?.formats).toEqual(expect.arrayContaining(['elf', 'elf-core', 'deb']))
+    expect(linuxRuntime.aspects?.formats).toEqual(
+      expect.arrayContaining(['elf', 'elf-core', 'deb'])
+    )
     expect(linuxRuntime.aspects?.runtimes).toEqual(
       expect.arrayContaining(['qiling', 'gdb', 'strace', 'ebpf'])
     )
@@ -1490,7 +1683,10 @@ describe('built-in plugin format matrix discovery', () => {
           requiresUserOptIn: true,
         })
       )
-      const recipe = requireWorkflowRecipe(tool as ToolDefinition, `${plugin.id.replace('-runtime', '')}.runtime.opt-in`)
+      const recipe = requireWorkflowRecipe(
+        tool as ToolDefinition,
+        `${plugin.id.replace('-runtime', '')}.runtime.opt-in`
+      )
       expect(recipe.startsWith).toEqual(expect.arrayContaining([tool?.name, 'tool.readiness']))
       expect(recipe.safety).toEqual(
         expect.arrayContaining([

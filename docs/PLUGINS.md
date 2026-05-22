@@ -20,7 +20,7 @@ A plugin can:
 
 ## Built-In Plugins
 
-The repository currently contains 76 built-in plugins.
+The repository currently contains 84 built-in plugins.
 
 | ID | Name | Domain | Surface tier |
 | --- | --- | --- | --- |
@@ -56,8 +56,11 @@ The repository currently contains 76 built-in plugins.
 | `graphviz` | Graphviz | static | 0 |
 | `host-correlation` | Host Correlation | static | 2 |
 | `ios-runtime` | iOS Runtime Plan | dynamic | 2 |
+| `jsvmp-analysis` | JSVMP Analysis Plan | static | 2 |
 | `jvm` | JVM Bytecode Inventory | static | 1 |
+| `javascript-deobfuscation` | JavaScript Deobfuscation | static | 2 |
 | `kb-collaboration` | Knowledge Base & Collaboration | static | 0 |
+| `lief` | LIEF Binary Plan | static | 3 |
 | `linux-binary` | Linux Binary Inventory | static | 1 |
 | `linux-package` | Linux Package Inventory | static | 1 |
 | `linux-runtime` | Linux Runtime Plan | dynamic | 2 |
@@ -68,6 +71,7 @@ The repository currently contains 76 built-in plugins.
 | `managed-sandbox` | Managed Sandbox | dynamic | 2 |
 | `memory-forensics` | Memory Forensics (Volatility 3) | static | 3 |
 | `metadata` | File Metadata | static | 0 |
+| `miasm` | Miasm IR Plan | static | 3 |
 | `native-object` | Native Object Inventory | static | 1 |
 | `observability` | observability.metrics | both | 0 |
 | `office-analysis` | Office Analysis | static | 1 |
@@ -76,8 +80,10 @@ The repository currently contains 76 built-in plugins.
 | `pe-analysis` | PE Analysis | static | 0 |
 | `pe-signature` | PE Authenticode Signature | static | 2 |
 | `qiling` | Qiling | dynamic | 3 |
+| `radare2` | radare2 Pipeline Plan | static | 3 |
 | `reporting` | Reporting | both | 0 |
 | `retdec` | RetDec | static | 3 |
+| `revng` | rev.ng Pipeline Plan | static | 3 |
 | `rizin` | Rizin | static | 3 |
 | `runtime-deobfuscate` | Runtime Deobfuscation | dynamic | 2 |
 | `sbom` | SBOM | static | 2 |
@@ -86,12 +92,14 @@ The repository currently contains 76 built-in plugins.
 | `static-triage` | Static Triage | static | 0 |
 | `strings` | Strings Extraction | static | 0 |
 | `threat-intel` | Threat Intelligence | static | 0 |
+| `triton` | Triton Symbolic Plan | static | 3 |
 | `unity-managed` | Unity Managed Inventory | static | 1 |
 | `unpacking` | Unpacking | static | 2 |
 | `upx` | UPX | static | 2 |
 | `visualization` | Visualization & Reporting | static | 0 |
 | `vm-analysis` | VM Analysis & Symbolic | static | 3 |
 | `vuln-scanner` | Vulnerability Scanner | static | 2 |
+| `wabt` | WABT Toolchain Plan | static | 3 |
 | `wasm` | WebAssembly Inventory | static | 1 |
 | `wasm-runtime` | WASM Runtime Plan | dynamic | 2 |
 | `windows-debug-symbols` | Windows Debug Symbols Inventory | static | 1 |
@@ -212,6 +220,14 @@ emulators, or attach debuggers.
 | `unpacking.detect-plan-retriage` | `unpacking` | `unpack.workflow.plan` | `unpack.auto`, `runtime.deobfuscate.plan`, `static.triage` | Passive plan with opt-in runtime gates; no live unpacking by default. |
 | `similarity.family-cluster` | `similarity` | `sample.family.cluster` | `binary.diff.summary`, `kb.context.suggest`, `report.generate` | Corpus-local clustering; no private dataset or network requirement. |
 | `malware.intel.feedback-loop` | `malware` | `malware.intel.loop` | `ioc.export`, `attack.map`, `sigma.rule.generate`, `yara.generate` | Offline evidence loop; no threat-intel network lookup by default. |
+| `javascript.deobfuscation.jsvmp-triage` | `javascript-deobfuscation` | `javascript.obfuscation.profile` | `strings.extract`, `yara.generate`, `analysis.evidence.graph`, `report.generate` | Passive source/profile triage only; no JavaScript execution, Node/V8 start, network, or external deobfuscator invocation. |
+| `jsvmp.bytecode.recovery-plan` | `jsvmp-analysis` | `jsvmp.bytecode.plan` | `strings.extract`, `yara.generate`, `analysis.evidence.graph`, `report.generate` | Plan-only bytecode/handler-map recovery; no JavaScript evaluation, interpreter-assisted normalization, Node/V8/browser start, or external backend invocation. |
+| `revng.lift-decompile.plan` | `revng` | `revng.pipeline.plan` | `rizin.analyze`, `ghidra.analyze`, `retdec.decompile`, `analysis.evidence.graph` | Plan-only backend integration; no rev.ng process, lifting, decompile, execution, mount, or network. |
+| `triton.symbolic.recovery-plan` | `triton` | `triton.symbolic.plan` | `constraint.extract`, `smt.solve`, `vm.workflow.plan`, `analysis.evidence.graph` | Plan-only symbolic workflow; no Triton/Unicorn emulation, solver run, live execution, or network. |
+| `miasm.ir.deobfuscation-plan` | `miasm` | `miasm.ir.plan` | `code.function.cfg`, `constraint.extract`, `smt.solve`, `analysis.evidence.graph` | Plan-only IR/data-flow workflow; no Python backend start, IR lifting, symbolic execution, or network. |
+| `lief.binary.structure-plan` | `lief` | `lief.binary.plan` | `pe.signature.verify`, `native.object.inventory`, `sbom.provenance.graph` | Plan-only LIEF integration; no binary modification, backend parsing, signing mutation, or network. |
+| `radare2.cross-backend.plan` | `radare2` | `radare2.pipeline.plan` | `rizin.analyze`, `ghidra.analyze`, `retdec.decompile`, `analysis.evidence.graph` | Plan-only compatibility backend; no radare2 process, r2pipe command execution, debugger attach, or network. |
+| `wabt.wasm.toolchain-plan` | `wabt` | `wabt.toolchain.plan` | `strings.extract`, `sbom.generate`, `wasm.runtime.plan`, `analysis.evidence.graph` | Plan-only WABT toolchain routing; no wasm2wat/wasm-objdump process, module instantiation, WASI grant, or network. |
 
 ## Advanced Safety Categories
 
@@ -239,8 +255,10 @@ The current plugin matrix is organized by `formats`, `platforms`, `execution`, `
 | iOS IPA, Mach-O, provisioning, entitlements | `apple-container`, `apple-signing`, `elf-macho` | `ios-runtime`, `frida`, `debug-session` | No IPA install, device connection, simulator start, Frida attach, or LLDB attach by default. |
 | Android APK, AAB, APKS, XAPK, DEX/OAT/VDEX, AAR | `android-package`, `android`, `apk-smali`, `jvm`, `linux-binary` | `android-runtime`, `frida`, `behavior-first` | No emulator start, ADB install, APK launch, frida-server deployment, or device connection by default. |
 | JVM, .NET, Unity, script bytecode | `jvm`, `dotnet-managed`, `dotnet-decompile`, `unity-managed`, `bytecode`, `strings` | `managed-sandbox`, `runtime-deobfuscate`, `behavior-first` | Runtime work is opt-in and delegated; metadata and bytecode inventory stay passive. |
+| JavaScript, Node/browser bundles, source maps, JSVMP-like obfuscation | `javascript-deobfuscation`, `jsvmp-analysis`, `strings`, `yara`, `yara-x`, `bytecode` | Future JSIR/CASCADE, JSIMPLIFIER-style, REstringer, and handler-map workers must remain explicit opt-in backends | No JavaScript evaluation, Node/V8 start, browser automation, network lookup, or external deobfuscator invocation by default. |
+| Advanced native lifting, symbolic execution, IR, and backend comparison workflows | `revng`, `triton`, `miasm`, `lief`, `radare2`, `vm-analysis`, `rizin`, `ghidra`, `retdec` | Future bounded workers only; runtime/emulation must be opt-in | Default tools emit backend plans and readiness metadata only; no heavy backend process, solver, emulator, binary mutation, or sample execution starts during discovery. |
 | Firmware, containers, archives, native objects | `firmware`, `container-analysis`, `native-object`, `linux-package`, `windows-installer` | `qiling`, `linux-runtime`, `wasm-runtime` when applicable | No mount, extraction-to-execute path, package install, module insertion, or payload launch by default. |
-| WASM/WASI | `wasm`, `strings`, `sbom` | `wasm-runtime` | No module instantiation, wasmtime start, filesystem preopen, or network grant by default. |
+| WASM/WASI | `wasm`, `wabt`, `strings`, `sbom` | `wasm-runtime` | No module instantiation, WABT process, wasmtime start, filesystem preopen, or network grant by default. |
 | Network, host, memory, reports | `pcap-analysis`, `host-correlation`, `memory-forensics`, `visualization`, `reporting` | `behavior-first`, `dynamic.behavior.diff`, `analysis.evidence.graph` | Correlation tools operate on existing artifacts and do not start live collection. |
 
 ## Aspect Authoring

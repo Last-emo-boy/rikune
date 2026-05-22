@@ -413,6 +413,22 @@ export function detectFileType(data: Buffer, filename?: string): string {
   }
 
   switch (extension) {
+    case 'js':
+      return 'JavaScript'
+    case 'mjs':
+      return 'MJS'
+    case 'cjs':
+      return 'CJS'
+    case 'ts':
+    case 'tsx':
+      return 'TypeScript'
+    case 'map':
+      return 'Source-Map'
+    case 'html':
+    case 'htm':
+      return 'HTML'
+    case 'wat':
+      return 'WAT'
     case 'deb':
       return 'DEB'
     case 'rpm':
