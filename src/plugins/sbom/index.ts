@@ -6,6 +6,10 @@
 
 import { definePlugin, defineTool, requireDatabase, requireWorkspaceManager } from '../sdk.js'
 import { sbomGenerateToolDefinition, createSbomGenerateHandler } from './tools/sbom-generate.js'
+import {
+  sbomProvenanceGraphToolDefinition,
+  createSbomProvenanceGraphHandler,
+} from './tools/sbom-provenance-graph.js'
 
 const sbomPlugin = definePlugin({
   id: 'sbom',
@@ -42,8 +46,8 @@ const sbomPlugin = definePlugin({
     architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv'],
     execution: ['static', 'correlation'],
     safety: ['passive', 'no_network_by_default'],
-    capabilities: ['sbom', 'dependency-inventory', 'provenance'],
-    evidence: ['sbom', 'package-metadata', 'imports', 'strings', 'provenance'],
+    capabilities: ['sbom', 'dependency-inventory', 'provenance', 'provenance-graph'],
+    evidence: ['sbom', 'package-metadata', 'imports', 'strings', 'workflow', 'provenance'],
   },
   surfaceRules: {
     tier: 2,
@@ -60,6 +64,10 @@ const sbomPlugin = definePlugin({
           requireWorkspaceManager(deps, 'sbom.generate'),
           requireDatabase(deps, 'sbom.generate')
         )(args as never),
+    }),
+    defineTool({
+      ...sbomProvenanceGraphToolDefinition,
+      handler: (args) => createSbomProvenanceGraphHandler()(args),
     }),
   ],
 })

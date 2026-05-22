@@ -14,6 +14,10 @@ import {
   firmwareEntropyToolDefinition,
   createFirmwareEntropyHandler,
 } from './tools/firmware-entropy.js'
+import {
+  firmwareWorkflowPlanToolDefinition,
+  createFirmwareWorkflowPlanHandler,
+} from './tools/firmware-workflow-plan.js'
 
 const firmwarePlugin: Plugin = {
   id: 'firmware',
@@ -40,8 +44,26 @@ const firmwarePlugin: Plugin = {
     architectures: ['arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv', 'x86', 'x64'],
     execution: ['static', 'triage'],
     safety: ['passive', 'no_installer_execution'],
-    capabilities: ['signatures', 'entropy', 'filesystem', 'nested-binaries', 'routing'],
-    evidence: ['signatures', 'filesystem', 'nested-binaries', 'artifact', 'provenance'],
+    capabilities: [
+      'signatures',
+      'entropy',
+      'filesystem',
+      'nested-binaries',
+      'routing',
+      'firmware-workflow',
+      'sbom-handoff',
+      'emulation-handoff',
+      'workflow-plan',
+    ],
+    evidence: [
+      'signatures',
+      'filesystem',
+      'nested-binaries',
+      'artifact',
+      'package-metadata',
+      'workflow',
+      'provenance',
+    ],
   },
   surfaceRules: {
     tier: 1,
@@ -103,8 +125,9 @@ const firmwarePlugin: Plugin = {
     server.registerTool(firmwareScanToolDefinition, createFirmwareScanHandler(wm, db))
     server.registerTool(firmwareExtractToolDefinition, createFirmwareExtractHandler(wm, db))
     server.registerTool(firmwareEntropyToolDefinition, createFirmwareEntropyHandler(wm, db))
+    server.registerTool(firmwareWorkflowPlanToolDefinition, createFirmwareWorkflowPlanHandler())
 
-    return ['firmware.scan', 'firmware.extract', 'firmware.entropy']
+    return ['firmware.scan', 'firmware.extract', 'firmware.entropy', 'firmware.workflow.plan']
   },
 }
 

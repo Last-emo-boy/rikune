@@ -52,7 +52,34 @@ const WasmStructureDataSchema = z.object({
   custom_sections: z.array(z.string()),
   import_count_hint: z.number(),
   export_count_hint: z.number(),
+  imports: z.array(
+    z.object({
+      module: z.string(),
+      name: z.string(),
+      kind: z.string(),
+    })
+  ),
+  exports: z.array(
+    z.object({
+      name: z.string(),
+      kind: z.string(),
+      index: z.number(),
+    })
+  ),
+  memory_declarations: z.array(z.record(z.any())),
+  table_declarations: z.array(z.record(z.any())),
+  start_function_index: z.number().nullable(),
   wasi_capability_hints: z.array(z.string()),
+  capability_risk_summary: z.object({
+    filesystem: z.boolean(),
+    environment: z.boolean(),
+    args: z.boolean(),
+    clocks: z.boolean(),
+    random: z.boolean(),
+    sockets_or_network_like: z.boolean(),
+    process_exit: z.boolean(),
+    risk_level: z.enum(['none', 'low', 'medium', 'high']),
+  }),
   runtime_plan: z.object({
     status: z.literal('plan_only'),
     recommended_tools: z.array(z.string()),
@@ -115,6 +142,8 @@ export const wasmStructureAnalyzeToolDefinition: ToolDefinition = {
 }
 
 export type WasmStructureInventory = z.infer<typeof WasmStructureDataSchema>
+type WasmImport = WasmStructureInventory['imports'][number]
+type WasmExport = WasmStructureInventory['exports'][number]
 
 function readU32Leb(data: Buffer, offset: number): { value: number; next: number } | null {
   let result = 0
@@ -151,16 +180,214 @@ function countVectorItems(data: Buffer, offset: number, limit: number): number {
   return count.value
 }
 
+function skipValueType(data: Buffer, offset: number, limit: number): number | null {
+  return offset < limit ? offset + 1 : null
+}
+
+function skipLimits(data: Buffer, offset: number, limit: number): number | null {
+  if (offset >= limit) return null
+  const flags = data[offset]
+  const min = readU32Leb(data, offset + 1)
+  if (!min) return null
+  if ((flags & 0x01) === 0) return min.next <= limit ? min.next : null
+  const max = readU32Leb(data, min.next)
+  return max && max.next <= limit ? max.next : null
+}
+
+function readLimits(data: Buffer, offset: number, limit: number) {
+  if (offset >= limit) return null
+  const flags = data[offset]
+  const min = readU32Leb(data, offset + 1)
+  if (!min) return null
+  if ((flags & 0x01) === 0) {
+    return { min: min.value, max: null, shared: Boolean(flags & 0x02), next: min.next }
+  }
+  const max = readU32Leb(data, min.next)
+  if (!max) return null
+  return { min: min.value, max: max.value, shared: Boolean(flags & 0x02), next: max.next }
+}
+
+function skipImportDescriptor(data: Buffer, offset: number, limit: number): number | null {
+  if (offset >= limit) return null
+  const kind = data[offset]
+  let cursor = offset + 1
+  if (kind === 0) {
+    const typeIndex = readU32Leb(data, cursor)
+    return typeIndex && typeIndex.next <= limit ? typeIndex.next : null
+  }
+  if (kind === 1) {
+    const elemType = skipValueType(data, cursor, limit)
+    return elemType === null ? null : skipLimits(data, elemType, limit)
+  }
+  if (kind === 2) {
+    return skipLimits(data, cursor, limit)
+  }
+  if (kind === 3) {
+    const valueType = skipValueType(data, cursor, limit)
+    if (valueType === null || valueType >= limit) return null
+    return valueType + 1
+  }
+  return null
+}
+
+function kindName(kind: number): string {
+  return ['function', 'table', 'memory', 'global'][kind] ?? `kind_${kind}`
+}
+
+function parseImportSection(data: Buffer, offset: number, limit: number): WasmImport[] {
+  const count = readU32Leb(data, offset)
+  if (!count || count.next > limit) return []
+  const imports: WasmImport[] = []
+  let cursor = count.next
+  for (let index = 0; index < count.value && cursor < limit && imports.length < 500; index += 1) {
+    const moduleName = readName(data, cursor, limit)
+    if (!moduleName) break
+    const importName = readName(data, moduleName.next, limit)
+    if (!importName || importName.next >= limit) break
+    const kind = data[importName.next]
+    const next = skipImportDescriptor(data, importName.next, limit)
+    if (next === null) break
+    imports.push({
+      module: moduleName.value,
+      name: importName.value,
+      kind: kindName(kind),
+    })
+    cursor = next
+  }
+  return imports
+}
+
+function parseExportSection(data: Buffer, offset: number, limit: number): WasmExport[] {
+  const count = readU32Leb(data, offset)
+  if (!count || count.next > limit) return []
+  const exports: WasmExport[] = []
+  let cursor = count.next
+  for (let index = 0; index < count.value && cursor < limit && exports.length < 500; index += 1) {
+    const exportName = readName(data, cursor, limit)
+    if (!exportName || exportName.next >= limit) break
+    const kind = data[exportName.next]
+    const itemIndex = readU32Leb(data, exportName.next + 1)
+    if (!itemIndex) break
+    exports.push({
+      name: exportName.value,
+      kind: kindName(kind),
+      index: itemIndex.value,
+    })
+    cursor = itemIndex.next
+  }
+  return exports
+}
+
+function parseMemorySection(data: Buffer, offset: number, limit: number) {
+  const count = readU32Leb(data, offset)
+  if (!count || count.next > limit) return []
+  const memories: Array<Record<string, unknown>> = []
+  let cursor = count.next
+  for (let index = 0; index < count.value && cursor < limit && memories.length < 100; index += 1) {
+    const limits = readLimits(data, cursor, limit)
+    if (!limits) break
+    memories.push({ min_pages: limits.min, max_pages: limits.max, shared: limits.shared })
+    cursor = limits.next
+  }
+  return memories
+}
+
+function parseTableSection(data: Buffer, offset: number, limit: number) {
+  const count = readU32Leb(data, offset)
+  if (!count || count.next > limit) return []
+  const tables: Array<Record<string, unknown>> = []
+  let cursor = count.next
+  for (let index = 0; index < count.value && cursor < limit && tables.length < 100; index += 1) {
+    if (cursor >= limit) break
+    const elementType = data[cursor]
+    const limits = readLimits(data, cursor + 1, limit)
+    if (!limits) break
+    tables.push({
+      element_type: `0x${elementType.toString(16)}`,
+      min: limits.min,
+      max: limits.max,
+      shared: limits.shared,
+    })
+    cursor = limits.next
+  }
+  return tables
+}
+
+function classifyWasiCapabilities(imports: WasmImport[], textHints: string[]): string[] {
+  const hints = new Set<string>(textHints)
+  for (const item of imports) {
+    const name = `${item.module}.${item.name}`
+    if (/wasi_snapshot_preview1|wasi_unstable/.test(item.module)) hints.add(item.module)
+    if (/fd_|path_|prestat_/.test(item.name)) hints.add('filesystem')
+    if (/environ/.test(item.name)) hints.add('environment')
+    if (/args_/.test(item.name)) hints.add('args')
+    if (/clock_/.test(item.name)) hints.add('clocks')
+    if (/random_get/.test(item.name)) hints.add('random')
+    if (/sock_|network|http/.test(name)) hints.add('sockets_or_network_like')
+    if (/proc_exit/.test(item.name)) hints.add('process_exit')
+  }
+  return Array.from(hints).sort()
+}
+
+function capabilityRiskSummary(hints: string[]): WasmStructureInventory['capability_risk_summary'] {
+  const has = (value: string) => hints.includes(value)
+  const filesystem = has('filesystem') || hints.some((hint) => /fd_|path_|prestat_/.test(hint))
+  const environment = has('environment') || hints.some((hint) => /environ/.test(hint))
+  const args = has('args') || hints.some((hint) => /args_/.test(hint))
+  const clocks = has('clocks') || hints.some((hint) => /clock_/.test(hint))
+  const random = has('random') || hints.some((hint) => /random_get/.test(hint))
+  const socketsOrNetwork =
+    has('sockets_or_network_like') || hints.some((hint) => /sock_|network|http/.test(hint))
+  const processExit = has('process_exit') || hints.some((hint) => /proc_exit/.test(hint))
+  const score = [
+    filesystem,
+    environment,
+    args,
+    clocks,
+    random,
+    socketsOrNetwork,
+    processExit,
+  ].filter(Boolean).length
+  const riskLevel =
+    socketsOrNetwork || score >= 4
+      ? 'high'
+      : filesystem || score >= 2
+        ? 'medium'
+        : score > 0
+          ? 'low'
+          : 'none'
+  return {
+    filesystem,
+    environment,
+    args,
+    clocks,
+    random,
+    sockets_or_network_like: socketsOrNetwork,
+    process_exit: processExit,
+    risk_level: riskLevel,
+  }
+}
+
 function parseSections(data: Buffer): {
   sections: WasmStructureInventory['sections']
   customSections: string[]
   importCountHint: number
   exportCountHint: number
   wasiHints: string[]
+  imports: WasmImport[]
+  exports: WasmExport[]
+  memoryDeclarations: Array<Record<string, unknown>>
+  tableDeclarations: Array<Record<string, unknown>>
+  startFunctionIndex: number | null
 } {
   const sections: WasmStructureInventory['sections'] = []
   const customSections: string[] = []
   const wasiHints = new Set<string>()
+  const imports: WasmImport[] = []
+  const exports: WasmExport[] = []
+  const memoryDeclarations: Array<Record<string, unknown>> = []
+  const tableDeclarations: Array<Record<string, unknown>> = []
+  let startFunctionIndex: number | null = null
   let importCountHint = 0
   let exportCountHint = 0
   let offset = 8
@@ -181,12 +408,20 @@ function parseSections(data: Buffer): {
       if (name?.value) customSections.push(name.value)
     } else if (id === 2) {
       importCountHint = countVectorItems(data, payloadStart, payloadEnd)
+      imports.push(...parseImportSection(data, payloadStart, payloadEnd))
       const text = data.subarray(payloadStart, payloadEnd).toString('latin1')
       for (const hint of ['wasi_snapshot_preview1', 'wasi_unstable', 'fd_', 'path_', 'sock_']) {
         if (text.includes(hint)) wasiHints.add(hint)
       }
+    } else if (id === 4) {
+      tableDeclarations.push(...parseTableSection(data, payloadStart, payloadEnd))
+    } else if (id === 5) {
+      memoryDeclarations.push(...parseMemorySection(data, payloadStart, payloadEnd))
     } else if (id === 7) {
       exportCountHint = countVectorItems(data, payloadStart, payloadEnd)
+      exports.push(...parseExportSection(data, payloadStart, payloadEnd))
+    } else if (id === 8) {
+      startFunctionIndex = readU32Leb(data, payloadStart)?.value ?? null
     }
 
     offset = payloadEnd
@@ -197,7 +432,12 @@ function parseSections(data: Buffer): {
     customSections,
     importCountHint,
     exportCountHint,
-    wasiHints: Array.from(wasiHints),
+    wasiHints: classifyWasiCapabilities(imports, Array.from(wasiHints)),
+    imports,
+    exports,
+    memoryDeclarations,
+    tableDeclarations,
+    startFunctionIndex,
   }
 }
 
@@ -210,7 +450,19 @@ export function buildWasmStructureFromBuffer(
   const version = validMagic ? data.readUInt32LE(4) : undefined
   const parsed = validMagic
     ? parseSections(data)
-    : { sections: [], customSections: [], importCountHint: 0, exportCountHint: 0, wasiHints: [] }
+    : {
+        sections: [],
+        customSections: [],
+        importCountHint: 0,
+        exportCountHint: 0,
+        wasiHints: [],
+        imports: [],
+        exports: [],
+        memoryDeclarations: [],
+        tableDeclarations: [],
+        startFunctionIndex: null,
+      }
+  const capabilitySummary = capabilityRiskSummary(parsed.wasiHints)
 
   return {
     sample_id: options.sampleId,
@@ -222,13 +474,20 @@ export function buildWasmStructureFromBuffer(
     custom_sections: parsed.customSections,
     import_count_hint: parsed.importCountHint,
     export_count_hint: parsed.exportCountHint,
+    imports: parsed.imports,
+    exports: parsed.exports,
+    memory_declarations: parsed.memoryDeclarations,
+    table_declarations: parsed.tableDeclarations,
+    start_function_index: parsed.startFunctionIndex,
     wasi_capability_hints: parsed.wasiHints,
+    capability_risk_summary: capabilitySummary,
     runtime_plan: {
       status: 'plan_only',
-      recommended_tools: ['metadata.extract', 'strings.extract'],
+      recommended_tools: ['metadata.extract', 'strings.extract', 'wasm.runtime.plan'],
       notes: [
         'Use a runtime-gated WASM/WASI backend only after reviewing imports and capabilities.',
         'This tool does not instantiate the module or start wasmtime.',
+        `Capability risk level: ${capabilitySummary.risk_level}.`,
       ],
     },
     policy: {
@@ -237,9 +496,9 @@ export function buildWasmStructureFromBuffer(
       no_runtime_start: true,
     },
     summary: validMagic
-      ? `Passive WASM inventory found ${parsed.sections.length} section(s), ${parsed.importCountHint} import hint(s), and ${parsed.exportCountHint} export hint(s).`
+      ? `Passive WASM inventory found ${parsed.sections.length} section(s), ${parsed.importCountHint} import hint(s), ${parsed.exportCountHint} export hint(s), and ${parsed.wasiHints.length} WASI capability hint(s).`
       : 'Input does not contain a valid WASM magic header in the inspected preview.',
-    recommended_next_tools: ['metadata.extract', 'strings.extract'],
+    recommended_next_tools: ['metadata.extract', 'strings.extract', 'wasm.runtime.plan'],
     next_actions: [
       'Review import and WASI capability hints before selecting a runtime backend.',
       'Do not instantiate the WASM module during static triage.',

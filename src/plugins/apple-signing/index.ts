@@ -11,6 +11,10 @@ import {
   appleSigningInspectToolDefinition,
   createAppleSigningInspectHandler,
 } from './tools/apple-signing-inspect.js'
+import {
+  appleSecurityProfileToolDefinition,
+  createAppleSecurityProfileHandler,
+} from './tools/apple-security-profile.js'
 
 const appleSigningPlugin = definePlugin({
   id: 'apple-signing',
@@ -35,8 +39,23 @@ const appleSigningPlugin = definePlugin({
     architectures: ['x86', 'x64', 'arm64', 'arm'],
     execution: ['static', 'triage'],
     safety: ['passive', 'no_network_by_default', 'no_live_sample_by_default'],
-    capabilities: ['inventory', 'package-metadata', 'provisioning', 'certificates', 'routing'],
-    evidence: ['manifest', 'certificates', 'package-metadata', 'nested-binaries', 'provenance'],
+    capabilities: [
+      'inventory',
+      'package-metadata',
+      'provisioning',
+      'certificates',
+      'routing',
+      'security-profile',
+      'workflow-plan',
+    ],
+    evidence: [
+      'manifest',
+      'certificates',
+      'package-metadata',
+      'nested-binaries',
+      'workflow',
+      'provenance',
+    ],
   },
   surfaceRules: {
     tier: 1,
@@ -67,6 +86,10 @@ const appleSigningPlugin = definePlugin({
     defineTool({
       ...appleSigningInspectToolDefinition,
       handler: (args, deps) => createAppleSigningInspectHandler(deps)(args as never),
+    }),
+    defineTool({
+      ...appleSecurityProfileToolDefinition,
+      handler: (args) => createAppleSecurityProfileHandler()(args),
     }),
   ],
 })

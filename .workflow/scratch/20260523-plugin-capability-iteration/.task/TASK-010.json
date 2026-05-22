@@ -54,5 +54,13 @@
   "notes": [
     "Use a minimal parser; do not add a heavy WASM runtime dependency unless justified."
   ],
-  "status": "pending"
+  "status": "completed",
+  "completed_at": "2026-05-23T02:58:59.0715877+08:00",
+  "summary": "Upgraded wasm.structure.analyze with passive imports, exports, memory/table declaration, start function, WASI capability classification, capability risk summary, and wasm.runtime.plan handoff while preserving invalid/truncated module safety.",
+  "verification": [
+    "npm test -- --runTestsByPath tests/unit/sbom-provenance-graph.test.ts tests/unit/android-behavior-graph.test.ts tests/unit/apple-security-profile.test.ts tests/unit/firmware-workflow-plan.test.ts tests/unit/wasm-structure-analyze.test.ts",
+    "npm test -- --runTestsByPath tests/unit/tool-readiness.test.ts tests/unit/tool-help.test.ts tests/unit/plugin-format-matrix.test.ts",
+    "npm run typecheck",
+    "npm run lint"
+  ]
 }

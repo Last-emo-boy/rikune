@@ -19,6 +19,10 @@ import {
   apkPackerDetectToolDefinition,
   createApkPackerDetectHandler,
 } from './tools/apk-packer-detect.js'
+import {
+  androidBehaviorGraphToolDefinition,
+  createAndroidBehaviorGraphHandler,
+} from './tools/android-behavior-graph.js'
 
 const androidPlugin: Plugin = {
   id: 'android',
@@ -39,8 +43,19 @@ const androidPlugin: Plugin = {
       'packer',
       'runtime-routing',
       'hook-plan-input',
+      'behavior-graph',
+      'workflow-plan',
     ],
-    evidence: ['structure', 'manifest', 'strings', 'signatures', 'nested-binaries', 'provenance'],
+    evidence: [
+      'structure',
+      'manifest',
+      'strings',
+      'signatures',
+      'nested-binaries',
+      'behavior',
+      'workflow',
+      'provenance',
+    ],
   },
   surfaceRules: {
     tier: 1,
@@ -100,7 +115,14 @@ const androidPlugin: Plugin = {
     server.registerTool(dexDecompileToolDefinition, createDexDecompileHandler(deps))
     server.registerTool(dexClassesListToolDefinition, createDexClassesListHandler(deps))
     server.registerTool(apkPackerDetectToolDefinition, createApkPackerDetectHandler(deps))
-    return ['apk.structure.analyze', 'dex.decompile', 'dex.classes.list', 'apk.packer.detect']
+    server.registerTool(androidBehaviorGraphToolDefinition, createAndroidBehaviorGraphHandler())
+    return [
+      'apk.structure.analyze',
+      'dex.decompile',
+      'dex.classes.list',
+      'apk.packer.detect',
+      'android.behavior.graph',
+    ]
   },
 }
 

@@ -5,11 +5,11 @@ TASK-003,Build offline memory forensics correlation chain,2,TASK-001;TASK-002,me
 TASK-004,Modernize VM analysis and symbolic workflow,2,TASK-001;TASK-002,vm-analysis symbolic constraints,completed
 TASK-005,Promote KB collaboration into analysis memory layer,2,TASK-001;TASK-002,kb-collaboration rule and sample knowledge,completed
 TASK-006,Deepen runtime readiness and opt-in session templates,2,TASK-001;TASK-002,runtime plan and dynamic control plane,completed
-TASK-007,Create supply-chain SBOM provenance graph,3,TASK-001;TASK-002,SBOM package container installer firmware,pending
-TASK-008,Expand Android static behavior graph,3,TASK-001;TASK-002,android apk smali dex native correlation,pending
-TASK-009,Expand Apple macOS iOS signing and runtime chain,3,TASK-001;TASK-002,apple container signing runtime planning,pending
-TASK-010,Upgrade WASM WASI capability analysis,3,TASK-001;TASK-002,WASM inventory imports capability risk,pending
-TASK-011,Add firmware IoT extraction SBOM and emulation bridge,3,TASK-001;TASK-002,firmware filesystem SBOM qiling handoff,pending
+TASK-007,Create supply-chain SBOM provenance graph,3,TASK-001;TASK-002,SBOM package container installer firmware,completed
+TASK-008,Expand Android static behavior graph,3,TASK-001;TASK-002,android apk smali dex native correlation,completed
+TASK-009,Expand Apple macOS iOS signing and runtime chain,3,TASK-001;TASK-002,apple container signing runtime planning,completed
+TASK-010,Upgrade WASM WASI capability analysis,3,TASK-001;TASK-002,WASM inventory imports capability risk,completed
+TASK-011,Add firmware IoT extraction SBOM and emulation bridge,3,TASK-001;TASK-002,firmware filesystem SBOM qiling handoff,completed
 TASK-012,Strengthen Office document and macro analysis,4,TASK-001;TASK-002,office OLE VBA macro IOC,pending
 TASK-013,Close unpacking and deobfuscation workflow loop,4,TASK-001;TASK-002,unpacking deep-unpack runtime-deobfuscate,pending
 TASK-014,Add sample similarity clustering and binary diff intelligence,4,TASK-001;TASK-002,similarity binary-diff family clustering,pending
