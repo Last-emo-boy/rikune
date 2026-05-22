@@ -61,6 +61,7 @@ export const toolHelpOutputSchema = z.object({
         format_matrix: z.record(z.any()).optional(),
         artifact_declarations: z.array(z.any()).optional(),
         evidence_declarations: z.array(z.any()).optional(),
+        workflow_recipes: z.array(z.any()).optional(),
         runtime_policy: z.any().nullable().optional(),
         runtime_contract: z.any().nullable().optional(),
         input: ToolSchemaSummarySchema.optional(),
@@ -667,6 +668,11 @@ function buildFieldHelpHint(path: string, toolName?: string): string | null {
 
 function buildUsageNotes(definition: ToolDefinition): string[] {
   const notes: string[] = []
+  if ((definition.workflowRecipes ?? []).length > 0) {
+    notes.push(
+      'This tool declares workflow_recipes metadata. Use those recipe ids, nextTools, requiredArtifacts, and producesArtifacts to choose follow-up tools without guessing.'
+    )
+  }
   if (definition.name === 'system.setup.guide') {
     notes.push(
       'Use this before first-run or after a degraded health probe when the MCP client needs exact pip install commands and required user-supplied paths such as JAVA_HOME, GHIDRA_PATH, or GHIDRA_PROJECT_ROOT.'

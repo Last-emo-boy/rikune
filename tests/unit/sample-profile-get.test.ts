@@ -552,6 +552,13 @@ describe('sample.profile.get tool', () => {
         package_format: 'apk',
         platforms: ['android'],
         evidence: [{ category: 'manifest' }, { category: 'signatures' }],
+        workflowRecipes: [
+          {
+            id: 'android.static.behavior',
+            title: 'Android static behavior',
+            nextTools: ['apk.manifest.parse', 'dex.classes.list'],
+          },
+        ],
         native_library_candidates: [
           {
             path: 'lib/arm64-v8a/libdemo.so',
@@ -586,6 +593,9 @@ describe('sample.profile.get tool', () => {
     expect(profile.architectures).toEqual(expect.arrayContaining(['arm64']))
     expect(profile.evidence_signals).toEqual(
       expect.arrayContaining(['evidence', 'manifest', 'signatures'])
+    )
+    expect(profile.workflow_recipes).toEqual(
+      expect.arrayContaining(['android.static.behavior'])
     )
     expect(profile.recommended_tools).toEqual(
       expect.arrayContaining([

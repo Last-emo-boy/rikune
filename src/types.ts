@@ -143,6 +143,21 @@ export interface ToolEvidenceSpec {
   [key: string]: unknown
 }
 
+/** Declaration of a cross-plugin workflow a tool starts, advances, or completes. */
+export interface WorkflowRecipeSpec {
+  id: string
+  title: string
+  description?: string
+  startsWith?: string[]
+  nextTools?: string[]
+  requiredArtifacts?: string[]
+  producesArtifacts?: string[]
+  evidence?: string[]
+  safety?: string[]
+  runtimeBackends?: string[]
+  [key: string]: unknown
+}
+
 /**
  * Tool definition following MCP protocol
  */
@@ -158,6 +173,8 @@ export interface ToolDefinition {
   artifacts?: ToolArtifactSpec[]
   /** Evidence families this tool may produce. */
   evidence?: ToolEvidenceSpec[]
+  /** Cross-plugin workflow recipes surfaced by discovery, help, and readiness tools. */
+  workflowRecipes?: WorkflowRecipeSpec[]
   /** Dynamic execution policy surfaced by readiness and scaffold templates. */
   runtimePolicy?: DynamicRuntimePolicy
   /** Runtime execution contract for tools delegated to a runtime node. */

@@ -205,6 +205,41 @@ describe('@rikune/plugin-sdk', () => {
     expect(handler).toHaveBeenCalledWith({ sample_id: 'sha256:test' }, {}, undefined)
   })
 
+  test('defineTool preserves workflow recipe metadata', () => {
+    const tool = defineTool({
+      name: 'demo.workflow.seed',
+      description: 'Seed a cross-plugin workflow',
+      inputSchema: { type: 'object' },
+      outputSchema: { type: 'object' },
+      aspects: {
+        execution: ['static', 'correlation'],
+        capabilities: ['workflow-seed'],
+        evidence: ['workflow'],
+      },
+      workflowRecipes: [
+        {
+          id: 'demo.workflow',
+          title: 'Demo workflow',
+          startsWith: ['demo.workflow.seed'],
+          nextTools: ['demo.workflow.next'],
+          requiredArtifacts: ['demo_input'],
+          producesArtifacts: ['demo_output'],
+          evidence: ['workflow'],
+          safety: ['passive'],
+        },
+      ],
+      handler: async () => ok({}),
+    })
+
+    expect(tool.definition.workflowRecipes).toEqual([
+      expect.objectContaining({
+        id: 'demo.workflow',
+        nextTools: ['demo.workflow.next'],
+      }),
+    ])
+    expect(validateTool(tool).ok).toBe(true)
+  })
+
   test('defineManifestPlugin binds manifest tools to named handlers', async () => {
     const plugin = defineManifestPlugin(
       {
@@ -265,6 +300,17 @@ describe('@rikune/plugin-sdk', () => {
             aspects: { formats: ['apk'], platforms: ['android'], execution: ['dynamic'] },
             artifacts: [{ type: 'manifest-dynamic.json' }],
             evidence: [{ category: 'timeline', artifactTypes: ['manifest-dynamic.json'] }],
+            workflowRecipes: [
+              {
+                id: 'manifest.dynamic.plan',
+                title: 'Manifest dynamic plan',
+                startsWith: ['manifest_dynamic.plan'],
+                nextTools: ['tool.readiness'],
+                producesArtifacts: ['manifest-dynamic.json'],
+                evidence: ['timeline', 'workflow'],
+                safety: ['passive', 'opt_in_dynamic'],
+              },
+            ],
             runtimePolicy: {
               passiveByDefault: true,
               requiresUserOptIn: true,
@@ -291,6 +337,7 @@ describe('@rikune/plugin-sdk', () => {
     expect(plugin.aspects?.formats).toEqual(['apk'])
     expect(plugin.runtimePolicy?.networkPolicy).toBe('disabled')
     expect(plugin.tools?.[0].definition.evidence?.[0].category).toBe('timeline')
+    expect(plugin.tools?.[0].definition.workflowRecipes?.[0].id).toBe('manifest.dynamic.plan')
     expect(plugin.tools?.[0].definition.runtime?.policy?.allowedBackends).toEqual([
       'android-emulator',
     ])
@@ -419,6 +466,51 @@ describe('@rikune/plugin-sdk', () => {
     )
     expect(warnings.every((warning) => warning.severity === 'info' || warning.severity === 'warning')).toBe(
       true
+    )
+    expect(warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          plugin_id: 'audit-demo',
+          suggested_task_owner: 'TASK-006',
+        }),
+      ])
+    )
+  })
+
+  test('auditPluginQuality reports workflow-capable tools without workflow recipes', () => {
+    const plugin = definePlugin({
+      id: 'workflow-audit-demo',
+      name: 'Workflow Audit Demo',
+      executionDomain: 'static',
+      aspects: {
+        execution: ['static', 'correlation'],
+        capabilities: ['workflow-summary'],
+        evidence: ['workflow'],
+      },
+      surfaceRules: { tier: 1, category: 'static-analysis' },
+      tools: [
+        defineTool({
+          name: 'workflow_audit.seed',
+          description: 'Workflow-capable tool with no recipe',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
+          artifacts: [{ type: 'workflow_audit_seed' }],
+          evidence: [{ category: 'workflow', artifactTypes: ['workflow_audit_seed'] }],
+          handler: async () => ok({}),
+        }),
+      ],
+    })
+
+    expect(auditPluginQuality(plugin)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'missing-workflow-recipe',
+          severity: 'info',
+          tool: 'workflow_audit.seed',
+          plugin_id: 'workflow-audit-demo',
+          suggested_task_owner: 'TASK-002',
+        }),
+      ])
     )
   })
 

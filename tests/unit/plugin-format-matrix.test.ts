@@ -16,6 +16,10 @@ import { buildNativeObjectInventoryFromBuffer } from '../../src/plugins/native-o
 import { buildAndroidPackageInventoryFromBuffer } from '../../src/plugins/android-package/tools/android-package-inventory.js'
 import { buildAppleSigningInspectFromBuffer } from '../../src/plugins/apple-signing/tools/apple-signing-inspect.js'
 import { buildLinuxBinaryInventoryFromBuffer } from '../../src/plugins/linux-binary/tools/linux-binary-inventory.js'
+import {
+  buildPluginAspectMatrix,
+  buildToolAspectSummary,
+} from '../../src/tools/tool-aspect-matrix.js'
 
 function localZip(entries: string[]): Buffer {
   const chunks: Buffer[] = []
@@ -165,6 +169,49 @@ function expectToolMetadata(
     )
   }
 }
+
+test('aspect matrix indexes workflow recipe metadata', () => {
+  const toolDefinition = {
+    name: 'fixture.workflow.seed',
+    description: 'Fixture workflow seed',
+    inputSchema: {},
+    aspects: {
+      formats: ['PE'],
+      platforms: ['Windows'],
+      execution: ['Static', 'Correlation'],
+      evidence: ['workflow'],
+    },
+    artifacts: [{ type: 'fixture_workflow_seed' }],
+    evidence: [{ category: 'workflow', artifactTypes: ['fixture_workflow_seed'] }],
+    workflowRecipes: [
+      {
+        id: 'fixture.workflow.review',
+        title: 'Fixture workflow review',
+        startsWith: ['fixture.workflow.seed'],
+        nextTools: ['analysis.evidence.graph'],
+      },
+    ],
+  }
+
+  const summary = buildToolAspectSummary(toolDefinition)
+  expect(summary.format_matrix.pe.workflow_recipes).toEqual(['fixture.workflow.review'])
+  expect(summary.workflow_recipes).toEqual([
+    expect.objectContaining({ id: 'fixture.workflow.review' }),
+  ])
+
+  const matrix = buildPluginAspectMatrix([
+    {
+      id: 'fixture-workflow',
+      status: 'loaded',
+      aspects: toolDefinition.aspects,
+      tools: [{ name: toolDefinition.name, definition: toolDefinition }],
+    },
+  ])
+  expect(matrix.summary.workflow_recipe_count).toBe(1)
+  expect(matrix.by_workflow['fixture.workflow.review'].tools).toEqual([
+    'fixture.workflow.seed',
+  ])
+})
 
 describe('cross-platform file type detection', () => {
   test('detects Android package and bytecode formats', () => {

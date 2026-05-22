@@ -93,6 +93,8 @@ export interface ToolDefinition {
   artifacts?: ToolArtifactSpec[]
   /** Evidence families this tool may produce. */
   evidence?: ToolEvidenceSpec[]
+  /** Cross-plugin workflow recipes this tool starts, advances, or completes. */
+  workflowRecipes?: WorkflowRecipeSpec[]
   /** Dynamic execution policy surfaced by readiness and scaffold templates. */
   runtimePolicy?: DynamicRuntimePolicy
   /** Runtime execution contract for tools delegated to a runtime node. */
@@ -302,6 +304,10 @@ export const PLUGIN_ASPECT_EVIDENCE = [
   'sbom',
   'vulnerabilities',
   'provenance',
+  'workflow',
+  'analysis-memory',
+  'correlation-graph',
+  'provenance-graph',
 ] as const
 
 export type PluginAspectFormat = (typeof PLUGIN_ASPECT_FORMATS)[number] | string
@@ -888,6 +894,7 @@ export interface PluginQualityWarning {
     | 'missing-surface-rules'
     | 'missing-aspects'
     | 'missing-evidence'
+    | 'missing-workflow-recipe'
     | 'missing-runtime-policy'
     | 'dynamic-runtime-contract-missing'
     | 'missing-system-deps'
@@ -896,12 +903,78 @@ export interface PluginQualityWarning {
   message: string
   tool?: string
   severity?: 'info' | 'warning'
+  plugin_id?: string
+  suggested_task_owner?: string
+}
+
+function suggestedTaskOwnerForPlugin(plugin: Plugin): string {
+  const id = plugin.id
+  if (id.includes('memory')) return 'TASK-003'
+  if (id.includes('vm-analysis') || id.includes('angr') || id.includes('crackme')) return 'TASK-004'
+  if (id.includes('kb-collaboration')) return 'TASK-005'
+  if (plugin.executionDomain === 'dynamic') return 'TASK-006'
+  if (
+    id.includes('runtime') ||
+    id.includes('dynamic') ||
+    id.includes('debug-session') ||
+    id.includes('frida') ||
+    id.includes('qiling') ||
+    id.includes('wine') ||
+    id.includes('speakeasy') ||
+    id.includes('panda')
+  ) {
+    return 'TASK-006'
+  }
+  if (
+    id.includes('sbom') ||
+    id.includes('container') ||
+    id.includes('linux-package') ||
+    id.includes('windows-installer')
+  ) {
+    return 'TASK-007'
+  }
+  if (id.includes('android') || id.includes('apk') || id.includes('dex')) return 'TASK-008'
+  if (id.includes('apple') || id.includes('ios') || id.includes('macos')) return 'TASK-009'
+  if (id.includes('wasm')) return 'TASK-010'
+  if (id.includes('firmware')) return 'TASK-011'
+  if (id.includes('office')) return 'TASK-012'
+  if (id.includes('unpack') || id.includes('deobf') || id.includes('upx')) return 'TASK-013'
+  if (id.includes('similarity') || id.includes('binary-diff')) return 'TASK-014'
+  if (
+    id.includes('malware') ||
+    id.includes('threat-intel') ||
+    id.includes('yara') ||
+    id.includes('vuln')
+  ) {
+    return 'TASK-015'
+  }
+  return 'TASK-002'
+}
+
+function withQualityWarningOwner(
+  plugin: Plugin,
+  warning: Omit<PluginQualityWarning, 'plugin_id' | 'suggested_task_owner'>
+): PluginQualityWarning {
+  return {
+    ...warning,
+    plugin_id: plugin.id,
+    suggested_task_owner: suggestedTaskOwnerForPlugin(plugin),
+  }
 }
 
 function hasDeclaredAspects(aspects: PluginAspects | null | undefined): boolean {
   return Boolean(
     aspects && Object.values(aspects).some((value) => Array.isArray(value) && value.length > 0)
   )
+}
+
+function hasWorkflowCapability(aspects: PluginAspects | null | undefined): boolean {
+  const normalized = normalizePluginAspects(aspects)
+  return [
+    ...(normalized.capabilities ?? []),
+    ...(normalized.evidence ?? []),
+    ...(normalized.execution ?? []),
+  ].some((tag) => tag.includes('workflow') || tag.includes('correlation'))
 }
 
 export function auditPluginQuality(plugin: Plugin): PluginQualityWarning[] {
@@ -911,36 +984,44 @@ export function auditPluginQuality(plugin: Plugin): PluginQualityWarning[] {
   const pluginHasRuntimePolicy = Boolean(plugin.runtimePolicy)
 
   if (tools.length === 0 && typeof plugin.register !== 'function') {
-    warnings.push({
-      code: 'missing-tools',
-      message: 'Plugin declares no tools or register() handler.',
-      severity: 'warning',
-    })
+    warnings.push(
+      withQualityWarningOwner(plugin, {
+        code: 'missing-tools',
+        message: 'Plugin declares no tools or register() handler.',
+        severity: 'warning',
+      })
+    )
   }
 
   if (!plugin.surfaceRules) {
-    warnings.push({
-      code: 'missing-surface-rules',
-      message: 'Plugin does not declare progressive surfaceRules; it defaults to always visible.',
-      severity: 'info',
-    })
+    warnings.push(
+      withQualityWarningOwner(plugin, {
+        code: 'missing-surface-rules',
+        message: 'Plugin does not declare progressive surfaceRules; it defaults to always visible.',
+        severity: 'info',
+      })
+    )
   }
 
   if (!pluginHasAspects) {
-    warnings.push({
-      code: 'missing-aspects',
-      message: 'Plugin does not declare aspect metadata for routing and progressive discovery.',
-      severity: 'info',
-    })
+    warnings.push(
+      withQualityWarningOwner(plugin, {
+        code: 'missing-aspects',
+        message: 'Plugin does not declare aspect metadata for routing and progressive discovery.',
+        severity: 'info',
+      })
+    )
   }
 
   if ((plugin.systemDeps ?? []).length === 0 && plugin.executionDomain !== 'static') {
-    warnings.push({
-      code: 'missing-system-deps',
-      message:
-        'Plugin has no declared systemDeps, so runtime/dependency degradation cannot be reported.',
-      severity: 'info',
-    })
+    warnings.push(
+      withQualityWarningOwner(plugin, {
+        code: 'missing-system-deps',
+        message:
+          'Plugin has no declared systemDeps, so runtime/dependency degradation cannot be reported.',
+        severity: 'info',
+      })
+    )
   }
 
   if (
@@ -948,46 +1029,69 @@ export function auditPluginQuality(plugin: Plugin): PluginQualityWarning[] {
     (plugin.systemDeps ?? []).length === 0 &&
     plugin.executionDomain === 'dynamic'
   ) {
-    warnings.push({
-      code: 'missing-readiness-check',
-      message: 'Dynamic plugin has neither check() nor systemDeps readiness metadata.',
-      severity: 'warning',
-    })
+    warnings.push(
+      withQualityWarningOwner(plugin, {
+        code: 'missing-readiness-check',
+        message: 'Dynamic plugin has neither check() nor systemDeps readiness metadata.',
+        severity: 'warning',
+      })
+    )
   }
 
   for (const tool of tools) {
     const definition = tool.definition
     if (!definition.outputSchema) {
-      warnings.push({
-        code: 'missing-output-schema',
-        message: `Tool ${definition.name} has no outputSchema.`,
-        tool: definition.name,
-        severity: 'warning',
-      })
+      warnings.push(
+        withQualityWarningOwner(plugin, {
+          code: 'missing-output-schema',
+          message: `Tool ${definition.name} has no outputSchema.`,
+          tool: definition.name,
+          severity: 'warning',
+        })
+      )
     }
     if (!pluginHasAspects && !definition.aspects) {
-      warnings.push({
-        code: 'missing-aspects',
-        message: `Tool ${definition.name} has no aspect metadata.`,
-        tool: definition.name,
-        severity: 'info',
-      })
+      warnings.push(
+        withQualityWarningOwner(plugin, {
+          code: 'missing-aspects',
+          message: `Tool ${definition.name} has no aspect metadata.`,
+          tool: definition.name,
+          severity: 'info',
+        })
+      )
     }
     if ((definition.evidence ?? []).length === 0 && (definition.artifacts ?? []).length === 0) {
-      warnings.push({
-        code: 'missing-evidence',
-        message: `Tool ${definition.name} does not declare artifact or evidence output metadata.`,
-        tool: definition.name,
-        severity: 'info',
-      })
+      warnings.push(
+        withQualityWarningOwner(plugin, {
+          code: 'missing-evidence',
+          message: `Tool ${definition.name} does not declare artifact or evidence output metadata.`,
+          tool: definition.name,
+          severity: 'info',
+        })
+      )
+    }
+    if (
+      (hasWorkflowCapability(plugin.aspects) || hasWorkflowCapability(definition.aspects)) &&
+      (definition.workflowRecipes ?? []).length === 0
+    ) {
+      warnings.push(
+        withQualityWarningOwner(plugin, {
+          code: 'missing-workflow-recipe',
+          message: `Workflow-capable tool ${definition.name} does not declare workflowRecipes metadata.`,
+          tool: definition.name,
+          severity: 'info',
+        })
+      )
     }
     if (plugin.executionDomain === 'dynamic' && !definition.runtime) {
-      warnings.push({
-        code: 'dynamic-runtime-contract-missing',
-        message: `Dynamic tool ${definition.name} has no runtime delegation contract.`,
-        tool: definition.name,
-        severity: 'info',
-      })
+      warnings.push(
+        withQualityWarningOwner(plugin, {
+          code: 'dynamic-runtime-contract-missing',
+          message: `Dynamic tool ${definition.name} has no runtime delegation contract.`,
+          tool: definition.name,
+          severity: 'info',
+        })
+      )
     }
     if (
       (plugin.executionDomain === 'dynamic' || definition.runtime) &&
@@ -995,12 +1099,14 @@ export function auditPluginQuality(plugin: Plugin): PluginQualityWarning[] {
       !definition.runtimePolicy &&
       !definition.runtime?.policy
     ) {
-      warnings.push({
-        code: 'missing-runtime-policy',
-        message: `Runtime-backed tool ${definition.name} has no dynamic runtime policy.`,
-        tool: definition.name,
-        severity: 'info',
-      })
+      warnings.push(
+        withQualityWarningOwner(plugin, {
+          code: 'missing-runtime-policy',
+          message: `Runtime-backed tool ${definition.name} has no dynamic runtime policy.`,
+          tool: definition.name,
+          severity: 'info',
+        })
+      )
     }
   }
 
@@ -1383,8 +1489,24 @@ export const ToolEvidenceSpecSchema = z
   })
   .passthrough()
 
+export const WorkflowRecipeSpecSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    description: z.string().optional(),
+    startsWith: z.array(z.string()).optional(),
+    nextTools: z.array(z.string()).optional(),
+    requiredArtifacts: z.array(z.string()).optional(),
+    producesArtifacts: z.array(z.string()).optional(),
+    evidence: z.array(z.string()).optional(),
+    safety: z.array(z.string()).optional(),
+    runtimeBackends: z.array(z.string()).optional(),
+  })
+  .passthrough()
+
 export type ToolArtifactSpec = z.infer<typeof ToolArtifactSpecSchema>
 export type ToolEvidenceSpec = z.infer<typeof ToolEvidenceSpecSchema>
+export type WorkflowRecipeSpec = z.infer<typeof WorkflowRecipeSpecSchema>
 
 export const ToolManifestSchema = z
   .object({
@@ -1395,6 +1517,7 @@ export const ToolManifestSchema = z
     aspects: PluginAspectsSchema.optional(),
     artifacts: z.array(ToolArtifactSpecSchema).optional(),
     evidence: z.array(ToolEvidenceSpecSchema).optional(),
+    workflowRecipes: z.array(WorkflowRecipeSpecSchema).optional(),
     runtimePolicy: DynamicRuntimePolicySchema.optional(),
     runtime: ToolRuntimeContractSchema.optional(),
     handler: z.string().optional(),
@@ -1836,6 +1959,7 @@ export function defineTool<TArgs = ToolArgs>(config: DefineToolConfig<TArgs>): D
     aspects: config.aspects,
     artifacts: config.artifacts,
     evidence: config.evidence,
+    workflowRecipes: config.workflowRecipes,
     runtimePolicy: config.runtimePolicy,
     runtime: config.runtime,
   }
@@ -1893,6 +2017,7 @@ export function defineManifestPlugin(
       aspects: toolManifest.aspects,
       artifacts: toolManifest.artifacts,
       evidence: toolManifest.evidence,
+      workflowRecipes: toolManifest.workflowRecipes,
       runtimePolicy: toolManifest.runtimePolicy,
       runtime: toolManifest.runtime as ToolRuntimeContract | undefined,
       handler,
@@ -1928,6 +2053,7 @@ export function validateTool(
     aspects: definition.aspects,
     artifacts: definition.artifacts,
     evidence: definition.evidence,
+    workflowRecipes: definition.workflowRecipes,
     runtimePolicy: definition.runtimePolicy,
     runtime: definition.runtime,
   })

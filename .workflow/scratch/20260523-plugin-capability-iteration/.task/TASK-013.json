@@ -1,0 +1,67 @@
+{
+  "id": "TASK-013",
+  "title": "Close unpacking and deobfuscation workflow loop",
+  "description": "把 unpacking、deep-unpack、runtime-deobfuscate、upx、die、static-triage、dynamic/debug-session 串成 detect -> plan -> dump -> reconstruct -> re-triage 闭环，默认只生成计划和安全 handoff。",
+  "type": "implementation",
+  "priority": "high",
+  "wave": 4,
+  "depends_on": [
+    "TASK-001",
+    "TASK-002"
+  ],
+  "parallel_group": "malware-workflow",
+  "scope": "unpacking deep-unpack runtime-deobfuscate",
+  "owned_plugin_dirs": [
+    "src/plugins/unpacking",
+    "src/plugins/deep-unpack",
+    "src/plugins/runtime-deobfuscate",
+    "src/plugins/upx",
+    "src/plugins/die",
+    "src/plugins/static-triage",
+    "src/plugins/dynamic",
+    "src/plugins/debug-session"
+  ],
+  "owned_tests": [
+    "tests/unit/unpack-*.test.ts",
+    "tests/unit/deep-*.test.ts",
+    "tests/unit/runtime-deobfuscate-worker.test.ts",
+    "tests/unit/upx-inspect.test.ts",
+    "tests/unit/die-*.test.ts"
+  ],
+  "read_first": [
+    "src/plugins/unpacking/index.ts",
+    "src/plugins/deep-unpack/index.ts",
+    "src/plugins/runtime-deobfuscate/index.ts",
+    "src/plugins/upx/index.ts",
+    "src/plugins/die/index.ts",
+    "src/plugins/dynamic/tools/dynamic-deep-plan.ts"
+  ],
+  "steps": [
+    "Define unpack.workflow.plan for packer/protector findings, dump strategy, runtime constraints, reconstruction targets, and re-triage steps.",
+    "Link DIE/static-triage/upx findings to unpacking guide and deep-unpack recommendations.",
+    "Add artifact/evidence declarations for unpack_plan, dumped_payload, reconstruction_notes, and reanalysis_request.",
+    "Ensure runtime-dependent dump steps are explicit opt-in and readiness-gated.",
+    "Add tests for plan generation from static packer/protector findings."
+  ],
+  "acceptance": [
+    "Users can get an unpacking plan without launching a debugger or sample.",
+    "Plan output includes safety requirements and next tools.",
+    "Existing unpacking/deobfuscation tests remain passing.",
+    "Re-triage step can route back to static plugins after a dumped payload artifact exists."
+  ],
+  "convergence": {
+    "criteria": [
+      "unpack workflow plan tool is registered or existing unpack-guide outputs workflow recipe metadata",
+      "tests cover packer finding to unpack plan conversion",
+      "runtime dump steps are readiness-gated and opt-in"
+    ]
+  },
+  "test_commands": [
+    "npm test -- --runTestsByPath tests/unit/unpack-auto.test.ts tests/unit/unpack-child-handoff.test.ts tests/unit/unpack-debug-runtime.test.ts tests/unit/dynamic-deep-plan.test.ts tests/unit/packer-detect.test.ts",
+    "npm run typecheck"
+  ],
+  "notes": [
+    "Do not add automatic dump execution in this task."
+  ],
+  "status": "pending"
+}

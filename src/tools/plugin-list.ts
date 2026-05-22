@@ -113,6 +113,9 @@ export function createPluginListHandler(_server: ToolRegistrar) {
         const pluginAspectPayload = Object.keys(pluginAspects).length > 0 ? pluginAspects : null
         const source = matrixSources.find((candidate) => candidate.id === s.id)
         const matrix = source ? buildPluginAspectMatrix([source]) : null
+        const visiblePluginTools = (plugin?.tools ?? []).filter((tool) =>
+          s.tools.includes(tool.definition.name)
+        )
         const entry: Record<string, unknown> = {
           id: s.id,
           name: s.name,
@@ -128,21 +131,22 @@ export function createPluginListHandler(_server: ToolRegistrar) {
           runtime_policy: plugin?.runtimePolicy ?? null,
           format_matrix: matrix?.by_format ?? {},
           plugin_matrix: matrix,
-          artifact_declarations: (plugin?.tools ?? [])
-            .filter((tool) => s.tools.includes(tool.definition.name))
-            .flatMap((tool) => tool.definition.artifacts ?? []),
-          evidence_declarations: (plugin?.tools ?? [])
-            .filter((tool) => s.tools.includes(tool.definition.name))
-            .flatMap((tool) => tool.definition.evidence ?? []),
-          tool_metadata: (plugin?.tools ?? [])
-            .filter((tool) => s.tools.includes(tool.definition.name))
-            .map((tool) => ({
-              name: tool.definition.name,
-              ...buildToolAspectSummary(tool.definition, {
-                pluginAspects: plugin?.aspects,
-                pluginRuntimePolicy: plugin?.runtimePolicy,
-              }),
-            })),
+          artifact_declarations: visiblePluginTools.flatMap(
+            (tool) => tool.definition.artifacts ?? []
+          ),
+          evidence_declarations: visiblePluginTools.flatMap(
+            (tool) => tool.definition.evidence ?? []
+          ),
+          workflow_recipes: visiblePluginTools.flatMap(
+            (tool) => tool.definition.workflowRecipes ?? []
+          ),
+          tool_metadata: visiblePluginTools.map((tool) => ({
+            name: tool.definition.name,
+            ...buildToolAspectSummary(tool.definition, {
+              pluginAspects: plugin?.aspects,
+              pluginRuntimePolicy: plugin?.runtimePolicy,
+            }),
+          })),
           quality_warning_count: s.qualityWarnings?.length ?? 0,
           quality_warnings: s.qualityWarnings ?? [],
         }

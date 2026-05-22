@@ -40,6 +40,17 @@ describe('plugin.list', () => {
               },
               artifacts: [{ type: 'android_package_inventory' }],
               evidence: [{ category: 'manifest' }],
+              workflowRecipes: [
+                {
+                  id: 'android.static.behavior',
+                  title: 'Android static behavior',
+                  startsWith: ['android.package.inventory'],
+                  nextTools: ['apk.manifest.parse', 'dex.classes.list'],
+                  producesArtifacts: ['android_package_inventory'],
+                  evidence: ['manifest', 'workflow'],
+                  safety: ['passive'],
+                },
+              ],
             },
           },
         ],
@@ -140,6 +151,10 @@ describe('plugin.list', () => {
     expect(summary.plugin_matrix.missing_deps).toEqual(
       expect.arrayContaining(['linux-binary: readelf'])
     )
+    expect(summary.plugin_matrix.summary.workflow_recipe_count).toBe(1)
+    expect(summary.plugin_matrix.by_workflow['android.static.behavior'].tools).toContain(
+      'android.package.inventory'
+    )
 
     const android = summary.plugins.find((plugin: any) => plugin.id === 'android-package')
     expect(android.aspects).toEqual(
@@ -155,8 +170,18 @@ describe('plugin.list', () => {
         execution: ['static'],
         evidence: expect.arrayContaining(['manifest']),
         artifacts: expect.arrayContaining(['android_package_inventory']),
+        workflow_recipes: expect.arrayContaining(['android.static.behavior']),
       })
     )
+    expect(android.workflow_recipes).toEqual([
+      expect.objectContaining({
+        id: 'android.static.behavior',
+        nextTools: ['apk.manifest.parse', 'dex.classes.list'],
+      }),
+    ])
+    expect(android.tool_metadata[0].workflow_recipes).toEqual([
+      expect.objectContaining({ id: 'android.static.behavior' }),
+    ])
     expect(android.quality_warnings).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: 'missing-output-schema' })])
     )

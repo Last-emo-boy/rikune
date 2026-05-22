@@ -1,0 +1,61 @@
+{
+  "id": "TASK-012",
+  "title": "Strengthen Office document and macro analysis",
+  "description": "把 office-analysis 升级为恶意文档静态链：OLE/OOXML 结构、VBA/XLM 宏提取、auto-open、suspicious API、URL/IOC、deobfuscation hints、YARA/Sigma handoff。",
+  "type": "implementation",
+  "priority": "medium",
+  "wave": 4,
+  "depends_on": [
+    "TASK-001",
+    "TASK-002"
+  ],
+  "parallel_group": "malware-workflow",
+  "scope": "office OLE VBA macro IOC",
+  "owned_plugin_dirs": [
+    "src/plugins/office-analysis",
+    "src/plugins/strings",
+    "src/plugins/yara",
+    "src/plugins/threat-intel"
+  ],
+  "owned_tests": [
+    "tests/unit/office-*.test.ts",
+    "tests/unit/strings-extract.test.ts",
+    "tests/unit/yara-generate.test.ts",
+    "tests/unit/ioc-export.test.ts"
+  ],
+  "read_first": [
+    "src/plugins/office-analysis/index.ts",
+    "src/plugins/office-analysis/tools/office-macro-detect.ts",
+    "src/plugins/office-analysis/tools/office-ole-analyze.ts",
+    "src/plugins/office-analysis/tools/office-vba-extract.ts",
+    "src/plugins/threat-intel/tools/ioc-export.ts"
+  ],
+  "steps": [
+    "Normalize office-analysis metadata to Plugin Standard v2 if gaps remain.",
+    "Add office.behavior.profile or macro risk summary that correlates OLE/OOXML structure, macro triggers, suspicious APIs, and strings.",
+    "Extract IOC candidates and YARA/Sigma generation hints from macro/static evidence.",
+    "Add safe synthetic Office fixtures for macro-like text and OLE/ZIP structures.",
+    "Expose office workflow in discovery for doc, docm, xls, xlsm, ppt, pptm, and OLE findings."
+  ],
+  "acceptance": [
+    "Office workflow remains passive and fixture-only.",
+    "Macro findings include auto-exec, network, filesystem, process, and obfuscation hints when present.",
+    "IOC export and YARA generation can consume office findings.",
+    "No Microsoft Office automation or macro execution is required."
+  ],
+  "convergence": {
+    "criteria": [
+      "office workflow or macro behavior profile tool is registered",
+      "tests cover macro IOC extraction from safe fixtures",
+      "tools.discover recommends office-analysis for Office formats"
+    ]
+  },
+  "test_commands": [
+    "npm test -- --runTestsByPath tests/unit/office-macro-detect.test.ts tests/unit/office-ole-analyze.test.ts tests/unit/office-vba-extract.test.ts tests/unit/ioc-export.test.ts tests/unit/yara-generate.test.ts",
+    "npm run typecheck"
+  ],
+  "notes": [
+    "If some office tests do not exist yet, create focused fixture tests."
+  ],
+  "status": "pending"
+}

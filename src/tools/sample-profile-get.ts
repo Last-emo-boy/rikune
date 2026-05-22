@@ -112,6 +112,7 @@ export const SampleProfileGetOutputSchema = z.object({
           platforms: z.array(z.string()),
           architectures: z.array(z.string()),
           evidence_signals: z.array(z.string()),
+          workflow_recipes: z.array(z.string()),
           nested_route_hints: z.array(
             z.object({
               source_analysis_id: z.string(),
@@ -228,19 +229,44 @@ function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
+function normalizeSignalKey(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .toLowerCase()
+    .replace(/_/g, '-')
+}
+
 function collectAspectSignals(value: unknown): {
   formats: string[]
   platforms: string[]
   architectures: string[]
   evidence: string[]
+  workflowRecipes: string[]
   recommendedTools: string[]
 } {
   const formats: string[] = []
   const platforms: string[] = []
   const architectures: string[] = []
   const evidence: string[] = []
+  const workflowRecipes: string[] = []
   const recommendedTools: string[] = []
   const seen = new Set<unknown>()
+
+  function pushWorkflowRecipe(value: unknown): void {
+    if (typeof value === 'string') {
+      const normalized = value.toLowerCase().trim().replace(/_/g, '-')
+      if (normalized) workflowRecipes.push(normalized)
+      return
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) pushWorkflowRecipe(item)
+      return
+    }
+    if (value && typeof value === 'object') {
+      const id = objectValue(value).id
+      if (typeof id === 'string') pushWorkflowRecipe(id)
+    }
+  }
 
   function visit(node: unknown, key = '', depth = 0): void {
     if (!node || depth > 8 || seen.has(node)) return
@@ -249,7 +275,7 @@ function collectAspectSignals(value: unknown): {
     if (typeof node === 'string') {
       const normalized = node.toLowerCase().trim().replace(/_/g, '-')
       if (!normalized) return
-      const keyName = key.toLowerCase().replace(/_/g, '-')
+      const keyName = normalizeSignalKey(key)
       if (keyName.includes('format') || keyName.includes('file-type') || keyName === 'type') {
         formats.push(...normalizeFileTypeTags(normalized))
       }
@@ -270,6 +296,13 @@ function collectAspectSignals(value: unknown): {
       if (keyName.includes('tool')) {
         recommendedTools.push(normalized)
       }
+      if (
+        keyName.includes('workflow-recipe') ||
+        keyName === 'workflow-id' ||
+        keyName === 'recipe-id'
+      ) {
+        workflowRecipes.push(normalized)
+      }
       return
     }
 
@@ -280,12 +313,19 @@ function collectAspectSignals(value: unknown): {
 
     if (typeof node === 'object') {
       for (const [childKey, childValue] of Object.entries(node)) {
+        const normalizedChildKey = normalizeSignalKey(childKey)
         if (childKey === 'recommended_next_tools' || childKey === 'recommended_tools') {
           recommendedTools.push(...stringArray(childValue))
         } else if (childKey === 'artifact_refs' || childKey === 'artifacts') {
           evidence.push('artifact')
         } else if (childKey === 'evidence' || childKey === 'evidence_state') {
           evidence.push('evidence')
+        } else if (
+          normalizedChildKey === 'workflow-recipes' ||
+          normalizedChildKey === 'workflow-recipe' ||
+          normalizedChildKey === 'workflow-id'
+        ) {
+          pushWorkflowRecipe(childValue)
         }
         visit(childValue, childKey, depth + 1)
       }
@@ -298,6 +338,7 @@ function collectAspectSignals(value: unknown): {
     platforms: uniqueStrings(platforms),
     architectures: uniqueStrings(architectures),
     evidence: uniqueStrings(evidence),
+    workflowRecipes: uniqueStrings(workflowRecipes),
     recommendedTools: uniqueStrings(recommendedTools),
   }
 }
@@ -378,6 +419,7 @@ function buildSampleRoutingProfile(params: {
   const platforms: string[] = []
   const architectures: string[] = []
   const evidenceSignals: string[] = []
+  const workflowRecipes: string[] = []
   const recommendedTools: string[] = []
   const nestedRouteHints: Array<{
     source_analysis_id: string
@@ -394,6 +436,7 @@ function buildSampleRoutingProfile(params: {
     platforms.push(...signals.platforms)
     architectures.push(...signals.architectures)
     evidenceSignals.push(...signals.evidence)
+    workflowRecipes.push(...signals.workflowRecipes)
     recommendedTools.push(...signals.recommendedTools)
     nestedRouteHints.push(...collectNestedRouteHints(analysis, parsed))
   }
@@ -443,6 +486,7 @@ function buildSampleRoutingProfile(params: {
     platforms: normalizedPlatforms,
     architectures: uniqueStrings(architectures),
     evidence_signals: uniqueStrings(evidenceSignals),
+    workflow_recipes: uniqueStrings(workflowRecipes),
     nested_route_hints: nestedRouteHints.slice(0, 50),
     recommended_tools: uniqueStrings(recommendedTools).slice(0, 50),
     next_actions: uniqueStrings(nextActions),

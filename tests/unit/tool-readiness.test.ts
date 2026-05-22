@@ -283,6 +283,18 @@ describe('tool.readiness', () => {
             },
             artifacts: [{ type: 'runtime.trace', description: 'Runtime trace' }],
             evidence: [{ category: 'behavior', artifactTypes: ['runtime.trace'] }],
+            workflowRecipes: [
+              {
+                id: 'windows.behavior.capture',
+                title: 'Windows behavior capture',
+                startsWith: ['behavior.capture'],
+                nextTools: ['analysis.evidence.graph'],
+                producesArtifacts: ['runtime.trace'],
+                evidence: ['behavior', 'workflow'],
+                safety: ['passive', 'opt_in_dynamic'],
+                runtimeBackends: ['windows-sandbox'],
+              },
+            ],
             runtimePolicy,
             runtime: {
               type: 'inline',
@@ -337,6 +349,7 @@ describe('tool.readiness', () => {
           execution: ['dynamic'],
           evidence: ['timeline'],
           artifacts: ['runtime.trace'],
+          workflow_recipes: ['windows.behavior.capture'],
         }),
       })
     )
@@ -345,6 +358,12 @@ describe('tool.readiness', () => {
     ])
     expect((result.data as any)?.evidence_declarations).toEqual([
       { category: 'behavior', artifactTypes: ['runtime.trace'] },
+    ])
+    expect((result.data as any)?.workflow_recipes).toEqual([
+      expect.objectContaining({
+        id: 'windows.behavior.capture',
+        nextTools: ['analysis.evidence.graph'],
+      }),
     ])
     expect((result.data as any)?.runtime_policy).toEqual(runtimePolicy)
     expect((result.data as any)?.runtime_contract_policy).toEqual(

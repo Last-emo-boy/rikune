@@ -101,6 +101,7 @@ export const toolsDiscoverOutputSchema = z.object({
               runtime_contract: z.any().nullable().optional(),
               artifact_declarations: z.array(z.any()).optional(),
               evidence_declarations: z.array(z.any()).optional(),
+              workflow_recipes: z.array(z.any()).optional(),
               recommended_tools: z.array(z.string()).optional(),
               available_tools: z.array(z.string()).optional(),
               blocked_tools: z.array(z.string()).optional(),
@@ -163,6 +164,7 @@ function collectToolDeclarations(
 ): {
   artifact_declarations: unknown[]
   evidence_declarations: unknown[]
+  workflow_recipes: unknown[]
 } {
   const toolNameSet = new Set(toolNames)
   const definitions = (plugin?.tools ?? [])
@@ -172,6 +174,7 @@ function collectToolDeclarations(
   return {
     artifact_declarations: definitions.flatMap((definition) => definition.artifacts ?? []),
     evidence_declarations: definitions.flatMap((definition) => definition.evidence ?? []),
+    workflow_recipes: definitions.flatMap((definition) => definition.workflowRecipes ?? []),
   }
 }
 

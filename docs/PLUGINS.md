@@ -128,6 +128,7 @@ Required tool-level fields:
 - `definition.name`, `description`, `inputSchema`, and `outputSchema`
 - `aspects` when the tool has narrower scope than the plugin
 - `artifacts` or `evidence` when the tool emits analysis results
+- `workflowRecipes` when the tool starts, advances, or completes a workflow/correlation chain
 - `runtimePolicy` and either a `runtime` contract or explicit plan-only semantics for dynamic
   and runtime-backed tools
 
@@ -139,6 +140,7 @@ Quality warning severities are intentionally warning-first:
 | `missing-surface-rules` | Plugin defaults to always visible | Add tier/category and activation rules |
 | `missing-aspects` | Plugin or tool cannot be routed by profile | Add aspect metadata |
 | `missing-evidence` | Tool result provenance is unclear | Add artifact or evidence declarations |
+| `missing-workflow-recipe` | Workflow/correlation-capable tool cannot explain follow-up flow | Add `workflowRecipes` with recipe id, inputs, outputs, next tools, and safety tags |
 | `missing-runtime-policy` | Runtime behavior is not policy-described | Add `runtimePolicy` |
 | `dynamic-runtime-contract-missing` | Dynamic tool has no delegation contract | Add `runtime` or make the tool clearly plan-only |
 | `missing-system-deps` | Dependency readiness cannot be explained | Add `systemDeps` or a `check()` hook |
@@ -148,6 +150,54 @@ Quality warning severities are intentionally warning-first:
 The canonical audit helper is `auditPluginQuality()` from `@rikune/plugin-sdk`. The core
 orchestrator uses it to populate `plugin.list`, `tools.discover`, `tool.help`, and
 `tool.readiness` quality metadata.
+
+## Capability Workflows
+
+Workflow recipes are additive metadata for cross-plugin analysis chains. They are exposed by
+`plugin.list`, `tools.discover`, `tool.help`, `tool.readiness`, and `sample.profile.get`; they
+must not start runtime backends or inspect samples by themselves.
+
+Use `workflowRecipes` on each tool that acts as a workflow entry, bridge, or terminal evidence
+collector. Supported fields:
+
+- `id`: stable kebab/dot-case recipe id, such as `android.static.behavior`.
+- `title` and optional `description`: short human-readable purpose.
+- `startsWith`: tool names that can seed the recipe.
+- `nextTools`: follow-up tools clients may choose after this tool succeeds.
+- `requiredArtifacts`: artifact types or evidence bundles the tool expects.
+- `producesArtifacts`: artifact types the tool emits or refines.
+- `evidence`: evidence tags produced or consumed by the recipe.
+- `safety`: passive and runtime-gate tags clients must preserve.
+- `runtimeBackends`: backend names for plan-only or opt-in runtime handoff.
+
+Shared artifact/evidence vocabulary for this iteration:
+
+- `workflow_recipe`: workflow metadata envelope emitted by discovery/help/readiness surfaces.
+- `finding_bundle`: grouped findings that can be routed into another plugin without parsing prose.
+- `correlation_graph`: cross-tool relation graph for artifacts, processes, files, imports, IOCs, or packages.
+- `provenance_graph`: source-to-derived-artifact lineage graph with tool and sample anchors.
+- `runtime_plan`: plan-only runtime guidance that does not start a backend.
+- `analysis_memory`: reusable analyst notes, rules, labels, or sample facts captured for future routing.
+- `analysis_report`: generated report artifact consuming structured evidence.
+
+Workflow-capable tools usually declare `execution: ["correlation"]`, `capabilities` containing
+`workflow-*` or graph terms, or `evidence` containing `workflow`, `correlation-graph`, or
+`provenance-graph`. When such a tool lacks `workflowRecipes`, `auditPluginQuality()` reports
+`missing-workflow-recipe` with a `suggested_task_owner` pointing at the relevant Maestro task.
+
+## Advanced Safety Categories
+
+Advanced plugin iteration is grouped by risk so CI can audit contracts without invoking heavy or
+unsafe backends:
+
+| Category | Applies to | Required default |
+| --- | --- | --- |
+| `passive-static` | file inventory, parsing, strings, package metadata, signatures | May read existing sample/workspace files only |
+| `external-binary` | Ghidra, RetDec, Rizin, Volatility, JADX, APKTool, binwalk, DIE, YARA-X | Must degrade through readiness/systemDeps and focused tests |
+| `runtime-gated` | sandbox, emulator, debugger, Frida, Wine, Qiling, Speakeasy, PANDA, wasmtime | Must be passive by default, opt-in, isolated, and visible through `tool.readiness` |
+| `network-sensitive` | threat intel, IOC export, malware config enrichment, package/vulnerability lookups | Must be offline in tests and declare `no_network_by_default` unless explicitly record-only |
+| `corpus-dependent` | similarity, binary diff, family clustering, KB memory | Must handle empty corpus and never require private datasets in CI |
+| `container-or-installer` | firmware extraction, container archive traversal, MSI/MSIX/PKG/DMG/APK/IPA | No mount, install, launch, entrypoint, package script, or custom action execution by default |
 
 ## Plugin Matrix
 
@@ -174,7 +224,7 @@ Every new plugin should declare plugin-level aspects and tool-level metadata whe
 - `execution`: `static`, `dynamic`, `emulation`, `decompilation`, `triage`, or `correlation`.
 - `runtimes`: runtime backends such as `windows-sandbox`, `hyperv`, `wine`, `speakeasy`, `qiling`, `gdb`, `lldb`, `dtrace`, `adb`, `android-emulator`, `frida`, `idevice-tools`, `wasmtime`.
 - `safety`: `passive`, `opt_in_dynamic`, `requires_isolation`, `no_live_sample_by_default`, `no_network_by_default`, `no_auto_mount`, `no_installer_execution`.
-- `evidence`: `structure`, `imports`, `exports`, `strings`, `signatures`, `timeline`, `behavior`, `process`, `filesystem`, `registry`, `network`, `memory`, `method-calls`, `syscalls`, `provenance`.
+- `evidence`: `structure`, `imports`, `exports`, `strings`, `signatures`, `timeline`, `behavior`, `process`, `filesystem`, `registry`, `network`, `memory`, `method-calls`, `syscalls`, `provenance`, `workflow`, `analysis-memory`, `correlation-graph`, `provenance-graph`.
 
 ## Dynamic Policy
 

@@ -34,6 +34,17 @@ describe('tools.discover', () => {
               inputSchema: {},
               artifacts: [{ type: 'pe.imports.json', description: 'PE imports' }],
               evidence: [{ category: 'imports', artifactTypes: ['pe.imports.json'] }],
+              workflowRecipes: [
+                {
+                  id: 'pe.imports.review',
+                  title: 'PE imports review',
+                  startsWith: ['pe.imports.extract'],
+                  nextTools: ['analysis.evidence.graph'],
+                  producesArtifacts: ['pe.imports.json'],
+                  evidence: ['imports', 'workflow'],
+                  safety: ['passive'],
+                },
+              ],
             },
             handler: async () => ({ ok: true }),
           },
@@ -124,6 +135,16 @@ describe('tools.discover', () => {
     expect(staticPlugin.evidence_declarations).toEqual([
       { category: 'imports', artifactTypes: ['pe.imports.json'] },
     ])
+    expect(staticPlugin.workflow_recipes).toEqual([
+      expect.objectContaining({
+        id: 'pe.imports.review',
+        nextTools: ['analysis.evidence.graph'],
+      }),
+    ])
+    expect(
+      categories.find((category: any) => category.category === 'static-analysis').plugin_matrix
+        .by_workflow['pe.imports.review'].tools
+    ).toContain('pe.imports.extract')
     expect(reversePlugin.tool_surface_role).toBe('expert')
     expect(runtimePlugin.tool_surface_role).toBe('runtime_gated')
     expect(runtimePlugin.runtime_policy).toEqual(

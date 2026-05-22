@@ -1019,6 +1019,17 @@ describe('tool.help tool', () => {
         },
         artifacts: [{ type: 'android_package_inventory', description: 'Android inventory' }],
         evidence: [{ category: 'manifest', artifactTypes: ['android_package_inventory'] }],
+        workflowRecipes: [
+          {
+            id: 'android.static.behavior',
+            title: 'Android static behavior',
+            startsWith: ['android.package.inventory'],
+            nextTools: ['apk.manifest.parse', 'dex.classes.list'],
+            producesArtifacts: ['android_package_inventory'],
+            evidence: ['manifest', 'workflow'],
+            safety: ['passive'],
+          },
+        ],
       },
       {
         name: 'linux.binary.inventory',
@@ -1056,6 +1067,7 @@ describe('tool.help tool', () => {
         execution: ['static'],
         evidence: ['manifest', 'signatures'],
         artifacts: ['android_package_inventory'],
+        workflow_recipes: ['android.static.behavior'],
       })
     )
     expect(tool.artifact_declarations).toEqual([
@@ -1064,6 +1076,15 @@ describe('tool.help tool', () => {
     expect(tool.evidence_declarations).toEqual([
       { category: 'manifest', artifactTypes: ['android_package_inventory'] },
     ])
+    expect(tool.workflow_recipes).toEqual([
+      expect.objectContaining({
+        id: 'android.static.behavior',
+        nextTools: ['apk.manifest.parse', 'dex.classes.list'],
+      }),
+    ])
+    expect(
+      tool.usage_notes.some((item: string) => item.includes('workflow_recipes metadata'))
+    ).toBe(true)
     expect(tool.runtime_policy).toBeNull()
     expect(tool.runtime_contract).toBeNull()
   })

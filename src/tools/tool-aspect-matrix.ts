@@ -39,11 +39,13 @@ export interface PluginAspectMatrix {
     platform_count: number
     execution_count: number
     evidence_count: number
+    workflow_recipe_count: number
   }
   by_format: Record<string, AspectMatrixBucket>
   by_platform: Record<string, AspectMatrixBucket>
   by_execution: Record<string, AspectMatrixBucket>
   by_evidence: Record<string, AspectMatrixBucket>
+  by_workflow: Record<string, AspectMatrixBucket>
   recommended_tools: string[]
   available_tools: string[]
   blocked_tools: string[]
@@ -120,6 +122,20 @@ function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+function workflowRecipeId(value: unknown): string | null {
+  const id = objectValue(value).id
+  return typeof id === 'string' && id.trim().length > 0 ? id.trim() : null
+}
+
+function workflowRecipeIds(definition: ToolAspectSource): string[] {
+  return uniqueStrings(
+    arrayValue(objectValue(definition).workflowRecipes).flatMap((recipe) => {
+      const id = workflowRecipeId(recipe)
+      return id ? [id] : []
+    })
+  )
+}
+
 function emptyBucket(): AspectMatrixBucket {
   return {
     plugins: [],
@@ -188,10 +204,17 @@ export function buildToolAspectSummary(
   aspect_coverage: string[]
   format_matrix: Record<
     string,
-    { platforms: string[]; execution: string[]; evidence: string[]; artifacts: string[] }
+    {
+      platforms: string[]
+      execution: string[]
+      evidence: string[]
+      artifacts: string[]
+      workflow_recipes: string[]
+    }
   >
   artifact_declarations: unknown[]
   evidence_declarations: unknown[]
+  workflow_recipes: unknown[]
   runtime_policy: unknown | null
   runtime_contract: unknown | null
 } {
@@ -199,6 +222,13 @@ export function buildToolAspectSummary(
   const runtime = objectValue(source.runtime)
   const artifactsDeclared = arrayValue(source.artifacts)
   const evidenceDeclared = arrayValue(source.evidence)
+  const workflowRecipes = arrayValue(source.workflowRecipes)
+  const workflowRecipeIds = uniqueStrings(
+    workflowRecipes.flatMap((recipe) => {
+      const id = workflowRecipeId(recipe)
+      return id ? [id] : []
+    })
+  )
   const aspects = mergeAspects(options.pluginAspects, source.aspects)
   const formats = aspects.formats ?? []
   const platforms = aspects.platforms ?? []
@@ -209,7 +239,13 @@ export function buildToolAspectSummary(
     .filter((type): type is string => typeof type === 'string')
   const formatMatrix: Record<
     string,
-    { platforms: string[]; execution: string[]; evidence: string[]; artifacts: string[] }
+    {
+      platforms: string[]
+      execution: string[]
+      evidence: string[]
+      artifacts: string[]
+      workflow_recipes: string[]
+    }
   > = {}
 
   for (const format of formats) {
@@ -218,6 +254,7 @@ export function buildToolAspectSummary(
       execution,
       evidence,
       artifacts,
+      workflow_recipes: workflowRecipeIds,
     }
   }
 
@@ -227,6 +264,7 @@ export function buildToolAspectSummary(
     format_matrix: formatMatrix,
     artifact_declarations: artifactsDeclared,
     evidence_declarations: evidenceDeclared,
+    workflow_recipes: workflowRecipes,
     runtime_policy: source.runtimePolicy ?? runtime.policy ?? options.pluginRuntimePolicy ?? null,
     runtime_contract: source.runtime ?? null,
   }
@@ -283,17 +321,22 @@ export function buildPluginAspectMatrix(
   const byPlatform: Record<string, AspectMatrixBucket> = {}
   const byExecution: Record<string, AspectMatrixBucket> = {}
   const byEvidence: Record<string, AspectMatrixBucket> = {}
+  const byWorkflow: Record<string, AspectMatrixBucket> = {}
   const recommendedTools: string[] = []
   const availableTools: string[] = []
   const blockedTools: string[] = []
   const missingDeps: string[] = []
   const nextActions: string[] = []
+  const workflowRecipes: string[] = []
   let toolCount = 0
 
   for (const plugin of plugins) {
     const toolNames = toolNamesFor(plugin)
     toolCount += toolNames.length
     const toolAspects = (plugin.tools ?? []).map((tool) => objectValue(tool.definition).aspects)
+    const toolWorkflowRecipes = uniqueStrings(
+      (plugin.tools ?? []).flatMap((tool) => workflowRecipeIds(tool.definition))
+    )
     const aspects = mergeAspects(plugin.aspects, ...toolAspects)
     const missing = pluginMissingDeps(plugin)
     const isBlocked = missing.length > 0 || Boolean(plugin.status && plugin.status !== 'loaded')
@@ -304,6 +347,7 @@ export function buildPluginAspectMatrix(
     blockedTools.push(...pluginBlockedTools)
     missingDeps.push(...missing.map((dep) => `${plugin.id}: ${dep}`))
     recommendedTools.push(...recommendTools(plugin, toolNames, aspects))
+    workflowRecipes.push(...toolWorkflowRecipes)
 
     for (const format of aspects.formats ?? []) {
       addBucketValue(
@@ -345,6 +389,16 @@ export function buildPluginAspectMatrix(
         pluginBlockedTools
       )
     }
+    for (const recipe of toolWorkflowRecipes) {
+      addBucketValue(
+        byWorkflow,
+        recipe,
+        plugin.id,
+        toolNames,
+        pluginAvailableTools,
+        pluginBlockedTools
+      )
+    }
 
     if (isBlocked) {
       nextActions.push(`Resolve ${plugin.id} plugin readiness before using its tools.`)
@@ -365,11 +419,13 @@ export function buildPluginAspectMatrix(
       platform_count: Object.keys(byPlatform).length,
       execution_count: Object.keys(byExecution).length,
       evidence_count: Object.keys(byEvidence).length,
+      workflow_recipe_count: uniqueStrings(workflowRecipes).length,
     },
     by_format: byFormat,
     by_platform: byPlatform,
     by_execution: byExecution,
     by_evidence: byEvidence,
+    by_workflow: byWorkflow,
     recommended_tools: uniqueStrings(recommendedTools).slice(0, 50),
     available_tools: uniqueStrings(availableTools),
     blocked_tools: uniqueStrings(blockedTools),
