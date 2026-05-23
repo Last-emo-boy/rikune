@@ -270,6 +270,7 @@ Worker-backed tools are explicit execution surfaces that sit beside existing pla
 | `restringer` | `restringer.deobfuscation.plan` | `restringer.deobfuscation.run` | external with builtin safe mode | Static JavaScript preprocessing only; no eval, Node/V8, browser, network, or source execution. |
 | `jsimplifier` | `jsimplifier.pipeline.plan` | `jsimplifier.pipeline.run` | external with builtin safe mode | Static pass orchestration only; no JavaScript runtime, LLM call, or network. |
 | `jsir-cascade` | `jsir.cascade.plan` | `jsir.cascade.normalize` | external with builtin safe mode | Static IR normalization only; no browser automation, Node/V8, or external deobfuscator by default. |
+| `jsvmp-analysis` | `jsvmp.bytecode.plan` | `jsvmp.bytecode.recover` | external with builtin safe mode | Static bytecode/dispatcher recovery only; no JavaScript VM evaluation, Node/V8, browser, or network. |
 | `gtirb` | `gtirb.ir.plan` | `gtirb.ir.generate` | external with builtin safe mode | Read-only IR artifact generation; no binary rewriting, loader mutation, or runtime execution. |
 | `remill` | `remill.lift.plan` | `remill.lift.run` | external with builtin safe mode | Function/range-bounded lift handoff; no whole-program unbounded lifting, emulator, solver, debugger, or network. |
 | `manifold` | `manifold.decompilation.plan` | `manifold.fact.extract` | external with builtin safe mode | Declarative fact extraction from local IR/CFG summaries; no decompiler/fact-engine process by default. |
@@ -277,6 +278,40 @@ Worker-backed tools are explicit execution surfaces that sit beside existing pla
 | `culifter` | `culifter.gpu.plan` | `culifter.gpu.artifact.inventory` | builtin safe inventory | No-GPU artifact inventory by default; no GPU driver, profiler, emulator, lifter, or sample execution. |
 
 These tools are visible through `plugin.list`, `tools.discover`, `tool.help`, `tool.readiness`, and the plugin aspect matrix. `tool.readiness` returns `worker_backend_readiness` and preserves `does_not_start_backend: true`.
+
+## Backend Auto-Install Tiers
+
+Docker backend installation is an enforceable plugin contract. A plugin that declares a
+`dockerFeature` must also declare a real install route or an explicit non-default policy through
+`dockerInstallRoute` and `dockerInstallProfile`. The generator reports every route during
+`--dry-run`; release tests fail if a backend route is implicitly `missing`.
+
+Install routes:
+
+- `installed`: installed by apt, a Docker fragment, a copied in-repo wrapper, or an existing base-image dependency.
+- `profile-gated`: installed only when `--backend-profile` includes the declared profile.
+- `validation-only`: planner/readiness metadata only; another plugin owns the executable backend.
+- `byo`: bring your own pinned backend path through an env var or mounted directory.
+- `sidecar`: use an intentionally supplied sidecar service or container image.
+
+Backend profiles:
+
+| Tier | Default behavior | Current examples |
+| --- | --- | --- |
+| `default` | Installed in normal analyzer images when static and low risk. | `restringer`, `jsimplifier`, `manifold`, `wabt`, LIEF validation |
+| `optional` | Enabled with `--backend-profile=optional` or broader profiles. | `jsir-cascade`, `jsvmp-analysis`, `gtirb`, `radare2`, `triton` |
+| `license-gated` | Excluded unless explicitly using `research` or `all`. | `miasm` |
+| `heavy` | Not silently installed; currently BYO/sidecar unless a future pinned fragment is added. | `remill`, `revng` |
+| `runtime` | Delegated runtime or BYO only; analyzer does not start instrumentation. | `qbdi` |
+| `gpu` | BYO only; no GPU driver load from discovery/readiness/test paths. | `culifter` |
+
+Useful checks:
+
+```bash
+node scripts/generate-docker.mjs --dry-run
+node scripts/generate-docker.mjs --dry-run --backend-profile=optional
+node scripts/generate-docker.mjs --all-profiles --dry-run
+```
 
 ## Plugin Matrix
 

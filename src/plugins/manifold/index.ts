@@ -108,6 +108,10 @@ const workerSpec: FrontierWorkerToolSpec = {
   backendName: 'Manifold',
   adapter: 'manifold.declarative.fact.extract',
   envVar: 'MANIFOLD_WORKER_PATH',
+  dockerFeature: 'manifold',
+  dockerDefault: '/opt/rikune-backends/manifold/bin/manifold-worker.js',
+  installRoute: 'installed',
+  installProfile: 'default',
   aspects: buildBackendPlanAspects(spec),
   artifacts: [
     {
@@ -166,6 +170,7 @@ const manifoldPlugin = definePlugin({
   },
   description: 'Passive superset decompilation and fact-modeling planning.',
   version: '1.0.0',
+  resources: { workers: 'workers' },
   configSchema: [
     {
       envVar: 'MANIFOLD_WORKER_PATH',
@@ -179,10 +184,14 @@ const manifoldPlugin = definePlugin({
       name: 'manifold-worker',
       target: '$MANIFOLD_WORKER_PATH',
       envVar: 'MANIFOLD_WORKER_PATH',
+      dockerDefault: '/opt/rikune-backends/manifold/bin/manifold-worker.js',
       required: false,
       description: 'Optional future declarative reverse-engineering worker',
-      dockerInstall: 'Provide a pinned local worker; not installed by default',
+      dockerInstall: 'Install Rikune Manifold fact extraction worker',
       dockerFeature: 'manifold',
+      dockerValidation: ['node /opt/rikune-backends/manifold/bin/manifold-worker.js --self-test'],
+      dockerInstallRoute: 'installed',
+      dockerInstallProfile: 'default',
     },
   ],
   tools: [

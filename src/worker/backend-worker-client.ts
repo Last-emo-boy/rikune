@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import { spawn } from 'child_process'
 import { existsSync, statSync } from 'fs'
 import type {
   ArtifactRef,
@@ -40,6 +41,12 @@ export interface BackendWorkerRunOptions {
   fixtureData?: Record<string, unknown>
 }
 
+interface ExternalWorkerResult {
+  result: WorkerResult
+  stderr: string
+  elapsedMs: number
+}
+
 export interface BackendWorkerReadiness {
   status: 'ready' | 'backend_missing' | 'policy_denied' | 'runtime_not_started'
   backend_name: string
@@ -58,6 +65,28 @@ function firstString(...values: unknown[]): string | null {
     if (typeof value === 'string' && value.trim().length > 0) return value.trim()
   }
   return null
+}
+
+function maxOutputBytes(policy: BackendWorkerPolicy | undefined): number {
+  return policy?.maxOutputBytes ?? 10 * 1024 * 1024
+}
+
+function timeoutMs(request: BackendWorkerRequest, options: BackendWorkerRunOptions): number {
+  return options.timeoutMs ?? request.backend.policy?.defaultTimeoutMs ?? 30_000
+}
+
+function parseCommandLine(commandLine: string): { command: string; args: string[] } {
+  const parts = commandLine.match(/"[^"]+"|'[^']+'|\S+/g) ?? []
+  const cleaned = parts.map((part) => part.replace(/^["']|["']$/g, ''))
+  return { command: cleaned[0] ?? commandLine, args: cleaned.slice(1) }
+}
+
+function backendPathExists(backendPath: string): boolean {
+  const parsed = parseCommandLine(backendPath)
+  if (parsed.command.includes('/') || parsed.command.includes('\\')) {
+    return existsSync(parsed.command)
+  }
+  return true
 }
 
 function defaultPolicy(
@@ -127,7 +156,7 @@ export function checkBackendWorkerReadiness(
   }
 
   if (mode !== 'builtin' && backend.backendKind === 'external') {
-    if (!backendPath || !existsSync(backendPath)) {
+    if (!backendPath || !backendPathExists(backendPath)) {
       reasons.push('backend_path_missing')
       return {
         status: 'backend_missing',
@@ -199,6 +228,114 @@ function buildBuiltinData(
   }
 }
 
+function runExternalWorker(
+  backendPath: string,
+  request: BackendWorkerRequest,
+  options: BackendWorkerRunOptions
+): Promise<ExternalWorkerResult> {
+  return new Promise((resolve) => {
+    const started = Date.now()
+    const limit = maxOutputBytes(request.backend.policy)
+    const timeout = timeoutMs(request, options)
+    const commandLine = parseCommandLine(backendPath)
+    const child = spawn(commandLine.command, commandLine.args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
+
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    let exceeded = false
+    const finish = (result: WorkerResult) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve({ result, stderr, elapsedMs: Date.now() - started })
+    }
+    const timer = setTimeout(() => {
+      finish({
+        ok: false,
+        errors: ['external_backend_timeout'],
+        data: {
+          timeout_ms: timeout,
+          backend: request.backend.backendName,
+          adapter: request.backend.adapter,
+        },
+      })
+      child.kill()
+    }, timeout)
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString()
+      if (Buffer.byteLength(stdout, 'utf8') > limit) {
+        exceeded = true
+        finish({
+          ok: false,
+          errors: ['external_backend_output_limit_exceeded'],
+          data: {
+            max_output_bytes: limit,
+            backend: request.backend.backendName,
+            adapter: request.backend.adapter,
+          },
+        })
+        child.kill()
+      }
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString()
+    })
+    child.on('error', (err) => {
+      finish({
+        ok: false,
+        errors: ['external_backend_spawn_failed', err.message],
+        data: {
+          backend: request.backend.backendName,
+          adapter: request.backend.adapter,
+        },
+      })
+    })
+    child.on('close', (code) => {
+      if (settled || exceeded) return
+      if (code !== 0) {
+        finish({
+          ok: false,
+          errors: ['external_backend_failed'],
+          data: {
+            exit_code: code,
+            stderr: stderr.slice(0, 4096),
+            backend: request.backend.backendName,
+            adapter: request.backend.adapter,
+          },
+        })
+        return
+      }
+      try {
+        const lines = stdout.trim().split('\n').filter(Boolean)
+        const parsed = JSON.parse(lines[lines.length - 1] ?? '{}') as WorkerResult
+        finish(parsed)
+      } catch (err) {
+        finish({
+          ok: false,
+          errors: [
+            'external_backend_malformed_output',
+            err instanceof Error ? err.message : String(err),
+          ],
+          data: {
+            stdout: stdout.slice(0, 4096),
+            stderr: stderr.slice(0, 4096),
+            backend: request.backend.backendName,
+            adapter: request.backend.adapter,
+          },
+        })
+      }
+    })
+
+    child.stdin.write(JSON.stringify(request) + '\n')
+    child.stdin.end()
+  })
+}
+
 export async function runBackendWorker(
   request: BackendWorkerRequest,
   options: BackendWorkerRunOptions = {}
@@ -231,6 +368,56 @@ export async function runBackendWorker(
       metrics: {
         elapsed_ms: 0,
         tool: request.tool,
+      },
+    }
+  }
+
+  if (mode === 'external') {
+    const backendPath = readiness.backend_path
+    if (!backendPath) {
+      return {
+        ok: false,
+        errors: ['backend_path_missing'],
+        data: {
+          readiness,
+          policy: request.context.policy,
+        },
+        metrics: {
+          elapsed_ms: 0,
+          tool: request.tool,
+        },
+      }
+    }
+    const external = await runExternalWorker(backendPath, request, options)
+    const resultData =
+      external.result.data && typeof external.result.data === 'object'
+        ? (external.result.data as Record<string, unknown>)
+        : {}
+    return {
+      ...external.result,
+      data: {
+        ...resultData,
+        readiness,
+        execution_semantics: {
+          requested_mode: mode,
+          actual_mode: 'worker_external',
+          backend: request.backend.backendName,
+          adapter: request.backend.adapter,
+          live_execution: !request.context.policy.noLiveExecution,
+          no_network: request.context.policy.noNetwork,
+          no_mutation: request.context.policy.noMutation,
+        },
+        stderr: external.stderr ? external.stderr.slice(0, 4096) : undefined,
+      },
+      metrics: {
+        ...(external.result.metrics ?? {}),
+        elapsed_ms: external.elapsedMs,
+        tool: request.tool,
+        backend_worker: {
+          contract: request.backend.version ?? 'backend-worker.v1',
+          mode,
+          adapter: request.backend.adapter,
+        },
       },
     }
   }

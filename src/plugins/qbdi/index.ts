@@ -120,6 +120,10 @@ const workerSpec: FrontierWorkerToolSpec = {
   adapter: 'qbdi.delegated.trace',
   backendKind: 'delegated-runtime',
   envVar: 'QBDI_PATH',
+  dockerFeature: 'qbdi',
+  dockerDefault: '/opt/qbdi',
+  installRoute: 'byo',
+  installProfile: 'runtime',
   aspects: buildBackendPlanAspects(spec),
   artifacts: [
     { type: 'qbdi_trace_artifact', description: 'Delegated QBDI trace artifact metadata' },
@@ -185,10 +189,16 @@ const qbdiPlugin = definePlugin({
       name: 'qbdi',
       target: '$QBDI_PATH',
       envVar: 'QBDI_PATH',
+      dockerDefault: '/opt/qbdi',
       required: false,
       description: 'QBDI runtime and tooling directory',
       dockerInstall: 'Install or provide a pinned QBDI release; not installed by default',
       dockerFeature: 'qbdi',
+      dockerInstallRoute: 'byo',
+      dockerInstallProfile: 'runtime',
+      dockerInstallNotes: [
+        'Delegated runtime backend; default analyzer image never installs or starts DBI.',
+      ],
     },
   ],
   tools: [

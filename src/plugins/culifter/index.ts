@@ -180,6 +180,9 @@ const culifterPlugin = definePlugin({
       description: 'Optional future CuLifter worker',
       dockerInstall: 'Provide a pinned local CuLifter worker; not installed by default',
       dockerFeature: 'culifter',
+      dockerInstallRoute: 'byo',
+      dockerInstallProfile: 'gpu',
+      dockerInstallNotes: ['Default mode uses builtin no-GPU artifact inventory.'],
     },
   ],
   tools: [

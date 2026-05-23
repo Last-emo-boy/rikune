@@ -885,6 +885,24 @@ export interface PluginSystemDep {
    * Example: `[{ source: '${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-projects', target: '/ghidra-projects', mode: 'rw' }]`
    */
   volumes?: Array<{ source: string; target: string; mode?: 'ro' | 'rw' }>
+
+  /**
+   * Docker/backend packaging classification used by the generator and release
+   * guards. `installed` means the default selected profile has a concrete
+   * install route. `profile-gated`, `byo`, and `sidecar` are explicit
+   * non-default routes; they prevent descriptive `dockerInstall` text from
+   * being mistaken for an executable install step.
+   */
+  dockerInstallRoute?: 'installed' | 'profile-gated' | 'byo' | 'sidecar' | 'validation-only'
+  dockerInstallProfile?:
+    | 'default'
+    | 'optional'
+    | 'heavy'
+    | 'research'
+    | 'runtime'
+    | 'gpu'
+    | 'license-gated'
+  dockerInstallNotes?: string[]
 }
 
 /**
@@ -931,6 +949,22 @@ export interface BackendWorkerContract {
     doesNotStartBackend?: boolean
     setupActions?: string[]
     missingBackendBehavior?: string
+    [key: string]: unknown
+  }
+  packaging?: {
+    installRoute?: 'installed' | 'profile-gated' | 'byo' | 'sidecar' | 'validation-only'
+    installProfile?:
+      | 'default'
+      | 'optional'
+      | 'heavy'
+      | 'research'
+      | 'runtime'
+      | 'gpu'
+      | 'license-gated'
+    dockerFeature?: string
+    envVar?: string
+    dockerDefault?: string
+    notes?: string[]
     [key: string]: unknown
   }
   [key: string]: unknown
@@ -1510,6 +1544,13 @@ export const PluginSystemDepSchema = z
         })
       )
       .optional(),
+    dockerInstallRoute: z
+      .enum(['installed', 'profile-gated', 'byo', 'sidecar', 'validation-only'])
+      .optional(),
+    dockerInstallProfile: z
+      .enum(['default', 'optional', 'heavy', 'research', 'runtime', 'gpu', 'license-gated'])
+      .optional(),
+    dockerInstallNotes: z.array(z.string()).optional(),
   })
   .passthrough()
 
@@ -1600,6 +1641,21 @@ export const BackendWorkerContractSchema = z
       .passthrough()
       .optional()
       .default({}),
+    packaging: z
+      .object({
+        installRoute: z
+          .enum(['installed', 'profile-gated', 'byo', 'sidecar', 'validation-only'])
+          .optional(),
+        installProfile: z
+          .enum(['default', 'optional', 'heavy', 'research', 'runtime', 'gpu', 'license-gated'])
+          .optional(),
+        dockerFeature: z.string().optional(),
+        envVar: z.string().optional(),
+        dockerDefault: z.string().optional(),
+        notes: z.array(z.string()).optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough()
 

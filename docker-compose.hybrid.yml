@@ -3,8 +3,9 @@
 # =============================================================================
 # Auto-generated from plugin systemDeps.
 # Profile: Hybrid Docker analyzer + Windows runtime
-# Build plugins: 45 | Runtime plugins: 56
-# Features: angr, binwalk, capa, die, dotnet-runtime, ghidra, goresym, graphviz, jadx, retdec, rizin, upx, vol3
+# Backend profile: default
+# Build plugins: 75 | Runtime plugins: 92
+# Features: angr, binwalk, capa, die, dotnet-runtime, ghidra, goresym, graphviz, jadx, jsimplifier, manifold, restringer, retdec, rizin, upx, vol3, wabt
 # Regenerate: npm run docker:generate -- --profile=hybrid
 # =============================================================================
 
@@ -34,6 +35,7 @@ services:
         RETDEC_VERSION: "5.0"
         RIZIN_VERSION: "0.8.2"
         UPX_VERSION: "5.1.1"
+        WABT_VERSION: "1.0.39"
     container_name: rikune-analyzer
     user: appuser
     stdin_open: true
@@ -68,9 +70,10 @@ services:
       - NODE_ENV=production
       - PYTHONUNBUFFERED=1
       - RIKUNE_DOCKER_PROFILE=hybrid
+      - RIKUNE_BACKEND_PROFILE=default
       - NODE_ROLE=analyzer
       - RUNTIME_MODE=remote-sandbox
-      - PLUGINS=android,angr,api-hash,apk-smali,batch,behavior-first,binary-diff,capstone,code-analysis,crackme,cross-module,debug-session,deep-unpack,die,dotnet-decompile,dotnet-reactor,dynamic,elf-macho,firmware,frida,ghidra,go-analysis,graphviz,host-correlation,kb-collaboration,malware,managed-fake-c2,managed-il-xrefs,managed-sandbox,memory-forensics,metadata,observability,office-analysis,panda,pcap-analysis,pe-analysis,pe-signature,qiling,reporting,retdec,rizin,runtime-deobfuscate,sbom,similarity,speakeasy,static-triage,strings,threat-intel,unpacking,upx,visualization,vm-analysis,vuln-scanner,wine,yara,yara-x
+      - PLUGINS=android,android-package,android-runtime,angr,api-hash,apk-smali,apple-container,apple-signing,batch,behavior-first,binary-diff,bytecode,capstone,code-analysis,container-analysis,crackme,cross-module,culifter,debug-session,deep-unpack,die,dotnet-decompile,dotnet-managed,dotnet-reactor,dynamic,elf-macho,firmware,frida,ghidra,go-analysis,graphviz,gtirb,host-correlation,ios-runtime,javascript-deobfuscation,jsimplifier,jsir-cascade,jsvmp-analysis,jvm,kb-collaboration,lief,linux-binary,linux-package,linux-runtime,macos-runtime,malware,managed-fake-c2,managed-il-xrefs,managed-sandbox,manifold,memory-forensics,metadata,miasm,native-object,observability,office-analysis,panda,pcap-analysis,pe-analysis,pe-signature,qbdi,qiling,radare2,remill,reporting,restringer,retdec,revng,rizin,runtime-deobfuscate,sbom,similarity,speakeasy,static-triage,strings,threat-intel,triton,unity-managed,unpacking,upx,visualization,vm-analysis,vuln-scanner,wabt,wasm,wasm-runtime,windows-debug-symbols,windows-installer,windows-runtime,wine,yara,yara-x
       - WORKSPACE_ROOT=/app/workspaces
       - DB_PATH=/app/data/database.db
       - CACHE_ROOT=/app/cache
@@ -89,15 +92,19 @@ services:
       - GHIDRA_INSTALL_DIR=/opt/ghidra
       - GORESYM_PATH=/usr/local/bin/GoReSym
       - GRAPHVIZ_DOT_PATH=/usr/bin/dot
+      - JSIMPLIFIER_WORKER_PATH=/opt/rikune-backends/jsimplifier/bin/jsimplifier-worker.js
       - CAPA_RULES_PATH=/opt/capa-rules
+      - MANIFOLD_WORKER_PATH=/opt/rikune-backends/manifold/bin/manifold-worker.js
       - VOLATILITY3_PATH=/usr/local/bin/vol
       - VOL3_SYMBOL_PATH=/opt/vol3-symbols
       - EXIFTOOL_PATH=/usr/bin/exiftool
       - TSHARK_PATH=/usr/bin/tshark
       - OSSLSIGNCODE_PATH=/usr/bin/osslsigncode
+      - RESTRINGER_PATH=/opt/rikune-backends/restringer/bin/restringer-worker.js
       - RETDEC_PATH=/opt/retdec/bin/retdec-decompiler
       - RIZIN_PATH=/opt/rizin/bin/rizin
       - UPX_PATH=/usr/local/bin/upx
+      - WABT_PATH=/opt/wabt/bin
       - GHIDRA_PROJECT_ROOT=/ghidra-projects
       - GHIDRA_LOG_ROOT=/ghidra-logs
       - CAPA_PATH=/usr/local/bin/capa

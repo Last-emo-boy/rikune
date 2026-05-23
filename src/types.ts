@@ -195,6 +195,22 @@ export interface BackendWorkerContract {
     missingBackendBehavior?: string
     [key: string]: unknown
   }
+  packaging?: {
+    installRoute?: 'installed' | 'profile-gated' | 'byo' | 'sidecar' | 'validation-only'
+    installProfile?:
+      | 'default'
+      | 'optional'
+      | 'heavy'
+      | 'research'
+      | 'runtime'
+      | 'gpu'
+      | 'license-gated'
+    dockerFeature?: string
+    envVar?: string
+    dockerDefault?: string
+    notes?: string[]
+    [key: string]: unknown
+  }
   [key: string]: unknown
 }
 

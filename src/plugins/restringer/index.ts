@@ -109,6 +109,10 @@ const workerSpec: FrontierWorkerToolSpec = {
   backendName: 'REstringer',
   adapter: 'restringer.static.preprocess',
   envVar: 'RESTRINGER_PATH',
+  dockerFeature: 'restringer',
+  dockerDefault: '/opt/rikune-backends/restringer/bin/restringer-worker.js',
+  installRoute: 'installed',
+  installProfile: 'default',
   aspects: buildBackendPlanAspects(spec),
   artifacts: [
     {
@@ -158,6 +162,7 @@ const restringerPlugin = definePlugin({
   },
   description: 'Passive REstringer JavaScript string-array and expression deobfuscation planning.',
   version: '1.0.0',
+  resources: { workers: 'workers' },
   configSchema: [
     {
       envVar: 'RESTRINGER_PATH',
@@ -171,10 +176,16 @@ const restringerPlugin = definePlugin({
       name: 'restringer',
       target: '$RESTRINGER_PATH',
       envVar: 'RESTRINGER_PATH',
+      dockerDefault: '/opt/rikune-backends/restringer/bin/restringer-worker.js',
       required: false,
       description: 'Optional REstringer checkout or wrapper',
-      dockerInstall: 'Provide a pinned REstringer checkout; not installed by default',
+      dockerInstall: 'Install Rikune static REstringer-compatible wrapper',
       dockerFeature: 'restringer',
+      dockerValidation: [
+        'node /opt/rikune-backends/restringer/bin/restringer-worker.js --self-test',
+      ],
+      dockerInstallRoute: 'installed',
+      dockerInstallProfile: 'default',
     },
   ],
   tools: [

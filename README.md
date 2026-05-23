@@ -22,6 +22,7 @@ The current server is organized around a staged analysis pipeline:
 - Progressive tool surface: core tools are always visible, specialist tools are exposed according to sample type, findings, or explicit discovery.
 - Static analysis and enrichment for PE, ELF, Mach-O, APK/DEX, Office, firmware, strings, YARA, SBOM, signatures, packers, .NET, Go, Rust, and more.
 - Ghidra, Rizin, RetDec, angr, Capstone, Graphviz, Qiling, PANDA, Speakeasy, Wine, Frida, and dynamic-runtime integration where available.
+- Plugin-driven Docker backend installation with default, optional, research, runtime, GPU, BYO, and sidecar tiers for worker-backed reverse-engineering tools.
 - Optional Analyzer/Runtime split for live Windows execution through a Windows Host Agent, Windows Sandbox, or Hyper-V VM.
 - Policy gates for live execution, network access, external upload, and bulk decompilation.
 
@@ -172,6 +173,14 @@ Docker/WSL analyzers should use `remote-sandbox`, not `auto-sandbox`.
 Rikune currently includes 92 built-in plugins under `src/plugins/<id>/`. Plugins can register tools, declare dependencies, expose configuration schema, participate in lifecycle hooks, provide Docker metadata, and declare bounded Worker-backed tools through `workerBackend` metadata.
 
 The frontier Worker suite keeps plan-only tools as triage and handoff surfaces, then adds explicit execution tools beside them. `restringer.deobfuscation.run`, `jsimplifier.pipeline.run`, `jsir.cascade.normalize`, `gtirb.ir.generate`, `remill.lift.run`, `manifold.fact.extract`, `qbdi.trace.run`, and `culifter.gpu.artifact.inventory` expose Worker contracts through `plugin.list`, `tools.discover`, `tool.help`, and `tool.readiness`. Discovery and readiness remain passive: they report backend metadata and setup guidance without starting REstringer, JSIMPLIFIER, JSIR/CASCADE, GTIRB, Remill, Manifold, QBDI, GPU drivers, Node/V8, browsers, or runtime instrumentation.
+
+Docker generation reads plugin `systemDeps` and Worker packaging metadata directly. Default images install low-risk static wrappers such as REstringer, JSIMPLIFIER, Manifold, WABT, and LIEF validation; optional profiles can enable JSIR/CASCADE, JSVMP, GTIRB, radare2, and Triton-style static routes; heavy/runtime/GPU/license-sensitive backends remain profile-gated, BYO, or sidecar.
+
+```bash
+node scripts/generate-docker.mjs --dry-run
+node scripts/generate-docker.mjs --profile=full --backend-profile=optional
+node scripts/generate-docker.mjs --all-profiles --dry-run
+```
 
 Plugin loading is controlled by `PLUGINS`:
 

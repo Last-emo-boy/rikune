@@ -305,7 +305,7 @@ export function buildJavascriptObfuscationProfileFromSource(
   const lines = source.length > 0 ? source.split(/\r?\n/) : []
   const nonEmptyLines = lines.filter((line) => line.trim().length > 0)
   const longLines = nonEmptyLines.filter((line) => line.length > 500).length
-  const identifiers = source.match(/\b[$A-Za-z_][$\w]{0,80}\b/g) ?? []
+  const identifiers: string[] = source.match(/\b[$A-Za-z_][$\w]{0,80}\b/g) ?? []
   const shortIdentifiers = identifiers.filter((id) => id.length <= 2).length
   const longIdentifierCount = identifiers.filter((id) => id.length >= 40).length
   const stringLiteralCount = countMatches(source, /(["'`])(?:\\.|(?!\1)[\s\S]){0,200}\1/g)

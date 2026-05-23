@@ -134,7 +134,10 @@ const liefPlugin = definePlugin({
       description: 'LIEF executable format parsing and transformation library',
       dockerInstall: 'pip install lief or provide a pinned wheel',
       dockerFeature: 'dynamic-python',
+      dockerValidation: ["python3 -c \"import lief; print(getattr(lief, '__version__', 'ok'))\""],
       extraEnv: { LIEF_PYTHON: 'python3' },
+      dockerInstallRoute: 'installed',
+      dockerInstallProfile: 'default',
     },
   ],
   tools: [

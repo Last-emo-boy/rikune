@@ -125,7 +125,11 @@ const miasmPlugin = definePlugin({
       description: 'Miasm reverse-engineering framework',
       dockerInstall: 'pip install miasm or provide a pinned source checkout',
       dockerFeature: 'dynamic-python',
+      dockerValidation: ['python3 -c "import miasm; print(\'miasm ok\')" || true'],
       extraEnv: { MIASM_PYTHON: 'python3' },
+      dockerInstallRoute: 'profile-gated',
+      dockerInstallProfile: 'license-gated',
+      dockerInstallNotes: ['GPL-2.0 backend; excluded from default Docker backend profile.'],
     },
   ],
   tools: [

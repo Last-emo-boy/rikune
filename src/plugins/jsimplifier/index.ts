@@ -119,6 +119,10 @@ const workerSpec: FrontierWorkerToolSpec = {
   backendName: 'JSIMPLIFIER',
   adapter: 'jsimplifier.static.pipeline',
   envVar: 'JSIMPLIFIER_WORKER_PATH',
+  dockerFeature: 'jsimplifier',
+  dockerDefault: '/opt/rikune-backends/jsimplifier/bin/jsimplifier-worker.js',
+  installRoute: 'installed',
+  installProfile: 'default',
   aspects: buildBackendPlanAspects(spec),
   artifacts: [
     { type: 'jsimplifier_pipeline_result', description: 'JSIMPLIFIER static pipeline output' },
@@ -171,6 +175,7 @@ const jsimplifierPlugin = definePlugin({
   },
   description: 'Passive JSIMPLIFIER-style JavaScript deobfuscation pipeline planning.',
   version: '1.0.0',
+  resources: { workers: 'workers' },
   configSchema: [
     {
       envVar: 'JSIMPLIFIER_WORKER_PATH',
@@ -184,10 +189,16 @@ const jsimplifierPlugin = definePlugin({
       name: 'jsimplifier-worker',
       target: '$JSIMPLIFIER_WORKER_PATH',
       envVar: 'JSIMPLIFIER_WORKER_PATH',
+      dockerDefault: '/opt/rikune-backends/jsimplifier/bin/jsimplifier-worker.js',
       required: false,
       description: 'Optional future JSIMPLIFIER static worker',
-      dockerInstall: 'Provide a pinned local JSIMPLIFIER worker; not installed by default',
+      dockerInstall: 'Install Rikune static JSIMPLIFIER-style worker',
       dockerFeature: 'jsimplifier',
+      dockerValidation: [
+        'node /opt/rikune-backends/jsimplifier/bin/jsimplifier-worker.js --self-test',
+      ],
+      dockerInstallRoute: 'installed',
+      dockerInstallProfile: 'default',
     },
   ],
   tools: [

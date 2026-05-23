@@ -123,12 +123,16 @@ const radare2Plugin = definePlugin({
       name: 'radare2',
       target: '$RADARE2_PATH',
       envVar: 'RADARE2_PATH',
+      dockerDefault: '/usr/local/bin/radare2',
       versionFlag: '-v',
       required: false,
       description: 'radare2 reverse-engineering framework',
-      dockerInstall:
-        'Install a pinned radare2 release or container image; not installed by default',
+      dockerInstall: 'Install radare2 from distro packages or provide a pinned release',
       dockerFeature: 'radare2',
+      aptPackages: ['radare2'],
+      dockerValidation: ['radare2 -v >/dev/null 2>&1', 'rabin2 -h >/dev/null 2>&1'],
+      dockerInstallRoute: 'profile-gated',
+      dockerInstallProfile: 'optional',
     },
   ],
   tools: [

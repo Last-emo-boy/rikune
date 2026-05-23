@@ -55,6 +55,11 @@ const javascriptDeobfuscationPlugin = definePlugin({
       description: 'Google JSIR / CASCADE JavaScript analysis tooling',
       dockerInstall: 'Provide a pinned local JSIR checkout; not installed by default',
       dockerFeature: 'javascript-deobfuscation',
+      dockerInstallRoute: 'validation-only',
+      dockerInstallProfile: 'default',
+      dockerInstallNotes: [
+        'This planner stays metadata-only; installable JSIR/CASCADE workers are declared by the jsir-cascade plugin.',
+      ],
     },
     {
       type: 'file',
@@ -65,6 +70,11 @@ const javascriptDeobfuscationPlugin = definePlugin({
       description: 'REstringer JavaScript deobfuscator CLI',
       dockerInstall: 'Provide a pinned local REstringer checkout; not installed by default',
       dockerFeature: 'javascript-deobfuscation',
+      dockerInstallRoute: 'validation-only',
+      dockerInstallProfile: 'default',
+      dockerInstallNotes: [
+        'This planner stays metadata-only; installable REstringer wrappers are declared by the restringer plugin.',
+      ],
     },
   ],
   tools: [

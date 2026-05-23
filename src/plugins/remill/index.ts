@@ -109,6 +109,10 @@ const workerSpec: FrontierWorkerToolSpec = {
   backendName: 'Remill',
   adapter: 'remill.bounded.llvm.lift',
   envVar: 'REMILL_PATH',
+  dockerFeature: 'remill',
+  dockerDefault: '/opt/rikune-backends/remill/bin/remill-worker',
+  installRoute: 'byo',
+  installProfile: 'heavy',
   aspects: buildBackendPlanAspects(spec),
   artifacts: [
     { type: 'llvm_bitcode_lift_artifact', description: 'Bounded LLVM bitcode lift artifact' },
@@ -168,10 +172,16 @@ const remillPlugin = definePlugin({
       name: 'remill',
       target: '$REMILL_PATH',
       envVar: 'REMILL_PATH',
+      dockerDefault: '/opt/rikune-backends/remill/bin/remill-worker',
       required: false,
       description: 'Optional Remill lifter or wrapper',
       dockerInstall: 'Provide a pinned Remill build; not installed by default',
       dockerFeature: 'remill',
+      dockerInstallRoute: 'byo',
+      dockerInstallProfile: 'heavy',
+      dockerInstallNotes: [
+        'Heavy LLVM backend; provide a pinned wrapper or enable a future heavy profile.',
+      ],
     },
   ],
   tools: [

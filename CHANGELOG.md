@@ -19,6 +19,8 @@ Versioning where practical.
 - Expanded the next-wave reverse-engineering suite with plan-only JSVMP bytecode/handler-map recovery, LIEF binary structure/transformation planning, radare2 cross-backend compatibility planning, and WABT WebAssembly toolchain planning; all remain passive and opt-in before any external backend process exists.
 - Added frontier plan-only suite coverage for JSIMPLIFIER, JSIR/CASCADE, REstringer, Remill, GTIRB, QBDI, superset-decompilation, and CuLifter-style workflows, plus shared backend handoff contracts and richer JSVMP static bytecode/dispatcher profiling.
 - Added `backend-worker.v1` SDK metadata and bounded Worker-backed tools for REstringer, JSIMPLIFIER, JSIR/CASCADE, GTIRB, Remill, Manifold, QBDI, and CuLifter. Worker metadata is surfaced through `plugin.list`, `tools.discover`, `tool.help`, and `tool.readiness` without starting external backends; QBDI remains explicit opt-in delegated runtime only.
+- Added Docker backend packaging routes and backend install profiles. Default images install low-risk static wrappers such as REstringer, JSIMPLIFIER, Manifold, WABT, and LIEF validation; optional profiles can enable JSIR/CASCADE, JSVMP, GTIRB, radare2, and Triton-style static routes; heavy, runtime, GPU, BYO, sidecar, and license-gated backends stay explicit.
+- Added `jsvmp.bytecode.recover` as a bounded Worker-backed JSVMP static recovery tool and wired in-repo JavaScript/Manifold worker wrappers through the external `backend-worker.v1` JSON stdin/stdout bridge.
 
 ### Runtime Stability
 
@@ -32,11 +34,13 @@ Versioning where practical.
 ### Tests
 
 - Added regression coverage for response pruning, staged run `job_id` preservation, `.pdata` function materialization, and runtime worker idle eviction.
+- Added backend packaging and Docker generator release guards covering install route classification, backend profile gating, external Worker execution denial, timeout, output-size limits, malformed output, and in-repo wrapper external-mode execution.
 
 ### Documentation
 
 - Reworked active documentation to match the current `src/core/*` architecture, staged `workflow.analyze.start/status/promote` pipeline, built-in plugin inventory, Docker profile model, and Analyzer/Runtime split.
 - Updated installation, deployment, plugin, architecture, troubleshooting, SDK, worker, script-resource, and MCP client setup docs.
+- Documented backend auto-install tiers, `--backend-profile`, `RIKUNE_BACKEND_PROFILE`, Worker packaging metadata, and the default/optional/heavy/runtime/GPU/license-gated backend matrix.
 
 ## [1.0.0-beta.3] - 2025-07-14
 

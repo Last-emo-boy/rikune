@@ -711,8 +711,83 @@ node scripts/generate-docker.mjs --profile=hybrid
 node scripts/generate-docker.mjs --all-profiles
 
 <span class="comment"># Preview without writing files</span>
-node scripts/generate-docker.mjs --profile=static --dry-run</pre>
+node scripts/generate-docker.mjs --profile=static --dry-run
+
+<span class="comment"># Enable optional static backends such as JSIR/CASCADE, JSVMP, GTIRB, and radare2</span>
+node scripts/generate-docker.mjs --profile=full --backend-profile=optional
+
+<span class="comment"># Research profile includes license-gated Python backends; BYO/sidecar tools still stay explicit</span>
+node scripts/generate-docker.mjs --profile=full --backend-profile=research --dry-run</pre>
           </div>
+
+          <h3>
+            <span data-lang-en>Backend Install Profiles</span
+            ><span data-lang-zh>Backend 安装 Profile</span>
+          </h3>
+          <p>
+            <span data-lang-en
+              >Docker generation now classifies every plugin backend route. A backend is either
+              actually installed, profile-gated, validation-only, BYO, or sidecar. Default images
+              only install static, low-risk backends; heavy, runtime, GPU, and license-sensitive
+              backends require explicit opt-in.</span
+            >
+            <span data-lang-zh
+              >Docker 生成器会分类每个插件 backend 的安装路线。Backend 要么真实安装，要么被
+              profile gate 控制，要么仅做 validation/readiness，要么是 BYO 或 sidecar。默认镜像只安装低风险静态
+              backend；heavy、runtime、GPU 和 license-sensitive backend 必须显式 opt-in。</span
+            >
+          </p>
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th><span data-lang-en>Profile</span><span data-lang-zh>Profile</span></th>
+                <th><span data-lang-en>Behavior</span><span data-lang-zh>行为</span></th>
+                <th><span data-lang-en>Examples</span><span data-lang-zh>示例</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>default</code></td>
+                <td>
+                  <span data-lang-en>Installed in normal analyzer images when static and low risk.</span
+                  ><span data-lang-zh>低风险静态 backend 会进入普通 analyzer 镜像。</span>
+                </td>
+                <td><code>restringer</code>, <code>jsimplifier</code>, <code>manifold</code>, <code>wabt</code></td>
+              </tr>
+              <tr>
+                <td><code>optional</code></td>
+                <td>
+                  <span data-lang-en>Enabled when <code>--backend-profile=optional</code> or broader profiles are selected.</span
+                  ><span data-lang-zh>使用 <code>--backend-profile=optional</code> 或更宽 profile 时启用。</span>
+                </td>
+                <td><code>jsir-cascade</code>, <code>jsvmp-analysis</code>, <code>gtirb</code>, <code>radare2</code></td>
+              </tr>
+              <tr>
+                <td><code>research</code></td>
+                <td>
+                  <span data-lang-en>Includes optional, heavy-profile, and license-gated Python routes where declared.</span
+                  ><span data-lang-zh>包含 optional、heavy-profile 和声明为 license-gated 的 Python 路线。</span>
+                </td>
+                <td><code>miasm</code>, <code>triton</code></td>
+              </tr>
+              <tr>
+                <td><code>runtime</code> / <code>gpu</code></td>
+                <td>
+                  <span data-lang-en>Reports delegated or BYO routes; analyzer images do not start instrumentation or GPU drivers.</span
+                  ><span data-lang-zh>报告 delegated/BYO 路线；analyzer 镜像不启动 instrumentation 或 GPU driver。</span>
+                </td>
+                <td><code>qbdi</code>, <code>culifter</code></td>
+              </tr>
+              <tr>
+                <td><code>heavy</code> / <code>all</code></td>
+                <td>
+                  <span data-lang-en>Used for explicit research builds; BYO and sidecar backends remain opt-in even here.</span
+                  ><span data-lang-zh>用于显式 research 构建；即使在这里 BYO 和 sidecar backend 仍保持 opt-in。</span>
+                </td>
+                <td><code>remill</code>, <code>revng</code></td>
+              </tr>
+            </tbody>
+          </table>
 
           <blockquote>
             <span data-lang-en
@@ -1076,6 +1151,56 @@ PYTHONUNBUFFERED = "1"</pre>
                     ><code>static</code>/<code>full</code> 使用 <code>disabled</code>，
                     <code>hybrid</code> 使用 <code>remote-sandbox</code></span
                   >
+                </td>
+              </tr>
+              <tr>
+                <td><code>RIKUNE_BACKEND_PROFILE</code></td>
+                <td><code>default</code></td>
+                <td>
+                  <span data-lang-en
+                    >Backend install tier selected during Docker generation:
+                    <code>default</code>, <code>optional</code>, <code>heavy</code>,
+                    <code>research</code>, <code>runtime</code>, <code>gpu</code>, or
+                    <code>all</code></span
+                  ><span data-lang-zh
+                    >Docker 生成时选择的 backend 安装层级：
+                    <code>default</code>、<code>optional</code>、<code>heavy</code>、<code>research</code>、<code>runtime</code>、<code>gpu</code>
+                    或 <code>all</code></span
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td><code>RESTRINGER_PATH</code></td>
+                <td><code>/opt/rikune-backends/restringer/bin/restringer-worker.js</code></td>
+                <td>
+                  <span data-lang-en>Installed static REstringer-compatible wrapper</span
+                  ><span data-lang-zh>已安装的静态 REstringer-compatible wrapper</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>JSIMPLIFIER_WORKER_PATH</code></td>
+                <td><code>/opt/rikune-backends/jsimplifier/bin/jsimplifier-worker.js</code></td>
+                <td>
+                  <span data-lang-en>Installed in-repo JSIMPLIFIER static worker</span
+                  ><span data-lang-zh>已安装的仓库内 JSIMPLIFIER 静态 worker</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>MANIFOLD_WORKER_PATH</code></td>
+                <td><code>/opt/rikune-backends/manifold/bin/manifold-worker.js</code></td>
+                <td>
+                  <span data-lang-en>Installed in-repo Manifold fact extraction worker</span
+                  ><span data-lang-zh>已安装的仓库内 Manifold fact extraction worker</span>
+                </td>
+              </tr>
+              <tr>
+                <td><code>JSIR_WORKER_PATH</code> / <code>JSVMP_WORKER_PATH</code></td>
+                <td>
+                  <span data-lang-en>Profile-gated</span><span data-lang-zh>由 profile gate 控制</span>
+                </td>
+                <td>
+                  <span data-lang-en>Optional JavaScript IR and JSVMP static workers</span
+                  ><span data-lang-zh>可选 JavaScript IR 与 JSVMP 静态 worker</span>
                 </td>
               </tr>
               <tr>

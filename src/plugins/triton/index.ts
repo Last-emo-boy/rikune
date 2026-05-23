@@ -127,7 +127,10 @@ const tritonPlugin = definePlugin({
       description: 'Triton dynamic binary analysis library',
       dockerInstall: 'pip install triton-library or provide a pinned build',
       dockerFeature: 'dynamic-python',
+      dockerValidation: ['python3 -c "import triton; print(\'triton ok\')" || true'],
       extraEnv: { TRITON_PYTHON: 'python3' },
+      dockerInstallRoute: 'profile-gated',
+      dockerInstallProfile: 'optional',
     },
   ],
   tools: [

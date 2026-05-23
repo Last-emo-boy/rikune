@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'jsvmp-analysis',
@@ -119,6 +124,49 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'jsvmp-analysis',
+  toolName: 'jsvmp.bytecode.recover',
+  description:
+    'Run a bounded static JSVMP bytecode recovery worker on local JavaScript artifacts. Builtin mode is fixture-safe; external mode requires JSVMP_WORKER_PATH.',
+  backendName: 'JSVMP Analysis',
+  adapter: 'jsvmp.static.parser',
+  envVar: 'JSVMP_WORKER_PATH',
+  dockerFeature: 'jsvmp-analysis',
+  dockerDefault: '/opt/rikune-backends/jsvmp-analysis/bin/jsvmp-worker.js',
+  installRoute: 'profile-gated',
+  installProfile: 'optional',
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    { type: 'jsvmp_bytecode_recovery', description: 'Recovered JSVMP bytecode container metadata' },
+    { type: 'jsvmp_handler_map', description: 'Static dispatcher and handler-map summary' },
+  ],
+  evidence: [
+    { category: 'structure', artifactTypes: ['jsvmp_bytecode_recovery'] },
+    { category: 'behavior', artifactTypes: ['jsvmp_handler_map'] },
+    { category: 'provenance', artifactTypes: ['jsvmp_bytecode_recovery'] },
+  ],
+  workflowRecipe: {
+    id: 'jsvmp.bytecode.recovery-worker',
+    title: 'JSVMP static bytecode recovery worker',
+    startsWith: ['javascript.obfuscation.profile', 'jsvmp.bytecode.recover'],
+    nextTools: ['jsir.cascade.normalize', 'strings.extract', 'analysis.evidence.graph'],
+    producesArtifacts: ['jsvmp_bytecode_recovery', 'jsvmp_handler_map'],
+    evidence: ['structure', 'behavior', 'workflow', 'provenance'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+  },
+  readinessSetupActions: [
+    'Set JSVMP_WORKER_PATH to a pinned static parser worker for external mode.',
+  ],
+  fixtureData: {
+    bytecode_candidates: 1,
+    dispatcher_candidates: 1,
+    handler_candidates: ['handler_0', 'handler_1'],
+    static_only: true,
+  },
+  recommendedNextTools: ['jsir.cascade.normalize', 'analysis.evidence.graph'],
+}
+
 const jsvmpAnalysisPlugin = definePlugin({
   id: 'jsvmp-analysis',
   name: 'JSVMP Analysis Plan',
@@ -135,6 +183,7 @@ const jsvmpAnalysisPlugin = definePlugin({
   description:
     'Passive JSVMP bytecode, dispatcher, handler-map, and semantics recovery planning for obfuscated JavaScript.',
   version: '1.0.0',
+  resources: { workers: 'workers' },
   configSchema: [
     {
       envVar: 'JSVMP_WORKER_PATH',
@@ -148,16 +197,26 @@ const jsvmpAnalysisPlugin = definePlugin({
       name: 'jsvmp-worker',
       target: '$JSVMP_WORKER_PATH',
       envVar: 'JSVMP_WORKER_PATH',
+      dockerDefault: '/opt/rikune-backends/jsvmp-analysis/bin/jsvmp-worker.js',
       required: false,
       description: 'Optional local JSVMP static parser worker',
-      dockerInstall: 'Provide a pinned local worker; not installed by default',
+      dockerInstall: 'Install Rikune local JSVMP parser worker',
       dockerFeature: 'jsvmp-analysis',
+      dockerValidation: [
+        'node /opt/rikune-backends/jsvmp-analysis/bin/jsvmp-worker.js --self-test',
+      ],
+      dockerInstallRoute: 'profile-gated',
+      dockerInstallProfile: 'optional',
     },
   ],
   tools: [
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

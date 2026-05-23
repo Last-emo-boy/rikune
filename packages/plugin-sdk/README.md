@@ -256,6 +256,7 @@ Worker-backed tools should keep a separate explicit tool name such as `example.w
 - input and output artifact types
 - `policy` fields such as `passiveByDefault`, `requiresUserOptIn`, `requiresIsolation`, `noNetwork`, `noMutation`, `noLiveExecution`, and size or timeout limits
 - `readiness.doesNotStartBackend: true` plus setup actions
+- `packaging` when the backend has Docker installation semantics
 
 Discovery surfaces expose this metadata without executing the backend:
 
@@ -265,6 +266,45 @@ Discovery surfaces expose this metadata without executing the backend:
 - `tool.readiness` returns `worker_backend_readiness`.
 
 External backend execution should remain opt-in and fixture-tested. Static JavaScript workers must not evaluate JavaScript or start Node/V8/browser automation by default; native IR workers must be read-only and bounded by file/function/range; runtime-gated workers must require explicit approval and isolation.
+
+### Backend Packaging Metadata
+
+`PluginSystemDep` is also the Docker backend installation contract. When a dependency declares
+`dockerFeature`, it must declare one of these routes:
+
+| Route | Meaning |
+| --- | --- |
+| `installed` | The generator installs it through apt, a Docker fragment, a copied in-repo worker, or base-image dependency validation. |
+| `profile-gated` | The generator installs it only when `--backend-profile` includes the declared `dockerInstallProfile`. |
+| `validation-only` | The plugin is a planner/readiness surface; another plugin owns the executable backend. |
+| `byo` | The user must provide the binary, wrapper, directory, or mounted path. |
+| `sidecar` | The backend should be supplied as a separate service/container. |
+
+Profiles are `default`, `optional`, `heavy`, `research`, `runtime`, `gpu`, and
+`license-gated`. Default Docker images should only install static, low-risk backends. Heavy,
+runtime, GPU, GPL/AGPL, or environment-sensitive tools must be profile-gated, BYO, or sidecar.
+
+Example in-repo worker route:
+
+```ts
+systemDeps: [
+  {
+    type: 'file',
+    name: 'example-worker',
+    target: '$EXAMPLE_WORKER_PATH',
+    envVar: 'EXAMPLE_WORKER_PATH',
+    dockerDefault: '/opt/rikune-backends/example/bin/example-worker.js',
+    dockerFeature: 'example',
+    dockerValidation: ['node /opt/rikune-backends/example/bin/example-worker.js --self-test'],
+    dockerInstallRoute: 'installed',
+    dockerInstallProfile: 'default',
+  },
+]
+```
+
+The matching `workerBackend.packaging` should echo the route, profile, feature, env var, and
+Docker default so `tool.readiness`, `plugin.list`, tests, and Docker dry-run agree on the same
+backend state.
 
 ## Runtime Contracts
 

@@ -18,10 +18,11 @@ Rikune 是一个面向 Windows EXE 和多格式二进制逆向的 MCP Server。�
 - 可选 HTTP API 和 dashboard，用于上传、下载、健康检查、SSE 事件和 artifact 访问。
 - 按 SHA-256 分桶的样本工作区，保存原始样本、缓存、Ghidra/.NET 输出和报告。
 - SQLite 持久化 samples、analysis runs、jobs、evidence、artifacts、batches、debug sessions 和 scheduler telemetry。
-- 56 个内置插件，支持第三方插件自动发现。
+- 92 个内置插件，支持第三方插件自动发现。
 - 渐进式工具暴露：核心工具常驻，专业工具按样本类型、发现结果或显式 `tools.discover` 暴露。
 - 覆盖 PE、ELF、Mach-O、APK/DEX、Office、firmware、strings、YARA、SBOM、签名、packer、.NET、Go、Rust 等静态分析。
 - 可集成 Ghidra、Rizin、RetDec、angr、Capstone、Graphviz、Qiling、PANDA、Speakeasy、Wine、Frida 等后端。
+- 插件驱动的 Docker backend 自动安装，支持 default、optional、research、runtime、GPU、BYO 和 sidecar 分层。
 - 可选 Analyzer/Runtime 分离架构，通过 Windows Host Agent、Windows Sandbox 或 Hyper-V VM 执行真实 Windows 运行时任务。
 - 对 live execution、网络访问、外部上传、批量反编译等危险能力做策略门控。
 
@@ -169,7 +170,17 @@ Docker/WSL analyzer 应使用 `remote-sandbox`，不要使用 `auto-sandbox`。
 
 ## 插件系统
 
-内置插件位于 `src/plugins/<id>/`，当前共 56 个。插件可以注册工具、声明依赖、暴露配置 schema、参与生命周期 hooks，并给 Docker 生成器提供安装元数据。
+内置插件位于 `src/plugins/<id>/`，当前共 92 个。插件可以注册工具、声明依赖、暴露配置 schema、参与生命周期 hooks，并给 Docker 生成器提供安装元数据，也可以通过 `workerBackend` metadata 声明受限 Worker-backed 工具。
+
+frontier Worker 套件保留 plan-only 工具作为 triage 和 handoff surface，再在旁边新增显式执行工具。`restringer.deobfuscation.run`、`jsimplifier.pipeline.run`、`jsir.cascade.normalize`、`jsvmp.bytecode.recover`、`gtirb.ir.generate`、`remill.lift.run`、`manifold.fact.extract`、`qbdi.trace.run` 和 `culifter.gpu.artifact.inventory` 会通过 `plugin.list`、`tools.discover`、`tool.help`、`tool.readiness` 暴露 Worker contract。Discovery 和 readiness 保持 passive：只报告 backend metadata 和 setup guidance，不启动 REstringer、JSIMPLIFIER、JSIR/CASCADE、JSVMP、GTIRB、Remill、Manifold、QBDI、GPU driver、Node/V8、browser 或 runtime instrumentation。
+
+Docker 生成器直接读取插件 `systemDeps` 和 Worker packaging metadata。默认镜像安装低风险静态 wrapper，例如 REstringer、JSIMPLIFIER、Manifold、WABT 和 LIEF validation；optional profile 可启用 JSIR/CASCADE、JSVMP、GTIRB、radare2、Triton 等静态路线；heavy/runtime/GPU/license-sensitive backend 保持 profile-gated、BYO 或 sidecar。
+
+```bash
+node scripts/generate-docker.mjs --dry-run
+node scripts/generate-docker.mjs --profile=full --backend-profile=optional
+node scripts/generate-docker.mjs --all-profiles --dry-run
+```
 
 `PLUGINS` 控制启动时加载范围：
 
@@ -232,7 +243,7 @@ src/
   tools/                      核心工具实现
   workflows/                  staged analysis、triage、reconstruction、review
   analysis/                   analysis run state 和后台任务 runner
-  plugins/                    56 个内置插件
+  plugins/                    92 个内置插件
   persistence/                SQLite 和 workspace 持久化
   sample/                     样本 finalization 和 workspace 检查
   storage/                    artifacts、uploads、retention

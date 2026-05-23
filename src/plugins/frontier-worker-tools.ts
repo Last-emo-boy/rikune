@@ -56,6 +56,11 @@ export interface FrontierWorkerToolSpec {
   adapter: string
   backendKind?: BackendWorkerContract['backendKind']
   envVar?: string
+  dockerFeature?: string
+  dockerDefault?: string
+  installRoute?: NonNullable<BackendWorkerContract['packaging']>['installRoute']
+  installProfile?: NonNullable<BackendWorkerContract['packaging']>['installProfile']
+  packagingNotes?: string[]
   aspects: PluginAspects
   artifacts: Array<{ type: string; description?: string }>
   evidence: Array<{ category: string; artifactTypes?: string[] }>
@@ -101,6 +106,21 @@ export function createFrontierWorkerContract(spec: FrontierWorkerToolSpec): Back
       missingBackendBehavior:
         'The worker returns backend_missing or uses builtin fixture-safe mode; readiness never starts the backend.',
     },
+    packaging: {
+      installRoute:
+        spec.installRoute ?? (spec.backendKind === 'builtin' ? 'installed' : 'profile-gated'),
+      installProfile:
+        spec.installProfile ??
+        (spec.backendKind === 'delegated-runtime'
+          ? 'runtime'
+          : spec.backendKind === 'builtin'
+            ? 'default'
+            : 'optional'),
+      dockerFeature: spec.dockerFeature ?? spec.pluginId,
+      envVar: spec.envVar,
+      dockerDefault: spec.dockerDefault,
+      notes: spec.packagingNotes ?? [],
+    },
   }
 }
 
@@ -143,6 +163,7 @@ export function createFrontierWorkerHandler(spec: FrontierWorkerToolSpec) {
       mode: input.mode,
       timeoutMs: input.timeout_ms,
       approved: input.approved,
+      allowExternalBackend: input.mode === 'external',
       fixtureData: {
         plugin_id: spec.pluginId,
         recommended_next_tools: spec.recommendedNextTools,

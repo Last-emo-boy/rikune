@@ -126,6 +126,10 @@ const workerSpec: FrontierWorkerToolSpec = {
   backendName: 'JSIR/CASCADE',
   adapter: 'jsir.cascade.static.normalize',
   envVar: 'JSIR_WORKER_PATH',
+  dockerFeature: 'jsir-cascade',
+  dockerDefault: '/opt/rikune-backends/jsir-cascade/bin/jsir-cascade-worker.js',
+  installRoute: 'profile-gated',
+  installProfile: 'optional',
   aspects: buildBackendPlanAspects(spec),
   artifacts: [
     { type: 'javascript_ir_artifact', description: 'Normalized JavaScript IR artifact' },
@@ -174,6 +178,7 @@ const jsirCascadePlugin = definePlugin({
   },
   description: 'Passive JSIR/CASCADE-style JavaScript IR normalization and deobfuscation planning.',
   version: '1.0.0',
+  resources: { workers: 'workers' },
   configSchema: [
     {
       envVar: 'JSIR_WORKER_PATH',
@@ -187,10 +192,16 @@ const jsirCascadePlugin = definePlugin({
       name: 'jsir-worker',
       target: '$JSIR_WORKER_PATH',
       envVar: 'JSIR_WORKER_PATH',
+      dockerDefault: '/opt/rikune-backends/jsir-cascade/bin/jsir-cascade-worker.js',
       required: false,
       description: 'Optional local JSIR/CASCADE static worker',
-      dockerInstall: 'Provide a pinned local JSIR/CASCADE worker; not installed by default',
+      dockerInstall: 'Install Rikune JSIR/CASCADE-compatible static wrapper',
       dockerFeature: 'jsir-cascade',
+      dockerValidation: [
+        'node /opt/rikune-backends/jsir-cascade/bin/jsir-cascade-worker.js --self-test',
+      ],
+      dockerInstallRoute: 'profile-gated',
+      dockerInstallProfile: 'optional',
     },
   ],
   tools: [

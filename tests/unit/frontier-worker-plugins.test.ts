@@ -13,6 +13,7 @@ describe('frontier worker-backed plugins', () => {
     ['restringer', 'restringer.deobfuscation.run', 'REstringer'],
     ['jsimplifier', 'jsimplifier.pipeline.run', 'JSIMPLIFIER'],
     ['jsir-cascade', 'jsir.cascade.normalize', 'JSIR/CASCADE'],
+    ['jsvmp-analysis', 'jsvmp.bytecode.recover', 'JSVMP Analysis'],
     ['gtirb', 'gtirb.ir.generate', 'GTIRB'],
     ['remill', 'remill.lift.run', 'Remill'],
     ['manifold', 'manifold.fact.extract', 'Manifold'],
@@ -40,6 +41,7 @@ describe('frontier worker-backed plugins', () => {
     ['restringer', 'restringer.deobfuscation.run', 'recovered_string_arrays'],
     ['jsimplifier', 'jsimplifier.pipeline.run', 'pass_timeline'],
     ['jsir-cascade', 'jsir.cascade.normalize', 'handler_candidates'],
+    ['jsvmp-analysis', 'jsvmp.bytecode.recover', 'bytecode_candidates'],
     ['gtirb', 'gtirb.ir.generate', 'cfg_blocks'],
     ['remill', 'remill.lift.run', 'lifted_instructions'],
     ['manifold', 'manifold.fact.extract', 'agreement'],
@@ -98,6 +100,82 @@ describe('frontier worker-backed plugins', () => {
       })
     )
   })
+
+  test.each([
+    [
+      'restringer',
+      'restringer.deobfuscation.run',
+      'RESTRINGER_PATH',
+      'src/plugins/restringer/workers/restringer-worker.js',
+      'recovered_string_arrays',
+    ],
+    [
+      'jsimplifier',
+      'jsimplifier.pipeline.run',
+      'JSIMPLIFIER_WORKER_PATH',
+      'src/plugins/jsimplifier/workers/jsimplifier-worker.js',
+      'pass_timeline',
+    ],
+    [
+      'jsir-cascade',
+      'jsir.cascade.normalize',
+      'JSIR_WORKER_PATH',
+      'src/plugins/jsir-cascade/workers/jsir-cascade-worker.js',
+      'handler_candidates',
+    ],
+    [
+      'jsvmp-analysis',
+      'jsvmp.bytecode.recover',
+      'JSVMP_WORKER_PATH',
+      'src/plugins/jsvmp-analysis/workers/jsvmp-worker.js',
+      'bytecode_candidates',
+    ],
+    [
+      'manifold',
+      'manifold.fact.extract',
+      'MANIFOLD_WORKER_PATH',
+      'src/plugins/manifold/workers/manifold-worker.js',
+      'facts',
+    ],
+  ])(
+    '%s external worker wrapper runs through backend-worker.v1 bridge',
+    async (pluginId, toolName, envVar, workerPath, key) => {
+      const previous = process.env[envVar]
+      process.env[envVar] = `node ${process.cwd()}/${workerPath}`
+      try {
+        const plugins = await discoverBuiltInPlugins()
+        const plugin = requirePlugin(plugins, pluginId)
+        const harness = createPluginTestHarness()
+        harness.registerPlugin(plugin)
+        const tool = harness.registeredTools.find((entry) => entry.definition.name === toolName)
+
+        const result = await tool!.handler({
+          path: 'fixtures/sample',
+          mode: 'external',
+          preview: true,
+        })
+
+        expect((result as any).ok).toBe(true)
+        expect((result as any).data).toEqual(
+          expect.objectContaining({
+            [key]: expect.anything(),
+            execution_semantics: expect.objectContaining({
+              actual_mode: 'worker_external',
+              live_execution: false,
+              no_network: true,
+              no_mutation: true,
+            }),
+          })
+        )
+      } finally {
+        if (previous === undefined) {
+          delete process.env[envVar]
+        } else {
+          process.env[envVar] = previous
+        }
+      }
+    }
+  )
 
   test('plan-only tools remain registered beside worker-backed tools', async () => {
     const plugins = await discoverBuiltInPlugins()

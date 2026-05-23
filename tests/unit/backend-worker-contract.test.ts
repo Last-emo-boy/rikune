@@ -1,4 +1,5 @@
 import { describe, expect, test } from '@jest/globals'
+import { join } from 'path'
 import {
   BackendWorkerContractSchema,
   defineTool,
@@ -131,5 +132,145 @@ describe('backend worker contract', () => {
         source: 'FixtureBackend',
       })
     )
+  })
+
+  test('external worker mode executes JSON stdin/stdout wrapper when explicitly enabled', async () => {
+    const workerPath = join(process.cwd(), 'tests', 'fixtures', 'workers', 'fixture-worker.mjs')
+    const externalContract = BackendWorkerContractSchema.parse({
+      ...contract,
+      commandHint: `node ${workerPath}`,
+      defaultMode: 'external',
+      policy: {
+        noNetwork: true,
+        noMutation: true,
+        noLiveExecution: true,
+        maxOutputBytes: 4096,
+        defaultTimeoutMs: 1000,
+      },
+    })
+    const request = buildBackendWorkerRequest({
+      tool: 'fixture.worker.run',
+      backend: externalContract,
+      args: { path: 'sample.js' },
+    })
+
+    const result = await runBackendWorker(request, {
+      mode: 'external',
+      allowExternalBackend: true,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        external: true,
+        execution_semantics: expect.objectContaining({
+          actual_mode: 'worker_external',
+          live_execution: false,
+        }),
+      })
+    )
+  })
+
+  test('external worker mode is denied unless explicitly enabled', async () => {
+    const workerPath = join(process.cwd(), 'tests', 'fixtures', 'workers', 'fixture-worker.mjs')
+    const externalContract = BackendWorkerContractSchema.parse({
+      ...contract,
+      commandHint: `node ${workerPath}`,
+      defaultMode: 'external',
+    })
+    const request = buildBackendWorkerRequest({
+      tool: 'fixture.worker.run',
+      backend: externalContract,
+      args: { path: 'sample.js' },
+    })
+
+    const result = await runBackendWorker(request, {
+      mode: 'external',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(expect.arrayContaining(['external_backend_execution_not_enabled']))
+  })
+
+  test('external worker mode rejects malformed backend output', async () => {
+    const workerPath = join(process.cwd(), 'tests', 'fixtures', 'workers', 'fixture-worker.mjs')
+    const externalContract = BackendWorkerContractSchema.parse({
+      ...contract,
+      commandHint: `node ${workerPath} malformed`,
+      defaultMode: 'external',
+    })
+    const request = buildBackendWorkerRequest({
+      tool: 'fixture.worker.run',
+      backend: externalContract,
+      args: { path: 'sample.js' },
+    })
+
+    const result = await runBackendWorker(request, {
+      mode: 'external',
+      allowExternalBackend: true,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(expect.arrayContaining(['external_backend_malformed_output']))
+  })
+
+  test('external worker mode enforces output limits', async () => {
+    const workerPath = join(process.cwd(), 'tests', 'fixtures', 'workers', 'fixture-worker.mjs')
+    const externalContract = BackendWorkerContractSchema.parse({
+      ...contract,
+      commandHint: `node ${workerPath} large`,
+      defaultMode: 'external',
+      policy: {
+        noNetwork: true,
+        noMutation: true,
+        noLiveExecution: true,
+        maxOutputBytes: 64,
+        defaultTimeoutMs: 1000,
+      },
+    })
+    const request = buildBackendWorkerRequest({
+      tool: 'fixture.worker.run',
+      backend: externalContract,
+      args: { path: 'sample.js' },
+    })
+
+    const result = await runBackendWorker(request, {
+      mode: 'external',
+      allowExternalBackend: true,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(
+      expect.arrayContaining(['external_backend_output_limit_exceeded'])
+    )
+  })
+
+  test('external worker mode enforces timeouts', async () => {
+    const workerPath = join(process.cwd(), 'tests', 'fixtures', 'workers', 'fixture-worker.mjs')
+    const externalContract = BackendWorkerContractSchema.parse({
+      ...contract,
+      commandHint: `node ${workerPath} slow`,
+      defaultMode: 'external',
+      policy: {
+        noNetwork: true,
+        noMutation: true,
+        noLiveExecution: true,
+        maxOutputBytes: 4096,
+        defaultTimeoutMs: 50,
+      },
+    })
+    const request = buildBackendWorkerRequest({
+      tool: 'fixture.worker.run',
+      backend: externalContract,
+      args: { path: 'sample.js' },
+    })
+
+    const result = await runBackendWorker(request, {
+      mode: 'external',
+      allowExternalBackend: true,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(expect.arrayContaining(['external_backend_timeout']))
   })
 })

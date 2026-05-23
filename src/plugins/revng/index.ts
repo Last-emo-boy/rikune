@@ -126,6 +126,9 @@ const revngPlugin = definePlugin({
       description: 'rev.ng binary analysis framework',
       dockerInstall: 'Install a pinned rev.ng release or container image; not installed by default',
       dockerFeature: 'revng',
+      dockerInstallRoute: 'sidecar',
+      dockerInstallProfile: 'heavy',
+      dockerInstallNotes: ['GPL-2.0 and heavy toolchain; use a sidecar or BYO backend path.'],
     },
   ],
   tools: [
