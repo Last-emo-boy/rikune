@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'culifter',
@@ -103,6 +108,46 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'culifter',
+  toolName: 'culifter.gpu.artifact.inventory',
+  description:
+    'Inventory CUDA/SASS/PTX/fatbin candidates from local artifacts without requiring GPU drivers, profilers, or sample execution.',
+  backendName: 'CuLifter',
+  adapter: 'culifter.gpu.artifact.inventory',
+  backendKind: 'builtin',
+  envVar: 'CULIFTER_WORKER_PATH',
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    { type: 'gpu_artifact_inventory', description: 'CUDA/SASS/PTX candidate inventory' },
+    { type: 'gpu_kernel_summary', description: 'GPU kernel and architecture summary' },
+  ],
+  evidence: [
+    { category: 'structure', artifactTypes: ['gpu_artifact_inventory'] },
+    { category: 'symbols', artifactTypes: ['gpu_kernel_summary'] },
+  ],
+  workflowRecipe: {
+    id: 'culifter.gpu.inventory-worker',
+    title: 'CuLifter no-GPU artifact inventory worker',
+    startsWith: ['culifter.gpu.artifact.inventory', 'linux.binary.inventory'],
+    nextTools: ['native.object.inventory', 'remill.lift.plan', 'sbom.provenance.graph'],
+    producesArtifacts: ['gpu_artifact_inventory', 'gpu_kernel_summary'],
+    evidence: ['structure', 'symbols', 'workflow', 'provenance'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+  },
+  readinessSetupActions: [
+    'No GPU driver is required for artifact inventory. Set CULIFTER_WORKER_PATH only for future external lifting mode.',
+  ],
+  fixtureData: {
+    kernels: ['kernel_0'],
+    architectures: ['sm_80'],
+    ptx_candidates: 1,
+    sass_candidates: 1,
+    gpu_driver_required: false,
+  },
+  recommendedNextTools: ['native.object.inventory', 'sbom.provenance.graph'],
+}
+
 const culifterPlugin = definePlugin({
   id: 'culifter',
   name: 'CuLifter GPU Plan',
@@ -141,6 +186,10 @@ const culifterPlugin = definePlugin({
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

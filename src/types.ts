@@ -158,6 +158,46 @@ export interface WorkflowRecipeSpec {
   [key: string]: unknown
 }
 
+/** Policy envelope for bounded backend worker tools. */
+export interface BackendWorkerPolicy {
+  passiveByDefault?: boolean
+  requiresUserOptIn?: boolean
+  requiresIsolation?: boolean
+  noNetwork?: boolean
+  noMutation?: boolean
+  noLiveExecution?: boolean
+  maxInputBytes?: number
+  maxOutputBytes?: number
+  defaultTimeoutMs?: number
+  allowedRoots?: string[]
+  notes?: string[]
+  [key: string]: unknown
+}
+
+/** Declaration of an optional worker backend used by a tool. */
+export interface BackendWorkerContract {
+  version?: 'backend-worker.v1'
+  backendName: string
+  backendKind: 'builtin' | 'external' | 'delegated-runtime'
+  adapter: string
+  availability?: 'builtin' | 'optional' | 'required'
+  envVar?: string
+  commandHint?: string
+  versionHint?: string
+  supportedModes?: string[]
+  defaultMode?: string
+  inputArtifactTypes?: string[]
+  outputArtifactTypes?: string[]
+  policy?: BackendWorkerPolicy
+  readiness?: {
+    doesNotStartBackend?: boolean
+    setupActions?: string[]
+    missingBackendBehavior?: string
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
 /**
  * Tool definition following MCP protocol
  */
@@ -179,6 +219,8 @@ export interface ToolDefinition {
   runtimePolicy?: DynamicRuntimePolicy
   /** Runtime execution contract for tools delegated to a runtime node. */
   runtime?: ToolRuntimeContract
+  /** Bounded backend worker contract for optional worker-backed tools. */
+  workerBackend?: BackendWorkerContract
 }
 
 /**

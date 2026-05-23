@@ -398,6 +398,65 @@ describe('tool.readiness', () => {
     expect((result.data as any)?.backend_missing).toBe(true)
   })
 
+  test('reports worker backend readiness without starting external backends', async () => {
+    const handler = createToolReadinessHandler(
+      () =>
+        [
+          {
+            name: 'fixture.worker.run',
+            description: 'fixture worker',
+            inputSchema: {},
+            aspects: {
+              formats: ['PE'],
+              execution: ['static'],
+              evidence: ['structure'],
+            },
+            workerBackend: {
+              version: 'backend-worker.v1',
+              backendName: 'FixtureWorker',
+              backendKind: 'external',
+              adapter: 'fixture.worker',
+              availability: 'optional',
+              defaultMode: 'builtin',
+              supportedModes: ['builtin', 'external'],
+              envVar: 'FIXTURE_WORKER_PATH',
+              outputArtifactTypes: ['fixture_worker_artifact'],
+              policy: {
+                passiveByDefault: true,
+                noNetwork: true,
+                noMutation: true,
+                noLiveExecution: true,
+              },
+              readiness: {
+                doesNotStartBackend: true,
+                setupActions: ['Set FIXTURE_WORKER_PATH for external mode.'],
+              },
+            },
+          },
+        ] as ToolDefinition[],
+      createPluginManagerMock as any
+    )
+
+    const result = await handler({ tool_name: 'fixture.worker.run', force_refresh: false })
+
+    expect(result.ok).toBe(true)
+    expect((result.data as any)?.worker_backend).toEqual(
+      expect.objectContaining({
+        version: 'backend-worker.v1',
+        backendName: 'FixtureWorker',
+        adapter: 'fixture.worker',
+      })
+    )
+    expect((result.data as any)?.worker_backend_readiness).toEqual(
+      expect.objectContaining({
+        status: 'ready',
+        backend_name: 'FixtureWorker',
+        mode: 'builtin',
+        does_not_start_backend: true,
+      })
+    )
+  })
+
   test('keeps local dynamic planning tools passive while surfacing advisory policy', async () => {
     const handler = createToolReadinessHandler(
       () =>

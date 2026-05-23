@@ -17,6 +17,7 @@ A plugin can:
 - provide Docker generation metadata;
 - define progressive tool surface rules;
 - delegate execution to Runtime Node through a runtime contract.
+- declare bounded optional backend Worker contracts for explicit worker-backed tools.
 
 ## Built-In Plugins
 
@@ -147,6 +148,7 @@ Required tool-level fields:
 - `workflowRecipes` when the tool starts, advances, or completes a workflow/correlation chain
 - `runtimePolicy` and either a `runtime` contract or explicit plan-only semantics for dynamic
   and runtime-backed tools
+- `workerBackend` when a tool delegates to an optional backend Worker
 
 Quality warning severities are intentionally warning-first:
 
@@ -259,6 +261,23 @@ unsafe backends:
 | `corpus-dependent` | similarity, binary diff, family clustering, KB memory | Must handle empty corpus and never require private datasets in CI |
 | `container-or-installer` | firmware extraction, container archive traversal, MSI/MSIX/PKG/DMG/APK/IPA | No mount, install, launch, entrypoint, package script, or custom action execution by default |
 
+## Worker-Backed Plugin Tools
+
+Worker-backed tools are explicit execution surfaces that sit beside existing plan-only tools. They share `backend-worker.v1`, return structured `WorkerResult` payloads, and expose readiness metadata without starting external backends. Builtin mode is fixture-safe and deterministic; external mode requires a configured backend path or runtime handoff.
+
+| Plugin | Plan-only tool | Worker-backed tool | Backend kind | Default boundary |
+| --- | --- | --- | --- | --- |
+| `restringer` | `restringer.deobfuscation.plan` | `restringer.deobfuscation.run` | external with builtin safe mode | Static JavaScript preprocessing only; no eval, Node/V8, browser, network, or source execution. |
+| `jsimplifier` | `jsimplifier.pipeline.plan` | `jsimplifier.pipeline.run` | external with builtin safe mode | Static pass orchestration only; no JavaScript runtime, LLM call, or network. |
+| `jsir-cascade` | `jsir.cascade.plan` | `jsir.cascade.normalize` | external with builtin safe mode | Static IR normalization only; no browser automation, Node/V8, or external deobfuscator by default. |
+| `gtirb` | `gtirb.ir.plan` | `gtirb.ir.generate` | external with builtin safe mode | Read-only IR artifact generation; no binary rewriting, loader mutation, or runtime execution. |
+| `remill` | `remill.lift.plan` | `remill.lift.run` | external with builtin safe mode | Function/range-bounded lift handoff; no whole-program unbounded lifting, emulator, solver, debugger, or network. |
+| `manifold` | `manifold.decompilation.plan` | `manifold.fact.extract` | external with builtin safe mode | Declarative fact extraction from local IR/CFG summaries; no decompiler/fact-engine process by default. |
+| `qbdi` | `qbdi.instrumentation.plan` | `qbdi.trace.run` | delegated-runtime | Requires `approved=true`, isolation, and runtime handoff; the local Analyzer never starts QBDI directly. |
+| `culifter` | `culifter.gpu.plan` | `culifter.gpu.artifact.inventory` | builtin safe inventory | No-GPU artifact inventory by default; no GPU driver, profiler, emulator, lifter, or sample execution. |
+
+These tools are visible through `plugin.list`, `tools.discover`, `tool.help`, `tool.readiness`, and the plugin aspect matrix. `tool.readiness` returns `worker_backend_readiness` and preserves `does_not_start_backend: true`.
+
 ## Plugin Matrix
 
 The current plugin matrix is organized by `formats`, `platforms`, `execution`, `runtimes`, `safety`, `capabilities`, and `evidence` aspects. `plugin.list`, `tools.discover`, `tool.help`, `tool.readiness`, and `sample.profile.get` expose these fields so clients can route from a file type to the right static inventory, dynamic plan, or runtime-gated tool.
@@ -271,8 +290,8 @@ The current plugin matrix is organized by `formats`, `platforms`, `execution`, `
 | iOS IPA, Mach-O, provisioning, entitlements | `apple-container`, `apple-signing`, `elf-macho` | `ios-runtime`, `frida`, `debug-session` | No IPA install, device connection, simulator start, Frida attach, or LLDB attach by default. |
 | Android APK, AAB, APKS, XAPK, DEX/OAT/VDEX, AAR | `android-package`, `android`, `apk-smali`, `jvm`, `linux-binary` | `android-runtime`, `frida`, `behavior-first` | No emulator start, ADB install, APK launch, frida-server deployment, or device connection by default. |
 | JVM, .NET, Unity, script bytecode | `jvm`, `dotnet-managed`, `dotnet-decompile`, `unity-managed`, `bytecode`, `strings` | `managed-sandbox`, `runtime-deobfuscate`, `behavior-first` | Runtime work is opt-in and delegated; metadata and bytecode inventory stay passive. |
-| JavaScript, Node/browser bundles, source maps, JSVMP-like obfuscation | `javascript-deobfuscation`, `jsvmp-analysis`, `jsimplifier`, `jsir-cascade`, `restringer`, `strings`, `yara`, `yara-x`, `bytecode` | Future JSIR/CASCADE, JSIMPLIFIER-style, REstringer, and handler-map workers must remain explicit opt-in backends | No JavaScript evaluation, Node/V8 start, browser automation, dynamic trace, LLM call, network lookup, or external deobfuscator invocation by default. |
-| Advanced native lifting, symbolic execution, IR, and backend comparison workflows | `revng`, `triton`, `miasm`, `lief`, `radare2`, `remill`, `gtirb`, `manifold`, `culifter`, `vm-analysis`, `rizin`, `ghidra`, `retdec` | Future bounded workers only; runtime/emulation must be opt-in | Default tools emit backend plans and readiness metadata only; no heavy backend process, solver, emulator, fact engine, binary mutation, GPU access, or sample execution starts during discovery. |
+| JavaScript, Node/browser bundles, source maps, JSVMP-like obfuscation | `javascript-deobfuscation`, `jsvmp-analysis`, `jsimplifier`, `jsir-cascade`, `restringer`, `strings`, `yara`, `yara-x`, `bytecode` | Worker-backed REstringer, JSIMPLIFIER, and JSIR/CASCADE tools remain explicit backend surfaces with builtin safe mode | No JavaScript evaluation, Node/V8 start, browser automation, dynamic trace, LLM call, network lookup, or external deobfuscator invocation by default. |
+| Advanced native lifting, symbolic execution, IR, and backend comparison workflows | `revng`, `triton`, `miasm`, `lief`, `radare2`, `remill`, `gtirb`, `manifold`, `culifter`, `vm-analysis`, `rizin`, `ghidra`, `retdec` | Worker-backed GTIRB, Remill, Manifold, QBDI, and CuLifter surfaces are bounded and readiness-gated; runtime/emulation remains opt-in | Discovery/readiness/help/list paths emit backend plans and readiness metadata only; no heavy backend process, solver, emulator, fact engine, binary mutation, GPU access, or sample execution starts during discovery. |
 | Firmware, containers, archives, native objects | `firmware`, `container-analysis`, `native-object`, `linux-package`, `windows-installer` | `qiling`, `linux-runtime`, `wasm-runtime` when applicable | No mount, extraction-to-execute path, package install, module insertion, or payload launch by default. |
 | WASM/WASI | `wasm`, `wabt`, `strings`, `sbom` | `wasm-runtime` | No module instantiation, WABT process, wasmtime start, filesystem preopen, or network grant by default. |
 | Network, host, memory, reports | `pcap-analysis`, `host-correlation`, `memory-forensics`, `visualization`, `reporting` | `behavior-first`, `dynamic.behavior.diff`, `analysis.evidence.graph` | Correlation tools operate on existing artifacts and do not start live collection. |

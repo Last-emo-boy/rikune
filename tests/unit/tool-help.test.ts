@@ -1030,6 +1030,26 @@ describe('tool.help tool', () => {
             safety: ['passive'],
           },
         ],
+        workerBackend: {
+          version: 'backend-worker.v1',
+          backendName: 'FixtureAndroidWorker',
+          backendKind: 'external',
+          adapter: 'fixture.android.inventory',
+          availability: 'optional',
+          defaultMode: 'builtin',
+          supportedModes: ['builtin', 'external'],
+          outputArtifactTypes: ['android_package_inventory'],
+          policy: {
+            passiveByDefault: true,
+            noNetwork: true,
+            noMutation: true,
+            noLiveExecution: true,
+          },
+          readiness: {
+            doesNotStartBackend: true,
+            setupActions: ['Set FIXTURE_ANDROID_WORKER_PATH for external mode.'],
+          },
+        },
       },
       {
         name: 'linux.binary.inventory',
@@ -1087,5 +1107,12 @@ describe('tool.help tool', () => {
     ).toBe(true)
     expect(tool.runtime_policy).toBeNull()
     expect(tool.runtime_contract).toBeNull()
+    expect(tool.worker_backend).toEqual(
+      expect.objectContaining({
+        version: 'backend-worker.v1',
+        backendName: 'FixtureAndroidWorker',
+        adapter: 'fixture.android.inventory',
+      })
+    )
   })
 })

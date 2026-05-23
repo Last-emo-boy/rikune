@@ -15,6 +15,7 @@ import {
 } from '../runtime-client/runtime-tool-support.js'
 import { ToolSurfaceRoleSchema, buildToolSurfaceGuidance } from '../tool-surface-guidance.js'
 import { buildToolAspectSummary } from './tool-aspect-matrix.js'
+import { checkBackendWorkerReadiness } from '../worker/backend-worker-client.js'
 
 const TOOL_NAME = 'tool.readiness'
 
@@ -75,6 +76,8 @@ const ToolReadinessDataSchema = z
     runtime_policy: z.any().nullable().optional(),
     runtime_contract_policy: z.any().nullable().optional(),
     runtime_isolation: z.any().nullable().optional(),
+    worker_backend: z.any().nullable().optional(),
+    worker_backend_readiness: z.any().nullable().optional(),
     runtime_policy_status: z.any().nullable().optional(),
     opt_in_required: z.boolean().optional(),
     policy_denied: z.boolean().optional(),
@@ -150,6 +153,10 @@ function buildToolMetadata(tool: ToolDefinition, plugin: PluginMetadata | null) 
     artifact_declarations: aspectSummary.artifact_declarations,
     evidence_declarations: aspectSummary.evidence_declarations,
     workflow_recipes: aspectSummary.workflow_recipes,
+    worker_backend: aspectSummary.worker_backend,
+    worker_backend_readiness: tool.workerBackend
+      ? checkBackendWorkerReadiness(tool.workerBackend)
+      : null,
     runtime_policy: runtimePolicy,
     runtime_contract_policy: tool.runtime?.policy ?? null,
     runtime_isolation: runtimeIsolation,

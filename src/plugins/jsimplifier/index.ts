@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'jsimplifier',
@@ -106,6 +111,51 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'jsimplifier',
+  toolName: 'jsimplifier.pipeline.run',
+  description:
+    'Run a bounded JSIMPLIFIER-style static deobfuscation pipeline worker on local JavaScript artifacts without executing JavaScript.',
+  backendName: 'JSIMPLIFIER',
+  adapter: 'jsimplifier.static.pipeline',
+  envVar: 'JSIMPLIFIER_WORKER_PATH',
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    { type: 'jsimplifier_pipeline_result', description: 'JSIMPLIFIER static pipeline output' },
+    { type: 'javascript_static_pass_report', description: 'Static pass timeline and metrics' },
+  ],
+  evidence: [
+    { category: 'structure', artifactTypes: ['javascript_static_pass_report'] },
+    { category: 'provenance', artifactTypes: ['jsimplifier_pipeline_result'] },
+  ],
+  workflowRecipe: {
+    id: 'jsimplifier.javascript.pipeline-worker',
+    title: 'JSIMPLIFIER static pipeline worker',
+    startsWith: ['javascript.obfuscation.profile', 'jsimplifier.pipeline.run'],
+    nextTools: [
+      'restringer.deobfuscation.run',
+      'jsir.cascade.normalize',
+      'analysis.evidence.graph',
+    ],
+    producesArtifacts: ['jsimplifier_pipeline_result', 'javascript_static_pass_report'],
+    evidence: ['structure', 'workflow', 'provenance'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+  },
+  readinessSetupActions: [
+    'Set JSIMPLIFIER_WORKER_PATH to a pinned local worker for external mode.',
+  ],
+  fixtureData: {
+    pass_timeline: ['parse', 'constant-fold', 'dead-branch-prune', 'identifier-score'],
+    confidence_breakdown: {
+      syntax: 0.9,
+      string_recovery: 0.75,
+      control_flow: 0.65,
+    },
+    static_only: true,
+  },
+  recommendedNextTools: ['restringer.deobfuscation.run', 'jsir.cascade.normalize'],
+}
+
 const jsimplifierPlugin = definePlugin({
   id: 'jsimplifier',
   name: 'JSIMPLIFIER Pipeline Plan',
@@ -144,6 +194,10 @@ const jsimplifierPlugin = definePlugin({
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

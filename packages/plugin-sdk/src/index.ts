@@ -99,6 +99,8 @@ export interface ToolDefinition {
   runtimePolicy?: DynamicRuntimePolicy
   /** Runtime execution contract for tools delegated to a runtime node. */
   runtime?: ToolRuntimeContract
+  /** Bounded backend worker contract for optional worker-backed tools. */
+  workerBackend?: BackendWorkerContract
 }
 
 /** Generic tool arguments (for tools that don't use Zod parsing). */
@@ -896,6 +898,44 @@ export interface DepCheckResult {
   error?: string
 }
 
+export interface BackendWorkerPolicy {
+  passiveByDefault?: boolean
+  requiresUserOptIn?: boolean
+  requiresIsolation?: boolean
+  noNetwork?: boolean
+  noMutation?: boolean
+  noLiveExecution?: boolean
+  maxInputBytes?: number
+  maxOutputBytes?: number
+  defaultTimeoutMs?: number
+  allowedRoots?: string[]
+  notes?: string[]
+  [key: string]: unknown
+}
+
+export interface BackendWorkerContract {
+  version?: 'backend-worker.v1'
+  backendName: string
+  backendKind: 'builtin' | 'external' | 'delegated-runtime'
+  adapter: string
+  availability?: 'builtin' | 'optional' | 'required'
+  envVar?: string
+  commandHint?: string
+  versionHint?: string
+  supportedModes?: string[]
+  defaultMode?: string
+  inputArtifactTypes?: string[]
+  outputArtifactTypes?: string[]
+  policy?: BackendWorkerPolicy
+  readiness?: {
+    doesNotStartBackend?: boolean
+    setupActions?: string[]
+    missingBackendBehavior?: string
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
 export interface PluginQualityWarning {
   code:
     | 'missing-output-schema'
@@ -1520,9 +1560,54 @@ export const WorkflowRecipeSpecSchema = z
   })
   .passthrough()
 
+export const BackendWorkerPolicySchema = z
+  .object({
+    passiveByDefault: z.boolean().optional().default(true),
+    requiresUserOptIn: z.boolean().optional().default(false),
+    requiresIsolation: z.boolean().optional().default(false),
+    noNetwork: z.boolean().optional().default(true),
+    noMutation: z.boolean().optional().default(true),
+    noLiveExecution: z.boolean().optional().default(true),
+    maxInputBytes: z.number().int().positive().optional(),
+    maxOutputBytes: z.number().int().positive().optional(),
+    defaultTimeoutMs: z.number().int().positive().optional(),
+    allowedRoots: z.array(z.string()).optional(),
+    notes: z.array(z.string()).optional(),
+  })
+  .passthrough()
+
+export const BackendWorkerContractSchema = z
+  .object({
+    version: z.literal('backend-worker.v1').optional().default('backend-worker.v1'),
+    backendName: z.string().min(1),
+    backendKind: z.enum(['builtin', 'external', 'delegated-runtime']),
+    adapter: z.string().min(1),
+    availability: z.enum(['builtin', 'optional', 'required']).optional().default('optional'),
+    envVar: z.string().optional(),
+    commandHint: z.string().optional(),
+    versionHint: z.string().optional(),
+    supportedModes: z.array(z.string()).optional().default(['builtin']),
+    defaultMode: z.string().optional().default('builtin'),
+    inputArtifactTypes: z.array(z.string()).optional().default([]),
+    outputArtifactTypes: z.array(z.string()).optional().default([]),
+    policy: BackendWorkerPolicySchema.optional().default({}),
+    readiness: z
+      .object({
+        doesNotStartBackend: z.boolean().optional().default(true),
+        setupActions: z.array(z.string()).optional().default([]),
+        missingBackendBehavior: z.string().optional(),
+      })
+      .passthrough()
+      .optional()
+      .default({}),
+  })
+  .passthrough()
+
 export type ToolArtifactSpec = z.infer<typeof ToolArtifactSpecSchema>
 export type ToolEvidenceSpec = z.infer<typeof ToolEvidenceSpecSchema>
 export type WorkflowRecipeSpec = z.infer<typeof WorkflowRecipeSpecSchema>
+export type BackendWorkerPolicySchemaType = z.infer<typeof BackendWorkerPolicySchema>
+export type BackendWorkerContractSchemaType = z.infer<typeof BackendWorkerContractSchema>
 
 export const ToolManifestSchema = z
   .object({
@@ -1536,6 +1621,7 @@ export const ToolManifestSchema = z
     workflowRecipes: z.array(WorkflowRecipeSpecSchema).optional(),
     runtimePolicy: DynamicRuntimePolicySchema.optional(),
     runtime: ToolRuntimeContractSchema.optional(),
+    workerBackend: BackendWorkerContractSchema.optional(),
     handler: z.string().optional(),
   })
   .passthrough()
@@ -1978,6 +2064,7 @@ export function defineTool<TArgs = ToolArgs>(config: DefineToolConfig<TArgs>): D
     workflowRecipes: config.workflowRecipes,
     runtimePolicy: config.runtimePolicy,
     runtime: config.runtime,
+    workerBackend: config.workerBackend,
   }
   const definedTool: DefinedTool<TArgs> = {
     definition,
@@ -2036,6 +2123,7 @@ export function defineManifestPlugin(
       workflowRecipes: toolManifest.workflowRecipes,
       runtimePolicy: toolManifest.runtimePolicy,
       runtime: toolManifest.runtime as ToolRuntimeContract | undefined,
+      workerBackend: toolManifest.workerBackend as BackendWorkerContract | undefined,
       handler,
     })
   })
@@ -2072,6 +2160,7 @@ export function validateTool(
     workflowRecipes: definition.workflowRecipes,
     runtimePolicy: definition.runtimePolicy,
     runtime: definition.runtime,
+    workerBackend: definition.workerBackend,
   })
   const issues = result.success ? [] : zodIssues(result.error)
   if (isDefinedTool(value) && typeof value.handler !== 'function') {

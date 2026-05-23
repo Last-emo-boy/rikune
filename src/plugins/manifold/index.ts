@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'manifold',
@@ -95,6 +100,57 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'manifold',
+  toolName: 'manifold.fact.extract',
+  description:
+    'Extract Manifold-style declarative reverse-engineering facts from local CFG/IR summaries through a bounded worker contract.',
+  backendName: 'Manifold',
+  adapter: 'manifold.declarative.fact.extract',
+  envVar: 'MANIFOLD_WORKER_PATH',
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    {
+      type: 'declarative_fact_artifact',
+      description: 'Declarative function/block/edge fact artifact',
+    },
+    {
+      type: 'cross_backend_fact_report',
+      description: 'Cross-backend agreement and conflict report',
+    },
+  ],
+  evidence: [
+    { category: 'structure', artifactTypes: ['declarative_fact_artifact'] },
+    { category: 'provenance', artifactTypes: ['cross_backend_fact_report'] },
+  ],
+  workflowRecipe: {
+    id: 'manifold.fact.extraction-worker',
+    title: 'Manifold declarative fact extraction worker',
+    startsWith: ['manifold.fact.extract', 'gtirb.ir.generate', 'remill.lift.run'],
+    nextTools: ['analysis.evidence.graph', 'report.generate'],
+    producesArtifacts: ['declarative_fact_artifact', 'cross_backend_fact_report'],
+    evidence: ['structure', 'workflow', 'provenance'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+  },
+  readinessSetupActions: [
+    'Set MANIFOLD_WORKER_PATH to a pinned local fact worker for external mode.',
+  ],
+  fixtureData: {
+    facts: {
+      functions: 1,
+      blocks: 3,
+      edges: 2,
+      calls: 1,
+    },
+    agreement: {
+      agreed: 4,
+      conflicting: 0,
+      missing: 1,
+    },
+  },
+  recommendedNextTools: ['analysis.evidence.graph', 'report.generate'],
+}
+
 const manifoldPlugin = definePlugin({
   id: 'manifold',
   name: 'Manifold Decompilation Plan',
@@ -133,6 +189,10 @@ const manifoldPlugin = definePlugin({
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

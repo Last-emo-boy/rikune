@@ -23,6 +23,7 @@ npm install @rikune/plugin-sdk zod
 | `ToolRuntimeContract` | Runtime Node delegation contract |
 | `PluginAspects` | Routing taxonomy for formats, platforms, execution mode, runtime backends, safety, and evidence |
 | `DynamicRuntimePolicy` | Policy metadata for dynamic or runtime-backed tools |
+| `BackendWorkerContract` | Bounded optional backend Worker contract for tool-local external adapters |
 | `ToolArtifactSpec`, `ToolEvidenceSpec` | Declarations for artifacts and evidence produced by a tool |
 | `definePlugin`, `defineTool`, `defineManifestPlugin` | Helpers for code-first or manifest-backed plugins |
 | `ok`, `fail`, `toolText` | Result helpers |
@@ -141,6 +142,7 @@ Tool-level metadata should include:
 - `aspects` when the tool is narrower than the plugin
 - `artifacts` or `evidence` when the tool emits analysis output
 - `runtimePolicy` and either `runtime` or plan-only semantics for dynamic tools
+- `workerBackend` when a tool delegates to a bounded optional backend Worker
 
 Quality warning codes include `missing-output-schema`, `missing-surface-rules`,
 `missing-aspects`, `missing-evidence`, `missing-runtime-policy`,
@@ -240,7 +242,29 @@ External plugins can declare manifest v2 metadata in `plugin.json` and export ha
 
 The SDK includes manifest validation helpers used by the Analyzer loader.
 
-Manifest v2 supports `aspects`, `runtimePolicy`, `resources`, `surfaceRules`, per-tool `artifacts`, per-tool `evidence`, and per-tool `runtime` contracts. Existing manifest fields remain compatible; new fields are additive.
+Manifest v2 supports `aspects`, `runtimePolicy`, `resources`, `surfaceRules`, per-tool `artifacts`, per-tool `evidence`, per-tool `runtime` contracts, and per-tool `workerBackend` contracts. Existing manifest fields remain compatible; new fields are additive.
+
+## Backend Worker Contracts
+
+Use `workerBackend` for optional tool-local adapters such as deobfuscators, IR generators, lifters, fact extractors, or specialized inventory workers. This is distinct from `runtime`: a Worker contract describes a bounded backend adapter and readiness metadata, while `runtime` describes delegated live execution through Runtime Node.
+
+Worker-backed tools should keep a separate explicit tool name such as `example.worker.run` instead of changing a plan-only tool into an execution tool. The contract should declare:
+
+- `version: "backend-worker.v1"`
+- `backendName`, `backendKind`, `adapter`, and optional `envVar` or `commandHint`
+- `supportedModes` and `defaultMode`
+- input and output artifact types
+- `policy` fields such as `passiveByDefault`, `requiresUserOptIn`, `requiresIsolation`, `noNetwork`, `noMutation`, `noLiveExecution`, and size or timeout limits
+- `readiness.doesNotStartBackend: true` plus setup actions
+
+Discovery surfaces expose this metadata without executing the backend:
+
+- `plugin.list` returns plugin-level `worker_backends` and per-tool `worker_backend`.
+- `tools.discover` returns plugin `worker_backend` hints.
+- `tool.help` returns per-tool `worker_backend`.
+- `tool.readiness` returns `worker_backend_readiness`.
+
+External backend execution should remain opt-in and fixture-tested. Static JavaScript workers must not evaluate JavaScript or start Node/V8/browser automation by default; native IR workers must be read-only and bounded by file/function/range; runtime-gated workers must require explicit approval and isolation.
 
 ## Runtime Contracts
 

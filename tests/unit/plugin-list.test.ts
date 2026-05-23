@@ -51,6 +51,26 @@ describe('plugin.list', () => {
                   safety: ['passive'],
                 },
               ],
+              workerBackend: {
+                version: 'backend-worker.v1',
+                backendName: 'FixtureAndroidWorker',
+                backendKind: 'external',
+                adapter: 'fixture.android.inventory',
+                availability: 'optional',
+                defaultMode: 'builtin',
+                supportedModes: ['builtin', 'external'],
+                outputArtifactTypes: ['android_package_inventory'],
+                policy: {
+                  passiveByDefault: true,
+                  noNetwork: true,
+                  noMutation: true,
+                  noLiveExecution: true,
+                },
+                readiness: {
+                  doesNotStartBackend: true,
+                  setupActions: ['Set FIXTURE_ANDROID_WORKER_PATH for external mode.'],
+                },
+              },
             },
           },
         ],
@@ -182,6 +202,19 @@ describe('plugin.list', () => {
     expect(android.tool_metadata[0].workflow_recipes).toEqual([
       expect.objectContaining({ id: 'android.static.behavior' }),
     ])
+    expect(android.worker_backends).toEqual([
+      expect.objectContaining({
+        version: 'backend-worker.v1',
+        backendName: 'FixtureAndroidWorker',
+        adapter: 'fixture.android.inventory',
+      }),
+    ])
+    expect(android.tool_metadata[0].worker_backend).toEqual(
+      expect.objectContaining({
+        backendName: 'FixtureAndroidWorker',
+        defaultMode: 'builtin',
+      })
+    )
     expect(android.quality_warnings).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: 'missing-output-schema' })])
     )

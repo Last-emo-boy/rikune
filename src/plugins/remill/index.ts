@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'remill',
@@ -96,6 +101,45 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'remill',
+  toolName: 'remill.lift.run',
+  description:
+    'Run a bounded Remill-style lift worker for explicit functions or address ranges; whole-program unbounded lifting is rejected by policy.',
+  backendName: 'Remill',
+  adapter: 'remill.bounded.llvm.lift',
+  envVar: 'REMILL_PATH',
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    { type: 'llvm_bitcode_lift_artifact', description: 'Bounded LLVM bitcode lift artifact' },
+    {
+      type: 'instruction_semantics_report',
+      description: 'Instruction semantics and unsupported opcode report',
+    },
+  ],
+  evidence: [
+    { category: 'structure', artifactTypes: ['llvm_bitcode_lift_artifact'] },
+    { category: 'behavior', artifactTypes: ['instruction_semantics_report'] },
+  ],
+  workflowRecipe: {
+    id: 'remill.llvm.lift-worker',
+    title: 'Remill bounded LLVM lifting worker',
+    startsWith: ['remill.lift.run', 'code.function.disassemble', 'gtirb.ir.generate'],
+    nextTools: ['manifold.fact.extract', 'revng.pipeline.plan', 'analysis.evidence.graph'],
+    producesArtifacts: ['llvm_bitcode_lift_artifact', 'instruction_semantics_report'],
+    evidence: ['structure', 'behavior', 'workflow', 'provenance'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+  },
+  readinessSetupActions: ['Set REMILL_PATH to a pinned Remill wrapper for external mode.'],
+  fixtureData: {
+    lifted_functions: 1,
+    lifted_instructions: 12,
+    unsupported_opcodes: [],
+    bounded: true,
+  },
+  recommendedNextTools: ['manifold.fact.extract', 'analysis.evidence.graph'],
+}
+
 const remillPlugin = definePlugin({
   id: 'remill',
   name: 'Remill Lift Plan',
@@ -134,6 +178,10 @@ const remillPlugin = definePlugin({
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

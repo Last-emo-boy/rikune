@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'restringer',
@@ -96,6 +101,48 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'restringer',
+  toolName: 'restringer.deobfuscation.run',
+  description:
+    'Run a bounded REstringer-style static JavaScript preprocessing worker on local artifacts. Builtin mode uses safe deterministic fixture logic; external mode requires RESTRINGER_PATH.',
+  backendName: 'REstringer',
+  adapter: 'restringer.static.preprocess',
+  envVar: 'RESTRINGER_PATH',
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    {
+      type: 'restringer_deobfuscation_result',
+      description: 'REstringer static deobfuscation result',
+    },
+    { type: 'javascript_string_array_recovery', description: 'Recovered string-array metadata' },
+  ],
+  evidence: [
+    { category: 'strings', artifactTypes: ['javascript_string_array_recovery'] },
+    { category: 'provenance', artifactTypes: ['restringer_deobfuscation_result'] },
+  ],
+  workflowRecipe: {
+    id: 'restringer.javascript.preprocess-worker',
+    title: 'REstringer static preprocessing worker',
+    startsWith: ['javascript.obfuscation.profile', 'restringer.deobfuscation.run'],
+    nextTools: ['jsimplifier.pipeline.run', 'jsir.cascade.normalize', 'jsvmp.bytecode.plan'],
+    producesArtifacts: ['restringer_deobfuscation_result', 'javascript_string_array_recovery'],
+    evidence: ['strings', 'workflow', 'provenance'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+  },
+  readinessSetupActions: ['Set RESTRINGER_PATH to a pinned REstringer wrapper for external mode.'],
+  fixtureData: {
+    recovered_string_arrays: 1,
+    simplified_expressions: 2,
+    static_only: true,
+  },
+  recommendedNextTools: [
+    'jsimplifier.pipeline.run',
+    'jsir.cascade.normalize',
+    'jsvmp.bytecode.plan',
+  ],
+}
+
 const restringerPlugin = definePlugin({
   id: 'restringer',
   name: 'REstringer Plan',
@@ -134,6 +181,10 @@ const restringerPlugin = definePlugin({
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

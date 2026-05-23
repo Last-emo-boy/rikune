@@ -251,6 +251,25 @@ test('aspect matrix indexes workflow recipe metadata', () => {
         nextTools: ['analysis.evidence.graph'],
       },
     ],
+    workerBackend: {
+      version: 'backend-worker.v1',
+      backendName: 'FixtureMatrixWorker',
+      backendKind: 'external',
+      adapter: 'fixture.matrix.worker',
+      availability: 'optional',
+      defaultMode: 'builtin',
+      supportedModes: ['builtin', 'external'],
+      outputArtifactTypes: ['fixture_workflow_seed'],
+      policy: {
+        passiveByDefault: true,
+        noNetwork: true,
+        noMutation: true,
+        noLiveExecution: true,
+      },
+      readiness: {
+        doesNotStartBackend: true,
+      },
+    },
   }
 
   const summary = buildToolAspectSummary(toolDefinition)
@@ -258,6 +277,13 @@ test('aspect matrix indexes workflow recipe metadata', () => {
   expect(summary.workflow_recipes).toEqual([
     expect.objectContaining({ id: 'fixture.workflow.review' }),
   ])
+  expect(summary.worker_backend).toEqual(
+    expect.objectContaining({
+      version: 'backend-worker.v1',
+      backendName: 'FixtureMatrixWorker',
+      adapter: 'fixture.matrix.worker',
+    })
+  )
 
   const matrix = buildPluginAspectMatrix([
     {

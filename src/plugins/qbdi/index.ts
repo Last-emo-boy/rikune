@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'qbdi',
@@ -106,6 +111,52 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'qbdi',
+  toolName: 'qbdi.trace.run',
+  description:
+    'Dispatch a QBDI trace request through an explicit opt-in delegated runtime worker contract. This local MCP server never starts QBDI directly.',
+  backendName: 'QBDI',
+  adapter: 'qbdi.delegated.trace',
+  backendKind: 'delegated-runtime',
+  envVar: 'QBDI_PATH',
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    { type: 'qbdi_trace_artifact', description: 'Delegated QBDI trace artifact metadata' },
+    { type: 'dbi_trace_summary', description: 'Instruction, coverage, and memory trace summary' },
+  ],
+  evidence: [
+    { category: 'timeline', artifactTypes: ['qbdi_trace_artifact'] },
+    { category: 'memory', artifactTypes: ['dbi_trace_summary'] },
+  ],
+  workflowRecipe: {
+    id: 'qbdi.dbi.trace-worker',
+    title: 'QBDI opt-in delegated trace worker',
+    startsWith: ['qbdi.instrumentation.plan', 'tool.readiness', 'qbdi.trace.run'],
+    nextTools: ['dynamic.runtime.status', 'analysis.evidence.graph', 'report.generate'],
+    producesArtifacts: ['qbdi_trace_artifact', 'dbi_trace_summary'],
+    evidence: ['timeline', 'memory', 'workflow', 'provenance'],
+    safety: ['passive', 'opt_in_dynamic', 'requires_isolation', 'no_network_by_default'],
+    runtimeBackends: ['qbdi'],
+  },
+  policy: {
+    requiresUserOptIn: true,
+    requiresIsolation: true,
+    noLiveExecution: false,
+    defaultTimeoutMs: 30_000,
+  },
+  readinessSetupActions: [
+    'Attach a runtime endpoint that advertises QBDI before calling qbdi.trace.run.',
+    'Pass approved=true only after analyst approval and isolation setup.',
+  ],
+  fixtureData: {
+    trace_events: 0,
+    delegated: true,
+    runtime_required: true,
+  },
+  recommendedNextTools: ['dynamic.runtime.status', 'analysis.evidence.graph'],
+}
+
 const qbdiPlugin = definePlugin({
   id: 'qbdi',
   name: 'QBDI Instrumentation Plan',
@@ -144,6 +195,10 @@ const qbdiPlugin = definePlugin({
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

@@ -169,7 +169,9 @@ Docker/WSL analyzers should use `remote-sandbox`, not `auto-sandbox`.
 
 ## Plugin System
 
-Rikune currently includes 92 built-in plugins under `src/plugins/<id>/`. Plugins can register tools, declare dependencies, expose configuration schema, participate in lifecycle hooks, and provide Docker metadata.
+Rikune currently includes 92 built-in plugins under `src/plugins/<id>/`. Plugins can register tools, declare dependencies, expose configuration schema, participate in lifecycle hooks, provide Docker metadata, and declare bounded Worker-backed tools through `workerBackend` metadata.
+
+The frontier Worker suite keeps plan-only tools as triage and handoff surfaces, then adds explicit execution tools beside them. `restringer.deobfuscation.run`, `jsimplifier.pipeline.run`, `jsir.cascade.normalize`, `gtirb.ir.generate`, `remill.lift.run`, `manifold.fact.extract`, `qbdi.trace.run`, and `culifter.gpu.artifact.inventory` expose Worker contracts through `plugin.list`, `tools.discover`, `tool.help`, and `tool.readiness`. Discovery and readiness remain passive: they report backend metadata and setup guidance without starting REstringer, JSIMPLIFIER, JSIR/CASCADE, GTIRB, Remill, Manifold, QBDI, GPU drivers, Node/V8, browsers, or runtime instrumentation.
 
 Plugin loading is controlled by `PLUGINS`:
 

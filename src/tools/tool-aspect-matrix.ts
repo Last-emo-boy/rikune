@@ -217,6 +217,7 @@ export function buildToolAspectSummary(
   workflow_recipes: unknown[]
   runtime_policy: unknown | null
   runtime_contract: unknown | null
+  worker_backend: unknown | null
 } {
   const source = objectValue(definition)
   const runtime = objectValue(source.runtime)
@@ -267,6 +268,7 @@ export function buildToolAspectSummary(
     workflow_recipes: workflowRecipes,
     runtime_policy: source.runtimePolicy ?? runtime.policy ?? options.pluginRuntimePolicy ?? null,
     runtime_contract: source.runtime ?? null,
+    worker_backend: source.workerBackend ?? null,
   }
 }
 

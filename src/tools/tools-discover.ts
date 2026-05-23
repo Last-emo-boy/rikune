@@ -99,6 +99,7 @@ export const toolsDiscoverOutputSchema = z.object({
               format_matrix: z.record(z.any()).optional(),
               runtime_policy: z.any().nullable().optional(),
               runtime_contract: z.any().nullable().optional(),
+              worker_backend: z.any().nullable().optional(),
               artifact_declarations: z.array(z.any()).optional(),
               evidence_declarations: z.array(z.any()).optional(),
               workflow_recipes: z.array(z.any()).optional(),
@@ -369,6 +370,8 @@ export function createToolsDiscoverHandler(pluginManager: PluginManager) {
                   runtime_contract:
                     toolSummaries.find((summary) => summary.runtime_contract)?.runtime_contract ??
                     null,
+                  worker_backend:
+                    toolSummaries.find((summary) => summary.worker_backend)?.worker_backend ?? null,
                   ...collectToolDeclarations(plugin, p.tools),
                   recommended_tools: perPluginMatrix?.target?.recommended_tools.length
                     ? perPluginMatrix.target.recommended_tools

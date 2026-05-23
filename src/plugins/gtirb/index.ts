@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'gtirb',
@@ -98,6 +103,42 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'gtirb',
+  toolName: 'gtirb.ir.generate',
+  description:
+    'Generate or summarize read-only GTIRB-style IR artifacts from local binary artifacts through a bounded worker contract.',
+  backendName: 'GTIRB',
+  adapter: 'gtirb.readonly.ir.generate',
+  envVar: 'GTIRB_PYTHON',
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    { type: 'gtirb_ir_artifact', description: 'Read-only GTIRB IR artifact metadata' },
+    { type: 'gtirb_cfg_summary', description: 'GTIRB CFG and symbol summary' },
+  ],
+  evidence: [
+    { category: 'structure', artifactTypes: ['gtirb_ir_artifact'] },
+    { category: 'symbols', artifactTypes: ['gtirb_cfg_summary'] },
+  ],
+  workflowRecipe: {
+    id: 'gtirb.binary.ir-worker',
+    title: 'GTIRB read-only IR worker',
+    startsWith: ['gtirb.ir.generate', 'pe.structure.analyze', 'elf.structure.analyze'],
+    nextTools: ['remill.lift.run', 'manifold.fact.extract', 'analysis.evidence.graph'],
+    producesArtifacts: ['gtirb_ir_artifact', 'gtirb_cfg_summary'],
+    evidence: ['structure', 'symbols', 'workflow', 'provenance'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+  },
+  readinessSetupActions: ['Set GTIRB_PYTHON to a Python interpreter with pinned GTIRB packages.'],
+  fixtureData: {
+    modules: 1,
+    cfg_blocks: 3,
+    symbols: ['entry', 'func_0'],
+    read_only: true,
+  },
+  recommendedNextTools: ['remill.lift.run', 'manifold.fact.extract'],
+}
+
 const gtirbPlugin = definePlugin({
   id: 'gtirb',
   name: 'GTIRB IR Plan',
@@ -137,6 +178,10 @@ const gtirbPlugin = definePlugin({
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

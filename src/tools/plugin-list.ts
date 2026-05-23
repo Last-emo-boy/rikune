@@ -129,6 +129,9 @@ export function createPluginListHandler(_server: ToolRegistrar) {
           aspects: pluginAspectPayload,
           aspect_coverage: describeAspectCoverage(pluginAspectPayload),
           runtime_policy: plugin?.runtimePolicy ?? null,
+          worker_backends: visiblePluginTools
+            .map((tool) => tool.definition.workerBackend)
+            .filter(Boolean),
           format_matrix: matrix?.by_format ?? {},
           plugin_matrix: matrix,
           artifact_declarations: visiblePluginTools.flatMap(

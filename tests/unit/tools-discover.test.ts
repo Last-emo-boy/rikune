@@ -45,6 +45,26 @@ describe('tools.discover', () => {
                   safety: ['passive'],
                 },
               ],
+              workerBackend: {
+                version: 'backend-worker.v1',
+                backendName: 'FixturePEWorker',
+                backendKind: 'external',
+                adapter: 'fixture.pe.imports',
+                availability: 'optional',
+                defaultMode: 'builtin',
+                supportedModes: ['builtin', 'external'],
+                outputArtifactTypes: ['pe.imports.json'],
+                policy: {
+                  passiveByDefault: true,
+                  noNetwork: true,
+                  noMutation: true,
+                  noLiveExecution: true,
+                },
+                readiness: {
+                  doesNotStartBackend: true,
+                  setupActions: ['Set FIXTURE_PE_WORKER_PATH for external mode.'],
+                },
+              },
             },
             handler: async () => ({ ok: true }),
           },
@@ -141,6 +161,13 @@ describe('tools.discover', () => {
         nextTools: ['analysis.evidence.graph'],
       }),
     ])
+    expect(staticPlugin.worker_backend).toEqual(
+      expect.objectContaining({
+        version: 'backend-worker.v1',
+        backendName: 'FixturePEWorker',
+        adapter: 'fixture.pe.imports',
+      })
+    )
     expect(
       categories.find((category: any) => category.category === 'static-analysis').plugin_matrix
         .by_workflow['pe.imports.review'].tools

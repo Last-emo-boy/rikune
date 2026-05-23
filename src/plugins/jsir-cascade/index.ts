@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'jsir-cascade',
@@ -113,6 +118,47 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'jsir-cascade',
+  toolName: 'jsir.cascade.normalize',
+  description:
+    'Normalize local JavaScript artifacts into a bounded JSIR/CASCADE-style static IR artifact without running Node, V8, or browser automation.',
+  backendName: 'JSIR/CASCADE',
+  adapter: 'jsir.cascade.static.normalize',
+  envVar: 'JSIR_WORKER_PATH',
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    { type: 'javascript_ir_artifact', description: 'Normalized JavaScript IR artifact' },
+    {
+      type: 'javascript_dispatcher_summary',
+      description: 'Dispatcher and handler candidate summary',
+    },
+  ],
+  evidence: [
+    { category: 'structure', artifactTypes: ['javascript_ir_artifact'] },
+    { category: 'behavior', artifactTypes: ['javascript_dispatcher_summary'] },
+  ],
+  workflowRecipe: {
+    id: 'jsir.cascade.normalization-worker',
+    title: 'JSIR/CASCADE static normalization worker',
+    startsWith: ['javascript.obfuscation.profile', 'jsir.cascade.normalize'],
+    nextTools: ['jsvmp.bytecode.plan', 'strings.extract', 'analysis.evidence.graph'],
+    producesArtifacts: ['javascript_ir_artifact', 'javascript_dispatcher_summary'],
+    evidence: ['structure', 'behavior', 'workflow', 'provenance'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+  },
+  readinessSetupActions: [
+    'Set JSIR_WORKER_PATH to a pinned JSIR/CASCADE worker for external mode.',
+  ],
+  fixtureData: {
+    ir_nodes: 8,
+    dispatcher_model: { type: 'switch-dispatch', confidence: 0.72 },
+    handler_candidates: ['handler_0', 'handler_1'],
+    static_only: true,
+  },
+  recommendedNextTools: ['jsvmp.bytecode.plan', 'strings.extract', 'analysis.evidence.graph'],
+}
+
 const jsirCascadePlugin = definePlugin({
   id: 'jsir-cascade',
   name: 'JSIR/CASCADE Plan',
@@ -151,6 +197,10 @@ const jsirCascadePlugin = definePlugin({
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

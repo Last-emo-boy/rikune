@@ -18,6 +18,7 @@ Versioning where practical.
 - Added passive next-wave plugins for JavaScript/JSVMP deobfuscation planning, rev.ng lift/decompile planning, Triton symbolic planning, and Miasm IR/data-flow planning, grounded in current JSIR/CASCADE, REstringer, rev.ng, Triton, and Miasm ecosystem signals while keeping all new backends plan-only by default.
 - Expanded the next-wave reverse-engineering suite with plan-only JSVMP bytecode/handler-map recovery, LIEF binary structure/transformation planning, radare2 cross-backend compatibility planning, and WABT WebAssembly toolchain planning; all remain passive and opt-in before any external backend process exists.
 - Added frontier plan-only suite coverage for JSIMPLIFIER, JSIR/CASCADE, REstringer, Remill, GTIRB, QBDI, superset-decompilation, and CuLifter-style workflows, plus shared backend handoff contracts and richer JSVMP static bytecode/dispatcher profiling.
+- Added `backend-worker.v1` SDK metadata and bounded Worker-backed tools for REstringer, JSIMPLIFIER, JSIR/CASCADE, GTIRB, Remill, Manifold, QBDI, and CuLifter. Worker metadata is surfaced through `plugin.list`, `tools.discover`, `tool.help`, and `tool.readiness` without starting external backends; QBDI remains explicit opt-in delegated runtime only.
 
 ### Runtime Stability
 

@@ -86,6 +86,7 @@ describe('advanced backend planning plugins', () => {
       expect(data.future_worker_contract).toEqual(
         expect.objectContaining({
           status: 'not_implemented',
+          contract_version: 'backend-worker.v1',
           backend: backendName,
           readiness: 'future_worker_required',
           expected_outputs: expect.arrayContaining([artifactType]),

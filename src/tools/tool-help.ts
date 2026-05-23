@@ -64,6 +64,7 @@ export const toolHelpOutputSchema = z.object({
         workflow_recipes: z.array(z.any()).optional(),
         runtime_policy: z.any().nullable().optional(),
         runtime_contract: z.any().nullable().optional(),
+        worker_backend: z.any().nullable().optional(),
         input: ToolSchemaSummarySchema.optional(),
         output: ToolSchemaSummarySchema.optional(),
       })

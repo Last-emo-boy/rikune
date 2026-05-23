@@ -149,6 +149,7 @@ export function buildBackendPlan(
   ])
   const futureWorkerContract = {
     status: 'not_implemented',
+    contract_version: 'backend-worker.v1',
     backend: spec.backendName,
     readiness: 'future_worker_required',
     required_inputs: uniqueStrings(contractStages.flatMap((stage) => stage.inputs)),
