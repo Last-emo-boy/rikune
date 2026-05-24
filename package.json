@@ -79,6 +79,7 @@
     "docker:generate:minimal": "node scripts/generate-docker.mjs --profile=static --exclude=ghidra,retdec,memory-forensics",
     "docker:generate:full": "node scripts/generate-docker.mjs --profile=full",
     "docs:api": "node scripts/generate-api-docs.js",
+    "docs:tool-catalog": "tsx scripts/generate-tool-catalog-doc.mjs",
     "docker:up:static": "npm run build && npm run docker:generate:static && docker compose -f docker-compose.analyzer.yml up -d analyzer",
     "docker:up:full": "npm run build && npm run docker:generate && docker compose -f docker-compose.yml up -d mcp-server",
     "docker:up:hybrid": "npm run build && npm run docker:generate:hybrid && docker compose -f docker-compose.hybrid.yml up -d analyzer",
