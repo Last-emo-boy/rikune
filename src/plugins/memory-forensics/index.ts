@@ -123,7 +123,7 @@ const memoryForensicsPlugin: Plugin = {
       description: 'Volatility 3 memory forensics framework',
       dockerInstall: 'pip install volatility3',
       dockerFeature: 'vol3',
-      dockerValidation: ['HOME=/app/cache/home /usr/local/bin/vol --help >/dev/null'],
+      dockerValidation: ['HOME=/tmp/rikune-home /usr/local/bin/vol --help >/dev/null'],
     },
     {
       type: 'directory',
