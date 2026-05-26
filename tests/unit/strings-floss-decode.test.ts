@@ -4,7 +4,11 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createStringsFlossDecodeHandler, StringsFlossDecodeInputSchema } from '../../src/plugins/strings/tools/strings-floss-decode.js'
+import {
+  createStringsFlossDecodeHandler,
+  stringsFlossDecodeToolDefinition,
+  StringsFlossDecodeInputSchema,
+} from '../../src/plugins/strings/tools/strings-floss-decode.js'
 import type { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { DatabaseManager } from '../../src/database.js'
 import type { CacheManager } from '../../src/cache-manager.js'
@@ -142,6 +146,28 @@ describe('strings.floss.decode tool', () => {
   })
 
   describe('Tool handler', () => {
+    test('should declare decoded string evidence workflow metadata', () => {
+      expect(stringsFlossDecodeToolDefinition.artifacts?.map((artifact) => artifact.type)).toContain(
+        'enriched_string_analysis'
+      )
+      expect(stringsFlossDecodeToolDefinition.workflowRecipes?.[0]).toEqual(
+        expect.objectContaining({
+          id: 'strings.floss-decoded-evidence',
+          producesArtifacts: ['enriched_string_analysis'],
+          nextTools: expect.arrayContaining([
+            'analysis.context.link',
+            'static.config.carver',
+            'analysis.evidence.graph',
+          ]),
+          safety: expect.arrayContaining([
+            'passive',
+            'no_live_sample_by_default',
+            'no_network_by_default',
+          ]),
+        })
+      )
+    })
+
     test('should return error when sample not found', async () => {
       const handler = createStringsFlossDecodeHandler(
         mockWorkspaceManager,
@@ -209,6 +235,40 @@ describe('strings.floss.decode tool', () => {
       expect(result.data).toMatchObject(mockCachedData)
       expect((result.data as any).enriched).toBeDefined()
       expect((result.data as any).enriched.top_decoded.length).toBeGreaterThan(0)
+      expect((result.data as any).evidence_summary).toEqual(
+        expect.objectContaining({
+          schema: 'rikune.strings_floss_decode.evidence_summary.v1',
+          decoded_string_count: 2,
+          top_iocs: expect.arrayContaining(['http://malicious.com/payload']),
+        })
+      )
+      expect((result.data as any).workflow_handoff).toEqual(
+        expect.objectContaining({
+          schema: 'rikune.strings_floss_decode.workflow_handoff.v1',
+          handoff_mode: 'decoded_strings_to_config_ioc_and_reporting',
+          recommended_next_tools: expect.arrayContaining([
+            'analysis.context.link',
+            'static.config.carver',
+            'malware.intel.loop',
+            'analysis.evidence.graph',
+          ]),
+        })
+      )
+      expect((result.data as any).workflow_handoff.dynamic_boundary).toEqual(
+        expect.objectContaining({
+          static_backend_started: false,
+          sample_executed_by_tool: false,
+          network_accessed_by_tool: false,
+        })
+      )
+      expect((result.data as any).quality_gates).toEqual(
+        expect.objectContaining({
+          passive_static_decode: true,
+          static_backend_started: false,
+          decoded_strings_present: true,
+          evidence_graph_handoff_ready: true,
+        })
+      )
       expect(result.warnings).toContain('Result from cache')
       expect(mockCacheManager.getCachedResult).toHaveBeenCalled()
     })

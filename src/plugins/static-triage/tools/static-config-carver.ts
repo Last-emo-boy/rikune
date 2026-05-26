@@ -42,6 +42,78 @@ export const staticConfigCarverToolDefinition: ToolDefinition = {
     'Carve generic malware/configuration candidates from raw sample bytes: URLs, domains, IPs, ports, registry paths, mutex-like values, user agents, encoded blobs, and suspicious configuration strings. Does not execute the sample.',
   inputSchema: StaticConfigCarverInputSchema,
   outputSchema: StaticConfigCarverOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll', 'dotnet', 'elf', 'macho', 'shellcode', 'raw-bytes'],
+    platforms: ['windows', 'linux', 'macos', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage', 'correlation'],
+    safety: ['passive', 'opt_in_dynamic', 'no_live_sample_by_default', 'no_network_by_default'],
+    capabilities: [
+      'config-carving',
+      'ioc-extraction',
+      'encoded-blob-triage',
+      'registry-triage',
+      'workflow-handoff',
+      'evidence-correlation',
+    ],
+    evidence: [
+      'network',
+      'registry',
+      'strings',
+      'encoded-config',
+      'environment-state',
+      'workflow',
+      'provenance',
+    ],
+  },
+  artifacts: [
+    {
+      type: 'static_config_carver',
+      description:
+        'Generic config, IOC, registry, mutex, encoded blob, workflow handoff, and passive quality gate evidence',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    { category: 'network', artifactTypes: ['static_config_carver'] },
+    { category: 'registry', artifactTypes: ['static_config_carver'] },
+    { category: 'strings', artifactTypes: ['static_config_carver'] },
+    { category: 'encoded-config', artifactTypes: ['static_config_carver'] },
+    { category: 'environment-state', artifactTypes: ['static_config_carver'] },
+    { category: 'workflow', artifactTypes: ['static_config_carver'] },
+    { category: 'provenance', artifactTypes: ['static_config_carver'] },
+  ],
+  workflowRecipes: [
+    {
+      id: 'static-triage.config-evidence-correlation',
+      title: 'Static config carving to evidence correlation',
+      description:
+        'Turn passive URLs, hosts, registry paths, mutexes, config strings, and encoded blobs into evidence graph nodes, IOC export inputs, behavior validation, and reporting handoffs.',
+      startsWith: ['static.config.carver', 'strings.extract'],
+      nextTools: [
+        'malware.intel.loop',
+        'ioc.export',
+        'static.behavior.classify',
+        'dynamic.behavior.diff',
+        'static.resource.graph',
+        'crypto.identify',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+      requiredArtifacts: [],
+      producesArtifacts: ['static_config_carver'],
+      evidence: [
+        'network',
+        'registry',
+        'strings',
+        'encoded-config',
+        'environment-state',
+        'workflow',
+        'provenance',
+      ],
+      safety: ['passive', 'opt_in_dynamic', 'no_live_sample_by_default', 'no_network_by_default'],
+    },
+  ],
 }
 
 interface ConfigCandidate {
@@ -229,6 +301,164 @@ function summarize(candidates: ConfigCandidate[], blobs: BlobCandidate[]) {
   }
 }
 
+function topConfigCandidates(candidates: ConfigCandidate[], limit = 8) {
+  return candidates
+    .slice()
+    .sort((left, right) => right.confidence - left.confidence)
+    .slice(0, limit)
+    .map((candidate) => ({
+      kind: candidate.kind,
+      value: candidate.value,
+      confidence: candidate.confidence,
+      evidence: candidate.evidence.slice(0, 6),
+    }))
+}
+
+function countBlobKinds(blobs: BlobCandidate[]): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const blob of blobs) counts[blob.kind] = (counts[blob.kind] || 0) + 1
+  return counts
+}
+
+function hasCandidateKind(candidates: ConfigCandidate[], pattern: RegExp): boolean {
+  return candidates.some((candidate) => pattern.test(candidate.kind))
+}
+
+function buildEvidenceSummary(args: {
+  sampleId: string
+  summary: ReturnType<typeof summarize>
+  candidates: ConfigCandidate[]
+  blobCandidates: BlobCandidate[]
+  stringCount: number
+}) {
+  return {
+    schema: 'rikune.static_config_carver.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    sample_id: args.sampleId,
+    candidate_count: args.summary.candidate_count,
+    blob_candidate_count: args.summary.blob_candidate_count,
+    high_confidence_count: args.summary.high_confidence_count,
+    candidate_kinds: args.summary.kinds,
+    blob_kinds: countBlobKinds(args.blobCandidates),
+    network_indicator_count: args.candidates.filter((candidate) =>
+      /url|domain|ip|user_agent/i.test(candidate.kind)
+    ).length,
+    registry_or_persistence_hint_count: args.candidates.filter((candidate) =>
+      /registry|run|service/i.test(candidate.kind)
+    ).length,
+    environment_hint_count: args.candidates.filter((candidate) =>
+      /mutex|guid/i.test(candidate.kind)
+    ).length,
+    string_count: args.stringCount,
+    top_candidates: topConfigCandidates(args.candidates),
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  sampleId: string
+  candidates: ConfigCandidate[]
+  blobCandidates: BlobCandidate[]
+  recommendedTools: string[]
+}) {
+  const hasNetworkIndicators = hasCandidateKind(
+    args.candidates,
+    /url|domain|ip|user_agent_or_http_client/i
+  )
+  const hasRegistryOrEnvironmentHints = hasCandidateKind(args.candidates, /registry|mutex|guid/i)
+  const hasEncodedBlobs = args.blobCandidates.length > 0
+
+  return {
+    schema: 'rikune.static_config_carver.workflow_handoff.v1',
+    handoff_mode: 'static_config_to_evidence_correlation',
+    sample_id: args.sampleId,
+    source_tool: TOOL_NAME,
+    recommended_next_tools: args.recommendedTools,
+    config_context: {
+      candidate_count: args.candidates.length,
+      blob_candidate_count: args.blobCandidates.length,
+      network_indicator_present: hasNetworkIndicators,
+      registry_or_environment_hint_present: hasRegistryOrEnvironmentHints,
+      encoded_blob_present: hasEncodedBlobs,
+      top_candidates: topConfigCandidates(args.candidates),
+    },
+    routing: [
+      {
+        goal: 'ioc-enrichment-and-export',
+        priority: hasNetworkIndicators ? 'high' : 'optional',
+        next_tools: ['malware.intel.loop', 'ioc.export', 'report.generate'],
+        required_evidence: ['static_config_carver'],
+      },
+      {
+        goal: 'runtime-behavior-validation',
+        priority: hasRegistryOrEnvironmentHints ? 'high' : 'normal',
+        next_tools: ['static.behavior.classify', 'dynamic.behavior.diff', 'dynamic.deep_plan'],
+        required_evidence: ['static_config_carver', 'explicit analyst opt-in for runtime'],
+      },
+      {
+        goal: 'encoded-config-or-payload-followup',
+        priority: hasEncodedBlobs ? 'high' : 'optional',
+        next_tools: ['static.resource.graph', 'crypto.identify', 'unpack.workflow.plan'],
+        required_evidence: ['blob_candidates', 'static_config_carver'],
+      },
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: 'normal',
+        next_tools: ['analysis.evidence.graph', 'report.generate'],
+        required_evidence: ['static_config_carver'],
+      },
+    ],
+    artifact_contract: {
+      consumes: ['sample bytes', 'raw strings'],
+      produces: ['static_config_carver'],
+      expected_consumers: [
+        'static.behavior.classify',
+        'malware.intel.loop',
+        'dynamic.behavior.diff',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+    },
+    dynamic_boundary: {
+      runtime_started_by_tool: false,
+      sample_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      runtime_followup_requires_opt_in: true,
+    },
+  }
+}
+
+function buildQualityGates(args: {
+  candidates: ConfigCandidate[]
+  blobCandidates: BlobCandidate[]
+}) {
+  const highConfidenceCount = args.candidates.filter(
+    (candidate) => candidate.confidence >= 0.75
+  ).length
+  const hasNetworkIndicators = hasCandidateKind(
+    args.candidates,
+    /url|domain|ip|user_agent_or_http_client/i
+  )
+  const hasRegistryOrEnvironmentHints = hasCandidateKind(args.candidates, /registry|mutex|guid/i)
+
+  return {
+    passive_static_carving: true,
+    backend_started: false,
+    sample_executed_by_tool: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    config_evidence_present: args.candidates.length > 0 || args.blobCandidates.length > 0,
+    network_indicator_present: hasNetworkIndicators,
+    registry_or_environment_hint_present: hasRegistryOrEnvironmentHints,
+    encoded_blob_present: args.blobCandidates.length > 0,
+    high_confidence_findings_present: highConfidenceCount > 0,
+    evidence_graph_handoff_ready: args.candidates.length > 0 || args.blobCandidates.length > 0,
+    runtime_followup_requires_opt_in: true,
+    analyst_review_required:
+      highConfidenceCount > 0 || hasNetworkIndicators || hasRegistryOrEnvironmentHints,
+    warning_count: 0,
+  }
+}
+
 export function createStaticConfigCarverHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager
@@ -256,6 +486,28 @@ export function createStaticConfigCarverHandler(
       const strings = Array.from(new Set([...asciiStrings, ...utf16Strings]))
       const candidates = inferConfigCandidates(strings)
       const blobCandidates = collectBlobCandidates(strings, input.max_blob_candidates)
+      const summary = summarize(candidates, blobCandidates)
+      const recommendedNextTools = [
+        'static.resource.graph',
+        'strings.extract',
+        'crypto.identify',
+        'dynamic.deep_plan',
+        'dynamic.behavior.capture',
+      ]
+      const evidenceSummary = buildEvidenceSummary({
+        sampleId: input.sample_id,
+        summary,
+        candidates,
+        blobCandidates,
+        stringCount: strings.length,
+      })
+      const workflowHandoff = buildWorkflowHandoff({
+        sampleId: input.sample_id,
+        candidates,
+        blobCandidates,
+        recommendedTools: recommendedNextTools,
+      })
+      const qualityGates = buildQualityGates({ candidates, blobCandidates })
       const data = {
         schema: 'rikune.static_config_carver.v1',
         tool_version: TOOL_VERSION,
@@ -264,16 +516,13 @@ export function createStaticConfigCarverHandler(
           size: buffer.length,
           sha256: createHash('sha256').update(buffer).digest('hex'),
         },
-        summary: summarize(candidates, blobCandidates),
+        summary,
         candidates: candidates.slice(0, 300),
         blob_candidates: blobCandidates,
-        recommended_next_tools: [
-          'static.resource.graph',
-          'strings.extract',
-          'crypto.identify',
-          'dynamic.deep_plan',
-          'dynamic.behavior.capture',
-        ],
+        evidence_summary: evidenceSummary,
+        workflow_handoff: workflowHandoff,
+        quality_gates: qualityGates,
+        recommended_next_tools: recommendedNextTools,
         next_actions: [
           'Review high-confidence URLs, IPs, registry paths, and config keyword strings before live execution.',
           'Use static.resource.graph when encoded blobs or resource-backed payloads are present.',

@@ -66,7 +66,11 @@ interface ResourceGraphData {
     high_entropy_resource_count: number
     largest_resources: Array<{ path: string; size: number; magic: string }>
   }
+  evidence_summary: Record<string, unknown>
+  workflow_handoff: Record<string, unknown>
+  quality_gates: Record<string, unknown>
   recommended_next_tools: string[]
+  next_actions: string[]
 }
 
 export const StaticResourceGraphInputSchema = z.object({
@@ -93,6 +97,59 @@ export const staticResourceGraphToolDefinition: ToolDefinition = {
     'Identifies resource leaf size, entropy, magic, hashes, strings, executable-like blobs, and recommended follow-up tools without executing the sample.',
   inputSchema: StaticResourceGraphInputSchema,
   outputSchema: StaticResourceGraphOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll', 'dotnet', 'raw-bytes'],
+    platforms: ['windows', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage', 'correlation'],
+    safety: ['passive', 'opt_in_dynamic', 'no_live_sample_by_default', 'no_network_by_default'],
+    capabilities: [
+      'resource-graph',
+      'embedded-payload-triage',
+      'high-entropy-resource-triage',
+      'workflow-handoff',
+      'evidence-correlation',
+    ],
+    evidence: ['resources', 'embedded-payload', 'entropy', 'strings', 'workflow', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'static_resource_graph',
+      description:
+        'Resource leaves, embedded payload hints, high-entropy resource evidence, workflow handoff, and passive quality gates',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    { category: 'resources', artifactTypes: ['static_resource_graph'] },
+    { category: 'embedded-payload', artifactTypes: ['static_resource_graph'] },
+    { category: 'entropy', artifactTypes: ['static_resource_graph'] },
+    { category: 'strings', artifactTypes: ['static_resource_graph'] },
+    { category: 'workflow', artifactTypes: ['static_resource_graph'] },
+    { category: 'provenance', artifactTypes: ['static_resource_graph'] },
+  ],
+  workflowRecipes: [
+    {
+      id: 'static-triage.resource-payload-correlation',
+      title: 'Static resource graph to payload correlation',
+      description:
+        'Turn passive resource, embedded payload, high-entropy blob, and string preview evidence into config carving, unpack planning, evidence graph, and reporting handoffs.',
+      startsWith: ['static.resource.graph'],
+      nextTools: [
+        'static.config.carver',
+        'entropy.analyze',
+        'strings.extract',
+        'crypto.identify',
+        'unpack.workflow.plan',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+      requiredArtifacts: [],
+      producesArtifacts: ['static_resource_graph'],
+      evidence: ['resources', 'embedded-payload', 'entropy', 'strings', 'workflow', 'provenance'],
+      safety: ['passive', 'opt_in_dynamic', 'no_live_sample_by_default', 'no_network_by_default'],
+    },
+  ],
 }
 
 function readUInt16(buffer: Buffer, offset: number): number {
@@ -324,6 +381,150 @@ function buildSummary(resources: PeResourceLeaf[]): ResourceGraphData['summary']
   }
 }
 
+function topSuspiciousResources(resources: PeResourceLeaf[], limit = 8) {
+  const executableLike = new Set(['pe_or_dos', 'elf', 'zip', 'cab'])
+  return resources
+    .filter(
+      (resource) =>
+        executableLike.has(resource.magic) ||
+        (resource.entropy ?? 0) >= 7.2 ||
+        resource.size >= 1024 * 1024
+    )
+    .sort((left, right) => {
+      const leftScore =
+        (executableLike.has(left.magic) ? 2 : 0) + ((left.entropy ?? 0) >= 7.2 ? 1 : 0)
+      const rightScore =
+        (executableLike.has(right.magic) ? 2 : 0) + ((right.entropy ?? 0) >= 7.2 ? 1 : 0)
+      return rightScore - leftScore || right.size - left.size
+    })
+    .slice(0, limit)
+    .map((resource) => ({
+      path: resource.path.join('/'),
+      size: resource.size,
+      magic: resource.magic,
+      entropy: resource.entropy,
+      sha256: resource.sha256,
+      string_preview: resource.stringPreview.slice(0, 4),
+    }))
+}
+
+function buildEvidenceSummary(args: {
+  sampleId: string
+  file: ResourceGraphData['file']
+  pe: ResourceGraphData['pe']
+  resources: PeResourceLeaf[]
+  summary: ResourceGraphData['summary']
+}) {
+  return {
+    schema: 'rikune.static_resource_graph.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    sample_id: args.sampleId,
+    file_magic: args.file.magic,
+    file_is_pe: args.file.is_pe,
+    section_count: args.pe.section_count,
+    resource_directory_present: args.pe.resource_directory_rva !== null,
+    resource_count: args.summary.resource_count,
+    suspicious_resource_count: args.summary.suspicious_resource_count,
+    executable_like_resource_count: args.summary.executable_like_resource_count,
+    high_entropy_resource_count: args.summary.high_entropy_resource_count,
+    top_suspicious_resources: topSuspiciousResources(args.resources),
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  sampleId: string
+  resources: PeResourceLeaf[]
+  summary: ResourceGraphData['summary']
+  recommendedTools: string[]
+}) {
+  const hasExecutablePayload = args.summary.executable_like_resource_count > 0
+  const hasHighEntropyResources = args.summary.high_entropy_resource_count > 0
+  const hasStringPreviews = args.resources.some((resource) => resource.stringPreview.length > 0)
+
+  return {
+    schema: 'rikune.static_resource_graph.workflow_handoff.v1',
+    handoff_mode: 'static_resource_to_payload_correlation',
+    sample_id: args.sampleId,
+    source_tool: TOOL_NAME,
+    recommended_next_tools: args.recommendedTools,
+    resource_context: {
+      resource_count: args.summary.resource_count,
+      suspicious_resource_count: args.summary.suspicious_resource_count,
+      executable_payload_present: hasExecutablePayload,
+      high_entropy_resource_present: hasHighEntropyResources,
+      string_preview_present: hasStringPreviews,
+      top_suspicious_resources: topSuspiciousResources(args.resources),
+    },
+    routing: [
+      {
+        goal: 'embedded-payload-followup',
+        priority: hasExecutablePayload ? 'high' : 'optional',
+        next_tools: ['unpack.workflow.plan', 'static.config.carver', 'analysis.evidence.graph'],
+        required_evidence: ['static_resource_graph'],
+      },
+      {
+        goal: 'encoded-or-encrypted-resource-followup',
+        priority: hasHighEntropyResources ? 'high' : 'optional',
+        next_tools: ['entropy.analyze', 'crypto.identify', 'static.config.carver'],
+        required_evidence: ['high entropy resource evidence'],
+      },
+      {
+        goal: 'string-preview-config-carving',
+        priority: hasStringPreviews ? 'normal' : 'optional',
+        next_tools: ['strings.extract', 'static.config.carver', 'malware.intel.loop'],
+        required_evidence: ['resource string previews'],
+      },
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: 'normal',
+        next_tools: ['analysis.evidence.graph', 'report.generate'],
+        required_evidence: ['static_resource_graph'],
+      },
+    ],
+    artifact_contract: {
+      consumes: ['sample bytes'],
+      produces: ['static_resource_graph'],
+      expected_consumers: [
+        'static.config.carver',
+        'unpack.workflow.plan',
+        'crypto.identify',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+    },
+    dynamic_boundary: {
+      runtime_started_by_tool: false,
+      sample_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      runtime_followup_requires_opt_in: true,
+    },
+  }
+}
+
+function buildQualityGates(args: {
+  resources: PeResourceLeaf[]
+  summary: ResourceGraphData['summary']
+}) {
+  const hasStringPreviews = args.resources.some((resource) => resource.stringPreview.length > 0)
+
+  return {
+    passive_static_resource_graph: true,
+    backend_started: false,
+    sample_executed_by_tool: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    resource_evidence_present: args.summary.resource_count > 0,
+    suspicious_resource_present: args.summary.suspicious_resource_count > 0,
+    executable_payload_present: args.summary.executable_like_resource_count > 0,
+    high_entropy_resource_present: args.summary.high_entropy_resource_count > 0,
+    string_preview_present: hasStringPreviews,
+    evidence_graph_handoff_ready: args.summary.resource_count > 0,
+    runtime_followup_requires_opt_in: true,
+    analyst_review_required: args.summary.suspicious_resource_count > 0,
+    warning_count: 0,
+  }
+}
+
 export function createStaticResourceGraphHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager
@@ -349,31 +550,61 @@ export function createStaticResourceGraphHandler(
         input.max_resources,
         input.max_string_preview
       )
+      const summary = buildSummary(resources)
+      const recommendedNextTools = [
+        'static.config.carver',
+        'entropy.analyze',
+        'strings.extract',
+        'crypto.identify',
+        'unpack.workflow.plan',
+        'analysis.evidence.graph',
+        'report.generate',
+        'dotnet.metadata.extract',
+        'dynamic.deep_plan',
+      ]
+      const file = {
+        size: buffer.length,
+        sha256: createHash('sha256').update(buffer).digest('hex'),
+        magic: magicOf(buffer),
+        is_pe: pe.isPe,
+      }
+      const peData = {
+        machine: pe.machine,
+        section_count: pe.sections.length,
+        resource_directory_rva: pe.resourceRva,
+        resource_directory_size: pe.resourceSize,
+        sections: pe.sections,
+      }
+      const evidenceSummary = buildEvidenceSummary({
+        sampleId: input.sample_id,
+        file,
+        pe: peData,
+        resources,
+        summary,
+      })
+      const workflowHandoff = buildWorkflowHandoff({
+        sampleId: input.sample_id,
+        resources,
+        summary,
+        recommendedTools: recommendedNextTools,
+      })
+      const qualityGates = buildQualityGates({ resources, summary })
       const data: ResourceGraphData = {
         schema: 'rikune.static_resource_graph.v1',
         tool_version: TOOL_VERSION,
         sample_id: input.sample_id,
-        file: {
-          size: buffer.length,
-          sha256: createHash('sha256').update(buffer).digest('hex'),
-          magic: magicOf(buffer),
-          is_pe: pe.isPe,
-        },
-        pe: {
-          machine: pe.machine,
-          section_count: pe.sections.length,
-          resource_directory_rva: pe.resourceRva,
-          resource_directory_size: pe.resourceSize,
-          sections: pe.sections,
-        },
+        file,
+        pe: peData,
         resources,
-        summary: buildSummary(resources),
-        recommended_next_tools: [
-          'static.config.carver',
-          'entropy.analyze',
-          'strings.extract',
-          'dotnet.metadata.extract',
-          'dynamic.deep_plan',
+        summary,
+        evidence_summary: evidenceSummary,
+        workflow_handoff: workflowHandoff,
+        quality_gates: qualityGates,
+        recommended_next_tools: recommendedNextTools,
+        next_actions: [
+          'Review executable-like, high-entropy, or oversized resources before live execution.',
+          'Use static.config.carver to extract URLs, registry paths, or encoded config from resource string previews.',
+          'Use unpack.workflow.plan only after reviewing whether resource evidence suggests an embedded payload.',
         ],
       }
 

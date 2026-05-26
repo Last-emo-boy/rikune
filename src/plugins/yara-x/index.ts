@@ -28,9 +28,15 @@ const yaraXPlugin: Plugin = {
     platforms: ['windows', 'linux', 'macos', 'android', 'embedded', 'cross-platform'],
     architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
     execution: ['static', 'triage'],
-    safety: ['passive', 'no_network_by_default'],
-    capabilities: ['signatures', 'pattern-matching', 'rule-matching'],
-    evidence: ['signatures', 'strings', 'provenance'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+    capabilities: [
+      'signatures',
+      'pattern-matching',
+      'rule-matching',
+      'workflow-handoff',
+      'evidence-correlation',
+    ],
+    evidence: ['signatures', 'strings', 'workflow', 'provenance'],
   },
   surfaceRules: {
     tier: 2,

@@ -123,6 +123,42 @@ describe('crypto.identify tool', () => {
     expect(data.algorithms[0].algorithm_family).toBe('aes')
     expect(data.algorithms[0].function).toBe('FUN_140023A50')
     expect(data.candidate_constants.some((item: any) => item.kind === 'sbox')).toBe(true)
+    expect(data.evidence_summary).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.crypto_identification.evidence_summary.v1',
+        source_tool: 'crypto.identify',
+        algorithm_count: data.algorithms.length,
+        localized_algorithm_count: expect.any(Number),
+        runtime_evidence_present: true,
+      })
+    )
+    expect(data.workflow_handoff).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.crypto_identification.workflow_handoff.v1',
+        handoff_mode: 'crypto_identification_to_runtime_tracing',
+        routing: expect.arrayContaining([
+          expect.objectContaining({
+            goal: 'crypto-breakpoint-planning',
+            next_tools: expect.arrayContaining(['breakpoint.smart', 'trace.condition']),
+          }),
+          expect.objectContaining({
+            goal: 'crypto-lifecycle-correlation',
+            next_tools: expect.arrayContaining(['crypto.lifecycle.graph', 'analysis.evidence.graph']),
+          }),
+        ]),
+      })
+    )
+    expect(data.quality_gates).toEqual(
+      expect.objectContaining({
+        passive_static_identification: true,
+        backend_started: false,
+        sample_executed_by_tool: false,
+        network_accessed_by_tool: false,
+        crypto_evidence_present: true,
+        function_localized_evidence_present: true,
+        runtime_followup_requires_opt_in: true,
+      })
+    )
     expect(data.recommended_next_tools).toEqual(
       expect.arrayContaining(['breakpoint.smart', 'trace.condition'])
     )

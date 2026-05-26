@@ -15,7 +15,9 @@ function toFileUrl(...segments) {
 }
 
 function unique(values) {
-  return Array.from(new Set(values.filter((value) => typeof value === 'string' && value.length > 0)))
+  return Array.from(
+    new Set(values.filter((value) => typeof value === 'string' && value.length > 0))
+  )
 }
 
 function asArray(value) {
@@ -80,7 +82,11 @@ function inferPluginCategory(plugin, definition) {
   if (haystack.includes('javascript') || haystack.includes('jsvmp') || haystack.includes('jsir')) {
     return 'javascript-deobfuscation'
   }
-  if (haystack.includes('dynamic') || haystack.includes('runtime') || haystack.includes('sandbox')) {
+  if (
+    haystack.includes('dynamic') ||
+    haystack.includes('runtime') ||
+    haystack.includes('sandbox')
+  ) {
     return 'dynamic-analysis'
   }
   if (haystack.includes('memory') || haystack.includes('volatility')) return 'memory-forensics'
@@ -111,7 +117,14 @@ function mergeAspects(pluginAspects, toolAspects) {
 }
 
 function summarizeAspects(aspects) {
-  const priority = ['formats', 'platforms', 'architectures', 'execution', 'capabilities', 'evidence']
+  const priority = [
+    'formats',
+    'platforms',
+    'architectures',
+    'execution',
+    'capabilities',
+    'evidence',
+  ]
   const parts = []
   for (const key of priority) {
     const values = asArray(aspects[key]).slice(0, 5)
@@ -153,7 +166,9 @@ function toolMetadata(source, plugin, definition) {
     description: normalizeDescription(definition.description),
     aspects,
     aspectSummary: summarizeAspects(aspects),
-    artifactTypes: asArray(definition.artifacts).map((artifact) => text(artifact.type)).filter(Boolean),
+    artifactTypes: asArray(definition.artifacts)
+      .map((artifact) => text(artifact.type))
+      .filter(Boolean),
     evidenceCategories: asArray(definition.evidence)
       .map((item) => text(item.category))
       .filter(Boolean),
@@ -455,7 +470,12 @@ function renderPluginSection(plugin) {
     plugin.executionDomain,
     plugin.category,
     ...categories,
-    ...tools.flatMap((tool) => [tool.name, tool.description, tool.backendName, tool.backendAdapter]),
+    ...tools.flatMap((tool) => [
+      tool.name,
+      tool.description,
+      tool.backendName,
+      tool.backendAdapter,
+    ]),
     ...deps.flatMap((dep) => [dep.name, dep.type, dep.envVar, dep.dockerFeature]),
   ]
     .join(' ')
@@ -828,6 +848,20 @@ ${renderNav(true)}
           <p class="catalog-note">
             This catalog is generated from tool definitions and plugin metadata. Rikune still uses progressive tool discovery at runtime, so a client should begin with <code>tools.discover</code>, <code>tool.help</code>, and <code>tool.readiness</code> instead of assuming every expert tool is visible at startup.
           </p>
+          <p class="catalog-note">
+            <code>tools.discover</code> is the main search portal for hidden capabilities. Use <code>action=recommend</code> to receive ranked toolchains with <code>score</code>, <code>match_reasons</code>, <code>readiness_state</code>, <code>activation_plan</code>, <code>activation_command</code>, <code>why_hidden</code>, and backend profile hints. Use <code>action=activate</code> only to expose selected tools; activation responses include <code>activation_audit</code> and must preserve <code>backend_execution_started=false</code>.
+          </p>
+          <table class="doc-table">
+            <thead>
+              <tr><th>Portal concept</th><th>Release guard</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Small startup surface</td><td>Hidden registered tools remain blocked by <code>ToolExecutor</code> until discovery exposes them.</td></tr>
+              <tr><td>Recommendation fields</td><td><code>score</code>, <code>match_reasons</code>, readiness state, activation command, and hidden-surface explanation are machine-readable.</td></tr>
+              <tr><td>Backend profiles</td><td>Routes such as <code>installed</code>, <code>profile-gated</code>, <code>byo</code>, <code>sidecar</code>, and <code>validation-only</code> are metadata until an explicit worker/runtime path is approved.</td></tr>
+              <tr><td>Safety policy</td><td>Discovery, help, readiness, plugin listing, catalog generation, and Docker dry-runs do not start external backends, sidecars, runtimes, solvers, or samples.</td></tr>
+            </tbody>
+          </table>
           <div class="category-strip">
             ${categories.map((group) => `<span>${escapeHtml(group.name)} <strong>${group.count}</strong></span>`).join('')}
           </div>
@@ -966,7 +1000,7 @@ async function main() {
   const { plugins, errors } = await collectPluginCatalog()
   const html = renderHtml({ coreTools, plugins, errors })
   mkdirSync(dirname(OUTPUT_PATH), { recursive: true })
-  writeFileSync(OUTPUT_PATH, html, 'utf8')
+  writeFileSync(OUTPUT_PATH, html.replace(/[ \t]+(?=\r?\n)/g, ''), 'utf8')
   const pluginToolCount = plugins.reduce((sum, plugin) => sum + plugin.tools.length, 0)
   console.log(
     `Generated docs/tool-catalog.html (${coreTools.length} core tools, ${plugins.length} plugins, ${pluginToolCount} plugin tools, ${errors.length} registration errors).`

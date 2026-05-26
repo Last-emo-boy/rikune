@@ -73,6 +73,43 @@ describe('static.config.carver tool', () => {
     expect(kinds.has('mutex_like')).toBe(true)
     expect(kinds.has('user_agent_or_http_client')).toBe(true)
     expect(data.blob_candidates.some((blob: any) => blob.kind === 'base64')).toBe(true)
+    expect(data.evidence_summary).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.static_config_carver.evidence_summary.v1',
+        source_tool: 'static.config.carver',
+        candidate_count: data.summary.candidate_count,
+        blob_candidate_count: data.summary.blob_candidate_count,
+        network_indicator_count: expect.any(Number),
+      })
+    )
+    expect(data.workflow_handoff).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.static_config_carver.workflow_handoff.v1',
+        handoff_mode: 'static_config_to_evidence_correlation',
+        routing: expect.arrayContaining([
+          expect.objectContaining({
+            goal: 'ioc-enrichment-and-export',
+            next_tools: expect.arrayContaining(['malware.intel.loop', 'ioc.export']),
+          }),
+          expect.objectContaining({
+            goal: 'evidence-graph-and-reporting',
+            next_tools: expect.arrayContaining(['analysis.evidence.graph', 'report.generate']),
+          }),
+        ]),
+      })
+    )
+    expect(data.quality_gates).toEqual(
+      expect.objectContaining({
+        passive_static_carving: true,
+        backend_started: false,
+        sample_executed_by_tool: false,
+        network_accessed_by_tool: false,
+        config_evidence_present: true,
+        network_indicator_present: true,
+        encoded_blob_present: true,
+        runtime_followup_requires_opt_in: true,
+      })
+    )
     expect(data.recommended_next_tools).toContain('dynamic.deep_plan')
 
     const artifacts = database.findArtifactsByType(SAMPLE_ID, 'static_config_carver')
