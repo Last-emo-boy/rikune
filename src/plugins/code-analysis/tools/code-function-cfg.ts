@@ -556,8 +556,8 @@ export function createCodeFunctionCFGHandler(
           address: cfg.address,
         },
         format: input.format,
-        tool_surface_role: 'primary' as const,
-        preferred_primary_tools: [],
+        tool_surface_role: 'specialist' as const,
+        preferred_primary_tools: ['workflow.search', 'artifact.read'],
         graph_semantics: {
           surface_role: 'local_navigation_aid' as const,
           confidence_state: 'observed' as const,

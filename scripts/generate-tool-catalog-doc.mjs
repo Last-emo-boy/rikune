@@ -846,17 +846,17 @@ ${renderNav(true)}
             <div class="catalog-stat"><strong>${workerTools}</strong><span>worker-backed</span></div>
           </div>
           <p class="catalog-note">
-            This catalog is generated from tool definitions and plugin metadata. Rikune still uses progressive tool discovery at runtime, so a client should begin with <code>tools.discover</code>, <code>tool.help</code>, and <code>tool.readiness</code> instead of assuming every expert tool is visible at startup.
+            This catalog is generated from tool definitions and plugin metadata. Rikune uses a minimal AI-facing gateway at runtime: begin with <code>workflow.search</code>, execute staged actions through <code>workflow.run</code>, and read full persisted payloads with <code>artifact.read</code>.
           </p>
           <p class="catalog-note">
-            <code>tools.discover</code> is the main search portal for hidden capabilities. Use <code>action=recommend</code> to receive ranked toolchains with <code>score</code>, <code>match_reasons</code>, <code>readiness_state</code>, <code>activation_plan</code>, <code>activation_command</code>, <code>why_hidden</code>, and backend profile hints. Use <code>action=activate</code> only to expose selected tools; activation responses include <code>activation_audit</code> and must preserve <code>backend_execution_started=false</code>.
+            <code>workflow.search</code> is the default passive profile-search portal for hidden capabilities. Use <code>action=search</code> or <code>action=recommend</code> to receive ranked toolchains with <code>score</code>, <code>match_reasons</code>, <code>readiness_state</code>, <code>activation_plan</code>, <code>activation_command</code>, <code>why_hidden</code>, and backend profile hints. Use <code>workflow.search action=activate</code> only to expose selected tools; activation responses include <code>activation_audit</code> and must preserve <code>backend_execution_started=false</code>. <code>tools.discover</code> remains a hidden low-level compatibility portal.
           </p>
           <table class="doc-table">
             <thead>
               <tr><th>Portal concept</th><th>Release guard</th></tr>
             </thead>
             <tbody>
-              <tr><td>Small startup surface</td><td>Hidden registered tools remain blocked by <code>ToolExecutor</code> until discovery exposes them.</td></tr>
+              <tr><td>Small startup surface</td><td>Hidden registered tools remain blocked by <code>ToolExecutor</code> until <code>workflow.search action=activate</code> exposes selected tools.</td></tr>
               <tr><td>Recommendation fields</td><td><code>score</code>, <code>match_reasons</code>, readiness state, activation command, and hidden-surface explanation are machine-readable.</td></tr>
               <tr><td>Backend profiles</td><td>Routes such as <code>installed</code>, <code>profile-gated</code>, <code>byo</code>, <code>sidecar</code>, and <code>validation-only</code> are metadata until an explicit worker/runtime path is approved.</td></tr>
               <tr><td>Safety policy</td><td>Discovery, help, readiness, plugin listing, catalog generation, and Docker dry-runs do not start external backends, sidecars, runtimes, solvers, or samples.</td></tr>

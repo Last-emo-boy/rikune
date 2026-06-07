@@ -18,6 +18,11 @@ import {
   createAnalyzeWorkflowStatusHandler,
 } from '../../workflows/analyze-pipeline.js'
 import {
+  workflowRunToolDefinition,
+  createWorkflowRunHandler,
+} from '../../workflows/workflow-run.js'
+import { createSampleRequestUploadHandler } from '../../tools/sample-request-upload.js'
+import {
   reconstructWorkflowToolDefinition,
   createReconstructWorkflowHandler,
 } from '../../workflows/reconstruct.js'
@@ -56,6 +61,7 @@ function createWorkflowRuntimeDependencies(deps: ToolDeps): AnalyzePipelineDepen
       runtimeClient: deps.runtimeClient,
       workspaceManager: deps.workspaceManager,
       database: deps.database,
+      policyGuard: deps.policyGuard,
       resolvePrimarySamplePath,
       sandboxDir: deps.sandboxDir ?? null,
     }),
@@ -86,6 +92,19 @@ export function registerWorkflowTools(
     runtimeDependencies,
     jobQueue
   )
+  const analyzeStatusHandler = createAnalyzeWorkflowStatusHandler(database, {}, jobQueue)
+  const requestUploadHandler = createSampleRequestUploadHandler(database, {
+    apiPort: deps.config.api.port,
+  })
+  server.registerTool(
+    workflowRunToolDefinition,
+    createWorkflowRunHandler({
+      requestUpload: requestUploadHandler,
+      start: analyzeStartHandler,
+      status: analyzeStatusHandler,
+      promote: analyzePromoteHandler,
+    })
+  )
   server.registerTool(
     triageWorkflowToolDefinition,
     createTriageWorkflowHandler(workspaceManager, database, cacheManager, {
@@ -93,10 +112,7 @@ export function registerWorkflowTools(
     })
   )
   server.registerTool(analyzeWorkflowStartToolDefinition, analyzeStartHandler)
-  server.registerTool(
-    analyzeWorkflowStatusToolDefinition,
-    createAnalyzeWorkflowStatusHandler(database, {}, jobQueue)
-  )
+  server.registerTool(analyzeWorkflowStatusToolDefinition, analyzeStatusHandler)
   server.registerTool(analyzeWorkflowPromoteToolDefinition, analyzePromoteHandler)
   server.registerTool(
     analyzeAutoWorkflowToolDefinition,

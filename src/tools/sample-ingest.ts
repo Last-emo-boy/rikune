@@ -137,16 +137,18 @@ export type SampleIngestOutput = z.infer<typeof SampleIngestOutputSchema>
 export const sampleIngestToolDefinition: ToolDefinition = {
   name: 'sample.ingest',
   description:
-    'Register a sample from exactly one ingest path: a container-visible local file path, Base64 bytes, or a compatibility upload_url. ' +
-    'Use this tool when the MCP worker can already read the file path directly or when a small file must be sent as Base64. ' +
-    'Do not use path for host-machine files that only exist outside the container; use sample.request_upload instead. ' +
+    'Compatibility sample registration helper for exactly one ingest path: a container-visible local file path, Base64 bytes, or a compatibility upload_url. ' +
+    'Prefer workflow.run action=request_upload for host-file upload and workflow.run action=start after you have a sample_id. ' +
+    'Use this direct tool only when the MCP worker can already read the file path directly, a small Base64 fallback is required, or a legacy upload_url finalize path is required. ' +
+    'Do not use path for host-machine files that only exist outside the container; use workflow.run action=request_upload instead. ' +
     '\n\nDecision guide:\n' +
-    '- Use when: the file is already accessible to the MCP worker, or a small Base64 fallback is required.\n' +
+    '- Use when: the file is already accessible to the MCP worker, a small Base64 fallback is required, or a legacy upload_url finalize path is required.\n' +
+    '- Prefer instead: workflow.run action=request_upload for host-file upload, then workflow.run action=start with the returned sample_id.\n' +
     '- Do not use when: the only copy is on the host machine outside the container-accessible filesystem.\n' +
-    '- Typical next step: continue with workflow.analyze.start for the staged-runtime path, or use workflow.triage only when you explicitly want the compatibility quick-profile surface.\n' +
+    '- Typical next step: continue with workflow.run action=start for the staged workflow path, or use workflow.search first when the requested workflow is unclear.\n' +
     '- Common mistake: passing a Windows host path to path while the MCP worker is running inside Docker.\n' +
-    '\nPrimary host-file workflow:\n' +
-    '1. Call sample.request_upload.\n' +
+    '\nGateway host-file workflow:\n' +
+    '1. Call workflow.run action=request_upload.\n' +
     '2. POST the file bytes to upload_url.\n' +
     '3. Read sample_id from the HTTP upload response.\n' +
     '\nCompatibility-only workflow:\n' +
@@ -344,21 +346,13 @@ export function createSampleIngestHandler(
                   sidecar_warnings:
                     sidecarStage.warnings.length > 0 ? sidecarStage.warnings : undefined,
                   result_mode: 'sample_registered',
-                  tool_surface_role: 'primary',
-                  preferred_primary_tools: [
-                    'workflow.analyze.start',
-                    'workflow.analyze.status',
-                    'workflow.analyze.promote',
-                  ],
-                  recommended_next_tools: [
-                    'workflow.analyze.start',
-                    'workflow.summarize',
-                    'workflow.triage',
-                  ],
+                  tool_surface_role: 'compatibility',
+                  preferred_primary_tools: ['workflow.run', 'workflow.search'],
+                  recommended_next_tools: ['workflow.run', 'workflow.search', 'artifact.read'],
                   next_actions: [
-                    'Use workflow.analyze.start with the returned sample_id for the primary staged-runtime path.',
-                    'Use workflow.triage only when you intentionally want the compatibility quick-profile surface.',
-                    'Promote the staged run or call workflow.summarize after deeper analysis has persisted.',
+                    'Use workflow.run action=start with the returned sample_id for the primary staged workflow path.',
+                    'Use workflow.search first when the sample type or requested workflow is unclear.',
+                    'Use artifact.read after workflow.run produces persisted artifact references.',
                   ],
                 },
               }
@@ -423,21 +417,13 @@ export function createSampleIngestHandler(
                   sidecar_warnings:
                     sidecarStage.warnings.length > 0 ? sidecarStage.warnings : undefined,
                   result_mode: 'sample_registered',
-                  tool_surface_role: 'primary',
-                  preferred_primary_tools: [
-                    'workflow.analyze.start',
-                    'workflow.analyze.status',
-                    'workflow.analyze.promote',
-                  ],
-                  recommended_next_tools: [
-                    'workflow.analyze.start',
-                    'workflow.summarize',
-                    'workflow.triage',
-                  ],
+                  tool_surface_role: 'compatibility',
+                  preferred_primary_tools: ['workflow.run', 'workflow.search'],
+                  recommended_next_tools: ['workflow.run', 'workflow.search', 'artifact.read'],
                   next_actions: [
-                    'Use workflow.analyze.start with the returned sample_id for the primary staged-runtime path.',
-                    'Use workflow.triage only when you intentionally want the compatibility quick-profile surface.',
-                    'Promote the staged run or call workflow.summarize after deeper analysis has persisted.',
+                    'Use workflow.run action=start with the returned sample_id for the primary staged workflow path.',
+                    'Use workflow.search first when the sample type or requested workflow is unclear.',
+                    'Use artifact.read after workflow.run produces persisted artifact references.',
                   ],
                 },
               }
@@ -520,21 +506,13 @@ export function createSampleIngestHandler(
               sidecar_warnings:
                 sidecarStage.warnings.length > 0 ? sidecarStage.warnings : undefined,
               result_mode: 'sample_registered',
-              tool_surface_role: 'primary',
-              preferred_primary_tools: [
-                'workflow.analyze.start',
-                'workflow.analyze.status',
-                'workflow.analyze.promote',
-              ],
-              recommended_next_tools: [
-                'workflow.analyze.start',
-                'workflow.summarize',
-                'workflow.triage',
-              ],
+              tool_surface_role: 'compatibility',
+              preferred_primary_tools: ['workflow.run', 'workflow.search'],
+              recommended_next_tools: ['workflow.run', 'workflow.search', 'artifact.read'],
               next_actions: [
-                'Use workflow.analyze.start with the returned sample_id for the primary staged-runtime path.',
-                'Use workflow.triage only when you intentionally want the compatibility quick-profile surface.',
-                'Promote the staged run or call workflow.summarize after deeper analysis has persisted.',
+                'Use workflow.run action=start with the returned sample_id for the primary staged workflow path.',
+                'Use workflow.search first when the sample type or requested workflow is unclear.',
+                'Use artifact.read after workflow.run produces persisted artifact references.',
               ],
             },
           }

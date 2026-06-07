@@ -585,7 +585,7 @@ function buildFieldHelpHint(path: string, toolName?: string): string | null {
 
   if (toolName === 'static.capability.triage') {
     if (path === 'sample_id') {
-      return 'Use this after sample.ingest for capability-style behavior recognition. It is most useful early in triage before deep reconstruct.'
+      return 'Use this after sample registration or workflow.run action=start returns a sample_id for capability-style behavior recognition. It is most useful early in triage before deep reconstruct.'
     }
     if (path === 'rules_path') {
       return 'Optional override for a capa rules directory or rules file. Prefer CAPA_RULES_PATH or workers.static.capaRulesPath for persistent configuration.'
@@ -779,16 +779,16 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
       'When both path and bytes_b64 are provided, path wins. Passing an absolute file path is the most reliable option for local VS Code/Copilot clients.'
     )
     notes.push(
-      'For host-machine files outside the container, prefer sample.request_upload and read sample_id directly from the HTTP upload response instead of calling sample.ingest(path).'
+      'For host-machine files outside the container, prefer workflow.run action=request_upload and read sample_id directly from the HTTP upload response instead of calling sample.ingest(path).'
     )
   }
 
   if (definition.name === 'sample.request_upload') {
     notes.push(
-      'Use this as the primary host-file ingest entrypoint when the MCP worker cannot read the host path directly.'
+      'This is a compatibility upload-session helper. Prefer workflow.run action=request_upload for the primary host-file upload path.'
     )
     notes.push(
-      'The usual follow-up is HTTP POST to upload_url, then continue analysis with the returned sample_id. sample.ingest(upload_url) is compatibility-only.'
+      'The usual follow-up is HTTP POST to upload_url, then continue analysis with workflow.run action=start and the returned sample_id. sample.ingest(upload_url) is compatibility-only.'
     )
   }
 
@@ -797,31 +797,31 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
       'This is a bounded fast-profile facade over the persisted staged runtime, not the final reverse-engineering step.'
     )
     notes.push(
-      'If the user only asked to analyze a sample without naming a workflow, prefer workflow.analyze.auto first so the server can route by intent.'
+      'If the user only asked to analyze a sample without naming a workflow, prefer workflow.search first so the server can route by profile and intent.'
     )
     notes.push(
-      'Use workflow.triage directly mainly for small/medium samples or when the user explicitly asks for a quick profile. For large samples, prefer workflow.analyze.start or workflow.analyze.auto so the result can persist and queue deeper stages.'
+      'Use workflow.triage directly mainly for legacy quick-profile compatibility. Prefer workflow.run action=start so the result can persist and queue deeper stages.'
     )
     notes.push(
-      'Use coverage_gaps and upgrade_paths instead of prose to decide whether you still need workflow.analyze.promote, analysis.context.link, crypto.identify, or workflow.reconstruct.'
+      'Use coverage_gaps and upgrade_paths instead of prose to decide whether you still need workflow.run action=promote, analysis.context.link, crypto.identify, or workflow.reconstruct.'
     )
   }
 
   if (definition.name === 'workflow.analyze.start') {
     notes.push(
-      'This starts or reuses a persisted staged analysis run. Only the fast_profile stage executes inline; heavier stages are queued by default.'
+      'This is the hidden compatibility target wrapped by workflow.run action=start. Only the fast_profile stage executes inline; heavier stages are queued by default.'
     )
     notes.push(
-      'Use workflow.analyze.status to monitor run progress and workflow.analyze.promote to queue deeper stages without rerunning completed work.'
+      'Use workflow.run action=status to monitor run progress and workflow.run action=promote to queue deeper stages without rerunning completed work.'
     )
     notes.push(
       'Large or expensive samples benefit from this nonblocking pattern. The run persists stage completion, artifact refs, and reuse metadata.'
     )
     notes.push(
-      'Practical pattern: small samples may go start -> summarize quickly, but medium/large samples should usually go start -> status -> promote instead of jumping straight to heavyweight tools.'
+      'Practical pattern: small samples may go workflow.run start -> summarize quickly, but medium/large samples should usually go workflow.run start -> status -> promote instead of jumping straight to heavyweight tools.'
     )
     notes.push(
-      'Use workflow.analyze.status to inspect scheduler bucket, worker-family reuse, and deferred-stage reasons instead of treating queued work as a generic FIFO backlog.'
+      'Use workflow.run action=status to inspect scheduler bucket, worker-family reuse, and deferred-stage reasons instead of treating queued work as a generic FIFO backlog.'
     )
     notes.push(
       'On packed samples, fast_profile now emits packed_state, unpack_state, and unpack_plan. Treat that as the first-class unpack routing contract instead of jumping straight into Ghidra or reconstruction.'
@@ -833,7 +833,7 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
 
   if (definition.name === 'workflow.analyze.status') {
     notes.push(
-      'Query this to inspect deferred jobs, completed stages, and reusable artifact refs for a persisted analysis run.'
+      'This is the hidden compatibility target wrapped by workflow.run action=status for persisted analysis run state.'
     )
     notes.push(
       'Use the returned recommended_next_tools and next_actions instead of repeating the same start call.'
@@ -848,7 +848,7 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
       'Read expected_rss_mb, current_rss_mb, memory_limit_mb, and control_plane_headroom_mb when large-sample work is deferred. Those fields explain whether the runtime protected the MCP control plane from OOM.'
     )
     notes.push(
-      'On medium/large samples, this is the normal next call after workflow.analyze.start or workflow.analyze.promote. Do not repeat the original start/triage call while the run is already queued or partial.'
+      'On medium/large samples, workflow.run action=status is the normal next call after workflow.run action=start or workflow.run action=promote. Do not repeat the original start/triage call while the run is already queued or partial.'
     )
     notes.push(
       'For packed or dynamically planned samples, read packed_state, unpack_state, debug_state, unpack_plan, debug_session, and diff_digests before assuming the original sample is ready for deeper static reconstruction.'
@@ -857,7 +857,7 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
 
   if (definition.name === 'workflow.analyze.promote') {
     notes.push(
-      'Use this to promote an existing run to deeper stages (enrich_static, function_map, reconstruct, etc.) without rerunning the fast_profile stage.'
+      'This is the hidden compatibility target wrapped by workflow.run action=promote for deeper stages such as enrich_static, function_map, and reconstruct.'
     )
     notes.push(
       'Pass stages to promote specific stages, or through_stage to promote through a target stage boundary.'
@@ -866,7 +866,7 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
       'Promoted stages are scheduler-governed. Deep stages may remain deferred while cheaper preview or artifact-only lanes are draining.'
     )
     notes.push(
-      'If a large-sample stage is deferred for memory headroom, do not retry it immediately. Wait for workflow.analyze.status to show earlier heavy work cleared, then promote again only if the deeper stage is still needed.'
+      'If a large-sample stage is deferred for memory headroom, do not retry it immediately. Wait for workflow.run action=status to show earlier heavy work cleared, then promote again only if the deeper stage is still needed.'
     )
     notes.push(
       'Typical large-sample order is enrich_static first, then function_map, then reconstruct only when code-level output is actually needed.'
@@ -935,7 +935,7 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
       'For larger samples, preview is the normal planning pass. Escalate to full only when crypto findings directly drive breakpoint planning or you need stronger constant/context corroboration.'
     )
     notes.push(
-      'Full crypto results on larger samples may return only a bounded inline digest plus chunked persisted findings. Follow chunk_manifest or workflow.analyze.status rather than retrying immediately.'
+      'Full crypto results on larger samples may return only a bounded inline digest plus chunked persisted findings. Follow chunk_manifest or workflow.run action=status rather than retrying immediately.'
     )
   }
 
@@ -952,10 +952,10 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
 
   if (definition.name === 'workflow.analyze.auto') {
     notes.push(
-      'Prefer this when the user asks for analysis, reverse engineering, dynamic checks, or reporting without naming a specific workflow or backend.'
+      'This is a compatibility intent router. Prefer workflow.search when the user asks for analysis, reverse engineering, dynamic checks, or reporting without naming a specific workflow or backend.'
     )
     notes.push(
-      'This router now translates intent into workflow.analyze.start and workflow.analyze.promote operations instead of launching legacy heavyweight chains directly.'
+      'The primary AI-facing path is workflow.search for routing, then workflow.run action=start/status/promote for staged execution.'
     )
     notes.push(
       'Execution-capable backends such as wine.run remain manual-only. allow_live_execution does not bypass approved=true.'
@@ -964,19 +964,19 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
       'Large or expensive samples may intentionally downshift to a bounded persisted profile first. Check run_id, sample_size_tier, analysis_budget_profile, downgrade_reasons, and upgrade_paths before escalating.'
     )
     notes.push(
-      'Practical playbook: for small samples, auto(goal=triage, depth=balanced) is usually fine. For medium/large samples, use auto(goal=triage, depth=safe|balanced), keep outputs compact, then continue with workflow.analyze.status and workflow.analyze.promote.'
+      'Practical playbook: for small samples, workflow.run action=start with goal=triage and depth=balanced is usually fine. For medium/large samples, keep outputs compact, then continue with workflow.run action=status and workflow.run action=promote.'
     )
   }
 
   if (definition.name === 'workflow.triage') {
     notes.push(
-      'workflow.triage is a compatibility quick-profile surface. The primary staged analysis path is workflow.analyze.start followed by workflow.analyze.status and workflow.analyze.promote.'
+      'workflow.triage is a compatibility quick-profile surface. The primary staged analysis path is workflow.search followed by workflow.run action=start/status/promote.'
     )
   }
 
   if (definition.name === 'task.status') {
     notes.push(
-      'task.status is the raw job-state view. Prefer workflow.analyze.status when you have a run_id and want the primary staged-runtime view.'
+      'task.status is the raw job-state view. Prefer workflow.run action=status when you have a plan_id/run_id and want the primary staged-runtime view.'
     )
   }
 
@@ -1018,7 +1018,7 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
 
   if (definition.name === 'workflow.deep_static' || definition.name === 'workflow.reconstruct') {
     notes.push(
-      'If the user has not explicitly chosen this workflow, prefer workflow.analyze.auto so the server can select the appropriate workflow by intent first.'
+      'If the user has not explicitly chosen this workflow, prefer workflow.search so the server can select the appropriate workflow by profile and intent first.'
     )
     notes.push(
       'Inspect completion_state and coverage_gaps before assuming queued, bounded, or degraded results contain the same depth as a fully completed run.'
@@ -1205,7 +1205,7 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
 
   if (definition.name === 'static.capability.triage') {
     notes.push(
-      'Use this after sample.ingest to recover capa-style behavior capabilities such as service installation, HTTP communication, injection, persistence, or crypto behavior.'
+      'Use this after sample registration or workflow.run action=start returns a sample_id to recover capa-style behavior capabilities such as service installation, HTTP communication, injection, persistence, or crypto behavior.'
     )
     notes.push(
       'When setup_actions or required_user_inputs are returned, install flare-capa and configure CAPA_RULES_PATH before retrying.'
@@ -1292,7 +1292,7 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
       'It does not execute instrumentation. Instead it tells you which existing runtime tool to invoke next and keeps setup_required boundaries explicit when Frida is not ready.'
     )
     notes.push(
-      'Use the returned plan as a debug-session artifact. The normal follow-up is workflow.analyze.status, explicit Frida capture, or another approved execution surface, not an ad hoc one-off trace command.'
+      'Use the returned plan as a debug-session artifact. The normal follow-up is workflow.run action=status, explicit Frida capture, or another approved execution surface, not an ad hoc one-off trace command.'
     )
   }
 

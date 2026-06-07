@@ -53,14 +53,17 @@ export class MCPRegistry {
     'sample.request_upload',
     'sample.ingest',
     'sample.profile.get',
+    'workflow.search',
+    'workflow.run',
+    'artifact.read',
     'tool.help',
   ])
 
   private static readonly SAMPLE_PREREQUISITE_HINT =
     '\n\nPrerequisite: before calling this tool you MUST obtain a sample_id. ' +
-    'Call sample.request_upload first to get an upload URL, POST the file bytes to that URL, ' +
-    'then use the returned sample_id. ' +
-    'If the file is already on the server filesystem, use sample.ingest(path) instead.'
+    'Call workflow.run action=request_upload first to get an upload URL, POST the file bytes to that URL, ' +
+    'then use the returned sample_id with workflow.run action=start. ' +
+    'If the file is already on the server filesystem, use workflow.search to find the hidden sample.ingest compatibility path.'
 
   constructor(logger: pino.Logger) {
     this.logger = logger

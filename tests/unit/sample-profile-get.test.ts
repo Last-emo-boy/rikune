@@ -619,6 +619,10 @@ describe('sample.profile.get tool', () => {
         }),
       ])
     )
+    expect(profile.next_actions).toEqual(
+      expect.arrayContaining([expect.stringContaining('workflow.search')])
+    )
+    expect(profile.next_actions.join(' ')).not.toContain('tools.discover')
     expect((result.data as any).routing_profile).toEqual(profile)
   })
 })

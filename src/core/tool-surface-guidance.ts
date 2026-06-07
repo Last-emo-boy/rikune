@@ -15,15 +15,9 @@ export const ToolSurfaceRoleSchema = z.enum(TOOL_SURFACE_ROLE_VALUES)
 export type ToolSurfaceRole = z.infer<typeof ToolSurfaceRoleSchema>
 
 const PRIMARY_TOOLS = new Set([
-  'sample.ingest',
-  'sample.request_upload',
-  'tool.help',
-  'tool.readiness',
-  'workflow.analyze.auto',
-  'workflow.analyze.start',
-  'workflow.analyze.status',
-  'workflow.analyze.promote',
-  'workflow.summarize',
+  'artifact.read',
+  'workflow.search',
+  'workflow.run',
 ])
 
 const EXPORT_ONLY_TOOLS = new Set(['report.generate'])
@@ -31,20 +25,33 @@ const EXPORT_ONLY_TOOLS = new Set(['report.generate'])
 const RENDERER_HELPER_TOOLS = new Set(['graphviz.render'])
 
 const COMPATIBILITY_PRIMARY_TOOLS = new Map<string, string[]>([
-  [
-    'workflow.triage',
-    ['workflow.analyze.start', 'workflow.analyze.status', 'workflow.analyze.promote'],
-  ],
-  ['task.status', ['workflow.analyze.status']],
+  ['sample.ingest', ['workflow.run', 'workflow.search']],
+  ['sample.request_upload', ['workflow.run']],
+  ['sample.profile.get', ['workflow.search', 'artifact.read']],
+  ['tools.discover', ['workflow.search']],
+  ['tool.help', ['workflow.search']],
+  ['tool.readiness', ['workflow.search']],
+  ['system.health', ['workflow.search', 'workflow.run']],
+  ['system.setup.guide', ['workflow.search']],
+  ['plugin.list', ['workflow.search']],
+  ['plugin.enable', ['workflow.search']],
+  ['plugin.disable', ['workflow.search']],
+  ['workflow.analyze.auto', ['workflow.run']],
+  ['workflow.analyze.start', ['workflow.run']],
+  ['workflow.analyze.status', ['workflow.run']],
+  ['workflow.analyze.promote', ['workflow.run']],
+  ['workflow.triage', ['workflow.run']],
+  ['workflow.summarize', ['workflow.search', 'artifact.read']],
+  ['task.status', ['workflow.run']],
   ['report.summarize', ['workflow.summarize']],
 ])
 
 const EXPORT_PRIMARY_TOOLS = new Map<string, string[]>([
-  ['report.generate', ['workflow.summarize', 'report.summarize']],
+  ['report.generate', ['workflow.search', 'artifact.read']],
 ])
 
 const RENDERER_PRIMARY_TOOLS = new Map<string, string[]>([
-  ['graphviz.render', ['code.function.cfg', 'workflow.summarize', 'report.summarize']],
+  ['graphviz.render', ['workflow.search', 'artifact.read']],
 ])
 
 const SPECIALIST_TOOL_PREFIXES = [
@@ -130,7 +137,7 @@ export function classifyToolSurfaceRole(
     return 'specialist'
   }
 
-  return 'primary'
+  return 'compatibility'
 }
 
 export function preferredPrimaryToolsFor(
@@ -143,11 +150,11 @@ export function preferredPrimaryToolsFor(
     EXPORT_PRIMARY_TOOLS.get(toolName) ||
     RENDERER_PRIMARY_TOOLS.get(toolName) ||
     (role === 'runtime_gated'
-      ? ['dynamic.runtime.status', 'runtime.debug.session.start', 'workflow.analyze.status']
+      ? ['workflow.run', 'dynamic.runtime.status', 'runtime.debug.session.start']
       : role === 'expert'
-        ? ['workflow.analyze.start', 'workflow.analyze.promote', 'tool.readiness']
+        ? ['workflow.run', 'tool.readiness']
         : role === 'specialist'
-          ? ['workflow.analyze.start', 'workflow.analyze.status', 'tools.discover']
+          ? ['workflow.search', 'workflow.run']
           : []) ||
     []
 

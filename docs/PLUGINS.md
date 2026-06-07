@@ -21,7 +21,7 @@ A plugin can:
 
 ## Built-In Plugins
 
-The repository currently contains 92 built-in plugins.
+The repository currently contains 93 built-in plugins.
 
 | ID | Name | Domain | Surface tier |
 | --- | --- | --- | --- |
@@ -51,6 +51,7 @@ The repository currently contains 92 built-in plugins.
 | `dotnet-reactor` | .NET Reactor Deobfuscation | static | 2 |
 | `dynamic` | Dynamic Analysis Automation | dynamic | 3 |
 | `elf-macho` | ELF / Mach-O | static | 1 |
+| `external-re-bridge` | External RE Bridge | static | 3 |
 | `firmware` | Firmware Analysis | static | 1 |
 | `frida` | Frida Instrumentation | dynamic | 3 |
 | `ghidra` | Ghidra Integration | static | 3 |
@@ -120,10 +121,50 @@ The repository currently contains 92 built-in plugins.
 
 Surface tier meanings:
 
-- `0`: visible gateway tools.
+- `0`: gateway-capable tools, visible only when included in the explicit gateway surface.
 - `1`: file-type activated tools.
 - `2`: finding/signal activated tools.
-- `3`: expert tools, usually surfaced by `tools.discover` or explicit readiness checks.
+- `3`: expert tools, usually selected by `workflow.search` and exposed only through explicit activation or readiness checks.
+
+## Discovery Portal Contract
+
+Rikune intentionally starts with a small MCP gateway surface: `workflow.search`, `workflow.run`,
+and `artifact.read`. Hidden core tools and specialist plugin tools are still registered, but direct
+calls remain blocked by `ToolExecutor` until the surface manager exposes them. Clients should route
+through `workflow.search` instead of assuming the full plugin catalog is visible at startup.
+
+`workflow.search` is the AI-facing profile-search and controlled activation gateway. The lower-level
+`tools.discover` handler remains registered for compatibility and internal activation plumbing. It
+supports four release-guarded actions:
+
+| Action | Purpose | Backend behavior |
+| --- | --- | --- |
+| `status` | Report progressive surface counts: total plugins/tools and visible plugins/tools. | Metadata only. |
+| `list` | Search registered core/plugin capabilities by query, sample id, file type, category, plugin id, or tool name. | Metadata only. |
+| `recommend` | Rank matching tools and plugin toolchains for a sample or goal. | Metadata only; no readiness bypass. |
+| `activate` | Expose matching hidden core tools or plugin tools by tool, plugin, category, finding, or file type. | Activation only; no backend execution. |
+
+Recommendation entries include:
+
+- `score` and `match_reasons`: explain why a toolchain matched the query, file type, aspects, or
+  workflow recipe.
+- `readiness_state`: `ready`, `hidden_activation_required`, `backend_profile_required`,
+  `byo_backend_required`, `sidecar_backend_required`, `license_profile_required`,
+  `runtime_opt_in_required`, `backend_readiness_required`, `readiness_warning`, or `blocked`.
+- `activation_plan` and `activation_command`: the exact next portal action needed before direct
+  tool calls.
+- `why_hidden`: the progressive-surface reason a tool is not initially callable.
+- `backend_install_profile` and `backend_profile_summary`: Docker/backend install routes and
+  profile gates for external binaries, BYO tools, sidecars, runtimes, GPU tooling, or license gates.
+- `recommended_tools`, `available_tools`, `blocked_tools`, `missing_deps`, and `next_actions`:
+  machine-readable routing hints for the next stage.
+
+Activation responses include `activation_audit`, which records the request, activated plugins,
+activated core tools, activated tool names, matched sample/file-type context, and policy facts. The
+audit must preserve `readiness_not_bypassed: true` and `backend_execution_started: false`.
+Discovery, help, readiness, plugin listing, catalog generation, and Docker dry-run paths must never
+start Ghidra, RetDec, radare2, Rizin, IDA, Binary Ninja, emulators, debuggers, solvers, browser/JS
+runtimes, GPU tooling, or user samples.
 
 ## Plugin Standard v2
 
@@ -227,14 +268,32 @@ emulators, or attach debuggers.
 | `apple.security.runtime-profile` | `apple-signing` | `apple.security.profile` | `macho.structure.analyze`, `macos.runtime.plan`, `ios.runtime.plan` | Static profile only; no mount, install, keychain, codesign, or device action. |
 | `firmware.iot.passive-workflow` | `firmware` | `firmware.workflow.plan` | `firmware.entropy`, `sbom.provenance.graph`, `qiling.inspect` | Passive workflow plan; no extraction-to-execute, mount, module load, or emulation. |
 | `office.macro.static-profile` | `office-analysis` | `office.behavior.profile` | `ioc.export`, `yara.generate`, `sigma.rule.generate`, `report.generate` | Static macro profile only; no Office automation or macro execution. |
-| `unpacking.detect-plan-retriage` | `unpacking` | `unpack.workflow.plan` | `unpack.auto`, `runtime.deobfuscate.plan`, `static.triage` | Passive plan with opt-in runtime gates; no live unpacking by default. |
+| `static-triage.capability-correlation` | `static-triage` | `static.capability.triage` | `static.config.carver`, `static.behavior.classify`, `crypto.identify`, `packer.detect`, `analysis.evidence.graph`, `malware.intel.loop` | Passive capability correlation bundle for behavior/config/crypto/packer routing; no live sample, dynamic backend, or network access. |
+| `static-triage.config-evidence-correlation` | `static-triage` | `static.config.carver` | `malware.intel.loop`, `ioc.export`, `static.behavior.classify`, `dynamic.behavior.diff`, `analysis.evidence.graph`, `report.generate` | Passive config and IOC carving handoff for evidence graph/reporting; runtime validation requires explicit opt-in. |
+| `static-triage.resource-payload-correlation` | `static-triage` | `static.resource.graph` | `static.config.carver`, `entropy.analyze`, `strings.extract`, `crypto.identify`, `unpack.workflow.plan`, `analysis.evidence.graph`, `report.generate` | Passive resource and embedded payload handoff for config carving, unpack planning, evidence graph, and reporting; runtime follow-up requires explicit opt-in. |
+| `static-triage.compiler-packer-attribution` | `static-triage` | `compiler.packer.detect` | `packer.detect`, `entropy.analyze`, `static.resource.graph`, `unpack.workflow.plan`, `static.capability.triage`, `code.cross_decompiler.consensus`, `analysis.evidence.graph`, `report.generate` | Passive Detect It Easy-style compiler, packer, protector, and file-type attribution handoff for unpack planning, evidence graph, and reporting; runtime follow-up requires explicit opt-in. |
+| `static-triage.behavior-runtime-validation` | `static-triage` | `static.behavior.classify` | `dynamic.behavior.diff`, `dynamic.deep_plan`, `breakpoint.smart`, `trace.condition`, `analysis.evidence.graph`, `report.generate` | Static behavior classifier handoff with evidence graph nodes and opt-in runtime validation gates; no live sample, backend, mutation, or network by default. |
+| `static-triage.crypto-runtime-tracing` | `static-triage` | `crypto.identify` | `breakpoint.smart`, `trace.condition`, `crypto.lifecycle.graph`, `analysis.evidence.graph`, `report.generate` | Passive crypto identification handoff with evidence graph and lifecycle routing; runtime tracing requires explicit opt-in. |
+| `unpacking.detect-plan-retriage` | `unpacking` | `unpack.workflow.plan` | `unpack.auto`, `runtime.deobfuscate.plan`, `static.triage`, `analysis.evidence.graph` | Passive plan with packer confidence, runtime gate matrix, re-triage handoff, and opt-in gates; no live unpacking by default. |
 | `similarity.family-cluster` | `similarity` | `sample.family.cluster` | `binary.diff.summary`, `kb.context.suggest`, `report.generate` | Corpus-local clustering; no private dataset or network requirement. |
-| `malware.intel.feedback-loop` | `malware` | `malware.intel.loop` | `ioc.export`, `attack.map`, `sigma.rule.generate`, `yara.generate` | Offline evidence loop; no threat-intel network lookup by default. |
+| `strings.raw-extraction-evidence` | `strings` | `strings.extract` | `analysis.context.link`, `strings.floss.decode`, `static.config.carver`, `malware.intel.loop`, `analysis.evidence.graph`, `report.generate` | Passive raw string evidence handoff for context linking, FLOSS follow-up, IOC/config carving, evidence graph, and reporting; no live sample or network access. |
+| `strings.floss-decoded-evidence` | `strings` | `strings.floss.decode` | `analysis.context.link`, `static.config.carver`, `malware.intel.loop`, `analysis.evidence.graph`, `report.generate` | Passive FLOSS decoded string evidence handoff for context linking, IOC/config carving, evidence graph, and reporting; no live sample or network access. |
+| `yara.rule-generation-handoff` | `yara` | `yara.generate` | `yara.scan`, `analysis.evidence.graph`, `report.generate`, `artifact.read` | Passive YARA rule generation handoff with score gates, false-positive review routing, evidence graph, and reporting; no live sample or network access. |
+| `yara.family-rule-generation-handoff` | `yara` | `yara.generate.batch` | `yara.scan`, `sample.family.cluster`, `analysis.evidence.graph`, `report.generate`, `artifact.read` | Passive multi-sample YARA family rule handoff with common-feature evidence, family cluster review, corpus validation, evidence graph, and reporting; no live sample or network access. |
+| `yara-x.scan-validation-handoff` | `yara-x` | `yara_x.scan` | `artifact.read`, `yara.scan`, `analysis.evidence.graph`, `report.generate` | Passive YARA-X scan validation handoff with bounded match previews, legacy YARA comparison, evidence graph, and reporting; no live sample or network access. |
+| `upx.inspect-validation-handoff` | `upx` | `upx.inspect` | `artifact.read`, `unpack.workflow.plan`, `static.triage`, `analysis.evidence.graph`, `report.generate` | Passive UPX inspection and decompression handoff with packed-sample validation, decompressed artifact re-triage, evidence graph, and reporting; no live sample execution or network access. |
+| `die.scan-validation-handoff` | `die` | `die.scan` | `artifact.read`, `compiler.packer.detect`, `packer.detect`, `unpack.workflow.plan`, `static.capability.triage`, `crypto.identify`, `analysis.evidence.graph`, `report.generate` | Passive Detect It Easy signature scan handoff with compiler, packer, protector, crypto, evidence graph, and reporting routes; runtime follow-up requires explicit opt-in. |
+| `api-hash.resolver-recovery` | `api-hash` | `hash.resolver.plan` | `hash.identify`, `hash.resolve`, `analysis.evidence.graph`, `report.generate` | Static resolver/hash planning with evidence handoff and quality gates; runtime breakpoint or trace follow-up requires explicit opt-in. |
+| `threat-intel.ioc-export-handoff` | `threat-intel` | `ioc.export` | `analysis.evidence.graph`, `malware.intel.loop`, `attack.map`, `sigma.rule.generate`, `yara.generate`, `report.generate` | Passive IOC export handoff for JSON, CSV, and STIX artifacts with quality gates, ATT&CK routing, evidence graph, detection generation, and reporting; no live sample or network access. |
+| `threat-intel.sigma-rule-generation-handoff` | `threat-intel` | `sigma.rule.generate` | `analysis.evidence.graph`, `attack.map`, `ioc.export`, `yara.generate`, `report.generate`, `artifact.read` | Passive Sigma rule generation handoff with quality gates, ATT&CK/IOC/YARA feedback, evidence graph, artifact review, and reporting; no live sample, SIEM mutation, or network access. |
+| `malware.intel.feedback-loop` | `malware` | `malware.intel.loop` | `ioc.export`, `attack.map`, `sigma.rule.generate`, `yara.generate`, `analysis.evidence.graph`, `report.generate` | Offline IOC provenance fusion with quality gates; no threat-intel network lookup by default. |
+| `visualization.plugin-evidence-reporting` | `visualization` | `analysis.evidence.graph` | `workflow.summarize`, `report.summarize`, `report.generate`, `artifact.read` | Passive graph/report handoff over existing plugin artifacts only; no backend, sample execution, mutation, or network access. |
 | `javascript.deobfuscation.jsvmp-triage` | `javascript-deobfuscation` | `javascript.obfuscation.profile` | `strings.extract`, `yara.generate`, `analysis.evidence.graph`, `report.generate` | Passive source/profile triage only; no JavaScript execution, Node/V8 start, network, or external deobfuscator invocation. |
 | `jsvmp.bytecode.recovery-plan` | `jsvmp-analysis` | `jsvmp.bytecode.plan` | `strings.extract`, `yara.generate`, `analysis.evidence.graph`, `report.generate` | Plan-only bytecode/handler-map recovery; no JavaScript evaluation, interpreter-assisted normalization, Node/V8/browser start, or external backend invocation. |
 | `jsimplifier.javascript.pipeline-plan` | `jsimplifier` | `jsimplifier.pipeline.plan` | `restringer.deobfuscation.plan`, `jsir.cascade.plan`, `jsvmp.bytecode.plan`, `analysis.evidence.graph` | Plan-only staged JavaScript deobfuscation; no dynamic trace, LLM call, JavaScript execution, Node/V8 start, or network. |
 | `jsir.cascade.normalization-plan` | `jsir-cascade` | `jsir.cascade.plan` | `jsvmp.bytecode.plan`, `strings.extract`, `yara.generate`, `analysis.evidence.graph` | Plan-only IR normalization; no JavaScript execution, browser automation, Node/V8 start, or external deobfuscator invocation. |
 | `restringer.javascript.preprocess-plan` | `restringer` | `restringer.deobfuscation.plan` | `jsir.cascade.plan`, `jsvmp.bytecode.plan`, `strings.extract`, `yara.generate` | Plan-only string-array/expression deobfuscation planning; no REstringer process, Node/V8 start, or source evaluation. |
+| `reverse.cross-decompiler.consensus` | `code-analysis` | `code.cross_decompiler.consensus` | `code.functions.reconstruct`, `code.function.explain.prepare`, `code.function.cfg`, `analysis.evidence.graph`, `report.generate` | Fixture-safe consensus over existing decompiler/IR artifacts with function handoff and quality gates; no backend process, live sample, mutation, or network. |
 | `revng.lift-decompile.plan` | `revng` | `revng.pipeline.plan` | `rizin.analyze`, `ghidra.analyze`, `retdec.decompile`, `analysis.evidence.graph` | Plan-only backend integration; no rev.ng process, lifting, decompile, execution, mount, or network. |
 | `remill.llvm.lift-plan` | `remill` | `remill.lift.plan` | `revng.pipeline.plan`, `gtirb.ir.plan`, `ghidra.analyze`, `analysis.evidence.graph` | Plan-only LLVM lifting workflow; no Remill process, loader, emulator, solver, debugger, or network. |
 | `gtirb.binary.ir-plan` | `gtirb` | `gtirb.ir.plan` | `remill.lift.plan`, `revng.pipeline.plan`, `rizin.analyze`, `analysis.evidence.graph` | Plan-only binary IR and rewrite-boundary planning; no GTIRB tooling, binary rewriting, mutation, loader, or network. |
@@ -276,6 +335,12 @@ Worker-backed tools are explicit execution surfaces that sit beside existing pla
 | `manifold` | `manifold.decompilation.plan` | `manifold.fact.extract` | external with builtin safe mode | Declarative fact extraction from local IR/CFG summaries; no decompiler/fact-engine process by default. |
 | `qbdi` | `qbdi.instrumentation.plan` | `qbdi.trace.run` | delegated-runtime | Requires `approved=true`, isolation, and runtime handoff; the local Analyzer never starts QBDI directly. |
 | `culifter` | `culifter.gpu.plan` | `culifter.gpu.artifact.inventory` | builtin safe inventory | No-GPU artifact inventory by default; no GPU driver, profiler, emulator, lifter, or sample execution. |
+| `radare2` | `radare2.pipeline.plan` | `radare2.pipeline.run` | external with builtin safe mode | Read-only function, string, section, and xref summaries; external mode requires `RADARE2_PATH` and a bounded allowlist. |
+| `wabt` | `wabt.toolchain.plan` | `wabt.toolchain.run` | external with builtin safe mode | Read-only WAT/objdump/validation planning; no WASM instantiation, WASI grant, or runtime execution. |
+| `lief` | `lief.binary.plan` | `lief.binary.inspect` | external with builtin safe mode | Read-only binary inspection only; no mutation, signing changes, patching, or binary rewrite path. |
+| `miasm` | `miasm.ir.plan` | `miasm.ir.lift` | external with builtin safe mode | Bounded static IR lifting only; license-gated external mode requires `MIASM_PYTHON`. |
+| `triton` | `triton.symbolic.plan` | `triton.symbolic.slice` | external with builtin safe mode | Bounded symbolic slice summaries only; no emulator, solver run, debugger attach, or live execution. |
+| `external-re-bridge` | Sidecar readiness metadata | `external_re.bridge.sync` | external/BYO sidecar contract with builtin safe mode | Normalizes provided local sidecar artifact manifests only; no sidecar startup or remote endpoint access. |
 
 These tools are visible through `plugin.list`, `tools.discover`, `tool.help`, `tool.readiness`, and the plugin aspect matrix. `tool.readiness` returns `worker_backend_readiness` and preserves `does_not_start_backend: true`.
 
@@ -300,7 +365,7 @@ Backend profiles:
 | --- | --- | --- |
 | `default` | Installed in normal analyzer images when static and low risk. | `restringer`, `jsimplifier`, `manifold`, `wabt`, LIEF validation |
 | `optional` | Enabled with `--backend-profile=optional` or broader profiles. | `jsir-cascade`, `jsvmp-analysis`, `gtirb`, `radare2`, `triton` |
-| `license-gated` | Excluded unless explicitly using `research` or `all`. | `miasm` |
+| `license-gated` | Excluded unless explicitly using `research` or `all`. | `miasm`, IDA/Binary Ninja sidecar profiles through `external-re-bridge` |
 | `heavy` | Not silently installed; currently BYO/sidecar unless a future pinned fragment is added. | `remill`, `revng` |
 | `runtime` | Delegated runtime or BYO only; analyzer does not start instrumentation. | `qbdi` |
 | `gpu` | BYO only; no GPU driver load from discovery/readiness/test paths. | `culifter` |
@@ -364,7 +429,10 @@ The dynamic policy contract is additive metadata: it is reported by discovery an
 | `plugin.list` | List known plugins, status, registered tools, dependencies, and optional config schema |
 | `plugin.enable` | Hot-load a known plugin when supported |
 | `plugin.disable` | Unload a plugin when supported |
-| `tools.discover` | Reveal relevant specialist tools for a sample, finding, or goal |
+| `workflow.search` | Search/rank relevant workflow profiles and specialist tools for a sample, finding, or goal |
+| `workflow.run` | Execute whitelisted gateway actions: upload, start, status, promote |
+| `artifact.read` | Read full persisted artifact payloads |
+| `tools.discover` | Low-level compatibility portal for progressive surface inspection/activation |
 | `tool.readiness` | Explain prerequisites, runtime contract, policy requirements, and backend availability for a tool |
 
 ## Loading Configuration
@@ -503,7 +571,7 @@ Plugin does not load:
 Tool is missing:
 
 1. Confirm the plugin loaded.
-2. Check progressive surface behavior with `tools.discover`.
+2. Check progressive surface behavior with `workflow.search`; use `tools.discover` only for low-level compatibility/debug inspection.
 3. Use `tool.readiness`.
 4. Check aliases if the client normalizes dotted names.
 

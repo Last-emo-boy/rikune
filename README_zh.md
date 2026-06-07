@@ -2,15 +2,15 @@
 
 Rikune 是一个面向 Windows EXE 和多格式二进制逆向的 MCP Server。它把样本导入、静态初筛、Ghidra 辅助函数恢复、插件化专业工具、artifact 管理，以及可选的隔离 Windows 运行时执行统一暴露给 MCP 客户端。
 
-当前主路径是 staged analysis pipeline：
+当前面向 AI 客户端的主路径是最小 gateway surface：
 
-1. 用 `sample.ingest` 或 `sample.request_upload` 导入样本。
-2. 用 `workflow.analyze.start` 创建或复用分析 run。
-3. 用 `workflow.analyze.status` 查询状态。
-4. 用 `workflow.analyze.promote` 推进更深阶段。
-5. 用 artifact、report、context 和 semantic review 工具阅读结果。
+1. 用 `workflow.search` 根据文件类型、样本画像和用户目标搜索并排序 workflow / specialist capabilities。
+2. 宿主机文件上传用 `workflow.run action=request_upload`；旧客户端需要直接导入时，再由 `workflow.search` 指向隐藏的 sample-intake compatibility 工具。
+3. 拿到 `sample_id` 后，用 `workflow.run action=start` 创建或复用 staged analysis run。
+4. 用 `workflow.run action=status` 查询状态，用 `workflow.run action=promote` 推进更深阶段。
+5. 紧凑输出不够时，用 `artifact.read` 读取完整持久化 artifact。
 
-`workflow.triage` 仍保留为快速初筛和兼容入口；新客户端应优先使用 `workflow.analyze.start/status/promote`。
+`sample.*`、`workflow.analyze.*`、`workflow.triage`、`tools.discover` 和 `task.status` 仍保留为兼容或低层检查入口；新客户端应优先使用 `workflow.search`、`workflow.run` 和 `artifact.read`。
 
 ## 核心能力
 
@@ -19,7 +19,7 @@ Rikune 是一个面向 Windows EXE 和多格式二进制逆向的 MCP Server。�
 - 按 SHA-256 分桶的样本工作区，保存原始样本、缓存、Ghidra/.NET 输出和报告。
 - SQLite 持久化 samples、analysis runs、jobs、evidence、artifacts、batches、debug sessions 和 scheduler telemetry。
 - 92 个内置插件，支持第三方插件自动发现。
-- 渐进式工具暴露：核心工具常驻，专业工具按样本类型、发现结果或显式 `tools.discover` 暴露。
+- 渐进式工具暴露：默认面向 AI 的入口刻意保持很小；`workflow.search` 根据样本类型、发现结果和 profile metadata 路由到相关专业能力，而不是一次暴露所有工具。
 - 覆盖 PE、ELF、Mach-O、APK/DEX、Office、firmware、strings、YARA、SBOM、签名、packer、.NET、Go、Rust 等静态分析。
 - 可集成 Ghidra、Rizin、RetDec、angr、Capstone、Graphviz、Qiling、PANDA、Speakeasy、Wine、Frida 等后端。
 - 插件驱动的 Docker backend 自动安装，支持 default、optional、research、runtime、GPU、BYO 和 sidecar 分层。
@@ -76,25 +76,23 @@ node dist/index.js
 
 根包要求 Node.js 22 或更新版本。部分 runtime 子包仍能在较旧 Node 上运行，但仓库开发、根 CLI 和发布包以 Node 22+ 为基线。
 
-## 主要 MCP 流程
+## 主要 Gateway 流程
 
-### 导入样本
+### 搜索与上传
 
-可选方式：
+不确定 workflow、文件类型或后端时，先调用 `workflow.search`。它会被动排序匹配的 profile / workflow / specialist tool，并返回紧凑的 readiness 与 routing hint，不会自动激活隐藏工具或启动后端。
 
-- `sample.ingest`：传入服务端可读取路径或 `bytes_b64`。
-- `sample.request_upload`：创建 durable upload session，然后向 HTTP upload URL POST 原始字节。
-- 启用 HTTP API 时直接 `POST /api/v1/samples`。
+宿主机文件上传调用 `workflow.run action=request_upload`，向返回的 upload URL POST 原始字节，然后从 HTTP 响应读取 `sample_id`。`sample.request_upload` 和 `sample.ingest` 是兼容 helper，不是普通 AI-facing 主路径。
 
-导入成功后会返回 `sample_id`。后续分析工具应使用 `sample_id`，不要继续依赖本地文件路径。
+启用 HTTP API 时，非 MCP 集成仍可直接 `POST /api/v1/samples`。导入成功后会返回 `sample_id`；后续分析应使用 `sample_id`，不要继续依赖本地文件路径。
 
 ### 启动分析
 
-用 `workflow.analyze.start` 传入 `sample_id`。第一阶段会执行 fast profile，并创建或复用 analysis run。
+用 `workflow.run action=start` 传入 `sample_id`。第一阶段会执行 fast profile，并创建或复用 analysis run。返回的 `plan_id` 映射到持久化 analysis run。
 
 ### 推进阶段
 
-`workflow.analyze.promote` 用于推进更深阶段。当前阶段模型包括：
+`workflow.run action=promote` 用于推进更深阶段。当前阶段模型包括：
 
 - `fast_profile`
 - `enrich_static`
@@ -105,22 +103,23 @@ node dist/index.js
 - `dynamic_execute`
 - `summarize`
 
-长任务会进入 JobQueue。用 `workflow.analyze.status` 和 `task.status` 轮询。
+长任务会进入 JobQueue。用 `workflow.run action=status` 轮询紧凑 staged state。
 
-`workflow.analyze.status` 是主要的 staged-run 视图。历史阶段结果过大时会裁剪，并在顶层 `warnings` 中说明；需要完整内容时用 `artifact.read` 读取持久化 artifact。`task.status` 是原始队列和进程视图，并包含 analyzer 子进程的 `external_active_*` 内存遥测。
+`workflow.run action=status` 是主要 staged-run 视图。历史阶段结果过大时会裁剪，并在顶层 `warnings` 中说明；需要完整内容时用 `artifact.read` 读取持久化 artifact。`task.status` 是原始队列/进程兼容视图，并包含 analyzer 子进程的 `external_active_*` 内存遥测。
 
 ### 阅读结果
 
 常用后续工具：
 
-- `sample.profile.get`
+- `workflow.search`
+- `workflow.run`
 - `analysis.context.get`
-- `artifact.list`、`artifact.read`、`artifact.diff`、`artifact.download`
+- `artifact.read`，以及兼容 artifact helper：`artifact.list`、`artifact.diff`、`artifact.download`
 - `report.summarize`、`report.generate`、`workflow.summarize`
 - `workflow.semantic_name_review`
 - `workflow.function_explanation_review`
 - `workflow.module_reconstruction_review`
-- `tools.discover`、`tool.readiness`
+- `tool.help`、`tool.readiness` 和 `tools.discover` 用于兼容/调试检查
 
 ## 架构概览
 
@@ -172,7 +171,7 @@ Docker/WSL analyzer 应使用 `remote-sandbox`，不要使用 `auto-sandbox`。
 
 内置插件位于 `src/plugins/<id>/`，当前共 92 个。插件可以注册工具、声明依赖、暴露配置 schema、参与生命周期 hooks，并给 Docker 生成器提供安装元数据，也可以通过 `workerBackend` metadata 声明受限 Worker-backed 工具。
 
-frontier Worker 套件保留 plan-only 工具作为 triage 和 handoff surface，再在旁边新增显式执行工具。`restringer.deobfuscation.run`、`jsimplifier.pipeline.run`、`jsir.cascade.normalize`、`jsvmp.bytecode.recover`、`gtirb.ir.generate`、`remill.lift.run`、`manifold.fact.extract`、`qbdi.trace.run` 和 `culifter.gpu.artifact.inventory` 会通过 `plugin.list`、`tools.discover`、`tool.help`、`tool.readiness` 暴露 Worker contract。Discovery 和 readiness 保持 passive：只报告 backend metadata 和 setup guidance，不启动 REstringer、JSIMPLIFIER、JSIR/CASCADE、JSVMP、GTIRB、Remill、Manifold、QBDI、GPU driver、Node/V8、browser 或 runtime instrumentation。
+frontier Worker 套件保留 plan-only 工具作为 triage 和 handoff surface，再在旁边新增显式执行工具。`restringer.deobfuscation.run`、`jsimplifier.pipeline.run`、`jsir.cascade.normalize`、`jsvmp.bytecode.recover`、`gtirb.ir.generate`、`remill.lift.run`、`manifold.fact.extract`、`qbdi.trace.run` 和 `culifter.gpu.artifact.inventory` 会通过 `workflow.search`、`plugin.list`、`tool.help`、`tool.readiness` 暴露 Worker contract；`tools.discover` 保留为低层兼容入口。Discovery 和 readiness 保持 passive：只报告 backend metadata 和 setup guidance，不启动 REstringer、JSIMPLIFIER、JSIR/CASCADE、JSVMP、GTIRB、Remill、Manifold、QBDI、GPU driver、Node/V8、browser 或 runtime instrumentation。
 
 Docker 生成器直接读取插件 `systemDeps` 和 Worker packaging metadata。默认镜像安装低风险静态 wrapper，例如 REstringer、JSIMPLIFIER、Manifold、WABT 和 LIEF validation；optional profile 可启用 JSIR/CASCADE、JSVMP、GTIRB、radare2、Triton 等静态路线；heavy/runtime/GPU/license-sensitive backend 保持 profile-gated、BYO 或 sidecar。
 
@@ -192,11 +191,12 @@ PLUGINS=-dynamic          # 加载除 dynamic 外的全部插件
 
 运行时管理工具：
 
+- `workflow.search`
+- `workflow.run`
 - `plugin.list`
 - `plugin.enable`
 - `plugin.disable`
-- `tools.discover`
-- `tool.readiness`
+- `tools.discover` 和 `tool.readiness` 用于低层兼容/调试检查
 
 详见 [docs/PLUGINS.md](docs/PLUGINS.md) 和 [packages/plugin-sdk/README.md](packages/plugin-sdk/README.md)。
 

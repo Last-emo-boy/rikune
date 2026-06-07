@@ -78,7 +78,7 @@ export const taskStatusToolDefinition: ToolDefinition = {
     '\n\nDecision guide:\n' +
     '- Use when: a previous tool returned job_id, status=queued/running, or polling_guidance and you need raw job-state details.\n' +
     '- Do not use when: you still need to ingest a sample or start analysis.\n' +
-    '- Typical next step: prefer workflow.analyze.status when you have a run_id; use task.status(job_id) only for raw queue-state detail.\n' +
+    '- Typical next step: prefer workflow.run action=status when you have a plan_id/run_id; use task.status(job_id) only for raw queue-state detail.\n' +
     '- Common mistake: immediate repeated polling without any client-side sleep/wait.',
   inputSchema: taskStatusInputSchema,
   outputSchema: taskStatusOutputSchema,
@@ -307,13 +307,13 @@ export function createTaskStatusHandler(
             reuse_hints: reuseHints,
             result_mode: 'job_lookup',
             tool_surface_role: 'compatibility',
-            preferred_primary_tools: ['workflow.analyze.status'],
+            preferred_primary_tools: ['workflow.run'],
             recommended_next_tools: isAnalysisStageJob
               ? statusRecord.status === 'completed'
-                ? ['workflow.analyze.status', 'artifact.read', 'report.summarize']
+                ? ['workflow.run', 'artifact.read', 'report.summarize']
                 : statusRecord.status === 'interrupted'
-                  ? ['workflow.analyze.status', 'workflow.analyze.promote', 'task.status']
-                  : ['workflow.analyze.status', 'task.status']
+                  ? ['workflow.run', 'task.status']
+                  : ['workflow.run', 'task.status']
               : statusRecord.status === 'completed'
                 ? ['workflow.reconstruct', 'code.functions.list', 'artifact.read']
                 : ['task.status'],
@@ -322,20 +322,20 @@ export function createTaskStatusHandler(
                 ? [
                     message,
                     isAnalysisStageJob && stageRunId
-                      ? `Use workflow.analyze.status with run_id=${stageRunId} as the primary staged-run view; only fall back to task.status when you need raw job state.`
+                      ? `Use workflow.run action=status with plan_id=${stageRunId} as the primary staged-run view; only fall back to task.status when you need raw job state.`
                       : 'Wait for approximately the recommended polling interval before querying task.status again.',
                     'Call task.status with the same job_id until the status becomes completed, failed, or cancelled.',
                   ]
                 : statusRecord.status === 'interrupted'
                   ? [
                       isAnalysisStageJob && stageRunId
-                        ? `The underlying queued stage was interrupted. Inspect workflow.analyze.status for run_id=${stageRunId} and re-promote only the recoverable stages you still need.`
+                        ? `The underlying queued stage was interrupted. Inspect workflow.run action=status with plan_id=${stageRunId} and use workflow.run action=promote only for recoverable stages you still need.`
                         : 'This job was interrupted before completion; decide whether it should be requeued or restarted from the originating tool.',
                     ]
                   : statusRecord.status === 'completed'
                     ? [
                         isAnalysisStageJob && stageRunId
-                          ? `Inspect workflow.analyze.status for run_id=${stageRunId} before deciding whether to promote or summarize the persisted run.`
+                          ? `Inspect workflow.run action=status with plan_id=${stageRunId} before deciding whether to promote or summarize the persisted run.`
                           : 'Inspect the completed job result or continue with downstream analysis tools using the finished artifacts.',
                       ]
                     : [
@@ -482,18 +482,18 @@ export function createTaskStatusHandler(
           polling_guidance: summaryGuidance,
           result_mode: 'queue_summary',
           tool_surface_role: 'compatibility',
-          preferred_primary_tools: ['workflow.analyze.status'],
+          preferred_primary_tools: ['workflow.run'],
           recommended_next_tools:
             activeRows.length > 0
               ? activeAnalysisRunId
-                ? ['workflow.analyze.status', 'task.status']
+                ? ['workflow.run', 'task.status']
                 : ['task.status']
               : [],
           next_actions:
             activeRows.length > 0
               ? [
                   activeAnalysisRunId
-                    ? `Use workflow.analyze.status with run_id=${activeAnalysisRunId} for the primary staged-run view, and poll task.status only for raw job details.`
+                    ? `Use workflow.run action=status with plan_id=${activeAnalysisRunId} for the primary staged-run view, and poll task.status only for raw job details.`
                     : 'Use polling_guidance to wait before the next queue check.',
                   'Switch to task.status(job_id) when you want detailed state for a specific job.',
                 ]

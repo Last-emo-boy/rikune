@@ -601,21 +601,28 @@
               <span class="terminal__title">PowerShell</span>
             </div>
             <div class="terminal__body">
-              <span class="comment"># Ingest a PE sample and run staged analysis</span>
-              <span class="prompt">❯</span> <span class="cmd">sample.ingest</span>
-              <span class="flag">--path</span> "C:\samples\target.exe"
-              <span class="output"> ✓ sha256:a1b2c3… ingested (PE32+, 1.2 MB)</span>
+              <span class="comment"># Search, upload, and run staged analysis through the gateway</span>
+              <span class="prompt">❯</span> <span class="cmd">workflow.search</span>
+              <span class="flag">--file_type</span> .exe
+              <span class="flag">--goal</span> reverse
+              <span class="output"> ✓ ranked PE staged workflow profile</span>
 
-              <span class="prompt">❯</span> <span class="cmd">workflow.analyze.start</span>
+              <span class="prompt">❯</span> <span class="cmd">workflow.run</span>
+              <span class="flag">--action</span> request_upload
+              <span class="flag">--filename</span> target.exe
+              <span class="output"> ✓ upload_url ready · sample_id sha256:a1b2c3… after POST</span>
+
+              <span class="prompt">❯</span> <span class="cmd">workflow.run</span>
+              <span class="flag">--action</span> start
               <span class="flag">--sample_id</span> sha256:a1b2c3…
               <span class="flag">--goal</span> reverse
               <span class="output">
-                ✓ run_id: run_0042 fast_profile completed ⧗ enrich_static → function_map →
+                ✓ plan_id: run_0042 fast_profile completed ⧗ enrich_static → function_map →
                 reconstruct queued</span
               >
 
-              <span class="prompt">❯</span> <span class="cmd">workflow.summarize</span>
-              <span class="flag">--sample_id</span> sha256:a1b2c3…
+              <span class="prompt">❯</span> <span class="cmd">artifact.read</span>
+              <span class="flag">--artifact_id</span> summary:run_0042
               <span class="output">
                 ✓ 148 functions recovered · 12 crypto APIs flagged 3 C2 indicators extracted ·
                 confidence 0.87</span

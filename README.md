@@ -2,15 +2,15 @@
 
 Rikune is an MCP server for reverse engineering Windows executables and related binary formats. It combines sample intake, static triage, Ghidra-assisted function recovery, plugin-driven specialist tooling, artifact management, and optional isolated Windows runtime execution behind a Model Context Protocol interface.
 
-The current server is organized around a staged analysis pipeline:
+The current AI-facing server workflow is organized around a minimal gateway surface:
 
-1. Import a sample with `sample.ingest` or request a durable upload session with `sample.request_upload`.
-2. Start analysis with `workflow.analyze.start`.
-3. Poll with `workflow.analyze.status`.
-4. Promote deeper stages with `workflow.analyze.promote`.
-5. Inspect artifacts with `artifact.*`, `analysis.context.get`, reporting tools, or semantic review workflows.
+1. Use `workflow.search` to rank matching profiles, workflows, and specialist capabilities for the file type and user goal.
+2. Use `workflow.run action=request_upload` for host-file upload, or let `workflow.search` point legacy clients to hidden sample-intake compatibility tools.
+3. Use `workflow.run action=start` with the returned `sample_id`.
+4. Use `workflow.run action=status` and `workflow.run action=promote` to monitor and deepen the staged run.
+5. Use `artifact.read` for full persisted artifacts when compact workflow output is not enough.
 
-`workflow.triage` is still available as a compatibility and quick-profile facade, but new clients should prefer `workflow.analyze.start/status/promote`.
+`sample.*`, `workflow.analyze.*`, `workflow.triage`, `tools.discover`, and `task.status` remain registered for compatibility or low-level inspection, but new clients should prefer `workflow.search`, `workflow.run`, and `artifact.read`.
 
 ## What Rikune Provides
 
@@ -19,7 +19,7 @@ The current server is organized around a staged analysis pipeline:
 - SHA-256 based sample workspaces with durable original files, cache directories, analysis artifacts, and upload sessions.
 - SQLite-backed persistence for samples, analyses, jobs, evidence, artifacts, batches, debug sessions, and scheduler telemetry.
 - Plugin architecture with 92 built-in plugins and external plugin discovery.
-- Progressive tool surface: core tools are always visible, specialist tools are exposed according to sample type, findings, or explicit discovery.
+- Progressive tool surface: the default AI-facing gateway is intentionally small; `workflow.search` uses sample type, findings, and profile metadata to route toward specialist capabilities without exposing every tool up front.
 - Static analysis and enrichment for PE, ELF, Mach-O, APK/DEX, Office, firmware, strings, YARA, SBOM, signatures, packers, .NET, Go, Rust, and more.
 - Ghidra, Rizin, RetDec, angr, Capstone, Graphviz, Qiling, PANDA, Speakeasy, Wine, Frida, and dynamic-runtime integration where available.
 - Plugin-driven Docker backend installation with default, optional, research, runtime, GPU, BYO, and sidecar tiers for worker-backed reverse-engineering tools.
@@ -76,25 +76,23 @@ node dist/index.js
 
 The root package requires Node.js 22 or newer. Some runtime subpackages can run on older Node versions, but repository development and the published root CLI should use Node 22+.
 
-## Primary MCP Flow
+## Primary Gateway Flow
 
-### Upload Or Ingest
+### Search And Upload
 
-Use one of:
+Start with `workflow.search` whenever the requested workflow, file type, or backend is unclear. It ranks matching profiles and returns compact readiness/routing hints without activating hidden specialist tools.
 
-- `sample.ingest` with a server-readable path or `bytes_b64`.
-- `sample.request_upload` to create an upload URL, then POST raw bytes to the embedded HTTP server.
-- `POST /api/v1/samples` when the HTTP API is enabled.
+For host files, call `workflow.run action=request_upload`, POST raw bytes to the returned upload URL, then read `sample_id` from the HTTP response. `sample.request_upload` and `sample.ingest` are compatibility helpers rather than the normal AI-facing path.
 
-Successful ingest returns a `sample_id`. Analysis tools should use `sample_id`, not a local path, after import.
+If the HTTP API is enabled, `POST /api/v1/samples` is still available for non-MCP integrations. Successful intake returns a `sample_id`; analysis should use `sample_id`, not a local path, after import.
 
 ### Start Analysis
 
-Call `workflow.analyze.start` with the `sample_id`. The first stage performs a fast profile and creates or reuses an analysis run.
+Call `workflow.run action=start` with the `sample_id`. The first stage performs a fast profile and creates or reuses an analysis run. The returned `plan_id` maps to the persisted analysis run.
 
 ### Promote Stages
 
-Use `workflow.analyze.promote` to request deeper stages. The pipeline currently models these stages:
+Use `workflow.run action=promote` to request deeper stages. The pipeline currently models these stages:
 
 - `fast_profile`
 - `enrich_static`
@@ -105,22 +103,23 @@ Use `workflow.analyze.promote` to request deeper stages. The pipeline currently 
 - `dynamic_execute`
 - `summarize`
 
-Long-running work is queued through the job system. Poll with `workflow.analyze.status` and `task.status`.
+Long-running work is queued through the job system. Poll compact staged state with `workflow.run action=status`.
 
-`workflow.analyze.status` is the primary staged-run view. Large historical stage payloads may be pruned with a top-level warning; use `artifact.read` for full artifacts. `task.status` is the raw queue/process view and includes `external_active_*` memory telemetry for analyzer subprocesses.
+`workflow.run action=status` is the primary staged-run view. Large historical stage payloads may be pruned with a top-level warning; use `artifact.read` for full artifacts. `task.status` is a raw queue/process compatibility view and includes `external_active_*` memory telemetry for analyzer subprocesses.
 
 ### Review Results
 
 Useful follow-up surfaces:
 
-- `sample.profile.get`
+- `workflow.search`
+- `workflow.run`
 - `analysis.context.get`
-- `artifact.list`, `artifact.read`, `artifact.diff`, `artifact.download`
+- `artifact.read`, plus compatibility artifact helpers such as `artifact.list`, `artifact.diff`, and `artifact.download`
 - `report.summarize`, `report.generate`, `workflow.summarize`
 - `workflow.semantic_name_review`
 - `workflow.function_explanation_review`
 - `workflow.module_reconstruction_review`
-- `tools.discover` and `tool.readiness`
+- `tool.help`, `tool.readiness`, and `tools.discover` for compatibility/debug inspection
 
 ## Architecture
 
@@ -172,7 +171,7 @@ Docker/WSL analyzers should use `remote-sandbox`, not `auto-sandbox`.
 
 Rikune currently includes 92 built-in plugins under `src/plugins/<id>/`. Plugins can register tools, declare dependencies, expose configuration schema, participate in lifecycle hooks, provide Docker metadata, and declare bounded Worker-backed tools through `workerBackend` metadata.
 
-The frontier Worker suite keeps plan-only tools as triage and handoff surfaces, then adds explicit execution tools beside them. `restringer.deobfuscation.run`, `jsimplifier.pipeline.run`, `jsir.cascade.normalize`, `gtirb.ir.generate`, `remill.lift.run`, `manifold.fact.extract`, `qbdi.trace.run`, and `culifter.gpu.artifact.inventory` expose Worker contracts through `plugin.list`, `tools.discover`, `tool.help`, and `tool.readiness`. Discovery and readiness remain passive: they report backend metadata and setup guidance without starting REstringer, JSIMPLIFIER, JSIR/CASCADE, GTIRB, Remill, Manifold, QBDI, GPU drivers, Node/V8, browsers, or runtime instrumentation.
+The frontier Worker suite keeps plan-only tools as triage and handoff surfaces, then adds explicit execution tools beside them. `restringer.deobfuscation.run`, `jsimplifier.pipeline.run`, `jsir.cascade.normalize`, `gtirb.ir.generate`, `remill.lift.run`, `manifold.fact.extract`, `qbdi.trace.run`, and `culifter.gpu.artifact.inventory` expose Worker contracts through `workflow.search`, `plugin.list`, `tool.help`, and `tool.readiness`; `tools.discover` remains a low-level compatibility portal. Discovery and readiness remain passive: they report backend metadata and setup guidance without starting REstringer, JSIMPLIFIER, JSIR/CASCADE, GTIRB, Remill, Manifold, QBDI, GPU drivers, Node/V8, browsers, or runtime instrumentation.
 
 Docker generation reads plugin `systemDeps` and Worker packaging metadata directly. Default images install low-risk static wrappers such as REstringer, JSIMPLIFIER, Manifold, WABT, and LIEF validation; optional profiles can enable JSIR/CASCADE, JSVMP, GTIRB, radare2, and Triton-style static routes; heavy/runtime/GPU/license-sensitive backends remain profile-gated, BYO, or sidecar.
 
@@ -192,11 +191,12 @@ PLUGINS=-dynamic          # all except dynamic
 
 Use these MCP tools at runtime:
 
+- `workflow.search`
+- `workflow.run`
 - `plugin.list`
 - `plugin.enable`
 - `plugin.disable`
-- `tools.discover`
-- `tool.readiness`
+- `tools.discover` and `tool.readiness` for low-level compatibility/debug inspection
 
 See [docs/PLUGINS.md](docs/PLUGINS.md) and [packages/plugin-sdk/README.md](packages/plugin-sdk/README.md).
 

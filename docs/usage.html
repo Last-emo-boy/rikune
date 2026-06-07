@@ -56,7 +56,7 @@
 <div class="doc-layout">
   <aside class="doc-sidebar">
     <div class="doc-sidebar__title"><span data-lang-en>On this page</span><span data-lang-zh>本页目录</span></div>
-    <a href="#sample-ingest">sample.ingest</a>
+    <a href="#workflow-gateway">Workflow Gateway</a>
     <a href="#core-tools">Core Tools</a>
     <a href="#workflow">Workflow Tools</a>
     <a href="#ghidra-tools">Ghidra Tools</a>
@@ -66,12 +66,12 @@
 
   <div class="doc-main">
 
-    <!-- sample.ingest -->
-    <section id="sample-ingest" class="reveal">
-      <h2>sample.ingest</h2>
+    <!-- Workflow Gateway -->
+    <section id="workflow-gateway" class="reveal">
+      <h2>Workflow Gateway</h2>
       <p>
-        <span data-lang-en>The primary entry point for all analysis. Ingest a PE binary and receive a structured triage result.</span>
-        <span data-lang-zh>所有分析的主入口。导入 PE 二进制文件并接收结构化的分诊结果。</span>
+        <span data-lang-en>The primary AI-facing entry points are <code>workflow.search</code>, <code>workflow.run</code>, and <code>artifact.read</code>. Use search to rank profiles, run to upload/start/status/promote, and artifact.read for full persisted payloads.</span>
+        <span data-lang-zh>面向 AI 的主入口是 <code>workflow.search</code>、<code>workflow.run</code> 和 <code>artifact.read</code>。用 search 排序 profile，用 run 上传/启动/查询/推进，用 artifact.read 读取完整持久化内容。</span>
       </p>
 
       <h3><span data-lang-en>Parameters</span><span data-lang-zh>参数</span></h3>
@@ -80,9 +80,11 @@
           <tr><th><span data-lang-en>Parameter</span><span data-lang-zh>参数</span></th><th><span data-lang-en>Type</span><span data-lang-zh>类型</span></th><th><span data-lang-en>Required</span><span data-lang-zh>必需</span></th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th></tr>
         </thead>
         <tbody>
-          <tr><td><code>path</code></td><td>string</td><td>✓</td><td><span data-lang-en>Path to sample file</span><span data-lang-zh>样本文件路径</span></td></tr>
-          <tr><td><code>filename</code></td><td>string</td><td>—</td><td><span data-lang-en>Original filename (auto-detected)</span><span data-lang-zh>原始文件名（自动检测）</span></td></tr>
-          <tr><td><code>source</code></td><td>string</td><td>—</td><td><span data-lang-en>Source label (e.g. "malware_zoo")</span><span data-lang-zh>样本来源标签</span></td></tr>
+          <tr><td><code>workflow.search.query</code></td><td>string</td><td>—</td><td><span data-lang-en>User request or capability query for profile search</span><span data-lang-zh>用于 profile search 的用户需求或能力查询</span></td></tr>
+          <tr><td><code>workflow.search.file_type</code></td><td>string</td><td>—</td><td><span data-lang-en>File type or extension hint such as .exe, pe, apk, wasm</span><span data-lang-zh>文件类型或扩展名提示，例如 .exe、pe、apk、wasm</span></td></tr>
+          <tr><td><code>workflow.run.action</code></td><td>enum</td><td>✓</td><td><span data-lang-en><code>request_upload</code>, <code>start</code>, <code>status</code>, or <code>promote</code></span><span data-lang-zh><code>request_upload</code>、<code>start</code>、<code>status</code> 或 <code>promote</code></span></td></tr>
+          <tr><td><code>sample_id</code></td><td>string</td><td>start</td><td><span data-lang-en>Returned after upload or compatibility intake</span><span data-lang-zh>上传或兼容导入后返回</span></td></tr>
+          <tr><td><code>plan_id</code></td><td>string</td><td>status/promote</td><td><span data-lang-en>External staged-run identifier returned by workflow.run</span><span data-lang-zh>workflow.run 返回的外部 staged-run 标识</span></td></tr>
         </tbody>
       </table>
 
@@ -90,26 +92,33 @@
       <div class="code-block">
         <div class="code-block__header"><span>MCP Tool Call</span><button class="code-block__copy">Copy</button></div>
         <pre>{
-  <span class="key">"name"</span>: <span class="str">"sample.ingest"</span>,
+  <span class="key">"name"</span>: <span class="str">"workflow.search"</span>,
   <span class="key">"arguments"</span>: {
-    <span class="key">"path"</span>: <span class="str">"C:\\samples\\target.exe"</span>,
-    <span class="key">"source"</span>: <span class="str">"manual_upload"</span>
+    <span class="key">"query"</span>: <span class="str">"reverse this Windows executable"</span>,
+    <span class="key">"file_type"</span>: <span class="str">".exe"</span>,
+    <span class="key">"goal"</span>: <span class="str">"reverse"</span>
   }
 }</pre>
       </div>
       <div class="code-block">
-        <div class="code-block__header"><span>Response</span><button class="code-block__copy">Copy</button></div>
+        <div class="code-block__header"><span>Upload</span><button class="code-block__copy">Copy</button></div>
         <pre>{
+  <span class="key">"name"</span>: <span class="str">"workflow.run"</span>,
+  <span class="key">"arguments"</span>: {
+    <span class="key">"action"</span>: <span class="str">"request_upload"</span>,
+    <span class="key">"filename"</span>: <span class="str">"target.exe"</span>
+  }
+}</pre>
+      </div>
+      <div class="code-block">
+        <div class="code-block__header"><span>Start</span><button class="code-block__copy">Copy</button></div>
+        <pre>{
+  <span class="key">"name"</span>: <span class="str">"workflow.run"</span>,
+  <span class="key">"arguments"</span>: {
+    <span class="key">"action"</span>: <span class="str">"start"</span>,
   <span class="key">"sample_id"</span>: <span class="str">"sha256:a1b2c3d4..."</span>,
-  <span class="key">"filename"</span>: <span class="str">"target.exe"</span>,
-  <span class="key">"file_type"</span>: <span class="str">"PE32+"</span>,
-  <span class="key">"size"</span>: <span class="val">1258291</span>,
-  <span class="key">"triage"</span>: {
-    <span class="key">"is_dotnet"</span>: <span class="val">false</span>,
-    <span class="key">"is_packed"</span>: <span class="val">true</span>,
-    <span class="key">"packer_hint"</span>: <span class="str">"UPX"</span>,
-    <span class="key">"import_count"</span>: <span class="val">42</span>,
-    <span class="key">"section_count"</span>: <span class="val">5</span>
+    <span class="key">"goal"</span>: <span class="str">"reverse"</span>,
+    <span class="key">"depth"</span>: <span class="str">"balanced"</span>
   }
 }</pre>
       </div>
@@ -123,9 +132,12 @@
           <tr><th><span data-lang-en>Tool</span><span data-lang-zh>工具</span></th><th><span data-lang-en>Category</span><span data-lang-zh>类别</span></th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th></tr>
         </thead>
         <tbody>
-          <tr><td><code>sample.ingest</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Ingest &amp; triage a PE sample</span><span data-lang-zh>导入并分诊 PE 样本</span></td></tr>
-          <tr><td><code>tool.help</code></td><td><span class="badge badge--green">Utility</span></td><td><span data-lang-en>Inspect schema fields, usage notes, surface role, and preferred primary tools</span><span data-lang-zh>查看 schema 字段、使用提示、工具面角色和首选主路径工具</span></td></tr>
-          <tr><td><code>tool.readiness</code></td><td><span class="badge badge--green">Utility</span></td><td><span data-lang-en>Passively check local/runtime readiness, runtime plane, execution semantics, and next actions before dispatch</span><span data-lang-zh>分发前被动检查本地/运行时就绪、runtime plane、执行语义和下一步动作</span></td></tr>
+          <tr><td><code>workflow.search</code></td><td><span class="badge badge--green">Gateway</span></td><td><span data-lang-en>Search/rank workflow profiles and specialist capabilities without exposing everything up front</span><span data-lang-zh>搜索/排序 workflow profile 和专业能力，不一次暴露全部工具</span></td></tr>
+          <tr><td><code>workflow.run</code></td><td><span class="badge badge--green">Gateway</span></td><td><span data-lang-en>Whitelisted execution gateway for upload, start, status, and promote</span><span data-lang-zh>用于上传、启动、查询和推进的白名单执行入口</span></td></tr>
+          <tr><td><code>artifact.read</code></td><td><span class="badge badge--green">Gateway</span></td><td><span data-lang-en>Read full persisted artifacts when compact workflow output is not enough</span><span data-lang-zh>紧凑 workflow 输出不足时读取完整持久化 artifact</span></td></tr>
+          <tr><td><code>sample.ingest</code></td><td><span class="badge badge--blue">Compatibility</span></td><td><span data-lang-en>Compatibility sample registration helper for server-readable paths or Base64</span><span data-lang-zh>用于服务端可读路径或 Base64 的兼容样本注册 helper</span></td></tr>
+          <tr><td><code>tool.help</code></td><td><span class="badge badge--green">Compatibility</span></td><td><span data-lang-en>Inspect schema fields, usage notes, surface role, and preferred primary tools</span><span data-lang-zh>查看 schema 字段、使用提示、工具面角色和首选主路径工具</span></td></tr>
+          <tr><td><code>tool.readiness</code></td><td><span class="badge badge--green">Compatibility</span></td><td><span data-lang-en>Passively check local/runtime readiness before dispatch</span><span data-lang-zh>分发前被动检查本地/运行时就绪状态</span></td></tr>
           <tr><td><code>pe.headers</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Parse PE headers (DOS, COFF, Optional)</span><span data-lang-zh>解析 PE 头（DOS、COFF、可选头）</span></td></tr>
           <tr><td><code>pe.imports</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Extract import table</span><span data-lang-zh>提取导入表</span></td></tr>
           <tr><td><code>pe.exports</code></td><td><span class="badge badge--blue">PE</span></td><td><span data-lang-en>Extract export table</span><span data-lang-zh>提取导出表</span></td></tr>
@@ -154,11 +166,11 @@
           <tr><th><span data-lang-en>Tool</span><span data-lang-zh>工具</span></th><th><span data-lang-en>Description</span><span data-lang-zh>描述</span></th></tr>
         </thead>
         <tbody>
-          <tr><td><code>workflow.analyze.start</code></td><td><span data-lang-en>Start a staged analysis run</span><span data-lang-zh>启动分阶段分析运行</span></td></tr>
-          <tr><td><code>workflow.analyze.status</code></td><td><span data-lang-en>Check analysis run status</span><span data-lang-zh>检查分析运行状态</span></td></tr>
-          <tr><td><code>workflow.analyze.promote</code></td><td><span data-lang-en>Queue deeper stages for an existing run</span><span data-lang-zh>为已有运行排队更深阶段</span></td></tr>
-          <tr><td><code>workflow.analyze.auto</code></td><td><span data-lang-en>Intent router over start/promote; does not launch legacy heavyweight workflows directly</span><span data-lang-zh>基于 start/promote 的意图路由；不会直接启动旧重型 workflow</span></td></tr>
-          <tr><td><code>workflow.summarize</code></td><td><span data-lang-en>Generate final summary report</span><span data-lang-zh>生成最终摘要报告</span></td></tr>
+          <tr><td><code>workflow.search</code></td><td><span data-lang-en>Passive profile search plus explicit controlled activation</span><span data-lang-zh>被动 profile search，并支持显式受控激活</span></td></tr>
+          <tr><td><code>workflow.run action=start</code></td><td><span data-lang-en>Start a staged analysis run</span><span data-lang-zh>启动分阶段分析运行</span></td></tr>
+          <tr><td><code>workflow.run action=status</code></td><td><span data-lang-en>Check analysis run status</span><span data-lang-zh>检查分析运行状态</span></td></tr>
+          <tr><td><code>workflow.run action=promote</code></td><td><span data-lang-en>Queue deeper stages for an existing run</span><span data-lang-zh>为已有运行排队更深阶段</span></td></tr>
+          <tr><td><code>workflow.analyze.*</code></td><td><span data-lang-en>Compatibility handlers wrapped by workflow.run</span><span data-lang-zh>由 workflow.run 包装的兼容 handler</span></td></tr>
         </tbody>
       </table>
     </section>
@@ -236,14 +248,15 @@
     <!-- Analysis Runtime -->
     <section id="analysis-runtime" class="reveal">
       <h2><span data-lang-en>Analysis Runtime</span><span data-lang-zh>分析运行时</span></h2>
-      <p><span data-lang-en>The server uses persisted staged runs as the primary orchestration model. All analysis flows through a seven-stage pipeline with run-level contracts.</span><span data-lang-zh>服务器使用持久化分阶段运行作为主要编排模型。所有分析通过七阶段流水线以运行级别契约执行。</span></p>
+      <p><span data-lang-en>The server uses persisted staged runs as the primary orchestration model. External clients normally enter through <code>workflow.search</code> and <code>workflow.run</code>; direct <code>workflow.analyze.*</code> handlers are compatibility targets.</span><span data-lang-zh>服务器使用持久化分阶段运行作为主要编排模型。外部客户端通常通过 <code>workflow.search</code> 和 <code>workflow.run</code> 进入；直接的 <code>workflow.analyze.*</code> handler 是兼容目标。</span></p>
 
       <h3><span data-lang-en>Primary Workflow</span><span data-lang-zh>主要工作流</span></h3>
       <div class="terminal">
         <div class="terminal__header"><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__title">workflow</span></div>
-        <pre><code>workflow.analyze.start   → Create/reuse persisted run, execute fast_profile inline
-workflow.analyze.status  → Primary progress surface for clients and AI agents
-workflow.analyze.promote → Queue deeper stages without rerunning compatible work</code></pre>
+        <pre><code>workflow.search              → Rank matching profiles and workflows
+workflow.run action=start    → Create/reuse persisted run, execute fast_profile inline
+workflow.run action=status   → Primary progress surface for clients and AI agents
+workflow.run action=promote  → Queue deeper stages without rerunning compatible work</code></pre>
       </div>
 
       <h3><span data-lang-en>Stage Graph</span><span data-lang-zh>阶段图</span></h3>
@@ -342,21 +355,21 @@ workflow.analyze.promote → Queue deeper stages without rerunning compatible wo
     <!-- Async Job Pattern -->
     <section id="async-jobs" class="reveal">
       <h2><span data-lang-en>Async Job Pattern</span><span data-lang-zh>异步任务模式</span></h2>
-      <p><span data-lang-en>The staged runtime uses <code>workflow.analyze.*</code> as the primary orchestration contract. <code>task.status</code> is available for low-level job inspection but is not the main workflow surface.</span><span data-lang-zh>分阶段运行时使用 <code>workflow.analyze.*</code> 作为主要编排契约。<code>task.status</code> 可用于底层任务检查但不是主要工作流界面。</span></p>
+      <p><span data-lang-en>The staged runtime uses <code>workflow.run</code> as the primary orchestration contract. <code>workflow.analyze.*</code> remains a wrapped compatibility target, and <code>task.status</code> is available for low-level job inspection but is not the main workflow surface.</span><span data-lang-zh>分阶段运行时使用 <code>workflow.run</code> 作为主要编排契约。<code>workflow.analyze.*</code> 保留为被包装的兼容目标，<code>task.status</code> 可用于底层任务检查但不是主要工作流界面。</span></p>
 
       <h3><span data-lang-en>Preferred Pattern</span><span data-lang-zh>推荐模式</span></h3>
       <div class="terminal">
         <div class="terminal__header"><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__title">async workflow</span></div>
-        <pre><code>workflow.analyze.start(sample_id, goal='triage')
-workflow.analyze.promote(run_id, through_stage='function_map')
-workflow.analyze.status(run_id)</code></pre>
+        <pre><code>workflow.run(action='start', sample_id=sample_id, goal='triage')
+workflow.run(action='promote', plan_id=plan_id, through_stage='function_map')
+workflow.run(action='status', plan_id=plan_id)</code></pre>
       </div>
 
       <h3><span data-lang-en>Tools That Queue Work</span><span data-lang-zh>排队工作的工具</span></h3>
       <table class="doc-table">
         <thead><tr><th><span data-lang-en>Tool</span><span data-lang-zh>工具</span></th><th><span data-lang-en>Notes</span><span data-lang-zh>说明</span></th></tr></thead>
         <tbody>
-          <tr><td><code>workflow.analyze.promote</code></td><td><span data-lang-en>Queues deeper stages</span><span data-lang-zh>排队更深阶段</span></td></tr>
+          <tr><td><code>workflow.run action=promote</code></td><td><span data-lang-en>Queues deeper stages through the gateway</span><span data-lang-zh>通过 gateway 排队更深阶段</span></td></tr>
           <tr><td><code>ghidra.analyze</code></td><td><span data-lang-en>Deep attribution backend</span><span data-lang-zh>深度归因后端</span></td></tr>
           <tr><td><code>workflow.deep_static</code></td><td><span data-lang-en>Full static pipeline</span><span data-lang-zh>完整静态流水线</span></td></tr>
           <tr><td><code>workflow.reconstruct</code></td><td><span data-lang-en>Source-like code export</span><span data-lang-zh>类源码导出</span></td></tr>
@@ -365,7 +378,7 @@ workflow.analyze.status(run_id)</code></pre>
       </table>
 
       <h3><span data-lang-en>Polling Guidance</span><span data-lang-zh>轮询指南</span></h3>
-      <p><span data-lang-en>When a stage is queued: (1) prefer <code>workflow.analyze.status(run_id)</code>; (2) only use <code>task.status(job_id)</code> for raw job details; (3) respect <code>polling_guidance</code> wait recommendations.</span><span data-lang-zh>当阶段排队时：(1) 优先使用 <code>workflow.analyze.status(run_id)</code>；(2) 仅在需要原始任务详情时用 <code>task.status(job_id)</code>；(3) 遵守 <code>polling_guidance</code> 等待建议。</span></p>
+      <p><span data-lang-en>When a stage is queued: (1) prefer <code>workflow.run action=status</code> with the <code>plan_id</code>; (2) only use <code>task.status(job_id)</code> for raw job details; (3) respect <code>polling_guidance</code> wait recommendations.</span><span data-lang-zh>当阶段排队时：(1) 优先用 <code>plan_id</code> 调用 <code>workflow.run action=status</code>；(2) 仅在需要原始任务详情时用 <code>task.status(job_id)</code>；(3) 遵守 <code>polling_guidance</code> 等待建议。</span></p>
       <p><span data-lang-en>Large staged responses may prune historical stage payloads and report this in top-level <code>warnings</code>. Use <code>artifact.read</code> for the full artifact payload. <code>task.status</code> also reports <code>external_active_*</code> memory telemetry for analyzer subprocesses that are still running outside the queue view.</span><span data-lang-zh>大型 staged 响应可能会裁剪历史阶段结果，并在顶层 <code>warnings</code> 中说明。完整内容请使用 <code>artifact.read</code>。<code>task.status</code> 还会通过 <code>external_active_*</code> 暴露仍在队列视图之外运行的 analyzer 子进程内存遥测。</span></p>
     </section>
 

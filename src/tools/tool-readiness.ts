@@ -584,8 +584,9 @@ export function createToolReadinessHandler(
             runtime_plane: 'tool_registry',
             reason: 'The requested tool is not registered in the current MCP surface.',
           },
-          recommended_next_tools: ['tool.help', 'plugin.list', 'tools.discover'],
+          recommended_next_tools: ['workflow.search', 'tool.help', 'plugin.list'],
           next_actions: [
+            'Use workflow.search with the requested capability or tool name to find the matching profile before exposing specialist tools.',
             'Verify the canonical tool name and whether the corresponding plugin is loaded.',
           ],
         },

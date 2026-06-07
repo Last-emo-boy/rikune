@@ -1,4 +1,5 @@
 import { describe, expect, test } from '@jest/globals'
+import { z } from 'zod'
 import { createToolsDiscoverHandler } from '../../src/tools/tools-discover.js'
 import { getToolSurfaceManager } from '../../src/core/tool-surface-manager.js'
 import type { Plugin } from '../../src/plugins/sdk.js'
@@ -7,6 +8,7 @@ function resetSurfaceForTest() {
   const surface = getToolSurfaceManager() as any
   surface.entries = new Map()
   surface.coreTools = new Set()
+  surface.visibleCoreTools = new Set()
 }
 
 describe('tools.discover', () => {
@@ -137,7 +139,7 @@ describe('tools.discover', () => {
 
     expect(staticPlugin.tool_surface_role).toBe('specialist')
     expect(staticPlugin.preferred_primary_tools).toEqual(
-      expect.arrayContaining(['workflow.analyze.start', 'workflow.analyze.status'])
+      expect.arrayContaining(['workflow.search', 'workflow.run'])
     )
     expect(staticPlugin.aspects).toEqual(
       expect.objectContaining({
@@ -217,6 +219,19 @@ describe('tools.discover', () => {
     expect(result.ok).toBe(true)
     expect((result.data as any).activated).toEqual(['yara-test'])
     expect((result.data as any).activated_tools).toEqual(['yara.scan'])
+    expect((result.data as any).activation_audit).toEqual(
+      expect.objectContaining({
+        action: 'activate',
+        activated_plugins: ['yara-test'],
+        activated_tools: ['yara.scan'],
+        policy: expect.objectContaining({
+          progressive_surface_enabled: true,
+          discovery_required_for_hidden_tools: true,
+          readiness_not_bypassed: true,
+          backend_execution_started: false,
+        }),
+      })
+    )
   })
 
   test('builds a cross-platform binary format matrix with target recommendations', async () => {
@@ -358,7 +373,10 @@ describe('tools.discover', () => {
     ]
 
     for (const plugin of plugins) {
-      surface.registerPlugin(plugin, plugin.tools.map((tool) => tool.definition.name))
+      surface.registerPlugin(
+        plugin,
+        plugin.tools.map((tool) => tool.definition.name)
+      )
     }
 
     const handler = createToolsDiscoverHandler({
@@ -384,12 +402,8 @@ describe('tools.discover', () => {
     )
     expect(data.plugin_matrix.by_format.apk.tools).toContain('android.package.inventory')
     expect(data.plugin_matrix.by_format.macho.tools).toContain('apple.signing.inspect')
-    expect(data.plugin_matrix.by_format['elf-executable'].tools).toContain(
-      'linux.binary.inventory'
-    )
-    expect(data.plugin_matrix.by_format.container.tools).toContain(
-      'container.structure.analyze'
-    )
+    expect(data.plugin_matrix.by_format['elf-executable'].tools).toContain('linux.binary.inventory')
+    expect(data.plugin_matrix.by_format.container.tools).toContain('container.structure.analyze')
     expect(data.recommended_tools).toContain('android.package.inventory')
     expect(data.plugin_matrix.target.matched_plugins).toContain('android-package-test')
     expect(data.available_tools).toEqual(
@@ -398,6 +412,503 @@ describe('tools.discover', () => {
         'apple.signing.inspect',
         'linux.binary.inventory',
         'container.structure.analyze',
+      ])
+    )
+  })
+
+  test('filters portal results by query without requiring prior activation', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [
+      {
+        id: 'jsvmp-test',
+        name: 'JSVMP Test',
+        description: 'Recover JavaScript virtual machine bytecode',
+        aspects: {
+          formats: ['js', 'javascript'],
+          capabilities: ['jsvmp-bytecode-recovery', 'handler-map-recovery'],
+        },
+        surfaceRules: {
+          tier: 2,
+          category: 'reverse-engineering',
+          activateOn: { fileTypes: ['js', 'javascript'], findings: ['jsvmp'] },
+        },
+        tools: [
+          {
+            definition: {
+              name: 'jsvmp.bytecode.recover',
+              description: 'Recover JSVMP bytecode',
+              inputSchema: {},
+              aspects: { formats: ['js'], capabilities: ['jsvmp-bytecode-recovery'] },
+            },
+            handler: async () => ({ ok: true }),
+          },
+        ],
+      },
+      {
+        id: 'pcap-test',
+        name: 'PCAP Test',
+        surfaceRules: {
+          tier: 1,
+          category: 'network-analysis',
+          activateOn: { fileTypes: ['pcap'] },
+        },
+        tools: [
+          {
+            definition: {
+              name: 'pcap.analyze',
+              description: 'Analyze packet captures',
+              inputSchema: {},
+              aspects: { formats: ['pcap'], capabilities: ['network-analysis'] },
+            },
+            handler: async () => ({ ok: true }),
+          },
+        ],
+      },
+    ]
+    for (const plugin of plugins) {
+      surface.registerPlugin(
+        plugin,
+        plugin.tools.map((tool) => tool.definition.name)
+      )
+    }
+
+    const handler = createToolsDiscoverHandler({
+      getStatuses: () =>
+        plugins.map((plugin) => ({
+          id: plugin.id,
+          name: plugin.name,
+          description: plugin.description,
+          status: 'loaded',
+          tools: plugin.tools.map((tool) => tool.definition.name),
+        })),
+      getDiscoveredPlugins: () => plugins,
+      getPlugin: (id: string) => plugins.find((plugin) => plugin.id === id),
+    } as any)
+
+    const result = await handler({ action: 'list', query: 'bytecode handler' })
+
+    expect(result.ok).toBe(true)
+    const categories = (result.data as any).categories
+    expect(categories).toHaveLength(1)
+    expect(categories[0].plugins[0].id).toBe('jsvmp-test')
+    expect(categories[0].plugins[0].activated).toBe(false)
+  })
+
+  test('uses sample_id file type as portal target and activates tier 2 format plugins explicitly', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [
+      {
+        id: 'javascript-deobf-test',
+        name: 'JavaScript Deobfuscation Test',
+        aspects: { formats: ['js', 'javascript'], capabilities: ['javascript-deobfuscation'] },
+        surfaceRules: {
+          tier: 2,
+          category: 'reverse-engineering',
+          activateOn: { fileTypes: ['js', 'javascript'], findings: ['obfuscated'] },
+        },
+        tools: [
+          {
+            definition: {
+              name: 'javascript.obfuscation.profile',
+              description: 'Profile JavaScript obfuscation',
+              inputSchema: {},
+              aspects: { formats: ['js'], capabilities: ['javascript-deobfuscation'] },
+            },
+            handler: async () => ({ ok: true }),
+          },
+        ],
+      },
+    ]
+    for (const plugin of plugins) {
+      surface.registerPlugin(
+        plugin,
+        plugin.tools.map((tool) => tool.definition.name)
+      )
+    }
+    const handler = createToolsDiscoverHandler(
+      {
+        getStatuses: () =>
+          plugins.map((plugin) => ({
+            id: plugin.id,
+            name: plugin.name,
+            status: 'loaded',
+            tools: plugin.tools.map((tool) => tool.definition.name),
+          })),
+        getDiscoveredPlugins: () => plugins,
+        getPlugin: (id: string) => plugins.find((plugin) => plugin.id === id),
+      } as any,
+      { database: { findSample: () => ({ file_type: 'JavaScript' }) } }
+    )
+
+    const listed = await handler({ action: 'list', sample_id: 'sha256:js' })
+    expect((listed.data as any).sample_file_type).toBe('JavaScript')
+    expect((listed.data as any).target_file_type_tags).toEqual(
+      expect.arrayContaining(['js', 'javascript'])
+    )
+    expect((listed.data as any).categories[0].plugins[0].activated).toBe(false)
+
+    const activated = await handler({ action: 'activate', sample_id: 'sha256:js' })
+    expect((activated.data as any).activated).toEqual(['javascript-deobf-test'])
+    expect((activated.data as any).activated_tools).toContain('javascript.obfuscation.profile')
+    expect((activated.data as any).activation_audit).toEqual(
+      expect.objectContaining({
+        activated_plugins: ['javascript-deobf-test'],
+        policy: expect.objectContaining({
+          file_type_activation_includes_tier2: true,
+          backend_execution_started: false,
+        }),
+      })
+    )
+  })
+
+  test('activates hidden core tools by tool_name', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    surface.registerCoreTools([
+      'workflow.analyze.start',
+      'workflow.analyze.status',
+      'sample.request_upload',
+    ])
+    surface.registerGatewayCoreTools(['tools.discover'])
+
+    const handler = createToolsDiscoverHandler({
+      getStatuses: () => [],
+      getDiscoveredPlugins: () => [],
+      getPlugin: () => undefined,
+    } as any)
+
+    expect(surface.isToolVisible('workflow.analyze.start')).toBe(false)
+    const result = await handler({ action: 'activate', tool_name: 'workflow_analyze_start' })
+    expect((result.data as any).activated_tools).toContain('workflow.analyze.start')
+    expect((result.data as any).activation_audit).toEqual(
+      expect.objectContaining({
+        activated_core_tools: ['workflow.analyze.start'],
+        policy: expect.objectContaining({
+          readiness_not_bypassed: true,
+          backend_execution_started: false,
+        }),
+      })
+    )
+    expect(surface.isToolVisible('workflow.analyze.start')).toBe(true)
+
+    const uploadResult = await handler({ action: 'activate', tool_name: 'sample.request_upload' })
+    expect((uploadResult.data as any).activated_tools).toContain('sample.request_upload')
+    expect(surface.isToolVisible('sample.request_upload')).toBe(true)
+  })
+
+  test('searches hidden core tools through the portal', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    surface.registerCoreTools(['workflow.analyze.start', 'tool.readiness'])
+    surface.registerGatewayCoreTools(['tools.discover'])
+
+    const handler = createToolsDiscoverHandler(
+      {
+        getStatuses: () => [],
+        getDiscoveredPlugins: () => [],
+        getPlugin: () => undefined,
+      } as any,
+      {
+        toolDefinitions: () => [
+          {
+            name: 'workflow.analyze.start',
+            description: 'Start staged analysis for a registered sample',
+            inputSchema: z.object({ sample_id: z.string() }),
+          },
+          {
+            name: 'tool.readiness',
+            description: 'Check backend readiness before dynamic or expert tools',
+            inputSchema: z.object({ tool_name: z.string() }),
+          },
+        ],
+      }
+    )
+
+    const result = await handler({ action: 'list', query: 'workflow_analyze_start' })
+
+    expect(result.ok).toBe(true)
+    const coreTools = (result.data as any).core_tools
+    expect(coreTools).toHaveLength(1)
+    expect(coreTools[0]).toEqual(
+      expect.objectContaining({
+        name: 'workflow.analyze.start',
+        transport_name: 'workflow_analyze_start',
+        visible: false,
+        tool_surface_role: 'compatibility',
+      })
+    )
+    expect(coreTools[0].preferred_primary_tools).toEqual(['workflow.run'])
+    expect(coreTools[0].next_actions).toEqual(
+      expect.arrayContaining([
+        'Use tools.discover action=activate tool_name=workflow.analyze.start to expose this core tool.',
+      ])
+    )
+  })
+
+  test('ranks explainable recommendations for hidden plugin and core tools', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    surface.registerCoreTools(['workflow.analyze.start', 'tool.readiness'])
+    surface.registerGatewayCoreTools(['tools.discover'])
+
+    const plugins: Plugin[] = [
+      {
+        id: 'pe-static-test',
+        name: 'PE Static Test',
+        description: 'PE import and structure analysis',
+        aspects: {
+          formats: ['pe'],
+          platforms: ['windows'],
+          execution: ['static'],
+          capabilities: ['imports', 'structure'],
+          evidence: ['imports', 'structure'],
+        },
+        surfaceRules: {
+          tier: 1,
+          category: 'static-analysis',
+          activateOn: { fileTypes: ['pe'] },
+        },
+        tools: [
+          {
+            definition: {
+              name: 'pe.structure.analyze',
+              description: 'Analyze PE structure',
+              inputSchema: {},
+              aspects: {
+                formats: ['pe'],
+                platforms: ['windows'],
+                execution: ['static'],
+                evidence: ['structure'],
+              },
+              artifacts: [{ type: 'pe.structure.json' }],
+              workflowRecipes: [
+                {
+                  id: 'pe.structure.workflow',
+                  title: 'PE structure workflow',
+                  startsWith: ['pe.structure.analyze'],
+                  nextTools: ['workflow.analyze.status'],
+                  producesArtifacts: ['pe.structure.json'],
+                  evidence: ['structure'],
+                  safety: ['passive'],
+                },
+              ],
+            },
+            handler: async () => ({ ok: true }),
+          },
+        ],
+      },
+      {
+        id: 'pe-runtime-test',
+        name: 'PE Runtime Test',
+        description: 'Runtime PE behavior analysis',
+        aspects: {
+          formats: ['pe'],
+          platforms: ['windows'],
+          execution: ['dynamic'],
+          runtimes: ['windows-sandbox'],
+          safety: ['passive', 'opt_in_dynamic', 'requires_isolation'],
+        },
+        runtimePolicy: {
+          passiveByDefault: true,
+          requiresUserOptIn: true,
+          requiresIsolation: true,
+          networkPolicy: 'disabled',
+        },
+        surfaceRules: {
+          tier: 3,
+          category: 'dynamic-analysis',
+          activateOn: { fileTypes: ['pe'] },
+        },
+        tools: [
+          {
+            definition: {
+              name: 'sandbox.execute',
+              description: 'Run isolated PE behavior collection',
+              inputSchema: {},
+              aspects: {
+                formats: ['pe'],
+                platforms: ['windows'],
+                execution: ['dynamic'],
+              },
+            },
+            handler: async () => ({ ok: true }),
+          },
+        ],
+      },
+    ]
+
+    for (const plugin of plugins) {
+      surface.registerPlugin(
+        plugin,
+        plugin.tools.map((tool) => tool.definition.name)
+      )
+    }
+
+    const handler = createToolsDiscoverHandler(
+      {
+        getStatuses: () =>
+          plugins.map((plugin) => ({
+            id: plugin.id,
+            name: plugin.name,
+            description: plugin.description,
+            status: 'loaded',
+            tools: plugin.tools.map((tool) => tool.definition.name),
+            depChecks: [],
+            qualityWarnings: [],
+          })),
+        getDiscoveredPlugins: () => plugins,
+        getPlugin: (id: string) => plugins.find((plugin) => plugin.id === id),
+      } as any,
+      {
+        toolDefinitions: () => [
+          {
+            name: 'workflow.analyze.start',
+            description: 'Start staged analysis for a registered sample',
+            inputSchema: z.object({ sample_id: z.string() }),
+          },
+          {
+            name: 'tool.readiness',
+            description: 'Check backend readiness',
+            inputSchema: z.object({ tool_name: z.string() }),
+          },
+        ],
+      }
+    )
+
+    const result = await handler({ action: 'recommend', file_type: 'PE', query: 'imports' })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.action).toBe('recommend')
+    expect(data.recommendations[0]).toEqual(
+      expect.objectContaining({
+        kind: 'plugin',
+        plugin_id: 'pe-static-test',
+        readiness_state: 'hidden_activation_required',
+        activation_command: { action: 'activate', plugin_id: 'pe-static-test' },
+      })
+    )
+    expect(data.recommendations[0].score).toBeGreaterThan(0)
+    expect(data.recommendations[0].match_reasons).toEqual(
+      expect.arrayContaining([expect.stringContaining('Matches target file type tags')])
+    )
+    expect(data.recommendations[0].why_hidden).toEqual(
+      expect.arrayContaining(['Plugin is not currently visible in the progressive surface.'])
+    )
+    expect(data.recommendations.some((item: any) => item.plugin_id === 'pe-runtime-test')).toBe(
+      true
+    )
+    const runtimeRecommendation = data.recommendations.find(
+      (item: any) => item.plugin_id === 'pe-runtime-test'
+    )
+    expect(runtimeRecommendation.readiness_state).toBe('runtime_opt_in_required')
+    expect(runtimeRecommendation.activation_plan).toEqual(
+      expect.arrayContaining(['Call tool.readiness for the selected tool before execution.'])
+    )
+  })
+
+  test('surfaces backend install profile gates in recommendations', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [
+      {
+        id: 'radare2-test',
+        name: 'radare2 Test',
+        description: 'radare2 backend planning',
+        aspects: {
+          formats: ['pe', 'elf'],
+          platforms: ['windows', 'linux'],
+          execution: ['static'],
+          capabilities: ['disassembly', 'xref-analysis'],
+          evidence: ['functions', 'xrefs'],
+        },
+        surfaceRules: {
+          tier: 3,
+          category: 'reverse-engineering',
+          activateOn: { fileTypes: ['pe', 'elf'] },
+        },
+        systemDeps: [
+          {
+            type: 'binary',
+            name: 'radare2',
+            target: '$RADARE2_PATH',
+            envVar: 'RADARE2_PATH',
+            dockerDefault: '/usr/local/bin/radare2',
+            required: false,
+            description: 'radare2 reverse-engineering framework',
+            dockerFeature: 'radare2',
+            dockerInstall: 'Install radare2 from distro packages or provide a pinned release',
+            dockerValidation: ['radare2 -v >/dev/null 2>&1'],
+            dockerInstallRoute: 'profile-gated',
+            dockerInstallProfile: 'optional',
+          },
+        ],
+        tools: [
+          {
+            definition: {
+              name: 'radare2.analysis.plan',
+              description: 'Plan radare2 disassembly workflow',
+              inputSchema: {},
+              aspects: {
+                formats: ['pe', 'elf'],
+                execution: ['static'],
+                capabilities: ['disassembly'],
+              },
+            },
+            handler: async () => ({ ok: true }),
+          },
+        ],
+      },
+    ]
+    surface.registerPlugin(plugins[0], ['radare2.analysis.plan'])
+
+    const handler = createToolsDiscoverHandler({
+      getStatuses: () => [
+        {
+          id: 'radare2-test',
+          name: 'radare2 Test',
+          description: 'radare2 backend planning',
+          status: 'loaded',
+          tools: ['radare2.analysis.plan'],
+          depChecks: [],
+          qualityWarnings: [],
+        },
+      ],
+      getDiscoveredPlugins: () => plugins,
+      getPlugin: (id: string) => plugins.find((plugin) => plugin.id === id),
+    } as any)
+
+    const result = await handler({ action: 'recommend', file_type: 'PE', query: 'disassembly' })
+
+    expect(result.ok).toBe(true)
+    const recommendation = (result.data as any).recommendations.find(
+      (item: any) => item.plugin_id === 'radare2-test'
+    )
+    expect(recommendation).toEqual(
+      expect.objectContaining({
+        readiness_state: 'backend_profile_required',
+        backend_profile_summary: expect.objectContaining({ profile_gated: 1 }),
+      })
+    )
+    expect(recommendation.backend_install_profile).toEqual([
+      expect.objectContaining({
+        docker_feature: 'radare2',
+        install_route: 'profile-gated',
+        install_profile: 'optional',
+        enabled_by_profiles: expect.arrayContaining(['optional', 'full', 'all']),
+        safety_gate: 'profile_opt_in_required',
+      }),
+    ])
+    expect(recommendation.match_reasons).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Backend install routes: radare2:profile-gated/optional'),
+      ])
+    )
+    expect(recommendation.activation_plan).toEqual(
+      expect.arrayContaining([
+        'Use backend profile full for radare2 when building the analyzer image.',
       ])
     )
   })

@@ -92,23 +92,24 @@ Tool definitions are registered with canonical dotted names, for example `workfl
 
 ## Core Tool Groups
 
-Core tools are registered before plugins and are always part of the baseline surface.
+Core tools are registered before plugins, but the default AI-facing visible surface is intentionally small: `workflow.search`, `workflow.run`, and `artifact.read`. The other core tools remain registered as compatibility, specialist, or low-level inspection surfaces.
 
 | Group | Examples |
 | --- | --- |
-| Sample intake | `sample.ingest`, `sample.request_upload`, `sample.profile.get`, `analysis.context.get` |
-| Artifacts | `artifact.list`, `artifact.read`, `artifact.diff`, `artifact.download` |
-| Workflow | `workflow.analyze.start`, `workflow.analyze.status`, `workflow.analyze.promote`, `workflow.analyze.auto`, `workflow.triage`, `workflow.deep_static`, `workflow.reconstruct` |
+| Gateway | `workflow.search`, `workflow.run`, `artifact.read` |
+| Sample intake compatibility | `sample.ingest`, `sample.request_upload`, `sample.profile.get`, `analysis.context.get` |
+| Artifacts | `artifact.read`, plus compatibility helpers `artifact.list`, `artifact.diff`, `artifact.download` |
+| Workflow compatibility | `workflow.analyze.start`, `workflow.analyze.status`, `workflow.analyze.promote`, `workflow.analyze.auto`, `workflow.triage`, `workflow.deep_static`, `workflow.reconstruct` |
 | Semantic review | `workflow.semantic_name_review`, `workflow.function_explanation_review`, `workflow.module_reconstruction_review` |
 | Tasks | `task.status`, `task.cancel`, `task.sweep` |
 | System | `system.health`, `system.setup.guide`, `setup.remediate` |
-| Utility | `tool.help`, `tool.readiness`, `tools.discover` |
+| Utility compatibility | `tool.help`, `tool.readiness`, `tools.discover` |
 | Plugins | `plugin.list`, `plugin.enable`, `plugin.disable` |
 | Diagnostics | `system.config.validate` |
 
 ## Staged Analysis Pipeline
 
-The primary analysis path is implemented in `src/workflows/analyze-pipeline.ts`.
+The primary analysis path is implemented in `src/workflows/analyze-pipeline.ts` and wrapped for clients by `workflow.run`.
 
 Stages:
 
@@ -121,11 +122,11 @@ Stages:
 7. `dynamic_execute`
 8. `summarize`
 
-`workflow.analyze.start` creates or reuses an analysis run and executes the initial profile. `workflow.analyze.promote` queues or runs deeper stages. `workflow.analyze.status` returns run state, stage state, evidence, coverage, pending work, and polling guidance.
+Externally, `workflow.run action=start` creates or reuses an analysis run and executes the initial profile. `workflow.run action=promote` queues or runs deeper stages. `workflow.run action=status` returns compact run state, stage state, evidence, coverage, pending work, and polling guidance. The direct `workflow.analyze.*` handlers remain registered as wrapped compatibility targets.
 
 Long-running stages use `JobQueue` and `AnalysisTaskRunner`. Jobs are persisted in SQLite and restored after restart; interrupted running jobs are made visible for recovery.
 
-The run-state layer preserves the queue `job_id` while a stage transitions from queued to running and completed. This lets `workflow.analyze.status`, `task.status`, scheduler telemetry, and restart recovery describe the same underlying worker instead of treating active work as lost context.
+The run-state layer preserves the queue `job_id` while a stage transitions from queued to running and completed. This lets `workflow.run action=status`, `task.status`, scheduler telemetry, and restart recovery describe the same underlying worker instead of treating active work as lost context.
 
 Large workflow responses are bounded by `src/core/response-guard.ts`. The guard prunes heavyweight `raw_results` and historical stage payloads while keeping schema-valid structured content. When pruning occurs, the tool returns a top-level warning and callers should use `artifact.read` or a stage-specific tool for full detail.
 
@@ -138,7 +139,7 @@ The scheduler and status surfaces distinguish three related concepts:
 | Concept | Surface |
 | --- | --- |
 | Queue state | `JobQueue`, persisted jobs, `task.status` |
-| Stage state | `analysis_run_stages`, `workflow.analyze.status` |
+| Stage state | `analysis_run_stages`, `workflow.run action=status` |
 | External subprocess pressure | scheduler snapshots, `task.status.external_active_*` |
 
 `task.status` reports bounded external analyzer subprocess telemetry (`external_active_rss_mb`, `external_active_process_count`, `external_active_processes`) so operators can see FLOSS, capa, Ghidra, Rizin, or similar work that is still consuming memory even when the in-memory queue is empty.
@@ -188,10 +189,10 @@ Tiers:
 
 | Tier | Meaning |
 | --- | --- |
-| 0 | Gateway/core-like plugin tools visible immediately |
+| 0 | Gateway-capable plugin tools, not necessarily visible unless included in the explicit gateway |
 | 1 | File-type activated tools |
 | 2 | Finding/signal activated tools |
-| 3 | Expert tools, normally exposed through `tools.discover` or explicit readiness checks |
+| 3 | Expert tools, normally selected through `workflow.search` and exposed only through explicit activation |
 
 Tool results can activate later tools by returning file-type, findings, or recommended-next-tool signals. The server can notify clients that the tool list changed.
 

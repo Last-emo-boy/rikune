@@ -790,12 +790,12 @@ export function createSystemHealthHandler(
 
       const recommendedNextTools =
         overallStatus === 'healthy'
-          ? ['workflow.analyze.start', 'workflow.summarize', 'workflow.triage']
+          ? ['workflow.search', 'workflow.run', 'artifact.read']
           : ['system.setup.guide']
       const nextActions =
         overallStatus === 'healthy'
           ? [
-              'Proceed with workflow.analyze.start for the primary staged-runtime path, or use workflow.triage only when you intentionally want the compatibility quick-profile surface.',
+              'Use workflow.search to choose the staged path, then workflow.run action=start with the selected sample_id.',
             ]
           : [
               'Inspect setup_actions and required_user_inputs before retrying blocked analysis tools.',
@@ -822,8 +822,8 @@ export function createSystemHealthHandler(
           setup_actions: setupActions,
           required_user_inputs: requiredUserInputs,
           result_mode: 'environment_health',
-          tool_surface_role: 'primary',
-          preferred_primary_tools: [],
+          tool_surface_role: 'compatibility',
+          preferred_primary_tools: ['workflow.search', 'workflow.run'],
           recommended_next_tools: recommendedNextTools,
           next_actions: nextActions,
         },

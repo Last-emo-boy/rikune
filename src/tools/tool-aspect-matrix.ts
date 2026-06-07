@@ -297,11 +297,11 @@ function summarizeMatrixTarget(
 
   if (matchedTools.length === 0) {
     nextActions.push(
-      `No plugin matrix entry matched file type tags: ${tags.join(', ')}. Use tools.discover action=list to browse plugins.`
+      `No plugin matrix entry matched file type tags: ${tags.join(', ')}. Use workflow.search with the same file_type tags to browse matching profiles.`
     )
   } else {
     nextActions.push(
-      `Use tools.discover action=activate file_type=${tags[0]} to expose matching format tools when they are not visible.`
+      `Use workflow.search file_type=${tags[0]} to rank matching workflows before exposing specialist tools.`
     )
   }
 
@@ -406,7 +406,7 @@ export function buildPluginAspectMatrix(
       nextActions.push(`Resolve ${plugin.id} plugin readiness before using its tools.`)
     } else if (toolNames.length > 0 && plugin.activated === false) {
       nextActions.push(
-        `Use tools.discover action=activate plugin_id=${plugin.id} to expose ${plugin.id} tools.`
+        `Use workflow.search plugin_id=${plugin.id} to inspect ${plugin.id} routing before exposing specialist tools.`
       )
     }
   }

@@ -229,14 +229,14 @@ export const deepStaticWorkflowToolDefinition: ToolDefinition = {
   name: 'workflow.deep_static',
   description:
     'Run a long-running deep static workflow that chains quick triage, Ghidra analysis, function ranking, and top-function decompilation. ' +
-    'If the user has not picked a workflow yet, prefer workflow.analyze.auto so the server can route by intent first. ' +
+    'If the user has not picked a workflow yet, prefer workflow.search so the server can rank matching profiles first. ' +
     'Use this when you want one queued entrypoint for deeper static reverse engineering rather than calling each stage manually. ' +
     'Do not use this for quick profiling only; workflow.triage is cheaper and faster. ' +
     'Read coverage_level, completion_state, coverage_gaps, and upgrade_paths to understand whether the result is queued, bounded, or fully completed.' +
     '\n\nDecision guide:\n' +
     '- Use when: you want a single deep static analysis job with queue-aware polling.\n' +
     '- Do not use when: you only need a fast first-pass triage or a single leaf analysis tool.\n' +
-    '- Typical next step: if queued, poll task.status(job_id); if completed, inspect top_functions or continue with workflow.reconstruct/report tools.\n' +
+    '- Typical next step: if queued, prefer workflow.run action=status when a plan_id/run_id is available; use task.status(job_id) only for raw queue details. If completed, inspect top_functions or continue with workflow.reconstruct/report tools.\n' +
     '- Common mistake: treating this as an immediate-response tool despite its long runtime.',
   inputSchema: deepStaticWorkflowInputSchema,
   outputSchema: deepStaticWorkflowOutputSchema,

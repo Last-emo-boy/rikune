@@ -160,7 +160,7 @@ describe('tool.help tool', () => {
     expect(
       data.tools[0].usage_notes.some(
         (item: string) =>
-          item.includes('workflow_analyze_start') || item.includes('workflow_analyze_promote')
+          item.includes('workflow_search') || item.includes('workflow_run')
       )
     ).toBe(true)
   })
@@ -200,8 +200,8 @@ describe('tool.help tool', () => {
     expect(
       data.tools[0].usage_notes.some(
         (item: string) =>
-          item.includes(toTransportToolName('workflow.analyze.start')) ||
-          item.includes(toTransportToolName('workflow.analyze.promote'))
+          item.includes(toTransportToolName('workflow.search')) ||
+          item.includes(toTransportToolName('workflow.run'))
       )
     ).toBe(true)
     expect(data.tools[0].usage_notes.some((item: string) => item.includes('small samples'))).toBe(
@@ -239,7 +239,7 @@ describe('tool.help tool', () => {
     const definitions: ToolDefinition[] = [
       {
         name: 'sample.request_upload',
-        description: 'Primary host-file upload entrypoint for containerized MCP workers.',
+        description: 'Compatibility host-file upload helper for containerized MCP workers.',
         inputSchema: z.object({
           filename: z.string().optional(),
           ttl_seconds: z.number().default(300),
@@ -282,7 +282,7 @@ describe('tool.help tool', () => {
     const uploadData = uploadResult.data as any
     expect(
       uploadData.tools[0].usage_notes.some((item: string) =>
-        item.includes('host-file ingest entrypoint')
+        item.includes('compatibility upload-session helper')
       )
     ).toBe(true)
     const ttlField = uploadData.tools[0].input.fields.find(
@@ -314,7 +314,7 @@ describe('tool.help tool', () => {
     const taskStatusData = taskStatusResult.data as any
     expect(taskStatusData.tools[0].surface_role).toBe('compatibility')
     expect(taskStatusData.tools[0].preferred_primary_tools).toContain(
-      toTransportToolName('workflow.analyze.status')
+      toTransportToolName('workflow.run')
     )
     expect(
       taskStatusData.tools[0].usage_notes.some((item: string) => item.includes('polling_guidance'))
@@ -649,13 +649,33 @@ describe('tool.help tool', () => {
   test('should classify primary, compatibility, and export-oriented surfaces', async () => {
     const definitions: ToolDefinition[] = [
       {
+        name: 'workflow.search',
+        description: 'Primary passive profile search gateway',
+        inputSchema: z.object({ query: z.string().optional() }),
+      },
+      {
+        name: 'sample.profile.get',
+        description: 'Compatibility sample profile view',
+        inputSchema: z.object({ sample_id: z.string() }),
+      },
+      {
+        name: 'tools.discover',
+        description: 'Compatibility low-level discovery portal',
+        inputSchema: z.object({ action: z.string().optional() }),
+      },
+      {
+        name: 'custom.unclassified',
+        description: 'Unclassified core compatibility helper',
+        inputSchema: z.object({ sample_id: z.string().optional() }),
+      },
+      {
         name: 'workflow.analyze.start',
-        description: 'Primary staged analysis entrypoint',
+        description: 'Compatibility staged analysis start handler',
         inputSchema: z.object({ sample_id: z.string() }),
       },
       {
         name: 'workflow.analyze.auto',
-        description: 'Primary staged analysis router',
+        description: 'Compatibility staged analysis router',
         inputSchema: z.object({ sample_id: z.string() }),
       },
       {
@@ -687,20 +707,47 @@ describe('tool.help tool', () => {
     const data = result.data as any
     const byName = new Map<string, any>(data.tools.map((item: any) => [item.name, item]))
 
-    expect(byName.get(toTransportToolName('workflow.analyze.start')).surface_role).toBe('primary')
-    expect(byName.get(toTransportToolName('workflow.analyze.auto')).surface_role).toBe('primary')
-    expect(byName.get(toTransportToolName('tool.readiness')).surface_role).toBe('primary')
+    expect(byName.get(toTransportToolName('workflow.search')).surface_role).toBe('primary')
+    expect(byName.get(toTransportToolName('sample.profile.get')).surface_role).toBe(
+      'compatibility'
+    )
+    expect(byName.get(toTransportToolName('sample.profile.get')).preferred_primary_tools).toContain(
+      toTransportToolName('workflow.search')
+    )
+    expect(byName.get(toTransportToolName('tools.discover')).surface_role).toBe('compatibility')
+    expect(byName.get(toTransportToolName('tools.discover')).preferred_primary_tools).toContain(
+      toTransportToolName('workflow.search')
+    )
+    expect(byName.get(toTransportToolName('custom.unclassified')).surface_role).toBe(
+      'compatibility'
+    )
+    expect(byName.get(toTransportToolName('workflow.analyze.start')).surface_role).toBe(
+      'compatibility'
+    )
+    expect(
+      byName.get(toTransportToolName('workflow.analyze.start')).preferred_primary_tools
+    ).toContain(toTransportToolName('workflow.run'))
+    expect(byName.get(toTransportToolName('workflow.analyze.auto')).surface_role).toBe(
+      'compatibility'
+    )
+    expect(
+      byName.get(toTransportToolName('workflow.analyze.auto')).preferred_primary_tools
+    ).toContain(toTransportToolName('workflow.run'))
+    expect(byName.get(toTransportToolName('tool.readiness')).surface_role).toBe('compatibility')
+    expect(byName.get(toTransportToolName('tool.readiness')).preferred_primary_tools).toContain(
+      toTransportToolName('workflow.search')
+    )
     expect(byName.get(toTransportToolName('workflow.triage')).surface_role).toBe('compatibility')
     expect(byName.get(toTransportToolName('workflow.triage')).preferred_primary_tools).toContain(
-      toTransportToolName('workflow.analyze.start')
+      toTransportToolName('workflow.run')
     )
     expect(byName.get(toTransportToolName('report.generate')).surface_role).toBe('export_only')
     expect(byName.get(toTransportToolName('report.generate')).preferred_primary_tools).toContain(
-      toTransportToolName('workflow.summarize')
+      toTransportToolName('workflow.search')
     )
     expect(byName.get(toTransportToolName('graphviz.render')).surface_role).toBe('renderer_helper')
     expect(byName.get(toTransportToolName('graphviz.render')).preferred_primary_tools).toContain(
-      toTransportToolName('code.function.cfg')
+      toTransportToolName('workflow.search')
     )
   })
 

@@ -473,8 +473,8 @@ function buildSampleRoutingProfile(params: {
   ])
   const nextActions = [
     normalizedFormats.length > 0
-      ? `Use tools.discover action=activate file_type=${normalizedFormats[0]} to expose matching static plugins.`
-      : 'Use tools.discover action=list to inspect available format plugins.',
+      ? `Use workflow.search file_type=${normalizedFormats[0]} to rank matching workflows and static plugins before exposing specialist tools.`
+      : 'Use workflow.search to inspect available format workflows before selecting specialist tools.',
     nestedRouteHints.length > 0
       ? 'Review nested_route_hints before selecting deep static or extraction tools.'
       : 'Run a passive inventory tool first when the sample is an archive, package, container, or bundle.',

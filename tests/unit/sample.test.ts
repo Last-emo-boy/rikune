@@ -81,7 +81,7 @@ describe('Sample Management', () => {
     )
     expect(uploadData.result_mode).toBe('upload_session')
     expect(uploadData.recommended_next_tools).toEqual(
-      expect.arrayContaining(['workflow.analyze.start', 'workflow.summarize'])
+      expect.arrayContaining(['workflow.run', 'workflow.search'])
     )
     expect(uploadData.next_actions[0]).toContain('POST the file bytes')
 

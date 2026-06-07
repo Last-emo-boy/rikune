@@ -97,8 +97,8 @@ describe('tool.readiness', () => {
     expect((result.data as any)?.result_mode).toBe('tool_readiness')
     expect((result.data as any)?.execution_path).toBe('local')
     expect((result.data as any)?.runtime_plane).toBe('local_tool')
-    expect((result.data as any)?.tool_surface_role).toBe('primary')
-    expect((result.data as any)?.preferred_primary_tools).toEqual([])
+    expect((result.data as any)?.tool_surface_role).toBe('compatibility')
+    expect((result.data as any)?.preferred_primary_tools).toEqual(['workflow.search'])
     expect((result.data as any)?.required_runtime_contract).toBeNull()
     expect((result.data as any)?.available_runtime_backends).toEqual([])
     expect((result.data as any)?.execution_semantics).toEqual(
@@ -174,9 +174,9 @@ describe('tool.readiness', () => {
 
     expect(result.ok).toBe(true)
     expect((result.data as any)?.tool_surface_role).toBe('compatibility')
-    expect((result.data as any)?.preferred_primary_tools).toEqual(['workflow.analyze.status'])
+    expect((result.data as any)?.preferred_primary_tools).toEqual(['workflow.run'])
     expect((result.data as any)?.recommended_next_tools).toEqual(
-      expect.arrayContaining(['workflow.analyze.status', 'tool.help', 'plugin.list'])
+      expect.arrayContaining(['workflow.run', 'tool.help', 'plugin.list'])
     )
   })
 
@@ -336,11 +336,7 @@ describe('tool.readiness', () => {
       })
     )
     expect((result.data as any)?.aspect_coverage).toEqual(
-      expect.arrayContaining([
-        'formats: pe',
-        'platforms: windows',
-        'capabilities: behavior',
-      ])
+      expect.arrayContaining(['formats: pe', 'platforms: windows', 'capabilities: behavior'])
     )
     expect((result.data as any)?.format_matrix).toEqual(
       expect.objectContaining({
@@ -633,6 +629,77 @@ describe('tool.readiness', () => {
     expect(validateRuntimeContract).toHaveBeenCalledWith(
       { type: 'python-worker', handler: 'frida_worker.py' },
       { forceRefresh: true }
+    )
+  })
+
+  test('does not report ready when matching handler lacks required runtime dimensions', async () => {
+    const strictRuntimeContract = {
+      type: 'python-worker' as const,
+      handler: 'frida_worker.py',
+      modes: ['live_sandbox' as const],
+      requiredTools: ['frida'],
+      isolation: { required: true, backends: ['windows-sandbox' as const] },
+      policy: {
+        requiresIsolation: true,
+        allowedBackends: ['windows-sandbox' as const],
+        networkPolicy: 'record_only' as const,
+      },
+    }
+    const handler = createToolReadinessHandler(
+      () =>
+        [
+          {
+            name: 'fixture.runtime.strict',
+            description: 'strict runtime fixture',
+            inputSchema: {},
+            runtime: strictRuntimeContract,
+          },
+        ] as ToolDefinition[],
+      createPluginManagerMock as any,
+      {
+        runtimeMode: 'manual_runtime',
+        runtimeClient: {
+          getEndpoint: () => 'http://127.0.0.1:4010',
+          validateRuntimeContract: async () => ({
+            supported: false,
+            capabilities: [
+              {
+                type: 'python-worker',
+                handler: 'frida_worker.py',
+                modes: ['safe_simulation'],
+                requiredTools: ['python'],
+                isolation: { required: true, backends: ['docker'] },
+                policy: {
+                  requiresIsolation: true,
+                  allowedBackends: ['docker'],
+                  networkPolicy: 'disabled',
+                },
+              },
+            ],
+          }),
+        },
+      }
+    )
+
+    const result = await handler({ tool_name: 'fixture.runtime.strict', force_refresh: false })
+
+    expect(result.ok).toBe(false)
+    expect((result.data as any)?.readiness).toBe('runtime_capability_missing')
+    expect((result.data as any)?.runtime?.capability_advertised).toBe(false)
+    expect((result.data as any)?.required_runtime_contract).toEqual(strictRuntimeContract)
+    expect((result.data as any)?.available_runtime_backends).toEqual([
+      expect.objectContaining({
+        type: 'python-worker',
+        handler: 'frida_worker.py',
+        modes: ['safe_simulation'],
+        requiredTools: ['python'],
+      }),
+    ])
+    expect((result.data as any)?.execution_semantics).toEqual(
+      expect.objectContaining({
+        actual_mode: 'plan_only',
+        target_requires_delegated_runtime: true,
+      })
     )
   })
 
