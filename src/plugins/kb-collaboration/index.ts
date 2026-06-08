@@ -6,6 +6,12 @@
 
 import { requireDatabase, requireWorkspaceManager, type Plugin } from '../sdk.js'
 import {
+  KB_COLLABORATION_PLATFORMS,
+  KB_COLLABORATION_RUNTIME_POLICY,
+  KB_COLLABORATION_SAFETY,
+  KB_FUNCTION_MATCH_CAPABILITIES,
+  KB_FUNCTION_MATCH_EVIDENCE,
+  KB_FUNCTION_MATCH_FORMATS,
   kbFunctionMatchToolDefinition,
   createKbFunctionMatchHandler,
 } from './tools/kb-function-match.js'
@@ -29,19 +35,14 @@ const kbCollaborationPlugin: Plugin = {
   name: 'Knowledge Base & Collaboration',
   executionDomain: 'static',
   aspects: {
-    formats: ['artifact', 'analysis-evidence', 'function', 'rule'],
-    platforms: ['cross-platform'],
+    formats: KB_FUNCTION_MATCH_FORMATS,
+    platforms: KB_COLLABORATION_PLATFORMS,
     execution: ['static', 'correlation'],
-    safety: ['passive', 'no_network_by_default'],
-    capabilities: [
-      'analysis-memory',
-      'knowledge-reuse',
-      'function-matching',
-      'rule-library',
-      'workflow-recommendation',
-    ],
-    evidence: ['analysis-memory', 'workflow', 'provenance'],
+    safety: KB_COLLABORATION_SAFETY,
+    capabilities: [...KB_FUNCTION_MATCH_CAPABILITIES, 'rule-library', 'workflow-recommendation'],
+    evidence: KB_FUNCTION_MATCH_EVIDENCE,
   },
+  runtimePolicy: KB_COLLABORATION_RUNTIME_POLICY,
   surfaceRules: { tier: 0, category: 'static-analysis' },
   description:
     'Function signature matching, analysis templates, and knowledge base import/export/management',

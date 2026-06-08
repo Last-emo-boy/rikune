@@ -5,6 +5,7 @@ import {
   type WorkerResult,
   type PluginToolDeps,
 } from '../../sdk.js'
+import { KB_COLLABORATION_RUNTIME_POLICY } from './kb-function-match.js'
 
 const TOOL_NAME = 'kb.context.suggest'
 
@@ -41,24 +42,31 @@ export const kbContextSuggestToolDefinition: ToolDefinition = {
     evidence: ['analysis-memory', 'workflow', 'provenance'],
   },
   artifacts: [
-    { type: 'analysis_memory', description: 'Reusable local analysis-memory recommendations' },
+    {
+      type: 'analysis_memory',
+      description: 'Reusable local analysis-memory recommendations',
+      mime: 'application/json',
+    },
   ],
   evidence: [
     { category: 'analysis-memory', artifactTypes: ['analysis_memory'] },
+    { category: 'workflow', artifactTypes: ['analysis_memory'] },
     { category: 'provenance', artifactTypes: ['analysis_memory'] },
   ],
   workflowRecipes: [
     {
       id: 'kb.analysis-memory.reuse',
       title: 'Analysis memory reuse',
-      startsWith: ['kb.context.suggest', 'analysis.notes', 'kb.function.match'],
+      startsWith: ['kb.context.suggest'],
       nextTools: ['kb.function.match', 'analysis.notes', 'rule.library', 'kb.export'],
       requiredArtifacts: ['analysis_evidence'],
       producesArtifacts: ['analysis_memory'],
       evidence: ['analysis-memory', 'workflow', 'provenance'],
       safety: ['passive', 'no_network_by_default'],
+      runtimeBackends: ['local'],
     },
   ],
+  runtimePolicy: KB_COLLABORATION_RUNTIME_POLICY,
 }
 
 function uniqueStrings(values: string[]): string[] {
