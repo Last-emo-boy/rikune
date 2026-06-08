@@ -11,6 +11,16 @@ import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
+import {
+  ELF_MACHO_CAPABILITIES,
+  ELF_MACHO_EVIDENCE,
+  ELF_MACHO_RUNTIME_POLICY,
+  ELF_MACHO_SAFETY,
+  ELF_STRUCTURE_ARTIFACT_TYPE,
+  ELF_STRUCTURE_WORKFLOW_RECIPES,
+  buildElfMachoWorkerBackend,
+  enrichElfStructureResult,
+} from '../elf-macho-metadata.js'
 
 const TOOL_NAME = 'elf.structure.analyze'
 
@@ -37,17 +47,29 @@ export const elfStructureAnalyzeToolDefinition: ToolDefinition = {
     platforms: ['linux'],
     architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv'],
     execution: ['static', 'triage'],
-    safety: ['passive'],
-    capabilities: ['structure', 'symbols', 'imports', 'exports', 'routing'],
-    evidence: ['structure', 'symbols', 'imports', 'exports', 'provenance'],
+    safety: ELF_MACHO_SAFETY,
+    capabilities: ELF_MACHO_CAPABILITIES,
+    evidence: ELF_MACHO_EVIDENCE,
   },
   artifacts: [
     {
-      type: 'elf_structure',
+      type: ELF_STRUCTURE_ARTIFACT_TYPE,
       description: 'ELF headers, sections, segments, symbols, dynamic entries, and notes',
+      mime: 'application/json',
+      mimeTypes: ['application/json'],
     },
   ],
-  evidence: [{ category: 'structure', artifactTypes: ['elf_structure'] }],
+  evidence: [
+    { category: 'structure', artifactTypes: [ELF_STRUCTURE_ARTIFACT_TYPE] },
+    { category: 'symbols', artifactTypes: [ELF_STRUCTURE_ARTIFACT_TYPE] },
+    { category: 'imports', artifactTypes: [ELF_STRUCTURE_ARTIFACT_TYPE] },
+    { category: 'exports', artifactTypes: [ELF_STRUCTURE_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [ELF_STRUCTURE_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [ELF_STRUCTURE_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: ELF_STRUCTURE_WORKFLOW_RECIPES,
+  runtimePolicy: ELF_MACHO_RUNTIME_POLICY,
+  workerBackend: buildElfMachoWorkerBackend([ELF_STRUCTURE_ARTIFACT_TYPE]),
 }
 
 export function createElfStructureAnalyzeHandler(
@@ -71,15 +93,16 @@ export function createElfStructureAnalyzeHandler(
         return { ok: false, errors: [String(result.error || 'ELF parsing failed')] }
       }
 
+      const enriched = enrichElfStructureResult(result, { sampleId: args.sample_id })
       const artifacts: ArtifactRef[] = []
       try {
         const artRef = await persistStaticAnalysisJsonArtifact(
           workspaceManager,
           database,
           args.sample_id,
-          'elf_structure',
+          ELF_STRUCTURE_ARTIFACT_TYPE,
           'elf-structure',
-          result
+          enriched
         )
         if (artRef) artifacts.push(artRef)
       } catch {
@@ -88,7 +111,7 @@ export function createElfStructureAnalyzeHandler(
 
       return {
         ok: true,
-        data: result,
+        data: enriched,
         artifacts,
         metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME },
       }

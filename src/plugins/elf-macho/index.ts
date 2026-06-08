@@ -21,6 +21,7 @@ import {
   elfExportsExtractToolDefinition,
   createElfExportsExtractHandler,
 } from './tools/elf-exports-extract.js'
+import { ELF_MACHO_RUNTIME_POLICY } from './elf-macho-metadata.js'
 
 const elfMachoPlugin: Plugin = {
   id: 'elf-macho',
@@ -29,16 +30,22 @@ const elfMachoPlugin: Plugin = {
   aspects: {
     formats: [
       'elf',
+      'elf-executable',
       'so',
+      'elf-so',
+      'shared-library',
       'core',
       'elf-core',
       'elf-object',
       'linux-kernel-module',
       'dwarf',
       'macho',
+      'mach-o',
+      'mach-o-fat',
       'fat',
       'universal',
       'macho-object',
+      'mach-o-object',
       'dylib',
       'framework',
       'dsym',
@@ -46,16 +53,35 @@ const elfMachoPlugin: Plugin = {
     platforms: ['linux', 'macos', 'ios'],
     architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv'],
     execution: ['static', 'triage'],
-    safety: ['passive'],
-    capabilities: ['structure', 'imports', 'exports', 'symbols', 'routing'],
-    evidence: ['structure', 'imports', 'exports', 'symbols', 'provenance'],
+    safety: [
+      'passive',
+      'no_sample_execution',
+      'no_runtime_start',
+      'no_native_load',
+      'no_network_by_default',
+      'no_mutation',
+    ],
+    capabilities: [
+      'structure',
+      'imports',
+      'exports',
+      'symbols',
+      'loader-metadata',
+      'search-profile',
+      'workflow-handoff',
+      'routing',
+    ],
+    evidence: ['structure', 'imports', 'exports', 'symbols', 'loader', 'workflow', 'provenance'],
   },
   surfaceRules: {
     tier: 1,
     activateOn: {
       fileTypes: [
         'elf',
+        'elf-executable',
         'so',
+        'elf-so',
+        'shared-library',
         'core',
         'elf-core',
         'elf-object',
@@ -67,6 +93,7 @@ const elfMachoPlugin: Plugin = {
         'fat',
         'universal',
         'macho-object',
+        'mach-o-object',
         'dylib',
         'framework',
         'dsym',
@@ -78,6 +105,7 @@ const elfMachoPlugin: Plugin = {
     'Structure analysis and import/export extraction for Linux ELF and macOS Mach-O binaries',
   version: '1.0.0',
   resources: { workers: 'workers' },
+  runtimePolicy: ELF_MACHO_RUNTIME_POLICY,
   register(server, deps) {
     const { workspaceManager: wm, database: db } = deps
 
