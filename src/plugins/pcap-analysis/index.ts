@@ -21,8 +21,16 @@ const pcapAnalysisPlugin: Plugin = {
     platforms: ['cross-platform'],
     execution: ['static', 'triage', 'correlation'],
     safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
-    capabilities: ['packet-analysis', 'dns-analysis', 'stream-extraction', 'ioc-routing'],
-    evidence: ['network', 'timeline', 'artifact', 'provenance'],
+    capabilities: [
+      'packet-analysis',
+      'dns-analysis',
+      'stream-extraction',
+      'ioc-routing',
+      'workflow-handoff',
+      'evidence-correlation',
+      'reporting',
+    ],
+    evidence: ['network', 'timeline', 'dns', 'streams', 'artifact', 'workflow', 'provenance'],
   },
   surfaceRules: {
     tier: 1,

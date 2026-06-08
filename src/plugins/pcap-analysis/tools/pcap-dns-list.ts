@@ -18,6 +18,10 @@ import {
   resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
+import {
+  buildPcapWorkflowEnvelope,
+  PCAP_NETWORK_WORKFLOW_RECIPES,
+} from '../pcap-workflow-metadata.js'
 
 const TOOL_NAME = 'pcap.dns.list'
 
@@ -45,6 +49,9 @@ export const pcapDnsListOutputSchema = z.object({
         )
         .optional(),
       artifact: ArtifactRefSchema.optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
@@ -65,7 +72,8 @@ export const pcapDnsListToolDefinition: ToolDefinition = {
     platforms: ['cross-platform'],
     execution: ['static', 'triage'],
     safety: ['passive', 'no_network_by_default'],
-    evidence: ['network', 'artifact'],
+    capabilities: ['dns-analysis', 'ioc-routing', 'workflow-handoff', 'evidence-correlation'],
+    evidence: ['network', 'dns', 'artifact', 'workflow', 'provenance'],
   },
   artifacts: [
     {
@@ -74,7 +82,11 @@ export const pcapDnsListToolDefinition: ToolDefinition = {
       mime: 'application/json',
     },
   ],
-  evidence: [{ category: 'network', artifactTypes: ['pcap_dns_records'] }],
+  evidence: [
+    { category: 'network', artifactTypes: ['pcap_dns_records'] },
+    { category: 'workflow', artifactTypes: ['pcap_dns_records'] },
+  ],
+  workflowRecipes: PCAP_NETWORK_WORKFLOW_RECIPES,
 }
 
 export function createPcapDnsListHandler(
@@ -149,6 +161,27 @@ export function createPcapDnsListHandler(
         )
         artifacts.push(artifact)
       }
+      const recommendedNextTools = [
+        'artifact.read',
+        'pcap.analyze',
+        'pcap.extract.streams',
+        'ioc.export',
+        'analysis.evidence.graph',
+        'report.generate',
+      ]
+      const envelope = buildPcapWorkflowEnvelope({
+        sourceTool: TOOL_NAME,
+        sampleId: input.sample_id,
+        artifactType: 'pcap_dns_records',
+        artifact,
+        summary: `${dnsEntries.length} DNS queries, ${domains.size} unique domains.`,
+        evidenceCounts: {
+          dns_query_count: dnsEntries.length,
+          unique_domain_count: domains.size,
+          response_count: dnsEntries.filter((entry) => entry.response).length,
+        },
+        recommendedNextTools,
+      })
 
       return {
         ok: true,
@@ -158,11 +191,13 @@ export function createPcapDnsListHandler(
           unique_domains: [...domains].sort().slice(0, 100),
           dns_entries: dnsEntries.slice(0, 50),
           artifact,
+          ...envelope,
           summary: `${dnsEntries.length} DNS queries, ${domains.size} unique domains.`,
-          recommended_next_tools: ['artifact.read', 'pcap.analyze', 'ioc.export', 'c2.extract'],
+          recommended_next_tools: recommendedNextTools,
           next_actions: [
             'Review domains for known C2 infrastructure.',
-            'Export IOCs with ioc.export.',
+            'Route DNS records into analysis.evidence.graph for correlation.',
+            'Export reviewed IOCs with ioc.export.',
           ],
         },
         artifacts,

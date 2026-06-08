@@ -18,6 +18,11 @@ import {
   resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
+import {
+  buildPcapWorkflowEnvelope,
+  PCAP_NETWORK_EVIDENCE,
+  PCAP_NETWORK_WORKFLOW_RECIPES,
+} from '../pcap-workflow-metadata.js'
 
 const TOOL_NAME = 'pcap.analyze'
 
@@ -38,6 +43,9 @@ export const pcapAnalyzeOutputSchema = z.object({
       conversations: z.string().optional(),
       endpoints: z.string().optional(),
       artifact: ArtifactRefSchema.optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
@@ -58,7 +66,8 @@ export const pcapAnalyzeToolDefinition: ToolDefinition = {
     platforms: ['cross-platform'],
     execution: ['static', 'triage'],
     safety: ['passive', 'no_network_by_default'],
-    evidence: ['network', 'timeline', 'artifact'],
+    capabilities: ['packet-analysis', 'network-triage', 'workflow-handoff', 'evidence-correlation'],
+    evidence: ['network', 'timeline', 'artifact', 'workflow', 'provenance'],
   },
   artifacts: [
     {
@@ -70,7 +79,9 @@ export const pcapAnalyzeToolDefinition: ToolDefinition = {
   evidence: [
     { category: 'network', artifactTypes: ['pcap_analysis'] },
     { category: 'timeline', artifactTypes: ['pcap_analysis'] },
+    { category: 'workflow', artifactTypes: ['pcap_analysis'] },
   ],
+  workflowRecipes: PCAP_NETWORK_WORKFLOW_RECIPES,
 }
 
 export function createPcapAnalyzeHandler(
@@ -151,6 +162,29 @@ export function createPcapAnalyzeHandler(
         )
         artifacts.push(artifact)
       }
+      const recommendedNextTools = [
+        'artifact.read',
+        'pcap.dns.list',
+        'pcap.extract.streams',
+        'ioc.export',
+        'analysis.evidence.graph',
+        'report.generate',
+      ]
+      const envelope = buildPcapWorkflowEnvelope({
+        sourceTool: TOOL_NAME,
+        sampleId: input.sample_id,
+        artifactType: 'pcap_analysis',
+        artifact,
+        summary: `PCAP analysis: ${packetCount} packets captured.`,
+        evidenceCounts: {
+          packet_count: packetCount,
+          protocol_hierarchy_available: protoResult.stdout.trim().length > 0,
+          conversation_summary_available: convResult.stdout.trim().length > 0,
+          io_statistics_available: statsResult.stdout.trim().length > 0,
+          evidence_family_count: PCAP_NETWORK_EVIDENCE.length,
+        },
+        recommendedNextTools,
+      })
 
       return {
         ok: true,
@@ -161,16 +195,13 @@ export function createPcapAnalyzeHandler(
           conversations: convResult.stdout.slice(0, 2000),
           endpoints: statsResult.stdout.slice(0, 1000),
           artifact,
+          ...envelope,
           summary: `PCAP analysis: ${packetCount} packets captured.`,
-          recommended_next_tools: [
-            'pcap.dns.list',
-            'pcap.extract.streams',
-            'behavior.network',
-            'ioc.export',
-          ],
+          recommended_next_tools: recommendedNextTools,
           next_actions: [
             'Use pcap.dns.list for DNS query/response analysis.',
             'Use pcap.extract.streams for TCP stream reassembly.',
+            'Route the persisted artifact into analysis.evidence.graph before report.generate.',
           ],
         },
         artifacts,

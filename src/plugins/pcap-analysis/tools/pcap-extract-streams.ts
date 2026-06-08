@@ -18,6 +18,10 @@ import {
   resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
+import {
+  buildPcapWorkflowEnvelope,
+  PCAP_NETWORK_WORKFLOW_RECIPES,
+} from '../pcap-workflow-metadata.js'
 
 const TOOL_NAME = 'pcap.extract.streams'
 
@@ -55,6 +59,9 @@ export const pcapExtractStreamsOutputSchema = z.object({
         )
         .optional(),
       artifact: ArtifactRefSchema.optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
@@ -75,7 +82,13 @@ export const pcapExtractStreamsToolDefinition: ToolDefinition = {
     platforms: ['cross-platform'],
     execution: ['static', 'triage'],
     safety: ['passive', 'no_network_by_default'],
-    evidence: ['network', 'artifact'],
+    capabilities: [
+      'stream-extraction',
+      'payload-preview',
+      'workflow-handoff',
+      'evidence-correlation',
+    ],
+    evidence: ['network', 'streams', 'artifact', 'workflow', 'provenance'],
   },
   artifacts: [
     {
@@ -87,7 +100,9 @@ export const pcapExtractStreamsToolDefinition: ToolDefinition = {
   evidence: [
     { category: 'network', artifactTypes: ['pcap_streams'] },
     { category: 'artifact', artifactTypes: ['pcap_streams'] },
+    { category: 'workflow', artifactTypes: ['pcap_streams'] },
   ],
+  workflowRecipes: PCAP_NETWORK_WORKFLOW_RECIPES,
 }
 
 export function createPcapExtractStreamsHandler(
@@ -136,6 +151,28 @@ export function createPcapExtractStreamsHandler(
           )
           artifacts.push(artifact)
         }
+        const recommendedNextTools = [
+          'artifact.read',
+          'strings.extract',
+          'pcap.dns.list',
+          'pcap.analyze',
+          'analysis.evidence.graph',
+          'report.generate',
+        ]
+        const envelope = buildPcapWorkflowEnvelope({
+          sourceTool: TOOL_NAME,
+          sampleId: input.sample_id,
+          artifactType: 'pcap_streams',
+          artifact,
+          summary: `Extracted ${input.protocol} stream #${input.stream_index} (${result.stdout.length} bytes).`,
+          evidenceCounts: {
+            stream_count: 1,
+            extracted_bytes: result.stdout.length,
+            preview_bytes: preview.length,
+            truncated: result.stdout.length > preview.length,
+          },
+          recommendedNextTools,
+        })
         return {
           ok: true,
           data: {
@@ -150,11 +187,13 @@ export function createPcapExtractStreamsHandler(
               },
             ],
             artifact,
+            ...envelope,
             summary: `Extracted ${input.protocol} stream #${input.stream_index} (${result.stdout.length} bytes).`,
-            recommended_next_tools: ['pcap.dns.list', 'pcap.analyze', 'string.extract'],
+            recommended_next_tools: recommendedNextTools,
             next_actions: [
               'Look for embedded payloads or C2 commands in the stream.',
               'Carve out any transferred files.',
+              'Use strings.extract on persisted stream artifacts when payload text needs enrichment.',
             ],
           },
           artifacts,
@@ -194,6 +233,27 @@ export function createPcapExtractStreamsHandler(
           )
           artifacts.push(artifact)
         }
+        const recommendedNextTools = [
+          'artifact.read',
+          'pcap.extract.streams',
+          'pcap.dns.list',
+          'pcap.analyze',
+          'analysis.evidence.graph',
+          'report.generate',
+        ]
+        const envelope = buildPcapWorkflowEnvelope({
+          sourceTool: TOOL_NAME,
+          sampleId: input.sample_id,
+          artifactType: 'pcap_streams',
+          artifact,
+          summary: `Found ${streams.length} ${input.protocol} streams.`,
+          evidenceCounts: {
+            stream_count: streams.length,
+            total_stream_bytes: streams.reduce((sum, stream) => sum + stream.bytes, 0),
+            protocol: input.protocol,
+          },
+          recommendedNextTools,
+        })
 
         return {
           ok: true,
@@ -203,11 +263,13 @@ export function createPcapExtractStreamsHandler(
             stream_count: streams.length,
             streams: streams.slice(0, 50),
             artifact,
+            ...envelope,
             summary: `Found ${streams.length} ${input.protocol} streams.`,
-            recommended_next_tools: ['pcap.extract.streams', 'pcap.dns.list', 'pcap.analyze'],
+            recommended_next_tools: recommendedNextTools,
             next_actions: [
               'Extract a specific stream by index for full content.',
               'Look for large streams that may contain file transfers.',
+              'Send stream summaries to analysis.evidence.graph before reporting.',
             ],
           },
           artifacts,
