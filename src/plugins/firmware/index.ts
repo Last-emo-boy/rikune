@@ -86,7 +86,7 @@ const firmwarePlugin: Plugin = {
     },
     category: 'static-analysis',
     extractSignals: (data: Record<string, unknown>): string[] => {
-      if (Array.isArray(data.firmware_signatures) && data.firmware_signatures.length > 0) {
+      if (Array.isArray(data.signatures) && data.signatures.length > 0) {
         return ['firmware']
       }
       return []

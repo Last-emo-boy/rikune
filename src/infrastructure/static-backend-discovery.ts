@@ -463,7 +463,7 @@ export function resolveCapaCli(currentConfig: Config = config): ExternalExecutab
 export function resolveDieCli(currentConfig: Config = config): ExternalExecutableResolution {
   return resolveExecutable({
     configuredPath: currentConfig.workers.static.diePath,
-    envPath: process.env.DIE_PATH,
+    envPath: process.env.DIE_PATH || process.env.DIEC_PATH,
     pathCandidates: ['diec', 'die'],
     versionArgSets: [['--version'], ['-v'], ['-h']],
   })

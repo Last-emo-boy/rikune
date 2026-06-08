@@ -5,7 +5,11 @@ import path from 'path'
 import { DatabaseManager } from '../../src/database.js'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import type { ToolchainBackendResolution } from '../../src/static-backend-discovery.js'
-import { createDieScanHandler, dieScanToolDefinition } from '../../src/plugins/die/tools/die-scan.js'
+import diePlugin from '../../src/plugins/die/index.js'
+import {
+  createDieScanHandler,
+  dieScanToolDefinition,
+} from '../../src/plugins/die/tools/die-scan.js'
 
 const SAMPLE_HASH = '9'.repeat(64)
 const SAMPLE_ID = `sha256:${SAMPLE_HASH}`
@@ -296,6 +300,20 @@ describe('die.scan tool', () => {
           ]),
         }),
       ])
+    )
+  })
+
+  test('declares DIE_PATH as canonical backend path metadata', () => {
+    expect(diePlugin.configSchema?.[0]).toEqual(
+      expect.objectContaining({
+        envVar: 'DIE_PATH',
+      })
+    )
+    expect(diePlugin.systemDeps?.[0]).toEqual(
+      expect.objectContaining({
+        target: '$DIE_PATH',
+        envVar: 'DIE_PATH',
+      })
     )
   })
 })

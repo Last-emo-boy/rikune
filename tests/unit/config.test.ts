@@ -61,6 +61,8 @@ describe('Configuration Loading', () => {
     delete process.env.GHIDRA_CLEANUP_AFTER_ANALYSIS
     delete process.env.GHIDRA_LOG_RETENTION_DAYS
     delete process.env.GHIDRA_MIN_JAVA_VERSION
+    delete process.env.DIE_PATH
+    delete process.env.DIEC_PATH
     delete process.env.LOG_LEVEL
     delete process.env.AUDIT_LOG_PATH
   })
@@ -163,6 +165,31 @@ describe('Configuration Loading', () => {
       expect(result.logging?.level).toBe('debug')
     })
 
+    test('should load DIE_PATH as canonical DIE backend path', () => {
+      process.env.DIE_PATH = '/opt/die/diec'
+
+      const result = loadConfigFromEnv()
+
+      expect(result.workers?.static?.diePath).toBe('/opt/die/diec')
+    })
+
+    test('should accept DIEC_PATH as legacy DIE backend path alias', () => {
+      process.env.DIEC_PATH = '/legacy/diec'
+
+      const result = loadConfigFromEnv()
+
+      expect(result.workers?.static?.diePath).toBe('/legacy/diec')
+    })
+
+    test('should prefer DIE_PATH over legacy DIEC_PATH', () => {
+      process.env.DIE_PATH = '/canonical/diec'
+      process.env.DIEC_PATH = '/legacy/diec'
+
+      const result = loadConfigFromEnv()
+
+      expect(result.workers?.static?.diePath).toBe('/canonical/diec')
+    })
+
     test('should return empty object when no environment variables are set', () => {
       // Clean up all relevant environment variables
       delete process.env.SERVER_PORT
@@ -177,6 +204,8 @@ describe('Configuration Loading', () => {
       delete process.env.GHIDRA_PATH
       delete process.env.GHIDRA_INSTALL_DIR
       delete process.env.PYTHON_PATH
+      delete process.env.DIE_PATH
+      delete process.env.DIEC_PATH
       delete process.env.LOG_LEVEL
       delete process.env.AUDIT_LOG_PATH
 
@@ -260,9 +289,12 @@ describe('Configuration Loading', () => {
           fs.copyFileSync(defaultConfigPath, backupPath)
         }
         fs.mkdirSync(defaultConfigDir, { recursive: true })
-        fs.writeFileSync(defaultConfigPath, JSON.stringify({
-          workspace: { root: '/persisted/workspace' },
-        }))
+        fs.writeFileSync(
+          defaultConfigPath,
+          JSON.stringify({
+            workspace: { root: '/persisted/workspace' },
+          })
+        )
 
         const config = loadConfig()
         expect(config.workspace.root).toBe('/persisted/workspace')

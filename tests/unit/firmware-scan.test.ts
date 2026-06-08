@@ -1,6 +1,7 @@
 import { describe, expect, test } from '@jest/globals'
 import { detectFileType } from '../../src/sample/sample-finalization.js'
 import { buildContainerStructureFromBuffer } from '../../src/plugins/container-analysis/tools/container-structure-analyze.js'
+import firmwarePlugin from '../../src/plugins/firmware/index.js'
 import { firmwareScanToolDefinition } from '../../src/plugins/firmware/tools/firmware-scan.js'
 import { firmwareExtractToolDefinition } from '../../src/plugins/firmware/tools/firmware-extract.js'
 import { firmwareEntropyToolDefinition } from '../../src/plugins/firmware/tools/firmware-entropy.js'
@@ -48,6 +49,22 @@ describe('firmware.scan static contract', () => {
     )
     expect(firmwareEntropyToolDefinition.outputSchema).toBeDefined()
     expect(firmwareEntropyToolDefinition.aspects?.safety).toContain('passive')
+  })
+
+  test('extracts firmware activation signal from firmware.scan signatures output', () => {
+    expect(
+      firmwarePlugin.surfaceRules?.extractSignals?.({
+        signature_count: 1,
+        signatures: [{ offset: '0x0', description: 'Squashfs filesystem' }],
+      })
+    ).toEqual(['firmware'])
+
+    expect(
+      firmwarePlugin.surfaceRules?.extractSignals?.({
+        signature_count: 0,
+        signatures: [],
+      })
+    ).toEqual([])
   })
 
   test('detects firmware, boot image, and embedded filesystem families', () => {

@@ -382,10 +382,11 @@ export function loadConfigFromEnv(): Record<string, any> {
     if (!config.workers.static) config.workers.static = {}
     config.workers.static.capaRulesPath = process.env.CAPA_RULES_PATH
   }
-  if (process.env.DIE_PATH) {
+  const diePath = process.env.DIE_PATH || process.env.DIEC_PATH
+  if (diePath) {
     if (!config.workers) config.workers = {}
     if (!config.workers.static) config.workers.static = {}
-    config.workers.static.diePath = process.env.DIE_PATH
+    config.workers.static.diePath = diePath
   }
   if (process.env.GRAPHVIZ_DOT_PATH) {
     if (!config.workers) config.workers = {}

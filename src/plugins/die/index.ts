@@ -62,7 +62,7 @@ const diePlugin: Plugin = {
   version: '1.0.0',
   configSchema: [
     {
-      envVar: 'DIEC_PATH',
+      envVar: 'DIE_PATH',
       description: 'Path to diec (DIE console) binary',
       required: false,
       defaultValue: '/usr/bin/diec',
@@ -72,8 +72,8 @@ const diePlugin: Plugin = {
     {
       type: 'binary',
       name: 'diec',
-      target: '$DIEC_PATH',
-      envVar: 'DIEC_PATH',
+      target: '$DIE_PATH',
+      envVar: 'DIE_PATH',
       dockerDefault: '/usr/bin/diec',
       versionFlag: '--version',
       required: false,
