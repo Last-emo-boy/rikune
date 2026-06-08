@@ -7,6 +7,12 @@
 
 import { definePlugin, defineTool } from '../sdk.js'
 import {
+  UNITY_METADATA_CAPABILITIES,
+  UNITY_METADATA_EVIDENCE,
+  UNITY_METADATA_FORMATS,
+  UNITY_METADATA_PLATFORMS,
+  UNITY_METADATA_RUNTIME_POLICY,
+  UNITY_METADATA_SAFETY,
   createUnityMetadataInspectHandler,
   unityMetadataInspectToolDefinition,
 } from './tools/unity-metadata-inspect.js'
@@ -16,18 +22,28 @@ const unityManagedPlugin = definePlugin({
   name: 'Unity Managed Inventory',
   executionDomain: 'static',
   aspects: {
-    formats: ['unity', 'unity-metadata', 'il2cpp', 'mono'],
-    platforms: ['dotnet', 'windows', 'linux', 'macos', 'android', 'ios'],
+    formats: UNITY_METADATA_FORMATS,
+    platforms: UNITY_METADATA_PLATFORMS,
     architectures: ['x86', 'x64', 'arm64', 'arm'],
-    execution: ['static', 'triage', 'decompilation'],
-    safety: ['passive', 'no_live_sample_by_default'],
-    capabilities: ['metadata', 'managed-native-map', 'decompile-plan', 'routing'],
-    evidence: ['manifest', 'symbols', 'nested-binaries', 'provenance'],
+    execution: ['static', 'triage'],
+    safety: UNITY_METADATA_SAFETY,
+    capabilities: UNITY_METADATA_CAPABILITIES,
+    evidence: UNITY_METADATA_EVIDENCE,
   },
+  runtimePolicy: UNITY_METADATA_RUNTIME_POLICY,
   surfaceRules: {
     tier: 1,
     activateOn: {
-      fileTypes: ['unity', 'unity-metadata', 'il2cpp', 'mono'],
+      fileTypes: [
+        'unity',
+        'unity-metadata',
+        'global-metadata',
+        'global-metadata.dat',
+        'il2cpp',
+        'gameassembly',
+        'libil2cpp',
+        'mono',
+      ],
     },
     category: 'dotnet-analysis',
   },
