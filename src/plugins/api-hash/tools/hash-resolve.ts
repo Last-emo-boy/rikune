@@ -21,15 +21,49 @@ import {
 } from '../../docker-shared.js'
 
 const TOOL_NAME = 'hash.resolve'
+const TOOL_VERSION = '0.2.0'
+const HASH_RESOLVE_ARTIFACT_TYPE = 'backend_hash_resolve'
+const HASH_RESOLVE_ALGORITHMS = [
+  'ror13',
+  'crc32',
+  'djb2',
+  'sdbm',
+  'fnv1a',
+  'ror13_additive',
+  'auto',
+] as const
+const HASH_RESOLVE_RECOMMENDED_NEXT_TOOLS = ['artifact.read', 'workflow.search']
+const HASH_RESOLVE_PROFILE_NEXT_TOOLS = [
+  'hash.identify',
+  'disasm.quick',
+  'analysis.evidence.graph',
+  'report.generate',
+]
+const HASH_API_SAFETY = [
+  'passive',
+  'read_only',
+  'bounded_output',
+  'no_live_sample_by_default',
+  'no_network_by_default',
+]
+
+type ApiHashToolDependencies = {
+  resolveExecutable?: typeof resolveExecutable
+  runPythonJson?: typeof runPythonJson
+}
 
 export const hashResolveInputSchema = z.object({
+  sample_id: z
+    .string()
+    .optional()
+    .describe('Optional sample identifier used when persisting resolution artifacts.'),
   hashes: z
     .array(z.string())
     .min(1)
     .max(200)
     .describe('Hex hash values to resolve (e.g. ["0x6A4ABC5B", "0xEC0E4E8E"]).'),
   algorithm: z
-    .enum(['ror13', 'crc32', 'djb2', 'sdbm', 'fnv1a', 'ror13_additive', 'auto'])
+    .enum(HASH_RESOLVE_ALGORITHMS)
     .default('auto')
     .describe('Hash algorithm used. "auto" tries all.'),
   unicode: z
@@ -44,6 +78,11 @@ export const hashResolveOutputSchema = z.object({
   ok: z.boolean(),
   data: z
     .object({
+      schema: z.string().optional(),
+      tool_version: z.string().optional(),
+      sample_id: z.string().optional(),
+      algorithm: z.string().optional(),
+      unicode: z.boolean().optional(),
       resolved_count: z.number().optional(),
       unresolved_count: z.number().optional(),
       results: z
@@ -57,14 +96,21 @@ export const hashResolveOutputSchema = z.object({
           })
         )
         .optional(),
+      raw_hash_result: z.record(z.any()).optional(),
       artifact: ArtifactRefSchema.optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
     })
     .optional(),
+  warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(ArtifactRefSchema).optional(),
+  setup_actions: z.array(z.any()).optional(),
+  required_user_inputs: z.array(z.any()).optional(),
   metrics: SharedMetricsSchema.optional(),
 })
 
@@ -74,6 +120,114 @@ export const hashResolveToolDefinition: ToolDefinition = {
     'Resolve shellcode API hashes against known Windows API hash databases (ROR13, CRC32, DJB2, etc.).',
   inputSchema: hashResolveInputSchema,
   outputSchema: hashResolveOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll', 'shellcode', 'memory', 'raw'],
+    platforms: ['windows', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage'],
+    runtimes: ['python'],
+    safety: HASH_API_SAFETY,
+    capabilities: [
+      'api-hash-resolution',
+      'shellcode-triage',
+      'import-recovery',
+      'behavior-corroboration',
+      'workflow-handoff',
+    ],
+    evidence: ['imports', 'symbols', 'behavior', 'workflow', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: HASH_RESOLVE_ARTIFACT_TYPE,
+      description: 'API hash resolution results for shellcode and packed binary triage',
+    },
+  ],
+  evidence: [
+    {
+      category: 'imports',
+      artifactTypes: [HASH_RESOLVE_ARTIFACT_TYPE],
+    },
+    {
+      category: 'behavior',
+      artifactTypes: [HASH_RESOLVE_ARTIFACT_TYPE],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: [HASH_RESOLVE_ARTIFACT_TYPE],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: [HASH_RESOLVE_ARTIFACT_TYPE],
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'api-hash.resolve-handoff',
+      title: 'API hash resolution handoff',
+      description:
+        'Resolve suspected API hashes with a bounded passive resolver, then hand off import evidence to artifact review, disassembly corroboration, evidence graph, and reporting.',
+      startsWith: [TOOL_NAME],
+      nextTools: [...HASH_RESOLVE_RECOMMENDED_NEXT_TOOLS, ...HASH_RESOLVE_PROFILE_NEXT_TOOLS],
+      requiredArtifacts: ['hash_values'],
+      producesArtifacts: [HASH_RESOLVE_ARTIFACT_TYPE],
+      evidence: ['imports', 'symbols', 'behavior', 'workflow', 'provenance'],
+      safety: HASH_API_SAFETY,
+      runtimeBackends: ['python'],
+      algorithms: HASH_RESOLVE_ALGORITHMS,
+    },
+  ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: false,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    maxRuntimeMs: 30000,
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    notes: [
+      'hash.resolve computes API-name hashes against an embedded bounded allowlist and never executes the sample.',
+      'workflow.search should route unresolved cases to disassembly or emulation planning without exposing broad runtime tools by default.',
+    ],
+  },
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'python',
+    backendKind: 'external',
+    adapter: 'api_hash.resolve',
+    availability: 'optional',
+    envVar: 'PYTHON_PATH',
+    commandHint: 'python -c "<embedded api hash resolver>"',
+    versionHint: 'python --version',
+    supportedModes: [...HASH_RESOLVE_ALGORITHMS],
+    defaultMode: 'auto',
+    inputArtifactTypes: ['hash_values'],
+    outputArtifactTypes: [HASH_RESOLVE_ARTIFACT_TYPE],
+    policy: {
+      passiveByDefault: true,
+      noNetwork: true,
+      noMutation: true,
+      noLiveExecution: true,
+      defaultTimeoutMs: 30000,
+      maxInputBytes: 64 * 1024,
+      maxOutputBytes: 4 * 1024 * 1024,
+      notes: ['Only bounded hash resolution results are persisted by this tool.'],
+    },
+    readiness: {
+      doesNotStartBackend: true,
+      setupActions: [
+        'Set PYTHON_PATH or install python3/python on PATH for the embedded resolver.',
+      ],
+      missingBackendBehavior: 'Return setup_required without resolving hashes.',
+    },
+    packaging: {
+      installRoute: 'installed',
+      installProfile: 'default',
+      envVar: 'PYTHON_PATH',
+      dockerDefault: 'python3',
+    },
+  },
 }
 
 const PYTHON_SCRIPT = `
@@ -211,15 +365,136 @@ resolved = sum(1 for r in results if r['resolved'])
 print(json.dumps({'resolved_count': resolved, 'unresolved_count': len(results) - resolved, 'results': results}))
 `
 
+function buildHashResolveEvidenceSummary(args: {
+  sampleId?: string
+  algorithm: z.infer<typeof hashResolveInputSchema>['algorithm']
+  unicode: boolean
+  requestedHashCount: number
+  resolvedCount: number
+  unresolvedCount: number
+  results: Array<Record<string, unknown>>
+  artifact?: ArtifactRef
+}) {
+  return {
+    schema: 'rikune.api_hash_resolve.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    tool_version: TOOL_VERSION,
+    artifact_type: HASH_RESOLVE_ARTIFACT_TYPE,
+    sample_id: args.sampleId ?? null,
+    algorithm: args.algorithm,
+    unicode: args.unicode,
+    requested_hash_count: args.requestedHashCount,
+    resolved_count: args.resolvedCount,
+    unresolved_count: args.unresolvedCount,
+    resolved_api_names: args.results
+      .filter((item) => item.resolved === true && typeof item.api_name === 'string')
+      .map((item) => item.api_name)
+      .slice(0, 25),
+    artifact_id: args.artifact?.id ?? null,
+  }
+}
+
+function buildHashResolveWorkflowHandoff(args: {
+  sampleId?: string
+  algorithm: z.infer<typeof hashResolveInputSchema>['algorithm']
+  resolvedCount: number
+  artifact?: ArtifactRef
+}) {
+  return {
+    schema: 'rikune.api_hash_resolve.workflow_handoff.v1',
+    handoff_mode: 'api_hash_resolution_to_import_behavior_review',
+    artifact_type: HASH_RESOLVE_ARTIFACT_TYPE,
+    sample_id: args.sampleId ?? null,
+    algorithm: args.algorithm,
+    resolved_count: args.resolvedCount,
+    recommended_next_tools: HASH_RESOLVE_RECOMMENDED_NEXT_TOOLS,
+    artifact_contract: {
+      type: HASH_RESOLVE_ARTIFACT_TYPE,
+      suggested_read_mode: 'profile',
+      artifact_id: args.artifact?.id ?? null,
+      content_kind: 'api_hash_resolution_results',
+    },
+    routing: [
+      {
+        goal: 'review-api-hash-results',
+        priority: args.artifact ? 'high' : 'normal',
+        next_tools: ['artifact.read'],
+        required_evidence: [HASH_RESOLVE_ARTIFACT_TYPE],
+      },
+      {
+        goal: 'corroborate-hash-computation',
+        priority: args.resolvedCount > 0 ? 'high' : 'normal',
+        next_tools: ['disasm.quick', 'analysis.evidence.graph'],
+        required_evidence: [HASH_RESOLVE_ARTIFACT_TYPE, 'hash computation site'],
+      },
+      {
+        goal: 'report-api-resolution',
+        priority: 'normal',
+        next_tools: ['report.generate'],
+        required_evidence: [HASH_RESOLVE_ARTIFACT_TYPE],
+      },
+    ],
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      backend_started: true,
+      backend_kind: 'external-passive-script',
+      live_execution_started: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+    },
+  }
+}
+
+function buildHashResolveQualityGates(args: {
+  algorithm: z.infer<typeof hashResolveInputSchema>['algorithm']
+  artifactPersisted: boolean
+  resolvedCount: number
+}) {
+  return {
+    schema: 'rikune.api_hash_resolve.quality_gates.v1',
+    passive_static_analysis: true,
+    read_only_backend: true,
+    sample_executed_by_tool: false,
+    backend_started_with_bounded_command: true,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    output_bounded_inline: true,
+    artifact_persisted: args.artifactPersisted,
+    analyst_review_required: true,
+    algorithm: args.algorithm,
+    resolved_count: args.resolvedCount,
+  }
+}
+
+function buildHashResolveNextActions(args: {
+  artifact?: ArtifactRef
+  resolvedCount: number
+  algorithm: z.infer<typeof hashResolveInputSchema>['algorithm']
+}) {
+  return [
+    args.artifact
+      ? 'Use artifact.read in profile mode to inspect the persisted API hash resolution envelope.'
+      : 'Persist API hash resolution output before relying on it for import recovery evidence.',
+    args.resolvedCount > 0
+      ? 'Use workflow.search to select a scoped disassembly or evidence graph follow-up for hash computation corroboration.'
+      : 'Use workflow.search with API hash identification or disassembly terms before escalating to emulation.',
+    args.algorithm === 'auto'
+      ? 'Review matched algorithms before treating resolved API names as behavior evidence.'
+      : 'Cross-check the selected hash algorithm against the code site when possible.',
+  ]
+}
+
 export function createHashResolveHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager
+  database: DatabaseManager,
+  dependencies?: ApiHashToolDependencies
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
       const input = hashResolveInputSchema.parse(args)
-      const backend = resolveExecutable({
+      const resolveExecutableImpl = dependencies?.resolveExecutable || resolveExecutable
+      const backend = resolveExecutableImpl({
         envPath: process.env.PYTHON_PATH,
         pathCandidates: ['python3', 'python'],
         versionArgSets: [['--version']],
@@ -232,24 +507,73 @@ export function createHashResolveHandler(
         )
       }
 
-      const result = await runPythonJson(
+      const runPythonJsonImpl = dependencies?.runPythonJson || runPythonJson
+      const result = await runPythonJsonImpl(
         backend.path,
         PYTHON_SCRIPT,
         { hashes: input.hashes, algorithm: input.algorithm, unicode: input.unicode },
         30000
       )
 
-      const parsed = result.parsed
+      const parsed = result.parsed && typeof result.parsed === 'object' ? result.parsed : {}
+      const results = Array.isArray(parsed?.results) ? parsed.results : []
+      const resolvedCount = Number(parsed?.resolved_count || 0)
+      const unresolvedCount = Number(parsed?.unresolved_count || 0)
+      const baseOutputData = {
+        schema: 'rikune.api_hash_resolve.v1',
+        tool_version: TOOL_VERSION,
+        sample_id: input.sample_id,
+        algorithm: input.algorithm,
+        unicode: input.unicode,
+        resolved_count: resolvedCount,
+        unresolved_count: unresolvedCount,
+        results,
+        raw_hash_result: parsed,
+        summary: `Resolved ${resolvedCount}/${input.hashes.length} API hashes.`,
+      } satisfies Record<string, unknown>
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
-      if (input.persist_artifact && parsed?.results?.length > 0) {
+      const warnings: string[] = []
+      if (input.persist_artifact && !input.sample_id) {
+        warnings.push(
+          'sample_id is required to persist hash.resolve artifacts; returning inline results only.'
+        )
+      }
+      if (input.persist_artifact && input.sample_id && results.length > 0) {
+        const artifactPayload = {
+          ...baseOutputData,
+          evidence_summary: buildHashResolveEvidenceSummary({
+            sampleId: input.sample_id,
+            algorithm: input.algorithm,
+            unicode: input.unicode,
+            requestedHashCount: input.hashes.length,
+            resolvedCount,
+            unresolvedCount,
+            results,
+          }),
+          workflow_handoff: buildHashResolveWorkflowHandoff({
+            sampleId: input.sample_id,
+            algorithm: input.algorithm,
+            resolvedCount,
+          }),
+          quality_gates: buildHashResolveQualityGates({
+            algorithm: input.algorithm,
+            artifactPersisted: true,
+            resolvedCount,
+          }),
+          recommended_next_tools: HASH_RESOLVE_RECOMMENDED_NEXT_TOOLS,
+          next_actions: buildHashResolveNextActions({
+            resolvedCount,
+            algorithm: input.algorithm,
+          }),
+        }
         artifact = await persistBackendArtifact(
           workspaceManager,
           database,
-          'api-hash',
+          input.sample_id,
           'hash',
           'resolve',
-          JSON.stringify(parsed.results, null, 2),
+          JSON.stringify(artifactPayload, null, 2),
           { extension: 'json', mime: 'application/json', sessionTag: input.session_tag }
         )
         artifacts.push(artifact)
@@ -258,19 +582,37 @@ export function createHashResolveHandler(
       return {
         ok: true,
         data: {
-          resolved_count: parsed?.resolved_count || 0,
-          unresolved_count: parsed?.unresolved_count || 0,
-          results: parsed?.results || [],
+          ...baseOutputData,
           artifact,
-          summary: `Resolved ${parsed?.resolved_count || 0}/${input.hashes.length} API hashes.`,
-          recommended_next_tools: ['hash.identify', 'disasm.quick', 'speakeasy.emulate'],
-          next_actions: [
-            parsed?.resolved_count > 0
-              ? 'Map resolved APIs to understand shellcode behavior.'
-              : 'Try different algorithm or check hash values.',
-            'Use disasm.quick to locate hash computation in shellcode.',
-          ],
+          evidence_summary: buildHashResolveEvidenceSummary({
+            sampleId: input.sample_id,
+            algorithm: input.algorithm,
+            unicode: input.unicode,
+            requestedHashCount: input.hashes.length,
+            resolvedCount,
+            unresolvedCount,
+            results,
+            artifact,
+          }),
+          workflow_handoff: buildHashResolveWorkflowHandoff({
+            sampleId: input.sample_id,
+            algorithm: input.algorithm,
+            resolvedCount,
+            artifact,
+          }),
+          quality_gates: buildHashResolveQualityGates({
+            algorithm: input.algorithm,
+            artifactPersisted: Boolean(artifact),
+            resolvedCount,
+          }),
+          recommended_next_tools: HASH_RESOLVE_RECOMMENDED_NEXT_TOOLS,
+          next_actions: buildHashResolveNextActions({
+            artifact,
+            resolvedCount,
+            algorithm: input.algorithm,
+          }),
         },
+        warnings: warnings.length > 0 ? warnings : undefined,
         artifacts,
         metrics: buildMetrics(startTime, TOOL_NAME),
       }
