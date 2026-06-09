@@ -9,6 +9,17 @@ import fs from 'fs/promises'
 import path from 'path'
 import { z } from 'zod'
 import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  NATIVE_OBJECT_EVIDENCE_SUMMARY_SCHEMA,
+  NATIVE_OBJECT_INVENTORY_ARTIFACT_TYPE,
+  NATIVE_OBJECT_QUALITY_GATES_SCHEMA,
+  NATIVE_OBJECT_RUNTIME_POLICY,
+  NATIVE_OBJECT_WORKFLOW_HANDOFF_SCHEMA,
+  buildNativeObjectEnvelope,
+  nativeObjectAspects,
+  nativeObjectRecommendedNextTools,
+  nativeObjectRecipe,
+} from '../native-object-metadata.js'
 
 const TOOL_NAME = 'native.object.inventory'
 const DEFAULT_MAX_READ_BYTES = 4 * 1024 * 1024
@@ -20,6 +31,7 @@ const NativeObjectPolicySchema = z.object({
   no_link: z.literal(true),
   no_load: z.literal(true),
   no_strip_or_sign: z.literal(true),
+  no_mutation: z.literal(true),
 })
 
 const NativeObjectInventoryDataSchema = z.object({
@@ -44,6 +56,51 @@ const NativeObjectInventoryDataSchema = z.object({
   summary: z.string(),
   recommended_next_tools: z.array(z.string()),
   next_actions: z.array(z.string()),
+  evidence_summary: z
+    .object({
+      schema: z.literal(NATIVE_OBJECT_EVIDENCE_SUMMARY_SCHEMA),
+      source_tool: z.literal(TOOL_NAME),
+      artifact_type: z.literal(NATIVE_OBJECT_INVENTORY_ARTIFACT_TYPE),
+    })
+    .passthrough()
+    .optional(),
+  workflow_handoff: z
+    .object({
+      schema: z.literal(NATIVE_OBJECT_WORKFLOW_HANDOFF_SCHEMA),
+      artifact_contract: z.record(z.any()),
+      dynamic_boundary: z
+        .object({
+          sample_execution_allowed: z.literal(false),
+          link_allowed: z.literal(false),
+          load_allowed: z.literal(false),
+          strip_or_sign_allowed: z.literal(false),
+          mutation_allowed: z.literal(false),
+          network_allowed: z.literal(false),
+          sample_executed_by_tool: z.literal(false),
+          linked_by_tool: z.literal(false),
+          loaded_by_tool: z.literal(false),
+          stripped_or_signed_by_tool: z.literal(false),
+          mutation_performed: z.literal(false),
+          network_used_by_tool: z.literal(false),
+        })
+        .passthrough(),
+      routing: z.array(z.record(z.any())),
+    })
+    .passthrough()
+    .optional(),
+  quality_gates: z
+    .object({
+      schema: z.literal(NATIVE_OBJECT_QUALITY_GATES_SCHEMA),
+      passive_static_inventory: z.literal(true),
+      sample_executed_by_tool: z.literal(false),
+      linked_by_tool: z.literal(false),
+      loaded_by_tool: z.literal(false),
+      stripped_or_signed_by_tool: z.literal(false),
+      mutation_performed: z.literal(false),
+      network_used_by_tool: z.literal(false),
+    })
+    .passthrough()
+    .optional(),
 })
 
 export const NativeObjectInventoryInputSchema = z.object({
@@ -73,46 +130,46 @@ export const nativeObjectInventoryToolDefinition: ToolDefinition = {
     'Passively inventory object files, static libraries, kernel modules, and debug bundles. Does not link, load, strip, sign, or execute content.',
   inputSchema: NativeObjectInventoryInputSchema,
   outputSchema: NativeObjectInventoryOutputSchema,
-  aspects: {
-    formats: [
-      'object',
-      'static-lib',
-      'ar',
-      'ar-static-lib',
-      'coff',
-      'coff-lib',
-      'elf-object',
-      'linux-kernel-module',
-      'macho-object',
-      'dsym',
-      'dwarf',
-    ],
-    platforms: ['windows', 'linux', 'macos', 'ios', 'embedded', 'cross-platform'],
-    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv'],
-    execution: ['static', 'triage'],
-    safety: ['passive', 'no_live_sample_by_default'],
-    capabilities: ['inventory', 'symbols', 'debug-metadata', 'nested-binaries', 'routing'],
-    evidence: ['structure', 'symbols', 'package-metadata', 'nested-binaries', 'provenance'],
-  },
+  aspects: nativeObjectAspects(),
   artifacts: [
     {
-      type: 'native_object_inventory',
+      type: NATIVE_OBJECT_INVENTORY_ARTIFACT_TYPE,
       description: 'Passive object/static-library/debug-bundle inventory and routing hints',
+      mime: 'application/json',
+      mimeTypes: ['application/json'],
     },
   ],
   evidence: [
     {
       category: 'structure',
-      artifactTypes: ['native_object_inventory'],
+      artifactTypes: [NATIVE_OBJECT_INVENTORY_ARTIFACT_TYPE],
     },
     {
       category: 'symbols',
-      artifactTypes: ['native_object_inventory'],
+      artifactTypes: [NATIVE_OBJECT_INVENTORY_ARTIFACT_TYPE],
+    },
+    {
+      category: 'debug-metadata',
+      artifactTypes: [NATIVE_OBJECT_INVENTORY_ARTIFACT_TYPE],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: [NATIVE_OBJECT_INVENTORY_ARTIFACT_TYPE],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: [NATIVE_OBJECT_INVENTORY_ARTIFACT_TYPE],
     },
   ],
+  workflowRecipes: [nativeObjectRecipe()],
+  runtimePolicy: NATIVE_OBJECT_RUNTIME_POLICY,
 }
 
 export type NativeObjectInventory = z.infer<typeof NativeObjectInventoryDataSchema>
+type NativeObjectInventoryBase = Omit<
+  NativeObjectInventory,
+  'evidence_summary' | 'workflow_handoff' | 'quality_gates'
+>
 type NestedBinaryCandidate = NativeObjectInventory['nested_binary_candidates'][number]
 
 const ELF_MACHINES: Record<number, string> = {
@@ -340,7 +397,7 @@ export function buildNativeObjectInventoryFromBuffer(
       ? 'Directory bundle member listing requires ingesting the dSYM bundle or archive; this inventory keeps the default behavior passive.'
       : undefined
 
-  return {
+  const inventoryBase: NativeObjectInventoryBase = {
     sample_id: options.sampleId,
     filename: options.filename,
     format: detected.format,
@@ -357,23 +414,26 @@ export function buildNativeObjectInventoryFromBuffer(
       no_link: true,
       no_load: true,
       no_strip_or_sign: true,
+      no_mutation: true,
     },
     unsupported_detail: unsupported,
     summary: `Passive native object inventory detected ${detected.format} with ${memberNames.length} archive member(s), ${symbolHints.length} symbol hint(s), and ${nested.length} nested candidate(s).`,
-    recommended_next_tools: unique([
-      'metadata.extract',
-      'strings.extract',
-      ...nested.flatMap((candidate) => candidate.recommended_tools),
-      detected.format.startsWith('elf') || detected.format === 'linux-kernel-module'
-        ? 'elf.structure.analyze'
-        : '',
-      detected.format.startsWith('macho') ? 'macho.structure.analyze' : '',
-    ]),
+    recommended_next_tools: nativeObjectRecommendedNextTools({
+      format: detected.format,
+      symbol_hints: symbolHints,
+      debug_metadata_candidates: debugCandidates,
+      nested_binary_candidates: nested,
+    }),
     next_actions: [
       'Review object members and symbol hints as static metadata only.',
       'Ingest relevant member binaries separately before running format-specific analyzers.',
       'Do not link, load, strip, sign, or execute object content during static triage.',
     ],
+  }
+
+  return {
+    ...inventoryBase,
+    ...buildNativeObjectEnvelope(inventoryBase),
   }
 }
 
@@ -426,7 +486,7 @@ export function createNativeObjectInventoryHandler(deps: PluginToolDeps) {
             workspaceManager,
             database,
             input.sample_id,
-            'native_object_inventory',
+            NATIVE_OBJECT_INVENTORY_ARTIFACT_TYPE,
             'native-object-inventory',
             inventory,
             input.session_tag ?? null

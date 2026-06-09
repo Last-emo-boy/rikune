@@ -10,54 +10,38 @@ import {
   createNativeObjectInventoryHandler,
   nativeObjectInventoryToolDefinition,
 } from './tools/native-object-inventory.js'
+import {
+  NATIVE_OBJECT_RUNTIME_POLICY,
+  NATIVE_OBJECT_TOOL_VERSION,
+  nativeObjectAspects,
+} from './native-object-metadata.js'
 
 const nativeObjectPlugin = definePlugin({
   id: 'native-object',
   name: 'Native Object Inventory',
   executionDomain: 'static',
-  aspects: {
-    formats: [
-      'object',
-      'static-lib',
-      'ar',
-      'ar-static-lib',
-      'coff',
-      'coff-lib',
-      'elf-object',
-      'linux-kernel-module',
-      'macho-object',
-      'dsym',
-      'dwarf',
-    ],
-    platforms: ['windows', 'linux', 'macos', 'ios', 'embedded', 'cross-platform'],
-    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv'],
-    execution: ['static', 'triage'],
-    safety: ['passive', 'no_live_sample_by_default'],
-    capabilities: ['inventory', 'symbols', 'debug-metadata', 'nested-binaries', 'routing'],
-    evidence: ['structure', 'symbols', 'package-metadata', 'nested-binaries', 'provenance'],
-  },
+  aspects: nativeObjectAspects(),
+  runtimePolicy: NATIVE_OBJECT_RUNTIME_POLICY,
   surfaceRules: {
     tier: 1,
     activateOn: {
       fileTypes: [
-        'object',
-        'static-lib',
-        'ar',
-        'ar-static-lib',
         'coff',
         'coff-lib',
         'elf-object',
         'linux-kernel-module',
         'macho-object',
         'dsym',
-        'dwarf',
+        'dwo',
+        'dwp',
+        'debug-metadata',
       ],
     },
     category: 'static-analysis',
   },
   description:
     'Passive native object/static-library/debug-bundle inventory with safe routing hints for ELF, Mach-O, COFF, and kernel modules.',
-  version: '1.0.0',
+  version: NATIVE_OBJECT_TOOL_VERSION,
   tools: [
     defineTool({
       ...nativeObjectInventoryToolDefinition,
