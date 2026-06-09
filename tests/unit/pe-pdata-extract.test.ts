@@ -4,7 +4,10 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
-import { createPEPdataExtractHandler } from '../../src/plugins/pe-analysis/tools/pe-pdata-extract.js'
+import {
+  createPEPdataExtractHandler,
+  pePdataExtractToolDefinition,
+} from '../../src/plugins/pe-analysis/tools/pe-pdata-extract.js'
 import { createCodeFunctionsListHandler } from '../../src/plugins/code-analysis/tools/code-functions-list.js'
 
 function createMinimalAmd64PdataPE(): Buffer {
@@ -143,6 +146,57 @@ describe('pe.pdata.extract tool', () => {
     }
   })
 
+  test('declares static function-boundary handoff metadata', () => {
+    expect(pePdataExtractToolDefinition.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['function-boundary-recovery', 'function-index-materialization'])
+    )
+    expect(pePdataExtractToolDefinition.workflowRecipes?.[0]).toEqual(
+      expect.objectContaining({
+        id: 'pe.pdata-function-handoff',
+        startsWith: ['pe.pdata.extract'],
+        nextTools: expect.arrayContaining([
+          'code.functions.list',
+          'code.functions.smart_recover',
+          'code.functions.define',
+          'analysis.evidence.graph',
+        ]),
+        producesArtifacts: expect.arrayContaining([
+          'pe_pdata_runtime_functions',
+          'function_index_entries',
+        ]),
+      })
+    )
+    expect(pePdataExtractToolDefinition.runtimePolicy).toEqual(
+      expect.objectContaining({
+        passiveByDefault: true,
+        requiresUserOptIn: false,
+        noNetwork: true,
+        noMutation: true,
+        noLiveExecution: true,
+      })
+    )
+    expect(pePdataExtractToolDefinition.workerBackend).toEqual(
+      expect.objectContaining({
+        backendName: 'builtin-pe-parser',
+        backendKind: 'builtin',
+        adapter: 'pe.pdata.extract',
+        defaultMode: 'materialize-functions',
+        outputArtifactTypes: expect.arrayContaining([
+          'pe_pdata_runtime_functions',
+          'function_index_entries',
+        ]),
+        policy: expect.objectContaining({
+          noNetwork: true,
+          noMutation: true,
+          noLiveExecution: true,
+        }),
+        readiness: expect.objectContaining({
+          doesNotStartBackend: true,
+        }),
+      })
+    )
+  })
+
   test('should parse x64 runtime functions from the PE exception directory', async () => {
     const handler = createPEPdataExtractHandler({ workspaceManager, database, cacheManager } as any)
     const result = await handler({ sample_id: sampleId })
@@ -161,6 +215,46 @@ describe('pe.pdata.extract tool', () => {
     expect(data.materialized_function_count).toBe(1)
     expect(data.skipped_existing_function_count).toBe(0)
     expect(data.function_index_status).toBe('ready')
+    expect(data.evidence_summary).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.pe_pdata.evidence_summary.v1',
+        source_tool: 'pe.pdata.extract',
+        runtime_function_count: 1,
+        materialized_function_count: 1,
+        function_index_status: 'ready',
+      })
+    )
+    expect(data.workflow_handoff).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.pe_pdata.workflow_handoff.v1',
+        handoff_mode: 'pe_pdata_to_function_index_and_review',
+        recommended_next_tools: expect.arrayContaining([
+          'pe.symbols.recover',
+          'code.functions.list',
+          'analysis.evidence.graph',
+        ]),
+      })
+    )
+    expect(data.workflow_handoff.dynamic_boundary).toEqual(
+      expect.objectContaining({
+        sample_executed_by_tool: false,
+        backend_started: false,
+        network_accessed_by_tool: false,
+        mutation_performed: false,
+      })
+    )
+    expect(data.quality_gates).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.pe_pdata.quality_gates.v1',
+        passive_static_analysis: true,
+        sample_executed_by_tool: false,
+        runtime_functions_recovered: true,
+        function_index_status: 'ready',
+      })
+    )
+    expect(data.recommended_next_tools).toEqual(
+      expect.arrayContaining(['code.functions.list', 'workflow.search'])
+    )
 
     const rows = database
       .getDatabase()
@@ -178,5 +272,41 @@ describe('pe.pdata.extract tool', () => {
     expect(listPayload.ok).toBe(true)
     expect(listPayload.data.count).toBe(1)
     expect(listPayload.data.functions[0].address).toBe('0x0000000140001000')
+  })
+
+  test('adds the handoff envelope on cached results without materialization drift', async () => {
+    const handler = createPEPdataExtractHandler({ workspaceManager, database, cacheManager } as any)
+    const fresh = await handler({ sample_id: sampleId, materialize_functions: false })
+    const cached = await handler({ sample_id: sampleId, materialize_functions: false })
+
+    expect(fresh.ok).toBe(true)
+    expect(cached.ok).toBe(true)
+    expect(cached.warnings?.[0]).toBe('Result from cache')
+    const data = cached.data as any
+    expect(data.function_index_status).toBe('skipped')
+    const rows = database
+      .getDatabase()
+      .prepare('SELECT address FROM functions WHERE sample_id = ?')
+      .all(sampleId) as any[]
+    expect(rows).toHaveLength(0)
+    expect(data.evidence_summary).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.pe_pdata.evidence_summary.v1',
+        runtime_function_count: 1,
+        function_index_status: 'skipped',
+      })
+    )
+    expect(data.quality_gates).toEqual(
+      expect.objectContaining({
+        function_index_materialization_requested: false,
+        function_index_status: 'skipped',
+      })
+    )
+    expect(data.workflow_handoff.data_contract).toEqual(
+      expect.objectContaining({
+        type: 'pe_pdata_runtime_functions',
+        function_index_status: 'skipped',
+      })
+    )
   })
 })

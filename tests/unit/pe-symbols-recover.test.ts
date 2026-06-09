@@ -4,7 +4,10 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
-import { createPESymbolsRecoverHandler } from '../../src/plugins/pe-analysis/tools/pe-symbols-recover.js'
+import {
+  createPESymbolsRecoverHandler,
+  peSymbolsRecoverToolDefinition,
+} from '../../src/plugins/pe-analysis/tools/pe-symbols-recover.js'
 
 function createMinimalAmd64PdataPE(): Buffer {
   const dosHeader = Buffer.alloc(0x80, 0)
@@ -142,6 +145,52 @@ describe('pe.symbols.recover tool', () => {
     }
   })
 
+  test('declares static symbol recovery handoff metadata', () => {
+    expect(peSymbolsRecoverToolDefinition.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['symbol-recovery', 'function-naming', 'runtime-hints'])
+    )
+    expect(peSymbolsRecoverToolDefinition.workflowRecipes?.[0]).toEqual(
+      expect.objectContaining({
+        id: 'pe.symbols-function-naming-handoff',
+        startsWith: ['pe.symbols.recover'],
+        nextTools: expect.arrayContaining([
+          'code.functions.define',
+          'workflow.function_index_recover',
+          'code.cross_decompiler.consensus',
+          'analysis.evidence.graph',
+        ]),
+        requiredArtifacts: ['sample'],
+        producesArtifacts: ['pe_recovered_symbols'],
+      })
+    )
+    expect(peSymbolsRecoverToolDefinition.runtimePolicy).toEqual(
+      expect.objectContaining({
+        passiveByDefault: true,
+        requiresUserOptIn: false,
+        noNetwork: true,
+        noMutation: true,
+        noLiveExecution: true,
+      })
+    )
+    expect(peSymbolsRecoverToolDefinition.workerBackend).toEqual(
+      expect.objectContaining({
+        backendName: 'builtin-pe-parser',
+        backendKind: 'builtin',
+        adapter: 'pe.symbols.recover',
+        inputArtifactTypes: ['sample'],
+        outputArtifactTypes: ['pe_recovered_symbols'],
+        policy: expect.objectContaining({
+          noNetwork: true,
+          noMutation: true,
+          noLiveExecution: true,
+        }),
+        readiness: expect.objectContaining({
+          doesNotStartBackend: true,
+        }),
+      })
+    )
+  })
+
   test('should recover runtime-aware symbolic names from PE metadata and string hints', async () => {
     const stringsHandler = jest.fn(async () => ({
       ok: true,
@@ -149,8 +198,7 @@ describe('pe.symbols.recover tool', () => {
         strings: [
           {
             offset: 32,
-            string:
-              'C:\\Users\\analyst\\cargo\\registry\\src\\tokio-1.43.0\\src\\runtime\\mod.rs',
+            string: 'C:\\Users\\analyst\\cargo\\registry\\src\\tokio-1.43.0\\src\\runtime\\mod.rs',
             encoding: 'ascii',
           },
         ],
@@ -163,7 +211,13 @@ describe('pe.symbols.recover tool', () => {
       },
     }))
 
-    const handler = createPESymbolsRecoverHandler({ workspaceManager, database, cacheManager, stringsHandler, runtimeHandler } as any)
+    const handler = createPESymbolsRecoverHandler({
+      workspaceManager,
+      database,
+      cacheManager,
+      stringsHandler,
+      runtimeHandler,
+    } as any)
     const result = await handler({ sample_id: sampleId })
 
     expect(result.ok).toBe(true)
@@ -177,5 +231,63 @@ describe('pe.symbols.recover tool', () => {
     expect(data.symbols[0].name_strategy).toBe('rust_entry_point')
     expect(data.symbols[0].confidence).toBeGreaterThanOrEqual(0.88)
     expect(data.symbols[0].evidence.some((item: string) => item.includes('entry point'))).toBe(true)
+    expect(data.evidence_summary).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.pe_symbols.evidence_summary.v1',
+        source_tool: 'pe.symbols.recover',
+        primary_runtime: 'rust',
+        recovered_symbol_count: 1,
+        entry_point_symbol_count: 1,
+      })
+    )
+    expect(data.workflow_handoff).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.pe_symbols.workflow_handoff.v1',
+        handoff_mode: 'pe_symbols_to_function_naming_and_consensus',
+        recommended_next_tools: expect.arrayContaining([
+          'code.functions.define',
+          'analysis.evidence.graph',
+        ]),
+      })
+    )
+    expect(data.workflow_handoff.dynamic_boundary).toEqual(
+      expect.objectContaining({
+        sample_executed_by_tool: false,
+        backend_started: false,
+        network_accessed_by_tool: false,
+        mutation_performed: false,
+      })
+    )
+    expect(data.quality_gates).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.pe_symbols.quality_gates.v1',
+        passive_static_analysis: true,
+        sample_executed_by_tool: false,
+        recovered_symbols_present: true,
+        runtime_hints_present: true,
+      })
+    )
+    expect(data.recommended_next_tools).toEqual(
+      expect.arrayContaining(['code.functions.define', 'workflow.search'])
+    )
+
+    const cached = await handler({ sample_id: sampleId })
+    expect(cached.ok).toBe(true)
+    expect(cached.warnings?.[0]).toBe('Result from cache')
+    expect((cached.metrics as any).cached).toBe(true)
+    expect(stringsHandler).toHaveBeenCalledTimes(1)
+    expect(runtimeHandler).toHaveBeenCalledTimes(1)
+    expect((cached.data as any).evidence_summary).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.pe_symbols.evidence_summary.v1',
+        recovered_symbol_count: 1,
+      })
+    )
+    expect((cached.data as any).workflow_handoff.data_contract).toEqual(
+      expect.objectContaining({
+        type: 'pe_recovered_symbols',
+        recovered_symbol_count: 1,
+      })
+    )
   })
 })
