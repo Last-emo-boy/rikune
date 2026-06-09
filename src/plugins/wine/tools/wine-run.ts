@@ -31,6 +31,7 @@ import {
   WINE_RUN_ARTIFACT_TYPES,
   WINE_RUN_WORKFLOW_RECIPES,
   WINE_RUNTIME_POLICY,
+  buildWineRunEnvelope,
   wineToolAspects,
 } from '../wine-metadata.js'
 
@@ -88,6 +89,9 @@ const wineRunSuccessOutputSchema = z.object({
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
     })
     .optional(),
   warnings: z.array(z.string()).optional(),
@@ -181,6 +185,15 @@ export function createWineRunHandler(
               'Use windows.runtime.plan or tool.readiness before any approved Wine run/debug workflow.',
               'Set approved=true only when you intentionally want to launch the sample under Wine or winedbg.',
             ],
+            ...buildWineRunEnvelope({
+              status: 'ready',
+              mode: input.mode,
+              approved: input.approved,
+              sampleId: input.sample_id,
+              backendAvailable: wineBackend.available && winedbgBackend.available,
+              executionAttempted: false,
+              recommendedNextTools: WINE_PROFILE_NEXT_TOOLS,
+            }),
           },
           metrics: buildMetrics(startTime, wineRunToolDefinition.name),
         }
@@ -204,6 +217,15 @@ export function createWineRunHandler(
               'Use windows.runtime.plan to choose an isolated runtime boundary before enabling Wine execution.',
               'Retry with approved=true only when you deliberately want MCP to start the sample under Wine or winedbg.',
             ],
+            ...buildWineRunEnvelope({
+              status: 'denied',
+              mode: input.mode,
+              approved: false,
+              sampleId: input.sample_id,
+              backendAvailable: selectedBackend.available,
+              executionAttempted: false,
+              recommendedNextTools: WINE_PROFILE_NEXT_TOOLS,
+            }),
           },
           warnings: ['Wine execution requires approved=true.'],
           metrics: buildMetrics(startTime, wineRunToolDefinition.name),
@@ -259,6 +281,17 @@ export function createWineRunHandler(
           next_actions: [
             'Use artifact.read for the full Wine stdout/stderr capture when the preview is truncated.',
           ],
+          ...buildWineRunEnvelope({
+            status: 'ready',
+            mode: input.mode,
+            approved: true,
+            sampleId: input.sample_id,
+            backendAvailable: selectedBackend.available,
+            executionAttempted: true,
+            artifactPersisted: Boolean(artifact),
+            timedOut: result.timedOut,
+            recommendedNextTools: ['artifact.read', 'wine.reg'],
+          }),
         },
         artifacts,
         warnings: result.timedOut ? ['Wine execution timed out before completion.'] : undefined,

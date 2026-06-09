@@ -5,8 +5,10 @@ import { createPluginTestHarness, type Plugin, type ToolDefinition } from '../..
 import winePlugin from '../../src/plugins/wine/index.js'
 import {
   WINE_PROFILE_NEXT_TOOLS,
+  WINE_ROUTE_TERMS,
   WINE_REG_ARTIFACT_TYPE,
   WINE_RUN_ARTIFACT_TYPES,
+  WINE_SEARCH_TERMS,
 } from '../../src/plugins/wine/wine-metadata.js'
 import { wineDllOverridesToolDefinition } from '../../src/plugins/wine/tools/wine-dll-overrides.js'
 import { wineEnvToolDefinition } from '../../src/plugins/wine/tools/wine-env.js'
@@ -94,6 +96,16 @@ describe('wine plugin metadata and search profile', () => {
     )
     expect(winePlugin.aspects?.evidence).not.toEqual(
       expect.arrayContaining(['network', 'api-calls'])
+    )
+    expect(winePlugin.aspects?.search).toEqual(
+      expect.arrayContaining(['wine preflight', 'windows runtime on linux', 'dll override'])
+    )
+    expect(winePlugin.aspects?.route_terms).toEqual(
+      expect.arrayContaining([
+        'wine_compatibility_profile',
+        'runtime_intent_router',
+        'approval_gated_execution',
+      ])
     )
     expect(winePlugin.runtimePolicy).toEqual(
       expect.objectContaining({
@@ -191,7 +203,10 @@ describe('wine plugin metadata and search profile', () => {
           networkPolicy: 'disabled',
         })
       )
+      expect(definition.aspects?.search).toEqual(expect.arrayContaining(WINE_SEARCH_TERMS))
+      expect(definition.aspects?.route_terms).toEqual(expect.arrayContaining(WINE_ROUTE_TERMS))
       for (const recipe of definition.workflowRecipes ?? []) {
+        expect((recipe as any).nextTools?.[0]).not.toBe('wine.run')
         for (const forbidden of FORBIDDEN_DEFAULT_NEXT_TOOLS) {
           expect((recipe as any).nextTools ?? []).not.toContain(forbidden)
         }

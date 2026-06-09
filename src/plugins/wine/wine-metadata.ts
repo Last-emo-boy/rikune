@@ -36,6 +36,34 @@ export const WINE_EVIDENCE = [
   'provenance',
 ]
 
+export const WINE_SEARCH_TERMS = [
+  'wine',
+  'wine preflight',
+  'wine readiness',
+  'windows compatibility',
+  'windows runtime on linux',
+  'linux-hosted windows sample',
+  'dll override',
+  'winedlloverrides',
+  'wine registry',
+  'wine prefix',
+  'winedbg',
+  'compatibility runtime',
+]
+
+export const WINE_ROUTE_TERMS = [
+  'wine_compatibility_profile',
+  'runtime_intent_router',
+  'windows_runtime_plan',
+  'profile_gated_execution',
+  'approval_gated_execution',
+  'prefix_profile',
+  'registry_profile',
+  'dll_override_profile',
+]
+
+export const WINE_QUALITY_GATES_SCHEMA = 'rikune.wine_compatibility.quality_gates.v1'
+
 export const WINE_RUNTIME_POLICY: ToolDefinition['runtimePolicy'] = {
   passiveByDefault: true,
   requiresUserOptIn: true,
@@ -61,6 +89,74 @@ export const WINE_PROFILE_NEXT_TOOLS = [
 
 export const WINE_RUN_ARTIFACT_TYPES = ['backend_wine_run', 'backend_winedbg_run']
 export const WINE_REG_ARTIFACT_TYPE = 'backend_wine-reg_export'
+
+export type WineRunEnvelopeInput = {
+  status: 'ready' | 'denied' | 'setup_required'
+  mode?: string
+  approved?: boolean
+  sampleId?: string
+  backendAvailable?: boolean
+  executionAttempted?: boolean
+  artifactPersisted?: boolean
+  timedOut?: boolean
+  recommendedNextTools?: string[]
+}
+
+export function buildWineRunEnvelope(input: WineRunEnvelopeInput) {
+  const executionAttempted = input.executionAttempted === true
+  const recommendedNextTools = input.recommendedNextTools ?? WINE_PROFILE_NEXT_TOOLS
+  const mode = input.mode ?? 'preflight'
+
+  return {
+    evidence_summary: {
+      schema: 'rikune.wine_compatibility.evidence_summary.v1',
+      profile: 'wine.compatibility',
+      status: input.status,
+      mode,
+      sample_id: input.sampleId ?? null,
+      evidence_categories: executionAttempted
+        ? ['runtime-readiness', 'process', 'filesystem', 'timeline', 'workflow', 'provenance']
+        : ['runtime-readiness', 'workflow', 'provenance'],
+      route_terms: WINE_ROUTE_TERMS,
+      confidence: executionAttempted ? 'compatibility-signal' : 'readiness-only',
+      notes: [
+        'Wine output is a compatibility signal and is not native Windows ground truth.',
+        'Live run/debug modes require explicit approval and isolation.',
+      ],
+      recommended_next_tools: recommendedNextTools,
+    },
+    workflow_handoff: {
+      schema: 'rikune.wine_compatibility.workflow_handoff.v1',
+      routing: {
+        profile: 'wine.compatibility',
+        route_terms: WINE_ROUTE_TERMS,
+        activation_boundary: 'result-scoped',
+        preferred_next_tools: recommendedNextTools,
+        live_execution_requires: [
+          'approved=true',
+          'isolated runtime',
+          'network disabled by default',
+        ],
+      },
+      recommended_next_tools: recommendedNextTools,
+      quality_gates_schema: WINE_QUALITY_GATES_SCHEMA,
+    },
+    quality_gates: {
+      schema: WINE_QUALITY_GATES_SCHEMA,
+      passive_preflight_only: mode === 'preflight' && !executionAttempted,
+      sample_executed_by_tool: executionAttempted,
+      approval_required_for_live_execution: true,
+      current_mode_requires_approval: mode === 'run' || mode === 'debug',
+      approved_execution: executionAttempted && input.approved === true,
+      network_disabled_by_default: true,
+      requires_isolation: true,
+      wine_not_windows_ground_truth: true,
+      runtime_backend_available: input.backendAvailable ?? null,
+      artifact_persisted: input.artifactPersisted === true,
+      timed_out: input.timedOut === true,
+    },
+  }
+}
 
 export const WINE_RUN_WORKFLOW_RECIPES = [
   {
@@ -148,5 +244,7 @@ export function wineToolAspects(
     safety: WINE_SAFETY,
     capabilities: options.capabilities ?? WINE_CAPABILITIES,
     evidence: options.evidence ?? WINE_EVIDENCE,
+    search: WINE_SEARCH_TERMS,
+    route_terms: WINE_ROUTE_TERMS,
   }
 }

@@ -15,6 +15,8 @@ import {
   WINE_PLATFORMS,
   WINE_RUNTIME_POLICY,
   WINE_SAFETY,
+  WINE_SEARCH_TERMS,
+  WINE_ROUTE_TERMS,
 } from './wine-metadata.js'
 import { wineRunToolDefinition, createWineRunHandler } from './tools/wine-run.js'
 import { wineEnvToolDefinition, createWineEnvHandler } from './tools/wine-env.js'
@@ -37,6 +39,8 @@ const winePlugin: Plugin = {
     safety: WINE_SAFETY,
     capabilities: WINE_CAPABILITIES,
     evidence: WINE_EVIDENCE,
+    search: WINE_SEARCH_TERMS,
+    route_terms: WINE_ROUTE_TERMS,
   },
   runtimePolicy: WINE_RUNTIME_POLICY,
   surfaceRules: { tier: 3, category: 'dynamic-analysis' },
