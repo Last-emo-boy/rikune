@@ -89,6 +89,22 @@ export const FakeC2InputSchema = z.object({
     .array(z.string())
     .optional()
     .describe('Domain names to redirect to the fake C2 (via hosts-file patching in sandbox)'),
+  explicit_runtime_opt_in: z
+    .boolean()
+    .default(false)
+    .describe('Required true before starting the Fake C2 listener.'),
+  isolated_runtime_confirmed: z
+    .boolean()
+    .default(false)
+    .describe('Required true to confirm the listener runs only inside an isolated runtime.'),
+  sinkholed_network_confirmed: z
+    .boolean()
+    .default(false)
+    .describe('Required true to confirm sample traffic is loopback sinkholed or record-only.'),
+  validation_planner_reviewed: z
+    .boolean()
+    .default(false)
+    .describe('Required true after reviewing debug.network.plan/tool.readiness.'),
 })
 
 export const FakeC2OutputSchema = createWorkerResultOutputSchema(z.record(z.any()))
@@ -314,6 +330,15 @@ export const fakeC2ToolDefinition: ToolDefinition = {
   workerBackend: FAKE_C2_WORKER_BACKEND,
 }
 
+function missingRuntimeApprovalGates(input: z.infer<typeof FakeC2InputSchema>): string[] {
+  const missing: string[] = []
+  if (input.explicit_runtime_opt_in !== true) missing.push('explicit_runtime_opt_in=true')
+  if (input.isolated_runtime_confirmed !== true) missing.push('isolated_runtime_confirmed=true')
+  if (input.sinkholed_network_confirmed !== true) missing.push('sinkholed_network_confirmed=true')
+  if (input.validation_planner_reviewed !== true) missing.push('validation_planner_reviewed=true')
+  return missing
+}
+
 /* ── Worker bridge ─────────────────────────────────────────────────────── */
 
 async function callFakeC2Worker(
@@ -371,6 +396,20 @@ export function createFakeC2Handler(deps: PluginToolDeps) {
   return async (args: z.infer<typeof FakeC2InputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()
     try {
+      const missingApprovalGates = missingRuntimeApprovalGates(args)
+      if (missingApprovalGates.length > 0) {
+        return {
+          ok: false,
+          errors: [
+            `${TOOL_NAME} requires explicit isolated-runtime approval before starting the Fake C2 listener: ${missingApprovalGates.join(', ')}.`,
+          ],
+          warnings: [
+            'Use workflow.search for passive discovery, then review debug.network.plan, dynamic.runtime.status, and tool.readiness before executing managed.fake_c2.',
+          ],
+          metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME },
+        }
+      }
+
       const sample = database.findSample(args.sample_id)
       if (!sample) return { ok: false, errors: [`Sample not found: ${args.sample_id}`] }
 

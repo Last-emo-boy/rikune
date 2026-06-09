@@ -3,6 +3,7 @@ import { describe, expect, test } from '@jest/globals'
 import managedFakeC2Plugin from '../../src/plugins/managed-fake-c2/index.js'
 import {
   FAKE_C2_ARTIFACT_TYPES,
+  createFakeC2Handler,
   fakeC2ToolDefinition,
 } from '../../src/plugins/managed-fake-c2/tools/fake-c2.js'
 import { buildManagedFakeC2Envelope } from '../../src/plugins/managed-fake-c2/managed-fake-c2-metadata.js'
@@ -89,6 +90,9 @@ describe('managed-fake-c2 metadata/readiness/profile', () => {
       expect.arrayContaining([
         'static_c2_to_sinkhole_validation',
         'fake_c2_request_capture_handoff',
+        'approval_gated_fake_c2',
+        'loopback_sinkhole_listener',
+        'dns_redirect_isolated_runtime_only',
         'workflow_search_does_not_run',
         'no_arbitrary_outbound_network',
       ])
@@ -159,6 +163,8 @@ describe('managed-fake-c2 metadata/readiness/profile', () => {
         'managed_fake_c2_profile',
         'dns_redirect_handoff',
         'beacon_gate_validation',
+        'approval_gated_fake_c2',
+        'loopback_sinkhole_listener',
       ])
     )
     expect(fakeC2ToolDefinition.artifacts).toEqual(
@@ -289,6 +295,58 @@ describe('managed-fake-c2 metadata/readiness/profile', () => {
     }
   })
 
+  test('denies direct execution until isolated runtime approval gates are confirmed', async () => {
+    let sampleLookupCalled = false
+    const handler = createFakeC2Handler({
+      config: {},
+      database: {
+        findSample: () => {
+          sampleLookupCalled = true
+          return null
+        },
+      },
+      workspaceManager: {},
+      resolvePrimarySamplePath: async () => {
+        throw new Error('sample resolution should not run before approval gates')
+      },
+      persistStaticAnalysisJsonArtifact: async () => null,
+      resolvePackagePath: (...parts: string[]) => parts.join('/'),
+    } as any)
+
+    const result = await handler({
+      sample_id: 'sha256:abc',
+      endpoints: [
+        {
+          path: '/gate',
+          method: 'ANY',
+          status_code: 200,
+          response_body: 'ok',
+          content_type: 'text/plain',
+          delay_ms: 0,
+        },
+      ],
+      listen_port: 8443,
+      use_tls: false,
+      capture_requests: true,
+      default_response: '{"status":"ok"}',
+      timeout_seconds: 10,
+      auto_run_sample: false,
+      dns_redirect: [],
+      explicit_runtime_opt_in: false,
+      isolated_runtime_confirmed: false,
+      sinkholed_network_confirmed: false,
+      validation_planner_reviewed: false,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors?.join(' ')).toContain('explicit_runtime_opt_in=true')
+    expect(result.errors?.join(' ')).toContain('isolated_runtime_confirmed=true')
+    expect(result.errors?.join(' ')).toContain('sinkholed_network_confirmed=true')
+    expect(result.errors?.join(' ')).toContain('validation_planner_reviewed=true')
+    expect(result.warnings?.join(' ')).toContain('workflow.search for passive discovery')
+    expect(sampleLookupCalled).toBe(false)
+  })
+
   test('builds result-level evidence, handoff, and quality gates for captured requests', () => {
     const envelope = buildManagedFakeC2Envelope({
       sample_id: 'sha256:abc',
@@ -327,7 +385,10 @@ describe('managed-fake-c2 metadata/readiness/profile', () => {
         route_terms: expect.arrayContaining([
           'static_c2_to_sinkhole_validation',
           'fake_c2_request_capture_handoff',
+          'approval_gated_fake_c2',
+          'loopback_sinkhole_listener',
         ]),
+        confidence: 'observed-request-evidence',
         dynamic_only_after_opt_in: true,
       })
     )
@@ -336,6 +397,56 @@ describe('managed-fake-c2 metadata/readiness/profile', () => {
         endpoints_configured: 2,
         dns_redirects: 1,
         requests_captured: 1,
+      })
+    )
+    expect(envelope.runtime_readiness).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.managed_fake_c2.runtime_readiness.v1',
+        status: 'approval_gated',
+        listener: expect.objectContaining({
+          bind_host: '127.0.0.1',
+          binds_loopback_only: true,
+          listen_port: 8443,
+          tls_enabled: true,
+          tls_certificate: 'ephemeral-self-signed',
+        }),
+        required_before_execution: expect.arrayContaining([
+          'explicit analyst opt-in',
+          'isolated runtime selected',
+          'debug.network.plan reviewed',
+          'tool.readiness reviewed',
+        ]),
+      })
+    )
+    expect(envelope.runtime_readiness.network_boundary).toEqual(
+      expect.objectContaining({
+        allowed_scope: 'loopback-sinkhole-only',
+        arbitrary_outbound_network_allowed: false,
+        dns_redirect_requested: true,
+        dns_redirect_requires_isolated_runtime: true,
+        host_dns_or_hosts_mutation_allowed: false,
+      })
+    )
+    expect(envelope.runtime_readiness.sample_execution).toEqual(
+      expect.objectContaining({
+        requested: false,
+        result_present: false,
+        allowed_without_explicit_approval: false,
+        runtime_dependency_profile: [],
+      })
+    )
+    expect(envelope.execution_profile).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.managed_fake_c2.execution_profile.v1',
+        mode: 'listener-only',
+        confidence: 'observed-request-evidence',
+        evidence_strength: 'runtime-observed-network',
+        route_terms: expect.arrayContaining([
+          'approval_gated_fake_c2',
+          'loopback_sinkhole_listener',
+          'ephemeral_tls_certificate',
+          'dns_redirect_isolated_runtime_only',
+        ]),
       })
     )
     expect(envelope.workflow_handoff).toEqual(
@@ -356,10 +467,13 @@ describe('managed-fake-c2 metadata/readiness/profile', () => {
         explicit_opt_in_required: true,
         isolated_runtime_required: true,
         validation_planner_required: true,
+        approval_gate: 'external-policy-guard-or-runtime-profile',
+        allowed_network_scope: 'loopback-sinkhole-only',
         workflow_search_can_start_listener: false,
         workflow_search_can_execute_sample: false,
         arbitrary_outbound_network_allowed: false,
         dns_or_hosts_mutation_outside_runtime_allowed: false,
+        dns_redirect_requires_isolated_runtime: true,
         auto_run_sample_requested: false,
       })
     )
@@ -386,10 +500,13 @@ describe('managed-fake-c2 metadata/readiness/profile', () => {
         isolated_runtime_required: true,
         validation_planner_required: true,
         sinkholed_network_only: true,
+        listener_bound_loopback_only: true,
+        tls_certificate_ephemeral: true,
         workflow_search_auto_run: false,
         workflow_search_started_listener: false,
         arbitrary_outbound_network_allowed: false,
         dns_or_hosts_mutation_outside_runtime_allowed: false,
+        dns_redirect_requires_isolated_runtime: true,
         endpoint_config_present: true,
         request_capture_enabled: true,
         requests_captured: true,

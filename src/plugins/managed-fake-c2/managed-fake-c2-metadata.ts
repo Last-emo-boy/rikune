@@ -99,6 +99,11 @@ export const MANAGED_FAKE_C2_ROUTE_TERMS = [
   'fake_c2_request_capture_handoff',
   'dns_redirect_handoff',
   'beacon_gate_validation',
+  'approval_gated_fake_c2',
+  'loopback_sinkhole_listener',
+  'ephemeral_tls_certificate',
+  'dns_redirect_isolated_runtime_only',
+  'managed_sandbox_fake_c2',
   'isolated_runtime_required',
   'workflow_search_does_not_run',
   'no_arbitrary_outbound_network',
@@ -107,6 +112,10 @@ export const MANAGED_FAKE_C2_ROUTE_TERMS = [
 export const MANAGED_FAKE_C2_EVIDENCE_SUMMARY_SCHEMA = 'rikune.managed_fake_c2.evidence_summary.v1'
 export const MANAGED_FAKE_C2_WORKFLOW_HANDOFF_SCHEMA = 'rikune.managed_fake_c2.workflow_handoff.v1'
 export const MANAGED_FAKE_C2_QUALITY_GATES_SCHEMA = 'rikune.managed_fake_c2.quality_gates.v1'
+export const MANAGED_FAKE_C2_RUNTIME_READINESS_SCHEMA =
+  'rikune.managed_fake_c2.runtime_readiness.v1'
+export const MANAGED_FAKE_C2_EXECUTION_PROFILE_SCHEMA =
+  'rikune.managed_fake_c2.execution_profile.v1'
 
 export const MANAGED_FAKE_C2_FOLLOW_UP_TOOLS = [
   'artifact.read',
@@ -168,9 +177,74 @@ export function buildManagedFakeC2Envelope(input: ManagedFakeC2EnvelopeInput) {
   const capturedRequests = requestCount(input.worker_result)
   const listenerStarted = Boolean(input.worker_result.ok)
   const sampleExecution = sampleExecutionPresent(input.worker_result)
+  const executionMode = input.auto_run_sample ? 'listener-plus-sample-run' : 'listener-only'
+  const evidenceConfidence =
+    capturedRequests > 0
+      ? 'observed-request-evidence'
+      : listenerStarted
+        ? 'listener-only'
+        : 'not-started'
 
   return {
     recommended_next_tools: MANAGED_FAKE_C2_FOLLOW_UP_TOOLS,
+    runtime_readiness: {
+      schema: MANAGED_FAKE_C2_RUNTIME_READINESS_SCHEMA,
+      source_tool: MANAGED_FAKE_C2_TOOL_NAME,
+      status:
+        input.auto_run_sample || input.dns_redirect_count > 0 ? 'approval_gated' : 'listener_ready',
+      listener: {
+        bind_host: '127.0.0.1',
+        binds_loopback_only: true,
+        listen_port: input.listen_port,
+        tls_enabled: input.use_tls,
+        tls_certificate: input.use_tls ? 'ephemeral-self-signed' : 'not-used',
+        timeout_seconds: input.timeout_seconds,
+      },
+      required_before_execution: [
+        'explicit analyst opt-in',
+        'isolated runtime selected',
+        'sinkholed network policy confirmed',
+        'debug.network.plan reviewed',
+        'tool.readiness reviewed',
+      ],
+      network_boundary: {
+        allowed_scope: 'loopback-sinkhole-only',
+        arbitrary_outbound_network_allowed: false,
+        dns_redirect_requested: input.dns_redirect_count > 0,
+        dns_redirect_requires_isolated_runtime: input.dns_redirect_count > 0,
+        host_dns_or_hosts_mutation_allowed: false,
+      },
+      sample_execution: {
+        requested: input.auto_run_sample,
+        result_present: sampleExecution,
+        allowed_without_explicit_approval: false,
+        runtime_dependency_profile: input.auto_run_sample ? ['dotnet', 'mono'] : [],
+      },
+    },
+    execution_profile: {
+      schema: MANAGED_FAKE_C2_EXECUTION_PROFILE_SCHEMA,
+      source_tool: MANAGED_FAKE_C2_TOOL_NAME,
+      mode: executionMode,
+      confidence: evidenceConfidence,
+      evidence_strength:
+        capturedRequests > 0
+          ? 'runtime-observed-network'
+          : listenerStarted
+            ? 'listener-configured-no-traffic'
+            : 'metadata-only',
+      route_terms: [
+        'approval_gated_fake_c2',
+        'loopback_sinkhole_listener',
+        ...(input.use_tls ? ['ephemeral_tls_certificate'] : []),
+        ...(input.dns_redirect_count > 0 ? ['dns_redirect_isolated_runtime_only'] : []),
+        ...(input.auto_run_sample ? ['managed_sandbox_fake_c2'] : []),
+      ],
+      counts: {
+        endpoints_configured: input.endpoint_count,
+        dns_redirects: input.dns_redirect_count,
+        requests_captured: capturedRequests,
+      },
+    },
     evidence_summary: {
       schema: MANAGED_FAKE_C2_EVIDENCE_SUMMARY_SCHEMA,
       source_tool: MANAGED_FAKE_C2_TOOL_NAME,
@@ -178,6 +252,7 @@ export function buildManagedFakeC2Envelope(input: ManagedFakeC2EnvelopeInput) {
       artifact_type: MANAGED_FAKE_C2_ARTIFACT_TYPES.session,
       route_terms: MANAGED_FAKE_C2_ROUTE_TERMS,
       evidence_categories: MANAGED_FAKE_C2_EVIDENCE,
+      confidence: evidenceConfidence,
       counts: {
         endpoints_configured: input.endpoint_count,
         dns_redirects: input.dns_redirect_count,
@@ -219,10 +294,13 @@ export function buildManagedFakeC2Envelope(input: ManagedFakeC2EnvelopeInput) {
         explicit_opt_in_required: true,
         isolated_runtime_required: true,
         validation_planner_required: true,
+        approval_gate: 'external-policy-guard-or-runtime-profile',
+        allowed_network_scope: 'loopback-sinkhole-only',
         workflow_search_can_start_listener: false,
         workflow_search_can_execute_sample: false,
         arbitrary_outbound_network_allowed: false,
         dns_or_hosts_mutation_outside_runtime_allowed: false,
+        dns_redirect_requires_isolated_runtime: input.dns_redirect_count > 0,
         auto_run_sample_requested: input.auto_run_sample,
         sample_execution_result_present: sampleExecution,
       },
@@ -271,10 +349,13 @@ export function buildManagedFakeC2Envelope(input: ManagedFakeC2EnvelopeInput) {
       isolated_runtime_required: true,
       validation_planner_required: true,
       sinkholed_network_only: true,
+      listener_bound_loopback_only: true,
+      tls_certificate_ephemeral: input.use_tls,
       workflow_search_auto_run: false,
       workflow_search_started_listener: false,
       arbitrary_outbound_network_allowed: false,
       dns_or_hosts_mutation_outside_runtime_allowed: false,
+      dns_redirect_requires_isolated_runtime: input.dns_redirect_count > 0,
       endpoint_config_present: input.endpoint_count > 0,
       request_capture_enabled: input.capture_requests,
       requests_captured: capturedRequests > 0,
