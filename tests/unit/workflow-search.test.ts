@@ -813,6 +813,13 @@ describe('workflow.search', () => {
                   safety: ['passive'],
                 },
               ],
+              artifacts: [{ type: 'pe_structure' }],
+              workerBackend: {
+                backendKind: 'external',
+                backendName: 'FixturePEWorker',
+                adapter: 'fixture.pe.structure',
+                outputArtifactTypes: ['pe_structure'],
+              },
             },
             handler: async () => ({ ok: true }),
           },
@@ -925,6 +932,18 @@ describe('workflow.search', () => {
         recommended_tools: expect.arrayContaining(['pe.structure.analyze', 'ghidra.analyze']),
       })
     )
+    expect(data.search_profile.plugin_matrix_summary).toEqual(
+      expect.objectContaining({
+        capability_count: expect.any(Number),
+        runtime_count: expect.any(Number),
+        safety_count: expect.any(Number),
+        artifact_type_count: expect.any(Number),
+        worker_backend_count: expect.any(Number),
+      })
+    )
+    expect(data.search_profile.plugin_matrix_summary.capability_count).toBeGreaterThan(0)
+    expect(data.search_profile.plugin_matrix_summary.artifact_type_count).toBeGreaterThan(0)
+    expect(data.search_profile.plugin_matrix_summary.worker_backend_count).toBeGreaterThan(0)
     expect(data.results.map((item: any) => item.plugin_id)).toEqual(
       expect.arrayContaining(['decompiler-auto-profile-test', 'pe-auto-profile-test'])
     )

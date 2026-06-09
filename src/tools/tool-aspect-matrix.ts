@@ -38,14 +38,24 @@ export interface PluginAspectMatrix {
     format_count: number
     platform_count: number
     execution_count: number
+    capability_count: number
+    runtime_count: number
+    safety_count: number
     evidence_count: number
+    artifact_type_count: number
     workflow_recipe_count: number
+    worker_backend_count: number
   }
   by_format: Record<string, AspectMatrixBucket>
   by_platform: Record<string, AspectMatrixBucket>
   by_execution: Record<string, AspectMatrixBucket>
+  by_capability: Record<string, AspectMatrixBucket>
+  by_runtime: Record<string, AspectMatrixBucket>
+  by_safety: Record<string, AspectMatrixBucket>
   by_evidence: Record<string, AspectMatrixBucket>
+  by_artifact_type: Record<string, AspectMatrixBucket>
   by_workflow: Record<string, AspectMatrixBucket>
+  by_worker_backend: Record<string, AspectMatrixBucket>
   recommended_tools: string[]
   available_tools: string[]
   blocked_tools: string[]
@@ -134,6 +144,60 @@ function workflowRecipeIds(definition: ToolAspectSource): string[] {
       return id ? [id] : []
     })
   )
+}
+
+function workflowRecipeArtifactTypes(definition: ToolAspectSource): string[] {
+  return uniqueStrings(
+    arrayValue(objectValue(definition).workflowRecipes).flatMap((recipe) => {
+      const record = objectValue(recipe)
+      return [
+        ...normalizeAspectTags(record.requiredArtifacts),
+        ...normalizeAspectTags(record.producesArtifacts),
+      ]
+    })
+  )
+}
+
+function declaredArtifactTypes(definition: ToolAspectSource): string[] {
+  return uniqueStrings(
+    arrayValue(objectValue(definition).artifacts).flatMap((artifact) => {
+      const type = objectValue(artifact).type
+      return typeof type === 'string' ? [type.trim().toLowerCase()] : []
+    })
+  )
+}
+
+function evidenceArtifactTypes(definition: ToolAspectSource): string[] {
+  return uniqueStrings(
+    arrayValue(objectValue(definition).evidence).flatMap((evidence) =>
+      normalizeAspectTags(objectValue(evidence).artifactTypes)
+    )
+  )
+}
+
+function workerBackendArtifactTypes(definition: ToolAspectSource): string[] {
+  const workerBackend = objectValue(objectValue(definition).workerBackend)
+  return uniqueStrings([
+    ...normalizeAspectTags(workerBackend.inputArtifactTypes),
+    ...normalizeAspectTags(workerBackend.outputArtifactTypes),
+  ])
+}
+
+function artifactTypes(definition: ToolAspectSource): string[] {
+  return uniqueStrings([
+    ...declaredArtifactTypes(definition),
+    ...evidenceArtifactTypes(definition),
+    ...workflowRecipeArtifactTypes(definition),
+    ...workerBackendArtifactTypes(definition),
+  ])
+}
+
+function workerBackendTags(definition: ToolAspectSource): string[] {
+  const workerBackend = objectValue(objectValue(definition).workerBackend)
+  const adapter = workerBackend.adapter
+  return typeof adapter === 'string' && adapter.trim().length > 0
+    ? [adapter.trim().toLowerCase()]
+    : []
 }
 
 function emptyBucket(): AspectMatrixBucket {
@@ -322,14 +386,21 @@ export function buildPluginAspectMatrix(
   const byFormat: Record<string, AspectMatrixBucket> = {}
   const byPlatform: Record<string, AspectMatrixBucket> = {}
   const byExecution: Record<string, AspectMatrixBucket> = {}
+  const byCapability: Record<string, AspectMatrixBucket> = {}
+  const byRuntime: Record<string, AspectMatrixBucket> = {}
+  const bySafety: Record<string, AspectMatrixBucket> = {}
   const byEvidence: Record<string, AspectMatrixBucket> = {}
+  const byArtifactType: Record<string, AspectMatrixBucket> = {}
   const byWorkflow: Record<string, AspectMatrixBucket> = {}
+  const byWorkerBackend: Record<string, AspectMatrixBucket> = {}
   const recommendedTools: string[] = []
   const availableTools: string[] = []
   const blockedTools: string[] = []
   const missingDeps: string[] = []
   const nextActions: string[] = []
   const workflowRecipes: string[] = []
+  const artifactTypeValues: string[] = []
+  const workerBackendValues: string[] = []
   let toolCount = 0
 
   for (const plugin of plugins) {
@@ -338,6 +409,12 @@ export function buildPluginAspectMatrix(
     const toolAspects = (plugin.tools ?? []).map((tool) => objectValue(tool.definition).aspects)
     const toolWorkflowRecipes = uniqueStrings(
       (plugin.tools ?? []).flatMap((tool) => workflowRecipeIds(tool.definition))
+    )
+    const toolArtifactTypes = uniqueStrings(
+      (plugin.tools ?? []).flatMap((tool) => artifactTypes(tool.definition))
+    )
+    const toolWorkerBackends = uniqueStrings(
+      (plugin.tools ?? []).flatMap((tool) => workerBackendTags(tool.definition))
     )
     const aspects = mergeAspects(plugin.aspects, ...toolAspects)
     const missing = pluginMissingDeps(plugin)
@@ -350,6 +427,8 @@ export function buildPluginAspectMatrix(
     missingDeps.push(...missing.map((dep) => `${plugin.id}: ${dep}`))
     recommendedTools.push(...recommendTools(plugin, toolNames, aspects))
     workflowRecipes.push(...toolWorkflowRecipes)
+    artifactTypeValues.push(...toolArtifactTypes)
+    workerBackendValues.push(...toolWorkerBackends)
 
     for (const format of aspects.formats ?? []) {
       addBucketValue(
@@ -381,6 +460,36 @@ export function buildPluginAspectMatrix(
         pluginBlockedTools
       )
     }
+    for (const capability of aspects.capabilities ?? []) {
+      addBucketValue(
+        byCapability,
+        capability,
+        plugin.id,
+        toolNames,
+        pluginAvailableTools,
+        pluginBlockedTools
+      )
+    }
+    for (const runtime of aspects.runtimes ?? []) {
+      addBucketValue(
+        byRuntime,
+        runtime,
+        plugin.id,
+        toolNames,
+        pluginAvailableTools,
+        pluginBlockedTools
+      )
+    }
+    for (const safety of aspects.safety ?? []) {
+      addBucketValue(
+        bySafety,
+        safety,
+        plugin.id,
+        toolNames,
+        pluginAvailableTools,
+        pluginBlockedTools
+      )
+    }
     for (const evidence of aspects.evidence ?? []) {
       addBucketValue(
         byEvidence,
@@ -391,10 +500,30 @@ export function buildPluginAspectMatrix(
         pluginBlockedTools
       )
     }
+    for (const artifactType of toolArtifactTypes) {
+      addBucketValue(
+        byArtifactType,
+        artifactType,
+        plugin.id,
+        toolNames,
+        pluginAvailableTools,
+        pluginBlockedTools
+      )
+    }
     for (const recipe of toolWorkflowRecipes) {
       addBucketValue(
         byWorkflow,
         recipe,
+        plugin.id,
+        toolNames,
+        pluginAvailableTools,
+        pluginBlockedTools
+      )
+    }
+    for (const backend of toolWorkerBackends) {
+      addBucketValue(
+        byWorkerBackend,
+        backend,
         plugin.id,
         toolNames,
         pluginAvailableTools,
@@ -420,14 +549,24 @@ export function buildPluginAspectMatrix(
       format_count: Object.keys(byFormat).length,
       platform_count: Object.keys(byPlatform).length,
       execution_count: Object.keys(byExecution).length,
+      capability_count: Object.keys(byCapability).length,
+      runtime_count: Object.keys(byRuntime).length,
+      safety_count: Object.keys(bySafety).length,
       evidence_count: Object.keys(byEvidence).length,
+      artifact_type_count: uniqueStrings(artifactTypeValues).length,
       workflow_recipe_count: uniqueStrings(workflowRecipes).length,
+      worker_backend_count: uniqueStrings(workerBackendValues).length,
     },
     by_format: byFormat,
     by_platform: byPlatform,
     by_execution: byExecution,
+    by_capability: byCapability,
+    by_runtime: byRuntime,
+    by_safety: bySafety,
     by_evidence: byEvidence,
+    by_artifact_type: byArtifactType,
     by_workflow: byWorkflow,
+    by_worker_backend: byWorkerBackend,
     recommended_tools: uniqueStrings(recommendedTools).slice(0, 50),
     available_tools: uniqueStrings(availableTools),
     blocked_tools: uniqueStrings(blockedTools),

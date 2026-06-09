@@ -174,6 +174,32 @@ describe('tools.discover', () => {
       categories.find((category: any) => category.category === 'static-analysis').plugin_matrix
         .by_workflow['pe.imports.review'].tools
     ).toContain('pe.imports.extract')
+    const staticMatrix = categories.find(
+      (category: any) => category.category === 'static-analysis'
+    ).plugin_matrix
+    const runtimeMatrix = categories.find(
+      (category: any) => category.category === 'dynamic-analysis'
+    ).plugin_matrix
+    expect(staticMatrix.summary).toEqual(
+      expect.objectContaining({
+        capability_count: 1,
+        artifact_type_count: 1,
+        worker_backend_count: 1,
+      })
+    )
+    expect(staticMatrix.by_capability.imports.tools).toContain('pe.imports.extract')
+    expect(staticMatrix.by_artifact_type['pe.imports.json'].tools).toContain('pe.imports.extract')
+    expect(staticMatrix.by_worker_backend['fixture.pe.imports'].tools).toContain(
+      'pe.imports.extract'
+    )
+    expect(runtimeMatrix.summary).toEqual(
+      expect.objectContaining({
+        runtime_count: 1,
+        safety_count: 2,
+      })
+    )
+    expect(runtimeMatrix.by_runtime['windows-sandbox'].tools).toContain('sandbox.execute')
+    expect(runtimeMatrix.by_safety.passive.tools).toContain('sandbox.execute')
     expect(reversePlugin.tool_surface_role).toBe('expert')
     expect(runtimePlugin.tool_surface_role).toBe('runtime_gated')
     expect(runtimePlugin.runtime_policy).toEqual(

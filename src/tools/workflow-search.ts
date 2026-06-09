@@ -1359,7 +1359,12 @@ function buildSearchProfile(
       available_tool_count: stringArray(discoveryData.available_tools).length,
       blocked_tool_count: stringArray(discoveryData.blocked_tools).length,
       missing_dep_count: stringArray(discoveryData.missing_deps).length,
+      capability_count: Object.keys(asRecord(pluginMatrix.by_capability)).length,
+      runtime_count: Object.keys(asRecord(pluginMatrix.by_runtime)).length,
+      safety_count: Object.keys(asRecord(pluginMatrix.by_safety)).length,
+      artifact_type_count: Object.keys(asRecord(pluginMatrix.by_artifact_type)).length,
       workflow_count: Object.keys(asRecord(pluginMatrix.by_workflow)).length,
+      worker_backend_count: Object.keys(asRecord(pluginMatrix.by_worker_backend)).length,
     },
   }
 }
