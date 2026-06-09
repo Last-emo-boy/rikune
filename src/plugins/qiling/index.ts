@@ -5,6 +5,15 @@
  */
 
 import type { Plugin } from '../sdk.js'
+import {
+  QILING_INSPECT_ARCHITECTURES,
+  QILING_INSPECT_CAPABILITIES,
+  QILING_INSPECT_EVIDENCE,
+  QILING_INSPECT_FORMATS,
+  QILING_INSPECT_PLATFORMS,
+  QILING_INSPECT_RUNTIME_POLICY,
+  QILING_INSPECT_SAFETY,
+} from './qiling-metadata.js'
 import { qilingInspectToolDefinition, createQilingInspectHandler } from './tools/qiling-inspect.js'
 
 const qilingPlugin: Plugin = {
@@ -12,33 +21,16 @@ const qilingPlugin: Plugin = {
   name: 'Qiling',
   executionDomain: 'dynamic',
   aspects: {
-    formats: ['elf', 'elf-executable', 'so', 'pe', 'macho', 'shellcode', 'firmware'],
-    platforms: ['linux', 'windows', 'macos', 'embedded'],
-    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'mipsel'],
-    execution: ['dynamic', 'emulation'],
+    formats: QILING_INSPECT_FORMATS,
+    platforms: QILING_INSPECT_PLATFORMS,
+    architectures: QILING_INSPECT_ARCHITECTURES,
+    execution: ['dynamic', 'emulation', 'triage'],
     runtimes: ['qiling', 'unicorn'],
-    safety: ['passive', 'opt_in_dynamic', 'requires_isolation', 'no_live_sample_by_default'],
-    capabilities: [
-      'syscall-trace',
-      'memory-map',
-      'filesystem-hints',
-      'network-hints',
-      'unsupported-summary',
-    ],
-    evidence: ['syscalls', 'memory', 'filesystem', 'network', 'modules', 'timeline'],
+    safety: QILING_INSPECT_SAFETY,
+    capabilities: QILING_INSPECT_CAPABILITIES,
+    evidence: QILING_INSPECT_EVIDENCE,
   },
-  runtimePolicy: {
-    passiveByDefault: true,
-    requiresUserOptIn: true,
-    requiresIsolation: true,
-    allowedBackends: ['qiling', 'unicorn'],
-    maxRuntimeMs: 120000,
-    networkPolicy: 'disabled',
-    notes: [
-      'Qiling inspection is emulation-backed and requires an explicit rootfs/backend selection before execution.',
-      'Readiness checks must not run or emulate sample code by default.',
-    ],
-  },
+  runtimePolicy: QILING_INSPECT_RUNTIME_POLICY,
   surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description: 'Qiling emulation framework for cross-platform binary emulation',
   version: '1.0.0',

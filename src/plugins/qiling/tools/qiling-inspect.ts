@@ -1,5 +1,5 @@
 /**
- * Qiling inspect tool �?inspect Qiling readiness and rootfs state.
+ * Qiling inspect tool - inspect Qiling readiness and rootfs state.
  */
 
 import { z } from 'zod'
@@ -21,6 +21,19 @@ import {
   buildDynamicDependencySetupActions,
   buildDynamicDependencyRequiredUserInputs,
 } from '../../docker-shared.js'
+import {
+  QILING_INSPECT_ARCHITECTURES,
+  QILING_INSPECT_ARTIFACT_TYPE,
+  QILING_INSPECT_CAPABILITIES,
+  QILING_INSPECT_EVIDENCE,
+  QILING_INSPECT_FORMATS,
+  QILING_INSPECT_PLATFORMS,
+  QILING_INSPECT_RECOMMENDED_NEXT_TOOLS,
+  QILING_INSPECT_RUNTIME_POLICY,
+  QILING_INSPECT_SAFETY,
+  QILING_INSPECT_WORKFLOW_RECIPES,
+  enrichQilingInspectResult,
+} from '../qiling-metadata.js'
 
 export const qilingInspectInputSchema = z.object({
   sample_id: z.string().describe('Target sample identifier.'),
@@ -41,6 +54,7 @@ export const qilingInspectOutputSchema = z.object({
   ok: z.boolean(),
   data: z
     .object({
+      result_mode: z.literal(QILING_INSPECT_ARTIFACT_TYPE).optional(),
       status: z.enum(['ready', 'setup_required']),
       backend: BackendSchema,
       sample_id: z.string().optional(),
@@ -48,6 +62,13 @@ export const qilingInspectOutputSchema = z.object({
       rootfs_configured: z.boolean().optional(),
       rootfs_exists: z.boolean().optional(),
       rootfs_path: z.string().nullable().optional(),
+      windows_rootfs_kernel32_present: z.boolean().optional(),
+      readiness: z.record(z.any()).optional(),
+      policy: z.record(z.any()).optional(),
+      execution_semantics: z.record(z.any()).optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
       details: z.record(z.any()).optional(),
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),
@@ -67,6 +88,25 @@ export const qilingInspectToolDefinition: ToolDefinition = {
     'Inspect Qiling readiness, configured rootfs state, and emulation prerequisites for a sample. Use this when you explicitly request Qiling-backed automation or need to verify rootfs prerequisites before emulation.',
   inputSchema: qilingInspectInputSchema,
   outputSchema: qilingInspectOutputSchema,
+  aspects: {
+    formats: QILING_INSPECT_FORMATS,
+    platforms: QILING_INSPECT_PLATFORMS,
+    architectures: QILING_INSPECT_ARCHITECTURES,
+    execution: ['dynamic', 'triage'],
+    runtimes: ['qiling', 'unicorn'],
+    safety: QILING_INSPECT_SAFETY,
+    capabilities: QILING_INSPECT_CAPABILITIES,
+    evidence: QILING_INSPECT_EVIDENCE,
+  },
+  evidence: [
+    { category: 'runtime-readiness' },
+    { category: 'rootfs' },
+    { category: 'backend' },
+    { category: 'workflow' },
+    { category: 'provenance' },
+  ],
+  workflowRecipes: QILING_INSPECT_WORKFLOW_RECIPES,
+  runtimePolicy: QILING_INSPECT_RUNTIME_POLICY,
   runtime: { type: 'inline', handler: 'executeQilingInspect' },
 }
 
@@ -109,7 +149,14 @@ export function createQilingInspectHandler(
       const backends = (dependencies?.resolveBackends || resolveAnalysisBackends)()
       const backend = backends.qiling
       if (!backend.available || !backend.path) {
-        return buildDynamicSetupRequired(backend, startTime, qilingInspectToolDefinition.name)
+        return enrichQilingInspectResult(
+          buildDynamicSetupRequired(backend, startTime, qilingInspectToolDefinition.name),
+          {
+            sampleId: input.sample_id,
+            operation: input.operation,
+            backendProbeStarted: false,
+          }
+        )
       }
 
       const runPythonImpl = dependencies?.runPythonJson || runPythonJson
@@ -124,6 +171,7 @@ export function createQilingInspectHandler(
 
       const rootfsConfigured = Boolean(result.parsed?.rootfs_configured)
       const rootfsExists = Boolean(result.parsed?.rootfs_exists)
+      const windowsKernel32Present = Boolean(result.parsed?.kernel32_present)
       const warnings: string[] = []
       if (!rootfsConfigured) {
         warnings.push('QILING_ROOTFS is not configured.')
@@ -131,49 +179,83 @@ export function createQilingInspectHandler(
         warnings.push('Configured QILING_ROOTFS does not exist.')
       }
 
-      return {
-        ok: true,
-        data: {
-          status: 'ready',
-          backend,
-          sample_id: input.sample_id,
-          operation: input.operation,
-          rootfs_configured: rootfsConfigured,
-          rootfs_exists: rootfsExists,
-          rootfs_path:
-            typeof result.parsed?.rootfs_path === 'string' ? result.parsed.rootfs_path : null,
-          details: result.parsed,
-          summary:
-            rootfsConfigured && rootfsExists
-              ? 'Qiling runtime is available and a rootfs is configured.'
-              : 'Qiling runtime is available, but the Windows rootfs still needs attention before useful emulation.',
-          recommended_next_tools: ['dynamic.dependencies', 'sandbox.execute', 'tool.help'],
-          next_actions:
-            rootfsConfigured && rootfsExists
-              ? [
-                  'Use sandbox.execute or future Qiling-backed workflows when you need controlled emulation.',
-                ]
-              : [
-                  'Set QILING_ROOTFS to a mounted Windows rootfs before attempting Qiling-backed emulation.',
-                ],
+      return enrichQilingInspectResult(
+        {
+          ok: true,
+          data: {
+            status:
+              rootfsConfigured && rootfsExists && windowsKernel32Present
+                ? 'ready'
+                : 'setup_required',
+            backend,
+            sample_id: input.sample_id,
+            operation: input.operation,
+            rootfs_configured: rootfsConfigured,
+            rootfs_exists: rootfsExists,
+            rootfs_path:
+              typeof result.parsed?.rootfs_path === 'string' ? result.parsed.rootfs_path : null,
+            windows_rootfs_kernel32_present: windowsKernel32Present,
+            details: result.parsed,
+            summary:
+              rootfsConfigured && rootfsExists
+                ? 'Qiling runtime is available and a rootfs is configured.'
+                : 'Qiling runtime is available, but the rootfs still needs attention before useful emulation.',
+            recommended_next_tools: QILING_INSPECT_RECOMMENDED_NEXT_TOOLS,
+            next_actions: [],
+          },
+          warnings: warnings.length > 0 ? warnings : undefined,
+          required_user_inputs:
+            !rootfsConfigured || !rootfsExists
+              ? mergeRequiredUserInputs(buildDynamicDependencyRequiredUserInputs())
+              : undefined,
+          setup_actions:
+            !rootfsConfigured || !rootfsExists
+              ? mergeSetupActions(buildDynamicDependencySetupActions())
+              : undefined,
+          metrics: buildMetrics(startTime, qilingInspectToolDefinition.name),
         },
-        warnings: warnings.length > 0 ? warnings : undefined,
-        required_user_inputs:
-          !rootfsConfigured || !rootfsExists
-            ? mergeRequiredUserInputs(buildDynamicDependencyRequiredUserInputs())
-            : undefined,
-        setup_actions:
-          !rootfsConfigured || !rootfsExists
-            ? mergeSetupActions(buildDynamicDependencySetupActions())
-            : undefined,
-        metrics: buildMetrics(startTime, qilingInspectToolDefinition.name),
-      }
+        {
+          sampleId: input.sample_id,
+          operation: input.operation,
+          rootfsConfigured,
+          rootfsExists,
+          rootfsPath:
+            typeof result.parsed?.rootfs_path === 'string' ? result.parsed.rootfs_path : null,
+          windowsKernel32Present,
+          backendProbeStarted: true,
+        }
+      )
     } catch (error) {
-      return {
-        ok: false,
-        errors: [normalizeError(error)],
-        metrics: buildMetrics(startTime, qilingInspectToolDefinition.name),
-      }
+      const parsedInput = qilingInspectInputSchema.safeParse(args)
+      const message = normalizeError(error)
+      return enrichQilingInspectResult(
+        {
+          ok: false,
+          data: {
+            status: 'setup_required',
+            backend: {
+              available: false,
+              source: null,
+              path: null,
+              version: null,
+              checked_candidates: [],
+              error: message,
+            },
+            sample_id: parsedInput.success ? parsedInput.data.sample_id : undefined,
+            operation: parsedInput.success ? parsedInput.data.operation : 'preflight',
+            summary: 'Qiling readiness probe failed before any sample execution or emulation.',
+            recommended_next_tools: QILING_INSPECT_RECOMMENDED_NEXT_TOOLS,
+            next_actions: [],
+          },
+          errors: [message],
+          metrics: buildMetrics(startTime, qilingInspectToolDefinition.name),
+        },
+        {
+          sampleId: parsedInput.success ? parsedInput.data.sample_id : undefined,
+          operation: parsedInput.success ? parsedInput.data.operation : 'preflight',
+          backendProbeStarted: false,
+        }
+      )
     }
   }
 }
