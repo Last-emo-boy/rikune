@@ -80,6 +80,26 @@ describe('ToolSurfaceManager', () => {
     expect(surface.isToolVisible('ghidra.analyze')).toBe(false)
   })
 
+  test('can expose one plugin-owned tool without activating the whole plugin', () => {
+    const surface = new ToolSurfaceManager()
+    const plugin: Plugin = {
+      id: 'scoped-plugin-test',
+      name: 'Scoped Plugin Test',
+      surfaceRules: { tier: 3, category: 'reverse-engineering' },
+      tools: [],
+    }
+
+    surface.registerPlugin(plugin, ['dynamic.deep_plan', 'dynamic.behavior.capture'])
+
+    expect(surface.activatePluginTools(['dynamic_deep_plan'])).toEqual(['dynamic.deep_plan'])
+    expect(surface.isToolVisible('dynamic.deep_plan')).toBe(true)
+    expect(surface.isToolVisible('dynamic.behavior.capture')).toBe(false)
+    expect(surface.getSurfaceStatus()).toMatchObject({
+      activatedPlugins: 0,
+      visibleTools: 1,
+    })
+  })
+
   test('does not expose tier 0 plugins at startup by default', () => {
     const surface = new ToolSurfaceManager()
     const plugin: Plugin = {
@@ -167,6 +187,27 @@ describe('ToolSurfaceManager', () => {
     expect(surface.activatePlugins(['unpack-surface-test'])).toEqual(['unpack-surface-test'])
     expect(surface.isToolVisible('unpack.workflow.plan')).toBe(true)
     expect(notify).toHaveBeenCalledTimes(3)
+  })
+
+  test('unregisterPlugin clears scoped plugin tool visibility', () => {
+    const surface = new ToolSurfaceManager()
+    const plugin: Plugin = {
+      id: 'scoped-unregister-test',
+      name: 'Scoped Unregister Test',
+      surfaceRules: { tier: 3, category: 'dynamic-analysis' },
+      tools: [],
+    }
+
+    surface.registerPlugin(plugin, ['dynamic.deep_plan', 'dynamic.behavior.capture'])
+    expect(surface.activatePluginTools(['dynamic.deep_plan'])).toEqual(['dynamic.deep_plan'])
+    expect(surface.isToolVisible('dynamic.deep_plan')).toBe(true)
+
+    expect(surface.unregisterPlugin('scoped-unregister-test')).toEqual([
+      'dynamic.deep_plan',
+      'dynamic.behavior.capture',
+    ])
+    expect(surface.isToolVisible('dynamic.deep_plan')).toBe(false)
+    expect(surface.getVisibleToolNames()).toEqual(new Set())
   })
 
   test('unregisterPlugin is a no-op for unknown plugin ids', () => {

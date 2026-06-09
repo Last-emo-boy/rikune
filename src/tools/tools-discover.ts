@@ -1084,6 +1084,7 @@ export function createToolsDiscoverHandler(
       case 'activate': {
         const activated: string[] = []
         const activatedCoreTools: string[] = []
+        const activatedScopedTools: string[] = []
 
         if (input.plugin_id) {
           activated.push(...surface.activatePlugins([input.plugin_id]))
@@ -1092,10 +1093,7 @@ export function createToolsDiscoverHandler(
           const targetTools = toolNameCandidates(input.tool_name)
           if (targetTools.length > 0) {
             activatedCoreTools.push(...surface.activateCoreTools(targetTools))
-            const owner = allCategories
-              .flatMap((category) => category.plugins)
-              .find((plugin) => plugin.tools.some((tool) => toolNameMatches(tool, input.tool_name)))
-            if (owner) activated.push(...surface.activatePlugins([owner.id]))
+            activatedScopedTools.push(...surface.activatePluginTools(targetTools))
           }
         }
         if (input.category) {
@@ -1111,7 +1109,7 @@ export function createToolsDiscoverHandler(
         const unique = [...new Set(activated)]
 
         // Collect activated tool names for display
-        const activatedTools: string[] = [...activatedCoreTools]
+        const activatedTools: string[] = [...activatedCoreTools, ...activatedScopedTools]
         for (const pid of unique) {
           const updatedCategories = surface.listCategories(pluginIndex)
           for (const c of updatedCategories) {
@@ -1144,6 +1142,7 @@ export function createToolsDiscoverHandler(
           },
           activated_plugins: unique,
           activated_core_tools: uniqueStrings(activatedCoreTools),
+          activated_scoped_tools: uniqueStrings(activatedScopedTools),
           activated_tools: uniqueStrings(activatedTools),
           matched_plugins: updatedPluginMatrix.target?.matched_plugins ?? [],
           matched_tools: updatedPluginMatrix.target?.matched_tools ?? [],
@@ -1153,17 +1152,19 @@ export function createToolsDiscoverHandler(
             file_type_activation_includes_tier2: Boolean(resolvedFileType),
             readiness_not_bypassed: true,
             backend_execution_started: false,
+            scoped_tool_activation_used: activatedScopedTools.length > 0,
           },
         }
 
         if (unique.length === 0) {
+          const exposedTools = uniqueStrings([...activatedCoreTools, ...activatedScopedTools])
           return {
             ok: true,
             data: {
               action: 'activate',
               activation_audit: activationAudit,
               activated: [],
-              activated_tools: activatedCoreTools,
+              activated_tools: exposedTools,
               query: input.query,
               sample_id: input.sample_id,
               sample_file_type: resolvedFileType,
@@ -1185,8 +1186,8 @@ export function createToolsDiscoverHandler(
                   ])
                 : updatedPluginMatrix.next_actions,
               message:
-                activatedCoreTools.length > 0
-                  ? `Exposed ${activatedCoreTools.length} core tool(s): ${activatedCoreTools.join(', ')}.`
+                exposedTools.length > 0
+                  ? `Exposed ${exposedTools.length} scoped tool(s): ${exposedTools.join(', ')}.`
                   : 'No new plugins were activated. They may already be active, or no matching plugins were found. Use action=list to see available categories and plugins.',
             },
           }

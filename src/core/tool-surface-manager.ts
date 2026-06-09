@@ -85,6 +85,8 @@ export interface DiscoverableCoreTool {
 
 export class ToolSurfaceManager {
   private entries: Map<string, PluginSurfaceEntry> = new Map()
+  /** Plugin-owned tool names explicitly exposed without activating their whole plugin. */
+  private visiblePluginTools: Set<string> = new Set()
   /** All registered core tool names (not from plugins). */
   private coreTools: Set<string> = new Set()
   /** Core tool names exposed in the initial gateway surface. */
@@ -158,6 +160,9 @@ export class ToolSurfaceManager {
     if (!entry) return []
 
     this.entries.delete(pluginId)
+    for (const tool of entry.tools) {
+      this.visiblePluginTools.delete(tool)
+    }
     if (this.notifyListChanged) {
       this.notifyListChanged()
     }
@@ -181,6 +186,7 @@ export class ToolSurfaceManager {
     if (!this.enabled) return new Set<string>() // empty = no filtering
 
     const visible = new Set<string>(this.visibleCoreTools)
+    for (const tool of this.visiblePluginTools) visible.add(tool)
     for (const entry of this.entries.values()) {
       if (entry.activated) {
         for (const tool of entry.tools) visible.add(tool)
@@ -202,6 +208,7 @@ export class ToolSurfaceManager {
   isToolVisible(toolName: string): boolean {
     if (!this.enabled) return true
     if (this.visibleCoreTools.has(toolName)) return true
+    if (this.visiblePluginTools.has(toolName)) return true
     for (const entry of this.entries.values()) {
       if (entry.activated && entry.tools.includes(toolName)) return true
     }
@@ -274,6 +281,52 @@ export class ToolSurfaceManager {
    */
   activatePlugins(pluginIds: string[]): string[] {
     return this.activateMatching((entry) => pluginIds.includes(entry.pluginId))
+  }
+
+  /**
+   * Expose specific plugin-owned tools without activating the whole plugin.
+   * Used by the workflow.search activation gateway for scoped tool activation.
+   *
+   * @returns newly exposed canonical tool names
+   */
+  activatePluginTools(toolNames: string[]): string[] {
+    if (!this.enabled) return []
+    const newlyVisible: string[] = []
+
+    for (const requested of toolNames) {
+      let matched:
+        | {
+            entry: PluginSurfaceEntry
+            canonicalName: string
+          }
+        | undefined
+      for (const entry of this.entries.values()) {
+        const canonicalName = entry.tools.find(
+          (tool) => tool === requested || toTransportToolName(tool) === requested
+        )
+        if (!canonicalName) continue
+        matched = { entry, canonicalName }
+        break
+      }
+
+      if (!matched) continue
+      const { entry, canonicalName } = matched
+      if (entry.activated || this.visiblePluginTools.has(canonicalName)) {
+        continue
+      }
+
+      this.visiblePluginTools.add(canonicalName)
+      newlyVisible.push(canonicalName)
+      logger.info(
+        { plugin: entry.pluginId, tier: entry.rules.tier, tool: canonicalName },
+        `Surface scoped activation: ${canonicalName}`
+      )
+    }
+
+    if (newlyVisible.length > 0 && this.notifyListChanged) {
+      this.notifyListChanged()
+    }
+    return newlyVisible
   }
 
   /**
@@ -425,6 +478,11 @@ export class ToolSurfaceManager {
       if (entry.activated) tiers[entry.rules.tier].activated++
       totalTools += entry.tools.length
       if (entry.activated) visibleTools += entry.tools.length
+    }
+
+    for (const tool of this.visiblePluginTools) {
+      const owner = [...this.entries.values()].find((entry) => entry.tools.includes(tool))
+      if (owner && !owner.activated) visibleTools += 1
     }
 
     return {

@@ -30,17 +30,22 @@ export const workflowSearchInputSchema = z.object({
   category: z.string().optional().describe('Optional capability category filter.'),
   plugin_id: z.string().optional().describe('Optional plugin ID filter.'),
   tool_name: z.string().optional().describe('Optional canonical or transport tool name filter.'),
+  result_id: z
+    .string()
+    .optional()
+    .describe(
+      'Stable result ID returned by a prior workflow.search result. With action=activate, exposes only that result scoped tool set instead of activating a whole plugin/category/file profile.'
+    ),
   finding: z
     .string()
     .optional()
     .describe('Optional finding/signal hint, such as packed, crypto, shellcode, c2.'),
   top_k: z
-    .number()
-    .int()
-    .min(1)
-    .max(25)
-    .default(5)
-    .describe('Maximum ranked recommendations to return for search/recommend.'),
+    .union([z.number().int().min(1).max(25), z.literal('auto')])
+    .default('auto')
+    .describe(
+      'Maximum ranked recommendations to return for search/recommend. Use auto to let workflow.search adapt the result window to the file profile and analyst intent.'
+    ),
 })
 
 export const workflowSearchOutputSchema = z.object({
@@ -55,6 +60,8 @@ export const workflowSearchOutputSchema = z.object({
       depth: z.string().optional(),
       top_k: z.number().int().positive(),
       search_profile: z.record(z.any()),
+      search_profiles: z.array(z.record(z.any())).optional(),
+      quota_decisions: z.array(z.record(z.any())).optional(),
       results: z.array(z.record(z.any())).optional(),
       recommendations: z.array(z.any()).optional(),
       recommendation_summary: z.any().optional(),
@@ -77,10 +84,36 @@ export const workflowSearchOutputSchema = z.object({
 
 const TOOL_NAME = 'workflow.search'
 type WorkflowSearchInput = z.infer<typeof workflowSearchInputSchema>
+type SearchProfileLane = Record<string, unknown>
+
+type LaneQuotaDecision = {
+  lane: string
+  lane_id: string
+  priority: number
+  quota: number
+  candidate_result_ids: string[]
+  selected_result_ids: string[]
+  overflow_result_ids: string[]
+  promoted: boolean
+  reason: string
+}
+
+type LaneQuotaSelection = {
+  selected: RankedRecommendation[]
+  quota_decisions: LaneQuotaDecision[]
+  selection_metadata: Map<string, { matched_lanes: string[]; selected_via_lane: string }>
+}
+
+type ResolvedTopK = {
+  value: number
+  mode: 'manual' | 'adaptive'
+  reason: string
+}
 
 type ScoreBreakdown = {
   discovery_score: number
   profile_score: number
+  sample_score: number
   query_score: number
   goal_score: number
   depth_score: number
@@ -96,6 +129,61 @@ type RankedRecommendation = {
   total_score: number
   score_breakdown: ScoreBreakdown
   matched_profile_fields: string[]
+}
+
+type WorkflowSearchDatabase = {
+  findSample?: (sampleId: string) => { file_type?: string | null; sha256?: string | null } | null
+  findArtifacts?: (sampleId: string) => Array<{
+    id?: string
+    type?: string
+    path?: string
+    mime?: string | null
+    created_at?: string
+  }>
+  findAnalysisRunsBySample?: (sampleId: string) => Array<{
+    id?: string
+    status?: string
+    goal?: string
+    depth?: string
+    latest_stage?: string | null
+    artifact_refs_json?: string | null
+    updated_at?: string
+  }>
+  findAnalysisRunStages?: (runId: string) => Array<{
+    stage?: string
+    status?: string
+    tool?: string | null
+    artifact_refs_json?: string | null
+    coverage_json?: string | null
+  }>
+  findAnalysisEvidenceBySample?: (
+    sampleId: string,
+    family?: string,
+    limit?: number
+  ) => Array<{
+    evidence_family?: string
+    backend?: string
+    mode?: string
+    artifact_refs_json?: string | null
+  }>
+}
+
+type SampleRouteFacts = {
+  sample_id: string
+  artifact_types: string[]
+  artifact_paths: string[]
+  evidence_families: string[]
+  evidence_backends: string[]
+  latest_stage?: string
+  completed_stages: string[]
+  coverage_gap_domains: string[]
+  known_findings: string[]
+  suspected_findings: string[]
+  unverified_areas: string[]
+  upgrade_tools: string[]
+  recommended_tools: string[]
+  route_terms: string[]
+  fact_sources: string[]
 }
 
 const GOAL_PROFILE_TERMS: Record<string, string[]> = {
@@ -183,6 +271,37 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined
 }
 
+function numberValue(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          item !== null && typeof item === 'object' && !Array.isArray(item)
+      )
+    : []
+}
+
+function parseJsonRecord(value: string | null | undefined): Record<string, unknown> {
+  if (!value || value.trim().length === 0) return {}
+  try {
+    return asRecord(JSON.parse(value))
+  } catch {
+    return {}
+  }
+}
+
+function parseJsonArray(value: string | null | undefined): Record<string, unknown>[] {
+  if (!value || value.trim().length === 0) return []
+  try {
+    return asRecordArray(JSON.parse(value))
+  } catch {
+    return []
+  }
+}
+
 function normalizeProfileTag(value: string): string {
   return value.toLowerCase().trim().replace(/^\./, '').replace(/_/g, '-')
 }
@@ -198,6 +317,10 @@ function termsFromText(value: string | undefined): string[] {
       .map((term) => term.trim())
       .filter((term) => term.length > 1)
   )
+}
+
+function termsFromValues(values: Array<string | undefined>): string[] {
+  return uniqueStrings(values.flatMap((value) => termsFromText(value)))
 }
 
 function normalizeSearchText(value: string): string {
@@ -261,6 +384,184 @@ function targetRecord(discoveryData: Record<string, unknown>): Record<string, un
   return asRecord(asRecord(discoveryData.plugin_matrix).target)
 }
 
+function collectArtifactFacts(
+  facts: {
+    artifactTypes: string[]
+    artifactPaths: string[]
+    routeTerms: string[]
+    factSources: string[]
+  },
+  artifact: Record<string, unknown>,
+  source: string
+): void {
+  const type = stringValue(artifact.type)
+  const artifactPath = stringValue(artifact.path)
+  if (type) facts.artifactTypes.push(normalizeProfileTag(type))
+  if (artifactPath) facts.artifactPaths.push(artifactPath)
+  facts.routeTerms.push(...termsFromValues([type, artifactPath]))
+  if (type || artifactPath) facts.factSources.push(source)
+}
+
+function collectCoverageFacts(
+  facts: {
+    coverageGapDomains: string[]
+    knownFindings: string[]
+    suspectedFindings: string[]
+    unverifiedAreas: string[]
+    upgradeTools: string[]
+    recommendedTools: string[]
+    routeTerms: string[]
+    factSources: string[]
+  },
+  coverage: Record<string, unknown>,
+  source: string
+): void {
+  const gaps = asRecordArray(coverage.coverage_gaps)
+  for (const gap of gaps) {
+    const domain = stringValue(gap.domain)
+    const reason = stringValue(gap.reason)
+    if (domain) facts.coverageGapDomains.push(normalizeProfileTag(domain))
+    facts.routeTerms.push(...termsFromValues([domain, reason, stringValue(gap.status)]))
+  }
+
+  const upgradePaths = asRecordArray(coverage.upgrade_paths)
+  for (const path of upgradePaths) {
+    const tool = stringValue(path.tool)
+    const purpose = stringValue(path.purpose)
+    if (tool) {
+      facts.upgradeTools.push(tool)
+      facts.recommendedTools.push(tool)
+    }
+    facts.routeTerms.push(
+      ...termsFromValues([tool, purpose, ...(stringArray(path.closes_gaps) as string[])])
+    )
+  }
+
+  const known = stringArray(coverage.known_findings).map(normalizeProfileTag)
+  const suspected = stringArray(coverage.suspected_findings).map(normalizeProfileTag)
+  const unverified = stringArray(coverage.unverified_areas).map(normalizeProfileTag)
+  facts.knownFindings.push(...known)
+  facts.suspectedFindings.push(...suspected)
+  facts.unverifiedAreas.push(...unverified)
+  facts.routeTerms.push(...termsFromValues([...known, ...suspected, ...unverified]))
+
+  if (gaps.length > 0 || upgradePaths.length > 0 || known.length > 0 || suspected.length > 0) {
+    facts.factSources.push(source)
+  }
+}
+
+function collectRunArtifactRefs(run: Record<string, unknown>): Record<string, unknown>[] {
+  return parseJsonArray(stringValue(run.artifact_refs_json))
+}
+
+function buildSampleRouteFacts(input: WorkflowSearchInput, database?: WorkflowSearchDatabase) {
+  if (!input.sample_id || !database) return undefined
+
+  const sampleId = input.sample_id
+  const artifactTypes: string[] = []
+  const artifactPaths: string[] = []
+  const evidenceFamilies: string[] = []
+  const evidenceBackends: string[] = []
+  const completedStages: string[] = []
+  const coverageGapDomains: string[] = []
+  const knownFindings: string[] = []
+  const suspectedFindings: string[] = []
+  const unverifiedAreas: string[] = []
+  const upgradeTools: string[] = []
+  const recommendedTools: string[] = []
+  const routeTerms: string[] = []
+  const factSources: string[] = []
+  let latestStage: string | undefined
+
+  const artifactFactSink = { artifactTypes, artifactPaths, routeTerms, factSources }
+  for (const artifact of database.findArtifacts?.(sampleId)?.slice(0, 50) ?? []) {
+    collectArtifactFacts(artifactFactSink, artifact as Record<string, unknown>, 'artifacts')
+  }
+
+  const runs = database.findAnalysisRunsBySample?.(sampleId)?.slice(0, 3) ?? []
+  for (const run of runs) {
+    if (!latestStage) latestStage = stringValue(run.latest_stage)
+    const runRecord = run as Record<string, unknown>
+    for (const artifact of collectRunArtifactRefs(runRecord).slice(0, 50)) {
+      collectArtifactFacts(artifactFactSink, artifact, 'analysis_run.artifact_refs')
+    }
+
+    const stages = run.id ? (database.findAnalysisRunStages?.(run.id)?.slice(0, 20) ?? []) : []
+    for (const stage of stages) {
+      const stageName = stringValue(stage.stage)
+      if (stageName) {
+        if (stage.status === 'completed') completedStages.push(stageName)
+        routeTerms.push(...termsFromText(stageName))
+      }
+      const tool = stringValue(stage.tool)
+      if (tool) {
+        recommendedTools.push(tool)
+        routeTerms.push(...termsFromText(tool))
+      }
+      for (const artifact of parseJsonArray(stage.artifact_refs_json).slice(0, 25)) {
+        collectArtifactFacts(artifactFactSink, artifact, 'analysis_stage.artifact_refs')
+      }
+      const coverage = parseJsonRecord(stage.coverage_json)
+      if (Object.keys(coverage).length > 0) {
+        collectCoverageFacts(
+          {
+            coverageGapDomains,
+            knownFindings,
+            suspectedFindings,
+            unverifiedAreas,
+            upgradeTools,
+            recommendedTools,
+            routeTerms,
+            factSources,
+          },
+          coverage,
+          'analysis_stage.coverage'
+        )
+      }
+    }
+  }
+
+  const evidenceRows = database.findAnalysisEvidenceBySample?.(sampleId, undefined, 20) ?? []
+  for (const evidence of evidenceRows) {
+    const family = stringValue(evidence.evidence_family)
+    const backend = stringValue(evidence.backend)
+    const mode = stringValue(evidence.mode)
+    if (family) evidenceFamilies.push(normalizeProfileTag(family))
+    if (backend) evidenceBackends.push(normalizeProfileTag(backend))
+    routeTerms.push(...termsFromValues([family, backend, mode]))
+    for (const artifact of parseJsonArray(evidence.artifact_refs_json).slice(0, 15)) {
+      collectArtifactFacts(artifactFactSink, artifact, 'analysis_evidence.artifact_refs')
+    }
+    if (family || backend) factSources.push('analysis_evidence')
+  }
+
+  const normalized: SampleRouteFacts = {
+    sample_id: sampleId,
+    artifact_types: uniqueStrings(artifactTypes).slice(0, 40),
+    artifact_paths: uniqueStrings(artifactPaths).slice(0, 25),
+    evidence_families: uniqueStrings(evidenceFamilies).slice(0, 20),
+    evidence_backends: uniqueStrings(evidenceBackends).slice(0, 20),
+    latest_stage: latestStage,
+    completed_stages: uniqueStrings(completedStages).slice(0, 20),
+    coverage_gap_domains: uniqueStrings(coverageGapDomains).slice(0, 20),
+    known_findings: uniqueStrings(knownFindings).slice(0, 20),
+    suspected_findings: uniqueStrings(suspectedFindings).slice(0, 20),
+    unverified_areas: uniqueStrings(unverifiedAreas).slice(0, 20),
+    upgrade_tools: uniqueStrings(upgradeTools).slice(0, 20),
+    recommended_tools: uniqueStrings(recommendedTools).slice(0, 30),
+    route_terms: uniqueStrings(routeTerms.map(normalizeProfileTag)).slice(0, 80),
+    fact_sources: uniqueStrings(factSources).slice(0, 12),
+  }
+
+  const hasFacts =
+    normalized.artifact_types.length > 0 ||
+    normalized.evidence_families.length > 0 ||
+    normalized.coverage_gap_domains.length > 0 ||
+    normalized.upgrade_tools.length > 0 ||
+    normalized.recommended_tools.length > 0
+  return hasFacts ? normalized : undefined
+}
+
 function profileTagsFor(input: WorkflowSearchInput, discoveryData: Record<string, unknown>) {
   const sampleFileType = stringValue(discoveryData.sample_file_type)
   return uniqueStrings(
@@ -312,17 +613,491 @@ function termsForFinding(finding: string | undefined): string[] {
   return uniqueStrings([...findingTerms, ...aliases])
 }
 
+function buildSearchProfiles(
+  input: WorkflowSearchInput,
+  discoveryData: Record<string, unknown>,
+  sampleRouteFacts?: SampleRouteFacts
+): SearchProfileLane[] {
+  const pluginMatrix = asRecord(discoveryData.plugin_matrix)
+  const target = targetRecord(discoveryData)
+  const fileTypeTags = profileTagsFor(input, discoveryData)
+  const queryTerms = termsFromText(input.query)
+  const goalTerms = termsForGoal(input.goal)
+  const depthTerms = termsForDepth(input.depth)
+  const findingTerms = termsForFinding(input.finding)
+  const formatMatrix = asRecord(discoveryData.format_matrix)
+  const byEvidence = asRecord(pluginMatrix.by_evidence)
+  const byWorkflow = asRecord(pluginMatrix.by_workflow)
+  const lanes: SearchProfileLane[] = []
+
+  if (fileTypeTags.length > 0) {
+    lanes.push({
+      id: 'format-lane',
+      lane: 'format',
+      priority: 100,
+      triggers: fileTypeTags,
+      matched_formats: stringArray(target.matched_formats),
+      matched_plugins: stringArray(target.matched_plugins),
+      matched_tools: stringArray(target.matched_tools),
+      recommended_tools: stringArray(target.recommended_tools).slice(0, 12),
+      rationale:
+        'Use normalized extension and sample file-type tags to keep format-specific tools in the topK window.',
+    })
+  }
+
+  if (
+    queryTerms.length > 0 ||
+    goalTerms.length > 0 ||
+    depthTerms.length > 0 ||
+    findingTerms.length > 0
+  ) {
+    lanes.push({
+      id: 'intent-lane',
+      lane: 'intent',
+      priority: 90,
+      query_terms: queryTerms,
+      goal_terms: goalTerms,
+      depth_terms: depthTerms,
+      finding_terms: findingTerms,
+      rationale:
+        'Use analyst wording, goal, depth, and finding hints to preserve intent-specific specialist tools.',
+    })
+  }
+
+  if (
+    Object.keys(formatMatrix).length > 0 ||
+    Object.keys(byEvidence).length > 0 ||
+    Object.keys(byWorkflow).length > 0
+  ) {
+    lanes.push({
+      id: 'artifact-lane',
+      lane: 'artifact',
+      priority: 80,
+      formats: Object.keys(formatMatrix),
+      evidence: Object.keys(byEvidence),
+      workflows: Object.keys(byWorkflow).slice(0, 25),
+      recommended_tools: stringArray(discoveryData.recommended_tools).slice(0, 12),
+      rationale:
+        'Use declared artifact, evidence, and workflow contracts so downstream consumers are not crowded out by raw format matches.',
+    })
+  }
+
+  if (sampleRouteFacts) {
+    lanes.push({
+      id: 'sample-facts-lane',
+      lane: 'sample_facts',
+      priority: 85,
+      sample_id: sampleRouteFacts.sample_id,
+      artifact_types: sampleRouteFacts.artifact_types.slice(0, 20),
+      evidence_families: sampleRouteFacts.evidence_families.slice(0, 12),
+      latest_stage: sampleRouteFacts.latest_stage ?? null,
+      completed_stages: sampleRouteFacts.completed_stages.slice(0, 12),
+      coverage_gap_domains: sampleRouteFacts.coverage_gap_domains.slice(0, 12),
+      upgrade_tools: sampleRouteFacts.upgrade_tools.slice(0, 12),
+      recommended_tools: sampleRouteFacts.recommended_tools.slice(0, 12),
+      fact_sources: sampleRouteFacts.fact_sources,
+      rationale:
+        'Use existing sample artifacts, staged coverage gaps, upgrade paths, and evidence rows to rank the next likely workflow without exposing more tools.',
+    })
+  }
+
+  const validationTerms = ['validate', 'validation', 'corroborate', 'corroboration', 'rule', 'yara']
+  if (
+    [...queryTerms, ...findingTerms].some((term) => validationTerms.includes(term)) ||
+    findingTerms.length > 0
+  ) {
+    lanes.push({
+      id: 'validation-lane',
+      lane: 'validation',
+      priority: 70,
+      triggers: uniqueStrings([...queryTerms, ...findingTerms]).filter((term) =>
+        [
+          'validate',
+          'validation',
+          'corroborate',
+          'corroboration',
+          'rule',
+          'ruleset',
+          'yara',
+          'sigma',
+        ].includes(term)
+      ),
+      rationale:
+        'Reserve room for rule validation, corroboration, and evidence graph consumers when the request includes findings or detection terms.',
+    })
+  }
+
+  const reportingTerms = ['report', 'summary', 'summarize', 'artifact', 'evidence', 'export']
+  if (input.goal === 'report' || queryTerms.some((term) => reportingTerms.includes(term))) {
+    lanes.push({
+      id: 'reporting-lane',
+      lane: 'reporting',
+      priority: 60,
+      triggers: uniqueStrings([...queryTerms, ...(input.goal ? [input.goal] : [])]).filter((term) =>
+        reportingTerms.includes(term)
+      ),
+      next_actions: stringArray(discoveryData.next_actions).slice(0, 8),
+      rationale:
+        'Keep reporting, artifact reading, and evidence summarization paths visible for low-context report requests.',
+    })
+  }
+
+  return lanes
+}
+
+function resolveTopK(
+  input: WorkflowSearchInput,
+  discoveryData: Record<string, unknown>,
+  sampleRouteFacts?: SampleRouteFacts
+): ResolvedTopK {
+  if (typeof input.top_k === 'number') {
+    return { value: input.top_k, mode: 'manual', reason: 'Caller provided an explicit top_k.' }
+  }
+
+  const queryTerms = termsFromText(input.query)
+  const findingTerms = termsForFinding(input.finding)
+  const profileTags = profileTagsFor(input, discoveryData)
+  const hasPreciseProfile = profileTags.length > 0
+  const intentTerms = uniqueStrings([
+    ...queryTerms,
+    ...termsForGoal(input.goal),
+    ...termsForDepth(input.depth),
+    ...findingTerms,
+  ])
+  const asksForDeepReverse =
+    input.goal === 'reverse' ||
+    input.depth === 'deep' ||
+    intentTerms.some((term) =>
+      ['decompile', 'decompiler', 'disassembly', 'cfg', 'xref', 'function', 'reconstruct'].includes(
+        term
+      )
+    )
+  const asksForValidation =
+    findingTerms.length > 0 ||
+    intentTerms.some((term) =>
+      ['packed', 'unpack', 'c2', 'ioc', 'yara', 'sigma', 'validate', 'corroboration'].includes(term)
+    )
+  const asksForReport = input.goal === 'report' || intentTerms.some((term) => term === 'report')
+  const asksForDynamic = input.goal === 'dynamic' || input.depth === 'deep'
+  const isDirectLookup = Boolean(input.tool_name || input.plugin_id || input.category)
+
+  if (isDirectLookup) {
+    return { value: 3, mode: 'adaptive', reason: 'Direct plugin/tool/category lookup.' }
+  }
+  if (asksForDeepReverse) {
+    return { value: 12, mode: 'adaptive', reason: 'Deep reverse-engineering intent.' }
+  }
+  if (asksForValidation || asksForDynamic || asksForReport) {
+    return {
+      value: 8,
+      mode: 'adaptive',
+      reason: 'Validation, runtime planning, or reporting intent needs a broader workflow window.',
+    }
+  }
+  if (sampleRouteFacts && sampleRouteFacts.route_terms.length > 0) {
+    return {
+      value: 8,
+      mode: 'adaptive',
+      reason: 'Sample-scoped route facts were available for follow-up ranking.',
+    }
+  }
+  if (hasPreciseProfile && queryTerms.length <= 3) {
+    return {
+      value: 5,
+      mode: 'adaptive',
+      reason: 'Precise file profile with a narrow user query.',
+    }
+  }
+  if (!hasPreciseProfile && queryTerms.length === 0) {
+    return { value: 8, mode: 'adaptive', reason: 'Broad discovery without profile or query.' }
+  }
+  return { value: 6, mode: 'adaptive', reason: 'Balanced profile and intent search.' }
+}
+
+function laneName(profile: SearchProfileLane): string | undefined {
+  return stringValue(profile.lane)
+}
+
+function lanePriority(profile: SearchProfileLane): number {
+  return numberValue(profile.priority)
+}
+
+function laneTerms(profile: SearchProfileLane): string[] {
+  return uniqueStrings(
+    [
+      ...termsFromValues([
+        laneName(profile),
+        stringValue(profile.id),
+        stringValue(profile.rationale),
+        ...stringArray(profile.triggers),
+        ...stringArray(profile.formats),
+        ...stringArray(profile.evidence),
+        ...stringArray(profile.workflows),
+        ...stringArray(profile.recommended_tools),
+        ...stringArray(profile.next_actions),
+      ]),
+      ...stringArray(profile.query_terms),
+      ...stringArray(profile.goal_terms),
+      ...stringArray(profile.depth_terms),
+      ...stringArray(profile.finding_terms),
+      ...stringArray(profile.artifact_types),
+      ...stringArray(profile.evidence_families),
+      ...stringArray(profile.coverage_gap_domains),
+    ].map(normalizeProfileTag)
+  )
+}
+
+function laneCandidateScore(ranked: RankedRecommendation, profile: SearchProfileLane): number {
+  const lane = laneName(profile)
+  if (!lane) return 0
+
+  const text = recommendationSearchText(ranked.item)
+  const terms = laneTerms(profile)
+  const termMatch = scoreTerms(terms, text)
+  const score = ranked.score_breakdown
+
+  if (lane === 'format') {
+    const intentPenalty = Math.min(24, score.query_score + score.depth_score + score.finding_score)
+    return Math.max(0, score.profile_score + termMatch.score * 2 - intentPenalty)
+  }
+
+  if (lane === 'intent') {
+    return score.query_score + score.goal_score + score.depth_score + score.finding_score
+  }
+
+  if (lane === 'sample_facts') {
+    return score.sample_score + termMatch.score
+  }
+
+  if (lane === 'artifact') {
+    const artifactTerms = uniqueStrings([
+      ...termsFromValues([...stringArray(profile.formats), ...stringArray(profile.evidence)]),
+      'artifact',
+      'evidence',
+      'workflow',
+      'handoff',
+      'correlation',
+      'graph',
+      'report',
+      'summary',
+      'provenance',
+    ])
+    const artifactMatch = scoreTerms(artifactTerms, text)
+    const consumerBonus = [
+      'artifact',
+      'evidence',
+      'correlation',
+      'graph',
+      'report',
+      'handoff',
+    ].filter((term) => text.includes(term)).length
+    return artifactMatch.score + consumerBonus * 18
+  }
+
+  if (lane === 'validation') {
+    const validationTerms = uniqueStrings([
+      ...terms,
+      'validate',
+      'validation',
+      'corroborate',
+      'rule',
+      'yara',
+      'sigma',
+    ])
+    return score.finding_score + scoreTerms(validationTerms, text).score
+  }
+
+  if (lane === 'reporting') {
+    const reportingTerms = uniqueStrings([
+      ...terms,
+      'report',
+      'summary',
+      'artifact',
+      'evidence',
+      'export',
+      'graph',
+    ])
+    return scoreTerms(reportingTerms, text).score + (text.includes('report') ? 12 : 0)
+  }
+
+  return termMatch.score
+}
+
+function resultIdForRanked(ranked: RankedRecommendation): string {
+  return recommendationResultId(ranked.item, ranked.original_index)
+}
+
+function recommendationKey(item: Record<string, unknown>, index: number): string {
+  const pluginId = stringValue(item.plugin_id) ?? stringValue(item.id)
+  if (pluginId) return `plugin:${pluginId}`
+  const toolName = stringValue(item.tool_name) ?? stringValue(item.name)
+  if (toolName) return `tool:${toolName}`
+  return `result:${index}`
+}
+
+function mergeRecommendations(
+  primary: Record<string, unknown>[],
+  supplemental: Record<string, unknown>[]
+): Record<string, unknown>[] {
+  const seen = new Set<string>()
+  const merged: Record<string, unknown>[] = []
+  for (const item of [...primary, ...supplemental]) {
+    const key = recommendationKey(item, merged.length)
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(item)
+  }
+  return merged
+}
+
+function shouldSupplementArtifactCandidates(
+  input: WorkflowSearchInput,
+  searchProfiles: SearchProfileLane[]
+): boolean {
+  if (input.plugin_id || input.tool_name || input.category) return false
+  return searchProfiles.some((profile) => {
+    const lane = laneName(profile)
+    return lane === 'artifact' || lane === 'reporting'
+  })
+}
+
+function matchedLanesForRecommendation(
+  ranked: RankedRecommendation,
+  searchProfiles: SearchProfileLane[]
+): string[] {
+  return uniqueStrings(
+    searchProfiles
+      .filter((profile) => laneCandidateScore(ranked, profile) > 0)
+      .map((profile) => laneName(profile))
+      .filter((lane): lane is string => Boolean(lane))
+  )
+}
+
+function assignLaneQuotas(searchProfiles: SearchProfileLane[], topK: number) {
+  const activeProfiles = searchProfiles
+    .filter((profile) => laneName(profile))
+    .sort((a, b) => lanePriority(b) - lanePriority(a))
+  const quotaProfiles = activeProfiles.slice(0, Math.max(0, topK))
+  return new Map(quotaProfiles.map((profile) => [laneName(profile) as string, 1]))
+}
+
+function selectLaneAwareTopK(
+  rankedRecommendations: RankedRecommendation[],
+  searchProfiles: SearchProfileLane[],
+  topK: number
+): LaneQuotaSelection {
+  const selected: RankedRecommendation[] = []
+  const selectedIds = new Set<string>()
+  const selectionMetadata = new Map<
+    string,
+    { matched_lanes: string[]; selected_via_lane: string }
+  >()
+  const quotaDecisions: LaneQuotaDecision[] = []
+  const laneQuotas = assignLaneQuotas(searchProfiles, topK)
+  const rankedIndex = new Map(
+    rankedRecommendations.map((item, index) => [resultIdForRanked(item), index])
+  )
+
+  for (const profile of searchProfiles
+    .filter((candidate) => laneName(candidate))
+    .sort((a, b) => lanePriority(b) - lanePriority(a))) {
+    const lane = laneName(profile) as string
+    const quota = laneQuotas.get(lane) ?? 0
+    const candidates = rankedRecommendations
+      .map((candidate) => ({ candidate, lane_score: laneCandidateScore(candidate, profile) }))
+      .filter((candidate) => candidate.lane_score > 0)
+      .sort(
+        (a, b) =>
+          b.lane_score - a.lane_score ||
+          b.candidate.total_score - a.candidate.total_score ||
+          a.candidate.original_index - b.candidate.original_index
+      )
+
+    const picked: RankedRecommendation[] = []
+    for (const { candidate } of candidates) {
+      if (picked.length >= quota) break
+      const resultId = resultIdForRanked(candidate)
+      if (selectedIds.has(resultId)) continue
+      picked.push(candidate)
+      selected.push(candidate)
+      selectedIds.add(resultId)
+      selectionMetadata.set(resultId, {
+        matched_lanes: matchedLanesForRecommendation(candidate, searchProfiles),
+        selected_via_lane: lane,
+      })
+    }
+
+    const selectedResultIds = picked.map(resultIdForRanked)
+    const candidateResultIds = candidates.map(({ candidate }) => resultIdForRanked(candidate))
+    quotaDecisions.push({
+      lane,
+      lane_id: stringValue(profile.id) ?? lane,
+      priority: lanePriority(profile),
+      quota,
+      candidate_result_ids: candidateResultIds.slice(0, 12),
+      selected_result_ids: selectedResultIds,
+      overflow_result_ids: candidateResultIds
+        .filter((resultId) => !selectedResultIds.includes(resultId))
+        .slice(0, 12),
+      promoted: selectedResultIds.some((resultId) => (rankedIndex.get(resultId) ?? topK) >= topK),
+      reason:
+        quota > 0
+          ? `Reserved ${quota} topK slot(s) for the ${lane} search profile lane.`
+          : `No reserved topK slot remained for the ${lane} search profile lane.`,
+    })
+  }
+
+  for (const candidate of rankedRecommendations) {
+    if (selected.length >= topK) break
+    const resultId = resultIdForRanked(candidate)
+    if (selectedIds.has(resultId)) continue
+    selected.push(candidate)
+    selectedIds.add(resultId)
+    selectionMetadata.set(resultId, {
+      matched_lanes: matchedLanesForRecommendation(candidate, searchProfiles),
+      selected_via_lane: 'global_fill',
+    })
+  }
+
+  return {
+    selected: selected
+      .slice(0, topK)
+      .sort(
+        (a, b) =>
+          (rankedIndex.get(resultIdForRanked(a)) ?? 0) -
+          (rankedIndex.get(resultIdForRanked(b)) ?? 0)
+      ),
+    quota_decisions: quotaDecisions,
+    selection_metadata: selectionMetadata,
+  }
+}
+
+function applyQuotaMetadataToProfiles(
+  searchProfiles: SearchProfileLane[],
+  quotaDecisions: LaneQuotaDecision[]
+): SearchProfileLane[] {
+  return searchProfiles.map((profile) => {
+    const lane = laneName(profile)
+    const decision = lane ? quotaDecisions.find((item) => item.lane === lane) : undefined
+    if (!decision) return profile
+    return {
+      ...profile,
+      top_k_quota: decision.quota,
+      candidate_count: decision.candidate_result_ids.length,
+      selected_count: decision.selected_result_ids.length,
+    }
+  })
+}
+
 function readinessScore(readinessState: string): number {
   if (readinessState === 'ready') return 8
   if (readinessState === 'blocked') return -60
   if (readinessState === 'readiness_warning') return -8
   if (readinessState === 'hidden_activation_required') return 0
   if (
-    [
-      'backend_readiness_required',
-      'runtime_opt_in_required',
-      'backend_profile_required',
-    ].includes(readinessState)
+    ['backend_readiness_required', 'runtime_opt_in_required', 'backend_profile_required'].includes(
+      readinessState
+    )
   ) {
     return -10
   }
@@ -339,13 +1114,70 @@ function readinessScore(readinessState: string): number {
   return 0
 }
 
+function sampleFactsScore(params: {
+  item: Record<string, unknown>
+  searchText: string
+  sampleRouteFacts?: SampleRouteFacts
+}): { score: number; matched: string[] } {
+  const facts = params.sampleRouteFacts
+  if (!facts) return { score: 0, matched: [] }
+
+  const matched: string[] = []
+  let score = 0
+  const toolName = stringValue(params.item.tool_name) ?? stringValue(params.item.name)
+  const itemTools = uniqueStrings([
+    ...(toolName ? [toolName] : []),
+    ...stringArray(params.item.recommended_tools),
+    ...stringArray(params.item.available_tools),
+    ...stringArray(params.item.preferred_primary_tools),
+  ])
+  const preferredTools = uniqueStrings([...facts.upgrade_tools, ...facts.recommended_tools])
+  const toolMatches = itemTools.filter((tool) =>
+    preferredTools.some(
+      (preferred) =>
+        tool === preferred ||
+        tool.startsWith(`${preferred}.`) ||
+        preferred.startsWith(`${tool}.`) ||
+        normalizeProfileTag(tool) === normalizeProfileTag(preferred)
+    )
+  )
+  if (toolMatches.length > 0) {
+    score += 45 + toolMatches.length * 10
+    matched.push(`sample recommended tools: ${toolMatches.slice(0, 4).join(', ')}`)
+  }
+
+  const routeTerms = uniqueStrings([
+    ...facts.route_terms,
+    ...facts.artifact_types,
+    ...facts.evidence_families,
+    ...facts.coverage_gap_domains,
+    ...facts.known_findings,
+    ...facts.suspected_findings,
+    ...facts.unverified_areas,
+  ]).slice(0, 80)
+  const routeMatch = scoreTerms(routeTerms, params.searchText)
+  if (routeMatch.matched.length > 0) {
+    score += Math.min(45, routeMatch.matched.length * 7)
+    matched.push(`sample route facts: ${routeMatch.matched.slice(0, 8).join(', ')}`)
+  }
+
+  const artifactMatches = facts.artifact_types.filter((type) => params.searchText.includes(type))
+  if (artifactMatches.length > 0) {
+    score += Math.min(24, artifactMatches.length * 6)
+    matched.push(`sample artifact types: ${artifactMatches.slice(0, 6).join(', ')}`)
+  }
+
+  return { score, matched: uniqueStrings(matched).slice(0, 6) }
+}
+
 function rankRecommendation(params: {
   item: Record<string, unknown>
   input: WorkflowSearchInput
   discoveryData: Record<string, unknown>
+  sampleRouteFacts?: SampleRouteFacts
   originalIndex: number
 }): RankedRecommendation {
-  const { item, input, discoveryData, originalIndex } = params
+  const { item, input, discoveryData, sampleRouteFacts, originalIndex } = params
   const discoveryScore = typeof item.score === 'number' ? item.score : 0
   const searchText = recommendationSearchText(item)
   const matchedProfileFields: string[] = []
@@ -357,6 +1189,11 @@ function rankRecommendation(params: {
   if (matchedProfileTags.length > 0) {
     profileScore += 55 + matchedProfileTags.length * 8
     matchedProfileFields.push(`file_type/profile tags: ${matchedProfileTags.join(', ')}`)
+  }
+
+  const sampleMatch = sampleFactsScore({ item, searchText, sampleRouteFacts })
+  if (sampleMatch.matched.length > 0) {
+    matchedProfileFields.push(...sampleMatch.matched)
   }
 
   const pluginId = stringValue(item.plugin_id) ?? stringValue(item.id)
@@ -428,6 +1265,7 @@ function rankRecommendation(params: {
   const totalScore =
     discoveryScore +
     profileScore +
+    sampleMatch.score +
     queryScore +
     goalScore +
     depthScore +
@@ -442,6 +1280,7 @@ function rankRecommendation(params: {
     score_breakdown: {
       discovery_score: discoveryScore,
       profile_score: profileScore,
+      sample_score: sampleMatch.score,
       query_score: queryScore,
       goal_score: goalScore,
       depth_score: depthScore,
@@ -454,18 +1293,58 @@ function rankRecommendation(params: {
   }
 }
 
-function buildSearchProfile(input: WorkflowSearchInput, discoveryData: Record<string, unknown>) {
+function buildSearchProfile(
+  input: WorkflowSearchInput,
+  discoveryData: Record<string, unknown>,
+  resolvedTopK: ResolvedTopK,
+  searchProfiles: SearchProfileLane[],
+  sampleRouteFacts?: SampleRouteFacts,
+  quotaDecisions: LaneQuotaDecision[] = []
+) {
   const pluginMatrix = asRecord(discoveryData.plugin_matrix)
   const queryTerms = termsFromText(input.query)
   const findingTerms = termsForFinding(input.finding)
   return {
     sample_file_type: discoveryData.sample_file_type ?? null,
     requested_file_type: input.file_type ?? null,
+    requested_top_k: input.top_k,
+    resolved_top_k: resolvedTopK.value,
+    top_k_strategy: resolvedTopK,
     file_type_tags: profileTagsFor(input, discoveryData),
     query_terms: queryTerms,
     goal_terms: termsForGoal(input.goal),
     depth_terms: termsForDepth(input.depth),
     finding_terms: findingTerms,
+    search_profiles: searchProfiles,
+    lane_top_k: {
+      enabled: quotaDecisions.length > 0,
+      requested_top_k: input.top_k,
+      resolved_top_k: resolvedTopK.value,
+      quotas: quotaDecisions.map((decision) => ({
+        lane: decision.lane,
+        quota: decision.quota,
+        selected_count: decision.selected_result_ids.length,
+        candidate_count: decision.candidate_result_ids.length,
+        promoted: decision.promoted,
+      })),
+    },
+    quota_decisions: quotaDecisions,
+    sample_route_facts: sampleRouteFacts
+      ? {
+          sample_id: sampleRouteFacts.sample_id,
+          artifact_types: sampleRouteFacts.artifact_types.slice(0, 20),
+          evidence_families: sampleRouteFacts.evidence_families.slice(0, 12),
+          latest_stage: sampleRouteFacts.latest_stage ?? null,
+          completed_stages: sampleRouteFacts.completed_stages.slice(0, 12),
+          coverage_gap_domains: sampleRouteFacts.coverage_gap_domains.slice(0, 12),
+          known_findings: sampleRouteFacts.known_findings.slice(0, 12),
+          suspected_findings: sampleRouteFacts.suspected_findings.slice(0, 12),
+          upgrade_tools: sampleRouteFacts.upgrade_tools.slice(0, 12),
+          recommended_tools: sampleRouteFacts.recommended_tools.slice(0, 12),
+          route_terms: sampleRouteFacts.route_terms.slice(0, 25),
+          fact_sources: sampleRouteFacts.fact_sources,
+        }
+      : undefined,
     formats: Object.keys(asRecord(discoveryData.format_matrix)),
     recommended_tools: stringArray(discoveryData.recommended_tools),
     available_tools: stringArray(discoveryData.available_tools),
@@ -485,15 +1364,24 @@ function buildSearchProfile(input: WorkflowSearchInput, discoveryData: Record<st
   }
 }
 
-function normalizeRecommendation(ranked: RankedRecommendation, index: number) {
+function normalizeRecommendation(
+  ranked: RankedRecommendation,
+  index: number,
+  metadata?: { matched_lanes?: string[]; selected_via_lane?: string }
+) {
   const item = ranked.item
   const workflowRecipes = Array.isArray(item.workflow_recipes)
     ? (item.workflow_recipes as Array<Record<string, unknown>>)
     : []
   const readinessState = typeof item.readiness_state === 'string' ? item.readiness_state : 'unknown'
+  const resultId = recommendationResultId(item, index)
+  const scopedToolNames = resultScopedToolNames(item)
   return {
+    result_id: resultId,
     rank: index + 1,
     score: ranked.total_score,
+    matched_lanes: metadata?.matched_lanes ?? [],
+    selected_via_lane: metadata?.selected_via_lane ?? 'global_fill',
     kind: item.kind === 'core_tool' ? 'tool' : item.kind,
     tool_name: item.tool_name ?? item.name,
     plugin_id: item.plugin_id ?? item.id,
@@ -504,7 +1392,13 @@ function normalizeRecommendation(ranked: RankedRecommendation, index: number) {
     tool_surface_role: item.tool_surface_role,
     preferred_primary_tools: stringArray(item.preferred_primary_tools),
     activation_required: ACTIVATION_REQUIRED_STATES.has(readinessState),
-    activation_command: normalizeActivationCommand(item.activation_command),
+    activation_command: normalizeActivationCommand(item.activation_command, resultId),
+    activation_scope: {
+      mode: 'result_scoped',
+      tool_names: scopedToolNames,
+      fallback_available_tools: stringArray(item.available_tools).slice(0, 8),
+      plugin_level_activation_required: scopedToolNames.length === 0 && Boolean(item.plugin_id),
+    },
     closes_gaps: [],
     matched_profile_fields: uniqueStrings([
       ...ranked.matched_profile_fields,
@@ -521,12 +1415,51 @@ function normalizeRecommendation(ranked: RankedRecommendation, index: number) {
   }
 }
 
-function normalizeActivationCommand(value: unknown): Record<string, unknown> | undefined {
+function recommendationResultId(item: Record<string, unknown>, index: number): string {
+  const pluginId = stringValue(item.plugin_id) ?? stringValue(item.id)
+  if (pluginId) return `plugin:${pluginId}`
+  const toolName = stringValue(item.tool_name) ?? stringValue(item.name)
+  if (toolName) return `tool:${toolName}`
+  return `result:${index + 1}`
+}
+
+function workflowRecipeStartTools(item: Record<string, unknown>): string[] {
+  const recipes = Array.isArray(item.workflow_recipes)
+    ? (item.workflow_recipes as Array<Record<string, unknown>>)
+    : []
+  return uniqueStrings(
+    recipes.flatMap((recipe) => [
+      ...stringArray(recipe.startsWith),
+      ...stringArray(recipe.starts_with),
+    ])
+  )
+}
+
+function resultScopedToolNames(item: Record<string, unknown>): string[] {
+  const kind = stringValue(item.kind)
+  if (kind === 'core_tool') {
+    const toolName = stringValue(item.tool_name) ?? stringValue(item.name)
+    return toolName ? [toolName] : []
+  }
+
+  const workflowStartTools = workflowRecipeStartTools(item)
+  if (workflowStartTools.length > 0) return workflowStartTools.slice(0, 8)
+
+  const recommendedTools = stringArray(item.recommended_tools)
+  if (recommendedTools.length > 0) return recommendedTools.slice(0, 8)
+
+  return stringArray(item.available_tools).slice(0, 1)
+}
+
+function normalizeActivationCommand(
+  value: unknown,
+  resultId?: string
+): Record<string, unknown> | undefined {
   const command = asRecord(value)
-  if (Object.keys(command).length === 0) return undefined
+  if (Object.keys(command).length === 0 && !resultId) return undefined
   return {
-    ...command,
     action: 'activate',
+    ...(resultId ? { result_id: resultId } : command),
     tool: TOOL_NAME,
     via: 'workflow.search',
   }
@@ -547,7 +1480,7 @@ function normalizeActivationActions(actions: unknown): string[] {
 export function createWorkflowSearchHandler(
   pluginManager: PluginManager,
   options: {
-    database?: { findSample?: (sampleId: string) => { file_type?: string | null } | null }
+    database?: WorkflowSearchDatabase
     toolDefinitions?: () => ToolDefinition[]
   } = {}
 ) {
@@ -557,8 +1490,12 @@ export function createWorkflowSearchHandler(
     const startTime = Date.now()
     try {
       const input = workflowSearchInputSchema.parse(args)
+      const discoveryAction =
+        input.action === 'activate' && input.result_id
+          ? 'recommend'
+          : toDiscoverAction(input.action)
       const discovery = await discover({
-        action: toDiscoverAction(input.action),
+        action: discoveryAction,
         query: buildDiscoverQuery(input),
         sample_id: input.sample_id,
         file_type: input.file_type,
@@ -578,6 +1515,187 @@ export function createWorkflowSearchHandler(
       }
 
       const discoveryData = asRecord(discovery.data)
+      const sampleRouteFacts = buildSampleRouteFacts(input, options.database)
+      const resolvedTopK = resolveTopK(input, discoveryData, sampleRouteFacts)
+      const searchProfiles = buildSearchProfiles(input, discoveryData, sampleRouteFacts)
+      const primaryRecommendations = Array.isArray(discoveryData.recommendations)
+        ? (discoveryData.recommendations as Record<string, unknown>[])
+        : []
+      const supplementalRecommendations: Record<string, unknown>[] = []
+      if (shouldSupplementArtifactCandidates(input, searchProfiles)) {
+        const supplementalDiscovery = await discover({
+          action: 'recommend',
+          query: 'evidence',
+          category: 'static-analysis',
+        })
+        if (supplementalDiscovery.ok) {
+          const supplementalData = asRecord(supplementalDiscovery.data)
+          supplementalRecommendations.push(
+            ...asRecordArray(supplementalData.recommendations).slice(0, 8)
+          )
+        }
+      }
+      const recommendations = mergeRecommendations(
+        primaryRecommendations,
+        supplementalRecommendations
+      )
+      const rankedRecommendations = recommendations
+        .map((item, index) =>
+          rankRecommendation({
+            item,
+            input,
+            discoveryData,
+            sampleRouteFacts,
+            originalIndex: index,
+          })
+        )
+        .sort((a, b) => b.total_score - a.total_score || a.original_index - b.original_index)
+      const resultWindow = input.action === 'activate' && input.result_id ? 25 : resolvedTopK.value
+      const quotaSelection = selectLaneAwareTopK(
+        rankedRecommendations,
+        searchProfiles,
+        resolvedTopK.value
+      )
+      const enhancedSearchProfiles = applyQuotaMetadataToProfiles(
+        searchProfiles,
+        quotaSelection.quota_decisions
+      )
+      const searchProfile = buildSearchProfile(
+        input,
+        discoveryData,
+        resolvedTopK,
+        enhancedSearchProfiles,
+        sampleRouteFacts,
+        quotaSelection.quota_decisions
+      )
+      const selectedRecommendations =
+        input.action === 'activate' && input.result_id
+          ? rankedRecommendations.slice(0, resultWindow)
+          : quotaSelection.selected
+      const results = selectedRecommendations.map((item, index) => {
+        const resultId = resultIdForRanked(item)
+        const metadata = quotaSelection.selection_metadata.get(resultId) ?? {
+          matched_lanes: matchedLanesForRecommendation(item, searchProfiles),
+          selected_via_lane: 'global_fill',
+        }
+        return normalizeRecommendation(item, index, metadata)
+      })
+
+      if (input.action === 'activate' && input.result_id) {
+        const selected = results.find((result) => result.result_id === input.result_id)
+        if (!selected) {
+          return {
+            ok: false,
+            errors: [
+              `No workflow.search result matched result_id=${input.result_id}. Re-run the same search and activate a returned result_id, or activate a specific tool_name.`,
+            ],
+            warnings: discovery.warnings,
+            metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
+          }
+        }
+
+        const activationScope = asRecord(selected.activation_scope)
+        const scopedToolNames = stringArray(activationScope.tool_names)
+        if (scopedToolNames.length === 0) {
+          return {
+            ok: false,
+            errors: [
+              `Result ${input.result_id} does not expose a scoped tool set. Use workflow.search action=activate tool_name=<tool> or inspect the result before plugin-level activation.`,
+            ],
+            warnings: discovery.warnings,
+            metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
+          }
+        }
+
+        const activationResults = []
+        for (const toolName of scopedToolNames) {
+          const activation = await discover({ action: 'activate', tool_name: toolName })
+          activationResults.push(asRecord(activation.data))
+          if (!activation.ok) {
+            return {
+              ok: false,
+              errors: activation.errors ?? [`Failed to activate scoped tool ${toolName}.`],
+              warnings: uniqueStrings([
+                ...(discovery.warnings ?? []),
+                ...(activation.warnings ?? []),
+              ]),
+              metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
+            }
+          }
+        }
+
+        const activationAudits = activationResults.map((result) =>
+          asRecord(result.activation_audit)
+        )
+        const activated = uniqueStrings(
+          activationResults.flatMap((result) => stringArray(result.activated))
+        )
+        const activatedTools = uniqueStrings(
+          activationResults.flatMap((result) => stringArray(result.activated_tools))
+        )
+        const activatedCoreTools = uniqueStrings(
+          activationAudits.flatMap((audit) => stringArray(audit.activated_core_tools))
+        )
+        const activatedScopedTools = uniqueStrings(
+          activationAudits.flatMap((audit) => stringArray(audit.activated_scoped_tools))
+        )
+
+        return {
+          ok: true,
+          data: {
+            result_mode: 'workflow_search',
+            action: input.action,
+            query: input.query,
+            sample_id: input.sample_id,
+            goal: input.goal,
+            depth: input.depth,
+            top_k: resolvedTopK.value,
+            search_profile: searchProfile,
+            search_profiles: enhancedSearchProfiles,
+            quota_decisions: quotaSelection.quota_decisions,
+            activation_audit: {
+              at: new Date().toISOString(),
+              action: 'activate',
+              request: {
+                result_id: input.result_id,
+                query: input.query ?? null,
+                file_type: input.file_type ?? null,
+                sample_id: input.sample_id ?? null,
+                goal: input.goal ?? null,
+                depth: input.depth ?? null,
+                finding: input.finding ?? null,
+              },
+              selected_result: selected,
+              scoped_tool_names: scopedToolNames,
+              activated_plugins: activated,
+              activated_tools: activatedTools,
+              activated_core_tools: activatedCoreTools,
+              activated_scoped_tools: activatedScopedTools,
+              policy: {
+                progressive_surface_enabled: true,
+                result_scoped_activation_used: true,
+                plugin_level_activation_used: false,
+                backend_execution_started: false,
+                readiness_not_bypassed: true,
+              },
+              child_audits: activationAudits,
+            },
+            activated,
+            activated_tools: activatedTools,
+            raw_discovery: {
+              action: discoveryData.action,
+              sample_file_type: discoveryData.sample_file_type,
+              target_file_type_tags: discoveryData.target_file_type_tags,
+              matched_plugins: discoveryData.matched_plugins,
+              matched_tools: discoveryData.matched_tools,
+            },
+            message: `Exposed ${activatedTools.length} result-scoped tool(s) for ${input.result_id}: ${activatedTools.join(', ')}.`,
+          },
+          warnings: discovery.warnings,
+          metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
+        }
+      }
+
       if (input.action === 'activate') {
         return {
           ok: true,
@@ -588,8 +1706,10 @@ export function createWorkflowSearchHandler(
             sample_id: input.sample_id,
             goal: input.goal,
             depth: input.depth,
-            top_k: input.top_k,
-            search_profile: buildSearchProfile(input, discoveryData),
+            top_k: resolvedTopK.value,
+            search_profile: searchProfile,
+            search_profiles: enhancedSearchProfiles,
+            quota_decisions: quotaSelection.quota_decisions,
             activation_audit: discoveryData.activation_audit,
             activated: stringArray(discoveryData.activated),
             activated_tools: stringArray(discoveryData.activated_tools),
@@ -610,22 +1730,6 @@ export function createWorkflowSearchHandler(
         }
       }
 
-      const recommendations = Array.isArray(discoveryData.recommendations)
-        ? (discoveryData.recommendations as Record<string, unknown>[])
-        : []
-      const results = recommendations
-        .map((item, index) =>
-          rankRecommendation({
-            item,
-            input,
-            discoveryData,
-            originalIndex: index,
-          })
-        )
-        .sort((a, b) => b.total_score - a.total_score || a.original_index - b.original_index)
-        .slice(0, input.top_k)
-        .map((item, index) => normalizeRecommendation(item, index))
-
       return {
         ok: true,
         data: {
@@ -635,8 +1739,10 @@ export function createWorkflowSearchHandler(
           sample_id: input.sample_id,
           goal: input.goal,
           depth: input.depth,
-          top_k: input.top_k,
-          search_profile: buildSearchProfile(input, discoveryData),
+          top_k: resolvedTopK.value,
+          search_profile: searchProfile,
+          search_profiles: enhancedSearchProfiles,
+          quota_decisions: quotaSelection.quota_decisions,
           results: input.action === 'status' ? undefined : results,
           recommendations: input.action === 'status' ? undefined : results,
           recommendation_summary: discoveryData.recommendation_summary,
