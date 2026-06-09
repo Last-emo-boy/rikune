@@ -16,6 +16,7 @@ import {
   normalizeGhidraError,
 } from '../../../worker/decompiler-worker.js'
 import { logger } from '../../../logger.js'
+import { CODE_FUNCTION_DECOMPILE_METADATA } from './code-analysis-metadata.js'
 
 /**
  * Input schema for code.function.decompile tool
@@ -86,6 +87,7 @@ export const codeFunctionDecompileToolDefinition: ToolDefinition = {
     'Decompile a specific function to pseudocode. Requires prior Ghidra analysis. Provide either address or symbol name.',
   inputSchema: codeFunctionDecompileInputSchema,
   outputSchema: codeFunctionDecompileOutputSchema,
+  ...CODE_FUNCTION_DECOMPILE_METADATA,
 }
 
 /**

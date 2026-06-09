@@ -8,6 +8,7 @@ import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-obs
 import { smartRecoverFunctionsFromPE } from '../../../pe-runtime-functions.js'
 import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
+import { CODE_FUNCTIONS_SMART_RECOVER_METADATA } from './code-analysis-metadata.js'
 
 const TOOL_NAME = 'code.functions.smart_recover'
 const TOOL_VERSION = '0.1.0'
@@ -90,6 +91,7 @@ export const codeFunctionsSmartRecoverToolDefinition: ToolDefinition = {
     'Recover function candidates heuristically from PE runtime metadata such as .pdata / exception directory, exports, and entry point.',
   inputSchema: codeFunctionsSmartRecoverInputSchema,
   outputSchema: codeFunctionsSmartRecoverOutputSchema,
+  ...CODE_FUNCTIONS_SMART_RECOVER_METADATA,
 }
 
 export function createCodeFunctionsSmartRecoverHandler(

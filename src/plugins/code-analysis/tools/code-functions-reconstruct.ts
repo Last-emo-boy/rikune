@@ -56,6 +56,7 @@ import {
   buildSemanticArtifactProvenance,
 } from '../../../analysis/analysis-provenance.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
+import { CODE_FUNCTIONS_RECONSTRUCT_METADATA } from './code-analysis-metadata.js'
 
 const TOOL_NAME = 'code.functions.reconstruct'
 const TOOL_VERSION = '0.2.14'
@@ -368,6 +369,7 @@ export const codeFunctionsReconstructToolDefinition: ToolDefinition = {
     'Reconstruct function-level semantics by combining decompile, CFG, and assembly evidence with confidence and unresolved gaps.',
   inputSchema: CodeFunctionsReconstructInputSchema,
   outputSchema: CodeFunctionsReconstructOutputSchema,
+  ...CODE_FUNCTIONS_RECONSTRUCT_METADATA,
 }
 
 interface FunctionTarget {

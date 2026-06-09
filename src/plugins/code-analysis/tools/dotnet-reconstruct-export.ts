@@ -26,6 +26,7 @@ import {
 } from '../../static-triage/tools/dotnet-metadata-extract.js'
 import { findBestGhidraAnalysis } from '../../../ghidra/ghidra-analysis-status.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
+import { DOTNET_RECONSTRUCT_EXPORT_METADATA } from './code-analysis-metadata.js'
 
 const TOOL_NAME = 'dotnet.reconstruct.export'
 const TOOL_VERSION = '0.2.0'
@@ -202,6 +203,7 @@ export const dotNetReconstructExportToolDefinition: ToolDefinition = {
     'Export a maintainable C# reconstruction skeleton for .NET samples with confidence annotations and IL fallback guidance.',
   inputSchema: DotNetReconstructExportInputSchema,
   outputSchema: DotNetReconstructExportOutputSchema,
+  ...DOTNET_RECONSTRUCT_EXPORT_METADATA,
 }
 
 interface RuntimeSuspected {

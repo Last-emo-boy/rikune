@@ -54,6 +54,7 @@ import {
   buildSemanticArtifactProvenance,
 } from '../../../analysis/analysis-provenance.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
+import { CODE_RECONSTRUCT_EXPORT_METADATA } from './code-analysis-metadata.js'
 
 const TOOL_NAME = 'code.reconstruct.export'
 const TOOL_VERSION = '0.2.15'
@@ -339,6 +340,7 @@ export const codeReconstructExportToolDefinition: ToolDefinition = {
     'Regroup recovered functions into source-like modules and export project skeleton with manifest and gaps.md.',
   inputSchema: CodeReconstructExportInputSchema,
   outputSchema: CodeReconstructExportOutputSchema,
+  ...CODE_RECONSTRUCT_EXPORT_METADATA,
 }
 
 interface ReconstructedFunction {

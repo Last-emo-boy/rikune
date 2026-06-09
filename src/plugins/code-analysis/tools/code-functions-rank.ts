@@ -12,6 +12,7 @@ import type { DatabaseManager } from '../../../database.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import { DecompilerWorker } from '../../../worker/decompiler-worker.js'
 import { logger } from '../../../logger.js'
+import { CODE_FUNCTIONS_RANK_METADATA } from './code-analysis-metadata.js'
 
 /**
  * Input schema for code.functions.rank tool
@@ -72,6 +73,7 @@ export const codeFunctionsRankToolDefinition: ToolDefinition = {
     'Rank indexed functions by interest score based on size, callers, sensitive API calls, and entry points. Works with Ghidra, recovered, or manually defined function indexes.',
   inputSchema: codeFunctionsRankInputSchema,
   outputSchema: codeFunctionsRankOutputSchema,
+  ...CODE_FUNCTIONS_RANK_METADATA,
 }
 
 /**

@@ -14,6 +14,7 @@ import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-obs
 import { createRuntimeDetectHandler } from '../../static-triage/tools/runtime-detect.js'
 import { createPackerDetectHandler } from '../../static-triage/tools/packer-detect.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
+import { CODE_RECONSTRUCT_PLAN_METADATA } from './code-analysis-metadata.js'
 
 const TOOL_NAME = 'code.reconstruct.plan'
 const TOOL_VERSION = '0.1.0'
@@ -97,6 +98,7 @@ export const codeReconstructPlanToolDefinition: ToolDefinition = {
     'Assess source-reconstruction feasibility and produce a phased reverse-engineering plan with confidence.',
   inputSchema: CodeReconstructPlanInputSchema,
   outputSchema: CodeReconstructPlanOutputSchema,
+  ...CODE_RECONSTRUCT_PLAN_METADATA,
 }
 
 interface RuntimeDetectData {

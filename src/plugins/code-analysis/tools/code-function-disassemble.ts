@@ -17,6 +17,7 @@ import {
 } from '../../../worker/decompiler-worker.js'
 import { runEntrypointFallbackDisasm } from '../../../tools/entrypoint-fallback-disasm.js'
 import { logger } from '../../../logger.js'
+import { CODE_FUNCTION_DISASSEMBLE_METADATA } from './code-analysis-metadata.js'
 
 /**
  * Input schema for code.function.disassemble tool
@@ -68,6 +69,7 @@ export const codeFunctionDisassembleToolDefinition: ToolDefinition = {
     'Get assembly code for a function. Requires prior Ghidra analysis. Provide either address or symbol name.',
   inputSchema: codeFunctionDisassembleInputSchema,
   outputSchema: codeFunctionDisassembleOutputSchema,
+  ...CODE_FUNCTION_DISASSEMBLE_METADATA,
 }
 
 function normalizeAddress(address: string | undefined): string | undefined {
