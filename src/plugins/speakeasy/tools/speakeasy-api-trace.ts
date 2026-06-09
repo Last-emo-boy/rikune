@@ -18,6 +18,13 @@ import {
   resolvePythonModuleBackend,
   buildDynamicSetupRequired,
 } from '../../docker-shared.js'
+import {
+  SPEAKEASY_API_TRACE_ARTIFACT_TYPE,
+  SPEAKEASY_API_TRACE_WORKFLOW_RECIPE,
+  SPEAKEASY_RUNTIME_BACKENDS,
+  SPEAKEASY_RUNTIME_POLICY,
+  SPEAKEASY_SAFETY,
+} from '../speakeasy-metadata.js'
 
 const TOOL_NAME = 'speakeasy.api_trace'
 
@@ -70,6 +77,31 @@ export const speakeasyApiTraceToolDefinition: ToolDefinition = {
     'Run Speakeasy emulation and extract a focused API call trace with optional module/API name filtering.',
   inputSchema: speakeasyApiTraceInputSchema,
   outputSchema: speakeasyApiTraceOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64'],
+    execution: ['dynamic', 'emulation'],
+    runtimes: SPEAKEASY_RUNTIME_BACKENDS,
+    safety: SPEAKEASY_SAFETY,
+    capabilities: ['api-trace', 'behavior-hints', 'workflow-handoff'],
+    evidence: ['api-calls', 'process', 'timeline', 'workflow'],
+  },
+  artifacts: [
+    {
+      type: SPEAKEASY_API_TRACE_ARTIFACT_TYPE,
+      mimeTypes: ['application/json'],
+      description: 'Speakeasy focused API trace artifact with module and API histograms.',
+    },
+  ],
+  evidence: [
+    { category: 'api-calls', artifactTypes: [SPEAKEASY_API_TRACE_ARTIFACT_TYPE] },
+    { category: 'process', artifactTypes: [SPEAKEASY_API_TRACE_ARTIFACT_TYPE] },
+    { category: 'timeline', artifactTypes: [SPEAKEASY_API_TRACE_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [SPEAKEASY_API_TRACE_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: [SPEAKEASY_API_TRACE_WORKFLOW_RECIPE],
+  runtimePolicy: SPEAKEASY_RUNTIME_POLICY,
   runtime: { type: 'inline', handler: 'executeSpeakeasyApiTrace' },
 }
 

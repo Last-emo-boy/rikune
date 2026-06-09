@@ -19,6 +19,13 @@ import {
   resolvePythonModuleBackend,
   buildDynamicSetupRequired,
 } from '../../docker-shared.js'
+import {
+  SPEAKEASY_EMULATE_ARTIFACT_TYPE,
+  SPEAKEASY_EMULATE_WORKFLOW_RECIPE,
+  SPEAKEASY_RUNTIME_BACKENDS,
+  SPEAKEASY_RUNTIME_POLICY,
+  SPEAKEASY_SAFETY,
+} from '../speakeasy-metadata.js'
 
 const TOOL_NAME = 'speakeasy.emulate'
 
@@ -72,6 +79,34 @@ export const speakeasyEmulateToolDefinition: ToolDefinition = {
     'Emulate a Windows PE file using Mandiant Speakeasy. Captures API calls, file/registry/network activity without native execution.',
   inputSchema: speakeasyEmulateInputSchema,
   outputSchema: speakeasyEmulateOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64'],
+    execution: ['dynamic', 'emulation'],
+    runtimes: SPEAKEASY_RUNTIME_BACKENDS,
+    safety: SPEAKEASY_SAFETY,
+    capabilities: ['api-trace', 'behavior-hints', 'workflow-handoff'],
+    evidence: ['api-calls', 'filesystem', 'registry', 'network', 'timeline', 'workflow'],
+  },
+  artifacts: [
+    {
+      type: SPEAKEASY_EMULATE_ARTIFACT_TYPE,
+      mimeTypes: ['application/json'],
+      description:
+        'Speakeasy PE emulation report with API, filesystem, registry, and network evidence.',
+    },
+  ],
+  evidence: [
+    { category: 'api-calls', artifactTypes: [SPEAKEASY_EMULATE_ARTIFACT_TYPE] },
+    { category: 'filesystem', artifactTypes: [SPEAKEASY_EMULATE_ARTIFACT_TYPE] },
+    { category: 'registry', artifactTypes: [SPEAKEASY_EMULATE_ARTIFACT_TYPE] },
+    { category: 'network', artifactTypes: [SPEAKEASY_EMULATE_ARTIFACT_TYPE] },
+    { category: 'timeline', artifactTypes: [SPEAKEASY_EMULATE_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [SPEAKEASY_EMULATE_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: [SPEAKEASY_EMULATE_WORKFLOW_RECIPE],
+  runtimePolicy: SPEAKEASY_RUNTIME_POLICY,
   runtime: { type: 'inline', handler: 'executeSpeakeasyEmulate' },
 }
 

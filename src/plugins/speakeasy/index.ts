@@ -18,33 +18,33 @@ import {
   speakeasyApiTraceToolDefinition,
   createSpeakeasyApiTraceHandler,
 } from './tools/speakeasy-api-trace.js'
+import {
+  SPEAKEASY_ARCHITECTURES,
+  SPEAKEASY_CAPABILITIES,
+  SPEAKEASY_EVIDENCE,
+  SPEAKEASY_FORMATS,
+  SPEAKEASY_PLATFORMS,
+  SPEAKEASY_RUNTIME_BACKENDS,
+  SPEAKEASY_RUNTIME_POLICY,
+  SPEAKEASY_SAFETY,
+  SPEAKEASY_SYSTEM_DEP,
+} from './speakeasy-metadata.js'
 
 const speakeasyPlugin: Plugin = {
   id: 'speakeasy',
   name: 'Speakeasy Emulator',
   executionDomain: 'dynamic',
   aspects: {
-    formats: ['pe', 'dll', 'shellcode'],
-    platforms: ['windows'],
-    architectures: ['x86', 'x64'],
+    formats: SPEAKEASY_FORMATS,
+    platforms: SPEAKEASY_PLATFORMS,
+    architectures: SPEAKEASY_ARCHITECTURES,
     execution: ['dynamic', 'emulation'],
-    runtimes: ['speakeasy'],
-    safety: ['passive', 'opt_in_dynamic', 'requires_isolation', 'no_live_sample_by_default'],
-    capabilities: ['api-trace', 'shellcode-emulation', 'behavior-hints', 'unsupported-summary'],
-    evidence: ['api-calls', 'memory', 'process', 'timeline', 'provenance'],
+    runtimes: SPEAKEASY_RUNTIME_BACKENDS,
+    safety: SPEAKEASY_SAFETY,
+    capabilities: SPEAKEASY_CAPABILITIES,
+    evidence: SPEAKEASY_EVIDENCE,
   },
-  runtimePolicy: {
-    passiveByDefault: true,
-    requiresUserOptIn: true,
-    requiresIsolation: true,
-    allowedBackends: ['speakeasy'],
-    maxRuntimeMs: 120000,
-    networkPolicy: 'disabled',
-    notes: [
-      'Speakeasy emulation is coverage-limited and should emit backend confidence with behavior evidence.',
-      'Readiness checks must not emulate payloads by default.',
-    ],
-  },
+  runtimePolicy: SPEAKEASY_RUNTIME_POLICY,
   surfaceRules: {
     tier: 2,
     activateOn: { findings: ['shellcode', 'suspicious_imports', 'packed'] },
@@ -52,17 +52,7 @@ const speakeasyPlugin: Plugin = {
   },
   description: 'Windows user-mode emulation for PE files and shellcode via Mandiant Speakeasy',
   version: '1.0.0',
-  systemDeps: [
-    {
-      type: 'python',
-      name: 'speakeasy-emulator',
-      importName: 'speakeasy',
-      required: false,
-      description: 'Mandiant Speakeasy Windows emulator',
-      dockerInstall: 'pip install speakeasy-emulator',
-      dockerFeature: 'dynamic-python',
-    },
-  ],
+  systemDeps: [SPEAKEASY_SYSTEM_DEP],
   register(server, deps) {
     const { workspaceManager: wm, database: db } = deps
 
