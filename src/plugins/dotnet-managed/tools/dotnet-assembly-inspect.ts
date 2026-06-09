@@ -8,6 +8,19 @@ import fs from 'fs/promises'
 import path from 'path'
 import { z } from 'zod'
 import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
+import {
+  DOTNET_ASSEMBLY_ARTIFACT_TYPE,
+  DOTNET_ASSEMBLY_EVIDENCE_SUMMARY_SCHEMA,
+  DOTNET_ASSEMBLY_QUALITY_GATES_SCHEMA,
+  DOTNET_ASSEMBLY_WORKFLOW_HANDOFF_SCHEMA,
+  DOTNET_MANAGED_DECOMPILATION_ROUTE_TOOLS,
+  DOTNET_MANAGED_EVIDENCE,
+  DOTNET_MANAGED_FOLLOW_UP_TOOLS,
+  DOTNET_MANAGED_RUNTIME_POLICY,
+  buildDotnetManagedEnvelope,
+  dotnetManagedAspects,
+  dotnetManagedRecipe,
+} from '../dotnet-managed-metadata.js'
 
 const TOOL_NAME = 'dotnet.assembly.inspect'
 const DEFAULT_MAX_READ_BYTES = 4 * 1024 * 1024
@@ -43,6 +56,32 @@ const DotnetAssemblyInventorySchema = z.object({
   summary: z.string(),
   recommended_next_tools: z.array(z.string()),
   next_actions: z.array(z.string()),
+  evidence_summary: z
+    .object({
+      schema: z.literal(DOTNET_ASSEMBLY_EVIDENCE_SUMMARY_SCHEMA),
+      source_tool: z.literal(TOOL_NAME),
+      artifact_type: z.literal(DOTNET_ASSEMBLY_ARTIFACT_TYPE),
+    })
+    .passthrough()
+    .optional(),
+  workflow_handoff: z
+    .object({
+      schema: z.literal(DOTNET_ASSEMBLY_WORKFLOW_HANDOFF_SCHEMA),
+      artifact_contract: z.record(z.any()),
+      dynamic_boundary: z.record(z.any()),
+      routing: z.array(z.record(z.any())),
+    })
+    .passthrough()
+    .optional(),
+  quality_gates: z
+    .object({
+      schema: z.literal(DOTNET_ASSEMBLY_QUALITY_GATES_SCHEMA),
+      passive_static_inventory: z.literal(true),
+      sample_executed_by_tool: z.literal(false),
+      clr_started_by_tool: z.literal(false),
+    })
+    .passthrough()
+    .optional(),
 })
 
 export const DotnetAssemblyInspectInputSchema = z.object({
@@ -72,35 +111,47 @@ export const dotnetAssemblyInspectToolDefinition: ToolDefinition = {
     'Passively inspect .NET PE-CLR, NuGet, Mono, and WinMD metadata without executing managed code or restoring packages.',
   inputSchema: DotnetAssemblyInspectInputSchema,
   outputSchema: DotnetAssemblyInspectOutputSchema,
-  aspects: {
-    formats: ['dotnet', 'pe-clr', 'nupkg', 'mono', 'winmd'],
-    platforms: ['dotnet', 'windows', 'linux', 'macos'],
-    architectures: ['x86', 'x64', 'arm64', 'arm'],
-    execution: ['static', 'triage', 'decompilation'],
-    safety: ['passive', 'no_live_sample_by_default'],
-    capabilities: ['assembly-metadata', 'resources', 'dependencies', 'decompile-plan', 'routing'],
-    evidence: ['manifest', 'resources', 'package-metadata', 'provenance'],
-  },
+  aspects: dotnetManagedAspects(),
   artifacts: [
     {
-      type: 'dotnet_assembly_inventory',
+      type: DOTNET_ASSEMBLY_ARTIFACT_TYPE,
       description:
         'Passive .NET assembly/package metadata, dependency, and decompile-plan inventory',
+      mime: 'application/json',
+      mimeTypes: ['application/json'],
     },
   ],
   evidence: [
     {
       category: 'manifest',
-      artifactTypes: ['dotnet_assembly_inventory'],
+      artifactTypes: [DOTNET_ASSEMBLY_ARTIFACT_TYPE],
     },
     {
       category: 'package-metadata',
-      artifactTypes: ['dotnet_assembly_inventory'],
+      artifactTypes: [DOTNET_ASSEMBLY_ARTIFACT_TYPE],
+    },
+    {
+      category: 'managed-metadata',
+      artifactTypes: [DOTNET_ASSEMBLY_ARTIFACT_TYPE],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: [DOTNET_ASSEMBLY_ARTIFACT_TYPE],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: [DOTNET_ASSEMBLY_ARTIFACT_TYPE],
     },
   ],
+  workflowRecipes: [dotnetManagedRecipe()],
+  runtimePolicy: DOTNET_MANAGED_RUNTIME_POLICY,
 }
 
 export type DotnetAssemblyInventory = z.infer<typeof DotnetAssemblyInventorySchema>
+type DotnetAssemblyInventoryBase = Omit<
+  DotnetAssemblyInventory,
+  'evidence_summary' | 'workflow_handoff' | 'quality_gates'
+>
 
 type ZipEntry = {
   name: string
@@ -250,7 +301,7 @@ export function buildDotnetAssemblyInventoryFromBuffer(
       ? 'Detailed CLR metadata tables require optional managed metadata tooling; this inventory uses passive marker and string hints.'
       : undefined
 
-  return {
+  const inventoryBase: DotnetAssemblyInventoryBase = {
     sample_id: options.sampleId,
     filename: options.filename,
     format,
@@ -264,9 +315,14 @@ export function buildDotnetAssemblyInventoryFromBuffer(
     pinvoke_hints: pinvokeHints,
     decompile_plan: {
       status: 'plan_only',
-      recommended_tools: ['dotnet.metadata.extract', 'dotnet.types.list', 'dotnet.decompile'],
+      recommended_tools: [
+        'dotnet.metadata.extract',
+        'dotnet.types.list',
+        ...DOTNET_MANAGED_DECOMPILATION_ROUTE_TOOLS,
+      ],
       notes: [
-        'Use ILSpy or dnfile-backed tools only after reviewing this static inventory.',
+        'Use type-scoped decompilation only after reviewing managed type inventory and selecting a target scope.',
+        'Whole-assembly decompilation is not part of this passive inventory handoff.',
         'NuGet package restore and managed code execution are not performed by this tool.',
       ],
     },
@@ -279,19 +335,17 @@ export function buildDotnetAssemblyInventoryFromBuffer(
     },
     unsupported_detail: unsupported,
     summary: `Passive .NET inventory detected ${format} with ${assemblyHints.length} assembly hint(s), ${targetFrameworkHints.length} target framework hint(s), and ${dependencyHints.length} dependency hint(s).`,
-    recommended_next_tools: Array.from(
-      new Set([
-        'metadata.extract',
-        'strings.extract',
-        'dotnet.metadata.extract',
-        'dotnet.types.list',
-      ])
-    ),
+    recommended_next_tools: Array.from(new Set(DOTNET_MANAGED_FOLLOW_UP_TOOLS)),
     next_actions: [
       'Review target framework, dependency, resource, and P/Invoke hints before decompilation.',
       'Do not restore NuGet packages or execute managed code during static triage.',
       'Use managed IL xref tools only after confirming the sample is a managed assembly.',
     ],
+  }
+
+  return {
+    ...inventoryBase,
+    ...buildDotnetManagedEnvelope(inventoryBase),
   }
 }
 
@@ -342,7 +396,7 @@ export function createDotnetAssemblyInspectHandler(deps: PluginToolDeps) {
             workspaceManager,
             database,
             input.sample_id,
-            'dotnet_assembly_inventory',
+            DOTNET_ASSEMBLY_ARTIFACT_TYPE,
             'dotnet-assembly-inventory',
             inventory,
             input.session_tag ?? null
