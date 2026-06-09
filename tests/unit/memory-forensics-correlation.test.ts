@@ -1,7 +1,11 @@
 import { describe, expect, test } from '@jest/globals'
 import { createPluginTestHarness } from '../../src/plugins/sdk.js'
 import memoryForensicsPlugin from '../../src/plugins/memory-forensics/index.js'
-import { buildMemoryForensicsCorrelation } from '../../src/plugins/memory-forensics/memory-correlation.js'
+import {
+  buildMemoryForensicsCorrelation,
+  MEMORY_FORENSICS_ROUTE_TERMS,
+  MEMORY_FORENSICS_SEARCH_TERMS,
+} from '../../src/plugins/memory-forensics/memory-correlation.js'
 
 describe('memory-forensics.correlate', () => {
   test('correlates fixture Volatility rows without invoking Volatility', () => {
@@ -64,7 +68,52 @@ describe('memory-forensics.correlate', () => {
       ])
     )
     expect(result.recommended_next_tools).toEqual(
-      expect.arrayContaining(['threat-intel.ioc-export', 'report.generate'])
+      expect.arrayContaining([
+        'artifact.read',
+        'ioc.export',
+        'analysis.evidence.graph',
+        'report.generate',
+      ])
+    )
+    expect(result.recommended_next_tools).not.toContain('threat-intel.ioc-export')
+    expect(result.recommended_next_tools).not.toContain('dynamic.memory.import')
+    expect(result.recommended_next_tools).not.toContain('dynamic.trace.import')
+    expect(result.evidence_summary).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.memory_forensics_correlation.evidence_summary.v1',
+        profile: 'memory.trace_fusion',
+        artifact_type: 'memory_forensics_correlation',
+        evidence_kind: 'offline_memory_correlation',
+        ioc_candidate_count: 1,
+        behavior_event_count: 3,
+        route_terms: expect.arrayContaining(['memory_trace_fusion_profile', 'netscan']),
+      })
+    )
+    expect(result.workflow_handoff).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.memory_forensics_correlation.workflow_handoff.v1',
+        routing: expect.arrayContaining([
+          expect.objectContaining({
+            activation_boundary: 'result-scoped',
+            next_tools: result.recommended_next_tools,
+          }),
+        ]),
+        dynamic_boundary: expect.objectContaining({
+          dynamic_imports_default_recommended: false,
+          excluded_default_tools: ['dynamic.memory.import', 'dynamic.trace.import'],
+        }),
+      })
+    )
+    expect(result.quality_gates).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.memory_forensics_correlation.quality_gates.v1',
+        offline_correlation_only: true,
+        volatility_invoked_by_tool: false,
+        live_memory_access: false,
+        dump_content_read_by_tool: false,
+        network_access_performed: false,
+        ioc_candidate_count: 1,
+      })
     )
     expect(result.safety_notes.join(' ')).toMatch(/No memory dump acquisition/)
   })
@@ -77,6 +126,20 @@ describe('memory-forensics.correlate', () => {
     )
 
     expect(names).toContain('memory-forensics.correlate')
+    expect(memoryForensicsPlugin.aspects?.search).toEqual(
+      expect.arrayContaining(MEMORY_FORENSICS_SEARCH_TERMS)
+    )
+    expect(memoryForensicsPlugin.aspects?.route_terms).toEqual(
+      expect.arrayContaining(MEMORY_FORENSICS_ROUTE_TERMS)
+    )
+    expect(memoryForensicsPlugin.runtimePolicy).toEqual(
+      expect.objectContaining({
+        passiveByDefault: true,
+        noLiveExecution: true,
+        noLiveMemoryAccess: true,
+        networkPolicy: 'disabled',
+      })
+    )
     expect(tool?.definition.artifacts?.map((artifact) => artifact.type)).toEqual(
       expect.arrayContaining([
         'memory_forensics_correlation',
@@ -90,7 +153,43 @@ describe('memory-forensics.correlate', () => {
     expect(tool?.definition.workflowRecipes?.[0]).toEqual(
       expect.objectContaining({
         id: 'memory-forensics.offline-correlation',
-        nextTools: expect.arrayContaining(['threat-intel.ioc-export', 'report.generate']),
+        startsWith: ['memory-forensics.correlate'],
+        nextTools: expect.arrayContaining([
+          'artifact.read',
+          'ioc.export',
+          'analysis.evidence.graph',
+          'report.generate',
+        ]),
+        quality_gates: expect.objectContaining({
+          schema: 'rikune.memory_forensics_correlation.quality_gates.v1',
+          volatility_invoked_by_tool: false,
+        }),
+      })
+    )
+    expect(tool?.definition.aspects?.search).toEqual(
+      expect.arrayContaining(MEMORY_FORENSICS_SEARCH_TERMS)
+    )
+    expect(tool?.definition.aspects?.route_terms).toEqual(
+      expect.arrayContaining(MEMORY_FORENSICS_ROUTE_TERMS)
+    )
+    expect(tool?.definition.runtimePolicy).toEqual(
+      expect.objectContaining({
+        passiveByDefault: true,
+        noLiveExecution: true,
+        noLiveMemoryAccess: true,
+      })
+    )
+    expect(tool?.definition.workerBackend).toEqual(
+      expect.objectContaining({
+        backendKind: 'builtin',
+        adapter: 'builtin.memory-forensics.offline-correlation',
+        readiness: expect.objectContaining({ doesNotStartBackend: true }),
+        policy: expect.objectContaining({
+          noLiveExecution: true,
+          noLiveMemoryAccess: true,
+          noNetwork: true,
+          noMutation: true,
+        }),
       })
     )
 
@@ -98,5 +197,6 @@ describe('memory-forensics.correlate', () => {
       sources: { netscan: [{ PID: 7, Owner: 'proc.exe', ForeignAddr: '198.51.100.2' }] },
     })) as any
     expect(result.structuredContent.result_mode).toBe('memory_forensics_correlation')
+    expect(result.structuredContent.quality_gates.volatility_invoked_by_tool).toBe(false)
   })
 })

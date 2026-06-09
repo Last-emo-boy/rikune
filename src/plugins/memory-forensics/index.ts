@@ -9,9 +9,19 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { z } from 'zod'
-import { getWorkspaceManager, type Plugin, type ToolResult, type PluginToolDeps } from '../sdk.js'
+import {
+  getWorkspaceManager,
+  type Plugin,
+  type ToolDefinition,
+  type ToolResult,
+  type PluginToolDeps,
+} from '../sdk.js'
 import {
   buildMemoryForensicsCorrelation,
+  MEMORY_FORENSICS_FOLLOW_UP_TOOLS,
+  MEMORY_FORENSICS_ROUTE_TERMS,
+  MEMORY_FORENSICS_SEARCH_TERMS,
+  MEMORY_FORENSICS_QUALITY_GATES_SCHEMA,
   MemoryCorrelationInputSchema,
   MemoryCorrelationOutputSchema,
 } from './memory-correlation.js'
@@ -28,6 +38,27 @@ const pidDumpInputSchema = dumpInputSchema.extend({
 })
 
 const volatilityOutputSchema = z.object({}).passthrough()
+
+const MEMORY_FORENSICS_RUNTIME_POLICY = {
+  passiveByDefault: true,
+  requiresUserOptIn: false,
+  requiresIsolation: false,
+  allowedBackends: ['local', 'volatility3'],
+  networkPolicy: 'disabled',
+  noNetwork: true,
+  noMutation: true,
+  noLiveExecution: true,
+  noLiveMemoryAccess: true,
+  notes: [
+    'memory-forensics.correlate consumes existing JSON rows and never invokes Volatility.',
+    'Volatility-backed tools read offline memory dump files only; they do not acquire live memory or execute samples.',
+  ],
+} as ToolDefinition['runtimePolicy'] & {
+  noNetwork: true
+  noMutation: true
+  noLiveExecution: true
+  noLiveMemoryAccess: true
+}
 
 function getVolatilityPath(): string {
   return process.env.VOLATILITY3_PATH || process.env.VOL3_PATH || 'vol3'
@@ -82,7 +113,9 @@ const memoryForensicsPlugin: Plugin = {
       'registry-scan',
       'command-line-extraction',
       'offline-correlation',
+      'memory-trace-fusion',
       'workflow-plan',
+      'workflow-handoff',
     ],
     evidence: [
       'memory',
@@ -95,7 +128,10 @@ const memoryForensicsPlugin: Plugin = {
       'correlation-graph',
       'provenance',
     ],
+    search: MEMORY_FORENSICS_SEARCH_TERMS,
+    route_terms: MEMORY_FORENSICS_ROUTE_TERMS,
   },
+  runtimePolicy: MEMORY_FORENSICS_RUNTIME_POLICY,
   surfaceRules: { tier: 3, category: 'memory-forensics' },
   description:
     'Memory dump analysis using Volatility 3 — process listing, DLL extraction, registry analysis, and memory-resident malware detection.',
@@ -421,7 +457,9 @@ const memoryForensicsPlugin: Plugin = {
             'process-tree',
             'ioc-candidates',
             'behavior-timeline',
+            'memory-trace-fusion',
             'workflow-plan',
+            'workflow-handoff',
           ],
           evidence: [
             'memory',
@@ -433,6 +471,8 @@ const memoryForensicsPlugin: Plugin = {
             'correlation-graph',
             'provenance',
           ],
+          search: MEMORY_FORENSICS_SEARCH_TERMS,
+          route_terms: MEMORY_FORENSICS_ROUTE_TERMS,
         },
         artifacts: [
           {
@@ -464,18 +504,8 @@ const memoryForensicsPlugin: Plugin = {
           {
             id: 'memory-forensics.offline-correlation',
             title: 'Offline memory forensics correlation',
-            startsWith: [
-              'memory-forensics.pslist',
-              'memory-forensics.malfind',
-              'memory-forensics.netscan',
-              'memory-forensics.correlate',
-            ],
-            nextTools: [
-              'threat-intel.ioc-export',
-              'analysis.evidence.graph',
-              'behavior.timeline',
-              'report.generate',
-            ],
+            startsWith: ['memory-forensics.correlate'],
+            nextTools: MEMORY_FORENSICS_FOLLOW_UP_TOOLS,
             requiredArtifacts: [
               'memory_process_list',
               'memory_suspicious_regions',
@@ -488,8 +518,55 @@ const memoryForensicsPlugin: Plugin = {
             ],
             evidence: ['memory', 'process', 'network', 'registry', 'behavior', 'provenance'],
             safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+            quality_gates: {
+              schema: MEMORY_FORENSICS_QUALITY_GATES_SCHEMA,
+              volatility_invoked_by_tool: false,
+              live_memory_access: false,
+            },
           },
         ],
+        runtimePolicy: MEMORY_FORENSICS_RUNTIME_POLICY,
+        workerBackend: {
+          version: 'backend-worker.v1',
+          backendName: 'Builtin memory forensics offline correlation',
+          backendKind: 'builtin',
+          adapter: 'builtin.memory-forensics.offline-correlation',
+          availability: 'builtin',
+          supportedModes: ['offline-correlation'],
+          defaultMode: 'offline-correlation',
+          inputArtifactTypes: [
+            'memory_process_list',
+            'memory_suspicious_regions',
+            'memory_network_scan',
+            'memory_registry_hives',
+            'memory_cmdline',
+          ],
+          outputArtifactTypes: [
+            'memory_forensics_correlation',
+            'behavior_timeline',
+            'ioc_candidates',
+          ],
+          policy: {
+            passiveByDefault: true,
+            requiresUserOptIn: false,
+            requiresIsolation: false,
+            noNetwork: true,
+            noMutation: true,
+            noLiveExecution: true,
+            noLiveMemoryAccess: true,
+            defaultTimeoutMs: 5_000,
+            notes: [
+              'Offline correlation consumes caller-provided Volatility JSON rows only.',
+              'Readiness and correlation do not invoke Volatility, read raw dump content, acquire live memory, or start runtime tooling.',
+            ],
+          },
+          readiness: {
+            doesNotStartBackend: true,
+            setupActions: [],
+            missingBackendBehavior:
+              'Offline correlation is builtin and does not require Volatility unless the user explicitly activates raw memory-dump extraction tools.',
+          },
+        },
       },
       async (args: unknown): Promise<ToolResult> => {
         const data = buildMemoryForensicsCorrelation(args)

@@ -22,10 +22,52 @@ export const MemoryCorrelationOutputSchema = z
     behavior_timeline: z.array(z.record(z.any())),
     correlation_graph: z.record(z.any()),
     provenance_graph: z.record(z.any()),
+    evidence_summary: z.record(z.any()),
+    workflow_handoff: z.record(z.any()),
+    quality_gates: z.record(z.any()),
     recommended_next_tools: z.array(z.string()),
     safety_notes: z.array(z.string()),
   })
   .passthrough()
+
+export const MEMORY_FORENSICS_FOLLOW_UP_TOOLS = [
+  'artifact.read',
+  'ioc.export',
+  'analysis.evidence.graph',
+  'behavior.timeline',
+  'report.generate',
+]
+
+export const MEMORY_FORENSICS_SEARCH_TERMS = [
+  'memory dump',
+  'volatility',
+  'volatility3',
+  'vmem',
+  'dmp',
+  'core dump',
+  'malfind',
+  'netscan',
+  'pslist',
+  'process injection',
+  'hollowing',
+  'memory ioc',
+  'memory trace fusion',
+]
+
+export const MEMORY_FORENSICS_ROUTE_TERMS = [
+  'memory_trace_fusion_profile',
+  'offline_memory_correlation',
+  'memory_snapshot',
+  'dynamic_trace',
+  'process_injection',
+  'malfind',
+  'netscan',
+  'ioc_candidates',
+  'behavior_timeline',
+]
+
+export const MEMORY_FORENSICS_QUALITY_GATES_SCHEMA =
+  'rikune.memory_forensics_correlation.quality_gates.v1'
 
 type Row = Record<string, unknown>
 type MemoryCorrelationInput = z.infer<typeof MemoryCorrelationInputSchema>
@@ -188,6 +230,38 @@ export function buildMemoryForensicsCorrelation(rawInput: unknown) {
     type: 'module',
     label: module.module,
   }))
+  const sourceSummaries = Object.entries(sources)
+    .filter(([, value]) => rowsFrom(value).length > 0)
+    .map(([source, value]) => ({
+      source: `memory-forensics.${source}`,
+      row_count: rowsFrom(value).length,
+    }))
+  const evidenceCategories = [
+    processes.length > 0 ? 'process' : null,
+    suspiciousRegions.length > 0 ? 'memory' : null,
+    networkConnections.length > 0 ? 'network' : null,
+    registryHives.length > 0 ? 'registry' : null,
+    behaviorTimeline.length > 0 ? 'behavior' : null,
+    'workflow',
+    'provenance',
+  ].filter((category): category is string => Boolean(category))
+  const qualityGates = {
+    schema: MEMORY_FORENSICS_QUALITY_GATES_SCHEMA,
+    offline_correlation_only: true,
+    volatility_invoked_by_tool: false,
+    live_memory_access: false,
+    dump_content_read_by_tool: false,
+    network_access_performed: false,
+    source_artifact_count: sourceSummaries.length,
+    process_rows: processes.length,
+    malfind_rows: suspiciousRegions.length,
+    netscan_rows: networkConnections.length,
+    registry_rows: registryHives.length,
+    module_rows: modules.length,
+    ioc_candidate_count: iocCandidates.length,
+    behavior_event_count: behaviorTimeline.length,
+    bounded_module_preview: modules.length > 100,
+  }
 
   return {
     result_mode: 'memory_forensics_correlation' as const,
@@ -222,19 +296,43 @@ export function buildMemoryForensicsCorrelation(rawInput: unknown) {
       ],
     },
     provenance_graph: {
-      sources: Object.entries(sources)
-        .filter(([, value]) => rowsFrom(value).length > 0)
-        .map(([source, value]) => ({
-          source: `memory-forensics.${source}`,
-          row_count: rowsFrom(value).length,
-        })),
+      sources: sourceSummaries,
     },
-    recommended_next_tools: [
-      'threat-intel.ioc-export',
-      'analysis.evidence.graph',
-      'behavior.timeline',
-      'report.generate',
-    ],
+    evidence_summary: {
+      schema: 'rikune.memory_forensics_correlation.evidence_summary.v1',
+      profile: 'memory.trace_fusion',
+      artifact_type: 'memory_forensics_correlation',
+      evidence_kind: 'offline_memory_correlation',
+      sample_id: input.sample_id ?? null,
+      evidence_categories: evidenceCategories,
+      source_artifact_count: sourceSummaries.length,
+      ioc_candidate_count: iocCandidates.length,
+      behavior_event_count: behaviorTimeline.length,
+      route_terms: MEMORY_FORENSICS_ROUTE_TERMS,
+      recommended_next_tools: MEMORY_FORENSICS_FOLLOW_UP_TOOLS,
+    },
+    workflow_handoff: {
+      schema: 'rikune.memory_forensics_correlation.workflow_handoff.v1',
+      routing: [
+        {
+          goal: 'memory-trace-fusion',
+          profile: 'memory.trace_fusion',
+          route_terms: MEMORY_FORENSICS_ROUTE_TERMS,
+          activation_boundary: 'result-scoped',
+          next_tools: MEMORY_FORENSICS_FOLLOW_UP_TOOLS,
+          required_evidence: ['memory_forensics_correlation'],
+        },
+      ],
+      dynamic_boundary: {
+        dynamic_imports_default_recommended: false,
+        allowed_only_for_existing_artifacts: ['dynamic_trace_json', 'memory_snapshot'],
+        excluded_default_tools: ['dynamic.memory.import', 'dynamic.trace.import'],
+      },
+      recommended_next_tools: MEMORY_FORENSICS_FOLLOW_UP_TOOLS,
+      quality_gates_schema: MEMORY_FORENSICS_QUALITY_GATES_SCHEMA,
+    },
+    quality_gates: qualityGates,
+    recommended_next_tools: MEMORY_FORENSICS_FOLLOW_UP_TOOLS,
     safety_notes: [
       'Correlation consumes existing Volatility JSON or fixture rows only.',
       'No memory dump acquisition, live process access, kernel access, or Volatility invocation is performed.',
