@@ -137,6 +137,7 @@ describe('memory-forensics.correlate', () => {
         passiveByDefault: true,
         noLiveExecution: true,
         noLiveMemoryAccess: true,
+        allowedBackends: ['local'],
         networkPolicy: 'disabled',
       })
     )
@@ -177,6 +178,7 @@ describe('memory-forensics.correlate', () => {
         passiveByDefault: true,
         noLiveExecution: true,
         noLiveMemoryAccess: true,
+        allowedBackends: ['local'],
       })
     )
     expect(tool?.definition.workerBackend).toEqual(

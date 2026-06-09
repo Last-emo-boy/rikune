@@ -43,7 +43,7 @@ const MEMORY_FORENSICS_RUNTIME_POLICY = {
   passiveByDefault: true,
   requiresUserOptIn: false,
   requiresIsolation: false,
-  allowedBackends: ['local', 'volatility3'],
+  allowedBackends: ['local'],
   networkPolicy: 'disabled',
   noNetwork: true,
   noMutation: true,
