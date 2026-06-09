@@ -13,6 +13,11 @@ import type { WorkerResult, ToolDefinition, ToolArgs } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { SharedMetricsSchema, normalizeError, buildMetrics } from '../../docker-shared.js'
+import {
+  WINE_DLL_OVERRIDE_WORKFLOW_RECIPES,
+  WINE_RUNTIME_POLICY,
+  wineToolAspects,
+} from '../wine-metadata.js'
 
 const overrideMode = z
   .enum(['native', 'builtin', 'native,builtin', 'builtin,native', 'disabled', ''])
@@ -71,6 +76,18 @@ export const wineDllOverridesToolDefinition: ToolDefinition = {
     'Set native/builtin/disabled per DLL — useful for hooking, anti-analysis bypass, or forcing specific API implementations.',
   inputSchema: inputSchema,
   outputSchema: wineDllOverridesOutputSchema,
+  aspects: wineToolAspects({
+    capabilities: ['dll-overrides', 'dll-override-plan', 'prefix-profile', 'workflow-handoff'],
+    evidence: ['configuration', 'filesystem', 'workflow', 'provenance'],
+  }),
+  evidence: [
+    { category: 'configuration' },
+    { category: 'filesystem' },
+    { category: 'workflow' },
+    { category: 'provenance' },
+  ],
+  workflowRecipes: WINE_DLL_OVERRIDE_WORKFLOW_RECIPES,
+  runtimePolicy: WINE_RUNTIME_POLICY,
   runtime: { type: 'inline', handler: 'executeWineDllOverrides' },
 }
 

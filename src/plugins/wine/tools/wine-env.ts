@@ -20,6 +20,11 @@ import {
   buildDynamicSetupRequired,
   resolveAnalysisBackends,
 } from '../../docker-shared.js'
+import {
+  WINE_ENV_WORKFLOW_RECIPES,
+  WINE_RUNTIME_POLICY,
+  wineToolAspects,
+} from '../wine-metadata.js'
 
 const inputSchema = z.object({
   action: z
@@ -89,6 +94,19 @@ export const wineEnvToolDefinition: ToolDefinition = {
     'Each prefix is a separate Windows filesystem for clean analysis.',
   inputSchema: inputSchema,
   outputSchema: wineEnvOutputSchema,
+  aspects: wineToolAspects({
+    capabilities: ['wine-prefix', 'prefix-profile', 'runtime-readiness', 'workflow-handoff'],
+    evidence: ['runtime-readiness', 'configuration', 'filesystem', 'workflow', 'provenance'],
+  }),
+  evidence: [
+    { category: 'runtime-readiness' },
+    { category: 'configuration' },
+    { category: 'filesystem' },
+    { category: 'workflow' },
+    { category: 'provenance' },
+  ],
+  workflowRecipes: WINE_ENV_WORKFLOW_RECIPES,
+  runtimePolicy: WINE_RUNTIME_POLICY,
   runtime: { type: 'inline', handler: 'executeWineEnv' },
 }
 

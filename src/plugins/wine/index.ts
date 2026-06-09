@@ -7,6 +7,15 @@
  */
 
 import type { Plugin } from '../sdk.js'
+import {
+  WINE_ARCHITECTURES,
+  WINE_CAPABILITIES,
+  WINE_EVIDENCE,
+  WINE_FORMATS,
+  WINE_PLATFORMS,
+  WINE_RUNTIME_POLICY,
+  WINE_SAFETY,
+} from './wine-metadata.js'
 import { wineRunToolDefinition, createWineRunHandler } from './tools/wine-run.js'
 import { wineEnvToolDefinition, createWineEnvHandler } from './tools/wine-env.js'
 import {
@@ -20,27 +29,16 @@ const winePlugin: Plugin = {
   name: 'Wine',
   executionDomain: 'dynamic',
   aspects: {
-    formats: ['pe', 'dll', 'dotnet', 'pe-clr', 'msi', 'installer'],
-    platforms: ['windows', 'linux'],
-    architectures: ['x86', 'x64', 'arm64'],
+    formats: WINE_FORMATS,
+    platforms: WINE_PLATFORMS,
+    architectures: WINE_ARCHITECTURES,
     execution: ['dynamic', 'emulation'],
     runtimes: ['wine'],
-    safety: ['passive', 'opt_in_dynamic', 'requires_isolation', 'no_live_sample_by_default'],
-    capabilities: ['wine-prefix', 'dll-overrides', 'registry', 'execution-plan', 'behavior-hints'],
-    evidence: ['process', 'filesystem', 'registry', 'network', 'api-calls', 'timeline'],
+    safety: WINE_SAFETY,
+    capabilities: WINE_CAPABILITIES,
+    evidence: WINE_EVIDENCE,
   },
-  runtimePolicy: {
-    passiveByDefault: true,
-    requiresUserOptIn: true,
-    requiresIsolation: true,
-    allowedBackends: ['wine'],
-    maxRuntimeMs: 120000,
-    networkPolicy: 'disabled',
-    notes: [
-      'Wine behavior is a compatibility/emulation signal and must not be treated as native Windows ground truth.',
-      'Readiness and planning paths must not launch Wine or execute PE payloads.',
-    ],
-  },
+  runtimePolicy: WINE_RUNTIME_POLICY,
   surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description:
     'Wine Windows compatibility layer — prefix management, DLL overrides, registry manipulation, and supervised execution of PE binaries',
