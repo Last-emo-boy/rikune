@@ -59,11 +59,12 @@ export const QILING_INSPECT_RUNTIME_POLICY: ToolDefinition['runtimePolicy'] = {
   passiveByDefault: true,
   requiresUserOptIn: true,
   requiresIsolation: true,
-  allowedBackends: ['qiling', 'unicorn'],
+  allowedBackends: ['docker'],
   maxRuntimeMs: 120_000,
   networkPolicy: 'disabled',
   notes: [
     'qiling.inspect is a readiness/profile planner; it probes backend and rootfs state only.',
+    'Qiling and Unicorn are emulation engine profiles, while allowedBackends names the isolation carrier used to run Python tooling.',
     'It must not execute, emulate, or instrument sample code by default.',
     'Live Qiling emulation requires a separate opt-in runtime plan and isolation boundary.',
   ],

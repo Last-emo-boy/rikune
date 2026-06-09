@@ -95,14 +95,25 @@ describe('qiling.inspect', () => {
         'qiling-rootfs-readiness',
       ])
     )
+    expect(qilingPlugin.aspects?.runtimes).toEqual(['qiling', 'unicorn'])
+    expect(qilingInspectToolDefinition.runtimePolicy).toEqual(qilingPlugin.runtimePolicy)
     expect(qilingPlugin.runtimePolicy).toEqual(
       expect.objectContaining({
         passiveByDefault: true,
         requiresUserOptIn: true,
         requiresIsolation: true,
+        allowedBackends: ['docker'],
+        maxRuntimeMs: 120_000,
         networkPolicy: 'disabled',
       })
     )
+    expect(qilingPlugin.runtimePolicy?.notes).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('allowedBackends names the isolation carrier'),
+      ])
+    )
+    expect(qilingPlugin.runtimePolicy?.allowedBackends).not.toContain('qiling')
+    expect(qilingPlugin.runtimePolicy?.allowedBackends).not.toContain('unicorn')
     expect(qilingInspectToolDefinition.aspects).toEqual(
       expect.objectContaining({
         formats: expect.arrayContaining(['elf', 'pe', 'macho', 'shellcode', 'firmware']),
@@ -141,6 +152,7 @@ describe('qiling.inspect', () => {
           'tool.readiness',
         ]),
         safety: expect.arrayContaining(['passive', 'no_network_by_default']),
+        runtimeBackends: ['qiling', 'unicorn'],
       })
     )
     expect(recipe?.producesArtifacts).toBeUndefined()
@@ -149,6 +161,7 @@ describe('qiling.inspect', () => {
         passiveByDefault: true,
         requiresUserOptIn: true,
         requiresIsolation: true,
+        allowedBackends: ['docker'],
         networkPolicy: 'disabled',
       })
     )
