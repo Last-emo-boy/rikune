@@ -57,6 +57,8 @@
     "dev:dashboard": "node -e \"const fs=require('fs'),p=require('path');const s='src/api/dashboard',d='dist/api/dashboard';fs.mkdirSync(d,{recursive:true});const cp=()=>{fs.readdirSync(s).forEach(f=>fs.copyFileSync(p.join(s,f),p.join(d,f)));console.log('Dashboard copied',new Date().toLocaleTimeString())};cp();fs.watch(s,{recursive:true},cp)\"",
     "start": "node dist/index.js",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:node": "node tests/node/run-node-integrations.mjs --mode=safe",
+    "test:node:all": "node tests/node/run-node-integrations.mjs --mode=all",
     "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage",
     "typecheck": "turbo run typecheck",

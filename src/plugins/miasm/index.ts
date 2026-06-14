@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'miasm',
@@ -92,6 +97,55 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'miasm',
+  toolName: 'miasm.ir.lift',
+  description:
+    'Run a bounded Miasm-style static IR lift worker for explicit functions, blocks, or shellcode windows. License-gated external mode requires MIASM_PYTHON.',
+  backendName: 'Miasm',
+  adapter: 'miasm.bounded.ir.lift',
+  envVar: 'MIASM_PYTHON',
+  dockerFeature: 'dynamic-python',
+  dockerDefault: 'python3',
+  installRoute: 'profile-gated',
+  installProfile: 'license-gated',
+  packagingNotes: ['GPL-2.0 backend; excluded from default install profiles.'],
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    { type: 'miasm_ir_graph', description: 'Bounded Miasm IR graph artifact' },
+    { type: 'data_flow_summary', description: 'Static data-flow simplification summary' },
+  ],
+  evidence: [
+    { category: 'structure', artifactTypes: ['miasm_ir_graph'] },
+    { category: 'behavior', artifactTypes: ['data_flow_summary'] },
+  ],
+  workflowRecipe: {
+    id: 'miasm.ir.lift-worker',
+    title: 'Miasm bounded IR lifting worker',
+    startsWith: ['miasm.ir.lift', 'code.function.disassemble', 'code.function.cfg'],
+    nextTools: ['triton.symbolic.slice', 'analysis.evidence.graph', 'report.generate'],
+    producesArtifacts: ['miasm_ir_graph', 'data_flow_summary'],
+    evidence: ['structure', 'behavior', 'workflow', 'provenance'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+  },
+  policy: {
+    defaultTimeoutMs: 25_000,
+    maxInputBytes: 5 * 1024 * 1024,
+    maxOutputBytes: 8 * 1024 * 1024,
+  },
+  readinessSetupActions: [
+    'Set MIASM_PYTHON to a Python interpreter with a pinned Miasm environment.',
+    'Enable a license-gated backend profile before external mode.',
+  ],
+  fixtureData: {
+    ir_blocks: 4,
+    expressions_simplified: 7,
+    license_gate: 'GPL-2.0',
+    bounded: true,
+  },
+  recommendedNextTools: ['triton.symbolic.slice', 'analysis.evidence.graph'],
+}
+
 const miasmPlugin = definePlugin({
   id: 'miasm',
   name: 'Miasm IR Plan',
@@ -136,6 +190,10 @@ const miasmPlugin = definePlugin({
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

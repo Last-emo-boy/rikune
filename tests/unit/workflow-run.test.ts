@@ -167,6 +167,135 @@ describe('workflow.run', () => {
     expect((promoteResult.data as any).routed_tool).toBe('workflow.analyze.promote')
   })
 
+  test('returns compact artifact selectors from status without exposing raw result', async () => {
+    const status = jest.fn<Promise<WorkerResult>, [Record<string, unknown>]>().mockResolvedValue(
+      okRunResult({
+        run_id: 'plan-7',
+        run: {
+          id: 'plan-7',
+          sample_id: 'sha256:abc',
+          status: 'completed',
+          latest_stage: 'reconstruct',
+          artifact_refs: [
+            {
+              id: 'artifact-run-summary',
+              type: 'analysis_summary',
+              path: 'reports/summary/run.json',
+              sha256: 'c'.repeat(64),
+              mime: 'application/json',
+            },
+            {
+              id: 'artifact-reconstruct-manifest',
+              type: 'reconstruct_manifest',
+              path: 'reports/reconstruct/latest/manifest.json',
+              sha256: 'b'.repeat(64),
+              mime: 'application/json',
+            },
+          ],
+          stages: [
+            {
+              stage: 'fast_profile',
+              status: 'completed',
+              artifact_refs: [
+                {
+                  id: 'artifact-fast-triage',
+                  type: 'triage_summary',
+                  path: 'reports/triage/summary.json',
+                  sha256: 'a'.repeat(64),
+                  mime: 'application/json',
+                },
+              ],
+            },
+            {
+              stage: 'reconstruct',
+              status: 'completed',
+              artifact_refs: [
+                {
+                  id: 'artifact-reconstruct-manifest',
+                  type: 'reconstruct_manifest',
+                  path: 'reports/reconstruct/latest/manifest.json',
+                  sha256: 'b'.repeat(64),
+                  mime: 'application/json',
+                },
+              ],
+            },
+          ],
+        },
+        recommended_next_tools: ['artifact.read', 'workflow.analyze.promote'],
+      })
+    )
+    const handler = createWorkflowRunHandler({
+      requestUpload: jest.fn() as any,
+      start: jest.fn() as any,
+      status,
+      promote: jest.fn() as any,
+    })
+
+    const result = await handler({ action: 'status', plan_id: 'plan-7' })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.routed_tool).toBe('workflow.analyze.status')
+    expect(data.routed_result).toBeUndefined()
+    expect(data.recommended_next_tools).toBeUndefined()
+    expect(data.recommended_workflow_tools).toEqual(['artifact.read', 'workflow.run'])
+    expect(data.artifact_selectors).toEqual([
+      expect.objectContaining({
+        artifact_id: 'artifact-reconstruct-manifest',
+        artifact_type: 'reconstruct_manifest',
+        path: 'reports/reconstruct/latest/manifest.json',
+        stage: 'reconstruct',
+        source: 'stage',
+        suggested_read_mode: 'profile',
+        read_args: {
+          sample_id: 'sha256:abc',
+          artifact_id: 'artifact-reconstruct-manifest',
+          read_mode: 'profile',
+        },
+      }),
+      expect.objectContaining({
+        artifact_id: 'artifact-fast-triage',
+        artifact_type: 'triage_summary',
+        stage: 'fast_profile',
+        read_args: {
+          sample_id: 'sha256:abc',
+          artifact_id: 'artifact-fast-triage',
+          read_mode: 'summary',
+        },
+      }),
+      expect.objectContaining({
+        artifact_id: 'artifact-run-summary',
+        artifact_type: 'analysis_summary',
+        stage: null,
+        source: 'run',
+        read_args: {
+          sample_id: 'sha256:abc',
+          artifact_id: 'artifact-run-summary',
+          read_mode: 'summary',
+        },
+      }),
+    ])
+    expect(data.artifact_selector_summary).toEqual(
+      expect.objectContaining({
+        total_artifact_refs: 4,
+        selectable_artifact_refs: 3,
+        selector_count: 3,
+        omitted_count: 0,
+        latest_stage: 'reconstruct',
+        by_type: expect.objectContaining({
+          reconstruct_manifest: 1,
+          triage_summary: 1,
+          analysis_summary: 1,
+        }),
+        by_stage: expect.objectContaining({
+          reconstruct: 1,
+          fast_profile: 1,
+          run: 1,
+        }),
+      })
+    )
+  })
+
   test('requires sample_id or plan_id according to action', async () => {
     const handler = createWorkflowRunHandler({
       requestUpload: jest.fn() as any,
@@ -208,7 +337,40 @@ describe('workflow.run', () => {
       createWorkflowRunHandler({
         requestUpload: async () => okUploadResult(),
         start: async () => okRunResult(),
-        status: async () => okRunResult(),
+        status: async () =>
+          okRunResult({
+            recommended_next_tools: ['artifact.read', 'packed.deep.scan'],
+            run: {
+              id: 'run-1',
+              sample_id: 'sha256:abc',
+              status: 'completed',
+              latest_stage: 'fast_profile',
+              artifact_refs: [
+                {
+                  id: 'artifact-fast-triage',
+                  type: 'triage_summary',
+                  path: 'reports/triage/summary.json',
+                  sha256: 'a'.repeat(64),
+                  mime: 'application/json',
+                },
+              ],
+              stages: [
+                {
+                  stage: 'fast_profile',
+                  status: 'completed',
+                  artifact_refs: [
+                    {
+                      id: 'artifact-fast-triage',
+                      type: 'triage_summary',
+                      path: 'reports/triage/summary.json',
+                      sha256: 'a'.repeat(64),
+                      mime: 'application/json',
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
         promote: async () => okRunResult(),
       })
     )
@@ -223,8 +385,19 @@ describe('workflow.run', () => {
     expect(result.isError).toBe(false)
     expect((result.structuredContent as any).data.result_mode).toBe('workflow_run')
     expect((result.structuredContent as any).data.recommended_next_tools).toBeUndefined()
+    expect((result.structuredContent as any).data.artifact_selectors).toEqual([
+      expect.objectContaining({
+        artifact_id: 'artifact-fast-triage',
+        read_args: {
+          sample_id: 'sha256:abc',
+          artifact_id: 'artifact-fast-triage',
+          read_mode: 'summary',
+        },
+      }),
+    ])
     expect([...surface.getVisibleToolNames()]).toEqual(['workflow.run'])
     expect(surface.isToolVisible('workflow.analyze.status')).toBe(false)
+    expect(surface.isToolVisible('artifact.read')).toBe(false)
     expect(surface.isToolVisible('packed.deep.scan')).toBe(false)
   })
 

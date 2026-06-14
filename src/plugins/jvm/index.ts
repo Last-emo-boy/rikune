@@ -7,6 +7,8 @@
 
 import { definePlugin, defineTool } from '../sdk.js'
 import {
+  JVM_STRUCTURE_EVIDENCE,
+  JVM_STRUCTURE_SAFETY,
   createJvmStructureAnalyzeHandler,
   jvmStructureAnalyzeToolDefinition,
 } from './tools/jvm-structure-analyze.js'
@@ -19,9 +21,21 @@ const jvmPlugin = definePlugin({
     formats: ['jar', 'class', 'war', 'aar', 'jmod', 'kotlin-metadata'],
     platforms: ['jvm', 'android'],
     execution: ['static', 'triage', 'decompilation'],
-    safety: ['passive', 'no_live_sample_by_default'],
-    capabilities: ['manifest', 'classes', 'dependencies', 'decompile-plan', 'routing'],
-    evidence: ['manifest', 'package-metadata', 'strings', 'provenance'],
+    safety: JVM_STRUCTURE_SAFETY,
+    capabilities: [
+      'manifest',
+      'classes',
+      'dependencies',
+      'dependency-hints',
+      'nested-archive-routing',
+      'decompile-plan',
+      'metadata-only-handoff',
+      'workflow-plan',
+      'workflow-handoff',
+      'artifact-handoff',
+      'routing',
+    ],
+    evidence: JVM_STRUCTURE_EVIDENCE,
   },
   surfaceRules: {
     tier: 1,

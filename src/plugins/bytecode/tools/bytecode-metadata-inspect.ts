@@ -10,8 +10,28 @@ import { z } from 'zod'
 import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '../../sdk.js'
 
 const TOOL_NAME = 'bytecode.metadata.inspect'
+const BYTECODE_METADATA_ARTIFACT_TYPE = 'bytecode_metadata'
 const DEFAULT_MAX_READ_BYTES = 2 * 1024 * 1024
 const MAX_PREVIEW_BYTES = 16 * 1024 * 1024
+const BYTECODE_METADATA_EVIDENCE = [
+  'structure',
+  'strings',
+  'package-metadata',
+  'workflow',
+  'provenance',
+]
+const BYTECODE_METADATA_FOLLOW_UP_TOOLS = [
+  'metadata.extract',
+  'strings.extract',
+  'analysis.evidence.graph',
+  'report.generate',
+]
+const BYTECODE_METADATA_SAFETY = [
+  'passive',
+  'no_interpreter_start',
+  'no_decompiler_launch',
+  'no_live_sample_by_default',
+]
 
 const BytecodePolicySchema = z.object({
   passive: z.literal(true),
@@ -38,6 +58,9 @@ const BytecodeMetadataSchema = z.object({
   summary: z.string(),
   recommended_next_tools: z.array(z.string()),
   next_actions: z.array(z.string()),
+  evidence_summary: z.record(z.any()),
+  workflow_handoff: z.record(z.any()),
+  quality_gates: z.record(z.any()),
 })
 
 export const BytecodeMetadataInspectInputSchema = z.object({
@@ -75,23 +98,41 @@ export const bytecodeMetadataInspectToolDefinition: ToolDefinition = {
     platforms: ['python', 'lua', 'node', 'cross-platform'],
     execution: ['static', 'triage', 'decompilation'],
     safety: ['passive', 'no_live_sample_by_default'],
-    capabilities: ['metadata', 'strings', 'version-hints', 'decompile-plan', 'routing'],
-    evidence: ['structure', 'strings', 'package-metadata', 'provenance'],
+    capabilities: ['metadata', 'strings', 'version-hints', 'decompile-plan', 'routing', 'workflow-plan'],
+    evidence: BYTECODE_METADATA_EVIDENCE,
   },
   artifacts: [
     {
-      type: 'bytecode_metadata',
+      type: BYTECODE_METADATA_ARTIFACT_TYPE,
       description: 'Passive script bytecode header, version hint, and string inventory',
     },
   ],
   evidence: [
     {
       category: 'structure',
-      artifactTypes: ['bytecode_metadata'],
+      artifactTypes: [BYTECODE_METADATA_ARTIFACT_TYPE],
     },
     {
       category: 'strings',
-      artifactTypes: ['bytecode_metadata'],
+      artifactTypes: [BYTECODE_METADATA_ARTIFACT_TYPE],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: [BYTECODE_METADATA_ARTIFACT_TYPE],
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'bytecode.passive-metadata-handoff',
+      title: 'Passive bytecode metadata and decompile-plan handoff',
+      description:
+        'Inventory script bytecode headers, version hints, and string evidence, then route passive metadata into strings, evidence graph, and reporting follow-ups without starting interpreters or decompilers.',
+      startsWith: [TOOL_NAME],
+      nextTools: BYTECODE_METADATA_FOLLOW_UP_TOOLS,
+      requiredArtifacts: ['sample'],
+      producesArtifacts: [BYTECODE_METADATA_ARTIFACT_TYPE],
+      evidence: BYTECODE_METADATA_EVIDENCE,
+      safety: BYTECODE_METADATA_SAFETY,
     },
   ],
 }
@@ -225,6 +266,95 @@ function decompileToolsFor(format: string): string[] {
   return ['metadata.extract', 'strings.extract']
 }
 
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim().length > 0)))
+}
+
+function buildBytecodeEvidenceSummary(input: {
+  sampleId?: string
+  filename?: string
+  format: string
+  versionHintCount: number
+  stringHintCount: number
+}): Record<string, unknown> {
+  return {
+    schema: 'rikune.bytecode_metadata.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    sample_id: input.sampleId ?? null,
+    filename: input.filename ?? null,
+    artifact_type: BYTECODE_METADATA_ARTIFACT_TYPE,
+    format: input.format,
+    version_hint_count: input.versionHintCount,
+    string_hint_count: input.stringHintCount,
+    passive_metadata_only: true,
+  }
+}
+
+function buildBytecodeWorkflowHandoff(input: {
+  sampleId?: string
+  format: string
+  recommendedTools: string[]
+}): Record<string, unknown> {
+  const nextTools = uniqueStrings([...input.recommendedTools, ...BYTECODE_METADATA_FOLLOW_UP_TOOLS])
+  return {
+    schema: 'rikune.bytecode_metadata.workflow_handoff.v1',
+    handoff_mode: 'bytecode_metadata_to_static_strings_evidence_graph_and_reporting',
+    source_tool: TOOL_NAME,
+    sample_id: input.sampleId ?? null,
+    artifact_type: BYTECODE_METADATA_ARTIFACT_TYPE,
+    format: input.format,
+    recommended_next_tools: nextTools,
+    artifact_contract: {
+      consumes: ['sample bytes'],
+      produces: [BYTECODE_METADATA_ARTIFACT_TYPE],
+      expected_consumers: nextTools,
+    },
+    routing: [
+      {
+        goal: 'version-and-string-correlation',
+        priority: 'normal',
+        next_tools: ['metadata.extract', 'strings.extract'],
+        required_evidence: [BYTECODE_METADATA_ARTIFACT_TYPE, 'bytecode header/version hints'],
+      },
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: 'normal',
+        next_tools: ['analysis.evidence.graph', 'report.generate'],
+        required_evidence: [BYTECODE_METADATA_ARTIFACT_TYPE],
+      },
+    ],
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      interpreter_started_by_tool: false,
+      decompiler_launched_by_tool: false,
+      runtime_started_by_tool: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+    },
+  }
+}
+
+function buildBytecodeQualityGates(input: {
+  format: string
+  versionHintCount: number
+  stringHintCount: number
+}): Record<string, unknown> {
+  return {
+    schema: 'rikune.bytecode_metadata.quality_gates.v1',
+    passive_metadata_only: true,
+    format_detected: input.format !== 'unknown',
+    version_hints_present: input.versionHintCount > 0,
+    string_hints_present: input.stringHintCount > 0,
+    sample_executed_by_tool: false,
+    interpreter_started_by_tool: false,
+    decompiler_launched_by_tool: false,
+    runtime_started_by_tool: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    analyst_review_required: true,
+  }
+}
+
 export function buildBytecodeMetadataFromBuffer(
   data: Buffer,
   options: { filename?: string; size?: number; sampleId?: string } = {}
@@ -233,6 +363,11 @@ export function buildBytecodeMetadataFromBuffer(
   const { header, versionHints } = buildHeader(format, data)
   const stringHints = extractAsciiStringHints(data)
   const recommendedTools = decompileToolsFor(format)
+  const recommendedNextTools = uniqueStrings([
+    ...recommendedTools,
+    'analysis.evidence.graph',
+    'report.generate',
+  ])
 
   return {
     sample_id: options.sampleId,
@@ -258,12 +393,30 @@ export function buildBytecodeMetadataFromBuffer(
       no_decompiler_launch: true,
     },
     summary: `Passive bytecode inventory detected ${format} with ${versionHints.length} version hint(s) and ${stringHints.length} string hint(s).`,
-    recommended_next_tools: recommendedTools,
+    recommended_next_tools: recommendedNextTools,
     next_actions: [
       'Review header and version hints before selecting a decompiler.',
       'Extract strings and metadata to correlate module names, paths, and constants.',
+      'Route the persisted bytecode_metadata artifact into analysis.evidence.graph before report.generate.',
       'Do not execute bytecode or start an interpreter during static triage.',
     ],
+    evidence_summary: buildBytecodeEvidenceSummary({
+      sampleId: options.sampleId,
+      filename: options.filename,
+      format,
+      versionHintCount: versionHints.length,
+      stringHintCount: stringHints.length,
+    }),
+    workflow_handoff: buildBytecodeWorkflowHandoff({
+      sampleId: options.sampleId,
+      format,
+      recommendedTools,
+    }),
+    quality_gates: buildBytecodeQualityGates({
+      format,
+      versionHintCount: versionHints.length,
+      stringHintCount: stringHints.length,
+    }),
   }
 }
 
@@ -316,7 +469,7 @@ export function createBytecodeMetadataInspectHandler(deps: PluginToolDeps) {
             workspaceManager,
             database,
             input.sample_id,
-            'bytecode_metadata',
+            BYTECODE_METADATA_ARTIFACT_TYPE,
             'bytecode-metadata',
             inventory,
             input.session_tag ?? null

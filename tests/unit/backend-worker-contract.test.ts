@@ -189,7 +189,9 @@ describe('backend worker contract', () => {
     })
 
     expect(result.ok).toBe(false)
-    expect(result.errors).toEqual(expect.arrayContaining(['external_backend_execution_not_enabled']))
+    expect(result.errors).toEqual(
+      expect.arrayContaining(['external_backend_execution_not_enabled'])
+    )
   })
 
   test('external worker mode rejects malformed backend output', async () => {
@@ -272,5 +274,121 @@ describe('backend worker contract', () => {
 
     expect(result.ok).toBe(false)
     expect(result.errors).toEqual(expect.arrayContaining(['external_backend_timeout']))
+  })
+
+  test('external worker command rejects shell launchers and control operators', async () => {
+    const workerPath = join(process.cwd(), 'tests', 'fixtures', 'workers', 'fixture-worker.mjs')
+    const shellContract = BackendWorkerContractSchema.parse({
+      ...contract,
+      commandHint: `cmd /c node ${workerPath}`,
+      defaultMode: 'external',
+    })
+    const chainedContract = BackendWorkerContractSchema.parse({
+      ...contract,
+      commandHint: `node ${workerPath} && whoami`,
+      defaultMode: 'external',
+    })
+
+    const shellReadiness = checkBackendWorkerReadiness(shellContract, { mode: 'external' })
+    const chainedReadiness = checkBackendWorkerReadiness(chainedContract, { mode: 'external' })
+
+    expect(shellReadiness.status).toBe('policy_denied')
+    expect(shellReadiness.reasons).toEqual(
+      expect.arrayContaining(['backend_shell_launcher_rejected'])
+    )
+    expect(chainedReadiness.status).toBe('policy_denied')
+    expect(chainedReadiness.reasons).toEqual(
+      expect.arrayContaining(['backend_shell_metacharacter_rejected'])
+    )
+  })
+
+  test('builtin worker mode rejects artifact output paths outside allowed roots', async () => {
+    const allowedRoot = join(process.cwd(), 'test-backend-artifacts')
+    const outsidePath = join(process.cwd(), 'outside-backend-artifacts', 'result.json')
+    const restrictedContract = BackendWorkerContractSchema.parse({
+      ...contract,
+      policy: {
+        noNetwork: true,
+        noMutation: true,
+        noLiveExecution: true,
+        allowedRoots: [allowedRoot],
+      },
+    })
+    const request = buildBackendWorkerRequest({
+      tool: 'fixture.worker.run',
+      backend: restrictedContract,
+      args: { path: 'sample.js', output_path: outsidePath },
+    })
+
+    const result = await runBackendWorker(request)
+
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(expect.arrayContaining(['artifact_path_outside_allowed_roots']))
+    expect(result.artifacts).toBeUndefined()
+  })
+
+  test('worker input is rejected when policy maxInputBytes is exceeded', async () => {
+    const restrictedContract = BackendWorkerContractSchema.parse({
+      ...contract,
+      policy: {
+        noNetwork: true,
+        noMutation: true,
+        noLiveExecution: true,
+        maxInputBytes: 64,
+      },
+    })
+    const request = buildBackendWorkerRequest({
+      tool: 'fixture.worker.run',
+      backend: restrictedContract,
+      args: { payload: 'x'.repeat(512) },
+    })
+
+    const result = await runBackendWorker(request)
+
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(expect.arrayContaining(['backend_worker_input_limit_exceeded']))
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        max_input_bytes: 64,
+        backend: 'FixtureBackend',
+      })
+    )
+  })
+
+  test('external worker diagnostics redact host paths and env-like secrets', async () => {
+    const previousSecret = process.env.RIKUNE_TEST_SECRET_VALUE
+    process.env.RIKUNE_TEST_SECRET_VALUE = 'SUPER_SECRET_VALUE_123456789'
+    const workerPath = join(process.cwd(), 'tests', 'fixtures', 'workers', 'fixture-worker.mjs')
+    const externalContract = BackendWorkerContractSchema.parse({
+      ...contract,
+      commandHint: `node ${workerPath} leak`,
+      defaultMode: 'external',
+    })
+    const request = buildBackendWorkerRequest({
+      tool: 'fixture.worker.run',
+      backend: externalContract,
+      args: { path: 'sample.js' },
+    })
+
+    try {
+      const result = await runBackendWorker(request, {
+        mode: 'external',
+        allowExternalBackend: true,
+      })
+      const stderr = String((result.data as any)?.stderr ?? '')
+
+      expect(result.ok).toBe(false)
+      expect(result.errors).toEqual(expect.arrayContaining(['external_backend_failed']))
+      expect(stderr).not.toContain('SUPER_SECRET_VALUE_123456789')
+      expect(stderr).not.toContain(process.cwd())
+      expect(stderr).toContain('<redacted>')
+      expect(stderr).toContain('<path>')
+    } finally {
+      if (previousSecret === undefined) {
+        delete process.env.RIKUNE_TEST_SECRET_VALUE
+      } else {
+        process.env.RIKUNE_TEST_SECRET_VALUE = previousSecret
+      }
+    }
   })
 })

@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'radare2',
@@ -93,6 +98,56 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'radare2',
+  toolName: 'radare2.pipeline.run',
+  description:
+    'Run a bounded radare2/r2pipe compatibility worker for read-only function, string, section, and xref summaries. Builtin mode is fixture-safe; external mode requires RADARE2_PATH.',
+  backendName: 'radare2',
+  adapter: 'radare2.readonly.pipeline',
+  envVar: 'RADARE2_PATH',
+  dockerFeature: 'radare2',
+  dockerDefault: '/usr/local/bin/radare2',
+  installRoute: 'profile-gated',
+  installProfile: 'optional',
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    { type: 'radare2_function_index', description: 'Read-only radare2 function inventory' },
+    { type: 'radare2_xref_summary', description: 'radare2 xref/string/section summary' },
+  ],
+  evidence: [
+    { category: 'structure', artifactTypes: ['radare2_function_index'] },
+    { category: 'symbols', artifactTypes: ['radare2_function_index'] },
+    { category: 'strings', artifactTypes: ['radare2_xref_summary'] },
+  ],
+  workflowRecipe: {
+    id: 'radare2.cross-backend.worker',
+    title: 'radare2 bounded cross-backend worker',
+    startsWith: ['radare2.pipeline.run', 'rizin.analyze', 'ghidra.analyze'],
+    nextTools: ['code.cross_decompiler.consensus', 'analysis.evidence.graph', 'report.generate'],
+    producesArtifacts: ['radare2_function_index', 'radare2_xref_summary'],
+    evidence: ['structure', 'symbols', 'strings', 'workflow', 'provenance'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+  },
+  policy: {
+    defaultTimeoutMs: 20_000,
+    maxInputBytes: 5 * 1024 * 1024,
+    maxOutputBytes: 5 * 1024 * 1024,
+  },
+  readinessSetupActions: [
+    'Set RADARE2_PATH to a pinned radare2 binary or wrapper before using external mode.',
+    'Keep r2pipe commands on the read-only allowlist: iIj, afl, izzj, iSj, iij, axfj.',
+  ],
+  fixtureData: {
+    functions_indexed: 3,
+    xrefs_indexed: 5,
+    strings_indexed: 4,
+    command_allowlist: ['iIj', 'aflj', 'izzj', 'iSj', 'iij', 'axfj'],
+    read_only: true,
+  },
+  recommendedNextTools: ['code.cross_decompiler.consensus', 'analysis.evidence.graph'],
+}
+
 const radare2Plugin = definePlugin({
   id: 'radare2',
   name: 'radare2 Pipeline Plan',
@@ -139,6 +194,10 @@ const radare2Plugin = definePlugin({
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

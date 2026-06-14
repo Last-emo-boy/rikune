@@ -30,12 +30,35 @@ import {
   resolvePackagePath,
 } from '../../docker-shared.js'
 
+const TOOL_NAME = 'rizin.analyze'
+const TOOL_VERSION = '0.2.0'
+const RIZIN_OPERATIONS = [
+  'info',
+  'sections',
+  'imports',
+  'exports',
+  'entrypoints',
+  'functions',
+  'strings',
+] as const
+const RIZIN_ARTIFACT_TYPES = RIZIN_OPERATIONS.map((operation) => `backend_rizin_${operation}`)
+const RIZIN_RECOMMENDED_NEXT_TOOLS = ['artifact.read', 'workflow.search']
+const RIZIN_PROFILE_NEXT_TOOLS = [
+  'code.cross_decompiler.consensus',
+  'analysis.evidence.graph',
+  'report.generate',
+]
+const RIZIN_SAFETY = [
+  'passive',
+  'read_only',
+  'bounded_output',
+  'no_live_sample_by_default',
+  'no_network_by_default',
+]
+
 export const rizinAnalyzeInputSchema = z.object({
   sample_id: z.string().describe('Target sample identifier.'),
-  operation: z
-    .enum(['info', 'sections', 'imports', 'exports', 'entrypoints', 'functions', 'strings'])
-    .default('info')
-    .describe('Bounded Rizin inspection mode.'),
+  operation: z.enum(RIZIN_OPERATIONS).default('info').describe('Bounded Rizin inspection mode.'),
   max_items: z
     .number()
     .int()
@@ -68,6 +91,9 @@ export const rizinAnalyzeOutputSchema = z.object({
       item_count: z.number().int().nonnegative().optional(),
       preview: z.any().optional(),
       artifact: ArtifactRefSchema.optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
@@ -82,7 +108,7 @@ export const rizinAnalyzeOutputSchema = z.object({
 })
 
 export const rizinAnalyzeToolDefinition: ToolDefinition = {
-  name: 'rizin.analyze',
+  name: TOOL_NAME,
   description:
     'Run bounded Rizin inspection on a sample for info, sections, imports, exports, entrypoints, functions, or strings. Use this when you explicitly want Rizin-backed inspection instead of the default workflow backends.',
   inputSchema: rizinAnalyzeInputSchema,
@@ -92,9 +118,20 @@ export const rizinAnalyzeToolDefinition: ToolDefinition = {
     platforms: ['windows', 'linux', 'macos', 'ios', 'embedded', 'cross-platform'],
     architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'ppc', 'riscv', 'wasm'],
     execution: ['static', 'triage'],
-    safety: ['passive'],
-    capabilities: ['info', 'sections', 'imports', 'exports', 'entrypoints', 'functions', 'strings'],
-    evidence: ['structure', 'symbols', 'imports', 'exports', 'strings'],
+    runtimes: ['rizin'],
+    safety: RIZIN_SAFETY,
+    capabilities: [
+      'info',
+      'sections',
+      'imports',
+      'exports',
+      'entrypoints',
+      'functions',
+      'strings',
+      'cross-backend-corroboration',
+      'workflow-handoff',
+    ],
+    evidence: ['structure', 'symbols', 'imports', 'exports', 'strings', 'workflow', 'provenance'],
   },
   artifacts: [
     {
@@ -148,6 +185,72 @@ export const rizinAnalyzeToolDefinition: ToolDefinition = {
       artifactTypes: ['backend_rizin_strings'],
     },
   ],
+  workflowRecipes: [
+    {
+      id: 'rizin.readonly-preview',
+      title: 'Rizin read-only backend preview',
+      description:
+        'Run a bounded Rizin read-only inspection, then hand off preview artifacts to artifact review, cross-decompiler consensus, evidence graph, and reporting.',
+      startsWith: [TOOL_NAME],
+      nextTools: [...RIZIN_RECOMMENDED_NEXT_TOOLS, ...RIZIN_PROFILE_NEXT_TOOLS],
+      requiredArtifacts: ['sample'],
+      producesArtifacts: RIZIN_ARTIFACT_TYPES,
+      evidence: ['structure', 'symbols', 'imports', 'exports', 'strings', 'workflow', 'provenance'],
+      safety: RIZIN_SAFETY,
+      runtimeBackends: ['rizin'],
+      operations: RIZIN_OPERATIONS,
+    },
+  ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: true,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    maxRuntimeMs: 180000,
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    notes: [
+      'Rizin is used as a bounded read-only static backend and must not execute the sample.',
+      'workflow.search should activate only rizin.analyze for this profile before any broader cross-backend workflow.',
+    ],
+  },
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'rizin',
+    backendKind: 'external',
+    adapter: 'rizin.readonly.preview',
+    availability: 'optional',
+    envVar: 'RIZIN_PATH',
+    commandHint: 'rizin -A -q0 -c "<command>;q" <sample>',
+    versionHint: 'rizin -v',
+    supportedModes: [...RIZIN_OPERATIONS],
+    defaultMode: 'info',
+    inputArtifactTypes: ['sample'],
+    outputArtifactTypes: RIZIN_ARTIFACT_TYPES,
+    policy: {
+      passiveByDefault: true,
+      noNetwork: true,
+      noMutation: true,
+      noLiveExecution: true,
+      defaultTimeoutMs: 45000,
+      maxOutputBytes: 16 * 1024 * 1024,
+      notes: ['Only bounded JSON preview commands are used by this tool.'],
+    },
+    readiness: {
+      doesNotStartBackend: true,
+      setupActions: ['Set RIZIN_PATH to a pinned Rizin binary or install rizin on PATH.'],
+      missingBackendBehavior: 'Return setup_required without running any backend command.',
+    },
+    packaging: {
+      installRoute: 'profile-gated',
+      installProfile: 'optional',
+      dockerFeature: 'rizin',
+      envVar: 'RIZIN_PATH',
+      dockerDefault: '/opt/rizin/bin/rizin',
+    },
+  },
 }
 
 function getRizinCommand(operation: z.infer<typeof rizinAnalyzeInputSchema>['operation']): string {
@@ -168,6 +271,117 @@ function getRizinCommand(operation: z.infer<typeof rizinAnalyzeInputSchema>['ope
     default:
       return 'ij'
   }
+}
+
+function rizinArtifactType(operation: z.infer<typeof rizinAnalyzeInputSchema>['operation']) {
+  return `backend_rizin_${operation}`
+}
+
+function buildRizinEvidenceSummary(args: {
+  sampleId: string
+  operation: z.infer<typeof rizinAnalyzeInputSchema>['operation']
+  itemCount: number
+  preview: unknown
+  artifact?: ArtifactRef
+}) {
+  return {
+    schema: 'rikune.rizin_preview.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    tool_version: TOOL_VERSION,
+    artifact_type: rizinArtifactType(args.operation),
+    sample_id: args.sampleId,
+    operation: args.operation,
+    item_count: args.itemCount,
+    preview_kind: Array.isArray(args.preview) ? 'array' : typeof args.preview,
+    artifact_id: args.artifact?.id ?? null,
+  }
+}
+
+function buildRizinQualityGates(args: {
+  operation: z.infer<typeof rizinAnalyzeInputSchema>['operation']
+  itemCount: number
+  artifactPersisted: boolean
+}) {
+  return {
+    schema: 'rikune.rizin_preview.quality_gates.v1',
+    passive_static_analysis: true,
+    read_only_backend: true,
+    sample_executed_by_tool: false,
+    backend_started_with_bounded_command: true,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    output_bounded_inline: true,
+    artifact_persisted: args.artifactPersisted,
+    analyst_review_required: true,
+    operation: args.operation,
+    item_count: args.itemCount,
+  }
+}
+
+function buildRizinWorkflowHandoff(args: {
+  sampleId: string
+  operation: z.infer<typeof rizinAnalyzeInputSchema>['operation']
+  itemCount: number
+  artifact?: ArtifactRef
+}) {
+  return {
+    schema: 'rikune.rizin_preview.workflow_handoff.v1',
+    handoff_mode: 'rizin_preview_to_cross_backend_review',
+    artifact_type: rizinArtifactType(args.operation),
+    sample_id: args.sampleId,
+    operation: args.operation,
+    recommended_next_tools: RIZIN_RECOMMENDED_NEXT_TOOLS,
+    artifact_contract: {
+      type: rizinArtifactType(args.operation),
+      suggested_read_mode: 'profile',
+      artifact_id: args.artifact?.id ?? null,
+      item_count: args.itemCount,
+    },
+    routing: [
+      {
+        goal: 'review-rizin-preview',
+        priority: 'high',
+        next_tools: ['artifact.read'],
+        required_evidence: [rizinArtifactType(args.operation)],
+      },
+      {
+        goal: 'cross-backend-corroboration',
+        priority:
+          args.operation === 'functions' || args.operation === 'imports' ? 'high' : 'normal',
+        next_tools: ['code.cross_decompiler.consensus', 'analysis.evidence.graph'],
+        required_evidence: [rizinArtifactType(args.operation), 'paired backend artifacts'],
+      },
+      {
+        goal: 'report-rizin-findings',
+        priority: 'normal',
+        next_tools: ['report.generate'],
+        required_evidence: [rizinArtifactType(args.operation)],
+      },
+    ],
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      backend_started: true,
+      backend_kind: 'external-static',
+      live_execution_started: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+    },
+  }
+}
+
+function buildRizinNextActions(args: {
+  operation: z.infer<typeof rizinAnalyzeInputSchema>['operation']
+  artifact?: ArtifactRef
+}) {
+  return [
+    args.artifact
+      ? 'Use artifact.read in profile mode to inspect the persisted Rizin preview envelope.'
+      : 'Persist a Rizin preview artifact before relying on this result for cross-backend review.',
+    'Use workflow.search to select a result-scoped cross-backend or evidence graph follow-up instead of exposing broad reverse-engineering tools.',
+    args.operation === 'functions'
+      ? 'Corroborate Rizin function boundaries with Ghidra, radare2, or another backend before reconstruction.'
+      : 'Corroborate this Rizin preview with a format-specific static analyzer before reporting.',
+  ]
 }
 
 export function createRizinAnalyzeHandler(
@@ -325,24 +539,9 @@ export function createRizinAnalyzeHandler(
 
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
-      if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(
-          workspaceManager,
-          database,
-          input.sample_id,
-          'rizin',
-          input.operation,
-          JSON.stringify(parsed ?? { stdout: commandResult?.stdout }, null, 2),
-          {
-            extension: 'json',
-            mime: 'application/json',
-            sessionTag: input.session_tag,
-          }
-        )
-        artifacts.push(artifact)
-      }
-
-      const outputData = {
+      const baseOutputData = {
+        schema: 'rikune.rizin_preview.v1',
+        tool_version: TOOL_VERSION,
         status: 'ready',
         backend,
         sample_id: input.sample_id,
@@ -360,17 +559,71 @@ export function createRizinAnalyzeHandler(
               cold_start: pooledResult.lease.cold_start,
             }
           : undefined,
-        artifact,
         summary: `Rizin completed ${input.operation} inspection for ${input.sample_id}.`,
-        recommended_next_tools: [
-          'artifact.read',
-          'code.function.disassemble',
-          'code.xrefs.analyze',
-        ],
-        next_actions: [
-          'Use artifact.read for the full JSON payload when the inline preview is truncated.',
-          'Prefer Ghidra-backed code tools when you need code-level decompile or reconstruction after this quick inspection.',
-        ],
+      } satisfies Record<string, unknown>
+
+      if (input.persist_artifact) {
+        const artifactPayload = {
+          ...baseOutputData,
+          evidence_summary: buildRizinEvidenceSummary({
+            sampleId: input.sample_id,
+            operation: input.operation,
+            itemCount,
+            preview,
+          }),
+          workflow_handoff: buildRizinWorkflowHandoff({
+            sampleId: input.sample_id,
+            operation: input.operation,
+            itemCount,
+          }),
+          quality_gates: buildRizinQualityGates({
+            operation: input.operation,
+            itemCount,
+            artifactPersisted: true,
+          }),
+          recommended_next_tools: RIZIN_RECOMMENDED_NEXT_TOOLS,
+          next_actions: buildRizinNextActions({ operation: input.operation }),
+          raw_rizin_result: parsed ?? { stdout: effectiveResult.stdout },
+        }
+        artifact = await persistBackendArtifact(
+          workspaceManager,
+          database,
+          input.sample_id,
+          'rizin',
+          input.operation,
+          JSON.stringify(artifactPayload, null, 2),
+          {
+            extension: 'json',
+            mime: 'application/json',
+            sessionTag: input.session_tag,
+          }
+        )
+        artifacts.push(artifact)
+      }
+
+      const outputData = {
+        ...baseOutputData,
+        artifact,
+        evidence_summary: buildRizinEvidenceSummary({
+          sampleId: input.sample_id,
+          operation: input.operation,
+          itemCount,
+          preview,
+          artifact,
+        }),
+        workflow_handoff: buildRizinWorkflowHandoff({
+          sampleId: input.sample_id,
+          operation: input.operation,
+          itemCount,
+          artifact,
+        }),
+        quality_gates: buildRizinQualityGates({
+          operation: input.operation,
+          itemCount,
+          artifactPersisted: Boolean(artifact),
+        }),
+        recommended_next_tools: RIZIN_RECOMMENDED_NEXT_TOOLS,
+        next_actions: buildRizinNextActions({ operation: input.operation, artifact }),
       } satisfies Record<string, unknown>
 
       persistBackendPreviewEvidence(

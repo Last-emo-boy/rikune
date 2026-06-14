@@ -75,6 +75,10 @@ import {
   createCodeReconstructPlanHandler,
 } from './tools/code-reconstruct-plan.js'
 import {
+  crossDecompilerConsensusToolDefinition,
+  createCrossDecompilerConsensusHandler,
+} from './tools/cross-decompiler-consensus.js'
+import {
   codeModuleReviewPrepareToolDefinition,
   createCodeModuleReviewPrepareHandler,
 } from './tools/code-module-review-prepare.js'
@@ -111,6 +115,9 @@ const codeAnalysisPlugin: Plugin = {
       'dotnet-export',
       'renaming',
       'llm-review',
+      'cross-decompiler-consensus',
+      'cross-decompiler',
+      'ir-comparison',
     ],
     evidence: [
       'functions',
@@ -193,6 +200,10 @@ const codeAnalysisPlugin: Plugin = {
       codeReconstructPlanToolDefinition,
       createCodeReconstructPlanHandler(wm, db, cm)
     )
+    server.registerTool(
+      crossDecompilerConsensusToolDefinition,
+      createCrossDecompilerConsensusHandler()
+    )
 
     return [
       'code.functions.list',
@@ -214,6 +225,7 @@ const codeAnalysisPlugin: Plugin = {
       'code.reconstruct.export',
       'dotnet.reconstruct.export',
       'code.reconstruct.plan',
+      'code.cross_decompiler.consensus',
     ]
   },
 }

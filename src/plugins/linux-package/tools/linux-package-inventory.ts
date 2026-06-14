@@ -13,6 +13,34 @@ import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '
 const TOOL_NAME = 'linux.package.inventory'
 const DEFAULT_MAX_READ_BYTES = 4 * 1024 * 1024
 const MAX_PREVIEW_BYTES = 16 * 1024 * 1024
+const LINUX_PACKAGE_INVENTORY_ARTIFACT_TYPE = 'linux_package_inventory'
+const LINUX_PACKAGE_FORMATS = ['deb', 'rpm', 'apk-alpine', 'snap', 'flatpak', 'appimage']
+const LINUX_PACKAGE_EVIDENCE = [
+  'workflow',
+  'provenance',
+  'package-metadata',
+  'nested-binaries',
+  'filesystem',
+  'sbom',
+]
+const LINUX_PACKAGE_FOLLOW_UP_TOOLS = [
+  'metadata.extract',
+  'strings.extract',
+  'sbom.provenance.graph',
+  'linux.binary.inventory',
+  'firmware.workflow.plan',
+  'container.structure.analyze',
+  'analysis.evidence.graph',
+  'report.generate',
+]
+const LINUX_PACKAGE_SAFETY = [
+  'passive',
+  'no_install',
+  'no_script_execution',
+  'no_installer_execution',
+  'no_auto_mount',
+  'no_live_sample_by_default',
+]
 
 const LinuxPackagePolicySchema = z.object({
   passive: z.literal(true),
@@ -71,28 +99,64 @@ export const linuxPackageInventoryToolDefinition: ToolDefinition = {
   inputSchema: LinuxPackageInventoryInputSchema,
   outputSchema: LinuxPackageInventoryOutputSchema,
   aspects: {
-    formats: ['deb', 'rpm', 'apk-alpine', 'snap', 'flatpak', 'appimage'],
+    formats: LINUX_PACKAGE_FORMATS,
     platforms: ['linux'],
     architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv'],
     execution: ['static', 'triage'],
-    safety: ['passive', 'no_installer_execution', 'no_auto_mount'],
-    capabilities: ['inventory', 'package-metadata', 'scripts', 'nested-binaries', 'routing'],
-    evidence: ['package-metadata', 'nested-binaries', 'filesystem', 'provenance'],
+    safety: LINUX_PACKAGE_SAFETY,
+    capabilities: [
+      'inventory',
+      'package-metadata',
+      'scripts',
+      'nested-binaries',
+      'routing',
+      'workflow-plan',
+      'metadata-only-handoff',
+      'supply-chain-handoff',
+      'firmware-handoff',
+    ],
+    evidence: LINUX_PACKAGE_EVIDENCE,
   },
   artifacts: [
     {
-      type: 'linux_package_inventory',
+      type: LINUX_PACKAGE_INVENTORY_ARTIFACT_TYPE,
       description: 'Passive Linux package metadata, script candidate, and nested binary inventory',
     },
   ],
   evidence: [
     {
+      category: 'workflow',
+      artifactTypes: [LINUX_PACKAGE_INVENTORY_ARTIFACT_TYPE],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: [LINUX_PACKAGE_INVENTORY_ARTIFACT_TYPE],
+    },
+    {
       category: 'package-metadata',
-      artifactTypes: ['linux_package_inventory'],
+      artifactTypes: [LINUX_PACKAGE_INVENTORY_ARTIFACT_TYPE],
     },
     {
       category: 'nested-binaries',
-      artifactTypes: ['linux_package_inventory'],
+      artifactTypes: [LINUX_PACKAGE_INVENTORY_ARTIFACT_TYPE],
+    },
+    {
+      category: 'filesystem',
+      artifactTypes: [LINUX_PACKAGE_INVENTORY_ARTIFACT_TYPE],
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'linux-package.passive-inventory-handoff',
+      title: 'Linux package passive inventory handoff',
+      description:
+        'Create a passive Linux package, maintainer script candidate, provenance, and nested binary inventory for supply-chain, firmware, container, evidence graph, and report workflows without installing packages, executing scripts, mounting filesystems, or running live samples.',
+      startsWith: [TOOL_NAME],
+      nextTools: LINUX_PACKAGE_FOLLOW_UP_TOOLS,
+      requiredArtifacts: ['sample'],
+      producesArtifacts: [LINUX_PACKAGE_INVENTORY_ARTIFACT_TYPE],
+      evidence: LINUX_PACKAGE_EVIDENCE,
+      safety: LINUX_PACKAGE_SAFETY,
     },
   ],
 }
@@ -296,9 +360,8 @@ export function buildLinuxPackageInventoryFromBuffer(
     summary: `Passive Linux package inventory detected ${format} with ${archiveMembers.length} archive member(s), ${scriptCandidates.length} script candidate(s), and ${nested.length} nested binary candidate(s).`,
     recommended_next_tools: Array.from(
       new Set([
-        'metadata.extract',
+        ...LINUX_PACKAGE_FOLLOW_UP_TOOLS,
         ...nested.flatMap((candidate) => candidate.recommended_tools),
-        'strings.extract',
         'sbom.generate',
       ])
     ),

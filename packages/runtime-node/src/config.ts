@@ -8,7 +8,7 @@ export const ConfigSchema = z.object({
   server: z
     .object({
       port: z.number().int().min(1).max(65535).default(18081),
-      host: z.string().default('0.0.0.0'),
+      host: z.string().default('127.0.0.1'),
     })
     .default({}),
   runtime: z
@@ -36,6 +36,34 @@ export type Config = z.infer<typeof ConfigSchema>
 export interface RuntimeConfigLoadOptions {
   argv?: string[]
   env?: NodeJS.ProcessEnv
+}
+
+export function isLoopbackHost(host: string): boolean {
+  const value = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+  return value === 'localhost' || value === '::1' || value.startsWith('127.')
+}
+
+function isProductionEnv(env: NodeJS.ProcessEnv): boolean {
+  return (env.NODE_ENV || '').trim().toLowerCase() === 'production'
+}
+
+export function getRuntimeAuthDefaultError(
+  runtimeConfig: Config,
+  env: NodeJS.ProcessEnv = process.env
+): string | null {
+  if (runtimeConfig.runtime.apiKey?.trim()) {
+    return null
+  }
+  if (isProductionEnv(env)) {
+    return 'RUNTIME_API_KEY is required when NODE_ENV=production. Set RUNTIME_API_KEY or pass --api-key before starting Runtime Node.'
+  }
+  if (!isLoopbackHost(runtimeConfig.server.host)) {
+    return `RUNTIME_API_KEY is required when RUNTIME_HOST/--host binds Runtime Node to non-loopback address '${runtimeConfig.server.host}'. Use 127.0.0.1 for unauthenticated local development or set RUNTIME_API_KEY/--api-key.`
+  }
+  return null
 }
 
 function ensureNestedObject(root: Record<string, any>, key: string): Record<string, any> {
@@ -212,6 +240,10 @@ export function loadConfig(options: RuntimeConfigLoadOptions = {}): Config {
   const result = ConfigSchema.safeParse(mergedConfig)
   if (!result.success) {
     throw new Error(`Runtime config validation failed: ${result.error.message}`)
+  }
+  const authDefaultError = getRuntimeAuthDefaultError(result.data, options.env ?? process.env)
+  if (authDefaultError) {
+    throw new Error(`Runtime config validation failed: ${authDefaultError}`)
   }
   return result.data
 }

@@ -12,6 +12,7 @@ import { validatePlugin, validateTool } from '../../../../src/plugins/sdk.js'
 import { discoverBuiltInPlugins } from '../../../../src/core/plugin-system/discovery.js'
 import { zodToJsonSchema } from '../../../../src/core/zod-schema-converter.js'
 import { listRuntimeBackendCapabilities } from '../../../../packages/runtime-node/src/executor.js'
+import { getRuntimeContractSupportMismatches } from '@rikune/shared'
 import {
   getLocalDynamicToolPolicy,
   listExplicitLocalDynamicTools,
@@ -122,9 +123,7 @@ describe('built-in plugin SDK contract', () => {
     const deps = createDeps()
     const pluginsRoot = path.join(process.cwd(), 'src', 'plugins')
     const resourceKinds = ['workers', 'scripts', 'data'] as const
-    const runtimeCapabilities = new Set(
-      listRuntimeBackendCapabilities().map((capability) => runtimeCapabilityKey(capability))
-    )
+    const runtimeCapabilities = listRuntimeBackendCapabilities()
 
     for (const plugin of plugins) {
       const pluginValidation = validatePlugin(plugin)
@@ -146,7 +145,9 @@ describe('built-in plugin SDK contract', () => {
 
             const declaredDir = path.join(pluginDir, declared)
             if (!fs.existsSync(declaredDir) || !fs.statSync(declaredDir).isDirectory()) {
-              resourceErrors.push(`${plugin.id}: resources.${kind} points to missing directory ${declared}`)
+              resourceErrors.push(
+                `${plugin.id}: resources.${kind} points to missing directory ${declared}`
+              )
             }
           }
         }
@@ -185,7 +186,11 @@ describe('built-in plugin SDK contract', () => {
           if (definition?.runtime) {
             runtimeToolCount += 1
             const key = runtimeCapabilityKey(definition.runtime)
-            if (!runtimeCapabilities.has(key)) {
+            const supported = runtimeCapabilities.some(
+              (capability) =>
+                getRuntimeContractSupportMismatches(capability, definition.runtime).length === 0
+            )
+            if (!supported) {
               runtimeErrors.push(
                 `${plugin.id}:${definition?.name}: unsupported runtime contract ${key}`
               )
@@ -215,7 +220,9 @@ describe('built-in plugin SDK contract', () => {
       if (Array.isArray(returned)) {
         const missing = returned.filter((name) => !registeredTools.includes(name))
         if (missing.length > 0) {
-          pluginErrors.push(`${plugin.id}: register() returned unregistered tools: ${missing.join(', ')}`)
+          pluginErrors.push(
+            `${plugin.id}: register() returned unregistered tools: ${missing.join(', ')}`
+          )
         }
       }
     }
@@ -241,7 +248,8 @@ describe('built-in plugin SDK contract', () => {
         const statusContract = runtimeStatusToolContractsByName.get(name)
         return (
           statusContract &&
-          runtimeCapabilityKey(statusContract) !== runtimeCapabilityKey(definition.runtime)
+          (getRuntimeContractSupportMismatches(statusContract, definition.runtime).length > 0 ||
+            getRuntimeContractSupportMismatches(definition.runtime, statusContract).length > 0)
         )
       })
       .map(

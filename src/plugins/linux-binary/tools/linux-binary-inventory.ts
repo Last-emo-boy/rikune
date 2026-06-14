@@ -14,6 +14,38 @@ import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '
 const TOOL_NAME = 'linux.binary.inventory'
 const DEFAULT_MAX_READ_BYTES = 6 * 1024 * 1024
 const MAX_PREVIEW_BYTES = 32 * 1024 * 1024
+const LINUX_BINARY_ARTIFACT_TYPE = 'linux_binary_inventory'
+const LINUX_BINARY_SAFETY = [
+  'passive',
+  'no_auto_mount',
+  'no_live_sample_by_default',
+  'no_execute',
+  'no_load',
+  'no_core_replay',
+  'no_kernel_module_load',
+  'no_runtime_start',
+  'no_network_by_default',
+]
+const LINUX_BINARY_EVIDENCE = [
+  'structure',
+  'symbols',
+  'filesystem',
+  'memory',
+  'nested-binaries',
+  'workflow',
+  'provenance',
+]
+const LINUX_BINARY_FOLLOW_UP_TOOLS = [
+  'metadata.extract',
+  'strings.extract',
+  'elf.structure.analyze',
+  'elf.imports.extract',
+  'elf.exports.extract',
+  'native.object.inventory',
+  'linux.runtime.plan',
+  'analysis.evidence.graph',
+  'artifact.read',
+]
 
 const LinuxBinaryPolicySchema = z.object({
   passive: z.literal(true),
@@ -31,6 +63,21 @@ const LinuxBinaryCandidateSchema = z.object({
   recommended_tools: z.array(z.string()),
 })
 
+const LinuxBinaryLoaderSecurityProfileSchema = z.object({
+  entrypoint: z.string().optional(),
+  interpreter: z.string().optional(),
+  needed_libraries: z.array(z.string()),
+  rpath_runpath_hints: z.array(z.string()),
+  dynamic_segment_present: z.boolean(),
+  pie_candidate: z.boolean().nullable(),
+  nx_stack_candidate: z.boolean().nullable(),
+  executable_stack_candidate: z.boolean().nullable(),
+  relro_candidate: z.boolean(),
+  bind_now_candidate: z.boolean(),
+  canary_symbol_candidate: z.boolean(),
+  hardening_notes: z.array(z.string()),
+})
+
 const LinuxBinaryInventoryDataSchema = z.object({
   sample_id: z.string().optional(),
   filename: z.string().optional(),
@@ -44,8 +91,10 @@ const LinuxBinaryInventoryDataSchema = z.object({
       type: z.string().optional(),
       machine: z.string().optional(),
       osabi: z.string().optional(),
+      entrypoint: z.string().optional(),
     })
     .optional(),
+  loader_security_profile: LinuxBinaryLoaderSecurityProfileSchema,
   interpreter_hints: z.array(z.string()),
   shared_library_hints: z.array(z.string()),
   symbol_hints: z.array(z.string()),
@@ -55,6 +104,9 @@ const LinuxBinaryInventoryDataSchema = z.object({
   nested_binary_candidates: z.array(LinuxBinaryCandidateSchema),
   policy: LinuxBinaryPolicySchema,
   unsupported_detail: z.string().optional(),
+  evidence_summary: z.record(z.any()).optional(),
+  workflow_handoff: z.record(z.any()).optional(),
+  quality_gates: z.record(z.any()).optional(),
   summary: z.string(),
   recommended_next_tools: z.array(z.string()),
   next_actions: z.array(z.string()),
@@ -105,33 +157,86 @@ export const linuxBinaryInventoryToolDefinition: ToolDefinition = {
     platforms: ['linux', 'embedded'],
     architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv'],
     execution: ['static', 'triage'],
-    safety: ['passive', 'no_auto_mount', 'no_live_sample_by_default'],
+    safety: LINUX_BINARY_SAFETY,
     capabilities: [
       'inventory',
       'structure',
+      'loader-profile',
+      'security-profile',
+      'hardening-candidates',
+      'elf-interpreter-profile',
+      'dependency-inventory',
       'symbols',
       'debug-metadata',
       'nested-binaries',
+      'workflow-handoff',
       'routing',
     ],
-    evidence: ['structure', 'symbols', 'filesystem', 'memory', 'nested-binaries', 'provenance'],
+    evidence: LINUX_BINARY_EVIDENCE,
   },
   artifacts: [
     {
-      type: 'linux_binary_inventory',
-      description: 'Passive Linux ELF/core/module/initramfs inventory and routing hints',
+      type: LINUX_BINARY_ARTIFACT_TYPE,
+      description:
+        'Passive Linux ELF/core/module/initramfs inventory, loader profile, hardening candidates, and routing hints',
+      mimeTypes: ['application/json'],
     },
   ],
   evidence: [
-    { category: 'structure', artifactTypes: ['linux_binary_inventory'] },
-    { category: 'symbols', artifactTypes: ['linux_binary_inventory'] },
-    { category: 'memory', artifactTypes: ['linux_binary_inventory'] },
-    { category: 'nested-binaries', artifactTypes: ['linux_binary_inventory'] },
+    { category: 'structure', artifactTypes: [LINUX_BINARY_ARTIFACT_TYPE] },
+    { category: 'symbols', artifactTypes: [LINUX_BINARY_ARTIFACT_TYPE] },
+    { category: 'filesystem', artifactTypes: [LINUX_BINARY_ARTIFACT_TYPE] },
+    { category: 'memory', artifactTypes: [LINUX_BINARY_ARTIFACT_TYPE] },
+    { category: 'nested-binaries', artifactTypes: [LINUX_BINARY_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [LINUX_BINARY_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [LINUX_BINARY_ARTIFACT_TYPE] },
   ],
+  workflowRecipes: [
+    {
+      id: 'linux-binary.passive-loader-security-profile',
+      title: 'Linux binary passive loader and security profile',
+      description:
+        'Extract ELF loader, dependency, hardening-candidate, symbol, core, module, and initramfs routing evidence without execution, loading, mounting, core replay, kernel module insertion, or runtime startup.',
+      startsWith: [TOOL_NAME],
+      nextTools: LINUX_BINARY_FOLLOW_UP_TOOLS,
+      requiredArtifacts: ['sample'],
+      producesArtifacts: [LINUX_BINARY_ARTIFACT_TYPE],
+      evidence: LINUX_BINARY_EVIDENCE,
+      safety: LINUX_BINARY_SAFETY,
+    },
+  ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: false,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    noLoad: true,
+    noMount: true,
+    noCoreReplay: true,
+    noKernelModuleLoad: true,
+    notes: [
+      'linux.binary.inventory is a passive local parser; it never executes ELF files or starts runtime tooling.',
+      'Core dumps are inventoried as metadata only and are not replayed or attached to a debugger.',
+      'Kernel modules are not inserted, loaded, or inspected through a live kernel.',
+    ],
+  } as ToolDefinition['runtimePolicy'] & {
+    noNetwork: true
+    noMutation: true
+    noLiveExecution: true
+    noLoad: true
+    noMount: true
+    noCoreReplay: true
+    noKernelModuleLoad: true
+  },
 }
 
 export type LinuxBinaryInventory = z.infer<typeof LinuxBinaryInventoryDataSchema>
 type LinuxBinaryCandidate = z.infer<typeof LinuxBinaryCandidateSchema>
+type LinuxBinaryLoaderSecurityProfile = z.infer<typeof LinuxBinaryLoaderSecurityProfileSchema>
 
 const ELF_MACHINES: Record<number, string> = {
   3: 'x86',
@@ -168,27 +273,142 @@ function previewText(data: Buffer): string {
   return data.subarray(0, Math.min(data.length, 1024 * 1024)).toString('latin1')
 }
 
+function isElf(data: Buffer): boolean {
+  return (
+    data.length >= 20 &&
+    data[0] === 0x7f &&
+    data[1] === 0x45 &&
+    data[2] === 0x4c &&
+    data[3] === 0x46
+  )
+}
+
+function elfEndian(data: Buffer): 'be' | 'le' {
+  return data[5] === 2 ? 'be' : 'le'
+}
+
+function readUInt16(data: Buffer, offset: number, endian: 'be' | 'le'): number {
+  if (offset + 2 > data.length) return 0
+  return endian === 'be' ? data.readUInt16BE(offset) : data.readUInt16LE(offset)
+}
+
+function readUInt32(data: Buffer, offset: number, endian: 'be' | 'le'): number {
+  if (offset + 4 > data.length) return 0
+  return endian === 'be' ? data.readUInt32BE(offset) : data.readUInt32LE(offset)
+}
+
+function readUInt64Number(data: Buffer, offset: number, endian: 'be' | 'le'): number | undefined {
+  if (offset + 8 > data.length) return undefined
+  const value = endian === 'be' ? data.readBigUInt64BE(offset) : data.readBigUInt64LE(offset)
+  return value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : undefined
+}
+
+function readUInt64Hex(data: Buffer, offset: number, endian: 'be' | 'le'): string | undefined {
+  if (offset + 8 > data.length) return undefined
+  const value = endian === 'be' ? data.readBigUInt64BE(offset) : data.readBigUInt64LE(offset)
+  return `0x${value.toString(16)}`
+}
+
+function readCString(data: Buffer, offset: number, size: number): string | undefined {
+  if (offset < 0 || size <= 0 || offset >= data.length) return undefined
+  const end = Math.min(offset + size, data.length)
+  const raw = data.subarray(offset, end)
+  const nul = raw.indexOf(0)
+  const text = raw.subarray(0, nul >= 0 ? nul : raw.length).toString('utf8').trim()
+  return text.length > 0 ? text : undefined
+}
+
 function readElfHeader(data: Buffer): LinuxBinaryInventory['elf_header'] | undefined {
-  if (
-    data.length < 20 ||
-    data[0] !== 0x7f ||
-    data[1] !== 0x45 ||
-    data[2] !== 0x4c ||
-    data[3] !== 0x46
-  ) {
+  if (!isElf(data)) {
     return undefined
   }
-  const endian = data[5] === 2 ? 'be' : 'le'
-  const readUInt16 = (offset: number) =>
-    endian === 'be' ? data.readUInt16BE(offset) : data.readUInt16LE(offset)
-  const type = data.length >= 18 ? readUInt16(16) : 0
-  const machine = data.length >= 20 ? readUInt16(18) : 0
+  const endian = elfEndian(data)
+  const elfClass = data[4]
+  const type = readUInt16(data, 16, endian)
+  const machine = readUInt16(data, 18, endian)
+  const entrypoint =
+    elfClass === 2
+      ? readUInt64Hex(data, 24, endian)
+      : data.length >= 28
+        ? `0x${readUInt32(data, 24, endian).toString(16)}`
+        : undefined
   return {
-    class: data[4] === 2 ? '64-bit' : data[4] === 1 ? '32-bit' : undefined,
+    class: elfClass === 2 ? '64-bit' : elfClass === 1 ? '32-bit' : undefined,
     endian: endian === 'be' ? 'big' : 'little',
     type: ELF_TYPES[type] ?? `elf-type-${type}`,
     machine: ELF_MACHINES[machine] ?? `elf-machine-${machine}`,
     osabi: ELF_OSABI[data[7]] ?? `osabi-${data[7]}`,
+    entrypoint,
+  }
+}
+
+function readElfProgramHeaderProfile(data: Buffer): {
+  interpreter?: string
+  dynamicSegmentPresent: boolean
+  relroCandidate: boolean
+  executableStackCandidate: boolean | null
+  nxStackCandidate: boolean | null
+} {
+  if (!isElf(data)) {
+    return {
+      dynamicSegmentPresent: false,
+      relroCandidate: false,
+      executableStackCandidate: null,
+      nxStackCandidate: null,
+    }
+  }
+
+  const endian = elfEndian(data)
+  const is64 = data[4] === 2
+  const phoff = is64 ? readUInt64Number(data, 32, endian) : readUInt32(data, 28, endian)
+  const phentsize = readUInt16(data, is64 ? 54 : 42, endian)
+  const phnum = readUInt16(data, is64 ? 56 : 44, endian)
+  if (!phoff || phentsize <= 0 || phnum <= 0) {
+    return {
+      dynamicSegmentPresent: false,
+      relroCandidate: false,
+      executableStackCandidate: null,
+      nxStackCandidate: null,
+    }
+  }
+
+  let interpreter: string | undefined
+  let dynamicSegmentPresent = false
+  let relroCandidate = false
+  let executableStackCandidate: boolean | null = null
+  const PT_INTERP = 3
+  const PT_DYNAMIC = 2
+  const PT_GNU_STACK = 0x6474e551
+  const PT_GNU_RELRO = 0x6474e552
+  const PF_X = 1
+
+  for (let index = 0; index < phnum; index++) {
+    const offset = phoff + index * phentsize
+    if (offset + phentsize > data.length) break
+    const type = readUInt32(data, offset, endian)
+    const flags = is64 ? readUInt32(data, offset + 4, endian) : readUInt32(data, offset + 24, endian)
+    const segmentOffset = is64
+      ? readUInt64Number(data, offset + 8, endian)
+      : readUInt32(data, offset + 4, endian)
+    const segmentSize = is64
+      ? readUInt64Number(data, offset + 32, endian)
+      : readUInt32(data, offset + 16, endian)
+
+    if (type === PT_INTERP && segmentOffset !== undefined && segmentSize !== undefined) {
+      interpreter = readCString(data, segmentOffset, segmentSize) ?? interpreter
+    }
+    if (type === PT_DYNAMIC) dynamicSegmentPresent = true
+    if (type === PT_GNU_RELRO) relroCandidate = true
+    if (type === PT_GNU_STACK) executableStackCandidate = Boolean(flags & PF_X)
+  }
+
+  return {
+    interpreter,
+    dynamicSegmentPresent,
+    relroCandidate,
+    executableStackCandidate,
+    nxStackCandidate:
+      executableStackCandidate === null ? null : executableStackCandidate === false,
   }
 }
 
@@ -259,6 +479,17 @@ function extractSharedLibraryHints(data: Buffer): string[] {
   return Array.from(new Set(matches)).slice(0, 160)
 }
 
+function extractRpathRunpathHints(data: Buffer): string[] {
+  const matches =
+    previewText(data).match(
+      /(?:(?:RPATH|RUNPATH|LD_LIBRARY_PATH)=)?\/(?:lib|lib64|usr\/lib|usr\/local\/lib|opt)[A-Za-z0-9_./:+-]*/g
+    ) ?? []
+  return Array.from(new Set(matches.map((item) => item.replace(/^(?:RPATH|RUNPATH)=/, '')))).slice(
+    0,
+    80
+  )
+}
+
 function extractSymbolHints(data: Buffer): string[] {
   const matches =
     previewText(data).match(
@@ -267,6 +498,56 @@ function extractSymbolHints(data: Buffer): string[] {
   return Array.from(new Set(matches))
     .filter((value) => value.length >= 4 && !/^[0-9]+$/.test(value))
     .slice(0, 200)
+}
+
+function buildLoaderSecurityProfile(args: {
+  data: Buffer
+  elfHeader?: LinuxBinaryInventory['elf_header']
+  interpreterHints: string[]
+  sharedLibraryHints: string[]
+  symbolHints: string[]
+}): LinuxBinaryLoaderSecurityProfile {
+  const programHeaderProfile = readElfProgramHeaderProfile(args.data)
+  const text = previewText(args.data)
+  const interpreter = programHeaderProfile.interpreter ?? args.interpreterHints[0]
+  const neededLibraries = args.sharedLibraryHints.filter((item) => !item.includes('/'))
+  const bindNowCandidate = /\b(?:BIND_NOW|DF_BIND_NOW)\b/.test(text)
+  const canarySymbolCandidate =
+    /__(?:stack_chk_fail|stack_chk_guard)\b/.test(text) ||
+    args.symbolHints.some((item) => ['__stack_chk_fail', '__stack_chk_guard'].includes(item))
+  const pieCandidate =
+    args.elfHeader?.type === 'shared-object'
+      ? true
+      : args.elfHeader?.type === 'executable'
+        ? false
+        : null
+  const hardeningNotes = unique([
+    programHeaderProfile.relroCandidate ? 'PT_GNU_RELRO segment candidate present.' : '',
+    programHeaderProfile.nxStackCandidate === true
+      ? 'PT_GNU_STACK is present without executable flag; NX stack candidate.'
+      : '',
+    programHeaderProfile.executableStackCandidate === true
+      ? 'PT_GNU_STACK appears executable; review executable-stack risk.'
+      : '',
+    bindNowCandidate ? 'BIND_NOW marker candidate present in preview strings.' : '',
+    canarySymbolCandidate ? 'Stack canary symbol candidate present.' : '',
+    pieCandidate === true ? 'ET_DYN binary may be PIE or shared object; confirm with ELF parser.' : '',
+  ])
+
+  return {
+    entrypoint: args.elfHeader?.entrypoint,
+    interpreter,
+    needed_libraries: unique(neededLibraries).slice(0, 120),
+    rpath_runpath_hints: extractRpathRunpathHints(args.data),
+    dynamic_segment_present: programHeaderProfile.dynamicSegmentPresent,
+    pie_candidate: pieCandidate,
+    nx_stack_candidate: programHeaderProfile.nxStackCandidate,
+    executable_stack_candidate: programHeaderProfile.executableStackCandidate,
+    relro_candidate: programHeaderProfile.relroCandidate,
+    bind_now_candidate: bindNowCandidate,
+    canary_symbol_candidate: canarySymbolCandidate,
+    hardening_notes: hardeningNotes,
+  }
 }
 
 function extractCoreHints(data: Buffer): string[] {
@@ -377,6 +658,107 @@ function unique(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.trim().length > 0)))
 }
 
+function buildEvidenceSummary(args: {
+  inventory: Omit<LinuxBinaryInventory, 'evidence_summary' | 'workflow_handoff' | 'quality_gates'>
+}) {
+  const { inventory } = args
+  return {
+    schema: 'rikune.linux_binary_inventory.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    sample_id: inventory.sample_id ?? null,
+    format: inventory.format,
+    detected_by: inventory.detected_by,
+    elf_header_present: Boolean(inventory.elf_header),
+    loader_profile_present: Boolean(inventory.loader_security_profile.entrypoint),
+    interpreter_count: inventory.interpreter_hints.length,
+    needed_library_count: inventory.loader_security_profile.needed_libraries.length,
+    symbol_hint_count: inventory.symbol_hints.length,
+    core_dump_hint_count: inventory.core_dump_hints.length,
+    kernel_module_hint_count: inventory.kernel_module_hints.length,
+    initramfs_member_count: inventory.initramfs_members.length,
+    nested_candidate_count: inventory.nested_binary_candidates.length,
+    hardening_candidates: {
+      relro: inventory.loader_security_profile.relro_candidate,
+      nx_stack: inventory.loader_security_profile.nx_stack_candidate,
+      executable_stack: inventory.loader_security_profile.executable_stack_candidate,
+      bind_now: inventory.loader_security_profile.bind_now_candidate,
+      canary_symbol: inventory.loader_security_profile.canary_symbol_candidate,
+      pie: inventory.loader_security_profile.pie_candidate,
+    },
+    static_only: true,
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  inventory: Omit<LinuxBinaryInventory, 'evidence_summary' | 'workflow_handoff' | 'quality_gates'>
+}) {
+  const { inventory } = args
+  return {
+    schema: 'rikune.linux_binary_inventory.workflow_handoff.v1',
+    handoff_mode: 'linux_binary_loader_security_to_static_runtime_planning',
+    source_tool: TOOL_NAME,
+    sample_id: inventory.sample_id ?? null,
+    recommended_next_tools: inventory.recommended_next_tools,
+    artifact_contract: {
+      consumes: ['sample'],
+      produces: [LINUX_BINARY_ARTIFACT_TYPE],
+      expected_consumers: inventory.recommended_next_tools,
+    },
+    routing: [
+      {
+        goal: 'elf-structure-and-imports',
+        next_tools: ['elf.structure.analyze', 'elf.imports.extract', 'elf.exports.extract'],
+        required_evidence: ['elf_header', 'loader_security_profile'],
+      },
+      {
+        goal: 'runtime-readiness-planning',
+        next_tools: ['linux.runtime.plan', 'tool.readiness', 'analysis.evidence.graph'],
+        required_evidence: ['interpreter_hints', 'needed_libraries', 'hardening_candidates'],
+      },
+      {
+        goal: 'nested-artifact-routing',
+        next_tools: unique(
+          inventory.nested_binary_candidates.flatMap((candidate) => candidate.recommended_tools)
+        ),
+        required_evidence: ['nested_binary_candidates'],
+      },
+    ],
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      library_loaded_by_tool: false,
+      core_replayed_by_tool: false,
+      kernel_module_loaded_by_tool: false,
+      filesystem_mounted_by_tool: false,
+      runtime_started_by_tool: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+    },
+  }
+}
+
+function buildQualityGates(args: {
+  inventory: Omit<LinuxBinaryInventory, 'evidence_summary' | 'workflow_handoff' | 'quality_gates'>
+}) {
+  const { inventory } = args
+  return {
+    schema: 'rikune.linux_binary_inventory.quality_gates.v1',
+    passive_static_inventory: true,
+    bounded_preview_only: true,
+    elf_header_present: Boolean(inventory.elf_header),
+    loader_profile_present:
+      Boolean(inventory.loader_security_profile.entrypoint) ||
+      Boolean(inventory.loader_security_profile.interpreter),
+    hardening_candidates_present: inventory.loader_security_profile.hardening_notes.length > 0,
+    nested_routing_present: inventory.nested_binary_candidates.length > 0,
+    sample_executed_by_tool: false,
+    library_loaded_by_tool: false,
+    core_replayed_by_tool: false,
+    kernel_module_loaded_by_tool: false,
+    filesystem_mounted_by_tool: false,
+    runtime_started_by_tool: false,
+  }
+}
+
 export function buildLinuxBinaryInventoryFromBuffer(
   data: Buffer,
   options: { filename?: string; size?: number; sampleId?: string } = {}
@@ -391,6 +773,13 @@ export function buildLinuxBinaryInventoryFromBuffer(
   const interpreterHints = extractInterpreterHints(data)
   const sharedLibraryHints = extractSharedLibraryHints(data)
   const symbolHints = extractSymbolHints(data)
+  const loaderSecurityProfile = buildLoaderSecurityProfile({
+    data,
+    elfHeader: detected.elfHeader,
+    interpreterHints,
+    sharedLibraryHints,
+    symbolHints,
+  })
   const coreDumpHints = detected.format === 'elf-core' ? extractCoreHints(data) : []
   const kernelModuleHints =
     detected.format === 'linux-kernel-module' ? extractKernelModuleHints(data) : []
@@ -401,13 +790,14 @@ export function buildLinuxBinaryInventoryFromBuffer(
         ? 'Core dump inspection is static only; this tool does not replay the process or attach a debugger.'
         : undefined
 
-  return {
+  const inventoryBase = {
     sample_id: options.sampleId,
     filename: options.filename,
     format: detected.format,
     detected_by: detected.detectedBy,
     size: options.size ?? data.length,
     elf_header: detected.elfHeader,
+    loader_security_profile: loaderSecurityProfile,
     interpreter_hints: interpreterHints,
     shared_library_hints: sharedLibraryHints,
     symbol_hints: symbolHints,
@@ -416,13 +806,13 @@ export function buildLinuxBinaryInventoryFromBuffer(
     initramfs_members: initramfsMembers.slice(0, 300),
     nested_binary_candidates: nested,
     policy: {
-      passive: true,
-      no_execute: true,
-      no_load: true,
-      no_core_replay: true,
-      no_kernel_module_load: true,
-      no_mount: true,
-      no_runtime_start: true,
+      passive: true as const,
+      no_execute: true as const,
+      no_load: true as const,
+      no_core_replay: true as const,
+      no_kernel_module_load: true as const,
+      no_mount: true as const,
+      no_runtime_start: true as const,
     },
     unsupported_detail: unsupported,
     summary: `Passive Linux binary inventory detected ${detected.format} with ${sharedLibraryHints.length} shared library hint(s), ${symbolHints.length} symbol hint(s), ${initramfsMembers.length} initramfs member(s), and ${nested.length} nested candidate(s).`,
@@ -438,13 +828,22 @@ export function buildLinuxBinaryInventoryFromBuffer(
       detected.format === 'cpio' || detected.format === 'initramfs'
         ? 'container.structure.analyze'
         : '',
+      detected.elfHeader ? 'linux.runtime.plan' : '',
+      detected.elfHeader ? 'analysis.evidence.graph' : '',
       ...nested.flatMap((candidate) => candidate.recommended_tools),
     ]),
     next_actions: [
       'Review ELF header, interpreter, shared-library, symbol, core, and module hints as static metadata.',
+      'Treat hardening values as candidates until corroborated by a full ELF parser such as elf.structure.analyze.',
       'Ingest nested initramfs members or linked objects separately before format-specific analysis.',
       'Do not execute binaries, dlopen libraries, replay core dumps, insert kernel modules, mount filesystems, or start emulators during passive triage.',
     ],
+  }
+  return {
+    ...inventoryBase,
+    evidence_summary: buildEvidenceSummary({ inventory: inventoryBase }),
+    workflow_handoff: buildWorkflowHandoff({ inventory: inventoryBase }),
+    quality_gates: buildQualityGates({ inventory: inventoryBase }),
   }
 }
 

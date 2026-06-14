@@ -36,6 +36,34 @@ describe('office.behavior.profile', () => {
     )
     expect(profile.rule_generation_handoff.yara.tool).toBe('yara.generate')
     expect(profile.rule_generation_handoff.sigma.tool).toBe('sigma.rule.generate')
+    expect(profile.evidence_summary).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.office_behavior_profile.evidence_summary.v1',
+        evidence_kind: 'office-behavior-profile',
+        static_only: true,
+      })
+    )
+    expect(profile.workflow_handoff).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.office_behavior_profile.workflow_handoff.v1',
+        recommended_next_tools: expect.arrayContaining(['ioc.export', 'yara.generate']),
+      })
+    )
+    expect(profile.workflow_handoff.dynamic_boundary).toEqual(
+      expect.objectContaining({
+        status: 'static_only',
+        macros_executed_by_tool: false,
+        office_automation_used: false,
+      })
+    )
+    expect(profile.quality_gates).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.office_behavior_profile.quality_gates.v1',
+        static_only: true,
+        behavior_profile_ready: true,
+        macros_executed: false,
+      })
+    )
     expect(profile.risk_summary.macro_execution_required).toBe(false)
     expect(profile.safety_notes.join(' ')).toMatch(/No Microsoft Office automation/)
   })

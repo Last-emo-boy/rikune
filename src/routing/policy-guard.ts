@@ -4,7 +4,7 @@
  * Requirements: 18.1, 18.2, 18.3, 18.4
  */
 
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import fs from 'fs'
 import { logger } from '../logger.js'
 import path from 'path'
@@ -66,6 +66,16 @@ export interface DangerousOperation {
   tool?: string
   requestedBy?: string
   approvalToken?: string
+  approvalBinding?: ApprovalBinding
+}
+
+export interface ApprovalBinding {
+  argsHash: string
+  runtimeContract?: string
+  runtimePolicyHash?: string
+  runtimeIsolationHash?: string
+  runtimeModesHash?: string
+  capabilityContextHash?: string
 }
 
 export interface ApprovalRecord {
@@ -169,6 +179,28 @@ export const POLICY_RULES: Record<string, PolicyRule> = {
 }
 
 const DEFAULT_APPROVAL_TTL_MS = 15 * 60 * 1000
+const APPROVAL_CONTROL_ARG_KEYS = new Set([
+  'approval_token',
+  'approvalToken',
+  'approved',
+  'require_user_approval',
+])
+const RUNTIME_CONTEXT_ARG_KEYS = new Set([
+  'runtime_contract',
+  'runtimeContract',
+  'runtime_policy',
+  'runtimePolicy',
+  'runtime_isolation',
+  'runtimeIsolation',
+  'runtime_modes',
+  'runtimeModes',
+  'runtime_backend',
+  'runtimeBackend',
+  'runtime_backends',
+  'runtimeBackends',
+  'available_runtime_backends',
+  'availableRuntimeBackends',
+])
 
 // ============================================================================
 // Policy Guard Implementation
@@ -236,16 +268,24 @@ export class PolicyGuard {
 
     // Check if operation requires approval
     if (rule.requiresApproval) {
-      const directApproval = this.checkApprovalProvided(operation)
+      const legacyApproval = this.checkLegacyApprovalProvided(operation)
       const dangerousOperation = this.toDangerousOperation(operation, context, dangerousType)
       const resolvedApproval = this.resolveApproval(operation, dangerousOperation)
 
-      if (directApproval || resolvedApproval.status === 'approved') {
+      if (resolvedApproval.status === 'approved') {
         return {
           allowed: true,
           reason: 'Approved by user',
           approvalToken: resolvedApproval.token,
-          approvalStatus: directApproval ? 'approved' : resolvedApproval.status,
+          approvalStatus: resolvedApproval.status,
+        }
+      }
+
+      if (!resolvedApproval.token && legacyApproval) {
+        return {
+          allowed: true,
+          reason: 'Approved by legacy boolean flag',
+          approvalStatus: 'approved',
         }
       }
 
@@ -321,19 +361,11 @@ export class PolicyGuard {
   }
 
   /**
-   * Check if approval was provided in operation arguments
+   * Check if legacy boolean approval was provided in operation arguments.
+   * This is only honored when no approval token is supplied.
    */
-  private checkApprovalProvided(operation: Operation): boolean {
-    // Check for explicit approval flag
-    if (operation.args.require_user_approval === true) {
-      return true
-    }
-
-    if (operation.args.approved === true) {
-      return true
-    }
-
-    return false
+  private checkLegacyApprovalProvided(operation: Operation): boolean {
+    return operation.args.approved === true
   }
 
   private getApprovalTokenFromArgs(operation: Operation): string | null {
@@ -385,6 +417,7 @@ export class PolicyGuard {
       tool: operation.tool,
       requestedBy: context.user,
       approvalToken: this.getApprovalTokenFromArgs(operation) ?? undefined,
+      approvalBinding: this.buildApprovalBinding(operation),
     }
   }
 
@@ -428,10 +461,132 @@ export class PolicyGuard {
       type: operation.type,
       sampleId: operation.sampleId,
       tool: operation.tool || '',
+      approvalBinding: operation.approvalBinding,
       description: operation.description,
       risks: [...operation.risks].sort(),
       requestedBy: operation.requestedBy || '',
     })
+  }
+
+  private buildApprovalBinding(operation: Operation): ApprovalBinding {
+    const normalizedArgs = this.normalizeArgsForApproval(operation.args)
+    const runtimePolicy = this.getArgValue(operation.args, ['runtime_policy', 'runtimePolicy'])
+    const runtimeIsolation = this.getArgValue(operation.args, [
+      'runtime_isolation',
+      'runtimeIsolation',
+    ])
+    const runtimeModes = this.getArgValue(operation.args, ['runtime_modes', 'runtimeModes'])
+    const runtimeContract = this.getArgValue(operation.args, [
+      'runtime_contract',
+      'runtimeContract',
+    ])
+    const capabilityContext = this.extractCapabilityContext(operation.args)
+
+    return {
+      argsHash: this.hashStableValue(normalizedArgs),
+      ...(runtimeContract !== undefined
+        ? { runtimeContract: this.describeBindingValue(runtimeContract) }
+        : {}),
+      ...(runtimePolicy !== undefined
+        ? { runtimePolicyHash: this.hashStableValue(runtimePolicy) }
+        : {}),
+      ...(runtimeIsolation !== undefined
+        ? { runtimeIsolationHash: this.hashStableValue(runtimeIsolation) }
+        : {}),
+      ...(runtimeModes !== undefined
+        ? { runtimeModesHash: this.hashStableValue(runtimeModes) }
+        : {}),
+      ...(capabilityContext
+        ? { capabilityContextHash: this.hashStableValue(capabilityContext) }
+        : {}),
+    }
+  }
+
+  private normalizeArgsForApproval(args: Record<string, unknown>): Record<string, unknown> {
+    const normalized: Record<string, unknown> = {}
+    for (const key of Object.keys(args).sort()) {
+      if (APPROVAL_CONTROL_ARG_KEYS.has(key) || args[key] === undefined) {
+        continue
+      }
+      normalized[key] = this.normalizeStableValue(args[key])
+    }
+    return normalized
+  }
+
+  private normalizeStableValue(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
+    if (value === null || value === undefined) {
+      return value
+    }
+    if (typeof value === 'bigint') {
+      return value.toString()
+    }
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : value.toString()
+    }
+    if (typeof value !== 'object') {
+      return value
+    }
+    if (value instanceof Date) {
+      return value.toISOString()
+    }
+    if (seen.has(value)) {
+      return '[Circular]'
+    }
+    seen.add(value)
+    if (Array.isArray(value)) {
+      const normalized = value.map((item) => this.normalizeStableValue(item, seen))
+      seen.delete(value)
+      return normalized
+    }
+
+    const normalized: Record<string, unknown> = {}
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      const child = (value as Record<string, unknown>)[key]
+      if (child !== undefined) {
+        normalized[key] = this.normalizeStableValue(child, seen)
+      }
+    }
+    seen.delete(value)
+    return normalized
+  }
+
+  private hashStableValue(value: unknown): string {
+    return createHash('sha256')
+      .update(JSON.stringify(this.normalizeStableValue(value)))
+      .digest('hex')
+  }
+
+  private getArgValue(args: Record<string, unknown>, keys: string[]): unknown {
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(args, key)) {
+        return args[key]
+      }
+    }
+    return undefined
+  }
+
+  private describeBindingValue(value: unknown): string {
+    const normalized = this.normalizeStableValue(value)
+    return typeof normalized === 'string' ? normalized : JSON.stringify(normalized)
+  }
+
+  private extractCapabilityContext(args: Record<string, unknown>): Record<string, unknown> | null {
+    const context: Record<string, unknown> = {}
+    for (const key of Object.keys(args).sort()) {
+      if (this.isCapabilityContextKey(key)) {
+        context[key] = this.normalizeStableValue(args[key])
+      }
+    }
+    return Object.keys(context).length > 0 ? context : null
+  }
+
+  private isCapabilityContextKey(key: string): boolean {
+    const normalizedKey = key.toLowerCase().replace(/[_-]/g, '')
+    return (
+      normalizedKey.includes('capability') ||
+      normalizedKey.includes('capabilities') ||
+      RUNTIME_CONTEXT_ARG_KEYS.has(key)
+    )
   }
 
   private pruneExpiredApprovals(nowMs: number = Date.now()): void {
@@ -448,13 +603,19 @@ export class PolicyGuard {
     this.pruneExpiredApprovals()
 
     const now = new Date()
+    const boundOperation = {
+      ...operation,
+      risks: [...operation.risks],
+      approvalToken: undefined,
+      approvalBinding: operation.approvalBinding ? { ...operation.approvalBinding } : undefined,
+    }
     const record: ApprovalRecord = {
       token: randomUUID(),
       status: 'pending',
-      operation,
+      operation: boundOperation,
       requestedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + this.approvalTtlMs).toISOString(),
-      operationKey: this.buildOperationKey(operation),
+      operationKey: this.buildOperationKey(boundOperation),
     }
 
     this.approvals.set(record.token, record)
@@ -470,6 +631,7 @@ export class PolicyGuard {
         approval_status: record.status,
         approval_token: record.token,
         approval_expires_at: record.expiresAt,
+        approval_binding: record.operation.approvalBinding,
         risks: operation.risks,
       },
     })

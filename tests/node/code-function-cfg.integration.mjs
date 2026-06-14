@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-const { createCodeFunctionCFGHandler } = await import('../../dist/tools/code-function-cfg.js')
+const { createCodeFunctionCFGHandler } = await import('../../dist/plugins/code-analysis/tools/code-function-cfg.js')
 
 const sampleCFG = {
   function: 'FUN_140001000',

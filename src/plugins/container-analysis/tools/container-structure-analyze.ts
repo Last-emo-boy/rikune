@@ -62,6 +62,10 @@ const ContainerStructureDataSchema = z.object({
     notes: z.array(z.string()),
   }),
   policy: ContainerPolicySchema,
+  container_profile: z.record(z.any()).optional(),
+  evidence_summary: z.record(z.any()).optional(),
+  workflow_handoff: z.record(z.any()).optional(),
+  quality_gates: z.record(z.any()).optional(),
   unsupported_detail: z.string().optional(),
   summary: z.string(),
   recommended_next_tools: z.array(z.string()),
@@ -121,8 +125,16 @@ export const containerStructureAnalyzeToolDefinition: ToolDefinition = {
     architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
     execution: ['static', 'triage'],
     safety: ['passive', 'no_installer_execution', 'no_auto_mount', 'no_live_sample_by_default'],
-    capabilities: ['inventory', 'nested-binaries', 'hashes', 'extraction-plan', 'routing'],
-    evidence: ['nested-binaries', 'filesystem', 'package-metadata', 'provenance'],
+    capabilities: [
+      'inventory',
+      'nested-binaries',
+      'hashes',
+      'extraction-plan',
+      'routing',
+      'workflow-plan',
+      'workflow-handoff',
+    ],
+    evidence: ['nested-binaries', 'filesystem', 'package-metadata', 'workflow', 'provenance'],
   },
   artifacts: [
     {
@@ -139,6 +151,32 @@ export const containerStructureAnalyzeToolDefinition: ToolDefinition = {
     {
       category: 'filesystem',
       artifactTypes: ['container_structure'],
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'container.passive-structure-inventory',
+      title: 'Passive container and archive inventory',
+      description:
+        'Inventory archive, package, installer, Docker/OCI, and generic container members, then route nested binaries and package evidence without extraction-to-execute, mounting, installation, or entrypoint execution.',
+      startsWith: ['container.structure.analyze'],
+      nextTools: [
+        'metadata.extract',
+        'strings.extract',
+        'pe.structure.analyze',
+        'elf.structure.analyze',
+        'macho.structure.analyze',
+        'android.package.inventory',
+        'apple.container.inventory',
+        'firmware.workflow.plan',
+        'sbom.provenance.graph',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+      requiredArtifacts: ['sample'],
+      producesArtifacts: ['container_structure'],
+      evidence: ['nested-binaries', 'filesystem', 'package-metadata', 'workflow', 'provenance'],
+      safety: ['passive', 'no_installer_execution', 'no_auto_mount', 'no_live_sample_by_default'],
     },
   ],
 }
@@ -514,6 +552,185 @@ function unique(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.trim().length > 0)))
 }
 
+function flagPaths(entries: ContainerEntry[], flag: string): string[] {
+  return entries
+    .filter((entry) => entry.risk_flags.includes(flag))
+    .map((entry) => entry.path)
+    .slice(0, 12)
+}
+
+function countBy(values: string[]): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const value of values) counts[value] = (counts[value] ?? 0) + 1
+  return counts
+}
+
+function buildContainerProfile(args: {
+  inventory: Omit<
+    ContainerStructureInventory,
+    'container_profile' | 'evidence_summary' | 'workflow_handoff' | 'quality_gates'
+  >
+}) {
+  const { inventory } = args
+  const highCompressionPaths = flagPaths(inventory.entries, 'high-compression-ratio')
+  const largeUncompressedPaths = flagPaths(inventory.entries, 'large-uncompressed-entry')
+  const traversalPaths = flagPaths(inventory.entries, 'path-traversal')
+  const absolutePaths = flagPaths(inventory.entries, 'absolute-path')
+  const nestedFormats = countBy(
+    inventory.nested_binary_candidates.flatMap((candidate) => candidate.routed_formats)
+  )
+  const nestedTools = countBy(
+    inventory.nested_binary_candidates.flatMap((candidate) => candidate.recommended_tools)
+  )
+
+  return {
+    schema: 'rikune.container_structure.profile.v1',
+    artifact_type: 'container_structure',
+    container_format: inventory.container_format,
+    zip_bomb: {
+      suspected: highCompressionPaths.length > 0 || largeUncompressedPaths.length > 0,
+      high_compression_entry_count: highCompressionPaths.length,
+      large_uncompressed_entry_count: largeUncompressedPaths.length,
+      ratio_threshold: ZIP_BOMB_RATIO_THRESHOLD,
+      uncompressed_size_threshold: ZIP_BOMB_UNCOMPRESSED_THRESHOLD,
+      representative_paths: unique([...highCompressionPaths, ...largeUncompressedPaths]),
+      review_required: highCompressionPaths.length > 0 || largeUncompressedPaths.length > 0,
+    },
+    path_traversal: {
+      present: traversalPaths.length > 0 || absolutePaths.length > 0,
+      traversal_entry_count: traversalPaths.length,
+      absolute_path_entry_count: absolutePaths.length,
+      representative_paths: unique([...traversalPaths, ...absolutePaths]),
+      review_required: traversalPaths.length > 0 || absolutePaths.length > 0,
+    },
+    entrypoint: {
+      candidate_count: inventory.entrypoint_candidates.length,
+      representative_paths: inventory.entrypoint_candidates.slice(0, 12),
+      not_run: inventory.policy.no_entrypoint_run,
+      review_required: inventory.entrypoint_candidates.length > 0,
+    },
+    nested_routes: {
+      candidate_count: inventory.nested_binary_candidates.length,
+      formats: nestedFormats,
+      tools: nestedTools,
+      representative_paths: inventory.nested_binary_candidates
+        .map((candidate) => candidate.path)
+        .slice(0, 12),
+    },
+  }
+}
+
+function buildEvidenceSummary(args: {
+  inventory: Omit<
+    ContainerStructureInventory,
+    'container_profile' | 'evidence_summary' | 'workflow_handoff' | 'quality_gates'
+  >
+}) {
+  const { inventory } = args
+  const profile = buildContainerProfile({ inventory })
+  return {
+    schema: 'rikune.container_structure.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    sample_id: inventory.sample_id ?? null,
+    artifact_type: 'container_structure',
+    container_format: inventory.container_format,
+    detected_by: inventory.detected_by,
+    entry_count: inventory.entries.length,
+    entries_truncated: inventory.entries_truncated,
+    nested_candidate_count: inventory.nested_binary_candidates.length,
+    manifest_candidate_count: inventory.manifest_candidates.length,
+    entrypoint_candidate_count: inventory.entrypoint_candidates.length,
+    risk_flags: inventory.risk_flags,
+    risk_counts: {
+      high_compression_ratio: profile.zip_bomb.high_compression_entry_count,
+      large_uncompressed_entry: profile.zip_bomb.large_uncompressed_entry_count,
+      path_traversal: profile.path_traversal.traversal_entry_count,
+      absolute_path: profile.path_traversal.absolute_path_entry_count,
+    },
+    static_only: true,
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  inventory: Omit<
+    ContainerStructureInventory,
+    'container_profile' | 'evidence_summary' | 'workflow_handoff' | 'quality_gates'
+  >
+}) {
+  const { inventory } = args
+  return {
+    schema: 'rikune.container_structure.workflow_handoff.v1',
+    handoff_mode: 'container_structure_to_nested_artifact_evidence_and_safe_extraction',
+    source_tool: TOOL_NAME,
+    sample_id: inventory.sample_id ?? null,
+    artifact_type: 'container_structure',
+    recommended_next_tools: inventory.recommended_next_tools,
+    artifact_contract: {
+      consumes: ['sample'],
+      produces: ['container_structure'],
+      expected_consumers: inventory.recommended_next_tools,
+    },
+    routing: [
+      {
+        goal: 'extraction-risk-review',
+        priority: inventory.risk_flags.length > 0 ? 'high' : 'normal',
+        next_tools: ['artifact.read', 'container.structure.analyze', 'analysis.evidence.graph'],
+        required_evidence: ['risk_flags', 'extraction_plan', 'container_profile'],
+      },
+      {
+        goal: 'nested-artifact-routing',
+        priority: inventory.nested_binary_candidates.length > 0 ? 'high' : 'normal',
+        next_tools: unique(
+          inventory.nested_binary_candidates.flatMap((candidate) => candidate.recommended_tools)
+        ),
+        required_evidence: ['nested_binary_candidates', 'nested_routes'],
+      },
+      {
+        goal: 'supply-chain-evidence-and-reporting',
+        priority: 'normal',
+        next_tools: ['sbom.provenance.graph', 'analysis.evidence.graph', 'report.generate'],
+        required_evidence: ['manifest_candidates', 'filesystem_inventory'],
+      },
+    ],
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      payload_executed_by_tool: false,
+      extraction_performed_by_tool: false,
+      filesystem_mounted_by_tool: false,
+      package_installed_by_tool: false,
+      entrypoint_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+    },
+  }
+}
+
+function buildQualityGates(args: {
+  inventory: Omit<
+    ContainerStructureInventory,
+    'container_profile' | 'evidence_summary' | 'workflow_handoff' | 'quality_gates'
+  >
+}) {
+  const { inventory } = args
+  const profile = buildContainerProfile({ inventory })
+  return {
+    schema: 'rikune.container_structure.quality_gates.v1',
+    passive_static_inventory: true,
+    bounded_preview_only: true,
+    max_entries_enforced: true,
+    entries_truncated: inventory.entries_truncated,
+    zip_bomb_review_required: profile.zip_bomb.review_required,
+    path_traversal_review_required: profile.path_traversal.review_required,
+    entrypoint_review_required: profile.entrypoint.review_required,
+    sample_executed_by_tool: false,
+    payload_executed_by_tool: false,
+    extraction_performed_by_tool: false,
+    filesystem_mounted_by_tool: false,
+    package_installed_by_tool: false,
+    entrypoint_executed_by_tool: false,
+  }
+}
+
 export function buildContainerStructureFromBuffer(
   data: Buffer,
   options: { filename?: string; size?: number; sampleId?: string } = {}
@@ -563,7 +780,7 @@ export function buildContainerStructureFromBuffer(
 
   const combinedRiskFlags = unique([...riskFlags, ...formatRiskFlags])
 
-  return {
+  const inventoryBase = {
     sample_id: options.sampleId,
     filename: options.filename,
     container_format: format,
@@ -577,8 +794,8 @@ export function buildContainerStructureFromBuffer(
     entrypoint_candidates: entrypointCandidates,
     risk_flags: combinedRiskFlags,
     extraction_plan: {
-      status: 'plan_only',
-      safe_default: true,
+      status: 'plan_only' as const,
+      safe_default: true as const,
       max_entries: MAX_ENTRIES,
       notes: [
         'Inventory first; extract only into a non-executable quarantine directory after reviewing risk flags.',
@@ -587,18 +804,21 @@ export function buildContainerStructureFromBuffer(
       ],
     },
     policy: {
-      passive: true,
-      no_execute: true,
-      no_extract_to_execution_path: true,
-      no_install: true,
-      no_mount: true,
-      no_entrypoint_run: true,
+      passive: true as const,
+      no_execute: true as const,
+      no_extract_to_execution_path: true as const,
+      no_install: true as const,
+      no_mount: true as const,
+      no_entrypoint_run: true as const,
     },
     unsupported_detail: unsupported,
     summary: `Passive container inventory detected ${format} with ${allEntries.length} member/path hint(s), ${nested.length} nested binary candidate(s), and ${combinedRiskFlags.length} risk flag(s).`,
     recommended_next_tools: unique([
       'metadata.extract',
       'strings.extract',
+      'sbom.provenance.graph',
+      'analysis.evidence.graph',
+      'report.generate',
       ...nested.flatMap((candidate) => candidate.recommended_tools),
     ]),
     next_actions: [
@@ -606,6 +826,13 @@ export function buildContainerStructureFromBuffer(
       'Ingest nested binary candidates separately and route them to format-specific static plugins.',
       'Do not execute payloads, installer hooks, or container entrypoints during static triage.',
     ],
+  }
+  return {
+    ...inventoryBase,
+    container_profile: buildContainerProfile({ inventory: inventoryBase }),
+    evidence_summary: buildEvidenceSummary({ inventory: inventoryBase }),
+    workflow_handoff: buildWorkflowHandoff({ inventory: inventoryBase }),
+    quality_gates: buildQualityGates({ inventory: inventoryBase }),
   }
 }
 

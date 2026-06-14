@@ -274,6 +274,8 @@ export interface CreateOrReuseAnalysisRunOptions {
   goal: AnalysisIntentGoal
   depth: AnalysisIntentDepth
   backendPolicy: BackendPolicy
+  allowTransformations?: boolean
+  allowLiveExecution?: boolean
   forceRefresh?: boolean
   metadata?: Record<string, unknown>
   stagePlan?: AnalysisPipelineStage[]
@@ -336,6 +338,8 @@ export function buildAnalysisRunCompatibilityMarker(input: {
   goal: AnalysisIntentGoal
   depth: AnalysisIntentDepth
   backendPolicy: BackendPolicy
+  allowTransformations?: boolean
+  allowLiveExecution?: boolean
   pipelineVersion?: string
 }): string {
   const payload = JSON.stringify({
@@ -343,6 +347,8 @@ export function buildAnalysisRunCompatibilityMarker(input: {
     goal: input.goal,
     depth: input.depth,
     backend_policy: input.backendPolicy,
+    allow_transformations: input.allowTransformations === true,
+    allow_live_execution: input.allowLiveExecution === true,
     pipeline_version: input.pipelineVersion || ANALYSIS_PIPELINE_VERSION,
   })
   return createHash('sha256').update(payload).digest('hex')
@@ -399,11 +405,19 @@ export function createOrReuseAnalysisRun(
   const sampleSizeTier = classifySampleSizeTier(options.sample.size)
   const analysisBudgetProfile = deriveAnalysisBudgetProfile(options.depth, sampleSizeTier)
   const stagePlan = options.stagePlan || buildStagePlan(options.goal)
+  const executionPolicy = {
+    allowTransformations:
+      options.allowTransformations ?? Boolean(options.metadata?.allow_transformations),
+    allowLiveExecution:
+      options.allowLiveExecution ?? Boolean(options.metadata?.allow_live_execution),
+  }
   const compatibilityMarker = buildAnalysisRunCompatibilityMarker({
     sampleSha256: options.sample.sha256,
     goal: options.goal,
     depth: options.depth,
     backendPolicy: options.backendPolicy,
+    allowTransformations: executionPolicy.allowTransformations,
+    allowLiveExecution: executionPolicy.allowLiveExecution,
   })
 
   if (!options.forceRefresh) {
@@ -445,7 +459,11 @@ export function createOrReuseAnalysisRun(
     latest_stage: null,
     stage_plan_json: JSON.stringify(stagePlan),
     artifact_refs_json: JSON.stringify([]),
-    metadata_json: JSON.stringify(options.metadata || {}),
+    metadata_json: JSON.stringify({
+      ...(options.metadata || {}),
+      allow_transformations: executionPolicy.allowTransformations,
+      allow_live_execution: executionPolicy.allowLiveExecution,
+    }),
     created_at: createdAt,
     updated_at: createdAt,
     finished_at: null,
@@ -637,7 +655,8 @@ function toStageView(
 }
 
 function deriveRunStatus(
-  stageViews: Array<z.infer<typeof AnalysisRunStageViewSchema>>
+  stageViews: Array<z.infer<typeof AnalysisRunStageViewSchema>>,
+  stagePlan: AnalysisPipelineStage[] = []
 ): AnalysisRunStatus {
   if (stageViews.some((stage) => stage.status === 'failed')) {
     return 'failed'
@@ -653,13 +672,27 @@ function deriveRunStatus(
   if (stageViews.some((stage) => stage.status === 'queued')) {
     return 'queued'
   }
-  if (
-    stageViews.length > 0 &&
-    stageViews.every((stage) => stage.status === 'completed' || stage.status === 'skipped')
-  ) {
+
+  const stageByName = new Map(stageViews.map((stage) => [stage.stage, stage]))
+  const plannedStages =
+    stagePlan.length > 0
+      ? stagePlan
+      : stageViews.map((stage) => stage.stage as AnalysisPipelineStage)
+  const plannedStagesComplete =
+    plannedStages.length > 0 &&
+    plannedStages.every((stage) => {
+      const view = stageByName.get(stage)
+      return view?.status === 'completed' || view?.status === 'skipped'
+    })
+  if (plannedStagesComplete) {
     return 'completed'
   }
-  if (stageViews.some((stage) => stage.status === 'completed' || stage.status === 'partial')) {
+  if (
+    stageViews.some(
+      (stage) =>
+        stage.status === 'completed' || stage.status === 'partial' || stage.status === 'skipped'
+    )
+  ) {
     return 'partial'
   }
   return 'created'
@@ -801,12 +834,17 @@ export function getAnalysisRunSummary(
       job_id: stage.job_id || null,
     }))
 
-  const status = deriveRunStatus(stages)
-  if (status !== run.status) {
+  const status = deriveRunStatus(stages, stagePlan)
+  const runStateChanged = status !== run.status
+  const finishedAt =
+    status === 'completed' || status === 'failed' ? run.finished_at || nowIso() : null
+  const timestampsChanged = finishedAt !== run.finished_at
+  const updatedAt = runStateChanged || timestampsChanged ? nowIso() : run.updated_at
+  if (runStateChanged || timestampsChanged) {
     database.updateAnalysisRun(runId, {
       status,
-      updated_at: nowIso(),
-      ...(status === 'completed' || status === 'failed' ? { finished_at: nowIso() } : {}),
+      updated_at: updatedAt,
+      finished_at: finishedAt,
     })
   }
 
@@ -826,8 +864,8 @@ export function getAnalysisRunSummary(
     reused:
       Boolean(run.reused_from_run_id) || stages.some((stage) => stage.execution_state === 'reused'),
     created_at: run.created_at,
-    updated_at: run.updated_at,
-    finished_at: run.finished_at,
+    updated_at: updatedAt,
+    finished_at: finishedAt,
     artifact_refs: parseRunArtifactRefs(run),
     stage_plan: stagePlan,
     stages,

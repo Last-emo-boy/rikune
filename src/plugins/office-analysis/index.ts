@@ -5,7 +5,7 @@
  * using oletools.
  */
 
-import type { Plugin } from '../sdk.js'
+import { defineTool, requireDatabase, requireWorkspaceManager, type Plugin } from '../sdk.js'
 import {
   officeVbaExtractToolDefinition,
   createOfficeVbaExtractHandler,
@@ -22,30 +22,46 @@ import {
   officeBehaviorProfileToolDefinition,
   createOfficeBehaviorProfileHandler,
 } from './tools/office-behavior-profile.js'
+import {
+  OFFICE_ANALYSIS_PLUGIN_ASPECTS,
+  OFFICE_OLETOOLS_RUNTIME_POLICY,
+} from './office-analysis-metadata.js'
 
 const officeAnalysisPlugin: Plugin = {
   id: 'office-analysis',
   name: 'Office Analysis',
   executionDomain: 'static',
-  aspects: {
-    formats: ['office', 'doc', 'docm', 'xls', 'xlsm', 'ppt', 'pptm', 'ole', 'ooxml'],
-    platforms: ['windows', 'macos', 'cross-platform'],
-    execution: ['static', 'triage'],
-    safety: ['passive', 'no_live_sample_by_default'],
-    capabilities: ['macro-analysis', 'ole-structure', 'vba-extraction', 'ioc-extraction'],
-    evidence: ['structure', 'strings', 'behavior', 'network', 'filesystem', 'provenance'],
-  },
+  aspects: OFFICE_ANALYSIS_PLUGIN_ASPECTS,
+  runtimePolicy: OFFICE_OLETOOLS_RUNTIME_POLICY,
   surfaceRules: {
     tier: 1,
-    activateOn: { fileTypes: ['office', 'doc', 'docm', 'xls', 'xlsm', 'ppt', 'pptm', 'ole'] },
+    activateOn: {
+      fileTypes: [
+        'office',
+        'doc',
+        'docx',
+        'docm',
+        'xls',
+        'xlsx',
+        'xlsm',
+        'ppt',
+        'pptx',
+        'pptm',
+        'rtf',
+        'ole',
+        'ooxml',
+      ],
+    },
     category: 'static-analysis',
     signalMap: {
       has_macros: 'vba_macros',
       has_vba: 'vba_macros',
+      macro: 'vba_macros',
+      malicious_document: 'vba_macros',
     },
   },
   description:
-    'VBA macro extraction, OLE structure analysis, and malicious Office document detection via oletools',
+    'Passive Office, VBA macro, Excel macro, OLE, OOXML, malicious document, and static-only behavior profile analysis via oletools',
   version: '1.0.0',
   systemDeps: [
     {
@@ -57,6 +73,36 @@ const officeAnalysisPlugin: Plugin = {
       dockerInstall: 'pip install oletools',
       dockerFeature: 'dynamic-python',
     },
+  ],
+  tools: [
+    defineTool({
+      ...officeVbaExtractToolDefinition,
+      handler: (args, deps) =>
+        createOfficeVbaExtractHandler(
+          requireWorkspaceManager(deps, 'office.vba.extract'),
+          requireDatabase(deps, 'office.vba.extract')
+        )(args),
+    }),
+    defineTool({
+      ...officeMacroDetectToolDefinition,
+      handler: (args, deps) =>
+        createOfficeMacroDetectHandler(
+          requireWorkspaceManager(deps, 'office.macro.detect'),
+          requireDatabase(deps, 'office.macro.detect')
+        )(args),
+    }),
+    defineTool({
+      ...officeOleAnalyzeToolDefinition,
+      handler: (args, deps) =>
+        createOfficeOleAnalyzeHandler(
+          requireWorkspaceManager(deps, 'office.ole.analyze'),
+          requireDatabase(deps, 'office.ole.analyze')
+        )(args),
+    }),
+    defineTool({
+      ...officeBehaviorProfileToolDefinition,
+      handler: (args) => createOfficeBehaviorProfileHandler()(args),
+    }),
   ],
   register(server, deps) {
     const { workspaceManager: wm, database: db } = deps

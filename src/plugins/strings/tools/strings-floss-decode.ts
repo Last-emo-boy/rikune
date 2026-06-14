@@ -251,6 +251,69 @@ export const stringsFlossDecodeToolDefinition: ToolDefinition = {
       ],
     },
   ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: false,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    notes: [
+      'FLOSS decoding is a static backend workflow and must not execute the sample.',
+      'Missing FLARE-FLOSS readiness is surfaced through setup metadata only.',
+    ],
+  } as ToolDefinition['runtimePolicy'] & {
+    noNetwork: true
+    noMutation: true
+    noLiveExecution: true
+  },
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'FLARE-FLOSS static decoder',
+    backendKind: 'external',
+    adapter: 'static_python.strings.floss.decode',
+    availability: 'optional',
+    envVar: 'FLOSS_PATH',
+    supportedModes: ['external'],
+    defaultMode: 'external',
+    inputArtifactTypes: ['sample'],
+    outputArtifactTypes: ['enriched_string_analysis'],
+    policy: {
+      passiveByDefault: true,
+      requiresUserOptIn: false,
+      requiresIsolation: false,
+      noNetwork: true,
+      noMutation: true,
+      noLiveExecution: true,
+      maxInputBytes: 256 * 1024 * 1024,
+      maxOutputBytes: 16 * 1024 * 1024,
+      defaultTimeoutMs: 60_000,
+      notes: [
+        'FLARE-FLOSS is used only as a read-only static decoder.',
+        'Readiness probes must not spawn FLOSS or fall back to dynamic sample execution.',
+      ],
+    },
+    readiness: {
+      doesNotStartBackend: true,
+      setupActions: [
+        'Install FLARE-FLOSS in the static analysis environment.',
+        'Set FLOSS_PATH to the floss command when using an external backend.',
+        'Use strings.extract for raw string triage when FLOSS is unavailable.',
+      ],
+      missingBackendBehavior:
+        'Report backend_missing/setup guidance through readiness metadata; do not start FLOSS from discovery/readiness and do not execute the sample.',
+    },
+    packaging: {
+      installRoute: 'profile-gated',
+      installProfile: 'optional',
+      dockerFeature: 'static-python',
+      envVar: 'FLOSS_PATH',
+      dockerDefault: 'floss',
+      notes: ['Enable the optional static-python profile to include FLARE-FLOSS.'],
+    },
+  },
 }
 
 // ============================================================================

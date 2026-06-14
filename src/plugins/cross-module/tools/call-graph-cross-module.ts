@@ -14,6 +14,54 @@ import {
 } from '../../sdk.js'
 
 const TOOL_NAME = 'call.graph.cross.module'
+export const CALL_GRAPH_CROSS_MODULE_ARTIFACT_TYPE = 'cross_module_graph'
+export const CALL_GRAPH_CROSS_MODULE_SAFETY = [
+  'passive',
+  'no_network_by_default',
+  'no_mutation',
+  'no_live_sample_by_default',
+  'no_sample_execution',
+]
+export const CALL_GRAPH_CROSS_MODULE_EVIDENCE = [
+  'imports',
+  'exports',
+  'symbols',
+  'call-graph',
+  'dependency-graph',
+  'cross-module',
+  'workflow',
+  'provenance',
+]
+export const CALL_GRAPH_CROSS_MODULE_FOLLOW_UP_TOOLS = [
+  'pe.imports.extract',
+  'pe.exports.extract',
+  'pe.symbols.recover',
+  'elf.imports.extract',
+  'elf.exports.extract',
+  'elf.structure.analyze',
+  'macho.structure.analyze',
+  'native.object.inventory',
+  'analysis.evidence.graph',
+  'report.generate',
+]
+export const CALL_GRAPH_CROSS_MODULE_RUNTIME_POLICY = {
+  passiveByDefault: true,
+  requiresUserOptIn: false,
+  requiresIsolation: false,
+  allowedBackends: ['local'],
+  networkPolicy: 'disabled',
+  noNetwork: true,
+  noMutation: true,
+  noLiveExecution: true,
+  notes: [
+    'Cross-module call graph reconstruction only correlates previously collected static import/export evidence.',
+    'The tool does not load, link, execute, or mutate any module while building dependency graph metadata.',
+  ],
+} as ToolDefinition['runtimePolicy'] & {
+  noNetwork: true
+  noMutation: true
+  noLiveExecution: true
+}
 
 export const CallGraphCrossModuleInputSchema = z.object({
   sample_ids: z
@@ -66,9 +114,67 @@ export const callGraphCrossModuleToolDefinition: ToolDefinition = {
   description:
     'Reconstruct a cross-module call graph by matching import entries in each binary ' +
     'to export entries in other binaries of the set. Produces a directed graph of ' +
-    'inter-module dependencies with resolved function-level edges when available.',
+    'inter-module dependencies with resolved function-level edges when available. Supports ' +
+    'workflow.search queries for dependency graph, cross-module, imports/exports/symbols/call graph, and handoff routing.',
   inputSchema: CallGraphCrossModuleInputSchema,
   outputSchema: CallGraphCrossModuleOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll', 'exe', 'elf', 'so', 'macho', 'dylib', 'native'],
+    platforms: ['windows', 'linux', 'macos', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage', 'correlation'],
+    safety: CALL_GRAPH_CROSS_MODULE_SAFETY,
+    capabilities: [
+      'cross-module',
+      'cross-module-call-graph',
+      'call-graph',
+      'dependency-graph',
+      'imports-exports-correlation',
+      'imports/exports/symbols/call-graph',
+      'symbols',
+      'routing',
+      'search-profile',
+      'workflow-handoff',
+    ],
+    evidence: CALL_GRAPH_CROSS_MODULE_EVIDENCE,
+  },
+  artifacts: [
+    {
+      type: CALL_GRAPH_CROSS_MODULE_ARTIFACT_TYPE,
+      description:
+        'Cross-module dependency graph with import/export/symbol correlation and resolved call edges',
+      mimeTypes: ['application/json'],
+    },
+  ],
+  evidence: [
+    { category: 'imports', artifactTypes: [CALL_GRAPH_CROSS_MODULE_ARTIFACT_TYPE] },
+    { category: 'exports', artifactTypes: [CALL_GRAPH_CROSS_MODULE_ARTIFACT_TYPE] },
+    { category: 'symbols', artifactTypes: [CALL_GRAPH_CROSS_MODULE_ARTIFACT_TYPE] },
+    { category: 'call-graph', artifactTypes: [CALL_GRAPH_CROSS_MODULE_ARTIFACT_TYPE] },
+    { category: 'dependency-graph', artifactTypes: [CALL_GRAPH_CROSS_MODULE_ARTIFACT_TYPE] },
+    { category: 'cross-module', artifactTypes: [CALL_GRAPH_CROSS_MODULE_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [CALL_GRAPH_CROSS_MODULE_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [CALL_GRAPH_CROSS_MODULE_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: [
+    {
+      id: 'cross-module.call-graph-correlation-handoff',
+      title: 'Cross-module call graph and dependency correlation',
+      description:
+        'Correlate static imports, exports, symbols, and module dependency graph evidence across PE, ELF, Mach-O, DLL, SO, and dylib sets before evidence graph and report handoff.',
+      startsWith: [TOOL_NAME],
+      nextTools: CALL_GRAPH_CROSS_MODULE_FOLLOW_UP_TOOLS,
+      requiredArtifacts: ['sample', 'static import/export evidence'],
+      producesArtifacts: [CALL_GRAPH_CROSS_MODULE_ARTIFACT_TYPE],
+      evidence: CALL_GRAPH_CROSS_MODULE_EVIDENCE,
+      safety: CALL_GRAPH_CROSS_MODULE_SAFETY,
+      handoff: {
+        recommended: CALL_GRAPH_CROSS_MODULE_FOLLOW_UP_TOOLS,
+        routes: ['pe', 'elf', 'macho', 'native', 'analysis.evidence.graph', 'report.generate'],
+      },
+    },
+  ],
+  runtimePolicy: CALL_GRAPH_CROSS_MODULE_RUNTIME_POLICY,
 }
 
 interface ModuleInfo {

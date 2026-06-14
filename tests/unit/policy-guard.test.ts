@@ -71,6 +71,24 @@ describe('PolicyGuard', () => {
   })
 
   describe('checkPermission', () => {
+    const approveOperationFor = async (
+      operation: Operation,
+      context: PolicyContext = {}
+    ): Promise<string> => {
+      const firstDecision = await policyGuard.checkPermission(operation, context)
+
+      expect(firstDecision.allowed).toBe(false)
+      expect(firstDecision.approvalToken).toBeTruthy()
+      expect(firstDecision.approvalStatus).toBe('pending')
+
+      await policyGuard.approveOperation(firstDecision.approvalToken!, {
+        decidedBy: 'reviewer@example.com',
+        reason: 'Approved for regression test',
+      })
+
+      return firstDecision.approvalToken!
+    }
+
     describe('dynamic execution', () => {
       test('should deny dynamic execution without approval (Requirement 18.1)', async () => {
         const operation: Operation = {
@@ -132,6 +150,204 @@ describe('PolicyGuard', () => {
         expect(approvedDecision.approvalStatus).toBe('approved')
       })
 
+      test('should not replay an approval token across tools', async () => {
+        const operation: Operation = {
+          type: 'dynamic_execution',
+          tool: 'sandbox.execute',
+          args: {
+            sample_id: 'sha256:test',
+            mode: 'live_local',
+          },
+        }
+        const context: PolicyContext = {
+          user: 'analyst@example.com',
+          sampleId: 'sha256:test',
+        }
+
+        const token = await approveOperationFor(operation, context)
+        const replayDecision = await policyGuard.checkPermission(
+          {
+            ...operation,
+            tool: 'sandbox.execute.alternate',
+            args: {
+              ...operation.args,
+              approval_token: token,
+            },
+          },
+          context
+        )
+
+        expect(replayDecision.allowed).toBe(false)
+        expect(replayDecision.requiresApproval).toBe(true)
+        expect(replayDecision.approvalToken).toBeTruthy()
+        expect(replayDecision.approvalToken).not.toBe(token)
+      })
+
+      test('should not replay an approval token across samples', async () => {
+        const operation: Operation = {
+          type: 'dynamic_execution',
+          tool: 'sandbox.execute',
+          args: {
+            sample_id: 'sha256:test',
+            mode: 'live_local',
+          },
+        }
+
+        const token = await approveOperationFor(operation, {
+          user: 'analyst@example.com',
+          sampleId: 'sha256:test',
+        })
+        const replayDecision = await policyGuard.checkPermission(
+          {
+            ...operation,
+            args: {
+              ...operation.args,
+              sample_id: 'sha256:other',
+              approval_token: token,
+            },
+          },
+          {
+            user: 'analyst@example.com',
+            sampleId: 'sha256:other',
+          }
+        )
+
+        expect(replayDecision.allowed).toBe(false)
+        expect(replayDecision.requiresApproval).toBe(true)
+        expect(replayDecision.approvalToken).toBeTruthy()
+        expect(replayDecision.approvalToken).not.toBe(token)
+      })
+
+      test('should not replay an approval token across argument hashes', async () => {
+        const operation: Operation = {
+          type: 'dynamic_execution',
+          tool: 'sandbox.execute',
+          args: {
+            sample_id: 'sha256:test',
+            mode: 'live_local',
+            timeout_sec: 20,
+          },
+        }
+        const context: PolicyContext = {
+          user: 'analyst@example.com',
+          sampleId: 'sha256:test',
+        }
+
+        const token = await approveOperationFor(operation, context)
+        const replayDecision = await policyGuard.checkPermission(
+          {
+            ...operation,
+            args: {
+              ...operation.args,
+              timeout_sec: 60,
+              approval_token: token,
+            },
+          },
+          context
+        )
+
+        expect(replayDecision.allowed).toBe(false)
+        expect(replayDecision.requiresApproval).toBe(true)
+        expect(replayDecision.approvalToken).toBeTruthy()
+        expect(replayDecision.approvalToken).not.toBe(token)
+      })
+
+      test('should not replay an approval token across runtime policy context', async () => {
+        const operation: Operation = {
+          type: 'dynamic_execution',
+          tool: 'frida.runtime.instrument',
+          args: {
+            sample_id: 'sha256:test',
+            runtime_contract: 'python-worker/frida_worker.py',
+            runtime_modes: ['instrument'],
+            runtime_policy: {
+              filesystem: 'read-only',
+              network: 'disabled',
+            },
+            runtime_isolation: {
+              sandbox: true,
+            },
+          },
+        }
+        const context: PolicyContext = {
+          user: 'analyst@example.com',
+          sampleId: 'sha256:test',
+        }
+
+        const token = await approveOperationFor(operation, context)
+        const replayDecision = await policyGuard.checkPermission(
+          {
+            ...operation,
+            args: {
+              ...operation.args,
+              runtime_policy: {
+                filesystem: 'read-only',
+                network: 'enabled',
+              },
+              approval_token: token,
+            },
+          },
+          context
+        )
+
+        expect(replayDecision.allowed).toBe(false)
+        expect(replayDecision.requiresApproval).toBe(true)
+        expect(replayDecision.approvalToken).toBeTruthy()
+        expect(replayDecision.approvalToken).not.toBe(token)
+      })
+
+      test('should not let approved=true override a mismatched approval token', async () => {
+        const operation: Operation = {
+          type: 'dynamic_execution',
+          tool: 'sandbox.execute',
+          args: {
+            sample_id: 'sha256:test',
+            mode: 'live_local',
+          },
+        }
+
+        const token = await approveOperationFor(operation, {
+          user: 'analyst@example.com',
+          sampleId: 'sha256:test',
+        })
+        const replayDecision = await policyGuard.checkPermission(
+          {
+            ...operation,
+            args: {
+              ...operation.args,
+              sample_id: 'sha256:other',
+              approval_token: token,
+              approved: true,
+            },
+          },
+          {
+            user: 'analyst@example.com',
+            sampleId: 'sha256:other',
+          }
+        )
+
+        expect(replayDecision.allowed).toBe(false)
+        expect(replayDecision.requiresApproval).toBe(true)
+        expect(replayDecision.approvalToken).toBeTruthy()
+        expect(replayDecision.approvalToken).not.toBe(token)
+      })
+
+      test('should not treat require_user_approval=true as approval by itself', async () => {
+        const operation: Operation = {
+          type: 'dynamic_execution',
+          tool: 'sandbox.execute',
+          args: {
+            sample_id: 'sha256:test',
+            require_user_approval: true,
+          },
+        }
+
+        const decision = await policyGuard.checkPermission(operation, {})
+
+        expect(decision.allowed).toBe(false)
+        expect(decision.requiresApproval).toBe(true)
+      })
+
       test('should detect sandbox.execute as dynamic execution', async () => {
         const operation: Operation = {
           type: 'static_analysis', // Wrong type, but tool indicates dynamic
@@ -181,7 +397,7 @@ describe('PolicyGuard', () => {
         expect(decision.requiresApproval).toBe(true)
       })
 
-      test('should allow external upload with approval', async () => {
+      test('should allow external upload with no-token legacy approved=true fallback', async () => {
         const operation: Operation = {
           type: 'static_analysis',
           tool: 'upload_to_virustotal',
@@ -194,6 +410,9 @@ describe('PolicyGuard', () => {
         const decision = await policyGuard.checkPermission(operation, {})
 
         expect(decision.allowed).toBe(true)
+        expect(decision.reason).toBe('Approved by legacy boolean flag')
+        expect(decision.approvalToken).toBeUndefined()
+        expect(decision.approvalStatus).toBe('approved')
       })
     })
 
@@ -445,9 +664,9 @@ describe('PolicyGuard', () => {
       // Test that audit log doesn't throw even if write fails
       // We'll mock fs.appendFileSync to simulate a write error
       const originalAppendFileSync = fs.appendFileSync
-      
+
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
-      
+
       // Mock appendFileSync to throw an error
       fs.appendFileSync = jest.fn(() => {
         throw new Error('Simulated write error')

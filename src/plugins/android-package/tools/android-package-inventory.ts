@@ -14,6 +14,62 @@ import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '
 const TOOL_NAME = 'android.package.inventory'
 const DEFAULT_MAX_READ_BYTES = 6 * 1024 * 1024
 const MAX_PREVIEW_BYTES = 32 * 1024 * 1024
+const ANDROID_PACKAGE_INVENTORY_ARTIFACT_TYPE = 'android_package_inventory'
+const ANDROID_PACKAGE_FORMATS = [
+  'android-package',
+  'android-bytecode',
+  'apk',
+  'aab',
+  'apks',
+  'xapk',
+  'split-apk',
+  'aar',
+  'dex',
+  'multi-dex',
+  'oat',
+  'vdex',
+  'odex',
+  'art',
+  'apk-signature',
+  'arsc',
+]
+const ANDROID_PACKAGE_PLATFORMS = ['android', 'jvm', 'linux']
+const ANDROID_PACKAGE_EVIDENCE = [
+  'structure',
+  'manifest',
+  'signatures',
+  'nested-binaries',
+  'package-metadata',
+  'provenance',
+]
+const ANDROID_PACKAGE_FOLLOW_UP_TOOLS = [
+  'apk.manifest.parse',
+  'dex.classes.list',
+  'apk.packer.detect',
+  'strings.extract',
+  'analysis.evidence.graph',
+  'workflow.plan',
+]
+const ANDROID_PACKAGE_WORKFLOW_RECIPES = [
+  {
+    id: 'android-package.static-inventory-handoff',
+    title: 'Android package static inventory handoff',
+    description:
+      'Create a passive Android package, bytecode, native library, signing, and split-package inventory for static workflow planning without installing packages, connecting devices, or launching decompilers.',
+    startsWith: [TOOL_NAME],
+    nextTools: ANDROID_PACKAGE_FOLLOW_UP_TOOLS,
+    requiredArtifacts: ['sample'],
+    producesArtifacts: [ANDROID_PACKAGE_INVENTORY_ARTIFACT_TYPE],
+    evidence: ANDROID_PACKAGE_EVIDENCE,
+    safety: [
+      'passive',
+      'no_install',
+      'no_device_connection',
+      'no_decompiler_launch',
+      'no_live_sample_by_default',
+    ],
+  },
+]
 
 const AndroidPackagePolicySchema = z.object({
   passive: z.literal(true),
@@ -26,6 +82,8 @@ const AndroidPackagePolicySchema = z.object({
 
 const RoutedCandidateSchema = z.object({
   path: z.string(),
+  format: z.string(),
+  architecture: z.string().optional(),
   routed_formats: z.array(z.string()),
   recommended_tools: z.array(z.string()),
 })
@@ -44,6 +102,10 @@ const AndroidPackageInventoryDataSchema = z.object({
   signing_candidates: z.array(z.string()),
   split_package_candidates: z.array(z.string()),
   nested_package_candidates: z.array(RoutedCandidateSchema),
+  workflowRecipes: z.array(z.any()),
+  formats: z.array(z.string()),
+  platforms: z.array(z.string()),
+  evidence: z.array(z.string()),
   policy: AndroidPackagePolicySchema,
   unsupported_detail: z.string().optional(),
   summary: z.string(),
@@ -79,42 +141,82 @@ export const androidPackageInventoryToolDefinition: ToolDefinition = {
   inputSchema: AndroidPackageInventoryInputSchema,
   outputSchema: AndroidPackageInventoryOutputSchema,
   aspects: {
-    formats: [
-      'android-package',
-      'apk',
-      'aab',
-      'apks',
-      'xapk',
-      'split-apk',
-      'aar',
-      'dex',
-      'multi-dex',
-      'oat',
-      'vdex',
-      'odex',
-      'art',
-      'apk-signature',
-      'arsc',
-    ],
-    platforms: ['android', 'jvm', 'linux'],
+    formats: ANDROID_PACKAGE_FORMATS,
+    platforms: ANDROID_PACKAGE_PLATFORMS,
     architectures: ['arm', 'arm64', 'x86', 'x64', 'riscv'],
     execution: ['static', 'triage'],
-    safety: ['passive', 'no_live_sample_by_default'],
-    capabilities: ['inventory', 'manifest', 'resources', 'signatures', 'native-lib', 'routing'],
-    evidence: ['structure', 'manifest', 'signatures', 'nested-binaries', 'provenance'],
+    safety: [
+      'passive',
+      'no_install',
+      'no_device_connection',
+      'no_decompiler_launch',
+      'no_live_sample_by_default',
+    ],
+    capabilities: [
+      'inventory',
+      'manifest',
+      'resources',
+      'signatures',
+      'native-lib',
+      'routing',
+      'workflow-plan',
+      'metadata-only-handoff',
+    ],
+    evidence: ANDROID_PACKAGE_EVIDENCE,
   },
   artifacts: [
     {
-      type: 'android_package_inventory',
+      type: ANDROID_PACKAGE_INVENTORY_ARTIFACT_TYPE,
       description: 'Passive Android package, bytecode, native library, and signing inventory',
     },
   ],
   evidence: [
-    { category: 'structure', artifactTypes: ['android_package_inventory'] },
-    { category: 'manifest', artifactTypes: ['android_package_inventory'] },
-    { category: 'signatures', artifactTypes: ['android_package_inventory'] },
-    { category: 'nested-binaries', artifactTypes: ['android_package_inventory'] },
+    { category: 'structure', artifactTypes: [ANDROID_PACKAGE_INVENTORY_ARTIFACT_TYPE] },
+    { category: 'manifest', artifactTypes: [ANDROID_PACKAGE_INVENTORY_ARTIFACT_TYPE] },
+    { category: 'signatures', artifactTypes: [ANDROID_PACKAGE_INVENTORY_ARTIFACT_TYPE] },
+    { category: 'nested-binaries', artifactTypes: [ANDROID_PACKAGE_INVENTORY_ARTIFACT_TYPE] },
+    { category: 'package-metadata', artifactTypes: [ANDROID_PACKAGE_INVENTORY_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [ANDROID_PACKAGE_INVENTORY_ARTIFACT_TYPE] },
   ],
+  workflowRecipes: ANDROID_PACKAGE_WORKFLOW_RECIPES,
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'Builtin Android package inventory worker',
+    backendKind: 'builtin',
+    adapter: 'builtin.android.package.inventory',
+    availability: 'builtin',
+    supportedModes: ['builtin'],
+    defaultMode: 'builtin',
+    inputArtifactTypes: ['sample'],
+    outputArtifactTypes: [ANDROID_PACKAGE_INVENTORY_ARTIFACT_TYPE],
+    policy: {
+      passiveByDefault: true,
+      requiresUserOptIn: false,
+      requiresIsolation: false,
+      noNetwork: true,
+      noMutation: true,
+      noLiveExecution: true,
+      maxInputBytes: MAX_PREVIEW_BYTES,
+      maxOutputBytes: 8 * 1024 * 1024,
+      defaultTimeoutMs: 15_000,
+      notes: [
+        'Builtin inventory reads bounded file previews and ZIP local headers only.',
+        'Policy forbids APK install, device connection, runtime startup, decompiler launch, network access, and sample mutation.',
+      ],
+    },
+    readiness: {
+      doesNotStartBackend: true,
+      setupActions: [],
+      missingBackendBehavior:
+        'Builtin inventory is always metadata-only; readiness does not install packages, start devices, or launch decompilers.',
+    },
+    packaging: {
+      installRoute: 'installed',
+      installProfile: 'default',
+      dockerFeature: 'android-package',
+      notes: ['No external Android SDK, device, emulator, installer, or decompiler is required.'],
+    },
+  },
 }
 
 export type AndroidPackageInventory = z.infer<typeof AndroidPackageInventoryDataSchema>
@@ -216,38 +318,61 @@ function routeAndroidCandidate(candidatePath: string): RoutedCandidate | null {
   const lower = candidatePath.toLowerCase()
   const routedFormats: string[] = []
   const recommendedTools: string[] = []
+  let format = ''
 
   if (lower.endsWith('.so')) {
     routedFormats.push('elf', 'so', 'native-lib')
     recommendedTools.push('elf.structure.analyze', 'linux.binary.inventory')
+    format = 'elf'
   }
   if (lower.endsWith('.dex')) {
     routedFormats.push('dex', 'android-bytecode')
     recommendedTools.push('dex.classes.list')
+    format ||= 'dex'
   }
   if (/\.(?:vdex|oat|odex|art)$/.test(lower)) {
-    routedFormats.push('android-bytecode')
+    const bytecodeFormat = lower.slice(lower.lastIndexOf('.') + 1)
+    routedFormats.push(bytecodeFormat, 'android-bytecode')
     recommendedTools.push('android.package.inventory', 'strings.extract')
+    format ||= bytecodeFormat
   }
   if (lower.endsWith('.jar')) {
     routedFormats.push('jar', 'jvm')
     recommendedTools.push('jvm.structure.analyze')
+    format ||= 'jar'
   }
   if (lower.endsWith('.wasm')) {
     routedFormats.push('wasm')
     recommendedTools.push('wasm.structure.analyze')
+    format ||= 'wasm'
   }
   if (/\.(?:apk|aab|apks|xapk|aar)$/.test(lower)) {
-    routedFormats.push('android-package')
+    const packageFormat = lower.slice(lower.lastIndexOf('.') + 1)
+    routedFormats.push(packageFormat, 'android-package')
     recommendedTools.push('android.package.inventory')
+    format ||= packageFormat
   }
 
   if (recommendedTools.length === 0) return null
   return {
     path: candidatePath,
+    format: format || routedFormats[0] || 'unknown',
+    architecture: inferAndroidArchitecture(candidatePath),
     routed_formats: Array.from(new Set(routedFormats)),
     recommended_tools: Array.from(new Set(recommendedTools)),
   }
+}
+
+function inferAndroidArchitecture(candidatePath: string): string | undefined {
+  const lower = candidatePath.toLowerCase().replace(/\\/g, '/')
+  if (lower.includes('/arm64-v8a/') || lower.includes('/aarch64/')) return 'arm64'
+  if (lower.includes('/armeabi-v7a/') || lower.includes('/armeabi/') || lower.includes('/arm/')) {
+    return 'arm'
+  }
+  if (lower.includes('/x86_64/') || lower.includes('/amd64/')) return 'x64'
+  if (lower.includes('/x86/')) return 'x86'
+  if (lower.includes('/riscv64/')) return 'riscv'
+  return undefined
 }
 
 function unique(values: string[]): string[] {
@@ -309,6 +434,10 @@ export function buildAndroidPackageInventoryFromBuffer(
     signing_candidates: signingCandidates.slice(0, 80),
     split_package_candidates: splitPackageCandidates.slice(0, 120),
     nested_package_candidates: nestedPackages.slice(0, 100),
+    workflowRecipes: ANDROID_PACKAGE_WORKFLOW_RECIPES,
+    formats: ANDROID_PACKAGE_FORMATS,
+    platforms: ANDROID_PACKAGE_PLATFORMS,
+    evidence: ANDROID_PACKAGE_EVIDENCE,
     policy: {
       passive: true,
       no_execute: true,

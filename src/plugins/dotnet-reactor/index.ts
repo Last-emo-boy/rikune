@@ -22,6 +22,21 @@ const dotnetReactorPlugin: Plugin = {
   id: 'dotnet-reactor',
   name: '.NET Reactor Deobfuscation',
   executionDomain: 'static',
+  aspects: {
+    formats: ['dotnet', 'pe', 'pe-clr'],
+    platforms: ['windows'],
+    architectures: ['cil', 'x86', 'x64'],
+    execution: ['static', 'deobfuscation'],
+    safety: ['passive'],
+    capabilities: [
+      'dotnet-reactor',
+      'anti-tamper-detection',
+      'string-decryption',
+      'dynamic-method-recovery',
+      'resource-export',
+    ],
+    evidence: ['dotnet-metadata', 'strings', 'resources', 'methods', 'provenance'],
+  },
   surfaceRules: {
     tier: 2,
     activateOn: { findings: ['dotnet', 'obfuscated'] },

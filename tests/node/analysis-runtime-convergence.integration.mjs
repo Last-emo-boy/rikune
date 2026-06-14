@@ -13,11 +13,11 @@ const {
   createAnalyzeWorkflowStartHandler,
   createAnalyzeWorkflowStatusHandler,
 } = await import('../../dist/workflows/analyze-pipeline.js')
-const { upsertAnalysisRunStage } = await import('../../dist/analysis-run-state.js')
+const { upsertAnalysisRunStage } = await import('../../dist/analysis/analysis-run-state.js')
 const { createTriageWorkflowHandler } = await import('../../dist/workflows/triage.js')
-const { createReportSummarizeHandler } = await import('../../dist/tools/report-summarize.js')
+const { createReportSummarizeHandler } = await import('../../dist/plugins/reporting/tools/report-summarize.js')
 const { createWorkflowSummarizeHandler } = await import('../../dist/workflows/summarize.js')
-const { createRizinAnalyzeHandler } = await import('../../dist/tools/docker-backend-tools.js')
+const { createRizinAnalyzeHandler } = await import('../../dist/plugins/dynamic/tools/docker-backend-tools.js')
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'analysis-runtime-convergence-'))
 const workspaceRoot = path.join(tempRoot, 'workspaces')

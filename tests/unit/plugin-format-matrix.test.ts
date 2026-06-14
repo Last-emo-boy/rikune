@@ -1092,6 +1092,8 @@ describe('built-in plugin format matrix discovery', () => {
     const androidPackage = requirePlugin(plugins, 'android-package')
     const appleSigning = requirePlugin(plugins, 'apple-signing')
     const linuxBinary = requirePlugin(plugins, 'linux-binary')
+    const codeAnalysis = requirePlugin(plugins, 'code-analysis')
+    const apiHash = requirePlugin(plugins, 'api-hash')
 
     expect(ghidra.aspects?.formats).toEqual(expect.arrayContaining(['pe', 'elf', 'macho']))
     expect(rizin.aspects?.formats).toEqual(expect.arrayContaining(['pe', 'elf', 'macho']))
@@ -1113,6 +1115,9 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(linuxBinary.aspects?.formats).toEqual(
       expect.arrayContaining(['linux-binary', 'elf-executable', 'elf-core'])
+    )
+    expect(codeAnalysis.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['cross-decompiler-consensus', 'ir-comparison'])
     )
 
     expectToolMetadata(ghidra, 'ghidra.analyze', {
@@ -1175,18 +1180,56 @@ describe('built-in plugin format matrix discovery', () => {
       artifacts: ['linux_binary_inventory'],
       evidence: ['structure', 'symbols', 'memory'],
     })
+    expectToolMetadata(codeAnalysis, 'code.cross_decompiler.consensus', {
+      formats: ['pe', 'elf', 'macho', 'firmware', 'object'],
+      artifacts: ['cross_decompiler_consensus', 'function_evidence_handoff'],
+      evidence: ['functions', 'cfg', 'artifact', 'workflow', 'correlation-graph'],
+    })
+    expectToolMetadata(apiHash, 'hash.resolver.plan', {
+      formats: ['pe', 'shellcode', 'raw-bytes'],
+      artifacts: ['api_hash_resolver_plan'],
+      evidence: ['imports', 'strings', 'shellcode', 'workflow', 'provenance'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'code-analysis',
+      toolName: 'code.cross_decompiler.consensus',
+      recipeId: 'reverse.cross-decompiler.consensus',
+      startsWith: ['code.cross_decompiler.consensus', 'ghidra.analyze'],
+      nextTools: [
+        'radare2.pipeline.run',
+        'gtirb.ir.generate',
+        'code.functions.reconstruct',
+        'code.function.explain.prepare',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+      producesArtifacts: ['cross_decompiler_consensus', 'function_evidence_handoff'],
+      evidence: [
+        'functions',
+        'cfg',
+        'symbols',
+        'artifact',
+        'workflow',
+        'correlation-graph',
+        'provenance',
+      ],
+      safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      runtimeBackends: ['ghidra', 'retdec', 'rizin', 'radare2', 'angr', 'revng', 'remill', 'gtirb'],
+    })
   })
 
   test('discovers cross-format enrichment plugins with artifact and evidence declarations', async () => {
     const plugins = await discoverBuiltInPlugins()
     const yara = requirePlugin(plugins, 'yara')
     const yaraX = requirePlugin(plugins, 'yara-x')
+    const upx = requirePlugin(plugins, 'upx')
     const die = requirePlugin(plugins, 'die')
     const strings = requirePlugin(plugins, 'strings')
     const sbom = requirePlugin(plugins, 'sbom')
     const vulnScanner = requirePlugin(plugins, 'vuln-scanner')
     const threatIntel = requirePlugin(plugins, 'threat-intel')
     const javascriptDeobfuscation = requirePlugin(plugins, 'javascript-deobfuscation')
+    const staticTriage = requirePlugin(plugins, 'static-triage')
 
     expect(yara.aspects?.formats).toEqual(expect.arrayContaining(['pe', 'elf', 'macho', 'apk']))
     expect(strings.aspects?.formats).toEqual(expect.arrayContaining(['apk', 'wasm', 'pyc']))
@@ -1207,19 +1250,40 @@ describe('built-in plugin format matrix discovery', () => {
     })
     expectToolMetadata(yara, 'yara.generate', {
       artifacts: ['yara_rule_generation'],
-      evidence: ['signatures', 'strings', 'imports'],
+      evidence: ['signatures', 'strings', 'imports', 'workflow', 'provenance'],
+    })
+    expectToolMetadata(yara, 'yara.generate.batch', {
+      artifacts: ['yara_family_rule'],
+      evidence: ['signatures', 'strings', 'imports', 'workflow', 'provenance'],
     })
     expectToolMetadata(yaraX, 'yara_x.scan', {
       artifacts: ['backend_yara_x_scan'],
-      evidence: ['signatures', 'strings'],
+      evidence: ['signatures', 'strings', 'workflow', 'provenance'],
+    })
+    expectToolMetadata(upx, 'upx.inspect', {
+      artifacts: ['backend_upx_list', 'backend_upx_test', 'backend_upx_decompress'],
+      evidence: ['packed', 'structure', 'unpacked-binary', 'workflow', 'provenance'],
     })
     expectToolMetadata(die, 'die.scan', {
       artifacts: ['backend_die_scan'],
-      evidence: ['signatures', 'structure'],
+      evidence: [
+        'signatures',
+        'structure',
+        'toolchain',
+        'packer',
+        'protector',
+        'file-type',
+        'workflow',
+        'provenance',
+      ],
     })
     expectToolMetadata(strings, 'strings.extract', {
       artifacts: ['enriched_string_analysis'],
-      evidence: ['strings', 'network', 'filesystem', 'registry'],
+      evidence: ['strings', 'network', 'encoded-config', 'workflow', 'provenance'],
+    })
+    expectToolMetadata(strings, 'strings.floss.decode', {
+      artifacts: ['enriched_string_analysis'],
+      evidence: ['strings', 'network', 'encoded-config', 'workflow', 'provenance'],
     })
     expectToolMetadata(sbom, 'sbom.generate', {
       evidence: ['sbom', 'package-metadata'],
@@ -1230,16 +1294,41 @@ describe('built-in plugin format matrix discovery', () => {
     })
     expectToolMetadata(threatIntel, 'ioc.export', {
       artifacts: ['ioc_export_json', 'ioc_export_csv', 'ioc_export_stix2'],
-      evidence: ['network', 'filesystem', 'registry', 'signatures'],
+      evidence: ['network', 'filesystem', 'registry', 'signatures', 'workflow', 'provenance'],
     })
     expectToolMetadata(threatIntel, 'sigma.rule.generate', {
       artifacts: ['sigma_rules'],
-      evidence: ['behavior', 'network', 'registry'],
+      evidence: ['behavior', 'network', 'registry', 'strings', 'imports', 'workflow', 'provenance'],
     })
     expectToolMetadata(javascriptDeobfuscation, 'javascript.obfuscation.profile', {
       formats: ['js', 'javascript', 'source-map'],
       artifacts: ['javascript_obfuscation_profile'],
       evidence: ['structure', 'strings', 'behavior', 'workflow'],
+    })
+    expectToolMetadata(staticTriage, 'static.behavior.classify', {
+      formats: ['pe', 'dll', 'dotnet'],
+      artifacts: ['static_behavior_classifier'],
+      evidence: ['behavior', 'strings', 'imports', 'registry', 'process', 'workflow'],
+    })
+    expectToolMetadata(staticTriage, 'crypto.identify', {
+      formats: ['pe', 'dll', 'elf', 'shellcode'],
+      artifacts: ['crypto_identification'],
+      evidence: ['crypto', 'strings', 'imports', 'constants', 'functions', 'workflow'],
+    })
+    expectToolMetadata(staticTriage, 'static.config.carver', {
+      formats: ['pe', 'dll', 'elf', 'shellcode'],
+      artifacts: ['static_config_carver'],
+      evidence: ['network', 'registry', 'strings', 'encoded-config', 'workflow'],
+    })
+    expectToolMetadata(staticTriage, 'static.resource.graph', {
+      formats: ['pe', 'dll', 'dotnet', 'raw-bytes'],
+      artifacts: ['static_resource_graph'],
+      evidence: ['resources', 'embedded-payload', 'entropy', 'strings', 'workflow'],
+    })
+    expectToolMetadata(staticTriage, 'compiler.packer.detect', {
+      formats: ['pe', 'dll', 'elf', 'macho'],
+      artifacts: ['compiler_packer_attribution'],
+      evidence: ['toolchain', 'signatures', 'packer', 'protector', 'workflow'],
     })
   })
 
@@ -1496,7 +1585,7 @@ describe('built-in plugin format matrix discovery', () => {
     })
     expectToolMetadata(visualization, 'analysis.evidence.graph', {
       artifacts: ['analysis_evidence_graph'],
-      evidence: ['provenance', 'timeline', 'behavior'],
+      evidence: ['provenance', 'timeline', 'behavior', 'workflow'],
     })
     expectToolMetadata(visualization, 'crypto.lifecycle.graph', {
       artifacts: ['crypto_lifecycle_graph'],
@@ -1621,6 +1710,163 @@ describe('built-in plugin format matrix discovery', () => {
         safety: ['passive', 'no_live_sample_by_default'],
       },
       {
+        pluginId: 'static-triage',
+        toolName: 'static.capability.triage',
+        recipeId: 'static-triage.capability-correlation',
+        startsWith: ['static.capability.triage', 'strings.extract'],
+        nextTools: ['static.config.carver', 'crypto.identify', 'packer.detect'],
+        producesArtifacts: ['static_capability_triage', 'static_triage_correlation_bundle'],
+        evidence: ['behavior', 'crypto', 'workflow', 'correlation-graph'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+        harnessOptions: passiveDeps,
+      },
+      {
+        pluginId: 'static-triage',
+        toolName: 'static.config.carver',
+        recipeId: 'static-triage.config-evidence-correlation',
+        startsWith: ['static.config.carver', 'strings.extract'],
+        nextTools: [
+          'malware.intel.loop',
+          'ioc.export',
+          'static.behavior.classify',
+          'analysis.evidence.graph',
+        ],
+        producesArtifacts: ['static_config_carver'],
+        evidence: ['network', 'registry', 'strings', 'encoded-config', 'workflow'],
+        safety: ['passive', 'opt_in_dynamic', 'no_live_sample_by_default', 'no_network_by_default'],
+        harnessOptions: passiveDeps,
+      },
+      {
+        pluginId: 'static-triage',
+        toolName: 'static.resource.graph',
+        recipeId: 'static-triage.resource-payload-correlation',
+        startsWith: ['static.resource.graph'],
+        nextTools: [
+          'static.config.carver',
+          'entropy.analyze',
+          'crypto.identify',
+          'unpack.workflow.plan',
+          'analysis.evidence.graph',
+        ],
+        producesArtifacts: ['static_resource_graph'],
+        evidence: ['resources', 'embedded-payload', 'entropy', 'strings', 'workflow'],
+        safety: ['passive', 'opt_in_dynamic', 'no_live_sample_by_default', 'no_network_by_default'],
+        harnessOptions: passiveDeps,
+      },
+      {
+        pluginId: 'static-triage',
+        toolName: 'compiler.packer.detect',
+        recipeId: 'static-triage.compiler-packer-attribution',
+        startsWith: ['compiler.packer.detect', 'die.scan', 'packer.detect'],
+        nextTools: [
+          'packer.detect',
+          'entropy.analyze',
+          'static.resource.graph',
+          'unpack.workflow.plan',
+          'analysis.evidence.graph',
+        ],
+        producesArtifacts: ['compiler_packer_attribution'],
+        evidence: ['toolchain', 'signatures', 'packer', 'protector', 'file-type', 'workflow'],
+        safety: [
+          'passive',
+          'external_static_backend',
+          'no_live_sample_by_default',
+          'no_network_by_default',
+        ],
+        runtimeBackends: ['detect-it-easy'],
+        harnessOptions: passiveDeps,
+      },
+      {
+        pluginId: 'static-triage',
+        toolName: 'static.behavior.classify',
+        recipeId: 'static-triage.behavior-runtime-validation',
+        startsWith: ['static.behavior.classify', 'strings.extract'],
+        nextTools: [
+          'dynamic.behavior.diff',
+          'dynamic.deep_plan',
+          'breakpoint.smart',
+          'analysis.evidence.graph',
+        ],
+        producesArtifacts: ['static_behavior_classifier'],
+        evidence: ['behavior', 'strings', 'imports', 'registry', 'process', 'workflow'],
+        safety: ['passive', 'opt_in_dynamic', 'no_live_sample_by_default', 'no_network_by_default'],
+        harnessOptions: passiveDeps,
+      },
+      {
+        pluginId: 'static-triage',
+        toolName: 'crypto.identify',
+        recipeId: 'static-triage.crypto-runtime-tracing',
+        startsWith: ['crypto.identify', 'strings.extract'],
+        nextTools: [
+          'breakpoint.smart',
+          'trace.condition',
+          'crypto.lifecycle.graph',
+          'analysis.evidence.graph',
+        ],
+        producesArtifacts: ['crypto_identification'],
+        evidence: ['crypto', 'strings', 'imports', 'constants', 'functions', 'workflow'],
+        safety: ['passive', 'opt_in_dynamic', 'no_live_sample_by_default', 'no_network_by_default'],
+        runtimeBackends: ['frida', 'debugger', 'sandbox'],
+        harnessOptions: passiveDeps,
+      },
+      {
+        pluginId: 'yara',
+        toolName: 'yara.generate',
+        recipeId: 'yara.rule-generation-handoff',
+        startsWith: ['yara.generate', 'strings.extract'],
+        nextTools: ['yara.scan', 'analysis.evidence.graph', 'report.generate'],
+        producesArtifacts: ['yara_rule_generation'],
+        evidence: ['signatures', 'strings', 'imports', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'yara',
+        toolName: 'yara.generate.batch',
+        recipeId: 'yara.family-rule-generation-handoff',
+        startsWith: ['yara.generate.batch', 'sample.family.cluster'],
+        nextTools: ['yara.scan', 'sample.family.cluster', 'analysis.evidence.graph'],
+        producesArtifacts: ['yara_family_rule'],
+        evidence: ['signatures', 'strings', 'imports', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'yara-x',
+        toolName: 'yara_x.scan',
+        recipeId: 'yara-x.scan-validation-handoff',
+        startsWith: ['yara_x.scan', 'yara.generate'],
+        nextTools: ['artifact.read', 'yara.scan', 'analysis.evidence.graph'],
+        producesArtifacts: ['backend_yara_x_scan'],
+        evidence: ['signatures', 'strings', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'upx',
+        toolName: 'upx.inspect',
+        recipeId: 'upx.inspect-validation-handoff',
+        startsWith: ['upx.inspect', 'packer.detect', 'die.scan'],
+        nextTools: ['artifact.read', 'unpack.workflow.plan', 'analysis.evidence.graph'],
+        producesArtifacts: ['backend_upx_list', 'backend_upx_test', 'backend_upx_decompress'],
+        evidence: ['packed', 'structure', 'unpacked-binary', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+        runtimeBackends: ['upx'],
+      },
+      {
+        pluginId: 'die',
+        toolName: 'die.scan',
+        recipeId: 'die.scan-validation-handoff',
+        startsWith: ['die.scan', 'compiler.packer.detect', 'packer.detect'],
+        nextTools: ['artifact.read', 'compiler.packer.detect', 'analysis.evidence.graph'],
+        producesArtifacts: ['backend_die_scan'],
+        evidence: ['signatures', 'toolchain', 'packer', 'protector', 'file-type', 'workflow'],
+        safety: [
+          'passive',
+          'external_static_backend',
+          'no_live_sample_by_default',
+          'no_network_by_default',
+        ],
+        runtimeBackends: ['detect-it-easy'],
+      },
+      {
         pluginId: 'unpacking',
         toolName: 'unpack.workflow.plan',
         recipeId: 'unpacking.detect-plan-retriage',
@@ -1642,6 +1888,78 @@ describe('built-in plugin format matrix discovery', () => {
         safety: ['passive', 'no_network_by_default'],
       },
       {
+        pluginId: 'strings',
+        toolName: 'strings.extract',
+        recipeId: 'strings.raw-extraction-evidence',
+        startsWith: ['strings.extract', 'analysis.context.link'],
+        nextTools: [
+          'analysis.context.link',
+          'strings.floss.decode',
+          'static.config.carver',
+          'analysis.evidence.graph',
+        ],
+        producesArtifacts: ['enriched_string_analysis'],
+        evidence: ['strings', 'network', 'encoded-config', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'strings',
+        toolName: 'strings.floss.decode',
+        recipeId: 'strings.floss-decoded-evidence',
+        startsWith: ['strings.floss.decode', 'strings.extract'],
+        nextTools: ['analysis.context.link', 'static.config.carver', 'analysis.evidence.graph'],
+        producesArtifacts: ['enriched_string_analysis'],
+        evidence: ['strings', 'network', 'encoded-config', 'workflow', 'provenance'],
+        safety: [
+          'passive',
+          'external_static_backend',
+          'no_live_sample_by_default',
+          'no_network_by_default',
+        ],
+      },
+      {
+        pluginId: 'api-hash',
+        toolName: 'hash.resolver.plan',
+        recipeId: 'api-hash.resolver-recovery',
+        startsWith: ['hash.resolver.plan', 'strings.extract'],
+        nextTools: ['hash.identify', 'hash.resolve', 'analysis.evidence.graph', 'report.generate'],
+        producesArtifacts: ['api_hash_resolver_plan'],
+        evidence: ['imports', 'strings', 'shellcode', 'workflow', 'provenance'],
+        safety: ['passive', 'opt_in_dynamic', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'threat-intel',
+        toolName: 'ioc.export',
+        recipeId: 'threat-intel.ioc-export-handoff',
+        startsWith: ['ioc.export', 'workflow.triage'],
+        nextTools: [
+          'analysis.evidence.graph',
+          'malware.intel.loop',
+          'attack.map',
+          'sigma.rule.generate',
+          'report.generate',
+        ],
+        producesArtifacts: ['ioc_export_json', 'ioc_export_csv', 'ioc_export_stix2'],
+        evidence: ['network', 'filesystem', 'registry', 'signatures', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'threat-intel',
+        toolName: 'sigma.rule.generate',
+        recipeId: 'threat-intel.sigma-rule-generation-handoff',
+        startsWith: ['sigma.rule.generate', 'strings.extract'],
+        nextTools: [
+          'analysis.evidence.graph',
+          'attack.map',
+          'ioc.export',
+          'yara.generate',
+          'report.generate',
+        ],
+        producesArtifacts: ['sigma_rules'],
+        evidence: ['behavior', 'network', 'registry', 'strings', 'imports', 'workflow'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
         pluginId: 'malware',
         toolName: 'malware.intel.loop',
         recipeId: 'malware.intel.feedback-loop',
@@ -1651,6 +1969,20 @@ describe('built-in plugin format matrix discovery', () => {
         evidence: ['behavior', 'network', 'strings', 'signatures', 'provenance'],
         safety: ['passive', 'no_network_by_default'],
         harnessOptions: passiveDeps,
+      },
+      {
+        pluginId: 'visualization',
+        toolName: 'analysis.evidence.graph',
+        recipeId: 'visualization.plugin-evidence-reporting',
+        startsWith: [
+          'analysis.evidence.graph',
+          'malware.intel.loop',
+          'code.cross_decompiler.consensus',
+        ],
+        nextTools: ['workflow.summarize', 'report.summarize', 'report.generate'],
+        producesArtifacts: ['analysis_evidence_graph'],
+        evidence: ['provenance', 'behavior', 'network', 'functions', 'workflow'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
       },
       {
         pluginId: 'javascript-deobfuscation',

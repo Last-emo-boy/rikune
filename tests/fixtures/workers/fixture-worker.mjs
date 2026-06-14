@@ -39,6 +39,12 @@ if (mode === 'fail') {
   process.exit(2)
 }
 
+if (mode === 'leak') {
+  console.error(`token=${process.env.RIKUNE_TEST_SECRET_VALUE || 'missing'}`)
+  console.error(`path=${process.cwd()}\\sensitive\\fixture.bin`)
+  process.exit(2)
+}
+
 console.log(
   JSON.stringify({
     ok: true,

@@ -100,6 +100,117 @@ export const peStructureAnalyzeToolDefinition: ToolDefinition = {
     'Parse PE headers, sections, imports, exports, resources, and overlays through pefile and LIEF with a canonical MCP schema.',
   inputSchema: peStructureAnalyzeInputSchema,
   outputSchema: peStructureAnalyzeOutputSchema,
+  aspects: {
+    formats: ['pe', 'pe-clr', 'sys', 'efi'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage'],
+    safety: [
+      'passive',
+      'external_static_backend',
+      'no_live_sample_by_default',
+      'no_network_by_default',
+      'no_mutation',
+    ],
+    capabilities: [
+      'header-parsing',
+      'section-analysis',
+      'import-export-inventory',
+      'resource-inventory',
+      'overlay-detection',
+      'workflow-handoff',
+    ],
+    evidence: ['structure', 'imports', 'exports', 'resources', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE,
+      description:
+        'Normalized PE headers, sections, imports, exports, resources, overlay metadata, backend provenance, and confidence semantics',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    { category: 'structure', artifactTypes: [PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE] },
+    { category: 'imports', artifactTypes: [PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE] },
+    { category: 'exports', artifactTypes: [PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE] },
+    { category: 'resources', artifactTypes: [PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: [
+    {
+      id: 'pe.static.structure-profile',
+      title: 'PE static structure profile',
+      description:
+        'Turn normalized PE structure, import/export, resource, overlay, and parser provenance evidence into static triage, capability, signature, evidence graph, and reporting handoffs.',
+      startsWith: ['pe.structure.analyze'],
+      nextTools: [
+        'pe.imports.extract',
+        'pe.exports.extract',
+        'pe.fingerprint',
+        'pe.signature.verify',
+        'static.capability.triage',
+        'compiler.packer.detect',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+      requiredArtifacts: ['sample'],
+      producesArtifacts: [PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE],
+      evidence: ['structure', 'imports', 'exports', 'resources', 'provenance'],
+      safety: [
+        'passive',
+        'external_static_backend',
+        'no_live_sample_by_default',
+        'no_network_by_default',
+        'no_mutation',
+      ],
+      runtimeBackends: ['static-python', 'pefile', 'lief'],
+    },
+  ],
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'Static Python PE structure worker',
+    backendKind: 'external',
+    adapter: 'static_python.pe.structure.analyze',
+    availability: 'optional',
+    envVar: 'STATIC_WORKER_PYTHON',
+    supportedModes: ['external'],
+    defaultMode: 'external',
+    inputArtifactTypes: ['sample'],
+    outputArtifactTypes: [PE_STRUCTURE_ANALYSIS_ARTIFACT_TYPE],
+    policy: {
+      passiveByDefault: true,
+      requiresUserOptIn: false,
+      requiresIsolation: false,
+      noNetwork: true,
+      noMutation: true,
+      noLiveExecution: true,
+      maxInputBytes: 256 * 1024 * 1024,
+      maxOutputBytes: 16 * 1024 * 1024,
+      defaultTimeoutMs: 30_000,
+      notes: [
+        'Worker performs read-only PE parsing through pefile and LIEF.',
+        'Missing parser backends must degrade to setup guidance or partial evidence, not runtime execution.',
+      ],
+    },
+    readiness: {
+      doesNotStartBackend: true,
+      setupActions: [
+        'Install pefile and LIEF into the configured static Python worker environment.',
+        'Rerun pe.structure.analyze after backend readiness is restored.',
+      ],
+      missingBackendBehavior:
+        'Return setup_required or partial static evidence with setup actions; do not execute the sample.',
+    },
+    packaging: {
+      installRoute: 'installed',
+      installProfile: 'default',
+      dockerFeature: 'static-python',
+      envVar: 'STATIC_WORKER_PYTHON',
+      dockerDefault: 'python3',
+      notes: ['Requires Python packages pefile and lief in the static worker environment.'],
+    },
+  },
 }
 
 interface PEStructureAnalyzeDependencies {

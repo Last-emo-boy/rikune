@@ -7,7 +7,7 @@ const { WorkspaceManager } = await import('../../dist/workspace-manager.js')
 const { DatabaseManager } = await import('../../dist/database.js')
 const { CacheManager } = await import('../../dist/cache-manager.js')
 const { createSystemHealthHandler } = await import('../../dist/tools/system-health.js')
-const { createDynamicDependenciesHandler } = await import('../../dist/tools/dynamic-dependencies.js')
+const { createDynamicDependenciesHandler } = await import('../../dist/plugins/dynamic/tools/dynamic-dependencies.js')
 
 function buildGhidraStatus(ok) {
   return {

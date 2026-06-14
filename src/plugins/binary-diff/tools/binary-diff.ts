@@ -16,6 +16,22 @@ import {
   type BinaryDiffResult,
   type AttackTechnique,
 } from '../binary-diff-engine.js'
+import {
+  BINARY_DIFF_ARTIFACT_TYPE,
+  BINARY_DIFF_ARTIFACTS,
+  BINARY_DIFF_ASPECTS,
+  BINARY_DIFF_EVIDENCE,
+  BINARY_DIFF_FOLLOW_UP_TOOLS,
+  BINARY_DIFF_RUNTIME_POLICY,
+  BINARY_DIFF_SCHEMA,
+  BINARY_DIFF_WORKER_BACKEND,
+  BINARY_DIFF_WORKFLOW_RECIPES,
+  buildBinaryDiffEvidenceSummary,
+  buildBinaryDiffProvenance,
+  buildBinaryDiffQualityGates,
+  buildBinaryDiffSimilarityProfile,
+  buildBinaryDiffWorkflowHandoff,
+} from '../binary-diff-metadata.js'
 
 // ============================================================================
 // Schemas
@@ -63,9 +79,15 @@ export const BinaryDiffOutputSchema = z.object({
 export const binaryDiffToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Compare two binary samples: function-level diff (via radiff2), structural delta (imports/exports/sections/strings), and ATT&CK technique delta. Produces a structured diff artifact.',
+    'Compare two binary samples for binary diff, variant comparison, function comparison, structural delta, and similarity profile handoff: function-level diff via radiff2 readiness, structural delta (imports/exports/sections/strings), ATT&CK technique delta, diff provenance, evidence graph/report handoff, and a structured binary_diff artifact.',
   inputSchema: BinaryDiffInputSchema,
   outputSchema: BinaryDiffOutputSchema,
+  aspects: BINARY_DIFF_ASPECTS,
+  artifacts: BINARY_DIFF_ARTIFACTS,
+  evidence: BINARY_DIFF_EVIDENCE,
+  workflowRecipes: BINARY_DIFF_WORKFLOW_RECIPES,
+  runtimePolicy: BINARY_DIFF_RUNTIME_POLICY,
+  workerBackend: BINARY_DIFF_WORKER_BACKEND,
 }
 
 // ============================================================================
@@ -311,6 +333,12 @@ export function createBinaryDiffHandler(
     diffResult.summary_stats = buildSummaryStats(diffResult)
     diffResult.errors = errors
     diffResult.warnings = warnings
+    diffResult.provenance = buildBinaryDiffProvenance(diffResult, input)
+    diffResult.similarity_profile = buildBinaryDiffSimilarityProfile(diffResult)
+    diffResult.evidence_summary = buildBinaryDiffEvidenceSummary(diffResult)
+    diffResult.workflow_handoff = buildBinaryDiffWorkflowHandoff(diffResult)
+    diffResult.quality_gates = buildBinaryDiffQualityGates(diffResult)
+    diffResult.recommended_next_tools = BINARY_DIFF_FOLLOW_UP_TOOLS
 
     // Persist artifact
     const artifacts: ArtifactRef[] = []
@@ -319,14 +347,34 @@ export function createBinaryDiffHandler(
         workspaceManager,
         database,
         input.sample_id_a,
-        'binary_diff',
+        BINARY_DIFF_ARTIFACT_TYPE,
         `diff_${input.sample_id_a.slice(7, 15)}_vs_${input.sample_id_b.slice(7, 15)}`,
         diffResult
       )
-      artifacts.push(artifactRef)
+      const enrichedArtifactRef: ArtifactRef = {
+        ...artifactRef,
+        metadata: {
+          schema: BINARY_DIFF_SCHEMA,
+          sample_id_a: input.sample_id_a,
+          sample_id_b: input.sample_id_b,
+          evidence: [
+            'binary-diff',
+            'function-similarity',
+            'structural-delta',
+            'attack-delta',
+            'provenance',
+          ],
+        },
+      }
+      artifacts.push(enrichedArtifactRef)
+      diffResult.workflow_handoff = buildBinaryDiffWorkflowHandoff(diffResult, enrichedArtifactRef)
     } catch {
       warnings.push('Failed to persist diff artifact')
     }
+    diffResult.warnings = warnings
+    diffResult.provenance = buildBinaryDiffProvenance(diffResult, input)
+    diffResult.evidence_summary = buildBinaryDiffEvidenceSummary(diffResult)
+    diffResult.quality_gates = buildBinaryDiffQualityGates(diffResult)
 
     return {
       ok: true,

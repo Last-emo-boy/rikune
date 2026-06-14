@@ -78,10 +78,53 @@ describe('javascript.obfuscation.profile', () => {
     )
     expect(profile.recommended_next_tools).toEqual(
       expect.arrayContaining([
+        'restringer.deobfuscation.run',
+        'jsimplifier.pipeline.run',
+        'jsir.cascade.normalize',
+        'jsvmp.bytecode.recover',
         'jsvmp.bytecode.plan',
         'strings.extract',
         'yara.generate',
         'analysis.evidence.graph',
+      ])
+    )
+    expect(profile.suite_pipeline).toEqual(
+      expect.objectContaining({
+        status: 'static_pipeline',
+        ordered_tools: expect.arrayContaining([
+          'javascript.obfuscation.profile',
+          'restringer.deobfuscation.run',
+          'jsimplifier.pipeline.run',
+          'jsir.cascade.normalize',
+          'jsvmp.bytecode.recover',
+        ]),
+        backend_profiles: expect.arrayContaining(['builtin', 'default', 'optional']),
+        safety: expect.objectContaining({
+          no_eval: true,
+          no_node_vm: true,
+          no_browser_automation: true,
+          no_network: true,
+          no_live_sample_execution: true,
+        }),
+      })
+    )
+    expect(profile.suite_pipeline.stages.map((stage) => stage.id)).toEqual(
+      expect.arrayContaining([
+        'profile',
+        'string-expression-recovery',
+        'static-simplification',
+        'ir-normalization',
+        'jsvmp-bytecode-recovery',
+      ])
+    )
+    expect(profile.suite_pipeline.artifacts.map((artifact) => artifact.type)).toEqual(
+      expect.arrayContaining([
+        'javascript_obfuscation_profile',
+        'restringer_deobfuscation_result',
+        'jsimplifier_pipeline_result',
+        'javascript_ir_artifact',
+        'jsvmp_bytecode_recovery',
+        'jsvmp_handler_map',
       ])
     )
   })
@@ -105,5 +148,7 @@ describe('javascript.obfuscation.profile', () => {
     expect(profile.bytecode_metrics.numeric_array_count).toBe(0)
     expect(profile.risk_tags).not.toContain('suspected_jsvmp')
     expect(profile.recommended_next_tools).not.toContain('jsvmp.bytecode.plan')
+    expect(profile.suite_pipeline.ordered_tools).not.toContain('jsvmp.bytecode.recover')
+    expect(profile.suite_pipeline.routing_reason).toMatch(/No strong VM-dispatch evidence/)
   })
 })

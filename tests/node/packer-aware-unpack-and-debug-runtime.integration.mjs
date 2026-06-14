@@ -6,12 +6,12 @@ import path from 'node:path'
 const { WorkspaceManager } = await import('../../dist/workspace-manager.js')
 const { DatabaseManager } = await import('../../dist/database.js')
 const { CacheManager } = await import('../../dist/cache-manager.js')
-const { createReportSummarizeHandler } = await import('../../dist/tools/report-summarize.js')
+const { createReportSummarizeHandler } = await import('../../dist/plugins/reporting/tools/report-summarize.js')
 const { createAnalyzeWorkflowStatusHandler } = await import('../../dist/workflows/analyze-pipeline.js')
 const {
   createOrReuseAnalysisRun,
   upsertAnalysisRunStage,
-} = await import('../../dist/analysis-run-state.js')
+} = await import('../../dist/analysis/analysis-run-state.js')
 const {
   ANALYSIS_DIFF_DIGEST_ARTIFACT_TYPE,
   DEBUG_SESSION_ARTIFACT_TYPE,
@@ -22,7 +22,7 @@ const {
   createDebugSessionRecord,
   persistUnpackDebugJsonArtifact,
   toDatabaseDebugSession,
-} = await import('../../dist/unpack-debug-runtime.js')
+} = await import('../../dist/plugins/unpacking/unpack-debug-runtime.js')
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'packer-unpack-debug-runtime-'))
 const workspaceRoot = path.join(tempRoot, 'workspaces')

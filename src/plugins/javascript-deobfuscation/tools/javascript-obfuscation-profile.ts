@@ -38,6 +38,26 @@ const JavascriptToolCandidateSchema = z.object({
   notes: z.array(z.string()),
 })
 
+const JavascriptPipelineArtifactSchema = z.object({
+  type: z.string(),
+  producer: z.string(),
+  description: z.string(),
+  confidence: z.number(),
+})
+
+const JavascriptPipelineStepSchema = z.object({
+  id: z.string(),
+  tool: z.string(),
+  purpose: z.string(),
+  inputs: z.array(z.string()),
+  produces_artifacts: z.array(z.string()),
+  evidence: z.array(z.string()),
+  confidence: z.number(),
+  backend_profile: z.enum(['builtin', 'default', 'optional']),
+  activation_hint: z.string(),
+  safety: z.array(z.string()),
+})
+
 const JavascriptBytecodeMetricsSchema = z.object({
   numeric_array_count: z.number(),
   numeric_array_value_count: z.number(),
@@ -99,6 +119,23 @@ const JavascriptProfileSchema = z.object({
     stages: z.array(z.string()),
     optional_tool_candidates: z.array(JavascriptToolCandidateSchema),
     recommended_next_tools: z.array(z.string()),
+  }),
+  suite_pipeline: z.object({
+    status: z.literal('static_pipeline'),
+    ordered_tools: z.array(z.string()),
+    stages: z.array(JavascriptPipelineStepSchema),
+    artifacts: z.array(JavascriptPipelineArtifactSchema),
+    evidence: z.array(z.string()),
+    confidence: z.number(),
+    routing_reason: z.string(),
+    backend_profiles: z.array(z.string()),
+    safety: z.object({
+      no_eval: z.literal(true),
+      no_node_vm: z.literal(true),
+      no_browser_automation: z.literal(true),
+      no_network: z.literal(true),
+      no_live_sample_execution: z.literal(true),
+    }),
   }),
   policy: JavascriptPolicySchema,
   summary: z.string(),
@@ -167,8 +204,24 @@ export const javascriptObfuscationProfileToolDefinition: ToolDefinition = {
       description:
         'Profile obfuscated JavaScript, identify VM-dispatch and bytecode container hints, then route to optional JSIR/CASCADE, REstringer, strings, YARA, and reporting work without executing the script.',
       startsWith: ['javascript.obfuscation.profile', 'strings.extract'],
-      nextTools: ['strings.extract', 'yara.generate', 'analysis.evidence.graph', 'report.generate'],
-      producesArtifacts: ['javascript_obfuscation_profile'],
+      nextTools: [
+        'restringer.deobfuscation.run',
+        'jsimplifier.pipeline.run',
+        'jsir.cascade.normalize',
+        'jsvmp.bytecode.recover',
+        'strings.extract',
+        'yara.generate',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+      producesArtifacts: [
+        'javascript_obfuscation_profile',
+        'restringer_deobfuscation_result',
+        'jsimplifier_pipeline_result',
+        'javascript_ir_artifact',
+        'jsvmp_bytecode_recovery',
+        'jsvmp_handler_map',
+      ],
       evidence: ['structure', 'strings', 'behavior', 'workflow', 'provenance'],
       safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
     },
@@ -430,15 +483,27 @@ export function buildJavascriptObfuscationProfileFromSource(
   )
   const suspectedJsvmp = jsvmpScore >= 0.45
   const optionalToolCandidates = buildToolCandidates()
-  const recommendedNextTools = suspectedJsvmp
+  const suiteTools = suspectedJsvmp
     ? [
+        'restringer.deobfuscation.run',
+        'jsimplifier.pipeline.run',
+        'jsir.cascade.normalize',
+        'jsvmp.bytecode.recover',
         'jsvmp.bytecode.plan',
         'strings.extract',
-        'yara.generate',
         'analysis.evidence.graph',
+        'yara.generate',
         'report.generate',
       ]
-    : ['strings.extract', 'yara.generate', 'report.generate']
+    : [
+        'strings.extract',
+        'restringer.deobfuscation.run',
+        'jsimplifier.pipeline.run',
+        'analysis.evidence.graph',
+        'yara.generate',
+        'report.generate',
+      ]
+  const recommendedNextTools = suiteTools
   const dispatcherModel =
     whileTrueCount > 0 && switchCaseCount >= 4
       ? 'loop_switch'
@@ -458,6 +523,128 @@ export function buildJavascriptObfuscationProfileFromSource(
     handlerTableHintCount > 0 ? 'handler_table_hints' : '',
     longLines > 0 ? 'minified_or_packed' : '',
   ])
+  const pipelineStages: z.infer<typeof JavascriptPipelineStepSchema>[] = [
+    {
+      id: 'profile',
+      tool: 'javascript.obfuscation.profile',
+      purpose:
+        'Produce passive lexical, bytecode-container, dispatcher, handler, and policy metadata.',
+      inputs: ['javascript_source'],
+      produces_artifacts: ['javascript_obfuscation_profile'],
+      evidence: ['structure', 'strings', 'behavior', 'workflow', 'provenance'],
+      confidence: clampRatio(Math.max(jsvmpScore, lexicalConfidence, bytecodeContainerConfidence)),
+      backend_profile: 'builtin',
+      activation_hint: 'Core profile tool is local and static.',
+      safety: ['no_eval', 'no_node_vm', 'no_browser_automation', 'no_network'],
+    },
+    {
+      id: 'string-expression-recovery',
+      tool: 'restringer.deobfuscation.run',
+      purpose:
+        'Recover string-array, decoder-call, and constant-expression evidence before deeper IR work.',
+      inputs: ['javascript_obfuscation_profile', 'javascript_source'],
+      produces_artifacts: ['restringer_deobfuscation_result', 'javascript_string_array_recovery'],
+      evidence: ['strings', 'workflow', 'provenance'],
+      confidence: clampRatio(
+        Math.max(
+          encodedStringArrayCount * 0.2,
+          largeArrayCount * 0.16,
+          stringLiteralCount > 20 ? 0.58 : 0.35
+        )
+      ),
+      backend_profile: 'default',
+      activation_hint:
+        'Activate restringer for static preprocessing; builtin mode remains fixture-safe.',
+      safety: ['no_eval', 'no_node_vm', 'no_network', 'no_live_sample_execution'],
+    },
+    {
+      id: 'static-simplification',
+      tool: 'jsimplifier.pipeline.run',
+      purpose:
+        'Run bounded static simplification, pass timeline, readability metrics, and identifier recovery planning.',
+      inputs: ['javascript_obfuscation_profile', 'restringer_deobfuscation_result'],
+      produces_artifacts: ['jsimplifier_pipeline_result', 'javascript_static_pass_report'],
+      evidence: ['structure', 'workflow', 'provenance'],
+      confidence: clampRatio(Math.max(lexicalConfidence, dispatcherConfidence, codegenConfidence)),
+      backend_profile: 'default',
+      activation_hint:
+        'Use the static JSIMPLIFIER worker path; dynamic trace and LLM stages are outside default mode.',
+      safety: ['no_eval', 'no_node_vm', 'no_browser_automation', 'no_network'],
+    },
+    {
+      id: 'ir-normalization',
+      tool: 'jsir.cascade.normalize',
+      purpose:
+        'Normalize JavaScript into static IR and expose dispatcher/handler candidates for downstream JSVMP analysis.',
+      inputs: ['javascript_obfuscation_profile', 'jsimplifier_pipeline_result'],
+      produces_artifacts: ['javascript_ir_artifact', 'javascript_dispatcher_summary'],
+      evidence: ['structure', 'behavior', 'workflow', 'provenance'],
+      confidence: clampRatio(Math.max(dispatcherConfidence, handlerModelConfidence)),
+      backend_profile: 'optional',
+      activation_hint:
+        'Enable JSIR/CASCADE optional profile only after local static profile routing.',
+      safety: ['no_eval', 'no_node_vm', 'no_browser_automation', 'no_network'],
+    },
+  ]
+
+  if (suspectedJsvmp) {
+    pipelineStages.push({
+      id: 'jsvmp-bytecode-recovery',
+      tool: 'jsvmp.bytecode.recover',
+      purpose:
+        'Recover bytecode container, dispatcher candidates, handler map candidates, and static VM state metadata.',
+      inputs: ['javascript_obfuscation_profile', 'javascript_ir_artifact'],
+      produces_artifacts: ['jsvmp_bytecode_recovery', 'jsvmp_handler_map'],
+      evidence: ['structure', 'behavior', 'workflow', 'provenance'],
+      confidence: jsvmpScore,
+      backend_profile: 'optional',
+      activation_hint: 'Activate JSVMP worker only for suspected VM-protected JavaScript.',
+      safety: ['no_eval', 'no_node_vm', 'no_browser_automation', 'no_network'],
+    })
+  }
+
+  const pipelineArtifacts: z.infer<typeof JavascriptPipelineArtifactSchema>[] = [
+    {
+      type: 'javascript_obfuscation_profile',
+      producer: 'javascript.obfuscation.profile',
+      description: 'Passive profile with lexical, bytecode, dispatcher, handler, and policy data.',
+      confidence: clampRatio(Math.max(jsvmpScore, lexicalConfidence)),
+    },
+    {
+      type: 'restringer_deobfuscation_result',
+      producer: 'restringer.deobfuscation.run',
+      description: 'Static string-array and expression deobfuscation result.',
+      confidence: pipelineStages[1].confidence,
+    },
+    {
+      type: 'jsimplifier_pipeline_result',
+      producer: 'jsimplifier.pipeline.run',
+      description: 'Static simplification pass timeline and confidence breakdown.',
+      confidence: pipelineStages[2].confidence,
+    },
+    {
+      type: 'javascript_ir_artifact',
+      producer: 'jsir.cascade.normalize',
+      description: 'Normalized JavaScript IR summary with dispatcher candidates.',
+      confidence: pipelineStages[3].confidence,
+    },
+    ...(suspectedJsvmp
+      ? [
+          {
+            type: 'jsvmp_bytecode_recovery',
+            producer: 'jsvmp.bytecode.recover',
+            description: 'Recovered bytecode container and candidate opcode stream metadata.',
+            confidence: jsvmpScore,
+          },
+          {
+            type: 'jsvmp_handler_map',
+            producer: 'jsvmp.bytecode.recover',
+            description: 'Static dispatcher, handler map, stack/register model candidates.',
+            confidence: handlerModelConfidence,
+          },
+        ]
+      : []),
+  ]
 
   return {
     sample_id: options.sampleId,
@@ -522,6 +709,28 @@ export function buildJavascriptObfuscationProfileFromSource(
       ],
       optional_tool_candidates: optionalToolCandidates,
       recommended_next_tools: recommendedNextTools,
+    },
+    suite_pipeline: {
+      status: 'static_pipeline',
+      ordered_tools: uniqueStrings(['javascript.obfuscation.profile', ...suiteTools]),
+      stages: pipelineStages,
+      artifacts: pipelineArtifacts,
+      evidence: uniqueStrings(pipelineStages.flatMap((stage) => stage.evidence)),
+      confidence: clampRatio(
+        pipelineStages.reduce((sum, stage) => sum + stage.confidence, 0) /
+          Math.max(pipelineStages.length, 1)
+      ),
+      routing_reason: suspectedJsvmp
+        ? 'JSVMP-like bytecode, dispatch, and handler signals justify the full static suite.'
+        : 'No strong VM-dispatch evidence; keep JSVMP recovery out of the default recommendation.',
+      backend_profiles: uniqueStrings(pipelineStages.map((stage) => stage.backend_profile)),
+      safety: {
+        no_eval: true,
+        no_node_vm: true,
+        no_browser_automation: true,
+        no_network: true,
+        no_live_sample_execution: true,
+      },
     },
     policy: {
       passive: true,

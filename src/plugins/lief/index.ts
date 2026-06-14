@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'lief',
@@ -101,6 +106,65 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'lief',
+  toolName: 'lief.binary.inspect',
+  description:
+    'Run a bounded read-only LIEF-style binary inspection worker for format, headers, imports, exports, relocations, and signature metadata. Mutation is excluded.',
+  backendName: 'LIEF',
+  adapter: 'lief.readonly.binary.inspect',
+  envVar: 'LIEF_PYTHON',
+  dockerFeature: 'dynamic-python',
+  dockerDefault: 'python3',
+  installRoute: 'installed',
+  installProfile: 'default',
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    { type: 'lief_binary_inventory', description: 'Read-only LIEF binary inventory' },
+    { type: 'lief_import_export_summary', description: 'Import/export/relocation summary' },
+  ],
+  evidence: [
+    { category: 'structure', artifactTypes: ['lief_binary_inventory'] },
+    { category: 'imports', artifactTypes: ['lief_import_export_summary'] },
+    { category: 'exports', artifactTypes: ['lief_import_export_summary'] },
+    { category: 'certificates', artifactTypes: ['lief_binary_inventory'] },
+  ],
+  workflowRecipe: {
+    id: 'lief.binary.inspect-worker',
+    title: 'LIEF read-only binary inspection worker',
+    startsWith: ['lief.binary.inspect', 'pe.structure.analyze', 'elf.structure.analyze'],
+    nextTools: [
+      'code.cross_decompiler.consensus',
+      'pe.signature.verify',
+      'analysis.evidence.graph',
+    ],
+    producesArtifacts: ['lief_binary_inventory', 'lief_import_export_summary'],
+    evidence: ['structure', 'imports', 'exports', 'certificates', 'workflow', 'provenance'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+  },
+  policy: {
+    defaultTimeoutMs: 20_000,
+    maxInputBytes: 10 * 1024 * 1024,
+    maxOutputBytes: 8 * 1024 * 1024,
+  },
+  readinessSetupActions: [
+    'Set LIEF_PYTHON to a Python interpreter with a pinned LIEF wheel for external mode.',
+    'Use separate explicitly approved tools for any mutation or patch workflow.',
+  ],
+  fixtureData: {
+    parsed_format: 'pe',
+    imports: 6,
+    exports: 1,
+    relocations: 2,
+    mutation_allowed: false,
+  },
+  recommendedNextTools: [
+    'code.cross_decompiler.consensus',
+    'pe.signature.verify',
+    'analysis.evidence.graph',
+  ],
+}
+
 const liefPlugin = definePlugin({
   id: 'lief',
   name: 'LIEF Binary Plan',
@@ -144,6 +208,10 @@ const liefPlugin = definePlugin({
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

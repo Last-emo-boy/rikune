@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'triton',
@@ -94,6 +99,55 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'triton',
+  toolName: 'triton.symbolic.slice',
+  description:
+    'Run a bounded Triton-style symbolic slice worker for selected instructions or basic blocks. It refuses unbounded emulation and defaults to fixture-safe builtin mode.',
+  backendName: 'Triton',
+  adapter: 'triton.bounded.symbolic.slice',
+  envVar: 'TRITON_PYTHON',
+  dockerFeature: 'dynamic-python',
+  dockerDefault: 'python3',
+  installRoute: 'profile-gated',
+  installProfile: 'optional',
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    { type: 'triton_symbolic_slice', description: 'Bounded symbolic slice artifact' },
+    { type: 'path_constraints', description: 'Recovered path constraint summary' },
+  ],
+  evidence: [
+    { category: 'behavior', artifactTypes: ['triton_symbolic_slice'] },
+    { category: 'memory', artifactTypes: ['path_constraints'] },
+  ],
+  workflowRecipe: {
+    id: 'triton.symbolic.slice-worker',
+    title: 'Triton bounded symbolic slice worker',
+    startsWith: ['triton.symbolic.slice', 'code.function.disassemble', 'miasm.ir.lift'],
+    nextTools: ['constraint.extract', 'smt.solve', 'analysis.evidence.graph'],
+    producesArtifacts: ['triton_symbolic_slice', 'path_constraints'],
+    evidence: ['behavior', 'memory', 'workflow', 'provenance'],
+    safety: ['passive', 'bounded_symbolic', 'no_live_sample_by_default', 'no_network_by_default'],
+    runtimeBackends: ['triton'],
+  },
+  policy: {
+    defaultTimeoutMs: 20_000,
+    maxInputBytes: 2 * 1024 * 1024,
+    maxOutputBytes: 5 * 1024 * 1024,
+  },
+  readinessSetupActions: [
+    'Set TRITON_PYTHON to a Python interpreter with a pinned Triton package.',
+    'Provide explicit target.function, target.address, or target.range before external symbolic mode.',
+  ],
+  fixtureData: {
+    symbolic_expressions: 5,
+    constraints_recovered: 3,
+    emulation_started: false,
+    bounded: true,
+  },
+  recommendedNextTools: ['constraint.extract', 'smt.solve', 'analysis.evidence.graph'],
+}
+
 const tritonPlugin = definePlugin({
   id: 'triton',
   name: 'Triton Symbolic Plan',
@@ -137,6 +191,10 @@ const tritonPlugin = definePlugin({
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

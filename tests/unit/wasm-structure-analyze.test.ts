@@ -1,7 +1,75 @@
 import { describe, expect, test } from '@jest/globals'
-import { buildWasmStructureFromBuffer } from '../../src/plugins/wasm/tools/wasm-structure-analyze.js'
+import {
+  buildWasmStructureFromBuffer,
+  wasmStructureAnalyzeToolDefinition,
+} from '../../src/plugins/wasm/tools/wasm-structure-analyze.js'
 
 describe('wasm.structure.analyze', () => {
+  test('declares searchable WASM/WASI static workflow and passive runtime policy metadata', () => {
+    expect(wasmStructureAnalyzeToolDefinition.aspects?.formats).toEqual(
+      expect.arrayContaining(['wasm', 'wasi', 'wat'])
+    )
+    expect(wasmStructureAnalyzeToolDefinition.aspects?.capabilities).toEqual(
+      expect.arrayContaining([
+        'wasi-capability-review',
+        'resource-grant-review',
+        'preopen-policy-review',
+        'network-policy-review',
+        'custom-section-inventory',
+        'runtime-handoff',
+      ])
+    )
+    expect(wasmStructureAnalyzeToolDefinition.evidence?.map((entry) => entry.category)).toEqual(
+      expect.arrayContaining([
+        'structure',
+        'imports',
+        'exports',
+        'wasi-capability',
+        'resource-grant',
+        'custom-section',
+        'workflow',
+        'provenance',
+      ])
+    )
+    expect(wasmStructureAnalyzeToolDefinition.workflowRecipes?.[0]).toEqual(
+      expect.objectContaining({
+        id: 'wasm.static.inventory',
+        startsWith: ['wasm.structure.analyze'],
+        nextTools: expect.arrayContaining([
+          'wasm.runtime.plan',
+          'tool.readiness',
+          'analysis.evidence.graph',
+          'artifact.read',
+        ]),
+        producesArtifacts: ['wasm_structure'],
+        evidence: expect.arrayContaining([
+          'imports',
+          'exports',
+          'wasi-capability',
+          'resource-grant',
+          'custom-section',
+          'provenance',
+        ]),
+        safety: expect.arrayContaining([
+          'no_instantiation',
+          'no_wasi_grants',
+          'no_resource_grants',
+          'no_network_by_default',
+        ]),
+      })
+    )
+    expect(wasmStructureAnalyzeToolDefinition.runtimePolicy).toEqual(
+      expect.objectContaining({
+        passiveByDefault: true,
+        networkPolicy: 'disabled',
+        noInstantiation: true,
+        noWasiGrants: true,
+        noResourceGrants: true,
+        resourceGrants: 'none',
+      })
+    )
+  })
+
   test('parses valid WASM module headers without starting a runtime', () => {
     const inventory = buildWasmStructureFromBuffer(
       Buffer.from([
@@ -21,9 +89,28 @@ describe('wasm.structure.analyze', () => {
         passive: true,
         no_execute: true,
         no_runtime_start: true,
+        no_instantiation: true,
+        no_wasi_grants: true,
+        no_network: true,
+        resource_grants: 'none',
+      })
+    )
+    expect(inventory.runtime_plan.handoff).toEqual(
+      expect.objectContaining({
+        primary_tool: 'wasm.runtime.plan',
+        readiness_tool: 'tool.readiness',
+        evidence_tools: expect.arrayContaining(['analysis.evidence.graph', 'artifact.read']),
+        static_evidence_artifact_type: 'wasm_structure',
+        runtime_policy: expect.objectContaining({
+          no_instantiation: true,
+          no_wasi_grants: true,
+          no_network: true,
+          resource_grants: 'none',
+        }),
       })
     )
     expect(inventory.next_actions.join(' ')).toMatch(/Do not instantiate/i)
+    expect(inventory.next_actions.join(' ')).toMatch(/resource grants/i)
   })
 
   test('parses imports, exports, memories, tables, start function, and WASI capability risk', () => {
@@ -84,7 +171,20 @@ describe('wasm.structure.analyze', () => {
       })
     )
     expect(inventory.runtime_plan.recommended_tools).toEqual(
-      expect.arrayContaining(['wasm.runtime.plan'])
+      expect.arrayContaining([
+        'wasm.runtime.plan',
+        'tool.readiness',
+        'analysis.evidence.graph',
+        'artifact.read',
+      ])
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining([
+        'wasm.runtime.plan',
+        'tool.readiness',
+        'analysis.evidence.graph',
+        'artifact.read',
+      ])
     )
   })
 

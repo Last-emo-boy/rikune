@@ -33,6 +33,10 @@ const WasmPolicySchema = z.object({
   passive: z.literal(true),
   no_execute: z.literal(true),
   no_runtime_start: z.literal(true),
+  no_instantiation: z.literal(true),
+  no_wasi_grants: z.literal(true),
+  no_network: z.literal(true),
+  resource_grants: z.literal('none'),
 })
 
 const WasmStructureDataSchema = z.object({
@@ -83,6 +87,18 @@ const WasmStructureDataSchema = z.object({
   runtime_plan: z.object({
     status: z.literal('plan_only'),
     recommended_tools: z.array(z.string()),
+    handoff: z.object({
+      primary_tool: z.literal('wasm.runtime.plan'),
+      readiness_tool: z.literal('tool.readiness'),
+      evidence_tools: z.array(z.string()),
+      static_evidence_artifact_type: z.literal('wasm_structure'),
+      runtime_policy: z.object({
+        no_instantiation: z.literal(true),
+        no_wasi_grants: z.literal(true),
+        no_network: z.literal(true),
+        resource_grants: z.literal('none'),
+      }),
+    }),
     notes: z.array(z.string()),
   }),
   policy: WasmPolicySchema,
@@ -119,13 +135,42 @@ export const wasmStructureAnalyzeToolDefinition: ToolDefinition = {
   inputSchema: WasmStructureAnalyzeInputSchema,
   outputSchema: WasmStructureAnalyzeOutputSchema,
   aspects: {
-    formats: ['wasm', 'wasi'],
-    platforms: ['wasm'],
-    architectures: ['wasm'],
+    formats: ['wasm', 'wasi', 'wat'],
+    platforms: ['wasm', 'cross-platform'],
+    architectures: ['wasm', 'wasm32'],
     execution: ['static', 'triage'],
-    safety: ['passive', 'no_live_sample_by_default'],
-    capabilities: ['structure', 'imports', 'exports', 'capabilities', 'runtime-plan'],
-    evidence: ['structure', 'imports', 'exports', 'provenance'],
+    safety: [
+      'passive',
+      'no_live_sample_by_default',
+      'no_runtime_start',
+      'no_instantiation',
+      'no_wasi_grants',
+      'no_resource_grants',
+      'no_network_by_default',
+    ],
+    capabilities: [
+      'structure',
+      'imports',
+      'exports',
+      'wasi-capability-review',
+      'resource-grant-review',
+      'preopen-policy-review',
+      'network-policy-review',
+      'custom-section-inventory',
+      'runtime-plan',
+      'runtime-handoff',
+      'workflow-routing',
+    ],
+    evidence: [
+      'structure',
+      'imports',
+      'exports',
+      'wasi-capability',
+      'resource-grant',
+      'custom-section',
+      'workflow',
+      'provenance',
+    ],
   },
   artifacts: [
     {
@@ -138,7 +183,101 @@ export const wasmStructureAnalyzeToolDefinition: ToolDefinition = {
       category: 'structure',
       artifactTypes: ['wasm_structure'],
     },
+    {
+      category: 'imports',
+      artifactTypes: ['wasm_structure'],
+    },
+    {
+      category: 'exports',
+      artifactTypes: ['wasm_structure'],
+    },
+    {
+      category: 'wasi-capability',
+      artifactTypes: ['wasm_structure'],
+    },
+    {
+      category: 'resource-grant',
+      artifactTypes: ['wasm_structure'],
+    },
+    {
+      category: 'custom-section',
+      artifactTypes: ['wasm_structure'],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: ['wasm_structure'],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: ['wasm_structure'],
+    },
   ],
+  workflowRecipes: [
+    {
+      id: 'wasm.static.inventory',
+      title: 'WASM/WASI static structure inventory',
+      description:
+        'Route .wasm/.wat and WASI import/export evidence into runtime planning without instantiation, WASI preopens, resource grants, or network.',
+      startsWith: [TOOL_NAME],
+      nextTools: [
+        'wasm.runtime.plan',
+        'tool.readiness',
+        'analysis.evidence.graph',
+        'artifact.read',
+        'strings.extract',
+        'sbom.generate',
+        'wabt.toolchain.plan',
+      ],
+      requiredArtifacts: ['sample'],
+      producesArtifacts: ['wasm_structure'],
+      evidence: [
+        'structure',
+        'imports',
+        'exports',
+        'wasi-capability',
+        'resource-grant',
+        'custom-section',
+        'workflow',
+        'provenance',
+      ],
+      safety: [
+        'passive',
+        'no_live_sample_by_default',
+        'no_runtime_start',
+        'no_instantiation',
+        'no_wasi_grants',
+        'no_resource_grants',
+        'no_network_by_default',
+      ],
+      runtimeBackends: ['wasmtime'],
+    },
+  ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: false,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    noInstantiation: true,
+    noWasiGrants: true,
+    noResourceGrants: true,
+    resourceGrants: 'none',
+    notes: [
+      'wasm.structure.analyze is a passive static parser; it never instantiates the module.',
+      'No WASI preopens, filesystem grants, resource grants, or network access are created by this tool.',
+    ],
+  } as ToolDefinition['runtimePolicy'] & {
+    noNetwork: true
+    noMutation: true
+    noLiveExecution: true
+    noInstantiation: true
+    noWasiGrants: true
+    noResourceGrants: true
+    resourceGrants: 'none'
+  },
 }
 
 export type WasmStructureInventory = z.infer<typeof WasmStructureDataSchema>
@@ -483,10 +622,32 @@ export function buildWasmStructureFromBuffer(
     capability_risk_summary: capabilitySummary,
     runtime_plan: {
       status: 'plan_only',
-      recommended_tools: ['metadata.extract', 'strings.extract', 'wasm.runtime.plan'],
+      recommended_tools: [
+        'wasm.runtime.plan',
+        'tool.readiness',
+        'analysis.evidence.graph',
+        'artifact.read',
+        'metadata.extract',
+        'strings.extract',
+        'sbom.generate',
+        'wabt.toolchain.plan',
+      ],
+      handoff: {
+        primary_tool: 'wasm.runtime.plan',
+        readiness_tool: 'tool.readiness',
+        evidence_tools: ['analysis.evidence.graph', 'artifact.read'],
+        static_evidence_artifact_type: 'wasm_structure',
+        runtime_policy: {
+          no_instantiation: true,
+          no_wasi_grants: true,
+          no_network: true,
+          resource_grants: 'none',
+        },
+      },
       notes: [
         'Use a runtime-gated WASM/WASI backend only after reviewing imports and capabilities.',
         'This tool does not instantiate the module or start wasmtime.',
+        'No WASI preopens, filesystem grants, resource grants, or network access are created.',
         `Capability risk level: ${capabilitySummary.risk_level}.`,
       ],
     },
@@ -494,14 +655,28 @@ export function buildWasmStructureFromBuffer(
       passive: true,
       no_execute: true,
       no_runtime_start: true,
+      no_instantiation: true,
+      no_wasi_grants: true,
+      no_network: true,
+      resource_grants: 'none',
     },
     summary: validMagic
       ? `Passive WASM inventory found ${parsed.sections.length} section(s), ${parsed.importCountHint} import hint(s), ${parsed.exportCountHint} export hint(s), and ${parsed.wasiHints.length} WASI capability hint(s).`
       : 'Input does not contain a valid WASM magic header in the inspected preview.',
-    recommended_next_tools: ['metadata.extract', 'strings.extract', 'wasm.runtime.plan'],
+    recommended_next_tools: [
+      'wasm.runtime.plan',
+      'tool.readiness',
+      'analysis.evidence.graph',
+      'artifact.read',
+      'metadata.extract',
+      'strings.extract',
+      'sbom.generate',
+      'wabt.toolchain.plan',
+    ],
     next_actions: [
       'Review import and WASI capability hints before selecting a runtime backend.',
       'Do not instantiate the WASM module during static triage.',
+      'Keep WASI preopens, resource grants, and network disabled until an explicit runtime plan is approved.',
     ],
   }
 }

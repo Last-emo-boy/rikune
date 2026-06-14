@@ -1,5 +1,8 @@
 import { describe, expect, test } from '@jest/globals'
-import { buildAppleContainerInventoryFromBuffer } from '../../src/plugins/apple-container/tools/apple-container-inventory.js'
+import {
+  appleContainerInventoryToolDefinition,
+  buildAppleContainerInventoryFromBuffer,
+} from '../../src/plugins/apple-container/tools/apple-container-inventory.js'
 
 function localZip(entries: string[]): Buffer {
   const chunks: Buffer[] = []
@@ -14,6 +17,46 @@ function localZip(entries: string[]): Buffer {
 }
 
 describe('apple.container.inventory', () => {
+  test('declares static inventory workflow metadata and passive safety boundaries', () => {
+    expect(appleContainerInventoryToolDefinition.workflowRecipes?.[0]).toEqual({
+      id: 'apple.container.static-inventory',
+      title: 'Apple static container inventory',
+      startsWith: ['apple.container.inventory'],
+      nextTools: [
+        'apple.signing.inspect',
+        'macho.structure.analyze',
+        'apple.security.profile',
+        'macos.runtime.plan',
+        'ios.runtime.plan',
+      ],
+      producesArtifacts: ['apple_container_inventory'],
+      evidence: ['manifest', 'package-metadata', 'nested-binaries', 'provenance'],
+      safety: ['passive', 'no_auto_mount', 'no_installer_execution', 'no_live_sample_by_default'],
+    })
+
+    expect(appleContainerInventoryToolDefinition.aspects?.evidence).toEqual([
+      'manifest',
+      'package-metadata',
+      'nested-binaries',
+      'provenance',
+    ])
+    expect(appleContainerInventoryToolDefinition.aspects?.evidence).not.toContain('certificates')
+    expect(appleContainerInventoryToolDefinition.evidence).toEqual([
+      { category: 'manifest', artifactTypes: ['apple_container_inventory'] },
+      { category: 'package-metadata', artifactTypes: ['apple_container_inventory'] },
+      { category: 'nested-binaries', artifactTypes: ['apple_container_inventory'] },
+      { category: 'provenance', artifactTypes: ['apple_container_inventory'] },
+    ])
+    expect(appleContainerInventoryToolDefinition.aspects?.safety).toEqual(
+      expect.arrayContaining([
+        'passive',
+        'no_auto_mount',
+        'no_installer_execution',
+        'no_live_sample_by_default',
+      ])
+    )
+  })
+
   test('inventories IPA app bundles without mounting, installing, launching, or device access', () => {
     const inventory = buildAppleContainerInventoryFromBuffer(
       localZip([

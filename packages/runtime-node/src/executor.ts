@@ -17,6 +17,7 @@ import {
   type RuntimeToolInventory,
 } from './toolkit/inventory.js'
 import {
+  findRuntimeBackendCapability,
   getPythonCommand,
   type RuntimeBackendCapability,
   type RuntimeBackendType,
@@ -536,12 +537,6 @@ const runtimeBackendCapabilityRegistry: RuntimeBackendCapabilityDetails[] = [
   })),
 ]
 
-const runtimeBackendCapabilityIndex = new Map(
-  runtimeBackendCapabilityRegistry.map(
-    (entry) => [entry.key, entry] satisfies [string, RuntimeBackendCapabilityDetails]
-  )
-)
-
 export function listRuntimeBackendCapabilities(): RuntimeBackendCapability[] {
   return runtimeBackendCapabilityRegistry.map(({ key: _key, ...capability }) => ({ ...capability }))
 }
@@ -549,9 +544,10 @@ export function listRuntimeBackendCapabilities(): RuntimeBackendCapability[] {
 export function getRuntimeBackendCapability(
   contract: ToolRuntimeContract
 ): RuntimeBackendCapability | undefined {
-  const capability = runtimeBackendCapabilityIndex.get(
-    getRuntimeBackendCapabilityKey(contract.type, contract.handler)
-  )
+  const capability = findRuntimeBackendCapability(
+    runtimeBackendCapabilityRegistry,
+    contract
+  ) as RuntimeBackendCapabilityDetails | undefined
   if (!capability) {
     return undefined
   }
@@ -778,16 +774,34 @@ function stageArtifactsToOutbox(
   if (!fs.existsSync(outboxDir)) {
     fs.mkdirSync(outboxDir, { recursive: true })
   }
+  const allowedSourceRoots = getAllowedArtifactSourceRoots(taskId, outboxDir)
+  const outboxRealPath = getExistingRealPath(outboxDir)
 
   for (const art of artifacts) {
     if (!art || typeof art !== 'object') continue
     const artPath = (art as any).path as string | undefined
-    if (!artPath || !fs.existsSync(artPath)) continue
+    const sourcePath = artPath ? getExistingRealPath(artPath) : null
+    if (!artPath || !sourcePath) continue
+    if (!isPathInsideAnyDirectory(sourcePath, allowedSourceRoots)) {
+      log(`Rejected artifact outside task workspace/outbox: ${artPath}`)
+      continue
+    }
 
-    const basename = path.basename(artPath)
+    const basename = path.basename(sourcePath)
     const destPath = path.join(outboxDir, basename)
     try {
-      fs.copyFileSync(artPath, destPath)
+      const destRealPath = getExistingRealPath(destPath)
+      if (
+        destRealPath &&
+        outboxRealPath &&
+        !isPathInsideAnyDirectory(destRealPath, [outboxRealPath])
+      ) {
+        log(`Rejected artifact staging destination outside task outbox: ${destPath}`)
+        continue
+      }
+      if (destRealPath !== sourcePath) {
+        fs.copyFileSync(sourcePath, destPath)
+      }
       staged.push({ name: basename, path: destPath })
       log(`Staged artifact to outbox: ${basename}`)
     } catch (err) {
@@ -796,6 +810,27 @@ function stageArtifactsToOutbox(
   }
 
   return staged
+}
+
+function getAllowedArtifactSourceRoots(taskId: string, outboxDir: string): string[] {
+  return [path.join(config.runtime.inbox, taskId), outboxDir]
+    .map((root) => getExistingRealPath(root))
+    .filter((root): root is string => Boolean(root))
+}
+
+function getExistingRealPath(filePath: string): string | null {
+  try {
+    return fs.realpathSync(filePath)
+  } catch {
+    return null
+  }
+}
+
+function isPathInsideAnyDirectory(candidatePath: string, directoryPaths: string[]): boolean {
+  return directoryPaths.some((directoryPath) => {
+    const relativePath = path.relative(directoryPath, candidatePath)
+    return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
+  })
 }
 
 async function checkPythonAvailable(): Promise<boolean> {

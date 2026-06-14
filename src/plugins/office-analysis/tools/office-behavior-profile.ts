@@ -1,5 +1,21 @@
 import { z } from 'zod'
 import type { ToolDefinition, WorkerResult } from '../../sdk.js'
+import { OFFICE_MACRO_DETECTION_ARTIFACT_TYPE } from './office-macro-detect.js'
+import { OFFICE_OLE_ANALYSIS_ARTIFACT_TYPE } from './office-ole-analyze.js'
+import { OFFICE_VBA_EXTRACT_ARTIFACT_TYPE } from './office-vba-extract.js'
+import {
+  OFFICE_ANALYSIS_FORMATS,
+  OFFICE_ANALYSIS_PLATFORMS,
+  OFFICE_ANALYSIS_PROFILE_TAGS,
+  OFFICE_ANALYSIS_SEARCH_TERMS,
+  OFFICE_ANALYSIS_SAFETY,
+  OFFICE_BEHAVIOR_FOLLOW_UP_TOOLS,
+  OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE,
+  OFFICE_PROFILE_RUNTIME_POLICY,
+  buildOfficeEvidenceSummary,
+  buildOfficeQualityGates,
+  buildOfficeWorkflowHandoff,
+} from '../office-analysis-metadata.js'
 
 const TOOL_NAME = 'office.behavior.profile'
 
@@ -28,24 +44,53 @@ export const officeBehaviorProfileToolDefinition: ToolDefinition = {
   inputSchema: OfficeBehaviorProfileInputSchema,
   outputSchema: OfficeBehaviorProfileOutputSchema,
   aspects: {
-    formats: ['office', 'doc', 'docm', 'xls', 'xlsm', 'ppt', 'pptm', 'ole', 'ooxml'],
-    platforms: ['windows', 'macos', 'cross-platform'],
-    execution: ['static', 'correlation'],
-    safety: ['passive', 'no_live_sample_by_default'],
-    capabilities: ['macro-analysis', 'ioc-extraction', 'behavior-profile', 'workflow-plan'],
-    evidence: ['structure', 'strings', 'behavior', 'network', 'filesystem', 'provenance'],
+    formats: OFFICE_ANALYSIS_FORMATS,
+    platforms: OFFICE_ANALYSIS_PLATFORMS,
+    execution: ['static', 'correlation', 'workflow-handoff'],
+    safety: OFFICE_ANALYSIS_SAFETY,
+    capabilities: [
+      'macro-analysis',
+      'vba-macro-analysis',
+      'excel-macro-analysis',
+      'ioc-extraction',
+      'behavior-profile',
+      'malicious-document-triage',
+      'static-only-profile',
+      'workflow-plan',
+      'workflow-handoff',
+    ],
+    evidence: [
+      'structure',
+      'strings',
+      'behavior',
+      'network',
+      'filesystem',
+      'registry',
+      'ioc',
+      'workflow',
+      'provenance',
+    ],
+    search: OFFICE_ANALYSIS_SEARCH_TERMS,
+    profile: OFFICE_ANALYSIS_PROFILE_TAGS,
   },
   artifacts: [
     {
-      type: 'office_behavior_profile',
-      description: 'Passive Office macro behavior profile with IOC and rule-generation handoffs',
+      type: OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE,
+      description:
+        'Passive Office macro behavior profile contract with IOC, rule-generation, evidence graph, reporting handoffs, and static-only quality gates',
+      required: false,
     },
   ],
   evidence: [
-    { category: 'structure', artifactTypes: ['office_behavior_profile'] },
-    { category: 'strings', artifactTypes: ['office_behavior_profile'] },
-    { category: 'behavior', artifactTypes: ['office_behavior_profile'] },
-    { category: 'network', artifactTypes: ['office_behavior_profile'] },
+    { category: 'structure', artifactTypes: [OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE] },
+    { category: 'strings', artifactTypes: [OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE] },
+    { category: 'behavior', artifactTypes: [OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE] },
+    { category: 'network', artifactTypes: [OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE] },
+    { category: 'filesystem', artifactTypes: [OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE] },
+    { category: 'registry', artifactTypes: [OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE] },
+    { category: 'ioc', artifactTypes: [OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE] },
   ],
   workflowRecipes: [
     {
@@ -57,13 +102,29 @@ export const officeBehaviorProfileToolDefinition: ToolDefinition = {
         'office.vba.extract',
         'office.behavior.profile',
       ],
-      nextTools: ['ioc.export', 'yara.generate', 'sigma.rule.generate', 'report.generate'],
-      requiredArtifacts: ['office_ole_analysis', 'office_macro_detection', 'office_vba_source'],
-      producesArtifacts: ['office_behavior_profile'],
-      evidence: ['structure', 'strings', 'behavior', 'network', 'provenance'],
-      safety: ['passive', 'no_live_sample_by_default'],
+      nextTools: OFFICE_BEHAVIOR_FOLLOW_UP_TOOLS,
+      requiredArtifacts: [
+        OFFICE_OLE_ANALYSIS_ARTIFACT_TYPE,
+        OFFICE_MACRO_DETECTION_ARTIFACT_TYPE,
+        OFFICE_VBA_EXTRACT_ARTIFACT_TYPE,
+      ],
+      producesArtifacts: [OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE],
+      evidence: [
+        'structure',
+        'strings',
+        'behavior',
+        'network',
+        'filesystem',
+        'registry',
+        'ioc',
+        'workflow',
+        'provenance',
+      ],
+      safety: OFFICE_ANALYSIS_SAFETY,
+      runtimeBackends: ['local-correlation'],
     },
   ],
+  runtimePolicy: OFFICE_PROFILE_RUNTIME_POLICY,
 }
 
 function stringify(value: unknown): string {
@@ -159,6 +220,86 @@ export function buildOfficeBehaviorProfile(rawInput: unknown) {
     signals.registry.length +
     signals.obfuscation.length +
     iocs.length
+  const signalCounts = {
+    structure_hints: structureHints.length,
+    macro_triggers: signals.auto_exec.length,
+    network: signals.network.length,
+    filesystem: signals.filesystem.length,
+    process: signals.process.length,
+    registry: signals.registry.length,
+    obfuscation: signals.obfuscation.length,
+    ioc_candidates: iocs.length,
+  }
+  const evidenceSummary = buildOfficeEvidenceSummary({
+    schema: 'rikune.office_behavior_profile.evidence_summary.v1',
+    sourceTool: TOOL_NAME,
+    sampleId: input.sample_id,
+    artifactType: OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE,
+    evidenceKind: 'office-behavior-profile',
+    evidenceCategories: [
+      'structure',
+      'strings',
+      'behavior',
+      'network',
+      'filesystem',
+      'registry',
+      'ioc',
+      'workflow',
+      'provenance',
+    ],
+    counts: signalCounts,
+    highlights: {
+      risk_level: riskLevel(score),
+      macro_triggers: signals.auto_exec.slice(0, 20),
+      network_hints: signals.network.slice(0, 20),
+      process_hints: signals.process.slice(0, 20),
+      ioc_candidates: iocs.slice(0, 20),
+    },
+  })
+  const workflowHandoff = buildOfficeWorkflowHandoff({
+    schema: 'rikune.office_behavior_profile.workflow_handoff.v1',
+    sourceTool: TOOL_NAME,
+    sampleId: input.sample_id,
+    producesArtifacts: [OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE],
+    consumesArtifacts: [
+      OFFICE_OLE_ANALYSIS_ARTIFACT_TYPE,
+      OFFICE_MACRO_DETECTION_ARTIFACT_TYPE,
+      OFFICE_VBA_EXTRACT_ARTIFACT_TYPE,
+      'strings',
+      'analysis_findings',
+    ],
+    primaryArtifactType: OFFICE_BEHAVIOR_PROFILE_ARTIFACT_TYPE,
+    recommendedNextTools: OFFICE_BEHAVIOR_FOLLOW_UP_TOOLS,
+    routing: [
+      {
+        goal: 'ioc-export',
+        next_tools: ['ioc.export', 'analysis.evidence.graph'],
+        evidence: ['ioc_candidates', 'network', 'filesystem'],
+      },
+      {
+        goal: 'rule-generation',
+        next_tools: ['yara.generate', 'sigma.rule.generate'],
+        evidence: ['macro_triggers', 'suspicious_api_hints', 'ioc_candidates'],
+      },
+      {
+        goal: 'malicious-document-reporting',
+        next_tools: ['report.generate', 'workflow.search'],
+        evidence: ['risk_summary', 'passive_findings', 'quality_gates'],
+      },
+    ],
+  })
+  const qualityGates = buildOfficeQualityGates({
+    schema: 'rikune.office_behavior_profile.quality_gates.v1',
+    sourceTool: TOOL_NAME,
+    backend: 'local-correlation',
+    checks: {
+      behavior_profile_ready: true,
+      has_behavior_signal: score > 0,
+      ioc_candidates_present: iocs.length > 0,
+      macro_trigger_count: signals.auto_exec.length,
+      static_evidence_only: true,
+    },
+  })
 
   return {
     result_mode: 'office_behavior_profile',
@@ -175,6 +316,7 @@ export function buildOfficeBehaviorProfile(rawInput: unknown) {
       },
     },
     ioc_candidates: iocs,
+    evidence_summary: evidenceSummary,
     rule_generation_handoff: {
       yara: {
         tool: 'yara.generate',
@@ -187,6 +329,8 @@ export function buildOfficeBehaviorProfile(rawInput: unknown) {
         evidence: ['process', 'registry', 'network'],
       },
     },
+    workflow_handoff: workflowHandoff,
+    quality_gates: qualityGates,
     risk_summary: {
       score,
       risk_level: riskLevel(score),
@@ -198,6 +342,9 @@ export function buildOfficeBehaviorProfile(rawInput: unknown) {
       'ioc.export',
       'yara.generate',
       'sigma.rule.generate',
+      'analysis.evidence.graph',
+      'report.generate',
+      'workflow.search',
     ],
     safety_notes: [
       'No Microsoft Office automation, macro execution, document preview, or network lookup is performed.',

@@ -30,23 +30,47 @@ afterEach(() => {
 })
 
 describe('runtime-node configuration loading', () => {
+  test('defaults to loopback without requiring an API key for local development', async () => {
+    const { loadConfig } = await import('../../../packages/runtime-node/src/config.js')
+
+    const config = loadConfig({
+      argv: [],
+      env: {},
+    })
+
+    expect(config.server.host).toBe('127.0.0.1')
+    expect(config.runtime.apiKey).toBeUndefined()
+  })
+
   test('loads configuration from CLI flags', async () => {
     const { loadConfig } = await import('../../../packages/runtime-node/src/config.js')
 
     const config = loadConfig({
       argv: [
-        '--host', '127.0.0.1',
-        '--port', '19081',
-        '--mode', 'manual',
-        '--inbox', 'C:\\cli-inbox',
-        '--outbox', 'C:\\cli-outbox',
-        '--api-key', 'cli-secret',
-        '--ready-file', 'C:\\cli-outbox\\runtime.ready.json',
-        '--cors-origin', 'http://analyzer.local',
-        '--python-path', 'C:\\Python311\\python.exe',
-        '--max-rss-bytes', '123456',
-        '--min-disk-space-bytes', '654321',
-        '--log-level', 'debug',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        '19081',
+        '--mode',
+        'manual',
+        '--inbox',
+        'C:\\cli-inbox',
+        '--outbox',
+        'C:\\cli-outbox',
+        '--api-key',
+        'cli-secret',
+        '--ready-file',
+        'C:\\cli-outbox\\runtime.ready.json',
+        '--cors-origin',
+        'http://analyzer.local',
+        '--python-path',
+        'C:\\Python311\\python.exe',
+        '--max-rss-bytes',
+        '123456',
+        '--min-disk-space-bytes',
+        '654321',
+        '--log-level',
+        'debug',
       ],
       env: {},
     })
@@ -70,9 +94,12 @@ describe('runtime-node configuration loading', () => {
 
     const config = loadConfig({
       argv: [
-        '--host', '127.0.0.1',
-        '--port', '19081',
-        '--ready-file', 'C:\\cli\\runtime.ready.json',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        '19081',
+        '--ready-file',
+        'C:\\cli\\runtime.ready.json',
       ],
       env: {
         RUNTIME_HOST: '0.0.0.0',
@@ -107,15 +134,33 @@ describe('runtime-node configuration loading', () => {
     expect(config.runtime.readyFile).toBe('C:\\env\\runtime.ready.json')
   })
 
+  test('requires an API key when binding to a non-loopback host', async () => {
+    const { loadConfig } = await import('../../../packages/runtime-node/src/config.js')
+
+    expect(() => {
+      loadConfig({
+        argv: ['--host', '0.0.0.0'],
+        env: {},
+      })
+    }).toThrow(/RUNTIME_API_KEY is required when RUNTIME_HOST\/--host binds Runtime Node/)
+  })
+
+  test('requires an API key in production even on loopback', async () => {
+    const { loadConfig } = await import('../../../packages/runtime-node/src/config.js')
+
+    expect(() => {
+      loadConfig({
+        argv: ['--host', '127.0.0.1'],
+        env: { NODE_ENV: 'production' },
+      })
+    }).toThrow(/RUNTIME_API_KEY is required when NODE_ENV=production/)
+  })
+
   test('accepts inline CLI assignment syntax used by sandbox launchers', async () => {
     const { loadConfig } = await import('../../../packages/runtime-node/src/config.js')
 
     const config = loadConfig({
-      argv: [
-        '--host=127.0.0.1',
-        '--port=19081',
-        '--ready-file=C:\\sandbox\\runtime.ready.json',
-      ],
+      argv: ['--host=127.0.0.1', '--port=19081', '--ready-file=C:\\sandbox\\runtime.ready.json'],
       env: {},
     })
 
@@ -135,5 +180,3 @@ describe('runtime-node configuration loading', () => {
     }).toThrow(/Invalid numeric value for --port/)
   })
 })
-
-

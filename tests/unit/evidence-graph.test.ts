@@ -10,9 +10,23 @@ import {
   createEvidenceGraphHandler,
   evidenceGraphToolDefinition,
 } from '../../src/plugins/visualization/tools/evidence-graph.js'
+import { buildMetadataExtractProfile } from '../../src/plugins/metadata/tools/metadata-extract.js'
+import { buildWindowsInstallerInventoryFromBuffer } from '../../src/plugins/windows-installer/tools/windows-installer-inventory.js'
 
 const SAMPLE_HASH = '4'.repeat(64)
 const SAMPLE_ID = `sha256:${SAMPLE_HASH}`
+
+function localZip(entries: string[]): Buffer {
+  const chunks: Buffer[] = []
+  for (const entry of entries) {
+    const name = Buffer.from(entry)
+    const header = Buffer.alloc(30)
+    header.writeUInt32LE(0x04034b50, 0)
+    header.writeUInt16LE(name.length, 26)
+    chunks.push(header, name)
+  }
+  return Buffer.concat(chunks)
+}
 
 describe('analysis.evidence.graph tool', () => {
   let tempRoot: string
@@ -33,89 +47,124 @@ describe('analysis.evidence.graph tool', () => {
       source: 'unit-test',
     })
 
-    await persistStaticAnalysisJsonArtifact(workspaceManager, database, SAMPLE_ID, 'static_config_carver', 'config_carver', {
-      schema: 'rikune.static_config_carver.v1',
-      candidates: [
-        { kind: 'url', value: 'http://c2.example.net/gate', confidence: 0.9, evidence: ['http_url_string'] },
-        { kind: 'registry_path', value: 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run', confidence: 0.8, evidence: ['registry_path_string'] },
-      ],
-      blob_candidates: [],
-      workflow_handoff: {
-        schema: 'rikune.static_config_carver.workflow_handoff.v1',
-        handoff_mode: 'static_config_to_evidence_correlation',
-        routing: [
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      SAMPLE_ID,
+      'static_config_carver',
+      'config_carver',
+      {
+        schema: 'rikune.static_config_carver.v1',
+        candidates: [
           {
-            goal: 'ioc-enrichment-and-export',
-            priority: 'high',
-            next_tools: ['malware.intel.loop', 'ioc.export', 'report.generate'],
-            required_evidence: ['static_config_carver'],
+            kind: 'url',
+            value: 'http://c2.example.net/gate',
+            confidence: 0.9,
+            evidence: ['http_url_string'],
           },
           {
-            goal: 'evidence-graph-and-reporting',
-            priority: 'normal',
-            next_tools: ['analysis.evidence.graph', 'report.generate'],
-            required_evidence: ['static_config_carver'],
+            kind: 'registry_path',
+            value: 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
+            confidence: 0.8,
+            evidence: ['registry_path_string'],
           },
         ],
-      },
-    })
-    await persistStaticAnalysisJsonArtifact(workspaceManager, database, SAMPLE_ID, 'static_resource_graph', 'resource_graph', {
-      schema: 'rikune.static_resource_graph.v1',
-      resources: [
-        {
-          path: ['resources', 'id_10', 'id_1033'],
-          size: 4096,
-          magic: 'pe_or_dos',
-          entropy: 6.1,
-          sha256: 'a'.repeat(64),
-          stringPreview: ['resource payload', 'http://payload.example.net/install'],
+        blob_candidates: [],
+        workflow_handoff: {
+          schema: 'rikune.static_config_carver.workflow_handoff.v1',
+          handoff_mode: 'static_config_to_evidence_correlation',
+          routing: [
+            {
+              goal: 'ioc-enrichment-and-export',
+              priority: 'high',
+              next_tools: ['malware.intel.loop', 'ioc.export', 'report.generate'],
+              required_evidence: ['static_config_carver'],
+            },
+            {
+              goal: 'evidence-graph-and-reporting',
+              priority: 'normal',
+              next_tools: ['analysis.evidence.graph', 'report.generate'],
+              required_evidence: ['static_config_carver'],
+            },
+          ],
         },
-        {
-          path: ['resources', 'id_24', 'id_1033'],
-          size: 2048,
-          magic: 'binary',
-          entropy: 7.8,
-          sha256: 'b'.repeat(64),
-          stringPreview: [],
-        },
-      ],
-      workflow_handoff: {
-        schema: 'rikune.static_resource_graph.workflow_handoff.v1',
-        handoff_mode: 'static_resource_to_payload_correlation',
-        routing: [
+      }
+    )
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      SAMPLE_ID,
+      'static_resource_graph',
+      'resource_graph',
+      {
+        schema: 'rikune.static_resource_graph.v1',
+        resources: [
           {
-            goal: 'embedded-payload-followup',
-            priority: 'high',
-            next_tools: ['unpack.workflow.plan', 'static.config.carver', 'analysis.evidence.graph'],
-            required_evidence: ['static_resource_graph'],
+            path: ['resources', 'id_10', 'id_1033'],
+            size: 4096,
+            magic: 'pe_or_dos',
+            entropy: 6.1,
+            sha256: 'a'.repeat(64),
+            stringPreview: ['resource payload', 'http://payload.example.net/install'],
           },
           {
-            goal: 'encoded-or-encrypted-resource-followup',
-            priority: 'high',
-            next_tools: ['entropy.analyze', 'crypto.identify', 'static.config.carver'],
-            required_evidence: ['high entropy resource evidence'],
+            path: ['resources', 'id_24', 'id_1033'],
+            size: 2048,
+            magic: 'binary',
+            entropy: 7.8,
+            sha256: 'b'.repeat(64),
+            stringPreview: [],
           },
         ],
-      },
-    })
-    await persistStaticAnalysisJsonArtifact(workspaceManager, database, SAMPLE_ID, 'dynamic_trace_json', 'dynamic_trace', {
-      schema_version: '0.1.0',
-      source_format: 'generic_json',
-      evidence_kind: 'trace',
-      imported_at: new Date().toISOString(),
-      executed: true,
-      raw_event_count: 2,
-      api_calls: [
-        { api: 'InternetConnectW', category: 'network', count: 1, confidence: 0.9, sources: [] },
-        { api: 'RegSetValueExW', category: 'registry', count: 1, confidence: 0.9, sources: [] },
-      ],
-      memory_regions: [],
-      modules: [],
-      strings: [],
-      stages: ['network', 'registry_operations'],
-      risk_hints: [],
-      notes: [],
-    })
+        workflow_handoff: {
+          schema: 'rikune.static_resource_graph.workflow_handoff.v1',
+          handoff_mode: 'static_resource_to_payload_correlation',
+          routing: [
+            {
+              goal: 'embedded-payload-followup',
+              priority: 'high',
+              next_tools: [
+                'unpack.workflow.plan',
+                'static.config.carver',
+                'analysis.evidence.graph',
+              ],
+              required_evidence: ['static_resource_graph'],
+            },
+            {
+              goal: 'encoded-or-encrypted-resource-followup',
+              priority: 'high',
+              next_tools: ['entropy.analyze', 'crypto.identify', 'static.config.carver'],
+              required_evidence: ['high entropy resource evidence'],
+            },
+          ],
+        },
+      }
+    )
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      SAMPLE_ID,
+      'dynamic_trace_json',
+      'dynamic_trace',
+      {
+        schema_version: '0.1.0',
+        source_format: 'generic_json',
+        evidence_kind: 'trace',
+        imported_at: new Date().toISOString(),
+        executed: true,
+        raw_event_count: 2,
+        api_calls: [
+          { api: 'InternetConnectW', category: 'network', count: 1, confidence: 0.9, sources: [] },
+          { api: 'RegSetValueExW', category: 'registry', count: 1, confidence: 0.9, sources: [] },
+        ],
+        memory_regions: [],
+        modules: [],
+        strings: [],
+        stages: ['network', 'registry_operations'],
+        risk_hints: [],
+        notes: [],
+      }
+    )
   })
 
   afterEach(() => {
@@ -147,8 +196,16 @@ describe('analysis.evidence.graph tool', () => {
     expect(data.summary.expectation_count).toBeGreaterThanOrEqual(3)
     expect(data.summary.observation_count).toBeGreaterThanOrEqual(2)
     expect(data.summary.corroboration_edge_count).toBeGreaterThan(0)
-    expect(data.graph.nodes.some((node: any) => node.kind === 'expectation' && node.category === 'network')).toBe(true)
-    expect(data.graph.nodes.some((node: any) => node.kind === 'observation' && node.category === 'registry')).toBe(true)
+    expect(
+      data.graph.nodes.some(
+        (node: any) => node.kind === 'expectation' && node.category === 'network'
+      )
+    ).toBe(true)
+    expect(
+      data.graph.nodes.some(
+        (node: any) => node.kind === 'observation' && node.category === 'registry'
+      )
+    ).toBe(true)
     expect(
       data.graph.nodes.some(
         (node: any) =>
@@ -1153,7 +1210,11 @@ describe('analysis.evidence.graph tool', () => {
             {
               goal: 'crypto-followup-and-capability-correlation',
               priority: 'normal',
-              next_tools: ['crypto.identify', 'static.capability.triage', 'analysis.evidence.graph'],
+              next_tools: [
+                'crypto.identify',
+                'static.capability.triage',
+                'analysis.evidence.graph',
+              ],
               required_evidence: ['backend_die_scan', 'DIE crypto signatures'],
             },
             {
@@ -1450,9 +1511,7 @@ describe('analysis.evidence.graph tool', () => {
     expect(data.plugin_evidence_summary.ioc_count).toBeGreaterThanOrEqual(3)
     expect(data.plugin_evidence_summary.triage_signal_count).toBeGreaterThanOrEqual(3)
     expect(data.plugin_evidence_summary.evidence_by_kind.capability).toBeGreaterThanOrEqual(2)
-    expect(data.plugin_evidence_summary.evidence_by_kind.behavior_cluster).toBeGreaterThanOrEqual(
-      4
-    )
+    expect(data.plugin_evidence_summary.evidence_by_kind.behavior_cluster).toBeGreaterThanOrEqual(4)
     expect(data.plugin_evidence_summary.recommended_tools).toEqual(
       expect.arrayContaining([
         'malware.intel.loop',
@@ -1880,5 +1939,420 @@ describe('analysis.evidence.graph tool', () => {
         'report.generate',
       ])
     )
+  })
+
+  test('adds plugin evidence from backend_yara_scan artifacts', async () => {
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      SAMPLE_ID,
+      'backend_yara_scan',
+      'yara_scan',
+      {
+        schema: 'rikune.yara_scan.v1',
+        tool_version: '1.1.0',
+        sample_id: SAMPLE_ID,
+        rule_set: 'malware_families',
+        rule_tier: 'production',
+        ruleset_version: 'rules-v2',
+        match_count: 1,
+        string_evidence_count: 1,
+        confidence_summary: { high: 1, medium: 0, low: 0 },
+        matches: [
+          {
+            rule: 'SuspiciousUnitFamily',
+            tags: ['malware-family'],
+            meta: { description: 'unit family rule' },
+            strings: [
+              {
+                identifier: '$mz_marker',
+                offset: 0,
+                matched_data: 'MZ',
+                location: { section: '.text', rva: 4096, distance_to_entrypoint: 16 },
+              },
+            ],
+            confidence: { level: 'high', score: 0.9 },
+            evidence: {
+              import_dll_hits: ['kernel32.dll'],
+              import_api_hits: ['CreateFileA'],
+              section_hits: ['.text'],
+              near_entrypoint_hits: 1,
+            },
+            inference: {
+              classification: 'malware-family',
+              summary: 'Unit-test family confidence.',
+            },
+          },
+        ],
+        evidence_summary: {
+          schema: 'rikune.yara_scan.evidence_summary.v1',
+          source_tool: 'yara.scan',
+          sample_id: SAMPLE_ID,
+          artifact_type: 'backend_yara_scan',
+          rule_provenance: {
+            source: 'bundled_static_worker_yara_rules',
+            rule_set: 'malware_families',
+            rule_tier: 'production',
+            ruleset_version: 'rules-v2',
+            rule_files: ['malware_families.yar'],
+          },
+          rule_set: 'malware_families',
+          rule_tier: 'production',
+          ruleset_version: 'rules-v2',
+          match_count: 1,
+          matched_rule_names: ['SuspiciousUnitFamily'],
+          string_evidence_count: 1,
+          offset_evidence: {
+            strings_with_offsets: 1,
+            strings_with_location: 1,
+            near_entrypoint_hits: 1,
+            parser: 'pefile',
+          },
+          confidence_summary: { high: 1, medium: 0, low: 0 },
+          timed_out: false,
+        },
+        workflow_handoff: {
+          schema: 'rikune.yara_scan.workflow_handoff.v1',
+          handoff_mode: 'yara_scan_to_validation_evidence_graph_and_reporting',
+          source_tool: 'yara.scan',
+          sample_id: SAMPLE_ID,
+          artifact_type: 'backend_yara_scan',
+          match_count: 1,
+          string_evidence_count: 1,
+          recommended_next_tools: [
+            'artifact.read',
+            'analysis.evidence.graph',
+            'report.generate',
+            'malware.intel.loop',
+            'ioc.export',
+          ],
+          routing: [
+            {
+              goal: 'artifact-review-and-offset-validation',
+              priority: 'high',
+              next_tools: ['artifact.read', 'analysis.evidence.graph'],
+              required_evidence: ['backend_yara_scan', 'YARA string offsets'],
+            },
+            {
+              goal: 'evidence-graph-and-reporting',
+              priority: 'high',
+              next_tools: ['analysis.evidence.graph', 'report.generate'],
+              required_evidence: ['backend_yara_scan'],
+            },
+          ],
+        },
+        quality_gates: {
+          schema: 'rikune.yara_scan.quality_gates.v1',
+          passive_local_scan_only: true,
+          backend_started: true,
+          sample_executed_by_tool: false,
+          network_accessed_by_tool: false,
+          match_floor_met: true,
+          string_offset_evidence_available: true,
+          dominant_confidence: 'high',
+        },
+        recommended_next_tools: [
+          'artifact.read',
+          'analysis.evidence.graph',
+          'report.generate',
+          'malware.intel.loop',
+          'ioc.export',
+        ],
+      }
+    )
+
+    const result = await createEvidenceGraphHandler({ workspaceManager, database } as any)({
+      sample_id: SAMPLE_ID,
+      persist_artifact: false,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.plugin_evidence_summary.evidence_by_source_artifact_type.backend_yara_scan).toBe(4)
+    expect(
+      data.graph.nodes.some(
+        (node: any) =>
+          node.kind === 'plugin_evidence' &&
+          node.source === 'backend_yara_scan' &&
+          node.category === 'signatures' &&
+          node.details?.plugin_evidence_kind === 'capability' &&
+          node.details?.value === 'SuspiciousUnitFamily' &&
+          node.details?.recommended_tools?.includes('malware.intel.loop') &&
+          node.details?.string_evidence_count === 1
+      )
+    ).toBe(true)
+    expect(
+      data.graph.nodes.some(
+        (node: any) =>
+          node.kind === 'plugin_evidence' &&
+          node.source === 'backend_yara_scan' &&
+          node.details?.plugin_evidence_kind === 'triage_signal' &&
+          node.details?.quality_gates?.dominant_confidence === 'high' &&
+          node.details?.rule_provenance?.ruleset_version === 'rules-v2'
+      )
+    ).toBe(true)
+    expect(
+      data.graph.nodes.some(
+        (node: any) =>
+          node.kind === 'plugin_evidence' &&
+          node.source === 'backend_yara_scan' &&
+          node.details?.plugin_evidence_kind === 'workflow_route' &&
+          node.details?.recommended_tools?.includes('analysis.evidence.graph')
+      )
+    ).toBe(true)
+  })
+
+  test('adds generic workflow handoff evidence for allowlisted artifacts', async () => {
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      SAMPLE_ID,
+      'binary_diff',
+      'binary_diff',
+      {
+        schema: 'rikune.binary_diff.result.v1',
+        sample_id_a: SAMPLE_ID,
+        sample_id_b: `sha256:${'5'.repeat(64)}`,
+        evidence_summary: {
+          schema: 'rikune.binary_diff.evidence_summary.v1',
+          artifact_type: 'binary_diff',
+          evidence_kind: 'binary-diff',
+          source_tool: 'binary.diff',
+          delta_counts: {
+            sections: { added: 1, removed: 0, size_changed: 1 },
+            imports: { added: 2, removed: 1, common: 8 },
+          },
+          recommended_next_tools: [
+            'binary.diff.summary',
+            'analysis.evidence.graph',
+            'report.generate',
+          ],
+        },
+        workflow_handoff: {
+          schema: 'rikune.binary_diff.workflow_handoff.v1',
+          handoff_mode: 'binary_diff_to_summary_graph_and_report',
+          recommended_next_tools: [
+            'binary.diff.summary',
+            'analysis.evidence.graph',
+            'report.generate',
+          ],
+          routing: [
+            {
+              goal: 'structural-delta',
+              next_tools: ['analysis.evidence.graph', 'report.generate', 'artifact.read'],
+              evidence: ['imports', 'exports', 'sections', 'strings'],
+            },
+          ],
+        },
+        quality_gates: {
+          schema: 'rikune.binary_diff.quality_gates.v1',
+          static_only: true,
+          structural_delta_available: true,
+          has_diff_signal: true,
+        },
+      }
+    )
+
+    const result = await createEvidenceGraphHandler({ workspaceManager, database } as any)({
+      sample_id: SAMPLE_ID,
+      persist_artifact: false,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.plugin_evidence_summary.evidence_by_source_artifact_type.binary_diff).toBe(2)
+    expect(
+      data.graph.nodes.some(
+        (node: any) =>
+          node.kind === 'plugin_evidence' &&
+          node.source === 'binary_diff' &&
+          node.category === 'binary_diff' &&
+          node.details?.plugin_evidence_kind === 'triage_signal' &&
+          node.details?.evidence_summary_schema === 'rikune.binary_diff.evidence_summary.v1' &&
+          node.details?.quality_gates?.static_only === true &&
+          node.details?.recommended_tools?.includes('binary.diff.summary')
+      )
+    ).toBe(true)
+    expect(
+      data.graph.nodes.some(
+        (node: any) =>
+          node.kind === 'plugin_evidence' &&
+          node.source === 'binary_diff' &&
+          node.details?.plugin_evidence_kind === 'workflow_route' &&
+          node.details?.value === 'structural-delta' &&
+          node.details?.recommended_tools?.includes('analysis.evidence.graph')
+      )
+    ).toBe(true)
+  })
+
+  test('adds generic workflow handoff evidence for passive inventory profiles', async () => {
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      SAMPLE_ID,
+      'metadata',
+      'metadata-profile',
+      buildMetadataExtractProfile({
+        sampleId: SAMPLE_ID,
+        metadata: {
+          'File:FileType': 'ZIP',
+          'File:MIMEType': 'application/zip',
+          'File:FileSize': '42 KiB',
+          'ZIP:ZipRequiredVersion': 20,
+        },
+      })
+    )
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      SAMPLE_ID,
+      'container_structure',
+      'container-structure',
+      {
+        schema: 'rikune.container_structure.v1',
+        evidence_summary: {
+          schema: 'rikune.container_structure.evidence_summary.v1',
+          artifact_type: 'container_structure',
+          evidence_kind: 'container-structure',
+          source_tool: 'container.structure.analyze',
+          container_format: 'zip',
+          entry_count: 2,
+          nested_candidate_count: 1,
+          risk_flags: ['path-traversal'],
+          static_only: true,
+        },
+        workflow_handoff: {
+          schema: 'rikune.container_structure.workflow_handoff.v1',
+          handoff_mode: 'container_structure_to_nested_artifact_evidence_and_safe_extraction',
+          recommended_next_tools: [
+            'artifact.read',
+            'container.structure.analyze',
+            'analysis.evidence.graph',
+            'report.generate',
+          ],
+          routing: [
+            {
+              goal: 'extraction-risk-review',
+              priority: 'high',
+              next_tools: ['artifact.read', 'analysis.evidence.graph'],
+              required_evidence: ['risk_flags', 'extraction_plan', 'container_profile'],
+            },
+            {
+              goal: 'nested-artifact-routing',
+              priority: 'high',
+              next_tools: ['pe.structure.analyze', 'analysis.evidence.graph'],
+              required_evidence: ['nested_binary_candidates', 'nested_routes'],
+            },
+          ],
+        },
+        quality_gates: {
+          schema: 'rikune.container_structure.quality_gates.v1',
+          passive_static_inventory: true,
+          bounded_preview_only: true,
+          path_traversal_review_required: true,
+          sample_executed_by_tool: false,
+          extraction_performed_by_tool: false,
+          entrypoint_executed_by_tool: false,
+        },
+        recommended_next_tools: [
+          'artifact.read',
+          'container.structure.analyze',
+          'analysis.evidence.graph',
+          'report.generate',
+        ],
+      }
+    )
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      SAMPLE_ID,
+      'windows_installer_inventory',
+      'windows-installer-inventory',
+      buildWindowsInstallerInventoryFromBuffer(
+        Buffer.concat([
+          localZip(['AppxManifest.xml', 'VFS/Demo.exe', 'scripts/install.ps1']),
+          Buffer.from('CustomAction Binary.Demo VFS/Demo.dll install.ps1'),
+        ]),
+        { filename: 'demo.msix', sampleId: SAMPLE_ID }
+      )
+    )
+
+    const result = await createEvidenceGraphHandler({ workspaceManager, database } as any)({
+      sample_id: SAMPLE_ID,
+      persist_artifact: false,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.plugin_evidence_summary.evidence_by_source_artifact_type.metadata).toBe(3)
+    expect(data.plugin_evidence_summary.evidence_by_source_artifact_type.container_structure).toBe(
+      3
+    )
+    expect(
+      data.plugin_evidence_summary.evidence_by_source_artifact_type.windows_installer_inventory
+    ).toBe(4)
+    expect(
+      data.graph.nodes.some(
+        (node: any) =>
+          node.kind === 'plugin_evidence' &&
+          node.source === 'metadata' &&
+          node.details?.plugin_evidence_kind === 'triage_signal' &&
+          node.details?.evidence_summary_schema === 'rikune.metadata_extract.evidence_summary.v1' &&
+          node.details?.recommended_tools?.includes('container.structure.analyze')
+      )
+    ).toBe(true)
+    expect(
+      data.graph.nodes.some(
+        (node: any) =>
+          node.kind === 'plugin_evidence' &&
+          node.source === 'metadata' &&
+          node.details?.plugin_evidence_kind === 'workflow_route' &&
+          node.details?.value === 'format-specific-inventory' &&
+          node.details?.recommended_tools?.includes('container.structure.analyze')
+      )
+    ).toBe(true)
+    expect(
+      data.graph.nodes.some(
+        (node: any) =>
+          node.kind === 'plugin_evidence' &&
+          node.source === 'container_structure' &&
+          node.details?.plugin_evidence_kind === 'triage_signal' &&
+          node.details?.evidence_summary_schema ===
+            'rikune.container_structure.evidence_summary.v1' &&
+          node.details?.quality_gates?.path_traversal_review_required === true
+      )
+    ).toBe(true)
+    expect(
+      data.graph.nodes.some(
+        (node: any) =>
+          node.kind === 'plugin_evidence' &&
+          node.source === 'container_structure' &&
+          node.details?.plugin_evidence_kind === 'workflow_route' &&
+          node.details?.value === 'nested-artifact-routing' &&
+          node.details?.recommended_tools?.includes('pe.structure.analyze')
+      )
+    ).toBe(true)
+    expect(
+      data.graph.nodes.some(
+        (node: any) =>
+          node.kind === 'plugin_evidence' &&
+          node.source === 'windows_installer_inventory' &&
+          node.details?.plugin_evidence_kind === 'triage_signal' &&
+          node.details?.evidence_summary_schema ===
+            'rikune.windows_installer_inventory.evidence_summary.v1' &&
+          node.details?.quality_gates?.custom_action_candidates_present === true &&
+          node.details?.quality_gates?.sample_executed_by_tool === false
+      )
+    ).toBe(true)
+    expect(
+      data.graph.nodes.some(
+        (node: any) =>
+          node.kind === 'plugin_evidence' &&
+          node.source === 'windows_installer_inventory' &&
+          node.details?.plugin_evidence_kind === 'workflow_route' &&
+          node.details?.value === 'windows-runtime-plan-only' &&
+          node.details?.recommended_tools?.includes('windows.runtime.plan')
+      )
+    ).toBe(true)
   })
 })

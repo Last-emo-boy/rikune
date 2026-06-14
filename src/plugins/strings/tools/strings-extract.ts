@@ -372,6 +372,68 @@ export const stringsExtractToolDefinition: ToolDefinition = {
       safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
     },
   ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: false,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    notes: [
+      'Static string extraction reads sample bytes through a bounded worker and does not execute the sample.',
+    ],
+  } as ToolDefinition['runtimePolicy'] & {
+    noNetwork: true
+    noMutation: true
+    noLiveExecution: true
+  },
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'Static Python strings extractor',
+    backendKind: 'external',
+    adapter: 'static_python.strings.extract',
+    availability: 'optional',
+    envVar: 'STATIC_WORKER_PYTHON',
+    commandHint: 'python3',
+    supportedModes: ['external'],
+    defaultMode: 'external',
+    inputArtifactTypes: ['sample'],
+    outputArtifactTypes: ['enriched_string_analysis'],
+    policy: {
+      passiveByDefault: true,
+      requiresUserOptIn: false,
+      requiresIsolation: false,
+      noNetwork: true,
+      noMutation: true,
+      noLiveExecution: true,
+      maxInputBytes: 256 * 1024 * 1024,
+      maxOutputBytes: 16 * 1024 * 1024,
+      defaultTimeoutMs: 30_000,
+      notes: [
+        'Worker performs read-only printable string extraction and IOC categorization.',
+        'Missing worker readiness must be reported as setup metadata, not replaced with live execution.',
+      ],
+    },
+    readiness: {
+      doesNotStartBackend: true,
+      setupActions: [
+        'Configure the static Python worker used for strings.extract.',
+        'Retry strings.extract after static worker readiness is restored.',
+      ],
+      missingBackendBehavior:
+        'Return setup_required or partial static evidence with setup actions; do not execute the sample.',
+    },
+    packaging: {
+      installRoute: 'installed',
+      installProfile: 'default',
+      dockerFeature: 'static-python',
+      envVar: 'STATIC_WORKER_PYTHON',
+      dockerDefault: 'python3',
+      notes: ['Uses the shared static Python worker path packaged with the MCP server.'],
+    },
+  },
 }
 
 // ============================================================================

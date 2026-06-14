@@ -9,6 +9,7 @@ import { AnalysisPipelineStageSchema } from '../analysis/analysis-run-state.js'
 import { toStringArray } from '../utils/shared-helpers.js'
 
 const TOOL_NAME = 'workflow.run'
+const ARTIFACT_SELECTOR_LIMIT = 12
 const WorkflowRunActionSchema = z.enum(['request_upload', 'start', 'status', 'promote'])
 const RoutedToolSchema = z.enum([
   'sample.request_upload',
@@ -16,6 +17,34 @@ const RoutedToolSchema = z.enum([
   'workflow.analyze.status',
   'workflow.analyze.promote',
 ])
+
+const ArtifactReadSelectorSchema = z.object({
+  selector_id: z.string(),
+  sample_id: z.string(),
+  artifact_id: z.string(),
+  artifact_type: z.string(),
+  path: z.string(),
+  sha256: z.string().optional(),
+  mime: z.string().nullable().optional(),
+  stage: z.string().nullable(),
+  source: z.enum(['stage', 'run']),
+  suggested_read_mode: z.enum(['profile', 'summary', 'content']),
+  read_args: z.object({
+    sample_id: z.string(),
+    artifact_id: z.string(),
+    read_mode: z.enum(['profile', 'summary', 'content']),
+  }),
+})
+
+const ArtifactSelectorSummarySchema = z.object({
+  total_artifact_refs: z.number().int().nonnegative(),
+  selectable_artifact_refs: z.number().int().nonnegative(),
+  selector_count: z.number().int().nonnegative(),
+  omitted_count: z.number().int().nonnegative(),
+  latest_stage: z.string().nullable(),
+  by_type: z.record(z.number().int().nonnegative()),
+  by_stage: z.record(z.number().int().nonnegative()),
+})
 
 export const workflowRunInputSchema = z
   .object({
@@ -109,6 +138,8 @@ export const workflowRunOutputSchema = z.object({
       upgrade_paths: z.array(z.any()).optional(),
       deferred_jobs: z.array(z.any()).optional(),
       recoverable_stages: z.array(z.any()).optional(),
+      artifact_selectors: z.array(ArtifactReadSelectorSchema).optional(),
+      artifact_selector_summary: ArtifactSelectorSummarySchema.optional(),
       recommended_workflow_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
       routed_result: z.any().optional(),
@@ -173,6 +204,15 @@ function stringValue(value: unknown): string | undefined {
 
 function arrayValue(value: unknown): unknown[] | undefined {
   return Array.isArray(value) ? value : undefined
+}
+
+function recordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          item !== null && typeof item === 'object' && !Array.isArray(item)
+      )
+    : []
 }
 
 function routedToolFor(action: z.infer<typeof WorkflowRunActionSchema>) {
@@ -257,6 +297,183 @@ function normalizeWorkflowNextAction(action: string): string {
     .replaceAll('tools.discover', 'workflow.search')
 }
 
+function artifactValueScore(type: string, artifactPath: string): number {
+  const normalized = `${type} ${artifactPath}`.toLowerCase()
+  const highValueSignals = [
+    'summary',
+    'report',
+    'evidence',
+    'graph',
+    'manifest',
+    'triage',
+    'reconstruct',
+    'trace',
+    'yara',
+    'sbom',
+    'vuln',
+    'diff',
+    'unpack',
+    'profile',
+  ]
+  return highValueSignals.reduce(
+    (score, signal) => score + (normalized.includes(signal) ? 1 : 0),
+    0
+  )
+}
+
+function suggestedReadMode(type: string, artifactPath: string): 'profile' | 'summary' | 'content' {
+  const normalized = `${type} ${artifactPath}`.toLowerCase()
+  if (
+    ['evidence', 'graph', 'manifest', 'handoff', 'profile', 'sbom', 'vuln', 'yara'].some((signal) =>
+      normalized.includes(signal)
+    )
+  ) {
+    return 'profile'
+  }
+  if (['report', 'summary', 'digest', 'triage'].some((signal) => normalized.includes(signal))) {
+    return 'summary'
+  }
+  return 'content'
+}
+
+function normalizeArtifactRef(
+  value: unknown,
+  params: {
+    sampleId: string
+    stage: string | null
+    source: 'stage' | 'run'
+    order: number
+  }
+): (z.infer<typeof ArtifactReadSelectorSchema> & { score: number; order: number }) | null {
+  const item = asRecord(value)
+  const artifactId = stringValue(item.id)
+  const artifactType = stringValue(item.type)
+  const artifactPath = stringValue(item.path)
+  if (!artifactId || !artifactType || !artifactPath) {
+    return null
+  }
+
+  const readMode = suggestedReadMode(artifactType, artifactPath)
+  const selector = {
+    selector_id: `${params.source}:${params.stage ?? 'run'}:${artifactId}`,
+    sample_id: params.sampleId,
+    artifact_id: artifactId,
+    artifact_type: artifactType,
+    path: artifactPath,
+    sha256: stringValue(item.sha256),
+    mime: typeof item.mime === 'string' ? item.mime : item.mime === null ? null : undefined,
+    stage: params.stage,
+    source: params.source,
+    suggested_read_mode: readMode,
+    read_args: {
+      sample_id: params.sampleId,
+      artifact_id: artifactId,
+      read_mode: readMode,
+    },
+    score: artifactValueScore(artifactType, artifactPath),
+    order: params.order,
+  }
+  return selector
+}
+
+function buildArtifactSelectorPayload(params: {
+  run: Record<string, unknown>
+  sampleId?: string
+  latestStage?: string
+}): {
+  artifact_selectors?: z.infer<typeof ArtifactReadSelectorSchema>[]
+  artifact_selector_summary?: z.infer<typeof ArtifactSelectorSummarySchema>
+} {
+  const sampleId = params.sampleId
+  if (!sampleId) return {}
+
+  const latestStage = params.latestStage ?? stringValue(params.run.latest_stage) ?? null
+  const candidates: Array<
+    z.infer<typeof ArtifactReadSelectorSchema> & { score: number; order: number }
+  > = []
+  let order = 0
+  let rawArtifactRefCount = 0
+
+  for (const stage of recordArray(params.run.stages)) {
+    const stageName = stringValue(stage.stage)
+    const artifactRefs = arrayValue(stage.artifact_refs) ?? []
+    rawArtifactRefCount += artifactRefs.length
+    for (const artifact of artifactRefs) {
+      const selector = normalizeArtifactRef(artifact, {
+        sampleId,
+        stage: stageName ?? null,
+        source: 'stage',
+        order,
+      })
+      order += 1
+      if (selector) candidates.push(selector)
+    }
+  }
+
+  const runArtifactRefs = arrayValue(params.run.artifact_refs) ?? []
+  rawArtifactRefCount += runArtifactRefs.length
+  for (const artifact of runArtifactRefs) {
+    const selector = normalizeArtifactRef(artifact, {
+      sampleId,
+      stage: null,
+      source: 'run',
+      order,
+    })
+    order += 1
+    if (selector) candidates.push(selector)
+  }
+
+  if (candidates.length === 0) return {}
+
+  const deduped = new Map<
+    string,
+    z.infer<typeof ArtifactReadSelectorSchema> & { score: number; order: number }
+  >()
+  for (const candidate of candidates) {
+    const key = candidate.artifact_id || `${candidate.artifact_type}:${candidate.path}`
+    const existing = deduped.get(key)
+    if (
+      !existing ||
+      (existing.source === 'run' && candidate.source === 'stage') ||
+      (existing.stage !== latestStage && candidate.stage === latestStage)
+    ) {
+      deduped.set(key, candidate)
+    }
+  }
+
+  const allSelectors = Array.from(deduped.values()).sort((left, right) => {
+    const leftLatest = left.stage === latestStage ? 1 : 0
+    const rightLatest = right.stage === latestStage ? 1 : 0
+    if (leftLatest !== rightLatest) return rightLatest - leftLatest
+    const leftStage = left.source === 'stage' ? 1 : 0
+    const rightStage = right.source === 'stage' ? 1 : 0
+    if (leftStage !== rightStage) return rightStage - leftStage
+    if (left.score !== right.score) return right.score - left.score
+    return left.order - right.order
+  })
+  const limited = allSelectors.slice(0, ARTIFACT_SELECTOR_LIMIT)
+  const byType: Record<string, number> = {}
+  const byStage: Record<string, number> = {}
+  for (const selector of allSelectors) {
+    byType[selector.artifact_type] = (byType[selector.artifact_type] ?? 0) + 1
+    const stageKey = selector.stage ?? 'run'
+    byStage[stageKey] = (byStage[stageKey] ?? 0) + 1
+  }
+
+  return {
+    artifact_selectors: limited.map(({ score: _score, order: _order, ...selector }) => selector),
+    artifact_selector_summary: {
+      total_artifact_refs: rawArtifactRefCount,
+      selectable_artifact_refs: allSelectors.length,
+      selector_count: limited.length,
+      omitted_count: Math.max(0, allSelectors.length - limited.length),
+      latest_stage: latestStage,
+      by_type: byType,
+      by_stage: byStage,
+    },
+  }
+}
+
 function compactWorkflowRunData(params: {
   input: z.infer<typeof workflowRunInputSchema>
   routedTool: z.infer<typeof RoutedToolSchema>
@@ -270,6 +487,7 @@ function compactWorkflowRunData(params: {
   const sampleId = stringValue(data.sample_id) ?? stringValue(run.sample_id) ?? input.sample_id
   const status = stringValue(data.status) ?? stringValue(run.status)
   const latestStage = stringValue(run.latest_stage)
+  const artifactSelectorPayload = buildArtifactSelectorPayload({ run, sampleId, latestStage })
 
   return {
     result_mode: 'workflow_run' as const,
@@ -292,6 +510,7 @@ function compactWorkflowRunData(params: {
     upgrade_paths: arrayValue(data.upgrade_paths),
     deferred_jobs: arrayValue(data.deferred_jobs),
     recoverable_stages: arrayValue(data.recoverable_stages),
+    ...artifactSelectorPayload,
     recommended_workflow_tools: normalizeRecommendedWorkflowTools(data.recommended_next_tools),
     next_actions: toStringArray(data.next_actions).map(normalizeWorkflowNextAction),
     ...(input.include_raw_result ? { routed_result: result } : {}),

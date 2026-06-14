@@ -19,6 +19,7 @@ const androidPackagePlugin = definePlugin({
   aspects: {
     formats: [
       'android-package',
+      'android-bytecode',
       'apk',
       'aab',
       'apks',
@@ -37,9 +38,31 @@ const androidPackagePlugin = definePlugin({
     platforms: ['android', 'jvm', 'linux'],
     architectures: ['arm', 'arm64', 'x86', 'x64', 'riscv'],
     execution: ['static', 'triage'],
-    safety: ['passive', 'no_live_sample_by_default'],
-    capabilities: ['inventory', 'manifest', 'resources', 'signatures', 'native-lib', 'routing'],
-    evidence: ['structure', 'manifest', 'signatures', 'nested-binaries', 'provenance'],
+    safety: [
+      'passive',
+      'no_install',
+      'no_device_connection',
+      'no_decompiler_launch',
+      'no_live_sample_by_default',
+    ],
+    capabilities: [
+      'inventory',
+      'manifest',
+      'resources',
+      'signatures',
+      'native-lib',
+      'routing',
+      'workflow-plan',
+      'metadata-only-handoff',
+    ],
+    evidence: [
+      'structure',
+      'manifest',
+      'signatures',
+      'nested-binaries',
+      'package-metadata',
+      'provenance',
+    ],
   },
   surfaceRules: {
     tier: 1,

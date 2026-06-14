@@ -6,11 +6,11 @@ import path from 'node:path'
 const { WorkspaceManager } = await import('../../dist/workspace-manager.js')
 const { DatabaseManager } = await import('../../dist/database.js')
 const { CacheManager } = await import('../../dist/cache-manager.js')
-const { createReportSummarizeHandler } = await import('../../dist/tools/report-summarize.js')
+const { createReportSummarizeHandler } = await import('../../dist/plugins/reporting/tools/report-summarize.js')
 const {
   createOrReuseAnalysisRun,
   upsertAnalysisRunStage,
-} = await import('../../dist/analysis-run-state.js')
+} = await import('../../dist/analysis/analysis-run-state.js')
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'large-sample-runtime-'))
 const workspaceRoot = path.join(tempRoot, 'workspaces')

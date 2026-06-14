@@ -13,11 +13,14 @@ jest.unstable_mockModule('../../../src/logger.js', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
 }))
 
+const mockToolSurfaceManager = {
+  registerPlugin: jest.fn(),
+  unregisterPlugin: jest.fn(),
+  isEnabled: jest.fn().mockReturnValue(false),
+}
+
 jest.unstable_mockModule('../../../src/core/tool-surface-manager.js', () => ({
-  getToolSurfaceManager: jest.fn().mockReturnValue({
-    registerPlugin: jest.fn(),
-    isEnabled: jest.fn().mockReturnValue(false),
-  }),
+  getToolSurfaceManager: jest.fn().mockReturnValue(mockToolSurfaceManager),
 }))
 
 jest.unstable_mockModule('../../../src/core/plugin-runtime-bridge.js', () => ({
@@ -261,7 +264,23 @@ describe('PluginOrchestrator', () => {
       await orchestrator.loadOne(p, mockServer as any, mockDeps)
       await orchestrator.unload('a')
       expect(mockServer.unregisterTool).toHaveBeenCalledWith('a.tool')
+      expect(mockToolSurfaceManager.unregisterPlugin).toHaveBeenCalledWith('a')
+      expect(orchestrator.getPluginForTool('a.tool')).toBeUndefined()
       expect(orchestrator.isLoaded('a')).toBe(false)
+    })
+
+    test('should remove plugin tool owners even when status tools are stale', async () => {
+      ;(orchestrator as any).server = mockServer
+      const p = makePlugin('a')
+      await orchestrator.loadOne(p, mockServer as any, mockDeps)
+      const status = orchestrator.getStatuses().find((item: PluginStatus) => item.id === 'a')
+      if (status) status.tools = []
+
+      await orchestrator.unload('a')
+
+      expect(mockServer.unregisterTool).toHaveBeenCalledWith('a.tool')
+      expect(orchestrator.getPluginForTool('a.tool')).toBeUndefined()
+      expect(mockToolSurfaceManager.unregisterPlugin).toHaveBeenCalledWith('a')
     })
   })
 })

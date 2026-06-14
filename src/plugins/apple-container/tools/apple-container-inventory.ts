@@ -87,9 +87,9 @@ export const appleContainerInventoryToolDefinition: ToolDefinition = {
     platforms: ['macos', 'ios'],
     architectures: ['x86', 'x64', 'arm64', 'arm'],
     execution: ['static', 'triage'],
-    safety: ['passive', 'no_installer_execution', 'no_auto_mount'],
+    safety: ['passive', 'no_auto_mount', 'no_installer_execution', 'no_live_sample_by_default'],
     capabilities: ['inventory', 'package-metadata', 'provisioning', 'nested-binaries', 'routing'],
-    evidence: ['package-metadata', 'manifest', 'certificates', 'nested-binaries', 'provenance'],
+    evidence: ['manifest', 'package-metadata', 'nested-binaries', 'provenance'],
   },
   artifacts: [
     {
@@ -99,12 +99,37 @@ export const appleContainerInventoryToolDefinition: ToolDefinition = {
   ],
   evidence: [
     {
+      category: 'manifest',
+      artifactTypes: ['apple_container_inventory'],
+    },
+    {
       category: 'package-metadata',
       artifactTypes: ['apple_container_inventory'],
     },
     {
       category: 'nested-binaries',
       artifactTypes: ['apple_container_inventory'],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: ['apple_container_inventory'],
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'apple.container.static-inventory',
+      title: 'Apple static container inventory',
+      startsWith: ['apple.container.inventory'],
+      nextTools: [
+        'apple.signing.inspect',
+        'macho.structure.analyze',
+        'apple.security.profile',
+        'macos.runtime.plan',
+        'ios.runtime.plan',
+      ],
+      producesArtifacts: ['apple_container_inventory'],
+      evidence: ['manifest', 'package-metadata', 'nested-binaries', 'provenance'],
+      safety: ['passive', 'no_auto_mount', 'no_installer_execution', 'no_live_sample_by_default'],
     },
   ],
 }

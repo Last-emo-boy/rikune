@@ -8,6 +8,7 @@ import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import { JobQueue } from '../../src/job-queue.js'
 import {
+  attackMapToolDefinition,
   createAttackMapHandler,
   mapIndicatorsToAttack,
 } from '../../src/plugins/threat-intel/tools/attack-map.js'
@@ -32,6 +33,29 @@ describe('attack.map tool', () => {
   afterEach(async () => {
     database.close()
     await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('should expose ATT&CK handoff workflow metadata', () => {
+    expect(attackMapToolDefinition.workflowRecipes?.[0]).toEqual(
+      expect.objectContaining({
+        id: 'threat-intel.attack-map-handoff',
+        startsWith: expect.arrayContaining(['attack.map', 'workflow.triage']),
+        nextTools: expect.arrayContaining([
+          'analysis.evidence.graph',
+          'ioc.export',
+          'sigma.rule.generate',
+          'yara.generate',
+          'report.generate',
+          'artifact.read',
+        ]),
+        producesArtifacts: expect.arrayContaining(['attack_map']),
+        safety: expect.arrayContaining([
+          'passive',
+          'no_live_sample_by_default',
+          'no_network_by_default',
+        ]),
+      })
+    )
   })
 
   test('should return error for unknown sample', async () => {
@@ -64,6 +88,11 @@ describe('attack.map tool', () => {
       techniques: Array<{ technique_id: string }>
       capability_clusters: Array<{ capability: string }>
       tactic_summary: Record<string, number>
+      evidence_summary: Record<string, any>
+      workflow_handoff: Record<string, any>
+      quality_gates: Record<string, any>
+      recommended_next_tools: string[]
+      next_actions: string[]
     }
     expect(data.techniques.length).toBeGreaterThan(0)
     const techniqueIds = data.techniques.map((item) => item.technique_id)
@@ -74,6 +103,54 @@ describe('attack.map tool', () => {
     ).toBe(true)
     expect(data.capability_clusters.length).toBeGreaterThan(0)
     expect(Object.keys(data.tactic_summary).length).toBeGreaterThan(0)
+    expect(data.recommended_next_tools).toEqual(
+      expect.arrayContaining(['analysis.evidence.graph', 'ioc.export', 'report.generate'])
+    )
+    expect(data.next_actions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('analysis.evidence.graph'),
+        expect.stringContaining('ioc.export'),
+      ])
+    )
+    expect(data.evidence_summary).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.attack_map.evidence_summary.v1',
+        source_tool: 'attack.map',
+        artifact_type: 'attack_map',
+        technique_count: data.techniques.length,
+      })
+    )
+    expect(data.quality_gates).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.attack_map.quality_gates.v1',
+        passive_mapping_only: true,
+        sample_executed_by_tool: false,
+        backend_started: false,
+        network_accessed_by_tool: false,
+        mutation_performed: false,
+        analyst_review_required: true,
+      })
+    )
+    expect(data.workflow_handoff).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.attack_map.workflow_handoff.v1',
+        handoff_mode: 'attack_mapping_to_evidence_detection_and_reporting',
+        artifact_type: 'attack_map',
+        recommended_next_tools: expect.arrayContaining([
+          'analysis.evidence.graph',
+          'ioc.export',
+          'report.generate',
+        ]),
+      })
+    )
+    expect(data.workflow_handoff.dynamic_boundary).toEqual(
+      expect.objectContaining({
+        sample_executed_by_tool: false,
+        backend_started: false,
+        network_accessed_by_tool: false,
+        live_lookup_started: false,
+      })
+    )
   })
 
   test('should reuse cached ATT&CK mapping for compatible repeated requests', async () => {

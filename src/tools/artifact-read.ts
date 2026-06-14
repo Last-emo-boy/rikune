@@ -18,6 +18,9 @@ import {
 
 const TOOL_NAME = 'artifact.read'
 const TOOL_VERSION = '0.1.0'
+const SUMMARY_MAX_BYTES = 64 * 1024
+const SUMMARY_PREVIEW_CHARS = 2048
+const RELATED_ARTIFACT_LIMIT = 8
 
 const TEXT_EXTENSIONS = new Set([
   '.txt',
@@ -48,6 +51,13 @@ export const ArtifactReadInputSchema = z.object({
   artifact_id: z.string().optional().describe('Specific artifact UUID to fetch'),
   artifact_type: z.string().optional().describe('Artifact type to fetch latest match'),
   path: z.string().optional().describe('Artifact relative path to fetch'),
+  read_mode: z
+    .enum(['profile', 'summary', 'content'])
+    .optional()
+    .default('content')
+    .describe(
+      'Low-context read mode. profile returns metadata and related selectors without reading payload; summary reads a bounded preview; content returns artifact content.'
+    ),
   include_untracked_files: z
     .boolean()
     .optional()
@@ -114,6 +124,10 @@ export const ArtifactReadOutputSchema = z.object({
         mime: z.string().nullable(),
         created_at: z.string(),
       }),
+      read_mode: z.enum(['profile', 'summary', 'content']),
+      artifact_profile: z.record(z.any()).optional(),
+      summary: z.record(z.any()).optional(),
+      related_artifacts: z.array(z.record(z.any())).optional(),
       content: z.string().optional(),
       content_encoding: z.enum(['utf8', 'base64']).optional(),
       parsed_json: z.any().optional(),
@@ -177,6 +191,51 @@ function isTextArtifact(
   return looksLikeText(sample)
 }
 
+function payloadKindFor(
+  artifact: Pick<ArtifactInventoryItem, 'path' | 'mime'>,
+  sample?: Buffer
+): 'json' | 'text' | 'binary' {
+  const extension = path.extname(artifact.path).toLowerCase()
+  if (artifact.mime === 'application/json' || extension === '.json') {
+    return 'json'
+  }
+  if (!sample) {
+    if (TEXT_EXTENSIONS.has(extension) || artifact.mime?.startsWith('text/')) {
+      return 'text'
+    }
+    return 'binary'
+  }
+  return isTextArtifact(artifact, sample) ? 'text' : 'binary'
+}
+
+function suggestedReadMode(
+  artifact: Pick<ArtifactInventoryItem, 'type' | 'path' | 'mime'>
+): 'profile' | 'summary' | 'content' {
+  const normalized = `${artifact.type} ${artifact.path} ${artifact.mime ?? ''}`.toLowerCase()
+  if (
+    normalized.includes('summary') ||
+    normalized.includes('evidence') ||
+    normalized.includes('handoff') ||
+    normalized.includes('gaps') ||
+    normalized.includes('graph') ||
+    normalized.includes('sbom') ||
+    normalized.includes('yara') ||
+    normalized.includes('ioc')
+  ) {
+    return 'summary'
+  }
+  if (
+    normalized.includes('report') ||
+    normalized.includes('html') ||
+    normalized.includes('markdown') ||
+    normalized.endsWith('.md') ||
+    normalized.endsWith('.html')
+  ) {
+    return 'content'
+  }
+  return 'profile'
+}
+
 function selectArtifact(
   input: ArtifactReadInput,
   artifacts: ArtifactInventoryItem[]
@@ -199,6 +258,156 @@ function selectArtifact(
   }
 
   return ordered[0] || null
+}
+
+async function readArtifactPrefix(artifactAbsPath: string, totalSize: number, maxBytes: number) {
+  const bytesToRead = Math.min(totalSize, maxBytes)
+  if (bytesToRead <= 0) {
+    return { buffer: Buffer.alloc(0), bytesRead: 0, truncated: false }
+  }
+
+  const handle = await fs.open(artifactAbsPath, 'r')
+  try {
+    const buffer = Buffer.alloc(bytesToRead)
+    const { bytesRead } = await handle.read(buffer, 0, bytesToRead, 0)
+    return {
+      buffer: buffer.subarray(0, bytesRead),
+      bytesRead,
+      truncated: totalSize > bytesRead,
+    }
+  } finally {
+    await handle.close()
+  }
+}
+
+function jsonShape(value: unknown): Record<string, unknown> {
+  if (Array.isArray(value)) {
+    const first = value.find((item) => item !== null && typeof item === 'object')
+    return {
+      top_level: 'array',
+      item_count: value.length,
+      first_item_keys:
+        first && typeof first === 'object' && !Array.isArray(first)
+          ? Object.keys(first as Record<string, unknown>).slice(0, 25)
+          : [],
+    }
+  }
+  if (value !== null && typeof value === 'object') {
+    return {
+      top_level: 'object',
+      keys: Object.keys(value as Record<string, unknown>).slice(0, 40),
+    }
+  }
+  return { top_level: typeof value }
+}
+
+function buildArtifactProfile(
+  artifact: ArtifactInventoryItem,
+  totalSize: number
+): Record<string, unknown> {
+  const payloadKind = payloadKindFor(artifact)
+  const readMode = suggestedReadMode(artifact)
+  return {
+    schema: 'rikune.artifact_profile.v1',
+    artifact_id: artifact.id,
+    artifact_type: artifact.type,
+    path: artifact.path,
+    mime: artifact.mime,
+    size_bytes: totalSize,
+    tracked: artifact.tracked,
+    exists: artifact.exists,
+    session_tag: artifact.session_tag,
+    retention_bucket: artifact.retention_bucket,
+    age_days: artifact.age_days,
+    payload_kind: payloadKind,
+    suggested_read_mode: readMode,
+    read_args: {
+      sample_id: artifact.sample_id,
+      artifact_id: artifact.id,
+      read_mode: readMode,
+    },
+  }
+}
+
+function buildRelatedArtifacts(
+  selected: ArtifactInventoryItem,
+  artifacts: ArtifactInventoryItem[]
+): Array<Record<string, unknown>> {
+  return artifacts
+    .filter((artifact) => artifact.id !== selected.id)
+    .map((artifact) => {
+      const sameSession =
+        selected.session_tag !== null && artifact.session_tag === selected.session_tag
+      const sameType = artifact.type === selected.type
+      const score = (sameSession ? 20 : 0) + (sameType ? 8 : 0) + (artifact.exists ? 2 : 0)
+      return { artifact, score }
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || b.artifact.created_at.localeCompare(a.artifact.created_at))
+    .slice(0, RELATED_ARTIFACT_LIMIT)
+    .map(({ artifact }) => ({
+      artifact_id: artifact.id,
+      artifact_type: artifact.type,
+      path: artifact.path,
+      mime: artifact.mime,
+      tracked: artifact.tracked,
+      session_tag: artifact.session_tag,
+      suggested_read_mode: suggestedReadMode(artifact),
+      read_args: {
+        sample_id: artifact.sample_id,
+        artifact_id: artifact.id,
+        read_mode: suggestedReadMode(artifact),
+      },
+    }))
+}
+
+function summarizeText(content: string): Record<string, unknown> {
+  const lines = content.split(/\r?\n/)
+  return {
+    line_count: lines.length,
+    preview: content.slice(0, SUMMARY_PREVIEW_CHARS),
+    preview_truncated: content.length > SUMMARY_PREVIEW_CHARS,
+  }
+}
+
+function buildContentSummary(params: {
+  artifact: ArtifactInventoryItem
+  sample: Buffer
+  content: string
+  encoding: 'utf8' | 'base64'
+  bytesRead: number
+  totalSize: number
+  truncated: boolean
+  includeHighlights: boolean
+}): Record<string, unknown> {
+  const payloadKind = payloadKindFor(params.artifact, params.sample)
+  const summary: Record<string, unknown> = {
+    schema: 'rikune.artifact_summary.v1',
+    artifact_id: params.artifact.id,
+    artifact_type: params.artifact.type,
+    path: params.artifact.path,
+    payload_kind: payloadKind,
+    content_encoding: params.encoding,
+    bytes_sampled: params.bytesRead,
+    total_size: params.totalSize,
+    truncated: params.truncated,
+  }
+
+  if (params.encoding === 'utf8') {
+    Object.assign(summary, summarizeText(params.content))
+    if (params.includeHighlights) {
+      summary.highlights = extractIOCTextHighlights(params.content)
+    }
+    if (payloadKind === 'json') {
+      try {
+        summary.json_shape = jsonShape(JSON.parse(params.content))
+      } catch (error) {
+        summary.json_parse_warning = (error as Error).message
+      }
+    }
+  }
+
+  return summary
 }
 
 function extractIOCTextHighlights(content: string): {
@@ -244,6 +453,10 @@ export function createArtifactReadHandler(
 
     try {
       const input = ArtifactReadInputSchema.parse(args)
+      const includeContentWasExplicit = Object.prototype.hasOwnProperty.call(
+        args,
+        'include_content'
+      )
       const sample = database.findSample(input.sample_id)
       if (!sample) {
         return {
@@ -289,7 +502,26 @@ export function createArtifactReadHandler(
 
       const workspace = await workspaceManager.getWorkspace(input.sample_id)
       const artifactAbsPath = workspaceManager.normalizePath(workspace.root, selected.path)
-      const stat = await fs.stat(artifactAbsPath)
+      const warnings: string[] = []
+      const readMode = input.read_mode
+      const shouldReturnContent = readMode === 'content' && input.include_content
+      let totalSize = selected.size_bytes ?? 0
+      try {
+        const stat = await fs.stat(artifactAbsPath)
+        totalSize = stat.size
+      } catch (error) {
+        if (readMode !== 'profile') {
+          return {
+            ok: false,
+            errors: [`Artifact file not found: ${selected.path}`],
+            metrics: {
+              elapsed_ms: Date.now() - startTime,
+              tool: TOOL_NAME,
+            },
+          }
+        }
+        warnings.push('Artifact file is missing; returning profile from inventory metadata only.')
+      }
 
       const responseData: {
         sample_id: string
@@ -303,6 +535,10 @@ export function createArtifactReadHandler(
           mime: string | null
           created_at: string
         }
+        read_mode: 'profile' | 'summary' | 'content'
+        artifact_profile?: Record<string, unknown>
+        summary?: Record<string, unknown>
+        related_artifacts?: Array<Record<string, unknown>>
         content?: string
         content_encoding?: 'utf8' | 'base64'
         parsed_json?: unknown
@@ -328,12 +564,14 @@ export function createArtifactReadHandler(
           mime: selected.mime,
           created_at: selected.created_at,
         },
+        read_mode: readMode,
+        artifact_profile: buildArtifactProfile(selected, totalSize),
+        related_artifacts: buildRelatedArtifacts(selected, artifacts),
         bytes_read: 0,
-        total_size: stat.size,
+        total_size: totalSize,
         truncated: false,
       }
 
-      const warnings: string[] = []
       const selectorProvided = Boolean(input.artifact_id || input.artifact_type || input.path)
       if (!selectorProvided && artifacts.length > 1) {
         warnings.push(
@@ -346,16 +584,22 @@ export function createArtifactReadHandler(
         )
       }
 
-      if (input.include_content) {
-        const fileBuffer = await fs.readFile(artifactAbsPath)
-        const truncated = fileBuffer.length > input.max_bytes
-        const outputBuffer = truncated ? fileBuffer.subarray(0, input.max_bytes) : fileBuffer
-        responseData.bytes_read = outputBuffer.length
-        responseData.truncated = truncated
+      if (readMode === 'profile' && input.include_content === true && includeContentWasExplicit) {
+        warnings.push(
+          'read_mode=profile ignores include_content=true to keep the response bounded.'
+        )
+      }
 
-        if (truncated) {
+      if (readMode === 'summary' || shouldReturnContent) {
+        const maxBytes =
+          readMode === 'summary' ? Math.min(input.max_bytes, SUMMARY_MAX_BYTES) : input.max_bytes
+        const readResult = await readArtifactPrefix(artifactAbsPath, totalSize, maxBytes)
+        responseData.bytes_read = readResult.bytesRead
+        responseData.truncated = readResult.truncated
+
+        if (readResult.truncated) {
           warnings.push(
-            `Artifact content truncated to ${input.max_bytes} bytes (total ${fileBuffer.length} bytes).`
+            `Artifact content truncated to ${maxBytes} bytes (total ${totalSize} bytes).`
           )
         }
 
@@ -363,14 +607,33 @@ export function createArtifactReadHandler(
         if (input.encoding === 'base64') {
           encoding = 'base64'
         } else if (input.encoding === 'auto') {
-          encoding = isTextArtifact(selected, outputBuffer) ? 'utf8' : 'base64'
+          encoding = isTextArtifact(selected, readResult.buffer) ? 'utf8' : 'base64'
         }
 
-        responseData.content_encoding = encoding
-        responseData.content =
-          encoding === 'utf8' ? outputBuffer.toString('utf-8') : outputBuffer.toString('base64')
+        const renderedContent =
+          encoding === 'utf8'
+            ? readResult.buffer.toString('utf-8')
+            : readResult.buffer.toString('base64')
 
-        if (encoding === 'utf8' && input.parse_json) {
+        if (readMode === 'summary') {
+          responseData.summary = buildContentSummary({
+            artifact: selected,
+            sample: readResult.buffer,
+            content: renderedContent,
+            encoding,
+            bytesRead: readResult.bytesRead,
+            totalSize,
+            truncated: readResult.truncated,
+            includeHighlights: input.ioc_highlights,
+          })
+        }
+
+        if (shouldReturnContent) {
+          responseData.content_encoding = encoding
+          responseData.content = renderedContent
+        }
+
+        if (shouldReturnContent && encoding === 'utf8' && input.parse_json) {
           try {
             responseData.parsed_json = JSON.parse(responseData.content)
           } catch (error) {
@@ -378,7 +641,7 @@ export function createArtifactReadHandler(
           }
         }
 
-        if (encoding === 'utf8' && input.ioc_highlights) {
+        if (shouldReturnContent && encoding === 'utf8' && input.ioc_highlights) {
           responseData.highlights = extractIOCTextHighlights(responseData.content)
         }
       }

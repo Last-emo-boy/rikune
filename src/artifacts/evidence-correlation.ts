@@ -154,6 +154,7 @@ const STATIC_ARTIFACT_TYPES = [
   'function_evidence_handoff',
   'enriched_string_analysis',
   'backend_die_scan',
+  'backend_yara_scan',
   'backend_yara_x_scan',
   'backend_upx_list',
   'backend_upx_test',
@@ -163,6 +164,14 @@ const STATIC_ARTIFACT_TYPES = [
   'ioc_export_json',
   'ioc_export_csv',
   'ioc_export_stix2',
+  'metadata',
+  'container_structure',
+  'windows_installer_inventory',
+  'binary_diff',
+  'cross_module_graph',
+  'cyclonedx_sbom',
+  'spdx_lite_sbom',
+  'sbom_generation_evidence',
 ]
 
 const PLUGIN_EVIDENCE_ARTIFACT_TYPES = new Set([
@@ -179,6 +188,7 @@ const PLUGIN_EVIDENCE_ARTIFACT_TYPES = new Set([
   'function_evidence_handoff',
   'enriched_string_analysis',
   'backend_die_scan',
+  'backend_yara_scan',
   'backend_yara_x_scan',
   'backend_upx_list',
   'backend_upx_test',
@@ -188,6 +198,25 @@ const PLUGIN_EVIDENCE_ARTIFACT_TYPES = new Set([
   'ioc_export_json',
   'ioc_export_csv',
   'ioc_export_stix2',
+  'metadata',
+  'container_structure',
+  'windows_installer_inventory',
+  'binary_diff',
+  'cross_module_graph',
+  'cyclonedx_sbom',
+  'spdx_lite_sbom',
+  'sbom_generation_evidence',
+])
+
+const GENERIC_WORKFLOW_HANDOFF_ARTIFACT_TYPES = new Set([
+  'metadata',
+  'container_structure',
+  'windows_installer_inventory',
+  'binary_diff',
+  'cross_module_graph',
+  'cyclonedx_sbom',
+  'spdx_lite_sbom',
+  'sbom_generation_evidence',
 ])
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -486,6 +515,191 @@ function pluginEvidenceNodeId(
   index: number
 ): string {
   return `plugin:${artifact.id}:${kind}:${index}:${sanitizeId(value)}`
+}
+
+function uniqueStringValues(values: string[], limit = 16): string[] {
+  return Array.from(new Set(values.filter(Boolean))).slice(0, limit)
+}
+
+function routeConfidence(route: Record<string, unknown>): number {
+  const priority = readString(route.priority)
+  if (priority === 'critical') return 0.9
+  if (priority === 'high') return 0.85
+  if (priority === 'low') return 0.52
+  return 0.62
+}
+
+function routeEvidence(route: Record<string, unknown>): string[] {
+  const requiredEvidence = readStringList(route.required_evidence, 8)
+  if (requiredEvidence.length > 0) return requiredEvidence
+  return readStringList(route.evidence, 8)
+}
+
+function evidenceFromWorkflowRoutes(args: {
+  artifact: ArtifactRef
+  workflowHandoff: Record<string, unknown> | null
+  labelPrefix: string
+  startIndex: number
+  details?: Record<string, unknown>
+}): { evidence: PluginEvidence[]; nextIndex: number } {
+  const evidence: PluginEvidence[] = []
+  let index = args.startIndex
+
+  for (const value of asArray(args.workflowHandoff?.routing).slice(0, 8)) {
+    const route = asRecord(value)
+    if (!route) continue
+    const goal = readString(route.goal) || readString(route.name) || readString(route.id)
+    if (!goal) continue
+    evidence.push({
+      id: pluginEvidenceNodeId(args.artifact, 'workflow_route', goal, index++),
+      kind: 'workflow_route',
+      category: 'workflow',
+      label: `${args.labelPrefix}:${goal}`,
+      value: goal,
+      confidence: routeConfidence(route),
+      source_artifact_id: args.artifact.id,
+      source_artifact_type: args.artifact.type,
+      evidence: routeEvidence(route),
+      recommended_tools: readStringList(route.next_tools, 12),
+      details: {
+        ...(args.details || {}),
+        priority: readString(route.priority) || 'normal',
+        handoff_schema: readString(args.workflowHandoff?.schema) || null,
+      },
+    })
+  }
+
+  return { evidence, nextIndex: index }
+}
+
+function standardHandoffData(payload: Record<string, unknown>): {
+  data: Record<string, unknown>
+  workflowHandoff: Record<string, unknown> | null
+  evidenceSummary: Record<string, unknown> | null
+  qualityGates: Record<string, unknown> | null
+} {
+  const data = unwrapPayload(payload)
+  return {
+    data,
+    workflowHandoff: asRecord(data.workflow_handoff) ?? asRecord(data.x_mcp_workflow_handoff),
+    evidenceSummary: asRecord(data.evidence_summary) ?? asRecord(data.x_mcp_evidence_summary),
+    qualityGates: asRecord(data.quality_gates) ?? asRecord(data.x_mcp_quality_gates),
+  }
+}
+
+function genericArtifactCategory(artifactType: string): string {
+  if (artifactType === 'binary_diff') return 'binary_diff'
+  if (artifactType === 'cross_module_graph') return 'cross_module'
+  if (/sbom/i.test(artifactType)) return 'supply_chain'
+  const category = categoryFromCapabilityText(artifactType)
+  return category === 'unknown' ? 'workflow' : category
+}
+
+function genericEvidenceFacts(evidenceSummary: Record<string, unknown> | null): string[] {
+  if (!evidenceSummary) return []
+  const fields = [
+    'artifact_type',
+    'evidence_kind',
+    'source_tool',
+    'sbom_format',
+    'match_count',
+    'component_count',
+    'sample_hash_count',
+    'rules_generated',
+    'total_indicators',
+  ]
+  const facts = fields
+    .map((field) => {
+      const value = evidenceSummary[field]
+      if (value === undefined || value === null || value === '') return ''
+      return `${field}=${String(value)}`
+    })
+    .filter(Boolean)
+  if (asRecord(evidenceSummary.delta_counts)) facts.push('delta_counts_present')
+  if (asRecord(evidenceSummary.similarity_profile)) facts.push('similarity_profile_present')
+  return facts.slice(0, 12)
+}
+
+function genericRecommendedTools(
+  data: Record<string, unknown>,
+  workflowHandoff: Record<string, unknown> | null,
+  evidenceSummary: Record<string, unknown> | null
+): string[] {
+  const routeTools = asArray(workflowHandoff?.routing).flatMap((value) => {
+    const route = asRecord(value)
+    return route ? readStringList(route.next_tools, 8) : []
+  })
+  return uniqueStringValues(
+    [
+      ...readStringList(data.recommended_next_tools, 12),
+      ...readStringList(workflowHandoff?.recommended_next_tools, 12),
+      ...readStringList(evidenceSummary?.recommended_next_tools, 12),
+      ...routeTools,
+      'analysis.evidence.graph',
+      'report.generate',
+    ],
+    16
+  )
+}
+
+function evidenceFromGenericWorkflowHandoff(
+  artifact: ArtifactRef,
+  payload: Record<string, unknown>
+): PluginEvidence[] {
+  if (!GENERIC_WORKFLOW_HANDOFF_ARTIFACT_TYPES.has(artifact.type)) return []
+  const { data, workflowHandoff, evidenceSummary, qualityGates } = standardHandoffData(payload)
+  if (!workflowHandoff && !evidenceSummary && !qualityGates) return []
+
+  const evidence: PluginEvidence[] = []
+  let index = 0
+  const artifactType =
+    readString(evidenceSummary?.artifact_type) ||
+    readString(workflowHandoff?.artifact_type) ||
+    artifact.type
+  const summaryValue =
+    readString(evidenceSummary?.evidence_kind) ||
+    readString(evidenceSummary?.sbom_format) ||
+    readString(workflowHandoff?.handoff_mode) ||
+    artifactType
+  const evidenceSummarySchema = readString(evidenceSummary?.schema)
+  const workflowHandoffSchema = readString(workflowHandoff?.schema)
+  const qualityGatesSchema = readString(qualityGates?.schema)
+
+  if (evidenceSummary || qualityGates) {
+    evidence.push({
+      id: pluginEvidenceNodeId(artifact, 'triage_signal', `generic:${summaryValue}`, index++),
+      kind: 'triage_signal',
+      category: genericArtifactCategory(artifact.type),
+      label: `generic_handoff:${artifact.type}`,
+      value: summaryValue,
+      confidence: evidenceSummary ? 0.66 : 0.56,
+      source_artifact_id: artifact.id,
+      source_artifact_type: artifact.type,
+      evidence: genericEvidenceFacts(evidenceSummary),
+      recommended_tools: genericRecommendedTools(data, workflowHandoff, evidenceSummary),
+      details: {
+        artifact_type: artifactType,
+        evidence_summary_schema: evidenceSummarySchema || null,
+        workflow_handoff_schema: workflowHandoffSchema || null,
+        quality_gates_schema: qualityGatesSchema || null,
+        quality_gates: qualityGates || null,
+      },
+    })
+  }
+
+  const routes = evidenceFromWorkflowRoutes({
+    artifact,
+    workflowHandoff,
+    labelPrefix: `${artifact.type}_route`,
+    startIndex: index,
+    details: {
+      evidence_summary_schema: evidenceSummarySchema || null,
+      quality_gates: qualityGates || null,
+    },
+  })
+  evidence.push(...routes.evidence)
+
+  return evidence
 }
 
 function evidenceFromMalwareIntelLoop(
@@ -1353,6 +1567,177 @@ function evidenceFromEnrichedStringAnalysis(
       },
     })
   }
+
+  return evidence
+}
+
+function confidenceFromYaraLevel(level: string): number {
+  if (level === 'high') return 0.86
+  if (level === 'medium') return 0.68
+  if (level === 'low') return 0.48
+  return 0.58
+}
+
+function confidenceFromYaraMatch(match: Record<string, unknown>): number {
+  const confidence = asRecord(match.confidence)
+  const score = readNumber(confidence?.score, -1)
+  if (score >= 0) return boundedConfidence(score, 0.58)
+  return confidenceFromYaraLevel(readString(confidence?.level))
+}
+
+function yaraMatchStringCount(match: Record<string, unknown>): number {
+  return asArray(match.strings).filter((value) => Boolean(asRecord(value))).length
+}
+
+function evidenceFromYaraScan(
+  artifact: ArtifactRef,
+  payload: Record<string, unknown>
+): PluginEvidence[] {
+  const { data, workflowHandoff, evidenceSummary, qualityGates } = standardHandoffData(payload)
+  const evidence: PluginEvidence[] = []
+  let index = 0
+  const matches = asArray(data.matches)
+    .map(asRecord)
+    .filter((match): match is Record<string, unknown> => Boolean(match))
+  const confidenceSummary =
+    asRecord(data.confidence_summary) ?? asRecord(evidenceSummary?.confidence_summary)
+  const ruleProvenance = asRecord(evidenceSummary?.rule_provenance)
+  const matchCount = readNumber(
+    data.match_count,
+    readNumber(evidenceSummary?.match_count, matches.length)
+  )
+  const stringEvidenceCount = readNumber(
+    data.string_evidence_count,
+    readNumber(
+      evidenceSummary?.string_evidence_count,
+      matches.reduce((total, match) => total + yaraMatchStringCount(match), 0)
+    )
+  )
+  const ruleSet =
+    readString(data.rule_set) ||
+    readString(evidenceSummary?.rule_set) ||
+    readString(ruleProvenance?.rule_set)
+  const ruleTier =
+    readString(data.rule_tier) ||
+    readString(evidenceSummary?.rule_tier) ||
+    readString(ruleProvenance?.rule_tier)
+  const rulesetVersion =
+    readString(data.ruleset_version) ||
+    readString(evidenceSummary?.ruleset_version) ||
+    readString(ruleProvenance?.ruleset_version)
+  const timedOut = data.timed_out === true || evidenceSummary?.timed_out === true
+  const recommendedTools = uniqueStringValues(
+    [
+      ...genericRecommendedTools(data, workflowHandoff, evidenceSummary),
+      'artifact.read',
+      'yara.scan',
+      matchCount > 0 ? 'malware.intel.loop' : 'yara.generate',
+      matchCount > 0 ? 'ioc.export' : '',
+    ],
+    16
+  )
+
+  for (const match of matches.slice(0, 16)) {
+    const rule = readString(match.rule) || readString(match.identifier) || `rule_${index}`
+    const tags = readStringList(match.tags, 8)
+    const strings = asArray(match.strings)
+      .map(asRecord)
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    const matchEvidence = asRecord(match.evidence)
+    const confidence = asRecord(match.confidence)
+    evidence.push({
+      id: pluginEvidenceNodeId(artifact, 'capability', `yara:${rule}`, index++),
+      kind: 'capability',
+      category: 'signatures',
+      label: `yara_match:${rule}`,
+      value: rule,
+      confidence: confidenceFromYaraMatch(match),
+      source_artifact_id: artifact.id,
+      source_artifact_type: artifact.type,
+      evidence: [
+        ...tags.map((tag) => `tag=${tag}`),
+        `strings=${strings.length}`,
+        readString(confidence?.level) ? `confidence=${readString(confidence?.level)}` : '',
+        readNumber(matchEvidence?.near_entrypoint_hits, 0) > 0
+          ? `near_entrypoint_hits=${readNumber(matchEvidence?.near_entrypoint_hits, 0)}`
+          : '',
+      ].filter(Boolean),
+      recommended_tools: recommendedTools,
+      details: {
+        rule,
+        tags,
+        meta: asRecord(match.meta) || null,
+        string_evidence_count: strings.length,
+        string_identifiers: strings.map((entry) => readString(entry.identifier)).filter(Boolean),
+        confidence_level: readString(confidence?.level) || null,
+        import_dll_hits: readStringList(matchEvidence?.import_dll_hits, 8),
+        import_api_hits: readStringList(matchEvidence?.import_api_hits, 8),
+        section_hits: readStringList(matchEvidence?.section_hits, 8),
+        inference: asRecord(match.inference) || null,
+        rule_set: ruleSet || null,
+        ruleset_version: rulesetVersion || null,
+        quality_gates: qualityGates || null,
+      },
+    })
+  }
+
+  const highCount = readNumber(confidenceSummary?.high, 0)
+  const mediumCount = readNumber(confidenceSummary?.medium, 0)
+  const summaryConfidence = timedOut
+    ? 0.4
+    : matchCount > 0
+      ? highCount > 0
+        ? 0.82
+        : mediumCount > 0
+          ? 0.7
+          : 0.58
+      : 0.45
+  evidence.push({
+    id: pluginEvidenceNodeId(
+      artifact,
+      'triage_signal',
+      `yara_summary:${matchCount}:${stringEvidenceCount}`,
+      index++
+    ),
+    kind: 'triage_signal',
+    category: 'signatures',
+    label: 'yara_scan_summary',
+    value: `matches=${matchCount};strings=${stringEvidenceCount}`,
+    confidence: summaryConfidence,
+    source_artifact_id: artifact.id,
+    source_artifact_type: artifact.type,
+    evidence: [
+      ruleSet ? `rule_set=${ruleSet}` : '',
+      ruleTier ? `rule_tier=${ruleTier}` : '',
+      rulesetVersion ? `ruleset_version=${rulesetVersion}` : '',
+      `match_count=${matchCount}`,
+      `string_evidence_count=${stringEvidenceCount}`,
+      timedOut ? 'timed_out=true' : '',
+    ].filter(Boolean),
+    recommended_tools: recommendedTools,
+    details: {
+      artifact_type: readString(evidenceSummary?.artifact_type) || artifact.type,
+      evidence_summary_schema: readString(evidenceSummary?.schema) || null,
+      rule_provenance: ruleProvenance || null,
+      confidence_summary: confidenceSummary || null,
+      matched_rule_names: readStringList(evidenceSummary?.matched_rule_names, 16),
+      offset_evidence: asRecord(evidenceSummary?.offset_evidence) || null,
+      quality_gates: qualityGates || null,
+    },
+  })
+
+  const routes = evidenceFromWorkflowRoutes({
+    artifact,
+    workflowHandoff,
+    labelPrefix: 'yara_scan_route',
+    startIndex: index,
+    details: {
+      rule_set: ruleSet || null,
+      ruleset_version: rulesetVersion || null,
+      quality_gates: qualityGates || null,
+    },
+  })
+  evidence.push(...routes.evidence)
 
   return evidence
 }
@@ -2618,6 +3003,9 @@ function pluginEvidenceFromArtifact(
   if (artifact.type === 'enriched_string_analysis') {
     return evidenceFromEnrichedStringAnalysis(artifact, payload)
   }
+  if (artifact.type === 'backend_yara_scan') {
+    return evidenceFromYaraScan(artifact, payload)
+  }
   if (artifact.type === 'backend_yara_x_scan') {
     return evidenceFromYaraXScan(artifact, payload)
   }
@@ -2639,6 +3027,9 @@ function pluginEvidenceFromArtifact(
     artifact.type === 'ioc_export_stix2'
   ) {
     return evidenceFromIOCExport(artifact, payload)
+  }
+  if (GENERIC_WORKFLOW_HANDOFF_ARTIFACT_TYPES.has(artifact.type)) {
+    return evidenceFromGenericWorkflowHandoff(artifact, payload)
   }
   return []
 }

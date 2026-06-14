@@ -1,0 +1,274 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "allows_live_malware": false,
+    "allows_host_execution": false,
+    "default_ci_static_only": true,
+    "external_corpus_env": "RIKUNE_REVERSE_BENCH_EXTERNAL"
+  },
+  "dimensions": [
+    {
+      "id": "tool_discovery_quality",
+      "description": "Verify tools.discover recommends the expected toolchain from sample profile metadata.",
+      "default_ci_metric": "expected recommended_tools and plugin_ids are present in the portal result",
+      "residual_gap_policy": "Record missing live-tool coverage as residual_gaps instead of requiring heavy backends in CI."
+    },
+    {
+      "id": "function_recovery_coverage",
+      "description": "Track whether the profile routes toward function inventory, disassembly, and decompilation tools.",
+      "default_ci_metric": "function recovery tools are recommended for synthetic native profiles",
+      "residual_gap_policy": "Runtime equivalence and source-level scoring require an opt-in external corpus."
+    },
+    {
+      "id": "decompile_consensus",
+      "description": "Track routing toward multiple decompiler or IR backends for consensus review.",
+      "default_ci_metric": "consensus-capable tools are recommended and backend profile gates are visible",
+      "residual_gap_policy": "Cross-backend output comparison is recorded as a residual gap unless real backends are enabled."
+    },
+    {
+      "id": "string_config_recovery",
+      "description": "Track routing toward string extraction, decoder, and malware configuration recovery paths.",
+      "default_ci_metric": "string and config recovery tools are present in recommendations",
+      "residual_gap_policy": "Family-specific config parsing stays opt-in and corpus-backed."
+    },
+    {
+      "id": "js_obfuscation_routing",
+      "description": "Track static JavaScript obfuscation, simplification, and JSVMP routing without executing JavaScript.",
+      "default_ci_metric": "passive JS deobfuscation tools are recommended for JavaScript profiles",
+      "residual_gap_policy": "Dynamic JavaScript execution and browser/V8 traces remain outside default CI."
+    },
+    {
+      "id": "safety_gate_correctness",
+      "description": "Verify recommendations preserve readiness, profile, BYO, sidecar, and runtime gates.",
+      "default_ci_metric": "expected readiness_state and backend safety_gate values are present",
+      "residual_gap_policy": "Real backend startup and sandbox execution are never required by default."
+    }
+  ],
+  "cases": [
+    {
+      "id": "synthetic-pe-static-discovery",
+      "profile": "tiny PE metadata with imports, strings, and function recovery intent",
+      "default_ci": true,
+      "fixture_mode": "metadata-only",
+      "dimensions": [
+        "tool_discovery_quality",
+        "function_recovery_coverage",
+        "string_config_recovery",
+        "safety_gate_correctness"
+      ],
+      "discover_request": {
+        "action": "recommend",
+        "file_type": "PE",
+        "query": "imports strings function recovery static"
+      },
+      "expected": {
+        "discover": {
+          "recommended_tools": [
+            "pe.structure.analyze",
+            "pe.imports.extract",
+            "strings.extract",
+            "code.functions.list"
+          ],
+          "plugin_ids": [
+            "benchmark-pe-static",
+            "benchmark-strings",
+            "benchmark-code-analysis"
+          ],
+          "readiness_states": {
+            "benchmark-pe-static": "hidden_activation_required"
+          }
+        }
+      },
+      "residual_gaps": [
+        "Function recovery is represented by metadata routing; no binary is decompiled in default CI.",
+        "String/config accuracy needs corpus-backed output comparison outside the guard suite."
+      ]
+    },
+    {
+      "id": "synthetic-packed-pe-consensus",
+      "profile": "packed PE metadata that should route to unpacking plus multiple decompiler backends",
+      "default_ci": true,
+      "fixture_mode": "metadata-only",
+      "dimensions": [
+        "tool_discovery_quality",
+        "function_recovery_coverage",
+        "decompile_consensus",
+        "safety_gate_correctness"
+      ],
+      "discover_request": {
+        "action": "recommend",
+        "file_type": "PE",
+        "query": "packed unpack decompile consensus"
+      },
+      "expected": {
+        "discover": {
+          "recommended_tools": [
+            "unpack.workflow.plan",
+            "ghidra.analyze",
+            "retdec.decompile",
+            "decompile.consensus.compare"
+          ],
+          "plugin_ids": [
+            "benchmark-unpacking",
+            "benchmark-ghidra",
+            "benchmark-retdec",
+            "benchmark-decompile-consensus"
+          ],
+          "readiness_states": {
+            "benchmark-ghidra": "backend_profile_required",
+            "benchmark-retdec": "backend_profile_required"
+          },
+          "safety_gates": [
+            "profile_opt_in_required"
+          ]
+        }
+      },
+      "residual_gaps": [
+        "Consensus compares expected routing only; real Ghidra/RetDec output equivalence is external-corpus gated.",
+        "Packed payload extraction is not executed in default CI."
+      ]
+    },
+    {
+      "id": "synthetic-dotnet-config-recovery",
+      "profile": ".NET PE metadata with strings and configuration extraction intent",
+      "default_ci": true,
+      "fixture_mode": "metadata-only",
+      "dimensions": [
+        "tool_discovery_quality",
+        "string_config_recovery",
+        "safety_gate_correctness"
+      ],
+      "discover_request": {
+        "action": "recommend",
+        "file_type": "pe-clr",
+        "query": "dotnet metadata strings config recovery"
+      },
+      "expected": {
+        "discover": {
+          "recommended_tools": [
+            "dotnet.metadata.extract",
+            "strings.floss.decode",
+            "malware.config.extract"
+          ],
+          "plugin_ids": [
+            "benchmark-dotnet",
+            "benchmark-strings",
+            "benchmark-malware-config"
+          ],
+          "readiness_states": {
+            "benchmark-malware-config": "hidden_activation_required"
+          }
+        }
+      },
+      "residual_gaps": [
+        "The case validates routing to config tooling but does not assert malware family parsers."
+      ]
+    },
+    {
+      "id": "synthetic-js-obfuscation-routing",
+      "profile": "JavaScript artifact metadata with obfuscation and VM bytecode signals",
+      "default_ci": true,
+      "fixture_mode": "tiny-synthetic",
+      "dimensions": [
+        "tool_discovery_quality",
+        "js_obfuscation_routing",
+        "safety_gate_correctness"
+      ],
+      "discover_request": {
+        "action": "recommend",
+        "file_type": "JavaScript",
+        "query": "javascript obfuscation vm bytecode"
+      },
+      "expected": {
+        "discover": {
+          "recommended_tools": [
+            "javascript.obfuscation.profile",
+            "jsimplifier.pipeline.plan",
+            "jsvmp.bytecode.recover"
+          ],
+          "plugin_ids": [
+            "benchmark-javascript-deobf",
+            "benchmark-jsimplifier",
+            "benchmark-jsvmp"
+          ],
+          "readiness_states": {
+            "benchmark-javascript-deobf": "hidden_activation_required"
+          }
+        }
+      },
+      "residual_gaps": [
+        "Tiny fixture mode only covers static metadata and does not execute JavaScript.",
+        "JSVMP handler-map quality needs corpus-backed AST/IR comparison."
+      ]
+    },
+    {
+      "id": "synthetic-runtime-safety-gates",
+      "profile": "PE profile requesting dynamic behavior collection and readiness planning",
+      "default_ci": true,
+      "fixture_mode": "metadata-only",
+      "dimensions": [
+        "tool_discovery_quality",
+        "safety_gate_correctness"
+      ],
+      "discover_request": {
+        "action": "recommend",
+        "file_type": "PE",
+        "query": "dynamic sandbox runtime safety readiness"
+      },
+      "expected": {
+        "discover": {
+          "recommended_tools": [
+            "sandbox.execute"
+          ],
+          "plugin_ids": [
+            "benchmark-runtime-sandbox"
+          ],
+          "readiness_states": {
+            "benchmark-runtime-sandbox": "runtime_or_gpu_profile_required"
+          },
+          "safety_gates": [
+            "runtime_opt_in_required"
+          ]
+        }
+      },
+      "residual_gaps": [
+        "Runtime behavior collection is represented by readiness metadata only.",
+        "Host execution and live sample execution remain disallowed in default CI."
+      ]
+    },
+    {
+      "id": "external-crackme-oracle-routing",
+      "profile": "Optional educational crackme corpus with executable oracle scoring",
+      "default_ci": false,
+      "fixture_mode": "external-corpus",
+      "dimensions": [
+        "tool_discovery_quality",
+        "function_recovery_coverage",
+        "safety_gate_correctness"
+      ],
+      "discover_request": {
+        "action": "recommend",
+        "file_type": "ELF",
+        "query": "crackme validation logic symbolic keygen"
+      },
+      "expected": {
+        "discover": {
+          "recommended_tools": [
+            "symbolic.explore",
+            "keygen.verify"
+          ],
+          "plugin_ids": [
+            "external-crackme-corpus"
+          ]
+        }
+      },
+      "external_corpus": {
+        "env_flag": "RIKUNE_REVERSE_BENCH_CRACKME",
+        "description": "Optional educational crackme corpus; not downloaded or executed by default CI."
+      },
+      "residual_gaps": [
+        "Executable oracle scoring is opt-in and must run in an isolated no-network sandbox."
+      ]
+    }
+  ]
+}

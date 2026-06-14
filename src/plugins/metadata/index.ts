@@ -6,6 +6,11 @@
 
 import { definePlugin, defineTool, requireDatabase, requireWorkspaceManager } from '../sdk.js'
 import {
+  METADATA_EXTRACT_CAPABILITIES,
+  METADATA_EXTRACT_EVIDENCE,
+  METADATA_EXTRACT_FORMATS,
+  METADATA_EXTRACT_PLATFORMS,
+  METADATA_EXTRACT_SAFETY,
   metadataExtractToolDefinition,
   createMetadataExtractHandler,
 } from './tools/metadata-extract.js'
@@ -15,40 +20,16 @@ const metadataPlugin = definePlugin({
   name: 'File Metadata',
   executionDomain: 'static',
   aspects: {
-    formats: [
-      'pe',
-      'coff',
-      'pdb',
-      'elf',
-      'elf-object',
-      'linux-kernel-module',
-      'macho',
-      'macho-object',
-      'dsym',
-      'apk',
-      'ipa',
-      'dmg',
-      'pkg',
-      'deb',
-      'rpm',
-      'appimage',
-      'jar',
-      'wasm',
-      'firmware',
-      'archive',
-      'container',
-      'office',
-      'pdf',
-    ],
-    platforms: ['windows', 'linux', 'macos', 'ios', 'android', 'cross-platform'],
+    formats: METADATA_EXTRACT_FORMATS,
+    platforms: METADATA_EXTRACT_PLATFORMS,
     execution: ['static', 'triage'],
-    safety: ['passive'],
-    capabilities: ['metadata', 'package-metadata', 'manifest', 'routing'],
-    evidence: ['package-metadata', 'manifest', 'provenance'],
+    safety: METADATA_EXTRACT_SAFETY,
+    capabilities: METADATA_EXTRACT_CAPABILITIES,
+    evidence: METADATA_EXTRACT_EVIDENCE,
   },
   surfaceRules: { tier: 0, category: 'static-analysis' },
   description:
-    'Universal file metadata extraction using exiftool (works on PE, Office, PDF, images, and more)',
+    'Passive universal file metadata profiling using exiftool for unknown, generic, PE, Office, PDF, image, archive, and container samples',
   version: '1.0.0',
   configSchema: [
     {

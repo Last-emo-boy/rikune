@@ -13,6 +13,12 @@ import type { ArtifactRef, PluginToolDeps, ToolDefinition, WorkerResult } from '
 const TOOL_NAME = 'installer.inventory'
 const DEFAULT_MAX_READ_BYTES = 4 * 1024 * 1024
 const MAX_PREVIEW_BYTES = 16 * 1024 * 1024
+const WINDOWS_INSTALLER_INVENTORY_FOLLOW_UP_TOOLS = [
+  'pe.structure.analyze',
+  'sbom.provenance.graph',
+  'windows.runtime.plan',
+]
+const WINDOWS_INSTALLER_INVENTORY_ARTIFACT_TYPE = 'windows_installer_inventory'
 
 const WindowsInstallerPolicySchema = z.object({
   passive: z.literal(true),
@@ -39,6 +45,9 @@ const WindowsInstallerInventoryDataSchema = z.object({
   script_candidates: z.array(z.string()),
   nested_payload_candidates: z.array(NestedPayloadSchema),
   policy: WindowsInstallerPolicySchema,
+  evidence_summary: z.record(z.any()).optional(),
+  workflow_handoff: z.record(z.any()).optional(),
+  quality_gates: z.record(z.any()).optional(),
   unsupported_detail: z.string().optional(),
   summary: z.string(),
   recommended_next_tools: z.array(z.string()),
@@ -81,23 +90,43 @@ export const windowsInstallerInventoryToolDefinition: ToolDefinition = {
     architectures: ['x86', 'x64', 'arm64', 'arm'],
     execution: ['static', 'triage'],
     safety: ['passive', 'no_installer_execution', 'no_live_sample_by_default'],
-    capabilities: ['inventory', 'custom-actions', 'scripts', 'nested-binaries', 'routing'],
+    capabilities: [
+      'inventory',
+      'custom-actions',
+      'scripts',
+      'nested-binaries',
+      'routing',
+      'workflow-plan',
+      'metadata-only-handoff',
+    ],
     evidence: ['filesystem', 'registry', 'nested-binaries', 'package-metadata', 'provenance'],
   },
   artifacts: [
     {
-      type: 'windows_installer_inventory',
+      type: WINDOWS_INSTALLER_INVENTORY_ARTIFACT_TYPE,
       description: 'Passive Windows installer member, custom action, script, and payload inventory',
     },
   ],
   evidence: [
     {
       category: 'package-metadata',
-      artifactTypes: ['windows_installer_inventory'],
+      artifactTypes: [WINDOWS_INSTALLER_INVENTORY_ARTIFACT_TYPE],
     },
     {
       category: 'nested-binaries',
-      artifactTypes: ['windows_installer_inventory'],
+      artifactTypes: [WINDOWS_INSTALLER_INVENTORY_ARTIFACT_TYPE],
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'windows-installer.passive-inventory-handoff',
+      title: 'Windows installer passive inventory handoff',
+      startsWith: ['installer.inventory'],
+      nextTools: WINDOWS_INSTALLER_INVENTORY_FOLLOW_UP_TOOLS,
+      requiredArtifacts: [WINDOWS_INSTALLER_INVENTORY_ARTIFACT_TYPE],
+      producesArtifacts: [WINDOWS_INSTALLER_INVENTORY_ARTIFACT_TYPE],
+      evidence: ['package-metadata', 'nested-binaries', 'filesystem', 'registry', 'provenance'],
+      safety: ['passive', 'no_installer_execution', 'no_live_sample_by_default'],
     },
   ],
 }
@@ -264,6 +293,126 @@ function scriptCandidates(members: string[], tokens: string[]): string[] {
   ).slice(0, 100)
 }
 
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim().length > 0)))
+}
+
+function buildEvidenceSummary(args: {
+  inventory: Omit<
+    WindowsInstallerInventory,
+    'evidence_summary' | 'workflow_handoff' | 'quality_gates'
+  >
+}) {
+  const { inventory } = args
+  return {
+    schema: 'rikune.windows_installer_inventory.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    sample_id: inventory.sample_id ?? null,
+    artifact_type: WINDOWS_INSTALLER_INVENTORY_ARTIFACT_TYPE,
+    installer_format: inventory.installer_format,
+    detected_by: inventory.detected_by,
+    member_count: inventory.archive_members.length,
+    custom_action_candidate_count: inventory.custom_action_candidates.length,
+    script_candidate_count: inventory.script_candidates.length,
+    nested_payload_candidate_count: inventory.nested_payload_candidates.length,
+    cab_summary_present: Boolean(inventory.cab_summary),
+    static_only: true,
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  inventory: Omit<
+    WindowsInstallerInventory,
+    'evidence_summary' | 'workflow_handoff' | 'quality_gates'
+  >
+}) {
+  const { inventory } = args
+  const nestedTools = unique(
+    inventory.nested_payload_candidates.flatMap((candidate) => candidate.recommended_tools)
+  )
+  const routing: Array<{
+    goal: string
+    priority: string
+    next_tools: string[]
+    required_evidence: string[]
+  }> = []
+  if (inventory.nested_payload_candidates.length > 0) {
+    routing.push({
+      goal: 'nested-payload-static-analysis',
+      priority: 'high',
+      next_tools: nestedTools,
+      required_evidence: ['nested_payload_candidates'],
+    })
+  }
+  routing.push({
+    goal: 'installer-supply-chain-provenance',
+    priority: 'normal',
+    next_tools: ['sbom.provenance.graph', 'analysis.evidence.graph', 'report.generate'],
+    required_evidence: ['archive_members', 'custom_action_candidates', 'script_candidates'],
+  })
+  if (inventory.custom_action_candidates.length > 0 || inventory.script_candidates.length > 0) {
+    routing.push({
+      goal: 'windows-runtime-plan-only',
+      priority: 'high',
+      next_tools: ['windows.runtime.plan', 'analysis.evidence.graph'],
+      required_evidence: ['custom_action_candidates', 'script_candidates'],
+    })
+  }
+
+  return {
+    schema: 'rikune.windows_installer_inventory.workflow_handoff.v1',
+    handoff_mode: 'windows_installer_inventory_to_payload_supply_chain_and_runtime_planning',
+    source_tool: TOOL_NAME,
+    sample_id: inventory.sample_id ?? null,
+    artifact_type: WINDOWS_INSTALLER_INVENTORY_ARTIFACT_TYPE,
+    recommended_next_tools: inventory.recommended_next_tools,
+    artifact_contract: {
+      consumes: ['sample'],
+      produces: [WINDOWS_INSTALLER_INVENTORY_ARTIFACT_TYPE],
+      expected_consumers: inventory.recommended_next_tools,
+    },
+    routing,
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      installer_launched_by_tool: false,
+      package_installed_by_tool: false,
+      custom_action_executed_by_tool: false,
+      script_executed_by_tool: false,
+      payload_launched_by_tool: false,
+      runtime_started_by_tool: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+    },
+  }
+}
+
+function buildQualityGates(args: {
+  inventory: Omit<
+    WindowsInstallerInventory,
+    'evidence_summary' | 'workflow_handoff' | 'quality_gates'
+  >
+}) {
+  const { inventory } = args
+  return {
+    schema: 'rikune.windows_installer_inventory.quality_gates.v1',
+    passive_static_inventory: true,
+    bounded_preview_only: true,
+    format_detected: inventory.installer_format !== 'unknown',
+    custom_action_candidates_present: inventory.custom_action_candidates.length > 0,
+    script_candidates_present: inventory.script_candidates.length > 0,
+    nested_payload_routing_present: inventory.nested_payload_candidates.length > 0,
+    sample_executed_by_tool: false,
+    installer_launched_by_tool: false,
+    package_installed_by_tool: false,
+    custom_action_executed_by_tool: false,
+    script_executed_by_tool: false,
+    payload_launched_by_tool: false,
+    runtime_started_by_tool: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+  }
+}
+
 export function buildWindowsInstallerInventoryFromBuffer(
   data: Buffer,
   options: { filename?: string; size?: number; sampleId?: string } = {}
@@ -286,7 +435,7 @@ export function buildWindowsInstallerInventoryFromBuffer(
         ? 'NSIS/Inno payload listing requires installer unpacking; this inventory does not execute or unpack setup code.'
         : undefined
 
-  return {
+  const inventoryBase = {
     sample_id: options.sampleId,
     filename: options.filename,
     installer_format: format,
@@ -298,25 +447,30 @@ export function buildWindowsInstallerInventoryFromBuffer(
     script_candidates: scripts,
     nested_payload_candidates: payloadCandidates,
     policy: {
-      passive: true,
-      no_execute: true,
-      no_install: true,
-      no_payload_launch: true,
+      passive: true as const,
+      no_execute: true as const,
+      no_install: true as const,
+      no_payload_launch: true as const,
     },
     unsupported_detail: unsupported,
     summary: `Passive Windows installer inventory detected ${format} with ${members.length} member/path hint(s), ${customActions.length} custom action candidate(s), ${scripts.length} script candidate(s), and ${payloadCandidates.length} nested payload candidate(s).`,
-    recommended_next_tools: Array.from(
-      new Set([
-        'metadata.extract',
-        'strings.extract',
-        ...payloadCandidates.flatMap((candidate) => candidate.recommended_tools),
-      ])
-    ),
+    recommended_next_tools: unique([
+      'metadata.extract',
+      'strings.extract',
+      ...WINDOWS_INSTALLER_INVENTORY_FOLLOW_UP_TOOLS,
+      ...payloadCandidates.flatMap((candidate) => candidate.recommended_tools),
+    ]),
     next_actions: [
       'Review custom action and script candidates as static evidence only.',
       'Ingest nested PE or installer payload candidates separately before running format-specific tools.',
       'Do not install the package, execute setup code, or launch extracted payloads during static triage.',
     ],
+  }
+  return {
+    ...inventoryBase,
+    evidence_summary: buildEvidenceSummary({ inventory: inventoryBase }),
+    workflow_handoff: buildWorkflowHandoff({ inventory: inventoryBase }),
+    quality_gates: buildQualityGates({ inventory: inventoryBase }),
   }
 }
 

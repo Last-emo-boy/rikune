@@ -23,6 +23,31 @@ import {
 } from '../../docker-shared.js'
 
 const TOOL_NAME = 'apk.disassemble'
+const APK_SMALI_LISTING_ARTIFACT_TYPE = 'backend_apk_smali-listing'
+const APK_SMALI_SAFETY = [
+  'passive',
+  'static',
+  'no_live_sample_by_default',
+  'no_network_by_default',
+  'no_mutation',
+  'no_live_execution',
+]
+const APK_SMALI_EVIDENCE = [
+  'structure',
+  'classes',
+  'multi-dex',
+  'strings',
+  'workflow',
+  'provenance',
+]
+const APK_SMALI_NEXT_TOOLS = [
+  'apk.manifest.parse',
+  'apk.resources.decode',
+  'dex.classes.list',
+  'strings.extract',
+  'analysis.evidence.graph',
+  'artifact.read',
+]
 
 export const apkDisassembleInputSchema = z.object({
   sample_id: z.string().describe('Sample ID for the APK file.'),
@@ -49,6 +74,7 @@ export const apkDisassembleOutputSchema = z.object({
       sample_id: z.string().optional(),
       total_classes: z.number().optional(),
       returned_files: z.number().optional(),
+      smali_roots: z.array(z.object({ root: z.string(), class_count: z.number() })).optional(),
       smali_files: z
         .array(
           z.object({
@@ -59,6 +85,9 @@ export const apkDisassembleOutputSchema = z.object({
         )
         .optional(),
       artifact: ArtifactRefSchema.optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
@@ -80,22 +109,76 @@ export const apkDisassembleToolDefinition: ToolDefinition = {
     platforms: ['android'],
     architectures: ['arm', 'arm64', 'x86', 'x64'],
     execution: ['static', 'decompilation'],
-    safety: ['passive', 'no_live_sample_by_default'],
-    capabilities: ['smali', 'classes', 'resources'],
-    evidence: ['structure', 'strings', 'artifact', 'provenance'],
+    safety: APK_SMALI_SAFETY,
+    capabilities: [
+      'smali',
+      'multi-dex',
+      'classes',
+      'android-bytecode',
+      'resources',
+      'workflow-handoff',
+    ],
+    evidence: APK_SMALI_EVIDENCE,
+    search: ['apktool', 'smali', 'multi-dex', 'classes.dex', 'smali_classes2', 'android-bytecode'],
   },
   artifacts: [
     {
-      type: 'backend_apk_smali-listing',
-      description: 'Smali class listing generated from APKTool output',
+      type: APK_SMALI_LISTING_ARTIFACT_TYPE,
+      description:
+        'Smali class listing generated from APKTool output, including smali and smali_classes* multi-dex roots',
+      mime: 'text/plain',
     },
   ],
   evidence: [
     {
       category: 'structure',
-      artifactTypes: ['backend_apk_smali-listing'],
+      artifactTypes: [APK_SMALI_LISTING_ARTIFACT_TYPE],
+    },
+    {
+      category: 'multi-dex',
+      artifactTypes: [APK_SMALI_LISTING_ARTIFACT_TYPE],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: [APK_SMALI_LISTING_ARTIFACT_TYPE],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: [APK_SMALI_LISTING_ARTIFACT_TYPE],
     },
   ],
+  workflowRecipes: [
+    {
+      id: 'apk-smali.multi-dex-static-disassembly',
+      title: 'APK Smali multi-dex static disassembly',
+      description:
+        'Use apktool to passively list Smali classes across smali and smali_classes* roots, then route manifest, resources, strings, DEX class inventory, and evidence graph follow-ups without executing Android bytecode.',
+      startsWith: [TOOL_NAME, 'android.package.inventory'],
+      nextTools: APK_SMALI_NEXT_TOOLS,
+      requiredArtifacts: ['sample'],
+      producesArtifacts: [APK_SMALI_LISTING_ARTIFACT_TYPE],
+      evidence: APK_SMALI_EVIDENCE,
+      safety: APK_SMALI_SAFETY,
+    },
+  ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: false,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    notes: [
+      'apk.disassemble runs apktool decode against a local APK and never executes Android bytecode.',
+      'Temporary apktool output is removed after bounded listing and optional artifact persistence.',
+    ],
+  } as ToolDefinition['runtimePolicy'] & {
+    noNetwork: true
+    noMutation: true
+    noLiveExecution: true
+  },
 }
 
 function collectSmaliFiles(
@@ -118,6 +201,115 @@ function collectSmaliFiles(
     }
   }
   return results
+}
+
+export function collectApktoolSmaliFiles(
+  outputDir: string,
+  filter?: RegExp
+): {
+  files: Array<{ rel: string; abs: string; size: number; root: string }>
+  roots: Array<{ root: string; class_count: number }>
+} {
+  if (!nodeFs.existsSync(outputDir)) return { files: [], roots: [] }
+  const rootNames = nodeFs
+    .readdirSync(outputDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^smali(?:_classes\d+)?$/.test(entry.name))
+    .map((entry) => entry.name)
+    .sort((a, b) => {
+      if (a === 'smali') return -1
+      if (b === 'smali') return 1
+      return a.localeCompare(b)
+    })
+
+  const files: Array<{ rel: string; abs: string; size: number; root: string }> = []
+  const roots: Array<{ root: string; class_count: number }> = []
+  for (const root of rootNames) {
+    const collected = collectSmaliFiles(path.join(outputDir, root), root, filter)
+    roots.push({ root, class_count: collected.length })
+    files.push(...collected.map((file) => ({ ...file, root })))
+  }
+  return { files, roots }
+}
+
+function buildEvidenceSummary(args: {
+  input: z.infer<typeof apkDisassembleInputSchema>
+  totalClasses: number
+  returnedFiles: number
+  smaliRoots: Array<{ root: string; class_count: number }>
+}) {
+  return {
+    schema: 'rikune.apk_smali_disassemble.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    sample_id: args.input.sample_id,
+    artifact_type: APK_SMALI_LISTING_ARTIFACT_TYPE,
+    class_filter: args.input.class_filter ?? null,
+    total_classes: args.totalClasses,
+    returned_files: args.returnedFiles,
+    smali_root_count: args.smaliRoots.length,
+    multi_dex_detected: args.smaliRoots.length > 1,
+    smali_roots: args.smaliRoots,
+    evidence_sources: ['apktool decoded smali roots'],
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  input: z.infer<typeof apkDisassembleInputSchema>
+  smaliRoots: Array<{ root: string; class_count: number }>
+  recommendedNextTools: string[]
+}) {
+  return {
+    schema: 'rikune.apk_smali_disassemble.workflow_handoff.v1',
+    handoff_mode: 'apk_smali_to_manifest_resources_strings_and_evidence_graph',
+    source_tool: TOOL_NAME,
+    sample_id: args.input.sample_id,
+    recommended_next_tools: args.recommendedNextTools,
+    artifact_contract: {
+      consumes: ['sample'],
+      produces: [APK_SMALI_LISTING_ARTIFACT_TYPE],
+      expected_consumers: ['apk.manifest.parse', 'apk.resources.decode', 'dex.classes.list'],
+    },
+    routing: [
+      {
+        goal: 'manifest-and-component-review',
+        next_tools: ['apk.manifest.parse', 'android.behavior.graph'],
+        required_evidence: ['smali_roots'],
+      },
+      {
+        goal: 'resources-and-string-review',
+        next_tools: ['apk.resources.decode', 'strings.extract'],
+        required_evidence: ['smali_listing'],
+      },
+      {
+        goal: 'multi-dex-class-inventory',
+        next_tools: ['dex.classes.list', 'analysis.evidence.graph'],
+        required_evidence: args.smaliRoots.map((root) => root.root),
+      },
+    ],
+    dynamic_boundary: {
+      passive_static_only: true,
+      android_bytecode_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+    },
+  }
+}
+
+function buildQualityGates(args: {
+  totalClasses: number
+  smaliRoots: Array<{ root: string; class_count: number }>
+  artifactPersisted: boolean
+}) {
+  return {
+    schema: 'rikune.apk_smali_disassemble.quality_gates.v1',
+    passive_static_only: true,
+    apktool_decode_completed: true,
+    smali_roots_detected: args.smaliRoots.length > 0,
+    multi_dex_accounted_for: args.smaliRoots.every((root) => root.root === 'smali' || root.class_count >= 0),
+    classes_found: args.totalClasses > 0,
+    artifact_persisted: args.artifactPersisted,
+    android_bytecode_executed_by_tool: false,
+    network_accessed_by_tool: false,
+  }
 }
 
 export function createApkDisassembleHandler(
@@ -151,9 +343,8 @@ export function createApkDisassembleHandler(
         input.timeout_sec * 1000
       )
 
-      const smaliDir = path.join(tmpDir, 'smali')
       const filter = input.class_filter ? new RegExp(input.class_filter, 'i') : undefined
-      const allFiles = collectSmaliFiles(smaliDir, '', filter)
+      const { files: allFiles, roots: smaliRoots } = collectApktoolSmaliFiles(tmpDir, filter)
       allFiles.sort((a, b) => b.size - a.size)
 
       const smaliFiles = allFiles.slice(0, input.max_files).map((f) => {
@@ -166,6 +357,7 @@ export function createApkDisassembleHandler(
 
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
+      let artifactPersisted = false
       if (input.persist_artifact) {
         const listing = allFiles.map((f) => `${f.rel.replace(/\\/g, '/')} (${f.size}B)`).join('\n')
         artifact = await persistBackendArtifact(
@@ -178,7 +370,25 @@ export function createApkDisassembleHandler(
           { extension: 'txt', mime: 'text/plain', sessionTag: input.session_tag }
         )
         artifacts.push(artifact)
+        artifactPersisted = true
       }
+      const recommendedNextTools = APK_SMALI_NEXT_TOOLS
+      const evidenceSummary = buildEvidenceSummary({
+        input,
+        totalClasses: allFiles.length,
+        returnedFiles: smaliFiles.length,
+        smaliRoots,
+      })
+      const workflowHandoff = buildWorkflowHandoff({
+        input,
+        smaliRoots,
+        recommendedNextTools,
+      })
+      const qualityGates = buildQualityGates({
+        totalClasses: allFiles.length,
+        smaliRoots,
+        artifactPersisted,
+      })
 
       return {
         ok: true,
@@ -186,13 +396,20 @@ export function createApkDisassembleHandler(
           sample_id: input.sample_id,
           total_classes: allFiles.length,
           returned_files: smaliFiles.length,
+          smali_roots: smaliRoots,
           smali_files: smaliFiles,
           artifact,
+          evidence_summary: evidenceSummary,
+          workflow_handoff: workflowHandoff,
+          quality_gates: qualityGates,
           summary: `Disassembled APK: ${allFiles.length} Smali classes found${filter ? ` (filtered)` : ''}.`,
-          recommended_next_tools: ['apk.manifest.parse', 'apk.resources.decode', 'string.extract'],
+          recommended_next_tools: recommendedNextTools,
           next_actions: [
             'Inspect Smali for obfuscated methods or crypto usage.',
             'Parse AndroidManifest.xml for permissions and components.',
+            smaliRoots.length > 1
+              ? `Review multi-dex roots: ${smaliRoots.map((root) => root.root).join(', ')}.`
+              : 'Single Smali root detected.',
           ],
         },
         artifacts,

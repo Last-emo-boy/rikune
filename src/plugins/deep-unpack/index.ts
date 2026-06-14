@@ -21,6 +21,16 @@ const deepUnpackPlugin: Plugin = {
   id: 'deep-unpack',
   name: 'Deep Unpack',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'dll', 'elf', 'macho'],
+    platforms: ['windows', 'linux', 'macos'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'unpacking', 'emulation'],
+    runtimes: ['speakeasy', 'qiling', 'wine'],
+    safety: ['passive', 'opt_in_dynamic', 'requires_isolation', 'no_live_sample_by_default'],
+    capabilities: ['unpacking', 'dump-scan', 'pe-reconstruction', 'iat-fixing', 'memory-carving'],
+    evidence: ['packed', 'unpacked-binary', 'memory', 'imports', 'structure', 'provenance'],
+  },
   surfaceRules: { tier: 2, activateOn: { findings: ['packed'] }, category: 'unpacking' },
   description:
     'Multi-strategy deep unpacking for heavily packed/obfuscated binaries. ' +

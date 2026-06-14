@@ -5,6 +5,11 @@ import {
   createBackendPlanToolDefinition,
   type BackendPlanSpec,
 } from '../backend-plan.js'
+import {
+  createFrontierWorkerHandler,
+  createFrontierWorkerToolDefinition,
+  type FrontierWorkerToolSpec,
+} from '../frontier-worker-tools.js'
 
 const spec: BackendPlanSpec = {
   pluginId: 'wabt',
@@ -93,6 +98,59 @@ const spec: BackendPlanSpec = {
   ],
 }
 
+const workerSpec: FrontierWorkerToolSpec = {
+  pluginId: 'wabt',
+  toolName: 'wabt.toolchain.run',
+  description:
+    'Run a bounded WABT read-only toolchain worker for wasm section, WAT, objdump, validation, and wasm2c planning artifacts without instantiating the module.',
+  backendName: 'WABT',
+  adapter: 'wabt.readonly.toolchain',
+  envVar: 'WABT_PATH',
+  dockerFeature: 'wabt',
+  dockerDefault: '/opt/wabt/bin',
+  installRoute: 'installed',
+  installProfile: 'default',
+  aspects: buildBackendPlanAspects(spec),
+  artifacts: [
+    { type: 'wat_disassembly_artifact', description: 'WAT disassembly or summary artifact' },
+    { type: 'wabt_objdump_summary', description: 'WASM sections/imports/exports summary' },
+    { type: 'wasm2c_translation_plan', description: 'Read-only wasm2c translation plan' },
+  ],
+  evidence: [
+    { category: 'structure', artifactTypes: ['wat_disassembly_artifact'] },
+    { category: 'imports', artifactTypes: ['wabt_objdump_summary'] },
+    { category: 'exports', artifactTypes: ['wabt_objdump_summary'] },
+  ],
+  workflowRecipe: {
+    id: 'wabt.wasm.toolchain-worker',
+    title: 'WABT passive WASM toolchain worker',
+    startsWith: ['wasm.structure.analyze', 'wabt.toolchain.run'],
+    nextTools: ['wasm.runtime.plan', 'analysis.evidence.graph', 'report.generate'],
+    producesArtifacts: [
+      'wat_disassembly_artifact',
+      'wabt_objdump_summary',
+      'wasm2c_translation_plan',
+    ],
+    evidence: ['structure', 'imports', 'exports', 'workflow', 'provenance'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+  },
+  policy: {
+    defaultTimeoutMs: 20_000,
+    maxInputBytes: 5 * 1024 * 1024,
+    maxOutputBytes: 8 * 1024 * 1024,
+  },
+  readinessSetupActions: [
+    'Set WABT_PATH to a directory containing pinned wasm2wat and wasm-objdump binaries.',
+  ],
+  fixtureData: {
+    wasm_sections: ['type', 'import', 'function', 'export', 'code'],
+    wat_functions: 2,
+    wasi_imports: ['fd_write'],
+    instantiated: false,
+  },
+  recommendedNextTools: ['wasm.runtime.plan', 'analysis.evidence.graph'],
+}
+
 const wabtPlugin = definePlugin({
   id: 'wabt',
   name: 'WABT Toolchain Plan',
@@ -140,6 +198,10 @@ const wabtPlugin = definePlugin({
     defineTool({
       ...createBackendPlanToolDefinition(spec),
       handler: createBackendPlanHandler(spec),
+    }),
+    defineTool({
+      ...createFrontierWorkerToolDefinition(workerSpec),
+      handler: createFrontierWorkerHandler(workerSpec),
     }),
   ],
 })

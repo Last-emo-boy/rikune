@@ -15,6 +15,15 @@ const apiHashPlugin: Plugin = {
   id: 'api-hash',
   name: 'API Hash Resolution',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'shellcode', 'raw-bytes'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['api-hash-resolution', 'shellcode-analysis', 'imports', 'deobfuscation'],
+    evidence: ['imports', 'strings', 'shellcode', 'provenance'],
+  },
   surfaceRules: {
     tier: 2,
     activateOn: { findings: ['obfuscated', 'shellcode', 'suspicious_imports'] },

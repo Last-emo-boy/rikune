@@ -64,6 +64,10 @@ jobs:
         timeout-minutes: 10
         continue-on-error: true
 
+      - name: Run Node integration smoke tests
+        run: npm run test:node
+        timeout-minutes: 15
+
       - name: Generate coverage report
         run: >
           npm run test:coverage -- --runInBand --forceExit --testPathPatterns="tests/unit/"

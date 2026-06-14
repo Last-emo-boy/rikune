@@ -14,6 +14,7 @@ import type { DatabaseManager } from '../../../database.js'
 import type { CacheManager } from '../../../cache-manager.js'
 import { generateCacheKey } from '../../../cache-manager.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
+import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
 import {
   buildStaticWorkerRequest,
@@ -27,8 +28,11 @@ import { getPythonCommand } from '../../../utils/shared-helpers.js'
 // ============================================================================
 
 const TOOL_NAME = 'yara.scan'
-const TOOL_VERSION = '1.0.0'
+const TOOL_VERSION = '1.1.0'
 const CACHE_TTL_MS = CACHE_TTL_30_DAYS
+const YARA_SCAN_ARTIFACT_TYPE = 'backend_yara_scan'
+const MATCH_PREVIEW_LIMIT = 25
+const STRING_PREVIEW_LIMIT = 40
 
 // ============================================================================
 // Input/Output Schemas
@@ -70,6 +74,9 @@ export const YaraScanOutputSchema = z.object({
   ok: z.boolean(),
   data: z
     .object({
+      schema: z.string().optional(),
+      tool_version: z.string().optional(),
+      sample_id: z.string().optional(),
       matches: z.array(
         z.object({
           rule: z.string(),
@@ -127,6 +134,8 @@ export const YaraScanOutputSchema = z.object({
       rule_set: z.string(),
       rule_tier: z.string().optional(),
       rule_files: z.array(z.string()).optional(),
+      match_count: z.number().int().nonnegative().optional(),
+      string_evidence_count: z.number().int().nonnegative().optional(),
       confidence_summary: z
         .object({
           high: z.number(),
@@ -148,7 +157,14 @@ export const YaraScanOutputSchema = z.object({
         })
         .optional(),
       quality_notes: z.array(z.string()).optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
+      recommended_next_tools: z.array(z.string()).optional(),
+      next_actions: z.array(z.string()).optional(),
+      artifact: z.any().optional(),
     })
+    .passthrough()
     .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
@@ -191,21 +207,106 @@ export const yaraScanToolDefinition: ToolDefinition = {
     ],
     platforms: ['windows', 'linux', 'macos', 'android', 'embedded', 'cross-platform'],
     architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
-    execution: ['static', 'triage'],
-    safety: ['passive', 'no_network_by_default'],
-    capabilities: ['signatures', 'malware-family', 'packer', 'rule-matching'],
-    evidence: ['signatures', 'strings', 'imports', 'provenance'],
+    execution: ['static', 'triage', 'local-worker'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+    capabilities: [
+      'signatures',
+      'malware-family',
+      'packer',
+      'rule-matching',
+      'workflow-handoff',
+      'evidence-correlation',
+      'readiness',
+    ],
+    evidence: ['signatures', 'strings', 'imports', 'workflow', 'provenance'],
   },
+  artifacts: [
+    {
+      type: YARA_SCAN_ARTIFACT_TYPE,
+      description:
+        'Legacy YARA scan result with bounded match previews, rule provenance, evidence summary, workflow handoff, and quality gates',
+      mime: 'application/json',
+    },
+  ],
   evidence: [
     {
       category: 'signatures',
-      description: 'YARA rule matches, matched offsets, confidence, and rule provenance',
+      artifactTypes: [YARA_SCAN_ARTIFACT_TYPE],
+      description: 'YARA rule matches, confidence, and rule provenance',
     },
     {
       category: 'imports',
+      artifactTypes: [YARA_SCAN_ARTIFACT_TYPE],
       description: 'Import evidence used to score YARA matches',
     },
+    {
+      category: 'strings',
+      artifactTypes: [YARA_SCAN_ARTIFACT_TYPE],
+      description: 'Matched string identifiers, offsets, and bounded data previews',
+    },
+    {
+      category: 'workflow',
+      artifactTypes: [YARA_SCAN_ARTIFACT_TYPE],
+      description: 'Scan-validation handoff for workflow search, evidence graph, and reporting',
+    },
+    {
+      category: 'provenance',
+      artifactTypes: [YARA_SCAN_ARTIFACT_TYPE],
+      description: 'Ruleset version, selected rule files, and local worker provenance',
+    },
   ],
+  workflowRecipes: [
+    {
+      id: 'yara.scan-validation-handoff',
+      title: 'YARA scan validation to evidence graph and reporting',
+      description:
+        'Run passive local YARA matching, preserve bounded offset evidence, validate rule provenance and confidence, then route results into the evidence graph and reporting workflow.',
+      startsWith: ['yara.scan', 'yara.generate', 'yara_x.scan'],
+      nextTools: [
+        'artifact.read',
+        'analysis.evidence.graph',
+        'report.generate',
+        'malware.intel.loop',
+      ],
+      requiredArtifacts: ['sample', 'bundled YARA rules'],
+      producesArtifacts: [YARA_SCAN_ARTIFACT_TYPE],
+      evidence: ['signatures', 'strings', 'imports', 'workflow', 'provenance'],
+      safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      runtimeBackends: ['static_python.preview'],
+    },
+  ],
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'static_python.preview',
+    backendKind: 'builtin',
+    adapter: 'runtime-worker-pool/static_worker.py:yara.scan',
+    availability: 'builtin',
+    supportedModes: ['local-static-scan'],
+    defaultMode: 'local-static-scan',
+    inputArtifactTypes: ['sample'],
+    outputArtifactTypes: [YARA_SCAN_ARTIFACT_TYPE],
+    policy: {
+      passiveByDefault: true,
+      noNetwork: true,
+      noMutation: true,
+      noLiveExecution: true,
+      defaultTimeoutMs: 30000,
+      notes: [
+        'Runs YARA matching against bytes from the local workspace only.',
+        'Does not execute the sample and does not require network access by default.',
+      ],
+    },
+    readiness: {
+      missingBackendBehavior:
+        'Return worker setup or execution errors without falling back to live execution.',
+      setupActions: ['Install yara-python in the local static worker environment.'],
+    },
+    packaging: {
+      installRoute: 'installed',
+      installProfile: 'default',
+      notes: ['Uses bundled workers/yara_rules rule files selected by rule_set and rule_tier.'],
+    },
+  },
 }
 
 // ============================================================================
@@ -315,6 +416,390 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
   })
 }
 
+type YaraScanRecord = Record<string, unknown>
+
+interface ConfidenceSummary {
+  high: number
+  medium: number
+  low: number
+}
+
+function isRecord(value: unknown): value is YaraScanRecord {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function readString(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.length > 0 ? value : fallback
+}
+
+function readBoolean(value: unknown): boolean {
+  return value === true
+}
+
+function readNonNegativeInteger(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.trunc(value))
+  }
+  return fallback
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    : []
+}
+
+function normalizeMatches(data: YaraScanRecord): YaraScanRecord[] {
+  return Array.isArray(data.matches) ? data.matches.filter(isRecord) : []
+}
+
+function normalizeConfidenceSummary(
+  data: YaraScanRecord,
+  matches: YaraScanRecord[]
+): ConfidenceSummary {
+  if (isRecord(data.confidence_summary)) {
+    return {
+      high: readNonNegativeInteger(data.confidence_summary.high),
+      medium: readNonNegativeInteger(data.confidence_summary.medium),
+      low: readNonNegativeInteger(data.confidence_summary.low),
+    }
+  }
+
+  return matches.reduce<ConfidenceSummary>(
+    (summary, match) => {
+      const confidence = isRecord(match.confidence) ? match.confidence : {}
+      const level = confidence.level
+      if (level === 'high' || level === 'medium' || level === 'low') {
+        summary[level] += 1
+      } else {
+        summary.low += 1
+      }
+      return summary
+    },
+    { high: 0, medium: 0, low: 0 }
+  )
+}
+
+function countStringEvidence(matches: YaraScanRecord[]): number {
+  return matches.reduce(
+    (total, match) => total + (Array.isArray(match.strings) ? match.strings.length : 0),
+    0
+  )
+}
+
+function buildStringEvidencePreview(matches: YaraScanRecord[]) {
+  const preview: YaraScanRecord[] = []
+
+  for (const match of matches) {
+    const strings = Array.isArray(match.strings) ? match.strings.filter(isRecord) : []
+    for (const entry of strings) {
+      if (preview.length >= STRING_PREVIEW_LIMIT) return preview
+      const location = isRecord(entry.location) ? entry.location : {}
+      const matchedData = typeof entry.matched_data === 'string' ? entry.matched_data : ''
+      preview.push({
+        rule: readString(match.rule, 'unknown'),
+        identifier: readString(entry.identifier, 'unknown'),
+        offset: readNonNegativeInteger(entry.offset),
+        matched_data_preview: matchedData.slice(0, 96),
+        section: typeof location.section === 'string' ? location.section : null,
+        rva: typeof location.rva === 'number' ? location.rva : null,
+        distance_to_entrypoint:
+          typeof location.distance_to_entrypoint === 'number'
+            ? location.distance_to_entrypoint
+            : null,
+      })
+    }
+  }
+
+  return preview
+}
+
+function countStringsWithLocation(matches: YaraScanRecord[]): number {
+  return matches.reduce((total, match) => {
+    const strings = Array.isArray(match.strings) ? match.strings.filter(isRecord) : []
+    return total + strings.filter((entry) => isRecord(entry.location)).length
+  }, 0)
+}
+
+function countNearEntrypointHits(matches: YaraScanRecord[]): number {
+  return matches.reduce((total, match) => {
+    const evidence = isRecord(match.evidence) ? match.evidence : {}
+    return total + readNonNegativeInteger(evidence.near_entrypoint_hits)
+  }, 0)
+}
+
+function buildRuleProvenance(data: YaraScanRecord, input: YaraScanInput) {
+  const ruleFiles = readStringArray(data.rule_files)
+  return {
+    source: 'bundled_static_worker_yara_rules',
+    rule_set: readString(data.rule_set, input.rule_set),
+    rule_tier: readString(data.rule_tier, input.rule_tier || 'production'),
+    ruleset_version: readString(data.ruleset_version, 'unknown'),
+    rule_files: ruleFiles,
+    selected_rule_file_count: ruleFiles.length,
+    local_worker_family: 'static_python.preview',
+  }
+}
+
+function buildRecommendedNextTools(args: { matchCount: number; timedOut: boolean }): string[] {
+  const tools = ['artifact.read', 'analysis.evidence.graph', 'report.generate']
+  if (args.matchCount > 0) {
+    tools.push('malware.intel.loop', 'ioc.export')
+  } else {
+    tools.push('yara.generate')
+  }
+  if (args.timedOut) {
+    tools.push('yara.scan')
+  }
+  return Array.from(new Set(tools))
+}
+
+function buildNextActions(args: {
+  matchCount: number
+  stringEvidenceCount: number
+  timedOut: boolean
+}): string[] {
+  const actions = [
+    'Review the persisted backend_yara_scan artifact for the bounded rule, offset, and string evidence preview.',
+    'Route the artifact into analysis.evidence.graph before report.generate so provenance and confidence are preserved.',
+  ]
+
+  if (args.matchCount > 0) {
+    actions.unshift(
+      'Validate matched rule provenance, confidence level, and offset context before treating the hit as a family label.'
+    )
+  } else {
+    actions.unshift(
+      'Treat the scan as no-hit evidence and consider yara.generate only after richer strings/imports evidence is available.'
+    )
+  }
+  if (args.stringEvidenceCount === 0) {
+    actions.push(
+      'Confirm the rule match did not omit string offsets before using it as strong evidence.'
+    )
+  }
+  if (args.timedOut) {
+    actions.unshift(
+      'Repeat yara.scan with a narrower rule_set or longer timeout before final reporting.'
+    )
+  }
+
+  return actions
+}
+
+function buildEvidenceSummary(args: {
+  input: YaraScanInput
+  sampleId: string
+  data: YaraScanRecord
+  matches: YaraScanRecord[]
+  confidenceSummary: ConfidenceSummary
+  stringEvidenceCount: number
+}) {
+  const stringPreview = buildStringEvidencePreview(args.matches)
+  const stringsWithLocation = countStringsWithLocation(args.matches)
+  const ruleProvenance = buildRuleProvenance(args.data, args.input)
+  const matchedRules = args.matches
+    .map((match) => readString(match.rule, ''))
+    .filter((rule) => rule.length > 0)
+
+  return {
+    schema: 'rikune.yara_scan.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    sample_id: args.sampleId,
+    artifact_type: YARA_SCAN_ARTIFACT_TYPE,
+    rule_provenance: ruleProvenance,
+    rule_set: ruleProvenance.rule_set,
+    rule_tier: ruleProvenance.rule_tier,
+    ruleset_version: ruleProvenance.ruleset_version,
+    match_count: args.matches.length,
+    matched_rule_names: matchedRules.slice(0, MATCH_PREVIEW_LIMIT),
+    string_evidence_count: args.stringEvidenceCount,
+    offset_evidence: {
+      strings_with_offsets: stringPreview.length,
+      strings_with_location: stringsWithLocation,
+      near_entrypoint_hits: countNearEntrypointHits(args.matches),
+      parser: isRecord(args.data.offset_mapping)
+        ? readString(args.data.offset_mapping.parser, 'unknown')
+        : 'unknown',
+      sections_count: isRecord(args.data.offset_mapping)
+        ? readNonNegativeInteger(args.data.offset_mapping.sections_count)
+        : 0,
+      string_preview: stringPreview,
+    },
+    confidence_summary: args.confidenceSummary,
+    import_evidence: isRecord(args.data.import_evidence) ? args.data.import_evidence : {},
+    timed_out: readBoolean(args.data.timed_out),
+    bounded_match_preview: {
+      max_rules: MATCH_PREVIEW_LIMIT,
+      returned_rules: Math.min(args.matches.length, MATCH_PREVIEW_LIMIT),
+      max_strings: STRING_PREVIEW_LIMIT,
+      returned_strings: stringPreview.length,
+      truncated:
+        args.matches.length > MATCH_PREVIEW_LIMIT ||
+        args.stringEvidenceCount > STRING_PREVIEW_LIMIT,
+    },
+  }
+}
+
+function dominantConfidence(summary: ConfidenceSummary): 'high' | 'medium' | 'low' | 'none' {
+  if (summary.high > 0) return 'high'
+  if (summary.medium > 0) return 'medium'
+  if (summary.low > 0) return 'low'
+  return 'none'
+}
+
+function buildQualityGates(args: {
+  input: YaraScanInput
+  data: YaraScanRecord
+  matches: YaraScanRecord[]
+  confidenceSummary: ConfidenceSummary
+  stringEvidenceCount: number
+  backendStarted: boolean
+}) {
+  const ruleProvenance = buildRuleProvenance(args.data, args.input)
+  const timedOut = readBoolean(args.data.timed_out)
+  return {
+    schema: 'rikune.yara_scan.quality_gates.v1',
+    passive_local_scan_only: true,
+    backend_started: args.backendStarted,
+    sample_executed_by_tool: false,
+    network_accessed_by_tool: false,
+    live_sample_mutation_performed: false,
+    rule_provenance_available:
+      ruleProvenance.ruleset_version !== 'unknown' || ruleProvenance.rule_files.length > 0,
+    match_floor_met: args.matches.length > 0,
+    string_offset_evidence_available: args.stringEvidenceCount > 0,
+    confidence_summary_available:
+      args.confidenceSummary.high + args.confidenceSummary.medium + args.confidenceSummary.low > 0,
+    dominant_confidence: dominantConfidence(args.confidenceSummary),
+    bounded_match_preview_returned: true,
+    timed_out: timedOut,
+    timeout_ms: args.input.timeout_ms,
+    artifact_review_required: true,
+    false_positive_review_required: args.matches.length > 0,
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  input: YaraScanInput
+  sampleId: string
+  data: YaraScanRecord
+  matches: YaraScanRecord[]
+  stringEvidenceCount: number
+  recommendedNextTools: string[]
+  backendStarted: boolean
+}) {
+  const matchCount = args.matches.length
+  const ruleProvenance = buildRuleProvenance(args.data, args.input)
+  return {
+    schema: 'rikune.yara_scan.workflow_handoff.v1',
+    handoff_mode: 'yara_scan_to_validation_evidence_graph_and_reporting',
+    source_tool: TOOL_NAME,
+    sample_id: args.sampleId,
+    artifact_type: YARA_SCAN_ARTIFACT_TYPE,
+    rule_provenance: ruleProvenance,
+    match_count: matchCount,
+    string_evidence_count: args.stringEvidenceCount,
+    recommended_next_tools: args.recommendedNextTools,
+    dynamic_boundary: {
+      passive_local_scan_only: true,
+      backend_started: args.backendStarted,
+      sample_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      live_sample_mutation_performed: false,
+    },
+    routing: [
+      {
+        goal: 'artifact-review-and-offset-validation',
+        priority: matchCount > 0 ? 'high' : 'normal',
+        next_tools: ['artifact.read'],
+        required_evidence: [YARA_SCAN_ARTIFACT_TYPE, 'YARA string offsets'],
+      },
+      {
+        goal: 'rule-provenance-and-confidence-review',
+        priority: matchCount > 0 ? 'high' : 'normal',
+        next_tools: ['artifact.read', 'analysis.evidence.graph'],
+        required_evidence: ['ruleset_version', 'rule_files', 'confidence_summary'],
+      },
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: matchCount > 0 ? 'high' : 'normal',
+        next_tools: ['analysis.evidence.graph', 'report.generate'],
+        required_evidence: [YARA_SCAN_ARTIFACT_TYPE],
+      },
+      {
+        goal: 'workflow-search-reuse',
+        priority: 'normal',
+        next_tools: ['workflow.search'],
+        required_evidence: ['yara.scan-validation-handoff'],
+      },
+    ],
+  }
+}
+
+function buildStructuredYaraScanResult(args: {
+  input: YaraScanInput
+  sampleId: string
+  data: YaraScanRecord
+  backendStarted: boolean
+}): YaraScanRecord {
+  const matches = normalizeMatches(args.data)
+  const confidenceSummary = normalizeConfidenceSummary(args.data, matches)
+  const stringEvidenceCount = countStringEvidence(matches)
+  const timedOut = readBoolean(args.data.timed_out)
+  const recommendedNextTools = buildRecommendedNextTools({
+    matchCount: matches.length,
+    timedOut,
+  })
+  const evidenceSummary = buildEvidenceSummary({
+    input: args.input,
+    sampleId: args.sampleId,
+    data: args.data,
+    matches,
+    confidenceSummary,
+    stringEvidenceCount,
+  })
+  const qualityGates = buildQualityGates({
+    input: args.input,
+    data: args.data,
+    matches,
+    confidenceSummary,
+    stringEvidenceCount,
+    backendStarted: args.backendStarted,
+  })
+  const workflowHandoff = buildWorkflowHandoff({
+    input: args.input,
+    sampleId: args.sampleId,
+    data: args.data,
+    matches,
+    stringEvidenceCount,
+    recommendedNextTools,
+    backendStarted: args.backendStarted,
+  })
+
+  return {
+    ...args.data,
+    schema: 'rikune.yara_scan.v1',
+    tool_version: TOOL_VERSION,
+    sample_id: args.sampleId,
+    rule_set: readString(args.data.rule_set, args.input.rule_set),
+    rule_tier: readString(args.data.rule_tier, args.input.rule_tier || 'production'),
+    ruleset_version: readString(args.data.ruleset_version, 'unknown'),
+    match_count: matches.length,
+    string_evidence_count: stringEvidenceCount,
+    confidence_summary: confidenceSummary,
+    evidence_summary: evidenceSummary,
+    workflow_handoff: workflowHandoff,
+    quality_gates: qualityGates,
+    recommended_next_tools: recommendedNextTools,
+    next_actions: buildNextActions({
+      matchCount: matches.length,
+      stringEvidenceCount,
+      timedOut,
+    }),
+  }
+}
+
 // ============================================================================
 // Tool Handler
 // ============================================================================
@@ -329,10 +814,11 @@ export function createYaraScanHandler(
   cacheManager: CacheManager
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
-    const input = args as YaraScanInput
     const startTime = Date.now()
 
     try {
+      const input = YaraScanInputSchema.parse(args)
+
       // 1. Validate sample exists
       const sample = database.findSample(input.sample_id)
       if (!sample) {
@@ -359,9 +845,18 @@ export function createYaraScanHandler(
       if (!input.force_refresh) {
         const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
         if (cachedLookup) {
+          const cachedData = isRecord(cachedLookup.data)
+            ? buildStructuredYaraScanResult({
+                input,
+                sampleId: input.sample_id,
+                data: cachedLookup.data,
+                backendStarted: false,
+              })
+            : cachedLookup.data
+
           return {
             ok: true,
-            data: cachedLookup.data,
+            data: cachedData,
             warnings: ['Result from cache', formatCacheWarning(cachedLookup.metadata)],
             metrics: {
               elapsed_ms: Date.now() - startTime,
@@ -376,6 +871,8 @@ export function createYaraScanHandler(
           }
         }
       }
+
+      const warnings = input.force_refresh ? ['force_refresh=true; bypassed cache lookup'] : []
 
       // 4. Get sample path from workspace
       const workspace = await workspaceManager.getWorkspace(input.sample_id)
@@ -420,25 +917,51 @@ export function createYaraScanHandler(
         }
       }
 
+      warnings.push(...(workerResponse.warnings || []))
+
+      let outputData: unknown = workerResponse.data
+      const artifacts: ArtifactRef[] = Array.isArray(workerResponse.artifacts)
+        ? [...(workerResponse.artifacts as ArtifactRef[])]
+        : []
+
+      if (isRecord(workerResponse.data)) {
+        outputData = buildStructuredYaraScanResult({
+          input,
+          sampleId: input.sample_id,
+          data: {
+            ...workerResponse.data,
+            worker_pool: workerResponse.metrics?.worker_pool,
+          },
+          backendStarted: true,
+        })
+
+        try {
+          const artifactRef = await persistStaticAnalysisJsonArtifact(
+            workspaceManager,
+            database,
+            input.sample_id,
+            YARA_SCAN_ARTIFACT_TYPE,
+            'yara_scan',
+            outputData
+          )
+          artifacts.push(artifactRef)
+          outputData = { ...(outputData as YaraScanRecord), artifact: artifactRef }
+        } catch {
+          warnings.push('Failed to persist YARA scan artifact')
+        }
+      }
+
       // 7. Cache result
       // Requirement: 5.5 - Cache with ruleset version for invalidation
-      await cacheManager.setCachedResult(cacheKey, workerResponse.data, CACHE_TTL_MS)
+      await cacheManager.setCachedResult(cacheKey, outputData, CACHE_TTL_MS)
 
       // 8. Return result
       return {
         ok: true,
-        data:
-          workerResponse.data && typeof workerResponse.data === 'object'
-            ? {
-                ...(workerResponse.data as Record<string, unknown>),
-                worker_pool: workerResponse.metrics?.worker_pool,
-              }
-            : workerResponse.data,
-        warnings: input.force_refresh
-          ? ['force_refresh=true; bypassed cache lookup', ...(workerResponse.warnings || [])]
-          : workerResponse.warnings,
+        data: outputData,
+        warnings: warnings.length > 0 ? warnings : undefined,
         errors: workerResponse.errors,
-        artifacts: workerResponse.artifacts as ArtifactRef[],
+        artifacts: artifacts.length > 0 ? artifacts : undefined,
         metrics: {
           ...workerResponse.metrics,
           elapsed_ms: Date.now() - startTime,
