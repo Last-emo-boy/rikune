@@ -21,7 +21,7 @@ A plugin can:
 
 ## Built-In Plugins
 
-The repository currently contains 93 built-in plugins.
+The repository currently contains 94 built-in plugins.
 
 | ID | Name | Domain | Surface tier |
 | --- | --- | --- | --- |
@@ -67,6 +67,7 @@ The repository currently contains 93 built-in plugins.
 | `javascript-deobfuscation` | JavaScript Deobfuscation | static | 2 |
 | `kb-collaboration` | Knowledge Base & Collaboration | static | 0 |
 | `lief` | LIEF Binary Plan | static | 3 |
+| `llvm-bitcode` | LLVM Bitcode Inventory | static | 1 |
 | `linux-binary` | Linux Binary Inventory | static | 1 |
 | `linux-package` | Linux Package Inventory | static | 1 |
 | `linux-runtime` | Linux Runtime Plan | dynamic | 2 |

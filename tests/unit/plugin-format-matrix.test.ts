@@ -13,6 +13,7 @@ import { buildAppleContainerInventoryFromBuffer } from '../../src/plugins/apple-
 import { buildJvmStructureFromBuffer } from '../../src/plugins/jvm/tools/jvm-structure-analyze.js'
 import { buildWasmStructureFromBuffer } from '../../src/plugins/wasm/tools/wasm-structure-analyze.js'
 import { buildBytecodeMetadataFromBuffer } from '../../src/plugins/bytecode/tools/bytecode-metadata-inspect.js'
+import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitcode/tools/llvm-bitcode-inventory.js'
 import { buildWindowsInstallerInventoryFromBuffer } from '../../src/plugins/windows-installer/tools/windows-installer-inventory.js'
 import { buildWindowsDebugMetadataFromBuffer } from '../../src/plugins/windows-debug-symbols/tools/windows-debug-metadata-inspect.js'
 import { buildDotnetAssemblyInventoryFromBuffer } from '../../src/plugins/dotnet-managed/tools/dotnet-assembly-inspect.js'
@@ -88,6 +89,13 @@ function isoFixture(): Buffer {
   const data = Buffer.alloc(0x8006)
   data.write('CD001', 0x8001, 'ascii')
   return data
+}
+
+function llvmBitcodeFixture(): Buffer {
+  return Buffer.concat([
+    Buffer.from([0x42, 0x43, 0xc0, 0xde, 0x03, 0x41, 0x10, 0x00]),
+    Buffer.from('target triple=x86_64-unknown-linux-gnu', 'ascii'),
+  ])
 }
 
 function elfFixture(type: number, machine = 62): Buffer {
@@ -347,6 +355,12 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(elfFixture(3), 'libdemo.so')).toBe('ELF-SO')
     expect(detectFileType(elfFixture(4), 'core.123')).toBe('ELF-Core')
     expect(detectFileType(Buffer.from([0x00, 0x61, 0x73, 0x6d]), 'module.wasm')).toBe('WASM')
+    expect(detectFileType(Buffer.from([0x42, 0x43, 0xc0, 0xde]), 'module.bc')).toBe(
+      'LLVM-Bitcode'
+    )
+    const wrapper = Buffer.alloc(20)
+    wrapper.writeUInt32LE(0x0b17c0de, 0)
+    expect(detectFileType(wrapper, 'module.bc')).toBe('LLVM-Bitcode-Wrapper')
   })
 
   test('detects JVM archives/classes and script bytecode formats', () => {
@@ -724,6 +738,18 @@ describe('passive bytecode and portable runtime inventory', () => {
     expect(inventory.version_hints).toEqual(expect.arrayContaining(['CPython 3.11']))
     expect(inventory.string_hints).toContain('module.path')
   })
+
+  test('builds LLVM bitcode inventory without invoking LLVM tools', () => {
+    const inventory = buildLlvmBitcodeInventoryFromBuffer(llvmBitcodeFixture(), {
+      filename: 'module.bc',
+    })
+
+    expect(inventory.format).toBe('llvm-bitcode')
+    expect(inventory.policy.no_llvm_toolchain_required).toBe(true)
+    expect(inventory.quality_gates.llvm_tool_invoked_by_tool).toBe(false)
+    expect(inventory.quality_gates.compiled_by_tool).toBe(false)
+    expect(inventory.recommended_next_tools).toEqual(expect.arrayContaining(['workflow.search']))
+  })
 })
 
 describe('passive Windows and managed format inventory', () => {
@@ -985,6 +1011,7 @@ describe('built-in plugin format matrix discovery', () => {
     const jvm = plugins.find((plugin) => plugin.id === 'jvm')
     const wasm = plugins.find((plugin) => plugin.id === 'wasm')
     const bytecode = plugins.find((plugin) => plugin.id === 'bytecode')
+    const llvmBitcode = plugins.find((plugin) => plugin.id === 'llvm-bitcode')
     const windowsInstaller = plugins.find((plugin) => plugin.id === 'windows-installer')
     const windowsDebugSymbols = plugins.find((plugin) => plugin.id === 'windows-debug-symbols')
     const dotnetManaged = plugins.find((plugin) => plugin.id === 'dotnet-managed')
@@ -1016,6 +1043,12 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(bytecode?.tools?.map((tool) => tool.definition.name)).toContain(
       'bytecode.metadata.inspect'
+    )
+    expect(llvmBitcode?.aspects?.formats).toEqual(
+      expect.arrayContaining(['llvm-bitcode', 'llvm-bc', 'llvm-ir'])
+    )
+    expect(llvmBitcode?.tools?.map((tool) => tool.definition.name)).toContain(
+      'llvm.bitcode.inventory'
     )
     expect(windowsInstaller?.aspects?.formats).toEqual(
       expect.arrayContaining(['msi', 'msix', 'appx', 'cab', 'nsis', 'inno'])
