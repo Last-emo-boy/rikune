@@ -32,3 +32,8 @@ Objective: add a passive LLVM bitcode inventory capability so Rikune can inspect
 - Passed: `git diff --check`.
 - Checked: `npx tsc --noEmit --pretty false` reports no LLVM bitcode iteration diagnostics. The repository baseline still reports 40 TypeScript diagnostic lines.
 - Known baseline failure: full `tests/unit/plugin-format-matrix.test.ts` still fails `release guard covers completed capability workflow recipes` because `kb-collaboration` starts with `kb.context.suggest` but the guard expects both `kb.context.suggest` and `analysis.notes`.
+
+## Completion
+
+- Commit: `162074a feat: 添加 LLVM bitcode 静态清单插件`
+- Pull request: https://github.com/Last-emo-boy/rikune/pull/41
