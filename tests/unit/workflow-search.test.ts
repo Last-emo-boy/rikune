@@ -9,6 +9,7 @@ import { MCPRegistry } from '../../src/core/mcp-registry.js'
 import { ToolExecutor } from '../../src/core/tool-executor.js'
 import { getToolSurfaceManager } from '../../src/core/tool-surface-manager.js'
 import type { Plugin } from '../../src/plugins/sdk.js'
+import ebpfBytecodePlugin from '../../src/plugins/ebpf-bytecode/index.js'
 
 const logger = pino({ level: 'silent' })
 
@@ -512,6 +513,39 @@ describe('workflow.search', () => {
     expect(jsData.results[0].matched_profile_fields.join(' ')).toContain('query terms')
     expect(surface.isToolVisible('pe.structure.analyze')).toBe(false)
     expect(surface.isToolVisible('jsvmp.bytecode.recover')).toBe(false)
+  })
+
+  test('recommends passive eBPF bytecode inventory without activating runtime telemetry tools', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins = [ebpfBytecodePlugin]
+    registerPluginsForSearch(plugins)
+    surface.registerGatewayCoreTools(['workflow.search'])
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+
+    const result = await handler({
+      query: 'inspect ebpf bytecode verifier helper map xdp',
+      file_type: '.bpf',
+      goal: 'static',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    const ebpfResult = data.results.find((item: any) => item.plugin_id === 'ebpf-bytecode')
+    expect(ebpfResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+      })
+    )
+    expect(ebpfResult.recommended_tools).toContain('ebpf.bytecode.inventory')
+    expect(ebpfResult.score_breakdown.total_score).toBeGreaterThan(0)
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining(['ebpf', 'bpf', 'ebpf-bytecode'])
+    )
+    expect(surface.isToolVisible('ebpf.bytecode.inventory')).toBe(false)
   })
 
   test('preserves one result per search profile lane when topK is constrained', async () => {

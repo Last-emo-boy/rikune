@@ -134,6 +134,12 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS.apks).toEqual(expect.arrayContaining(['android', 'split-apk']))
     expect(SURFACE_FILE_TYPE_TAGS.ipa).toEqual(expect.arrayContaining(['ios', 'macho']))
     expect(SURFACE_FILE_TYPE_TAGS.wasm).toContain('wasi')
+    expect(SURFACE_FILE_TYPE_TAGS.ebpf).toEqual(
+      expect.arrayContaining(['ebpf', 'bpf', 'ebpf-bytecode', 'linux', 'bytecode'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['ebpf-elf']).toEqual(
+      expect.arrayContaining(['ebpf', 'bpf', 'elf', 'linux', 'object'])
+    )
   })
 
   test('aspect helpers normalize, describe, and match sample profiles', () => {
@@ -464,9 +470,9 @@ describe('@rikune/plugin-sdk', () => {
         'missing-runtime-policy',
       ])
     )
-    expect(warnings.every((warning) => warning.severity === 'info' || warning.severity === 'warning')).toBe(
-      true
-    )
+    expect(
+      warnings.every((warning) => warning.severity === 'info' || warning.severity === 'warning')
+    ).toBe(true)
     expect(warnings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
