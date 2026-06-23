@@ -33,3 +33,8 @@ Objective: add a passive eBPF bytecode static-analysis capability to broaden Rik
 - Passed: `git diff --check`.
 - Checked: `npx tsc --noEmit --pretty false` reports no `src/plugins/ebpf-bytecode` diagnostics. The repository baseline still reports 40 TypeScript diagnostic lines, including unresolved `@rikune/shared` workspace types and pre-existing plugin schema strictness issues.
 - Known baseline failure: full `tests/unit/plugin-format-matrix.test.ts` still fails `release guard covers completed capability workflow recipes` because `kb-collaboration` starts with `kb.context.suggest` but the guard expects both `kb.context.suggest` and `analysis.notes`.
+
+## Completion
+
+- Commit: `2866384 feat: 添加 eBPF 字节码静态分析插件`
+- Pull request: https://github.com/Last-emo-boy/rikune/pull/40
