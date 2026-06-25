@@ -146,6 +146,12 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS['cuda-fatbin']).toEqual(
       expect.arrayContaining(['fatbin', 'cuda', 'gpu', 'ptx', 'cubin'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS.ebpf).toEqual(
+      expect.arrayContaining(['ebpf', 'bpf', 'ebpf-bytecode', 'linux', 'bytecode'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['ebpf-elf']).toEqual(
+      expect.arrayContaining(['ebpf', 'bpf', 'elf', 'linux', 'object'])
+    )
   })
 
   test('aspect helpers normalize, describe, and match sample profiles', () => {

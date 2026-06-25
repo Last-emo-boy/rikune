@@ -348,6 +348,8 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(elfFixture(3), 'libdemo.so')).toBe('ELF-SO')
     expect(detectFileType(elfFixture(4), 'core.123')).toBe('ELF-Core')
     expect(detectFileType(Buffer.from([0x00, 0x61, 0x73, 0x6d]), 'module.wasm')).toBe('WASM')
+    expect(detectFileType(Buffer.alloc(16), 'program.bpf')).toBe('eBPF-Bytecode')
+    expect(detectFileType(Buffer.alloc(16), 'program.ebpf')).toBe('eBPF-Bytecode')
   })
 
   test('detects CUDA PTX, CUBIN, and fatbin formats without masking host binaries', () => {
@@ -455,6 +457,8 @@ describe('cross-platform file type detection', () => {
     ubifs.writeUInt32LE(0x06101831, 0)
 
     expect(detectFileType(elfFixture(1), 'demo.o')).toBe('ELF-Object')
+    expect(detectFileType(elfFixture(1, 247), 'xdp.o')).toBe('eBPF-ELF')
+    expect(detectFileType(elfFixture(1, 247), 'xdp.bpf')).toBe('eBPF-ELF')
     expect(
       detectFileType(Buffer.concat([elfFixture(1), Buffer.from('vermagic=6.1')]), 'demo.ko')
     ).toBe('Linux-Kernel-Module')
@@ -1031,6 +1035,7 @@ describe('built-in plugin format matrix discovery', () => {
     const jvm = plugins.find((plugin) => plugin.id === 'jvm')
     const wasm = plugins.find((plugin) => plugin.id === 'wasm')
     const bytecode = plugins.find((plugin) => plugin.id === 'bytecode')
+    const ebpfBytecode = plugins.find((plugin) => plugin.id === 'ebpf-bytecode')
     const windowsInstaller = plugins.find((plugin) => plugin.id === 'windows-installer')
     const windowsDebugSymbols = plugins.find((plugin) => plugin.id === 'windows-debug-symbols')
     const dotnetManaged = plugins.find((plugin) => plugin.id === 'dotnet-managed')
@@ -1063,6 +1068,12 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(bytecode?.tools?.map((tool) => tool.definition.name)).toContain(
       'bytecode.metadata.inspect'
+    )
+    expect(ebpfBytecode?.aspects?.formats).toEqual(
+      expect.arrayContaining(['ebpf', 'bpf', 'raw-ebpf', 'ebpf-elf'])
+    )
+    expect(ebpfBytecode?.tools?.map((tool) => tool.definition.name)).toContain(
+      'ebpf.bytecode.inventory'
     )
     expect(windowsInstaller?.aspects?.formats).toEqual(
       expect.arrayContaining(['msi', 'msix', 'appx', 'cab', 'nsis', 'inno'])
@@ -1142,6 +1153,7 @@ describe('built-in plugin format matrix discovery', () => {
     const apkSmali = requirePlugin(plugins, 'apk-smali')
     const firmware = requirePlugin(plugins, 'firmware')
     const nativeObject = requirePlugin(plugins, 'native-object')
+    const ebpfBytecode = requirePlugin(plugins, 'ebpf-bytecode')
     const androidPackage = requirePlugin(plugins, 'android-package')
     const appleSigning = requirePlugin(plugins, 'apple-signing')
     const linuxBinary = requirePlugin(plugins, 'linux-binary')
@@ -1225,6 +1237,22 @@ describe('built-in plugin format matrix discovery', () => {
       formats: ['object', 'ar-static-lib', 'linux-kernel-module'],
       artifacts: ['native_object_inventory'],
       evidence: ['structure', 'symbols'],
+    })
+    expectToolMetadata(ebpfBytecode, 'ebpf.bytecode.inventory', {
+      formats: ['ebpf', 'bpf', 'raw-ebpf', 'ebpf-elf'],
+      artifacts: ['ebpf_bytecode_inventory'],
+      evidence: ['structure', 'bytecode', 'control-flow', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'ebpf-bytecode',
+      toolName: 'ebpf.bytecode.inventory',
+      recipeId: 'ebpf.bytecode-static-inventory',
+      startsWith: ['ebpf.bytecode.inventory'],
+      nextTools: ['artifact.read', 'elf.structure.analyze', 'linux.runtime.plan'],
+      producesArtifacts: ['ebpf_bytecode_inventory'],
+      evidence: ['bytecode', 'control-flow', 'workflow'],
+      safety: ['no_bpf_syscall', 'no_kernel_verifier_run', 'no_program_load'],
+      runtimeBackends: ['linux-runtime'],
     })
     expectToolMetadata(androidPackage, 'android.package.inventory', {
       formats: ['android-package', 'apk', 'dex'],

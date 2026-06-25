@@ -115,6 +115,19 @@ export function detectFileType(data: Buffer, filename?: string): string {
     return 'CUDA-Fatbin'
   }
 
+  if (extension === 'bpf' || extension === 'ebpf') {
+    if (
+      data.length >= 4 &&
+      data[0] === 0x7f &&
+      data[1] === 0x45 &&
+      data[2] === 0x4c &&
+      data[3] === 0x46
+    ) {
+      return 'eBPF-ELF'
+    }
+    return 'eBPF-Bytecode'
+  }
+
   if (extension === 'framework') {
     return 'Framework'
   }
@@ -322,6 +335,7 @@ export function detectFileType(data: Buffer, filename?: string): string {
     const elfType = data.length >= 18 ? readUInt16(16) : 0
     const elfMachine = data.length >= 20 ? readUInt16(18) : 0
     if (elfMachine === 190) return 'CUDA-CUBIN'
+    if (elfMachine === 247) return 'eBPF-ELF'
     if (extension === 'ko' || basename.endsWith('.ko') || preview.includes('vermagic=')) {
       return 'Linux-Kernel-Module'
     }

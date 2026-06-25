@@ -21,7 +21,7 @@ A plugin can:
 
 ## Built-In Plugins
 
-The repository currently contains 94 built-in plugins.
+The repository currently contains 95 built-in plugins.
 
 | ID | Name | Domain | Surface tier |
 | --- | --- | --- | --- |
@@ -37,6 +37,7 @@ The repository currently contains 94 built-in plugins.
 | `behavior-first` | Behavior-First Analysis | dynamic | 2 |
 | `binary-diff` | Binary Diff | static | 2 |
 | `bytecode` | Script Bytecode Inventory | static | 1 |
+| `ebpf-bytecode` | eBPF Bytecode Inventory | static | 1 |
 | `capstone` | Capstone Disassembly | static | 2 |
 | `code-analysis` | Code Analysis | static | 0 |
 | `container-analysis` | Container / Archive Inventory | static | 1 |
@@ -307,6 +308,7 @@ emulators, or attach debuggers.
 | `manifold.superset.decompilation-plan` | `manifold` | `manifold.decompilation.plan` | `revng.pipeline.plan`, `gtirb.ir.plan`, `miasm.ir.plan`, `analysis.evidence.graph` | Plan-only superset-decompilation workflow; no decompiler, fact engine, lifter, solver, or network. |
 | `culifter.gpu.lift-plan` | `culifter` | `culifter.gpu.plan` | `linux.binary.inventory`, `native.object.inventory`, `strings.extract`, `sbom.provenance.graph` | Plan-only GPU binary lifting workflow; no GPU driver, profiler, emulator, lifter, or sample execution. |
 | `cuda.binary.static-inventory-handoff` | `cuda-binary` | `cuda.binary.inventory` | `culifter.gpu.plan`, `culifter.gpu.artifact.inventory`, `native.object.inventory`, `linux.binary.inventory`, `strings.extract`, `sbom.provenance.graph`, `analysis.evidence.graph` | Passive CUDA/PTX/CUBIN/fatbin inventory; no CUDA driver, GPU access, cuobjdump, nvdisasm, profiler, or sample execution. |
+| `ebpf.bytecode-static-inventory` | `ebpf-bytecode` | `ebpf.bytecode.inventory` | `native.object.inventory`, `linux.binary.inventory`, `analysis.evidence.graph`, `linux.runtime.plan` | Passive eBPF bytecode and ELF EM_BPF inventory; no `bpf()` syscall, kernel verifier run, program load, attach, map creation, runtime start, or network. |
 | `wabt.wasm.toolchain-plan` | `wabt` | `wabt.toolchain.plan` | `strings.extract`, `sbom.generate`, `wasm.runtime.plan`, `analysis.evidence.graph` | Plan-only WABT toolchain routing; no wasm2wat/wasm-objdump process, module instantiation, WASI grant, or network. |
 
 ## Advanced Safety Categories
