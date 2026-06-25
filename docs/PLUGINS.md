@@ -21,7 +21,7 @@ A plugin can:
 
 ## Built-In Plugins
 
-The repository currently contains 96 built-in plugins.
+The repository currently contains 97 built-in plugins.
 
 | ID | Name | Domain | Surface tier |
 | --- | --- | --- | --- |
@@ -36,6 +36,7 @@ The repository currently contains 96 built-in plugins.
 | `batch` | Batch Analysis | both | 0 |
 | `behavior-first` | Behavior-First Analysis | dynamic | 2 |
 | `binary-diff` | Binary Diff | static | 2 |
+| `btf` | BTF Type Inventory | static | 1 |
 | `bytecode` | Script Bytecode Inventory | static | 1 |
 | `ebpf-bytecode` | eBPF Bytecode Inventory | static | 1 |
 | `capstone` | Capstone Disassembly | static | 2 |
@@ -309,6 +310,7 @@ emulators, or attach debuggers.
 | `manifold.superset.decompilation-plan` | `manifold` | `manifold.decompilation.plan` | `revng.pipeline.plan`, `gtirb.ir.plan`, `miasm.ir.plan`, `analysis.evidence.graph` | Plan-only superset-decompilation workflow; no decompiler, fact engine, lifter, solver, or network. |
 | `culifter.gpu.lift-plan` | `culifter` | `culifter.gpu.plan` | `linux.binary.inventory`, `native.object.inventory`, `strings.extract`, `sbom.provenance.graph` | Plan-only GPU binary lifting workflow; no GPU driver, profiler, emulator, lifter, or sample execution. |
 | `cuda.binary.static-inventory-handoff` | `cuda-binary` | `cuda.binary.inventory` | `culifter.gpu.plan`, `culifter.gpu.artifact.inventory`, `native.object.inventory`, `linux.binary.inventory`, `strings.extract`, `sbom.provenance.graph`, `analysis.evidence.graph` | Passive CUDA/PTX/CUBIN/fatbin inventory; no CUDA driver, GPU access, cuobjdump, nvdisasm, profiler, or sample execution. |
+| `btf.type-core-inventory` | `btf` | `btf.type.inventory` | `ebpf.bytecode.inventory`, `native.object.inventory`, `linux.binary.inventory`, `analysis.evidence.graph`, `report.generate`, `linux.runtime.plan` | Passive BTF type and CO-RE relocation inventory; no `bpf()` syscall, kernel verifier, program load, libbpf, bpftool, runtime start, or network. |
 | `ebpf.bytecode-static-inventory` | `ebpf-bytecode` | `ebpf.bytecode.inventory` | `native.object.inventory`, `linux.binary.inventory`, `analysis.evidence.graph`, `linux.runtime.plan` | Passive eBPF bytecode and ELF EM_BPF inventory; no `bpf()` syscall, kernel verifier run, program load, attach, map creation, runtime start, or network. |
 | `llvm.bitcode-static-inventory` | `llvm-bitcode` | `llvm.bitcode.inventory` | `artifact.read`, `metadata.extract`, `strings.extract`, `analysis.evidence.graph`, `report.generate`, `workflow.search` | Passive LLVM bitcode and wrapper inventory; no LLVM toolchain, compile, link, JIT, interpreter, sample execution, mutation, or network. |
 | `wabt.wasm.toolchain-plan` | `wabt` | `wabt.toolchain.plan` | `strings.extract`, `sbom.generate`, `wasm.runtime.plan`, `analysis.evidence.graph` | Plan-only WABT toolchain routing; no wasm2wat/wasm-objdump process, module instantiation, WASI grant, or network. |
@@ -392,7 +394,7 @@ The current plugin matrix is organized by `formats`, `platforms`, `execution`, `
 | Coverage | Static plugins | Dynamic or runtime-plan plugins | Safety boundary |
 | --- | --- | --- | --- |
 | Windows PE, DLL, SYS, EFI, MSI/MSIX/APPX/CAB/PDB | `pe-analysis`, `pe-signature`, `windows-installer`, `windows-debug-symbols`, `dotnet-managed`, `retdec`, `rizin`, `ghidra` | `windows-runtime`, `debug-session`, `wine`, `speakeasy`, `behavior-first`, `frida` | Static inventory is passive. Dynamic tools require opt-in, isolation, and runtime readiness. |
-| Linux ELF, SO, core, modules, packages, eBPF | `linux-binary`, `linux-package`, `elf-macho`, `native-object`, `container-analysis`, `ebpf-bytecode` | `linux-runtime`, `qiling`, `debug-session`, `behavior-first` | No ELF execution, ptrace, kernel module loading, package install, eBPF load/attach, or eBPF collection by default. |
+| Linux ELF, SO, core, modules, packages, eBPF, BTF | `linux-binary`, `linux-package`, `elf-macho`, `native-object`, `container-analysis`, `btf`, `ebpf-bytecode` | `linux-runtime`, `qiling`, `debug-session`, `behavior-first` | No ELF execution, ptrace, kernel module loading, package install, eBPF load/attach, BTF verifier submission, or eBPF collection by default. |
 | macOS Mach-O, app bundles, frameworks, DMG, PKG, dSYM | `apple-container`, `apple-signing`, `elf-macho`, `native-object` | `macos-runtime`, `debug-session`, `frida`, `behavior-first` | No DMG mount, app launch, LLDB attach, DTrace, or fs_usage capture by default. |
 | iOS IPA, Mach-O, provisioning, entitlements | `apple-container`, `apple-signing`, `elf-macho` | `ios-runtime`, `frida`, `debug-session` | No IPA install, device connection, simulator start, Frida attach, or LLDB attach by default. |
 | Android APK, AAB, APKS, XAPK, DEX/OAT/VDEX, AAR | `android-package`, `android`, `apk-smali`, `jvm`, `linux-binary` | `android-runtime`, `frida`, `behavior-first` | No emulator start, ADB install, APK launch, frida-server deployment, or device connection by default. |

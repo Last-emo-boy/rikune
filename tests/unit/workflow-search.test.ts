@@ -9,6 +9,7 @@ import { MCPRegistry } from '../../src/core/mcp-registry.js'
 import { ToolExecutor } from '../../src/core/tool-executor.js'
 import { getToolSurfaceManager } from '../../src/core/tool-surface-manager.js'
 import type { Plugin } from '../../src/plugins/sdk.js'
+import btfPlugin from '../../src/plugins/btf/index.js'
 import ebpfBytecodePlugin from '../../src/plugins/ebpf-bytecode/index.js'
 import llvmBitcodePlugin from '../../src/plugins/llvm-bitcode/index.js'
 
@@ -668,6 +669,44 @@ describe('workflow.search', () => {
     expect(activatedData.activated_tools).toContain('llvm.bitcode.inventory')
     expect(activatedData.activation_audit.policy.backend_execution_started).toBe(false)
     expect(surface.isToolVisible('llvm.bitcode.inventory')).toBe(true)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
+  })
+
+  test('recommends passive BTF inventory for CO-RE metadata without gateway expansion', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [btfPlugin]
+    surface.registerCoreTools([
+      'workflow.search',
+      'workflow.run',
+      'artifact.read',
+      'tools.discover',
+    ])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      query: 'inspect BTF CO-RE relocation type metadata',
+      file_type: '.btf',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining(['btf', 'bpf-btf', 'ebpf', 'linux'])
+    )
+    const btfResult = data.results.find((item: any) => item.plugin_id === 'btf')
+    expect(btfResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining(['btf.type.inventory']),
+      })
+    )
+    expect(btfResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(surface.isToolVisible('btf.type.inventory')).toBe(false)
     expect(surface.isToolVisible('tools.discover')).toBe(false)
   })
 

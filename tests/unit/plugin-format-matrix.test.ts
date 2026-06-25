@@ -13,6 +13,7 @@ import { buildAppleContainerInventoryFromBuffer } from '../../src/plugins/apple-
 import { buildJvmStructureFromBuffer } from '../../src/plugins/jvm/tools/jvm-structure-analyze.js'
 import { buildWasmStructureFromBuffer } from '../../src/plugins/wasm/tools/wasm-structure-analyze.js'
 import { buildBytecodeMetadataFromBuffer } from '../../src/plugins/bytecode/tools/bytecode-metadata-inspect.js'
+import { buildBtfInventoryFromBuffer } from '../../src/plugins/btf/tools/btf-type-inventory.js'
 import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitcode/tools/llvm-bitcode-inventory.js'
 import { buildWindowsInstallerInventoryFromBuffer } from '../../src/plugins/windows-installer/tools/windows-installer-inventory.js'
 import { buildWindowsDebugMetadataFromBuffer } from '../../src/plugins/windows-debug-symbols/tools/windows-debug-metadata-inspect.js'
@@ -97,6 +98,32 @@ function llvmBitcodeFixture(): Buffer {
     Buffer.from([0x42, 0x43, 0xc0, 0xde, 0x03, 0x41, 0x10, 0x00]),
     Buffer.from('target triple=x86_64-unknown-linux-gnu', 'ascii'),
   ])
+}
+
+function btfFixture(): Buffer {
+  const strings = Buffer.from('\0int\0task_struct\0pid\0', 'utf8')
+  const intType = Buffer.alloc(16)
+  intType.writeUInt32LE(1, 0)
+  intType.writeUInt32LE(1 << 24, 4)
+  intType.writeUInt32LE(4, 8)
+  intType.writeUInt32LE(32, 12)
+  const structType = Buffer.alloc(24)
+  structType.writeUInt32LE(5, 0)
+  structType.writeUInt32LE((4 << 24) | 1, 4)
+  structType.writeUInt32LE(4, 8)
+  structType.writeUInt32LE(17, 12)
+  structType.writeUInt32LE(1, 16)
+  structType.writeUInt32LE(0, 20)
+  const types = Buffer.concat([intType, structType])
+  const header = Buffer.alloc(24)
+  header.writeUInt16LE(0xeb9f, 0)
+  header[2] = 1
+  header.writeUInt32LE(24, 4)
+  header.writeUInt32LE(0, 8)
+  header.writeUInt32LE(types.length, 12)
+  header.writeUInt32LE(types.length, 16)
+  header.writeUInt32LE(strings.length, 20)
+  return Buffer.concat([header, types, strings])
 }
 
 function elfFixture(type: number, machine = 62): Buffer {
@@ -362,6 +389,7 @@ describe('cross-platform file type detection', () => {
     const wrapper = Buffer.alloc(20)
     wrapper.writeUInt32LE(0x0b17c0de, 0)
     expect(detectFileType(wrapper, 'module.bc')).toBe('LLVM-Bitcode-Wrapper')
+    expect(detectFileType(btfFixture(), 'vmlinux.btf')).toBe('BTF')
   })
 
   test('detects CUDA PTX, CUBIN, and fatbin formats without masking host binaries', () => {
@@ -798,6 +826,33 @@ describe('passive bytecode and portable runtime inventory', () => {
     expect(inventory.quality_gates.compiled_by_tool).toBe(false)
     expect(inventory.recommended_next_tools).toEqual(expect.arrayContaining(['workflow.search']))
   })
+
+  test('builds BTF inventory without invoking libbpf, bpftool, or kernel verifier', () => {
+    const inventory = buildBtfInventoryFromBuffer(btfFixture(), {
+      filename: 'vmlinux.btf',
+    })
+
+    expect(inventory.format).toBe('btf')
+    expect(inventory.btf).toEqual(
+      expect.objectContaining({
+        decode_status: 'parsed',
+        type_count: 2,
+        kind_counts: expect.objectContaining({ INT: 1, STRUCT: 1 }),
+      })
+    )
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_libbpf: true,
+        no_bpftool: true,
+        no_kernel_verifier_run: true,
+        no_program_load: true,
+      })
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining(['ebpf.bytecode.inventory', 'analysis.evidence.graph'])
+    )
+  })
 })
 
 describe('passive Windows and managed format inventory', () => {
@@ -1059,6 +1114,7 @@ describe('built-in plugin format matrix discovery', () => {
     const jvm = plugins.find((plugin) => plugin.id === 'jvm')
     const wasm = plugins.find((plugin) => plugin.id === 'wasm')
     const bytecode = plugins.find((plugin) => plugin.id === 'bytecode')
+    const btf = plugins.find((plugin) => plugin.id === 'btf')
     const ebpfBytecode = plugins.find((plugin) => plugin.id === 'ebpf-bytecode')
     const llvmBitcode = plugins.find((plugin) => plugin.id === 'llvm-bitcode')
     const windowsInstaller = plugins.find((plugin) => plugin.id === 'windows-installer')
@@ -1094,6 +1150,10 @@ describe('built-in plugin format matrix discovery', () => {
     expect(bytecode?.tools?.map((tool) => tool.definition.name)).toContain(
       'bytecode.metadata.inspect'
     )
+    expect(btf?.aspects?.formats).toEqual(
+      expect.arrayContaining(['btf', 'btf-ext', 'btf-elf', 'core-relocations'])
+    )
+    expect(btf?.tools?.map((tool) => tool.definition.name)).toContain('btf.type.inventory')
     expect(ebpfBytecode?.aspects?.formats).toEqual(
       expect.arrayContaining(['ebpf', 'bpf', 'raw-ebpf', 'ebpf-elf'])
     )
@@ -1184,6 +1244,7 @@ describe('built-in plugin format matrix discovery', () => {
     const apkSmali = requirePlugin(plugins, 'apk-smali')
     const firmware = requirePlugin(plugins, 'firmware')
     const nativeObject = requirePlugin(plugins, 'native-object')
+    const btf = requirePlugin(plugins, 'btf')
     const ebpfBytecode = requirePlugin(plugins, 'ebpf-bytecode')
     const llvmBitcode = requirePlugin(plugins, 'llvm-bitcode')
     const androidPackage = requirePlugin(plugins, 'android-package')
@@ -1205,6 +1266,9 @@ describe('built-in plugin format matrix discovery', () => {
     expect(firmware.aspects?.formats).toEqual(expect.arrayContaining(['cpio', 'squashfs', 'ubi']))
     expect(nativeObject.aspects?.formats).toEqual(
       expect.arrayContaining(['object', 'static-lib', 'linux-kernel-module'])
+    )
+    expect(btf.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['btf-type-inventory', 'core-relocation-inventory'])
     )
     expect(androidPackage.aspects?.formats).toEqual(
       expect.arrayContaining(['android-package', 'apk', 'dex', 'apk-signature'])
@@ -1272,6 +1336,22 @@ describe('built-in plugin format matrix discovery', () => {
       formats: ['object', 'ar-static-lib', 'linux-kernel-module'],
       artifacts: ['native_object_inventory'],
       evidence: ['structure', 'symbols'],
+    })
+    expectToolMetadata(btf, 'btf.type.inventory', {
+      formats: ['btf', 'btf-ext', 'btf-elf', 'core-relocations'],
+      artifacts: ['btf_type_inventory'],
+      evidence: ['structure', 'types', 'metadata', 'relocations', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'btf',
+      toolName: 'btf.type.inventory',
+      recipeId: 'btf.type-core-inventory',
+      startsWith: ['btf.type.inventory'],
+      nextTools: ['ebpf.bytecode.inventory', 'native.object.inventory', 'linux.runtime.plan'],
+      producesArtifacts: ['btf_type_inventory'],
+      evidence: ['types', 'relocations', 'workflow'],
+      safety: ['no_bpf_syscall', 'no_kernel_verifier_run', 'no_program_load', 'no_libbpf'],
+      runtimeBackends: ['linux-runtime'],
     })
     expectToolMetadata(ebpfBytecode, 'ebpf.bytecode.inventory', {
       formats: ['ebpf', 'bpf', 'raw-ebpf', 'ebpf-elf'],
