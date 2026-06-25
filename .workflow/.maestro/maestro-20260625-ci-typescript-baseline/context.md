@@ -22,6 +22,7 @@ PR: https://github.com/Last-emo-boy/rikune/pull/43
 - `npm test -- --runInBand --forceExit --runTestsByPath tests/unit/kb-collaboration-metadata.test.ts tests/unit/plugin-format-matrix.test.ts tests/unit/cross-decompiler-consensus.test.ts tests/unit/plugin-contracts.test.ts` passed: 4 suites, 41 tests.
 - `npm test -- --runInBand --forceExit --runTestsByPath tests/unit/attack-map.test.ts` passed: 1 suite, 6 tests.
 - `npm test -- --runInBand --forceExit --testPathPatterns="tests/unit/" --silent --json --outputFile=tests/temp/full-unit-results.json` passed.
+- `npm run test:node` passed: 11 node integration smoke tests.
 - `git diff --check` passed.
 - `npm run lint` passed after formatting the repository lint baseline.
 
@@ -31,3 +32,4 @@ PR: https://github.com/Last-emo-boy/rikune/pull/43
 - `managed.fake_c2` keeps the Python worker handler in the runtime contract as a string literal so the runtime contract guard can verify it.
 - `code-analysis` cross-decompiler discovery test now expects `runtime_opt_in_required`, matching the plugin runtime policy without exposing the hidden tool surface automatically.
 - Slow Windows discovery and ATT&CK mapping tests have explicit timeout budgets that match observed full-suite runtime.
+- Node integration smoke tests now expect `code.function.cfg` as a specialist surface and `workflow.summarize` as a compatibility surface, matching `tool-surface-guidance`.

@@ -2,7 +2,7 @@
   "session_id": "maestro-20260625-ci-typescript-baseline",
   "source": "maestro",
   "created_at": "2026-06-25T23:18:00+08:00",
-  "updated_at": "2026-06-26T00:25:00+08:00",
+  "updated_at": "2026-06-26T00:41:00+08:00",
   "intent": "Repair shared TypeScript build baseline blocking feature PR validate jobs",
   "task_type": "debug",
   "chain_name": "quality-fix",
@@ -42,6 +42,12 @@
       "steps": ["ci-full-unit-baseline"],
       "status": "completed",
       "summary": "Repaired full-unit failures in workflow recipe metadata, runtime contract guard coverage, cross-decompiler readiness expectations, and slow Windows test budgets."
+    },
+    {
+      "wave_n": 5,
+      "steps": ["node-integration-baseline"],
+      "status": "completed",
+      "summary": "Aligned node integration smoke tests with the current progressive tool surface roles for specialist CFG and compatibility summary workflows."
     }
   ],
   "steps": [
