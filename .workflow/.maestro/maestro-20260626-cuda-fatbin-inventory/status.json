@@ -12,7 +12,11 @@
     "diff_check": "passed",
     "lint": "passed",
     "build": "passed",
-    "pr": "pending"
+    "pr": "created"
+  },
+  "pr": {
+    "number": 44,
+    "url": "https://github.com/Last-emo-boy/rikune/pull/44"
   },
   "verification_commands": [
     "npm test -- --runInBand --forceExit --runTestsByPath tests/unit/cuda-binary-inventory.test.ts tests/unit/packages/plugin-sdk.test.ts tests/unit/workflow-search.test.ts tests/unit/plugin-format-matrix.test.ts",
