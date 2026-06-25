@@ -514,6 +514,84 @@ describe('workflow.search', () => {
     expect(surface.isToolVisible('jsvmp.bytecode.recover')).toBe(false)
   })
 
+  test('routes CUDA binary file profiles to hidden static GPU inventory without runtime opt-in', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [
+      {
+        id: 'cuda-binary-search-test',
+        name: 'CUDA Binary Search Test',
+        description: 'Static CUDA PTX CUBIN fatbin GPU kernel inventory',
+        aspects: {
+          formats: ['cuda', 'ptx', 'cubin', 'fatbin', 'sass'],
+          platforms: ['cuda', 'cross-platform'],
+          execution: ['static'],
+          capabilities: ['cuda-artifact-inventory', 'gpu-kernel-summary', 'culifter-handoff'],
+          evidence: ['structure', 'symbols', 'workflow'],
+        },
+        surfaceRules: {
+          tier: 2,
+          category: 'reverse-engineering',
+          activateOn: { fileTypes: ['cuda', 'ptx', 'cubin', 'fatbin'] },
+        },
+        tools: [
+          {
+            definition: {
+              name: 'cuda.binary.inventory',
+              description: 'Static CUDA binary inventory',
+              inputSchema: z.object({ sample_id: z.string() }),
+              aspects: {
+                formats: ['cuda', 'ptx', 'cubin', 'fatbin'],
+                execution: ['static'],
+                capabilities: ['cuda-artifact-inventory', 'gpu-kernel-summary'],
+                safety: ['passive', 'no_cuda_driver', 'no_gpu_access'],
+              },
+              workflowRecipes: [
+                {
+                  id: 'cuda.binary.static-inventory-handoff',
+                  title: 'CUDA binary inventory',
+                  startsWith: ['cuda.binary.inventory'],
+                  nextTools: ['culifter.gpu.plan', 'native.object.inventory'],
+                  evidence: ['structure', 'symbols', 'workflow'],
+                  safety: ['passive', 'no_cuda_driver', 'no_gpu_access'],
+                },
+              ],
+            },
+            handler: async () => ({ ok: true }),
+          },
+        ],
+      },
+    ]
+    surface.registerGatewayCoreTools(['workflow.search'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      file_type: 'CUDA-PTX',
+      query: 'gpu kernel ptx inventory',
+      goal: 'reverse',
+      top_k: 3,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining(['cuda-ptx', 'ptx', 'cuda', 'gpu', 'sass'])
+    )
+    const cudaResult = data.results.find(
+      (item: any) => item.plugin_id === 'cuda-binary-search-test'
+    )
+    expect(cudaResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining(['cuda.binary.inventory']),
+      })
+    )
+    expect(cudaResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(surface.isToolVisible('cuda.binary.inventory')).toBe(false)
+  })
+
   test('preserves one result per search profile lane when topK is constrained', async () => {
     resetSurfaceForTest()
     const surface = getToolSurfaceManager()

@@ -22,6 +22,7 @@ import { buildNativeObjectInventoryFromBuffer } from '../../src/plugins/native-o
 import { buildAndroidPackageInventoryFromBuffer } from '../../src/plugins/android-package/tools/android-package-inventory.js'
 import { buildAppleSigningInspectFromBuffer } from '../../src/plugins/apple-signing/tools/apple-signing-inspect.js'
 import { buildLinuxBinaryInventoryFromBuffer } from '../../src/plugins/linux-binary/tools/linux-binary-inventory.js'
+import { buildCudaBinaryInventoryFromBuffer } from '../../src/plugins/cuda-binary/tools/cuda-binary-inventory.js'
 import {
   buildPluginAspectMatrix,
   buildToolAspectSummary,
@@ -347,6 +348,21 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(elfFixture(3), 'libdemo.so')).toBe('ELF-SO')
     expect(detectFileType(elfFixture(4), 'core.123')).toBe('ELF-Core')
     expect(detectFileType(Buffer.from([0x00, 0x61, 0x73, 0x6d]), 'module.wasm')).toBe('WASM')
+  })
+
+  test('detects CUDA PTX, CUBIN, and fatbin formats without masking host binaries', () => {
+    const ptx = Buffer.from(
+      '.version 8.1\n.target sm_90\n.address_size 64\n.visible .entry _Z6kernelv() {}\n',
+      'utf8'
+    )
+    const cubin = elfFixture(1, 190)
+    const host = Buffer.concat([Buffer.from('MZ'), Buffer.from('__cudaRegisterFatBinary')])
+
+    expect(detectFileType(ptx, 'kernel.ptx')).toBe('CUDA-PTX')
+    expect(detectFileType(ptx, 'kernel.txt')).toBe('CUDA-PTX')
+    expect(detectFileType(cubin, 'kernel.cubin')).toBe('CUDA-CUBIN')
+    expect(detectFileType(Buffer.from('__cudaFatCubin'), 'bundle.fatbin')).toBe('CUDA-Fatbin')
+    expect(detectFileType(host, 'host.exe')).toBe('PE')
   })
 
   test('detects JVM archives/classes and script bytecode formats', () => {
@@ -724,6 +740,36 @@ describe('passive bytecode and portable runtime inventory', () => {
     expect(inventory.version_hints).toEqual(expect.arrayContaining(['CPython 3.11']))
     expect(inventory.string_hints).toContain('module.path')
   })
+
+  test('builds CUDA binary inventory without starting CUDA tools or GPU drivers', () => {
+    const inventory = buildCudaBinaryInventoryFromBuffer(
+      Buffer.from(
+        '.version 8.1\n.target sm_90\n.address_size 64\n.visible .entry _Z6kernelv() {}\n',
+        'utf8'
+      ),
+      { filename: 'kernel.ptx' }
+    )
+
+    expect(inventory.format).toBe('ptx')
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_execute: true,
+        no_cuda_driver: true,
+        no_gpu_access: true,
+        no_external_tool: true,
+      })
+    )
+    expect(inventory.target_arches).toEqual(
+      expect.arrayContaining([expect.objectContaining({ value: 'sm_90' })])
+    )
+    expect(inventory.kernels).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: '_Z6kernelv' })])
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining(['culifter.gpu.plan', 'culifter.gpu.artifact.inventory'])
+    )
+  })
 })
 
 describe('passive Windows and managed format inventory', () => {
@@ -994,6 +1040,7 @@ describe('built-in plugin format matrix discovery', () => {
     const androidPackage = plugins.find((plugin) => plugin.id === 'android-package')
     const appleSigning = plugins.find((plugin) => plugin.id === 'apple-signing')
     const linuxBinary = plugins.find((plugin) => plugin.id === 'linux-binary')
+    const cudaBinary = plugins.find((plugin) => plugin.id === 'cuda-binary')
 
     expect(linuxPackage?.aspects?.formats).toEqual(
       expect.arrayContaining(['deb', 'rpm', 'apk-alpine', 'appimage'])
@@ -1077,6 +1124,12 @@ describe('built-in plugin format matrix discovery', () => {
     expect(linuxBinary?.tools?.map((tool) => tool.definition.name)).toContain(
       'linux.binary.inventory'
     )
+    expect(cudaBinary?.aspects?.formats).toEqual(
+      expect.arrayContaining(['cuda', 'ptx', 'cubin', 'fatbin', 'sass'])
+    )
+    expect(cudaBinary?.tools?.map((tool) => tool.definition.name)).toContain(
+      'cuda.binary.inventory'
+    )
   }, 30_000)
 
   test('discovers native reverse engineering adapters with tool-level metadata', async () => {
@@ -1094,6 +1147,7 @@ describe('built-in plugin format matrix discovery', () => {
     const linuxBinary = requirePlugin(plugins, 'linux-binary')
     const codeAnalysis = requirePlugin(plugins, 'code-analysis')
     const apiHash = requirePlugin(plugins, 'api-hash')
+    const cudaBinary = requirePlugin(plugins, 'cuda-binary')
 
     expect(ghidra.aspects?.formats).toEqual(expect.arrayContaining(['pe', 'elf', 'macho']))
     expect(rizin.aspects?.formats).toEqual(expect.arrayContaining(['pe', 'elf', 'macho']))
@@ -1118,6 +1172,9 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(codeAnalysis.aspects?.capabilities).toEqual(
       expect.arrayContaining(['cross-decompiler-consensus', 'ir-comparison'])
+    )
+    expect(cudaBinary.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['cuda-artifact-inventory', 'culifter-handoff'])
     )
 
     expectToolMetadata(ghidra, 'ghidra.analyze', {
@@ -1189,6 +1246,11 @@ describe('built-in plugin format matrix discovery', () => {
       formats: ['pe', 'shellcode', 'raw-bytes'],
       artifacts: ['api_hash_resolver_plan'],
       evidence: ['imports', 'strings', 'shellcode', 'workflow', 'provenance'],
+    })
+    expectToolMetadata(cudaBinary, 'cuda.binary.inventory', {
+      formats: ['cuda', 'ptx', 'cubin', 'fatbin'],
+      artifacts: ['cuda_binary_inventory', 'cuda_kernel_summary'],
+      evidence: ['structure', 'symbols', 'strings', 'workflow', 'provenance'],
     })
     expectWorkflowRecipeMetadata(plugins, {
       pluginId: 'code-analysis',
@@ -2153,6 +2215,16 @@ describe('built-in plugin format matrix discovery', () => {
         producesArtifacts: ['culifter_gpu_plan', 'sass_lift_plan'],
         evidence: ['structure', 'symbols', 'imports', 'exports', 'workflow', 'provenance'],
         safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'cuda-binary',
+        toolName: 'cuda.binary.inventory',
+        recipeId: 'cuda.binary.static-inventory-handoff',
+        startsWith: ['cuda.binary.inventory'],
+        nextTools: ['culifter.gpu.plan', 'native.object.inventory', 'linux.binary.inventory'],
+        producesArtifacts: ['cuda_binary_inventory', 'cuda_kernel_summary'],
+        evidence: ['structure', 'symbols', 'strings', 'workflow', 'provenance'],
+        safety: ['passive', 'no_cuda_driver', 'no_gpu_access', 'no_external_tool'],
       },
     ]
 

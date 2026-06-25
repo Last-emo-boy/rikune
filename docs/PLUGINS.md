@@ -21,7 +21,7 @@ A plugin can:
 
 ## Built-In Plugins
 
-The repository currently contains 93 built-in plugins.
+The repository currently contains 94 built-in plugins.
 
 | ID | Name | Domain | Surface tier |
 | --- | --- | --- | --- |
@@ -43,6 +43,7 @@ The repository currently contains 93 built-in plugins.
 | `crackme` | CrackMe Automation | static | 3 |
 | `cross-module` | Cross-Module Analysis | static | 2 |
 | `culifter` | CuLifter GPU Plan | static | 3 |
+| `cuda-binary` | CUDA Binary Inventory | static | 2 |
 | `debug-session` | Debug Session | dynamic | 3 |
 | `deep-unpack` | Deep Unpack | static | 2 |
 | `die` | Detect It Easy | static | 0 |
@@ -304,6 +305,7 @@ emulators, or attach debuggers.
 | `qbdi.dbi.opt-in-plan` | `qbdi` | `qbdi.instrumentation.plan` | `windows.runtime.plan`, `linux.runtime.plan`, `macos.runtime.plan`, `dynamic.runtime.status` | Plan-only DBI handoff; no QBDI load, process launch, instrumentation injection, debugger attach, or live execution. |
 | `manifold.superset.decompilation-plan` | `manifold` | `manifold.decompilation.plan` | `revng.pipeline.plan`, `gtirb.ir.plan`, `miasm.ir.plan`, `analysis.evidence.graph` | Plan-only superset-decompilation workflow; no decompiler, fact engine, lifter, solver, or network. |
 | `culifter.gpu.lift-plan` | `culifter` | `culifter.gpu.plan` | `linux.binary.inventory`, `native.object.inventory`, `strings.extract`, `sbom.provenance.graph` | Plan-only GPU binary lifting workflow; no GPU driver, profiler, emulator, lifter, or sample execution. |
+| `cuda.binary.static-inventory-handoff` | `cuda-binary` | `cuda.binary.inventory` | `culifter.gpu.plan`, `culifter.gpu.artifact.inventory`, `native.object.inventory`, `linux.binary.inventory`, `strings.extract`, `sbom.provenance.graph`, `analysis.evidence.graph` | Passive CUDA/PTX/CUBIN/fatbin inventory; no CUDA driver, GPU access, cuobjdump, nvdisasm, profiler, or sample execution. |
 | `wabt.wasm.toolchain-plan` | `wabt` | `wabt.toolchain.plan` | `strings.extract`, `sbom.generate`, `wasm.runtime.plan`, `analysis.evidence.graph` | Plan-only WABT toolchain routing; no wasm2wat/wasm-objdump process, module instantiation, WASI grant, or network. |
 
 ## Advanced Safety Categories
@@ -391,7 +393,7 @@ The current plugin matrix is organized by `formats`, `platforms`, `execution`, `
 | Android APK, AAB, APKS, XAPK, DEX/OAT/VDEX, AAR | `android-package`, `android`, `apk-smali`, `jvm`, `linux-binary` | `android-runtime`, `frida`, `behavior-first` | No emulator start, ADB install, APK launch, frida-server deployment, or device connection by default. |
 | JVM, .NET, Unity, script bytecode | `jvm`, `dotnet-managed`, `dotnet-decompile`, `unity-managed`, `bytecode`, `strings` | `managed-sandbox`, `runtime-deobfuscate`, `behavior-first` | Runtime work is opt-in and delegated; metadata and bytecode inventory stay passive. |
 | JavaScript, Node/browser bundles, source maps, JSVMP-like obfuscation | `javascript-deobfuscation`, `jsvmp-analysis`, `jsimplifier`, `jsir-cascade`, `restringer`, `strings`, `yara`, `yara-x`, `bytecode` | Worker-backed REstringer, JSIMPLIFIER, and JSIR/CASCADE tools remain explicit backend surfaces with builtin safe mode | No JavaScript evaluation, Node/V8 start, browser automation, dynamic trace, LLM call, network lookup, or external deobfuscator invocation by default. |
-| Advanced native lifting, symbolic execution, IR, and backend comparison workflows | `revng`, `triton`, `miasm`, `lief`, `radare2`, `remill`, `gtirb`, `manifold`, `culifter`, `vm-analysis`, `rizin`, `ghidra`, `retdec` | Worker-backed GTIRB, Remill, Manifold, QBDI, and CuLifter surfaces are bounded and readiness-gated; runtime/emulation remains opt-in | Discovery/readiness/help/list paths emit backend plans and readiness metadata only; no heavy backend process, solver, emulator, fact engine, binary mutation, GPU access, or sample execution starts during discovery. |
+| Advanced native lifting, symbolic execution, IR, GPU artifacts, and backend comparison workflows | `revng`, `triton`, `miasm`, `lief`, `radare2`, `remill`, `gtirb`, `manifold`, `cuda-binary`, `culifter`, `vm-analysis`, `rizin`, `ghidra`, `retdec` | Worker-backed GTIRB, Remill, Manifold, QBDI, and CuLifter surfaces are bounded and readiness-gated; runtime/emulation remains opt-in | Discovery/readiness/help/list paths emit backend plans and readiness metadata only; no heavy backend process, solver, emulator, fact engine, binary mutation, CUDA driver, GPU access, or sample execution starts during discovery. |
 | Firmware, containers, archives, native objects | `firmware`, `container-analysis`, `native-object`, `linux-package`, `windows-installer` | `qiling`, `linux-runtime`, `wasm-runtime` when applicable | No mount, extraction-to-execute path, package install, module insertion, or payload launch by default. |
 | WASM/WASI | `wasm`, `wabt`, `strings`, `sbom` | `wasm-runtime` | No module instantiation, WABT process, wasmtime start, filesystem preopen, or network grant by default. |
 | Network, host, memory, reports | `pcap-analysis`, `host-correlation`, `memory-forensics`, `visualization`, `reporting` | `behavior-first`, `dynamic.behavior.diff`, `analysis.evidence.graph` | Correlation tools operate on existing artifacts and do not start live collection. |

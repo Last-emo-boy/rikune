@@ -134,6 +134,15 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS.apks).toEqual(expect.arrayContaining(['android', 'split-apk']))
     expect(SURFACE_FILE_TYPE_TAGS.ipa).toEqual(expect.arrayContaining(['ios', 'macho']))
     expect(SURFACE_FILE_TYPE_TAGS.wasm).toContain('wasi')
+    expect(SURFACE_FILE_TYPE_TAGS['cuda-ptx']).toEqual(
+      expect.arrayContaining(['ptx', 'cuda', 'gpu', 'sass'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['cuda-cubin']).toEqual(
+      expect.arrayContaining(['cubin', 'cuda', 'gpu', 'sass', 'elf'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['cuda-fatbin']).toEqual(
+      expect.arrayContaining(['fatbin', 'cuda', 'gpu', 'ptx', 'cubin'])
+    )
   })
 
   test('aspect helpers normalize, describe, and match sample profiles', () => {
@@ -464,9 +473,9 @@ describe('@rikune/plugin-sdk', () => {
         'missing-runtime-policy',
       ])
     )
-    expect(warnings.every((warning) => warning.severity === 'info' || warning.severity === 'warning')).toBe(
-      true
-    )
+    expect(
+      warnings.every((warning) => warning.severity === 'info' || warning.severity === 'warning')
+    ).toBe(true)
     expect(warnings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
