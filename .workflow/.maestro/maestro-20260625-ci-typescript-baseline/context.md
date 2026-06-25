@@ -4,6 +4,8 @@
 
 This session repaired the shared TypeScript build baseline that was blocking validate jobs for feature PRs based on `beta-minimize-tool-surface`.
 
+PR: https://github.com/Last-emo-boy/rikune/pull/43
+
 ## Root Causes
 
 - `@rikune/plugin-sdk` exposed manifest types directly from passthrough Zod schemas, causing fields to become `unknown` under strict package builds.
