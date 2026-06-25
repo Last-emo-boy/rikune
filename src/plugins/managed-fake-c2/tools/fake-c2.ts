@@ -27,8 +27,6 @@ import {
 } from '../managed-fake-c2-metadata.js'
 
 const TOOL_NAME = MANAGED_FAKE_C2_TOOL_NAME
-const WORKER_HANDLER = 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py'
-
 export const FAKE_C2_ARTIFACT_TYPES = MANAGED_FAKE_C2_ARTIFACT_TYPES
 
 type FakeC2RuntimePolicy = NonNullable<ToolDefinition['runtimePolicy']> & {
@@ -325,7 +323,7 @@ export const fakeC2ToolDefinition: ToolDefinition = {
   runtimePolicy: FAKE_C2_RUNTIME_POLICY,
   runtime: {
     type: 'python-worker',
-    handler: WORKER_HANDLER,
+    handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
   },
   workerBackend: FAKE_C2_WORKER_BACKEND,
 }

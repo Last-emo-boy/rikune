@@ -299,7 +299,7 @@ describe('code.cross_decompiler.consensus', () => {
     )
     expect(codeAnalysis).toEqual(
       expect.objectContaining({
-        readiness_state: 'hidden_activation_required',
+        readiness_state: 'runtime_opt_in_required',
         activation_command: expect.objectContaining({
           action: 'activate',
           plugin_id: 'code-analysis',

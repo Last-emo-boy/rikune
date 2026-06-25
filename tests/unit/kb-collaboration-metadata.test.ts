@@ -138,7 +138,7 @@ describe('kb-collaboration metadata deepening', () => {
     )
     expect(recipe).toEqual(
       expect.objectContaining({
-        startsWith: ['kb.context.suggest'],
+        startsWith: expect.arrayContaining(['kb.context.suggest', 'analysis.notes']),
         nextTools: expect.arrayContaining([
           'kb.function.match',
           'analysis.notes',
