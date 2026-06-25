@@ -150,7 +150,13 @@ describe('@rikune/plugin-sdk', () => {
       expect.arrayContaining(['ebpf', 'bpf', 'ebpf-bytecode', 'linux', 'bytecode'])
     )
     expect(SURFACE_FILE_TYPE_TAGS['ebpf-elf']).toEqual(
-      expect.arrayContaining(['ebpf', 'bpf', 'elf', 'linux', 'object'])
+      expect.arrayContaining(['ebpf', 'bpf', 'elf', 'linux', 'object', 'btf'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.btf).toEqual(
+      expect.arrayContaining(['btf', 'bpf-btf', 'ebpf', 'linux', 'types'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['btf-ext']).toEqual(
+      expect.arrayContaining(['btf-ext', 'btf', 'core-relocations', 'co-re'])
     )
     expect(SURFACE_FILE_TYPE_TAGS.bc).toEqual(
       expect.arrayContaining(['bc', 'llvm-bc', 'llvm-bitcode', 'llvm-ir'])

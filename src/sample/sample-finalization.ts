@@ -105,6 +105,15 @@ export function detectFileType(data: Buffer, filename?: string): string {
     return 'LLVM-Bitcode-Wrapper'
   }
 
+  if (
+    data.length >= 24 &&
+    ((data[0] === 0x9f && data[1] === 0xeb) || (data[0] === 0xeb && data[1] === 0x9f)) &&
+    data[2] === 1
+  ) {
+    if (extension === 'ext' && basename.endsWith('.btf.ext')) return 'BTF-Ext'
+    return 'BTF'
+  }
+
   if (extension === 'mobileprovision') {
     return 'MobileProvision'
   }
