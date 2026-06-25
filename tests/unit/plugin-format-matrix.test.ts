@@ -20,6 +20,7 @@ import { buildWindowsDebugMetadataFromBuffer } from '../../src/plugins/windows-d
 import { buildDotnetAssemblyInventoryFromBuffer } from '../../src/plugins/dotnet-managed/tools/dotnet-assembly-inspect.js'
 import { buildUnityMetadataInventoryFromBuffer } from '../../src/plugins/unity-managed/tools/unity-metadata-inspect.js'
 import { buildContainerStructureFromBuffer } from '../../src/plugins/container-analysis/tools/container-structure-analyze.js'
+import { buildContainerImageSecurityProfileFromBuffer } from '../../src/plugins/container-analysis/tools/container-image-security-profile.js'
 import { buildNativeObjectInventoryFromBuffer } from '../../src/plugins/native-object/tools/native-object-inventory.js'
 import { buildAndroidPackageInventoryFromBuffer } from '../../src/plugins/android-package/tools/android-package-inventory.js'
 import { buildAppleSigningInspectFromBuffer } from '../../src/plugins/apple-signing/tools/apple-signing-inspect.js'
@@ -85,6 +86,41 @@ function tarFixture(entries: string[]): Buffer {
   }
   blocks.push(Buffer.alloc(1024))
   return Buffer.concat(blocks)
+}
+
+function tarDataEntry(name: string, data = Buffer.alloc(0), mode = 0o644, typeflag = '0'): Buffer {
+  const header = Buffer.alloc(512)
+  header.write(name, 0, Math.min(Buffer.byteLength(name), 100), 'utf8')
+  header.write(mode.toString(8).padStart(7, '0') + '\0', 100, 'ascii')
+  header.write('0000000\0', 108, 'ascii')
+  header.write('0000000\0', 116, 'ascii')
+  header.write(data.length.toString(8).padStart(11, '0') + '\0', 124, 'ascii')
+  header.write('00000000000\0', 136, 'ascii')
+  header[156] = typeflag.charCodeAt(0)
+  header.write('ustar\0', 257, 'ascii')
+  header.write('00', 263, 'ascii')
+  header.fill(0x20, 148, 156)
+  let checksum = 0
+  for (const byte of header) checksum += byte
+  header.write(checksum.toString(8).padStart(6, '0'), 148, 'ascii')
+  header[154] = 0
+  header[155] = 0x20
+  return Buffer.concat([header, data, Buffer.alloc((512 - (data.length % 512)) % 512)])
+}
+
+function tarDataFixture(
+  entries: Array<{ name: string; data?: Buffer; mode?: number; typeflag?: string }>
+): Buffer {
+  return Buffer.concat([
+    ...entries.map((entry) =>
+      tarDataEntry(entry.name, entry.data ?? Buffer.alloc(0), entry.mode ?? 0o644, entry.typeflag ?? '0')
+    ),
+    Buffer.alloc(1024),
+  ])
+}
+
+function jsonFixture(value: unknown): Buffer {
+  return Buffer.from(JSON.stringify(value), 'utf8')
 }
 
 function isoFixture(): Buffer {
@@ -1057,8 +1093,54 @@ describe('passive generic container inventory', () => {
     expect(docker.policy.no_entrypoint_run).toBe(true)
     expect(docker.risk_flags).toContain('container-entrypoint-not-run')
     expect(docker.entrypoint_candidates).toContain('bin/entrypoint.sh')
+    expect(docker.recommended_next_tools).toContain('container.image.security.profile')
     expect(oci.container_format).toBe('oci-image')
     expect(oci.policy.no_mount).toBe(true)
+    expect(oci.recommended_next_tools).toContain('container.image.security.profile')
+  })
+
+  test('builds Docker image security profile without registry, daemon, mount, or entrypoint execution', () => {
+    const layer = tarDataFixture([{ name: 'usr/bin/helper', mode: 0o4755 }])
+    const image = tarDataFixture([
+      {
+        name: 'manifest.json',
+        data: jsonFixture([{ Config: 'config.json', RepoTags: ['demo:latest'], Layers: ['layer.tar'] }]),
+      },
+      {
+        name: 'config.json',
+        data: jsonFixture({
+          architecture: 'amd64',
+          os: 'linux',
+          config: {
+            Env: ['PATH=/usr/bin'],
+            Entrypoint: ['/bin/sh', '-c', 'run'],
+            ExposedPorts: { '80/tcp': {} },
+          },
+          rootfs: { type: 'layers', diff_ids: ['sha256:diff'] },
+        }),
+      },
+      { name: 'layer.tar', data: layer },
+    ])
+
+    const profile = buildContainerImageSecurityProfileFromBuffer(image, { filename: 'image.tar' })
+
+    expect(profile.image_format).toBe('docker-image')
+    expect(profile.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_registry_network: true,
+        no_docker_daemon: true,
+        no_layer_extract: true,
+        no_mount: true,
+        no_entrypoint_run: true,
+      })
+    )
+    expect(profile.risk_flags).toEqual(
+      expect.arrayContaining(['root-user-default', 'shell-entrypoint', 'suid-files'])
+    )
+    expect(profile.recommended_next_tools).toEqual(
+      expect.arrayContaining(['container.structure.analyze', 'sbom.provenance.graph'])
+    )
   })
 })
 
@@ -1199,8 +1281,8 @@ describe('built-in plugin format matrix discovery', () => {
         'oci-image',
       ])
     )
-    expect(containerAnalysis?.tools?.map((tool) => tool.definition.name)).toContain(
-      'container.structure.analyze'
+    expect(containerAnalysis?.tools?.map((tool) => tool.definition.name)).toEqual(
+      expect.arrayContaining(['container.structure.analyze', 'container.image.security.profile'])
     )
     expect(nativeObject?.aspects?.formats).toEqual(
       expect.arrayContaining(['object', 'ar-static-lib', 'elf-object', 'linux-kernel-module'])
@@ -1901,6 +1983,29 @@ describe('built-in plugin format matrix discovery', () => {
         producesArtifacts: ['sbom_provenance_graph'],
         evidence: ['sbom', 'package-metadata', 'nested-binaries', 'provenance'],
         safety: ['passive', 'no_installer_execution', 'no_auto_mount', 'no_network_by_default'],
+      },
+      {
+        pluginId: 'container-analysis',
+        toolName: 'container.image.security.profile',
+        recipeId: 'container.image-security-profile',
+        startsWith: ['container.image.security.profile', 'container.structure.analyze'],
+        nextTools: [
+          'container.structure.analyze',
+          'sbom.provenance.graph',
+          'sbom.generate',
+          'analysis.evidence.graph',
+          'report.generate',
+        ],
+        producesArtifacts: ['container_image_security_profile'],
+        evidence: ['filesystem', 'package-metadata', 'provenance', 'workflow', 'sbom'],
+        safety: [
+          'passive',
+          'no_network_by_default',
+          'no_installer_execution',
+          'no_auto_mount',
+          'no_live_sample_by_default',
+          'no_mutation',
+        ],
       },
       {
         pluginId: 'android',

@@ -11,6 +11,10 @@ import {
   containerStructureAnalyzeToolDefinition,
   createContainerStructureAnalyzeHandler,
 } from './tools/container-structure-analyze.js'
+import {
+  containerImageSecurityProfileToolDefinition,
+  createContainerImageSecurityProfileHandler,
+} from './tools/container-image-security-profile.js'
 
 const containerAnalysisPlugin = definePlugin({
   id: 'container-analysis',
@@ -38,7 +42,7 @@ const containerAnalysisPlugin = definePlugin({
     platforms: ['windows', 'linux', 'macos', 'ios', 'android', 'embedded', 'cross-platform'],
     architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
     execution: ['static', 'triage'],
-    safety: ['passive', 'no_installer_execution', 'no_auto_mount', 'no_live_sample_by_default'],
+    safety: ['passive', 'no_network_by_default', 'no_installer_execution', 'no_auto_mount'],
     capabilities: ['inventory', 'nested-binaries', 'hashes', 'extraction-plan', 'routing'],
     evidence: ['nested-binaries', 'filesystem', 'package-metadata', 'provenance'],
   },
@@ -67,12 +71,16 @@ const containerAnalysisPlugin = definePlugin({
     category: 'static-analysis',
   },
   description:
-    'Passive archive/container inventory with nested binary routing and extraction safety plan.',
+    'Passive archive/container inventory, Docker/OCI image security profiling, nested binary routing, and extraction safety planning.',
   version: '1.0.0',
   tools: [
     defineTool({
       ...containerStructureAnalyzeToolDefinition,
       handler: (args, deps) => createContainerStructureAnalyzeHandler(deps)(args as never),
+    }),
+    defineTool({
+      ...containerImageSecurityProfileToolDefinition,
+      handler: (args, deps) => createContainerImageSecurityProfileHandler(deps)(args as never),
     }),
   ],
 })
