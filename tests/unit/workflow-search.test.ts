@@ -10,6 +10,7 @@ import { ToolExecutor } from '../../src/core/tool-executor.js'
 import { getToolSurfaceManager } from '../../src/core/tool-surface-manager.js'
 import type { Plugin } from '../../src/plugins/sdk.js'
 import btfPlugin from '../../src/plugins/btf/index.js'
+import containerAnalysisPlugin from '../../src/plugins/container-analysis/index.js'
 import ebpfBytecodePlugin from '../../src/plugins/ebpf-bytecode/index.js'
 import llvmBitcodePlugin from '../../src/plugins/llvm-bitcode/index.js'
 
@@ -707,6 +708,48 @@ describe('workflow.search', () => {
     )
     expect(btfResult.readiness_state).not.toBe('runtime_opt_in_required')
     expect(surface.isToolVisible('btf.type.inventory')).toBe(false)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
+  })
+
+  test('recommends passive container image security profile without gateway expansion', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [containerAnalysisPlugin]
+    surface.registerCoreTools([
+      'workflow.search',
+      'workflow.run',
+      'artifact.read',
+      'tools.discover',
+    ])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      query: 'container image static security profile root entrypoint secret env layer risks',
+      file_type: 'oci-image',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining(['oci-image', 'container', 'archive'])
+    )
+    const containerResult = data.results.find((item: any) => item.plugin_id === 'container-analysis')
+    expect(containerResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining([
+          'container.structure.analyze',
+          'container.image.security.profile',
+        ]),
+      })
+    )
+    expect(containerResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(data.search_profile.recommended_tools).toContain('container.image.security.profile')
+    expect(surface.isToolVisible('container.image.security.profile')).toBe(false)
     expect(surface.isToolVisible('tools.discover')).toBe(false)
   })
 

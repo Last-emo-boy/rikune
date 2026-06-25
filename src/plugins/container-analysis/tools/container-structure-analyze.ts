@@ -166,6 +166,7 @@ export const containerStructureAnalyzeToolDefinition: ToolDefinition = {
         'pe.structure.analyze',
         'elf.structure.analyze',
         'macho.structure.analyze',
+        'container.image.security.profile',
         'android.package.inventory',
         'apple.container.inventory',
         'firmware.workflow.plan',
@@ -816,6 +817,7 @@ export function buildContainerStructureFromBuffer(
     recommended_next_tools: unique([
       'metadata.extract',
       'strings.extract',
+      format === 'docker-image' || format === 'oci-image' ? 'container.image.security.profile' : '',
       'sbom.provenance.graph',
       'analysis.evidence.graph',
       'report.generate',

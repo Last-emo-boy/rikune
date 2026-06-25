@@ -41,7 +41,7 @@ The repository currently contains 97 built-in plugins.
 | `ebpf-bytecode` | eBPF Bytecode Inventory | static | 1 |
 | `capstone` | Capstone Disassembly | static | 2 |
 | `code-analysis` | Code Analysis | static | 0 |
-| `container-analysis` | Container / Archive Inventory | static | 1 |
+| `container-analysis` | Container / Archive Inventory | static | 2 |
 | `crackme` | CrackMe Automation | static | 3 |
 | `cross-module` | Cross-Module Analysis | static | 2 |
 | `culifter` | CuLifter GPU Plan | static | 3 |
@@ -268,6 +268,7 @@ emulators, or attach debuggers.
 | `android.runtime.opt-in` | `android-runtime` | `android.runtime.plan` | `dynamic.toolkit.status`, ADB/emulator/Frida tooling after approval | Plan-only; no install, launch, device connection, or Frida attach. |
 | `wasm.runtime.opt-in` | `wasm-runtime` | `wasm.runtime.plan` | `tool.readiness`, wasmtime tooling after approval | Plan-only; no module instantiation or WASI grant. |
 | `supply-chain.sbom.provenance` | `sbom` | `sbom.provenance.graph` | `sbom.generate`, `vuln.pattern.summary`, `report.generate` | Local inventories only; no install, mount, execute, or network lookup. |
+| `container.image-security-profile` | `container-analysis` | `container.image.security.profile` | `container.structure.analyze`, `sbom.provenance.graph`, `sbom.generate`, `analysis.evidence.graph`, `report.generate` | Passive Docker/OCI image config and layer-header profile only; no registry network, Docker daemon, image load, layer extraction, mount, package install, entrypoint, mutation, or CVE lookup. |
 | `android.static.behavior-graph` | `android` | `android.behavior.graph` | `dex.classes.list`, `android.runtime.plan` | Static graph only; no APK launch, device connection, or runtime start. |
 | `apple.security.runtime-profile` | `apple-signing` | `apple.security.profile` | `macho.structure.analyze`, `macos.runtime.plan`, `ios.runtime.plan` | Static profile only; no mount, install, keychain, codesign, or device action. |
 | `pe.security.hardening-profile` | `pe-analysis` | `pe.security.profile` | `pe.structure.analyze`, `pe.imports.extract`, `pe.pdata.extract`, `analysis.evidence.graph`, `windows.runtime.plan` | Static PE mitigation profile only; no DLL load, loader invocation, exploit test, network, or mutation. |
