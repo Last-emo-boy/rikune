@@ -314,7 +314,10 @@ function readCString(data: Buffer, offset: number, size: number): string | undef
   const end = Math.min(offset + size, data.length)
   const raw = data.subarray(offset, end)
   const nul = raw.indexOf(0)
-  const text = raw.subarray(0, nul >= 0 ? nul : raw.length).toString('utf8').trim()
+  const text = raw
+    .subarray(0, nul >= 0 ? nul : raw.length)
+    .toString('utf8')
+    .trim()
   return text.length > 0 ? text : undefined
 }
 
@@ -386,7 +389,9 @@ function readElfProgramHeaderProfile(data: Buffer): {
     const offset = phoff + index * phentsize
     if (offset + phentsize > data.length) break
     const type = readUInt32(data, offset, endian)
-    const flags = is64 ? readUInt32(data, offset + 4, endian) : readUInt32(data, offset + 24, endian)
+    const flags = is64
+      ? readUInt32(data, offset + 4, endian)
+      : readUInt32(data, offset + 24, endian)
     const segmentOffset = is64
       ? readUInt64Number(data, offset + 8, endian)
       : readUInt32(data, offset + 4, endian)
@@ -407,8 +412,7 @@ function readElfProgramHeaderProfile(data: Buffer): {
     dynamicSegmentPresent,
     relroCandidate,
     executableStackCandidate,
-    nxStackCandidate:
-      executableStackCandidate === null ? null : executableStackCandidate === false,
+    nxStackCandidate: executableStackCandidate === null ? null : executableStackCandidate === false,
   }
 }
 
@@ -531,7 +535,9 @@ function buildLoaderSecurityProfile(args: {
       : '',
     bindNowCandidate ? 'BIND_NOW marker candidate present in preview strings.' : '',
     canarySymbolCandidate ? 'Stack canary symbol candidate present.' : '',
-    pieCandidate === true ? 'ET_DYN binary may be PIE or shared object; confirm with ELF parser.' : '',
+    pieCandidate === true
+      ? 'ET_DYN binary may be PIE or shared object; confirm with ELF parser.'
+      : '',
   ])
 
   return {

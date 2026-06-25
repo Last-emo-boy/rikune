@@ -14,11 +14,7 @@ export const ToolSurfaceRoleSchema = z.enum(TOOL_SURFACE_ROLE_VALUES)
 
 export type ToolSurfaceRole = z.infer<typeof ToolSurfaceRoleSchema>
 
-const PRIMARY_TOOLS = new Set([
-  'artifact.read',
-  'workflow.search',
-  'workflow.run',
-])
+const PRIMARY_TOOLS = new Set(['artifact.read', 'workflow.search', 'workflow.run'])
 
 const EXPORT_ONLY_TOOLS = new Set(['report.generate'])
 

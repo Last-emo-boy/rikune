@@ -722,13 +722,19 @@ function buildNextActions(args: {
   ]
 
   if (args.techniqueCount === 0) {
-    actions.unshift('Gather richer strings, import, IOC, or runtime evidence before promoting ATT&CK coverage.')
+    actions.unshift(
+      'Gather richer strings, import, IOC, or runtime evidence before promoting ATT&CK coverage.'
+    )
   } else if (args.highConfidenceCount === 0) {
-    actions.unshift('Review low and medium confidence ATT&CK mappings before using them in reporting.')
+    actions.unshift(
+      'Review low and medium confidence ATT&CK mappings before using them in reporting.'
+    )
   }
 
   if (args.counterEvidenceCount > 0) {
-    actions.unshift('Review counter-evidence before promoting suppressed or low-confidence techniques.')
+    actions.unshift(
+      'Review counter-evidence before promoting suppressed or low-confidence techniques.'
+    )
   }
 
   if (args.capabilityClusterCount === 0 && args.classification !== 'benign') {
