@@ -1378,6 +1378,10 @@ export interface SurfaceRules {
  */
 export const SURFACE_FILE_TYPE_TAGS: Record<string, string[]> = {
   pe: ['pe', 'pe32', 'pe64', 'dll', 'exe', 'windows'],
+  pe32: ['pe32', 'pe', 'exe', 'windows'],
+  'pe32+': ['pe32+', 'pe32-plus', 'pe64', 'pe', 'exe', 'windows'],
+  'pe32-plus': ['pe32-plus', 'pe32+', 'pe64', 'pe', 'exe', 'windows'],
+  pe64: ['pe64', 'pe32-plus', 'pe32+', 'pe', 'exe', 'windows'],
   dll: ['pe', 'dll', 'windows'],
   exe: ['pe', 'exe', 'windows'],
   efi: ['efi', 'pe', 'windows', 'firmware'],

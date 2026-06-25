@@ -592,6 +592,84 @@ describe('workflow.search', () => {
     expect(surface.isToolVisible('cuda.binary.inventory')).toBe(false)
   })
 
+  test('routes PE hardening queries to the static security profile without runtime opt-in', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [
+      {
+        id: 'pe-security-search-test',
+        name: 'PE Security Search Test',
+        description: 'Static PE hardening mitigation exploitability profile',
+        aspects: {
+          formats: ['pe', 'exe', 'dll'],
+          platforms: ['windows'],
+          execution: ['static'],
+          capabilities: ['security-profile', 'hardening-assessment', 'exploitability-posture'],
+          evidence: ['structure', 'mitigations', 'sections', 'workflow'],
+        },
+        surfaceRules: {
+          tier: 1,
+          category: 'static-analysis',
+          activateOn: { fileTypes: ['pe', 'exe', 'dll'] },
+        },
+        tools: [
+          {
+            definition: {
+              name: 'pe.security.profile',
+              description: 'Static PE security hardening mitigation profile',
+              inputSchema: z.object({ sample_id: z.string() }),
+              aspects: {
+                formats: ['pe', 'exe', 'dll'],
+                platforms: ['windows'],
+                execution: ['static'],
+                capabilities: ['security-profile', 'hardening-assessment'],
+                safety: ['passive', 'no_network_by_default', 'no_mutation'],
+              },
+              workflowRecipes: [
+                {
+                  id: 'pe.security.hardening-profile',
+                  title: 'PE security hardening profile',
+                  startsWith: ['pe.security.profile', 'pe.structure.analyze'],
+                  nextTools: ['pe.structure.analyze', 'analysis.evidence.graph'],
+                  producesArtifacts: ['pe_security_profile'],
+                  evidence: ['structure', 'mitigations', 'workflow'],
+                  safety: ['passive', 'no_network_by_default', 'no_mutation'],
+                },
+              ],
+            },
+            handler: async () => ({ ok: true }),
+          },
+        ],
+      },
+    ]
+    surface.registerGatewayCoreTools(['workflow.search'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      file_type: '.exe',
+      query: 'security hardening mitigations profile',
+      goal: 'triage',
+      top_k: 3,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining(['pe', 'exe', 'windows'])
+    )
+    const peResult = data.results.find((item: any) => item.plugin_id === 'pe-security-search-test')
+    expect(peResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining(['pe.security.profile']),
+      })
+    )
+    expect(peResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(surface.isToolVisible('pe.security.profile')).toBe(false)
+  })
+
   test('preserves one result per search profile lane when topK is constrained', async () => {
     resetSurfaceForTest()
     const surface = getToolSurfaceManager()
