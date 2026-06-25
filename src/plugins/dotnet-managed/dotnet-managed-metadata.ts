@@ -175,12 +175,13 @@ export type DotnetAssemblyInventoryEnvelopeInput = {
 export function buildDotnetManagedEnvelope(inventory: DotnetAssemblyInventoryEnvelopeInput) {
   return {
     evidence_summary: {
-      schema: DOTNET_ASSEMBLY_EVIDENCE_SUMMARY_SCHEMA,
-      source_tool: 'dotnet.assembly.inspect',
+      schema:
+        DOTNET_ASSEMBLY_EVIDENCE_SUMMARY_SCHEMA as typeof DOTNET_ASSEMBLY_EVIDENCE_SUMMARY_SCHEMA,
+      source_tool: 'dotnet.assembly.inspect' as const,
       sample_id: inventory.sample_id ?? null,
       format: inventory.format,
       detected_by: inventory.detected_by,
-      artifact_type: DOTNET_ASSEMBLY_ARTIFACT_TYPE,
+      artifact_type: DOTNET_ASSEMBLY_ARTIFACT_TYPE as typeof DOTNET_ASSEMBLY_ARTIFACT_TYPE,
       route_terms: DOTNET_MANAGED_ROUTE_TERMS,
       evidence_categories: DOTNET_MANAGED_EVIDENCE,
       counts: {
@@ -208,7 +209,8 @@ export function buildDotnetManagedEnvelope(inventory: DotnetAssemblyInventoryEnv
       },
     },
     workflow_handoff: {
-      schema: DOTNET_ASSEMBLY_WORKFLOW_HANDOFF_SCHEMA,
+      schema:
+        DOTNET_ASSEMBLY_WORKFLOW_HANDOFF_SCHEMA as typeof DOTNET_ASSEMBLY_WORKFLOW_HANDOFF_SCHEMA,
       handoff_mode: 'dotnet_passive_inventory_to_managed_analysis',
       source_tool: 'dotnet.assembly.inspect',
       sample_id: inventory.sample_id ?? null,
@@ -274,7 +276,7 @@ export function buildDotnetManagedEnvelope(inventory: DotnetAssemblyInventoryEnv
       quality_gates_schema: DOTNET_ASSEMBLY_QUALITY_GATES_SCHEMA,
     },
     quality_gates: {
-      schema: DOTNET_ASSEMBLY_QUALITY_GATES_SCHEMA,
+      schema: DOTNET_ASSEMBLY_QUALITY_GATES_SCHEMA as typeof DOTNET_ASSEMBLY_QUALITY_GATES_SCHEMA,
       passive_static_inventory: true,
       bounded_preview_only: true,
       format_detected: inventory.format !== 'unknown',

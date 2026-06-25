@@ -19,6 +19,7 @@ import {
   nativeObjectAspects,
   nativeObjectRecommendedNextTools,
   nativeObjectRecipe,
+  type NativeObjectInventoryEnvelopeInput,
 } from '../native-object-metadata.js'
 
 const TOOL_NAME = 'native.object.inventory'
@@ -170,7 +171,11 @@ type NativeObjectInventoryBase = Omit<
   NativeObjectInventory,
   'evidence_summary' | 'workflow_handoff' | 'quality_gates'
 >
-type NestedBinaryCandidate = NativeObjectInventory['nested_binary_candidates'][number]
+type NestedBinaryCandidate = {
+  path: string
+  routed_formats: string[]
+  recommended_tools: string[]
+}
 
 const ELF_MACHINES: Record<number, string> = {
   3: 'x86',
@@ -431,10 +436,10 @@ export function buildNativeObjectInventoryFromBuffer(
     ],
   }
 
-  return {
+  return NativeObjectInventoryDataSchema.parse({
     ...inventoryBase,
-    ...buildNativeObjectEnvelope(inventoryBase),
-  }
+    ...buildNativeObjectEnvelope(inventoryBase as NativeObjectInventoryEnvelopeInput),
+  })
 }
 
 async function readPreview(

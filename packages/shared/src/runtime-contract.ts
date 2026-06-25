@@ -83,6 +83,9 @@ export interface DynamicRuntimePolicy {
   allowedBackends?: RuntimeIsolationBackend[]
   maxRuntimeMs?: number
   networkPolicy?: RuntimeNetworkPolicy
+  noNetwork?: boolean
+  noMutation?: boolean
+  noLiveExecution?: boolean
   notes?: string[]
 }
 
@@ -317,6 +320,9 @@ export const DynamicRuntimePolicySchema = z
     allowedBackends: z.array(RuntimeIsolationBackendSchema).optional(),
     maxRuntimeMs: z.number().int().positive().optional(),
     networkPolicy: RuntimeNetworkPolicySchema.optional(),
+    noNetwork: z.boolean().optional(),
+    noMutation: z.boolean().optional(),
+    noLiveExecution: z.boolean().optional(),
     notes: z.array(z.string()).optional(),
   })
   .passthrough()

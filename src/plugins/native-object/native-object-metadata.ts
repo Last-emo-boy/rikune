@@ -269,12 +269,13 @@ export function buildNativeObjectEnvelope(inventory: NativeObjectInventoryEnvelo
 
   return {
     evidence_summary: {
-      schema: NATIVE_OBJECT_EVIDENCE_SUMMARY_SCHEMA,
-      source_tool: 'native.object.inventory',
+      schema: NATIVE_OBJECT_EVIDENCE_SUMMARY_SCHEMA as typeof NATIVE_OBJECT_EVIDENCE_SUMMARY_SCHEMA,
+      source_tool: 'native.object.inventory' as const,
       sample_id: inventory.sample_id ?? null,
       format: inventory.format,
       detected_by: inventory.detected_by,
-      artifact_type: NATIVE_OBJECT_INVENTORY_ARTIFACT_TYPE,
+      artifact_type:
+        NATIVE_OBJECT_INVENTORY_ARTIFACT_TYPE as typeof NATIVE_OBJECT_INVENTORY_ARTIFACT_TYPE,
       route_terms: NATIVE_OBJECT_ROUTE_TERMS,
       evidence_categories: NATIVE_OBJECT_EVIDENCE,
       counts: {
@@ -306,7 +307,7 @@ export function buildNativeObjectEnvelope(inventory: NativeObjectInventoryEnvelo
       },
     },
     workflow_handoff: {
-      schema: NATIVE_OBJECT_WORKFLOW_HANDOFF_SCHEMA,
+      schema: NATIVE_OBJECT_WORKFLOW_HANDOFF_SCHEMA as typeof NATIVE_OBJECT_WORKFLOW_HANDOFF_SCHEMA,
       handoff_mode: 'native_object_inventory_to_symbol_and_debug_analysis',
       source_tool: 'native.object.inventory',
       sample_id: inventory.sample_id ?? null,
@@ -392,7 +393,7 @@ export function buildNativeObjectEnvelope(inventory: NativeObjectInventoryEnvelo
       quality_gates_schema: NATIVE_OBJECT_QUALITY_GATES_SCHEMA,
     },
     quality_gates: {
-      schema: NATIVE_OBJECT_QUALITY_GATES_SCHEMA,
+      schema: NATIVE_OBJECT_QUALITY_GATES_SCHEMA as typeof NATIVE_OBJECT_QUALITY_GATES_SCHEMA,
       passive_static_inventory: true,
       bounded_preview_only: true,
       format_detected: inventory.format !== 'unknown',

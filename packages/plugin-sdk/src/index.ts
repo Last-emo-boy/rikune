@@ -1706,8 +1706,35 @@ export const PluginManifestSchema = z
   })
   .passthrough()
 
-export type ToolManifest = z.infer<typeof ToolManifestSchema>
-export type PluginManifest = z.infer<typeof PluginManifestSchema>
+export interface ToolManifest extends ToolDefinition {
+  handler?: string
+  [key: string]: unknown
+}
+
+export interface PluginManifest {
+  id: string
+  name: string
+  description?: string
+  version?: string
+  executionDomain?: 'static' | 'dynamic' | 'both'
+  dependencies?: string[]
+  configSchema?: PluginConfigField[]
+  systemDeps?: PluginSystemDep[]
+  aspects?: PluginAspects
+  runtimePolicy?: DynamicRuntimePolicy
+  resources?: {
+    workers?: string
+    scripts?: string
+    data?: string
+  }
+  surfaceRules?: SurfaceRules
+  tools?: ToolManifest[]
+  [key: string]: unknown
+}
+
+type ParsedPluginManifest = PluginManifest & {
+  tools: ToolManifest[]
+}
 
 export interface Plugin {
   /** Unique kebab-case identifier, e.g. `'android'`, `'ghidra'`. */
@@ -2159,7 +2186,7 @@ export function defineManifestPlugin(
   manifestInput: PluginManifest,
   handlers: ManifestHandlers
 ): Plugin {
-  const manifest = PluginManifestSchema.parse(manifestInput)
+  const manifest = PluginManifestSchema.parse(manifestInput) as ParsedPluginManifest
   const tools = manifest.tools.map((toolManifest: ToolManifest) => {
     const handlerName = String(toolManifest.handler ?? toolManifest.name)
     const handler = handlers[handlerName]

@@ -1,4 +1,10 @@
-import { definePlugin, defineTool, type PluginAspects, type WorkerResult } from '../sdk.js'
+import {
+  definePlugin,
+  defineTool,
+  type DynamicRuntimePolicy,
+  type PluginAspects,
+  type WorkerResult,
+} from '../sdk.js'
 import {
   buildBackendPlanAspects,
   createBackendPlanHandler,
@@ -69,7 +75,7 @@ const GTIRB_WORKER_FOLLOW_UP_TOOLS = [
   'workflow.search',
 ]
 
-const GTIRB_RUNTIME_POLICY = {
+const GTIRB_RUNTIME_POLICY: DynamicRuntimePolicy = {
   passiveByDefault: true,
   requiresUserOptIn: false,
   requiresIsolation: false,

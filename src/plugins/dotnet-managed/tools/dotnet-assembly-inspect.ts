@@ -20,6 +20,7 @@ import {
   buildDotnetManagedEnvelope,
   dotnetManagedAspects,
   dotnetManagedRecipe,
+  type DotnetAssemblyInventoryEnvelopeInput,
 } from '../dotnet-managed-metadata.js'
 
 const TOOL_NAME = 'dotnet.assembly.inspect'
@@ -343,10 +344,10 @@ export function buildDotnetAssemblyInventoryFromBuffer(
     ],
   }
 
-  return {
+  return DotnetAssemblyInventorySchema.parse({
     ...inventoryBase,
-    ...buildDotnetManagedEnvelope(inventoryBase),
-  }
+    ...buildDotnetManagedEnvelope(inventoryBase as DotnetAssemblyInventoryEnvelopeInput),
+  })
 }
 
 async function readPreview(
