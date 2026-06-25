@@ -32,13 +32,7 @@ const APK_RESOURCES_SAFETY = [
   'no_mutation',
   'no_live_execution',
 ]
-const APK_RESOURCES_EVIDENCE = [
-  'resources',
-  'strings',
-  'filesystem',
-  'workflow',
-  'provenance',
-]
+const APK_RESOURCES_EVIDENCE = ['resources', 'strings', 'filesystem', 'workflow', 'provenance']
 const APK_RESOURCES_NEXT_TOOLS = [
   'apk.manifest.parse',
   'apk.disassemble',
@@ -99,14 +93,7 @@ export const apkResourcesDecodeToolDefinition: ToolDefinition = {
     platforms: ['android'],
     execution: ['static', 'triage'],
     safety: APK_RESOURCES_SAFETY,
-    capabilities: [
-      'resources',
-      'strings',
-      'layouts',
-      'assets',
-      'manifest',
-      'workflow-handoff',
-    ],
+    capabilities: ['resources', 'strings', 'layouts', 'assets', 'manifest', 'workflow-handoff'],
     evidence: APK_RESOURCES_EVIDENCE,
     search: ['resources', 'strings.xml', 'layouts', 'drawables', 'assets', 'apktool'],
   },

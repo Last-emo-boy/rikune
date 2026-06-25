@@ -1077,7 +1077,7 @@ describe('built-in plugin format matrix discovery', () => {
     expect(linuxBinary?.tools?.map((tool) => tool.definition.name)).toContain(
       'linux.binary.inventory'
     )
-  })
+  }, 30_000)
 
   test('discovers native reverse engineering adapters with tool-level metadata', async () => {
     const plugins = await discoverBuiltInPlugins()

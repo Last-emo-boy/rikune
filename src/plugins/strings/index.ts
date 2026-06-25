@@ -83,8 +83,7 @@ const stringsPlugin: Plugin = {
       name: 'flare-floss',
       importName: 'floss',
       required: false,
-      description:
-        'FLARE-FLOSS Python package used by the optional static decoded-string backend.',
+      description: 'FLARE-FLOSS Python package used by the optional static decoded-string backend.',
       dockerInstall: 'pip install flare-floss',
       dockerFeature: 'static-python',
       dockerValidation: ['python3 -m floss --version'],
@@ -97,8 +96,7 @@ const stringsPlugin: Plugin = {
       target: '$FLOSS_PATH',
       envVar: 'FLOSS_PATH',
       required: false,
-      description:
-        'Optional FLARE-FLOSS command used for decoded string recovery when available.',
+      description: 'Optional FLARE-FLOSS command used for decoded string recovery when available.',
       dockerInstall: 'pip install flare-floss',
       dockerFeature: 'static-python',
       dockerValidation: ['floss --version'],

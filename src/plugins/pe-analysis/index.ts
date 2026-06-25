@@ -68,7 +68,9 @@ const peAnalysisPlugin: Plugin = {
       description: 'pefile PE parser used by static PE structure workers',
       dockerInstall: 'pip install pefile',
       dockerFeature: 'static-python',
-      dockerValidation: ["python3 -c \"import pefile; print(getattr(pefile, '__version__', 'ok'))\""],
+      dockerValidation: [
+        "python3 -c \"import pefile; print(getattr(pefile, '__version__', 'ok'))\"",
+      ],
       dockerInstallRoute: 'installed',
       dockerInstallProfile: 'default',
     },

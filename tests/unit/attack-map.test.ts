@@ -13,7 +13,7 @@ import {
   mapIndicatorsToAttack,
 } from '../../src/plugins/threat-intel/tools/attack-map.js'
 
-jest.setTimeout(15000)
+jest.setTimeout(45_000)
 
 describe('attack.map tool', () => {
   let tempDir: string

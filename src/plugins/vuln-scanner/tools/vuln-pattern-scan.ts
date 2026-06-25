@@ -270,7 +270,11 @@ function buildWorkflowHandoff(args: {
     artifact_contract: {
       consumes: ['analysis_evidence.function_map', 'decompiled_functions'],
       produces: [VULN_PATTERN_SCAN_ARTIFACT_TYPE],
-      expected_consumers: ['vuln.pattern.summary', 'code.functions.rank', 'analysis.evidence.graph'],
+      expected_consumers: [
+        'vuln.pattern.summary',
+        'code.functions.rank',
+        'analysis.evidence.graph',
+      ],
     },
     routing: [
       {

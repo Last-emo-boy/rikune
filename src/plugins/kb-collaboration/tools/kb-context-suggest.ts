@@ -57,7 +57,7 @@ export const kbContextSuggestToolDefinition: ToolDefinition = {
     {
       id: 'kb.analysis-memory.reuse',
       title: 'Analysis memory reuse',
-      startsWith: ['kb.context.suggest'],
+      startsWith: ['kb.context.suggest', 'analysis.notes'],
       nextTools: ['kb.function.match', 'analysis.notes', 'rule.library', 'kb.export'],
       requiredArtifacts: ['analysis_evidence'],
       producesArtifacts: ['analysis_memory'],

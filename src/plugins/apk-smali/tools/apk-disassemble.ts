@@ -304,7 +304,9 @@ function buildQualityGates(args: {
     passive_static_only: true,
     apktool_decode_completed: true,
     smali_roots_detected: args.smaliRoots.length > 0,
-    multi_dex_accounted_for: args.smaliRoots.every((root) => root.root === 'smali' || root.class_count >= 0),
+    multi_dex_accounted_for: args.smaliRoots.every(
+      (root) => root.root === 'smali' || root.class_count >= 0
+    ),
     classes_found: args.totalClasses > 0,
     artifact_persisted: args.artifactPersisted,
     android_bytecode_executed_by_tool: false,

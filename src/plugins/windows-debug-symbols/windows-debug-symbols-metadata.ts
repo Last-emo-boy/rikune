@@ -301,12 +301,14 @@ export function buildWindowsDebugMetadataEnvelope(inventory: WindowsDebugMetadat
 
   return {
     evidence_summary: {
-      schema: WINDOWS_DEBUG_METADATA_EVIDENCE_SUMMARY_SCHEMA,
-      source_tool: WINDOWS_DEBUG_METADATA_TOOL_NAME,
+      schema:
+        WINDOWS_DEBUG_METADATA_EVIDENCE_SUMMARY_SCHEMA as typeof WINDOWS_DEBUG_METADATA_EVIDENCE_SUMMARY_SCHEMA,
+      source_tool: WINDOWS_DEBUG_METADATA_TOOL_NAME as typeof WINDOWS_DEBUG_METADATA_TOOL_NAME,
       sample_id: inventory.sample_id ?? null,
       format: inventory.format,
       detected_by: inventory.detected_by,
-      artifact_type: WINDOWS_DEBUG_METADATA_ARTIFACT_TYPE,
+      artifact_type:
+        WINDOWS_DEBUG_METADATA_ARTIFACT_TYPE as typeof WINDOWS_DEBUG_METADATA_ARTIFACT_TYPE,
       route_terms: WINDOWS_DEBUG_METADATA_ROUTE_TERMS,
       evidence_categories: WINDOWS_DEBUG_METADATA_EVIDENCE,
       counts: {
@@ -335,7 +337,8 @@ export function buildWindowsDebugMetadataEnvelope(inventory: WindowsDebugMetadat
       },
     },
     workflow_handoff: {
-      schema: WINDOWS_DEBUG_METADATA_WORKFLOW_HANDOFF_SCHEMA,
+      schema:
+        WINDOWS_DEBUG_METADATA_WORKFLOW_HANDOFF_SCHEMA as typeof WINDOWS_DEBUG_METADATA_WORKFLOW_HANDOFF_SCHEMA,
       handoff_mode: 'windows_debug_metadata_to_symbol_source_and_function_boundary_analysis',
       source_tool: WINDOWS_DEBUG_METADATA_TOOL_NAME,
       sample_id: inventory.sample_id ?? null,
@@ -419,7 +422,8 @@ export function buildWindowsDebugMetadataEnvelope(inventory: WindowsDebugMetadat
       quality_gates_schema: WINDOWS_DEBUG_METADATA_QUALITY_GATES_SCHEMA,
     },
     quality_gates: {
-      schema: WINDOWS_DEBUG_METADATA_QUALITY_GATES_SCHEMA,
+      schema:
+        WINDOWS_DEBUG_METADATA_QUALITY_GATES_SCHEMA as typeof WINDOWS_DEBUG_METADATA_QUALITY_GATES_SCHEMA,
       passive_static_inventory: true,
       bounded_preview_only: true,
       format_detected: inventory.format !== 'unknown',

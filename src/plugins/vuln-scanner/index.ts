@@ -68,13 +68,7 @@ const vulnScannerPlugin: Plugin = {
   surfaceRules: {
     tier: 2,
     activateOn: {
-      findings: [
-        'suspicious_imports',
-        'vulnerability',
-        'cwe',
-        'unsafe-api',
-        'function-risk',
-      ],
+      findings: ['suspicious_imports', 'vulnerability', 'cwe', 'unsafe-api', 'function-risk'],
     },
     category: 'vulnerability-research',
   },

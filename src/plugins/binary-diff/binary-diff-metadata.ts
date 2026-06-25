@@ -13,16 +13,7 @@ export const BINARY_DIFF_FOLLOW_UP_TOOLS = [
 ]
 
 export const BINARY_DIFF_ASPECTS = {
-  formats: [
-    'pe',
-    'exe',
-    'dll',
-    'elf',
-    'macho',
-    'dotnet',
-    'native-binary',
-    'firmware',
-  ],
+  formats: ['pe', 'exe', 'dll', 'elf', 'macho', 'dotnet', 'native-binary', 'firmware'],
   platforms: ['windows', 'linux', 'macos', 'cross-platform'],
   architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'ppc', 'riscv'],
   execution: ['static', 'correlation', 'comparison', 'workflow-handoff'],
@@ -115,7 +106,12 @@ export const BINARY_DIFF_WORKFLOW_RECIPES: NonNullable<ToolDefinition['workflowR
     description:
       'Use radiff2 function similarity deltas to prioritize changed, added, and removed functions before deeper reverse-engineering.',
     startsWith: ['binary.diff'],
-    nextTools: ['binary.diff.summary', 'analysis.evidence.graph', 'report.generate', 'tool.readiness'],
+    nextTools: [
+      'binary.diff.summary',
+      'analysis.evidence.graph',
+      'report.generate',
+      'tool.readiness',
+    ],
     requiredArtifacts: ['sample-a', 'sample-b'],
     producesArtifacts: [BINARY_DIFF_ARTIFACT_TYPE],
     evidence: ['function-similarity', 'binary-diff', 'provenance'],
@@ -128,7 +124,12 @@ export const BINARY_DIFF_WORKFLOW_RECIPES: NonNullable<ToolDefinition['workflowR
     description:
       'Route imports/exports/sections/strings/ATT&CK delta evidence from binary diff into evidence graph, report, and similarity workflows.',
     startsWith: ['binary.diff'],
-    nextTools: ['analysis.evidence.graph', 'report.generate', 'binary.diff.summary', 'artifact.read'],
+    nextTools: [
+      'analysis.evidence.graph',
+      'report.generate',
+      'binary.diff.summary',
+      'artifact.read',
+    ],
     requiredArtifacts: ['pe-imports', 'pe-exports', 'structure', 'strings', 'attack-map'],
     producesArtifacts: [BINARY_DIFF_ARTIFACT_TYPE],
     evidence: ['imports', 'exports', 'sections', 'strings', 'attack', 'structural-delta'],
@@ -455,10 +456,7 @@ export function buildBinaryDiffProvenance(
   }
 }
 
-export function buildBinaryDiffWorkflowHandoff(
-  diff: BinaryDiffResult,
-  artifact?: ArtifactRef
-) {
+export function buildBinaryDiffWorkflowHandoff(diff: BinaryDiffResult, artifact?: ArtifactRef) {
   const artifactSelector = artifact
     ? { artifact_id: artifact.id, artifact_type: artifact.type, path: artifact.path }
     : { artifact_type: BINARY_DIFF_ARTIFACT_TYPE }
@@ -541,7 +539,7 @@ export function buildBinaryDiffQualityGates(diff: BinaryDiffResult) {
     structural_delta_available: Boolean(diff.structural_delta),
     attack_delta_available: Boolean(diff.attack_delta),
     has_diff_signal:
-      (diff.summary_stats.functions_added +
+      diff.summary_stats.functions_added +
         diff.summary_stats.functions_removed +
         diff.summary_stats.functions_modified +
         diff.summary_stats.imports_added +
@@ -549,7 +547,7 @@ export function buildBinaryDiffQualityGates(diff: BinaryDiffResult) {
         diff.summary_stats.strings_added +
         diff.summary_stats.strings_removed +
         diff.summary_stats.attack_techniques_added +
-        diff.summary_stats.attack_techniques_removed) >
+        diff.summary_stats.attack_techniques_removed >
       0,
     warnings_count: diff.warnings.length,
     errors_count: diff.errors.length,

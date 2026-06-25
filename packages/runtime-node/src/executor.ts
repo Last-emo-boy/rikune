@@ -544,10 +544,9 @@ export function listRuntimeBackendCapabilities(): RuntimeBackendCapability[] {
 export function getRuntimeBackendCapability(
   contract: ToolRuntimeContract
 ): RuntimeBackendCapability | undefined {
-  const capability = findRuntimeBackendCapability(
-    runtimeBackendCapabilityRegistry,
-    contract
-  ) as RuntimeBackendCapabilityDetails | undefined
+  const capability = findRuntimeBackendCapability(runtimeBackendCapabilityRegistry, contract) as
+    | RuntimeBackendCapabilityDetails
+    | undefined
   if (!capability) {
     return undefined
   }

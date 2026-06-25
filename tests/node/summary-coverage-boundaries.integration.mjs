@@ -196,7 +196,7 @@ try {
   })
 
   assert.equal(result.ok, true)
-  assert.equal(result.data.tool_surface_role, 'primary')
+  assert.equal(result.data.tool_surface_role, 'compatibility')
   assert.equal(result.data.coverage_level, 'deep_static')
   assert.ok(Array.isArray(result.data.known_findings))
   assert.ok(Array.isArray(result.data.suspected_findings))

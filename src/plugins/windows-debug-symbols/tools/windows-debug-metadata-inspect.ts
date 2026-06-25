@@ -20,6 +20,9 @@ import {
   windowsDebugMetadataAspects,
   windowsDebugMetadataRecipe,
   windowsDebugMetadataRecommendedNextTools,
+  type WindowsDebugCoffSymbolTable,
+  type WindowsDebugMetadataEnvelopeInput,
+  type WindowsDebugPdbIdentityHint,
 } from '../windows-debug-symbols-metadata.js'
 
 const TOOL_NAME = WINDOWS_DEBUG_METADATA_TOOL_NAME
@@ -379,8 +382,8 @@ function formatRsdsGuid(data: Buffer, offset: number): string | undefined {
   return `${part1}-${part2}-${part3}-${part4}-${part5}`
 }
 
-function extractPdbIdentityHints(data: Buffer) {
-  const hints: WindowsDebugMetadataInventoryBase['pdb_identity_hints'] = []
+function extractPdbIdentityHints(data: Buffer): WindowsDebugPdbIdentityHint[] {
+  const hints: WindowsDebugPdbIdentityHint[] = []
 
   for (const offset of markerOffsets(data, 'RSDS')) {
     if (offset + 24 > data.length) continue
@@ -425,7 +428,7 @@ function extractCoffSymbolTable(
   format: string,
   header: Record<string, unknown>,
   data: Buffer
-): WindowsDebugMetadataInventoryBase['coff_symbol_table'] {
+): WindowsDebugCoffSymbolTable | undefined {
   if (format !== 'coff') return undefined
   const offset = numberFromHeader(header, 'symbol_table_offset') ?? 0
   const count = numberFromHeader(header, 'symbol_count') ?? 0
@@ -538,10 +541,10 @@ export function buildWindowsDebugMetadataFromBuffer(
     ],
   }
 
-  return {
+  return WindowsDebugMetadataSchema.parse({
     ...inventoryBase,
-    ...buildWindowsDebugMetadataEnvelope(inventoryBase),
-  }
+    ...buildWindowsDebugMetadataEnvelope(inventoryBase as WindowsDebugMetadataEnvelopeInput),
+  })
 }
 
 async function readPreview(

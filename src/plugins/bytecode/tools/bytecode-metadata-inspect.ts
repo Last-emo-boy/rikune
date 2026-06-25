@@ -98,7 +98,14 @@ export const bytecodeMetadataInspectToolDefinition: ToolDefinition = {
     platforms: ['python', 'lua', 'node', 'cross-platform'],
     execution: ['static', 'triage', 'decompilation'],
     safety: ['passive', 'no_live_sample_by_default'],
-    capabilities: ['metadata', 'strings', 'version-hints', 'decompile-plan', 'routing', 'workflow-plan'],
+    capabilities: [
+      'metadata',
+      'strings',
+      'version-hints',
+      'decompile-plan',
+      'routing',
+      'workflow-plan',
+    ],
     evidence: BYTECODE_METADATA_EVIDENCE,
   },
   artifacts: [
