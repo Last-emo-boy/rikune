@@ -46,7 +46,10 @@ describe('pe.structure.analyze tool', () => {
 
   describe('Handler', () => {
     test('should return error for non-existent resource', async () => {
-      const handler = createPEStructureAnalyzeHandler({ workspaceManager: mockWorkspaceManager, database: mockDatabase } as any)
+      const handler = createPEStructureAnalyzeHandler({
+        workspaceManager: mockWorkspaceManager,
+        database: mockDatabase,
+      } as any)
 
       mockDatabase.findSample.mockReturnValue(undefined)
 
@@ -100,6 +103,7 @@ describe('pe.structure.analyze tool', () => {
           nextTools: expect.arrayContaining([
             'pe.imports.extract',
             'pe.exports.extract',
+            'pe.security.profile',
             'analysis.evidence.graph',
           ]),
           producesArtifacts: expect.arrayContaining(['pe_structure_analysis']),

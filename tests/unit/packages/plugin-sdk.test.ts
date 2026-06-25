@@ -129,6 +129,9 @@ describe('@rikune/plugin-sdk', () => {
 
   test('surface file type tags provide normalized vocabulary', () => {
     expect(SURFACE_FILE_TYPE_TAGS.pe).toEqual(expect.arrayContaining(['pe', 'windows']))
+    expect(SURFACE_FILE_TYPE_TAGS['pe32+']).toEqual(
+      expect.arrayContaining(['pe32-plus', 'pe64', 'pe', 'windows'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS['mach-o']).toContain('macos')
     expect(SURFACE_FILE_TYPE_TAGS.apk).toContain('android')
     expect(SURFACE_FILE_TYPE_TAGS.apks).toEqual(expect.arrayContaining(['android', 'split-apk']))

@@ -1148,6 +1148,7 @@ describe('built-in plugin format matrix discovery', () => {
     const codeAnalysis = requirePlugin(plugins, 'code-analysis')
     const apiHash = requirePlugin(plugins, 'api-hash')
     const cudaBinary = requirePlugin(plugins, 'cuda-binary')
+    const peAnalysis = requirePlugin(plugins, 'pe-analysis')
 
     expect(ghidra.aspects?.formats).toEqual(expect.arrayContaining(['pe', 'elf', 'macho']))
     expect(rizin.aspects?.formats).toEqual(expect.arrayContaining(['pe', 'elf', 'macho']))
@@ -1175,6 +1176,9 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(cudaBinary.aspects?.capabilities).toEqual(
       expect.arrayContaining(['cuda-artifact-inventory', 'culifter-handoff'])
+    )
+    expect(peAnalysis.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['security-profile', 'mitigation-profile', 'loader-security'])
     )
 
     expectToolMetadata(ghidra, 'ghidra.analyze', {
@@ -1251,6 +1255,11 @@ describe('built-in plugin format matrix discovery', () => {
       formats: ['cuda', 'ptx', 'cubin', 'fatbin'],
       artifacts: ['cuda_binary_inventory', 'cuda_kernel_summary'],
       evidence: ['structure', 'symbols', 'strings', 'workflow', 'provenance'],
+    })
+    expectToolMetadata(peAnalysis, 'pe.security.profile', {
+      formats: ['pe', 'pe-clr', 'dll', 'exe', 'sys', 'efi'],
+      artifacts: ['pe_security_profile'],
+      evidence: ['structure', 'mitigations', 'sections', 'workflow', 'provenance'],
     })
     expectWorkflowRecipeMetadata(plugins, {
       pluginId: 'code-analysis',
@@ -1750,6 +1759,17 @@ describe('built-in plugin format matrix discovery', () => {
         producesArtifacts: ['apple_security_profile'],
         evidence: ['manifest', 'certificates', 'package-metadata', 'workflow', 'provenance'],
         safety: ['passive', 'no_auto_mount', 'no_installer_execution', 'no_live_sample_by_default'],
+      },
+      {
+        pluginId: 'pe-analysis',
+        toolName: 'pe.security.profile',
+        recipeId: 'pe.security.hardening-profile',
+        startsWith: ['pe.security.profile', 'pe.structure.analyze'],
+        nextTools: ['pe.structure.analyze', 'pe.pdata.extract', 'analysis.evidence.graph'],
+        producesArtifacts: ['pe_security_profile'],
+        evidence: ['structure', 'mitigations', 'sections', 'workflow', 'provenance'],
+        safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default', 'no_mutation'],
+        runtimeBackends: ['builtin-pe-parser'],
       },
       {
         pluginId: 'firmware',

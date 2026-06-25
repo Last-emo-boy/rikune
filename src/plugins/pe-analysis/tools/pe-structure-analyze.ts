@@ -148,6 +148,7 @@ export const peStructureAnalyzeToolDefinition: ToolDefinition = {
         'pe.imports.extract',
         'pe.exports.extract',
         'pe.fingerprint',
+        'pe.security.profile',
         'pe.signature.verify',
         'static.capability.triage',
         'compiler.packer.detect',

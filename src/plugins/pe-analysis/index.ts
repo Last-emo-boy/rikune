@@ -24,6 +24,10 @@ import {
   createPEPdataExtractHandler,
 } from './tools/pe-pdata-extract.js'
 import {
+  peSecurityProfileToolDefinition,
+  createPESecurityProfileHandler,
+} from './tools/pe-security-profile.js'
+import {
   peSymbolsRecoverToolDefinition,
   createPESymbolsRecoverHandler,
 } from './tools/pe-symbols-recover.js'
@@ -44,8 +48,28 @@ const peAnalysisPlugin: Plugin = {
       'no_network_by_default',
       'no_mutation',
     ],
-    capabilities: ['structure', 'imports', 'exports', 'resources', 'symbols', 'routing'],
-    evidence: ['structure', 'imports', 'exports', 'resources', 'symbols', 'provenance'],
+    capabilities: [
+      'structure',
+      'imports',
+      'exports',
+      'resources',
+      'symbols',
+      'routing',
+      'security-profile',
+      'mitigation-profile',
+      'loader-security',
+    ],
+    evidence: [
+      'structure',
+      'imports',
+      'exports',
+      'resources',
+      'symbols',
+      'mitigations',
+      'sections',
+      'workflow',
+      'provenance',
+    ],
   },
   surfaceRules: {
     tier: 0,
@@ -54,6 +78,11 @@ const peAnalysisPlugin: Plugin = {
       is_signed: 'signed',
       has_certificate: 'signed',
       suspicious_imports: 'suspicious_imports',
+      missing_aslr: 'missing_aslr',
+      missing_dep_nx: 'missing_dep_nx',
+      missing_cfg: 'missing_cfg',
+      tls_callbacks: 'tls_callbacks',
+      write_execute_section: 'write_execute_section',
     },
   },
   description:
@@ -93,6 +122,7 @@ const peAnalysisPlugin: Plugin = {
     server.registerTool(peExportsExtractToolDefinition, createPEExportsExtractHandler(deps))
     server.registerTool(peFingerprintToolDefinition, createPEFingerprintHandler(deps))
     server.registerTool(pePdataExtractToolDefinition, createPEPdataExtractHandler(deps))
+    server.registerTool(peSecurityProfileToolDefinition, createPESecurityProfileHandler(deps))
     server.registerTool(peSymbolsRecoverToolDefinition, createPESymbolsRecoverHandler(deps))
     return [
       'pe.structure.analyze',
@@ -100,6 +130,7 @@ const peAnalysisPlugin: Plugin = {
       'pe.exports.extract',
       'pe.fingerprint',
       'pe.pdata.extract',
+      'pe.security.profile',
       'pe.symbols.recover',
     ]
   },
