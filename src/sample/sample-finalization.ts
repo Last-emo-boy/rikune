@@ -103,6 +103,18 @@ export function detectFileType(data: Buffer, filename?: string): string {
     return 'App-Bundle'
   }
 
+  if (extension === 'ptx') {
+    return 'CUDA-PTX'
+  }
+
+  if (extension === 'cubin') {
+    return 'CUDA-CUBIN'
+  }
+
+  if (extension === 'fatbin') {
+    return 'CUDA-Fatbin'
+  }
+
   if (extension === 'framework') {
     return 'Framework'
   }
@@ -120,6 +132,27 @@ export function detectFileType(data: Buffer, filename?: string): string {
       data[3] === 0xaf)
   ) {
     return 'Unity-Metadata'
+  }
+
+  const looksLikeBinaryContainer =
+    (data.length >= 2 && data[0] === 0x4d && data[1] === 0x5a) ||
+    (data.length >= 4 &&
+      data[0] === 0x7f &&
+      data[1] === 0x45 &&
+      data[2] === 0x4c &&
+      data[3] === 0x46) ||
+    (data.length >= 4 && data[0] === 0x50 && data[1] === 0x4b) ||
+    (data.length >= 8 && data.subarray(0, 8).toString('ascii') === '!<arch>\n')
+
+  if (data.length > 0 && !looksLikeBinaryContainer) {
+    const preview = data.subarray(0, Math.min(data.length, 1024 * 1024)).toString('latin1')
+    if (
+      /^\s*\.version\s+[0-9]+(?:\.[0-9]+)?/m.test(preview) &&
+      /^\s*\.target\s+.*\b(?:sm|compute)_[0-9]{2,3}[a-z]?\b/m.test(preview) &&
+      /^\s*(?:\.visible\s+)?\.entry\s+[A-Za-z_$][A-Za-z0-9_.$]*/m.test(preview)
+    ) {
+      return 'CUDA-PTX'
+    }
   }
 
   if (
@@ -287,6 +320,8 @@ export function detectFileType(data: Buffer, filename?: string): string {
     const readUInt16 = (offset: number) =>
       endian === 'be' ? data.readUInt16BE(offset) : data.readUInt16LE(offset)
     const elfType = data.length >= 18 ? readUInt16(16) : 0
+    const elfMachine = data.length >= 20 ? readUInt16(18) : 0
+    if (elfMachine === 190) return 'CUDA-CUBIN'
     if (extension === 'ko' || basename.endsWith('.ko') || preview.includes('vermagic=')) {
       return 'Linux-Kernel-Module'
     }
@@ -517,6 +552,12 @@ export function detectFileType(data: Buffer, filename?: string): string {
       return 'IPA'
     case 'wasm':
       return 'WASM'
+    case 'ptx':
+      return 'CUDA-PTX'
+    case 'cubin':
+      return 'CUDA-CUBIN'
+    case 'fatbin':
+      return 'CUDA-Fatbin'
     case 'pyc':
       return 'PYC'
     case 'luac':
