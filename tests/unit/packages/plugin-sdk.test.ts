@@ -152,6 +152,12 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS['ebpf-elf']).toEqual(
       expect.arrayContaining(['ebpf', 'bpf', 'elf', 'linux', 'object'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS.bc).toEqual(
+      expect.arrayContaining(['bc', 'llvm-bc', 'llvm-bitcode', 'llvm-ir'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['llvm-bitcode-wrapper']).toEqual(
+      expect.arrayContaining(['llvm-bitcode-wrapper', 'llvm-bitcode', 'llvm-ir'])
+    )
   })
 
   test('aspect helpers normalize, describe, and match sample profiles', () => {

@@ -91,6 +91,20 @@ export function detectFileType(data: Buffer, filename?: string): string {
   const extension = normalizeFileExtension(filename)
   const basename = normalizeFileBasename(filename)
 
+  if (
+    data.length >= 4 &&
+    data[0] === 0x42 &&
+    data[1] === 0x43 &&
+    data[2] === 0xc0 &&
+    data[3] === 0xde
+  ) {
+    return 'LLVM-Bitcode'
+  }
+
+  if (data.length >= 20 && data.readUInt32LE(0) === 0x0b17c0de) {
+    return 'LLVM-Bitcode-Wrapper'
+  }
+
   if (extension === 'mobileprovision') {
     return 'MobileProvision'
   }
@@ -478,6 +492,10 @@ export function detectFileType(data: Buffer, filename?: string): string {
       return 'HTML'
     case 'wat':
       return 'WAT'
+    case 'bc':
+      return 'LLVM-Bitcode'
+    case 'll':
+      return 'LLVM-IR'
     case 'deb':
       return 'DEB'
     case 'rpm':

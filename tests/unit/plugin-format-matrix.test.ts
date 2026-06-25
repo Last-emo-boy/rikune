@@ -13,6 +13,7 @@ import { buildAppleContainerInventoryFromBuffer } from '../../src/plugins/apple-
 import { buildJvmStructureFromBuffer } from '../../src/plugins/jvm/tools/jvm-structure-analyze.js'
 import { buildWasmStructureFromBuffer } from '../../src/plugins/wasm/tools/wasm-structure-analyze.js'
 import { buildBytecodeMetadataFromBuffer } from '../../src/plugins/bytecode/tools/bytecode-metadata-inspect.js'
+import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitcode/tools/llvm-bitcode-inventory.js'
 import { buildWindowsInstallerInventoryFromBuffer } from '../../src/plugins/windows-installer/tools/windows-installer-inventory.js'
 import { buildWindowsDebugMetadataFromBuffer } from '../../src/plugins/windows-debug-symbols/tools/windows-debug-metadata-inspect.js'
 import { buildDotnetAssemblyInventoryFromBuffer } from '../../src/plugins/dotnet-managed/tools/dotnet-assembly-inspect.js'
@@ -89,6 +90,13 @@ function isoFixture(): Buffer {
   const data = Buffer.alloc(0x8006)
   data.write('CD001', 0x8001, 'ascii')
   return data
+}
+
+function llvmBitcodeFixture(): Buffer {
+  return Buffer.concat([
+    Buffer.from([0x42, 0x43, 0xc0, 0xde, 0x03, 0x41, 0x10, 0x00]),
+    Buffer.from('target triple=x86_64-unknown-linux-gnu', 'ascii'),
+  ])
 }
 
 function elfFixture(type: number, machine = 62): Buffer {
@@ -350,6 +358,10 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(Buffer.from([0x00, 0x61, 0x73, 0x6d]), 'module.wasm')).toBe('WASM')
     expect(detectFileType(Buffer.alloc(16), 'program.bpf')).toBe('eBPF-Bytecode')
     expect(detectFileType(Buffer.alloc(16), 'program.ebpf')).toBe('eBPF-Bytecode')
+    expect(detectFileType(Buffer.from([0x42, 0x43, 0xc0, 0xde]), 'module.bc')).toBe('LLVM-Bitcode')
+    const wrapper = Buffer.alloc(20)
+    wrapper.writeUInt32LE(0x0b17c0de, 0)
+    expect(detectFileType(wrapper, 'module.bc')).toBe('LLVM-Bitcode-Wrapper')
   })
 
   test('detects CUDA PTX, CUBIN, and fatbin formats without masking host binaries', () => {
@@ -774,6 +786,18 @@ describe('passive bytecode and portable runtime inventory', () => {
       expect.arrayContaining(['culifter.gpu.plan', 'culifter.gpu.artifact.inventory'])
     )
   })
+
+  test('builds LLVM bitcode inventory without invoking LLVM tools', () => {
+    const inventory = buildLlvmBitcodeInventoryFromBuffer(llvmBitcodeFixture(), {
+      filename: 'module.bc',
+    })
+
+    expect(inventory.format).toBe('llvm-bitcode')
+    expect(inventory.policy.no_llvm_toolchain_required).toBe(true)
+    expect(inventory.quality_gates.llvm_tool_invoked_by_tool).toBe(false)
+    expect(inventory.quality_gates.compiled_by_tool).toBe(false)
+    expect(inventory.recommended_next_tools).toEqual(expect.arrayContaining(['workflow.search']))
+  })
 })
 
 describe('passive Windows and managed format inventory', () => {
@@ -1036,6 +1060,7 @@ describe('built-in plugin format matrix discovery', () => {
     const wasm = plugins.find((plugin) => plugin.id === 'wasm')
     const bytecode = plugins.find((plugin) => plugin.id === 'bytecode')
     const ebpfBytecode = plugins.find((plugin) => plugin.id === 'ebpf-bytecode')
+    const llvmBitcode = plugins.find((plugin) => plugin.id === 'llvm-bitcode')
     const windowsInstaller = plugins.find((plugin) => plugin.id === 'windows-installer')
     const windowsDebugSymbols = plugins.find((plugin) => plugin.id === 'windows-debug-symbols')
     const dotnetManaged = plugins.find((plugin) => plugin.id === 'dotnet-managed')
@@ -1074,6 +1099,12 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(ebpfBytecode?.tools?.map((tool) => tool.definition.name)).toContain(
       'ebpf.bytecode.inventory'
+    )
+    expect(llvmBitcode?.aspects?.formats).toEqual(
+      expect.arrayContaining(['llvm-bitcode', 'llvm-bc', 'llvm-ir'])
+    )
+    expect(llvmBitcode?.tools?.map((tool) => tool.definition.name)).toContain(
+      'llvm.bitcode.inventory'
     )
     expect(windowsInstaller?.aspects?.formats).toEqual(
       expect.arrayContaining(['msi', 'msix', 'appx', 'cab', 'nsis', 'inno'])
@@ -1154,6 +1185,7 @@ describe('built-in plugin format matrix discovery', () => {
     const firmware = requirePlugin(plugins, 'firmware')
     const nativeObject = requirePlugin(plugins, 'native-object')
     const ebpfBytecode = requirePlugin(plugins, 'ebpf-bytecode')
+    const llvmBitcode = requirePlugin(plugins, 'llvm-bitcode')
     const androidPackage = requirePlugin(plugins, 'android-package')
     const appleSigning = requirePlugin(plugins, 'apple-signing')
     const linuxBinary = requirePlugin(plugins, 'linux-binary')
@@ -1182,6 +1214,9 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(linuxBinary.aspects?.formats).toEqual(
       expect.arrayContaining(['linux-binary', 'elf-executable', 'elf-core'])
+    )
+    expect(llvmBitcode.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['bitstream-summary', 'wrapper-inventory', 'workflow-routing'])
     )
     expect(codeAnalysis.aspects?.capabilities).toEqual(
       expect.arrayContaining(['cross-decompiler-consensus', 'ir-comparison'])
@@ -1253,6 +1288,26 @@ describe('built-in plugin format matrix discovery', () => {
       evidence: ['bytecode', 'control-flow', 'workflow'],
       safety: ['no_bpf_syscall', 'no_kernel_verifier_run', 'no_program_load'],
       runtimeBackends: ['linux-runtime'],
+    })
+    expectToolMetadata(llvmBitcode, 'llvm.bitcode.inventory', {
+      formats: ['llvm-bitcode', 'llvm-bitcode-wrapper', 'llvm-bc', 'llvm-ir'],
+      artifacts: ['llvm_bitcode_inventory'],
+      evidence: ['structure', 'strings', 'metadata', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'llvm-bitcode',
+      toolName: 'llvm.bitcode.inventory',
+      recipeId: 'llvm.bitcode-static-inventory',
+      startsWith: ['llvm.bitcode.inventory'],
+      nextTools: [
+        'artifact.read',
+        'metadata.extract',
+        'strings.extract',
+        'analysis.evidence.graph',
+      ],
+      producesArtifacts: ['llvm_bitcode_inventory'],
+      evidence: ['structure', 'strings', 'metadata', 'workflow'],
+      safety: ['passive', 'no_llvm_toolchain_required', 'no_compile', 'no_link', 'no_execute'],
     })
     expectToolMetadata(androidPackage, 'android.package.inventory', {
       formats: ['android-package', 'apk', 'dex'],

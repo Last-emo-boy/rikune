@@ -10,6 +10,7 @@ import { ToolExecutor } from '../../src/core/tool-executor.js'
 import { getToolSurfaceManager } from '../../src/core/tool-surface-manager.js'
 import type { Plugin } from '../../src/plugins/sdk.js'
 import ebpfBytecodePlugin from '../../src/plugins/ebpf-bytecode/index.js'
+import llvmBitcodePlugin from '../../src/plugins/llvm-bitcode/index.js'
 
 const logger = pino({ level: 'silent' })
 
@@ -624,6 +625,50 @@ describe('workflow.search', () => {
       expect.arrayContaining(['ebpf', 'bpf', 'ebpf-bytecode'])
     )
     expect(surface.isToolVisible('ebpf.bytecode.inventory')).toBe(false)
+  })
+
+  test('recommends LLVM bitcode inventory through file-type routing without gateway expansion', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [llvmBitcodePlugin]
+    surface.registerCoreTools([
+      'workflow.search',
+      'workflow.run',
+      'artifact.read',
+      'tools.discover',
+    ])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      query: 'inspect LLVM bitcode IR metadata',
+      file_type: '.bc',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'plugin',
+          plugin_id: 'llvm-bitcode',
+          readiness_state: 'hidden_activation_required',
+        }),
+      ])
+    )
+    expect(data.search_profile.recommended_tools).toContain('llvm.bitcode.inventory')
+    expect(surface.isToolVisible('llvm.bitcode.inventory')).toBe(false)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
+
+    const activated = await handler({ action: 'activate', plugin_id: 'llvm-bitcode' })
+    expect(activated.ok).toBe(true)
+    const activatedData = activated.data as any
+    expect(activatedData.activated_tools).toContain('llvm.bitcode.inventory')
+    expect(activatedData.activation_audit.policy.backend_execution_started).toBe(false)
+    expect(surface.isToolVisible('llvm.bitcode.inventory')).toBe(true)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
   })
 
   test('routes PE hardening queries to the static security profile without runtime opt-in', async () => {
