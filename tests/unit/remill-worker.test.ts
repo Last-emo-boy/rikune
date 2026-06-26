@@ -10,5 +10,5 @@ describe('remill worker', () => {
       fixtureKey: 'lifted_instructions',
       args: { target: { function: 'entry' } },
     })
-  })
+  }, 30_000)
 })

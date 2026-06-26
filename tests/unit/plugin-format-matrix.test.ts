@@ -16,6 +16,7 @@ import { buildWasmComponentInventoryFromBuffer } from '../../src/plugins/wasm-co
 import { buildAppleObjcSwiftMetadataFromBuffer } from '../../src/plugins/apple-objc-swift/tools/apple-objc-swift-metadata-inspect.js'
 import { buildBytecodeMetadataFromBuffer } from '../../src/plugins/bytecode/tools/bytecode-metadata-inspect.js'
 import { buildBtfInventoryFromBuffer } from '../../src/plugins/btf/tools/btf-type-inventory.js'
+import { buildCppAbiLayoutInventoryFromBuffer } from '../../src/plugins/cpp-abi-layout/tools/cpp-abi-layout-inventory.js'
 import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitcode/tools/llvm-bitcode-inventory.js'
 import { buildMlModelInventoryFromBuffer } from '../../src/plugins/ml-model/tools/ml-model-inventory.js'
 import { buildNativeDebugTypesInventoryFromBuffer } from '../../src/plugins/native-debug-types/tools/native-debug-types-inventory.js'
@@ -1561,6 +1562,44 @@ describe('passive native object inventory', () => {
   })
 })
 
+describe('passive C++ ABI layout inventory', () => {
+  test('extracts cross-platform ABI class layout seeds without demanglers or loaders', () => {
+    const inventory = buildCppAbiLayoutInventoryFromBuffer(
+      Buffer.from(
+        [
+          '_ZTVN4demo6WidgetE',
+          '_ZTIN4demo6WidgetE',
+          '??_7Widget@@6B@',
+          '??_R0?AVWidget@@@8',
+          '__gxx_personality_v0',
+          '__CxxFrameHandler3',
+        ].join('\0'),
+        'utf8'
+      ),
+      { filename: 'mixed.o' }
+    )
+
+    expect(inventory.format).toBe('mixed-cpp-abi')
+    expect(inventory.class_hints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ abi: 'itanium', class_name: 'demo::Widget' }),
+        expect.objectContaining({ abi: 'msvc', class_name: 'Widget' }),
+      ])
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining(['native.debug.types.inventory', 'code.xrefs.analyze'])
+    )
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_external_demangler: true,
+        no_native_load: true,
+        no_link: true,
+      })
+    )
+  })
+})
+
 describe('built-in plugin format matrix discovery', () => {
   test('discovers cross-platform format plugins with declared aspects', async () => {
     const plugins = await discoverBuiltInPlugins()
@@ -1571,6 +1610,7 @@ describe('built-in plugin format matrix discovery', () => {
     const wasmComponent = plugins.find((plugin) => plugin.id === 'wasm-component')
     const bytecode = plugins.find((plugin) => plugin.id === 'bytecode')
     const btf = plugins.find((plugin) => plugin.id === 'btf')
+    const cppAbiLayout = plugins.find((plugin) => plugin.id === 'cpp-abi-layout')
     const ebpfBytecode = plugins.find((plugin) => plugin.id === 'ebpf-bytecode')
     const llvmBitcode = plugins.find((plugin) => plugin.id === 'llvm-bitcode')
     const mlModel = plugins.find((plugin) => plugin.id === 'ml-model')
@@ -1625,6 +1665,12 @@ describe('built-in plugin format matrix discovery', () => {
       expect.arrayContaining(['btf', 'btf-ext', 'btf-elf', 'core-relocations'])
     )
     expect(btf?.tools?.map((tool) => tool.definition.name)).toContain('btf.type.inventory')
+    expect(cppAbiLayout?.aspects?.formats).toEqual(
+      expect.arrayContaining(['cpp-abi', 'itanium-abi', 'msvc-abi', 'rtti', 'vtable'])
+    )
+    expect(cppAbiLayout?.tools?.map((tool) => tool.definition.name)).toContain(
+      'cpp.abi.layout.inventory'
+    )
     expect(ebpfBytecode?.aspects?.formats).toEqual(
       expect.arrayContaining(['ebpf', 'bpf', 'raw-ebpf', 'ebpf-elf'])
     )
@@ -1736,6 +1782,7 @@ describe('built-in plugin format matrix discovery', () => {
     const firmware = requirePlugin(plugins, 'firmware')
     const nativeObject = requirePlugin(plugins, 'native-object')
     const nativeDebugTypes = requirePlugin(plugins, 'native-debug-types')
+    const cppAbiLayout = requirePlugin(plugins, 'cpp-abi-layout')
     const btf = requirePlugin(plugins, 'btf')
     const ebpfBytecode = requirePlugin(plugins, 'ebpf-bytecode')
     const llvmBitcode = requirePlugin(plugins, 'llvm-bitcode')
@@ -1765,6 +1812,13 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(nativeDebugTypes.aspects?.capabilities).toEqual(
       expect.arrayContaining(['dwarf-unit-summary', 'ctf-type-metadata', 'type-graph-seeds'])
+    )
+    expect(cppAbiLayout.aspects?.capabilities).toEqual(
+      expect.arrayContaining([
+        'itanium-vtable-inventory',
+        'msvc-rtti-inventory',
+        'class-layout-seeds',
+      ])
     )
     expect(btf.aspects?.capabilities).toEqual(
       expect.arrayContaining(['btf-type-inventory', 'core-relocation-inventory'])
@@ -1867,6 +1921,21 @@ describe('built-in plugin format matrix discovery', () => {
       producesArtifacts: ['native_debug_type_inventory'],
       evidence: ['debug-metadata', 'types', 'source-map', 'workflow'],
       safety: ['passive', 'no_external_tool', 'no_symbol_server_download', 'no_source_fetch'],
+    })
+    expectToolMetadata(cppAbiLayout, 'cpp.abi.layout.inventory', {
+      formats: ['cpp-abi', 'itanium-abi', 'msvc-abi', 'rtti'],
+      artifacts: ['cpp_abi_layout_inventory'],
+      evidence: ['classes', 'rtti', 'vtable', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'cpp-abi-layout',
+      toolName: 'cpp.abi.layout.inventory',
+      recipeId: 'cpp.abi-layout-static-inventory',
+      startsWith: ['cpp.abi.layout.inventory'],
+      nextTools: ['native.object.inventory', 'native.debug.types.inventory', 'code.xrefs.analyze'],
+      producesArtifacts: ['cpp_abi_layout_inventory'],
+      evidence: ['classes', 'rtti', 'vtable', 'layout-seeds', 'workflow'],
+      safety: ['passive', 'no_external_demangler', 'no_native_load', 'no_source_fetch'],
     })
     expectToolMetadata(btf, 'btf.type.inventory', {
       formats: ['btf', 'btf-ext', 'btf-elf', 'core-relocations'],
