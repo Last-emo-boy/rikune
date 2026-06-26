@@ -9,6 +9,7 @@ import { MCPRegistry } from '../../src/core/mcp-registry.js'
 import { ToolExecutor } from '../../src/core/tool-executor.js'
 import { getToolSurfaceManager } from '../../src/core/tool-surface-manager.js'
 import type { Plugin } from '../../src/plugins/sdk.js'
+import binaryHardeningPlugin from '../../src/plugins/binary-hardening/index.js'
 import btfPlugin from '../../src/plugins/btf/index.js'
 import containerAnalysisPlugin from '../../src/plugins/container-analysis/index.js'
 import compilerCodegenPlugin from '../../src/plugins/compiler-codegen/index.js'
@@ -894,6 +895,46 @@ describe('workflow.search', () => {
     expect(teeResult.readiness_state).not.toBe('runtime_opt_in_required')
     expect(data.search_profile.recommended_tools).toContain('tee.enclave.inventory')
     expect(surface.isToolVisible('tee.enclave.inventory')).toBe(false)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
+  })
+
+  test('recommends passive binary hardening inventory without runtime opt-in', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [binaryHardeningPlugin]
+    surface.registerCoreTools([
+      'workflow.search',
+      'workflow.run',
+      'artifact.read',
+      'tools.discover',
+    ])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      query:
+        'checksec hardening exploit mitigation RELRO PIE NX stack canary CET IBT SHSTK PAC BTI MTE CHERI',
+      file_type: 'binary-hardening',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining(['binary-hardening', 'hardening', 'exploit-mitigation', 'checksec'])
+    )
+    const hardeningResult = data.results.find((item: any) => item.plugin_id === 'binary-hardening')
+    expect(hardeningResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining(['binary.hardening.inventory']),
+      })
+    )
+    expect(hardeningResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(data.search_profile.recommended_tools).toContain('binary.hardening.inventory')
+    expect(surface.isToolVisible('binary.hardening.inventory')).toBe(false)
     expect(surface.isToolVisible('tools.discover')).toBe(false)
   })
 

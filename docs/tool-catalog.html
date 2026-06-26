@@ -297,9 +297,9 @@
           <h2><span data-lang-en>Overview</span><span data-lang-zh>概览</span></h2>
           <div class="catalog-stats">
             <div class="catalog-stat"><strong>35</strong><span>core tools</span></div>
-            <div class="catalog-stat"><strong>109</strong><span>built-in plugins</span></div>
-            <div class="catalog-stat"><strong>299</strong><span>plugin tools</span></div>
-            <div class="catalog-stat"><strong>334</strong><span>cataloged tools</span></div>
+            <div class="catalog-stat"><strong>110</strong><span>built-in plugins</span></div>
+            <div class="catalog-stat"><strong>300</strong><span>plugin tools</span></div>
+            <div class="catalog-stat"><strong>335</strong><span>cataloged tools</span></div>
             <div class="catalog-stat"><strong>143</strong><span>runtime-aware</span></div>
             <div class="catalog-stat"><strong>45</strong><span>worker-backed</span></div>
           </div>
@@ -321,18 +321,18 @@
             </tbody>
           </table>
           <div class="category-strip">
-            <span>static-analysis <strong>97</strong></span><span>reverse-engineering <strong>67</strong></span><span>dynamic-analysis <strong>61</strong></span><span>malware-analysis <strong>16</strong></span><span>symbolic-execution <strong>14</strong></span><span>workflow-orchestration <strong>13</strong></span><span>dotnet-analysis <strong>11</strong></span><span>android-analysis <strong>10</strong></span><span>unpacking <strong>8</strong></span><span>memory-forensics <strong>7</strong></span><span>artifact-management <strong>4</strong></span><span>system-diagnostics <strong>4</strong></span><span>go-analysis <strong>3</strong></span><span>network-analysis <strong>3</strong></span><span>plugin-management <strong>3</strong></span><span>sample-intake <strong>3</strong></span><span>task-control <strong>3</strong></span><span>tool-discovery <strong>3</strong></span><span>vulnerability-research <strong>2</strong></span><span>analysis-context <strong>1</strong></span><span>llm-review <strong>1</strong></span>
+            <span>static-analysis <strong>98</strong></span><span>reverse-engineering <strong>67</strong></span><span>dynamic-analysis <strong>61</strong></span><span>malware-analysis <strong>16</strong></span><span>symbolic-execution <strong>14</strong></span><span>workflow-orchestration <strong>13</strong></span><span>dotnet-analysis <strong>11</strong></span><span>android-analysis <strong>10</strong></span><span>unpacking <strong>8</strong></span><span>memory-forensics <strong>7</strong></span><span>artifact-management <strong>4</strong></span><span>system-diagnostics <strong>4</strong></span><span>go-analysis <strong>3</strong></span><span>network-analysis <strong>3</strong></span><span>plugin-management <strong>3</strong></span><span>sample-intake <strong>3</strong></span><span>task-control <strong>3</strong></span><span>tool-discovery <strong>3</strong></span><span>vulnerability-research <strong>2</strong></span><span>analysis-context <strong>1</strong></span><span>llm-review <strong>1</strong></span>
           </div>
           <div class="catalog-controls" aria-label="Tool catalog filters">
             <input id="catalogSearch" type="search" placeholder="Search tool, plugin, backend, format, capability..." />
             <select id="categoryFilter">
               <option value="">All categories</option>
-              <option value="static-analysis">static-analysis (97)</option><option value="reverse-engineering">reverse-engineering (67)</option><option value="dynamic-analysis">dynamic-analysis (61)</option><option value="malware-analysis">malware-analysis (16)</option><option value="symbolic-execution">symbolic-execution (14)</option><option value="workflow-orchestration">workflow-orchestration (13)</option><option value="dotnet-analysis">dotnet-analysis (11)</option><option value="android-analysis">android-analysis (10)</option><option value="unpacking">unpacking (8)</option><option value="memory-forensics">memory-forensics (7)</option><option value="artifact-management">artifact-management (4)</option><option value="system-diagnostics">system-diagnostics (4)</option><option value="go-analysis">go-analysis (3)</option><option value="network-analysis">network-analysis (3)</option><option value="plugin-management">plugin-management (3)</option><option value="sample-intake">sample-intake (3)</option><option value="task-control">task-control (3)</option><option value="tool-discovery">tool-discovery (3)</option><option value="vulnerability-research">vulnerability-research (2)</option><option value="analysis-context">analysis-context (1)</option><option value="llm-review">llm-review (1)</option>
+              <option value="static-analysis">static-analysis (98)</option><option value="reverse-engineering">reverse-engineering (67)</option><option value="dynamic-analysis">dynamic-analysis (61)</option><option value="malware-analysis">malware-analysis (16)</option><option value="symbolic-execution">symbolic-execution (14)</option><option value="workflow-orchestration">workflow-orchestration (13)</option><option value="dotnet-analysis">dotnet-analysis (11)</option><option value="android-analysis">android-analysis (10)</option><option value="unpacking">unpacking (8)</option><option value="memory-forensics">memory-forensics (7)</option><option value="artifact-management">artifact-management (4)</option><option value="system-diagnostics">system-diagnostics (4)</option><option value="go-analysis">go-analysis (3)</option><option value="network-analysis">network-analysis (3)</option><option value="plugin-management">plugin-management (3)</option><option value="sample-intake">sample-intake (3)</option><option value="task-control">task-control (3)</option><option value="tool-discovery">tool-discovery (3)</option><option value="vulnerability-research">vulnerability-research (2)</option><option value="analysis-context">analysis-context (1)</option><option value="llm-review">llm-review (1)</option>
             </select>
             <select id="domainFilter">
               <option value="">All domains</option>
               <option value="core">core</option>
-              <option value="static">static (231)</option><option value="dynamic">dynamic (61)</option><option value="both">both (7)</option>
+              <option value="static">static (232)</option><option value="dynamic">dynamic (61)</option><option value="both">both (7)</option>
             </select>
             <label><input id="runtimeOnly" type="checkbox" /> Runtime</label>
             <label><input id="workerOnly" type="checkbox" /> Worker</label>
@@ -1829,6 +1829,47 @@
 
                       </div>
                       <div class="tool-tags"><span class="tool-badge">pe</span><span class="tool-badge">exe</span><span class="tool-badge">dll</span><span class="tool-badge">elf</span><span class="tool-badge">macho</span><span class="tool-badge">dotnet</span><span class="tool-badge">native-binary</span><span class="tool-badge">firmware</span><span class="tool-badge">binary-diff</span><span class="tool-badge">variant-comparison</span></div>
+                    </article>
+                  </div>
+                </div>
+              </section>
+
+              <section class="plugin-card" data-plugin-card data-search="binary-hardening binary hardening inventory passive cross-platform binary hardening inventory for elf, pe, mach-o, and object artifacts, covering relro, pie/aslr, nx/dep, stack canaries, fortify, cfg/xfg, cet ibt/shstk, pac/bti, mte, cheri, and w^x section risks. static static-analysis static-analysis binary.hardening.inventory passively inventory cross-platform binary hardening posture across elf, pe, mach-o, and native object artifacts, including relro, pie/aslr, nx/dep, stack canaries, fortify, cfg/xfg, cet ibt/shstk, pac/bti, mte, cheri, and w^x section risks without execution or external tools.  " data-domain="static">
+                <button class="plugin-card__summary" type="button" data-plugin-toggle>
+                  <span>
+                    <code>binary-hardening</code>
+                    <strong>Binary Hardening Inventory</strong>
+                  </span>
+                  <span>1 tools</span>
+                </button>
+                <div class="plugin-card__body">
+                  <p>Passive cross-platform binary hardening inventory for ELF, PE, Mach-O, and object artifacts, covering RELRO, PIE/ASLR, NX/DEP, stack canaries, FORTIFY, CFG/XFG, CET IBT/SHSTK, PAC/BTI, MTE, CHERI, and W^X section risks.</p>
+                  <div class="tool-tags">
+                    <span class="badge badge--purple">static</span>
+                    <span class="badge badge--blue">tier 1</span>
+                    <span class="tool-badge">static-analysis</span>
+                  </div>
+
+                  <div class="tool-row-list">
+
+                    <article class="tool-row" data-tool-row data-search="binary.hardening.inventory passively inventory cross-platform binary hardening posture across elf, pe, mach-o, and native object artifacts, including relro, pie/aslr, nx/dep, stack canaries, fortify, cfg/xfg, cet ibt/shstk, pac/bti, mte, cheri, and w^x section risks without execution or external tools. binary-hardening binary hardening inventory static-analysis static binary-hardening hardening exploit-mitigation mitigation-profile checksec elf-hardening pe-hardening macho-hardening elf pe macho object static-lib native windows linux macos ios android firmware cross-platform x86 x64 arm arm64 riscv cheri static triage correlation workflow-plan passive read_only no_execute no_loader_invocation no_exploit_test no_debugger no_emulation no_rewrite no_signing no_external_tool no_network_by_default no_mutation binary-hardening-inventory checksec-style-profile exploit-mitigation-posture relro-pie-nx-canary-fortify pe-cfg-xfg-load-config-hints cet-ibt-shstk-hints pac-bti-mte-hints cheri-purecap-hints section-permission-risk workflow-routing format-headers program-headers sections mitigations hardware-features symbols strings workflow binary hardening checksec exploit mitigation relro pie aslr nx dep stack canary fortify cfg xfg cet ibt shstk pac bti mte cheri purecap w^x cross-platform binary hardening inventory checksec exploit mitigation posture cet pac bti mte cheri hardening hints relro pie nx stack canary fortify section risk binary_hardening_inventory format-headers program-headers sections mitigations hardware-features symbols strings workflow  " data-category="static-analysis" data-domain="static" data-runtime="no" data-worker="no">
+                      <div class="tool-row__head">
+                        <code>binary.hardening.inventory</code>
+                        <div class="tool-row__badges">
+                          <span class="badge badge--blue">static-analysis</span>
+                          <span class="badge badge--purple">static</span>
+
+
+                        </div>
+                      </div>
+                      <p>Passively inventory cross-platform binary hardening posture across ELF, PE, Mach-O, and native object artifacts, including RELRO, PIE/ASLR, NX/DEP, stack canaries, FORTIFY, CFG/XFG, CET IBT/SHSTK, PAC/BTI, MTE, CHERI, and W^X section risks without execution or external tools.</p>
+                      <div class="tool-row__meta">
+
+
+
+                        <span><strong>Artifacts</strong> binary_hardening_inventory</span>
+                      </div>
+                      <div class="tool-tags"><span class="tool-badge">binary-hardening</span><span class="tool-badge">hardening</span><span class="tool-badge">exploit-mitigation</span><span class="tool-badge">mitigation-profile</span><span class="tool-badge">checksec</span><span class="tool-badge">elf-hardening</span><span class="tool-badge">pe-hardening</span><span class="tool-badge">macho-hardening</span><span class="tool-badge">elf</span><span class="tool-badge">pe</span></div>
                     </article>
                   </div>
                 </div>
@@ -9355,12 +9396,12 @@
             </tbody>
           </table>
           <script type="application/json" id="catalogMetadata">{
-  "generatedAt": "2026-06-26T11:35:25.958Z",
+  "generatedAt": "2026-06-26T12:33:58.775Z",
   "counts": {
     "coreTools": 35,
-    "builtInPlugins": 109,
-    "pluginTools": 299,
-    "totalTools": 334,
+    "builtInPlugins": 110,
+    "pluginTools": 300,
+    "totalTools": 335,
     "runtimeTools": 143,
     "workerTools": 45,
     "registrationErrors": 0
@@ -9368,7 +9409,7 @@
   "categories": [
     {
       "name": "static-analysis",
-      "count": 97
+      "count": 98
     },
     {
       "name": "reverse-engineering",
@@ -9454,7 +9495,7 @@
   "domains": [
     {
       "name": "static",
-      "count": 231
+      "count": 232
     },
     {
       "name": "dynamic",
