@@ -823,6 +823,11 @@ export function detectFileType(data: Buffer, filename?: string): string {
       return 'NUPKG'
     case 'winmd':
       return 'WinMD'
+    case 'tlb':
+    case 'olb':
+      return 'TypeLib'
+    case 'idl':
+      return 'IDL'
     case 'dll':
     case 'exe':
       if (basename === 'gameassembly.dll') return 'IL2CPP'

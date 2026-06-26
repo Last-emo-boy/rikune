@@ -24,6 +24,7 @@ import { buildNativeDebugTypesInventoryFromBuffer } from '../../src/plugins/nati
 import { buildShaderIrInventoryFromBuffer } from '../../src/plugins/shader-ir/tools/shader-ir-inventory.js'
 import { buildSyscallAbiSurfaceInventoryFromBuffer } from '../../src/plugins/syscall-abi-surface/tools/syscall-abi-surface-inventory.js'
 import { buildUefiSmmSurfaceInventoryFromBuffer } from '../../src/plugins/uefi-smm-surface/tools/uefi-smm-surface-inventory.js'
+import { buildWindowsInterfaceSurfaceInventoryFromBuffer } from '../../src/plugins/windows-interface-surface/tools/windows-interface-surface-inventory.js'
 import { buildWindowsInstallerInventoryFromBuffer } from '../../src/plugins/windows-installer/tools/windows-installer-inventory.js'
 import { buildWindowsDebugMetadataFromBuffer } from '../../src/plugins/windows-debug-symbols/tools/windows-debug-metadata-inspect.js'
 import { buildDotnetAssemblyInventoryFromBuffer } from '../../src/plugins/dotnet-managed/tools/dotnet-assembly-inspect.js'
@@ -778,6 +779,8 @@ describe('cross-platform file type detection', () => {
     expect(
       detectFileType(Buffer.concat([Buffer.from('!<arch>\n'), arMember('demo.o')]), 'libdemo.a')
     ).toBe('AR-Static-Lib')
+    expect(detectFileType(Buffer.from('TYPELIB\0LIBID'), 'demo.tlb')).toBe('TypeLib')
+    expect(detectFileType(Buffer.from('interface IDemo : IUnknown {};'), 'demo.idl')).toBe('IDL')
     expect(detectFileType(uimage, 'firmware.uImage')).toBe('U-Boot-uImage')
     expect(detectFileType(dtb, 'board.dtb')).toBe('DTB')
     expect(detectFileType(dtb, 'kernel.itb')).toBe('FIT-Image')
@@ -1742,6 +1745,61 @@ describe('passive syscall ABI surface inventory', () => {
   })
 })
 
+describe('passive Windows interface surface inventory', () => {
+  test('extracts COM/RPC/IPC/WMI/service hints without activating interfaces', () => {
+    const inventory = buildWindowsInterfaceSurfaceInventoryFromBuffer(
+      Buffer.from(
+        [
+          'MZ',
+          'CLSID',
+          '{11111111-2222-3333-4444-555555555555}',
+          'CoCreateInstance',
+          'DllRegisterServer',
+          'RpcServerRegisterIf',
+          'ncacn_ip_tcp',
+          '\\\\.\\pipe\\svcctl',
+          'ImpersonateNamedPipeClient',
+          'IWbemServices',
+          'root\\subscription',
+          '__EventFilter',
+          'OpenSCManagerW',
+          'CreateServiceW',
+        ].join('\0'),
+        'ascii'
+      ),
+      { filename: 'broker.dll' }
+    )
+
+    expect(inventory.format).toBe('windows-rpc-interface-surface')
+    expect((inventory.com_surface as any).present).toBe(true)
+    expect((inventory.rpc_surface as any).has_remote_protocol_hint).toBe(true)
+    expect((inventory.ipc_surface as any).impersonation_hint).toBe(true)
+    expect((inventory.wmi_surface as any).persistence_hint).toBe(true)
+    expect((inventory.service_surface as any).present).toBe(true)
+    expect(inventory.risk_flags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'windows.rpc-remote-protocol' }),
+        expect.objectContaining({ id: 'windows.ipc-impersonation-surface' }),
+        expect.objectContaining({ id: 'windows.wmi-persistence-surface' }),
+      ])
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining(['pe.imports.extract', 'static.resource.graph', 'workflow.search'])
+    )
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_execute: true,
+        no_com_activation: true,
+        no_rpc_call: true,
+        no_named_pipe_connect: true,
+        no_wmi_query: true,
+        no_service_start: true,
+      })
+    )
+  })
+})
+
 describe('built-in plugin format matrix discovery', () => {
   test('discovers cross-platform format plugins with declared aspects', async () => {
     const plugins = await discoverBuiltInPlugins()
@@ -1760,6 +1818,9 @@ describe('built-in plugin format matrix discovery', () => {
     const shaderIr = plugins.find((plugin) => plugin.id === 'shader-ir')
     const syscallAbiSurface = plugins.find((plugin) => plugin.id === 'syscall-abi-surface')
     const uefiSmmSurface = plugins.find((plugin) => plugin.id === 'uefi-smm-surface')
+    const windowsInterfaceSurface = plugins.find(
+      (plugin) => plugin.id === 'windows-interface-surface'
+    )
     const windowsInstaller = plugins.find((plugin) => plugin.id === 'windows-installer')
     const windowsDebugSymbols = plugins.find((plugin) => plugin.id === 'windows-debug-symbols')
     const dotnetManaged = plugins.find((plugin) => plugin.id === 'dotnet-managed')
@@ -1833,6 +1894,12 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(syscallAbiSurface?.tools?.map((tool) => tool.definition.name)).toContain(
       'syscall.abi.surface.inventory'
+    )
+    expect(windowsInterfaceSurface?.aspects?.formats).toEqual(
+      expect.arrayContaining(['windows-interface', 'com', 'rpc', 'alpc', 'etw', 'wmi'])
+    )
+    expect(windowsInterfaceSurface?.tools?.map((tool) => tool.definition.name)).toContain(
+      'windows.interface.surface.inventory'
     )
     expect(ebpfBytecode?.aspects?.formats).toEqual(
       expect.arrayContaining(['ebpf', 'bpf', 'raw-ebpf', 'ebpf-elf'])
@@ -1954,6 +2021,7 @@ describe('built-in plugin format matrix discovery', () => {
     const shaderIr = requirePlugin(plugins, 'shader-ir')
     const syscallAbiSurface = requirePlugin(plugins, 'syscall-abi-surface')
     const uefiSmmSurface = requirePlugin(plugins, 'uefi-smm-surface')
+    const windowsInterfaceSurface = requirePlugin(plugins, 'windows-interface-surface')
     const wasmComponent = requirePlugin(plugins, 'wasm-component')
     const androidPackage = requirePlugin(plugins, 'android-package')
     const appleSigning = requirePlugin(plugins, 'apple-signing')
@@ -2029,6 +2097,14 @@ describe('built-in plugin format matrix discovery', () => {
         'syscall-abi-surface-inventory',
         'direct-syscall-stub-detection',
         'nt-api-boundary-hints',
+      ])
+    )
+    expect(windowsInterfaceSurface.aspects?.capabilities).toEqual(
+      expect.arrayContaining([
+        'windows-interface-surface-inventory',
+        'com-clsid-iid-inventory',
+        'rpc-interface-endpoint-hints',
+        'alpc-named-pipe-ipc-hints',
       ])
     )
     expect(wasmComponent.aspects?.capabilities).toEqual(
@@ -2161,6 +2237,21 @@ describe('built-in plugin format matrix discovery', () => {
       producesArtifacts: ['syscall_abi_surface_inventory'],
       evidence: ['syscalls', 'abi', 'evasion', 'risk', 'workflow'],
       safety: ['passive', 'no_syscall', 'no_ptrace', 'no_debugger', 'no_emulation'],
+    })
+    expectToolMetadata(windowsInterfaceSurface, 'windows.interface.surface.inventory', {
+      formats: ['windows-interface', 'com', 'rpc', 'alpc', 'etw', 'wmi'],
+      artifacts: ['windows_interface_surface_inventory'],
+      evidence: ['interfaces', 'guid', 'com', 'rpc', 'ipc', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'windows-interface-surface',
+      toolName: 'windows.interface.surface.inventory',
+      recipeId: 'windows.interface-surface-static-inventory',
+      startsWith: ['windows.interface.surface.inventory'],
+      nextTools: ['artifact.read', 'pe.imports.extract', 'static.resource.graph'],
+      producesArtifacts: ['windows_interface_surface_inventory'],
+      evidence: ['interfaces', 'guid', 'com', 'rpc', 'ipc', 'risk', 'workflow'],
+      safety: ['passive', 'no_com_activation', 'no_rpc_call', 'no_named_pipe_connect'],
     })
     expectToolMetadata(btf, 'btf.type.inventory', {
       formats: ['btf', 'btf-ext', 'btf-elf', 'core-relocations'],

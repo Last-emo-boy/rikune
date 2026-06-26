@@ -229,6 +229,24 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS['linux-kernel-module']).toEqual(
       expect.arrayContaining(['linux-driver', 'kernel-driver', 'driver-surface', 'ioctl'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS['windows-interface']).toEqual(
+      expect.arrayContaining(['windows-interface', 'windows', 'com', 'rpc', 'etw', 'wmi'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.com).toEqual(
+      expect.arrayContaining(['com', 'dcom', 'ole', 'windows-interface', 'clsid', 'iid'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.rpc).toEqual(
+      expect.arrayContaining(['rpc', 'windows-interface', 'windows', 'uuid', 'endpoint'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['named-pipe']).toEqual(
+      expect.arrayContaining(['named-pipe', 'pipe', 'ipc', 'windows-interface'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['service-control']).toEqual(
+      expect.arrayContaining(['service-control', 'scm', 'windows-service', 'windows-interface'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.typelib).toEqual(
+      expect.arrayContaining(['typelib', 'tlb', 'com', 'windows-interface'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS.syscall).toEqual(
       expect.arrayContaining(['syscall', 'syscall-stub', 'direct-syscall', 'raw-shellcode'])
     )

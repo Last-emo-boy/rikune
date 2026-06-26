@@ -4,7 +4,7 @@
 # Auto-generated from plugin systemDeps.
 # Profile: Hybrid Docker analyzer + Windows runtime
 # Backend profile: default
-# Build plugins: 89 | Runtime plugins: 106
+# Build plugins: 90 | Runtime plugins: 107
 # Features: angr, binwalk, capa, die, dotnet-runtime, ghidra, goresym, graphviz, jadx, jsimplifier, manifold, restringer, retdec, rizin, static-python, upx, vol3, wabt
 # Regenerate: npm run docker:generate -- --profile=hybrid
 # =============================================================================
@@ -73,7 +73,7 @@ services:
       - RIKUNE_BACKEND_PROFILE=default
       - NODE_ROLE=analyzer
       - RUNTIME_MODE=remote-sandbox
-      - PLUGINS=android,android-package,android-runtime,angr,api-hash,apk-smali,apple-container,apple-objc-swift,apple-signing,batch,behavior-first,binary-diff,btf,bytecode,capstone,code-analysis,container-analysis,cpp-abi-layout,crackme,cross-module,cuda-binary,culifter,debug-session,deep-unpack,die,dotnet-decompile,dotnet-managed,dotnet-reactor,dynamic,ebpf-bytecode,elf-macho,external-re-bridge,firmware,frida,ghidra,go-analysis,graphviz,gtirb,host-correlation,ios-runtime,javascript-deobfuscation,jsimplifier,jsir-cascade,jsvmp-analysis,jvm,kb-collaboration,kernel-driver-surface,lief,linux-binary,linux-package,linux-runtime,llvm-bitcode,macos-runtime,malware,managed-fake-c2,managed-il-xrefs,managed-sandbox,manifold,memory-forensics,metadata,miasm,ml-model,native-debug-types,native-object,observability,office-analysis,panda,pcap-analysis,pe-analysis,pe-signature,qbdi,qiling,radare2,remill,reporting,restringer,retdec,revng,rizin,runtime-deobfuscate,sbom,shader-ir,similarity,speakeasy,static-triage,strings,syscall-abi-surface,threat-intel,triton,uefi-smm-surface,unity-managed,unpacking,upx,visualization,vm-analysis,vuln-scanner,wabt,wasm,wasm-component,wasm-runtime,windows-debug-symbols,windows-installer,windows-runtime,wine,yara,yara-x
+      - PLUGINS=android,android-package,android-runtime,angr,api-hash,apk-smali,apple-container,apple-objc-swift,apple-signing,batch,behavior-first,binary-diff,btf,bytecode,capstone,code-analysis,container-analysis,cpp-abi-layout,crackme,cross-module,cuda-binary,culifter,debug-session,deep-unpack,die,dotnet-decompile,dotnet-managed,dotnet-reactor,dynamic,ebpf-bytecode,elf-macho,external-re-bridge,firmware,frida,ghidra,go-analysis,graphviz,gtirb,host-correlation,ios-runtime,javascript-deobfuscation,jsimplifier,jsir-cascade,jsvmp-analysis,jvm,kb-collaboration,kernel-driver-surface,lief,linux-binary,linux-package,linux-runtime,llvm-bitcode,macos-runtime,malware,managed-fake-c2,managed-il-xrefs,managed-sandbox,manifold,memory-forensics,metadata,miasm,ml-model,native-debug-types,native-object,observability,office-analysis,panda,pcap-analysis,pe-analysis,pe-signature,qbdi,qiling,radare2,remill,reporting,restringer,retdec,revng,rizin,runtime-deobfuscate,sbom,shader-ir,similarity,speakeasy,static-triage,strings,syscall-abi-surface,threat-intel,triton,uefi-smm-surface,unity-managed,unpacking,upx,visualization,vm-analysis,vuln-scanner,wabt,wasm,wasm-component,wasm-runtime,windows-debug-symbols,windows-installer,windows-interface-surface,windows-runtime,wine,yara,yara-x
       - WORKSPACE_ROOT=/app/workspaces
       - DB_PATH=/app/data/database.db
       - CACHE_ROOT=/app/cache
