@@ -299,24 +299,37 @@ function normalizeWorkflowNextAction(action: string): string {
 
 function artifactValueScore(type: string, artifactPath: string): number {
   const normalized = `${type} ${artifactPath}`.toLowerCase()
-  const highValueSignals = [
-    'summary',
-    'report',
-    'evidence',
-    'graph',
-    'manifest',
-    'triage',
-    'reconstruct',
-    'trace',
-    'yara',
-    'sbom',
-    'vuln',
-    'diff',
-    'unpack',
-    'profile',
+  const weightedSignals: Array<[string, number]> = [
+    ['ghidra_functions', 60],
+    ['backend_rizin_functions', 55],
+    ['function_map', 45],
+    ['reconstruct', 40],
+    ['decompile', 36],
+    ['function', 32],
+    ['cfg', 30],
+    ['xrefs', 28],
+    ['capability', 24],
+    ['context_link', 24],
+    ['crypto_identification', 22],
+    ['pe_structure', 20],
+    ['elf_structure', 20],
+    ['summary', 18],
+    ['report', 18],
+    ['evidence', 18],
+    ['graph', 18],
+    ['manifest', 16],
+    ['triage', 14],
+    ['trace', 14],
+    ['yara', 12],
+    ['sbom', 12],
+    ['vuln', 12],
+    ['diff', 12],
+    ['unpack', 10],
+    ['profile', 8],
+    ['enriched_string', 4],
   ]
-  return highValueSignals.reduce(
-    (score, signal) => score + (normalized.includes(signal) ? 1 : 0),
+  return weightedSignals.reduce(
+    (score, [signal, weight]) => score + (normalized.includes(signal) ? weight : 0),
     0
   )
 }

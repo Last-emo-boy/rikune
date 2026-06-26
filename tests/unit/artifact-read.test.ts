@@ -360,6 +360,97 @@ describe('artifact.read tool', () => {
     expect(data.parsed_json?.count).toBe(2)
   })
 
+  test('should summarize truncated JSON using full-file shape without parse warnings', async () => {
+    const content = JSON.stringify({
+      schema: 'demo.large.v1',
+      functions: Array.from({ length: 120 }, (_, index) => ({
+        name: `FUN_${index.toString(16).padStart(8, '0')}`,
+        address: `0040${index.toString(16).padStart(4, '0')}`,
+        callees: ['puts', 'strcmp'],
+      })),
+    })
+    const setup = await setupSampleWithArtifacts(workspaceManager, database, [
+      {
+        id: 'artifact-functions-1',
+        type: 'ghidra_functions',
+        path: 'ghidra/functions.json',
+        mime: 'application/json',
+        content,
+      },
+    ])
+
+    const result = await handler({
+      sample_id: setup.sampleId,
+      artifact_id: 'artifact-functions-1',
+      read_mode: 'summary',
+      max_bytes: 512,
+      parse_json: true,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as {
+      summary?: {
+        truncated: boolean
+        json_shape?: { top_level?: string; keys?: string[] }
+        json_parse_warning?: string
+      }
+    }
+    expect(data.summary?.truncated).toBe(true)
+    expect(data.summary?.json_shape).toEqual(
+      expect.objectContaining({
+        top_level: 'object',
+        keys: expect.arrayContaining(['schema', 'functions']),
+      })
+    )
+    expect(data.summary?.json_parse_warning).toBeUndefined()
+  })
+
+  test('should include analyst-focused summary for enriched string artifacts', async () => {
+    const content = JSON.stringify({
+      sample_id: 'sha256:test',
+      data: {
+        strings: [
+          { offset: 100, string: 'H嬅H兡 [锰烫烫烫烫烫烫H婹', encoding: 'gbk' },
+          { offset: 200, string: 'Enter password:', encoding: 'ascii' },
+          { offset: 220, string: 'Correct password, access granted', encoding: 'ascii' },
+          { offset: 300, string: 'KERNEL32.dll', encoding: 'ascii' },
+        ],
+      },
+    })
+    const setup = await setupSampleWithArtifacts(workspaceManager, database, [
+      {
+        id: 'artifact-strings-1',
+        type: 'enriched_string_analysis',
+        path: 'reports/strings/default/enriched_strings.json',
+        mime: 'application/json',
+        content,
+      },
+    ])
+
+    const result = await handler({
+      sample_id: setup.sampleId,
+      artifact_id: 'artifact-strings-1',
+      read_mode: 'summary',
+      max_bytes: 256,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as {
+      summary?: {
+        domain_summary?: {
+          high_signal_strings?: Array<{ string: string; reasons: string[] }>
+          noise_filtered_count?: number
+        }
+      }
+    }
+    const highSignal = data.summary?.domain_summary?.high_signal_strings || []
+    expect(highSignal.map((item) => item.string)).toEqual(
+      expect.arrayContaining(['Enter password:', 'Correct password, access granted'])
+    )
+    expect(highSignal.some((item) => item.string.includes('烫'))).toBe(false)
+    expect(data.summary?.domain_summary?.noise_filtered_count).toBeGreaterThan(0)
+  })
+
   test('should extract IOC highlights from UTF-8 content', async () => {
     const setup = await setupSampleWithArtifacts(workspaceManager, database, [
       {
