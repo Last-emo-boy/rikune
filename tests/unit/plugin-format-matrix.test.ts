@@ -23,6 +23,7 @@ import { buildKernelDriverSurfaceInventoryFromBuffer } from '../../src/plugins/k
 import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitcode/tools/llvm-bitcode-inventory.js'
 import { buildMlModelInventoryFromBuffer } from '../../src/plugins/ml-model/tools/ml-model-inventory.js'
 import { buildNativeDebugTypesInventoryFromBuffer } from '../../src/plugins/native-debug-types/tools/native-debug-types-inventory.js'
+import { buildRustBinaryInventoryFromBuffer } from '../../src/plugins/rust-binary/tools/rust-binary-inventory.js'
 import { buildShaderIrInventoryFromBuffer } from '../../src/plugins/shader-ir/tools/shader-ir-inventory.js'
 import { buildSyscallAbiSurfaceInventoryFromBuffer } from '../../src/plugins/syscall-abi-surface/tools/syscall-abi-surface-inventory.js'
 import { buildTeeEnclaveInventoryFromBuffer } from '../../src/plugins/tee-enclave/tools/tee-enclave-inventory.js'
@@ -638,6 +639,8 @@ describe('cross-platform file type detection', () => {
     const wrapper = Buffer.alloc(20)
     wrapper.writeUInt32LE(0x0b17c0de, 0)
     expect(detectFileType(wrapper, 'module.bc')).toBe('LLVM-Bitcode-Wrapper')
+    expect(detectFileType(Buffer.from('rustc metadata'), 'libdemo.rlib')).toBe('Rust-RLIB')
+    expect(detectFileType(Buffer.from('rust metadata'), 'libdemo.rmeta')).toBe('Rust-RMETA')
     expect(detectFileType(shaderSpirvFixture(), 'shader.spv')).toBe('SPIR-V')
     expect(detectFileType(Buffer.from('DXBC'), 'shader.dxil')).toBe('DXContainer')
     expect(detectFileType(Buffer.from('fn main() {}'), 'shader.wgsl')).toBe('WGSL')
@@ -1673,6 +1676,51 @@ describe('passive compiler codegen fingerprint inventory', () => {
   })
 })
 
+describe('passive Rust binary inventory', () => {
+  test('extracts Rust runtime, mangling, Cargo, and target hints without demanglers', () => {
+    const inventory = buildRustBinaryInventoryFromBuffer(
+      Buffer.from(
+        [
+          'rustc 1.84.1',
+          'x86_64-unknown-linux-gnu',
+          '_RNvCs1234567890abcdef_7mycrate4main',
+          '_ZN4core3fmt5write17h0123456789abcdefE',
+          '/home/build/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.217/src/lib.rs',
+          'std::rt::lang_start',
+          'core::panicking::panic_fmt',
+          'rust_eh_personality',
+          '__rust_alloc',
+        ].join('\0'),
+        'ascii'
+      ),
+      { filename: 'agent.rlib' }
+    )
+
+    expect(inventory.format).toBe('rust-rlib-inventory')
+    expect(inventory.rustc_candidates).toEqual(
+      expect.arrayContaining([expect.objectContaining({ version: '1.84.1' })])
+    )
+    expect(inventory.symbol_mangling).toEqual(
+      expect.objectContaining({ v0_count: 1, legacy_count: 1, demangling_performed: false })
+    )
+    expect(inventory.crate_candidates).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'serde', version: '1.0.217' })])
+    )
+    expect(inventory.target_triples).toEqual(
+      expect.arrayContaining([expect.objectContaining({ triple: 'x86_64-unknown-linux-gnu' })])
+    )
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_execute: true,
+        no_rustc_invocation: true,
+        no_cargo_invocation: true,
+        no_external_demangler: true,
+      })
+    )
+  })
+})
+
 describe('passive binary hardening inventory', () => {
   test('extracts mitigation posture without loaders, exploit tests, or external tools', () => {
     const inventory = buildBinaryHardeningInventoryFromBuffer(
@@ -1985,6 +2033,7 @@ describe('built-in plugin format matrix discovery', () => {
     const containerAnalysis = plugins.find((plugin) => plugin.id === 'container-analysis')
     const nativeObject = plugins.find((plugin) => plugin.id === 'native-object')
     const nativeDebugTypes = plugins.find((plugin) => plugin.id === 'native-debug-types')
+    const rustBinary = plugins.find((plugin) => plugin.id === 'rust-binary')
     const androidPackage = plugins.find((plugin) => plugin.id === 'android-package')
     const appleSigning = plugins.find((plugin) => plugin.id === 'apple-signing')
     const appleObjcSwift = plugins.find((plugin) => plugin.id === 'apple-objc-swift')
@@ -2041,15 +2090,23 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(btf?.tools?.map((tool) => tool.definition.name)).toContain('btf.type.inventory')
     expect(compilerCodegen?.aspects?.formats).toEqual(
-      expect.arrayContaining([
-        'compiler-codegen',
-        'compiler-provenance',
-        'rich-header',
-        'codeview',
-      ])
+      expect.arrayContaining(['compiler-codegen', 'compiler-provenance', 'rich-header', 'codeview'])
     )
     expect(compilerCodegen?.tools?.map((tool) => tool.definition.name)).toContain(
       'compiler.codegen.fingerprint'
+    )
+    expect(rustBinary?.aspects?.formats).toEqual(
+      expect.arrayContaining([
+        'rust-binary',
+        'rust',
+        'rustc',
+        'cargo-crate',
+        'rust-v0-mangled',
+        'rust-legacy-mangled',
+      ])
+    )
+    expect(rustBinary?.tools?.map((tool) => tool.definition.name)).toContain(
+      'rust.binary.inventory'
     )
     expect(teeEnclave?.aspects?.formats).toEqual(
       expect.arrayContaining(['tee-enclave', 'sgx-enclave', 'optee-ta', 'tdx', 'sev-snp'])
@@ -2200,6 +2257,7 @@ describe('built-in plugin format matrix discovery', () => {
     const nativeObject = requirePlugin(plugins, 'native-object')
     const nativeDebugTypes = requirePlugin(plugins, 'native-debug-types')
     const compilerCodegen = requirePlugin(plugins, 'compiler-codegen')
+    const rustBinary = requirePlugin(plugins, 'rust-binary')
     const cppAbiLayout = requirePlugin(plugins, 'cpp-abi-layout')
     const kernelDriverSurface = requirePlugin(plugins, 'kernel-driver-surface')
     const btf = requirePlugin(plugins, 'btf')
@@ -2251,6 +2309,15 @@ describe('built-in plugin format matrix discovery', () => {
         'compiler-codegen-fingerprint',
         'toolchain-provenance-inventory',
         'optimization-lto-pgo-hints',
+      ])
+    )
+    expect(rustBinary.aspects?.capabilities).toEqual(
+      expect.arrayContaining([
+        'rust-binary-inventory',
+        'rust-v0-mangled-symbol-inventory',
+        'rust-legacy-mangled-symbol-inventory',
+        'rustc-cargo-provenance-hints',
+        'rust-panic-unwind-profile',
       ])
     )
     expect(teeEnclave.aspects?.capabilities).toEqual(
@@ -2426,6 +2493,25 @@ describe('built-in plugin format matrix discovery', () => {
       producesArtifacts: ['compiler_codegen_fingerprint'],
       evidence: ['provenance', 'compiler', 'linker', 'optimization', 'workflow'],
       safety: ['passive', 'no_compiler_invocation', 'no_linker_invocation', 'no_external_tool'],
+    })
+    expectToolMetadata(rustBinary, 'rust.binary.inventory', {
+      formats: ['rust-binary', 'rust', 'rustc', 'cargo-crate', 'rust-v0-mangled'],
+      artifacts: ['rust_binary_inventory'],
+      evidence: ['symbols', 'language-runtime', 'provenance', 'panic', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'rust-binary',
+      toolName: 'rust.binary.inventory',
+      recipeId: 'rust.binary-static-inventory',
+      startsWith: ['rust.binary.inventory'],
+      nextTools: [
+        'compiler.codegen.fingerprint',
+        'native.debug.types.inventory',
+        'sbom.provenance.graph',
+      ],
+      producesArtifacts: ['rust_binary_inventory'],
+      evidence: ['symbols', 'language-runtime', 'provenance', 'panic', 'workflow'],
+      safety: ['passive', 'no_rustc_invocation', 'no_cargo_invocation', 'no_external_demangler'],
     })
     expectToolMetadata(teeEnclave, 'tee.enclave.inventory', {
       formats: ['tee-enclave', 'sgx-enclave', 'optee-ta', 'tdx', 'sev-snp'],
