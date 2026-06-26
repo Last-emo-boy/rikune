@@ -21,7 +21,7 @@ A plugin can:
 
 ## Built-In Plugins
 
-The repository currently contains 100 built-in plugins.
+The repository currently contains 101 built-in plugins.
 
 | ID | Name | Domain | Surface tier |
 | --- | --- | --- | --- |
@@ -32,6 +32,7 @@ The repository currently contains 100 built-in plugins.
 | `api-hash` | API Hash Resolution | static | 2 |
 | `apk-smali` | APK Smali Analysis | static | 1 |
 | `apple-container` | Apple Container Inventory | static | 1 |
+| `apple-objc-swift` | Apple ObjC / Swift Metadata Inventory | static | 1 |
 | `apple-signing` | Apple Signing Inventory | static | 1 |
 | `batch` | Batch Analysis | both | 0 |
 | `behavior-first` | Behavior-First Analysis | dynamic | 2 |
@@ -277,6 +278,7 @@ emulators, or attach debuggers.
 | `wasm.component-static-inventory` | `wasm-component` | `wasm.component.inventory` | `wasm.structure.analyze`, `wasm.runtime.plan`, `wabt.toolchain.plan`, `analysis.evidence.graph`, `artifact.read`, `strings.extract`, `sbom.generate` | Passive WebAssembly Component Model inventory for WIT/WASI Preview 2, component imports/exports, and Canonical ABI hints; no component instantiation, wasmtime start, WASI grant, external wasm tooling, package fetch, mutation, or network. |
 | `android.static.behavior-graph` | `android` | `android.behavior.graph` | `dex.classes.list`, `android.runtime.plan` | Static graph only; no APK launch, device connection, or runtime start. |
 | `apple.security.runtime-profile` | `apple-signing` | `apple.security.profile` | `macho.structure.analyze`, `macos.runtime.plan`, `ios.runtime.plan` | Static profile only; no mount, install, keychain, codesign, or device action. |
+| `apple.objc-swift-metadata-static-inventory` | `apple-objc-swift` | `apple.objc_swift.metadata.inspect` | `macho.structure.analyze`, `apple.signing.inspect`, `apple.security.profile`, `analysis.evidence.graph`, `artifact.read`, `strings.extract`, `report.generate`, `macos.runtime.plan`, `ios.runtime.plan` | Passive Objective-C class/protocol/selector and Swift ABI/reflection metadata inventory; no app launch, debugger attach, device connection, DMG mount, external Apple tooling, demangle process, runtime start, mutation, or network. |
 | `pe.security.hardening-profile` | `pe-analysis` | `pe.security.profile` | `pe.structure.analyze`, `pe.imports.extract`, `pe.pdata.extract`, `analysis.evidence.graph`, `windows.runtime.plan` | Static PE mitigation profile only; no DLL load, loader invocation, exploit test, network, or mutation. |
 | `firmware.iot.passive-workflow` | `firmware` | `firmware.workflow.plan` | `firmware.entropy`, `sbom.provenance.graph`, `qiling.inspect` | Passive workflow plan; no extraction-to-execute, mount, module load, or emulation. |
 | `office.macro.static-profile` | `office-analysis` | `office.behavior.profile` | `ioc.export`, `yara.generate`, `sigma.rule.generate`, `report.generate` | Static macro profile only; no Office automation or macro execution. |
@@ -402,8 +404,8 @@ The current plugin matrix is organized by `formats`, `platforms`, `execution`, `
 | --- | --- | --- | --- |
 | Windows PE, DLL, SYS, EFI, MSI/MSIX/APPX/CAB/PDB | `pe-analysis`, `pe-signature`, `windows-installer`, `windows-debug-symbols`, `dotnet-managed`, `retdec`, `rizin`, `ghidra` | `windows-runtime`, `debug-session`, `wine`, `speakeasy`, `behavior-first`, `frida` | Static inventory is passive. Dynamic tools require opt-in, isolation, and runtime readiness. |
 | Linux ELF, SO, core, modules, packages, eBPF, BTF | `linux-binary`, `linux-package`, `elf-macho`, `native-object`, `container-analysis`, `btf`, `ebpf-bytecode` | `linux-runtime`, `qiling`, `debug-session`, `behavior-first` | No ELF execution, ptrace, kernel module loading, package install, eBPF load/attach, BTF verifier submission, or eBPF collection by default. |
-| macOS Mach-O, app bundles, frameworks, DMG, PKG, dSYM | `apple-container`, `apple-signing`, `elf-macho`, `native-object` | `macos-runtime`, `debug-session`, `frida`, `behavior-first` | No DMG mount, app launch, LLDB attach, DTrace, or fs_usage capture by default. |
-| iOS IPA, Mach-O, provisioning, entitlements | `apple-container`, `apple-signing`, `elf-macho` | `ios-runtime`, `frida`, `debug-session` | No IPA install, device connection, simulator start, Frida attach, or LLDB attach by default. |
+| macOS Mach-O, app bundles, frameworks, DMG, PKG, dSYM | `apple-container`, `apple-signing`, `apple-objc-swift`, `elf-macho`, `native-object` | `macos-runtime`, `debug-session`, `frida`, `behavior-first` | No DMG mount, app launch, LLDB attach, DTrace, fs_usage capture, Objective-C runtime attach, Swift demangle process, or external Apple tooling by default. |
+| iOS IPA, Mach-O, provisioning, entitlements | `apple-container`, `apple-signing`, `apple-objc-swift`, `elf-macho` | `ios-runtime`, `frida`, `debug-session` | No IPA install, device connection, simulator start, Frida attach, LLDB attach, class-dump, swift-demangle, or app launch by default. |
 | Android APK, AAB, APKS, XAPK, DEX/OAT/VDEX, AAR | `android-package`, `android`, `apk-smali`, `jvm`, `linux-binary` | `android-runtime`, `frida`, `behavior-first` | No emulator start, ADB install, APK launch, frida-server deployment, or device connection by default. |
 | JVM, .NET, Unity, script bytecode | `jvm`, `dotnet-managed`, `dotnet-decompile`, `unity-managed`, `bytecode`, `strings` | `managed-sandbox`, `runtime-deobfuscate`, `behavior-first` | Runtime work is opt-in and delegated; metadata and bytecode inventory stay passive. |
 | AI/ML model artifacts, checkpoints, tensor containers | `ml-model`, `container-analysis`, `metadata`, `strings`, `yara` | Runtime/model loading is not enabled by default | No `pickle.load`, `torch.load`, `numpy.load(... allow_pickle=True)`, ONNX Runtime, TensorFlow/TFLite delegate, PyTorch framework import, model inference, archive extraction, network/model hub download, or mutation by default. |

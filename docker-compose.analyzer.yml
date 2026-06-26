@@ -4,7 +4,7 @@
 # Auto-generated from plugin systemDeps.
 # Profile: Static-only Docker analyzer
 # Backend profile: default
-# Build plugins: 83 | Runtime plugins: 83
+# Build plugins: 84 | Runtime plugins: 84
 # Features: angr, binwalk, capa, die, dotnet-runtime, ghidra, goresym, graphviz, jadx, jsimplifier, manifold, restringer, retdec, rizin, static-python, upx, vol3, wabt
 # Regenerate: npm run docker:generate -- --profile=static
 # =============================================================================
@@ -73,7 +73,7 @@ services:
       - RIKUNE_BACKEND_PROFILE=default
       - NODE_ROLE=analyzer
       - RUNTIME_MODE=disabled
-      - PLUGINS=android,android-package,angr,api-hash,apk-smali,apple-container,apple-signing,batch,binary-diff,btf,bytecode,capstone,code-analysis,container-analysis,crackme,cross-module,cuda-binary,culifter,deep-unpack,die,dotnet-decompile,dotnet-managed,dotnet-reactor,ebpf-bytecode,elf-macho,external-re-bridge,firmware,ghidra,go-analysis,graphviz,gtirb,host-correlation,javascript-deobfuscation,jsimplifier,jsir-cascade,jsvmp-analysis,jvm,kb-collaboration,lief,linux-binary,linux-package,llvm-bitcode,malware,managed-il-xrefs,manifold,memory-forensics,metadata,miasm,ml-model,native-object,observability,office-analysis,pcap-analysis,pe-analysis,pe-signature,qbdi,radare2,remill,reporting,restringer,retdec,revng,rizin,sbom,shader-ir,similarity,static-triage,strings,threat-intel,triton,unity-managed,unpacking,upx,visualization,vm-analysis,vuln-scanner,wabt,wasm,wasm-component,windows-debug-symbols,windows-installer,yara,yara-x
+      - PLUGINS=android,android-package,angr,api-hash,apk-smali,apple-container,apple-objc-swift,apple-signing,batch,binary-diff,btf,bytecode,capstone,code-analysis,container-analysis,crackme,cross-module,cuda-binary,culifter,deep-unpack,die,dotnet-decompile,dotnet-managed,dotnet-reactor,ebpf-bytecode,elf-macho,external-re-bridge,firmware,ghidra,go-analysis,graphviz,gtirb,host-correlation,javascript-deobfuscation,jsimplifier,jsir-cascade,jsvmp-analysis,jvm,kb-collaboration,lief,linux-binary,linux-package,llvm-bitcode,malware,managed-il-xrefs,manifold,memory-forensics,metadata,miasm,ml-model,native-object,observability,office-analysis,pcap-analysis,pe-analysis,pe-signature,qbdi,radare2,remill,reporting,restringer,retdec,revng,rizin,sbom,shader-ir,similarity,static-triage,strings,threat-intel,triton,unity-managed,unpacking,upx,visualization,vm-analysis,vuln-scanner,wabt,wasm,wasm-component,windows-debug-symbols,windows-installer,yara,yara-x
       - WORKSPACE_ROOT=/app/workspaces
       - DB_PATH=/app/data/database.db
       - CACHE_ROOT=/app/cache
