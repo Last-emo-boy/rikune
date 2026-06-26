@@ -17,7 +17,7 @@ describe('RikuneAgentGateway stable tool surface', () => {
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
-  function createGateway(): RikuneAgentGateway {
+  function createGateway(envOverrides: Record<string, string> = {}): RikuneAgentGateway {
     return new RikuneAgentGateway({
       configPath,
       env: {
@@ -25,6 +25,7 @@ describe('RikuneAgentGateway stable tool surface', () => {
         RIKUNE_AGENT_NO_ENV_FILE: '1',
         RIKUNE_ANALYZER_TRANSPORT: 'stdio',
         RIKUNE_ANALYZER_ENDPOINT: 'http://127.0.0.1:18080',
+        ...envOverrides,
       },
     })
   }
@@ -117,6 +118,24 @@ describe('RikuneAgentGateway stable tool surface', () => {
     )
   })
 
+  test('documents current workflow.run analyzer schema in the stable gateway surface', () => {
+    const gateway = createGateway()
+    const tools = (gateway as any).listExposedTools() as Array<{
+      name: string
+      inputSchema?: any
+    }>
+    const workflowRun = tools.find((tool) => tool.name === 'workflow_run')
+
+    expect(workflowRun?.inputSchema.properties.backend_policy.enum).toEqual([
+      'auto',
+      'prefer_new',
+      'legacy_only',
+      'strict',
+    ])
+    expect(workflowRun?.inputSchema.properties.through_stage.enum).toContain('summarize')
+    expect(workflowRun?.inputSchema.properties.through_stage.enum).toContain('function_map')
+  })
+
   test('routes arbitrary subtool calls through the stable call gateway', async () => {
     const gateway = createGateway()
     const callTool = jest.fn(async () => ({
@@ -143,5 +162,87 @@ describe('RikuneAgentGateway stable tool surface', () => {
       undefined,
       expect.objectContaining({ resetTimeoutOnProgress: true })
     )
+  })
+
+  test('forwards activated analyzer subtools even when upstream tools/list stays minimal', async () => {
+    const gateway = createGateway()
+    const callTool = jest.fn(async () => ({
+      content: [{ type: 'text', text: '{"ok":true}' }],
+      structuredContent: { ok: true },
+    }))
+    ;(gateway as any).states.analyzer = {
+      client: { callTool },
+      connected: true,
+      tools: [
+        { name: 'workflow_search', inputSchema: { type: 'object' } },
+        { name: 'workflow_run', inputSchema: { type: 'object' } },
+        { name: 'artifact_read', inputSchema: { type: 'object' } },
+      ],
+    }
+
+    const result = await (gateway as any).handleDirectToolCall({
+      tool: 'code.function.decompile',
+      arguments: { sample_id: 'sha256:test', address: '0x401000' },
+    })
+
+    expect(result.structuredContent).toEqual({ ok: true })
+    expect(callTool).toHaveBeenCalledWith(
+      {
+        name: 'code.function.decompile',
+        arguments: { sample_id: 'sha256:test', address: '0x401000' },
+      },
+      undefined,
+      expect.objectContaining({ resetTimeoutOnProgress: true })
+    )
+  })
+
+  test('rewrites localhost upload URLs to the configured analyzer endpoint', async () => {
+    const gateway = createGateway({
+      RIKUNE_ANALYZER_ENDPOINT: 'http://159.195.136.226:18080',
+    })
+    const upstreamPayload = {
+      ok: true,
+      data: {
+        result_mode: 'workflow_run',
+        action: 'request_upload',
+        routed_tool: 'sample.request_upload',
+        upload_url: 'http://localhost:18080/api/v1/uploads/token-1',
+        status_url: 'http://localhost:18080/api/v1/uploads/token-1/status',
+        token: 'token-1',
+        recommended_workflow_tools: ['workflow.run'],
+        next_actions: ['POST the file bytes to upload_url.'],
+        message: 'request_upload routed through sample.request_upload; upload_url is ready.',
+      },
+    }
+    const callTool = jest.fn(async () => ({
+      content: [{ type: 'text', text: JSON.stringify(upstreamPayload) }],
+      structuredContent: upstreamPayload,
+    }))
+    ;(gateway as any).states.analyzer = {
+      client: { callTool },
+      connected: true,
+      tools: [{ name: 'workflow_run', inputSchema: { type: 'object' } }],
+    }
+
+    const result = await (gateway as any).proxyToolCall('workflow_run', {
+      action: 'request_upload',
+    })
+    const payload = result.structuredContent as any
+    const textPayload = JSON.parse((result.content[0] as any).text)
+
+    expect(payload.data.upload_url).toBe(
+      'http://159.195.136.226:18080/api/v1/uploads/token-1'
+    )
+    expect(payload.data.client_upload_url).toBe(payload.data.upload_url)
+    expect(payload.data.upstream_upload_url).toBe(
+      'http://localhost:18080/api/v1/uploads/token-1'
+    )
+    expect(payload.data.status_url).toBe(
+      'http://159.195.136.226:18080/api/v1/uploads/token-1/status'
+    )
+    expect(payload.warnings).toContain(
+      'Gateway rewrote localhost upload_url/status_url to the configured analyzer endpoint.'
+    )
+    expect(textPayload.data.upload_url).toBe(payload.data.upload_url)
   })
 })

@@ -90,6 +90,8 @@ node dist/index.js
 
 宿主机文件上传调用 `workflow.run action=request_upload`，向返回的 upload URL POST 原始字节，然后从 HTTP 响应读取 `sample_id`。`sample.request_upload` 和 `sample.ingest` 是兼容 helper，不是普通 AI-facing 主路径。
 
+远程 analyzer 或 `rikune-agent` 部署时，设置 `API_PUBLIC_BASE_URL`、`RIKUNE_API_PUBLIC_BASE_URL` 或 `RIKUNE_ANALYZER_PUBLIC_URL` 为客户端可访问的 HTTP API base，例如 `http://159.195.136.226:18080`。这样上传会话会返回公网/内网可访问的 `upload_url` / `status_url`，而不是容器内部的 `localhost` 地址。远程 gateway 也会把旧 analyzer 返回的 localhost 上传地址归一化到已配置的 analyzer endpoint。
+
 启用 HTTP API 时，非 MCP 集成仍可直接 `POST /api/v1/samples`。导入成功后会返回 `sample_id`；后续分析应使用 `sample_id`，不要继续依赖本地文件路径。
 
 ### 启动分析
@@ -299,6 +301,7 @@ npm run build:runtime
       "env": {
         "API_ENABLED": "true",
         "API_PORT": "18080",
+        "API_PUBLIC_BASE_URL": "http://127.0.0.1:18080",
         "PLUGINS": "*"
       }
     }

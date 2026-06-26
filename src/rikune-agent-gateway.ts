@@ -80,7 +80,7 @@ const GATEWAY_INSTRUCTIONS = [
   'Use workflow_search first for capability discovery, workflow selection, readiness checks, and explicit activation. workflow_search is passive unless action=activate is explicitly requested.',
   'Use workflow_run for the normal execution path: request_upload, start, status, and promote. Do not call low-level sample or workflow.analyze tools directly from the MCP surface.',
   'Use artifact_read for persisted evidence, summaries, reports, decompiler output, and other artifacts returned by workflow_run or workflow_search.',
-  'Use rikune_tool_call only as an advanced subtool gateway when workflow_search identifies a specific internal analyzer tool that is not covered by workflow_run or artifact_read. Pass the internal tool name in the tool field and the tool arguments in arguments.',
+  'Use rikune_tool_call only as an advanced subtool gateway when workflow_search identifies a specific internal analyzer tool that is not covered by workflow_run or artifact_read. Pass the internal tool name in the tool field and the tool arguments in arguments; the tool does not need to appear in upstream tools/list after activation.',
   'Connection tools manage upstream analyzer, VM, and runtime links. Refresh updates the internal capability cache only; it does not expand the MCP tool list.',
 ].join('\n')
 
@@ -189,7 +189,7 @@ const STABLE_ANALYZER_TOOLS: Tool[] = [
         },
         backend_policy: {
           type: 'string',
-          enum: ['auto', 'local_only', 'external_allowed', 'runtime_required'],
+          enum: ['auto', 'prefer_new', 'legacy_only', 'strict'],
           description: 'Backend routing policy for action=start.',
         },
         allow_transformations: {
@@ -203,11 +203,37 @@ const STABLE_ANALYZER_TOOLS: Tool[] = [
         },
         stages: {
           type: 'array',
-          items: { type: 'string' },
+          items: {
+            type: 'string',
+            enum: [
+              'fast_profile',
+              'enrich_static',
+              'function_map',
+              'reconstruct',
+              'semantic_name_review',
+              'semantic_explain_review',
+              'semantic_module_review',
+              'dynamic_plan',
+              'dynamic_execute',
+              'summarize',
+            ],
+          },
           description: 'Optional promoted stages for action=promote.',
         },
         through_stage: {
           type: 'string',
+          enum: [
+            'fast_profile',
+            'enrich_static',
+            'function_map',
+            'reconstruct',
+            'semantic_name_review',
+            'semantic_explain_review',
+            'semantic_module_review',
+            'dynamic_plan',
+            'dynamic_execute',
+            'summarize',
+          ],
           description: 'Optional terminal stage for action=promote.',
         },
         force_refresh: { type: 'boolean', description: 'Bypass reusable run/stage results.' },
@@ -402,7 +428,7 @@ const CONTROL_TOOLS: Tool[] = [
 const DIRECT_TOOL_CALL_TOOL: Tool = {
   name: DIRECT_TOOL_CALL_NAME,
   description:
-    'Advanced Rikune subtool gateway. Use workflow_search first to find or activate a specific internal analyzer capability, then call that internal tool here without requiring MCP clients to refresh their tool list. Prefer workflow_run and artifact_read for normal analysis.',
+    'Advanced Rikune subtool gateway. Use workflow_search first to find or activate a specific internal analyzer capability, then call that internal tool here without requiring MCP clients to refresh their tool list or the internal tool to appear in upstream tools/list. Prefer workflow_run and artifact_read for normal analysis.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -658,7 +684,9 @@ export class RikuneAgentGateway {
     }
 
     const state = this.states[target]
-    const upstreamName = this.resolveUpstreamToolName(state, requestedTool)
+    const upstreamName =
+      this.resolveUpstreamToolName(state, requestedTool) ??
+      (target === 'analyzer' ? requestedTool : null)
     if (!upstreamName) {
       return this.errorToolResult(
         `Upstream ${target} tool not found: ${requestedTool}. Use workflow_search to discover available analyzer capabilities.`
@@ -685,7 +713,39 @@ export class RikuneAgentGateway {
     const state = this.states[route.target]
     const upstreamName =
       this.resolveUpstreamToolName(state, route.upstreamName) ?? route.upstreamName
-    return await this.callUpstreamTool(route.target, upstreamName, args)
+    const result = await this.callUpstreamTool(route.target, upstreamName, args)
+    return this.rewriteUploadUrlsForClient(route, args, result)
+  }
+
+  private rewriteUploadUrlsForClient(
+    route: ToolRoute,
+    args: Record<string, unknown>,
+    result: CallToolResult
+  ): CallToolResult {
+    if (
+      route.target !== 'analyzer' ||
+      normalizeToolLookupName(route.upstreamName) !== 'workflow_run' ||
+      args.action !== 'request_upload' ||
+      !this.config.analyzer.endpoint
+    ) {
+      return result
+    }
+
+    const payload = structuredPayloadFromToolResult(result)
+    if (!payload) {
+      return result
+    }
+
+    const rewritten = rewriteUploadPayload(payload, this.config.analyzer.endpoint)
+    if (!rewritten.changed) {
+      return result
+    }
+
+    return {
+      ...result,
+      structuredContent: rewritten.payload,
+      content: rewriteJsonTextContent(result.content, rewritten.payload),
+    }
   }
 
   private async ensureTargetConnected(target: AgentTarget): Promise<boolean> {
@@ -1294,6 +1354,145 @@ async function fetchJson(
     throw new Error(`HTTP ${response.status}${text ? ` ${text.slice(0, 500)}` : ''}`)
   }
   return body
+}
+
+function structuredPayloadFromToolResult(result: CallToolResult): Record<string, unknown> | null {
+  if (
+    result.structuredContent &&
+    typeof result.structuredContent === 'object' &&
+    !Array.isArray(result.structuredContent)
+  ) {
+    return cloneRecord(result.structuredContent as Record<string, unknown>)
+  }
+
+  for (const item of result.content || []) {
+    if (!('text' in item) || typeof item.text !== 'string') {
+      continue
+    }
+    try {
+      const parsed = JSON.parse(item.text) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>
+      }
+    } catch {}
+  }
+
+  return null
+}
+
+function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>
+}
+
+function rewriteJsonTextContent(
+  content: CallToolResult['content'],
+  payload: Record<string, unknown>
+): CallToolResult['content'] {
+  let replaced = false
+  return (content || []).map((item) => {
+    if (replaced || !('text' in item) || typeof item.text !== 'string') {
+      return item
+    }
+    try {
+      JSON.parse(item.text)
+      replaced = true
+      return {
+        ...item,
+        text: JSON.stringify(payload),
+      }
+    } catch {
+      return item
+    }
+  })
+}
+
+function rewriteUploadPayload(
+  payload: Record<string, unknown>,
+  analyzerEndpoint: string
+): { payload: Record<string, unknown>; changed: boolean } {
+  const data = asPlainObject(payload.data)
+  if (Object.keys(data).length === 0) {
+    return { payload, changed: false }
+  }
+
+  const uploadUrl = typeof data.upload_url === 'string' ? data.upload_url : undefined
+  const statusUrl = typeof data.status_url === 'string' ? data.status_url : undefined
+  const rewrittenUploadUrl = uploadUrl
+    ? rewriteLocalServiceUrl(uploadUrl, analyzerEndpoint)
+    : undefined
+  const rewrittenStatusUrl = statusUrl
+    ? rewriteLocalServiceUrl(statusUrl, analyzerEndpoint)
+    : undefined
+
+  if (
+    (!rewrittenUploadUrl || rewrittenUploadUrl === uploadUrl) &&
+    (!rewrittenStatusUrl || rewrittenStatusUrl === statusUrl)
+  ) {
+    return { payload, changed: false }
+  }
+
+  const nextData: Record<string, unknown> = { ...data }
+  if (rewrittenUploadUrl && uploadUrl && rewrittenUploadUrl !== uploadUrl) {
+    nextData.upstream_upload_url = uploadUrl
+    nextData.client_upload_url = rewrittenUploadUrl
+    nextData.upload_url = rewrittenUploadUrl
+  }
+  if (rewrittenStatusUrl && statusUrl && rewrittenStatusUrl !== statusUrl) {
+    nextData.upstream_status_url = statusUrl
+    nextData.client_status_url = rewrittenStatusUrl
+    nextData.status_url = rewrittenStatusUrl
+  }
+
+  const nextActions = Array.isArray(nextData.next_actions)
+    ? nextData.next_actions.filter((item): item is string => typeof item === 'string')
+    : []
+  nextData.next_actions = uniqueStrings([
+    'POST file bytes to upload_url; the gateway rewrote localhost upload URLs to the configured analyzer endpoint when needed.',
+    ...nextActions,
+  ])
+  if (typeof nextData.message === 'string') {
+    nextData.message = `${nextData.message} Gateway upload URLs were normalized for this client.`
+  }
+
+  const warnings = Array.isArray(payload.warnings)
+    ? payload.warnings.filter((item): item is string => typeof item === 'string')
+    : []
+  return {
+    payload: {
+      ...payload,
+      data: nextData,
+      warnings: uniqueStrings([
+        ...warnings,
+        'Gateway rewrote localhost upload_url/status_url to the configured analyzer endpoint.',
+      ]),
+    },
+    changed: true,
+  }
+}
+
+function rewriteLocalServiceUrl(value: string, endpoint: string): string | null {
+  try {
+    const original = new URL(value)
+    const host = original.hostname.toLowerCase()
+    if (
+      host !== 'localhost' &&
+      host !== '127.0.0.1' &&
+      host !== '0.0.0.0' &&
+      host !== 'host.docker.internal'
+    ) {
+      return value
+    }
+
+    const base = new URL(endpoint)
+    original.protocol = base.protocol
+    original.hostname = base.hostname
+    original.port = base.port
+    original.username = ''
+    original.password = ''
+    return original.toString()
+  } catch {
+    return null
+  }
 }
 
 function parseTarget(value: unknown): AgentTarget {

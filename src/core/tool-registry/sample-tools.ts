@@ -22,7 +22,10 @@ export function registerSampleTools(server: ToolRegistrar, deps: ToolDeps): void
   )
   server.registerTool(
     sampleRequestUploadToolDefinition,
-    createSampleRequestUploadHandler(database, { apiPort: config.api.port })
+    createSampleRequestUploadHandler(database, {
+      apiPort: config.api.port,
+      baseUrl: config.api.publicBaseUrl,
+    })
   )
   server.registerTool(
     sampleProfileGetToolDefinition,

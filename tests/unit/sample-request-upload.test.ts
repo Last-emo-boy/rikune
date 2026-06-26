@@ -54,4 +54,27 @@ describe('sample.request_upload tool', () => {
     expect(session?.status).toBe('pending')
     expect(session?.filename).toBe('Weixin.dll')
   })
+
+  test('uses configured public base URL for remote upload sessions', async () => {
+    const handler = createSampleRequestUploadHandler(database, {
+      apiPort: 19080,
+      baseUrl: 'http://159.195.136.226:18080/',
+    })
+
+    const result = await handler({
+      filename: 'remote.bin',
+      ttl_seconds: 300,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as {
+      upload_url: string
+      status_url: string
+      token: string
+    }
+    expect(data.upload_url).toBe(`http://159.195.136.226:18080/api/v1/uploads/${data.token}`)
+    expect(data.status_url).toBe(
+      `http://159.195.136.226:18080/api/v1/uploads/${data.token}/status`
+    )
+  })
 })

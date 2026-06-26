@@ -1482,6 +1482,21 @@ function normalizeActivationActions(actions: unknown): string[] {
     .slice(0, 8)
 }
 
+function directActivationFromResultId(
+  resultId: string | undefined
+): { plugin_id?: string; tool_name?: string } | null {
+  if (!resultId) return null
+  if (resultId.startsWith('plugin:')) {
+    const pluginId = resultId.slice('plugin:'.length).trim()
+    return pluginId ? { plugin_id: pluginId } : null
+  }
+  if (resultId.startsWith('tool:')) {
+    const toolName = resultId.slice('tool:'.length).trim()
+    return toolName ? { tool_name: toolName } : null
+  }
+  return null
+}
+
 export function createWorkflowSearchHandler(
   pluginManager: PluginManager,
   options: {
@@ -1589,6 +1604,61 @@ export function createWorkflowSearchHandler(
       if (input.action === 'activate' && input.result_id) {
         const selected = results.find((result) => result.result_id === input.result_id)
         if (!selected) {
+          const directActivation = directActivationFromResultId(input.result_id)
+          if (directActivation) {
+            const activation = await discover({
+              action: 'activate',
+              ...directActivation,
+              sample_id: input.sample_id,
+              file_type: input.file_type,
+              finding: input.finding,
+            })
+            const activationData = asRecord(activation.data)
+            if (activation.ok) {
+              return {
+                ok: true,
+                data: {
+                  result_mode: 'workflow_search',
+                  action: input.action,
+                  query: input.query,
+                  sample_id: input.sample_id,
+                  goal: input.goal,
+                  depth: input.depth,
+                  top_k: resolvedTopK.value,
+                  search_profile: searchProfile,
+                  search_profiles: enhancedSearchProfiles,
+                  quota_decisions: quotaSelection.quota_decisions,
+                  activation_audit: {
+                    ...asRecord(activationData.activation_audit),
+                    result_id: input.result_id,
+                    result_id_direct_activation_used: true,
+                  },
+                  activated: stringArray(activationData.activated),
+                  activated_tools: stringArray(activationData.activated_tools),
+                  raw_discovery: {
+                    action: activationData.action,
+                    sample_file_type: activationData.sample_file_type,
+                    target_file_type_tags: activationData.target_file_type_tags,
+                    matched_plugins: activationData.matched_plugins,
+                    matched_tools: activationData.matched_tools,
+                  },
+                  message: `Activated ${input.result_id} directly from result_id; no backend execution was started.`,
+                },
+                warnings: uniqueStrings([...(discovery.warnings ?? []), ...(activation.warnings ?? [])]),
+                metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
+              }
+            }
+
+            return {
+              ok: false,
+              errors:
+                activation.errors ??
+                [`Failed to activate workflow.search result_id=${input.result_id}.`],
+              warnings: uniqueStrings([...(discovery.warnings ?? []), ...(activation.warnings ?? [])]),
+              metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
+            }
+          }
+
           return {
             ok: false,
             errors: [

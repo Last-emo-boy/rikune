@@ -65,6 +65,9 @@ describe('Configuration Loading', () => {
     delete process.env.DIEC_PATH
     delete process.env.LOG_LEVEL
     delete process.env.AUDIT_LOG_PATH
+    delete process.env.API_PUBLIC_BASE_URL
+    delete process.env.RIKUNE_API_PUBLIC_BASE_URL
+    delete process.env.RIKUNE_ANALYZER_PUBLIC_URL
   })
 
   describe('loadConfigFromFile', () => {
@@ -323,6 +326,14 @@ describe('Configuration Loading', () => {
       expect(config.server.port).toBe(8080)
       expect(config.server.host).toBe('custom.host')
       expect(config.logging.level).toBe('debug')
+    })
+
+    test('should load public API base URL from environment', () => {
+      process.env.API_PUBLIC_BASE_URL = 'http://159.195.136.226:18080'
+
+      const config = loadConfig(testConfigPath)
+
+      expect(config.api.publicBaseUrl).toBe('http://159.195.136.226:18080')
     })
 
     test('should throw error for invalid configuration', () => {
