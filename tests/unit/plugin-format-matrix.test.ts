@@ -16,6 +16,7 @@ import { buildWasmComponentInventoryFromBuffer } from '../../src/plugins/wasm-co
 import { buildAppleObjcSwiftMetadataFromBuffer } from '../../src/plugins/apple-objc-swift/tools/apple-objc-swift-metadata-inspect.js'
 import { buildBytecodeMetadataFromBuffer } from '../../src/plugins/bytecode/tools/bytecode-metadata-inspect.js'
 import { buildBtfInventoryFromBuffer } from '../../src/plugins/btf/tools/btf-type-inventory.js'
+import { buildCompilerCodegenFingerprintFromBuffer } from '../../src/plugins/compiler-codegen/tools/compiler-codegen-fingerprint.js'
 import { buildCppAbiLayoutInventoryFromBuffer } from '../../src/plugins/cpp-abi-layout/tools/cpp-abi-layout-inventory.js'
 import { buildKernelDriverSurfaceInventoryFromBuffer } from '../../src/plugins/kernel-driver-surface/tools/kernel-driver-surface-inventory.js'
 import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitcode/tools/llvm-bitcode-inventory.js'
@@ -1614,6 +1615,59 @@ describe('passive C++ ABI layout inventory', () => {
   })
 })
 
+describe('passive compiler codegen fingerprint inventory', () => {
+  test('extracts toolchain provenance hints without invoking compilers or loaders', () => {
+    const inventory = buildCompilerCodegenFingerprintFromBuffer(
+      Buffer.from(
+        [
+          'RSDS',
+          'C:\\build\\sample.pdb',
+          'GCC: (GNU) 13.2.1',
+          'clang version 18.1.8',
+          'thinlto',
+          '__llvm_prf_cnts',
+          'runtime.goexit',
+          'rustc 1.78.0',
+        ].join('\0'),
+        'ascii'
+      ),
+      { filename: 'sample.o' }
+    )
+
+    expect(inventory.compiler_candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ family: 'msvc' }),
+        expect.objectContaining({ family: 'gcc' }),
+        expect.objectContaining({ family: 'clang' }),
+      ])
+    )
+    expect(inventory.language_runtime_hints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ family: 'go' }),
+        expect.objectContaining({ family: 'rust' }),
+      ])
+    )
+    expect(inventory.optimization_hints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'lto' }),
+        expect.objectContaining({ kind: 'pgo' }),
+      ])
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining(['native.debug.types.inventory', 'sbom.provenance.graph'])
+    )
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_execute: true,
+        no_compiler_invocation: true,
+        no_linker_invocation: true,
+        no_external_tool: true,
+      })
+    )
+  })
+})
+
 describe('passive kernel driver surface inventory', () => {
   test('extracts IOCTL and module surface hints without loading drivers or modules', () => {
     const ioctl = Buffer.alloc(4)
@@ -1810,6 +1864,7 @@ describe('built-in plugin format matrix discovery', () => {
     const wasmComponent = plugins.find((plugin) => plugin.id === 'wasm-component')
     const bytecode = plugins.find((plugin) => plugin.id === 'bytecode')
     const btf = plugins.find((plugin) => plugin.id === 'btf')
+    const compilerCodegen = plugins.find((plugin) => plugin.id === 'compiler-codegen')
     const cppAbiLayout = plugins.find((plugin) => plugin.id === 'cpp-abi-layout')
     const ebpfBytecode = plugins.find((plugin) => plugin.id === 'ebpf-bytecode')
     const kernelDriverSurface = plugins.find((plugin) => plugin.id === 'kernel-driver-surface')
@@ -1871,6 +1926,17 @@ describe('built-in plugin format matrix discovery', () => {
       expect.arrayContaining(['btf', 'btf-ext', 'btf-elf', 'core-relocations'])
     )
     expect(btf?.tools?.map((tool) => tool.definition.name)).toContain('btf.type.inventory')
+    expect(compilerCodegen?.aspects?.formats).toEqual(
+      expect.arrayContaining([
+        'compiler-codegen',
+        'compiler-provenance',
+        'rich-header',
+        'codeview',
+      ])
+    )
+    expect(compilerCodegen?.tools?.map((tool) => tool.definition.name)).toContain(
+      'compiler.codegen.fingerprint'
+    )
     expect(cppAbiLayout?.aspects?.formats).toEqual(
       expect.arrayContaining(['cpp-abi', 'itanium-abi', 'msvc-abi', 'rtti', 'vtable'])
     )
@@ -2012,6 +2078,7 @@ describe('built-in plugin format matrix discovery', () => {
     const firmware = requirePlugin(plugins, 'firmware')
     const nativeObject = requirePlugin(plugins, 'native-object')
     const nativeDebugTypes = requirePlugin(plugins, 'native-debug-types')
+    const compilerCodegen = requirePlugin(plugins, 'compiler-codegen')
     const cppAbiLayout = requirePlugin(plugins, 'cpp-abi-layout')
     const kernelDriverSurface = requirePlugin(plugins, 'kernel-driver-surface')
     const btf = requirePlugin(plugins, 'btf')
@@ -2046,6 +2113,13 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(nativeDebugTypes.aspects?.capabilities).toEqual(
       expect.arrayContaining(['dwarf-unit-summary', 'ctf-type-metadata', 'type-graph-seeds'])
+    )
+    expect(compilerCodegen.aspects?.capabilities).toEqual(
+      expect.arrayContaining([
+        'compiler-codegen-fingerprint',
+        'toolchain-provenance-inventory',
+        'optimization-lto-pgo-hints',
+      ])
     )
     expect(cppAbiLayout.aspects?.capabilities).toEqual(
       expect.arrayContaining([
@@ -2177,6 +2251,25 @@ describe('built-in plugin format matrix discovery', () => {
       producesArtifacts: ['native_debug_type_inventory'],
       evidence: ['debug-metadata', 'types', 'source-map', 'workflow'],
       safety: ['passive', 'no_external_tool', 'no_symbol_server_download', 'no_source_fetch'],
+    })
+    expectToolMetadata(compilerCodegen, 'compiler.codegen.fingerprint', {
+      formats: ['compiler-codegen', 'compiler-provenance', 'rich-header', 'codeview'],
+      artifacts: ['compiler_codegen_fingerprint'],
+      evidence: ['provenance', 'compiler', 'linker', 'optimization', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'compiler-codegen',
+      toolName: 'compiler.codegen.fingerprint',
+      recipeId: 'compiler.codegen-fingerprint-static-inventory',
+      startsWith: ['compiler.codegen.fingerprint'],
+      nextTools: [
+        'native.debug.types.inventory',
+        'windows.debug.metadata.inspect',
+        'sbom.provenance.graph',
+      ],
+      producesArtifacts: ['compiler_codegen_fingerprint'],
+      evidence: ['provenance', 'compiler', 'linker', 'optimization', 'workflow'],
+      safety: ['passive', 'no_compiler_invocation', 'no_linker_invocation', 'no_external_tool'],
     })
     expectToolMetadata(cppAbiLayout, 'cpp.abi.layout.inventory', {
       formats: ['cpp-abi', 'itanium-abi', 'msvc-abi', 'rtti'],
