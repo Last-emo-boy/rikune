@@ -95,6 +95,7 @@ export function registerWorkflowTools(
   const analyzeStatusHandler = createAnalyzeWorkflowStatusHandler(database, {}, jobQueue)
   const requestUploadHandler = createSampleRequestUploadHandler(database, {
     apiPort: deps.config.api.port,
+    baseUrl: deps.config.api.publicBaseUrl,
   })
   server.registerTool(
     workflowRunToolDefinition,

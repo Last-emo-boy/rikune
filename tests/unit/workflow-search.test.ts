@@ -368,6 +368,51 @@ describe('workflow.search', () => {
     expect(surface.isToolVisible('dynamic.behavior.capture')).toBe(false)
   })
 
+  test('activates plugin result IDs directly when the prior search window is unavailable', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [
+      {
+        id: 'direct-result-id-test',
+        name: 'Direct Result ID Test',
+        description: 'Specialist tool exposed by result ID fallback',
+        surfaceRules: {
+          tier: 3,
+          category: 'reverse-engineering',
+          activateOn: { fileTypes: ['elf'] },
+        },
+        tools: [
+          {
+            definition: {
+              name: 'direct.result.inspect',
+              description: 'Inspect result ID fallback activation',
+              inputSchema: z.object({ sample_id: z.string() }),
+            },
+            handler: async () => ({ ok: true }),
+          },
+        ],
+      },
+    ]
+    surface.registerCoreTools(['workflow.search'])
+    surface.registerGatewayCoreTools(['workflow.search'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const activated = await handler({
+      action: 'activate',
+      result_id: 'plugin:direct-result-id-test',
+      query: 'unrelated query that does not reselect the prior result',
+    })
+
+    expect(activated.ok).toBe(true)
+    const data = activated.data as any
+    expect(data.activated).toEqual(['direct-result-id-test'])
+    expect(data.activated_tools).toContain('direct.result.inspect')
+    expect(data.activation_audit.result_id_direct_activation_used).toBe(true)
+    expect(data.activation_audit.policy.backend_execution_started).toBe(false)
+    expect(surface.isToolVisible('direct.result.inspect')).toBe(true)
+  })
+
   test('reranks recommendations with file profile, query, and goal signals', async () => {
     resetSurfaceForTest()
     const surface = getToolSurfaceManager()

@@ -91,6 +91,8 @@ Start with `workflow.search` whenever the requested workflow, file type, or back
 
 For host files, call `workflow.run action=request_upload`, POST raw bytes to the returned upload URL, then read `sample_id` from the HTTP response. `sample.request_upload` and `sample.ingest` are compatibility helpers rather than the normal AI-facing path.
 
+For remote analyzer or `rikune-agent` deployments, set `API_PUBLIC_BASE_URL`, `RIKUNE_API_PUBLIC_BASE_URL`, or `RIKUNE_ANALYZER_PUBLIC_URL` to the client-reachable HTTP API base, for example `http://159.195.136.226:18080`. Upload sessions then return public `upload_url` / `status_url` values instead of container-local `localhost` URLs. The remote gateway also normalizes localhost upload URLs from older analyzers to its configured analyzer endpoint.
+
 If the HTTP API is enabled, `POST /api/v1/samples` is still available for non-MCP integrations. Successful intake returns a `sample_id`; analysis should use `sample_id`, not a local path, after import.
 
 ### Start Analysis
@@ -300,6 +302,7 @@ Local build:
       "env": {
         "API_ENABLED": "true",
         "API_PORT": "18080",
+        "API_PUBLIC_BASE_URL": "http://127.0.0.1:18080",
         "PLUGINS": "*"
       }
     }
