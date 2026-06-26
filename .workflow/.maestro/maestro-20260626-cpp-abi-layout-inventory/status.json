@@ -2,11 +2,11 @@
   "session_id": "maestro-20260626-cpp-abi-layout-inventory",
   "source": "codex",
   "created_at": "2026-06-26T12:30:00+08:00",
-  "updated_at": "2026-06-26T12:54:00+08:00",
+  "updated_at": "2026-06-26T13:10:00+08:00",
   "intent": "Add a passive C++ ABI layout inventory plugin for Itanium/MSVC vtables, RTTI/typeinfo, EH personalities, virtual dispatch, and class-layout seeds while preserving the three-tool gateway model.",
   "branch": "feat/cpp-abi-layout-inventory",
   "base_branch": "beta",
-  "status": "verification_completed",
+  "status": "pr_open_ci_fix_applied",
   "context": {
     "iteration_type": "tool-capability",
     "target_plugin": "cpp-abi-layout",
@@ -18,6 +18,8 @@
       "LLVM/Clang Microsoft C++ ABI implementation",
       "Microsoft PE exception/unwind documentation"
     ],
+    "pull_request_url": "https://github.com/Last-emo-boy/rikune/pull/54",
+    "ci_follow_up": "GitHub validate initially timed out in tests/unit/remill-worker.test.ts during full-suite Windows runner execution. The test timeout was raised to 30s without weakening contract assertions.",
     "safety_boundary": [
       "passive",
       "no_execute",
@@ -52,14 +54,14 @@
       "skill": "verification",
       "args": "targeted Jest, TypeScript, build, docs generation, docker generation, lint, diff check",
       "status": "completed",
-      "artifacts": "tests/unit/cpp-abi-layout-inventory.test.ts; tests/unit/packages/plugin-sdk.test.ts; tests/unit/workflow-search.test.ts; tests/unit/plugin-format-matrix.test.ts; docs/tool-catalog.html; docker-compose.analyzer.yml; docker-compose.hybrid.yml"
+      "artifacts": "tests/unit/cpp-abi-layout-inventory.test.ts; tests/unit/packages/plugin-sdk.test.ts; tests/unit/workflow-search.test.ts; tests/unit/plugin-format-matrix.test.ts; tests/unit/remill-worker.test.ts; docs/tool-catalog.html; docker-compose.analyzer.yml; docker-compose.hybrid.yml"
     },
     {
       "index": 3,
       "skill": "commit-and-pr",
       "args": "commit scoped files and open PR with gh",
-      "status": "pending",
-      "artifacts": null
+      "status": "completed",
+      "artifacts": "https://github.com/Last-emo-boy/rikune/pull/54"
     },
     {
       "index": 4,
