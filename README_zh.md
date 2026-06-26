@@ -18,7 +18,7 @@ Rikune 是一个面向 Windows EXE 和多格式二进制逆向的 MCP Server。�
 - 可选 HTTP API 和 dashboard，用于上传、下载、健康检查、SSE 事件和 artifact 访问。
 - 按 SHA-256 分桶的样本工作区，保存原始样本、缓存、Ghidra/.NET 输出和报告。
 - SQLite 持久化 samples、analysis runs、jobs、evidence、artifacts、batches、debug sessions 和 scheduler telemetry。
-- 101 个内置插件，支持第三方插件自动发现。
+- 102 个内置插件，支持第三方插件自动发现。
 - 渐进式工具暴露：默认面向 AI 的入口刻意保持很小；`workflow.search` 根据样本类型、发现结果和 profile metadata 路由到相关专业能力，而不是一次暴露所有工具。
 - 覆盖 PE、ELF、Mach-O、APK/DEX、Office、firmware、CUDA PTX/CUBIN/fatbin、strings、YARA、SBOM、签名、packer、.NET、Go、Rust 等静态分析。
 - 可集成 Ghidra、Rizin、RetDec、angr、Capstone、Graphviz、Qiling、PANDA、Speakeasy、Wine、Frida 等后端。
@@ -169,7 +169,7 @@ Docker/WSL analyzer 应使用 `remote-sandbox`，不要使用 `auto-sandbox`。
 
 ## 插件系统
 
-内置插件位于 `src/plugins/<id>/`，当前共 101 个。插件可以注册工具、声明依赖、暴露配置 schema、参与生命周期 hooks，并给 Docker 生成器提供安装元数据，也可以通过 `workerBackend` metadata 声明受限 Worker-backed 工具。
+内置插件位于 `src/plugins/<id>/`，当前共 102 个。插件可以注册工具、声明依赖、暴露配置 schema、参与生命周期 hooks，并给 Docker 生成器提供安装元数据，也可以通过 `workerBackend` metadata 声明受限 Worker-backed 工具。
 
 frontier Worker 套件保留 plan-only 工具作为 triage 和 handoff surface，再在旁边新增显式执行工具。`restringer.deobfuscation.run`、`jsimplifier.pipeline.run`、`jsir.cascade.normalize`、`jsvmp.bytecode.recover`、`gtirb.ir.generate`、`remill.lift.run`、`manifold.fact.extract`、`qbdi.trace.run` 和 `culifter.gpu.artifact.inventory` 会通过 `workflow.search`、`plugin.list`、`tool.help`、`tool.readiness` 暴露 Worker contract；`tools.discover` 保留为低层兼容入口。Discovery 和 readiness 保持 passive：只报告 backend metadata 和 setup guidance，不启动 REstringer、JSIMPLIFIER、JSIR/CASCADE、JSVMP、GTIRB、Remill、Manifold、QBDI、GPU driver、Node/V8、browser 或 runtime instrumentation。
 
@@ -243,7 +243,7 @@ src/
   tools/                      核心工具实现
   workflows/                  staged analysis、triage、reconstruction、review
   analysis/                   analysis run state 和后台任务 runner
-  plugins/                    101 个内置插件
+  plugins/                    102 个内置插件
   persistence/                SQLite 和 workspace 持久化
   sample/                     样本 finalization 和 workspace 检查
   storage/                    artifacts、uploads、retention

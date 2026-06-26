@@ -14,6 +14,7 @@ import containerAnalysisPlugin from '../../src/plugins/container-analysis/index.
 import ebpfBytecodePlugin from '../../src/plugins/ebpf-bytecode/index.js'
 import llvmBitcodePlugin from '../../src/plugins/llvm-bitcode/index.js'
 import mlModelPlugin from '../../src/plugins/ml-model/index.js'
+import nativeDebugTypesPlugin from '../../src/plugins/native-debug-types/index.js'
 import shaderIrPlugin from '../../src/plugins/shader-ir/index.js'
 import wasmComponentPlugin from '../../src/plugins/wasm-component/index.js'
 import appleObjcSwiftPlugin from '../../src/plugins/apple-objc-swift/index.js'
@@ -712,6 +713,47 @@ describe('workflow.search', () => {
     )
     expect(btfResult.readiness_state).not.toBe('runtime_opt_in_required')
     expect(surface.isToolVisible('btf.type.inventory')).toBe(false)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
+  })
+
+  test('recommends passive native debug type inventory without runtime opt-in', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [nativeDebugTypesPlugin]
+    surface.registerCoreTools([
+      'workflow.search',
+      'workflow.run',
+      'artifact.read',
+      'tools.discover',
+    ])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      query: 'inspect DWARF split debug type graph source paths CTF',
+      file_type: '.dwo',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining(['dwo', 'split-dwarf', 'dwarf', 'debug-info', 'debug-types'])
+    )
+    const debugTypesResult = data.results.find(
+      (item: any) => item.plugin_id === 'native-debug-types'
+    )
+    expect(debugTypesResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining(['native.debug.types.inventory']),
+      })
+    )
+    expect(debugTypesResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(data.search_profile.recommended_tools).toContain('native.debug.types.inventory')
+    expect(surface.isToolVisible('native.debug.types.inventory')).toBe(false)
     expect(surface.isToolVisible('tools.discover')).toBe(false)
   })
 

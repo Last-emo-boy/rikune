@@ -178,6 +178,21 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS['btf-ext']).toEqual(
       expect.arrayContaining(['btf-ext', 'btf', 'core-relocations', 'co-re'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS.dwarf).toEqual(
+      expect.arrayContaining(['dwarf', 'dwarf-debug', 'debug-info', 'debug-types', 'type-graph'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['dwarf-debug']).toEqual(
+      expect.arrayContaining(['dwarf-debug', 'dwarf', 'debug-file', 'debug-section'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.dwo).toEqual(
+      expect.arrayContaining(['dwo', 'split-dwarf', 'dwarf', 'debug-info'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.dwp).toEqual(
+      expect.arrayContaining(['dwp', 'split-dwarf', 'dwarf', 'debug-types'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.ctf).toEqual(
+      expect.arrayContaining(['ctf', 'compact-ctf', 'debug-types', 'type-graph'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS.bc).toEqual(
       expect.arrayContaining(['bc', 'llvm-bc', 'llvm-bitcode', 'llvm-ir'])
     )
