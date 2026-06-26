@@ -193,6 +193,15 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS.ctf).toEqual(
       expect.arrayContaining(['ctf', 'compact-ctf', 'debug-types', 'type-graph'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS['cpp-abi']).toEqual(
+      expect.arrayContaining(['cpp-abi', 'cxx-abi', 'rtti', 'vtable', 'class-layout'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['itanium-abi']).toEqual(
+      expect.arrayContaining(['itanium-abi', 'cpp-abi', 'typeinfo', 'vtable'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['msvc-abi']).toEqual(
+      expect.arrayContaining(['msvc-abi', 'cpp-abi', 'vftable', 'vbtable'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS.bc).toEqual(
       expect.arrayContaining(['bc', 'llvm-bc', 'llvm-bitcode', 'llvm-ir'])
     )

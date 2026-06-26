@@ -11,6 +11,7 @@ import { getToolSurfaceManager } from '../../src/core/tool-surface-manager.js'
 import type { Plugin } from '../../src/plugins/sdk.js'
 import btfPlugin from '../../src/plugins/btf/index.js'
 import containerAnalysisPlugin from '../../src/plugins/container-analysis/index.js'
+import cppAbiLayoutPlugin from '../../src/plugins/cpp-abi-layout/index.js'
 import ebpfBytecodePlugin from '../../src/plugins/ebpf-bytecode/index.js'
 import llvmBitcodePlugin from '../../src/plugins/llvm-bitcode/index.js'
 import mlModelPlugin from '../../src/plugins/ml-model/index.js'
@@ -754,6 +755,45 @@ describe('workflow.search', () => {
     expect(debugTypesResult.readiness_state).not.toBe('runtime_opt_in_required')
     expect(data.search_profile.recommended_tools).toContain('native.debug.types.inventory')
     expect(surface.isToolVisible('native.debug.types.inventory')).toBe(false)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
+  })
+
+  test('recommends passive C++ ABI layout inventory without runtime opt-in', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [cppAbiLayoutPlugin]
+    surface.registerCoreTools([
+      'workflow.search',
+      'workflow.run',
+      'artifact.read',
+      'tools.discover',
+    ])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      query: 'inspect C++ ABI RTTI vtable vftable class layout virtual dispatch Itanium MSVC',
+      file_type: 'cpp-abi',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining(['cpp-abi', 'cxx-abi', 'rtti', 'vtable', 'class-layout'])
+    )
+    const cppAbiResult = data.results.find((item: any) => item.plugin_id === 'cpp-abi-layout')
+    expect(cppAbiResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining(['cpp.abi.layout.inventory']),
+      })
+    )
+    expect(cppAbiResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(data.search_profile.recommended_tools).toContain('cpp.abi.layout.inventory')
+    expect(surface.isToolVisible('cpp.abi.layout.inventory')).toBe(false)
     expect(surface.isToolVisible('tools.discover')).toBe(false)
   })
 
