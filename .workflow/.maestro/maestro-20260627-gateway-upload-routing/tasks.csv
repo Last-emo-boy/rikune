@@ -5,4 +5,4 @@ id,task,status,artifacts,notes
 3,Fix workflow.search direct activation fallback,completed,src/tools/workflow-search.ts,"plugin:* and tool:* result IDs can be activated directly when the prior search window is unavailable."
 4,Add focused tests,completed,"tests/unit/rikune-agent-gateway.test.ts; tests/unit/sample-request-upload.test.ts; tests/unit/config.test.ts; tests/unit/workflow-search.test.ts","Tests cover schema values, hidden subtool forwarding, upload URL rewrite, public base URL config, and direct result_id activation."
 5,Run verification,completed,"targeted Jest; tsc; git diff --check","Targeted Jest, TypeScript, and git diff --check passed after docs/project-record updates."
-6,Commit and open PR,in_progress,,
+6,Commit and open PR,completed,https://github.com/Last-emo-boy/rikune/pull/65,"Committed scoped files and opened PR #65 against beta."
