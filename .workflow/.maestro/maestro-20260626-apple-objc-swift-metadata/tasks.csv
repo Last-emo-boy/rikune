@@ -6,5 +6,5 @@ id,task,status,notes
 5,Add workflow-search and matrix tests,completed,Focused Jest and selected matrix tests passed
 6,Update docs compose and project records,completed,README docs PLUGINS tool catalog compose generator outputs updated
 7,Run final verification,completed,Focused Jest plugin SDK workflow search format matrix tsc lint and diff check passed
-8,Commit push PR and merge to beta,pending,gh PR against beta after local verification
+8,Commit push PR and merge to beta,in_progress,PR #52 created against beta; merge pending checks and mergeability
 9,Deploy beta on server and verify container,pending,pull beta build compose health ready MCP smoke

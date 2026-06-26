@@ -3,7 +3,7 @@
   "date": "2026-06-26",
   "branch": "feat/apple-objc-swift-metadata",
   "base": "beta",
-  "status": "ready_for_pr",
+  "status": "pr_created",
   "objective": "Add passive Apple Objective-C and Swift metadata inventory coverage for Mach-O and standalone Swift metadata artifacts.",
   "subagents": [
     {
@@ -66,9 +66,9 @@
     "server_deploy": "pending"
   },
   "pr": {
-    "created": false,
-    "url": null,
-    "number": null,
+    "created": true,
+    "url": "https://github.com/Last-emo-boy/rikune/pull/52",
+    "number": 52,
     "merged": false
   }
 }
