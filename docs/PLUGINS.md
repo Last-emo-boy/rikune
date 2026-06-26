@@ -21,7 +21,7 @@ A plugin can:
 
 ## Built-In Plugins
 
-The repository currently contains 103 built-in plugins.
+The repository currently contains 104 built-in plugins.
 
 | ID | Name | Domain | Surface tier |
 | --- | --- | --- | --- |
@@ -71,6 +71,7 @@ The repository currently contains 103 built-in plugins.
 | `jvm` | JVM Bytecode Inventory | static | 1 |
 | `javascript-deobfuscation` | JavaScript Deobfuscation | static | 2 |
 | `kb-collaboration` | Knowledge Base & Collaboration | static | 0 |
+| `kernel-driver-surface` | Kernel Driver Surface Inventory | static | 1 |
 | `lief` | LIEF Binary Plan | static | 3 |
 | `llvm-bitcode` | LLVM Bitcode Inventory | static | 1 |
 | `linux-binary` | Linux Binary Inventory | static | 1 |
@@ -325,6 +326,7 @@ emulators, or attach debuggers.
 | `ebpf.bytecode-static-inventory` | `ebpf-bytecode` | `ebpf.bytecode.inventory` | `native.object.inventory`, `linux.binary.inventory`, `analysis.evidence.graph`, `linux.runtime.plan` | Passive eBPF bytecode and ELF EM_BPF inventory; no `bpf()` syscall, kernel verifier run, program load, attach, map creation, runtime start, or network. |
 | `native.debug-types-static-inventory` | `native-debug-types` | `native.debug.types.inventory` | `native.object.inventory`, `windows.debug.metadata.inspect`, `elf.structure.analyze`, `macho.structure.analyze`, `strings.extract`, `analysis.evidence.graph`, `artifact.read`, `report.generate`, `workflow.search` | Passive DWARF, split-DWARF, and CTF debug/type metadata inventory; no debugger, native load, external dumpers, symbol-server download, source fetch, mutation, or network. |
 | `cpp.abi-layout-static-inventory` | `cpp-abi-layout` | `cpp.abi.layout.inventory` | `native.object.inventory`, `native.debug.types.inventory`, `windows.debug.metadata.inspect`, `pe.structure.analyze`, `elf.structure.analyze`, `macho.structure.analyze`, `strings.extract`, `code.xrefs.analyze`, `analysis.evidence.graph`, `artifact.read`, `report.generate`, `workflow.search` | Passive Itanium/MSVC C++ ABI vtable, RTTI/typeinfo, EH personality, and class-layout seed inventory; no execution, native load, link, debugger, external demangler, symbol-server download, source fetch, mutation, or network. |
+| `kernel.driver-surface-static-inventory` | `kernel-driver-surface` | `kernel.driver.surface.inventory` | `pe.structure.analyze`, `pe.imports.extract`, `pe.security.profile`, `linux.binary.inventory`, `native.object.inventory`, `native.debug.types.inventory`, `strings.extract`, `code.xrefs.analyze`, `vuln.pattern.scan`, `analysis.evidence.graph`, `windows.runtime.plan`, `linux.runtime.plan`, `artifact.read`, `report.generate`, `workflow.search` | Passive Windows/Linux kernel driver surface inventory for IOCTL constants, device interfaces, dispatch hints, Linux module metadata, and risky primitives; no driver load, kernel module insertion, device open, IOCTL send, syscall, kernel probe, debugger, external tool, mutation, or network. |
 | `llvm.bitcode-static-inventory` | `llvm-bitcode` | `llvm.bitcode.inventory` | `artifact.read`, `metadata.extract`, `strings.extract`, `analysis.evidence.graph`, `report.generate`, `workflow.search` | Passive LLVM bitcode and wrapper inventory; no LLVM toolchain, compile, link, JIT, interpreter, sample execution, mutation, or network. |
 | `wabt.wasm.toolchain-plan` | `wabt` | `wabt.toolchain.plan` | `strings.extract`, `sbom.generate`, `wasm.runtime.plan`, `analysis.evidence.graph` | Plan-only WABT toolchain routing; no wasm2wat/wasm-objdump process, module instantiation, WASI grant, or network. |
 
@@ -406,8 +408,8 @@ The current plugin matrix is organized by `formats`, `platforms`, `execution`, `
 
 | Coverage | Static plugins | Dynamic or runtime-plan plugins | Safety boundary |
 | --- | --- | --- | --- |
-| Windows PE, DLL, SYS, EFI, MSI/MSIX/APPX/CAB/PDB | `pe-analysis`, `pe-signature`, `windows-installer`, `windows-debug-symbols`, `dotnet-managed`, `cpp-abi-layout`, `retdec`, `rizin`, `ghidra` | `windows-runtime`, `debug-session`, `wine`, `speakeasy`, `behavior-first`, `frida` | Static inventory is passive. Dynamic tools require opt-in, isolation, and runtime readiness. |
-| Linux ELF, SO, core, modules, packages, eBPF, BTF, DWARF/CTF | `linux-binary`, `linux-package`, `elf-macho`, `native-object`, `native-debug-types`, `cpp-abi-layout`, `container-analysis`, `btf`, `ebpf-bytecode` | `linux-runtime`, `qiling`, `debug-session`, `behavior-first` | No ELF execution, ptrace, kernel module loading, package install, eBPF load/attach, BTF verifier submission, DWARF/CTF external dumpers, C++ external demanglers, symbol-server download, source fetch, or eBPF collection by default. |
+| Windows PE, DLL, SYS, EFI, MSI/MSIX/APPX/CAB/PDB | `pe-analysis`, `pe-signature`, `kernel-driver-surface`, `windows-installer`, `windows-debug-symbols`, `dotnet-managed`, `cpp-abi-layout`, `retdec`, `rizin`, `ghidra` | `windows-runtime`, `debug-session`, `wine`, `speakeasy`, `behavior-first`, `frida` | Static inventory is passive. Driver surface inventory never loads `.sys`, opens device objects, sends IOCTLs, starts a kernel debugger, or mutates samples. Dynamic tools require opt-in, isolation, and runtime readiness. |
+| Linux ELF, SO, core, modules, packages, eBPF, BTF, DWARF/CTF | `linux-binary`, `linux-package`, `kernel-driver-surface`, `elf-macho`, `native-object`, `native-debug-types`, `cpp-abi-layout`, `container-analysis`, `btf`, `ebpf-bytecode` | `linux-runtime`, `qiling`, `debug-session`, `behavior-first` | No ELF execution, ptrace, kernel module loading, package install, eBPF load/attach, BTF verifier submission, DWARF/CTF external dumpers, C++ external demanglers, symbol-server download, source fetch, IOCTL probing, syscall triggering, kernel probing, or eBPF collection by default. |
 | macOS Mach-O, app bundles, frameworks, DMG, PKG, dSYM | `apple-container`, `apple-signing`, `apple-objc-swift`, `elf-macho`, `native-object`, `native-debug-types`, `cpp-abi-layout` | `macos-runtime`, `debug-session`, `frida`, `behavior-first` | No DMG mount, app launch, LLDB attach, DTrace, fs_usage capture, Objective-C runtime attach, Swift demangle process, C++ external demangler, DWARF external dumpers, source fetch, or external Apple tooling by default. |
 | iOS IPA, Mach-O, provisioning, entitlements | `apple-container`, `apple-signing`, `apple-objc-swift`, `elf-macho` | `ios-runtime`, `frida`, `debug-session` | No IPA install, device connection, simulator start, Frida attach, LLDB attach, class-dump, swift-demangle, or app launch by default. |
 | Android APK, AAB, APKS, XAPK, DEX/OAT/VDEX, AAR | `android-package`, `android`, `apk-smali`, `jvm`, `linux-binary` | `android-runtime`, `frida`, `behavior-first` | No emulator start, ADB install, APK launch, frida-server deployment, or device connection by default. |

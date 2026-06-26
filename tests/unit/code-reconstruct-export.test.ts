@@ -27,20 +27,26 @@ describe('code.reconstruct.export tool', () => {
   let testDbPath: string
   let testCachePath: string
 
+  function removeDirectoryIfExists(target: string) {
+    if (fs.existsSync(target)) {
+      fs.rmSync(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    }
+  }
+
+  function removeFileIfExists(target: string) {
+    if (fs.existsSync(target)) {
+      fs.rmSync(target, { force: true, maxRetries: 5, retryDelay: 100 })
+    }
+  }
+
   beforeEach(() => {
     testWorkspaceRoot = path.join(process.cwd(), 'test-workspace-reconstruct-export')
     testDbPath = path.join(process.cwd(), 'test-reconstruct-export.db')
     testCachePath = path.join(process.cwd(), 'test-cache-reconstruct-export')
 
-    if (fs.existsSync(testWorkspaceRoot)) {
-      fs.rmSync(testWorkspaceRoot, { recursive: true, force: true })
-    }
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath)
-    }
-    if (fs.existsSync(testCachePath)) {
-      fs.rmSync(testCachePath, { recursive: true, force: true })
-    }
+    removeDirectoryIfExists(testWorkspaceRoot)
+    removeFileIfExists(testDbPath)
+    removeDirectoryIfExists(testCachePath)
 
     workspaceManager = new WorkspaceManager(testWorkspaceRoot)
     database = new DatabaseManager(testDbPath)
@@ -54,15 +60,9 @@ describe('code.reconstruct.export tool', () => {
       // ignore
     }
 
-    if (fs.existsSync(testWorkspaceRoot)) {
-      fs.rmSync(testWorkspaceRoot, { recursive: true, force: true })
-    }
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath)
-    }
-    if (fs.existsSync(testCachePath)) {
-      fs.rmSync(testCachePath, { recursive: true, force: true })
-    }
+    removeDirectoryIfExists(testWorkspaceRoot)
+    removeFileIfExists(testDbPath)
+    removeDirectoryIfExists(testCachePath)
   })
 
   async function setupSample(sampleId: string, hashChar: string) {

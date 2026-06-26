@@ -297,9 +297,9 @@
           <h2><span data-lang-en>Overview</span><span data-lang-zh>概览</span></h2>
           <div class="catalog-stats">
             <div class="catalog-stat"><strong>35</strong><span>core tools</span></div>
-            <div class="catalog-stat"><strong>103</strong><span>built-in plugins</span></div>
-            <div class="catalog-stat"><strong>293</strong><span>plugin tools</span></div>
-            <div class="catalog-stat"><strong>328</strong><span>cataloged tools</span></div>
+            <div class="catalog-stat"><strong>104</strong><span>built-in plugins</span></div>
+            <div class="catalog-stat"><strong>294</strong><span>plugin tools</span></div>
+            <div class="catalog-stat"><strong>329</strong><span>cataloged tools</span></div>
             <div class="catalog-stat"><strong>143</strong><span>runtime-aware</span></div>
             <div class="catalog-stat"><strong>45</strong><span>worker-backed</span></div>
           </div>
@@ -321,18 +321,18 @@
             </tbody>
           </table>
           <div class="category-strip">
-            <span>static-analysis <strong>91</strong></span><span>reverse-engineering <strong>67</strong></span><span>dynamic-analysis <strong>61</strong></span><span>malware-analysis <strong>16</strong></span><span>symbolic-execution <strong>14</strong></span><span>workflow-orchestration <strong>13</strong></span><span>dotnet-analysis <strong>11</strong></span><span>android-analysis <strong>10</strong></span><span>unpacking <strong>8</strong></span><span>memory-forensics <strong>7</strong></span><span>artifact-management <strong>4</strong></span><span>system-diagnostics <strong>4</strong></span><span>go-analysis <strong>3</strong></span><span>network-analysis <strong>3</strong></span><span>plugin-management <strong>3</strong></span><span>sample-intake <strong>3</strong></span><span>task-control <strong>3</strong></span><span>tool-discovery <strong>3</strong></span><span>vulnerability-research <strong>2</strong></span><span>analysis-context <strong>1</strong></span><span>llm-review <strong>1</strong></span>
+            <span>static-analysis <strong>92</strong></span><span>reverse-engineering <strong>67</strong></span><span>dynamic-analysis <strong>61</strong></span><span>malware-analysis <strong>16</strong></span><span>symbolic-execution <strong>14</strong></span><span>workflow-orchestration <strong>13</strong></span><span>dotnet-analysis <strong>11</strong></span><span>android-analysis <strong>10</strong></span><span>unpacking <strong>8</strong></span><span>memory-forensics <strong>7</strong></span><span>artifact-management <strong>4</strong></span><span>system-diagnostics <strong>4</strong></span><span>go-analysis <strong>3</strong></span><span>network-analysis <strong>3</strong></span><span>plugin-management <strong>3</strong></span><span>sample-intake <strong>3</strong></span><span>task-control <strong>3</strong></span><span>tool-discovery <strong>3</strong></span><span>vulnerability-research <strong>2</strong></span><span>analysis-context <strong>1</strong></span><span>llm-review <strong>1</strong></span>
           </div>
           <div class="catalog-controls" aria-label="Tool catalog filters">
             <input id="catalogSearch" type="search" placeholder="Search tool, plugin, backend, format, capability..." />
             <select id="categoryFilter">
               <option value="">All categories</option>
-              <option value="static-analysis">static-analysis (91)</option><option value="reverse-engineering">reverse-engineering (67)</option><option value="dynamic-analysis">dynamic-analysis (61)</option><option value="malware-analysis">malware-analysis (16)</option><option value="symbolic-execution">symbolic-execution (14)</option><option value="workflow-orchestration">workflow-orchestration (13)</option><option value="dotnet-analysis">dotnet-analysis (11)</option><option value="android-analysis">android-analysis (10)</option><option value="unpacking">unpacking (8)</option><option value="memory-forensics">memory-forensics (7)</option><option value="artifact-management">artifact-management (4)</option><option value="system-diagnostics">system-diagnostics (4)</option><option value="go-analysis">go-analysis (3)</option><option value="network-analysis">network-analysis (3)</option><option value="plugin-management">plugin-management (3)</option><option value="sample-intake">sample-intake (3)</option><option value="task-control">task-control (3)</option><option value="tool-discovery">tool-discovery (3)</option><option value="vulnerability-research">vulnerability-research (2)</option><option value="analysis-context">analysis-context (1)</option><option value="llm-review">llm-review (1)</option>
+              <option value="static-analysis">static-analysis (92)</option><option value="reverse-engineering">reverse-engineering (67)</option><option value="dynamic-analysis">dynamic-analysis (61)</option><option value="malware-analysis">malware-analysis (16)</option><option value="symbolic-execution">symbolic-execution (14)</option><option value="workflow-orchestration">workflow-orchestration (13)</option><option value="dotnet-analysis">dotnet-analysis (11)</option><option value="android-analysis">android-analysis (10)</option><option value="unpacking">unpacking (8)</option><option value="memory-forensics">memory-forensics (7)</option><option value="artifact-management">artifact-management (4)</option><option value="system-diagnostics">system-diagnostics (4)</option><option value="go-analysis">go-analysis (3)</option><option value="network-analysis">network-analysis (3)</option><option value="plugin-management">plugin-management (3)</option><option value="sample-intake">sample-intake (3)</option><option value="task-control">task-control (3)</option><option value="tool-discovery">tool-discovery (3)</option><option value="vulnerability-research">vulnerability-research (2)</option><option value="analysis-context">analysis-context (1)</option><option value="llm-review">llm-review (1)</option>
             </select>
             <select id="domainFilter">
               <option value="">All domains</option>
               <option value="core">core</option>
-              <option value="static">static (225)</option><option value="dynamic">dynamic (61)</option><option value="both">both (7)</option>
+              <option value="static">static (226)</option><option value="dynamic">dynamic (61)</option><option value="both">both (7)</option>
             </select>
             <label><input id="runtimeOnly" type="checkbox" /> Runtime</label>
             <label><input id="workerOnly" type="checkbox" /> Worker</label>
@@ -5008,6 +5008,47 @@
                 </div>
               </section>
 
+              <section class="plugin-card" data-plugin-card data-search="kernel-driver-surface kernel driver surface inventory passive kernel driver surface inventory for windows.sys and linux.ko artifacts, including ioctl constants, device interfaces, dispatch hints, module metadata, and risky primitive handoff. static static-analysis static-analysis kernel.driver.surface.inventory passively inventory windows/linux kernel driver attack-surface evidence, including ioctl constants, device interface strings, dispatch hints, linux module metadata, and risky primitives without loading drivers, inserting modules, opening devices, sending ioctls, or invoking external tools.  " data-domain="static">
+                <button class="plugin-card__summary" type="button" data-plugin-toggle>
+                  <span>
+                    <code>kernel-driver-surface</code>
+                    <strong>Kernel Driver Surface Inventory</strong>
+                  </span>
+                  <span>1 tools</span>
+                </button>
+                <div class="plugin-card__body">
+                  <p>Passive kernel driver surface inventory for Windows.sys and Linux.ko artifacts, including IOCTL constants, device interfaces, dispatch hints, module metadata, and risky primitive handoff.</p>
+                  <div class="tool-tags">
+                    <span class="badge badge--purple">static</span>
+                    <span class="badge badge--blue">tier 1</span>
+                    <span class="tool-badge">static-analysis</span>
+                  </div>
+
+                  <div class="tool-row-list">
+
+                    <article class="tool-row" data-tool-row data-search="kernel.driver.surface.inventory passively inventory windows/linux kernel driver attack-surface evidence, including ioctl constants, device interface strings, dispatch hints, linux module metadata, and risky primitives without loading drivers, inserting modules, opening devices, sending ioctls, or invoking external tools. kernel-driver-surface kernel driver surface inventory static-analysis static kernel-driver driver driver-surface ioctl windows-driver windows-kernel-driver linux-driver linux-kernel-module sys pe elf elf-object windows linux embedded cross-platform x86 x64 arm arm64 mips mipsel ppc riscv static triage attack-surface workflow-plan passive no_execute no_driver_load no_kernel_module_load no_device_open no_ioctl_send no_syscall no_kernel_probe no_debugger no_external_tool no_network_by_default no_mutation driver-surface-inventory windows-ioctl-candidate-decode windows-device-interface-inventory windows-dispatch-hints linux-module-metadata-inventory linux-ioctl-handler-hints kernel-risk-primitive-inventory driver-workflow-routing structure symbols imports strings device-interfaces ioctl dispatch module-metadata risk workflow kernel driver driver surface windows driver linux kernel module ioctl irp mj device control device object wdf wdm kmdf unlocked_ioctl copy_from_user vermagic kernel driver attack surface windows ioctl inventory linux kernel module metadata driver dispatch and risky primitive inventory kernel_driver_surface_inventory structure symbols imports strings device-interfaces ioctl dispatch module-metadata risk workflow  " data-category="static-analysis" data-domain="static" data-runtime="no" data-worker="no">
+                      <div class="tool-row__head">
+                        <code>kernel.driver.surface.inventory</code>
+                        <div class="tool-row__badges">
+                          <span class="badge badge--blue">static-analysis</span>
+                          <span class="badge badge--purple">static</span>
+
+
+                        </div>
+                      </div>
+                      <p>Passively inventory Windows/Linux kernel driver attack-surface evidence, including IOCTL constants, device interface strings, dispatch hints, Linux module metadata, and risky primitives without loading drivers, inserting modules, opening devices, sending IOCTLs, or invoking external tools.</p>
+                      <div class="tool-row__meta">
+
+
+
+                        <span><strong>Artifacts</strong> kernel_driver_surface_inventory</span>
+                      </div>
+                      <div class="tool-tags"><span class="tool-badge">kernel-driver</span><span class="tool-badge">driver</span><span class="tool-badge">driver-surface</span><span class="tool-badge">ioctl</span><span class="tool-badge">windows-driver</span><span class="tool-badge">windows-kernel-driver</span><span class="tool-badge">linux-driver</span><span class="tool-badge">linux-kernel-module</span><span class="tool-badge">sys</span><span class="tool-badge">pe</span></div>
+                    </article>
+                  </div>
+                </div>
+              </section>
+
               <section class="plugin-card" data-plugin-card data-search="lief lief binary plan passive lief binary structure and transformation planning across pe, elf, mach-o, and object formats. static reverse-engineering reverse-engineering lief.binary.plan build a passive lief integration plan for binary structure, signatures, relocation, import/export, and safe transformation workflows without parsing or modifying the sample through lief.   lief.binary.inspect run a bounded read-only lief-style binary inspection worker for format, headers, imports, exports, relocations, and signature metadata. mutation is excluded. lief lief.readonly.binary.inspect lief python  dynamic-python" data-domain="static">
                 <button class="plugin-card__summary" type="button" data-plugin-toggle>
                   <span>
@@ -9109,12 +9150,12 @@
             </tbody>
           </table>
           <script type="application/json" id="catalogMetadata">{
-  "generatedAt": "2026-06-26T04:51:48.112Z",
+  "generatedAt": "2026-06-26T06:02:15.223Z",
   "counts": {
     "coreTools": 35,
-    "builtInPlugins": 103,
-    "pluginTools": 293,
-    "totalTools": 328,
+    "builtInPlugins": 104,
+    "pluginTools": 294,
+    "totalTools": 329,
     "runtimeTools": 143,
     "workerTools": 45,
     "registrationErrors": 0
@@ -9122,7 +9163,7 @@
   "categories": [
     {
       "name": "static-analysis",
-      "count": 91
+      "count": 92
     },
     {
       "name": "reverse-engineering",
@@ -9208,7 +9249,7 @@
   "domains": [
     {
       "name": "static",
-      "count": 225
+      "count": 226
     },
     {
       "name": "dynamic",
