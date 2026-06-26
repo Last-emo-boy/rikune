@@ -12,6 +12,13 @@ The current AI-facing server workflow is organized around a minimal gateway surf
 
 `sample.*`, `workflow.analyze.*`, `workflow.triage`, `tools.discover`, and `task.status` remain registered for compatibility or low-level inspection, but new clients should prefer `workflow.search`, `workflow.run`, and `artifact.read`.
 
+When connecting through the remote `rikune-agent` gateway, MCP clients see stable transport names:
+`workflow_search`, `workflow_run`, `artifact_read`, `rikune_tool_call`, and the
+`rikune_connection_*` controls. `rikune_connection_refresh` updates the internal upstream
+capability cache only; it does not expand the MCP tool list. Use `rikune_tool_call` only after
+`workflow_search` identifies a specific internal analyzer subtool that is not covered by the
+primary workflow or artifact gateways.
+
 ## What Rikune Provides
 
 - MCP stdio server for AI clients and agent runtimes.
