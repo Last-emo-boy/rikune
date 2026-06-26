@@ -1,0 +1,52 @@
+{
+  "iteration": "maestro-20260626-uefi-smm-surface",
+  "branch": "feat/uefi-smm-surface",
+  "base": "beta",
+  "updated_at": "2026-06-26T15:18:23.6053028+08:00",
+  "status": "in_progress",
+  "selected_direction": "UEFI/SMM trust-boundary static inventory",
+  "tool": "uefi.smm.surface.inventory",
+  "plugin": "uefi-smm-surface",
+  "artifact_type": "uefi_smm_surface_inventory",
+  "completed": [
+    "branch created",
+    "read-only subagent split",
+    "plugin implementation",
+    "SDK tags and routing tests",
+    "human-written docs update",
+    "generated docs and Docker profile refresh",
+    "verification"
+  ],
+  "in_progress": [],
+  "pending": [
+    "commit",
+    "push",
+    "PR",
+    "merge to beta if checks allow",
+    "server deployment and MCP smoke"
+  ],
+  "safety_boundary": {
+    "passive": true,
+    "firmware_boot_allowed": false,
+    "smi_trigger_allowed": false,
+    "smm_execution_allowed": false,
+    "efi_variable_write_allowed": false,
+    "nvram_write_allowed": false,
+    "capsule_apply_allowed": false,
+    "spi_flash_write_allowed": false,
+    "mmio_or_msr_access_allowed": false,
+    "external_tool_allowed": false,
+    "network_allowed": false,
+    "mutation_allowed": false
+  },
+  "verification": {
+    "targeted_uefi_tests": "passed",
+    "docs_tool_catalog": "passed",
+    "docker_generate_all": "passed",
+    "full_tests": "passed",
+    "tsc": "passed",
+    "build": "passed",
+    "lint": "passed",
+    "diff_check": "passed"
+  }
+}

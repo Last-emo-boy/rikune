@@ -297,9 +297,9 @@
           <h2><span data-lang-en>Overview</span><span data-lang-zh>概览</span></h2>
           <div class="catalog-stats">
             <div class="catalog-stat"><strong>35</strong><span>core tools</span></div>
-            <div class="catalog-stat"><strong>104</strong><span>built-in plugins</span></div>
-            <div class="catalog-stat"><strong>294</strong><span>plugin tools</span></div>
-            <div class="catalog-stat"><strong>329</strong><span>cataloged tools</span></div>
+            <div class="catalog-stat"><strong>105</strong><span>built-in plugins</span></div>
+            <div class="catalog-stat"><strong>295</strong><span>plugin tools</span></div>
+            <div class="catalog-stat"><strong>330</strong><span>cataloged tools</span></div>
             <div class="catalog-stat"><strong>143</strong><span>runtime-aware</span></div>
             <div class="catalog-stat"><strong>45</strong><span>worker-backed</span></div>
           </div>
@@ -321,18 +321,18 @@
             </tbody>
           </table>
           <div class="category-strip">
-            <span>static-analysis <strong>92</strong></span><span>reverse-engineering <strong>67</strong></span><span>dynamic-analysis <strong>61</strong></span><span>malware-analysis <strong>16</strong></span><span>symbolic-execution <strong>14</strong></span><span>workflow-orchestration <strong>13</strong></span><span>dotnet-analysis <strong>11</strong></span><span>android-analysis <strong>10</strong></span><span>unpacking <strong>8</strong></span><span>memory-forensics <strong>7</strong></span><span>artifact-management <strong>4</strong></span><span>system-diagnostics <strong>4</strong></span><span>go-analysis <strong>3</strong></span><span>network-analysis <strong>3</strong></span><span>plugin-management <strong>3</strong></span><span>sample-intake <strong>3</strong></span><span>task-control <strong>3</strong></span><span>tool-discovery <strong>3</strong></span><span>vulnerability-research <strong>2</strong></span><span>analysis-context <strong>1</strong></span><span>llm-review <strong>1</strong></span>
+            <span>static-analysis <strong>93</strong></span><span>reverse-engineering <strong>67</strong></span><span>dynamic-analysis <strong>61</strong></span><span>malware-analysis <strong>16</strong></span><span>symbolic-execution <strong>14</strong></span><span>workflow-orchestration <strong>13</strong></span><span>dotnet-analysis <strong>11</strong></span><span>android-analysis <strong>10</strong></span><span>unpacking <strong>8</strong></span><span>memory-forensics <strong>7</strong></span><span>artifact-management <strong>4</strong></span><span>system-diagnostics <strong>4</strong></span><span>go-analysis <strong>3</strong></span><span>network-analysis <strong>3</strong></span><span>plugin-management <strong>3</strong></span><span>sample-intake <strong>3</strong></span><span>task-control <strong>3</strong></span><span>tool-discovery <strong>3</strong></span><span>vulnerability-research <strong>2</strong></span><span>analysis-context <strong>1</strong></span><span>llm-review <strong>1</strong></span>
           </div>
           <div class="catalog-controls" aria-label="Tool catalog filters">
             <input id="catalogSearch" type="search" placeholder="Search tool, plugin, backend, format, capability..." />
             <select id="categoryFilter">
               <option value="">All categories</option>
-              <option value="static-analysis">static-analysis (92)</option><option value="reverse-engineering">reverse-engineering (67)</option><option value="dynamic-analysis">dynamic-analysis (61)</option><option value="malware-analysis">malware-analysis (16)</option><option value="symbolic-execution">symbolic-execution (14)</option><option value="workflow-orchestration">workflow-orchestration (13)</option><option value="dotnet-analysis">dotnet-analysis (11)</option><option value="android-analysis">android-analysis (10)</option><option value="unpacking">unpacking (8)</option><option value="memory-forensics">memory-forensics (7)</option><option value="artifact-management">artifact-management (4)</option><option value="system-diagnostics">system-diagnostics (4)</option><option value="go-analysis">go-analysis (3)</option><option value="network-analysis">network-analysis (3)</option><option value="plugin-management">plugin-management (3)</option><option value="sample-intake">sample-intake (3)</option><option value="task-control">task-control (3)</option><option value="tool-discovery">tool-discovery (3)</option><option value="vulnerability-research">vulnerability-research (2)</option><option value="analysis-context">analysis-context (1)</option><option value="llm-review">llm-review (1)</option>
+              <option value="static-analysis">static-analysis (93)</option><option value="reverse-engineering">reverse-engineering (67)</option><option value="dynamic-analysis">dynamic-analysis (61)</option><option value="malware-analysis">malware-analysis (16)</option><option value="symbolic-execution">symbolic-execution (14)</option><option value="workflow-orchestration">workflow-orchestration (13)</option><option value="dotnet-analysis">dotnet-analysis (11)</option><option value="android-analysis">android-analysis (10)</option><option value="unpacking">unpacking (8)</option><option value="memory-forensics">memory-forensics (7)</option><option value="artifact-management">artifact-management (4)</option><option value="system-diagnostics">system-diagnostics (4)</option><option value="go-analysis">go-analysis (3)</option><option value="network-analysis">network-analysis (3)</option><option value="plugin-management">plugin-management (3)</option><option value="sample-intake">sample-intake (3)</option><option value="task-control">task-control (3)</option><option value="tool-discovery">tool-discovery (3)</option><option value="vulnerability-research">vulnerability-research (2)</option><option value="analysis-context">analysis-context (1)</option><option value="llm-review">llm-review (1)</option>
             </select>
             <select id="domainFilter">
               <option value="">All domains</option>
               <option value="core">core</option>
-              <option value="static">static (226)</option><option value="dynamic">dynamic (61)</option><option value="both">both (7)</option>
+              <option value="static">static (227)</option><option value="dynamic">dynamic (61)</option><option value="both">both (7)</option>
             </select>
             <label><input id="runtimeOnly" type="checkbox" /> Runtime</label>
             <label><input id="workerOnly" type="checkbox" /> Worker</label>
@@ -7990,6 +7990,47 @@
                 </div>
               </section>
 
+              <section class="plugin-card" data-plugin-card data-search="uefi-smm-surface uefi/smm surface inventory passive uefi/smm firmware trust-boundary inventory for smi handlers, communication buffers, protocol/service references, nvram variable surface, flash/capsule/mmio/msr primitives, and static follow-up routing. static static-analysis static-analysis uefi.smm.surface.inventory passively inventory uefi/smm firmware trust-boundary evidence including smi handlers, communication buffers, protocol/service references, nvram variable surface, secure boot hints, and flash/capsule/mmio/msr primitives without booting firmware, triggering smi, executing smm code, writing efi variables, touching hardware, or invoking external tools.  " data-domain="static">
+                <button class="plugin-card__summary" type="button" data-plugin-toggle>
+                  <span>
+                    <code>uefi-smm-surface</code>
+                    <strong>UEFI/SMM Surface Inventory</strong>
+                  </span>
+                  <span>1 tools</span>
+                </button>
+                <div class="plugin-card__body">
+                  <p>Passive UEFI/SMM firmware trust-boundary inventory for SMI handlers, communication buffers, protocol/service references, NVRAM variable surface, flash/capsule/MMIO/MSR primitives, and static follow-up routing.</p>
+                  <div class="tool-tags">
+                    <span class="badge badge--purple">static</span>
+                    <span class="badge badge--blue">tier 1</span>
+                    <span class="tool-badge">static-analysis</span>
+                  </div>
+
+                  <div class="tool-row-list">
+
+                    <article class="tool-row" data-tool-row data-search="uefi.smm.surface.inventory passively inventory uefi/smm firmware trust-boundary evidence including smi handlers, communication buffers, protocol/service references, nvram variable surface, secure boot hints, and flash/capsule/mmio/msr primitives without booting firmware, triggering smi, executing smm code, writing efi variables, touching hardware, or invoking external tools. uefi-smm-surface uefi/smm surface inventory static-analysis static uefi efi uefi-firmware uefi-module uefi-smm smm smi te firmware-volume uefi-capsule dxe pei nvram uefi firmware embedded x86 x64 arm arm64 x86 x64 arm arm64 riscv static triage attack-surface trust-boundary workflow-plan passive no_execute no_firmware_boot no_smi_trigger no_smm_execution no_efi_variable_write no_nvram_write no_spi_flash_write no_firmware_flash_write no_capsule_apply no_mmio_or_msr_access no_emulation no_external_tool no_network_by_default no_mutation uefi-smm-surface-inventory smi-handler-hints smm-communication-buffer-hints uefi-protocol-service-inventory nvram-variable-surface secure-boot-variable-hints firmware-flash-capsule-primitive-inventory trust-boundary-risk-routing structure strings protocols guid smm variables low-level-primitives risk workflow uefi efi firmware smm smi handler smi dispatch commbuffer smram smm communication boot services runtime services nvram secure boot capsule update firmware volume uefi smm trust boundary inventory smi handler communication buffer triage uefi nvram variable and secure boot surface firmware volume capsule static risk inventory uefi_smm_surface_inventory structure strings protocols guid smm variables low-level-primitives risk workflow  " data-category="static-analysis" data-domain="static" data-runtime="no" data-worker="no">
+                      <div class="tool-row__head">
+                        <code>uefi.smm.surface.inventory</code>
+                        <div class="tool-row__badges">
+                          <span class="badge badge--blue">static-analysis</span>
+                          <span class="badge badge--purple">static</span>
+
+
+                        </div>
+                      </div>
+                      <p>Passively inventory UEFI/SMM firmware trust-boundary evidence including SMI handlers, communication buffers, protocol/service references, NVRAM variable surface, Secure Boot hints, and flash/capsule/MMIO/MSR primitives without booting firmware, triggering SMI, executing SMM code, writing EFI variables, touching hardware, or invoking external tools.</p>
+                      <div class="tool-row__meta">
+
+
+
+                        <span><strong>Artifacts</strong> uefi_smm_surface_inventory</span>
+                      </div>
+                      <div class="tool-tags"><span class="tool-badge">uefi</span><span class="tool-badge">efi</span><span class="tool-badge">uefi-firmware</span><span class="tool-badge">uefi-module</span><span class="tool-badge">uefi-smm</span><span class="tool-badge">smm</span><span class="tool-badge">smi</span><span class="tool-badge">te</span><span class="tool-badge">firmware-volume</span><span class="tool-badge">uefi-capsule</span></div>
+                    </article>
+                  </div>
+                </div>
+              </section>
+
               <section class="plugin-card" data-plugin-card data-search="unity-managed unity managed inventory passive unity metadata, mono assembly, and il2cpp bridge inventory without unity runtime execution. static dotnet-analysis dotnet-analysis unity.metadata.inspect passively inspect unity global-metadata.dat, il2cpp, and managed assembly layout without starting unity or loading native code.  " data-domain="static">
                 <button class="plugin-card__summary" type="button" data-plugin-toggle>
                   <span>
@@ -9150,12 +9191,12 @@
             </tbody>
           </table>
           <script type="application/json" id="catalogMetadata">{
-  "generatedAt": "2026-06-26T06:02:15.223Z",
+  "generatedAt": "2026-06-26T07:13:35.371Z",
   "counts": {
     "coreTools": 35,
-    "builtInPlugins": 104,
-    "pluginTools": 294,
-    "totalTools": 329,
+    "builtInPlugins": 105,
+    "pluginTools": 295,
+    "totalTools": 330,
     "runtimeTools": 143,
     "workerTools": 45,
     "registrationErrors": 0
@@ -9163,7 +9204,7 @@
   "categories": [
     {
       "name": "static-analysis",
-      "count": 92
+      "count": 93
     },
     {
       "name": "reverse-engineering",
@@ -9249,7 +9290,7 @@
   "domains": [
     {
       "name": "static",
-      "count": 226
+      "count": 227
     },
     {
       "name": "dynamic",
