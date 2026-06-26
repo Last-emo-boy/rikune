@@ -57,7 +57,7 @@ import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
 import { CODE_RECONSTRUCT_EXPORT_METADATA } from './code-analysis-metadata.js'
 
 const TOOL_NAME = 'code.reconstruct.export'
-const TOOL_VERSION = '0.2.15'
+const TOOL_VERSION = '0.2.16'
 const CACHE_TTL_MS = CACHE_TTL_7_DAYS
 
 export const CodeReconstructExportInputSchema = z
@@ -4875,6 +4875,63 @@ function buildGapsMarkdown(
   return lines.join('\n')
 }
 
+interface SampleFormatProfile {
+  family: 'pe' | 'elf' | 'macho' | 'wasm' | 'raw' | 'unknown'
+  isPeLike: boolean
+}
+
+function classifySampleFormat(
+  originalFilename: string | null,
+  sampleFileType: string | null | undefined
+): SampleFormatProfile {
+  const loweredName = (originalFilename || '').toLowerCase()
+  const loweredType = (sampleFileType || '').toLowerCase()
+
+  if (
+    loweredName.endsWith('.exe') ||
+    loweredName.endsWith('.dll') ||
+    loweredName.endsWith('.sys') ||
+    loweredName.endsWith('.ocx') ||
+    loweredName.endsWith('.cpl') ||
+    loweredType.includes('pe') ||
+    loweredType.includes('exe') ||
+    loweredType.includes('dll') ||
+    loweredType.includes('windows')
+  ) {
+    return { family: 'pe', isPeLike: true }
+  }
+  if (
+    loweredName.endsWith('.elf') ||
+    loweredName.endsWith('.so') ||
+    loweredName.endsWith('.ko') ||
+    loweredType.includes('elf') ||
+    loweredType.includes('linux')
+  ) {
+    return { family: 'elf', isPeLike: false }
+  }
+  if (
+    loweredName.endsWith('.dylib') ||
+    loweredName.endsWith('.macho') ||
+    loweredName.endsWith('.app') ||
+    loweredType.includes('macho') ||
+    loweredType.includes('mach-o')
+  ) {
+    return { family: 'macho', isPeLike: false }
+  }
+  if (loweredName.endsWith('.wasm') || loweredType.includes('wasm')) {
+    return { family: 'wasm', isPeLike: false }
+  }
+  if (
+    loweredName.endsWith('.bin') ||
+    loweredName.endsWith('.raw') ||
+    loweredType.includes('shellcode') ||
+    loweredType.includes('raw')
+  ) {
+    return { family: 'raw', isPeLike: false }
+  }
+  return { family: 'unknown', isPeLike: false }
+}
+
 function inferBinaryRole(
   originalFilename: string | null,
   sampleFileType: string | null | undefined,
@@ -4882,7 +4939,26 @@ function inferBinaryRole(
 ): string {
   const loweredName = (originalFilename || '').toLowerCase()
   const loweredType = (sampleFileType || '').toLowerCase()
+  const format = classifySampleFormat(originalFilename, sampleFileType)
 
+  if (format.family === 'elf') {
+    if (loweredName.endsWith('.so') || loweredType.includes('shared')) {
+      return 'elf_shared_object'
+    }
+    if (loweredName.endsWith('.ko') || loweredType.includes('kernel')) {
+      return 'elf_kernel_module'
+    }
+    return 'elf_binary'
+  }
+  if (format.family === 'macho') {
+    return loweredName.endsWith('.dylib') ? 'mach_o_dylib' : 'mach_o_binary'
+  }
+  if (format.family === 'wasm') {
+    return 'wasm_module'
+  }
+  if (format.family === 'raw') {
+    return loweredType.includes('shellcode') ? 'raw_shellcode' : 'raw_binary'
+  }
   if (loweredName.endsWith('.sys') || loweredType.includes('driver')) {
     return 'driver'
   }
@@ -4900,7 +4976,7 @@ function inferBinaryRole(
   if (exportCount > 0) {
     return 'library_like_pe'
   }
-  return 'pe_image'
+  return format.isPeLike ? 'pe_image' : 'native_binary'
 }
 
 function buildBinaryProfile(
@@ -5345,8 +5421,12 @@ export function createCodeReconstructExportHandler(
         }
       }
 
+      const workspace = await workspaceManager.getWorkspace(input.sample_id)
+      const originalEntries = await fs.readdir(workspace.original)
+      const originalFilename = originalEntries.length > 0 ? originalEntries[0] : null
+      const sampleFormat = classifySampleFormat(originalFilename, sample.file_type)
       let importsData: ImportsData | undefined
-      if (input.include_imports) {
+      if (input.include_imports && sampleFormat.isPeLike) {
         const importsResult = await importsExtractHandler({
           sample_id: input.sample_id,
           group_by_dll: true,
@@ -5361,27 +5441,31 @@ export function createCodeReconstructExportHandler(
       }
 
       let exportsData: PEExportsData | undefined
-      const exportsResult = await exportsExtractHandler({
-        sample_id: input.sample_id,
-      })
-      if (exportsResult.ok && exportsResult.data) {
-        exportsData = exportsResult.data as PEExportsData
-      } else {
-        warnings.push(
-          `exports unavailable: ${(exportsResult.errors || ['unknown error']).join('; ')}`
-        )
+      if (sampleFormat.isPeLike) {
+        const exportsResult = await exportsExtractHandler({
+          sample_id: input.sample_id,
+        })
+        if (exportsResult.ok && exportsResult.data) {
+          exportsData = exportsResult.data as PEExportsData
+        } else {
+          warnings.push(
+            `exports unavailable: ${(exportsResult.errors || ['unknown error']).join('; ')}`
+          )
+        }
       }
 
       let packerData: PackerDetectData | undefined
-      const packerResult = await packerDetectHandler({
-        sample_id: input.sample_id,
-      })
-      if (packerResult.ok && packerResult.data) {
-        packerData = packerResult.data as PackerDetectData
-      } else {
-        warnings.push(
-          `packer unavailable: ${(packerResult.errors || ['unknown error']).join('; ')}`
-        )
+      if (sampleFormat.isPeLike) {
+        const packerResult = await packerDetectHandler({
+          sample_id: input.sample_id,
+        })
+        if (packerResult.ok && packerResult.data) {
+          packerData = packerResult.data as PackerDetectData
+        } else {
+          warnings.push(
+            `packer unavailable: ${(packerResult.errors || ['unknown error']).join('; ')}`
+          )
+        }
       }
 
       let stringsData: StringsSummary | undefined
@@ -5506,9 +5590,6 @@ export function createCodeReconstructExportHandler(
         input.semantic_session_tag
       )
 
-      const workspace = await workspaceManager.getWorkspace(input.sample_id)
-      const originalEntries = await fs.readdir(workspace.original)
-      const originalFilename = originalEntries.length > 0 ? originalEntries[0] : null
       const exportFolderName =
         input.export_name ||
         `export_${new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')}`

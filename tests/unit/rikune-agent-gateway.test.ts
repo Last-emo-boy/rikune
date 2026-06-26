@@ -113,6 +113,9 @@ describe('RikuneAgentGateway stable tool surface', () => {
     expect(descriptions.get('workflow_run')).toContain('Primary Rikune analyzer execution gateway')
     expect(descriptions.get('artifact_read')).toContain('Primary Rikune artifact reader')
     expect(descriptions.get('rikune_tool_call')).toContain('Advanced Rikune subtool gateway')
+    expect(descriptions.get('rikune_tool_call')).toContain(
+      'does not need to appear in upstream tools/list'
+    )
     expect(descriptions.get('rikune_connection_refresh')).toContain(
       'does not expand the stable MCP tool list'
     )
