@@ -120,6 +120,21 @@ export function detectFileType(data: Buffer, filename?: string): string {
   }
 
   if (
+    data.length >= 4 &&
+    (data.readUInt32LE(0) === 0x07230203 || data.readUInt32BE(0) === 0x07230203)
+  ) {
+    return 'SPIR-V'
+  }
+
+  if (data.length >= 4 && data.subarray(0, 4).toString('ascii') === 'DXBC') {
+    return 'DXContainer'
+  }
+
+  if (data.length >= 4 && ['MTLB', 'MTLL'].includes(data.subarray(0, 4).toString('ascii'))) {
+    return 'Metal-Metallib'
+  }
+
+  if (
     data.length >= 24 &&
     ((data[0] === 0x9f && data[1] === 0xeb) || (data[0] === 0xeb && data[1] === 0x9f)) &&
     data[2] === 1
@@ -186,6 +201,26 @@ export function detectFileType(data: Buffer, filename?: string): string {
 
   if (extension === 'npy') {
     return 'NumPy-NPY'
+  }
+
+  if (extension === 'spv' || extension === 'spirv') {
+    return 'SPIR-V'
+  }
+
+  if (extension === 'dxil') {
+    return 'DXIL-Container'
+  }
+
+  if (extension === 'dxbc' || extension === 'cso') {
+    return 'DXBC-Container'
+  }
+
+  if (extension === 'metallib') {
+    return 'Metal-Metallib'
+  }
+
+  if (extension === 'wgsl') {
+    return 'WGSL'
   }
 
   if (extension === 'mobileprovision') {
@@ -579,6 +614,18 @@ export function detectFileType(data: Buffer, filename?: string): string {
       return 'LLVM-Bitcode'
     case 'll':
       return 'LLVM-IR'
+    case 'spv':
+    case 'spirv':
+      return 'SPIR-V'
+    case 'dxil':
+      return 'DXIL-Container'
+    case 'dxbc':
+    case 'cso':
+      return 'DXBC-Container'
+    case 'wgsl':
+      return 'WGSL'
+    case 'metallib':
+      return 'Metal-Metallib'
     case 'onnx':
       return 'ONNX-Model'
     case 'tflite':

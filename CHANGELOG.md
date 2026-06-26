@@ -22,6 +22,7 @@ Versioning where practical.
 - Added Docker backend packaging routes and backend install profiles. Default images install low-risk static wrappers such as REstringer, JSIMPLIFIER, Manifold, WABT, and LIEF validation; optional profiles can enable JSIR/CASCADE, JSVMP, GTIRB, radare2, and Triton-style static routes; heavy, runtime, GPU, BYO, sidecar, and license-gated backends stay explicit.
 - Added `jsvmp.bytecode.recover` as a bounded Worker-backed JSVMP static recovery tool and wired in-repo JavaScript/Manifold worker wrappers through the external `backend-worker.v1` JSON stdin/stdout bridge.
 - Added passive `ml.model.inventory` coverage for SafeTensors, GGUF/GGML, ONNX, TFLite, PyTorch/pickle checkpoints, and NumPy model artifacts, with unsafe deserialization, external data, prompt/template, and resource-risk signals while forbidding model load, inference, framework import, archive extraction, mutation, and network access.
+- Added passive `shader.ir.inventory` coverage for SPIR-V, DXIL/DXBC containers, WGSL source, and Metal library hints, with entry point, resource binding, container part, and GPU/IR routing signals while forbidding validators, compilers, disassemblers, GPU drivers, shader runtimes, mutation, and network access.
 
 ### Runtime Stability
 
