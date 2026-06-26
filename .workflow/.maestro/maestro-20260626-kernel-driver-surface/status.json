@@ -2,11 +2,11 @@
   "session_id": "maestro-20260626-kernel-driver-surface",
   "source": "codex",
   "created_at": "2026-06-26T13:58:22+08:00",
-  "updated_at": "2026-06-26T14:05:25+08:00",
+  "updated_at": "2026-06-26T14:22:30+08:00",
   "intent": "Add a passive kernel driver surface inventory plugin for Windows .sys and Linux .ko artifacts while preserving the three-tool gateway model and runtime opt-in boundary.",
   "branch": "feat/kernel-driver-surface",
   "base_branch": "beta",
-  "status": "verification_completed_pending_pr",
+  "status": "pr_opened_pending_merge",
   "context": {
     "iteration_type": "tool-capability",
     "target_plugin": "kernel-driver-surface",
@@ -31,7 +31,9 @@
       "no_network_by_default",
       "no_mutation"
     ],
-    "default_gateway_tools": ["workflow.search", "workflow.run", "artifact.read"]
+    "default_gateway_tools": ["workflow.search", "workflow.run", "artifact.read"],
+    "pr_url": "https://github.com/Last-emo-boy/rikune/pull/55",
+    "ci_follow_up": "Initial validate check exposed Windows EBUSY cleanup flake in tests/unit/code-reconstruct-export.test.ts; added retrying test cleanup helper."
   },
   "steps": [
     {
@@ -59,8 +61,8 @@
       "index": 3,
       "skill": "commit-and-pr",
       "args": "commit scoped files and open PR with gh",
-      "status": "pending",
-      "artifacts": null
+      "status": "completed",
+      "artifacts": "commit c235158; PR #55"
     },
     {
       "index": 4,
