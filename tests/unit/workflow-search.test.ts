@@ -19,6 +19,7 @@ import kernelDriverSurfacePlugin from '../../src/plugins/kernel-driver-surface/i
 import llvmBitcodePlugin from '../../src/plugins/llvm-bitcode/index.js'
 import mlModelPlugin from '../../src/plugins/ml-model/index.js'
 import nativeDebugTypesPlugin from '../../src/plugins/native-debug-types/index.js'
+import rustBinaryPlugin from '../../src/plugins/rust-binary/index.js'
 import shaderIrPlugin from '../../src/plugins/shader-ir/index.js'
 import syscallAbiSurfacePlugin from '../../src/plugins/syscall-abi-surface/index.js'
 import teeEnclavePlugin from '../../src/plugins/tee-enclave/index.js'
@@ -935,6 +936,46 @@ describe('workflow.search', () => {
     expect(hardeningResult.readiness_state).not.toBe('runtime_opt_in_required')
     expect(data.search_profile.recommended_tools).toContain('binary.hardening.inventory')
     expect(surface.isToolVisible('binary.hardening.inventory')).toBe(false)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
+  })
+
+  test('recommends passive Rust binary inventory without runtime opt-in', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [rustBinaryPlugin]
+    surface.registerCoreTools([
+      'workflow.search',
+      'workflow.run',
+      'artifact.read',
+      'tools.discover',
+    ])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      query:
+        'inspect Rust binary rustc Cargo crate v0 mangled symbol panic unwind allocator target triple',
+      file_type: 'rust-binary',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining(['rust-binary', 'rust', 'rustc', 'cargo', 'rust-mangled'])
+    )
+    const rustResult = data.results.find((item: any) => item.plugin_id === 'rust-binary')
+    expect(rustResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining(['rust.binary.inventory']),
+      })
+    )
+    expect(rustResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(data.search_profile.recommended_tools).toContain('rust.binary.inventory')
+    expect(surface.isToolVisible('rust.binary.inventory')).toBe(false)
     expect(surface.isToolVisible('tools.discover')).toBe(false)
   })
 

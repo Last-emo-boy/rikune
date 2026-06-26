@@ -266,6 +266,24 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS.cheri).toEqual(
       expect.arrayContaining(['cheri', 'purecap', 'binary-hardening'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS['rust-binary']).toEqual(
+      expect.arrayContaining([
+        'rust-binary',
+        'rust',
+        'rustc',
+        'cargo',
+        'cargo-crate',
+        'rust-mangled',
+        'rust-v0-mangled',
+        'rust-legacy-mangled',
+      ])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.rustc).toEqual(
+      expect.arrayContaining(['rustc', 'rust', 'rust-binary', 'compiler-codegen'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['rust-rlib']).toEqual(
+      expect.arrayContaining(['rust-rlib', 'rlib', 'rust-binary', 'archive'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS['tee-enclave']).toEqual(
       expect.arrayContaining([
         'tee-enclave',

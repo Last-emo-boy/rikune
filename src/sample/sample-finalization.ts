@@ -256,6 +256,14 @@ export function detectFileType(data: Buffer, filename?: string): string {
     return 'Swift-ABI'
   }
 
+  if (extension === 'rlib') {
+    return 'Rust-RLIB'
+  }
+
+  if (extension === 'rmeta') {
+    return 'Rust-RMETA'
+  }
+
   if (extension === 'dsym' || basename.endsWith('.dsym')) {
     return 'dSYM'
   }
@@ -789,6 +797,10 @@ export function detectFileType(data: Buffer, filename?: string): string {
       return 'SwiftDoc'
     case 'abi.json':
       return 'Swift-ABI'
+    case 'rlib':
+      return 'Rust-RLIB'
+    case 'rmeta':
+      return 'Rust-RMETA'
     case 'app':
       return 'App-Bundle'
     case 'framework':
