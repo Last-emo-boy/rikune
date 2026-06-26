@@ -239,6 +239,33 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS.codeview).toEqual(
       expect.arrayContaining(['codeview', 'compiler-codegen', 'debug-metadata', 'pdb'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS['binary-hardening']).toEqual(
+      expect.arrayContaining([
+        'binary-hardening',
+        'hardening',
+        'exploit-mitigation',
+        'checksec',
+        'relro',
+        'pie',
+        'nx',
+        'cet',
+        'pac',
+        'mte',
+        'cheri',
+      ])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['elf-hardening']).toEqual(
+      expect.arrayContaining(['elf-hardening', 'binary-hardening', 'hardening', 'elf'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.cet).toEqual(
+      expect.arrayContaining(['cet', 'ibt', 'shstk', 'binary-hardening'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.pac).toEqual(
+      expect.arrayContaining(['pac', 'bti', 'binary-hardening', 'arm64'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.cheri).toEqual(
+      expect.arrayContaining(['cheri', 'purecap', 'binary-hardening'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS['tee-enclave']).toEqual(
       expect.arrayContaining([
         'tee-enclave',

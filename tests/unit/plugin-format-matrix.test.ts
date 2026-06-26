@@ -16,6 +16,7 @@ import { buildWasmComponentInventoryFromBuffer } from '../../src/plugins/wasm-co
 import { buildAppleObjcSwiftMetadataFromBuffer } from '../../src/plugins/apple-objc-swift/tools/apple-objc-swift-metadata-inspect.js'
 import { buildBytecodeMetadataFromBuffer } from '../../src/plugins/bytecode/tools/bytecode-metadata-inspect.js'
 import { buildBtfInventoryFromBuffer } from '../../src/plugins/btf/tools/btf-type-inventory.js'
+import { buildBinaryHardeningInventoryFromBuffer } from '../../src/plugins/binary-hardening/tools/binary-hardening-inventory.js'
 import { buildCompilerCodegenFingerprintFromBuffer } from '../../src/plugins/compiler-codegen/tools/compiler-codegen-fingerprint.js'
 import { buildCppAbiLayoutInventoryFromBuffer } from '../../src/plugins/cpp-abi-layout/tools/cpp-abi-layout-inventory.js'
 import { buildKernelDriverSurfaceInventoryFromBuffer } from '../../src/plugins/kernel-driver-surface/tools/kernel-driver-surface-inventory.js'
@@ -1672,6 +1673,52 @@ describe('passive compiler codegen fingerprint inventory', () => {
   })
 })
 
+describe('passive binary hardening inventory', () => {
+  test('extracts mitigation posture without loaders, exploit tests, or external tools', () => {
+    const inventory = buildBinaryHardeningInventoryFromBuffer(
+      Buffer.from(
+        [
+          '__stack_chk_fail',
+          '__memcpy_chk',
+          'GNU_PROPERTY_X86_FEATURE_1_IBT',
+          'GNU_PROPERTY_X86_FEATURE_1_SHSTK',
+          'PACIASP',
+          'BTI',
+          'memtag',
+          'CHERI purecap',
+        ].join('\0'),
+        'ascii'
+      ),
+      { filename: 'hardened.bin' }
+    )
+
+    expect(inventory.mitigations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'stack.canary', status: 'present' }),
+        expect.objectContaining({ id: 'fortify', status: 'present' }),
+        expect.objectContaining({ id: 'cet.ibt', status: 'candidate' }),
+        expect.objectContaining({ id: 'cet.shstk', status: 'candidate' }),
+        expect.objectContaining({ id: 'aarch64.pac', status: 'candidate' }),
+        expect.objectContaining({ id: 'aarch64.bti', status: 'candidate' }),
+        expect.objectContaining({ id: 'aarch64.mte', status: 'candidate' }),
+        expect.objectContaining({ id: 'cheri.purecap', status: 'candidate' }),
+      ])
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining(['pe.security.profile', 'compiler.codegen.fingerprint'])
+    )
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_execute: true,
+        no_loader_invocation: true,
+        no_exploit_test: true,
+        no_external_tool: true,
+      })
+    )
+  })
+})
+
 describe('passive TEE enclave inventory', () => {
   test('extracts enclave and attestation hints without loading enclaves or requesting quotes', () => {
     const inventory = buildTeeEnclaveInventoryFromBuffer(
@@ -1916,6 +1963,7 @@ describe('built-in plugin format matrix discovery', () => {
     const wasm = plugins.find((plugin) => plugin.id === 'wasm')
     const wasmComponent = plugins.find((plugin) => plugin.id === 'wasm-component')
     const bytecode = plugins.find((plugin) => plugin.id === 'bytecode')
+    const binaryHardening = plugins.find((plugin) => plugin.id === 'binary-hardening')
     const btf = plugins.find((plugin) => plugin.id === 'btf')
     const compilerCodegen = plugins.find((plugin) => plugin.id === 'compiler-codegen')
     const cppAbiLayout = plugins.find((plugin) => plugin.id === 'cpp-abi-layout')
@@ -1975,6 +2023,18 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(bytecode?.tools?.map((tool) => tool.definition.name)).toContain(
       'bytecode.metadata.inspect'
+    )
+    expect(binaryHardening?.aspects?.formats).toEqual(
+      expect.arrayContaining([
+        'binary-hardening',
+        'exploit-mitigation',
+        'elf-hardening',
+        'pe-hardening',
+        'checksec',
+      ])
+    )
+    expect(binaryHardening?.tools?.map((tool) => tool.definition.name)).toContain(
+      'binary.hardening.inventory'
     )
     expect(btf?.aspects?.formats).toEqual(
       expect.arrayContaining(['btf', 'btf-ext', 'btf-elf', 'core-relocations'])
@@ -2136,6 +2196,7 @@ describe('built-in plugin format matrix discovery', () => {
     const elfMacho = requirePlugin(plugins, 'elf-macho')
     const apkSmali = requirePlugin(plugins, 'apk-smali')
     const firmware = requirePlugin(plugins, 'firmware')
+    const binaryHardening = requirePlugin(plugins, 'binary-hardening')
     const nativeObject = requirePlugin(plugins, 'native-object')
     const nativeDebugTypes = requirePlugin(plugins, 'native-debug-types')
     const compilerCodegen = requirePlugin(plugins, 'compiler-codegen')
@@ -2174,6 +2235,16 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(nativeDebugTypes.aspects?.capabilities).toEqual(
       expect.arrayContaining(['dwarf-unit-summary', 'ctf-type-metadata', 'type-graph-seeds'])
+    )
+    expect(binaryHardening.aspects?.capabilities).toEqual(
+      expect.arrayContaining([
+        'binary-hardening-inventory',
+        'checksec-style-profile',
+        'exploit-mitigation-posture',
+        'cet-ibt-shstk-hints',
+        'pac-bti-mte-hints',
+        'cheri-purecap-hints',
+      ])
     )
     expect(compilerCodegen.aspects?.capabilities).toEqual(
       expect.arrayContaining([
@@ -2321,6 +2392,21 @@ describe('built-in plugin format matrix discovery', () => {
       producesArtifacts: ['native_debug_type_inventory'],
       evidence: ['debug-metadata', 'types', 'source-map', 'workflow'],
       safety: ['passive', 'no_external_tool', 'no_symbol_server_download', 'no_source_fetch'],
+    })
+    expectToolMetadata(binaryHardening, 'binary.hardening.inventory', {
+      formats: ['binary-hardening', 'exploit-mitigation', 'elf-hardening', 'pe-hardening'],
+      artifacts: ['binary_hardening_inventory'],
+      evidence: ['mitigations', 'hardware-features', 'sections', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'binary-hardening',
+      toolName: 'binary.hardening.inventory',
+      recipeId: 'binary.hardening-static-inventory',
+      startsWith: ['binary.hardening.inventory'],
+      nextTools: ['pe.security.profile', 'compiler.codegen.fingerprint', 'analysis.evidence.graph'],
+      producesArtifacts: ['binary_hardening_inventory'],
+      evidence: ['mitigations', 'hardware-features', 'sections', 'workflow'],
+      safety: ['passive', 'no_loader_invocation', 'no_exploit_test', 'no_external_tool'],
     })
     expectToolMetadata(compilerCodegen, 'compiler.codegen.fingerprint', {
       formats: ['compiler-codegen', 'compiler-provenance', 'rich-header', 'codeview'],
