@@ -37,6 +37,7 @@ function normalizeFileExtension(filename?: string): string | null {
   const basename = path.posix.basename(filename.replace(/\\/g, '/')).trim().toLowerCase()
   if (!basename.includes('.')) return null
   if (basename.endsWith('.safetensors.index.json')) return 'safetensors.index.json'
+  if (basename.endsWith('.abi.json')) return 'abi.json'
   if (basename.endsWith('.appimage')) return 'appimage'
   return basename.slice(basename.lastIndexOf('.') + 1)
 }
@@ -225,6 +226,22 @@ export function detectFileType(data: Buffer, filename?: string): string {
 
   if (extension === 'mobileprovision') {
     return 'MobileProvision'
+  }
+
+  if (extension === 'swiftmodule') {
+    return 'SwiftModule'
+  }
+
+  if (extension === 'swiftinterface') {
+    return 'SwiftInterface'
+  }
+
+  if (extension === 'swiftdoc') {
+    return 'SwiftDoc'
+  }
+
+  if (extension === 'abi.json') {
+    return 'Swift-ABI'
   }
 
   if (extension === 'dsym' || basename.endsWith('.dsym')) {
@@ -687,6 +704,14 @@ export function detectFileType(data: Buffer, filename?: string): string {
       return 'PKG'
     case 'mobileprovision':
       return 'MobileProvision'
+    case 'swiftmodule':
+      return 'SwiftModule'
+    case 'swiftinterface':
+      return 'SwiftInterface'
+    case 'swiftdoc':
+      return 'SwiftDoc'
+    case 'abi.json':
+      return 'Swift-ABI'
     case 'app':
       return 'App-Bundle'
     case 'framework':

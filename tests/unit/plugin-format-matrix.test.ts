@@ -13,6 +13,7 @@ import { buildAppleContainerInventoryFromBuffer } from '../../src/plugins/apple-
 import { buildJvmStructureFromBuffer } from '../../src/plugins/jvm/tools/jvm-structure-analyze.js'
 import { buildWasmStructureFromBuffer } from '../../src/plugins/wasm/tools/wasm-structure-analyze.js'
 import { buildWasmComponentInventoryFromBuffer } from '../../src/plugins/wasm-component/tools/wasm-component-inventory.js'
+import { buildAppleObjcSwiftMetadataFromBuffer } from '../../src/plugins/apple-objc-swift/tools/apple-objc-swift-metadata-inspect.js'
 import { buildBytecodeMetadataFromBuffer } from '../../src/plugins/bytecode/tools/bytecode-metadata-inspect.js'
 import { buildBtfInventoryFromBuffer } from '../../src/plugins/btf/tools/btf-type-inventory.js'
 import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitcode/tools/llvm-bitcode-inventory.js'
@@ -289,6 +290,71 @@ function machoObjectFixture(): Buffer {
   return data
 }
 
+function fixedMachOName(data: Buffer, offset: number, value: string): void {
+  data.fill(0, offset, offset + 16)
+  data.write(value, offset, Math.min(Buffer.byteLength(value), 16), 'ascii')
+}
+
+function appleMetadataSection(
+  data: Buffer,
+  offset: number,
+  section: string,
+  segment: string,
+  fileOffset: number,
+  size: number
+): void {
+  fixedMachOName(data, offset, section)
+  fixedMachOName(data, offset + 16, segment)
+  data.writeBigUInt64LE(BigInt(fileOffset), offset + 32)
+  data.writeBigUInt64LE(BigInt(size), offset + 40)
+  data.writeUInt32LE(fileOffset, offset + 48)
+}
+
+function appleMetadataCStringBlob(data: Buffer, offset: number, values: string[]): number {
+  const blob = Buffer.from(`${values.join('\0')}\0`, 'utf8')
+  blob.copy(data, offset)
+  return blob.length
+}
+
+function appleObjcSwiftMetadataFixture(): Buffer {
+  const data = Buffer.alloc(0x500)
+  const sectionCount = 4
+  const commandSize = 72 + sectionCount * 80
+  const sectionTableOffset = 32 + 72
+  data.writeUInt32LE(0xfeedfacf, 0)
+  data.writeInt32LE(0x0100000c, 4)
+  data.writeInt32LE(0, 8)
+  data.writeUInt32LE(6, 12)
+  data.writeUInt32LE(1, 16)
+  data.writeUInt32LE(commandSize, 20)
+  data.writeUInt32LE(0x19, 32)
+  data.writeUInt32LE(commandSize, 36)
+  fixedMachOName(data, 40, '__TEXT')
+  data.writeUInt32LE(sectionCount, 96)
+  const methSize = appleMetadataCStringBlob(data, 0x280, ['viewDidLoad', 'performSelector:'])
+  const classSize = appleMetadataCStringBlob(data, 0x2c0, ['DemoController'])
+  const swiftSize = appleMetadataCStringBlob(data, 0x300, ['$s4Demo5ModelV', 'Swift.Task'])
+  appleMetadataSection(data, sectionTableOffset, '__objc_classlist', '__DATA_CONST', 0x260, 8)
+  appleMetadataSection(data, sectionTableOffset + 80, '__objc_methname', '__TEXT', 0x280, methSize)
+  appleMetadataSection(
+    data,
+    sectionTableOffset + 160,
+    '__objc_classname',
+    '__TEXT',
+    0x2c0,
+    classSize
+  )
+  appleMetadataSection(
+    data,
+    sectionTableOffset + 240,
+    '__swift5_reflstr',
+    '__TEXT',
+    0x300,
+    swiftSize
+  )
+  return data
+}
+
 function cpioNewcFixture(entries: Array<{ name: string; body?: Buffer }>): Buffer {
   const chunks: Buffer[] = []
   for (const entry of entries) {
@@ -506,6 +572,14 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(Buffer.alloc(16), 'Demo.xcframework')).toBe('XCFramework')
     expect(detectFileType(Buffer.alloc(16), 'Demo.dSYM')).toBe('dSYM')
     expect(detectFileType(Buffer.alloc(16), 'embedded.mobileprovision')).toBe('MobileProvision')
+    expect(detectFileType(Buffer.from('target arm64-apple-ios'), 'Demo.swiftmodule')).toBe(
+      'SwiftModule'
+    )
+    expect(detectFileType(Buffer.from('public interface Demo'), 'Demo.swiftinterface')).toBe(
+      'SwiftInterface'
+    )
+    expect(detectFileType(Buffer.from('Swift doc'), 'Demo.swiftdoc')).toBe('SwiftDoc')
+    expect(detectFileType(Buffer.from('{}'), 'Demo.abi.json')).toBe('Swift-ABI')
   })
 
   test('detects AppImage and WASM without breaking ELF detection', () => {
@@ -834,6 +908,45 @@ describe('passive package and Apple container inventory', () => {
           recommended_tools: expect.arrayContaining(['macho.structure.analyze']),
         }),
       ])
+    )
+  })
+
+  test('builds Apple ObjC/Swift metadata inventory without demangle/runtime tooling', () => {
+    const inventory = buildAppleObjcSwiftMetadataFromBuffer(appleObjcSwiftMetadataFixture(), {
+      filename: 'Demo.framework/Demo',
+    })
+
+    expect(inventory.format).toBe('macho')
+    expect(inventory.objc.present).toBe(true)
+    expect(inventory.objc.pointer_reference_counts.classlist).toBe(1)
+    expect(inventory.objc.class_name_hints).toContain('DemoController')
+    expect(inventory.objc.selector_hints).toContain('performSelector:')
+    expect(inventory.swift.present).toBe(true)
+    expect(inventory.swift.section_hints).toContain('__TEXT.__swift5_reflstr')
+    expect(inventory.swift.module_hints).toContain('Demo')
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_execute: true,
+        no_debug_attach: true,
+        no_app_launch: true,
+        no_external_tool: true,
+        no_runtime_start: true,
+      })
+    )
+    expect(inventory.demangle_plan).toEqual(
+      expect.objectContaining({
+        status: 'plan_only',
+        external_tool_invoked_by_tool: false,
+      })
+    )
+    expect(inventory.workflow_handoff.dynamic_boundary).toEqual(
+      expect.objectContaining({
+        app_launch_allowed: false,
+        debugger_attach_allowed: false,
+        external_tool_allowed: false,
+        runtime_started_by_tool: false,
+      })
     )
   })
 
@@ -1426,6 +1539,7 @@ describe('built-in plugin format matrix discovery', () => {
     const nativeObject = plugins.find((plugin) => plugin.id === 'native-object')
     const androidPackage = plugins.find((plugin) => plugin.id === 'android-package')
     const appleSigning = plugins.find((plugin) => plugin.id === 'apple-signing')
+    const appleObjcSwift = plugins.find((plugin) => plugin.id === 'apple-objc-swift')
     const linuxBinary = plugins.find((plugin) => plugin.id === 'linux-binary')
     const cudaBinary = plugins.find((plugin) => plugin.id === 'cuda-binary')
 
@@ -1540,6 +1654,12 @@ describe('built-in plugin format matrix discovery', () => {
     expect(appleSigning?.tools?.map((tool) => tool.definition.name)).toContain(
       'apple.signing.inspect'
     )
+    expect(appleObjcSwift?.aspects?.formats).toEqual(
+      expect.arrayContaining(['objc-metadata', 'swift-metadata', 'swiftmodule', 'macho'])
+    )
+    expect(appleObjcSwift?.tools?.map((tool) => tool.definition.name)).toContain(
+      'apple.objc_swift.metadata.inspect'
+    )
     expect(linuxBinary?.aspects?.formats).toEqual(
       expect.arrayContaining(['elf-executable', 'elf-so', 'elf-core', 'linux-kernel-module'])
     )
@@ -1572,6 +1692,7 @@ describe('built-in plugin format matrix discovery', () => {
     const wasmComponent = requirePlugin(plugins, 'wasm-component')
     const androidPackage = requirePlugin(plugins, 'android-package')
     const appleSigning = requirePlugin(plugins, 'apple-signing')
+    const appleObjcSwift = requirePlugin(plugins, 'apple-objc-swift')
     const linuxBinary = requirePlugin(plugins, 'linux-binary')
     const codeAnalysis = requirePlugin(plugins, 'code-analysis')
     const apiHash = requirePlugin(plugins, 'api-hash')
@@ -1598,6 +1719,13 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(appleSigning.aspects?.formats).toEqual(
       expect.arrayContaining(['apple-signing', 'macho', 'mobileprovision'])
+    )
+    expect(appleObjcSwift.aspects?.capabilities).toEqual(
+      expect.arrayContaining([
+        'objc-runtime-metadata-inventory',
+        'swift-abi-metadata-inventory',
+        'selector-inventory',
+      ])
     )
     expect(linuxBinary.aspects?.formats).toEqual(
       expect.arrayContaining(['linux-binary', 'elf-executable', 'elf-core'])
@@ -1792,6 +1920,21 @@ describe('built-in plugin format matrix discovery', () => {
       formats: ['apple-signing', 'codesignature', 'mobileprovision'],
       artifacts: ['apple_signing_inventory'],
       evidence: ['manifest', 'certificates', 'package-metadata'],
+    })
+    expectToolMetadata(appleObjcSwift, 'apple.objc_swift.metadata.inspect', {
+      formats: ['objc-metadata', 'swift-metadata', 'macho'],
+      artifacts: ['apple_objc_swift_metadata_inventory'],
+      evidence: ['structure', 'symbols', 'classes', 'selectors', 'swift-metadata', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'apple-objc-swift',
+      toolName: 'apple.objc_swift.metadata.inspect',
+      recipeId: 'apple.objc-swift-metadata-static-inventory',
+      startsWith: ['apple.objc_swift.metadata.inspect'],
+      nextTools: ['macho.structure.analyze', 'apple.signing.inspect', 'analysis.evidence.graph'],
+      producesArtifacts: ['apple_objc_swift_metadata_inventory'],
+      evidence: ['classes', 'selectors', 'swift-metadata', 'workflow'],
+      safety: ['passive', 'no_debug_attach', 'no_app_launch', 'no_external_tool'],
     })
     expectToolMetadata(linuxBinary, 'linux.binary.inventory', {
       formats: ['linux-binary', 'elf-executable', 'elf-core'],
@@ -2389,6 +2532,30 @@ describe('built-in plugin format matrix discovery', () => {
         producesArtifacts: ['apple_security_profile'],
         evidence: ['manifest', 'certificates', 'package-metadata', 'workflow', 'provenance'],
         safety: ['passive', 'no_auto_mount', 'no_installer_execution', 'no_live_sample_by_default'],
+      },
+      {
+        pluginId: 'apple-objc-swift',
+        toolName: 'apple.objc_swift.metadata.inspect',
+        recipeId: 'apple.objc-swift-metadata-static-inventory',
+        startsWith: ['apple.objc_swift.metadata.inspect'],
+        nextTools: ['macho.structure.analyze', 'apple.signing.inspect', 'analysis.evidence.graph'],
+        producesArtifacts: ['apple_objc_swift_metadata_inventory'],
+        evidence: [
+          'structure',
+          'symbols',
+          'classes',
+          'selectors',
+          'swift-metadata',
+          'workflow',
+          'provenance',
+        ],
+        safety: [
+          'passive',
+          'no_debug_attach',
+          'no_app_launch',
+          'no_external_tool',
+          'no_runtime_start',
+        ],
       },
       {
         pluginId: 'pe-analysis',

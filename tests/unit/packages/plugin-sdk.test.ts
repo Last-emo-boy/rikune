@@ -136,6 +136,15 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS.apk).toContain('android')
     expect(SURFACE_FILE_TYPE_TAGS.apks).toEqual(expect.arrayContaining(['android', 'split-apk']))
     expect(SURFACE_FILE_TYPE_TAGS.ipa).toEqual(expect.arrayContaining(['ios', 'macho']))
+    expect(SURFACE_FILE_TYPE_TAGS.objc).toEqual(
+      expect.arrayContaining(['objc', 'objective-c', 'objc-metadata', 'macho'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.swiftmodule).toEqual(
+      expect.arrayContaining(['swiftmodule', 'swift-metadata', 'swift', 'swift-abi'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['swift-abi']).toEqual(
+      expect.arrayContaining(['swift-abi', 'swift-metadata', 'swift'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS.wasm).toContain('wasi')
     expect(SURFACE_FILE_TYPE_TAGS['wasm-component']).toEqual(
       expect.arrayContaining([
