@@ -297,9 +297,9 @@
           <h2><span data-lang-en>Overview</span><span data-lang-zh>概览</span></h2>
           <div class="catalog-stats">
             <div class="catalog-stat"><strong>35</strong><span>core tools</span></div>
-            <div class="catalog-stat"><strong>105</strong><span>built-in plugins</span></div>
-            <div class="catalog-stat"><strong>295</strong><span>plugin tools</span></div>
-            <div class="catalog-stat"><strong>330</strong><span>cataloged tools</span></div>
+            <div class="catalog-stat"><strong>106</strong><span>built-in plugins</span></div>
+            <div class="catalog-stat"><strong>296</strong><span>plugin tools</span></div>
+            <div class="catalog-stat"><strong>331</strong><span>cataloged tools</span></div>
             <div class="catalog-stat"><strong>143</strong><span>runtime-aware</span></div>
             <div class="catalog-stat"><strong>45</strong><span>worker-backed</span></div>
           </div>
@@ -321,18 +321,18 @@
             </tbody>
           </table>
           <div class="category-strip">
-            <span>static-analysis <strong>93</strong></span><span>reverse-engineering <strong>67</strong></span><span>dynamic-analysis <strong>61</strong></span><span>malware-analysis <strong>16</strong></span><span>symbolic-execution <strong>14</strong></span><span>workflow-orchestration <strong>13</strong></span><span>dotnet-analysis <strong>11</strong></span><span>android-analysis <strong>10</strong></span><span>unpacking <strong>8</strong></span><span>memory-forensics <strong>7</strong></span><span>artifact-management <strong>4</strong></span><span>system-diagnostics <strong>4</strong></span><span>go-analysis <strong>3</strong></span><span>network-analysis <strong>3</strong></span><span>plugin-management <strong>3</strong></span><span>sample-intake <strong>3</strong></span><span>task-control <strong>3</strong></span><span>tool-discovery <strong>3</strong></span><span>vulnerability-research <strong>2</strong></span><span>analysis-context <strong>1</strong></span><span>llm-review <strong>1</strong></span>
+            <span>static-analysis <strong>94</strong></span><span>reverse-engineering <strong>67</strong></span><span>dynamic-analysis <strong>61</strong></span><span>malware-analysis <strong>16</strong></span><span>symbolic-execution <strong>14</strong></span><span>workflow-orchestration <strong>13</strong></span><span>dotnet-analysis <strong>11</strong></span><span>android-analysis <strong>10</strong></span><span>unpacking <strong>8</strong></span><span>memory-forensics <strong>7</strong></span><span>artifact-management <strong>4</strong></span><span>system-diagnostics <strong>4</strong></span><span>go-analysis <strong>3</strong></span><span>network-analysis <strong>3</strong></span><span>plugin-management <strong>3</strong></span><span>sample-intake <strong>3</strong></span><span>task-control <strong>3</strong></span><span>tool-discovery <strong>3</strong></span><span>vulnerability-research <strong>2</strong></span><span>analysis-context <strong>1</strong></span><span>llm-review <strong>1</strong></span>
           </div>
           <div class="catalog-controls" aria-label="Tool catalog filters">
             <input id="catalogSearch" type="search" placeholder="Search tool, plugin, backend, format, capability..." />
             <select id="categoryFilter">
               <option value="">All categories</option>
-              <option value="static-analysis">static-analysis (93)</option><option value="reverse-engineering">reverse-engineering (67)</option><option value="dynamic-analysis">dynamic-analysis (61)</option><option value="malware-analysis">malware-analysis (16)</option><option value="symbolic-execution">symbolic-execution (14)</option><option value="workflow-orchestration">workflow-orchestration (13)</option><option value="dotnet-analysis">dotnet-analysis (11)</option><option value="android-analysis">android-analysis (10)</option><option value="unpacking">unpacking (8)</option><option value="memory-forensics">memory-forensics (7)</option><option value="artifact-management">artifact-management (4)</option><option value="system-diagnostics">system-diagnostics (4)</option><option value="go-analysis">go-analysis (3)</option><option value="network-analysis">network-analysis (3)</option><option value="plugin-management">plugin-management (3)</option><option value="sample-intake">sample-intake (3)</option><option value="task-control">task-control (3)</option><option value="tool-discovery">tool-discovery (3)</option><option value="vulnerability-research">vulnerability-research (2)</option><option value="analysis-context">analysis-context (1)</option><option value="llm-review">llm-review (1)</option>
+              <option value="static-analysis">static-analysis (94)</option><option value="reverse-engineering">reverse-engineering (67)</option><option value="dynamic-analysis">dynamic-analysis (61)</option><option value="malware-analysis">malware-analysis (16)</option><option value="symbolic-execution">symbolic-execution (14)</option><option value="workflow-orchestration">workflow-orchestration (13)</option><option value="dotnet-analysis">dotnet-analysis (11)</option><option value="android-analysis">android-analysis (10)</option><option value="unpacking">unpacking (8)</option><option value="memory-forensics">memory-forensics (7)</option><option value="artifact-management">artifact-management (4)</option><option value="system-diagnostics">system-diagnostics (4)</option><option value="go-analysis">go-analysis (3)</option><option value="network-analysis">network-analysis (3)</option><option value="plugin-management">plugin-management (3)</option><option value="sample-intake">sample-intake (3)</option><option value="task-control">task-control (3)</option><option value="tool-discovery">tool-discovery (3)</option><option value="vulnerability-research">vulnerability-research (2)</option><option value="analysis-context">analysis-context (1)</option><option value="llm-review">llm-review (1)</option>
             </select>
             <select id="domainFilter">
               <option value="">All domains</option>
               <option value="core">core</option>
-              <option value="static">static (227)</option><option value="dynamic">dynamic (61)</option><option value="both">both (7)</option>
+              <option value="static">static (228)</option><option value="dynamic">dynamic (61)</option><option value="both">both (7)</option>
             </select>
             <label><input id="runtimeOnly" type="checkbox" /> Runtime</label>
             <label><input id="workerOnly" type="checkbox" /> Worker</label>
@@ -7848,6 +7848,47 @@
                 </div>
               </section>
 
+              <section class="plugin-card" data-plugin-card data-search="syscall-abi-surface syscall abi surface inventory passive syscall abi and user-kernel boundary inventory for windows direct syscall stubs, nt resolver strings, linux syscall/seccomp hints, mach traps, svc/ecall patterns, and evasion risk handoff. static static-analysis static-analysis syscall.abi.surface.inventory passively inventory syscall abi and user-kernel boundary evidence, including windows direct syscall stubs, nt resolver strings, linux syscall/seccomp hints, mach traps, arm svc/risc-v ecall patterns, and evasion risk handoff without executing the sample, invoking syscalls, tracing, debugging, emulating, opening devices, or using external tools.  " data-domain="static">
+                <button class="plugin-card__summary" type="button" data-plugin-toggle>
+                  <span>
+                    <code>syscall-abi-surface</code>
+                    <strong>Syscall ABI Surface Inventory</strong>
+                  </span>
+                  <span>1 tools</span>
+                </button>
+                <div class="plugin-card__body">
+                  <p>Passive syscall ABI and user-kernel boundary inventory for Windows direct syscall stubs, NT resolver strings, Linux syscall/seccomp hints, Mach traps, SVC/ecall patterns, and evasion risk handoff.</p>
+                  <div class="tool-tags">
+                    <span class="badge badge--purple">static</span>
+                    <span class="badge badge--blue">tier 2</span>
+                    <span class="tool-badge">static-analysis</span>
+                  </div>
+
+                  <div class="tool-row-list">
+
+                    <article class="tool-row" data-tool-row data-search="syscall.abi.surface.inventory passively inventory syscall abi and user-kernel boundary evidence, including windows direct syscall stubs, nt resolver strings, linux syscall/seccomp hints, mach traps, arm svc/risc-v ecall patterns, and evasion risk handoff without executing the sample, invoking syscalls, tracing, debugging, emulating, opening devices, or using external tools. syscall-abi-surface syscall abi surface inventory static-analysis static syscall syscall-stub direct-syscall raw-shellcode shellcode ntdll-stub linux-syscall mach-trap pe elf macho windows linux macos ios android cross-platform x86 x64 arm arm64 riscv static triage correlation passive no_execute no_syscall no_ptrace no_strace no_ltrace no_debugger no_frida no_emulation no_device_open no_driver_load no_external_tool no_network_by_default no_mutation syscall-abi-surface-inventory direct-syscall-stub-detection nt-api-boundary-hints linux-syscall-instruction-hints mach-trap-hints svc-ecall-boundary-hints syscall-evasion-risk-routing structure bytecode syscalls abi strings evasion risk workflow provenance syscall direct syscall indirect syscall hells gate halos gate tartarusgate syswhispers ntdll syscall stub sysenter int 0x80 svc ecall mach trap seccomp ptrace direct syscall stub inventory syscall abi surface triage user kernel boundary static inventory hell gate syswhispers syscall evasion detection linux syscall seccomp ptrace static hints syscall_abi_surface_inventory structure bytecode syscalls abi strings evasion risk workflow provenance  " data-category="static-analysis" data-domain="static" data-runtime="no" data-worker="no">
+                      <div class="tool-row__head">
+                        <code>syscall.abi.surface.inventory</code>
+                        <div class="tool-row__badges">
+                          <span class="badge badge--blue">static-analysis</span>
+                          <span class="badge badge--purple">static</span>
+
+
+                        </div>
+                      </div>
+                      <p>Passively inventory syscall ABI and user-kernel boundary evidence, including Windows direct syscall stubs, NT resolver strings, Linux syscall/seccomp hints, Mach traps, ARM SVC/RISC-V ecall patterns, and evasion risk handoff without executing the sample, invoking syscalls, tracing, debugging, emulating, opening devices, or using external tools.</p>
+                      <div class="tool-row__meta">
+
+
+
+                        <span><strong>Artifacts</strong> syscall_abi_surface_inventory</span>
+                      </div>
+                      <div class="tool-tags"><span class="tool-badge">syscall</span><span class="tool-badge">syscall-stub</span><span class="tool-badge">direct-syscall</span><span class="tool-badge">raw-shellcode</span><span class="tool-badge">shellcode</span><span class="tool-badge">ntdll-stub</span><span class="tool-badge">linux-syscall</span><span class="tool-badge">mach-trap</span><span class="tool-badge">pe</span><span class="tool-badge">elf</span></div>
+                    </article>
+                  </div>
+                </div>
+              </section>
+
               <section class="plugin-card" data-plugin-card data-search="threat-intel threat intelligence mitre att&amp;ck technique mapping, ioc export (json, csv, stix2), and sigma rule generation static malware-analysis malware-analysis attack.map generate mitre att&amp;ck technique mapping from triage indicators with evidence-linked confidence scoring. medium and larger samples may return a background job_id; use analysis.context.get before rerunning to discover prior att&amp;ck maps, active jobs, and cached context.   ioc.export export normalized ioc data and optional att&amp;ck mapping as json, csv, or stix 2.1 bundle.   sigma.rule.generate auto-generate sigma detection rules from sample analysis evidence. creates rules for process creation, file events, registry modifications, network connections, dns queries, and dll loads. uses strings, imports, and behavioral evidence to build detection logic.  " data-domain="static">
                 <button class="plugin-card__summary" type="button" data-plugin-toggle>
                   <span>
@@ -9191,12 +9232,12 @@
             </tbody>
           </table>
           <script type="application/json" id="catalogMetadata">{
-  "generatedAt": "2026-06-26T07:13:35.371Z",
+  "generatedAt": "2026-06-26T08:41:10.433Z",
   "counts": {
     "coreTools": 35,
-    "builtInPlugins": 105,
-    "pluginTools": 295,
-    "totalTools": 330,
+    "builtInPlugins": 106,
+    "pluginTools": 296,
+    "totalTools": 331,
     "runtimeTools": 143,
     "workerTools": 45,
     "registrationErrors": 0
@@ -9204,7 +9245,7 @@
   "categories": [
     {
       "name": "static-analysis",
-      "count": 93
+      "count": 94
     },
     {
       "name": "reverse-engineering",
@@ -9290,7 +9331,7 @@
   "domains": [
     {
       "name": "static",
-      "count": 227
+      "count": 228
     },
     {
       "name": "dynamic",

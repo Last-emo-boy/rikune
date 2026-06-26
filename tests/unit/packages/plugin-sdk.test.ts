@@ -229,6 +229,18 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS['linux-kernel-module']).toEqual(
       expect.arrayContaining(['linux-driver', 'kernel-driver', 'driver-surface', 'ioctl'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS.syscall).toEqual(
+      expect.arrayContaining(['syscall', 'syscall-stub', 'direct-syscall', 'raw-shellcode'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['direct-syscall']).toEqual(
+      expect.arrayContaining(['direct-syscall', 'syscall-stub', 'syscall', 'ntdll-stub'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['raw-shellcode']).toEqual(
+      expect.arrayContaining(['raw-shellcode', 'shellcode', 'syscall'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['linux-syscall']).toEqual(
+      expect.arrayContaining(['linux-syscall', 'syscall', 'linux', 'elf'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS.bc).toEqual(
       expect.arrayContaining(['bc', 'llvm-bc', 'llvm-bitcode', 'llvm-ir'])
     )

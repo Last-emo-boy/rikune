@@ -18,6 +18,7 @@ import llvmBitcodePlugin from '../../src/plugins/llvm-bitcode/index.js'
 import mlModelPlugin from '../../src/plugins/ml-model/index.js'
 import nativeDebugTypesPlugin from '../../src/plugins/native-debug-types/index.js'
 import shaderIrPlugin from '../../src/plugins/shader-ir/index.js'
+import syscallAbiSurfacePlugin from '../../src/plugins/syscall-abi-surface/index.js'
 import uefiSmmSurfacePlugin from '../../src/plugins/uefi-smm-surface/index.js'
 import wasmComponentPlugin from '../../src/plugins/wasm-component/index.js'
 import appleObjcSwiftPlugin from '../../src/plugins/apple-objc-swift/index.js'
@@ -878,6 +879,46 @@ describe('workflow.search', () => {
     expect(uefiResult.readiness_state).not.toBe('runtime_opt_in_required')
     expect(data.search_profile.recommended_tools).toContain('uefi.smm.surface.inventory')
     expect(surface.isToolVisible('uefi.smm.surface.inventory')).toBe(false)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
+  })
+
+  test('recommends passive syscall ABI surface inventory without runtime opt-in', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [syscallAbiSurfacePlugin]
+    surface.registerCoreTools([
+      'workflow.search',
+      'workflow.run',
+      'artifact.read',
+      'tools.discover',
+    ])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      query:
+        'inspect direct syscall SysWhispers HellsGate ntdll stub NtAllocateVirtualMemory syscall ABI boundary',
+      file_type: 'direct-syscall',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining(['direct-syscall', 'syscall-stub', 'syscall', 'ntdll-stub'])
+    )
+    const syscallResult = data.results.find((item: any) => item.plugin_id === 'syscall-abi-surface')
+    expect(syscallResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining(['syscall.abi.surface.inventory']),
+      })
+    )
+    expect(syscallResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(data.search_profile.recommended_tools).toContain('syscall.abi.surface.inventory')
+    expect(surface.isToolVisible('syscall.abi.surface.inventory')).toBe(false)
     expect(surface.isToolVisible('tools.discover')).toBe(false)
   })
 

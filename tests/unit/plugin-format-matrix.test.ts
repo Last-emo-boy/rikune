@@ -22,6 +22,7 @@ import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitc
 import { buildMlModelInventoryFromBuffer } from '../../src/plugins/ml-model/tools/ml-model-inventory.js'
 import { buildNativeDebugTypesInventoryFromBuffer } from '../../src/plugins/native-debug-types/tools/native-debug-types-inventory.js'
 import { buildShaderIrInventoryFromBuffer } from '../../src/plugins/shader-ir/tools/shader-ir-inventory.js'
+import { buildSyscallAbiSurfaceInventoryFromBuffer } from '../../src/plugins/syscall-abi-surface/tools/syscall-abi-surface-inventory.js'
 import { buildUefiSmmSurfaceInventoryFromBuffer } from '../../src/plugins/uefi-smm-surface/tools/uefi-smm-surface-inventory.js'
 import { buildWindowsInstallerInventoryFromBuffer } from '../../src/plugins/windows-installer/tools/windows-installer-inventory.js'
 import { buildWindowsDebugMetadataFromBuffer } from '../../src/plugins/windows-debug-symbols/tools/windows-debug-metadata-inspect.js'
@@ -618,6 +619,9 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(Buffer.alloc(16), 'demo.component.wasm')).toBe('WASM-Component')
     expect(detectFileType(Buffer.alloc(16), 'program.bpf')).toBe('eBPF-Bytecode')
     expect(detectFileType(Buffer.alloc(16), 'program.ebpf')).toBe('eBPF-Bytecode')
+    expect(detectFileType(Buffer.alloc(16), 'ntdll.stub')).toBe('Syscall-Stub')
+    expect(detectFileType(Buffer.alloc(16), 'direct.syscall')).toBe('Syscall-Stub')
+    expect(detectFileType(Buffer.alloc(16), 'payload.shellcode')).toBe('Raw-Shellcode')
     expect(detectFileType(Buffer.from('VZ\0\0'), 'SmmDriver.te')).toBe('UEFI-TE')
     expect(detectFileType(Buffer.alloc(16), 'firmware.cap')).toBe('UEFI-Capsule')
     expect(detectFileType(Buffer.concat([Buffer.alloc(64), Buffer.from('_FVH')]), 'bios.fd')).toBe(
@@ -1701,6 +1705,43 @@ describe('passive UEFI/SMM surface inventory', () => {
   })
 })
 
+describe('passive syscall ABI surface inventory', () => {
+  test('extracts direct syscall hints without invoking syscalls or tracing', () => {
+    const inventory = buildSyscallAbiSurfaceInventoryFromBuffer(
+      Buffer.concat([
+        Buffer.from([0x4d, 0x5a, 0x4c, 0x8b, 0xd1, 0xb8, 0x3a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0xc3]),
+        Buffer.from(
+          ['SysWhispers', 'HellsGate', 'ntdll.dll', 'NtAllocateVirtualMemory'].join('\0'),
+          'ascii'
+        ),
+      ]),
+      { filename: 'direct.syscall' }
+    )
+
+    expect(inventory.format).toBe('pe-windows-direct-syscall-surface')
+    expect((inventory.windows_nt_surface as any).direct_stub_count).toBe(1)
+    expect((inventory.windows_nt_surface as any).syscall_numbers).toContain('0x3a')
+    expect(inventory.risk_flags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'windows.direct-syscall-stub' }),
+        expect.objectContaining({ id: 'direct-syscall.named-evasion-framework' }),
+      ])
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining(['code.xrefs.analyze', 'analysis.evidence.graph'])
+    )
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_syscall: true,
+        no_ptrace: true,
+        no_debugger: true,
+        no_emulation: true,
+      })
+    )
+  })
+})
+
 describe('built-in plugin format matrix discovery', () => {
   test('discovers cross-platform format plugins with declared aspects', async () => {
     const plugins = await discoverBuiltInPlugins()
@@ -1717,6 +1758,7 @@ describe('built-in plugin format matrix discovery', () => {
     const llvmBitcode = plugins.find((plugin) => plugin.id === 'llvm-bitcode')
     const mlModel = plugins.find((plugin) => plugin.id === 'ml-model')
     const shaderIr = plugins.find((plugin) => plugin.id === 'shader-ir')
+    const syscallAbiSurface = plugins.find((plugin) => plugin.id === 'syscall-abi-surface')
     const uefiSmmSurface = plugins.find((plugin) => plugin.id === 'uefi-smm-surface')
     const windowsInstaller = plugins.find((plugin) => plugin.id === 'windows-installer')
     const windowsDebugSymbols = plugins.find((plugin) => plugin.id === 'windows-debug-symbols')
@@ -1785,6 +1827,12 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(uefiSmmSurface?.tools?.map((tool) => tool.definition.name)).toContain(
       'uefi.smm.surface.inventory'
+    )
+    expect(syscallAbiSurface?.aspects?.formats).toEqual(
+      expect.arrayContaining(['syscall', 'direct-syscall', 'raw-shellcode', 'ntdll-stub'])
+    )
+    expect(syscallAbiSurface?.tools?.map((tool) => tool.definition.name)).toContain(
+      'syscall.abi.surface.inventory'
     )
     expect(ebpfBytecode?.aspects?.formats).toEqual(
       expect.arrayContaining(['ebpf', 'bpf', 'raw-ebpf', 'ebpf-elf'])
@@ -1904,6 +1952,7 @@ describe('built-in plugin format matrix discovery', () => {
     const llvmBitcode = requirePlugin(plugins, 'llvm-bitcode')
     const mlModel = requirePlugin(plugins, 'ml-model')
     const shaderIr = requirePlugin(plugins, 'shader-ir')
+    const syscallAbiSurface = requirePlugin(plugins, 'syscall-abi-surface')
     const uefiSmmSurface = requirePlugin(plugins, 'uefi-smm-surface')
     const wasmComponent = requirePlugin(plugins, 'wasm-component')
     const androidPackage = requirePlugin(plugins, 'android-package')
@@ -1973,6 +2022,13 @@ describe('built-in plugin format matrix discovery', () => {
         'uefi-smm-surface-inventory',
         'smi-handler-hints',
         'smm-communication-buffer-hints',
+      ])
+    )
+    expect(syscallAbiSurface.aspects?.capabilities).toEqual(
+      expect.arrayContaining([
+        'syscall-abi-surface-inventory',
+        'direct-syscall-stub-detection',
+        'nt-api-boundary-hints',
       ])
     )
     expect(wasmComponent.aspects?.capabilities).toEqual(
@@ -2090,6 +2146,21 @@ describe('built-in plugin format matrix discovery', () => {
       producesArtifacts: ['uefi_smm_surface_inventory'],
       evidence: ['smm', 'variables', 'low-level-primitives', 'risk', 'workflow'],
       safety: ['passive', 'no_smi_trigger', 'no_smm_execution', 'no_efi_variable_write'],
+    })
+    expectToolMetadata(syscallAbiSurface, 'syscall.abi.surface.inventory', {
+      formats: ['syscall', 'direct-syscall', 'raw-shellcode', 'ntdll-stub'],
+      artifacts: ['syscall_abi_surface_inventory'],
+      evidence: ['syscalls', 'abi', 'evasion', 'risk', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'syscall-abi-surface',
+      toolName: 'syscall.abi.surface.inventory',
+      recipeId: 'syscall.abi-surface-static-inventory',
+      startsWith: ['syscall.abi.surface.inventory'],
+      nextTools: ['artifact.read', 'pe.imports.extract', 'code.xrefs.analyze'],
+      producesArtifacts: ['syscall_abi_surface_inventory'],
+      evidence: ['syscalls', 'abi', 'evasion', 'risk', 'workflow'],
+      safety: ['passive', 'no_syscall', 'no_ptrace', 'no_debugger', 'no_emulation'],
     })
     expectToolMetadata(btf, 'btf.type.inventory', {
       formats: ['btf', 'btf-ext', 'btf-elf', 'core-relocations'],
