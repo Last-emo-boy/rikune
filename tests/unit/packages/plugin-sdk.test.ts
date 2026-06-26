@@ -132,6 +132,21 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS['pe32+']).toEqual(
       expect.arrayContaining(['pe32-plus', 'pe64', 'pe', 'windows'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS.efi).toEqual(
+      expect.arrayContaining(['efi', 'uefi', 'uefi-module', 'uefi-firmware'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.uefi).toEqual(
+      expect.arrayContaining(['uefi', 'efi', 'uefi-firmware', 'firmware-volume'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['uefi-smm']).toEqual(
+      expect.arrayContaining(['uefi-smm', 'smm', 'smi', 'uefi-module'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['firmware-volume']).toEqual(
+      expect.arrayContaining(['firmware-volume', 'uefi-firmware', 'uefi', 'firmware'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['uefi-capsule']).toEqual(
+      expect.arrayContaining(['uefi-capsule', 'capsule', 'uefi-firmware', 'uefi'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS['mach-o']).toContain('macos')
     expect(SURFACE_FILE_TYPE_TAGS.apk).toContain('android')
     expect(SURFACE_FILE_TYPE_TAGS.apks).toEqual(expect.arrayContaining(['android', 'split-apk']))

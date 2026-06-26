@@ -292,6 +292,35 @@ export function detectFileType(data: Buffer, filename?: string): string {
     return 'CUDA-Fatbin'
   }
 
+  const firmwarePreview = data.subarray(0, Math.min(data.length, 1024 * 1024)).toString('latin1')
+  const firmwareVolumeHeaderOffset = firmwarePreview.indexOf('_FVH')
+  const firmwareLikeExtension = [
+    'fd',
+    'rom',
+    'bin',
+    'cap',
+    'capsule',
+    'efi',
+    'dxe',
+    'pei',
+    'smm',
+    'te',
+  ].includes(extension ?? '')
+  if (
+    firmwareVolumeHeaderOffset >= 0 &&
+    (firmwareLikeExtension || firmwareVolumeHeaderOffset < 0x10000)
+  ) {
+    return 'UEFI-Firmware-Volume'
+  }
+
+  if (data.length >= 2 && data[0] === 0x56 && data[1] === 0x5a) {
+    if (['te', 'efi', 'dxe', 'smm', 'pei'].includes(extension ?? '')) return 'UEFI-TE'
+  }
+
+  if (['cap', 'capsule'].includes(extension ?? '')) {
+    return 'UEFI-Capsule'
+  }
+
   if (extension === 'bpf' || extension === 'ebpf') {
     if (
       data.length >= 4 &&
@@ -792,6 +821,16 @@ export function detectFileType(data: Buffer, filename?: string): string {
       return 'PE'
     case 'efi':
       return 'EFI'
+    case 'dxe':
+    case 'pei':
+    case 'smm':
+    case 'te':
+      return 'UEFI-Module'
+    case 'cap':
+    case 'capsule':
+      return 'UEFI-Capsule'
+    case 'fd':
+      return 'UEFI-Firmware'
     case 'sys':
       return 'SYS'
     case 'ipa':

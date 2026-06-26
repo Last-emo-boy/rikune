@@ -22,6 +22,7 @@ import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitc
 import { buildMlModelInventoryFromBuffer } from '../../src/plugins/ml-model/tools/ml-model-inventory.js'
 import { buildNativeDebugTypesInventoryFromBuffer } from '../../src/plugins/native-debug-types/tools/native-debug-types-inventory.js'
 import { buildShaderIrInventoryFromBuffer } from '../../src/plugins/shader-ir/tools/shader-ir-inventory.js'
+import { buildUefiSmmSurfaceInventoryFromBuffer } from '../../src/plugins/uefi-smm-surface/tools/uefi-smm-surface-inventory.js'
 import { buildWindowsInstallerInventoryFromBuffer } from '../../src/plugins/windows-installer/tools/windows-installer-inventory.js'
 import { buildWindowsDebugMetadataFromBuffer } from '../../src/plugins/windows-debug-symbols/tools/windows-debug-metadata-inspect.js'
 import { buildDotnetAssemblyInventoryFromBuffer } from '../../src/plugins/dotnet-managed/tools/dotnet-assembly-inspect.js'
@@ -617,6 +618,11 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(Buffer.alloc(16), 'demo.component.wasm')).toBe('WASM-Component')
     expect(detectFileType(Buffer.alloc(16), 'program.bpf')).toBe('eBPF-Bytecode')
     expect(detectFileType(Buffer.alloc(16), 'program.ebpf')).toBe('eBPF-Bytecode')
+    expect(detectFileType(Buffer.from('VZ\0\0'), 'SmmDriver.te')).toBe('UEFI-TE')
+    expect(detectFileType(Buffer.alloc(16), 'firmware.cap')).toBe('UEFI-Capsule')
+    expect(detectFileType(Buffer.concat([Buffer.alloc(64), Buffer.from('_FVH')]), 'bios.fd')).toBe(
+      'UEFI-Firmware-Volume'
+    )
     expect(detectFileType(Buffer.from([0x42, 0x43, 0xc0, 0xde]), 'module.bc')).toBe('LLVM-Bitcode')
     const wrapper = Buffer.alloc(20)
     wrapper.writeUInt32LE(0x0b17c0de, 0)
@@ -1650,6 +1656,51 @@ describe('passive kernel driver surface inventory', () => {
   })
 })
 
+describe('passive UEFI/SMM surface inventory', () => {
+  test('extracts trust-boundary hints without booting firmware or touching hardware', () => {
+    const inventory = buildUefiSmmSurfaceInventoryFromBuffer(
+      Buffer.from(
+        [
+          'MZ',
+          '_FVH',
+          'SmiHandlerRegister',
+          'EFI_SMM_COMMUNICATION_PROTOCOL',
+          'CommBuffer',
+          'BootServices',
+          'SetVariable',
+          'SecureBoot',
+          'MmioWrite32',
+          'UpdateCapsule',
+        ].join('\0'),
+        'ascii'
+      ),
+      { filename: 'SmmSurface.efi' }
+    )
+
+    expect(inventory.format).toBe('uefi-firmware-volume-smm-surface')
+    expect((inventory.smm_surface as any).present).toBe(true)
+    expect((inventory.variable_surface as any).secure_boot_variable_hint).toBe(true)
+    expect(inventory.risk_flags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'smm.communication-buffer' }),
+        expect.objectContaining({ id: 'uefi.variable-write' }),
+      ])
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining(['firmware.scan', 'code.xrefs.analyze', 'analysis.evidence.graph'])
+    )
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_smi_trigger: true,
+        no_smm_execution: true,
+        no_efi_variable_write: true,
+        no_mmio_or_msr_access: true,
+      })
+    )
+  })
+})
+
 describe('built-in plugin format matrix discovery', () => {
   test('discovers cross-platform format plugins with declared aspects', async () => {
     const plugins = await discoverBuiltInPlugins()
@@ -1666,6 +1717,7 @@ describe('built-in plugin format matrix discovery', () => {
     const llvmBitcode = plugins.find((plugin) => plugin.id === 'llvm-bitcode')
     const mlModel = plugins.find((plugin) => plugin.id === 'ml-model')
     const shaderIr = plugins.find((plugin) => plugin.id === 'shader-ir')
+    const uefiSmmSurface = plugins.find((plugin) => plugin.id === 'uefi-smm-surface')
     const windowsInstaller = plugins.find((plugin) => plugin.id === 'windows-installer')
     const windowsDebugSymbols = plugins.find((plugin) => plugin.id === 'windows-debug-symbols')
     const dotnetManaged = plugins.find((plugin) => plugin.id === 'dotnet-managed')
@@ -1727,6 +1779,12 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(kernelDriverSurface?.tools?.map((tool) => tool.definition.name)).toContain(
       'kernel.driver.surface.inventory'
+    )
+    expect(uefiSmmSurface?.aspects?.formats).toEqual(
+      expect.arrayContaining(['uefi', 'efi', 'uefi-smm', 'firmware-volume', 'uefi-capsule'])
+    )
+    expect(uefiSmmSurface?.tools?.map((tool) => tool.definition.name)).toContain(
+      'uefi.smm.surface.inventory'
     )
     expect(ebpfBytecode?.aspects?.formats).toEqual(
       expect.arrayContaining(['ebpf', 'bpf', 'raw-ebpf', 'ebpf-elf'])
@@ -1846,6 +1904,7 @@ describe('built-in plugin format matrix discovery', () => {
     const llvmBitcode = requirePlugin(plugins, 'llvm-bitcode')
     const mlModel = requirePlugin(plugins, 'ml-model')
     const shaderIr = requirePlugin(plugins, 'shader-ir')
+    const uefiSmmSurface = requirePlugin(plugins, 'uefi-smm-surface')
     const wasmComponent = requirePlugin(plugins, 'wasm-component')
     const androidPackage = requirePlugin(plugins, 'android-package')
     const appleSigning = requirePlugin(plugins, 'apple-signing')
@@ -1908,6 +1967,13 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(shaderIr.aspects?.capabilities).toEqual(
       expect.arrayContaining(['shader-ir-inventory', 'spirv-entrypoint-reflection'])
+    )
+    expect(uefiSmmSurface.aspects?.capabilities).toEqual(
+      expect.arrayContaining([
+        'uefi-smm-surface-inventory',
+        'smi-handler-hints',
+        'smm-communication-buffer-hints',
+      ])
     )
     expect(wasmComponent.aspects?.capabilities).toEqual(
       expect.arrayContaining([
@@ -2009,6 +2075,21 @@ describe('built-in plugin format matrix discovery', () => {
       producesArtifacts: ['kernel_driver_surface_inventory'],
       evidence: ['ioctl', 'dispatch', 'module-metadata', 'risk', 'workflow'],
       safety: ['passive', 'no_driver_load', 'no_kernel_module_load', 'no_ioctl_send'],
+    })
+    expectToolMetadata(uefiSmmSurface, 'uefi.smm.surface.inventory', {
+      formats: ['uefi', 'efi', 'uefi-smm', 'firmware-volume'],
+      artifacts: ['uefi_smm_surface_inventory'],
+      evidence: ['smm', 'protocols', 'variables', 'risk', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'uefi-smm-surface',
+      toolName: 'uefi.smm.surface.inventory',
+      recipeId: 'uefi.smm-surface-static-inventory',
+      startsWith: ['uefi.smm.surface.inventory'],
+      nextTools: ['firmware.scan', 'pe.structure.analyze', 'code.xrefs.analyze'],
+      producesArtifacts: ['uefi_smm_surface_inventory'],
+      evidence: ['smm', 'variables', 'low-level-primitives', 'risk', 'workflow'],
+      safety: ['passive', 'no_smi_trigger', 'no_smm_execution', 'no_efi_variable_write'],
     })
     expectToolMetadata(btf, 'btf.type.inventory', {
       formats: ['btf', 'btf-ext', 'btf-elf', 'core-relocations'],
