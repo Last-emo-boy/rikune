@@ -428,7 +428,7 @@ const CONTROL_TOOLS: Tool[] = [
 const DIRECT_TOOL_CALL_TOOL: Tool = {
   name: DIRECT_TOOL_CALL_NAME,
   description:
-    'Advanced Rikune subtool gateway. Use workflow_search first to find or activate a specific internal analyzer capability, then call that internal tool here without requiring MCP clients to refresh their tool list or the internal tool to appear in upstream tools/list. Prefer workflow_run and artifact_read for normal analysis.',
+    'Advanced Rikune subtool gateway. Use workflow_search first to find or activate a specific internal analyzer capability, then call that internal tool here without requiring MCP clients to refresh their tool list; the internal tool does not need to appear in upstream tools/list after activation. Prefer workflow_run and artifact_read for normal analysis.',
   inputSchema: {
     type: 'object',
     properties: {

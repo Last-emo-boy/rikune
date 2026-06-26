@@ -98,13 +98,13 @@ describe('code.reconstruct.export tool', () => {
     removeDirectoryIfExists(testCachePath)
   })
 
-  async function setupSample(sampleId: string, hashChar: string) {
+  async function setupSample(sampleId: string, hashChar: string, fileType = 'PE') {
     database.insertSample({
       id: sampleId,
       sha256: hashChar.repeat(64),
       md5: hashChar.repeat(32),
       size: 2048,
-      file_type: 'PE',
+      file_type: fileType,
       created_at: new Date().toISOString(),
       source: 'test',
     })
@@ -2661,6 +2661,65 @@ describe('code.reconstruct.export tool', () => {
 
     expect(result.ok).toBe(false)
     expect(result.errors?.[0]).toContain('No reconstructed functions available')
+  })
+
+  test('should keep non-PE samples out of PE metadata fallbacks', async () => {
+    const sampleId = 'sha256:' + 'e'.repeat(64)
+    await setupSample(sampleId, 'e', 'ELF')
+    const workspace = await workspaceManager.getWorkspace(sampleId)
+    fs.writeFileSync(
+      path.join(workspace.original, 'relax_keygen'),
+      Buffer.from([0x7f, 0x45, 0x4c, 0x46])
+    )
+
+    const metadata = buildBinaryMetadataDependencies({ exportsOk: false, packerOk: false })
+    const importsExtractHandler = jest
+      .fn<(args: ToolArgs) => Promise<WorkerResult>>()
+      .mockResolvedValue({
+        ok: false,
+        errors: ['PE imports worker should not run for ELF'],
+      })
+
+    const handler = createCodeReconstructExportHandler(
+      workspaceManager,
+      database,
+      cacheManager,
+      {
+        reconstructFunctionsHandler: jest
+          .fn<(args: ToolArgs) => Promise<WorkerResult>>()
+          .mockResolvedValue(buildReconstructResult()),
+        importsExtractHandler,
+        stringsExtractHandler: jest
+          .fn<(args: ToolArgs) => Promise<WorkerResult>>()
+          .mockResolvedValue({
+            ok: true,
+            data: { summary: { top_high_value: [] } },
+          }),
+        ...metadata,
+      }
+    )
+
+    const result = await handler({
+      sample_id: sampleId,
+      export_name: 'elf_profile_export',
+      min_module_size: 1,
+      reuse_cached: false,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.binary_profile.binary_role).toBe('elf_binary')
+    expect(importsExtractHandler).not.toHaveBeenCalled()
+    expect(metadata.exportsExtractHandler).not.toHaveBeenCalled()
+    expect(metadata.packerDetectHandler).not.toHaveBeenCalled()
+    expect(result.warnings?.join(' ') || '').not.toContain('imports unavailable')
+    expect(result.warnings?.join(' ') || '').not.toContain('exports unavailable')
+    expect(result.warnings?.join(' ') || '').not.toContain('packer unavailable')
+
+    const notesContent = fs.readFileSync(path.join(workspace.root, data.notes_path), 'utf-8')
+    expect(notesContent).toContain('binary_role: elf_binary')
+    expect(notesContent).not.toContain('imports unavailable')
+    expect(notesContent).not.toContain('exports unavailable')
   })
 
   test('should cache export results', async () => {
