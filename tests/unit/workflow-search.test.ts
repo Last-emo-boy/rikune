@@ -21,6 +21,7 @@ import shaderIrPlugin from '../../src/plugins/shader-ir/index.js'
 import syscallAbiSurfacePlugin from '../../src/plugins/syscall-abi-surface/index.js'
 import uefiSmmSurfacePlugin from '../../src/plugins/uefi-smm-surface/index.js'
 import wasmComponentPlugin from '../../src/plugins/wasm-component/index.js'
+import windowsInterfaceSurfacePlugin from '../../src/plugins/windows-interface-surface/index.js'
 import appleObjcSwiftPlugin from '../../src/plugins/apple-objc-swift/index.js'
 
 const logger = pino({ level: 'silent' })
@@ -919,6 +920,47 @@ describe('workflow.search', () => {
     expect(syscallResult.readiness_state).not.toBe('runtime_opt_in_required')
     expect(data.search_profile.recommended_tools).toContain('syscall.abi.surface.inventory')
     expect(surface.isToolVisible('syscall.abi.surface.inventory')).toBe(false)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
+  })
+
+  test('recommends passive Windows interface surface inventory without runtime opt-in', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [windowsInterfaceSurfacePlugin]
+    surface.registerCoreTools([
+      'workflow.search',
+      'workflow.run',
+      'artifact.read',
+      'tools.discover',
+    ])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      query: 'inspect COM RPC ALPC ETW WMI named pipe CLSID IID Windows interface inventory',
+      file_type: 'windows-interface',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining(['windows-interface', 'com', 'rpc', 'windows'])
+    )
+    const interfaceResult = data.results.find(
+      (item: any) => item.plugin_id === 'windows-interface-surface'
+    )
+    expect(interfaceResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining(['windows.interface.surface.inventory']),
+      })
+    )
+    expect(interfaceResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(data.search_profile.recommended_tools).toContain('windows.interface.surface.inventory')
+    expect(surface.isToolVisible('windows.interface.surface.inventory')).toBe(false)
     expect(surface.isToolVisible('tools.discover')).toBe(false)
   })
 
