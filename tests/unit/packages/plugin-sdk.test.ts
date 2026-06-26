@@ -164,6 +164,21 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS['llvm-bitcode-wrapper']).toEqual(
       expect.arrayContaining(['llvm-bitcode-wrapper', 'llvm-bitcode', 'llvm-ir'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS.safetensors).toEqual(
+      expect.arrayContaining(['safetensors', 'ml-model', 'ai-model', 'tensor'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.gguf).toEqual(
+      expect.arrayContaining(['gguf', 'ggml', 'ml-model', 'ai-model'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.onnx).toEqual(
+      expect.arrayContaining(['onnx', 'ml-model', 'model-graph'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['pytorch-checkpoint']).toEqual(
+      expect.arrayContaining(['pytorch-checkpoint', 'pickle', 'ml-model'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.npz).toEqual(
+      expect.arrayContaining(['npz', 'numpy', 'zip', 'archive', 'ml-model'])
+    )
   })
 
   test('aspect helpers normalize, describe, and match sample profiles', () => {

@@ -13,6 +13,7 @@ import btfPlugin from '../../src/plugins/btf/index.js'
 import containerAnalysisPlugin from '../../src/plugins/container-analysis/index.js'
 import ebpfBytecodePlugin from '../../src/plugins/ebpf-bytecode/index.js'
 import llvmBitcodePlugin from '../../src/plugins/llvm-bitcode/index.js'
+import mlModelPlugin from '../../src/plugins/ml-model/index.js'
 
 const logger = pino({ level: 'silent' })
 
@@ -736,7 +737,9 @@ describe('workflow.search', () => {
     expect(data.search_profile.file_type_tags).toEqual(
       expect.arrayContaining(['oci-image', 'container', 'archive'])
     )
-    const containerResult = data.results.find((item: any) => item.plugin_id === 'container-analysis')
+    const containerResult = data.results.find(
+      (item: any) => item.plugin_id === 'container-analysis'
+    )
     expect(containerResult).toEqual(
       expect.objectContaining({
         readiness_state: 'hidden_activation_required',
@@ -750,6 +753,45 @@ describe('workflow.search', () => {
     expect(containerResult.readiness_state).not.toBe('runtime_opt_in_required')
     expect(data.search_profile.recommended_tools).toContain('container.image.security.profile')
     expect(surface.isToolVisible('container.image.security.profile')).toBe(false)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
+  })
+
+  test('recommends passive ML model inventory without loading runtime tools', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [mlModelPlugin]
+    surface.registerCoreTools([
+      'workflow.search',
+      'workflow.run',
+      'artifact.read',
+      'tools.discover',
+    ])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      query: 'safetensors model checkpoint tensor pickle unsafe deserialization inventory',
+      file_type: '.safetensors',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining(['safetensors', 'ml-model', 'ai-model'])
+    )
+    const mlResult = data.results.find((item: any) => item.plugin_id === 'ml-model')
+    expect(mlResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining(['ml.model.inventory']),
+      })
+    )
+    expect(mlResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(data.search_profile.recommended_tools).toContain('ml.model.inventory')
+    expect(surface.isToolVisible('ml.model.inventory')).toBe(false)
     expect(surface.isToolVisible('tools.discover')).toBe(false)
   })
 

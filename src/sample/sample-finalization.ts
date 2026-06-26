@@ -36,6 +36,7 @@ function normalizeFileExtension(filename?: string): string | null {
   if (!filename) return null
   const basename = path.posix.basename(filename.replace(/\\/g, '/')).trim().toLowerCase()
   if (!basename.includes('.')) return null
+  if (basename.endsWith('.safetensors.index.json')) return 'safetensors.index.json'
   if (basename.endsWith('.appimage')) return 'appimage'
   return basename.slice(basename.lastIndexOf('.') + 1)
 }
@@ -71,11 +72,24 @@ function detectZipFileType(data: Buffer, extension: string | null): string {
       return 'APPX'
     case 'nupkg':
       return 'NUPKG'
+    case 'npz':
+      return 'NumPy-NPZ'
+    case 'pt':
+    case 'pth':
+    case 'ckpt':
+      return 'PyTorch-Checkpoint'
     default:
       break
   }
 
   const preview = data.subarray(0, Math.min(data.length, 1024 * 1024)).toString('latin1')
+  if (
+    preview.includes('data.pkl') &&
+    (preview.includes('archive/') || preview.includes('version'))
+  ) {
+    return 'PyTorch-Checkpoint'
+  }
+  if (preview.includes('.npy')) return 'NumPy-NPZ'
   if (preview.includes('oci-layout')) return 'OCI-Image'
   if (preview.includes('manifest.json') && preview.includes('layer')) return 'Docker-Image'
   if (preview.includes('Payload/') && preview.includes('.app/')) return 'IPA'
@@ -112,6 +126,66 @@ export function detectFileType(data: Buffer, filename?: string): string {
   ) {
     if (extension === 'ext' && basename.endsWith('.btf.ext')) return 'BTF-Ext'
     return 'BTF'
+  }
+
+  if (data.length >= 4 && data.subarray(0, 4).toString('ascii') === 'GGUF') {
+    return 'GGUF'
+  }
+
+  if (data.length >= 4 && data.subarray(0, 4).toString('ascii').toLowerCase() === 'ggml') {
+    return 'GGML'
+  }
+
+  if (data.length >= 8 && data[0] === 0x93 && data.subarray(1, 6).toString('ascii') === 'NUMPY') {
+    return 'NumPy-NPY'
+  }
+
+  if (data.length >= 8 && data.subarray(4, 8).toString('ascii') === 'TFL3') {
+    return 'TFLite-Model'
+  }
+
+  if (data.length >= 8) {
+    const headerLength = Number(data.readBigUInt64LE(0))
+    if (
+      Number.isSafeInteger(headerLength) &&
+      headerLength > 1 &&
+      headerLength <= Math.max(data.length - 8, 1) &&
+      data[8] === 0x7b
+    ) {
+      return 'SafeTensors'
+    }
+  }
+
+  if (
+    data.length >= 1 &&
+    data[0] === 0x80 &&
+    ['pkl', 'pickle', 'pt', 'pth', 'ckpt'].includes(extension ?? '')
+  ) {
+    return ['pt', 'pth', 'ckpt'].includes(extension ?? '') ? 'PyTorch-Pickle' : 'Pickle'
+  }
+
+  if (extension === 'safetensors' || extension === 'safetensors.index.json') {
+    return 'SafeTensors'
+  }
+
+  if (extension === 'gguf') {
+    return 'GGUF'
+  }
+
+  if (extension === 'ggml') {
+    return 'GGML'
+  }
+
+  if (extension === 'onnx') {
+    return 'ONNX-Model'
+  }
+
+  if (extension === 'tflite') {
+    return 'TFLite-Model'
+  }
+
+  if (extension === 'npy') {
+    return 'NumPy-NPY'
   }
 
   if (extension === 'mobileprovision') {
@@ -505,6 +579,28 @@ export function detectFileType(data: Buffer, filename?: string): string {
       return 'LLVM-Bitcode'
     case 'll':
       return 'LLVM-IR'
+    case 'onnx':
+      return 'ONNX-Model'
+    case 'tflite':
+      return 'TFLite-Model'
+    case 'safetensors':
+    case 'safetensors.index.json':
+      return 'SafeTensors'
+    case 'gguf':
+      return 'GGUF'
+    case 'ggml':
+      return 'GGML'
+    case 'pt':
+    case 'pth':
+    case 'ckpt':
+      return 'PyTorch-Checkpoint'
+    case 'pkl':
+    case 'pickle':
+      return 'Pickle'
+    case 'npy':
+      return 'NumPy-NPY'
+    case 'npz':
+      return 'NumPy-NPZ'
     case 'deb':
       return 'DEB'
     case 'rpm':
