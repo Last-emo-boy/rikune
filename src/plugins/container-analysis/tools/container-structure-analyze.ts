@@ -326,6 +326,7 @@ function classifyEntryPath(entryPath: string): string {
   if (/\.(?:jar|war|aar|jmod|class)$/.test(lower)) return 'jvm'
   if (/\.(?:nupkg|winmd)$/.test(lower)) return 'dotnet'
   if (lower.endsWith('global-metadata.dat') || lower.includes('il2cpp')) return 'unity'
+  if (lower.endsWith('.component.wasm') || lower.endsWith('.wit.wasm')) return 'wasm-component'
   if (lower.endsWith('.wasm')) return 'wasm'
   if (/\.(?:pyc|luac|jsc|blob)$/.test(lower)) return 'script-bytecode'
   if (/\.(?:deb|rpm|appimage|snap|flatpak)$/.test(lower)) return 'linux-package'
@@ -513,6 +514,10 @@ function routeEntry(entry: ContainerEntry): NestedBinaryCandidate | null {
     case 'wasm':
       routedFormats.push('wasm')
       recommendedTools.push('wasm.structure.analyze')
+      break
+    case 'wasm-component':
+      routedFormats.push('wasm-component', 'component-model', 'wasi-preview2')
+      recommendedTools.push('wasm.component.inventory', 'wasm.structure.analyze')
       break
     case 'script-bytecode':
       routedFormats.push('pyc', 'lua-bytecode', 'v8-cache')

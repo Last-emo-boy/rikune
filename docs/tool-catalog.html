@@ -297,9 +297,9 @@
           <h2><span data-lang-en>Overview</span><span data-lang-zh>概览</span></h2>
           <div class="catalog-stats">
             <div class="catalog-stat"><strong>35</strong><span>core tools</span></div>
-            <div class="catalog-stat"><strong>99</strong><span>built-in plugins</span></div>
-            <div class="catalog-stat"><strong>289</strong><span>plugin tools</span></div>
-            <div class="catalog-stat"><strong>324</strong><span>cataloged tools</span></div>
+            <div class="catalog-stat"><strong>100</strong><span>built-in plugins</span></div>
+            <div class="catalog-stat"><strong>290</strong><span>plugin tools</span></div>
+            <div class="catalog-stat"><strong>325</strong><span>cataloged tools</span></div>
             <div class="catalog-stat"><strong>143</strong><span>runtime-aware</span></div>
             <div class="catalog-stat"><strong>45</strong><span>worker-backed</span></div>
           </div>
@@ -321,18 +321,18 @@
             </tbody>
           </table>
           <div class="category-strip">
-            <span>static-analysis <strong>87</strong></span><span>reverse-engineering <strong>67</strong></span><span>dynamic-analysis <strong>61</strong></span><span>malware-analysis <strong>16</strong></span><span>symbolic-execution <strong>14</strong></span><span>workflow-orchestration <strong>13</strong></span><span>dotnet-analysis <strong>11</strong></span><span>android-analysis <strong>10</strong></span><span>unpacking <strong>8</strong></span><span>memory-forensics <strong>7</strong></span><span>artifact-management <strong>4</strong></span><span>system-diagnostics <strong>4</strong></span><span>go-analysis <strong>3</strong></span><span>network-analysis <strong>3</strong></span><span>plugin-management <strong>3</strong></span><span>sample-intake <strong>3</strong></span><span>task-control <strong>3</strong></span><span>tool-discovery <strong>3</strong></span><span>vulnerability-research <strong>2</strong></span><span>analysis-context <strong>1</strong></span><span>llm-review <strong>1</strong></span>
+            <span>static-analysis <strong>88</strong></span><span>reverse-engineering <strong>67</strong></span><span>dynamic-analysis <strong>61</strong></span><span>malware-analysis <strong>16</strong></span><span>symbolic-execution <strong>14</strong></span><span>workflow-orchestration <strong>13</strong></span><span>dotnet-analysis <strong>11</strong></span><span>android-analysis <strong>10</strong></span><span>unpacking <strong>8</strong></span><span>memory-forensics <strong>7</strong></span><span>artifact-management <strong>4</strong></span><span>system-diagnostics <strong>4</strong></span><span>go-analysis <strong>3</strong></span><span>network-analysis <strong>3</strong></span><span>plugin-management <strong>3</strong></span><span>sample-intake <strong>3</strong></span><span>task-control <strong>3</strong></span><span>tool-discovery <strong>3</strong></span><span>vulnerability-research <strong>2</strong></span><span>analysis-context <strong>1</strong></span><span>llm-review <strong>1</strong></span>
           </div>
           <div class="catalog-controls" aria-label="Tool catalog filters">
             <input id="catalogSearch" type="search" placeholder="Search tool, plugin, backend, format, capability..." />
             <select id="categoryFilter">
               <option value="">All categories</option>
-              <option value="static-analysis">static-analysis (87)</option><option value="reverse-engineering">reverse-engineering (67)</option><option value="dynamic-analysis">dynamic-analysis (61)</option><option value="malware-analysis">malware-analysis (16)</option><option value="symbolic-execution">symbolic-execution (14)</option><option value="workflow-orchestration">workflow-orchestration (13)</option><option value="dotnet-analysis">dotnet-analysis (11)</option><option value="android-analysis">android-analysis (10)</option><option value="unpacking">unpacking (8)</option><option value="memory-forensics">memory-forensics (7)</option><option value="artifact-management">artifact-management (4)</option><option value="system-diagnostics">system-diagnostics (4)</option><option value="go-analysis">go-analysis (3)</option><option value="network-analysis">network-analysis (3)</option><option value="plugin-management">plugin-management (3)</option><option value="sample-intake">sample-intake (3)</option><option value="task-control">task-control (3)</option><option value="tool-discovery">tool-discovery (3)</option><option value="vulnerability-research">vulnerability-research (2)</option><option value="analysis-context">analysis-context (1)</option><option value="llm-review">llm-review (1)</option>
+              <option value="static-analysis">static-analysis (88)</option><option value="reverse-engineering">reverse-engineering (67)</option><option value="dynamic-analysis">dynamic-analysis (61)</option><option value="malware-analysis">malware-analysis (16)</option><option value="symbolic-execution">symbolic-execution (14)</option><option value="workflow-orchestration">workflow-orchestration (13)</option><option value="dotnet-analysis">dotnet-analysis (11)</option><option value="android-analysis">android-analysis (10)</option><option value="unpacking">unpacking (8)</option><option value="memory-forensics">memory-forensics (7)</option><option value="artifact-management">artifact-management (4)</option><option value="system-diagnostics">system-diagnostics (4)</option><option value="go-analysis">go-analysis (3)</option><option value="network-analysis">network-analysis (3)</option><option value="plugin-management">plugin-management (3)</option><option value="sample-intake">sample-intake (3)</option><option value="task-control">task-control (3)</option><option value="tool-discovery">tool-discovery (3)</option><option value="vulnerability-research">vulnerability-research (2)</option><option value="analysis-context">analysis-context (1)</option><option value="llm-review">llm-review (1)</option>
             </select>
             <select id="domainFilter">
               <option value="">All domains</option>
               <option value="core">core</option>
-              <option value="static">static (221)</option><option value="dynamic">dynamic (61)</option><option value="both">both (7)</option>
+              <option value="static">static (222)</option><option value="dynamic">dynamic (61)</option><option value="both">both (7)</option>
             </select>
             <label><input id="runtimeOnly" type="checkbox" /> Runtime</label>
             <label><input id="workerOnly" type="checkbox" /> Worker</label>
@@ -8534,6 +8534,47 @@
                 </div>
               </section>
 
+              <section class="plugin-card" data-plugin-card data-search="wasm-component webassembly component model inventory passive webassembly component model inventory for wit/wasi preview 2 and canonical abi hints without component instantiation. static static-analysis static-analysis wasm.component.inventory passively inventory webassembly component model binaries, wit/wasi preview 2 hints, component imports/exports, and canonical abi evidence without external tools or instantiation.  " data-domain="static">
+                <button class="plugin-card__summary" type="button" data-plugin-toggle>
+                  <span>
+                    <code>wasm-component</code>
+                    <strong>WebAssembly Component Model Inventory</strong>
+                  </span>
+                  <span>1 tools</span>
+                </button>
+                <div class="plugin-card__body">
+                  <p>Passive WebAssembly Component Model inventory for WIT/WASI Preview 2 and Canonical ABI hints without component instantiation.</p>
+                  <div class="tool-tags">
+                    <span class="badge badge--purple">static</span>
+                    <span class="badge badge--blue">tier 1</span>
+                    <span class="tool-badge">static-analysis</span>
+                  </div>
+
+                  <div class="tool-row-list">
+
+                    <article class="tool-row" data-tool-row data-search="wasm.component.inventory passively inventory webassembly component model binaries, wit/wasi preview 2 hints, component imports/exports, and canonical abi evidence without external tools or instantiation. wasm-component webassembly component model inventory static-analysis static wasm-component component-model wit-component wasi-preview2 wasm wasi cross-platform wasm component-model static triage passive no_runtime_start no_instantiation no_wasi_grants no_resource_grants no_external_tool no_network_by_default no_mutation component-model-inventory wit-interface-hints wasi-preview2-capability-review canonical-abi-summary component-section-inventory component-import-export-inventory runtime-plan runtime-handoff workflow-routing structure imports exports wasi-capability wit-interface canonical-abi custom-section workflow provenance wasm_component_inventory structure imports exports wasi-capability wit-interface canonical-abi custom-section workflow provenance  " data-category="static-analysis" data-domain="static" data-runtime="no" data-worker="no">
+                      <div class="tool-row__head">
+                        <code>wasm.component.inventory</code>
+                        <div class="tool-row__badges">
+                          <span class="badge badge--blue">static-analysis</span>
+                          <span class="badge badge--purple">static</span>
+
+
+                        </div>
+                      </div>
+                      <p>Passively inventory WebAssembly Component Model binaries, WIT/WASI Preview 2 hints, component imports/exports, and Canonical ABI evidence without external tools or instantiation.</p>
+                      <div class="tool-row__meta">
+
+
+
+                        <span><strong>Artifacts</strong> wasm_component_inventory</span>
+                      </div>
+                      <div class="tool-tags"><span class="tool-badge">wasm-component</span><span class="tool-badge">component-model</span><span class="tool-badge">wit-component</span><span class="tool-badge">wasi-preview2</span><span class="tool-badge">component-model-inventory</span><span class="tool-badge">wit-interface-hints</span><span class="tool-badge">wasi-preview2-capability-review</span><span class="tool-badge">canonical-abi-summary</span><span class="tool-badge">component-section-inventory</span><span class="tool-badge">component-import-export-inventory</span></div>
+                    </article>
+                  </div>
+                </div>
+              </section>
+
               <section class="plugin-card" data-plugin-card data-search="wasm-runtime wasm runtime plan passive wasm/wasi runtime planning for wasmtime readiness, capability review, and import/export behavior mapping. dynamic dynamic-analysis dynamic-analysis wasm.runtime.plan build a passive webassembly/wasi runtime plan for wasmtime-backed capability review and import/export behavior mapping without instantiating the module.   wasmtime binary wasmtime_path wasmtime" data-domain="dynamic">
                 <button class="plugin-card__summary" type="button" data-plugin-toggle>
                   <span>
@@ -8945,12 +8986,12 @@
             </tbody>
           </table>
           <script type="application/json" id="catalogMetadata">{
-  "generatedAt": "2026-06-26T01:06:14.886Z",
+  "generatedAt": "2026-06-26T02:20:16.319Z",
   "counts": {
     "coreTools": 35,
-    "builtInPlugins": 99,
-    "pluginTools": 289,
-    "totalTools": 324,
+    "builtInPlugins": 100,
+    "pluginTools": 290,
+    "totalTools": 325,
     "runtimeTools": 143,
     "workerTools": 45,
     "registrationErrors": 0
@@ -8958,7 +8999,7 @@
   "categories": [
     {
       "name": "static-analysis",
-      "count": 87
+      "count": 88
     },
     {
       "name": "reverse-engineering",
@@ -9044,7 +9085,7 @@
   "domains": [
     {
       "name": "static",
-      "count": 221
+      "count": 222
     },
     {
       "name": "dynamic",
