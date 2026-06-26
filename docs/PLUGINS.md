@@ -151,6 +151,12 @@ and `artifact.read`. Hidden core tools and specialist plugin tools are still reg
 calls remain blocked by `ToolExecutor` until the surface manager exposes them. Clients should route
 through `workflow.search` instead of assuming the full plugin catalog is visible at startup.
 
+The remote `rikune-agent` connector follows the same contract with stable transport names:
+`workflow_search`, `workflow_run`, `artifact_read`, and the advanced `rikune_tool_call` subtool
+gateway. Its `rikune_connection_refresh` command refreshes the internal upstream capability cache
+only; it must not be treated as a request for MCP clients to hot-load newly discovered specialist
+tools.
+
 `workflow.search` is the AI-facing profile-search and controlled activation gateway. The lower-level
 `tools.discover` handler remains registered for compatibility and internal activation plumbing. It
 supports four release-guarded actions:

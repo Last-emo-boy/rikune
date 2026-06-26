@@ -12,6 +12,12 @@ Rikune 是一个面向 Windows EXE 和多格式二进制逆向的 MCP Server。�
 
 `sample.*`、`workflow.analyze.*`、`workflow.triage`、`tools.discover` 和 `task.status` 仍保留为兼容或低层检查入口；新客户端应优先使用 `workflow.search`、`workflow.run` 和 `artifact.read`。
 
+通过远程 `rikune-agent` gateway 连接时，MCP 客户端看到的是固定 transport 名称：
+`workflow_search`、`workflow_run`、`artifact_read`、`rikune_tool_call`，以及
+`rikune_connection_*` 控制入口。`rikune_connection_refresh` 只更新内部上游能力缓存，
+不会扩展 MCP tool list。只有当 `workflow_search` 明确识别到某个 primary workflow /
+artifact gateway 覆盖不到的内部 analyzer subtool 时，才使用 `rikune_tool_call` 调用。
+
 ## 核心能力
 
 - MCP stdio server，可直接接入支持 MCP 的 AI 客户端。
