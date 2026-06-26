@@ -15,6 +15,7 @@ import { buildWasmStructureFromBuffer } from '../../src/plugins/wasm/tools/wasm-
 import { buildBytecodeMetadataFromBuffer } from '../../src/plugins/bytecode/tools/bytecode-metadata-inspect.js'
 import { buildBtfInventoryFromBuffer } from '../../src/plugins/btf/tools/btf-type-inventory.js'
 import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitcode/tools/llvm-bitcode-inventory.js'
+import { buildMlModelInventoryFromBuffer } from '../../src/plugins/ml-model/tools/ml-model-inventory.js'
 import { buildWindowsInstallerInventoryFromBuffer } from '../../src/plugins/windows-installer/tools/windows-installer-inventory.js'
 import { buildWindowsDebugMetadataFromBuffer } from '../../src/plugins/windows-debug-symbols/tools/windows-debug-metadata-inspect.js'
 import { buildDotnetAssemblyInventoryFromBuffer } from '../../src/plugins/dotnet-managed/tools/dotnet-assembly-inspect.js'
@@ -113,7 +114,12 @@ function tarDataFixture(
 ): Buffer {
   return Buffer.concat([
     ...entries.map((entry) =>
-      tarDataEntry(entry.name, entry.data ?? Buffer.alloc(0), entry.mode ?? 0o644, entry.typeflag ?? '0')
+      tarDataEntry(
+        entry.name,
+        entry.data ?? Buffer.alloc(0),
+        entry.mode ?? 0o644,
+        entry.typeflag ?? '0'
+      )
     ),
     Buffer.alloc(1024),
   ])
@@ -160,6 +166,19 @@ function btfFixture(): Buffer {
   header.writeUInt32LE(types.length, 16)
   header.writeUInt32LE(strings.length, 20)
   return Buffer.concat([header, types, strings])
+}
+
+function mlSafeTensorsFixture(): Buffer {
+  const header = Buffer.from(
+    JSON.stringify({
+      weight: { dtype: 'F32', shape: [2, 2], data_offsets: [0, 16] },
+      __metadata__: { source: 'https://example.invalid/model' },
+    }),
+    'utf8'
+  )
+  const length = Buffer.alloc(8)
+  length.writeBigUInt64LE(BigInt(header.length), 0)
+  return Buffer.concat([length, header, Buffer.alloc(16)])
 }
 
 function elfFixture(type: number, machine = 62): Buffer {
@@ -441,6 +460,27 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(cubin, 'kernel.cubin')).toBe('CUDA-CUBIN')
     expect(detectFileType(Buffer.from('__cudaFatCubin'), 'bundle.fatbin')).toBe('CUDA-Fatbin')
     expect(detectFileType(host, 'host.exe')).toBe('PE')
+  })
+
+  test('detects ML model artifact formats for static routing', () => {
+    const tflite = Buffer.alloc(8)
+    tflite.write('TFL3', 4, 'ascii')
+    const npy = Buffer.concat([
+      Buffer.from([0x93]),
+      Buffer.from('NUMPY', 'ascii'),
+      Buffer.from([0x01, 0x00, 0x00, 0x00]),
+    ])
+
+    expect(detectFileType(mlSafeTensorsFixture(), 'model.safetensors')).toBe('SafeTensors')
+    expect(detectFileType(Buffer.from('GGUF\x03\x00\x00\x00'), 'model.gguf')).toBe('GGUF')
+    expect(detectFileType(Buffer.from('ggml'), 'model.ggml')).toBe('GGML')
+    expect(detectFileType(tflite, 'model.tflite')).toBe('TFLite-Model')
+    expect(detectFileType(Buffer.alloc(16), 'model.onnx')).toBe('ONNX-Model')
+    expect(detectFileType(npy, 'array.npy')).toBe('NumPy-NPY')
+    expect(detectFileType(localZip(['array.npy']), 'arrays.npz')).toBe('NumPy-NPZ')
+    expect(detectFileType(localZip(['archive/data.pkl', 'archive/version']), 'model.pt')).toBe(
+      'PyTorch-Checkpoint'
+    )
   })
 
   test('detects JVM archives/classes and script bytecode formats', () => {
@@ -889,6 +929,32 @@ describe('passive bytecode and portable runtime inventory', () => {
       expect.arrayContaining(['ebpf.bytecode.inventory', 'analysis.evidence.graph'])
     )
   })
+
+  test('builds ML model inventory without deserializing or loading frameworks', () => {
+    const inventory = buildMlModelInventoryFromBuffer(mlSafeTensorsFixture(), {
+      filename: 'model.safetensors',
+    })
+
+    expect(inventory.format).toBe('safetensors')
+    expect(inventory.inventory).toEqual(
+      expect.objectContaining({
+        tensor_count: 1,
+        dtype_counts: expect.objectContaining({ F32: 1 }),
+      })
+    )
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_deserialize: true,
+        no_model_load: true,
+        no_inference: true,
+        no_ml_framework_load: true,
+      })
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining(['strings.extract', 'analysis.evidence.graph', 'workflow.search'])
+    )
+  })
 })
 
 describe('passive Windows and managed format inventory', () => {
@@ -1104,7 +1170,9 @@ describe('passive generic container inventory', () => {
     const image = tarDataFixture([
       {
         name: 'manifest.json',
-        data: jsonFixture([{ Config: 'config.json', RepoTags: ['demo:latest'], Layers: ['layer.tar'] }]),
+        data: jsonFixture([
+          { Config: 'config.json', RepoTags: ['demo:latest'], Layers: ['layer.tar'] },
+        ]),
       },
       {
         name: 'config.json',
@@ -1199,6 +1267,7 @@ describe('built-in plugin format matrix discovery', () => {
     const btf = plugins.find((plugin) => plugin.id === 'btf')
     const ebpfBytecode = plugins.find((plugin) => plugin.id === 'ebpf-bytecode')
     const llvmBitcode = plugins.find((plugin) => plugin.id === 'llvm-bitcode')
+    const mlModel = plugins.find((plugin) => plugin.id === 'ml-model')
     const windowsInstaller = plugins.find((plugin) => plugin.id === 'windows-installer')
     const windowsDebugSymbols = plugins.find((plugin) => plugin.id === 'windows-debug-symbols')
     const dotnetManaged = plugins.find((plugin) => plugin.id === 'dotnet-managed')
@@ -1248,6 +1317,10 @@ describe('built-in plugin format matrix discovery', () => {
     expect(llvmBitcode?.tools?.map((tool) => tool.definition.name)).toContain(
       'llvm.bitcode.inventory'
     )
+    expect(mlModel?.aspects?.formats).toEqual(
+      expect.arrayContaining(['ml-model', 'safetensors', 'gguf', 'onnx', 'tflite'])
+    )
+    expect(mlModel?.tools?.map((tool) => tool.definition.name)).toContain('ml.model.inventory')
     expect(windowsInstaller?.aspects?.formats).toEqual(
       expect.arrayContaining(['msi', 'msix', 'appx', 'cab', 'nsis', 'inno'])
     )
@@ -1329,6 +1402,7 @@ describe('built-in plugin format matrix discovery', () => {
     const btf = requirePlugin(plugins, 'btf')
     const ebpfBytecode = requirePlugin(plugins, 'ebpf-bytecode')
     const llvmBitcode = requirePlugin(plugins, 'llvm-bitcode')
+    const mlModel = requirePlugin(plugins, 'ml-model')
     const androidPackage = requirePlugin(plugins, 'android-package')
     const appleSigning = requirePlugin(plugins, 'apple-signing')
     const linuxBinary = requirePlugin(plugins, 'linux-binary')
@@ -1470,6 +1544,21 @@ describe('built-in plugin format matrix discovery', () => {
       producesArtifacts: ['llvm_bitcode_inventory'],
       evidence: ['structure', 'strings', 'metadata', 'workflow'],
       safety: ['passive', 'no_llvm_toolchain_required', 'no_compile', 'no_link', 'no_execute'],
+    })
+    expectToolMetadata(mlModel, 'ml.model.inventory', {
+      formats: ['ml-model', 'safetensors', 'gguf', 'onnx', 'tflite'],
+      artifacts: ['ml_model_inventory'],
+      evidence: ['structure', 'metadata', 'strings', 'workflow', 'provenance'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'ml-model',
+      toolName: 'ml.model.inventory',
+      recipeId: 'ml.model-static-inventory',
+      startsWith: ['ml.model.inventory'],
+      nextTools: ['artifact.read', 'strings.extract', 'analysis.evidence.graph'],
+      producesArtifacts: ['ml_model_inventory'],
+      evidence: ['structure', 'metadata', 'strings', 'workflow', 'provenance'],
+      safety: ['passive', 'no_deserialization', 'no_model_load', 'no_inference'],
     })
     expectToolMetadata(androidPackage, 'android.package.inventory', {
       formats: ['android-package', 'apk', 'dex'],
@@ -2005,6 +2094,29 @@ describe('built-in plugin format matrix discovery', () => {
           'no_auto_mount',
           'no_live_sample_by_default',
           'no_mutation',
+        ],
+      },
+      {
+        pluginId: 'ml-model',
+        toolName: 'ml.model.inventory',
+        recipeId: 'ml.model-static-inventory',
+        startsWith: ['ml.model.inventory'],
+        nextTools: [
+          'artifact.read',
+          'metadata.extract',
+          'strings.extract',
+          'analysis.evidence.graph',
+          'report.generate',
+        ],
+        producesArtifacts: ['ml_model_inventory'],
+        evidence: ['structure', 'metadata', 'strings', 'workflow', 'provenance'],
+        safety: [
+          'passive',
+          'no_deserialization',
+          'no_model_load',
+          'no_inference',
+          'no_ml_framework_load',
+          'no_network_by_default',
         ],
       },
       {

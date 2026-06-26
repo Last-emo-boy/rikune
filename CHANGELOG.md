@@ -21,6 +21,7 @@ Versioning where practical.
 - Added `backend-worker.v1` SDK metadata and bounded Worker-backed tools for REstringer, JSIMPLIFIER, JSIR/CASCADE, GTIRB, Remill, Manifold, QBDI, and CuLifter. Worker metadata is surfaced through `plugin.list`, `tools.discover`, `tool.help`, and `tool.readiness` without starting external backends; QBDI remains explicit opt-in delegated runtime only.
 - Added Docker backend packaging routes and backend install profiles. Default images install low-risk static wrappers such as REstringer, JSIMPLIFIER, Manifold, WABT, and LIEF validation; optional profiles can enable JSIR/CASCADE, JSVMP, GTIRB, radare2, and Triton-style static routes; heavy, runtime, GPU, BYO, sidecar, and license-gated backends stay explicit.
 - Added `jsvmp.bytecode.recover` as a bounded Worker-backed JSVMP static recovery tool and wired in-repo JavaScript/Manifold worker wrappers through the external `backend-worker.v1` JSON stdin/stdout bridge.
+- Added passive `ml.model.inventory` coverage for SafeTensors, GGUF/GGML, ONNX, TFLite, PyTorch/pickle checkpoints, and NumPy model artifacts, with unsafe deserialization, external data, prompt/template, and resource-risk signals while forbidding model load, inference, framework import, archive extraction, mutation, and network access.
 
 ### Runtime Stability
 

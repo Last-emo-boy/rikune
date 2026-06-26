@@ -21,7 +21,7 @@ A plugin can:
 
 ## Built-In Plugins
 
-The repository currently contains 97 built-in plugins.
+The repository currently contains 98 built-in plugins.
 
 | ID | Name | Domain | Surface tier |
 | --- | --- | --- | --- |
@@ -83,6 +83,7 @@ The repository currently contains 97 built-in plugins.
 | `memory-forensics` | Memory Forensics (Volatility 3) | static | 3 |
 | `metadata` | File Metadata | static | 0 |
 | `miasm` | Miasm IR Plan | static | 3 |
+| `ml-model` | ML Model Artifact Inventory | static | 1 |
 | `native-object` | Native Object Inventory | static | 1 |
 | `observability` | observability.metrics | both | 0 |
 | `office-analysis` | Office Analysis | static | 1 |
@@ -269,6 +270,7 @@ emulators, or attach debuggers.
 | `wasm.runtime.opt-in` | `wasm-runtime` | `wasm.runtime.plan` | `tool.readiness`, wasmtime tooling after approval | Plan-only; no module instantiation or WASI grant. |
 | `supply-chain.sbom.provenance` | `sbom` | `sbom.provenance.graph` | `sbom.generate`, `vuln.pattern.summary`, `report.generate` | Local inventories only; no install, mount, execute, or network lookup. |
 | `container.image-security-profile` | `container-analysis` | `container.image.security.profile` | `container.structure.analyze`, `sbom.provenance.graph`, `sbom.generate`, `analysis.evidence.graph`, `report.generate` | Passive Docker/OCI image config and layer-header profile only; no registry network, Docker daemon, image load, layer extraction, mount, package install, entrypoint, mutation, or CVE lookup. |
+| `ml.model-static-inventory` | `ml-model` | `ml.model.inventory` | `artifact.read`, `metadata.extract`, `strings.extract`, `analysis.evidence.graph`, `report.generate` | Passive ML model artifact inventory for SafeTensors, GGUF/GGML, ONNX, TFLite, PyTorch/pickle checkpoints, and NumPy arrays; no deserialization, model load, inference, ML framework import, archive extraction, mutation, or network. |
 | `android.static.behavior-graph` | `android` | `android.behavior.graph` | `dex.classes.list`, `android.runtime.plan` | Static graph only; no APK launch, device connection, or runtime start. |
 | `apple.security.runtime-profile` | `apple-signing` | `apple.security.profile` | `macho.structure.analyze`, `macos.runtime.plan`, `ios.runtime.plan` | Static profile only; no mount, install, keychain, codesign, or device action. |
 | `pe.security.hardening-profile` | `pe-analysis` | `pe.security.profile` | `pe.structure.analyze`, `pe.imports.extract`, `pe.pdata.extract`, `analysis.evidence.graph`, `windows.runtime.plan` | Static PE mitigation profile only; no DLL load, loader invocation, exploit test, network, or mutation. |
@@ -400,6 +402,7 @@ The current plugin matrix is organized by `formats`, `platforms`, `execution`, `
 | iOS IPA, Mach-O, provisioning, entitlements | `apple-container`, `apple-signing`, `elf-macho` | `ios-runtime`, `frida`, `debug-session` | No IPA install, device connection, simulator start, Frida attach, or LLDB attach by default. |
 | Android APK, AAB, APKS, XAPK, DEX/OAT/VDEX, AAR | `android-package`, `android`, `apk-smali`, `jvm`, `linux-binary` | `android-runtime`, `frida`, `behavior-first` | No emulator start, ADB install, APK launch, frida-server deployment, or device connection by default. |
 | JVM, .NET, Unity, script bytecode | `jvm`, `dotnet-managed`, `dotnet-decompile`, `unity-managed`, `bytecode`, `strings` | `managed-sandbox`, `runtime-deobfuscate`, `behavior-first` | Runtime work is opt-in and delegated; metadata and bytecode inventory stay passive. |
+| AI/ML model artifacts, checkpoints, tensor containers | `ml-model`, `container-analysis`, `metadata`, `strings`, `yara` | Runtime/model loading is not enabled by default | No `pickle.load`, `torch.load`, `numpy.load(... allow_pickle=True)`, ONNX Runtime, TensorFlow/TFLite delegate, PyTorch framework import, model inference, archive extraction, network/model hub download, or mutation by default. |
 | JavaScript, Node/browser bundles, source maps, JSVMP-like obfuscation | `javascript-deobfuscation`, `jsvmp-analysis`, `jsimplifier`, `jsir-cascade`, `restringer`, `strings`, `yara`, `yara-x`, `bytecode` | Worker-backed REstringer, JSIMPLIFIER, and JSIR/CASCADE tools remain explicit backend surfaces with builtin safe mode | No JavaScript evaluation, Node/V8 start, browser automation, dynamic trace, LLM call, network lookup, or external deobfuscator invocation by default. |
 | Advanced native lifting, symbolic execution, IR, GPU artifacts, and backend comparison workflows | `revng`, `triton`, `miasm`, `lief`, `radare2`, `remill`, `gtirb`, `manifold`, `llvm-bitcode`, `cuda-binary`, `culifter`, `vm-analysis`, `rizin`, `ghidra`, `retdec` | Worker-backed GTIRB, Remill, Manifold, QBDI, and CuLifter surfaces are bounded and readiness-gated; runtime/emulation remains opt-in | Discovery/readiness/help/list paths emit backend plans and readiness metadata only; no LLVM toolchain, heavy backend process, solver, emulator, fact engine, binary mutation, CUDA driver, GPU access, or sample execution starts during discovery. |
 | Firmware, containers, archives, native objects | `firmware`, `container-analysis`, `native-object`, `linux-package`, `windows-installer` | `qiling`, `linux-runtime`, `wasm-runtime` when applicable | No mount, extraction-to-execute path, package install, module insertion, or payload launch by default. |
