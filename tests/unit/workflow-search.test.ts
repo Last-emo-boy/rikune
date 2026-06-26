@@ -11,6 +11,7 @@ import { getToolSurfaceManager } from '../../src/core/tool-surface-manager.js'
 import type { Plugin } from '../../src/plugins/sdk.js'
 import btfPlugin from '../../src/plugins/btf/index.js'
 import containerAnalysisPlugin from '../../src/plugins/container-analysis/index.js'
+import compilerCodegenPlugin from '../../src/plugins/compiler-codegen/index.js'
 import cppAbiLayoutPlugin from '../../src/plugins/cpp-abi-layout/index.js'
 import ebpfBytecodePlugin from '../../src/plugins/ebpf-bytecode/index.js'
 import kernelDriverSurfacePlugin from '../../src/plugins/kernel-driver-surface/index.js'
@@ -798,6 +799,53 @@ describe('workflow.search', () => {
     expect(cppAbiResult.readiness_state).not.toBe('runtime_opt_in_required')
     expect(data.search_profile.recommended_tools).toContain('cpp.abi.layout.inventory')
     expect(surface.isToolVisible('cpp.abi.layout.inventory')).toBe(false)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
+  })
+
+  test('recommends passive compiler codegen fingerprint without runtime opt-in', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [compilerCodegenPlugin]
+    surface.registerCoreTools([
+      'workflow.search',
+      'workflow.run',
+      'artifact.read',
+      'tools.discover',
+    ])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      query:
+        'inspect compiler codegen fingerprint MSVC Rich header CodeView GCC clang optimization LTO PGO toolchain provenance',
+      file_type: 'compiler-codegen',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining([
+        'compiler-codegen',
+        'compiler-provenance',
+        'toolchain-provenance',
+        'optimization-level',
+        'rich-header',
+        'codeview',
+      ])
+    )
+    const codegenResult = data.results.find((item: any) => item.plugin_id === 'compiler-codegen')
+    expect(codegenResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining(['compiler.codegen.fingerprint']),
+      })
+    )
+    expect(codegenResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(data.search_profile.recommended_tools).toContain('compiler.codegen.fingerprint')
+    expect(surface.isToolVisible('compiler.codegen.fingerprint')).toBe(false)
     expect(surface.isToolVisible('tools.discover')).toBe(false)
   })
 

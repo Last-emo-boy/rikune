@@ -217,6 +217,28 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS['msvc-abi']).toEqual(
       expect.arrayContaining(['msvc-abi', 'cpp-abi', 'vftable', 'vbtable'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS['compiler-codegen']).toEqual(
+      expect.arrayContaining([
+        'compiler-codegen',
+        'compiler-provenance',
+        'toolchain-provenance',
+        'optimization-level',
+        'rich-header',
+        'codeview',
+      ])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.lto).toEqual(
+      expect.arrayContaining(['lto', 'optimization-level', 'compiler-codegen', 'llvm'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.pgo).toEqual(
+      expect.arrayContaining(['pgo', 'optimization-level', 'compiler-codegen'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['rich-header']).toEqual(
+      expect.arrayContaining(['rich-header', 'compiler-codegen', 'pe', 'windows'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.codeview).toEqual(
+      expect.arrayContaining(['codeview', 'compiler-codegen', 'debug-metadata', 'pdb'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS.sys).toEqual(
       expect.arrayContaining(['sys', 'pe', 'windows-driver', 'kernel-driver', 'ioctl'])
     )
