@@ -256,8 +256,13 @@ const CARGO_REGISTRY_RE =
   /(?:^|[\\/])(?:\.cargo[\\/])?registry[\\/]src[\\/][^\\/]+[\\/]([A-Za-z0-9_.-]+)-(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9_.-]+)?)(?:[\\/]|$)/gi
 const RUST_SOURCE_PATH_RE =
   /(?:^|[\\/])(?:src|library)[\\/]([A-Za-z0-9_.-]+)[\\/](?:src[\\/])?([A-Za-z0-9_.-]+\.rs)\b/gi
-const LEGACY_MANGLED_RE = /_ZN(?:\d+[A-Za-z_.$][A-Za-z0-9_.$]*)+17h[0-9a-fA-F]{16}E/g
 const V0_MANGLED_RE = /(?:^|[^A-Za-z0-9_])(_R[A-Za-z0-9_.$]{8,})/g
+const LEGACY_MANGLED_PREFIX = '_ZN'
+const LEGACY_MANGLED_HASH_PREFIX = '17h'
+const LEGACY_MANGLED_HASH_LENGTH = 16
+const LEGACY_MANGLED_MAX_SYMBOL_LENGTH = 512
+const LEGACY_MANGLED_MAX_SEGMENTS = 64
+const LEGACY_MANGLED_MAX_SEGMENT_LENGTH = 240
 
 const RUNTIME_MARKERS = [
   { id: 'std.lang-start', pattern: 'std::rt::lang_start', category: 'runtime' },
@@ -466,6 +471,114 @@ function collectRegexMatches(
   }
 }
 
+function isAsciiDigit(value: string, index: number): boolean {
+  const code = value.charCodeAt(index)
+  return code >= 48 && code <= 57
+}
+
+function isHexDigit(value: string, index: number): boolean {
+  const code = value.charCodeAt(index)
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 70) || (code >= 97 && code <= 102)
+}
+
+function isLegacySegmentChar(value: string, index: number): boolean {
+  const code = value.charCodeAt(index)
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    code === 36 ||
+    code === 46 ||
+    code === 95
+  )
+}
+
+function hasLegacyHashSuffix(value: string, index: number): boolean {
+  if (!value.startsWith(LEGACY_MANGLED_HASH_PREFIX, index)) return false
+  const hashStart = index + LEGACY_MANGLED_HASH_PREFIX.length
+  const hashEnd = hashStart + LEGACY_MANGLED_HASH_LENGTH
+  if (hashEnd >= value.length || value[hashEnd] !== 'E') return false
+  for (let cursor = hashStart; cursor < hashEnd; cursor += 1) {
+    if (!isHexDigit(value, cursor)) return false
+  }
+  return true
+}
+
+function findLegacyMangledSymbols(value: string): Array<{ value: string; index: number }> {
+  const matches: Array<{ value: string; index: number }> = []
+  let searchFrom = 0
+
+  while (searchFrom < value.length && matches.length < MAX_EVIDENCE) {
+    const start = value.indexOf(LEGACY_MANGLED_PREFIX, searchFrom)
+    if (start === -1) break
+
+    let cursor = start + LEGACY_MANGLED_PREFIX.length
+    let segments = 0
+    const maxEnd = Math.min(value.length, start + LEGACY_MANGLED_MAX_SYMBOL_LENGTH)
+    let matchedEnd: number | undefined
+
+    while (cursor < maxEnd && segments < LEGACY_MANGLED_MAX_SEGMENTS) {
+      const lengthStart = cursor
+      while (cursor < maxEnd && isAsciiDigit(value, cursor)) cursor += 1
+      if (cursor === lengthStart) break
+
+      const segmentLength = Number(value.slice(lengthStart, cursor))
+      if (
+        !Number.isSafeInteger(segmentLength) ||
+        segmentLength <= 0 ||
+        segmentLength > LEGACY_MANGLED_MAX_SEGMENT_LENGTH
+      ) {
+        break
+      }
+
+      const segmentEnd = cursor + segmentLength
+      if (segmentEnd > maxEnd) break
+
+      let validSegment = true
+      for (let index = cursor; index < segmentEnd; index += 1) {
+        if (!isLegacySegmentChar(value, index)) {
+          validSegment = false
+          break
+        }
+      }
+      if (!validSegment) break
+
+      cursor = segmentEnd
+      segments += 1
+      if (hasLegacyHashSuffix(value, cursor)) {
+        matchedEnd =
+          cursor + LEGACY_MANGLED_HASH_PREFIX.length + LEGACY_MANGLED_HASH_LENGTH + 'E'.length
+        break
+      }
+    }
+
+    if (matchedEnd !== undefined) {
+      matches.push({ value: value.slice(start, matchedEnd), index: start })
+      searchFrom = matchedEnd
+    } else {
+      searchFrom = start + LEGACY_MANGLED_PREFIX.length
+    }
+  }
+
+  return matches
+}
+
+function collectLegacyMangledMatches(evidence: RustEvidence[], strings: StringEvidence[]) {
+  for (const item of strings) {
+    for (const match of findLegacyMangledSymbols(item.value)) {
+      addEvidence(
+        evidence,
+        'rust.legacy-mangled-symbol',
+        'symbols',
+        match.value,
+        'string',
+        'high',
+        item.offset === undefined ? undefined : item.offset + match.index
+      )
+    }
+  }
+}
+
 function collectRustEvidence(strings: StringEvidence[]): RustEvidence[] {
   const evidence: RustEvidence[] = []
   collectRegexMatches(evidence, strings, RUSTC_RE, 'rustc.version', 'provenance', 'string', 'high')
@@ -505,15 +618,7 @@ function collectRustEvidence(strings: StringEvidence[]): RustEvidence[] {
     'string',
     'high'
   )
-  collectRegexMatches(
-    evidence,
-    strings,
-    LEGACY_MANGLED_RE,
-    'rust.legacy-mangled-symbol',
-    'symbols',
-    'string',
-    'high'
-  )
+  collectLegacyMangledMatches(evidence, strings)
   collectRegexMatches(
     evidence,
     strings,

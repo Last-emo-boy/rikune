@@ -145,6 +145,20 @@ describe('rust.binary.inventory', () => {
     )
   })
 
+  test('rejects hostile legacy mangling candidates without backtracking', () => {
+    const hostile = `${'_ZN0$'.repeat(400)}rustc 1.84.1`
+    const inventory = buildRustBinaryInventoryFromBuffer(elfRustFixture([hostile]), {
+      filename: 'hostile.elf',
+      sampleId: 'sha256:hostile-rust',
+    })
+
+    expect(inventory.symbol_mangling.legacy_count).toBe(0)
+    expect(inventory.detected_by).not.toContain('rust-legacy-mangled-symbol')
+    expect(inventory.rustc_candidates).toEqual(
+      expect.arrayContaining([expect.objectContaining({ version: '1.84.1' })])
+    )
+  })
+
   test('summarizes Windows Rust allocator, target, ecosystem, and panic-abort hints', () => {
     const inventory = buildRustBinaryInventoryFromBuffer(
       peRustFixture([
