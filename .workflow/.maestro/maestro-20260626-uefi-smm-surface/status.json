@@ -2,7 +2,7 @@
   "iteration": "maestro-20260626-uefi-smm-surface",
   "branch": "feat/uefi-smm-surface",
   "base": "beta",
-  "updated_at": "2026-06-26T15:18:23.6053028+08:00",
+  "updated_at": "2026-06-26T15:41:30.5372712+08:00",
   "status": "in_progress",
   "selected_direction": "UEFI/SMM trust-boundary static inventory",
   "tool": "uefi.smm.surface.inventory",
@@ -15,13 +15,16 @@
     "SDK tags and routing tests",
     "human-written docs update",
     "generated docs and Docker profile refresh",
-    "verification"
+    "verification",
+    "PR #56 created",
+    "CI validate failure triaged",
+    "Windows reconstruct-export unit test stabilized"
   ],
   "in_progress": [],
   "pending": [
-    "commit",
-    "push",
-    "PR",
+    "commit CI fix",
+    "push CI fix",
+    "wait PR checks",
     "merge to beta if checks allow",
     "server deployment and MCP smoke"
   ],
@@ -41,12 +44,15 @@
   },
   "verification": {
     "targeted_uefi_tests": "passed",
+    "code_reconstruct_export_regression": "passed",
+    "combined_pr_regression_tests": "passed",
     "docs_tool_catalog": "passed",
     "docker_generate_all": "passed",
-    "full_tests": "passed",
+    "full_unit_ci": "pending GitHub Actions rerun after CI fix",
     "tsc": "passed",
     "build": "passed",
     "lint": "passed",
-    "diff_check": "passed"
+    "diff_check": "passed",
+    "ci_validate": "failed before CI fix on tests/unit/code-reconstruct-export.test.ts Windows timeout/EBUSY cleanup; fix verified locally"
   }
 }

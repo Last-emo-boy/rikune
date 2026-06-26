@@ -19,6 +19,8 @@ import {
   persistSemanticNameSuggestionsArtifact,
 } from '../../src/artifacts/semantic-name-suggestion-artifacts.js'
 
+jest.setTimeout(60_000)
+
 describe('code.reconstruct.export tool', () => {
   let workspaceManager: WorkspaceManager
   let database: DatabaseManager
@@ -26,23 +28,54 @@ describe('code.reconstruct.export tool', () => {
   let testWorkspaceRoot: string
   let testDbPath: string
   let testCachePath: string
+  let testCaseCounter = 0
+
+  function sleepSync(ms: number) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+  }
+
+  function isRetryableFsCleanupError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') return false
+    const code = (error as NodeJS.ErrnoException).code
+    return code === 'EBUSY' || code === 'ENOTEMPTY' || code === 'EPERM'
+  }
+
+  function nextTestSlug(): string {
+    testCaseCounter += 1
+    return `p${process.pid}-c${testCaseCounter}`
+  }
 
   function removeDirectoryIfExists(target: string) {
-    if (fs.existsSync(target)) {
-      fs.rmSync(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (!fs.existsSync(target)) return
+      try {
+        fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 })
+        return
+      } catch (error) {
+        if (!isRetryableFsCleanupError(error) || attempt === 19) throw error
+        sleepSync(150 + attempt * 50)
+      }
     }
   }
 
   function removeFileIfExists(target: string) {
-    if (fs.existsSync(target)) {
-      fs.rmSync(target, { force: true, maxRetries: 5, retryDelay: 100 })
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (!fs.existsSync(target)) return
+      try {
+        fs.rmSync(target, { force: true, maxRetries: 10, retryDelay: 150 })
+        return
+      } catch (error) {
+        if (!isRetryableFsCleanupError(error) || attempt === 19) throw error
+        sleepSync(150 + attempt * 50)
+      }
     }
   }
 
   beforeEach(() => {
-    testWorkspaceRoot = path.join(process.cwd(), 'test-workspace-reconstruct-export')
-    testDbPath = path.join(process.cwd(), 'test-reconstruct-export.db')
-    testCachePath = path.join(process.cwd(), 'test-cache-reconstruct-export')
+    const testSlug = nextTestSlug()
+    testWorkspaceRoot = path.join(process.cwd(), 'test-workspace-reconstruct-export', testSlug)
+    testDbPath = path.join(process.cwd(), `test-reconstruct-export-${testSlug}.db`)
+    testCachePath = path.join(process.cwd(), 'test-cache-reconstruct-export', testSlug)
 
     removeDirectoryIfExists(testWorkspaceRoot)
     removeFileIfExists(testDbPath)
@@ -204,10 +237,39 @@ describe('code.reconstruct.export tool', () => {
               },
             }
       )
+    const nativeBuildValidator = jest.fn<() => Promise<any>>().mockResolvedValue({
+      attempted: false,
+      status: 'unavailable' as const,
+      compiler: 'clang',
+      compiler_path: null,
+      command: null,
+      exit_code: null,
+      timed_out: false,
+      error: 'native build validation disabled in unit test harness',
+      stdout: '',
+      stderr: '',
+      log_path: null,
+      executable_path: null,
+    })
+    const harnessValidator = jest.fn<() => Promise<any>>().mockResolvedValue({
+      attempted: false,
+      status: 'skipped' as const,
+      command: null,
+      exit_code: null,
+      timed_out: false,
+      error: 'native harness execution disabled in unit test harness',
+      stdout: '',
+      stderr: '',
+      log_path: null,
+      matched_entries: 0,
+      mismatched_entries: 0,
+    })
 
     return {
       exportsExtractHandler,
       packerDetectHandler,
+      nativeBuildValidator,
+      harnessValidator,
     }
   }
 
@@ -454,6 +516,7 @@ describe('code.reconstruct.export tool', () => {
           ok: true,
           data: { summary: { top_high_value: [] } },
         }),
+        ...buildBinaryMetadataDependencies(),
         nativeBuildValidator: jest
           .fn<
             (
@@ -473,23 +536,23 @@ describe('code.reconstruct.export tool', () => {
             compilerPath: _compilerPath,
             timeoutMs: _timeoutMs,
           }) => {
-          const executablePath = path.join(exportRoot, 'reconstruct_harness.exe')
-          fs.writeFileSync(executablePath, 'MZ')
-          return {
-            attempted: true,
-            status: 'passed' as const,
-            compiler: 'clang',
-            compiler_path: 'E:/clang/bin/clang.exe',
-            command: '"clang" -std=c99',
-            exit_code: 0,
-            timed_out: false,
-            error: null,
-            stdout: 'build ok',
-            stderr: '',
-            log_path: null,
-            executable_path: executablePath,
-          }
-        }),
+            const executablePath = path.join(exportRoot, 'reconstruct_harness.exe')
+            fs.writeFileSync(executablePath, 'MZ')
+            return {
+              attempted: true,
+              status: 'passed' as const,
+              compiler: 'clang',
+              compiler_path: 'E:/clang/bin/clang.exe',
+              command: '"clang" -std=c99',
+              exit_code: 0,
+              timed_out: false,
+              error: null,
+              stdout: 'build ok',
+              stderr: '',
+              log_path: null,
+              executable_path: executablePath,
+            }
+          }),
         harnessValidator: jest
           .fn<
             (
@@ -514,7 +577,6 @@ describe('code.reconstruct.export tool', () => {
             matched_entries: 1,
             mismatched_entries: 0,
           })),
-        ...buildBinaryMetadataDependencies(),
       }
     )
 
