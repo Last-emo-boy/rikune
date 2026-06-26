@@ -507,6 +507,8 @@ RUN (echo "[validate] Rikune Docker image") && \
     (HOME=/tmp/rikune-home /usr/local/bin/vol --help >/dev/null) && \
     (exiftool -ver >/dev/null 2>&1) && \
     (tshark --version >/dev/null 2>&1) && \
+    (python3 -c "import pefile; print(getattr(pefile, '__version__', 'ok'))") && \
+    (python3 -c "import lief; print(getattr(lief, '__version__', 'ok'))") && \
     (osslsigncode --version >/dev/null 2>&1 || true) && \
     (node /opt/rikune-backends/restringer/bin/restringer-worker.js --self-test) && \
     (retdec-decompiler --help >/dev/null 2>&1) && \
@@ -543,7 +545,7 @@ ENV NODE_ENV=production \
     JADX_PATH=/opt/jadx/bin/jadx \
     ANGR_PYTHON=/opt/angr-venv/bin/python \
     APKTOOL_PATH=/usr/bin/apktool \
-    DIEC_PATH=/usr/bin/diec \
+    DIE_PATH=/usr/bin/diec \
     ILSPYCMD_PATH=/usr/local/bin/ilspycmd \
     BINWALK_PATH=/usr/bin/binwalk \
     GHIDRA_INSTALL_DIR=/opt/ghidra \
@@ -565,7 +567,6 @@ ENV NODE_ENV=production \
     GHIDRA_PROJECT_ROOT=/ghidra-projects \
     GHIDRA_LOG_ROOT=/ghidra-logs \
     CAPA_PATH=/usr/local/bin/capa \
-    DIE_PATH=/usr/bin/diec \
     RETDEC_INSTALL_DIR=/opt/retdec
 
 RUN mkdir -p /app/workspaces /app/data /app/cache /tmp/rikune-home /app/logs /samples /tmp /ghidra-projects /ghidra-logs /opt/vol3-symbols && \

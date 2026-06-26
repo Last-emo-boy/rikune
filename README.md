@@ -18,7 +18,7 @@ The current AI-facing server workflow is organized around a minimal gateway surf
 - Optional HTTP API and dashboard for uploads, downloads, health checks, SSE events, and artifact access.
 - SHA-256 based sample workspaces with durable original files, cache directories, analysis artifacts, and upload sessions.
 - SQLite-backed persistence for samples, analyses, jobs, evidence, artifacts, batches, debug sessions, and scheduler telemetry.
-- Plugin architecture with 98 built-in plugins and external plugin discovery.
+- Plugin architecture with 99 built-in plugins and external plugin discovery.
 - Progressive tool surface: the default AI-facing gateway is intentionally small; `workflow.search` uses sample type, findings, and profile metadata to route toward specialist capabilities without exposing every tool up front.
 - Static analysis and enrichment for PE, ELF, Mach-O, APK/DEX, Office, firmware, CUDA PTX/CUBIN/fatbin, strings, YARA, SBOM, signatures, packers, .NET, Go, Rust, and more.
 - Ghidra, Rizin, RetDec, angr, Capstone, Graphviz, Qiling, PANDA, Speakeasy, Wine, Frida, and dynamic-runtime integration where available.
@@ -169,7 +169,7 @@ Docker/WSL analyzers should use `remote-sandbox`, not `auto-sandbox`.
 
 ## Plugin System
 
-Rikune currently includes 98 built-in plugins under `src/plugins/<id>/`. Plugins can register tools, declare dependencies, expose configuration schema, participate in lifecycle hooks, provide Docker metadata, and declare bounded Worker-backed tools through `workerBackend` metadata.
+Rikune currently includes 99 built-in plugins under `src/plugins/<id>/`. Plugins can register tools, declare dependencies, expose configuration schema, participate in lifecycle hooks, provide Docker metadata, and declare bounded Worker-backed tools through `workerBackend` metadata.
 
 The frontier Worker suite keeps plan-only tools as triage and handoff surfaces, then adds explicit execution tools beside them. `restringer.deobfuscation.run`, `jsimplifier.pipeline.run`, `jsir.cascade.normalize`, `gtirb.ir.generate`, `remill.lift.run`, `manifold.fact.extract`, `qbdi.trace.run`, and `culifter.gpu.artifact.inventory` expose Worker contracts through `workflow.search`, `plugin.list`, `tool.help`, and `tool.readiness`; `tools.discover` remains a low-level compatibility portal. Discovery and readiness remain passive: they report backend metadata and setup guidance without starting REstringer, JSIMPLIFIER, JSIR/CASCADE, GTIRB, Remill, Manifold, QBDI, GPU drivers, Node/V8, browsers, or runtime instrumentation.
 
@@ -243,7 +243,7 @@ src/
   tools/                      core tool implementations
   workflows/                  staged analysis, triage, reconstruction, review workflows
   analysis/                   run state and background task runner
-  plugins/                    98 built-in plugins
+  plugins/                    99 built-in plugins
   persistence/                SQLite and workspace persistence
   sample/                     sample finalization and workspace inspection
   storage/                    artifacts, uploads, retention

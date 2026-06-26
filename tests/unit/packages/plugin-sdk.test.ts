@@ -164,6 +164,15 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS['llvm-bitcode-wrapper']).toEqual(
       expect.arrayContaining(['llvm-bitcode-wrapper', 'llvm-bitcode', 'llvm-ir'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS.spv).toEqual(
+      expect.arrayContaining(['spir-v', 'shader-ir', 'vulkan', 'webgpu', 'gpu'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.dxil).toEqual(
+      expect.arrayContaining(['dxcontainer', 'shader-ir', 'directx', 'gpu', 'llvm-ir'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.wgsl).toEqual(
+      expect.arrayContaining(['wgsl', 'webgpu', 'shader-ir', 'source'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS.safetensors).toEqual(
       expect.arrayContaining(['safetensors', 'ml-model', 'ai-model', 'tensor'])
     )

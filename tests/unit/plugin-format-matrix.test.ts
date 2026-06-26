@@ -16,6 +16,7 @@ import { buildBytecodeMetadataFromBuffer } from '../../src/plugins/bytecode/tool
 import { buildBtfInventoryFromBuffer } from '../../src/plugins/btf/tools/btf-type-inventory.js'
 import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitcode/tools/llvm-bitcode-inventory.js'
 import { buildMlModelInventoryFromBuffer } from '../../src/plugins/ml-model/tools/ml-model-inventory.js'
+import { buildShaderIrInventoryFromBuffer } from '../../src/plugins/shader-ir/tools/shader-ir-inventory.js'
 import { buildWindowsInstallerInventoryFromBuffer } from '../../src/plugins/windows-installer/tools/windows-installer-inventory.js'
 import { buildWindowsDebugMetadataFromBuffer } from '../../src/plugins/windows-debug-symbols/tools/windows-debug-metadata-inspect.js'
 import { buildDotnetAssemblyInventoryFromBuffer } from '../../src/plugins/dotnet-managed/tools/dotnet-assembly-inspect.js'
@@ -140,6 +141,36 @@ function llvmBitcodeFixture(): Buffer {
     Buffer.from([0x42, 0x43, 0xc0, 0xde, 0x03, 0x41, 0x10, 0x00]),
     Buffer.from('target triple=x86_64-unknown-linux-gnu', 'ascii'),
   ])
+}
+
+function shaderSpirvStringWords(value: string): number[] {
+  const bytes = Buffer.from(`${value}\0`, 'utf8')
+  const padded = Buffer.concat([bytes, Buffer.alloc((4 - (bytes.length % 4)) % 4)])
+  const words: number[] = []
+  for (let offset = 0; offset < padded.length; offset += 4) {
+    words.push(padded.readUInt32LE(offset))
+  }
+  return words
+}
+
+function shaderSpirvInstruction(opcode: number, operands: number[]): number[] {
+  return [((operands.length + 1) << 16) | opcode, ...operands]
+}
+
+function shaderSpirvFixture(): Buffer {
+  const words = [
+    0x07230203,
+    0x00010300,
+    0,
+    16,
+    0,
+    ...shaderSpirvInstruction(17, [1]),
+    ...shaderSpirvInstruction(14, [0, 1]),
+    ...shaderSpirvInstruction(15, [5, 7, ...shaderSpirvStringWords('main')]),
+  ]
+  const data = Buffer.alloc(words.length * 4)
+  words.forEach((word, index) => data.writeUInt32LE(word >>> 0, index * 4))
+  return data
 }
 
 function btfFixture(): Buffer {
@@ -444,6 +475,10 @@ describe('cross-platform file type detection', () => {
     const wrapper = Buffer.alloc(20)
     wrapper.writeUInt32LE(0x0b17c0de, 0)
     expect(detectFileType(wrapper, 'module.bc')).toBe('LLVM-Bitcode-Wrapper')
+    expect(detectFileType(shaderSpirvFixture(), 'shader.spv')).toBe('SPIR-V')
+    expect(detectFileType(Buffer.from('DXBC'), 'shader.dxil')).toBe('DXContainer')
+    expect(detectFileType(Buffer.from('fn main() {}'), 'shader.wgsl')).toBe('WGSL')
+    expect(detectFileType(Buffer.from('MTLB'), 'default.metallib')).toBe('Metal-Metallib')
     expect(detectFileType(btfFixture(), 'vmlinux.btf')).toBe('BTF')
   })
 
@@ -955,6 +990,30 @@ describe('passive bytecode and portable runtime inventory', () => {
       expect.arrayContaining(['strings.extract', 'analysis.evidence.graph', 'workflow.search'])
     )
   })
+
+  test('builds shader IR inventory without compiler, validator, disassembler, or GPU access', () => {
+    const inventory = buildShaderIrInventoryFromBuffer(shaderSpirvFixture(), {
+      filename: 'shader.spv',
+    })
+
+    expect(inventory.format).toBe('spir-v')
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_gpu_driver: true,
+        no_gpu_access: true,
+        no_shader_compiler: true,
+        no_validator: true,
+        no_disassembler: true,
+      })
+    )
+    expect(inventory.entry_points).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'main', stage: 'GLCompute' })])
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining(['culifter.gpu.plan', 'analysis.evidence.graph'])
+    )
+  })
 })
 
 describe('passive Windows and managed format inventory', () => {
@@ -1268,6 +1327,7 @@ describe('built-in plugin format matrix discovery', () => {
     const ebpfBytecode = plugins.find((plugin) => plugin.id === 'ebpf-bytecode')
     const llvmBitcode = plugins.find((plugin) => plugin.id === 'llvm-bitcode')
     const mlModel = plugins.find((plugin) => plugin.id === 'ml-model')
+    const shaderIr = plugins.find((plugin) => plugin.id === 'shader-ir')
     const windowsInstaller = plugins.find((plugin) => plugin.id === 'windows-installer')
     const windowsDebugSymbols = plugins.find((plugin) => plugin.id === 'windows-debug-symbols')
     const dotnetManaged = plugins.find((plugin) => plugin.id === 'dotnet-managed')
@@ -1321,6 +1381,10 @@ describe('built-in plugin format matrix discovery', () => {
       expect.arrayContaining(['ml-model', 'safetensors', 'gguf', 'onnx', 'tflite'])
     )
     expect(mlModel?.tools?.map((tool) => tool.definition.name)).toContain('ml.model.inventory')
+    expect(shaderIr?.aspects?.formats).toEqual(
+      expect.arrayContaining(['shader-ir', 'spir-v', 'dxil', 'dxbc', 'wgsl'])
+    )
+    expect(shaderIr?.tools?.map((tool) => tool.definition.name)).toContain('shader.ir.inventory')
     expect(windowsInstaller?.aspects?.formats).toEqual(
       expect.arrayContaining(['msi', 'msix', 'appx', 'cab', 'nsis', 'inno'])
     )
@@ -1403,6 +1467,7 @@ describe('built-in plugin format matrix discovery', () => {
     const ebpfBytecode = requirePlugin(plugins, 'ebpf-bytecode')
     const llvmBitcode = requirePlugin(plugins, 'llvm-bitcode')
     const mlModel = requirePlugin(plugins, 'ml-model')
+    const shaderIr = requirePlugin(plugins, 'shader-ir')
     const androidPackage = requirePlugin(plugins, 'android-package')
     const appleSigning = requirePlugin(plugins, 'apple-signing')
     const linuxBinary = requirePlugin(plugins, 'linux-binary')
@@ -1443,6 +1508,9 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(cudaBinary.aspects?.capabilities).toEqual(
       expect.arrayContaining(['cuda-artifact-inventory', 'culifter-handoff'])
+    )
+    expect(shaderIr.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['shader-ir-inventory', 'spirv-entrypoint-reflection'])
     )
     expect(peAnalysis.aspects?.capabilities).toEqual(
       expect.arrayContaining(['security-profile', 'mitigation-profile', 'loader-security'])
@@ -1559,6 +1627,21 @@ describe('built-in plugin format matrix discovery', () => {
       producesArtifacts: ['ml_model_inventory'],
       evidence: ['structure', 'metadata', 'strings', 'workflow', 'provenance'],
       safety: ['passive', 'no_deserialization', 'no_model_load', 'no_inference'],
+    })
+    expectToolMetadata(shaderIr, 'shader.ir.inventory', {
+      formats: ['shader-ir', 'spir-v', 'dxil', 'dxbc', 'wgsl'],
+      artifacts: ['shader_ir_inventory'],
+      evidence: ['structure', 'metadata', 'strings', 'resources', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'shader-ir',
+      toolName: 'shader.ir.inventory',
+      recipeId: 'shader.ir-static-inventory',
+      startsWith: ['shader.ir.inventory'],
+      nextTools: ['artifact.read', 'strings.extract', 'metadata.extract', 'culifter.gpu.plan'],
+      producesArtifacts: ['shader_ir_inventory'],
+      evidence: ['structure', 'metadata', 'strings', 'resources', 'workflow'],
+      safety: ['passive', 'no_gpu_driver', 'no_gpu_access', 'no_shader_compiler'],
     })
     expectToolMetadata(androidPackage, 'android.package.inventory', {
       formats: ['android-package', 'apk', 'dex'],
