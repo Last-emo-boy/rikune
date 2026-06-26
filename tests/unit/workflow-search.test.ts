@@ -20,6 +20,7 @@ import mlModelPlugin from '../../src/plugins/ml-model/index.js'
 import nativeDebugTypesPlugin from '../../src/plugins/native-debug-types/index.js'
 import shaderIrPlugin from '../../src/plugins/shader-ir/index.js'
 import syscallAbiSurfacePlugin from '../../src/plugins/syscall-abi-surface/index.js'
+import teeEnclavePlugin from '../../src/plugins/tee-enclave/index.js'
 import uefiSmmSurfacePlugin from '../../src/plugins/uefi-smm-surface/index.js'
 import wasmComponentPlugin from '../../src/plugins/wasm-component/index.js'
 import windowsInterfaceSurfacePlugin from '../../src/plugins/windows-interface-surface/index.js'
@@ -846,6 +847,53 @@ describe('workflow.search', () => {
     expect(codegenResult.readiness_state).not.toBe('runtime_opt_in_required')
     expect(data.search_profile.recommended_tools).toContain('compiler.codegen.fingerprint')
     expect(surface.isToolVisible('compiler.codegen.fingerprint')).toBe(false)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
+  })
+
+  test('recommends passive TEE enclave inventory without runtime opt-in', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [teeEnclavePlugin]
+    surface.registerCoreTools([
+      'workflow.search',
+      'workflow.run',
+      'artifact.read',
+      'tools.discover',
+    ])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      query:
+        'inspect SGX enclave SIGSTRUCT MRENCLAVE OP-TEE TrustZone TDX quote SEV-SNP attestation',
+      file_type: 'sgx-enclave',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining([
+        'sgx-enclave',
+        'sgx',
+        'tee-enclave',
+        'sigstruct',
+        'mrenclave',
+        'mrsigner',
+      ])
+    )
+    const teeResult = data.results.find((item: any) => item.plugin_id === 'tee-enclave')
+    expect(teeResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining(['tee.enclave.inventory']),
+      })
+    )
+    expect(teeResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(data.search_profile.recommended_tools).toContain('tee.enclave.inventory')
+    expect(surface.isToolVisible('tee.enclave.inventory')).toBe(false)
     expect(surface.isToolVisible('tools.discover')).toBe(false)
   })
 

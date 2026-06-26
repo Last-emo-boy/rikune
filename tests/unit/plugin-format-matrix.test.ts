@@ -24,6 +24,7 @@ import { buildMlModelInventoryFromBuffer } from '../../src/plugins/ml-model/tool
 import { buildNativeDebugTypesInventoryFromBuffer } from '../../src/plugins/native-debug-types/tools/native-debug-types-inventory.js'
 import { buildShaderIrInventoryFromBuffer } from '../../src/plugins/shader-ir/tools/shader-ir-inventory.js'
 import { buildSyscallAbiSurfaceInventoryFromBuffer } from '../../src/plugins/syscall-abi-surface/tools/syscall-abi-surface-inventory.js'
+import { buildTeeEnclaveInventoryFromBuffer } from '../../src/plugins/tee-enclave/tools/tee-enclave-inventory.js'
 import { buildUefiSmmSurfaceInventoryFromBuffer } from '../../src/plugins/uefi-smm-surface/tools/uefi-smm-surface-inventory.js'
 import { buildWindowsInterfaceSurfaceInventoryFromBuffer } from '../../src/plugins/windows-interface-surface/tools/windows-interface-surface-inventory.js'
 import { buildWindowsInstallerInventoryFromBuffer } from '../../src/plugins/windows-installer/tools/windows-installer-inventory.js'
@@ -621,6 +622,9 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(Buffer.alloc(16), 'demo.component.wasm')).toBe('WASM-Component')
     expect(detectFileType(Buffer.alloc(16), 'program.bpf')).toBe('eBPF-Bytecode')
     expect(detectFileType(Buffer.alloc(16), 'program.ebpf')).toBe('eBPF-Bytecode')
+    expect(detectFileType(Buffer.alloc(16), 'sample.ta')).toBe('OP-TEE-TA')
+    expect(detectFileType(Buffer.alloc(16), 'sample.sigstruct')).toBe('SGX-SIGSTRUCT')
+    expect(detectFileType(Buffer.alloc(16), 'sample.enclave')).toBe('SGX-Enclave')
     expect(detectFileType(Buffer.alloc(16), 'ntdll.stub')).toBe('Syscall-Stub')
     expect(detectFileType(Buffer.alloc(16), 'direct.syscall')).toBe('Syscall-Stub')
     expect(detectFileType(Buffer.alloc(16), 'payload.shellcode')).toBe('Raw-Shellcode')
@@ -1668,6 +1672,55 @@ describe('passive compiler codegen fingerprint inventory', () => {
   })
 })
 
+describe('passive TEE enclave inventory', () => {
+  test('extracts enclave and attestation hints without loading enclaves or requesting quotes', () => {
+    const inventory = buildTeeEnclaveInventoryFromBuffer(
+      Buffer.from(
+        [
+          'SIGSTRUCT',
+          'MRENCLAVE',
+          'g_ecall_table',
+          'OP-TEE',
+          'TA_InvokeCommandEntryPoint',
+          'TDREPORT',
+          'SEV-SNP',
+          'SNP_REPORT',
+        ].join('\0'),
+        'ascii'
+      ),
+      { filename: 'enclave.bin' }
+    )
+
+    expect(inventory.enclave_families).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ family: 'sgx' }),
+        expect.objectContaining({ family: 'optee' }),
+        expect.objectContaining({ family: 'tdx' }),
+        expect.objectContaining({ family: 'sev-snp' }),
+      ])
+    )
+    expect(inventory.attestation_hints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'sgx.sigstruct' }),
+        expect.objectContaining({ id: 'tdx.report' }),
+        expect.objectContaining({ id: 'sev.snp-report' }),
+      ])
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining(['native.object.inventory', 'analysis.evidence.graph'])
+    )
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_enclave_load: true,
+        no_attestation_request: true,
+        no_quote_generation: true,
+        no_external_tool: true,
+      })
+    )
+  })
+})
+
 describe('passive kernel driver surface inventory', () => {
   test('extracts IOCTL and module surface hints without loading drivers or modules', () => {
     const ioctl = Buffer.alloc(4)
@@ -1872,6 +1925,7 @@ describe('built-in plugin format matrix discovery', () => {
     const mlModel = plugins.find((plugin) => plugin.id === 'ml-model')
     const shaderIr = plugins.find((plugin) => plugin.id === 'shader-ir')
     const syscallAbiSurface = plugins.find((plugin) => plugin.id === 'syscall-abi-surface')
+    const teeEnclave = plugins.find((plugin) => plugin.id === 'tee-enclave')
     const uefiSmmSurface = plugins.find((plugin) => plugin.id === 'uefi-smm-surface')
     const windowsInterfaceSurface = plugins.find(
       (plugin) => plugin.id === 'windows-interface-surface'
@@ -1936,6 +1990,12 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(compilerCodegen?.tools?.map((tool) => tool.definition.name)).toContain(
       'compiler.codegen.fingerprint'
+    )
+    expect(teeEnclave?.aspects?.formats).toEqual(
+      expect.arrayContaining(['tee-enclave', 'sgx-enclave', 'optee-ta', 'tdx', 'sev-snp'])
+    )
+    expect(teeEnclave?.tools?.map((tool) => tool.definition.name)).toContain(
+      'tee.enclave.inventory'
     )
     expect(cppAbiLayout?.aspects?.formats).toEqual(
       expect.arrayContaining(['cpp-abi', 'itanium-abi', 'msvc-abi', 'rtti', 'vtable'])
@@ -2087,6 +2147,7 @@ describe('built-in plugin format matrix discovery', () => {
     const mlModel = requirePlugin(plugins, 'ml-model')
     const shaderIr = requirePlugin(plugins, 'shader-ir')
     const syscallAbiSurface = requirePlugin(plugins, 'syscall-abi-surface')
+    const teeEnclave = requirePlugin(plugins, 'tee-enclave')
     const uefiSmmSurface = requirePlugin(plugins, 'uefi-smm-surface')
     const windowsInterfaceSurface = requirePlugin(plugins, 'windows-interface-surface')
     const wasmComponent = requirePlugin(plugins, 'wasm-component')
@@ -2119,6 +2180,15 @@ describe('built-in plugin format matrix discovery', () => {
         'compiler-codegen-fingerprint',
         'toolchain-provenance-inventory',
         'optimization-lto-pgo-hints',
+      ])
+    )
+    expect(teeEnclave.aspects?.capabilities).toEqual(
+      expect.arrayContaining([
+        'tee-enclave-inventory',
+        'sgx-enclave-metadata-hints',
+        'optee-ta-metadata-hints',
+        'tdx-attestation-hints',
+        'sev-snp-attestation-hints',
       ])
     )
     expect(cppAbiLayout.aspects?.capabilities).toEqual(
@@ -2270,6 +2340,25 @@ describe('built-in plugin format matrix discovery', () => {
       producesArtifacts: ['compiler_codegen_fingerprint'],
       evidence: ['provenance', 'compiler', 'linker', 'optimization', 'workflow'],
       safety: ['passive', 'no_compiler_invocation', 'no_linker_invocation', 'no_external_tool'],
+    })
+    expectToolMetadata(teeEnclave, 'tee.enclave.inventory', {
+      formats: ['tee-enclave', 'sgx-enclave', 'optee-ta', 'tdx', 'sev-snp'],
+      artifacts: ['tee_enclave_inventory'],
+      evidence: ['manifest', 'attestation', 'measurement', 'boundary', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'tee-enclave',
+      toolName: 'tee.enclave.inventory',
+      recipeId: 'tee.enclave-static-inventory',
+      startsWith: ['tee.enclave.inventory'],
+      nextTools: [
+        'native.object.inventory',
+        'compiler.codegen.fingerprint',
+        'sbom.provenance.graph',
+      ],
+      producesArtifacts: ['tee_enclave_inventory'],
+      evidence: ['manifest', 'attestation', 'measurement', 'boundary', 'workflow'],
+      safety: ['passive', 'no_enclave_load', 'no_attestation_request', 'no_external_tool'],
     })
     expectToolMetadata(cppAbiLayout, 'cpp.abi.layout.inventory', {
       formats: ['cpp-abi', 'itanium-abi', 'msvc-abi', 'rtti'],

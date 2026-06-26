@@ -292,6 +292,18 @@ export function detectFileType(data: Buffer, filename?: string): string {
     return 'CUDA-Fatbin'
   }
 
+  if (extension === 'ta') {
+    return 'OP-TEE-TA'
+  }
+
+  if (extension === 'sigstruct') {
+    return 'SGX-SIGSTRUCT'
+  }
+
+  if (extension === 'enclave' || extension === 'sgx') {
+    return 'SGX-Enclave'
+  }
+
   const firmwarePreview = data.subarray(0, Math.min(data.length, 1024 * 1024)).toString('latin1')
   const firmwareVolumeHeaderOffset = firmwarePreview.indexOf('_FVH')
   const firmwareLikeExtension = [

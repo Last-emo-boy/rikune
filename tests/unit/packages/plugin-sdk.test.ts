@@ -239,6 +239,33 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS.codeview).toEqual(
       expect.arrayContaining(['codeview', 'compiler-codegen', 'debug-metadata', 'pdb'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS['tee-enclave']).toEqual(
+      expect.arrayContaining([
+        'tee-enclave',
+        'confidential-computing',
+        'tee',
+        'sgx',
+        'optee',
+        'op-tee',
+        'tdx',
+        'sev-snp',
+      ])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['sgx-enclave']).toEqual(
+      expect.arrayContaining(['sgx-enclave', 'sgx', 'sigstruct', 'mrenclave', 'mrsigner'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['optee-ta']).toEqual(
+      expect.arrayContaining(['optee-ta', 'optee', 'op-tee-ta', 'tee-ta', 'trustzone'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['op-tee-ta']).toEqual(
+      expect.arrayContaining(['op-tee-ta', 'optee-ta', 'op-tee', 'trusted-application'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['tdx-quote']).toEqual(
+      expect.arrayContaining(['tdx-quote', 'tdx', 'tdreport', 'attestation'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['sev-snp']).toEqual(
+      expect.arrayContaining(['sev-snp', 'sev', 'snp-attestation', 'attestation'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS.sys).toEqual(
       expect.arrayContaining(['sys', 'pe', 'windows-driver', 'kernel-driver', 'ioctl'])
     )
