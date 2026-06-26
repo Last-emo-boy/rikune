@@ -296,6 +296,74 @@ describe('workflow.run', () => {
     )
   })
 
+  test('prioritizes function-map artifacts over noisy string chunks in selectors', async () => {
+    const status = jest.fn<Promise<WorkerResult>, [Record<string, unknown>]>().mockResolvedValue(
+      okRunResult({
+        run: {
+          id: 'run-1',
+          sample_id: 'sha256:abc',
+          status: 'partial',
+          latest_stage: 'function_map',
+          stages: [
+            {
+              stage: 'function_map',
+              status: 'partial',
+              artifact_refs: [
+                ...Array.from({ length: 14 }, (_, index) => ({
+                  id: `artifact-string-${index}`,
+                  type: 'enriched_string_analysis',
+                  path: `reports/strings/default/enriched_strings_chunk_${index}.json`,
+                  sha256: 'c'.repeat(64),
+                  mime: 'application/json',
+                })),
+                {
+                  id: 'artifact-rizin-functions',
+                  type: 'backend_rizin_functions',
+                  path: 'reports/backend_tools/default/rizin/functions.json',
+                  sha256: 'd'.repeat(64),
+                  mime: 'application/json',
+                },
+                {
+                  id: 'artifact-ghidra-functions',
+                  type: 'ghidra_functions',
+                  path: 'ghidra/functions.json',
+                  sha256: 'e'.repeat(64),
+                  mime: 'application/json',
+                },
+              ],
+            },
+          ],
+        },
+      })
+    )
+    const handler = createWorkflowRunHandler({
+      requestUpload: jest.fn() as any,
+      start: jest.fn() as any,
+      status,
+      promote: jest.fn() as any,
+    })
+
+    const result = await handler({ action: 'status', plan_id: 'run-1' })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.artifact_selectors.slice(0, 2).map((item: any) => item.artifact_id)).toEqual(
+      expect.arrayContaining(['artifact-ghidra-functions', 'artifact-rizin-functions'])
+    )
+    expect(data.artifact_selector_summary).toEqual(
+      expect.objectContaining({
+        selector_count: 12,
+        omitted_count: 4,
+        latest_stage: 'function_map',
+        by_type: expect.objectContaining({
+          enriched_string_analysis: 14,
+          backend_rizin_functions: 1,
+          ghidra_functions: 1,
+        }),
+      })
+    )
+  })
+
   test('requires sample_id or plan_id according to action', async () => {
     const handler = createWorkflowRunHandler({
       requestUpload: jest.fn() as any,

@@ -21,6 +21,8 @@ const TOOL_VERSION = '0.1.0'
 const SUMMARY_MAX_BYTES = 64 * 1024
 const SUMMARY_PREVIEW_CHARS = 2048
 const RELATED_ARTIFACT_LIMIT = 8
+const JSON_SUMMARY_PARSE_MAX_BYTES = 8 * 1024 * 1024
+const STRING_SIGNAL_LIMIT = 25
 
 const TEXT_EXTENSIONS = new Set([
   '.txt',
@@ -370,6 +372,196 @@ function summarizeText(content: string): Record<string, unknown> {
   }
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function recordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          item !== null && typeof item === 'object' && !Array.isArray(item)
+      )
+    : []
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function extractStringItems(value: unknown): Record<string, unknown>[] {
+  const root = asRecord(value)
+  const data = asRecord(root.data)
+  for (const candidate of [
+    recordArray(data.strings),
+    recordArray(root.strings),
+    recordArray(data.decoded_strings),
+    recordArray(root.decoded_strings),
+  ]) {
+    if (candidate.length > 0) {
+      return candidate
+    }
+  }
+  return []
+}
+
+function printableAsciiRatio(value: string): number {
+  if (value.length === 0) {
+    return 0
+  }
+  let printable = 0
+  for (const char of value) {
+    const code = char.charCodeAt(0)
+    if ((code >= 0x20 && code <= 0x7e) || code === 0x09) {
+      printable += 1
+    }
+  }
+  return printable / value.length
+}
+
+function scoreStringSignal(value: string, encoding?: string): { score: number; reasons: string[] } {
+  const lower = value.toLowerCase()
+  const reasons: string[] = []
+  let score = 0
+  const ratio = printableAsciiRatio(value)
+
+  if (ratio >= 0.9) {
+    score += 4
+    reasons.push('printable-ascii')
+  } else if (ratio < 0.6 && !/https?:\/\//i.test(value)) {
+    score -= 8
+    reasons.push('low-printable-ratio')
+  }
+
+  if (encoding === 'ascii' || encoding === 'utf16le' || encoding === 'utf16be') {
+    score += 2
+    reasons.push(`encoding:${encoding}`)
+  } else if (encoding && !['utf8', 'utf-8'].includes(encoding.toLowerCase())) {
+    score -= 2
+    reasons.push(`encoding:${encoding}`)
+  }
+
+  const semanticTerms = [
+    'password',
+    'passwd',
+    'pass',
+    'serial',
+    'license',
+    'key',
+    'flag',
+    'correct',
+    'wrong',
+    'invalid',
+    'success',
+    'failed',
+    'congrat',
+    'try again',
+    'usage',
+    'error',
+    'debug',
+    'admin',
+    'token',
+  ]
+  for (const term of semanticTerms) {
+    if (lower.includes(term)) {
+      score += 8
+      reasons.push(`keyword:${term}`)
+    }
+  }
+
+  if (/https?:\/\/|\\\\\.\\pipe\\|hkey_|\\system32\\|\.dll\b|\.exe\b/i.test(value)) {
+    score += 7
+    reasons.push('ioc-or-platform-string')
+  }
+  if (/^[A-Za-z0-9_.$?@-]{4,80}$/.test(value)) {
+    score += 2
+    reasons.push('symbol-like')
+  }
+  if (value.length > 160) {
+    score -= 4
+    reasons.push('very-long')
+  }
+  if (/[\u4e00-\u9fff]/.test(value) && ratio < 0.75) {
+    score -= 6
+    reasons.push('likely-misdecoded')
+  }
+
+  return { score, reasons }
+}
+
+function buildStringArtifactSummary(value: unknown): Record<string, unknown> | undefined {
+  const strings = extractStringItems(value)
+  if (strings.length === 0) {
+    return undefined
+  }
+
+  type StringSignal = {
+    offset: number | undefined
+    string: string
+    encoding: string | undefined
+    score: number
+    reasons: string[]
+  }
+
+  const encodingCounts: Record<string, number> = {}
+  const scored = strings
+    .map((item) => {
+      const text = stringValue(item.string) ?? stringValue(item.value) ?? stringValue(item.text)
+      if (!text) {
+        return null
+      }
+      const encoding = stringValue(item.encoding)
+      encodingCounts[encoding ?? 'unknown'] = (encodingCounts[encoding ?? 'unknown'] ?? 0) + 1
+      const scored = scoreStringSignal(text, encoding)
+      return {
+        offset: numberValue(item.offset),
+        string: text,
+        encoding,
+        score: scored.score,
+        reasons: scored.reasons,
+      }
+    })
+    .filter((item): item is StringSignal => item !== null)
+
+  const highSignal = scored
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.string.length - b.string.length)
+    .slice(0, STRING_SIGNAL_LIMIT)
+    .map((item) => ({
+      ...(item.offset !== undefined ? { offset: item.offset } : {}),
+      string: item.string,
+      ...(item.encoding ? { encoding: item.encoding } : {}),
+      score: item.score,
+      reasons: item.reasons.slice(0, 5),
+    }))
+
+  return {
+    schema: 'rikune.enriched_string_summary.v1',
+    total_strings: strings.length,
+    scored_strings: scored.length,
+    high_signal_count: highSignal.length,
+    encoding_counts: encodingCounts,
+    high_signal_strings: highSignal,
+    noise_filtered_count: scored.filter((item) => item.score <= 0).length,
+  }
+}
+
+function buildJsonDomainSummary(
+  artifact: ArtifactInventoryItem,
+  value: unknown
+): Record<string, unknown> | undefined {
+  if (artifact.type === 'enriched_string_analysis') {
+    return buildStringArtifactSummary(value)
+  }
+  return undefined
+}
+
 function buildContentSummary(params: {
   artifact: ArtifactInventoryItem
   sample: Buffer
@@ -379,6 +571,9 @@ function buildContentSummary(params: {
   totalSize: number
   truncated: boolean
   includeHighlights: boolean
+  fullJsonShape?: Record<string, unknown>
+  jsonDomainSummary?: Record<string, unknown>
+  jsonParseSkippedReason?: string
 }): Record<string, unknown> {
   const payloadKind = payloadKindFor(params.artifact, params.sample)
   const summary: Record<string, unknown> = {
@@ -399,10 +594,19 @@ function buildContentSummary(params: {
       summary.highlights = extractIOCTextHighlights(params.content)
     }
     if (payloadKind === 'json') {
-      try {
-        summary.json_shape = jsonShape(JSON.parse(params.content))
-      } catch (error) {
-        summary.json_parse_warning = (error as Error).message
+      if (params.fullJsonShape) {
+        summary.json_shape = params.fullJsonShape
+      } else if (params.truncated) {
+        summary.json_parse_skipped = params.jsonParseSkippedReason || 'summary content truncated'
+      } else {
+        try {
+          summary.json_shape = jsonShape(JSON.parse(params.content))
+        } catch (error) {
+          summary.json_parse_warning = (error as Error).message
+        }
+      }
+      if (params.jsonDomainSummary) {
+        summary.domain_summary = params.jsonDomainSummary
       }
     }
   }
@@ -615,6 +819,27 @@ export function createArtifactReadHandler(
             ? readResult.buffer.toString('utf-8')
             : readResult.buffer.toString('base64')
 
+        let fullJsonShape: Record<string, unknown> | undefined
+        let jsonDomainSummary: Record<string, unknown> | undefined
+        let jsonParseSkippedReason: string | undefined
+        const payloadKind = payloadKindFor(selected, readResult.buffer)
+        if (readMode === 'summary' && encoding === 'utf8' && payloadKind === 'json') {
+          if (totalSize <= JSON_SUMMARY_PARSE_MAX_BYTES) {
+            try {
+              const fullJsonText = readResult.truncated
+                ? await fs.readFile(artifactAbsPath, 'utf8')
+                : renderedContent
+              const parsed = JSON.parse(fullJsonText)
+              fullJsonShape = jsonShape(parsed)
+              jsonDomainSummary = buildJsonDomainSummary(selected, parsed)
+            } catch (error) {
+              jsonParseSkippedReason = `full JSON parse failed: ${(error as Error).message}`
+            }
+          } else {
+            jsonParseSkippedReason = `artifact exceeds JSON summary parse limit (${JSON_SUMMARY_PARSE_MAX_BYTES} bytes)`
+          }
+        }
+
         if (readMode === 'summary') {
           responseData.summary = buildContentSummary({
             artifact: selected,
@@ -625,6 +850,9 @@ export function createArtifactReadHandler(
             totalSize,
             truncated: readResult.truncated,
             includeHighlights: input.ioc_highlights,
+            fullJsonShape,
+            jsonDomainSummary,
+            jsonParseSkippedReason,
           })
         }
 
