@@ -137,6 +137,17 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS.apks).toEqual(expect.arrayContaining(['android', 'split-apk']))
     expect(SURFACE_FILE_TYPE_TAGS.ipa).toEqual(expect.arrayContaining(['ios', 'macho']))
     expect(SURFACE_FILE_TYPE_TAGS.wasm).toContain('wasi')
+    expect(SURFACE_FILE_TYPE_TAGS['wasm-component']).toEqual(
+      expect.arrayContaining([
+        'wasm-component',
+        'component-model',
+        'wit-component',
+        'wasi-preview2',
+      ])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['wasi-preview2']).toEqual(
+      expect.arrayContaining(['wasi-preview2', 'component-model', 'wasm-component', 'wasi'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS['cuda-ptx']).toEqual(
       expect.arrayContaining(['ptx', 'cuda', 'gpu', 'sass'])
     )

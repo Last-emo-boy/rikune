@@ -12,6 +12,7 @@ import { buildLinuxPackageInventoryFromBuffer } from '../../src/plugins/linux-pa
 import { buildAppleContainerInventoryFromBuffer } from '../../src/plugins/apple-container/tools/apple-container-inventory.js'
 import { buildJvmStructureFromBuffer } from '../../src/plugins/jvm/tools/jvm-structure-analyze.js'
 import { buildWasmStructureFromBuffer } from '../../src/plugins/wasm/tools/wasm-structure-analyze.js'
+import { buildWasmComponentInventoryFromBuffer } from '../../src/plugins/wasm-component/tools/wasm-component-inventory.js'
 import { buildBytecodeMetadataFromBuffer } from '../../src/plugins/bytecode/tools/bytecode-metadata-inspect.js'
 import { buildBtfInventoryFromBuffer } from '../../src/plugins/btf/tools/btf-type-inventory.js'
 import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitcode/tools/llvm-bitcode-inventory.js'
@@ -171,6 +172,59 @@ function shaderSpirvFixture(): Buffer {
   const data = Buffer.alloc(words.length * 4)
   words.forEach((word, index) => data.writeUInt32LE(word >>> 0, index * 4))
   return data
+}
+
+function wasmComponentU32Leb(value: number): number[] {
+  const bytes: number[] = []
+  let remaining = value >>> 0
+  do {
+    let byte = remaining & 0x7f
+    remaining >>>= 7
+    if (remaining !== 0) byte |= 0x80
+    bytes.push(byte)
+  } while (remaining !== 0)
+  return bytes
+}
+
+function wasmComponentName(value: string): number[] {
+  const bytes = [...Buffer.from(value, 'utf8')]
+  return [...wasmComponentU32Leb(bytes.length), ...bytes]
+}
+
+function wasmComponentExternName(value: string): number[] {
+  return [0x00, ...wasmComponentName(value)]
+}
+
+function wasmComponentSection(id: number, payload: number[]): number[] {
+  return [id, ...wasmComponentU32Leb(payload.length), ...payload]
+}
+
+function wasmComponentFixture(): Buffer {
+  return Buffer.from([
+    0x00,
+    0x61,
+    0x73,
+    0x6d,
+    0x0d,
+    0x00,
+    0x01,
+    0x00,
+    ...wasmComponentSection(0, wasmComponentName('component-name')),
+    ...wasmComponentSection(1, [0x00]),
+    ...wasmComponentSection(8, [0x01, 0x00]),
+    ...wasmComponentSection(10, [
+      0x01,
+      ...wasmComponentExternName('wasi:http/outgoing-handler@0.2.0'),
+      0x01,
+      0x00,
+    ]),
+    ...wasmComponentSection(11, [
+      0x01,
+      ...wasmComponentExternName('example:component/run@1.0.0'),
+      0x01,
+      0x00,
+    ]),
+  ])
 }
 
 function btfFixture(): Buffer {
@@ -468,7 +522,9 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(elfFixture(2), 'tool')).toBe('ELF-Executable')
     expect(detectFileType(elfFixture(3), 'libdemo.so')).toBe('ELF-SO')
     expect(detectFileType(elfFixture(4), 'core.123')).toBe('ELF-Core')
+    expect(detectFileType(wasmComponentFixture(), 'component.wasm')).toBe('WASM-Component')
     expect(detectFileType(Buffer.from([0x00, 0x61, 0x73, 0x6d]), 'module.wasm')).toBe('WASM')
+    expect(detectFileType(Buffer.alloc(16), 'demo.component.wasm')).toBe('WASM-Component')
     expect(detectFileType(Buffer.alloc(16), 'program.bpf')).toBe('eBPF-Bytecode')
     expect(detectFileType(Buffer.alloc(16), 'program.ebpf')).toBe('eBPF-Bytecode')
     expect(detectFileType(Buffer.from([0x42, 0x43, 0xc0, 0xde]), 'module.bc')).toBe('LLVM-Bitcode')
@@ -872,6 +928,34 @@ describe('passive bytecode and portable runtime inventory', () => {
     )
   })
 
+  test('builds Wasm Component Model inventory without external tools or instantiation', () => {
+    const inventory = buildWasmComponentInventoryFromBuffer(wasmComponentFixture(), {
+      filename: 'component.wasm',
+    })
+
+    expect(inventory.format).toBe('wasm-component')
+    expect(inventory.component_preamble).toEqual(
+      expect.objectContaining({ version_field: 13, layer_field: 1, is_component: true })
+    )
+    expect(inventory.custom_sections).toContain('component-name')
+    expect(inventory.embedded_core_module_count).toBe(1)
+    expect(inventory.canonical_abi_definition_count).toBe(1)
+    expect(inventory.imports.map((item) => item.name)).toContain('wasi:http/outgoing-handler@0.2.0')
+    expect(inventory.exports.map((item) => item.name)).toContain('example:component/run@1.0.0')
+    expect(inventory.wasi_capability_hints).toEqual(expect.arrayContaining(['http', 'wasi']))
+    expect(inventory.capability_risk_summary.risk_level).toBe('high')
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_execute: true,
+        no_runtime_start: true,
+        no_instantiation: true,
+        no_wasi_grants: true,
+        no_external_tool: true,
+      })
+    )
+  })
+
   test('builds script bytecode metadata without starting interpreters', () => {
     const pyc = Buffer.alloc(32)
     pyc.writeUInt32LE(0x0a0d0da7, 0)
@@ -1132,6 +1216,7 @@ describe('passive generic container inventory', () => {
       'Payload/App.app.dSYM',
       'classes/demo.jar',
       'module.wasm',
+      'demo.component.wasm',
       'rootfs.squashfs',
     ])
 
@@ -1195,6 +1280,10 @@ describe('passive generic container inventory', () => {
         expect.objectContaining({
           path: 'module.wasm',
           recommended_tools: expect.arrayContaining(['wasm.structure.analyze']),
+        }),
+        expect.objectContaining({
+          path: 'demo.component.wasm',
+          recommended_tools: expect.arrayContaining(['wasm.component.inventory']),
         }),
         expect.objectContaining({
           path: 'rootfs.squashfs',
@@ -1322,6 +1411,7 @@ describe('built-in plugin format matrix discovery', () => {
     const appleContainer = plugins.find((plugin) => plugin.id === 'apple-container')
     const jvm = plugins.find((plugin) => plugin.id === 'jvm')
     const wasm = plugins.find((plugin) => plugin.id === 'wasm')
+    const wasmComponent = plugins.find((plugin) => plugin.id === 'wasm-component')
     const bytecode = plugins.find((plugin) => plugin.id === 'bytecode')
     const btf = plugins.find((plugin) => plugin.id === 'btf')
     const ebpfBytecode = plugins.find((plugin) => plugin.id === 'ebpf-bytecode')
@@ -1355,6 +1445,17 @@ describe('built-in plugin format matrix discovery', () => {
     expect(jvm?.tools?.map((tool) => tool.definition.name)).toContain('jvm.structure.analyze')
     expect(wasm?.aspects?.formats).toEqual(expect.arrayContaining(['wasm', 'wasi']))
     expect(wasm?.tools?.map((tool) => tool.definition.name)).toContain('wasm.structure.analyze')
+    expect(wasmComponent?.aspects?.formats).toEqual(
+      expect.arrayContaining([
+        'wasm-component',
+        'component-model',
+        'wit-component',
+        'wasi-preview2',
+      ])
+    )
+    expect(wasmComponent?.tools?.map((tool) => tool.definition.name)).toContain(
+      'wasm.component.inventory'
+    )
     expect(bytecode?.aspects?.formats).toEqual(
       expect.arrayContaining(['pyc', 'lua-bytecode', 'v8-cache'])
     )
@@ -1468,6 +1569,7 @@ describe('built-in plugin format matrix discovery', () => {
     const llvmBitcode = requirePlugin(plugins, 'llvm-bitcode')
     const mlModel = requirePlugin(plugins, 'ml-model')
     const shaderIr = requirePlugin(plugins, 'shader-ir')
+    const wasmComponent = requirePlugin(plugins, 'wasm-component')
     const androidPackage = requirePlugin(plugins, 'android-package')
     const appleSigning = requirePlugin(plugins, 'apple-signing')
     const linuxBinary = requirePlugin(plugins, 'linux-binary')
@@ -1511,6 +1613,13 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(shaderIr.aspects?.capabilities).toEqual(
       expect.arrayContaining(['shader-ir-inventory', 'spirv-entrypoint-reflection'])
+    )
+    expect(wasmComponent.aspects?.capabilities).toEqual(
+      expect.arrayContaining([
+        'component-model-inventory',
+        'wit-interface-hints',
+        'canonical-abi-summary',
+      ])
     )
     expect(peAnalysis.aspects?.capabilities).toEqual(
       expect.arrayContaining(['security-profile', 'mitigation-profile', 'loader-security'])
@@ -1642,6 +1751,37 @@ describe('built-in plugin format matrix discovery', () => {
       producesArtifacts: ['shader_ir_inventory'],
       evidence: ['structure', 'metadata', 'strings', 'resources', 'workflow'],
       safety: ['passive', 'no_gpu_driver', 'no_gpu_access', 'no_shader_compiler'],
+    })
+    expectToolMetadata(wasmComponent, 'wasm.component.inventory', {
+      formats: ['wasm-component', 'component-model', 'wit-component', 'wasi-preview2'],
+      artifacts: ['wasm_component_inventory'],
+      evidence: [
+        'structure',
+        'imports',
+        'exports',
+        'wasi-capability',
+        'wit-interface',
+        'canonical-abi',
+        'workflow',
+      ],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'wasm-component',
+      toolName: 'wasm.component.inventory',
+      recipeId: 'wasm.component-static-inventory',
+      startsWith: ['wasm.component.inventory'],
+      nextTools: ['wasm.structure.analyze', 'wasm.runtime.plan', 'analysis.evidence.graph'],
+      producesArtifacts: ['wasm_component_inventory'],
+      evidence: [
+        'structure',
+        'imports',
+        'exports',
+        'wasi-capability',
+        'wit-interface',
+        'canonical-abi',
+        'workflow',
+      ],
+      safety: ['passive', 'no_instantiation', 'no_wasi_grants', 'no_external_tool'],
     })
     expectToolMetadata(androidPackage, 'android.package.inventory', {
       formats: ['android-package', 'apk', 'dex'],
@@ -2199,6 +2339,33 @@ describe('built-in plugin format matrix discovery', () => {
           'no_model_load',
           'no_inference',
           'no_ml_framework_load',
+          'no_network_by_default',
+        ],
+      },
+      {
+        pluginId: 'wasm-component',
+        toolName: 'wasm.component.inventory',
+        recipeId: 'wasm.component-static-inventory',
+        startsWith: ['wasm.component.inventory'],
+        nextTools: ['wasm.structure.analyze', 'wasm.runtime.plan', 'analysis.evidence.graph'],
+        producesArtifacts: ['wasm_component_inventory'],
+        evidence: [
+          'structure',
+          'imports',
+          'exports',
+          'wasi-capability',
+          'wit-interface',
+          'canonical-abi',
+          'workflow',
+          'provenance',
+        ],
+        safety: [
+          'passive',
+          'no_live_sample_by_default',
+          'no_runtime_start',
+          'no_instantiation',
+          'no_wasi_grants',
+          'no_external_tool',
           'no_network_by_default',
         ],
       },

@@ -130,12 +130,14 @@ export const containerImageSecurityProfileToolDefinition: ToolDefinition = {
     {
       category: 'filesystem',
       artifactTypes: [ARTIFACT_TYPE],
-      description: 'Layer tar header evidence, whiteouts, SUID/world-writable paths, and package traces',
+      description:
+        'Layer tar header evidence, whiteouts, SUID/world-writable paths, and package traces',
     },
     {
       category: 'provenance',
       artifactTypes: [ARTIFACT_TYPE],
-      description: 'Image config, history, labels, repo tags, digest references, and platform metadata',
+      description:
+        'Image config, history, labels, repo tags, digest references, and platform metadata',
     },
     {
       category: 'package-metadata',
@@ -253,9 +255,7 @@ type LayerScan = {
   nested_binary_paths: string[]
 }
 
-export type ContainerImageSecurityProfile = z.infer<
-  typeof ContainerImageSecurityProfileDataSchema
->
+export type ContainerImageSecurityProfile = z.infer<typeof ContainerImageSecurityProfileDataSchema>
 
 function normalizePath(value: string): string {
   return value.replace(/\\/g, '/').replace(/^\.?\//, '')
@@ -343,7 +343,9 @@ function vector(value: string[] | string | null | undefined): string[] {
 
 function isRootUser(user?: string): boolean {
   const normalized = (user ?? '').trim()
-  return normalized === '' || normalized === '0' || normalized === 'root' || normalized.startsWith('0:')
+  return (
+    normalized === '' || normalized === '0' || normalized === 'root' || normalized.startsWith('0:')
+  )
 }
 
 function envName(value: string): string {
@@ -383,7 +385,8 @@ function historyRisk(createdBy: string): string[] {
   if (/\b(?:apt-get|apt|apk|yum|dnf)\s+install\b/i.test(createdBy)) {
     risks.push('package-install-history')
   }
-  if (/\b(?:npm|pip|gem)\s+install\b/i.test(createdBy)) risks.push('language-package-install-history')
+  if (/\b(?:npm|pip|gem)\s+install\b/i.test(createdBy))
+    risks.push('language-package-install-history')
   return risks
 }
 
@@ -431,9 +434,14 @@ function detectFormat(data: Buffer, filename?: string): { format: string; detect
   return { format: 'unknown', detectedBy: ['unknown'] }
 }
 
-function layerBytes(layer: TarMember, ref: LayerReference): { bytes?: Buffer; compressed: boolean; reason?: string } {
+function layerBytes(
+  layer: TarMember,
+  ref: LayerReference
+): { bytes?: Buffer; compressed: boolean; reason?: string } {
   const compressed =
-    /\.t?gz$/i.test(layer.path) || /gzip/i.test(ref.mediaType ?? '') || layer.data.subarray(0, 2).equals(Buffer.from([0x1f, 0x8b]))
+    /\.t?gz$/i.test(layer.path) ||
+    /gzip/i.test(ref.mediaType ?? '') ||
+    layer.data.subarray(0, 2).equals(Buffer.from([0x1f, 0x8b]))
   if (!compressed) return { bytes: layer.data, compressed: false }
   try {
     return { bytes: zlib.gunzipSync(layer.data), compressed: true }
@@ -447,7 +455,11 @@ function layerBytes(layer: TarMember, ref: LayerReference): { bytes?: Buffer; co
   }
 }
 
-function scanLayer(ref: LayerReference, members: Map<string, TarMember>, maxLayerBytes: number): LayerScan {
+function scanLayer(
+  ref: LayerReference,
+  members: Map<string, TarMember>,
+  maxLayerBytes: number
+): LayerScan {
   const layer = members.get(ref.path)
   if (!layer) {
     return {
@@ -552,14 +564,22 @@ function scanLayer(ref: LayerReference, members: Map<string, TarMember>, maxLaye
   }
 }
 
-function selectDockerImage(
-  members: Map<string, TarMember>
-): { selected: Record<string, unknown>; config?: ImageConfig; configDigest?: string; layers: LayerReference[] } {
+function selectDockerImage(members: Map<string, TarMember>): {
+  selected: Record<string, unknown>
+  config?: ImageConfig
+  configDigest?: string
+  layers: LayerReference[]
+} {
   const manifest = parseJson<DockerManifestEntry[]>(members.get('manifest.json')) ?? []
   const first = manifest[0] ?? {}
   const configPath = first.Config
   const config = parseJson<ImageConfig>(configPath ? members.get(configPath) : undefined)
-  const configDigest = configPath ? crypto.createHash('sha256').update(members.get(configPath)?.data ?? Buffer.alloc(0)).digest('hex') : undefined
+  const configDigest = configPath
+    ? crypto
+        .createHash('sha256')
+        .update(members.get(configPath)?.data ?? Buffer.alloc(0))
+        .digest('hex')
+    : undefined
   return {
     selected: {
       repo_tags: first.RepoTags ?? [],
@@ -576,9 +596,12 @@ function selectDockerImage(
   }
 }
 
-function selectOciImage(
-  members: Map<string, TarMember>
-): { selected: Record<string, unknown>; config?: ImageConfig; configDigest?: string; layers: LayerReference[] } {
+function selectOciImage(members: Map<string, TarMember>): {
+  selected: Record<string, unknown>
+  config?: ImageConfig
+  configDigest?: string
+  layers: LayerReference[]
+} {
   const index = parseJson<{ manifests?: OciDescriptor[] }>(members.get('index.json')) ?? {}
   const descriptor = index.manifests?.[0]
   const manifestPath = blobPathForDigest(descriptor?.digest)
@@ -627,7 +650,9 @@ function runtimeConfig(config: ImageConfig | undefined) {
     entrypoint,
     cmd,
     shell,
-    shell_entrypoint: entrypoint.some((item) => /(?:^|\/)(?:sh|bash|dash|ash|powershell|cmd)(?:\.exe)?$/i.test(item)),
+    shell_entrypoint: entrypoint.some((item) =>
+      /(?:^|\/)(?:sh|bash|dash|ash|powershell|cmd)(?:\.exe)?$/i.test(item)
+    ),
     exposed_ports: exposedPorts,
     privileged_ports: exposedPorts.filter((port) => {
       const value = Number.parseInt(port, 10)
@@ -676,7 +701,9 @@ function summarizeLayers(layers: LayerReference[], scans: LayerScan[]) {
     package_manager_paths: scans
       .flatMap((scan) => scan.package_manager_paths)
       .slice(0, MAX_PREVIEW_ITEMS),
-    nested_binary_paths: scans.flatMap((scan) => scan.nested_binary_paths).slice(0, MAX_PREVIEW_ITEMS),
+    nested_binary_paths: scans
+      .flatMap((scan) => scan.nested_binary_paths)
+      .slice(0, MAX_PREVIEW_ITEMS),
     skipped_layers: scans
       .filter((scan) => !scan.scanned)
       .map((scan) => ({
@@ -745,7 +772,10 @@ export function buildContainerImageSecurityProfileFromBuffer(
     layers: layerSummary,
     history: historySummary,
   })
-  const riskScore = Math.min(100, riskFlags.reduce((sum, flag) => sum + riskWeight(flag), 0))
+  const riskScore = Math.min(
+    100,
+    riskFlags.reduce((sum, flag) => sum + riskWeight(flag), 0)
+  )
   const unsupported =
     detected.format === 'unknown'
       ? 'Input did not look like a Docker save tar or OCI image layout in the bounded preview.'
@@ -773,8 +803,7 @@ export function buildContainerImageSecurityProfileFromBuffer(
     config_digest: image.configDigest,
     platform: {
       os:
-        image.config?.os ??
-        (image.selected['platform'] as Record<string, unknown> | undefined)?.os,
+        image.config?.os ?? (image.selected['platform'] as Record<string, unknown> | undefined)?.os,
       architecture:
         image.config?.architecture ??
         (image.selected['platform'] as Record<string, unknown> | undefined)?.architecture,
@@ -824,7 +853,9 @@ export function buildContainerImageSecurityProfileFromBuffer(
         {
           goal: 'container-runtime-default-review',
           priority:
-            runtime.root_user_default || runtime.secret_like_env_names.length > 0 ? 'high' : 'normal',
+            runtime.root_user_default || runtime.secret_like_env_names.length > 0
+              ? 'high'
+              : 'normal',
           next_tools: ['artifact.read', 'analysis.evidence.graph', 'report.generate'],
           required_evidence: ['runtime_config', 'risk_flags'],
         },

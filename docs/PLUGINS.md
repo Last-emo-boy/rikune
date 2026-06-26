@@ -21,7 +21,7 @@ A plugin can:
 
 ## Built-In Plugins
 
-The repository currently contains 99 built-in plugins.
+The repository currently contains 100 built-in plugins.
 
 | ID | Name | Domain | Surface tier |
 | --- | --- | --- | --- |
@@ -117,6 +117,7 @@ The repository currently contains 99 built-in plugins.
 | `vuln-scanner` | Vulnerability Scanner | static | 2 |
 | `wabt` | WABT Toolchain Plan | static | 3 |
 | `wasm` | WebAssembly Inventory | static | 1 |
+| `wasm-component` | WebAssembly Component Model Inventory | static | 1 |
 | `wasm-runtime` | WASM Runtime Plan | dynamic | 2 |
 | `windows-debug-symbols` | Windows Debug Symbols Inventory | static | 1 |
 | `windows-installer` | Windows Installer Inventory | static | 1 |
@@ -273,6 +274,7 @@ emulators, or attach debuggers.
 | `container.image-security-profile` | `container-analysis` | `container.image.security.profile` | `container.structure.analyze`, `sbom.provenance.graph`, `sbom.generate`, `analysis.evidence.graph`, `report.generate` | Passive Docker/OCI image config and layer-header profile only; no registry network, Docker daemon, image load, layer extraction, mount, package install, entrypoint, mutation, or CVE lookup. |
 | `ml.model-static-inventory` | `ml-model` | `ml.model.inventory` | `artifact.read`, `metadata.extract`, `strings.extract`, `analysis.evidence.graph`, `report.generate` | Passive ML model artifact inventory for SafeTensors, GGUF/GGML, ONNX, TFLite, PyTorch/pickle checkpoints, and NumPy arrays; no deserialization, model load, inference, ML framework import, archive extraction, mutation, or network. |
 | `shader.ir-static-inventory` | `shader-ir` | `shader.ir.inventory` | `artifact.read`, `metadata.extract`, `strings.extract`, `llvm.bitcode.inventory`, `culifter.gpu.plan`, `analysis.evidence.graph`, `report.generate` | Passive shader IR inventory for SPIR-V, DXIL/DXBC containers, WGSL source, and Metal library hints; no validator, compiler, disassembler, GPU driver, GPU access, shader runtime, sample execution, mutation, or network. |
+| `wasm.component-static-inventory` | `wasm-component` | `wasm.component.inventory` | `wasm.structure.analyze`, `wasm.runtime.plan`, `wabt.toolchain.plan`, `analysis.evidence.graph`, `artifact.read`, `strings.extract`, `sbom.generate` | Passive WebAssembly Component Model inventory for WIT/WASI Preview 2, component imports/exports, and Canonical ABI hints; no component instantiation, wasmtime start, WASI grant, external wasm tooling, package fetch, mutation, or network. |
 | `android.static.behavior-graph` | `android` | `android.behavior.graph` | `dex.classes.list`, `android.runtime.plan` | Static graph only; no APK launch, device connection, or runtime start. |
 | `apple.security.runtime-profile` | `apple-signing` | `apple.security.profile` | `macho.structure.analyze`, `macos.runtime.plan`, `ios.runtime.plan` | Static profile only; no mount, install, keychain, codesign, or device action. |
 | `pe.security.hardening-profile` | `pe-analysis` | `pe.security.profile` | `pe.structure.analyze`, `pe.imports.extract`, `pe.pdata.extract`, `analysis.evidence.graph`, `windows.runtime.plan` | Static PE mitigation profile only; no DLL load, loader invocation, exploit test, network, or mutation. |
@@ -409,7 +411,7 @@ The current plugin matrix is organized by `formats`, `platforms`, `execution`, `
 | JavaScript, Node/browser bundles, source maps, JSVMP-like obfuscation | `javascript-deobfuscation`, `jsvmp-analysis`, `jsimplifier`, `jsir-cascade`, `restringer`, `strings`, `yara`, `yara-x`, `bytecode` | Worker-backed REstringer, JSIMPLIFIER, and JSIR/CASCADE tools remain explicit backend surfaces with builtin safe mode | No JavaScript evaluation, Node/V8 start, browser automation, dynamic trace, LLM call, network lookup, or external deobfuscator invocation by default. |
 | Advanced native lifting, symbolic execution, IR, GPU artifacts, and backend comparison workflows | `revng`, `triton`, `miasm`, `lief`, `radare2`, `remill`, `gtirb`, `manifold`, `llvm-bitcode`, `shader-ir`, `cuda-binary`, `culifter`, `vm-analysis`, `rizin`, `ghidra`, `retdec` | Worker-backed GTIRB, Remill, Manifold, QBDI, and CuLifter surfaces are bounded and readiness-gated; runtime/emulation remains opt-in | Discovery/readiness/help/list paths emit backend plans and readiness metadata only; no LLVM toolchain, heavy backend process, solver, emulator, fact engine, binary mutation, shader compiler, CUDA driver, GPU access, or sample execution starts during discovery. |
 | Firmware, containers, archives, native objects | `firmware`, `container-analysis`, `native-object`, `linux-package`, `windows-installer` | `qiling`, `linux-runtime`, `wasm-runtime` when applicable | No mount, extraction-to-execute path, package install, module insertion, or payload launch by default. |
-| WASM/WASI | `wasm`, `wabt`, `strings`, `sbom` | `wasm-runtime` | No module instantiation, WABT process, wasmtime start, filesystem preopen, or network grant by default. |
+| WASM/WASI and Component Model | `wasm`, `wasm-component`, `wabt`, `strings`, `sbom` | `wasm-runtime` | No module/component instantiation, WABT/wasm-tools process, wasmtime start, filesystem preopen, package fetch, or network grant by default. |
 | Network, host, memory, reports | `pcap-analysis`, `host-correlation`, `memory-forensics`, `visualization`, `reporting` | `behavior-first`, `dynamic.behavior.diff`, `analysis.evidence.graph` | Correlation tools operate on existing artifacts and do not start live collection. |
 
 ## Aspect Authoring

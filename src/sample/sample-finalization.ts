@@ -510,12 +510,13 @@ export function detectFileType(data: Buffer, filename?: string): string {
   }
 
   if (
-    data.length >= 4 &&
+    data.length >= 8 &&
     data[0] === 0x00 &&
     data[1] === 0x61 &&
     data[2] === 0x73 &&
     data[3] === 0x6d
   ) {
+    if (data.readUInt16LE(6) === 1) return 'WASM-Component'
     return 'WASM'
   }
 
@@ -735,6 +736,9 @@ export function detectFileType(data: Buffer, filename?: string): string {
     case 'ipa':
       return 'IPA'
     case 'wasm':
+      if (basename.endsWith('.component.wasm') || basename.endsWith('.wit.wasm')) {
+        return 'WASM-Component'
+      }
       return 'WASM'
     case 'ptx':
       return 'CUDA-PTX'
