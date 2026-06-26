@@ -144,6 +144,18 @@ export function detectFileType(data: Buffer, filename?: string): string {
     return 'BTF'
   }
 
+  if (
+    data.length >= 8 &&
+    (data.readBigUInt64LE(0) === 0x8b47f2a4d7623eebn ||
+      data.readBigUInt64BE(0) === 0x8b47f2a4d7623eebn)
+  ) {
+    return 'CTF-Archive'
+  }
+
+  if (data.length >= 2 && (data.readUInt16LE(0) === 0xdff2 || data.readUInt16BE(0) === 0xdff2)) {
+    return 'CTF'
+  }
+
   if (data.length >= 4 && data.subarray(0, 4).toString('ascii') === 'GGUF') {
     return 'GGUF'
   }
@@ -246,6 +258,22 @@ export function detectFileType(data: Buffer, filename?: string): string {
 
   if (extension === 'dsym' || basename.endsWith('.dsym')) {
     return 'dSYM'
+  }
+
+  if (extension === 'dwo') {
+    return 'DWO'
+  }
+
+  if (extension === 'dwp') {
+    return 'DWP'
+  }
+
+  if (extension === 'debug') {
+    return 'DWARF-Debug'
+  }
+
+  if (extension === 'ctf') {
+    return 'CTF'
   }
 
   if (extension === 'app') {
@@ -720,6 +748,14 @@ export function detectFileType(data: Buffer, filename?: string): string {
       return 'XCFramework'
     case 'dsym':
       return 'dSYM'
+    case 'dwo':
+      return 'DWO'
+    case 'dwp':
+      return 'DWP'
+    case 'debug':
+      return 'DWARF-Debug'
+    case 'ctf':
+      return 'CTF'
     case 'msi':
     case 'msp':
     case 'msm':

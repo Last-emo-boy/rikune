@@ -18,6 +18,7 @@ import { buildBytecodeMetadataFromBuffer } from '../../src/plugins/bytecode/tool
 import { buildBtfInventoryFromBuffer } from '../../src/plugins/btf/tools/btf-type-inventory.js'
 import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitcode/tools/llvm-bitcode-inventory.js'
 import { buildMlModelInventoryFromBuffer } from '../../src/plugins/ml-model/tools/ml-model-inventory.js'
+import { buildNativeDebugTypesInventoryFromBuffer } from '../../src/plugins/native-debug-types/tools/native-debug-types-inventory.js'
 import { buildShaderIrInventoryFromBuffer } from '../../src/plugins/shader-ir/tools/shader-ir-inventory.js'
 import { buildWindowsInstallerInventoryFromBuffer } from '../../src/plugins/windows-installer/tools/windows-installer-inventory.js'
 import { buildWindowsDebugMetadataFromBuffer } from '../../src/plugins/windows-debug-symbols/tools/windows-debug-metadata-inspect.js'
@@ -252,6 +253,19 @@ function btfFixture(): Buffer {
   header.writeUInt32LE(types.length, 16)
   header.writeUInt32LE(strings.length, 20)
   return Buffer.concat([header, types, strings])
+}
+
+function ctfDictionaryFixture(): Buffer {
+  const data = Buffer.alloc(48)
+  data.writeUInt16LE(0xdff2, 0)
+  data[2] = 4
+  data.writeUInt32LE(8, 16)
+  data.writeUInt32LE(12, 20)
+  data.writeUInt32LE(16, 24)
+  data.writeUInt32LE(24, 36)
+  data.writeUInt32LE(32, 40)
+  data.writeUInt32LE(8, 44)
+  return data
 }
 
 function mlSafeTensorsFixture(): Buffer {
@@ -610,6 +624,11 @@ describe('cross-platform file type detection', () => {
     expect(detectFileType(Buffer.from('fn main() {}'), 'shader.wgsl')).toBe('WGSL')
     expect(detectFileType(Buffer.from('MTLB'), 'default.metallib')).toBe('Metal-Metallib')
     expect(detectFileType(btfFixture(), 'vmlinux.btf')).toBe('BTF')
+    expect(detectFileType(Buffer.alloc(16), 'main.dwo')).toBe('DWO')
+    expect(detectFileType(Buffer.alloc(16), 'package.dwp')).toBe('DWP')
+    expect(detectFileType(Buffer.alloc(16), 'main.debug')).toBe('DWARF-Debug')
+    expect(detectFileType(ctfDictionaryFixture(), 'types.bin')).toBe('CTF')
+    expect(detectFileType(Buffer.alloc(16), 'types.ctf')).toBe('CTF')
   })
 
   test('detects CUDA PTX, CUBIN, and fatbin formats without masking host binaries', () => {
@@ -1162,6 +1181,31 @@ describe('passive bytecode and portable runtime inventory', () => {
     )
   })
 
+  test('builds native debug type inventory without invoking dumpers or symbol servers', () => {
+    const inventory = buildNativeDebugTypesInventoryFromBuffer(ctfDictionaryFixture(), {
+      filename: 'types.ctf',
+    })
+
+    expect(inventory.format).toBe('ctf')
+    expect(inventory.ctf).toEqual(
+      expect.objectContaining({
+        present: true,
+        format: 'ctf-dictionary',
+      })
+    )
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_external_tool: true,
+        no_symbol_server_download: true,
+        no_source_fetch: true,
+      })
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining(['native.object.inventory', 'workflow.search'])
+    )
+  })
+
   test('builds ML model inventory without deserializing or loading frameworks', () => {
     const inventory = buildMlModelInventoryFromBuffer(mlSafeTensorsFixture(), {
       filename: 'model.safetensors',
@@ -1537,6 +1581,7 @@ describe('built-in plugin format matrix discovery', () => {
     const unityManaged = plugins.find((plugin) => plugin.id === 'unity-managed')
     const containerAnalysis = plugins.find((plugin) => plugin.id === 'container-analysis')
     const nativeObject = plugins.find((plugin) => plugin.id === 'native-object')
+    const nativeDebugTypes = plugins.find((plugin) => plugin.id === 'native-debug-types')
     const androidPackage = plugins.find((plugin) => plugin.id === 'android-package')
     const appleSigning = plugins.find((plugin) => plugin.id === 'apple-signing')
     const appleObjcSwift = plugins.find((plugin) => plugin.id === 'apple-objc-swift')
@@ -1642,6 +1687,12 @@ describe('built-in plugin format matrix discovery', () => {
     expect(nativeObject?.tools?.map((tool) => tool.definition.name)).toContain(
       'native.object.inventory'
     )
+    expect(nativeDebugTypes?.aspects?.formats).toEqual(
+      expect.arrayContaining(['dwarf', 'split-dwarf', 'dwo', 'dwp', 'ctf'])
+    )
+    expect(nativeDebugTypes?.tools?.map((tool) => tool.definition.name)).toContain(
+      'native.debug.types.inventory'
+    )
     expect(androidPackage?.aspects?.formats).toEqual(
       expect.arrayContaining(['apk', 'aab', 'apks', 'xapk', 'dex', 'oat', 'vdex'])
     )
@@ -1684,6 +1735,7 @@ describe('built-in plugin format matrix discovery', () => {
     const apkSmali = requirePlugin(plugins, 'apk-smali')
     const firmware = requirePlugin(plugins, 'firmware')
     const nativeObject = requirePlugin(plugins, 'native-object')
+    const nativeDebugTypes = requirePlugin(plugins, 'native-debug-types')
     const btf = requirePlugin(plugins, 'btf')
     const ebpfBytecode = requirePlugin(plugins, 'ebpf-bytecode')
     const llvmBitcode = requirePlugin(plugins, 'llvm-bitcode')
@@ -1710,6 +1762,9 @@ describe('built-in plugin format matrix discovery', () => {
     expect(firmware.aspects?.formats).toEqual(expect.arrayContaining(['cpio', 'squashfs', 'ubi']))
     expect(nativeObject.aspects?.formats).toEqual(
       expect.arrayContaining(['object', 'static-lib', 'linux-kernel-module'])
+    )
+    expect(nativeDebugTypes.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['dwarf-unit-summary', 'ctf-type-metadata', 'type-graph-seeds'])
     )
     expect(btf.aspects?.capabilities).toEqual(
       expect.arrayContaining(['btf-type-inventory', 'core-relocation-inventory'])
@@ -1797,6 +1852,21 @@ describe('built-in plugin format matrix discovery', () => {
       formats: ['object', 'ar-static-lib', 'linux-kernel-module'],
       artifacts: ['native_object_inventory'],
       evidence: ['structure', 'symbols'],
+    })
+    expectToolMetadata(nativeDebugTypes, 'native.debug.types.inventory', {
+      formats: ['dwarf', 'split-dwarf', 'dwo', 'dwp', 'ctf'],
+      artifacts: ['native_debug_type_inventory'],
+      evidence: ['structure', 'debug-metadata', 'types', 'source-map', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'native-debug-types',
+      toolName: 'native.debug.types.inventory',
+      recipeId: 'native.debug-types-static-inventory',
+      startsWith: ['native.debug.types.inventory'],
+      nextTools: ['native.object.inventory', 'artifact.read', 'analysis.evidence.graph'],
+      producesArtifacts: ['native_debug_type_inventory'],
+      evidence: ['debug-metadata', 'types', 'source-map', 'workflow'],
+      safety: ['passive', 'no_external_tool', 'no_symbol_server_download', 'no_source_fetch'],
     })
     expectToolMetadata(btf, 'btf.type.inventory', {
       formats: ['btf', 'btf-ext', 'btf-elf', 'core-relocations'],
@@ -2555,6 +2625,22 @@ describe('built-in plugin format matrix discovery', () => {
           'no_app_launch',
           'no_external_tool',
           'no_runtime_start',
+        ],
+      },
+      {
+        pluginId: 'native-debug-types',
+        toolName: 'native.debug.types.inventory',
+        recipeId: 'native.debug-types-static-inventory',
+        startsWith: ['native.debug.types.inventory'],
+        nextTools: ['native.object.inventory', 'windows.debug.metadata.inspect'],
+        producesArtifacts: ['native_debug_type_inventory'],
+        evidence: ['debug-metadata', 'types', 'source-map', 'source-paths', 'workflow'],
+        safety: [
+          'passive',
+          'no_debugger',
+          'no_external_tool',
+          'no_symbol_server_download',
+          'no_source_fetch',
         ],
       },
       {
