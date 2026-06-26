@@ -334,6 +334,14 @@ export function detectFileType(data: Buffer, filename?: string): string {
     return 'eBPF-Bytecode'
   }
 
+  if (['syscall', 'syscallstub', 'ntdllstub', 'stub'].includes(extension ?? '')) {
+    return 'Syscall-Stub'
+  }
+
+  if (['sc', 'shellcode'].includes(extension ?? '')) {
+    return 'Raw-Shellcode'
+  }
+
   if (extension === 'framework') {
     return 'Framework'
   }
