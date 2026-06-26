@@ -13,6 +13,7 @@ import btfPlugin from '../../src/plugins/btf/index.js'
 import containerAnalysisPlugin from '../../src/plugins/container-analysis/index.js'
 import cppAbiLayoutPlugin from '../../src/plugins/cpp-abi-layout/index.js'
 import ebpfBytecodePlugin from '../../src/plugins/ebpf-bytecode/index.js'
+import kernelDriverSurfacePlugin from '../../src/plugins/kernel-driver-surface/index.js'
 import llvmBitcodePlugin from '../../src/plugins/llvm-bitcode/index.js'
 import mlModelPlugin from '../../src/plugins/ml-model/index.js'
 import nativeDebugTypesPlugin from '../../src/plugins/native-debug-types/index.js'
@@ -794,6 +795,48 @@ describe('workflow.search', () => {
     expect(cppAbiResult.readiness_state).not.toBe('runtime_opt_in_required')
     expect(data.search_profile.recommended_tools).toContain('cpp.abi.layout.inventory')
     expect(surface.isToolVisible('cpp.abi.layout.inventory')).toBe(false)
+    expect(surface.isToolVisible('tools.discover')).toBe(false)
+  })
+
+  test('recommends passive kernel driver surface inventory without runtime opt-in', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [kernelDriverSurfacePlugin]
+    surface.registerCoreTools([
+      'workflow.search',
+      'workflow.run',
+      'artifact.read',
+      'tools.discover',
+    ])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({
+      query:
+        'inspect kernel driver IOCTL IRP_MJ_DEVICE_CONTROL METHOD_NEITHER device object linux module unlocked_ioctl copy_from_user',
+      file_type: 'kernel-driver',
+      top_k: 5,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.search_profile.file_type_tags).toEqual(
+      expect.arrayContaining(['kernel-driver', 'driver-surface', 'ioctl'])
+    )
+    const driverResult = data.results.find(
+      (item: any) => item.plugin_id === 'kernel-driver-surface'
+    )
+    expect(driverResult).toEqual(
+      expect.objectContaining({
+        readiness_state: 'hidden_activation_required',
+        activation_required: true,
+        recommended_tools: expect.arrayContaining(['kernel.driver.surface.inventory']),
+      })
+    )
+    expect(driverResult.readiness_state).not.toBe('runtime_opt_in_required')
+    expect(data.search_profile.recommended_tools).toContain('kernel.driver.surface.inventory')
+    expect(surface.isToolVisible('kernel.driver.surface.inventory')).toBe(false)
     expect(surface.isToolVisible('tools.discover')).toBe(false)
   })
 

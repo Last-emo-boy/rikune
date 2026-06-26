@@ -202,6 +202,18 @@ describe('@rikune/plugin-sdk', () => {
     expect(SURFACE_FILE_TYPE_TAGS['msvc-abi']).toEqual(
       expect.arrayContaining(['msvc-abi', 'cpp-abi', 'vftable', 'vbtable'])
     )
+    expect(SURFACE_FILE_TYPE_TAGS.sys).toEqual(
+      expect.arrayContaining(['sys', 'pe', 'windows-driver', 'kernel-driver', 'ioctl'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['kernel-driver']).toEqual(
+      expect.arrayContaining(['kernel-driver', 'driver-surface', 'ioctl'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['windows-kernel-driver']).toEqual(
+      expect.arrayContaining(['windows-driver', 'wdm', 'kmdf', 'ioctl'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['linux-kernel-module']).toEqual(
+      expect.arrayContaining(['linux-driver', 'kernel-driver', 'driver-surface', 'ioctl'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS.bc).toEqual(
       expect.arrayContaining(['bc', 'llvm-bc', 'llvm-bitcode', 'llvm-ir'])
     )

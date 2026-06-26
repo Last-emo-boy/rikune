@@ -17,6 +17,7 @@ import { buildAppleObjcSwiftMetadataFromBuffer } from '../../src/plugins/apple-o
 import { buildBytecodeMetadataFromBuffer } from '../../src/plugins/bytecode/tools/bytecode-metadata-inspect.js'
 import { buildBtfInventoryFromBuffer } from '../../src/plugins/btf/tools/btf-type-inventory.js'
 import { buildCppAbiLayoutInventoryFromBuffer } from '../../src/plugins/cpp-abi-layout/tools/cpp-abi-layout-inventory.js'
+import { buildKernelDriverSurfaceInventoryFromBuffer } from '../../src/plugins/kernel-driver-surface/tools/kernel-driver-surface-inventory.js'
 import { buildLlvmBitcodeInventoryFromBuffer } from '../../src/plugins/llvm-bitcode/tools/llvm-bitcode-inventory.js'
 import { buildMlModelInventoryFromBuffer } from '../../src/plugins/ml-model/tools/ml-model-inventory.js'
 import { buildNativeDebugTypesInventoryFromBuffer } from '../../src/plugins/native-debug-types/tools/native-debug-types-inventory.js'
@@ -1600,6 +1601,55 @@ describe('passive C++ ABI layout inventory', () => {
   })
 })
 
+describe('passive kernel driver surface inventory', () => {
+  test('extracts IOCTL and module surface hints without loading drivers or modules', () => {
+    const ioctl = Buffer.alloc(4)
+    ioctl.writeUInt32LE((0x22 << 16) | (0x801 << 2) | 3, 0)
+    const inventory = buildKernelDriverSurfaceInventoryFromBuffer(
+      Buffer.concat([
+        Buffer.from(
+          [
+            'MZ',
+            'DriverEntry',
+            'IRP_MJ_DEVICE_CONTROL',
+            'IoCreateDevice',
+            'METHOD_NEITHER',
+            'FILE_ANY_ACCESS',
+            'MmMapIoSpace',
+            '\\\\.\\SurfaceDrv',
+          ].join('\0'),
+          'ascii'
+        ),
+        ioctl,
+      ]),
+      { filename: 'surfacedrv.sys' }
+    )
+
+    expect(inventory.format).toBe('windows-kernel-driver-surface')
+    expect(inventory.ioctl_candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          method: 'METHOD_NEITHER',
+          access: 'FILE_ANY_ACCESS',
+          risk_flags: expect.arrayContaining(['method_neither', 'file_any_access']),
+        }),
+      ])
+    )
+    expect(inventory.recommended_next_tools).toEqual(
+      expect.arrayContaining(['code.xrefs.analyze', 'vuln.pattern.scan'])
+    )
+    expect(inventory.policy).toEqual(
+      expect.objectContaining({
+        passive: true,
+        no_driver_load: true,
+        no_kernel_module_load: true,
+        no_device_open: true,
+        no_ioctl_send: true,
+      })
+    )
+  })
+})
+
 describe('built-in plugin format matrix discovery', () => {
   test('discovers cross-platform format plugins with declared aspects', async () => {
     const plugins = await discoverBuiltInPlugins()
@@ -1612,6 +1662,7 @@ describe('built-in plugin format matrix discovery', () => {
     const btf = plugins.find((plugin) => plugin.id === 'btf')
     const cppAbiLayout = plugins.find((plugin) => plugin.id === 'cpp-abi-layout')
     const ebpfBytecode = plugins.find((plugin) => plugin.id === 'ebpf-bytecode')
+    const kernelDriverSurface = plugins.find((plugin) => plugin.id === 'kernel-driver-surface')
     const llvmBitcode = plugins.find((plugin) => plugin.id === 'llvm-bitcode')
     const mlModel = plugins.find((plugin) => plugin.id === 'ml-model')
     const shaderIr = plugins.find((plugin) => plugin.id === 'shader-ir')
@@ -1670,6 +1721,12 @@ describe('built-in plugin format matrix discovery', () => {
     )
     expect(cppAbiLayout?.tools?.map((tool) => tool.definition.name)).toContain(
       'cpp.abi.layout.inventory'
+    )
+    expect(kernelDriverSurface?.aspects?.formats).toEqual(
+      expect.arrayContaining(['kernel-driver', 'windows-driver', 'linux-kernel-module', 'ioctl'])
+    )
+    expect(kernelDriverSurface?.tools?.map((tool) => tool.definition.name)).toContain(
+      'kernel.driver.surface.inventory'
     )
     expect(ebpfBytecode?.aspects?.formats).toEqual(
       expect.arrayContaining(['ebpf', 'bpf', 'raw-ebpf', 'ebpf-elf'])
@@ -1783,6 +1840,7 @@ describe('built-in plugin format matrix discovery', () => {
     const nativeObject = requirePlugin(plugins, 'native-object')
     const nativeDebugTypes = requirePlugin(plugins, 'native-debug-types')
     const cppAbiLayout = requirePlugin(plugins, 'cpp-abi-layout')
+    const kernelDriverSurface = requirePlugin(plugins, 'kernel-driver-surface')
     const btf = requirePlugin(plugins, 'btf')
     const ebpfBytecode = requirePlugin(plugins, 'ebpf-bytecode')
     const llvmBitcode = requirePlugin(plugins, 'llvm-bitcode')
@@ -1936,6 +1994,21 @@ describe('built-in plugin format matrix discovery', () => {
       producesArtifacts: ['cpp_abi_layout_inventory'],
       evidence: ['classes', 'rtti', 'vtable', 'layout-seeds', 'workflow'],
       safety: ['passive', 'no_external_demangler', 'no_native_load', 'no_source_fetch'],
+    })
+    expectToolMetadata(kernelDriverSurface, 'kernel.driver.surface.inventory', {
+      formats: ['kernel-driver', 'windows-driver', 'linux-kernel-module', 'ioctl'],
+      artifacts: ['kernel_driver_surface_inventory'],
+      evidence: ['device-interfaces', 'ioctl', 'dispatch', 'module-metadata', 'risk', 'workflow'],
+    })
+    expectWorkflowRecipeMetadata(plugins, {
+      pluginId: 'kernel-driver-surface',
+      toolName: 'kernel.driver.surface.inventory',
+      recipeId: 'kernel.driver-surface-static-inventory',
+      startsWith: ['kernel.driver.surface.inventory'],
+      nextTools: ['pe.structure.analyze', 'linux.binary.inventory', 'code.xrefs.analyze'],
+      producesArtifacts: ['kernel_driver_surface_inventory'],
+      evidence: ['ioctl', 'dispatch', 'module-metadata', 'risk', 'workflow'],
+      safety: ['passive', 'no_driver_load', 'no_kernel_module_load', 'no_ioctl_send'],
     })
     expectToolMetadata(btf, 'btf.type.inventory', {
       formats: ['btf', 'btf-ext', 'btf-elf', 'core-relocations'],
