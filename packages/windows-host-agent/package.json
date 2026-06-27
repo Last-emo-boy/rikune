@@ -1,6 +1,6 @@
 {
   "name": "@rikune/windows-host-agent",
-  "version": "1.0.0-beta.3",
+  "version": "1.1.0",
   "description": "Rikune Windows Host Agent for remote sandbox lifecycle management.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,7 +18,7 @@
     "test": "cmd /d /s /c \"pushd ..\\.. && node --experimental-vm-modules node_modules\\jest\\bin\\jest.js --runInBand tests\\unit\\packages\\windows-host-agent.test.ts && popd\""
   },
   "dependencies": {
-    "@rikune/shared": "1.0.0-beta.3",
+    "@rikune/shared": "1.1.0",
     "pino": "^10.3.1",
     "zod": "^3.25.76"
   },

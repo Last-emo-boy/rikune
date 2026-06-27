@@ -68,7 +68,7 @@ interface AgentOptions {
   configPath?: string
 }
 
-const VERSION = '1.0.0-beta.3'
+const VERSION = '1.1.0'
 const DEFAULT_CONNECT_TIMEOUT_MS = 30_000
 const DEFAULT_TOOL_TIMEOUT_MS = 300_000
 const DEFAULT_ANALYZER_HTTP_ENDPOINT = 'http://localhost:18080'
