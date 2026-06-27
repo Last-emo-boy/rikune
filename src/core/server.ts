@@ -85,7 +85,7 @@ export class MCPServer
     this.server = new Server(
       {
         name: 'rikune',
-        version: '1.0.0-beta.3',
+        version: '1.1.0',
       },
       {
         capabilities: {

@@ -116,8 +116,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@rikune/plugin-sdk": "1.0.0-beta.3",
-    "@rikune/shared": "1.0.0-beta.3",
+    "@rikune/plugin-sdk": "1.1.0",
+    "@rikune/shared": "1.1.0",
     "better-sqlite3": "^12.6.2",
     "node-windows": "^1.0.0-beta.8",
     "pino": "^10.3.1",
