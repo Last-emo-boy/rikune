@@ -46,6 +46,12 @@ export const workflowSearchInputSchema = z.object({
     .describe(
       'Maximum ranked recommendations to return for search/recommend. Use auto to let workflow.search adapt the result window to the file profile and analyst intent.'
     ),
+  verbose: z
+    .boolean()
+    .default(false)
+    .describe(
+      'When false (default) the response is compact: the large echoed format arrays (search_profile.formats, plugin_matrix_summary.formats, and per-lane formats) are dropped in favor of format_count, while ranked results and tool lists stay intact. Set true to return the full uncompacted payload.'
+    ),
 })
 
 export const workflowSearchOutputSchema = z.object({
@@ -1089,6 +1095,15 @@ function applyQuotaMetadataToProfiles(
   })
 }
 
+function compactSearchProfilesForOutput(profiles: SearchProfileLane[]): SearchProfileLane[] {
+  return profiles.map((profile) => {
+    if (!Array.isArray(profile.formats)) return profile
+    const compact: SearchProfileLane = { ...profile, format_count: profile.formats.length }
+    delete compact.formats
+    return compact
+  })
+}
+
 function readinessScore(readinessState: string): number {
   if (readinessState === 'ready') return 8
   if (readinessState === 'blocked') return -60
@@ -1304,6 +1319,8 @@ function buildSearchProfile(
   const pluginMatrix = asRecord(discoveryData.plugin_matrix)
   const queryTerms = termsFromText(input.query)
   const findingTerms = termsForFinding(input.finding)
+  const verbose = input.verbose
+  const formatKeys = Object.keys(asRecord(discoveryData.format_matrix))
   return {
     sample_file_type: discoveryData.sample_file_type ?? null,
     requested_file_type: input.file_type ?? null,
@@ -1345,7 +1362,8 @@ function buildSearchProfile(
           fact_sources: sampleRouteFacts.fact_sources,
         }
       : undefined,
-    formats: Object.keys(asRecord(discoveryData.format_matrix)),
+    format_count: formatKeys.length,
+    ...(verbose ? { formats: formatKeys } : {}),
     recommended_tools: stringArray(discoveryData.recommended_tools),
     available_tools: stringArray(discoveryData.available_tools),
     blocked_tools: stringArray(discoveryData.blocked_tools),
@@ -1354,7 +1372,8 @@ function buildSearchProfile(
     matched_plugins: stringArray(discoveryData.matched_plugins),
     matched_tools: stringArray(discoveryData.matched_tools),
     plugin_matrix_summary: {
-      formats: Object.keys(asRecord(discoveryData.format_matrix)),
+      format_count: formatKeys.length,
+      ...(verbose ? { formats: formatKeys } : {}),
       recommended_tools: stringArray(discoveryData.recommended_tools).slice(0, 12),
       available_tool_count: stringArray(discoveryData.available_tools).length,
       blocked_tool_count: stringArray(discoveryData.blocked_tools).length,
@@ -1580,11 +1599,14 @@ export function createWorkflowSearchHandler(
         searchProfiles,
         quotaSelection.quota_decisions
       )
+      const outputSearchProfiles = input.verbose
+        ? enhancedSearchProfiles
+        : compactSearchProfilesForOutput(enhancedSearchProfiles)
       const searchProfile = buildSearchProfile(
         input,
         discoveryData,
         resolvedTopK,
-        enhancedSearchProfiles,
+        outputSearchProfiles,
         sampleRouteFacts,
         quotaSelection.quota_decisions
       )
@@ -1626,7 +1648,7 @@ export function createWorkflowSearchHandler(
                   depth: input.depth,
                   top_k: resolvedTopK.value,
                   search_profile: searchProfile,
-                  search_profiles: enhancedSearchProfiles,
+                  search_profiles: outputSearchProfiles,
                   quota_decisions: quotaSelection.quota_decisions,
                   activation_audit: {
                     ...asRecord(activationData.activation_audit),
@@ -1726,7 +1748,7 @@ export function createWorkflowSearchHandler(
             depth: input.depth,
             top_k: resolvedTopK.value,
             search_profile: searchProfile,
-            search_profiles: enhancedSearchProfiles,
+            search_profiles: outputSearchProfiles,
             quota_decisions: quotaSelection.quota_decisions,
             activation_audit: {
               at: new Date().toISOString(),
@@ -1783,7 +1805,7 @@ export function createWorkflowSearchHandler(
             depth: input.depth,
             top_k: resolvedTopK.value,
             search_profile: searchProfile,
-            search_profiles: enhancedSearchProfiles,
+            search_profiles: outputSearchProfiles,
             quota_decisions: quotaSelection.quota_decisions,
             activation_audit: discoveryData.activation_audit,
             activated: stringArray(discoveryData.activated),
@@ -1816,7 +1838,7 @@ export function createWorkflowSearchHandler(
           depth: input.depth,
           top_k: resolvedTopK.value,
           search_profile: searchProfile,
-          search_profiles: enhancedSearchProfiles,
+          search_profiles: outputSearchProfiles,
           quota_decisions: quotaSelection.quota_decisions,
           results: input.action === 'status' ? undefined : results,
           recommendations: input.action === 'status' ? undefined : results,

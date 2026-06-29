@@ -1429,6 +1429,13 @@ export function createReconstructWorkflowHandler(
           )
         )
       }
+      // Re-query persisted analyses right before assembling the export so a
+      // ghidra function-index artifact that landed during the preceding async
+      // evidence/semantic loads is picked up and used instead of a stale
+      // "unavailable" view (timing race). No Ghidra re-run and no blocking wait;
+      // findAnalysesBySample is append-only so this can only upgrade the view.
+      analyses = database.findAnalysesBySample(input.sample_id)
+      completedGhidraAnalysis = findBestGhidraAnalysis(analyses, 'function_index')
       const functionDefinitionMarker = pickLatestAnalysisMarker(
         analyses,
         (analysis) => analysis.stage === 'function_definition'

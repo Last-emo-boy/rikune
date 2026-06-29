@@ -45,6 +45,14 @@ export const SymbolicExploreInputSchema = z.object({
     .describe('Exploration timeout in seconds'),
   stdin_mode: z.boolean().optional().default(true).describe('Use symbolic stdin as input'),
   argv_mode: z.boolean().optional().default(false).describe('Use symbolic argv[1] as input'),
+  approved: z
+    .boolean()
+    .optional()
+    .describe('Explicit approval flag honored by PolicyGuard for dynamic execution'),
+  approval_token: z
+    .string()
+    .optional()
+    .describe('Approval token issued by PolicyGuard for dynamic execution'),
 })
 
 export const SymbolicExploreOutputSchema = createWorkerResultOutputSchema(z.record(z.any()))
@@ -123,7 +131,11 @@ export function createSymbolicExploreHandler(deps: PluginToolDeps) {
         {
           type: 'dynamic_execution',
           tool: TOOL_NAME,
-          args: { find_addresses: args.find_addresses },
+          args: {
+            find_addresses: args.find_addresses,
+            approved: args.approved,
+            approval_token: args.approval_token,
+          },
         },
         { sampleId: args.sample_id, timestamp: new Date().toISOString() }
       )
