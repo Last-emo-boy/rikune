@@ -316,7 +316,33 @@ function inferBinaryRole(
     return { binaryRole: 'library_like_pe', roleConfidence: 0.73, roleEvidence: evidence }
   }
 
-  return { binaryRole: 'pe_image', roleConfidence: 0.62, roleEvidence: ['generic PE image'] }
+  const detectedType = (sampleFileType || '').trim()
+  const looksLikePe = /pe32|portable executable|ms-?dos|\bmz\b|\.net/i.test(loweredType)
+  if (looksLikePe || detectedType === '') {
+    return { binaryRole: 'pe_image', roleConfidence: 0.62, roleEvidence: ['generic PE image'] }
+  }
+
+  // Non-PE sample reached the PE role profiler (e.g. ELF/Mach-O/dex/wasm). Classify by the
+  // detected format instead of mislabeling it as a generic PE image.
+  let nonPeRole = 'non_pe_binary'
+  if (loweredType.includes('elf')) {
+    nonPeRole = 'elf_binary'
+  } else if (loweredType.includes('mach-o') || loweredType.includes('mach o')) {
+    nonPeRole = 'macho_binary'
+  } else if (loweredType.includes('wasm') || loweredType.includes('webassembly')) {
+    nonPeRole = 'wasm_module'
+  } else if (
+    loweredType.includes('dalvik') ||
+    loweredType.includes('dex') ||
+    loweredType.includes('android')
+  ) {
+    nonPeRole = 'android_dex'
+  }
+  return {
+    binaryRole: nonPeRole,
+    roleConfidence: 0.55,
+    roleEvidence: [`non-PE sample classified by detected file type: ${detectedType}`],
+  }
 }
 
 function buildRoleIndicator(
