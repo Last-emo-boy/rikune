@@ -182,7 +182,7 @@ describe('MCP Protocol Implementation', () => {
       const result = schema.safeParse({ number: 42 })
 
       if (!result.success) {
-        const messages = result.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`)
+        const messages = result.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`)
         expect(messages.length).toBeGreaterThan(0)
         expect(messages.some((m) => m.includes('required'))).toBe(true)
       }

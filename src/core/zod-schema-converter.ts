@@ -82,9 +82,22 @@ export function withSchemaMetadata(
   }
 }
 
+/** Read the zod4 internal check list off any schema. */
+function getZodChecks(schema: z.ZodTypeAny): Array<{ _zod?: { def?: Record<string, unknown> } }> {
+  return (
+    (schema._zod.def as unknown as { checks?: Array<{ _zod?: { def?: Record<string, unknown> } }> })
+      .checks || []
+  )
+}
+
 export function getSchemaGuidance(schema: z.ZodTypeAny): string[] {
-  // zod4: transforms are ZodPipe; surface their description as guidance.
-  if (schema instanceof z.ZodPipe && schema.description) {
+  if (!schema.description) {
+    return []
+  }
+  // zod4: refinements attach a `custom` check (ZodEffects was removed); transforms
+  // are ZodPipe. Surface the description as guidance to mirror the old behavior.
+  const hasRefinement = getZodChecks(schema).some((c) => c._zod?.def?.check === 'custom')
+  if (hasRefinement || schema instanceof z.ZodPipe) {
     return [schema.description]
   }
 
@@ -95,32 +108,38 @@ export function applyStringChecks(
   jsonSchema: Record<string, unknown>,
   schema: z.ZodString
 ): Record<string, unknown> {
-  const checks = ((schema as any)._def?.checks || []) as Array<Record<string, unknown>>
   const result: Record<string, unknown> = { ...jsonSchema }
 
-  for (const check of checks) {
-    switch (check.kind) {
-      case 'min':
-        result.minLength = check.value
+  for (const c of getZodChecks(schema)) {
+    const def = (c._zod?.def || {}) as Record<string, unknown>
+    switch (def.check) {
+      case 'min_length':
+        result.minLength = def.minimum
         break
-      case 'max':
-        result.maxLength = check.value
+      case 'max_length':
+        result.maxLength = def.maximum
         break
-      case 'email':
-        result.format = 'email'
-        break
-      case 'url':
-        result.format = 'uri'
-        break
-      case 'uuid':
-        result.format = 'uuid'
-        break
-      case 'datetime':
-        result.format = 'date-time'
-        break
-      case 'regex':
-        if (check.regex instanceof RegExp) {
-          result.pattern = check.regex.source
+      case 'string_format':
+        switch (def.format) {
+          case 'email':
+            result.format = 'email'
+            break
+          case 'url':
+            result.format = 'uri'
+            break
+          case 'uuid':
+          case 'guid':
+            result.format = 'uuid'
+            break
+          case 'datetime':
+          case 'iso_datetime':
+            result.format = 'date-time'
+            break
+          case 'regex':
+            if (def.pattern instanceof RegExp) {
+              result.pattern = def.pattern.source
+            }
+            break
         }
         break
     }
@@ -133,30 +152,32 @@ export function applyNumberChecks(
   jsonSchema: Record<string, unknown>,
   schema: z.ZodNumber
 ): Record<string, unknown> {
-  const checks = ((schema as any)._def?.checks || []) as Array<Record<string, unknown>>
   const result: Record<string, unknown> = { ...jsonSchema }
 
-  for (const check of checks) {
-    switch (check.kind) {
-      case 'int':
-        result.type = 'integer'
-        break
-      case 'min':
-        if (check.inclusive === false) {
-          result.exclusiveMinimum = check.value
-        } else {
-          result.minimum = check.value
+  for (const c of getZodChecks(schema)) {
+    const def = (c._zod?.def || {}) as Record<string, unknown>
+    switch (def.check) {
+      case 'number_format':
+        if (def.format === 'safeint' || def.format === 'int' || def.format === 'int32') {
+          result.type = 'integer'
         }
         break
-      case 'max':
-        if (check.inclusive === false) {
-          result.exclusiveMaximum = check.value
+      case 'greater_than':
+        if (def.inclusive === false) {
+          result.exclusiveMinimum = def.value
         } else {
-          result.maximum = check.value
+          result.minimum = def.value
         }
         break
-      case 'multipleOf':
-        result.multipleOf = check.value
+      case 'less_than':
+        if (def.inclusive === false) {
+          result.exclusiveMaximum = def.value
+        } else {
+          result.maximum = def.value
+        }
+        break
+      case 'multiple_of':
+        result.multipleOf = def.value
         break
     }
   }
@@ -168,12 +189,18 @@ export function applyArrayChecks(
   jsonSchema: Record<string, unknown>,
   schema: z.ZodTypeAny
 ): Record<string, unknown> {
-  const def = (schema as any)._def || {}
-  return {
-    ...jsonSchema,
-    ...(def.minLength?.value !== undefined ? { minItems: def.minLength.value } : {}),
-    ...(def.maxLength?.value !== undefined ? { maxItems: def.maxLength.value } : {}),
+  const result: Record<string, unknown> = { ...jsonSchema }
+
+  for (const c of getZodChecks(schema)) {
+    const def = (c._zod?.def || {}) as Record<string, unknown>
+    if (def.check === 'min_length') {
+      result.minItems = def.minimum
+    } else if (def.check === 'max_length') {
+      result.maxItems = def.maximum
+    }
   }
+
+  return result
 }
 
 export function isNeverSchema(schema: z.ZodTypeAny): boolean {
