@@ -10,7 +10,7 @@ export const ConfigSchema = z.object({
       port: z.number().int().min(1).max(65535).default(18081),
       host: z.string().default('127.0.0.1'),
     })
-    .default({}),
+    .prefault({}),
   runtime: z
     .object({
       mode: z.enum(['sandbox', 'manual', 'disabled']).default('sandbox'),
@@ -23,12 +23,12 @@ export const ConfigSchema = z.object({
       maxRssBytes: z.number().default(2 * 1024 * 1024 * 1024),
       minDiskSpaceBytes: z.number().default(5 * 1024 * 1024 * 1024),
     })
-    .default({}),
+    .prefault({}),
   logging: z
     .object({
       level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
     })
-    .default({}),
+    .prefault({}),
 })
 
 export type Config = z.infer<typeof ConfigSchema>

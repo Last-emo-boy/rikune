@@ -62,7 +62,7 @@ export const ConfigSchema = z
         port: z.number().int().min(1).max(65535).default(3000),
         host: z.string().default('localhost'),
       })
-      .default({}),
+      .prefault({}),
     database: z
       .object({
         type: z.enum(['sqlite', 'postgresql']).default('sqlite'),
@@ -73,7 +73,7 @@ export const ConfigSchema = z
         user: z.string().optional(),
         password: z.string().optional(),
       })
-      .default({}),
+      .prefault({}),
     workspace: z
       .object({
         root: z.string().default(getDefaultWorkspaceRoot()),
@@ -83,7 +83,7 @@ export const ConfigSchema = z
           .min(1)
           .default(500 * 1024 * 1024), // 500MB
       })
-      .default({}),
+      .prefault({}),
     workers: z
       .object({
         ghidra: z
@@ -98,7 +98,7 @@ export const ConfigSchema = z
             maxConcurrent: z.number().int().min(1).max(16).default(4),
             timeout: z.number().int().min(1).default(300),
           })
-          .default({}),
+          .prefault({}),
         static: z
           .object({
             enabled: z.boolean().default(true),
@@ -115,14 +115,14 @@ export const ConfigSchema = z
             dieTimeout: z.number().int().min(1).default(30),
             timeout: z.number().int().min(1).default(60),
           })
-          .default({}),
+          .prefault({}),
         dotnet: z
           .object({
             enabled: z.boolean().default(true),
             ilspyPath: z.string().optional(),
             timeout: z.number().int().min(1).default(60),
           })
-          .default({}),
+          .prefault({}),
         sandbox: z
           .object({
             enabled: z.boolean().default(true),
@@ -134,7 +134,7 @@ export const ConfigSchema = z
             pandaPythonPath: z.string().optional(),
             timeout: z.number().int().min(1).default(120),
           })
-          .default({}),
+          .prefault({}),
         frida: z
           .object({
             enabled: z.boolean().default(true),
@@ -142,9 +142,9 @@ export const ConfigSchema = z
             scriptRoot: z.string().optional(),
             timeout: z.number().int().min(1).default(30),
           })
-          .default({}),
+          .prefault({}),
       })
-      .default({}),
+      .prefault({}),
     cache: z
       .object({
         enabled: z.boolean().default(true),
@@ -155,14 +155,14 @@ export const ConfigSchema = z
           .min(0)
           .default(30 * 24 * 60 * 60), // 30 days
       })
-      .default({}),
+      .prefault({}),
     logging: z
       .object({
         level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
         pretty: z.boolean().default(false),
         auditPath: z.string().default(getDefaultAuditLogPath()),
       })
-      .default({}),
+      .prefault({}),
     api: z
       .object({
         enabled: z.boolean().default(true), // Default: enabled
@@ -190,7 +190,7 @@ export const ConfigSchema = z
       .object({
         role: z.enum(['analyzer', 'runtime', 'hybrid']).default('analyzer'),
       })
-      .default({}),
+      .prefault({}),
     runtime: z
       .object({
         mode: z.enum(['auto-sandbox', 'remote-sandbox', 'manual', 'disabled']).default('disabled'),
@@ -202,7 +202,7 @@ export const ConfigSchema = z
         heartbeatIntervalMs: z.number().int().min(1000).default(30000),
         healthCheckTimeoutMs: z.number().int().min(1000).default(60000),
       })
-      .default({}),
+      .prefault({}),
   })
   .superRefine((data, ctx) => {
     // Cross-field validations

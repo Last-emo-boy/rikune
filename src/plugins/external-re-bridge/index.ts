@@ -181,7 +181,7 @@ const ExternalReBridgeInputSchema = z.object({
   backend_version: z.string().optional(),
   sidecar_version: z.string().optional(),
   requested_operations: z.array(z.string()).optional().default([]),
-  artifact_manifest: ArtifactManifestSchema.optional().default({}),
+  artifact_manifest: ArtifactManifestSchema.optional().prefault({}),
 })
 
 const ARTIFACT_TYPES = [

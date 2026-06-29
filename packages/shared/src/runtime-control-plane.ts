@@ -6,7 +6,7 @@ export const RuntimeTaskStatusSchema = z.enum([
   'completed',
   'failed',
   'cancelled',
-])
+] as const)
 export type RuntimeTaskStatus = z.infer<typeof RuntimeTaskStatusSchema>
 
 export const RuntimeTaskLifecycleEventTypeSchema = z.enum([
@@ -141,7 +141,7 @@ export const RuntimeDynamicArtifactFamilySchema = z.enum([
   'sandbox_trace',
   'runtime_debug',
   'runtime_analysis',
-])
+] as const)
 export type RuntimeDynamicArtifactFamily = z.infer<typeof RuntimeDynamicArtifactFamilySchema>
 export const RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPES = [
   PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,

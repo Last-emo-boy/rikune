@@ -97,38 +97,36 @@ function unwrapSchema(schema: z.ZodTypeAny): {
   while (true) {
     if (current instanceof z.ZodOptional) {
       required = false
-      current = current._def.innerType
+      current = current.unwrap() as z.ZodTypeAny
       continue
     }
     if (current instanceof z.ZodDefault) {
       required = false
+      const dv: unknown = current._zod.def.defaultValue
       try {
-        defaultValue = current._def.defaultValue()
+        defaultValue = typeof dv === 'function' ? (dv as () => unknown)() : dv
       } catch {
         defaultValue = undefined
       }
-      current = current._def.innerType
+      current = current.unwrap() as z.ZodTypeAny
       continue
     }
     if (current instanceof z.ZodNullable) {
       nullable = true
-      current = current._def.innerType
+      current = current.unwrap() as z.ZodTypeAny
       continue
     }
     if (current instanceof z.ZodCatch) {
-      current = current._def.innerType
+      current = current.unwrap() as z.ZodTypeAny
       continue
     }
-    if (current instanceof z.ZodEffects) {
-      current = current._def.schema
-      continue
-    }
-    if (current instanceof z.ZodBranded) {
-      current = current._def.type
+    // zod4: .transform() produces a ZodPipe (ZodEffects was removed); unwrap to its input schema.
+    if (current instanceof z.ZodPipe) {
+      current = current._zod.def.in as z.ZodTypeAny
       continue
     }
     if (current instanceof z.ZodReadonly) {
-      current = current._def.innerType
+      current = current.unwrap() as z.ZodTypeAny
       continue
     }
     break
@@ -150,7 +148,7 @@ function describeSchemaType(schema: z.ZodTypeAny): string {
   if (schema instanceof z.ZodLiteral) return 'literal'
   if (schema instanceof z.ZodObject) return 'object'
   if (schema instanceof z.ZodArray) {
-    const itemInfo = unwrapSchema(schema._def.type)
+    const itemInfo = unwrapSchema(schema.element as z.ZodTypeAny)
     return `array<${describeSchemaType(itemInfo.schema)}>`
   }
   if (schema instanceof z.ZodUnion) return 'union'
@@ -182,9 +180,9 @@ function collectSchemaFields(schema: z.ZodTypeAny, prefix = '', toolName?: strin
     field.default_value = info.defaultValue
   }
   if (current instanceof z.ZodEnum) {
-    field.enum_values = [...current._def.values]
+    field.enum_values = [...current.options].map((v) => String(v))
   } else if (current instanceof z.ZodLiteral) {
-    field.enum_values = [String(current._def.value)]
+    field.enum_values = [...current.values].map((v) => String(v))
   }
 
   return [field]
