@@ -248,6 +248,69 @@ export const reportGenerateToolDefinition: ToolDefinition = {
 }
 
 /**
+ * Auxiliary (non-PE) static-analysis artifact types surfaced in the report when present.
+ * Values mirror the persisted artifact `type` identifiers produced by the respective analyzers
+ * (dex/apk/wasm/ml/rust/.NET). Kept as local literals to avoid coupling the report exporter to
+ * every analyzer plugin module.
+ */
+const AUXILIARY_STATIC_EVIDENCE_TYPES: ReadonlyArray<{ label: string; artifactType: string }> = [
+  { label: 'DEX Decompilation', artifactType: 'dex_decompilation' },
+  { label: 'APK Structure', artifactType: 'apk_structure' },
+  { label: 'WASM Structure', artifactType: 'wasm_structure' },
+  { label: 'ML Model Inventory', artifactType: 'ml_model_inventory' },
+  { label: 'Rust Binary Inventory', artifactType: 'rust_binary_inventory' },
+  { label: '.NET Assembly Inventory', artifactType: 'dotnet_assembly_inventory' },
+  { label: '.NET Metadata', artifactType: 'dotnet_metadata' },
+]
+
+interface AuxiliaryStaticEvidenceEntry {
+  label: string
+  artifact_type: string
+  present: boolean
+  artifact_count: number
+  latest_created_at: string | null
+  summary: string | null
+}
+
+/**
+ * Extract a short one-line summary from a heterogeneous static-analysis artifact payload.
+ * Returns null when no summary string is available so callers can render a generic note.
+ */
+function summarizeAuxiliaryPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+  const record = payload as Record<string, unknown>
+  if (typeof record.summary === 'string' && record.summary.trim().length > 0) {
+    return record.summary.trim()
+  }
+  const nested = record.data
+  if (nested && typeof nested === 'object') {
+    const nestedSummary = (nested as Record<string, unknown>).summary
+    if (typeof nestedSummary === 'string' && nestedSummary.trim().length > 0) {
+      return nestedSummary.trim()
+    }
+  }
+  return null
+}
+
+/**
+ * Resolve the displayed binary role. The binary-role profiler emits the generic 'pe_image'
+ * fallback when no role-specific evidence matches; for non-PE samples surface the detected
+ * file type (or 'unknown') instead of mislabeling the sample as a PE image.
+ */
+function resolveDisplayBinaryRole(role: string, fileType: string | null | undefined): string {
+  if (role !== 'pe_image') {
+    return role
+  }
+  const normalizedType = (fileType || '').trim()
+  if (/pe32|portable executable|ms-?dos|\bmz\b|\.net/i.test(normalizedType)) {
+    return role
+  }
+  return normalizedType || 'unknown'
+}
+
+/**
  * Generate Markdown report
  */
 function generateMarkdownReport(
@@ -289,7 +352,8 @@ function generateMarkdownReport(
     pe_structure?: ReturnType<typeof buildArtifactSelectionDiff>
     compiler_packer?: ReturnType<typeof buildArtifactSelectionDiff>
     semantic_explanations?: ReturnType<typeof buildArtifactSelectionDiff>
-  }
+  },
+  auxiliaryEvidence?: AuxiliaryStaticEvidenceEntry[]
 ): string {
   const lines: string[] = []
 
@@ -328,7 +392,12 @@ function generateMarkdownReport(
     if (analysis.metrics_json) {
       try {
         const metrics = JSON.parse(analysis.metrics_json)
-        lines.push(`- **Duration:** ${metrics.elapsed_ms}ms`)
+        const elapsedMs = metrics.elapsed_ms
+        lines.push(
+          `- **Duration:** ${
+            typeof elapsedMs === 'number' && Number.isFinite(elapsedMs) ? `${elapsedMs}ms` : 'n/a'
+          }`
+        )
       } catch (e) {
         // Ignore parse errors
       }
@@ -392,9 +461,10 @@ function generateMarkdownReport(
     const lifecycleSurface = binaryProfile.lifecycle_surface || []
     const classFactorySurface = binaryProfile.com_profile.class_factory_surface || []
     const callbackSurface = binaryProfile.host_interaction_profile.callback_surface || []
+    const displayBinaryRole = resolveDisplayBinaryRole(binaryProfile.binary_role, sample.file_type)
     lines.push('## Binary Role Profile')
     lines.push('')
-    lines.push(`- **Binary Role:** ${binaryProfile.binary_role}`)
+    lines.push(`- **Binary Role:** ${displayBinaryRole}`)
     lines.push(`- **Role Confidence:** ${binaryProfile.role_confidence.toFixed(2)}`)
     lines.push(`- **Packed:** ${binaryProfile.packed ? 'Yes' : 'No'}`)
     lines.push(`- **Packing Confidence:** ${binaryProfile.packing_confidence.toFixed(2)}`)
@@ -517,6 +587,21 @@ function generateMarkdownReport(
     )
   } else {
     lines.push('- **Compiler/Packer Attribution:** none')
+  }
+  lines.push('')
+
+  lines.push('## Additional Static Evidence')
+  lines.push('')
+  const presentAuxiliaryEvidence = (auxiliaryEvidence || []).filter((entry) => entry.present)
+  if (presentAuxiliaryEvidence.length === 0) {
+    lines.push('- No additional non-PE static evidence matched the selected scope.')
+  } else {
+    for (const entry of presentAuxiliaryEvidence) {
+      const detail = entry.summary
+        ? `: ${entry.summary}`
+        : ` (${entry.artifact_count} artifact${entry.artifact_count === 1 ? '' : 's'})`
+      lines.push(`- **${entry.label}:** present${detail}`)
+    }
   }
   lines.push('')
 
@@ -860,6 +945,28 @@ export function createReportGenerateHandler(
       const staticCapabilities = staticCapabilitiesSelection.latest_payload
       const peStructure = peStructureSelection.latest_payload
       const compilerPacker = compilerPackerSelection.latest_payload
+      const auxiliaryStaticEvidence: AuxiliaryStaticEvidenceEntry[] = await Promise.all(
+        AUXILIARY_STATIC_EVIDENCE_TYPES.map(async (descriptor) => {
+          const selection = await loadStaticAnalysisArtifactSelection<Record<string, unknown>>(
+            workspaceManager,
+            database,
+            input.sample_id,
+            descriptor.artifactType,
+            {
+              scope: input.static_scope,
+              sessionTag: input.static_session_tag,
+            }
+          )
+          return {
+            label: descriptor.label,
+            artifact_type: descriptor.artifactType,
+            present: selection.artifact_ids.length > 0,
+            artifact_count: selection.artifact_ids.length,
+            latest_created_at: selection.latest_created_at,
+            summary: summarizeAuxiliaryPayload(selection.latest_payload),
+          }
+        })
+      )
       let binaryProfile: z.infer<typeof BinaryRoleProfileDataSchema> | null = null
       let rustProfile: z.infer<typeof RustBinaryAnalyzeDataSchema> | null = null
       if (binaryRoleProfileHandler) {
@@ -1053,7 +1160,8 @@ export function createReportGenerateHandler(
             input.semantic_session_tag,
             provenance,
             ghidraExecution,
-            selectionDiffs
+            selectionDiffs,
+            auxiliaryStaticEvidence
           )
           reportExtension = 'md'
           mimeType = 'text/markdown'
@@ -1079,6 +1187,7 @@ export function createReportGenerateHandler(
               static_capabilities: staticCapabilities,
               pe_structure: peStructure,
               compiler_packer: compilerPacker,
+              auxiliary_static_evidence: auxiliaryStaticEvidence,
               function_explanations: functionExplanations,
               evidence_scope: input.evidence_scope,
               evidence_session_tag: input.evidence_session_tag || null,
@@ -1133,7 +1242,8 @@ export function createReportGenerateHandler(
             input.semantic_session_tag,
             provenance,
             ghidraExecution,
-            selectionDiffs
+            selectionDiffs,
+            auxiliaryStaticEvidence
           )}</pre>
 </body>
 </html>`
