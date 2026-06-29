@@ -1104,6 +1104,57 @@ function compactSearchProfilesForOutput(profiles: SearchProfileLane[]): SearchPr
   })
 }
 
+// Default (compact) shaping of the workflow.search response: the search path otherwise
+// echoes several large arrays that either duplicate top-level fields (search_profile.search_profiles /
+// quota_decisions) or are reference-only (full available_tools/blocked_tools, per-lane evidence/workflows,
+// per-result diagnostics). They are replaced with *_count and the ranked results stay intact. The full
+// payload is preserved when the caller passes verbose:true.
+function countAndStrip(target: Record<string, unknown>, keys: string[]): void {
+  for (const key of keys) {
+    const value = target[key]
+    if (Array.isArray(value)) {
+      target[`${key}_count`] = value.length
+      delete target[key]
+    }
+  }
+}
+function compactWorkflowSearchData(
+  data: Record<string, unknown>
+): Record<string, unknown> {
+  // search_profile: keep the ranked-relevant fields (recommended_tools, search_profiles,
+  // sample_route_facts) but drop the reference-only full tool lists and the quota_decisions
+  // copy that already exists at the response top level.
+  const profile = asRecord(data.search_profile)
+  if (Object.keys(profile).length > 0) {
+    delete profile.quota_decisions
+    countAndStrip(profile, ['available_tools', 'blocked_tools', 'missing_deps', 'matched_tools', 'matched_plugins'])
+    const matrix = asRecord(profile.plugin_matrix_summary)
+    if (Object.keys(matrix).length > 0) {
+      delete matrix.formats
+      profile.plugin_matrix_summary = matrix
+    }
+    data.search_profile = profile
+  }
+  // recommendations is an exact copy of results; keep a lightweight index only. results keeps
+  // the full per-result detail (rank, score_breakdown, matched_profile_fields, activation, ...).
+  if (Array.isArray(data.recommendations)) {
+    data.recommendations = data.recommendations.map((entry) => {
+      const item = asRecord(entry)
+      return {
+        result_id: item.result_id,
+        rank: item.rank,
+        score: item.score,
+        kind: item.kind,
+        tool_name: item.tool_name,
+        plugin_id: item.plugin_id,
+        readiness_state: item.readiness_state,
+        activation_required: item.activation_required,
+      }
+    })
+  }
+  return data
+}
+
 function readinessScore(readinessState: string): number {
   if (readinessState === 'ready') return 8
   if (readinessState === 'blocked') return -60
@@ -1827,28 +1878,31 @@ export function createWorkflowSearchHandler(
         }
       }
 
+      const searchResponseData: Record<string, unknown> = {
+        result_mode: 'workflow_search',
+        action: input.action,
+        query: input.query,
+        sample_id: input.sample_id,
+        goal: input.goal,
+        depth: input.depth,
+        top_k: resolvedTopK.value,
+        search_profile: searchProfile,
+        search_profiles: outputSearchProfiles,
+        quota_decisions: quotaSelection.quota_decisions,
+        results: input.action === 'status' ? undefined : results,
+        recommendations: input.action === 'status' ? undefined : results,
+        recommendation_summary: discoveryData.recommendation_summary,
+        raw_discovery: input.action === 'status' ? discoveryData : undefined,
+        message:
+          input.action === 'status'
+            ? String(discoveryData.message ?? 'Workflow search status returned.')
+            : `Ranked ${results.length} passive workflow/search recommendation(s). No tools were activated or executed.`,
+      }
       return {
         ok: true,
-        data: {
-          result_mode: 'workflow_search',
-          action: input.action,
-          query: input.query,
-          sample_id: input.sample_id,
-          goal: input.goal,
-          depth: input.depth,
-          top_k: resolvedTopK.value,
-          search_profile: searchProfile,
-          search_profiles: outputSearchProfiles,
-          quota_decisions: quotaSelection.quota_decisions,
-          results: input.action === 'status' ? undefined : results,
-          recommendations: input.action === 'status' ? undefined : results,
-          recommendation_summary: discoveryData.recommendation_summary,
-          raw_discovery: input.action === 'status' ? discoveryData : undefined,
-          message:
-            input.action === 'status'
-              ? String(discoveryData.message ?? 'Workflow search status returned.')
-              : `Ranked ${results.length} passive workflow/search recommendation(s). No tools were activated or executed.`,
-        },
+        data: input.verbose
+          ? searchResponseData
+          : compactWorkflowSearchData(searchResponseData),
         warnings: discovery.warnings,
         metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
       }
