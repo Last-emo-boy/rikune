@@ -84,7 +84,7 @@ const WasmComponentInventorySchema = z.object({
       count_hint: z.number().nullable(),
     })
   ),
-  section_counts: z.record(z.number()),
+  section_counts: z.record(z.string(), z.number()),
   custom_sections: z.array(z.string()),
   imports: z.array(
     z.object({

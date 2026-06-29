@@ -28,7 +28,7 @@ const GeneratedYaraFamilyRuleSchema = z.object({
   type: z.string(),
   rule_text: z.string(),
   score: z.number(),
-  breakdown: z.record(z.any()),
+  breakdown: z.record(z.string(), z.any()),
 })
 
 export const YaraGenerateBatchInputSchema = z.object({
@@ -58,7 +58,7 @@ export const YaraGenerateBatchOutputSchema = z.object({
       family_rule: GeneratedYaraFamilyRuleSchema.optional(),
       rule_text: z.string().optional(),
       score: z.number().optional(),
-      breakdown: z.record(z.any()).optional(),
+      breakdown: z.record(z.string(), z.any()).optional(),
       common_features: z
         .object({
           strings: z.number(),
@@ -67,9 +67,9 @@ export const YaraGenerateBatchOutputSchema = z.object({
         })
         .optional(),
       sample_count: z.number().optional(),
-      evidence_summary: z.record(z.any()).optional(),
-      workflow_handoff: z.record(z.any()).optional(),
-      quality_gates: z.record(z.any()).optional(),
+      evidence_summary: z.record(z.string(), z.any()).optional(),
+      workflow_handoff: z.record(z.string(), z.any()).optional(),
+      quality_gates: z.record(z.string(), z.any()).optional(),
       recommended_next_tools: z.array(z.string()).optional(),
       next_actions: z.array(z.string()).optional(),
     })

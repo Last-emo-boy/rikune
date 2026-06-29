@@ -12,7 +12,7 @@ export const vmWorkflowPlanInputSchema = z.object({
 
 export const vmWorkflowPlanOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.record(z.any()).optional(),
+  data: z.record(z.string(), z.any()).optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),

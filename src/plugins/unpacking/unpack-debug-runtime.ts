@@ -148,7 +148,7 @@ export const DebugSessionRecordSchema = z.object({
   session_tag: z.string().nullable(),
   artifact_refs: z.array(z.any()),
   guidance: DebugSessionGuidanceSchema,
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
   created_at: z.string(),
   updated_at: z.string(),
   finished_at: z.string().nullable().optional(),

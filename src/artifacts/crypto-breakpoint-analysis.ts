@@ -67,7 +67,7 @@ export const ArtifactRefSchema = z.object({
   path: z.string(),
   sha256: z.string(),
   mime: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 export const CryptoEvidenceSchema = z.object({

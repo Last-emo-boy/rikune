@@ -71,9 +71,9 @@ export const FridaScriptGenerateOutputSchema = z.object({
       ),
       combined_script: z.string(),
       total_hooks: z.number(),
-      evidence_summary: z.record(z.any()),
-      workflow_handoff: z.record(z.any()),
-      quality_gates: z.record(z.any()),
+      evidence_summary: z.record(z.string(), z.any()),
+      workflow_handoff: z.record(z.string(), z.any()),
+      quality_gates: z.record(z.string(), z.any()),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
     })

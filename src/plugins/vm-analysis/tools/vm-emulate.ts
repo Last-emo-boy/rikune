@@ -15,7 +15,7 @@ export const vmEmulateInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
   bytecode_hex: z.string().describe('Hex-encoded VM bytecode to emulate'),
   initial_registers: z
-    .record(z.number())
+    .record(z.string(), z.number())
     .optional()
     .describe('Initial register values (e.g. {"r0": 1234, "r1": 0})'),
   max_steps: z

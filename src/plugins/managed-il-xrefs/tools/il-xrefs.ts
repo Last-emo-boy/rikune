@@ -47,7 +47,7 @@ export const IlXrefsInputSchema = z.object({
     .describe('Maximum cross-references to return'),
 })
 
-export const IlXrefsOutputSchema = createWorkerResultOutputSchema(z.record(z.any()))
+export const IlXrefsOutputSchema = createWorkerResultOutputSchema(z.record(z.string(), z.any()))
 
 export const ilXrefsToolDefinition: ToolDefinition = {
   name: TOOL_NAME,

@@ -19,7 +19,7 @@ const BlockedToolContextSchema = z.object({
   sample_id: z.string().optional().describe('Sample ID if applicable'),
   error_message: z.string().optional().describe('Error message that caused the block'),
   setup_required: z.string().optional().describe('Setup requirement identifier'),
-  context: z.record(z.unknown()).optional().describe('Additional blocked context'),
+  context: z.record(z.string(), z.unknown()).optional().describe('Additional blocked context'),
 })
 
 export const SetupRemediateInputSchema = z.object({

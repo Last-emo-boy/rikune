@@ -51,8 +51,8 @@ export const AnalysisEvidenceRecordSchema = z.object({
   freshness_marker: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
-  provenance: z.record(z.any()).optional(),
-  metadata: z.record(z.any()).optional(),
+  provenance: z.record(z.string(), z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
   artifact_refs: z.array(z.any()),
   result: z.any(),
 })

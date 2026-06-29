@@ -42,7 +42,7 @@ export const taskStatusInputSchema = z.object({
 
 export type TaskStatusInput = z.infer<typeof taskStatusInputSchema>
 
-const TaskStatusJobSchema = z.record(z.any())
+const TaskStatusJobSchema = z.record(z.string(), z.any())
 
 export const taskStatusOutputSchema = z.object({
   ok: z.boolean(),
@@ -60,10 +60,10 @@ export const taskStatusOutputSchema = z.object({
       preferred_primary_tools: z.array(z.string()).optional(),
       recommended_next_tools: z.array(z.string()).optional(),
       next_actions: z.array(z.string()).optional(),
-      reuse_hints: z.record(z.any()).optional(),
+      reuse_hints: z.record(z.string(), z.any()).optional(),
       external_active_rss_mb: z.number().nonnegative().optional(),
       external_active_process_count: z.number().int().nonnegative().optional(),
-      external_active_processes: z.array(z.record(z.any())).optional(),
+      external_active_processes: z.array(z.record(z.string(), z.any())).optional(),
     })
     .optional(),
   errors: z.array(z.string()).optional(),

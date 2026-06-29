@@ -134,9 +134,9 @@ const CudaBinaryInventoryDataSchema = z.object({
     .object({
       schema: z.literal(CUDA_WORKFLOW_HANDOFF_SCHEMA),
       handoff_mode: z.literal('cuda_binary_inventory_to_gpu_lift_and_host_correlation'),
-      artifact_contract: z.record(z.any()),
-      dynamic_boundary: z.record(z.any()),
-      routing: z.array(z.record(z.any())),
+      artifact_contract: z.record(z.string(), z.any()),
+      dynamic_boundary: z.record(z.string(), z.any()),
+      routing: z.array(z.record(z.string(), z.any())),
     })
     .passthrough(),
   quality_gates: z

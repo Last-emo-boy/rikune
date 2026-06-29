@@ -16,7 +16,7 @@ export const ArtifactRefSchema = z
     path: z.string(),
     sha256: z.string(),
     mime: z.string().optional(),
-    metadata: z.record(z.any()).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
   })
   .passthrough()
 
@@ -36,7 +36,7 @@ export const EvidenceRefSchema = z
     sampleId: z.string().optional(),
     artifactRefs: z.array(ArtifactRefSchema).optional(),
     confidence: z.number().min(0).max(1).optional(),
-    metadata: z.record(z.any()).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
   })
   .passthrough()
 
@@ -52,7 +52,7 @@ export const EvidenceTimelineEntrySchema = z
     target: z.string().optional(),
     confidence: z.number().min(0).max(1).optional(),
     artifactRefs: z.array(ArtifactRefSchema).optional(),
-    metadata: z.record(z.any()).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
   })
   .passthrough()
 

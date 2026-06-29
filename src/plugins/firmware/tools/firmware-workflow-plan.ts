@@ -6,7 +6,7 @@ const TOOL_NAME = 'firmware.workflow.plan'
 export const FirmwareWorkflowPlanInputSchema = z
   .object({
     sample_id: z.string().optional(),
-    signatures: z.array(z.record(z.any())).optional().default([]),
+    signatures: z.array(z.record(z.string(), z.any())).optional().default([]),
     firmware_scan: z.any().optional(),
     container_inventory: z.any().optional(),
     package_inventory: z.any().optional(),
@@ -17,7 +17,7 @@ export const FirmwareWorkflowPlanInputSchema = z
 
 export const FirmwareWorkflowPlanOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.record(z.any()).optional(),
+  data: z.record(z.string(), z.any()).optional(),
   errors: z.array(z.string()).optional(),
   metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),
 })

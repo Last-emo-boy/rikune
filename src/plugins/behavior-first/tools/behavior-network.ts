@@ -23,7 +23,7 @@ const TOOL_NAME = 'behavior.network'
 
 export const behaviorNetworkInputSchema = z.object({
   sample_id: z.string().describe('Sample ID for artifact association'),
-  behavior_data: z.record(z.any()).describe('Behavioral capture data from behavior.capture'),
+  behavior_data: z.record(z.string(), z.any()).describe('Behavioral capture data from behavior.capture'),
   persist_artifact: z.boolean().default(true),
   session_tag: z.string().optional(),
 })

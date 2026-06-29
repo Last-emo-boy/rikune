@@ -70,8 +70,8 @@ const WasmStructureDataSchema = z.object({
       index: z.number(),
     })
   ),
-  memory_declarations: z.array(z.record(z.any())),
-  table_declarations: z.array(z.record(z.any())),
+  memory_declarations: z.array(z.record(z.string(), z.any())),
+  table_declarations: z.array(z.record(z.string(), z.any())),
   start_function_index: z.number().nullable(),
   wasi_capability_hints: z.array(z.string()),
   capability_risk_summary: z.object({

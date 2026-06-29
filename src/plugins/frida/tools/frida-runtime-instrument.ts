@@ -47,7 +47,7 @@ export const FridaRuntimeInstrumentInputSchema = z.object({
     .optional()
     .describe('Custom Frida JavaScript script content (overrides script_name)'),
   script_parameters: z
-    .record(z.any())
+    .record(z.string(), z.any())
     .optional()
     .describe('Parameters to pass to the Frida script'),
   speed_factor: z

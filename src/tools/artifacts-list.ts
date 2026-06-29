@@ -97,8 +97,8 @@ const ArtifactsListSummarySchema = z.object({
   filtered_count: z.number().int().nonnegative(),
   missing_count: z.number().int().nonnegative(),
   untracked_count: z.number().int().nonnegative(),
-  by_type: z.record(z.number()),
-  latest_by_type: z.record(
+  by_type: z.record(z.string(), z.number()),
+  latest_by_type: z.record(z.string(), 
     z.object({
       id: z.string(),
       path: z.string(),
@@ -106,7 +106,7 @@ const ArtifactsListSummarySchema = z.object({
       tracked: z.boolean(),
     })
   ),
-  latest_by_session: z.record(
+  latest_by_session: z.record(z.string(), 
     z.object({
       id: z.string(),
       path: z.string(),
@@ -115,7 +115,7 @@ const ArtifactsListSummarySchema = z.object({
       tracked: z.boolean(),
     })
   ),
-  session_index: z.record(
+  session_index: z.record(z.string(), 
     z.object({
       count: z.number().int().nonnegative(),
       latest_created_at: z.string(),
@@ -125,7 +125,7 @@ const ArtifactsListSummarySchema = z.object({
       retention_buckets: z.array(z.string()),
     })
   ),
-  by_retention_bucket: z.record(z.number()),
+  by_retention_bucket: z.record(z.string(), z.number()),
   high_value_types: z.array(z.string()),
 })
 

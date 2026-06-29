@@ -58,7 +58,7 @@ export const speakeasyApiTraceOutputSchema = z.object({
       filtered_count: z.number().optional(),
       api_trace: z.array(z.any()).optional(),
       unique_apis: z.array(z.string()).optional(),
-      module_histogram: z.record(z.number()).optional(),
+      module_histogram: z.record(z.string(), z.number()).optional(),
       artifact: ArtifactRefSchema.optional(),
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),

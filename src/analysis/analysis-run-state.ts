@@ -112,7 +112,7 @@ export const AnalysisRunStageViewSchema = z.object({
   finished_at: z.string().nullable().optional(),
   artifact_refs: z.array(z.any()),
   result: z.any().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 export const RecoverableStageSchema = z.object({

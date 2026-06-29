@@ -42,8 +42,8 @@ const ArtifactSelectorSummarySchema = z.object({
   selector_count: z.number().int().nonnegative(),
   omitted_count: z.number().int().nonnegative(),
   latest_stage: z.string().nullable(),
-  by_type: z.record(z.number().int().nonnegative()),
-  by_stage: z.record(z.number().int().nonnegative()),
+  by_type: z.record(z.string(), z.number().int().nonnegative()),
+  by_stage: z.record(z.string(), z.number().int().nonnegative()),
 })
 
 export const workflowRunInputSchema = z

@@ -41,7 +41,7 @@ export const DynamicDependenciesOutputSchema = z.object({
     .object({
       status: z.enum(['ready', 'partial', 'bootstrap_required']),
       available_components: z.array(z.string()),
-      components: z.record(z.any()),
+      components: z.record(z.string(), z.any()),
       recommendations: z.array(z.string()),
       setup_actions: z.array(SetupActionSchema).optional(),
       required_user_inputs: z.array(RequiredUserInputSchema).optional(),

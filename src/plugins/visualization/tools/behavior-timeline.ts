@@ -47,13 +47,13 @@ export const BehaviorTimelineOutputSchema = createWorkerResultOutputSchema(
         dominant_phase: z.string(),
       })
     ),
-    phase_distribution: z.record(z.number()),
+    phase_distribution: z.record(z.string(), z.number()),
     timeline_buckets: z.array(
       z.object({
         start_ms: z.number(),
         end_ms: z.number(),
         event_count: z.number().int().nonnegative(),
-        phases: z.record(z.number()),
+        phases: z.record(z.string(), z.number()),
         top_apis: z.array(z.object({ api: z.string(), count: z.number().int().nonnegative() })),
       })
     ),

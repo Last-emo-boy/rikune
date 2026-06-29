@@ -172,7 +172,7 @@ export const codeFunctionCFGOutputSchema = z.object({
         address: z.string(),
         node_count: z.number().int().nonnegative(),
         edge_count: z.number().int().nonnegative(),
-        block_type_counts: z.record(z.number()),
+        block_type_counts: z.record(z.string(), z.number()),
         entry_node_count: z.number().int().nonnegative(),
         exit_node_count: z.number().int().nonnegative(),
       }),

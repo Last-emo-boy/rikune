@@ -7,12 +7,12 @@ export const SbomProvenanceGraphInputSchema = z
   .object({
     sample_id: z.string().optional().describe('Optional sample ID for graph metadata.'),
     sources: z
-      .record(z.any())
+      .record(z.string(), z.any())
       .optional()
       .default({})
       .describe('Inventory outputs keyed by source tool or inventory family.'),
     components: z
-      .array(z.record(z.any()))
+      .array(z.record(z.string(), z.any()))
       .optional()
       .default([])
       .describe('Optional explicit component rows to merge into the graph.'),
@@ -26,7 +26,7 @@ export const SbomProvenanceGraphInputSchema = z
 
 export const SbomProvenanceGraphOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.record(z.any()).optional(),
+  data: z.record(z.string(), z.any()).optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),

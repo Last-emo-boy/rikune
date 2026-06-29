@@ -48,16 +48,16 @@ const wineDllOverridesOutputSchema = z
       .union([
         z.object({
           prefix: z.string(),
-          overrides: z.record(z.string()),
+          overrides: z.record(z.string(), z.string()),
           count: z.number().int().nonnegative(),
         }),
         z.object({
           prefix: z.string(),
-          overrides: z.record(z.string().nullable()),
+          overrides: z.record(z.string(), z.string().nullable()),
         }),
         z.object({
           prefix: z.string(),
-          applied: z.record(overrideMode),
+          applied: z.record(z.string(), overrideMode),
           env_string: z.string(),
           hint: z.string(),
         }),

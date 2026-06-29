@@ -71,7 +71,7 @@ export const SafeRunInputSchema = z.object({
 
 export const SafeRunSuccessOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.record(z.unknown()).optional(),
+  data: z.record(z.string(), z.unknown()).optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(z.any()).optional(),

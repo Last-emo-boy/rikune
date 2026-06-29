@@ -55,7 +55,7 @@ export const SymbolicExploreInputSchema = z.object({
     .describe('Approval token issued by PolicyGuard for dynamic execution'),
 })
 
-export const SymbolicExploreOutputSchema = createWorkerResultOutputSchema(z.record(z.any()))
+export const SymbolicExploreOutputSchema = createWorkerResultOutputSchema(z.record(z.string(), z.any()))
 
 export const symbolicExploreToolDefinition: ToolDefinition = {
   name: TOOL_NAME,

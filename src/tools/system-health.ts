@@ -47,7 +47,7 @@ const ComponentSchema = z.object({
   status: z.enum(['healthy', 'degraded', 'unhealthy', 'skipped']),
   ok: z.boolean(),
   error: z.string().nullable().optional(),
-  details: z.record(z.any()).optional(),
+  details: z.record(z.string(), z.any()).optional(),
 })
 
 const CacheObservabilitySchema = z.object({

@@ -115,9 +115,9 @@ export const pePdataExtractOutputSchema = z.object({
       skipped_existing_function_count: z.number().int().nonnegative().optional(),
       function_index_status: z.enum(['ready', 'unchanged', 'empty', 'skipped']).optional(),
       analysis_id: z.string().optional(),
-      evidence_summary: z.record(z.any()).optional(),
-      workflow_handoff: z.record(z.any()).optional(),
-      quality_gates: z.record(z.any()).optional(),
+      evidence_summary: z.record(z.string(), z.any()).optional(),
+      workflow_handoff: z.record(z.string(), z.any()).optional(),
+      quality_gates: z.record(z.string(), z.any()).optional(),
       recommended_next_tools: z.array(z.string()).optional(),
       next_actions: z.array(z.string()).optional(),
     })

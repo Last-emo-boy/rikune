@@ -59,9 +59,9 @@ export const pcapExtractStreamsOutputSchema = z.object({
         )
         .optional(),
       artifact: ArtifactRefSchema.optional(),
-      evidence_summary: z.record(z.any()).optional(),
-      workflow_handoff: z.record(z.any()).optional(),
-      quality_gates: z.record(z.any()).optional(),
+      evidence_summary: z.record(z.string(), z.any()).optional(),
+      workflow_handoff: z.record(z.string(), z.any()).optional(),
+      quality_gates: z.record(z.string(), z.any()).optional(),
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),

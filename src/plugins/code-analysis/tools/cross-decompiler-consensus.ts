@@ -180,9 +180,9 @@ export const CrossDecompilerConsensusOutputSchema = createWorkerResultOutputSche
         recommended_tools: z.array(z.string()),
       })
     ),
-    backend_coverage: z.record(z.any()),
-    evidence_summary: z.record(z.any()),
-    function_evidence_handoff: z.record(z.any()),
+    backend_coverage: z.record(z.string(), z.any()),
+    evidence_summary: z.record(z.string(), z.any()),
+    function_evidence_handoff: z.record(z.string(), z.any()),
     evidence_graph: z
       .object({
         nodes: z.array(z.object({ id: z.string(), type: z.string(), label: z.string() })),
@@ -191,7 +191,7 @@ export const CrossDecompilerConsensusOutputSchema = createWorkerResultOutputSche
         ),
       })
       .optional(),
-    quality_gates: z.record(z.any()),
+    quality_gates: z.record(z.string(), z.any()),
     follow_up_recommendations: z.array(z.string()),
   })
 )

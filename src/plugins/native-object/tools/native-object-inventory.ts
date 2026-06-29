@@ -68,7 +68,7 @@ const NativeObjectInventoryDataSchema = z.object({
   workflow_handoff: z
     .object({
       schema: z.literal(NATIVE_OBJECT_WORKFLOW_HANDOFF_SCHEMA),
-      artifact_contract: z.record(z.any()),
+      artifact_contract: z.record(z.string(), z.any()),
       dynamic_boundary: z
         .object({
           sample_execution_allowed: z.literal(false),
@@ -85,7 +85,7 @@ const NativeObjectInventoryDataSchema = z.object({
           network_used_by_tool: z.literal(false),
         })
         .passthrough(),
-      routing: z.array(z.record(z.any())),
+      routing: z.array(z.record(z.string(), z.any())),
     })
     .passthrough()
     .optional(),

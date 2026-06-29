@@ -40,7 +40,7 @@ export const ObfuscationDetectOutputSchema = z.object({
           name: z.string(),
           confidence: z.number(),
           description: z.string(),
-          indicators: z.record(z.any()),
+          indicators: z.record(z.string(), z.any()),
         })
       ),
       dotnet_specific: z.array(z.any()),

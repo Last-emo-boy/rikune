@@ -77,7 +77,7 @@ const WindowsDebugMetadataSchema = z.object({
   format: z.string(),
   detected_by: z.array(z.string()),
   size: z.number().optional(),
-  header: z.record(z.any()),
+  header: z.record(z.string(), z.any()),
   symbol_hints: z.array(z.string()),
   source_path_hints: z.array(z.string()),
   object_members: z.array(z.string()),
@@ -106,7 +106,7 @@ const WindowsDebugMetadataSchema = z.object({
   workflow_handoff: z
     .object({
       schema: z.literal(WINDOWS_DEBUG_METADATA_WORKFLOW_HANDOFF_SCHEMA),
-      artifact_contract: z.record(z.any()),
+      artifact_contract: z.record(z.string(), z.any()),
       dynamic_boundary: z
         .object({
           sample_execution_allowed: z.literal(false),
@@ -121,7 +121,7 @@ const WindowsDebugMetadataSchema = z.object({
           mutation_performed: z.literal(false),
         })
         .passthrough(),
-      routing: z.array(z.record(z.any())),
+      routing: z.array(z.record(z.string(), z.any())),
     })
     .passthrough()
     .optional(),
