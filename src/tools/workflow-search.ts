@@ -438,9 +438,7 @@ function collectCoverageFacts(
       facts.upgradeTools.push(tool)
       facts.recommendedTools.push(tool)
     }
-    facts.routeTerms.push(
-      ...termsFromValues([tool, purpose, ...(stringArray(path.closes_gaps) as string[])])
-    )
+    facts.routeTerms.push(...termsFromValues([tool, purpose, ...stringArray(path.closes_gaps)]))
   }
 
   const known = stringArray(coverage.known_findings).map(normalizeProfileTag)
@@ -481,7 +479,7 @@ function buildSampleRouteFacts(input: WorkflowSearchInput, database?: WorkflowSe
 
   const artifactFactSink = { artifactTypes, artifactPaths, routeTerms, factSources }
   for (const artifact of database.findArtifacts?.(sampleId)?.slice(0, 50) ?? []) {
-    collectArtifactFacts(artifactFactSink, artifact as Record<string, unknown>, 'artifacts')
+    collectArtifactFacts(artifactFactSink, artifact, 'artifacts')
   }
 
   const runs = database.findAnalysisRunsBySample?.(sampleId)?.slice(0, 3) ?? []
@@ -984,7 +982,7 @@ function assignLaneQuotas(searchProfiles: SearchProfileLane[], topK: number) {
     .filter((profile) => laneName(profile))
     .sort((a, b) => lanePriority(b) - lanePriority(a))
   const quotaProfiles = activeProfiles.slice(0, Math.max(0, topK))
-  return new Map(quotaProfiles.map((profile) => [laneName(profile) as string, 1]))
+  return new Map(quotaProfiles.map((profile) => [laneName(profile), 1]))
 }
 
 function selectLaneAwareTopK(
@@ -1007,7 +1005,7 @@ function selectLaneAwareTopK(
   for (const profile of searchProfiles
     .filter((candidate) => laneName(candidate))
     .sort((a, b) => lanePriority(b) - lanePriority(a))) {
-    const lane = laneName(profile) as string
+    const lane = laneName(profile)
     const quota = laneQuotas.get(lane) ?? 0
     const candidates = rankedRecommendations
       .map((candidate) => ({ candidate, lane_score: laneCandidateScore(candidate, profile) }))
@@ -1118,16 +1116,20 @@ function countAndStrip(target: Record<string, unknown>, keys: string[]): void {
     }
   }
 }
-function compactWorkflowSearchData(
-  data: Record<string, unknown>
-): Record<string, unknown> {
+function compactWorkflowSearchData(data: Record<string, unknown>): Record<string, unknown> {
   // search_profile: keep the ranked-relevant fields (recommended_tools, search_profiles,
   // sample_route_facts) but drop the reference-only full tool lists and the quota_decisions
   // copy that already exists at the response top level.
   const profile = asRecord(data.search_profile)
   if (Object.keys(profile).length > 0) {
     delete profile.quota_decisions
-    countAndStrip(profile, ['available_tools', 'blocked_tools', 'missing_deps', 'matched_tools', 'matched_plugins'])
+    countAndStrip(profile, [
+      'available_tools',
+      'blocked_tools',
+      'missing_deps',
+      'matched_tools',
+      'matched_plugins',
+    ])
     const matrix = asRecord(profile.plugin_matrix_summary)
     if (Object.keys(matrix).length > 0) {
       delete matrix.formats
@@ -1717,17 +1719,23 @@ export function createWorkflowSearchHandler(
                   },
                   message: `Activated ${input.result_id} directly from result_id; no backend execution was started.`,
                 },
-                warnings: uniqueStrings([...(discovery.warnings ?? []), ...(activation.warnings ?? [])]),
+                warnings: uniqueStrings([
+                  ...(discovery.warnings ?? []),
+                  ...(activation.warnings ?? []),
+                ]),
                 metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
               }
             }
 
             return {
               ok: false,
-              errors:
-                activation.errors ??
-                [`Failed to activate workflow.search result_id=${input.result_id}.`],
-              warnings: uniqueStrings([...(discovery.warnings ?? []), ...(activation.warnings ?? [])]),
+              errors: activation.errors ?? [
+                `Failed to activate workflow.search result_id=${input.result_id}.`,
+              ],
+              warnings: uniqueStrings([
+                ...(discovery.warnings ?? []),
+                ...(activation.warnings ?? []),
+              ]),
               metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
             }
           }
@@ -1900,9 +1908,7 @@ export function createWorkflowSearchHandler(
       }
       return {
         ok: true,
-        data: input.verbose
-          ? searchResponseData
-          : compactWorkflowSearchData(searchResponseData),
+        data: input.verbose ? searchResponseData : compactWorkflowSearchData(searchResponseData),
         warnings: discovery.warnings,
         metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
       }
