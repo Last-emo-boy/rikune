@@ -148,50 +148,66 @@ describe('V0.1 Acceptance Tests', () => {
    * Helper function to create a minimal PE file for testing
    */
   function createMinimalPE(): Buffer {
-    const pe = Buffer.alloc(1024)
-    
+    const pe = Buffer.alloc(0x400)
+    const peOffset = 0x80
+    const optionalOffset = peOffset + 24
+    const sectionOffset = optionalOffset + 0xe0
+
     // DOS header
-    pe.write('MZ', 0, 'ascii')  // e_magic
-    pe.writeUInt32LE(0x80, 0x3c)  // e_lfanew (offset to PE header)
-    
-    // PE header at offset 0x80
-    pe.write('PE\0\0', 0x80, 'ascii')  // Signature
-    
-    // COFF header
-    pe.writeUInt16LE(0x014c, 0x84)  // Machine (IMAGE_FILE_MACHINE_I386)
-    pe.writeUInt16LE(1, 0x86)  // NumberOfSections
-    pe.writeUInt32LE(Math.floor(Date.now() / 1000), 0x88)  // TimeDateStamp
-    pe.writeUInt32LE(0, 0x8c)  // PointerToSymbolTable
-    pe.writeUInt32LE(0, 0x90)  // NumberOfSymbols
-    pe.writeUInt16LE(0xe0, 0x94)  // SizeOfOptionalHeader
-    pe.writeUInt16LE(0x010f, 0x96)  // Characteristics
-    
+    pe.write('MZ', 0, 'ascii')
+    pe.writeUInt32LE(peOffset, 0x3c)
+
+    // PE signature and COFF header
+    pe.write('PE\0\0', peOffset, 'ascii')
+    pe.writeUInt16LE(0x014c, peOffset + 4) // Machine: IMAGE_FILE_MACHINE_I386
+    pe.writeUInt16LE(1, peOffset + 6) // NumberOfSections
+    pe.writeUInt32LE(Math.floor(Date.now() / 1000), peOffset + 8)
+    pe.writeUInt32LE(0, peOffset + 12) // PointerToSymbolTable
+    pe.writeUInt32LE(0, peOffset + 16) // NumberOfSymbols
+    pe.writeUInt16LE(0xe0, peOffset + 20) // SizeOfOptionalHeader
+    pe.writeUInt16LE(0x010f, peOffset + 22) // Characteristics
+
     // Optional header
-    pe.writeUInt16LE(0x010b, 0x98)  // Magic (PE32)
-    pe.writeUInt8(0x0e, 0x9a)  // MajorLinkerVersion
-    pe.writeUInt8(0x00, 0x9b)  // MinorLinkerVersion
-    pe.writeUInt32LE(0x1000, 0x9c)  // SizeOfCode
-    pe.writeUInt32LE(0x1000, 0xa0)  // SizeOfInitializedData
-    pe.writeUInt32LE(0, 0xa4)  // SizeOfUninitializedData
-    pe.writeUInt32LE(0x1000, 0xa8)  // AddressOfEntryPoint
-    pe.writeUInt32LE(0x1000, 0xac)  // BaseOfCode
-    pe.writeUInt32LE(0x2000, 0xb0)  // BaseOfData
-    pe.writeUInt32LE(0x400000, 0xb4)  // ImageBase
-    pe.writeUInt32LE(0x1000, 0xb8)  // SectionAlignment
-    pe.writeUInt32LE(0x200, 0xbc)  // FileAlignment
-    pe.writeUInt16LE(5, 0xc0)  // MajorOperatingSystemVersion
-    pe.writeUInt16LE(1, 0xc2)  // MinorOperatingSystemVersion
-    pe.writeUInt16LE(0, 0xc4)  // MajorImageVersion
-    pe.writeUInt16LE(0, 0xc6)  // MinorImageVersion
-    pe.writeUInt16LE(5, 0xc8)  // MajorSubsystemVersion
-    pe.writeUInt16LE(1, 0xca)  // MinorSubsystemVersion
-    pe.writeUInt32LE(0, 0xcc)  // Win32VersionValue
-    pe.writeUInt32LE(0x3000, 0xd0)  // SizeOfImage
-    pe.writeUInt32LE(0x200, 0xd4)  // SizeOfHeaders
-    pe.writeUInt32LE(0, 0xd8)  // CheckSum
-    pe.writeUInt16LE(3, 0xdc)  // Subsystem (IMAGE_SUBSYSTEM_WINDOWS_CUI)
-    pe.writeUInt16LE(0, 0xde)  // DllCharacteristics
-    
+    pe.writeUInt16LE(0x010b, optionalOffset) // Magic: PE32
+    pe.writeUInt8(0x0e, optionalOffset + 2) // MajorLinkerVersion
+    pe.writeUInt8(0x00, optionalOffset + 3) // MinorLinkerVersion
+    pe.writeUInt32LE(0x200, optionalOffset + 4) // SizeOfCode
+    pe.writeUInt32LE(0x200, optionalOffset + 8) // SizeOfInitializedData
+    pe.writeUInt32LE(0, optionalOffset + 12) // SizeOfUninitializedData
+    pe.writeUInt32LE(0x1000, optionalOffset + 16) // AddressOfEntryPoint
+    pe.writeUInt32LE(0x1000, optionalOffset + 20) // BaseOfCode
+    pe.writeUInt32LE(0x2000, optionalOffset + 24) // BaseOfData
+    pe.writeUInt32LE(0x400000, optionalOffset + 28) // ImageBase
+    pe.writeUInt32LE(0x1000, optionalOffset + 32) // SectionAlignment
+    pe.writeUInt32LE(0x200, optionalOffset + 36) // FileAlignment
+    pe.writeUInt16LE(5, optionalOffset + 40) // MajorOperatingSystemVersion
+    pe.writeUInt16LE(1, optionalOffset + 42) // MinorOperatingSystemVersion
+    pe.writeUInt16LE(0, optionalOffset + 44) // MajorImageVersion
+    pe.writeUInt16LE(0, optionalOffset + 46) // MinorImageVersion
+    pe.writeUInt16LE(5, optionalOffset + 48) // MajorSubsystemVersion
+    pe.writeUInt16LE(1, optionalOffset + 50) // MinorSubsystemVersion
+    pe.writeUInt32LE(0, optionalOffset + 52) // Win32VersionValue
+    pe.writeUInt32LE(0x2000, optionalOffset + 56) // SizeOfImage
+    pe.writeUInt32LE(0x200, optionalOffset + 60) // SizeOfHeaders
+    pe.writeUInt32LE(0, optionalOffset + 64) // CheckSum
+    pe.writeUInt16LE(3, optionalOffset + 68) // Subsystem: IMAGE_SUBSYSTEM_WINDOWS_CUI
+    pe.writeUInt16LE(0, optionalOffset + 70) // DllCharacteristics
+    pe.writeUInt32LE(0x100000, optionalOffset + 72) // SizeOfStackReserve
+    pe.writeUInt32LE(0x1000, optionalOffset + 76) // SizeOfStackCommit
+    pe.writeUInt32LE(0x100000, optionalOffset + 80) // SizeOfHeapReserve
+    pe.writeUInt32LE(0x1000, optionalOffset + 84) // SizeOfHeapCommit
+    pe.writeUInt32LE(0, optionalOffset + 88) // LoaderFlags
+    pe.writeUInt32LE(16, optionalOffset + 92) // NumberOfRvaAndSizes
+
+    // Section table and tiny .text body
+    pe.write('.text\0\0\0', sectionOffset, 'ascii')
+    pe.writeUInt32LE(0x10, sectionOffset + 8) // VirtualSize
+    pe.writeUInt32LE(0x1000, sectionOffset + 12) // VirtualAddress
+    pe.writeUInt32LE(0x200, sectionOffset + 16) // SizeOfRawData
+    pe.writeUInt32LE(0x200, sectionOffset + 20) // PointerToRawData
+    pe.writeUInt32LE(0x60000020, sectionOffset + 36) // Code | execute | read
+    pe[0x200] = 0xc3 // ret
+
     return pe
   }
 

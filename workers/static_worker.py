@@ -20,6 +20,7 @@ import traceback
 import warnings
 import signal
 import tempfile
+import struct
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict, is_dataclass
 from datetime import datetime, timezone
@@ -2319,6 +2320,198 @@ print(json.dumps(payload))
         
         return entropy
 
+    def _read_u16(self, data: bytes, offset: int) -> int:
+        if offset < 0 or offset + 2 > len(data):
+            raise ValueError("PE header is truncated")
+        return struct.unpack_from("<H", data, offset)[0]
+
+    def _read_u32(self, data: bytes, offset: int) -> int:
+        if offset < 0 or offset + 4 > len(data):
+            raise ValueError("PE header is truncated")
+        return struct.unpack_from("<I", data, offset)[0]
+
+    def _read_u64(self, data: bytes, offset: int) -> int:
+        if offset < 0 or offset + 8 > len(data):
+            raise ValueError("PE header is truncated")
+        return struct.unpack_from("<Q", data, offset)[0]
+
+    def _parse_minimal_pe(self, sample_path: str) -> Dict[str, Any]:
+        with open(sample_path, "rb") as handle:
+            data = handle.read()
+
+        if len(data) < 0x40 or data[0:2] != b"MZ":
+            raise ValueError("Not a PE file: missing MZ header")
+
+        pe_offset = self._read_u32(data, 0x3C)
+        if pe_offset <= 0 or pe_offset + 24 > len(data) or data[pe_offset:pe_offset + 4] != b"PE\x00\x00":
+            raise ValueError("Not a PE file: missing PE signature")
+
+        coff_offset = pe_offset + 4
+        machine = self._read_u16(data, coff_offset)
+        section_count = self._read_u16(data, coff_offset + 2)
+        timestamp = self._read_u32(data, coff_offset + 4)
+        optional_size = self._read_u16(data, coff_offset + 16)
+        optional_offset = coff_offset + 20
+        if optional_size < 96 or optional_offset + optional_size > len(data):
+            raise ValueError("PE optional header is missing or truncated")
+
+        optional_magic = self._read_u16(data, optional_offset)
+        if optional_magic == 0x10B:
+            pe64 = False
+            entry_point = self._read_u32(data, optional_offset + 16)
+            image_base = self._read_u32(data, optional_offset + 28)
+            subsystem = self._read_u16(data, optional_offset + 68)
+            data_directory_offset = optional_offset + 96
+            number_of_rva_and_sizes = self._read_u32(data, optional_offset + 92)
+        elif optional_magic == 0x20B:
+            pe64 = True
+            entry_point = self._read_u32(data, optional_offset + 16)
+            image_base = self._read_u64(data, optional_offset + 24)
+            subsystem = self._read_u16(data, optional_offset + 68)
+            data_directory_offset = optional_offset + 112
+            number_of_rva_and_sizes = self._read_u32(data, optional_offset + 108)
+        else:
+            raise ValueError(f"Unsupported PE optional header magic: 0x{optional_magic:x}")
+
+        machine_names = {
+            0x014C: "IMAGE_FILE_MACHINE_I386",
+            0x8664: "IMAGE_FILE_MACHINE_AMD64",
+            0x01C0: "IMAGE_FILE_MACHINE_ARM",
+            0xAA64: "IMAGE_FILE_MACHINE_ARM64",
+        }
+        subsystem_names = {
+            1: "IMAGE_SUBSYSTEM_NATIVE",
+            2: "IMAGE_SUBSYSTEM_WINDOWS_GUI",
+            3: "IMAGE_SUBSYSTEM_WINDOWS_CUI",
+            9: "IMAGE_SUBSYSTEM_WINDOWS_CE_GUI",
+            10: "IMAGE_SUBSYSTEM_EFI_APPLICATION",
+        }
+
+        directories: List[Dict[str, int]] = []
+        max_directories = min(number_of_rva_and_sizes, 16)
+        for index in range(max_directories):
+            offset = data_directory_offset + index * 8
+            if offset + 8 > optional_offset + optional_size or offset + 8 > len(data):
+                break
+            directories.append({
+                "rva": self._read_u32(data, offset),
+                "size": self._read_u32(data, offset + 4),
+            })
+
+        section_offset = optional_offset + optional_size
+        sections = []
+        for index in range(section_count):
+            offset = section_offset + index * 40
+            if offset + 40 > len(data):
+                break
+            name = data[offset:offset + 8].split(b"\x00", 1)[0].decode("utf-8", errors="ignore")
+            virtual_size = self._read_u32(data, offset + 8)
+            virtual_address = self._read_u32(data, offset + 12)
+            raw_size = self._read_u32(data, offset + 16)
+            raw_pointer = self._read_u32(data, offset + 20)
+            characteristics = self._read_u32(data, offset + 36)
+            raw_data = b""
+            if raw_size > 0 and raw_pointer < len(data):
+                raw_data = data[raw_pointer:min(raw_pointer + raw_size, len(data))]
+            sections.append({
+                "name": name,
+                "virtual_address": virtual_address,
+                "virtual_size": virtual_size,
+                "raw_size": raw_size,
+                "raw_pointer": raw_pointer,
+                "entropy": round(self._calculate_entropy(raw_data), 2),
+                "characteristics": characteristics,
+            })
+
+        parser_limitations = [
+            "pefile and LIEF are unavailable; only PE headers and section table were parsed.",
+            "Imports, exports, resources, signatures, and CLR metadata require the full PE parser stack.",
+        ]
+
+        return {
+            "machine": machine,
+            "machine_name": machine_names.get(machine, "Unknown"),
+            "subsystem": subsystem,
+            "subsystem_name": subsystem_names.get(subsystem, "Unknown"),
+            "timestamp": timestamp,
+            "timestamp_iso": datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat() if timestamp > 0 else None,
+            "imphash": None,
+            "entry_point": entry_point,
+            "image_base": image_base,
+            "is_pe64": pe64,
+            "sections": sections,
+            "data_directories": directories,
+            "_parser": "minimal-pe",
+            "_parser_limitations": parser_limitations,
+        }
+
+    def _pe_fingerprint_minimal(self, sample_path: str, fast: bool) -> Dict[str, Any]:
+        parsed = self._parse_minimal_pe(sample_path)
+        result = {
+            "machine": parsed["machine"],
+            "machine_name": parsed["machine_name"],
+            "subsystem": parsed["subsystem"],
+            "subsystem_name": parsed["subsystem_name"],
+            "timestamp": parsed["timestamp"],
+            "timestamp_iso": parsed["timestamp_iso"],
+            "imphash": None,
+            "entry_point": parsed["entry_point"],
+            "image_base": parsed["image_base"],
+            "_parser": "minimal-pe",
+            "_parser_limitations": parsed["_parser_limitations"],
+        }
+        if not fast:
+            result["sections"] = [
+                {
+                    "name": section["name"],
+                    "virtual_address": section["virtual_address"],
+                    "virtual_size": section["virtual_size"],
+                    "raw_size": section["raw_size"],
+                    "entropy": section["entropy"],
+                    "characteristics": section["characteristics"],
+                }
+                for section in parsed["sections"]
+            ]
+            result["signature"] = {"present": False}
+        return result
+
+    def _pe_imports_extract_minimal(self, sample_path: str, group_by_dll: bool) -> Dict[str, Any]:
+        parsed = self._parse_minimal_pe(sample_path)
+        return {
+            "imports": {},
+            "delayed_imports": {},
+            "total_dlls": 0,
+            "total_delayed_dlls": 0,
+            "total_functions": 0,
+            "total_delayed_functions": 0,
+            "_parser": "minimal-pe",
+            "_parser_limitations": parsed["_parser_limitations"],
+        }
+
+    def _pe_exports_extract_minimal(self, sample_path: str) -> Dict[str, Any]:
+        parsed = self._parse_minimal_pe(sample_path)
+        return {
+            "exports": [],
+            "forwarders": [],
+            "total_exports": 0,
+            "total_forwarders": 0,
+            "_parser": "minimal-pe",
+            "_parser_limitations": parsed["_parser_limitations"],
+        }
+
+    def _runtime_detect_minimal_pe(self, sample_path: str) -> Dict[str, Any]:
+        parsed = self._parse_minimal_pe(sample_path)
+        return {
+            "is_dotnet": False,
+            "dotnet_version": None,
+            "target_framework": None,
+            "suspected": [],
+            "import_dlls": [],
+            "tooling": self._get_dependency_status(),
+            "_parser": "minimal-pe",
+            "_parser_limitations": parsed["_parser_limitations"],
+        }
+
     def _pe_fingerprint_pefile(self, sample_path: str, fast: bool) -> Dict[str, Any]:
         """
         浣跨敤 pefile 鎻愬彇 PE 鎸囩汗
@@ -2527,9 +2720,14 @@ print(json.dumps(payload))
                         result["_pefile_error"] = str(e)
                         return result
                     except Exception as lief_error:
-                        raise Exception(f"Both parsers failed. pefile: {str(e)}, lief: {str(lief_error)}")
+                        result = self._pe_fingerprint_minimal(sample_path, fast)
+                        result["_pefile_error"] = str(e)
+                        result["_lief_error"] = str(lief_error)
+                        return result
                 else:
-                    raise Exception(f"pefile failed and LIEF not available: {str(e)}")
+                    result = self._pe_fingerprint_minimal(sample_path, fast)
+                    result["_pefile_error"] = str(e)
+                    return result
         
         # 濡傛灉 pefile 涓嶅彲鐢紝鐩存帴浣跨敤 LIEF
         elif LIEF_AVAILABLE:
@@ -2538,10 +2736,12 @@ print(json.dumps(payload))
                 result["_parser"] = "lief"
                 return result
             except Exception as e:
-                raise Exception(f"LIEF parser failed: {str(e)}")
+                result = self._pe_fingerprint_minimal(sample_path, fast)
+                result["_lief_error"] = str(e)
+                return result
         
         else:
-            raise Exception("No PE parser available (neither pefile nor LIEF)")
+            return self._pe_fingerprint_minimal(sample_path, fast)
 
     def _pe_imports_extract_pefile(self, sample_path: str, group_by_dll: bool) -> Dict[str, Any]:
         """
@@ -2704,9 +2904,14 @@ print(json.dumps(payload))
                         result["_pefile_error"] = str(e)
                         return result
                     except Exception as lief_error:
-                        raise Exception(f"Both parsers failed. pefile: {str(e)}, lief: {str(lief_error)}")
+                        result = self._pe_imports_extract_minimal(sample_path, group_by_dll)
+                        result["_pefile_error"] = str(e)
+                        result["_lief_error"] = str(lief_error)
+                        return result
                 else:
-                    raise Exception(f"pefile failed and LIEF not available: {str(e)}")
+                    result = self._pe_imports_extract_minimal(sample_path, group_by_dll)
+                    result["_pefile_error"] = str(e)
+                    return result
         
         # 濡傛灉 pefile 涓嶅彲鐢紝鐩存帴浣跨敤 LIEF
         elif LIEF_AVAILABLE:
@@ -2715,10 +2920,12 @@ print(json.dumps(payload))
                 result["_parser"] = "lief"
                 return result
             except Exception as e:
-                raise Exception(f"LIEF parser failed: {str(e)}")
+                result = self._pe_imports_extract_minimal(sample_path, group_by_dll)
+                result["_lief_error"] = str(e)
+                return result
         
         else:
-            raise Exception("No PE parser available (neither pefile nor LIEF)")
+            return self._pe_imports_extract_minimal(sample_path, group_by_dll)
 
     def _pe_exports_extract_pefile(self, sample_path: str) -> Dict[str, Any]:
         """
@@ -2838,9 +3045,14 @@ print(json.dumps(payload))
                         result["_pefile_error"] = str(e)
                         return result
                     except Exception as lief_error:
-                        raise Exception(f"Both parsers failed. pefile: {str(e)}, lief: {str(lief_error)}")
+                        result = self._pe_exports_extract_minimal(sample_path)
+                        result["_pefile_error"] = str(e)
+                        result["_lief_error"] = str(lief_error)
+                        return result
                 else:
-                    raise Exception(f"pefile failed and LIEF not available: {str(e)}")
+                    result = self._pe_exports_extract_minimal(sample_path)
+                    result["_pefile_error"] = str(e)
+                    return result
         
         # 濡傛灉 pefile 涓嶅彲鐢紝鐩存帴浣跨敤 LIEF
         elif LIEF_AVAILABLE:
@@ -2849,10 +3061,12 @@ print(json.dumps(payload))
                 result["_parser"] = "lief"
                 return result
             except Exception as e:
-                raise Exception(f"LIEF parser failed: {str(e)}")
+                result = self._pe_exports_extract_minimal(sample_path)
+                result["_lief_error"] = str(e)
+                return result
         
         else:
-            raise Exception("No PE parser available (neither pefile nor LIEF)")
+            return self._pe_exports_extract_minimal(sample_path)
 
 
     def strings_extract(self, sample_path: str, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -4457,8 +4671,9 @@ print(json.dumps(payload))
                     result["suspected"].append(rust_info)
                 
             except Exception as lief_error:
-                # 涓や釜瑙ｆ瀽鍣ㄩ兘澶辫触
-                raise ValueError(f"Failed to parse PE file with both pefile and LIEF: {str(e)}, {str(lief_error)}")
+                result = self._runtime_detect_minimal_pe(sample_path)
+                result["_pefile_error"] = str(e)
+                result["_lief_error"] = str(lief_error)
 
         self._augment_rust_msvc_fusion(result["suspected"])
 
@@ -7467,4 +7682,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

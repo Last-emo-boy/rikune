@@ -156,6 +156,16 @@ function makeMockProcess(options: {
 
 describe('runtime-node executor backend pre-flight checks', () => {
   let samplePath: string
+  let platformDescriptor: PropertyDescriptor | undefined
+
+  function mockWindowsRuntimePlatform(): void {
+    platformDescriptor = platformDescriptor ?? Object.getOwnPropertyDescriptor(process, 'platform')
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      enumerable: platformDescriptor?.enumerable ?? true,
+      value: 'win32',
+    })
+  }
 
   beforeEach(() => {
     fs.mkdirSync(testInbox, { recursive: true })
@@ -168,6 +178,10 @@ describe('runtime-node executor backend pre-flight checks', () => {
 
   afterEach(() => {
     setSpawnImplementationForTests()
+    if (platformDescriptor) {
+      Object.defineProperty(process, 'platform', platformDescriptor)
+      platformDescriptor = undefined
+    }
     jest.restoreAllMocks()
     try { fs.rmSync(testInbox, { recursive: true, force: true }) } catch {}
     try { fs.rmSync(testOutbox, { recursive: true, force: true }) } catch {}
@@ -732,6 +746,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
 
   describe('executeTelemetryCapture', () => {
     test('reports setup_required profile when ProcMon is unavailable', async () => {
+      mockWindowsRuntimePlatform()
       const originalExistsSync = fs.existsSync
       jest.spyOn(fs, 'existsSync').mockImplementation((candidate) => {
         const value = String(candidate).toLowerCase()
@@ -759,6 +774,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
     })
 
     test('captures PowerShell event-log telemetry artifact', async () => {
+      mockWindowsRuntimePlatform()
       spawnMock.mockImplementation((cmd: string, args: string[]) => {
         expect(cmd.toLowerCase()).toBe('powershell.exe')
         const outputIndex = args.findIndex((arg) => arg.includes('Set-Content'))
@@ -794,6 +810,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
     })
 
     test('starts and stops ETW logman capture', async () => {
+      mockWindowsRuntimePlatform()
       spawnMock.mockImplementation((cmd: string, args: string[]) => {
         expect(cmd.toLowerCase()).toBe('logman.exe')
         if (args[0] === 'start') {

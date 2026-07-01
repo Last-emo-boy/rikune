@@ -589,42 +589,61 @@ describe('MCP Tools Integration Tests', () => {
  * Helper function to create a minimal PE file for testing
  */
 function createMinimalPE(): Buffer {
-  // Create a minimal PE header structure
-  const dosHeader = Buffer.alloc(64)
-  dosHeader.write('MZ', 0) // DOS signature
-  dosHeader.writeUInt32LE(64, 60) // PE header offset
+  const pe = Buffer.alloc(0x400)
+  const peOffset = 0x80
+  const optionalOffset = peOffset + 24
+  const sectionOffset = optionalOffset + 0xe0
 
-  const peSignature = Buffer.from('PE\0\0')
-  
-  const coffHeader = Buffer.alloc(20)
-  coffHeader.writeUInt16LE(0x014c, 0) // Machine: IMAGE_FILE_MACHINE_I386
-  coffHeader.writeUInt16LE(1, 2) // NumberOfSections
-  coffHeader.writeUInt32LE(Math.floor(Date.now() / 1000), 4) // TimeDateStamp
-  coffHeader.writeUInt16LE(224, 16) // SizeOfOptionalHeader
-  coffHeader.writeUInt16LE(0x0102, 18) // Characteristics
+  pe.write('MZ', 0, 'ascii')
+  pe.writeUInt32LE(peOffset, 0x3c)
 
-  const optionalHeader = Buffer.alloc(224)
-  optionalHeader.writeUInt16LE(0x010b, 0) // Magic: PE32
-  optionalHeader.writeUInt32LE(0x1000, 24) // ImageBase
-  optionalHeader.writeUInt32LE(0x1000, 32) // SectionAlignment
-  optionalHeader.writeUInt32LE(0x200, 36) // FileAlignment
-  optionalHeader.writeUInt16LE(3, 68) // Subsystem: IMAGE_SUBSYSTEM_WINDOWS_CUI
+  pe.write('PE\0\0', peOffset, 'ascii')
+  pe.writeUInt16LE(0x014c, peOffset + 4) // Machine: IMAGE_FILE_MACHINE_I386
+  pe.writeUInt16LE(1, peOffset + 6) // NumberOfSections
+  pe.writeUInt32LE(Math.floor(Date.now() / 1000), peOffset + 8)
+  pe.writeUInt32LE(0, peOffset + 12) // PointerToSymbolTable
+  pe.writeUInt32LE(0, peOffset + 16) // NumberOfSymbols
+  pe.writeUInt16LE(0xe0, peOffset + 20) // SizeOfOptionalHeader
+  pe.writeUInt16LE(0x010f, peOffset + 22) // Characteristics
 
-  const sectionHeader = Buffer.alloc(40)
-  sectionHeader.write('.text', 0)
-  sectionHeader.writeUInt32LE(0x1000, 8) // VirtualSize
-  sectionHeader.writeUInt32LE(0x1000, 12) // VirtualAddress
-  sectionHeader.writeUInt32LE(0x200, 16) // SizeOfRawData
-  sectionHeader.writeUInt32LE(0x400, 20) // PointerToRawData
+  pe.writeUInt16LE(0x010b, optionalOffset) // Magic: PE32
+  pe.writeUInt8(0x0e, optionalOffset + 2) // MajorLinkerVersion
+  pe.writeUInt8(0x00, optionalOffset + 3) // MinorLinkerVersion
+  pe.writeUInt32LE(0x200, optionalOffset + 4) // SizeOfCode
+  pe.writeUInt32LE(0x200, optionalOffset + 8) // SizeOfInitializedData
+  pe.writeUInt32LE(0, optionalOffset + 12) // SizeOfUninitializedData
+  pe.writeUInt32LE(0x1000, optionalOffset + 16) // AddressOfEntryPoint
+  pe.writeUInt32LE(0x1000, optionalOffset + 20) // BaseOfCode
+  pe.writeUInt32LE(0x2000, optionalOffset + 24) // BaseOfData
+  pe.writeUInt32LE(0x400000, optionalOffset + 28) // ImageBase
+  pe.writeUInt32LE(0x1000, optionalOffset + 32) // SectionAlignment
+  pe.writeUInt32LE(0x200, optionalOffset + 36) // FileAlignment
+  pe.writeUInt16LE(5, optionalOffset + 40) // MajorOperatingSystemVersion
+  pe.writeUInt16LE(1, optionalOffset + 42) // MinorOperatingSystemVersion
+  pe.writeUInt16LE(0, optionalOffset + 44) // MajorImageVersion
+  pe.writeUInt16LE(0, optionalOffset + 46) // MinorImageVersion
+  pe.writeUInt16LE(5, optionalOffset + 48) // MajorSubsystemVersion
+  pe.writeUInt16LE(1, optionalOffset + 50) // MinorSubsystemVersion
+  pe.writeUInt32LE(0, optionalOffset + 52) // Win32VersionValue
+  pe.writeUInt32LE(0x2000, optionalOffset + 56) // SizeOfImage
+  pe.writeUInt32LE(0x200, optionalOffset + 60) // SizeOfHeaders
+  pe.writeUInt32LE(0, optionalOffset + 64) // CheckSum
+  pe.writeUInt16LE(3, optionalOffset + 68) // Subsystem: IMAGE_SUBSYSTEM_WINDOWS_CUI
+  pe.writeUInt16LE(0, optionalOffset + 70) // DllCharacteristics
+  pe.writeUInt32LE(0x100000, optionalOffset + 72) // SizeOfStackReserve
+  pe.writeUInt32LE(0x1000, optionalOffset + 76) // SizeOfStackCommit
+  pe.writeUInt32LE(0x100000, optionalOffset + 80) // SizeOfHeapReserve
+  pe.writeUInt32LE(0x1000, optionalOffset + 84) // SizeOfHeapCommit
+  pe.writeUInt32LE(0, optionalOffset + 88) // LoaderFlags
+  pe.writeUInt32LE(16, optionalOffset + 92) // NumberOfRvaAndSizes
 
-  const sectionData = Buffer.alloc(512)
+  pe.write('.text\0\0\0', sectionOffset, 'ascii')
+  pe.writeUInt32LE(0x10, sectionOffset + 8) // VirtualSize
+  pe.writeUInt32LE(0x1000, sectionOffset + 12) // VirtualAddress
+  pe.writeUInt32LE(0x200, sectionOffset + 16) // SizeOfRawData
+  pe.writeUInt32LE(0x200, sectionOffset + 20) // PointerToRawData
+  pe.writeUInt32LE(0x60000020, sectionOffset + 36) // Code | execute | read
+  pe[0x200] = 0xc3 // ret
 
-  return Buffer.concat([
-    dosHeader,
-    peSignature,
-    coffHeader,
-    optionalHeader,
-    sectionHeader,
-    sectionData
-  ])
+  return pe
 }

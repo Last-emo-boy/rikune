@@ -101,6 +101,10 @@ function findExecutableOnPath(filenames: string[]): { path: string; source: stri
   return null
 }
 
+function resolveRuntimeToolCandidate(root: string, relativePath: string): string {
+  return path.join(root, ...relativePath.split(/[\\/]+/u))
+}
+
 export function findRuntimeTool(
   spec: RuntimeToolSpec | undefined
 ): { path: string; source: string } | null {
@@ -109,7 +113,7 @@ export function findRuntimeTool(
   }
   for (const root of runtimeToolSearchRoots()) {
     for (const relativePath of spec.relativePaths) {
-      const candidate = path.join(root, relativePath)
+      const candidate = resolveRuntimeToolCandidate(root, relativePath)
       if (fs.existsSync(candidate)) {
         return { path: candidate, source: root }
       }

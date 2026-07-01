@@ -78,13 +78,13 @@ export interface ProcessInvocation {
   windowsVerbatimArguments?: boolean
 }
 
-function getWindowsCommandInterpreter(): string {
+function getWindowsCommandInterpreter(requireExisting = process.platform === 'win32'): string {
   const envCandidates = [process.env.ComSpec, process.env.COMSPEC].filter(
     (value): value is string => Boolean(value && value.trim())
   )
 
   for (const candidate of envCandidates) {
-    if (fs.existsSync(candidate)) {
+    if (!requireExisting || fs.existsSync(candidate)) {
       return candidate
     }
   }
@@ -308,13 +308,17 @@ export function quoteForWindowsCmd(value: string): string {
  * Build explicit cmd.exe invocation for .bat/.cmd entry points on Windows.
  * Avoids `shell: true` and path-splitting issues on special characters.
  */
-export function buildWindowsBatchInvocation(command: string, args: string[]): ProcessInvocation {
+export function buildWindowsBatchInvocation(
+  command: string,
+  args: string[],
+  platform: NodeJS.Platform = process.platform
+): ProcessInvocation {
   const commandLine = [quoteForWindowsCmd(command), ...args.map(quoteForWindowsCmd)].join(' ')
   // cmd.exe /s /c requires one outer quote pair around the full command line;
   // without this, paths containing '&' are split and fail to execute.
   const wrappedCommandLine = `"${commandLine}"`
   return {
-    command: getWindowsCommandInterpreter(),
+    command: getWindowsCommandInterpreter(platform === 'win32' && process.platform === 'win32'),
     args: ['/d', '/s', '/c', wrappedCommandLine],
     windowsVerbatimArguments: true,
   }
@@ -330,7 +334,7 @@ export function buildProcessInvocation(
   platform: NodeJS.Platform = process.platform
 ): ProcessInvocation {
   if (platform === 'win32' && /\.(bat|cmd)$/i.test(command)) {
-    return buildWindowsBatchInvocation(command, args)
+    return buildWindowsBatchInvocation(command, args, platform)
   }
 
   return {
