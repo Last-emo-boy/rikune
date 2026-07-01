@@ -11,7 +11,10 @@ import { DatabaseManager } from '../../src/database.js'
 import { JobQueue } from '../../src/job-queue.js'
 import { PolicyGuard } from '../../src/policy-guard.js'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
-import { createOrReuseAnalysisRun } from '../../src/analysis/analysis-run-state.js'
+import {
+  createOrReuseAnalysisRun,
+  upsertAnalysisRunStage,
+} from '../../src/analysis/analysis-run-state.js'
 import {
   ANALYSIS_STAGE_JOB_TOOL,
   createAnalyzePipelineStageContext,
@@ -223,23 +226,32 @@ describe('Workflow Integration', () => {
     expect(promoteResult.ok).toBe(true)
     const promoted = promoteResult.data as any
     expect(promoted.execution_state).toBe('queued')
-    expect(promoted.stage_result.queued_stages).toEqual(['enrich_static', 'function_map'])
-    expect(promoted.deferred_jobs).toHaveLength(2)
-    expect(promoted.deferred_jobs.map((job: any) => job.stage)).toEqual([
-      'enrich_static',
-      'function_map',
+    expect(promoted.stage_result.queued_stages).toEqual(['enrich_static'])
+    expect(promoted.stage_result.blocked_stages).toEqual([
+      expect.objectContaining({
+        stage: 'function_map',
+        blocked_by_stage: 'enrich_static',
+        blocked_by_status: 'queued',
+      }),
     ])
+    expect(promoted.coverage_gaps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ domain: 'function_map', status: 'blocked' }),
+      ])
+    )
+    expect(promoteResult.warnings?.join(' ')).toContain('function_map waits for enrich_static')
+    expect(promoted.deferred_jobs).toHaveLength(1)
+    expect(promoted.deferred_jobs.map((job: any) => job.stage)).toEqual(['enrich_static'])
 
     const queuedJobs = jobQueue.listQueuedJobs()
-    expect(queuedJobs).toHaveLength(2)
+    expect(queuedJobs).toHaveLength(1)
     expect(queuedJobs.every((job) => job.tool === ANALYSIS_STAGE_JOB_TOOL)).toBe(true)
 
     const enrichStage = database.findAnalysisRunStage(started.run_id, 'enrich_static')
     const functionMapStage = database.findAnalysisRunStage(started.run_id, 'function_map')
     expect(enrichStage?.status).toBe('queued')
     expect(enrichStage?.tool).toBe(ANALYSIS_STAGE_JOB_TOOL)
-    expect(functionMapStage?.status).toBe('queued')
-    expect(functionMapStage?.tool).toBe(ANALYSIS_STAGE_JOB_TOOL)
+    expect(functionMapStage).toBeUndefined()
 
     const statusResult = await status({ run_id: started.run_id })
 
@@ -247,13 +259,77 @@ describe('Workflow Integration', () => {
     const current = statusResult.data as any
     expect(current.execution_state).toBe('queued')
     expect(current.run.status).toBe('queued')
-    expect(current.run.latest_stage).toBe('function_map')
-    expect(current.deferred_jobs).toHaveLength(2)
-    expect(current.deferred_jobs.map((job: any) => job.stage)).toEqual([
-      'enrich_static',
-      'function_map',
-    ])
+    expect(current.run.latest_stage).toBe('enrich_static')
+    expect(current.deferred_jobs).toHaveLength(1)
+    expect(current.deferred_jobs.map((job: any) => job.stage)).toEqual(['enrich_static'])
     expect(current.recommended_next_tools).toContain('workflow.analyze.status')
+    expect(current.next_actions[0]).toContain('workflow.analyze.status')
+  })
+
+  test('keeps function_map partial while the internal Ghidra analysis job is queued', async () => {
+    const sample = database.findSample(`sha256:${'a'.repeat(64)}`)
+    expect(sample).toBeDefined()
+    const { run } = createOrReuseAnalysisRun(database, {
+      sample: sample!,
+      goal: 'reverse',
+      depth: 'balanced',
+      backendPolicy: 'auto',
+      forceRefresh: true,
+    })
+    upsertAnalysisRunStage(database, {
+      runId: run.id,
+      stage: 'enrich_static',
+      status: 'completed',
+      executionState: 'completed',
+      result: { stage: 'enrich_static', status: 'ready' },
+    })
+
+    const stageContext = createAnalyzePipelineStageContext(
+      workspaceManager,
+      database,
+      cacheManager,
+      policyGuard,
+      undefined,
+      {
+        ghidraAnalyze: async () => ({
+          ok: true,
+          data: {
+            analysis_id: 'ghidra-job-1',
+            job_id: 'ghidra-job-1',
+            status: 'queued',
+            result_mode: 'queued',
+            function_count: 0,
+          },
+        }),
+        rizinAnalyze: async () => ({
+          ok: true,
+          data: { functions: [] },
+        }),
+        resolveBackends: () => makeUnavailableBackendResolution(),
+      },
+      jobQueue
+    )
+
+    const result = await executeQueuedAnalysisStage(stageContext, {
+      run_id: run.id,
+      stage: 'function_map',
+      force_refresh: false,
+    })
+
+    expect(result.ok).toBe(true)
+    expect((result.data as any).status).toBe('waiting_for_ghidra')
+    expect((result.data as any).execution_state).toBe('partial')
+    expect(result.warnings.join(' ')).toContain('function_map remains partial')
+
+    const stage = database.findAnalysisRunStage(run.id, 'function_map')
+    expect(stage?.status).toBe('partial')
+    expect(stage?.execution_state).toBe('partial')
+    const metadata = JSON.parse(stage?.metadata_json || '{}')
+    expect(metadata).toMatchObject({
+      ghidra_job_id: 'ghidra-job-1',
+      ghidra_status: 'queued',
+      function_index_ready: false,
+    })
   })
 
   test('records bounded dynamic_execute output when runtime-backed sandbox execution is unsupported', async () => {
@@ -370,6 +446,14 @@ describe('Workflow Integration', () => {
       force_refresh: false,
     })
     expect(promoteResult.ok).toBe(true)
+    expect((promoteResult.data as any).stage_result.queued_stages).toEqual(['dynamic_plan'])
+    expect((promoteResult.data as any).stage_result.blocked_stages).toEqual([
+      expect.objectContaining({
+        stage: 'dynamic_execute',
+        blocked_by_stage: 'dynamic_plan',
+        blocked_by_status: 'queued',
+      }),
+    ])
 
     const queuedDynamicPlan = jobQueue
       .listQueuedJobs()
@@ -383,6 +467,16 @@ describe('Workflow Integration', () => {
     })
     jobQueue.complete(queuedDynamicPlan!.id, dynamicPlanResult)
     expect(dynamicPlanResult.ok).toBe(true)
+
+    const promoteExecuteResult = await promote({
+      run_id: started.run_id,
+      through_stage: 'dynamic_execute',
+      force_refresh: false,
+    })
+    expect(promoteExecuteResult.ok).toBe(true)
+    expect((promoteExecuteResult.data as any).stage_result.queued_stages).toEqual([
+      'dynamic_execute',
+    ])
 
     const queuedDynamicExecute = jobQueue
       .listQueuedJobs()
@@ -435,6 +529,15 @@ describe('Workflow Integration', () => {
       depth: 'balanced',
       backendPolicy: 'auto',
     })
+    for (const stage of ['enrich_static', 'function_map', 'reconstruct'] as const) {
+      upsertAnalysisRunStage(database, {
+        runId: run.id,
+        stage,
+        status: 'completed',
+        executionState: 'completed',
+        result: { stage, status: 'ready' },
+      })
+    }
     let capturedArgs: Record<string, unknown> | null = null
     const prepareArtifact = {
       id: 'semantic-prepare-1',

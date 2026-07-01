@@ -1273,6 +1273,88 @@ describe('code.functions.reconstruct tool', () => {
     expect(data.functions[0].gaps).toContain('missing_ghidra_analysis')
   })
 
+  test('should not cache degraded fallback when top-k ranking yields no functions', async () => {
+    const sampleId = 'sha256:' + '6'.repeat(64)
+    insertSample(sampleId, '6')
+
+    const rankFunctions = jest
+      .fn<(sampleId: string, topK: number) => Promise<RankedFunction[]>>()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          address: '0x406000',
+          name: 'recovered',
+          score: 42,
+          reasons: ['ready_after_ghidra'],
+        },
+      ])
+    const decompileFunction = jest
+      .fn<
+        (
+          sampleId: string,
+          addressOrSymbol: string,
+          includeXrefs: boolean,
+          timeoutMs: number
+        ) => Promise<DecompiledFunction>
+      >()
+      .mockResolvedValue({
+        function: 'recovered',
+        address: '0x406000',
+        pseudocode: 'int recovered(void) { return 1; }',
+        callers: [],
+        callees: [],
+      })
+    const getFunctionCFG = jest
+      .fn<
+        (
+          sampleId: string,
+          addressOrSymbol: string,
+          timeoutMs: number
+        ) => Promise<ControlFlowGraph>
+      >()
+      .mockResolvedValue({
+        function: 'recovered',
+        address: '0x406000',
+        nodes: [
+          {
+            id: 'entry',
+            address: '0x406000',
+            instructions: ['ret'],
+            type: 'entry',
+          },
+        ],
+        edges: [],
+      })
+
+    const handler = createCodeFunctionsReconstructHandler(
+      workspaceManager,
+      database,
+      cacheManager,
+      {
+        rankFunctions,
+        decompileFunction,
+        getFunctionCFG,
+      }
+    )
+
+    const first = await handler({
+      sample_id: sampleId,
+      topk: 1,
+    })
+    const second = await handler({
+      sample_id: sampleId,
+      topk: 1,
+    })
+
+    expect(first.ok).toBe(true)
+    expect((first.data as any).functions[0].function).toBe('degraded_static_summary')
+    expect(second.ok).toBe(true)
+    expect((second.data as any).functions[0].function).toBe('recovered')
+    expect(second.warnings || []).not.toContain('Result from cache')
+    expect(rankFunctions).toHaveBeenCalledTimes(2)
+    expect(decompileFunction).toHaveBeenCalledTimes(1)
+  })
+
   test('should cache reconstruction result', async () => {
     const sampleId = 'sha256:' + '4'.repeat(64)
     insertSample(sampleId, '4')

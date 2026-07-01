@@ -97,7 +97,7 @@ export const CodeReconstructExportInputSchema = z
     validate_build: z
       .boolean()
       .default(true)
-      .describe('Compile the exported C skeleton with clang when available'),
+      .describe('Compile the exported C skeleton with clang, gcc, or cc when available'),
     run_harness: z
       .boolean()
       .default(true)
@@ -107,14 +107,14 @@ export const CodeReconstructExportInputSchema = z
       .min(1)
       .max(260)
       .optional()
-      .describe('Optional explicit clang compiler path'),
+      .describe('Optional explicit C compiler path'),
     build_timeout_ms: z
       .number()
       .int()
       .min(5000)
       .max(300000)
       .default(60000)
-      .describe('Timeout for clang build validation in milliseconds'),
+      .describe('Timeout for native C build validation in milliseconds'),
     run_timeout_ms: z
       .number()
       .int()
@@ -4597,43 +4597,111 @@ async function collectWindowsClangCandidates(root: string): Promise<string[]> {
   return candidates
 }
 
-async function resolveClangCompilerPath(
-  explicitCompilerPath?: string | null
-): Promise<string | null> {
-  const candidates: string[] = []
+interface NativeCCompilerSelection {
+  compiler: string
+  compiler_path: string
+}
+
+function normalizeCompilerName(commandOrPath: string): string {
+  const baseName = path
+    .basename(commandOrPath)
+    .toLowerCase()
+    .replace(/\.exe$/, '')
+  if (baseName.includes('clang')) {
+    return 'clang'
+  }
+  if (baseName.includes('gcc')) {
+    return 'gcc'
+  }
+  if (baseName === 'cc') {
+    return 'cc'
+  }
+  return baseName || 'cc'
+}
+
+function compilerCommandNames(platform: NodeJS.Platform = process.platform): string[] {
+  return platform === 'win32' ? ['clang.exe', 'clang', 'gcc.exe', 'gcc'] : ['clang', 'gcc', 'cc']
+}
+
+export async function resolveNativeCCompilerPath(
+  explicitCompilerPath?: string | null,
+  options: {
+    env?: NodeJS.ProcessEnv
+    platform?: NodeJS.Platform
+    commandResolver?: (commandNames: string[]) => Promise<string | null>
+  } = {}
+): Promise<NativeCCompilerSelection | null> {
+  const env = options.env || process.env
+  const platform = options.platform || process.platform
+  const commandResolver = options.commandResolver || resolveCommandFromPath
+  const candidates: NativeCCompilerSelection[] = []
+  const pushCandidate = (compilerPath: string | null | undefined, compiler?: string) => {
+    if (!compilerPath) {
+      return
+    }
+    candidates.push({
+      compiler: compiler || normalizeCompilerName(compilerPath),
+      compiler_path: compilerPath,
+    })
+  }
+
   if (explicitCompilerPath) {
-    candidates.push(explicitCompilerPath)
+    pushCandidate(explicitCompilerPath)
   }
-  if (process.env.CLANG_PATH) {
-    candidates.push(process.env.CLANG_PATH)
+  if (env.CLANG_PATH) {
+    pushCandidate(env.CLANG_PATH, 'clang')
+  }
+  if (env.CC) {
+    if (env.CC.includes(path.sep) || (path.win32.isAbsolute(env.CC) && platform === 'win32')) {
+      pushCandidate(env.CC)
+    } else {
+      const located = await commandResolver([env.CC])
+      pushCandidate(located || env.CC, normalizeCompilerName(env.CC))
+    }
   }
 
-  const pathLookup = await resolveCommandFromPath(['clang.exe', 'clang'])
-  if (pathLookup) {
-    candidates.push(pathLookup)
+  for (const commandName of compilerCommandNames(platform)) {
+    const located = await commandResolver([commandName])
+    pushCandidate(located, normalizeCompilerName(commandName))
   }
 
-  const pathEntries = (process.env.PATH || '')
+  const pathEntries = (env.PATH || '')
     .split(path.delimiter)
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
   for (const entry of pathEntries) {
-    candidates.push(path.join(entry, process.platform === 'win32' ? 'clang.exe' : 'clang'))
+    for (const commandName of compilerCommandNames(platform)) {
+      pushCandidate(path.join(entry, commandName), normalizeCompilerName(commandName))
+    }
   }
 
-  candidates.push(
-    'C:\\Program Files\\LLVM\\bin\\clang.exe',
+  pushCandidate('C:\\Program Files\\LLVM\\bin\\clang.exe', 'clang')
+  pushCandidate(
     'E:\\clang+llvm-18.1.8-x86_64-pc-windows-msvc\\clang+llvm-18.1.8-x86_64-pc-windows-msvc\\bin\\clang.exe',
-    'E:\\clang+llvm-18.1.8-x86_64-pc-windows-msvc.tar\\clang+llvm-18.1.8-x86_64-pc-windows-msvc\\clang+llvm-18.1.8-x86_64-pc-windows-msvc\\bin\\clang.exe'
+    'clang'
+  )
+  pushCandidate(
+    'E:\\clang+llvm-18.1.8-x86_64-pc-windows-msvc.tar\\clang+llvm-18.1.8-x86_64-pc-windows-msvc\\clang+llvm-18.1.8-x86_64-pc-windows-msvc\\bin\\clang.exe',
+    'clang'
   )
 
-  if (process.platform === 'win32') {
-    candidates.push(...(await collectWindowsClangCandidates('E:\\')))
-    candidates.push(...(await collectWindowsClangCandidates('C:\\')))
+  if (platform === 'win32') {
+    for (const candidate of [
+      ...(await collectWindowsClangCandidates('E:\\')),
+      ...(await collectWindowsClangCandidates('C:\\')),
+    ]) {
+      pushCandidate(candidate, 'clang')
+    }
   }
 
-  for (const candidate of dedupe(candidates)) {
-    if (await pathExists(candidate)) {
+  const seen = new Set<string>()
+  for (const candidate of candidates) {
+    const key = candidate.compiler_path.toLowerCase()
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    if (await pathExists(candidate.compiler_path)) {
       return candidate
     }
   }
@@ -4700,17 +4768,17 @@ async function runNativeBuildValidation(args: {
   compilerPath?: string | null
   timeoutMs: number
 }): Promise<NativeBuildValidationResult> {
-  const compilerPath = await resolveClangCompilerPath(args.compilerPath)
-  if (!compilerPath) {
+  const compiler = await resolveNativeCCompilerPath(args.compilerPath)
+  if (!compiler) {
     return {
       attempted: true,
       status: 'unavailable',
-      compiler: 'clang',
+      compiler: null,
       compiler_path: null,
       command: null,
       exit_code: null,
       timed_out: false,
-      error: 'clang compiler is not available in PATH or known install locations',
+      error: 'C compiler is not available in PATH or known install locations',
       stdout: '',
       stderr: '',
       log_path: null,
@@ -4732,7 +4800,7 @@ async function runNativeBuildValidation(args: {
     ...args.moduleRewriteFiles,
   ]
   const result = await runCommandWithTimeout(
-    compilerPath,
+    compiler.compiler_path,
     buildArgs,
     args.exportRoot,
     args.timeoutMs
@@ -4746,15 +4814,16 @@ async function runNativeBuildValidation(args: {
         : result.exitCode === 0
           ? 'passed'
           : 'failed',
-    compiler: 'clang',
-    compiler_path: compilerPath,
+    compiler: compiler.compiler,
+    compiler_path: compiler.compiler_path,
     command: result.command,
     exit_code: result.exitCode,
     timed_out: result.timedOut,
     error:
       result.exitCode === 0 && !result.timedOut
         ? null
-        : result.error || `clang build failed with exit code ${result.exitCode ?? 'unknown'}`,
+        : result.error ||
+          `${compiler.compiler} build failed with exit code ${result.exitCode ?? 'unknown'}`,
     stdout: result.stdout,
     stderr: result.stderr,
     log_path: null,

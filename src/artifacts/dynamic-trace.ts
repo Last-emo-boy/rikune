@@ -806,7 +806,10 @@ export async function loadDynamicTraceEvidence(
       8
     ),
     artifact_families: dedupeStrings(
-      selectedTraces.map((item) => inferRuntimeArtifactFamily(item.artifact.type) || ''),
+      selectedTraces.map((item) => {
+        const family = inferRuntimeArtifactFamily(item.artifact.type)
+        return typeof family === 'string' ? family : ''
+      }),
       8
     ),
     executed: normalizedTraces.some((item) => item.executed),

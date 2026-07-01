@@ -107,7 +107,9 @@ export const ReconstructWorkflowInputSchema = z
     validate_build: z
       .boolean()
       .default(true)
-      .describe('For native path, compile the exported C skeleton when clang is available'),
+      .describe(
+        'For native path, compile the exported C skeleton when clang, gcc, or cc is available'
+      ),
     run_harness: z
       .boolean()
       .default(true)
@@ -117,14 +119,14 @@ export const ReconstructWorkflowInputSchema = z
       .min(1)
       .max(260)
       .optional()
-      .describe('Optional explicit clang compiler path for native validation'),
+      .describe('Optional explicit C compiler path for native validation'),
     build_timeout_ms: z
       .number()
       .int()
       .min(5000)
       .max(300000)
       .default(60000)
-      .describe('Timeout for native clang build validation in milliseconds'),
+      .describe('Timeout for native C build validation in milliseconds'),
     run_timeout_ms: z
       .number()
       .int()

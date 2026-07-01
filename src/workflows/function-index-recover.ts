@@ -76,6 +76,8 @@ export const FunctionIndexRecoverWorkflowOutputSchema = z.object({
       function_index_status: z.enum(['ready']),
       decompile_status: z.enum(['missing']),
       cfg_status: z.enum(['missing']),
+      boundary_application_scope: z.enum(['rikune_function_index_only']),
+      ghidra_project_updated: z.boolean(),
       recovery_strategy: z.array(z.string()),
       imported_artifact: z
         .object({
@@ -164,6 +166,8 @@ type DefineData = {
   function_index_status: 'ready'
   decompile_status: 'missing'
   cfg_status: 'missing'
+  boundary_application_scope?: 'rikune_function_index_only'
+  ghidra_project_updated?: boolean
   imported_functions: Array<{
     address: string
     rva: number | null
@@ -336,6 +340,7 @@ export function createFunctionIndexRecoverWorkflowHandler(
       }
 
       const defineData = defineResult.data as DefineData
+      warnings.push(...(defineResult.warnings || []))
       let rankPreview: Array<z.infer<typeof RankPreviewSchema>> | undefined
       if (input.include_rank_preview) {
         const decompilerWorker = new DecompilerWorker(database, workspaceManager)
@@ -354,6 +359,9 @@ export function createFunctionIndexRecoverWorkflowHandler(
           function_index_status: defineData.function_index_status,
           decompile_status: defineData.decompile_status,
           cfg_status: defineData.cfg_status,
+          boundary_application_scope:
+            defineData.boundary_application_scope || 'rikune_function_index_only',
+          ghidra_project_updated: defineData.ghidra_project_updated === true,
           recovery_strategy: smartRecoverData.strategy,
           imported_artifact: defineData.artifact,
           analysis_id: defineData.analysis_id,

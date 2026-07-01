@@ -764,7 +764,9 @@ async function persistRuntimeArtifacts(
         const artifactId = randomUUID()
         const createdAt = new Date().toISOString()
         const mime = guessMime(basename)
-        const artifactType = inferRuntimeArtifactType(effectiveToolName, basename)
+        const inferredArtifactType = inferRuntimeArtifactType(effectiveToolName, basename)
+        const artifactType =
+          typeof inferredArtifactType === 'string' ? inferredArtifactType : 'runtime_analysis'
 
         database.insertArtifact({
           id: artifactId,

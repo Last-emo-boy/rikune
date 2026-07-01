@@ -722,11 +722,13 @@ function toRuntimeEventView(event: RuntimeSseEvent | null): RuntimeEventView | n
   if (!event) {
     return null
   }
+  const eventType = typeof event.event === 'string' ? event.event : ''
+  const runtimeStatus = extractRuntimeTaskStatusFromEvent(event)
   return {
     ...event,
     normalized_status: normalizeRuntimeEventStatus(
-      event.event,
-      extractRuntimeTaskStatusFromEvent(event) ?? null
+      eventType,
+      typeof runtimeStatus === 'string' ? runtimeStatus : null
     ),
   }
 }

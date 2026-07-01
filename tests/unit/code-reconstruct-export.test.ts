@@ -12,6 +12,7 @@ import type { ToolArgs, WorkerResult } from '../../src/types.js'
 import {
   createCodeReconstructExportHandler,
   CodeReconstructExportInputSchema,
+  resolveNativeCCompilerPath,
 } from '../../src/plugins/code-analysis/tools/code-reconstruct-export.js'
 import {
   persistSemanticFunctionExplanationsArtifact,
@@ -228,6 +229,24 @@ describe('code.reconstruct.export tool', () => {
     expect(parsed.evidence_scope).toBe('all')
     expect(parsed.semantic_scope).toBe('all')
     expect(parsed.reuse_cached).toBe(true)
+  })
+
+  test('should fall back to gcc or cc for native build validation when clang is absent', async () => {
+    const binDir = path.join(testWorkspaceRoot, 'fake-bin')
+    fs.mkdirSync(binDir, { recursive: true })
+    const gccPath = path.join(binDir, 'gcc')
+    fs.writeFileSync(gccPath, '#!/bin/sh\n')
+
+    const selected = await resolveNativeCCompilerPath(null, {
+      env: { PATH: binDir },
+      platform: 'linux',
+      commandResolver: async () => null,
+    })
+
+    expect(selected).toEqual({
+      compiler: 'gcc',
+      compiler_path: gccPath,
+    })
   })
 
   test('should require evidence_session_tag when evidence_scope=session', () => {

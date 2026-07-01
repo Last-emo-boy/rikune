@@ -543,6 +543,69 @@ function normalizeToolLikeResult(result: WorkerResult | ToolResult): WorkerResul
   }
 }
 
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function stringValue(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key]
+  return typeof value === 'string' ? value : undefined
+}
+
+function numberValue(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function stringArrayValue(record: Record<string, unknown>, key: string): string[] {
+  const value = record[key]
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
+}
+
+function summarizeGhidraAnalyzeResult(result: WorkerResult) {
+  const data = recordValue(result.data)
+  const capabilities = recordValue(data.capabilities)
+  const functionIndex = recordValue(capabilities.function_index)
+  const status = stringValue(data, 'status') || 'unknown'
+  const resultMode = stringValue(data, 'result_mode') || 'unknown'
+  const functionCount = numberValue(data, 'function_count') || 0
+  const functionIndexStatus = stringValue(functionIndex, 'status') || 'missing'
+  const functionIndexReady =
+    result.ok &&
+    status !== 'queued' &&
+    resultMode !== 'queued' &&
+    (functionCount > 0 || functionIndexStatus === 'ready' || functionIndex.available === true)
+
+  return {
+    analysis_id: stringValue(data, 'analysis_id'),
+    job_id: stringValue(data, 'job_id'),
+    status,
+    result_mode: resultMode,
+    function_count: functionCount,
+    function_index_status: functionIndexStatus,
+    function_index_ready: functionIndexReady,
+    queued: status === 'queued' || resultMode === 'queued',
+  }
+}
+
+function summarizeRetDecQuality(result: WorkerResult) {
+  const data = recordValue(result.data)
+  const qualityGates = recordValue(data.quality_gates)
+  return {
+    status: stringValue(data, 'status') || (result.ok ? 'ready' : 'unavailable'),
+    semantic_completeness: stringValue(qualityGates, 'semantic_completeness') || 'unknown',
+    decompiler_confidence_score: numberValue(qualityGates, 'decompiler_confidence_score') ?? null,
+    risk_flags: stringArrayValue(qualityGates, 'risk_flags'),
+    cross_backend_corroboration_required:
+      qualityGates.cross_backend_corroboration_required === true,
+    trust_policy: stringValue(qualityGates, 'trust_policy') || null,
+  }
+}
+
 function extractImportsMap(result: WorkerResult | undefined): Record<string, string[]> {
   const data =
     result?.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {}
@@ -804,6 +867,85 @@ function parseJsonRecord<T>(value: string | null | undefined, fallback: T): T {
     return JSON.parse(value) as T
   } catch {
     return fallback
+  }
+}
+
+interface StageDependencyBlocker {
+  stage: AnalysisPipelineStage
+  blocked_by_stage: AnalysisPipelineStage
+  blocked_by_status: string
+  reason: string
+}
+
+function parseStagePlanFromRun(run: AnalysisRun): AnalysisPipelineStage[] {
+  const parsed = parseJsonRecord<unknown>(run.stage_plan_json, [])
+  if (Array.isArray(parsed)) {
+    const stages = parsed
+      .map((stage) => AnalysisPipelineStageSchema.safeParse(stage))
+      .filter((stage): stage is { success: true; data: AnalysisPipelineStage } => stage.success)
+      .map((stage) => stage.data)
+    if (stages.length > 0) {
+      return stages
+    }
+  }
+  return buildStagePlan(run.goal as z.infer<typeof AnalysisIntentGoalSchema>)
+}
+
+function isCompletedStageStatus(status: string | null | undefined): boolean {
+  return status === 'completed' || status === 'skipped'
+}
+
+function findStageDependencyBlocker(
+  database: DatabaseManager,
+  run: AnalysisRun,
+  stage: AnalysisPipelineStage
+): StageDependencyBlocker | null {
+  if (stage === FAST_PROFILE_STAGE) {
+    return null
+  }
+  const stagePlan = parseStagePlanFromRun(run)
+  const stageIndex = stagePlan.indexOf(stage)
+  if (stageIndex <= 0) {
+    return null
+  }
+
+  for (const predecessor of stagePlan.slice(0, stageIndex)) {
+    if (predecessor === FAST_PROFILE_STAGE) {
+      continue
+    }
+    const row = database.findAnalysisRunStage(run.id, predecessor)
+    if (isCompletedStageStatus(row?.status)) {
+      continue
+    }
+    const blockedByStatus = row?.status || 'missing'
+    return {
+      stage,
+      blocked_by_stage: predecessor,
+      blocked_by_status: blockedByStatus,
+      reason: `${stage} is waiting for ${predecessor} to complete before it can run.`,
+    }
+  }
+
+  return null
+}
+
+function buildDependencyBlockedStageResult(
+  stage: AnalysisPipelineStage,
+  blocker: StageDependencyBlocker
+): Record<string, unknown> {
+  return {
+    stage,
+    status: 'blocked_by_dependency',
+    execution_state: 'partial',
+    summary: `${stage} was not executed because ${blocker.blocked_by_stage} is ${blocker.blocked_by_status}.`,
+    dependency_blocker: blocker,
+    stage_outputs: {},
+    recommended_next_tools: ['workflow.analyze.status', 'workflow.analyze.promote'],
+    next_actions: [
+      'Use workflow.analyze.status to monitor the prerequisite stage.',
+      `Promote ${stage} again after ${blocker.blocked_by_stage} reaches completed or skipped state.`,
+    ],
+    artifact_refs: [],
   }
 }
 
@@ -1456,6 +1598,7 @@ async function runFunctionMapStage(
       },
     })
   )
+  const ghidraState = summarizeGhidraAnalyzeResult(ghidraResult)
   const rizinFunctions = await context.dependencies.rizinAnalyze({
     sample_id: sampleId,
     operation: 'functions',
@@ -1467,30 +1610,58 @@ async function runFunctionMapStage(
     ...collectArtifactsFromResult(ghidraResult),
     ...collectArtifactsFromResult(rizinFunctions),
   ]
+  const ready = ghidraState.function_index_ready
+  const warnings = [
+    ...(ghidraResult.warnings || []),
+    ...(rizinFunctions.warnings || []),
+    ...(!ready
+      ? [
+          ghidraState.queued
+            ? `Ghidra function index is still queued for ${sampleId}; function_map remains partial until the queued job completes.`
+            : `Ghidra function index is not ready for ${sampleId}; function_map remains partial.`,
+        ]
+      : []),
+  ]
   return {
     result: {
       stage: 'function_map',
-      status: ghidraResult.ok ? 'ready' : 'partial',
-      execution_state: ghidraResult.ok ? 'completed' : 'partial',
-      summary: ghidraResult.ok
+      status: ready ? 'ready' : ghidraState.queued ? 'waiting_for_ghidra' : 'partial',
+      execution_state: ready ? 'completed' : 'partial',
+      summary: ready
         ? 'Function-map stage completed with Ghidra-backed analysis and Rizin corroboration.'
-        : 'Function-map stage completed partially; inspect the persisted function-map artifacts and warnings.',
+        : 'Function-map stage is waiting for a completed Ghidra function index before downstream reconstruction can run.',
       stage_outputs: {
         ghidra: ghidraResult.data || null,
+        ghidra_readiness: ghidraState,
         rizin: rizinFunctions.data || null,
       },
-      recommended_next_tools: [
-        'workflow.analyze.promote',
-        'workflow.reconstruct',
-        'code.function.decompile',
-      ],
-      next_actions: [
-        'Promote to reconstruct when you need source-like export or backend fallback decompilation.',
-        'Use code.function.decompile or code.function.cfg on the now-attributed function set before going broader.',
-      ],
+      recommended_next_tools: ready
+        ? ['workflow.analyze.promote', 'workflow.reconstruct', 'code.function.decompile']
+        : ['workflow.analyze.status', 'workflow.analyze.promote', 'task.status'],
+      next_actions: ready
+        ? [
+            'Promote to reconstruct when you need source-like export or backend fallback decompilation.',
+            'Use code.function.decompile or code.function.cfg on the now-attributed function set before going broader.',
+          ]
+        : [
+            'Wait for the queued Ghidra analysis job to complete if a job_id is present.',
+            'Promote function_map again after Ghidra reports a ready function index.',
+          ],
       artifact_refs: artifacts,
     },
     artifacts,
+    stageStatus: ready ? 'completed' : 'partial',
+    executionState: ready ? 'completed' : 'partial',
+    metadata: {
+      ghidra_analysis_id: ghidraState.analysis_id || null,
+      ghidra_job_id: ghidraState.job_id || null,
+      ghidra_status: ghidraState.status,
+      ghidra_result_mode: ghidraState.result_mode,
+      ghidra_function_count: ghidraState.function_count,
+      function_index_ready: ready,
+    },
+    warnings: warnings.length > 0 ? warnings : undefined,
+    errors: ghidraResult.ok ? undefined : ghidraResult.errors,
   }
 }
 
@@ -1516,10 +1687,16 @@ async function runReconstructStage(
     output_format: 'plain',
     persist_artifact: true,
   })
+  const retdecQuality = summarizeRetDecQuality(retdecResult)
   const artifacts = [
     ...collectArtifactsFromResult(reconstructResult),
     ...collectArtifactsFromResult(angrResult),
     ...collectArtifactsFromResult(retdecResult),
+  ]
+  const warnings = [
+    ...(reconstructResult.warnings || []),
+    ...(angrResult.warnings || []).map((item) => `angr.analyze: ${item}`),
+    ...(retdecResult.warnings || []).map((item) => `retdec.decompile: ${item}`),
   ]
 
   return {
@@ -1534,14 +1711,25 @@ async function runReconstructStage(
         angr: angrResult.data || null,
         retdec: retdecResult.data || null,
       },
+      backend_quality: {
+        retdec: retdecQuality,
+      },
       recommended_next_tools: ['workflow.analyze.promote', 'workflow.summarize', 'artifact.read'],
       next_actions: [
         'Promote to summarize when you want a compact persisted summary without rerunning earlier stages.',
-        'Read the emitted reconstruction artifacts instead of repeating heavy reconstruct passes.',
+        retdecQuality.cross_backend_corroboration_required
+          ? 'Treat RetDec output as corroborating evidence only; verify missing calls against CFG/xref artifacts.'
+          : 'Read the emitted reconstruction artifacts instead of repeating heavy reconstruct passes.',
       ],
       artifact_refs: artifacts,
     },
     artifacts,
+    warnings: warnings.length > 0 ? warnings : undefined,
+    metadata: {
+      retdec_semantic_completeness: retdecQuality.semantic_completeness,
+      retdec_confidence_score: retdecQuality.decompiler_confidence_score,
+      retdec_risk_flags: retdecQuality.risk_flags,
+    },
   }
 }
 
@@ -2547,6 +2735,36 @@ export async function executeQueuedAnalysisStage(
     }
   }
 
+  const blocker = findStageDependencyBlocker(context.database, run, input.stage)
+  if (blocker) {
+    const result = buildDependencyBlockedStageResult(input.stage, blocker)
+    upsertAnalysisRunStage(context.database, {
+      runId: run.id,
+      stage: input.stage,
+      status: 'partial',
+      executionState: 'partial',
+      tool: ANALYSIS_STAGE_JOB_TOOL,
+      jobId: input.job_id,
+      result,
+      metadata: {
+        dependency_blocked: true,
+        blocked_by_stage: blocker.blocked_by_stage,
+        blocked_by_status: blocker.blocked_by_status,
+        force_refresh: Boolean(input.force_refresh),
+      },
+      finishedAt: new Date().toISOString(),
+    })
+    return {
+      jobId: run.id,
+      ok: true,
+      data: result,
+      errors: [],
+      warnings: [blocker.reason],
+      artifacts: [],
+      metrics: { elapsedMs: Date.now() - startTime, peakRssMb: 0 },
+    }
+  }
+
   upsertAnalysisRunStage(context.database, {
     runId: run.id,
     stage: input.stage,
@@ -3236,8 +3454,14 @@ export function createAnalyzeWorkflowPromoteHandler(
           : [stagePlan[Math.min(stagePlan.length - 1, 1)]]
 
       const queuedStages: string[] = []
+      const blockedStages: StageDependencyBlocker[] = []
       for (const stage of targetStages) {
         if (stage === FAST_PROFILE_STAGE) {
+          continue
+        }
+        const blocker = findStageDependencyBlocker(database, run, stage)
+        if (blocker) {
+          blockedStages.push(blocker)
           continue
         }
         const existing = database.findAnalysisRunStage(run.id, stage)
@@ -3262,12 +3486,19 @@ export function createAnalyzeWorkflowPromoteHandler(
       const coverage = buildCoverageForRun(
         sample,
         run.depth as z.infer<typeof AnalysisIntentDepthSchema>,
-        'queued',
-        queuedStages.map((stage) => ({
-          domain: stage,
-          status: 'queued' as const,
-          reason: `${stage} was queued as a promoted stage for this persisted run.`,
-        }))
+        queuedStages.length > 0 || runSummary.deferred_jobs.length > 0 ? 'queued' : 'partial',
+        [
+          ...queuedStages.map((stage) => ({
+            domain: stage,
+            status: 'queued' as const,
+            reason: `${stage} was queued as a promoted stage for this persisted run.`,
+          })),
+          ...blockedStages.map((blocker) => ({
+            domain: blocker.stage,
+            status: 'blocked' as const,
+            reason: `${blocker.stage} is blocked by ${blocker.blocked_by_stage} (${blocker.blocked_by_status}).`,
+          })),
+        ]
       )
       const unpackDebugEnvelope = extractUnpackDebugEnvelope(
         runSummary.stages.find(
@@ -3300,6 +3531,8 @@ export function createAnalyzeWorkflowPromoteHandler(
           runSummary,
           {
             queued_stages: queuedStages,
+            blocked_stages: blockedStages,
+            dependency_policy: 'stage_prerequisites_must_complete',
             polling_guidance: buildPollingGuidance({
               tool: ANALYSIS_STAGE_JOB_TOOL,
               status: 'queued',
@@ -3309,15 +3542,26 @@ export function createAnalyzeWorkflowPromoteHandler(
           coverage,
           routing,
           runSummary.reused,
-          'queued',
+          queuedStages.length > 0 || runSummary.deferred_jobs.length > 0 ? 'queued' : 'partial',
           buildRuntimeControlEnvelope(database, runSummary.sample_id)
         ),
-        warnings:
-          queuedStages.length === 0
+        warnings: [
+          ...(queuedStages.length === 0 && blockedStages.length === 0
             ? [
                 'Requested stages were already completed or queued; reused existing persisted run state.',
               ]
-            : undefined,
+            : []),
+          ...(blockedStages.length > 0
+            ? [
+                `Some requested stages were not queued because prerequisites are not complete: ${blockedStages
+                  .map(
+                    (item) =>
+                      `${item.stage} waits for ${item.blocked_by_stage} (${item.blocked_by_status})`
+                  )
+                  .join('; ')}.`,
+              ]
+            : []),
+        ].filter(Boolean),
         metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME_PROMOTE },
       }
     } catch (error) {

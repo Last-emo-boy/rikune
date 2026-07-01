@@ -1,5 +1,5 @@
 /**
- * RetDec decompile tool �?decompile a sample with RetDec.
+ * RetDec decompile tool - decompile a sample with RetDec.
  */
 
 import { z } from 'zod'
@@ -24,10 +24,33 @@ import {
   resolveAnalysisBackends,
 } from '../../docker-shared.js'
 
+const TOOL_NAME = 'retdec.decompile'
+const TOOL_VERSION = '0.2.0'
+const RETDEC_OUTPUT_FORMATS = ['plain', 'json-human'] as const
+const RETDEC_RECOMMENDED_NEXT_TOOLS = ['artifact.read', 'workflow.search']
+const RETDEC_MAX_OUTPUT_BYTES = 16 * 1024 * 1024
+const CONTROL_FLOW_KEYWORDS = new Set([
+  'if',
+  'for',
+  'while',
+  'switch',
+  'return',
+  'sizeof',
+  'case',
+  'do',
+])
+
+interface RetDecSemanticCompleteness {
+  semantic_completeness: 'suspect' | 'unverified'
+  decompiler_confidence_score: number
+  risk_flags: string[]
+  reasons: string[]
+}
+
 export const retdecDecompileInputSchema = z.object({
   sample_id: z.string().describe('Target sample identifier.'),
   output_format: z
-    .enum(['plain', 'json-human'])
+    .enum(RETDEC_OUTPUT_FORMATS)
     .default('plain')
     .describe('RetDec output format for the main decompilation file.'),
   timeout_sec: z
@@ -61,6 +84,9 @@ export const retdecDecompileOutputSchema = z.object({
         .optional(),
       artifact: ArtifactRefSchema.optional(),
       supporting_artifacts: z.array(ArtifactRefSchema).optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
@@ -75,11 +101,198 @@ export const retdecDecompileOutputSchema = z.object({
 })
 
 export const retdecDecompileToolDefinition: ToolDefinition = {
-  name: 'retdec.decompile',
+  name: TOOL_NAME,
   description:
     'Decompile a sample with RetDec and persist the generated high-level output as an artifact. Use this when you explicitly want a RetDec alternative to the default Ghidra-oriented flow.',
   inputSchema: retdecDecompileInputSchema,
   outputSchema: retdecDecompileOutputSchema,
+}
+
+function retdecArtifactType(
+  outputFormat: z.infer<typeof retdecDecompileInputSchema>['output_format']
+) {
+  return `backend_retdec_decompile_${outputFormat}`
+}
+
+function buildRetDecEvidenceSummary(args: {
+  sampleId: string
+  outputFormat: z.infer<typeof retdecDecompileInputSchema>['output_format']
+  charCount: number
+  previewTruncated: boolean
+  artifact?: ArtifactRef
+  backendVersion?: string | null
+}) {
+  return {
+    schema: 'rikune.retdec_decompile.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    tool_version: TOOL_VERSION,
+    artifact_type: retdecArtifactType(args.outputFormat),
+    sample_id: args.sampleId,
+    output_format: args.outputFormat,
+    output_char_count: args.charCount,
+    preview_truncated: args.previewTruncated,
+    artifact_id: args.artifact?.id ?? null,
+    backend_version: args.backendVersion ?? null,
+  }
+}
+
+function buildRetDecQualityGates(args: {
+  outputFormat: z.infer<typeof retdecDecompileInputSchema>['output_format']
+  artifactPersisted: boolean
+  previewTruncated: boolean
+  semanticCompleteness: RetDecSemanticCompleteness
+}) {
+  return {
+    schema: 'rikune.retdec_decompile.quality_gates.v1',
+    passive_static_analysis: true,
+    read_only_backend: true,
+    sample_executed_by_tool: false,
+    backend_started_with_bounded_command: true,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    output_bounded_inline: true,
+    artifact_persisted: args.artifactPersisted,
+    analyst_review_required: true,
+    output_format: args.outputFormat,
+    preview_truncated: args.previewTruncated,
+    semantic_completeness: args.semanticCompleteness.semantic_completeness,
+    decompiler_confidence_score: args.semanticCompleteness.decompiler_confidence_score,
+    decompiler_confidence_reasons: args.semanticCompleteness.reasons,
+    risk_flags: args.semanticCompleteness.risk_flags,
+    cross_backend_corroboration_required: true,
+    trust_policy: 'RetDec missing calls are not negative evidence; corroborate with CFG/xref data.',
+  }
+}
+
+function buildRetDecSemanticCompleteness(args: {
+  output: string
+  outputFormat: z.infer<typeof retdecDecompileInputSchema>['output_format']
+  previewTruncated: boolean
+}): RetDecSemanticCompleteness {
+  const reasons = [
+    'RetDec output has not been correlated with a separate CFG or xref source.',
+    'Absent calls in RetDec output do not prove the original function has no calls.',
+  ]
+  const riskFlags: string[] = []
+  let score = 0.55
+
+  if (args.previewTruncated) {
+    riskFlags.push('inline_preview_truncated')
+    reasons.push('The inline preview was truncated before review.')
+    score = Math.min(score, 0.4)
+  }
+
+  if (args.outputFormat === 'plain') {
+    const mainMatch =
+      /\b(?:int|void|undefined\d*|int\d+_t)\s+(?:__cdecl\s+|__fastcall\s+|__stdcall\s+)?main\s*\(/i.test(
+        args.output
+      )
+    const callNames = Array.from(args.output.matchAll(/\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g))
+      .map((match) => match[1])
+      .filter((name) => !CONTROL_FLOW_KEYWORDS.has(name.toLowerCase()))
+    const nonEntrypointCalls = callNames.filter((name) => name.toLowerCase() !== 'main')
+
+    if (mainMatch && args.output.length < 2000 && nonEntrypointCalls.length <= 1) {
+      riskFlags.push('short_entrypoint_low_call_coverage')
+      reasons.push(
+        'The recovered main-like function is very short and has little visible call coverage.'
+      )
+      score = Math.min(score, 0.35)
+    }
+  } else {
+    reasons.push('JSON-human RetDec output requires a separate normalizer before semantic review.')
+    score = Math.min(score, 0.5)
+  }
+
+  return {
+    semantic_completeness: riskFlags.length > 0 ? 'suspect' : 'unverified',
+    decompiler_confidence_score: score,
+    risk_flags: riskFlags,
+    reasons,
+  }
+}
+
+function buildRetDecWarnings(semanticCompleteness: RetDecSemanticCompleteness): string[] {
+  if (semanticCompleteness.semantic_completeness !== 'suspect') {
+    return [
+      'RetDec semantic completeness is unverified; corroborate missing calls with CFG/xref evidence before relying on this output.',
+    ]
+  }
+
+  return [
+    `RetDec semantic completeness is suspect (${semanticCompleteness.risk_flags.join(', ')}); do not treat missing calls as proof they are absent in the original binary.`,
+  ]
+}
+
+function buildRetDecWorkflowHandoff(args: {
+  sampleId: string
+  outputFormat: z.infer<typeof retdecDecompileInputSchema>['output_format']
+  artifact?: ArtifactRef
+}) {
+  const artifactType = retdecArtifactType(args.outputFormat)
+  return {
+    schema: 'rikune.retdec_decompile.workflow_handoff.v1',
+    handoff_mode: 'retdec_decompile_to_cross_backend_review',
+    artifact_type: artifactType,
+    sample_id: args.sampleId,
+    output_format: args.outputFormat,
+    recommended_next_tools: RETDEC_RECOMMENDED_NEXT_TOOLS,
+    artifact_contract: {
+      type: artifactType,
+      suggested_read_mode: 'profile',
+      artifact_id: args.artifact?.id ?? null,
+      content_kind: args.outputFormat === 'plain' ? 'c_like_decompiled_text' : 'retdec_json_human',
+    },
+    routing: [
+      {
+        goal: 'review-retdec-output',
+        priority: 'high',
+        next_tools: ['artifact.read'],
+        required_evidence: [artifactType],
+      },
+      {
+        goal: 'cross-backend-corroboration',
+        priority: 'high',
+        next_tools: ['code.cross_decompiler.consensus', 'analysis.evidence.graph'],
+        required_evidence: [artifactType, 'paired backend artifacts'],
+      },
+      {
+        goal: 'reconstruct-with-retdec-corroboration',
+        priority: 'normal',
+        next_tools: ['workflow.reconstruct'],
+        required_evidence: [artifactType],
+      },
+      {
+        goal: 'report-retdec-findings',
+        priority: 'normal',
+        next_tools: ['report.generate'],
+        required_evidence: [artifactType],
+      },
+    ],
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      backend_started: true,
+      backend_kind: 'external-static',
+      live_execution_started: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+    },
+  }
+}
+
+function buildRetDecNextActions(args: {
+  outputFormat: z.infer<typeof retdecDecompileInputSchema>['output_format']
+  artifact?: ArtifactRef
+}) {
+  return [
+    args.artifact
+      ? 'Use artifact.read in profile or summary mode before loading the full RetDec decompile output.'
+      : 'Persist a RetDec decompile artifact before relying on this result for cross-backend review.',
+    'Use workflow.search to select a result-scoped cross-decompiler or evidence graph follow-up instead of exposing broad reverse-engineering tools.',
+    args.outputFormat === 'plain'
+      ? 'Corroborate RetDec C-like output with Ghidra, Rizin, or another backend before applying reconstruction changes.'
+      : 'Normalize RetDec JSON-human output through cross-decompiler consensus before using it as function evidence.',
+  ]
 }
 
 export function createRetDecDecompileHandler(
@@ -99,76 +312,137 @@ export function createRetDecDecompileHandler(
       }
 
       const runner = dependencies?.executeCommand || executeCommand
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'retdec-decompile-'))
-      const outputExtension = input.output_format === 'plain' ? 'c' : 'json'
-      const outputPath = path.join(tempDir, `retdec_output.${outputExtension}`)
-      const result = await runner(
-        backend.path,
-        ['--cleanup', '--output-format', input.output_format, '--output', outputPath, samplePath],
-        input.timeout_sec * 1000
-      )
+      let tempDir: string | undefined
+      try {
+        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'retdec-decompile-'))
+        const outputExtension = input.output_format === 'plain' ? 'c' : 'json'
+        const outputPath = path.join(tempDir, `retdec_output.${outputExtension}`)
+        const result = await runner(
+          backend.path,
+          ['--cleanup', '--output-format', input.output_format, '--output', outputPath, samplePath],
+          input.timeout_sec * 1000
+        )
 
-      if (result.exitCode !== 0) {
-        await fs.rm(tempDir, { recursive: true, force: true })
+        if (result.timedOut) {
+          return {
+            ok: false,
+            errors: [
+              `RetDec timed out after ${input.timeout_sec} seconds.`,
+              result.stderr || result.stdout || 'No backend output was returned before timeout.',
+            ],
+            metrics: buildMetrics(startTime, retdecDecompileToolDefinition.name),
+          }
+        }
+
+        if (result.exitCode !== 0) {
+          return {
+            ok: false,
+            errors: [
+              `RetDec exited with code ${result.exitCode}`,
+              result.stderr || result.stdout || 'No backend output was returned.',
+            ],
+            metrics: buildMetrics(startTime, retdecDecompileToolDefinition.name),
+          }
+        }
+
+        let outputStat
+        try {
+          outputStat = await fs.stat(outputPath)
+        } catch {
+          return {
+            ok: false,
+            errors: [
+              `RetDec completed but did not produce the expected output file: ${outputPath}`,
+              result.stderr || result.stdout || 'No backend output was returned.',
+            ],
+            metrics: buildMetrics(startTime, retdecDecompileToolDefinition.name),
+          }
+        }
+
+        if (outputStat.size > RETDEC_MAX_OUTPUT_BYTES) {
+          return {
+            ok: false,
+            errors: [
+              `RetDec output exceeded the ${RETDEC_MAX_OUTPUT_BYTES} byte limit.`,
+              'Use a narrower workflow or external artifact handling for very large decompilation output.',
+            ],
+            metrics: buildMetrics(startTime, retdecDecompileToolDefinition.name),
+          }
+        }
+
+        const mainOutput = await fs.readFile(outputPath, 'utf8')
+        const preview = truncateText(mainOutput, 3000)
+        const semanticCompleteness = buildRetDecSemanticCompleteness({
+          output: mainOutput,
+          outputFormat: input.output_format,
+          previewTruncated: preview.truncated,
+        })
+        const artifacts: ArtifactRef[] = []
+        let artifact: ArtifactRef | undefined
+        if (input.persist_artifact) {
+          artifact = await persistBackendArtifact(
+            workspaceManager,
+            database,
+            input.sample_id,
+            'retdec',
+            `decompile_${input.output_format}`,
+            mainOutput,
+            {
+              extension: outputExtension,
+              mime: input.output_format === 'plain' ? 'text/x-csrc' : 'application/json',
+              sessionTag: input.session_tag,
+            }
+          )
+          artifacts.push(artifact)
+        }
+
         return {
-          ok: false,
-          errors: [
-            `RetDec exited with code ${result.exitCode}`,
-            result.stderr || result.stdout || 'No backend output was returned.',
-          ],
+          ok: true,
+          data: {
+            schema: 'rikune.retdec_decompile.v1',
+            tool_version: TOOL_VERSION,
+            status: 'ready',
+            backend,
+            sample_id: input.sample_id,
+            output_format: input.output_format,
+            preview: {
+              inline_text: preview.text,
+              truncated: preview.truncated,
+              char_count: mainOutput.length,
+            },
+            artifact,
+            supporting_artifacts: [],
+            evidence_summary: buildRetDecEvidenceSummary({
+              sampleId: input.sample_id,
+              outputFormat: input.output_format,
+              charCount: mainOutput.length,
+              previewTruncated: preview.truncated,
+              artifact,
+              backendVersion: backend.version,
+            }),
+            workflow_handoff: buildRetDecWorkflowHandoff({
+              sampleId: input.sample_id,
+              outputFormat: input.output_format,
+              artifact,
+            }),
+            quality_gates: buildRetDecQualityGates({
+              outputFormat: input.output_format,
+              artifactPersisted: Boolean(artifact),
+              previewTruncated: preview.truncated,
+              semanticCompleteness,
+            }),
+            summary: `RetDec produced ${input.output_format} decompilation output for ${input.sample_id}.`,
+            recommended_next_tools: RETDEC_RECOMMENDED_NEXT_TOOLS,
+            next_actions: buildRetDecNextActions({ outputFormat: input.output_format, artifact }),
+          },
+          warnings: buildRetDecWarnings(semanticCompleteness),
+          artifacts,
           metrics: buildMetrics(startTime, retdecDecompileToolDefinition.name),
         }
-      }
-
-      const mainOutput = await fs.readFile(outputPath, 'utf8')
-      const preview = truncateText(mainOutput, 3000)
-      const artifacts: ArtifactRef[] = []
-      let artifact: ArtifactRef | undefined
-      if (input.persist_artifact) {
-        artifact = await persistBackendArtifact(
-          workspaceManager,
-          database,
-          input.sample_id,
-          'retdec',
-          `decompile_${input.output_format}`,
-          mainOutput,
-          {
-            extension: outputExtension,
-            mime: input.output_format === 'plain' ? 'text/x-csrc' : 'application/json',
-            sessionTag: input.session_tag,
-          }
-        )
-        artifacts.push(artifact)
-      }
-
-      await fs.rm(tempDir, { recursive: true, force: true })
-
-      return {
-        ok: true,
-        data: {
-          status: 'ready',
-          backend,
-          sample_id: input.sample_id,
-          output_format: input.output_format,
-          preview: {
-            inline_text: preview.text,
-            truncated: preview.truncated,
-            char_count: mainOutput.length,
-          },
-          artifact,
-          supporting_artifacts: [],
-          summary: `RetDec produced ${input.output_format} decompilation output for ${input.sample_id}.`,
-          recommended_next_tools: [
-            'artifact.read',
-            'code.function.decompile',
-            'workflow.reconstruct',
-          ],
-          next_actions: [
-            'Read the persisted RetDec artifact for the full output before comparing it with Ghidra-backed decompile results.',
-          ],
-        },
-        artifacts,
-        metrics: buildMetrics(startTime, retdecDecompileToolDefinition.name),
+      } finally {
+        if (tempDir) {
+          await fs.rm(tempDir, { recursive: true, force: true })
+        }
       }
     } catch (error) {
       return {

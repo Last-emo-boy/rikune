@@ -121,6 +121,8 @@ export const codeFunctionsDefineOutputSchema = z.object({
       function_index_status: z.enum(['ready']),
       decompile_status: z.enum(['missing']),
       cfg_status: z.enum(['missing']),
+      boundary_application_scope: z.enum(['rikune_function_index_only']),
+      ghidra_project_updated: z.boolean(),
       image_base: z.number().nullable(),
       imported_functions: z.array(
         z.object({
@@ -381,6 +383,7 @@ export function createCodeFunctionsDefineHandler(
                 available: true,
                 status: 'ready',
                 reason: 'Function index imported manually or from recovered metadata.',
+                boundary_application_scope: 'rikune_function_index_only',
               },
               decompile: {
                 available: false,
@@ -393,6 +396,8 @@ export function createCodeFunctionsDefineHandler(
                 reason: 'Manual function definitions do not establish Ghidra CFG readiness.',
               },
             },
+            boundary_application_scope: 'rikune_function_index_only',
+            ghidra_project_updated: false,
           }),
           metrics_json: JSON.stringify({
             imported_count: imported.length,
@@ -410,6 +415,8 @@ export function createCodeFunctionsDefineHandler(
           function_index_status: 'ready',
           decompile_status: 'missing',
           cfg_status: 'missing',
+          boundary_application_scope: 'rikune_function_index_only',
+          ghidra_project_updated: false,
           image_base: imageBase,
           imported_functions: importedSummary,
           analysis_id: analysisId,
@@ -417,10 +424,18 @@ export function createCodeFunctionsDefineHandler(
           next_steps: [
             'Run code.functions.list or code.functions.rank to inspect the imported function index.',
             'Run code.functions.reconstruct to obtain degraded semantic reconstruction from the new function index.',
-            'Run ghidra.analyze later if you still need decompile or CFG readiness.',
+            'Run ghidra.analyze later if you still need Ghidra decompile or CFG readiness.',
           ],
         },
-        warnings: warnings.length > 0 ? warnings : undefined,
+        warnings:
+          warnings.length > 0
+            ? [
+                ...warnings,
+                'Function definitions were imported into the Rikune function index only; the read-only Ghidra project was not updated, so code.function.decompile may still report Function not found.',
+              ]
+            : [
+                'Function definitions were imported into the Rikune function index only; the read-only Ghidra project was not updated, so code.function.decompile may still report Function not found.',
+              ],
         artifacts: artifacts.length > 0 ? artifacts : undefined,
         metrics: {
           elapsed_ms: Date.now() - startTime,

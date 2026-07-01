@@ -3715,8 +3715,6 @@ export function createCodeFunctionsReconstructHandler(
           functions: [fallbackFunction],
         }
 
-        await cacheManager.setCachedResult(cacheKey, fallbackOutput, CACHE_TTL_MS, sample.sha256)
-
         return {
           ok: true,
           data: fallbackOutput,
