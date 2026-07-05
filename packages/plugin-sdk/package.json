@@ -1,6 +1,6 @@
 {
   "name": "@rikune/plugin-sdk",
-  "version": "1.0.0-beta.3",
+  "version": "1.1.0",
   "description": "Plugin SDK for rikune — types and utilities for third-party plugin authors.",
   "type": "module",
   "main": "dist/index.js",
@@ -17,7 +17,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -b --force tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "keywords": [
@@ -31,6 +32,6 @@
     "zod": "^3.0.0"
   },
   "dependencies": {
-    "@rikune/shared": "1.0.0-beta.3"
+    "@rikune/shared": "1.1.0"
   }
 }

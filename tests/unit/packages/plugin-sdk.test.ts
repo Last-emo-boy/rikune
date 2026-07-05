@@ -3,8 +3,21 @@
  */
 
 import { describe, expect, jest, test } from '@jest/globals'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import {
+  DynamicRuntimePolicySchema,
+  PluginAspectsSchema,
   SURFACE_FILE_TYPE_TAGS,
+  ToolRuntimeContractSchema,
+  auditPluginQuality,
+  buildSampleProfileAspects,
+  createEvidenceRef,
+  createEvidenceTimelineEntry,
+  createPluginTestHarness,
+  createToolOutputEnvelope,
+  describeAspectCoverage,
   defineManifestPlugin,
   definePlugin,
   defineTool,
@@ -12,6 +25,8 @@ import {
   fail,
   getRuntimeConfig,
   getWorkspaceServices,
+  matchSampleProfile,
+  normalizePluginAspects,
   ok,
   pathExists,
   requireDatabase,
@@ -30,6 +45,8 @@ import type {
   WorkerResult,
 } from '../../../packages/plugin-sdk/src/index.js'
 
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
+
 describe('@rikune/plugin-sdk', () => {
   test('runtime contract supports declared backend types', () => {
     const contracts: ToolRuntimeContract[] = [
@@ -40,6 +57,31 @@ describe('@rikune/plugin-sdk', () => {
 
     expect(contracts.map((contract) => contract.type)).toEqual(['python-worker', 'spawn', 'inline'])
     expect(contracts.every((contract) => contract.handler.length > 0)).toBe(true)
+  })
+
+  test('runtime policy schema accepts expanded dynamic backends safely', () => {
+    const policy = DynamicRuntimePolicySchema.parse({
+      passiveByDefault: true,
+      requiresUserOptIn: true,
+      requiresIsolation: true,
+      allowedBackends: ['windows-host-agent', 'android-emulator', 'frida-server', 'wasmtime'],
+      networkPolicy: 'disabled',
+      maxRuntimeMs: 30000,
+    })
+    const contract = ToolRuntimeContractSchema.parse({
+      type: 'spawn',
+      handler: 'android.runtime.plan',
+      modes: ['plan_only'],
+      policy,
+      isolation: { required: true, backends: ['android-emulator'] },
+      capabilities: ['readiness', 'behavior-plan'],
+      safety: ['passive', 'opt_in_dynamic'],
+    })
+
+    expect(contract.policy?.allowedBackends).toEqual(
+      expect.arrayContaining(['android-emulator', 'wasmtime'])
+    )
+    expect(contract.isolation?.backends).toEqual(['android-emulator'])
   })
 
   test('tool and worker result contracts can be expressed without server internals', () => {
@@ -87,8 +129,285 @@ describe('@rikune/plugin-sdk', () => {
 
   test('surface file type tags provide normalized vocabulary', () => {
     expect(SURFACE_FILE_TYPE_TAGS.pe).toEqual(expect.arrayContaining(['pe', 'windows']))
+    expect(SURFACE_FILE_TYPE_TAGS['pe32+']).toEqual(
+      expect.arrayContaining(['pe32-plus', 'pe64', 'pe', 'windows'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.efi).toEqual(
+      expect.arrayContaining(['efi', 'uefi', 'uefi-module', 'uefi-firmware'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.uefi).toEqual(
+      expect.arrayContaining(['uefi', 'efi', 'uefi-firmware', 'firmware-volume'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['uefi-smm']).toEqual(
+      expect.arrayContaining(['uefi-smm', 'smm', 'smi', 'uefi-module'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['firmware-volume']).toEqual(
+      expect.arrayContaining(['firmware-volume', 'uefi-firmware', 'uefi', 'firmware'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['uefi-capsule']).toEqual(
+      expect.arrayContaining(['uefi-capsule', 'capsule', 'uefi-firmware', 'uefi'])
+    )
     expect(SURFACE_FILE_TYPE_TAGS['mach-o']).toContain('macos')
     expect(SURFACE_FILE_TYPE_TAGS.apk).toContain('android')
+    expect(SURFACE_FILE_TYPE_TAGS.apks).toEqual(expect.arrayContaining(['android', 'split-apk']))
+    expect(SURFACE_FILE_TYPE_TAGS.ipa).toEqual(expect.arrayContaining(['ios', 'macho']))
+    expect(SURFACE_FILE_TYPE_TAGS.objc).toEqual(
+      expect.arrayContaining(['objc', 'objective-c', 'objc-metadata', 'macho'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.swiftmodule).toEqual(
+      expect.arrayContaining(['swiftmodule', 'swift-metadata', 'swift', 'swift-abi'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['swift-abi']).toEqual(
+      expect.arrayContaining(['swift-abi', 'swift-metadata', 'swift'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.wasm).toContain('wasi')
+    expect(SURFACE_FILE_TYPE_TAGS['wasm-component']).toEqual(
+      expect.arrayContaining([
+        'wasm-component',
+        'component-model',
+        'wit-component',
+        'wasi-preview2',
+      ])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['wasi-preview2']).toEqual(
+      expect.arrayContaining(['wasi-preview2', 'component-model', 'wasm-component', 'wasi'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['cuda-ptx']).toEqual(
+      expect.arrayContaining(['ptx', 'cuda', 'gpu', 'sass'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['cuda-cubin']).toEqual(
+      expect.arrayContaining(['cubin', 'cuda', 'gpu', 'sass', 'elf'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['cuda-fatbin']).toEqual(
+      expect.arrayContaining(['fatbin', 'cuda', 'gpu', 'ptx', 'cubin'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.ebpf).toEqual(
+      expect.arrayContaining(['ebpf', 'bpf', 'ebpf-bytecode', 'linux', 'bytecode'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['ebpf-elf']).toEqual(
+      expect.arrayContaining(['ebpf', 'bpf', 'elf', 'linux', 'object', 'btf'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.btf).toEqual(
+      expect.arrayContaining(['btf', 'bpf-btf', 'ebpf', 'linux', 'types'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['btf-ext']).toEqual(
+      expect.arrayContaining(['btf-ext', 'btf', 'core-relocations', 'co-re'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.dwarf).toEqual(
+      expect.arrayContaining(['dwarf', 'dwarf-debug', 'debug-info', 'debug-types', 'type-graph'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['dwarf-debug']).toEqual(
+      expect.arrayContaining(['dwarf-debug', 'dwarf', 'debug-file', 'debug-section'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.dwo).toEqual(
+      expect.arrayContaining(['dwo', 'split-dwarf', 'dwarf', 'debug-info'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.dwp).toEqual(
+      expect.arrayContaining(['dwp', 'split-dwarf', 'dwarf', 'debug-types'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.ctf).toEqual(
+      expect.arrayContaining(['ctf', 'compact-ctf', 'debug-types', 'type-graph'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['cpp-abi']).toEqual(
+      expect.arrayContaining(['cpp-abi', 'cxx-abi', 'rtti', 'vtable', 'class-layout'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['itanium-abi']).toEqual(
+      expect.arrayContaining(['itanium-abi', 'cpp-abi', 'typeinfo', 'vtable'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['msvc-abi']).toEqual(
+      expect.arrayContaining(['msvc-abi', 'cpp-abi', 'vftable', 'vbtable'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['compiler-codegen']).toEqual(
+      expect.arrayContaining([
+        'compiler-codegen',
+        'compiler-provenance',
+        'toolchain-provenance',
+        'optimization-level',
+        'rich-header',
+        'codeview',
+      ])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.lto).toEqual(
+      expect.arrayContaining(['lto', 'optimization-level', 'compiler-codegen', 'llvm'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.pgo).toEqual(
+      expect.arrayContaining(['pgo', 'optimization-level', 'compiler-codegen'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['rich-header']).toEqual(
+      expect.arrayContaining(['rich-header', 'compiler-codegen', 'pe', 'windows'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.codeview).toEqual(
+      expect.arrayContaining(['codeview', 'compiler-codegen', 'debug-metadata', 'pdb'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['binary-hardening']).toEqual(
+      expect.arrayContaining([
+        'binary-hardening',
+        'hardening',
+        'exploit-mitigation',
+        'checksec',
+        'relro',
+        'pie',
+        'nx',
+        'cet',
+        'pac',
+        'mte',
+        'cheri',
+      ])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['elf-hardening']).toEqual(
+      expect.arrayContaining(['elf-hardening', 'binary-hardening', 'hardening', 'elf'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.cet).toEqual(
+      expect.arrayContaining(['cet', 'ibt', 'shstk', 'binary-hardening'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.pac).toEqual(
+      expect.arrayContaining(['pac', 'bti', 'binary-hardening', 'arm64'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.cheri).toEqual(
+      expect.arrayContaining(['cheri', 'purecap', 'binary-hardening'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['rust-binary']).toEqual(
+      expect.arrayContaining([
+        'rust-binary',
+        'rust',
+        'rustc',
+        'cargo',
+        'cargo-crate',
+        'rust-mangled',
+        'rust-v0-mangled',
+        'rust-legacy-mangled',
+      ])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.rustc).toEqual(
+      expect.arrayContaining(['rustc', 'rust', 'rust-binary', 'compiler-codegen'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['rust-rlib']).toEqual(
+      expect.arrayContaining(['rust-rlib', 'rlib', 'rust-binary', 'archive'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['tee-enclave']).toEqual(
+      expect.arrayContaining([
+        'tee-enclave',
+        'confidential-computing',
+        'tee',
+        'sgx',
+        'optee',
+        'op-tee',
+        'tdx',
+        'sev-snp',
+      ])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['sgx-enclave']).toEqual(
+      expect.arrayContaining(['sgx-enclave', 'sgx', 'sigstruct', 'mrenclave', 'mrsigner'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['optee-ta']).toEqual(
+      expect.arrayContaining(['optee-ta', 'optee', 'op-tee-ta', 'tee-ta', 'trustzone'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['op-tee-ta']).toEqual(
+      expect.arrayContaining(['op-tee-ta', 'optee-ta', 'op-tee', 'trusted-application'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['tdx-quote']).toEqual(
+      expect.arrayContaining(['tdx-quote', 'tdx', 'tdreport', 'attestation'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['sev-snp']).toEqual(
+      expect.arrayContaining(['sev-snp', 'sev', 'snp-attestation', 'attestation'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.sys).toEqual(
+      expect.arrayContaining(['sys', 'pe', 'windows-driver', 'kernel-driver', 'ioctl'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['kernel-driver']).toEqual(
+      expect.arrayContaining(['kernel-driver', 'driver-surface', 'ioctl'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['windows-kernel-driver']).toEqual(
+      expect.arrayContaining(['windows-driver', 'wdm', 'kmdf', 'ioctl'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['linux-kernel-module']).toEqual(
+      expect.arrayContaining(['linux-driver', 'kernel-driver', 'driver-surface', 'ioctl'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['windows-interface']).toEqual(
+      expect.arrayContaining(['windows-interface', 'windows', 'com', 'rpc', 'etw', 'wmi'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.com).toEqual(
+      expect.arrayContaining(['com', 'dcom', 'ole', 'windows-interface', 'clsid', 'iid'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.rpc).toEqual(
+      expect.arrayContaining(['rpc', 'windows-interface', 'windows', 'uuid', 'endpoint'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['named-pipe']).toEqual(
+      expect.arrayContaining(['named-pipe', 'pipe', 'ipc', 'windows-interface'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['service-control']).toEqual(
+      expect.arrayContaining(['service-control', 'scm', 'windows-service', 'windows-interface'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.typelib).toEqual(
+      expect.arrayContaining(['typelib', 'tlb', 'com', 'windows-interface'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.syscall).toEqual(
+      expect.arrayContaining(['syscall', 'syscall-stub', 'direct-syscall', 'raw-shellcode'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['direct-syscall']).toEqual(
+      expect.arrayContaining(['direct-syscall', 'syscall-stub', 'syscall', 'ntdll-stub'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['raw-shellcode']).toEqual(
+      expect.arrayContaining(['raw-shellcode', 'shellcode', 'syscall'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['linux-syscall']).toEqual(
+      expect.arrayContaining(['linux-syscall', 'syscall', 'linux', 'elf'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.bc).toEqual(
+      expect.arrayContaining(['bc', 'llvm-bc', 'llvm-bitcode', 'llvm-ir'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['llvm-bitcode-wrapper']).toEqual(
+      expect.arrayContaining(['llvm-bitcode-wrapper', 'llvm-bitcode', 'llvm-ir'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.spv).toEqual(
+      expect.arrayContaining(['spir-v', 'shader-ir', 'vulkan', 'webgpu', 'gpu'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.dxil).toEqual(
+      expect.arrayContaining(['dxcontainer', 'shader-ir', 'directx', 'gpu', 'llvm-ir'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.wgsl).toEqual(
+      expect.arrayContaining(['wgsl', 'webgpu', 'shader-ir', 'source'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.safetensors).toEqual(
+      expect.arrayContaining(['safetensors', 'ml-model', 'ai-model', 'tensor'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.gguf).toEqual(
+      expect.arrayContaining(['gguf', 'ggml', 'ml-model', 'ai-model'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.onnx).toEqual(
+      expect.arrayContaining(['onnx', 'ml-model', 'model-graph'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS['pytorch-checkpoint']).toEqual(
+      expect.arrayContaining(['pytorch-checkpoint', 'pickle', 'ml-model'])
+    )
+    expect(SURFACE_FILE_TYPE_TAGS.npz).toEqual(
+      expect.arrayContaining(['npz', 'numpy', 'zip', 'archive', 'ml-model'])
+    )
+  })
+
+  test('aspect helpers normalize, describe, and match sample profiles', () => {
+    const pluginAspects = normalizePluginAspects({
+      formats: ['APK', 'DEX', 'native_lib'],
+      platforms: ['Android'],
+      execution: ['Static'],
+      evidence: ['Manifest', 'Certificates'],
+    })
+    const sampleAspects = buildSampleProfileAspects({
+      fileTypes: ['apk'],
+      platforms: ['android'],
+      execution: ['static'],
+      findings: ['permissions'],
+    })
+    const match = matchSampleProfile(pluginAspects, sampleAspects)
+
+    expect(PluginAspectsSchema.parse(pluginAspects).formats).toEqual(
+      expect.arrayContaining(['apk', 'dex', 'native-lib'])
+    )
+    expect(match.matched).toBe(true)
+    expect(match.matchedAspects.formats).toEqual(expect.arrayContaining(['apk', 'dex']))
+    expect(describeAspectCoverage(pluginAspects)).toEqual(
+      expect.arrayContaining(['platforms: android', 'execution: static'])
+    )
   })
 
   test('plugin contract can describe dependencies and registration', () => {
@@ -135,6 +454,41 @@ describe('@rikune/plugin-sdk', () => {
     expect(handler).toHaveBeenCalledWith({ sample_id: 'sha256:test' }, {}, undefined)
   })
 
+  test('defineTool preserves workflow recipe metadata', () => {
+    const tool = defineTool({
+      name: 'demo.workflow.seed',
+      description: 'Seed a cross-plugin workflow',
+      inputSchema: { type: 'object' },
+      outputSchema: { type: 'object' },
+      aspects: {
+        execution: ['static', 'correlation'],
+        capabilities: ['workflow-seed'],
+        evidence: ['workflow'],
+      },
+      workflowRecipes: [
+        {
+          id: 'demo.workflow',
+          title: 'Demo workflow',
+          startsWith: ['demo.workflow.seed'],
+          nextTools: ['demo.workflow.next'],
+          requiredArtifacts: ['demo_input'],
+          producesArtifacts: ['demo_output'],
+          evidence: ['workflow'],
+          safety: ['passive'],
+        },
+      ],
+      handler: async () => ok({}),
+    })
+
+    expect(tool.definition.workflowRecipes).toEqual([
+      expect.objectContaining({
+        id: 'demo.workflow',
+        nextTools: ['demo.workflow.next'],
+      }),
+    ])
+    expect(validateTool(tool).ok).toBe(true)
+  })
+
   test('defineManifestPlugin binds manifest tools to named handlers', async () => {
     const plugin = defineManifestPlugin(
       {
@@ -165,6 +519,129 @@ describe('@rikune/plugin-sdk', () => {
     )
 
     expect(registered).toEqual([{ name: 'manifest_demo.echo' }])
+  })
+
+  test('manifest plugin preserves aspects, evidence, artifacts, and runtime policy', async () => {
+    const plugin = defineManifestPlugin(
+      {
+        id: 'manifest-dynamic-demo',
+        name: 'Manifest Dynamic Demo',
+        executionDomain: 'dynamic',
+        aspects: {
+          formats: ['apk'],
+          platforms: ['android'],
+          execution: ['dynamic'],
+          safety: ['passive', 'opt_in_dynamic'],
+        },
+        runtimePolicy: {
+          passiveByDefault: true,
+          requiresUserOptIn: true,
+          requiresIsolation: true,
+          allowedBackends: ['android-emulator'],
+          networkPolicy: 'disabled',
+        },
+        tools: [
+          {
+            name: 'manifest_dynamic.plan',
+            description: 'Manifest-backed dynamic plan',
+            inputSchema: { type: 'object' },
+            outputSchema: { type: 'object' },
+            aspects: { formats: ['apk'], platforms: ['android'], execution: ['dynamic'] },
+            artifacts: [{ type: 'manifest-dynamic.json' }],
+            evidence: [{ category: 'timeline', artifactTypes: ['manifest-dynamic.json'] }],
+            workflowRecipes: [
+              {
+                id: 'manifest.dynamic.plan',
+                title: 'Manifest dynamic plan',
+                startsWith: ['manifest_dynamic.plan'],
+                nextTools: ['tool.readiness'],
+                producesArtifacts: ['manifest-dynamic.json'],
+                evidence: ['timeline', 'workflow'],
+                safety: ['passive', 'opt_in_dynamic'],
+              },
+            ],
+            runtimePolicy: {
+              passiveByDefault: true,
+              requiresUserOptIn: true,
+              allowedBackends: ['android-emulator'],
+            },
+            runtime: {
+              type: 'spawn',
+              handler: 'manifest_dynamic.runtime.plan',
+              modes: ['plan_only'],
+              policy: {
+                passiveByDefault: true,
+                requiresUserOptIn: true,
+                allowedBackends: ['android-emulator'],
+              },
+            },
+          },
+        ],
+      },
+      {
+        'manifest_dynamic.plan': async () => ok({ source: 'manifest' }),
+      }
+    )
+
+    expect(plugin.aspects?.formats).toEqual(['apk'])
+    expect(plugin.runtimePolicy?.networkPolicy).toBe('disabled')
+    expect(plugin.tools?.[0].definition.evidence?.[0].category).toBe('timeline')
+    expect(plugin.tools?.[0].definition.workflowRecipes?.[0].id).toBe('manifest.dynamic.plan')
+    expect(plugin.tools?.[0].definition.runtime?.policy?.allowedBackends).toEqual([
+      'android-emulator',
+    ])
+  })
+
+  test('artifact/evidence fixture can be loaded as a manifest v2 plugin', async () => {
+    const fixturePath = path.join(
+      repoRoot,
+      'tests',
+      'fixtures',
+      'plugins',
+      'artifact-evidence',
+      'plugin.json'
+    )
+    const manifest = JSON.parse(fs.readFileSync(fixturePath, 'utf8'))
+    const plugin = defineManifestPlugin(manifest, {
+      'fixture.artifact.evidence': async () =>
+        ok(
+          { fixture: true },
+          {
+            artifacts: [
+              {
+                id: 'fixture-artifact',
+                type: 'fixture_analysis',
+                path: 'fixtures/fixture.json',
+                sha256: '0'.repeat(64),
+              },
+            ],
+            evidence: [
+              createEvidenceRef({
+                id: 'fixture-evidence',
+                category: 'timeline',
+                source: 'fixture',
+                toolName: 'fixture.artifact.evidence',
+              }),
+            ],
+          }
+        ),
+    })
+    const harness = createPluginTestHarness()
+
+    harness.registerPlugin(plugin)
+    const tool = harness.registeredTools.find(
+      (candidate) => candidate.definition.name === 'fixture.artifact.evidence'
+    )
+    const result = (await tool?.handler({ sample_id: 'sha256:fixture' })) as WorkerResult
+
+    expect(plugin.aspects?.evidence).toEqual(expect.arrayContaining(['structure', 'timeline']))
+    expect(plugin.runtimePolicy?.requiresUserOptIn).toBe(true)
+    expect(tool?.definition.artifacts?.[0].type).toBe('fixture_analysis')
+    expect(tool?.definition.evidence?.map((entry) => entry.category)).toEqual(
+      expect.arrayContaining(['structure', 'timeline'])
+    )
+    expect(result.artifacts?.[0].type).toBe('fixture_analysis')
+    expect(result.evidence?.[0].category).toBe('timeline')
   })
 
   test('manifest plugins fail fast when a handler is missing', () => {
@@ -206,6 +683,86 @@ describe('@rikune/plugin-sdk', () => {
     expect(result.errors.join('\n')).toContain('Duplicate tool name')
   })
 
+  test('auditPluginQuality reports warning-first plugin standard gaps', () => {
+    const plugin = definePlugin({
+      id: 'audit-demo',
+      name: 'Audit Demo',
+      executionDomain: 'dynamic',
+      tools: [
+        defineTool({
+          name: 'audit_demo.run',
+          description: 'Audit demo runtime-like tool',
+          inputSchema: { type: 'object' },
+          handler: async () => ok({}),
+        }),
+      ],
+    })
+
+    const warnings = auditPluginQuality(plugin)
+    const codes = warnings.map((warning) => warning.code)
+
+    expect(codes).toEqual(
+      expect.arrayContaining([
+        'missing-surface-rules',
+        'missing-aspects',
+        'missing-system-deps',
+        'missing-readiness-check',
+        'missing-output-schema',
+        'missing-evidence',
+        'dynamic-runtime-contract-missing',
+        'missing-runtime-policy',
+      ])
+    )
+    expect(
+      warnings.every((warning) => warning.severity === 'info' || warning.severity === 'warning')
+    ).toBe(true)
+    expect(warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          plugin_id: 'audit-demo',
+          suggested_task_owner: 'TASK-006',
+        }),
+      ])
+    )
+  })
+
+  test('auditPluginQuality reports workflow-capable tools without workflow recipes', () => {
+    const plugin = definePlugin({
+      id: 'workflow-audit-demo',
+      name: 'Workflow Audit Demo',
+      executionDomain: 'static',
+      aspects: {
+        execution: ['static', 'correlation'],
+        capabilities: ['workflow-summary'],
+        evidence: ['workflow'],
+      },
+      surfaceRules: { tier: 1, category: 'static-analysis' },
+      tools: [
+        defineTool({
+          name: 'workflow_audit.seed',
+          description: 'Workflow-capable tool with no recipe',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
+          artifacts: [{ type: 'workflow_audit_seed' }],
+          evidence: [{ category: 'workflow', artifactTypes: ['workflow_audit_seed'] }],
+          handler: async () => ok({}),
+        }),
+      ],
+    })
+
+    expect(auditPluginQuality(plugin)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'missing-workflow-recipe',
+          severity: 'info',
+          tool: 'workflow_audit.seed',
+          plugin_id: 'workflow-audit-demo',
+          suggested_task_owner: 'TASK-002',
+        }),
+      ])
+    )
+  })
+
   test('result helpers produce compatible tool and worker results', () => {
     expect(ok({ status: 'ready' })).toEqual({ ok: true, data: { status: 'ready' } })
     expect(fail('missing dependency')).toEqual({
@@ -217,6 +774,70 @@ describe('@rikune/plugin-sdk', () => {
       ok: true,
       data: { value: 1 },
     })
+  })
+
+  test('evidence helpers produce tool output envelopes and worker-compatible refs', () => {
+    const evidence = createEvidenceRef({
+      id: 'ev-1',
+      category: 'structure',
+      source: 'unit-test',
+      toolName: 'demo.tool',
+      confidence: 0.9,
+    })
+    const timeline = createEvidenceTimelineEntry({
+      source: 'unit-test',
+      toolName: 'demo.tool',
+      category: 'filesystem',
+      action: 'read',
+      target: '/tmp/sample',
+      confidence: 0.8,
+    })
+    const envelope = createToolOutputEnvelope({
+      ok: true,
+      data: { status: 'ready' },
+      evidence: [evidence],
+      timeline: [timeline],
+    })
+
+    expect(envelope.evidence?.[0].id).toBe('ev-1')
+    expect(envelope.timeline?.[0].category).toBe('filesystem')
+    expect(ok({ status: 'ready' }, { evidence: [evidence] }).evidence).toEqual([evidence])
+  })
+
+  test('plugin test harness registers tools with deps and context', async () => {
+    const handler = jest.fn(async (_args: { sample_id: string }, deps, ctx) =>
+      ok({ db: deps.database.kind, plugin: ctx?.pluginId })
+    )
+    const plugin = definePlugin({
+      id: 'harness-demo',
+      name: 'Harness Demo',
+      executionDomain: 'static',
+      tools: [
+        defineTool({
+          name: 'harness_demo.run',
+          description: 'Harness demo',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
+          aspects: { formats: ['pe'], platforms: ['windows'], execution: ['static'] },
+          artifacts: [{ type: 'harness-demo.json' }],
+          evidence: [{ category: 'structure' }],
+          handler,
+        }),
+      ],
+    })
+    const harness = createPluginTestHarness({
+      deps: { database: { kind: 'test-db' } },
+      ctx: { pluginId: 'harness-demo' },
+    })
+
+    expect(harness.registerPlugin(plugin)).toEqual(['harness_demo.run'])
+    expect(harness.registeredTools[0].definition.aspects?.formats).toEqual(['pe'])
+    await harness.registeredTools[0].handler({ sample_id: 'sha256:test' })
+    expect(handler).toHaveBeenCalledWith(
+      { sample_id: 'sha256:test' },
+      expect.objectContaining({ database: { kind: 'test-db' } }),
+      expect.objectContaining({ pluginId: 'harness-demo' })
+    )
   })
 
   test('plugin deps expose grouped services alongside top-level fields', () => {

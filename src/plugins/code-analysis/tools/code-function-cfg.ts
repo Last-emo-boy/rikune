@@ -34,6 +34,7 @@ import {
   type GraphvizAvailability,
   type LocalCallGraph,
 } from '../cfg-visual-exports.js'
+import { CODE_FUNCTION_CFG_METADATA } from './code-analysis-metadata.js'
 
 const TOOL_NAME = 'code.function.cfg'
 
@@ -342,6 +343,7 @@ export const codeFunctionCFGToolDefinition: ToolDefinition = {
     '- Common mistake: expecting render=svg/png to inline XML or binary output into the MCP response.',
   inputSchema: codeFunctionCFGInputSchema,
   outputSchema: codeFunctionCFGOutputSchema,
+  ...CODE_FUNCTION_CFG_METADATA,
 }
 
 export function createCodeFunctionCFGHandler(
@@ -556,8 +558,8 @@ export function createCodeFunctionCFGHandler(
           address: cfg.address,
         },
         format: input.format,
-        tool_surface_role: 'primary' as const,
-        preferred_primary_tools: [],
+        tool_surface_role: 'specialist' as const,
+        preferred_primary_tools: ['workflow.search', 'artifact.read'],
         graph_semantics: {
           surface_role: 'local_navigation_aid' as const,
           confidence_state: 'observed' as const,

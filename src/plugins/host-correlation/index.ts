@@ -7,15 +7,35 @@
  */
 
 import type { Plugin } from '../sdk.js'
-import { hostCorrelateToolDefinition, createHostCorrelateHandler } from './tools/host-correlate.js'
+import {
+  HOST_CORRELATION_CAPABILITIES,
+  HOST_CORRELATION_EVIDENCE,
+  HOST_CORRELATION_FORMATS,
+  HOST_CORRELATION_RUNTIME_POLICY,
+  HOST_CORRELATION_SAFETY,
+  createHostCorrelateHandler,
+  hostCorrelateToolDefinition,
+} from './tools/host-correlate.js'
 
 const hostCorrelationPlugin: Plugin = {
   id: 'host-correlation',
   name: 'Host Correlation',
   executionDomain: 'static',
+  aspects: {
+    formats: HOST_CORRELATION_FORMATS,
+    platforms: ['windows'],
+    execution: ['static', 'triage', 'correlation'],
+    safety: HOST_CORRELATION_SAFETY,
+    capabilities: HOST_CORRELATION_CAPABILITIES,
+    evidence: HOST_CORRELATION_EVIDENCE,
+  },
+  runtimePolicy: HOST_CORRELATION_RUNTIME_POLICY,
   surfaceRules: {
     tier: 2,
-    activateOn: { findings: ['suspicious_imports'] },
+    activateOn: {
+      findings: ['suspicious_imports', 'dll_sideloading', 'persistence', 'host-loader'],
+      fileTypes: ['pe', 'dll', 'exe', 'windows-host-artifacts', 'manifest', 'registry'],
+    },
     category: 'malware-analysis',
   },
   description:
@@ -35,8 +55,9 @@ const hostCorrelationPlugin: Plugin = {
       type: 'python',
       name: 'pefile',
       importName: 'pefile',
-      required: true,
-      description: 'Python pefile for PE header analysis',
+      required: false,
+      description:
+        'Optional Python pefile for future deep PE header analysis; the bundled worker uses a minimal parser by default',
       dockerInstall: 'pip install pefile',
     },
   ],

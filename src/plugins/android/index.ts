@@ -19,14 +19,60 @@ import {
   apkPackerDetectToolDefinition,
   createApkPackerDetectHandler,
 } from './tools/apk-packer-detect.js'
+import {
+  androidBehaviorGraphToolDefinition,
+  createAndroidBehaviorGraphHandler,
+} from './tools/android-behavior-graph.js'
 
 const androidPlugin: Plugin = {
   id: 'android',
   name: 'Android / APK Analysis',
   executionDomain: 'static',
+  aspects: {
+    formats: ['apk', 'aab', 'apks', 'xapk', 'split-apk', 'dex', 'multi-dex', 'oat', 'vdex', 'aar'],
+    platforms: ['android'],
+    architectures: ['arm', 'arm64', 'x86', 'x64'],
+    execution: ['static', 'triage', 'decompilation'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    capabilities: [
+      'structure',
+      'resources',
+      'signatures',
+      'classes',
+      'native-lib',
+      'packer',
+      'runtime-routing',
+      'hook-plan-input',
+      'behavior-graph',
+      'workflow-plan',
+    ],
+    evidence: [
+      'structure',
+      'manifest',
+      'strings',
+      'signatures',
+      'nested-binaries',
+      'behavior',
+      'workflow',
+      'provenance',
+    ],
+  },
   surfaceRules: {
     tier: 1,
-    activateOn: { fileTypes: ['apk', 'android', 'dex'] },
+    activateOn: {
+      fileTypes: [
+        'apk',
+        'aab',
+        'apks',
+        'xapk',
+        'split-apk',
+        'android',
+        'dex',
+        'oat',
+        'vdex',
+        'aar',
+      ],
+    },
     category: 'android-analysis',
   },
   description: 'APK manifest extraction, DEX decompilation, and packer detection',
@@ -69,7 +115,14 @@ const androidPlugin: Plugin = {
     server.registerTool(dexDecompileToolDefinition, createDexDecompileHandler(deps))
     server.registerTool(dexClassesListToolDefinition, createDexClassesListHandler(deps))
     server.registerTool(apkPackerDetectToolDefinition, createApkPackerDetectHandler(deps))
-    return ['apk.structure.analyze', 'dex.decompile', 'dex.classes.list', 'apk.packer.detect']
+    server.registerTool(androidBehaviorGraphToolDefinition, createAndroidBehaviorGraphHandler())
+    return [
+      'apk.structure.analyze',
+      'dex.decompile',
+      'dex.classes.list',
+      'apk.packer.detect',
+      'android.behavior.graph',
+    ]
   },
 }
 

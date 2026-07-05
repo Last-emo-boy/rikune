@@ -18,6 +18,7 @@
 //
 // =============================================================================
 
+import { execFileSync } from 'child_process'
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs'
 import { join, dirname, basename } from 'path'
 import { fileURLToPath } from 'url'
@@ -80,22 +81,36 @@ const PROFILES = {
 }
 
 const EXECUTION_DOCKER_FEATURES = new Set(['dynamic-python', 'frida', 'gdb', 'qiling', 'wine'])
+const BACKEND_PROFILES = {
+  default: new Set(['default']),
+  full: new Set(['default', 'optional']),
+  optional: new Set(['default', 'optional']),
+  heavy: new Set(['default', 'optional', 'heavy']),
+  research: new Set(['default', 'optional', 'heavy', 'research', 'license-gated']),
+  runtime: new Set(['default', 'optional', 'runtime']),
+  gpu: new Set(['default', 'optional', 'gpu']),
+  all: new Set(['default', 'optional', 'heavy', 'research', 'runtime', 'gpu', 'license-gated']),
+}
 
 // -----------------------------------------------------------------------------
 // 1. Auto-discover plugins from dist/plugins/ (or src/plugins/ for names)
 // -----------------------------------------------------------------------------
 
 function discoverPluginIds() {
+  const names = new Set()
   for (const base of [join(ROOT, 'dist', 'plugins'), join(ROOT, 'src', 'plugins')]) {
     if (!existsSync(base)) continue
-    return readdirSync(base)
+    for (const name of readdirSync(base)
       .filter((name) => {
         if (name === 'sdk.ts' || name === 'sdk.js' || name.startsWith('.')) return false
         const full = join(base, name)
         return statSync(full).isDirectory()
       })
-      .sort()
+      .sort()) {
+      names.add(name)
+    }
   }
+  if (names.size > 0) return [...names].sort()
   console.error('  x Neither dist/plugins/ nor src/plugins/ found.')
   process.exit(1)
 }
@@ -217,37 +232,84 @@ function discoverPluginScriptDirs() {
 // 2. Load systemDeps from compiled plugins
 // -----------------------------------------------------------------------------
 
+function loadSourcePluginMetadata(srcIndexPath) {
+  const loader = `
+const input = process.argv[1]
+const mod = await import('file://' + input.replace(/\\\\/g, '/'))
+const plugin = mod.default
+console.log(JSON.stringify({
+  id: plugin?.id,
+  executionDomain: plugin?.executionDomain ?? 'both',
+  systemDeps: plugin?.systemDeps ?? [],
+}))
+`
+  const output = execFileSync(process.execPath, ['--import', 'tsx', '--eval', loader, srcIndexPath], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  return JSON.parse(output)
+}
+
 async function loadPluginMetadata(pluginIds) {
   const distDir = join(ROOT, 'dist', 'plugins')
-  if (!existsSync(distDir)) {
-    console.error('  x dist/plugins/ not found. Run `npm run build` first.')
-    process.exit(1)
-  }
 
   const result = new Map()
   let loaded = 0
+  const failures = []
+  const fallbackWarnings = []
+
+  function normalizePluginMetadata(id, plugin) {
+    return {
+      id,
+      executionDomain: plugin?.executionDomain ?? 'both',
+      systemDeps: plugin?.systemDeps ?? [],
+    }
+  }
+
+  async function loadDistPlugin(indexPath) {
+    return (await import(`file://${indexPath.replace(/\\/g, '/')}`)).default
+  }
 
   for (const id of pluginIds) {
     const indexPath = join(distDir, id, 'index.js')
-    if (!existsSync(indexPath)) {
+    const srcIndexPath = join(ROOT, 'src', 'plugins', id, 'index.ts')
+    if (!existsSync(indexPath) && !existsSync(srcIndexPath)) {
       result.set(id, { id, executionDomain: 'both', systemDeps: [] })
       continue
     }
     try {
-      const mod = await import(`file://${indexPath.replace(/\\/g, '/')}`)
-      const plugin = mod.default
-      result.set(id, {
-        id,
-        executionDomain: plugin?.executionDomain ?? 'both',
-        systemDeps: plugin?.systemDeps ?? [],
-      })
+      let plugin
+      if (existsSync(indexPath)) {
+        try {
+          plugin = await loadDistPlugin(indexPath)
+        } catch (err) {
+          if (!existsSync(srcIndexPath)) throw err
+          fallbackWarnings.push(`${id}: ${err instanceof Error ? err.message : String(err)}`)
+          plugin = loadSourcePluginMetadata(srcIndexPath)
+        }
+      } else {
+        plugin = loadSourcePluginMetadata(srcIndexPath)
+      }
+      result.set(id, normalizePluginMetadata(id, plugin))
       if (plugin?.systemDeps?.length > 0) loaded++
-    } catch {
+    } catch (err) {
+      failures.push(`${id}: ${err instanceof Error ? err.message : String(err)}`)
       result.set(id, { id, executionDomain: 'both', systemDeps: [] })
     }
   }
 
   console.log(`  Scanned ${pluginIds.length} plugins, ${loaded} have systemDeps`)
+  if (fallbackWarnings.length > 0) {
+    console.log(`  Metadata source fallbacks (${fallbackWarnings.length}):`)
+    for (const warning of fallbackWarnings.slice(0, 10)) console.log(`    - ${warning}`)
+    if (fallbackWarnings.length > 10) console.log(`    ... ${fallbackWarnings.length - 10} more`)
+  }
+  if (failures.length > 0) {
+    console.log(`  Metadata load warnings (${failures.length}):`)
+    for (const failure of failures.slice(0, 10)) console.log(`    - ${failure}`)
+    if (failures.length > 10) console.log(`    ... ${failures.length - 10} more`)
+  }
   return result
 }
 
@@ -263,6 +325,86 @@ function depsForPluginIds(pluginIds, metadata, profile = PROFILES.full) {
     )
   }
   return result
+}
+
+function backendProfileAllows(dep, backendProfile = 'default') {
+  const route = dep.dockerInstallRoute
+  const depProfile = dep.dockerInstallProfile ?? 'default'
+  if (route === 'byo' || route === 'sidecar' || route === 'validation-only') return false
+  if (route === 'profile-gated' && !BACKEND_PROFILES[backendProfile]?.has(depProfile)) return false
+  return BACKEND_PROFILES[backendProfile]?.has(depProfile) ?? false
+}
+
+function filterDepsByBackendProfile(pluginDepMap, backendProfile = 'default') {
+  const result = new Map()
+  for (const [id, deps] of pluginDepMap) {
+    result.set(
+      id,
+      deps.filter((dep) => {
+        if (!dep.dockerFeature) return true
+        return backendProfileAllows(dep, backendProfile)
+      })
+    )
+  }
+  return result
+}
+
+function classifyInstallRoute(feature, deps, fragments, backendProfile) {
+  const routes = new Set(deps.map((dep) => dep.dockerInstallRoute).filter(Boolean))
+  const profiles = new Set(deps.map((dep) => dep.dockerInstallProfile).filter(Boolean))
+  const hasFragment = fragments.has(feature)
+  const hasApt = deps.some((dep) => dep.aptPackages?.length > 0)
+  const hasValidation = deps.some((dep) => dep.dockerValidation?.length > 0)
+  const hasDockerDefault = deps.some((dep) => dep.envVar && dep.dockerDefault)
+  const explicitRoute = routes.values().next().value
+  const installProfile = profiles.values().next().value ?? 'default'
+
+  if (explicitRoute === 'byo' || explicitRoute === 'sidecar' || explicitRoute === 'validation-only') {
+    return { route: explicitRoute, installProfile, enabled: false }
+  }
+  if (
+    explicitRoute === 'profile-gated' &&
+    !BACKEND_PROFILES[backendProfile]?.has(installProfile)
+  ) {
+    return { route: 'profile-gated', installProfile, enabled: false }
+  }
+  if (hasFragment) return { route: explicitRoute ?? 'installed', installProfile, enabled: true }
+  if (hasApt) return { route: explicitRoute ?? 'installed', installProfile, enabled: true }
+  if (feature === 'dynamic-python') return { route: explicitRoute ?? 'installed', installProfile, enabled: true }
+  if (hasValidation && hasDockerDefault) {
+    return { route: explicitRoute ?? 'validation-only', installProfile, enabled: true }
+  }
+  return { route: explicitRoute ?? 'missing', installProfile, enabled: false }
+}
+
+function collectBackendInstallReport(pluginDepMap, fragments, backendProfile = 'default') {
+  const byFeature = new Map()
+  for (const [plugin, deps] of pluginDepMap) {
+    for (const dep of deps) {
+      if (!dep.dockerFeature) continue
+      const route = dep.dockerInstallRoute ?? 'installed'
+      const profile = dep.dockerInstallProfile ?? 'default'
+      const key = `${dep.dockerFeature}:${route}:${profile}`
+      const entry = byFeature.get(key) ?? { feature: dep.dockerFeature, plugins: new Set(), deps: [] }
+      entry.plugins.add(plugin)
+      entry.deps.push(dep)
+      byFeature.set(key, entry)
+    }
+  }
+
+  return [...byFeature.values()]
+    .map((entry) => ({
+      feature: entry.feature,
+      plugins: [...entry.plugins].sort(),
+      ...classifyInstallRoute(entry.feature, entry.deps, fragments, backendProfile),
+    }))
+    .sort((a, b) => {
+      const byFeatureName = a.feature.localeCompare(b.feature)
+      if (byFeatureName !== 0) return byFeatureName
+      const byRoute = a.route.localeCompare(b.route)
+      if (byRoute !== 0) return byRoute
+      return a.installProfile.localeCompare(b.installProfile)
+    })
 }
 
 function filterBuildPluginsForProfile(pluginIds, metadata, profile) {
@@ -488,7 +630,7 @@ function makePluginsEnv(pluginIds) {
   return pluginIds.length > 0 ? pluginIds.join(',') : ''
 }
 
-function generateDockerCompose(requirements, buildPluginIds, runtimePluginIds, profile) {
+function generateDockerCompose(requirements, buildPluginIds, runtimePluginIds, profile, backendProfile) {
   const { features, envVars, extraEnv, buildArgs, volumes: pluginVolumes } = requirements
 
   // Build args from plugins. Proxy args are always set explicitly so Docker
@@ -513,16 +655,17 @@ function generateDockerCompose(requirements, buildPluginIds, runtimePluginIds, p
     ['NODE_ENV', 'production'],
     ['PYTHONUNBUFFERED', '1'],
     ['RIKUNE_DOCKER_PROFILE', profile.id],
+    ['RIKUNE_BACKEND_PROFILE', backendProfile],
     ['NODE_ROLE', profile.nodeRole],
     ['RUNTIME_MODE', profile.runtimeMode],
     ['PLUGINS', makePluginsEnv(runtimePluginIds)],
     ['WORKSPACE_ROOT', '/app/workspaces'],
     ['DB_PATH', '/app/data/database.db'],
     ['CACHE_ROOT', '/app/cache'],
-    ['HOME', '/app/cache/home'],
+    ['HOME', '/tmp/rikune-home'],
     ['AUDIT_LOG_PATH', '/app/logs/audit.log'],
-    ['XDG_CONFIG_HOME', '/app/logs/.config'],
-    ['XDG_CACHE_HOME', '/app/cache/xdg'],
+    ['XDG_CONFIG_HOME', '/tmp/rikune-home/.config'],
+    ['XDG_CACHE_HOME', '/tmp/rikune-home/.cache'],
     ['LOG_LEVEL', 'info'],
     ['SANDBOX_PYTHON_PATH', '/usr/local/bin/python3'],
   ])
@@ -563,6 +706,7 @@ function generateDockerCompose(requirements, buildPluginIds, runtimePluginIds, p
 # =============================================================================
 # Auto-generated from plugin systemDeps.
 # Profile: ${profile.displayName}
+# Backend profile: ${backendProfile}
 # Build plugins: ${buildPluginIds.length} | Runtime plugins: ${runtimePluginIds.length}
 # Features: ${featureList}
 # Regenerate: npm run docker:generate -- --profile=${profile.id}
@@ -655,6 +799,7 @@ Options:
   --include=<ids>   Only include these plugins (comma-separated)
   --exclude=<ids>   Exclude these plugins
   --output=<dir>    Output directory (default: project root)
+  --backend-profile=<name>  default | full | optional | heavy | research | runtime | gpu | all
   --dry-run         Preview profile resolution without writing files
   --help            Show this help
 `)
@@ -662,6 +807,11 @@ Options:
   }
 
   console.log('--- Rikune Docker Generator ---')
+  const backendProfile = flags['backend-profile'] || 'default'
+  if (!BACKEND_PROFILES[backendProfile]) {
+    console.error(`  x Unknown backend profile '${backendProfile}'.`)
+    process.exit(1)
+  }
 
   const selectedProfiles = flags['all-profiles']
     ? [PROFILES.full, PROFILES.static, PROFILES.hybrid]
@@ -706,7 +856,9 @@ Options:
   for (const profile of selectedProfiles) {
     const buildPluginIds = filterBuildPluginsForProfile(selectedPluginIds, metadata, profile)
     const runtimePluginIds = profile.id === 'static' ? buildPluginIds : selectedPluginIds
-    const req = collectDockerRequirements(depsForPluginIds(buildPluginIds, metadata, profile))
+    const rawDeps = depsForPluginIds(buildPluginIds, metadata, profile)
+    const installReport = collectBackendInstallReport(rawDeps, fragments, backendProfile)
+    const req = collectDockerRequirements(filterDepsByBackendProfile(rawDeps, backendProfile))
     const featureList = [...req.features].sort()
 
     console.log(`\n  Profile: ${profile.id} (${profile.displayName})`)
@@ -726,6 +878,14 @@ Options:
     console.log(`  directories: ${req.directories.length}`)
     console.log(`  volumes: ${req.volumes.length}`)
     console.log(`  validation: ${req.validationCmds.length} commands`)
+    console.log(`  Backend install profile: ${backendProfile}`)
+    console.log('  Backend install routes:')
+    for (const item of installReport) {
+      const state = item.enabled ? 'enabled' : 'skipped'
+      console.log(
+        `    - ${item.feature}: ${item.route} (${item.installProfile}) ${state} [${item.plugins.join(', ')}]`
+      )
+    }
 
     const enabledFragments = [...fragments.entries()].filter(([f]) => req.features.has(f))
     console.log(`  Docker fragments (${enabledFragments.length}/${fragments.size}):`)
@@ -768,7 +928,7 @@ Options:
     writeFileSync(join(outputDir, profile.dockerfile), dockerfile, 'utf-8')
     console.log(`  OK ${profile.dockerfile} (${dockerfile.split('\n').length} lines)`)
 
-    const compose = generateDockerCompose(req, buildPluginIds, runtimePluginIds, profile)
+    const compose = generateDockerCompose(req, buildPluginIds, runtimePluginIds, profile, backendProfile)
     writeFileSync(join(outputDir, profile.composeFile), compose, 'utf-8')
     console.log(`  OK ${profile.composeFile} (${compose.split('\n').length} lines)`)
   }

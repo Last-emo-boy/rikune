@@ -113,16 +113,16 @@ export const analyzeAutoWorkflowOutputSchema = z.object({
 export const analyzeAutoWorkflowToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Intent-routed analysis entrypoint. Prefer this when the user asks for analysis, reverse engineering, dynamic checks, or reporting without naming a specific workflow or backend. ' +
+    'Compatibility intent-routed analysis handler. Prefer workflow.search when the requested workflow is unclear, then workflow.run action=start/status/promote for the primary AI-facing staged path. ' +
     'The server chooses an existing workflow layer and only selects safe corroborating backends automatically. ' +
-    'This router delegates to workflow.analyze.start and, for non-triage goals, workflow.analyze.promote; it does not launch legacy heavyweight workflows directly. ' +
+    'This router delegates internally to workflow.analyze.start and, for non-triage goals, workflow.analyze.promote; it does not launch legacy heavyweight workflows directly. ' +
     'Read coverage_level, completion_state, coverage_gaps, and upgrade_paths on the result before assuming a deeper stage was reached. ' +
     '\n\nDecision guide:\n' +
-    '- Use when: the user says analyze / triage / reverse / dynamic / summarize without specifying an exact backend.\n' +
+    '- Use when: a legacy client still calls workflow.analyze.auto directly; new clients should start with workflow.search.\n' +
     '- Small-sample default: goal=triage with depth=balanced is usually the best first call; inspect recommended_next_tools before escalating.\n' +
-    '- Large-sample default: expect a persisted run with bounded output first; prefer workflow.analyze.status and workflow.analyze.promote over direct heavyweight tools.\n' +
+    '- Large-sample default: expect a persisted run with bounded output first; prefer workflow.run action=status and workflow.run action=promote over direct heavyweight tools.\n' +
     '- Do not use when: the user explicitly names a backend wrapper such as rizin.analyze or retdec.decompile.\n' +
-    '- Typical next step: inspect routed_tool and routing metadata, then continue with task.status, artifact.read, or the recommended_next_tools.\n' +
+    '- Typical next step: inspect routed_tool and routing metadata, then continue with workflow.run action=status, artifact.read, or the recommended_next_tools.\n' +
     '- Common mistake: assuming allow_live_execution automatically launches Wine; live execution remains approval-gated.',
   inputSchema: analyzeAutoWorkflowInputSchema,
   outputSchema: analyzeAutoWorkflowOutputSchema,
@@ -152,6 +152,34 @@ function extractCoverageEnvelope(payload: unknown): z.infer<typeof CoverageEnvel
 
   const parsed = CoverageEnvelopeSchema.safeParse(payload)
   return parsed.success ? parsed.data : null
+}
+
+function normalizeGatewayTools(items: unknown): string[] {
+  const values = Array.isArray(items)
+    ? items.filter((item): item is string => typeof item === 'string')
+    : []
+  const mapped = values.map((item) => {
+    if (
+      item === 'workflow.run' ||
+      item.startsWith('workflow.analyze.') ||
+      item === 'workflow.triage' ||
+      item === 'workflow.analyze.auto' ||
+      item === 'task.status'
+    ) {
+      return 'workflow.run'
+    }
+    if (item === 'artifact.read' || item.startsWith('artifact.')) return 'artifact.read'
+    return 'workflow.search'
+  })
+  return Array.from(new Set(mapped))
+}
+
+function normalizeGatewayAction(action: string): string {
+  return action
+    .replaceAll('workflow.analyze.start', 'workflow.run action=start')
+    .replaceAll('workflow.analyze.status', 'workflow.run action=status')
+    .replaceAll('workflow.analyze.promote', 'workflow.run action=promote')
+    .replaceAll('task.status', 'workflow.run action=status or task.status for raw queue details')
 }
 
 export function createAnalyzeAutoWorkflowHandler(
@@ -271,13 +299,17 @@ export function createAnalyzeAutoWorkflowHandler(
                 routed_tool: 'workflow.analyze.start',
                 routed_result: startPayload.stage_result,
                 result_mode: startPayload.execution_state === 'queued' ? 'queued' : 'completed',
-                recommended_next_tools: (startPayload.recommended_next_tools as string[]) || [
-                  'workflow.analyze.promote',
-                  'workflow.analyze.status',
-                ],
-                next_actions: (startPayload.next_actions as string[]) || [
-                  'Promote the persisted run instead of repeating fast-profile analysis when you need deeper stages.',
-                ],
+                recommended_next_tools: normalizeGatewayTools(
+                  (startPayload.recommended_next_tools as string[] | undefined) || [
+                    'workflow.run',
+                    'artifact.read',
+                  ]
+                ),
+                next_actions: (
+                  (startPayload.next_actions as string[] | undefined) || [
+                    'Use workflow.run action=promote on the persisted plan instead of repeating fast-profile analysis when you need deeper stages.',
+                  ]
+                ).map(normalizeGatewayAction),
               },
               startCoverage
             ),
@@ -354,13 +386,17 @@ export function createAnalyzeAutoWorkflowHandler(
               routed_tool: 'workflow.analyze.promote',
               routed_result: promotePayload.stage_result || promotePayload,
               result_mode: promotePayload.execution_state === 'queued' ? 'queued' : 'completed',
-              recommended_next_tools: (promotePayload.recommended_next_tools as string[]) || [
-                'workflow.analyze.status',
-                'workflow.analyze.promote',
-              ],
-              next_actions: (promotePayload.next_actions as string[]) || [
-                'Use workflow.analyze.status to monitor the persisted run instead of rerunning heavyweight workflows.',
-              ],
+              recommended_next_tools: normalizeGatewayTools(
+                (promotePayload.recommended_next_tools as string[] | undefined) || [
+                  'workflow.run',
+                  'artifact.read',
+                ]
+              ),
+              next_actions: (
+                (promotePayload.next_actions as string[] | undefined) || [
+                  'Use workflow.run action=status to monitor the persisted run instead of rerunning heavyweight workflows.',
+                ]
+              ).map(normalizeGatewayAction),
             },
             promoteCoverage
           ),

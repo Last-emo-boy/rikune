@@ -121,6 +121,31 @@ export const ghidraAnalyzeToolDefinition: ToolDefinition = {
     '- Common mistake: assuming this tool is always synchronous and skipping task.status when a queue-backed client is active.',
   inputSchema: ghidraAnalyzeInputSchema,
   outputSchema: ghidraAnalyzeOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'wasm', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'ios', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'ppc', 'riscv', 'wasm'],
+    execution: ['static', 'decompilation'],
+    safety: ['passive'],
+    capabilities: ['functions', 'decompile', 'cfg', 'xrefs', 'symbols'],
+    evidence: ['structure', 'symbols', 'imports', 'exports', 'artifact'],
+  },
+  artifacts: [
+    {
+      type: 'ghidra_analysis',
+      description: 'Ghidra project-backed function index, decompilation, CFG, and xref analysis',
+    },
+  ],
+  evidence: [
+    {
+      category: 'symbols',
+      artifactTypes: ['ghidra_analysis'],
+    },
+    {
+      category: 'structure',
+      artifactTypes: ['ghidra_analysis'],
+    },
+  ],
 }
 
 /**

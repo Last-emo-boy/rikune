@@ -160,7 +160,7 @@ describe('tool.help tool', () => {
     expect(
       data.tools[0].usage_notes.some(
         (item: string) =>
-          item.includes('workflow_analyze_start') || item.includes('workflow_analyze_promote')
+          item.includes('workflow_search') || item.includes('workflow_run')
       )
     ).toBe(true)
   })
@@ -200,8 +200,8 @@ describe('tool.help tool', () => {
     expect(
       data.tools[0].usage_notes.some(
         (item: string) =>
-          item.includes(toTransportToolName('workflow.analyze.start')) ||
-          item.includes(toTransportToolName('workflow.analyze.promote'))
+          item.includes(toTransportToolName('workflow.search')) ||
+          item.includes(toTransportToolName('workflow.run'))
       )
     ).toBe(true)
     expect(data.tools[0].usage_notes.some((item: string) => item.includes('small samples'))).toBe(
@@ -239,7 +239,7 @@ describe('tool.help tool', () => {
     const definitions: ToolDefinition[] = [
       {
         name: 'sample.request_upload',
-        description: 'Primary host-file upload entrypoint for containerized MCP workers.',
+        description: 'Compatibility host-file upload helper for containerized MCP workers.',
         inputSchema: z.object({
           filename: z.string().optional(),
           ttl_seconds: z.number().default(300),
@@ -282,7 +282,7 @@ describe('tool.help tool', () => {
     const uploadData = uploadResult.data as any
     expect(
       uploadData.tools[0].usage_notes.some((item: string) =>
-        item.includes('host-file ingest entrypoint')
+        item.includes('compatibility upload-session helper')
       )
     ).toBe(true)
     const ttlField = uploadData.tools[0].input.fields.find(
@@ -314,7 +314,7 @@ describe('tool.help tool', () => {
     const taskStatusData = taskStatusResult.data as any
     expect(taskStatusData.tools[0].surface_role).toBe('compatibility')
     expect(taskStatusData.tools[0].preferred_primary_tools).toContain(
-      toTransportToolName('workflow.analyze.status')
+      toTransportToolName('workflow.run')
     )
     expect(
       taskStatusData.tools[0].usage_notes.some((item: string) => item.includes('polling_guidance'))
@@ -649,13 +649,33 @@ describe('tool.help tool', () => {
   test('should classify primary, compatibility, and export-oriented surfaces', async () => {
     const definitions: ToolDefinition[] = [
       {
+        name: 'workflow.search',
+        description: 'Primary passive profile search gateway',
+        inputSchema: z.object({ query: z.string().optional() }),
+      },
+      {
+        name: 'sample.profile.get',
+        description: 'Compatibility sample profile view',
+        inputSchema: z.object({ sample_id: z.string() }),
+      },
+      {
+        name: 'tools.discover',
+        description: 'Compatibility low-level discovery portal',
+        inputSchema: z.object({ action: z.string().optional() }),
+      },
+      {
+        name: 'custom.unclassified',
+        description: 'Unclassified core compatibility helper',
+        inputSchema: z.object({ sample_id: z.string().optional() }),
+      },
+      {
         name: 'workflow.analyze.start',
-        description: 'Primary staged analysis entrypoint',
+        description: 'Compatibility staged analysis start handler',
         inputSchema: z.object({ sample_id: z.string() }),
       },
       {
         name: 'workflow.analyze.auto',
-        description: 'Primary staged analysis router',
+        description: 'Compatibility staged analysis router',
         inputSchema: z.object({ sample_id: z.string() }),
       },
       {
@@ -687,20 +707,47 @@ describe('tool.help tool', () => {
     const data = result.data as any
     const byName = new Map<string, any>(data.tools.map((item: any) => [item.name, item]))
 
-    expect(byName.get(toTransportToolName('workflow.analyze.start')).surface_role).toBe('primary')
-    expect(byName.get(toTransportToolName('workflow.analyze.auto')).surface_role).toBe('primary')
-    expect(byName.get(toTransportToolName('tool.readiness')).surface_role).toBe('primary')
+    expect(byName.get(toTransportToolName('workflow.search')).surface_role).toBe('primary')
+    expect(byName.get(toTransportToolName('sample.profile.get')).surface_role).toBe(
+      'compatibility'
+    )
+    expect(byName.get(toTransportToolName('sample.profile.get')).preferred_primary_tools).toContain(
+      toTransportToolName('workflow.search')
+    )
+    expect(byName.get(toTransportToolName('tools.discover')).surface_role).toBe('compatibility')
+    expect(byName.get(toTransportToolName('tools.discover')).preferred_primary_tools).toContain(
+      toTransportToolName('workflow.search')
+    )
+    expect(byName.get(toTransportToolName('custom.unclassified')).surface_role).toBe(
+      'compatibility'
+    )
+    expect(byName.get(toTransportToolName('workflow.analyze.start')).surface_role).toBe(
+      'compatibility'
+    )
+    expect(
+      byName.get(toTransportToolName('workflow.analyze.start')).preferred_primary_tools
+    ).toContain(toTransportToolName('workflow.run'))
+    expect(byName.get(toTransportToolName('workflow.analyze.auto')).surface_role).toBe(
+      'compatibility'
+    )
+    expect(
+      byName.get(toTransportToolName('workflow.analyze.auto')).preferred_primary_tools
+    ).toContain(toTransportToolName('workflow.run'))
+    expect(byName.get(toTransportToolName('tool.readiness')).surface_role).toBe('compatibility')
+    expect(byName.get(toTransportToolName('tool.readiness')).preferred_primary_tools).toContain(
+      toTransportToolName('workflow.search')
+    )
     expect(byName.get(toTransportToolName('workflow.triage')).surface_role).toBe('compatibility')
     expect(byName.get(toTransportToolName('workflow.triage')).preferred_primary_tools).toContain(
-      toTransportToolName('workflow.analyze.start')
+      toTransportToolName('workflow.run')
     )
     expect(byName.get(toTransportToolName('report.generate')).surface_role).toBe('export_only')
     expect(byName.get(toTransportToolName('report.generate')).preferred_primary_tools).toContain(
-      toTransportToolName('workflow.summarize')
+      toTransportToolName('workflow.search')
     )
     expect(byName.get(toTransportToolName('graphviz.render')).surface_role).toBe('renderer_helper')
     expect(byName.get(toTransportToolName('graphviz.render')).preferred_primary_tools).toContain(
-      toTransportToolName('code.function.cfg')
+      toTransportToolName('workflow.search')
     )
   })
 
@@ -1003,5 +1050,116 @@ describe('tool.help tool', () => {
     expect(
       traceData.tools[0].usage_notes.some((item: string) => item.includes('debug-session artifact'))
     ).toBe(true)
+  })
+
+  test('should expose aspect, artifact, evidence, and runtime metadata for format tools', async () => {
+    const definitions: ToolDefinition[] = [
+      {
+        name: 'android.package.inventory',
+        description: 'Inventory Android APK/AAB packages without installing them',
+        inputSchema: z.object({ sample_id: z.string() }),
+        aspects: {
+          formats: ['APK', 'AAB', 'DEX'],
+          platforms: ['Android'],
+          execution: ['static'],
+          evidence: ['manifest', 'signatures'],
+        },
+        artifacts: [{ type: 'android_package_inventory', description: 'Android inventory' }],
+        evidence: [{ category: 'manifest', artifactTypes: ['android_package_inventory'] }],
+        workflowRecipes: [
+          {
+            id: 'android.static.behavior',
+            title: 'Android static behavior',
+            startsWith: ['android.package.inventory'],
+            nextTools: ['apk.manifest.parse', 'dex.classes.list'],
+            producesArtifacts: ['android_package_inventory'],
+            evidence: ['manifest', 'workflow'],
+            safety: ['passive'],
+          },
+        ],
+        workerBackend: {
+          version: 'backend-worker.v1',
+          backendName: 'FixtureAndroidWorker',
+          backendKind: 'external',
+          adapter: 'fixture.android.inventory',
+          availability: 'optional',
+          defaultMode: 'builtin',
+          supportedModes: ['builtin', 'external'],
+          outputArtifactTypes: ['android_package_inventory'],
+          policy: {
+            passiveByDefault: true,
+            noNetwork: true,
+            noMutation: true,
+            noLiveExecution: true,
+          },
+          readiness: {
+            doesNotStartBackend: true,
+            setupActions: ['Set FIXTURE_ANDROID_WORKER_PATH for external mode.'],
+          },
+        },
+      },
+      {
+        name: 'linux.binary.inventory',
+        description: 'Inventory ELF executables, shared objects, and core dumps',
+        inputSchema: z.object({ sample_id: z.string() }),
+        aspects: {
+          formats: ['ELF-Executable', 'ELF-Core'],
+          platforms: ['Linux'],
+          execution: ['static'],
+          evidence: ['structure', 'symbols'],
+        },
+        artifacts: [{ type: 'linux_binary_inventory' }],
+        evidence: [{ category: 'structure' }, { category: 'symbols' }],
+      },
+    ]
+
+    const handler = createToolHelpHandler(() => definitions)
+    const result = await handler({ tool_name: 'android.package.inventory' })
+
+    expect(result.ok).toBe(true)
+    const tool = (result.data as any).tools[0]
+    expect(tool.aspects).toEqual(
+      expect.objectContaining({
+        formats: ['apk', 'aab', 'dex'],
+        platforms: ['android'],
+        execution: ['static'],
+      })
+    )
+    expect(tool.aspect_coverage).toEqual(
+      expect.arrayContaining(['formats: apk, aab, dex', 'platforms: android'])
+    )
+    expect(tool.format_matrix.apk).toEqual(
+      expect.objectContaining({
+        platforms: ['android'],
+        execution: ['static'],
+        evidence: ['manifest', 'signatures'],
+        artifacts: ['android_package_inventory'],
+        workflow_recipes: ['android.static.behavior'],
+      })
+    )
+    expect(tool.artifact_declarations).toEqual([
+      { type: 'android_package_inventory', description: 'Android inventory' },
+    ])
+    expect(tool.evidence_declarations).toEqual([
+      { category: 'manifest', artifactTypes: ['android_package_inventory'] },
+    ])
+    expect(tool.workflow_recipes).toEqual([
+      expect.objectContaining({
+        id: 'android.static.behavior',
+        nextTools: ['apk.manifest.parse', 'dex.classes.list'],
+      }),
+    ])
+    expect(
+      tool.usage_notes.some((item: string) => item.includes('workflow_recipes metadata'))
+    ).toBe(true)
+    expect(tool.runtime_policy).toBeNull()
+    expect(tool.runtime_contract).toBeNull()
+    expect(tool.worker_backend).toEqual(
+      expect.objectContaining({
+        version: 'backend-worker.v1',
+        backendName: 'FixtureAndroidWorker',
+        adapter: 'fixture.android.inventory',
+      })
+    )
   })
 })

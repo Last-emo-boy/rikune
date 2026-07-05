@@ -495,15 +495,15 @@ export function buildUnpackPlan(input: UnpackPlanBuildInput) {
           : ['debug_session_plan', 'runtime_dump_or_trace_digest', 'recoverable_unpack_execution'],
     recommended_next_tools:
       packedState === 'not_packed'
-        ? ['workflow.analyze.promote', 'workflow.summarize']
-        : ['workflow.analyze.promote', 'workflow.analyze.status', 'upx.inspect'],
+        ? ['workflow.run', 'workflow.search', 'artifact.read']
+        : ['workflow.run', 'workflow.search', 'artifact.read'],
     next_actions:
       packedState === 'not_packed'
         ? ['Continue into enrich_static or function_map; no unpack branch is required right now.']
         : upxCandidate && input.allowTransformations
           ? [
               'Promote to dynamic_execute to allow a safe UPX-backed unpack attempt and persist the unpacked binary.',
-              'Use workflow.analyze.status instead of repeating fast-profile analysis while unpack work is in progress.',
+              'Use workflow.run action=status instead of repeating fast-profile analysis while unpack work is in progress.',
             ]
           : upxCandidate
             ? [

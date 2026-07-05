@@ -18,6 +18,14 @@ import {
   resolvePythonModuleBackend,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
+import {
+  CAPSTONE_DISASM_ARTIFACT_TYPE,
+  CAPSTONE_PASSIVE_SAFETY,
+  CAPSTONE_QUICK_EVIDENCE,
+  CAPSTONE_QUICK_FOLLOW_UP_TOOLS,
+  CAPSTONE_QUICK_WORKFLOW_RECIPES,
+  CAPSTONE_RUNTIME_POLICY,
+} from '../capstone-metadata.js'
 
 const TOOL_NAME = 'disasm.quick'
 
@@ -81,6 +89,47 @@ export const disasmQuickToolDefinition: ToolDefinition = {
     'Quickly disassemble bytes from a sample at a given offset. Uses Capstone — no Ghidra/Rizin needed. Ideal for entrypoints, shellcode snippets, and quick inspection.',
   inputSchema: disasmQuickInputSchema,
   outputSchema: disasmQuickOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips'],
+    execution: ['static', 'triage'],
+    safety: CAPSTONE_PASSIVE_SAFETY,
+    capabilities: [
+      'disassembly',
+      'bounded-disassembly',
+      'entrypoint-preview',
+      'function-boundary-seeding',
+      'workflow-handoff',
+    ],
+    evidence: CAPSTONE_QUICK_EVIDENCE,
+  },
+  artifacts: [
+    {
+      type: CAPSTONE_DISASM_ARTIFACT_TYPE,
+      description: 'Bounded Capstone disassembly preview',
+    },
+  ],
+  evidence: [
+    {
+      category: 'structure',
+      artifactTypes: [CAPSTONE_DISASM_ARTIFACT_TYPE],
+    },
+    {
+      category: 'disassembly',
+      artifactTypes: [CAPSTONE_DISASM_ARTIFACT_TYPE],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: [CAPSTONE_DISASM_ARTIFACT_TYPE],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: [CAPSTONE_DISASM_ARTIFACT_TYPE],
+    },
+  ],
+  workflowRecipes: CAPSTONE_QUICK_WORKFLOW_RECIPES,
+  runtimePolicy: CAPSTONE_RUNTIME_POLICY,
 }
 
 const CAPSTONE_DISASM_SCRIPT = `
@@ -197,14 +246,11 @@ export function createDisasmQuickHandler(
           instructions: (result.parsed?.instructions || []).slice(0, 50),
           artifact,
           summary: `Disassembled ${count} ${input.arch} instructions at offset 0x${input.offset.toString(16)}.`,
-          recommended_next_tools: [
-            'artifact.read',
-            'code.function.decompile',
-            'shellcode.disasm',
-            'pe.pdata.extract',
-          ],
+          recommended_next_tools: CAPSTONE_QUICK_FOLLOW_UP_TOOLS,
           next_actions: [
             'Use code.function.decompile for full function analysis via Ghidra.',
+            'Use code.functions.smart_recover to seed function recovery from this bounded preview.',
+            'Use analysis.evidence.graph to preserve disassembly provenance before reporting.',
             'Use shellcode.disasm for raw shellcode analysis.',
           ],
         },

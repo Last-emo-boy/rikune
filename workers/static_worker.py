@@ -4375,7 +4375,7 @@ print(json.dumps(payload))
         # 鑾峰彇鍙傛暟
         rule_set = args.get('rule_set', 'default')
         timeout_ms = args.get('timeout_ms', 30000)
-        rule_tier = str(args.get('rule_tier', 'production') or 'production').strip().lower()
+        rule_tier = str(args.get('rule_tier', 'test') or 'test').strip().lower()
         if rule_tier not in {'production', 'experimental', 'test', 'all'}:
             rule_tier = 'production'
         
@@ -6045,16 +6045,32 @@ print(json.dumps(payload))
             }
 
             has_strong_non_yara = (
-                method_scores['entropy'] >= 0.62
+                method_scores['entropy'] >= 0.60
                 or method_scores['entrypoint'] >= 0.68
                 or feature_score >= 0.62
+            )
+            has_named_packer_section = bool(suspicious_section_names) and any(
+                marker in name.lower()
+                for name in suspicious_section_names
+                for marker in ['upx', 'aspack', 'vmp', 'themida', 'petite']
+            )
+            has_corroborated_named_packer = bool(
+                has_named_packer_section
+                and (
+                    method_scores['yara'] >= 0.45
+                    or method_scores['entrypoint'] >= 0.60
+                    or feature_score >= 0.50
+                )
             )
             has_high_yara = method_scores['yara'] >= 0.80 and not yara_string_only
             result['packed'] = bool(
                 has_strong_non_yara
+                or has_corroborated_named_packer
                 or has_high_yara
                 or result['confidence'] >= 0.58
             )
+            if has_corroborated_named_packer:
+                result['confidence'] = max(result['confidence'], 0.66)
 
             if not result['packed'] and method_scores['yara'] > 0:
                 warnings.append(

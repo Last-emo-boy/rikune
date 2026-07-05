@@ -11,6 +11,14 @@ import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
+import {
+  ELF_IMPORTS_ARTIFACT_TYPE,
+  ELF_IMPORTS_WORKFLOW_RECIPES,
+  ELF_MACHO_RUNTIME_POLICY,
+  ELF_MACHO_SAFETY,
+  buildElfMachoWorkerBackend,
+  enrichElfImportsResult,
+} from '../elf-macho-metadata.js'
 
 const TOOL_NAME = 'elf.imports.extract'
 
@@ -31,6 +39,32 @@ export const elfImportsExtractToolDefinition: ToolDefinition = {
   description: 'Extract ELF imports: DT_NEEDED shared libraries and imported symbols from .dynsym.',
   inputSchema: ElfImportsExtractInputSchema,
   outputSchema: ElfImportsExtractOutputSchema,
+  aspects: {
+    formats: ['elf', 'so'],
+    platforms: ['linux'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv'],
+    execution: ['static', 'triage'],
+    safety: ELF_MACHO_SAFETY,
+    capabilities: ['imports', 'libraries', 'symbols', 'loader-metadata', 'workflow-handoff'],
+    evidence: ['imports', 'symbols', 'loader', 'workflow', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: ELF_IMPORTS_ARTIFACT_TYPE,
+      description: 'ELF DT_NEEDED libraries and imported dynamic symbols',
+      mime: 'application/json',
+      mimeTypes: ['application/json'],
+    },
+  ],
+  evidence: [
+    { category: 'imports', artifactTypes: [ELF_IMPORTS_ARTIFACT_TYPE] },
+    { category: 'symbols', artifactTypes: [ELF_IMPORTS_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [ELF_IMPORTS_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [ELF_IMPORTS_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: ELF_IMPORTS_WORKFLOW_RECIPES,
+  runtimePolicy: ELF_MACHO_RUNTIME_POLICY,
+  workerBackend: buildElfMachoWorkerBackend([ELF_IMPORTS_ARTIFACT_TYPE]),
 }
 
 export function createElfImportsExtractHandler(
@@ -70,6 +104,7 @@ export function createElfImportsExtractHandler(
         total_needed: needed.length,
         total_imported_symbols: importedSymbols.length,
       }
+      const enriched = enrichElfImportsResult(importData, { sampleId: args.sample_id })
 
       const artifacts: ArtifactRef[] = []
       try {
@@ -77,9 +112,9 @@ export function createElfImportsExtractHandler(
           workspaceManager,
           database,
           args.sample_id,
-          'elf_imports',
+          ELF_IMPORTS_ARTIFACT_TYPE,
           'elf-imports',
-          importData
+          enriched
         )
         if (artRef) artifacts.push(artRef)
       } catch {
@@ -88,7 +123,7 @@ export function createElfImportsExtractHandler(
 
       return {
         ok: true,
-        data: importData,
+        data: enriched,
         artifacts,
         metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME },
       }

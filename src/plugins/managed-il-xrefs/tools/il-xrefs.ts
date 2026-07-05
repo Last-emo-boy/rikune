@@ -16,6 +16,16 @@ import {
   type PluginToolDeps,
 } from '../../sdk.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
+import {
+  MANAGED_IL_XREFS_ARTIFACT_TYPES,
+  MANAGED_IL_XREFS_RUNTIME_POLICY,
+  MANAGED_IL_XREFS_TOOL_VERSION,
+  MANAGED_IL_XREFS_WORKER_TIMEOUT_MS,
+  buildManagedIlXrefsEnvelope,
+  managedIlXrefsAspects,
+  managedIlXrefsRecipe,
+  managedIlXrefsWorkerBackend,
+} from '../managed-il-xrefs-metadata.js'
 
 const TOOL_NAME = 'managed.il_xrefs'
 
@@ -47,6 +57,40 @@ export const ilXrefsToolDefinition: ToolDefinition = {
     'ldtoken/typeof (types). Handles generic context resolution.',
   inputSchema: IlXrefsInputSchema,
   outputSchema: IlXrefsOutputSchema,
+  aspects: managedIlXrefsAspects([
+    'il-xrefs',
+    'managed-xrefs',
+    'token-reference-scan',
+    'generic-context-resolution',
+    'workflow-handoff',
+    'quality-gates',
+  ]),
+  artifacts: [
+    {
+      type: MANAGED_IL_XREFS_ARTIFACT_TYPES.il,
+      description: 'Managed IL cross-reference rows for a field, method, or type token',
+      mime: 'application/json',
+      mimeTypes: ['application/json'],
+    },
+  ],
+  evidence: [
+    { category: 'managed-metadata', artifactTypes: [MANAGED_IL_XREFS_ARTIFACT_TYPES.il] },
+    { category: 'il-references', artifactTypes: [MANAGED_IL_XREFS_ARTIFACT_TYPES.il] },
+    { category: 'symbols', artifactTypes: [MANAGED_IL_XREFS_ARTIFACT_TYPES.il] },
+    { category: 'workflow', artifactTypes: [MANAGED_IL_XREFS_ARTIFACT_TYPES.il] },
+    { category: 'provenance', artifactTypes: [MANAGED_IL_XREFS_ARTIFACT_TYPES.il] },
+  ],
+  workflowRecipes: [
+    managedIlXrefsRecipe({
+      id: 'managed-il-xrefs.il-token-reference-handoff',
+      title: 'Managed IL token reference handoff',
+      startsWith: TOOL_NAME,
+      artifactType: MANAGED_IL_XREFS_ARTIFACT_TYPES.il,
+      focus: 'il-token-reference',
+    }),
+  ],
+  runtimePolicy: MANAGED_IL_XREFS_RUNTIME_POLICY,
+  workerBackend: managedIlXrefsWorkerBackend(MANAGED_IL_XREFS_ARTIFACT_TYPES.il),
 }
 
 async function callIlXrefsWorker(
@@ -65,6 +109,13 @@ async function callIlXrefsWorker(
     const proc = spawn(pythonCmd, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
+    let settled = false
+    const timeout = setTimeout(() => {
+      if (settled) return
+      settled = true
+      proc.kill()
+      reject(new Error(`IL xrefs worker timed out after ${MANAGED_IL_XREFS_WORKER_TIMEOUT_MS}ms`))
+    }, MANAGED_IL_XREFS_WORKER_TIMEOUT_MS)
     proc.stdout.on('data', (d: Buffer) => {
       stdout += d.toString()
     })
@@ -72,6 +123,9 @@ async function callIlXrefsWorker(
       stderr += d.toString()
     })
     proc.on('close', (code) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
       if (code !== 0 && !stdout.trim()) {
         reject(new Error(`IL xrefs worker exited ${code}: ${stderr.slice(0, 500)}`))
         return
@@ -82,7 +136,12 @@ async function callIlXrefsWorker(
         reject(new Error(`Parse: ${(e as Error).message}`))
       }
     })
-    proc.on('error', (e) => reject(new Error(`Spawn: ${e.message}`)))
+    proc.on('error', (e) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      reject(new Error(`Spawn: ${e.message}`))
+    })
     proc.stdin.write(JSON.stringify(request) + '\n')
     proc.stdin.end()
   })
@@ -110,11 +169,12 @@ export function createIlXrefsHandler(deps: PluginToolDeps) {
       const cacheKey = generateCacheKey({
         sampleSha256: sample.sha256,
         toolName: TOOL_NAME,
-        toolVersion: '1.0.0',
+        toolVersion: MANAGED_IL_XREFS_TOOL_VERSION,
         args: {
           token: args.token,
           token_type: args.token_type,
           generic: args.include_generic_instantiations,
+          max_results: args.max_results,
         },
       })
       const cached = await cacheManager!.getCachedResult(cacheKey)
@@ -139,6 +199,22 @@ export function createIlXrefsHandler(deps: PluginToolDeps) {
         pythonCmd,
         resolvePackagePath
       )
+      const enrichedResult = {
+        ...result,
+        ...buildManagedIlXrefsEnvelope({
+          toolName: TOOL_NAME,
+          artifactType: MANAGED_IL_XREFS_ARTIFACT_TYPES.il,
+          sampleId: args.sample_id,
+          focus: 'il-token-reference',
+          query: {
+            token: args.token,
+            token_type: args.token_type,
+            include_generic_instantiations: args.include_generic_instantiations,
+            max_results: args.max_results,
+          },
+          result,
+        }),
+      }
 
       const artifacts: ArtifactRef[] = []
       try {
@@ -148,7 +224,7 @@ export function createIlXrefsHandler(deps: PluginToolDeps) {
           args.sample_id,
           'il_xrefs',
           'managed-il-xrefs',
-          result
+          enrichedResult
         )
         if (artRef) artifacts.push(artRef)
       } catch {
@@ -158,14 +234,14 @@ export function createIlXrefsHandler(deps: PluginToolDeps) {
       if (result.ok)
         await cacheManager!.setCachedResult(
           cacheKey,
-          result,
+          enrichedResult,
           30 * 24 * 60 * 60 * 1000,
           sample.sha256
         )
 
       return {
         ok: Boolean(result.ok),
-        data: result,
+        data: enrichedResult,
         artifacts,
         metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME },
       }

@@ -31,6 +31,7 @@ import {
   mergeRequiredUserInputs,
   buildDynamicDependencyRequiredUserInputs,
 } from '../plugins/docker-shared.js'
+import type { PolicyGuard } from '../policy-guard.js'
 
 export interface RuntimeClientLike {
   execute(
@@ -71,6 +72,7 @@ export interface RuntimeDelegatedToolHandlerOptions {
   runtimeClient: RuntimeClientLike | null | undefined
   workspaceManager: any
   database: any
+  policyGuard?: PolicyGuard
   resolvePrimarySamplePath: any
   sandboxDir?: string | null
   getProgressReporter?: (progressToken?: string | number) => ProgressReporter
@@ -355,6 +357,21 @@ function normalizeRuntimeExecuteResponse(
   return { ok: true, data: result }
 }
 
+function mergeRuntimeSidecarWarnings(
+  result: CoreWorkerResult,
+  sidecarWarnings: string[]
+): CoreWorkerResult {
+  const runtimeSidecarWarnings = uniqueStrings(sidecarWarnings)
+  if (runtimeSidecarWarnings.length === 0) {
+    return result
+  }
+
+  return {
+    ...result,
+    warnings: uniqueStrings([...(result.warnings ?? []), ...runtimeSidecarWarnings]),
+  }
+}
+
 function buildUnsupportedToolRuntimeContractResult(
   definition: ToolDefinition,
   validation: RuntimeContractValidationResult,
@@ -389,6 +406,85 @@ function buildRuntimeUnavailableResult(
       buildDynamicDependencySetupActions()
     ),
     requiredUserInputs: mergeRequiredUserInputs(buildDynamicDependencyRequiredUserInputs()),
+  })
+}
+
+async function enforceRuntimeDelegationPolicy(params: {
+  policyGuard?: PolicyGuard
+  pluginId: string
+  definition: ToolDefinition
+  runtime: ToolRuntimeContract
+  args: any
+}): Promise<CoreWorkerResult | null> {
+  const { policyGuard, pluginId, definition, runtime, args } = params
+  if (!policyGuard) {
+    return null
+  }
+
+  const operationArgs =
+    args && typeof args === 'object'
+      ? {
+          ...args,
+          runtime_contract: `${runtime.type}/${runtime.handler}`,
+          runtime_modes: runtime.modes,
+          runtime_policy: runtime.policy,
+          runtime_isolation: runtime.isolation,
+        }
+      : {
+          runtime_contract: `${runtime.type}/${runtime.handler}`,
+          runtime_modes: runtime.modes,
+          runtime_policy: runtime.policy,
+          runtime_isolation: runtime.isolation,
+        }
+  const sampleId =
+    typeof operationArgs.sample_id === 'string' && operationArgs.sample_id.trim().length > 0
+      ? operationArgs.sample_id
+      : 'unknown'
+
+  const decision = await policyGuard.checkPermission(
+    {
+      type: 'dynamic_execution',
+      tool: definition.name,
+      args: operationArgs,
+    },
+    {
+      sampleId,
+      timestamp: new Date().toISOString(),
+    }
+  )
+
+  await policyGuard
+    .auditLog({
+      timestamp: new Date().toISOString(),
+      operation: definition.name,
+      sampleId,
+      decision: decision.allowed ? 'allow' : 'deny',
+      reason: decision.reason,
+      metadata: {
+        plugin_id: pluginId,
+        delegated_runtime: true,
+        runtime_contract: `${runtime.type}/${runtime.handler}`,
+        runtime_modes: runtime.modes,
+        approval_status: decision.approvalStatus,
+        approval_token: decision.approvalToken,
+      },
+    })
+    .catch((err) => {
+      logger.warn({ pluginId, tool: definition.name, err }, 'Runtime policy audit failed')
+    })
+
+  if (decision.allowed) {
+    return null
+  }
+
+  return buildRuntimeFailureResult(definition, 'tool_specific_execution_failed', {
+    summary: `Runtime delegation for ${definition.name} was denied by policy before contacting the runtime node.`,
+    errors: [decision.reason || 'Runtime delegation denied by policy guard.'],
+    warnings: decision.requiresApproval
+      ? [
+          'Runtime delegation requires explicit approval before sample upload, sandbox launch, or runtime execution.',
+        ]
+      : undefined,
   })
 }
 
@@ -428,7 +524,8 @@ export function createRuntimeDelegatedToolHandler(
     options.workspaceManager,
     options.database,
     options.resolvePrimarySamplePath,
-    options.sandboxDir ?? null
+    options.sandboxDir ?? null,
+    options.policyGuard
   ).registerTool(options.definition, async () =>
     buildRuntimeUnavailableResult(
       options.definition,
@@ -494,7 +591,8 @@ export function createDelegatingServer(
   workspaceManager: any,
   database: any,
   resolvePrimarySamplePath: any,
-  sandboxDir: string | null | undefined
+  sandboxDir: string | null | undefined,
+  policyGuard?: PolicyGuard
 ): PluginServerInterface {
   return {
     registerTool(definition, handler) {
@@ -519,8 +617,20 @@ export function createDelegatingServer(
           inboxHostDir: string
           sidecars: RuntimeSidecarUpload[]
         } | null = null
+        let sidecarWarnings: string[] = []
 
         try {
+          const policyFailure = await enforceRuntimeDelegationPolicy({
+            policyGuard,
+            pluginId,
+            definition,
+            runtime,
+            args,
+          })
+          if (policyFailure) {
+            return policyFailure
+          }
+
           if (runtime && runtimeClient.validateRuntimeContract) {
             const validation = await runtimeClient.validateRuntimeContract(runtime)
             if (validation.supported === false) {
@@ -540,6 +650,7 @@ export function createDelegatingServer(
               args,
               resolved.samplePath
             )
+            sidecarWarnings = uploadOptions.warnings
             for (const warning of uploadOptions.warnings) {
               logger.warn(
                 { pluginId, tool: definition.name, warning },
@@ -604,7 +715,7 @@ export function createDelegatingServer(
             const existing = Array.isArray(baseResult.artifacts) ? baseResult.artifacts : []
             baseResult.artifacts = [...existing, ...persistedArtifacts]
           }
-          return baseResult
+          return mergeRuntimeSidecarWarnings(baseResult, sidecarWarnings)
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err)
           const isHostAgentSandboxStartFailure =
@@ -690,7 +801,7 @@ export function createDelegatingServer(
                   const existing = Array.isArray(baseResult.artifacts) ? baseResult.artifacts : []
                   baseResult.artifacts = [...existing, ...persistedArtifacts]
                 }
-                return baseResult
+                return mergeRuntimeSidecarWarnings(baseResult, sidecarWarnings)
               }
             } catch (recoverErr) {
               logger.error(
@@ -704,18 +815,21 @@ export function createDelegatingServer(
             { pluginId, tool: definition.name, err },
             'Delegated runtime execution failed'
           )
-          return buildRuntimeFailureResult(
-            definition,
-            isNetworkError ? 'runtime_recovery_failed' : 'tool_specific_execution_failed',
-            {
-              summary: isHostAgentSandboxStartFailure
-                ? 'Windows Host Agent could not start the Windows Sandbox runtime.'
-                : isNetworkError
-                  ? `Runtime became unreachable while executing ${definition.name} and automatic recovery did not restore service.`
-                  : `Delegated runtime execution failed for ${definition.name}.`,
-              errors: [`Runtime execution failed: ${errMsg}`],
-              runtimeEndpoint,
-            }
+          return mergeRuntimeSidecarWarnings(
+            buildRuntimeFailureResult(
+              definition,
+              isNetworkError ? 'runtime_recovery_failed' : 'tool_specific_execution_failed',
+              {
+                summary: isHostAgentSandboxStartFailure
+                  ? 'Windows Host Agent could not start the Windows Sandbox runtime.'
+                  : isNetworkError
+                    ? `Runtime became unreachable while executing ${definition.name} and automatic recovery did not restore service.`
+                    : `Delegated runtime execution failed for ${definition.name}.`,
+                errors: [`Runtime execution failed: ${errMsg}`],
+                runtimeEndpoint,
+              }
+            ),
+            sidecarWarnings
           )
         }
       }

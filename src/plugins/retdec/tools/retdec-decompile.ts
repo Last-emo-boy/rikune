@@ -27,8 +27,24 @@ import {
 const TOOL_NAME = 'retdec.decompile'
 const TOOL_VERSION = '0.2.0'
 const RETDEC_OUTPUT_FORMATS = ['plain', 'json-human'] as const
+const RETDEC_ARTIFACT_TYPES = RETDEC_OUTPUT_FORMATS.map(
+  (format) => `backend_retdec_decompile_${format}`
+)
 const RETDEC_RECOMMENDED_NEXT_TOOLS = ['artifact.read', 'workflow.search']
+const RETDEC_PROFILE_NEXT_TOOLS = [
+  'code.cross_decompiler.consensus',
+  'workflow.reconstruct',
+  'analysis.evidence.graph',
+  'report.generate',
+]
 const RETDEC_MAX_OUTPUT_BYTES = 16 * 1024 * 1024
+const RETDEC_SAFETY = [
+  'passive',
+  'read_only',
+  'bounded_output',
+  'no_live_sample_by_default',
+  'no_network_by_default',
+]
 const CONTROL_FLOW_KEYWORDS = new Set([
   'if',
   'for',
@@ -106,6 +122,118 @@ export const retdecDecompileToolDefinition: ToolDefinition = {
     'Decompile a sample with RetDec and persist the generated high-level output as an artifact. Use this when you explicitly want a RetDec alternative to the default Ghidra-oriented flow.',
   inputSchema: retdecDecompileInputSchema,
   outputSchema: retdecDecompileOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho'],
+    platforms: ['windows', 'linux', 'macos', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips'],
+    execution: ['static', 'decompilation'],
+    runtimes: ['retdec'],
+    safety: RETDEC_SAFETY,
+    capabilities: [
+      'decompile',
+      'source-reconstruction',
+      'cross-backend-corroboration',
+      'workflow-handoff',
+    ],
+    evidence: ['artifact', 'symbols', 'structure', 'decompiled-code', 'workflow', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'backend_retdec_decompile_plain',
+      description: 'RetDec plain C-like high-level decompilation output',
+    },
+    {
+      type: 'backend_retdec_decompile_json-human',
+      description: 'RetDec JSON high-level decompilation output',
+    },
+  ],
+  evidence: [
+    {
+      category: 'artifact',
+      artifactTypes: ['backend_retdec_decompile_plain', 'backend_retdec_decompile_json-human'],
+    },
+    {
+      category: 'decompiled-code',
+      artifactTypes: ['backend_retdec_decompile_plain', 'backend_retdec_decompile_json-human'],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: ['backend_retdec_decompile_plain', 'backend_retdec_decompile_json-human'],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: ['backend_retdec_decompile_plain', 'backend_retdec_decompile_json-human'],
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'retdec.decompile-handoff',
+      title: 'RetDec decompile handoff',
+      description:
+        'Run a bounded RetDec static decompile, then hand off the persisted output to artifact review, cross-decompiler consensus, reconstruction, evidence graph, and reporting.',
+      startsWith: [TOOL_NAME],
+      nextTools: [...RETDEC_RECOMMENDED_NEXT_TOOLS, ...RETDEC_PROFILE_NEXT_TOOLS],
+      requiredArtifacts: ['sample'],
+      producesArtifacts: RETDEC_ARTIFACT_TYPES,
+      evidence: ['decompiled-code', 'symbols', 'structure', 'workflow', 'provenance'],
+      safety: RETDEC_SAFETY,
+      runtimeBackends: ['retdec'],
+      outputFormats: RETDEC_OUTPUT_FORMATS,
+    },
+  ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: true,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    maxRuntimeMs: 900000,
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    notes: [
+      'RetDec is used as a bounded read-only static decompiler and must not execute the sample.',
+      'workflow.search should activate only retdec.decompile for this profile before any broader cross-backend workflow.',
+    ],
+  },
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'retdec',
+    backendKind: 'external',
+    adapter: 'retdec.static.decompile',
+    availability: 'optional',
+    envVar: 'RETDEC_PATH',
+    commandHint:
+      'retdec-decompiler --cleanup --output-format <plain|json-human> --output <output> <sample>',
+    versionHint: 'retdec-decompiler --version',
+    supportedModes: [...RETDEC_OUTPUT_FORMATS],
+    defaultMode: 'plain',
+    inputArtifactTypes: ['sample'],
+    outputArtifactTypes: RETDEC_ARTIFACT_TYPES,
+    policy: {
+      passiveByDefault: true,
+      noNetwork: true,
+      noMutation: true,
+      noLiveExecution: true,
+      defaultTimeoutMs: 300000,
+      maxOutputBytes: RETDEC_MAX_OUTPUT_BYTES,
+      notes: ['Only bounded static decompilation output is persisted by this tool.'],
+    },
+    readiness: {
+      doesNotStartBackend: true,
+      setupActions: [
+        'Set RETDEC_PATH to a pinned retdec-decompiler binary or install retdec-decompiler on PATH.',
+      ],
+      missingBackendBehavior: 'Return setup_required without running any backend command.',
+    },
+    packaging: {
+      installRoute: 'profile-gated',
+      installProfile: 'heavy',
+      dockerFeature: 'retdec',
+      envVar: 'RETDEC_PATH',
+      dockerDefault: '/opt/retdec/bin/retdec-decompiler',
+    },
+  },
 }
 
 function retdecArtifactType(

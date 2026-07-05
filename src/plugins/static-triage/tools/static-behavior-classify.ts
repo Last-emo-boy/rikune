@@ -101,6 +101,9 @@ export const StaticBehaviorClassifyOutputSchema = createWorkerResultOutputSchema
         by_severity: z.record(z.number()),
         max_confidence: z.number(),
       }),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
       findings: z.array(
         z
           .object({
@@ -129,6 +132,60 @@ export const staticBehaviorClassifyToolDefinition: ToolDefinition = {
     'Classify static persistence, service install, scheduled task, WMI, process injection, DLL injection, APC injection, and hollowing indicators from strings, config artifacts, and optional imported runtime evidence. Does not execute the sample.',
   inputSchema: StaticBehaviorClassifyInputSchema,
   outputSchema: StaticBehaviorClassifyOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll', 'dotnet', 'elf', 'macho', 'shellcode'],
+    platforms: ['windows', 'linux', 'macos', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage', 'correlation'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+    capabilities: [
+      'behavior-classification',
+      'persistence-triage',
+      'injection-triage',
+      'anti-analysis-triage',
+      'workflow-handoff',
+      'evidence-correlation',
+    ],
+    evidence: ['behavior', 'strings', 'imports', 'registry', 'process', 'workflow', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'static_behavior_classifier',
+      description:
+        'Static behavior classification findings, runtime validation handoff, and passive quality gates',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    { category: 'behavior', artifactTypes: ['static_behavior_classifier'] },
+    { category: 'strings', artifactTypes: ['static_behavior_classifier'] },
+    { category: 'imports', artifactTypes: ['static_behavior_classifier'] },
+    { category: 'registry', artifactTypes: ['static_behavior_classifier'] },
+    { category: 'process', artifactTypes: ['static_behavior_classifier'] },
+    { category: 'workflow', artifactTypes: ['static_behavior_classifier'] },
+    { category: 'provenance', artifactTypes: ['static_behavior_classifier'] },
+  ],
+  workflowRecipes: [
+    {
+      id: 'static-triage.behavior-runtime-validation',
+      title: 'Static behavior classification to runtime validation',
+      description:
+        'Turn passive persistence, injection, anti-analysis, and execution findings into evidence graph nodes and opt-in runtime validation plans.',
+      startsWith: ['static.behavior.classify', 'strings.extract', 'static.config.carver'],
+      nextTools: [
+        'dynamic.behavior.diff',
+        'dynamic.deep_plan',
+        'breakpoint.smart',
+        'trace.condition',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+      requiredArtifacts: ['static_config_carver'],
+      producesArtifacts: ['static_behavior_classifier'],
+      evidence: ['behavior', 'strings', 'imports', 'registry', 'process', 'workflow', 'provenance'],
+      safety: ['passive', 'opt_in_dynamic', 'no_live_sample_by_default', 'no_network_by_default'],
+    },
+  ],
 }
 
 const RULES: BehaviorRule[] = [
@@ -526,6 +583,148 @@ function summarizeFindings(
   }
 }
 
+function topBehaviorFindings(findings: Array<any>) {
+  return findings.slice(0, 12).map((finding) => ({
+    id: finding.id,
+    category: finding.category,
+    technique: finding.technique,
+    severity: finding.severity,
+    confidence: finding.confidence,
+    evidence_count: Array.isArray(finding.evidence) ? finding.evidence.length : 0,
+    recommended_tools: finding.recommended_next_tools || [],
+  }))
+}
+
+function buildEvidenceSummary(args: {
+  findings: Array<any>
+  summary: ReturnType<typeof summarizeFindings>
+  evidenceSources: {
+    config_artifacts: string[]
+    config_scope_note: string
+    dynamic_artifacts: string[]
+    dynamic_scope_note: string | null
+  }
+  stringCount: number
+  dynamicSummary: { executed?: boolean; artifact_count?: number } | null
+  warnings: string[]
+}) {
+  return {
+    schema: 'rikune.static_behavior_classifier.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    finding_count: args.summary.finding_count,
+    high_or_critical_count: args.summary.high_or_critical_count,
+    by_category: args.summary.by_category,
+    by_severity: args.summary.by_severity,
+    max_confidence: args.summary.max_confidence,
+    string_count: args.stringCount,
+    config_artifact_count: args.evidenceSources.config_artifacts.length,
+    dynamic_artifact_count: args.evidenceSources.dynamic_artifacts.length,
+    dynamic_evidence_present: Boolean(args.dynamicSummary),
+    dynamic_executed: Boolean(args.dynamicSummary?.executed),
+    warning_count: args.warnings.length,
+    warnings: args.warnings,
+    top_findings: topBehaviorFindings(args.findings),
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  sampleId: string
+  findings: Array<any>
+  recommendedTools: string[]
+  warnings: string[]
+}) {
+  const highRiskFindings = args.findings.filter(
+    (finding) => finding.severity === 'high' || finding.severity === 'critical'
+  )
+  const injectionFindings = args.findings.filter((finding) => finding.category === 'injection')
+  const persistenceFindings = args.findings.filter((finding) => finding.category === 'persistence')
+
+  return {
+    schema: 'rikune.static_behavior_classifier.workflow_handoff.v1',
+    handoff_mode: 'static_behavior_to_runtime_validation',
+    sample_id: args.sampleId,
+    source_tool: TOOL_NAME,
+    recommended_next_tools: args.recommendedTools,
+    behavior_context: {
+      finding_count: args.findings.length,
+      high_risk_findings: topBehaviorFindings(highRiskFindings),
+      injection_findings: topBehaviorFindings(injectionFindings),
+      persistence_findings: topBehaviorFindings(persistenceFindings),
+    },
+    routing: [
+      {
+        goal: 'runtime-behavior-validation',
+        priority: highRiskFindings.length > 0 ? 'high' : 'normal',
+        next_tools: ['dynamic.behavior.diff', 'dynamic.behavior.capture', 'dynamic.deep_plan'],
+        required_evidence: ['static_behavior_classifier'],
+      },
+      {
+        goal: 'debug-breakpoint-planning',
+        priority: injectionFindings.length > 0 ? 'high' : 'optional',
+        next_tools: ['breakpoint.smart', 'trace.condition'],
+        required_evidence: ['injection findings', 'explicit analyst opt-in'],
+      },
+      {
+        goal: 'persona-or-trigger-planning',
+        priority: persistenceFindings.length > 0 ? 'normal' : 'optional',
+        next_tools: ['dynamic.persona.plan', 'dynamic.deep_plan'],
+        required_evidence: ['behavior classification findings'],
+      },
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: 'normal',
+        next_tools: ['analysis.evidence.graph', 'report.generate'],
+        required_evidence: ['static_behavior_classifier'],
+      },
+    ],
+    artifact_contract: {
+      consumes: ['sample strings', 'static_config_carver', 'dynamic_trace_json'],
+      produces: ['static_behavior_classifier'],
+      expected_consumers: [
+        'dynamic.behavior.diff',
+        'breakpoint.smart',
+        'trace.condition',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+    },
+    dynamic_boundary: {
+      runtime_started_by_tool: false,
+      sample_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      runtime_followup_requires_opt_in: true,
+    },
+    warnings: args.warnings,
+  }
+}
+
+function buildQualityGates(args: {
+  findings: Array<any>
+  dynamicSummary: unknown | null
+  warnings: string[]
+}) {
+  const highRiskCount = args.findings.filter(
+    (finding) => finding.severity === 'high' || finding.severity === 'critical'
+  ).length
+  const injectionCount = args.findings.filter((finding) => finding.category === 'injection').length
+
+  return {
+    passive_static_classification: true,
+    backend_started: false,
+    sample_executed_by_tool: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    behavior_evidence_present: args.findings.length > 0,
+    high_risk_findings_present: highRiskCount > 0,
+    injection_findings_present: injectionCount > 0,
+    dynamic_evidence_used: Boolean(args.dynamicSummary),
+    evidence_graph_handoff_ready: args.findings.length > 0,
+    runtime_followup_requires_opt_in: true,
+    analyst_review_required: highRiskCount > 0 || args.warnings.length > 0,
+    warning_count: args.warnings.length,
+  }
+}
+
 export function createStaticBehaviorClassifyHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager
@@ -632,6 +831,32 @@ export function createStaticBehaviorClassifyHandler(
       if (input.include_dynamic_evidence && !dynamicSummary) {
         warnings.push('No dynamic trace evidence was selected; classification is static-only.')
       }
+      const evidenceSources = {
+        config_artifacts: configSelection.artifact_ids,
+        config_scope_note: configSelection.scope_note,
+        dynamic_artifacts: dynamicSummary?.artifact_ids || [],
+        dynamic_scope_note: dynamicSummary?.scope_note || null,
+      }
+      const summary = summarizeFindings(findings)
+      const evidenceSummary = buildEvidenceSummary({
+        findings,
+        summary,
+        evidenceSources,
+        stringCount: strings.length,
+        dynamicSummary,
+        warnings,
+      })
+      const workflowHandoff = buildWorkflowHandoff({
+        sampleId: input.sample_id,
+        findings,
+        recommendedTools,
+        warnings,
+      })
+      const qualityGates = buildQualityGates({
+        findings,
+        dynamicSummary,
+        warnings,
+      })
 
       const data = {
         schema: 'rikune.static_behavior_classifier.v1',
@@ -642,13 +867,11 @@ export function createStaticBehaviorClassifyHandler(
           sha256: createHash('sha256').update(buffer).digest('hex'),
           string_count: strings.length,
         },
-        evidence_sources: {
-          config_artifacts: configSelection.artifact_ids,
-          config_scope_note: configSelection.scope_note,
-          dynamic_artifacts: dynamicSummary?.artifact_ids || [],
-          dynamic_scope_note: dynamicSummary?.scope_note || null,
-        },
-        summary: summarizeFindings(findings),
+        evidence_sources: evidenceSources,
+        summary,
+        evidence_summary: evidenceSummary,
+        workflow_handoff: workflowHandoff,
+        quality_gates: qualityGates,
         findings,
         dynamic_summary: dynamicSummary
           ? {

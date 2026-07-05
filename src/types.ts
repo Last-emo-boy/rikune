@@ -21,6 +21,7 @@ import {
   RuntimeTaskStatusSchema,
   ToolRuntimeContractSchema,
   type ArtifactRef,
+  type DynamicRuntimePolicy,
   type RuntimeArtifactControlPlaneMetadata,
   type RuntimeBackendType,
   type RuntimeConnectedEventData,
@@ -76,6 +77,7 @@ export {
 }
 export type {
   ArtifactRef,
+  DynamicRuntimePolicy,
   RuntimeArtifactControlPlaneMetadata,
   RuntimeBackendType,
   RuntimeConnectedEventData,
@@ -107,6 +109,112 @@ export type {
 export type JSONSchema = z.ZodTypeAny
 
 /**
+ * Plugin aspect metadata used for sample routing, discovery, and readiness.
+ * This mirrors the public SDK taxonomy while staying permissive for future
+ * plugin-defined aspect groups.
+ */
+export interface PluginAspects {
+  formats?: string[]
+  platforms?: string[]
+  architectures?: string[]
+  execution?: string[]
+  runtimes?: string[]
+  safety?: string[]
+  capabilities?: string[]
+  evidence?: string[]
+  [group: string]: string[] | undefined
+}
+
+/** Declaration of artifact families a tool may produce. */
+export interface ToolArtifactSpec {
+  type: string
+  description?: string
+  mimeTypes?: string[]
+  required?: boolean
+  [key: string]: unknown
+}
+
+/** Declaration of evidence families a tool may produce. */
+export interface ToolEvidenceSpec {
+  category: string
+  description?: string
+  artifactTypes?: string[]
+  required?: boolean
+  [key: string]: unknown
+}
+
+/** Declaration of a cross-plugin workflow a tool starts, advances, or completes. */
+export interface WorkflowRecipeSpec {
+  id: string
+  title: string
+  description?: string
+  startsWith?: string[]
+  nextTools?: string[]
+  requiredArtifacts?: string[]
+  producesArtifacts?: string[]
+  evidence?: string[]
+  safety?: string[]
+  runtimeBackends?: string[]
+  [key: string]: unknown
+}
+
+/** Policy envelope for bounded backend worker tools. */
+export interface BackendWorkerPolicy {
+  passiveByDefault?: boolean
+  requiresUserOptIn?: boolean
+  requiresIsolation?: boolean
+  noNetwork?: boolean
+  noMutation?: boolean
+  noLiveExecution?: boolean
+  maxInputBytes?: number
+  maxOutputBytes?: number
+  defaultTimeoutMs?: number
+  allowedRoots?: string[]
+  notes?: string[]
+  [key: string]: unknown
+}
+
+/** Declaration of an optional worker backend used by a tool. */
+export interface BackendWorkerContract {
+  version?: 'backend-worker.v1'
+  backendName: string
+  backendKind: 'builtin' | 'external' | 'delegated-runtime'
+  adapter: string
+  availability?: 'builtin' | 'optional' | 'required'
+  envVar?: string
+  commandHint?: string
+  versionHint?: string
+  supportedModes?: string[]
+  defaultMode?: string
+  inputArtifactTypes?: string[]
+  outputArtifactTypes?: string[]
+  policy?: BackendWorkerPolicy
+  readiness?: {
+    doesNotStartBackend?: boolean
+    setupActions?: string[]
+    missingBackendBehavior?: string
+    [key: string]: unknown
+  }
+  packaging?: {
+    installRoute?: 'installed' | 'profile-gated' | 'byo' | 'sidecar' | 'validation-only'
+    installProfile?:
+      | 'default'
+      | 'optional'
+      | 'heavy'
+      | 'research'
+      | 'runtime'
+      | 'gpu'
+      | 'license-gated'
+    dockerFeature?: string
+    envVar?: string
+    dockerDefault?: string
+    notes?: string[]
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
+/**
  * Tool definition following MCP protocol
  */
 export interface ToolDefinition {
@@ -115,8 +223,20 @@ export interface ToolDefinition {
   description: string
   inputSchema: JSONSchema
   outputSchema?: JSONSchema
+  /** Aspect metadata used by sample profiling and progressive discovery. */
+  aspects?: PluginAspects
+  /** Artifact families this tool may write. */
+  artifacts?: ToolArtifactSpec[]
+  /** Evidence families this tool may produce. */
+  evidence?: ToolEvidenceSpec[]
+  /** Cross-plugin workflow recipes surfaced by discovery, help, and readiness tools. */
+  workflowRecipes?: WorkflowRecipeSpec[]
+  /** Dynamic execution policy surfaced by readiness and scaffold templates. */
+  runtimePolicy?: DynamicRuntimePolicy
   /** Runtime execution contract for tools delegated to a runtime node. */
   runtime?: ToolRuntimeContract
+  /** Bounded backend worker contract for optional worker-backed tools. */
+  workerBackend?: BackendWorkerContract
 }
 
 /**

@@ -18,6 +18,11 @@ import {
 
 const TOOL_NAME = 'artifact.read'
 const TOOL_VERSION = '0.1.0'
+const SUMMARY_MAX_BYTES = 64 * 1024
+const SUMMARY_PREVIEW_CHARS = 2048
+const RELATED_ARTIFACT_LIMIT = 8
+const JSON_SUMMARY_PARSE_MAX_BYTES = 8 * 1024 * 1024
+const STRING_SIGNAL_LIMIT = 25
 
 const TEXT_EXTENSIONS = new Set([
   '.txt',
@@ -48,6 +53,13 @@ export const ArtifactReadInputSchema = z.object({
   artifact_id: z.string().optional().describe('Specific artifact UUID to fetch'),
   artifact_type: z.string().optional().describe('Artifact type to fetch latest match'),
   path: z.string().optional().describe('Artifact relative path to fetch'),
+  read_mode: z
+    .enum(['profile', 'summary', 'content'])
+    .optional()
+    .default('content')
+    .describe(
+      'Low-context read mode. profile returns metadata and related selectors without reading payload; summary reads a bounded preview; content returns artifact content.'
+    ),
   include_untracked_files: z
     .boolean()
     .optional()
@@ -114,6 +126,10 @@ export const ArtifactReadOutputSchema = z.object({
         mime: z.string().nullable(),
         created_at: z.string(),
       }),
+      read_mode: z.enum(['profile', 'summary', 'content']),
+      artifact_profile: z.record(z.any()).optional(),
+      summary: z.record(z.any()).optional(),
+      related_artifacts: z.array(z.record(z.any())).optional(),
       content: z.string().optional(),
       content_encoding: z.enum(['utf8', 'base64']).optional(),
       parsed_json: z.any().optional(),
@@ -177,6 +193,51 @@ function isTextArtifact(
   return looksLikeText(sample)
 }
 
+function payloadKindFor(
+  artifact: Pick<ArtifactInventoryItem, 'path' | 'mime'>,
+  sample?: Buffer
+): 'json' | 'text' | 'binary' {
+  const extension = path.extname(artifact.path).toLowerCase()
+  if (artifact.mime === 'application/json' || extension === '.json') {
+    return 'json'
+  }
+  if (!sample) {
+    if (TEXT_EXTENSIONS.has(extension) || artifact.mime?.startsWith('text/')) {
+      return 'text'
+    }
+    return 'binary'
+  }
+  return isTextArtifact(artifact, sample) ? 'text' : 'binary'
+}
+
+function suggestedReadMode(
+  artifact: Pick<ArtifactInventoryItem, 'type' | 'path' | 'mime'>
+): 'profile' | 'summary' | 'content' {
+  const normalized = `${artifact.type} ${artifact.path} ${artifact.mime ?? ''}`.toLowerCase()
+  if (
+    normalized.includes('summary') ||
+    normalized.includes('evidence') ||
+    normalized.includes('handoff') ||
+    normalized.includes('gaps') ||
+    normalized.includes('graph') ||
+    normalized.includes('sbom') ||
+    normalized.includes('yara') ||
+    normalized.includes('ioc')
+  ) {
+    return 'summary'
+  }
+  if (
+    normalized.includes('report') ||
+    normalized.includes('html') ||
+    normalized.includes('markdown') ||
+    normalized.endsWith('.md') ||
+    normalized.endsWith('.html')
+  ) {
+    return 'content'
+  }
+  return 'profile'
+}
+
 function selectArtifact(
   input: ArtifactReadInput,
   artifacts: ArtifactInventoryItem[]
@@ -199,6 +260,358 @@ function selectArtifact(
   }
 
   return ordered[0] || null
+}
+
+async function readArtifactPrefix(artifactAbsPath: string, totalSize: number, maxBytes: number) {
+  const bytesToRead = Math.min(totalSize, maxBytes)
+  if (bytesToRead <= 0) {
+    return { buffer: Buffer.alloc(0), bytesRead: 0, truncated: false }
+  }
+
+  const handle = await fs.open(artifactAbsPath, 'r')
+  try {
+    const buffer = Buffer.alloc(bytesToRead)
+    const { bytesRead } = await handle.read(buffer, 0, bytesToRead, 0)
+    return {
+      buffer: buffer.subarray(0, bytesRead),
+      bytesRead,
+      truncated: totalSize > bytesRead,
+    }
+  } finally {
+    await handle.close()
+  }
+}
+
+function jsonShape(value: unknown): Record<string, unknown> {
+  if (Array.isArray(value)) {
+    const first = value.find((item) => item !== null && typeof item === 'object')
+    return {
+      top_level: 'array',
+      item_count: value.length,
+      first_item_keys:
+        first && typeof first === 'object' && !Array.isArray(first)
+          ? Object.keys(first as Record<string, unknown>).slice(0, 25)
+          : [],
+    }
+  }
+  if (value !== null && typeof value === 'object') {
+    return {
+      top_level: 'object',
+      keys: Object.keys(value as Record<string, unknown>).slice(0, 40),
+    }
+  }
+  return { top_level: typeof value }
+}
+
+function buildArtifactProfile(
+  artifact: ArtifactInventoryItem,
+  totalSize: number
+): Record<string, unknown> {
+  const payloadKind = payloadKindFor(artifact)
+  const readMode = suggestedReadMode(artifact)
+  return {
+    schema: 'rikune.artifact_profile.v1',
+    artifact_id: artifact.id,
+    artifact_type: artifact.type,
+    path: artifact.path,
+    mime: artifact.mime,
+    size_bytes: totalSize,
+    tracked: artifact.tracked,
+    exists: artifact.exists,
+    session_tag: artifact.session_tag,
+    retention_bucket: artifact.retention_bucket,
+    age_days: artifact.age_days,
+    payload_kind: payloadKind,
+    suggested_read_mode: readMode,
+    read_args: {
+      sample_id: artifact.sample_id,
+      artifact_id: artifact.id,
+      read_mode: readMode,
+    },
+  }
+}
+
+function buildRelatedArtifacts(
+  selected: ArtifactInventoryItem,
+  artifacts: ArtifactInventoryItem[]
+): Array<Record<string, unknown>> {
+  return artifacts
+    .filter((artifact) => artifact.id !== selected.id)
+    .map((artifact) => {
+      const sameSession =
+        selected.session_tag !== null && artifact.session_tag === selected.session_tag
+      const sameType = artifact.type === selected.type
+      const score = (sameSession ? 20 : 0) + (sameType ? 8 : 0) + (artifact.exists ? 2 : 0)
+      return { artifact, score }
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || b.artifact.created_at.localeCompare(a.artifact.created_at))
+    .slice(0, RELATED_ARTIFACT_LIMIT)
+    .map(({ artifact }) => ({
+      artifact_id: artifact.id,
+      artifact_type: artifact.type,
+      path: artifact.path,
+      mime: artifact.mime,
+      tracked: artifact.tracked,
+      session_tag: artifact.session_tag,
+      suggested_read_mode: suggestedReadMode(artifact),
+      read_args: {
+        sample_id: artifact.sample_id,
+        artifact_id: artifact.id,
+        read_mode: suggestedReadMode(artifact),
+      },
+    }))
+}
+
+function summarizeText(content: string): Record<string, unknown> {
+  const lines = content.split(/\r?\n/)
+  return {
+    line_count: lines.length,
+    preview: content.slice(0, SUMMARY_PREVIEW_CHARS),
+    preview_truncated: content.length > SUMMARY_PREVIEW_CHARS,
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function recordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          item !== null && typeof item === 'object' && !Array.isArray(item)
+      )
+    : []
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function extractStringItems(value: unknown): Record<string, unknown>[] {
+  const root = asRecord(value)
+  const data = asRecord(root.data)
+  for (const candidate of [
+    recordArray(data.strings),
+    recordArray(root.strings),
+    recordArray(data.decoded_strings),
+    recordArray(root.decoded_strings),
+  ]) {
+    if (candidate.length > 0) {
+      return candidate
+    }
+  }
+  return []
+}
+
+function printableAsciiRatio(value: string): number {
+  if (value.length === 0) {
+    return 0
+  }
+  let printable = 0
+  for (const char of value) {
+    const code = char.charCodeAt(0)
+    if ((code >= 0x20 && code <= 0x7e) || code === 0x09) {
+      printable += 1
+    }
+  }
+  return printable / value.length
+}
+
+function scoreStringSignal(value: string, encoding?: string): { score: number; reasons: string[] } {
+  const lower = value.toLowerCase()
+  const reasons: string[] = []
+  let score = 0
+  const ratio = printableAsciiRatio(value)
+
+  if (ratio >= 0.9) {
+    score += 4
+    reasons.push('printable-ascii')
+  } else if (ratio < 0.6 && !/https?:\/\//i.test(value)) {
+    score -= 8
+    reasons.push('low-printable-ratio')
+  }
+
+  if (encoding === 'ascii' || encoding === 'utf16le' || encoding === 'utf16be') {
+    score += 2
+    reasons.push(`encoding:${encoding}`)
+  } else if (encoding && !['utf8', 'utf-8'].includes(encoding.toLowerCase())) {
+    score -= 2
+    reasons.push(`encoding:${encoding}`)
+  }
+
+  const semanticTerms = [
+    'password',
+    'passwd',
+    'pass',
+    'serial',
+    'license',
+    'key',
+    'flag',
+    'correct',
+    'wrong',
+    'invalid',
+    'success',
+    'failed',
+    'congrat',
+    'try again',
+    'usage',
+    'error',
+    'debug',
+    'admin',
+    'token',
+  ]
+  for (const term of semanticTerms) {
+    if (lower.includes(term)) {
+      score += 8
+      reasons.push(`keyword:${term}`)
+    }
+  }
+
+  if (/https?:\/\/|\\\\\.\\pipe\\|hkey_|\\system32\\|\.dll\b|\.exe\b/i.test(value)) {
+    score += 7
+    reasons.push('ioc-or-platform-string')
+  }
+  if (/^[A-Za-z0-9_.$?@-]{4,80}$/.test(value)) {
+    score += 2
+    reasons.push('symbol-like')
+  }
+  if (value.length > 160) {
+    score -= 4
+    reasons.push('very-long')
+  }
+  if (/[\u4e00-\u9fff]/.test(value) && ratio < 0.75) {
+    score -= 6
+    reasons.push('likely-misdecoded')
+  }
+
+  return { score, reasons }
+}
+
+function buildStringArtifactSummary(value: unknown): Record<string, unknown> | undefined {
+  const strings = extractStringItems(value)
+  if (strings.length === 0) {
+    return undefined
+  }
+
+  type StringSignal = {
+    offset: number | undefined
+    string: string
+    encoding: string | undefined
+    score: number
+    reasons: string[]
+  }
+
+  const encodingCounts: Record<string, number> = {}
+  const scored = strings
+    .map((item) => {
+      const text = stringValue(item.string) ?? stringValue(item.value) ?? stringValue(item.text)
+      if (!text) {
+        return null
+      }
+      const encoding = stringValue(item.encoding)
+      encodingCounts[encoding ?? 'unknown'] = (encodingCounts[encoding ?? 'unknown'] ?? 0) + 1
+      const scored = scoreStringSignal(text, encoding)
+      return {
+        offset: numberValue(item.offset),
+        string: text,
+        encoding,
+        score: scored.score,
+        reasons: scored.reasons,
+      }
+    })
+    .filter((item): item is StringSignal => item !== null)
+
+  const highSignal = scored
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.string.length - b.string.length)
+    .slice(0, STRING_SIGNAL_LIMIT)
+    .map((item) => ({
+      ...(item.offset !== undefined ? { offset: item.offset } : {}),
+      string: item.string,
+      ...(item.encoding ? { encoding: item.encoding } : {}),
+      score: item.score,
+      reasons: item.reasons.slice(0, 5),
+    }))
+
+  return {
+    schema: 'rikune.enriched_string_summary.v1',
+    total_strings: strings.length,
+    scored_strings: scored.length,
+    high_signal_count: highSignal.length,
+    encoding_counts: encodingCounts,
+    high_signal_strings: highSignal,
+    noise_filtered_count: scored.filter((item) => item.score <= 0).length,
+  }
+}
+
+function buildJsonDomainSummary(
+  artifact: ArtifactInventoryItem,
+  value: unknown
+): Record<string, unknown> | undefined {
+  if (artifact.type === 'enriched_string_analysis') {
+    return buildStringArtifactSummary(value)
+  }
+  return undefined
+}
+
+function buildContentSummary(params: {
+  artifact: ArtifactInventoryItem
+  sample: Buffer
+  content: string
+  encoding: 'utf8' | 'base64'
+  bytesRead: number
+  totalSize: number
+  truncated: boolean
+  includeHighlights: boolean
+  fullJsonShape?: Record<string, unknown>
+  jsonDomainSummary?: Record<string, unknown>
+  jsonParseSkippedReason?: string
+}): Record<string, unknown> {
+  const payloadKind = payloadKindFor(params.artifact, params.sample)
+  const summary: Record<string, unknown> = {
+    schema: 'rikune.artifact_summary.v1',
+    artifact_id: params.artifact.id,
+    artifact_type: params.artifact.type,
+    path: params.artifact.path,
+    payload_kind: payloadKind,
+    content_encoding: params.encoding,
+    bytes_sampled: params.bytesRead,
+    total_size: params.totalSize,
+    truncated: params.truncated,
+  }
+
+  if (params.encoding === 'utf8') {
+    Object.assign(summary, summarizeText(params.content))
+    if (params.includeHighlights) {
+      summary.highlights = extractIOCTextHighlights(params.content)
+    }
+    if (payloadKind === 'json') {
+      if (params.fullJsonShape) {
+        summary.json_shape = params.fullJsonShape
+      } else if (params.truncated) {
+        summary.json_parse_skipped = params.jsonParseSkippedReason || 'summary content truncated'
+      } else {
+        try {
+          summary.json_shape = jsonShape(JSON.parse(params.content))
+        } catch (error) {
+          summary.json_parse_warning = (error as Error).message
+        }
+      }
+      if (params.jsonDomainSummary) {
+        summary.domain_summary = params.jsonDomainSummary
+      }
+    }
+  }
+
+  return summary
 }
 
 function extractIOCTextHighlights(content: string): {
@@ -244,6 +657,10 @@ export function createArtifactReadHandler(
 
     try {
       const input = ArtifactReadInputSchema.parse(args)
+      const includeContentWasExplicit = Object.prototype.hasOwnProperty.call(
+        args,
+        'include_content'
+      )
       const sample = database.findSample(input.sample_id)
       if (!sample) {
         return {
@@ -289,7 +706,26 @@ export function createArtifactReadHandler(
 
       const workspace = await workspaceManager.getWorkspace(input.sample_id)
       const artifactAbsPath = workspaceManager.normalizePath(workspace.root, selected.path)
-      const stat = await fs.stat(artifactAbsPath)
+      const warnings: string[] = []
+      const readMode = input.read_mode
+      const shouldReturnContent = readMode === 'content' && input.include_content
+      let totalSize = selected.size_bytes ?? 0
+      try {
+        const stat = await fs.stat(artifactAbsPath)
+        totalSize = stat.size
+      } catch (error) {
+        if (readMode !== 'profile') {
+          return {
+            ok: false,
+            errors: [`Artifact file not found: ${selected.path}`],
+            metrics: {
+              elapsed_ms: Date.now() - startTime,
+              tool: TOOL_NAME,
+            },
+          }
+        }
+        warnings.push('Artifact file is missing; returning profile from inventory metadata only.')
+      }
 
       const responseData: {
         sample_id: string
@@ -303,6 +739,10 @@ export function createArtifactReadHandler(
           mime: string | null
           created_at: string
         }
+        read_mode: 'profile' | 'summary' | 'content'
+        artifact_profile?: Record<string, unknown>
+        summary?: Record<string, unknown>
+        related_artifacts?: Array<Record<string, unknown>>
         content?: string
         content_encoding?: 'utf8' | 'base64'
         parsed_json?: unknown
@@ -328,12 +768,14 @@ export function createArtifactReadHandler(
           mime: selected.mime,
           created_at: selected.created_at,
         },
+        read_mode: readMode,
+        artifact_profile: buildArtifactProfile(selected, totalSize),
+        related_artifacts: buildRelatedArtifacts(selected, artifacts),
         bytes_read: 0,
-        total_size: stat.size,
+        total_size: totalSize,
         truncated: false,
       }
 
-      const warnings: string[] = []
       const selectorProvided = Boolean(input.artifact_id || input.artifact_type || input.path)
       if (!selectorProvided && artifacts.length > 1) {
         warnings.push(
@@ -346,16 +788,22 @@ export function createArtifactReadHandler(
         )
       }
 
-      if (input.include_content) {
-        const fileBuffer = await fs.readFile(artifactAbsPath)
-        const truncated = fileBuffer.length > input.max_bytes
-        const outputBuffer = truncated ? fileBuffer.subarray(0, input.max_bytes) : fileBuffer
-        responseData.bytes_read = outputBuffer.length
-        responseData.truncated = truncated
+      if (readMode === 'profile' && input.include_content === true && includeContentWasExplicit) {
+        warnings.push(
+          'read_mode=profile ignores include_content=true to keep the response bounded.'
+        )
+      }
 
-        if (truncated) {
+      if (readMode === 'summary' || shouldReturnContent) {
+        const maxBytes =
+          readMode === 'summary' ? Math.min(input.max_bytes, SUMMARY_MAX_BYTES) : input.max_bytes
+        const readResult = await readArtifactPrefix(artifactAbsPath, totalSize, maxBytes)
+        responseData.bytes_read = readResult.bytesRead
+        responseData.truncated = readResult.truncated
+
+        if (readResult.truncated) {
           warnings.push(
-            `Artifact content truncated to ${input.max_bytes} bytes (total ${fileBuffer.length} bytes).`
+            `Artifact content truncated to ${maxBytes} bytes (total ${totalSize} bytes).`
           )
         }
 
@@ -363,14 +811,57 @@ export function createArtifactReadHandler(
         if (input.encoding === 'base64') {
           encoding = 'base64'
         } else if (input.encoding === 'auto') {
-          encoding = isTextArtifact(selected, outputBuffer) ? 'utf8' : 'base64'
+          encoding = isTextArtifact(selected, readResult.buffer) ? 'utf8' : 'base64'
         }
 
-        responseData.content_encoding = encoding
-        responseData.content =
-          encoding === 'utf8' ? outputBuffer.toString('utf-8') : outputBuffer.toString('base64')
+        const renderedContent =
+          encoding === 'utf8'
+            ? readResult.buffer.toString('utf-8')
+            : readResult.buffer.toString('base64')
 
-        if (encoding === 'utf8' && input.parse_json) {
+        let fullJsonShape: Record<string, unknown> | undefined
+        let jsonDomainSummary: Record<string, unknown> | undefined
+        let jsonParseSkippedReason: string | undefined
+        const payloadKind = payloadKindFor(selected, readResult.buffer)
+        if (readMode === 'summary' && encoding === 'utf8' && payloadKind === 'json') {
+          if (totalSize <= JSON_SUMMARY_PARSE_MAX_BYTES) {
+            try {
+              const fullJsonText = readResult.truncated
+                ? await fs.readFile(artifactAbsPath, 'utf8')
+                : renderedContent
+              const parsed = JSON.parse(fullJsonText)
+              fullJsonShape = jsonShape(parsed)
+              jsonDomainSummary = buildJsonDomainSummary(selected, parsed)
+            } catch (error) {
+              jsonParseSkippedReason = `full JSON parse failed: ${(error as Error).message}`
+            }
+          } else {
+            jsonParseSkippedReason = `artifact exceeds JSON summary parse limit (${JSON_SUMMARY_PARSE_MAX_BYTES} bytes)`
+          }
+        }
+
+        if (readMode === 'summary') {
+          responseData.summary = buildContentSummary({
+            artifact: selected,
+            sample: readResult.buffer,
+            content: renderedContent,
+            encoding,
+            bytesRead: readResult.bytesRead,
+            totalSize,
+            truncated: readResult.truncated,
+            includeHighlights: input.ioc_highlights,
+            fullJsonShape,
+            jsonDomainSummary,
+            jsonParseSkippedReason,
+          })
+        }
+
+        if (shouldReturnContent) {
+          responseData.content_encoding = encoding
+          responseData.content = renderedContent
+        }
+
+        if (shouldReturnContent && encoding === 'utf8' && input.parse_json) {
           try {
             responseData.parsed_json = JSON.parse(responseData.content)
           } catch (error) {
@@ -378,7 +869,7 @@ export function createArtifactReadHandler(
           }
         }
 
-        if (encoding === 'utf8' && input.ioc_highlights) {
+        if (shouldReturnContent && encoding === 'utf8' && input.ioc_highlights) {
           responseData.highlights = extractIOCTextHighlights(responseData.content)
         }
       }

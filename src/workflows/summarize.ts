@@ -226,8 +226,8 @@ export const WorkflowSummarizeOutputSchema = z.object({
 export const workflowSummarizeToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Primary staged reporting workflow. Builds or reuses bounded triage/static/deep/final digest artifacts and returns compact final reporting output by stage. ' +
-    'Prefer this over report.summarize when you need the final analyst-facing summary path without one monolithic payload. ' +
+    'Compatibility staged reporting workflow. Builds or reuses bounded triage/static/deep/final digest artifacts and returns compact final reporting output by stage. ' +
+    'Prefer workflow.search for the primary AI-facing routing path, then use artifact.read for persisted supporting detail. ' +
     'Read coverage_level, completion_state, known_findings, suspected_findings, unverified_areas, and upgrade_paths on the result before treating the summary as complete. ' +
     '\n\nDecision guide:\n' +
     '- Use when: you want staged digest artifacts, resumable summary generation, or a final compact summary.\n' +
@@ -237,6 +237,21 @@ export const workflowSummarizeToolDefinition: ToolDefinition = {
     '- Common mistake: expecting the workflow to inline raw backend payloads instead of returning digest artifacts.',
   inputSchema: WorkflowSummarizeInputSchema,
   outputSchema: WorkflowSummarizeOutputSchema,
+  aspects: {
+    formats: ['artifact', 'report', 'analysis-evidence'],
+    platforms: ['all', 'cross-platform'],
+    execution: ['static', 'correlation'],
+    safety: ['passive'],
+    evidence: ['artifact', 'provenance', 'timeline', 'behavior', 'structure'],
+  },
+  artifacts: [
+    {
+      type: 'workflow_summary',
+      description: 'Staged triage/static/deep/final summary digest artifacts',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [{ category: 'artifact', artifactTypes: ['workflow_summary'] }],
 }
 
 function extractCoverage(payload: unknown): z.infer<typeof CoverageEnvelopeSchema> | null {
@@ -965,8 +980,8 @@ export function createWorkflowSummarizeHandler(
         input.through_stage === 'final'
           ? ['artifact.read', 'artifacts.list', 'report.generate']
           : input.through_stage === 'deep'
-            ? ['workflow.summarize', 'artifact.read', 'workflow.reconstruct']
-            : ['workflow.summarize', 'artifact.read', 'ghidra.analyze', 'workflow.reconstruct']
+            ? ['workflow.search', 'artifact.read', 'workflow.reconstruct']
+            : ['workflow.search', 'artifact.read', 'ghidra.analyze', 'workflow.reconstruct']
       const nextActions =
         input.through_stage === 'final'
           ? [
@@ -975,7 +990,7 @@ export function createWorkflowSummarizeHandler(
               'Use artifacts.list with path_prefix=reports/summary to inspect persisted staged digests.',
             ]
           : [
-              `Rerun workflow.summarize through a later stage (current through_stage=${input.through_stage}) when you need deeper synthesis.`,
+              `Use workflow.search to select the next reporting/synthesis path when you need deeper synthesis beyond through_stage=${input.through_stage}.`,
               'Use artifact.read or artifacts.list on the returned stage_artifacts for supporting detail instead of requesting a monolithic inline payload.',
               'When explanation_artifacts are present, prefer them over decorative graph export requests because they carry provenance, confidence, and omission boundaries.',
             ]
@@ -986,8 +1001,8 @@ export function createWorkflowSummarizeHandler(
           sample_id: input.sample_id,
           through_stage: input.through_stage,
           detail_level: 'compact',
-          tool_surface_role: 'primary',
-          preferred_primary_tools: [],
+          tool_surface_role: 'compatibility',
+          preferred_primary_tools: ['workflow.search', 'artifact.read'],
           completed_stages: completedStages,
           stages: {
             ...(stageDigests.triage ? { triage: stageDigests.triage as any } : {}),

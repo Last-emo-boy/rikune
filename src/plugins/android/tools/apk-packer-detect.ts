@@ -29,6 +29,28 @@ export const apkPackerDetectToolDefinition: ToolDefinition = {
     'Detect Android packer/hardening solutions (360, Bangbang, Legu, iJiaMi, Ali, DexProtector, etc.) by checking native library signatures and DEX structure anomalies.',
   inputSchema: ApkPackerDetectInputSchema,
   outputSchema: ApkPackerDetectOutputSchema,
+  aspects: {
+    formats: ['apk', 'aab', 'apks', 'xapk', 'split-apk', 'dex'],
+    platforms: ['android'],
+    architectures: ['arm', 'arm64', 'x86', 'x64'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    capabilities: ['packer', 'signatures', 'native-lib', 'routing'],
+    evidence: ['signatures', 'structure', 'nested-binaries', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'apk_packer_detection',
+      description: 'Android packer, hardening, DEX anomaly, and native library signature findings',
+    },
+  ],
+  evidence: [
+    {
+      category: 'signatures',
+      description: 'Static Android packer and protector signatures',
+      artifactTypes: ['apk_packer_detection'],
+    },
+  ],
 }
 
 async function callApkWorker(

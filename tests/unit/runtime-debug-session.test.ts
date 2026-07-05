@@ -8,13 +8,17 @@ import os from 'os'
 import path from 'path'
 import http from 'http'
 import {
+  canTransitionRuntimeDebugSessionState,
   createRuntimeDebugCommandHandler,
   createRuntimeDebugSessionStartHandler,
   createRuntimeDebugSessionStatusHandler,
+  normalizeRuntimeDebugSessionState,
   runtimeDebugCommandToolDefinition,
   runtimeDebugSessionStartToolDefinition,
   runtimeDebugSessionStatusToolDefinition,
   runtimeDebugSessionStopToolDefinition,
+  RUNTIME_DEBUG_SESSION_STATES,
+  RuntimeDebugSessionStateSchema,
 } from '../../src/plugins/dynamic/tools/runtime-debug-session.js'
 
 const SAMPLE_SHA256 = 'a'.repeat(64)
@@ -61,6 +65,26 @@ describe('runtime debug session tools', () => {
     expect(runtimeDebugSessionStatusToolDefinition.name).toBe('runtime.debug.session.status')
     expect(runtimeDebugSessionStopToolDefinition.name).toBe('runtime.debug.session.stop')
     expect(runtimeDebugCommandToolDefinition.name).toBe('runtime.debug.command')
+  })
+
+  test('exports an explicit runtime session state machine', () => {
+    expect(RUNTIME_DEBUG_SESSION_STATES).toEqual(
+      expect.arrayContaining([
+        'not_requested',
+        'planned',
+        'armed',
+        'capturing',
+        'approval_gated',
+        'captured',
+        'finished',
+      ])
+    )
+    expect(RuntimeDebugSessionStateSchema.parse('planned')).toBe('planned')
+    expect(normalizeRuntimeDebugSessionState('completed')).toBe('finished')
+    expect(canTransitionRuntimeDebugSessionState('planned', 'armed')).toBe(true)
+    expect(canTransitionRuntimeDebugSessionState('armed', 'capturing')).toBe(true)
+    expect(canTransitionRuntimeDebugSessionState('capturing', 'approval_gated')).toBe(false)
+    expect(canTransitionRuntimeDebugSessionState('finished', 'capturing')).toBe(false)
   })
 
   test('attaches to a manual runtime endpoint, persists session state, and imports runtime artifacts', async () => {
@@ -209,6 +233,7 @@ describe('runtime debug session tools', () => {
       expect(status.ok).toBe(true)
       expect((status.data as any).runtime).toEqual({ ok: true, runtime: 'test-runtime' })
       expect((status.data as any).persisted_sessions.length).toBeGreaterThanOrEqual(1)
+      expect((status.data as any).persisted_sessions[0].lifecycle_state).toBe('captured')
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
       fs.rmSync(tmpDir, { recursive: true, force: true })

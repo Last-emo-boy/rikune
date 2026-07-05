@@ -97,7 +97,7 @@ import {
 } from '../ghidra/ghidra-analysis-status.js'
 import { loadDynamicTraceEvidence } from '../artifacts/dynamic-trace.js'
 import { createSampleFinalizationService } from '../sample/sample-finalization.js'
-import { persistCanonicalEvidence } from '../analysis/analysis-evidence.js'
+import { buildFreshEvidenceState, persistCanonicalEvidence } from '../analysis/analysis-evidence.js'
 import {
   ANALYSIS_DIFF_DIGEST_ARTIFACT_TYPE,
   AnalysisDiffDigestSchema,
@@ -303,7 +303,7 @@ export const analyzeWorkflowPromoteOutputSchema = analyzeWorkflowStartOutputSche
 export const analyzeWorkflowStartToolDefinition: ToolDefinition = {
   name: TOOL_NAME_START,
   description:
-    'Start or reuse a persisted nonblocking staged analysis run. Only the fast preview profile executes inline; heavier stages are promoted later. Use this directly for medium/large samples or whenever you expect queued work instead of one-shot synchronous analysis.',
+    'Compatibility staged-analysis start handler wrapped by workflow.run action=start. It starts or reuses a persisted nonblocking staged analysis run; only the fast preview profile executes inline and heavier stages are promoted later. Prefer workflow.search to choose a profile and workflow.run action=start for the primary AI-facing path.',
   inputSchema: analyzeStartInputSchema,
   outputSchema: analyzeWorkflowStartOutputSchema,
 }
@@ -311,7 +311,7 @@ export const analyzeWorkflowStartToolDefinition: ToolDefinition = {
 export const analyzeWorkflowStatusToolDefinition: ToolDefinition = {
   name: TOOL_NAME_STATUS,
   description:
-    'Read aggregate status for a persisted staged analysis run, including deferred jobs, completed stages, and reusable artifact refs. This is the primary follow-up for medium/large samples after workflow.analyze.start or workflow.analyze.promote.',
+    'Compatibility staged-analysis status handler wrapped by workflow.run action=status. It reads aggregate status for a persisted staged analysis run, including deferred jobs, completed stages, and reusable artifact refs. Prefer workflow.run action=status for the primary compact follow-up after start or promote.',
   inputSchema: analyzeStatusInputSchema,
   outputSchema: analyzeWorkflowStatusOutputSchema,
 }
@@ -319,7 +319,7 @@ export const analyzeWorkflowStatusToolDefinition: ToolDefinition = {
 export const analyzeWorkflowPromoteToolDefinition: ToolDefinition = {
   name: TOOL_NAME_PROMOTE,
   description:
-    'Promote a persisted staged analysis run to one or more deeper stages without rerunning the existing preview profile. Use this after inspecting workflow.analyze.status when you need enrich_static, function_map, reconstruct, or summarize boundaries.',
+    'Compatibility staged-analysis promotion handler wrapped by workflow.run action=promote. It promotes a persisted staged analysis run to deeper stages without rerunning the existing preview profile. Prefer workflow.run action=status before promotion and workflow.run action=promote when you need enrich_static, function_map, reconstruct, or summarize boundaries.',
   inputSchema: analyzePromoteInputSchema,
   outputSchema: analyzeWorkflowPromoteOutputSchema,
 }
@@ -1420,9 +1420,16 @@ async function buildFastProfileStage(
             ip_addresses: ipAddresses,
           },
           evidence,
-          evidence_state: uniqueEvidenceStates(
-            collectEvidenceStatesFromPayload([stringsResult.data, binaryRoleResult.data])
-          ),
+          evidence_state: uniqueEvidenceStates([
+            buildFreshEvidenceState({
+              evidenceFamily: 'backend_preview',
+              backend: TOOL_NAME_START,
+              mode: FAST_PROFILE_STAGE,
+              reason:
+                'Fast profile completed during this request and produced the current staged preview.',
+            }),
+            ...collectEvidenceStatesFromPayload([stringsResult.data, binaryRoleResult.data]),
+          ]),
           packed_state: unpackPlan.packed_state,
           unpack_state: unpackPlan.unpack_state,
           unpack_confidence: unpackPlan.unpack_confidence,
@@ -2130,6 +2137,12 @@ async function runDynamicPlanStage(
       stage: 'dynamic_plan',
       status: 'ready',
       execution_state: 'completed',
+      execution_semantics: {
+        actual_mode: 'plan_only',
+        live_execution_started: false,
+        approval_required: !executionPolicy.allowLiveExecution,
+        allow_live_execution: executionPolicy.allowLiveExecution,
+      },
       summary:
         'Dynamic-plan stage completed using readiness probes and planning-only breakpoint analysis; no live execution was started.',
       packed_state: unpackPlan?.packed_state || 'unknown',
@@ -2570,8 +2583,8 @@ async function runDynamicExecuteStage(
 
   const guidance = {
     recommended_next_tools: unpackedSampleId
-      ? ['workflow.analyze.start', 'workflow.analyze.promote', 'workflow.summarize']
-      : ['workflow.analyze.status', 'workflow.summarize', 'artifact.read'],
+      ? ['workflow.run', 'workflow.search', 'artifact.read']
+      : ['workflow.run', 'workflow.search', 'artifact.read'],
     next_actions: unpackedSampleId
       ? [
           'Use the unpacked sample_id for deeper function_map or reconstruct stages.',
@@ -2579,7 +2592,7 @@ async function runDynamicExecuteStage(
         ]
       : [
           'Consume the bounded dynamic diff digest and session artifact before escalating to manual live execution.',
-          'Use workflow.analyze.status to inspect recoverable packed/debug state instead of replaying dynamic_execute blindly.',
+          'Use workflow.run action=status to inspect recoverable packed/debug state instead of replaying dynamic_execute blindly.',
         ],
     ...(executionPolicy.allowLiveExecution
       ? {}
@@ -2658,6 +2671,16 @@ async function runDynamicExecuteStage(
         unpackExecution?.unpack_state === 'unpacked' || afterDynamicEvidence || sandboxExecuted
           ? 'completed'
           : 'partial',
+      execution_semantics: {
+        actual_mode: sandboxExecuted
+          ? 'live_runtime'
+          : executionPolicy.allowLiveExecution
+            ? 'setup_required'
+            : 'approval_gated',
+        live_execution_started: sandboxExecuted,
+        approval_required: !executionPolicy.allowLiveExecution,
+        allow_live_execution: executionPolicy.allowLiveExecution,
+      },
       summary: unpackedSampleId
         ? 'Dynamic execute completed a bounded unpack/debug pass, persisted an unpacked sample, and recorded compact pre/post diff artifacts.'
         : sandboxExecuted
@@ -2947,23 +2970,37 @@ function buildRunEnvelope(
       : ['workflow.analyze.status', 'task.status']
   const completedPreferredTools =
     unpackDebugEnvelope.packed_state && unpackDebugEnvelope.packed_state !== 'not_packed'
-      ? ['workflow.analyze.promote', 'workflow.analyze.status', 'workflow.summarize']
-      : ['workflow.analyze.promote', 'workflow.analyze.status']
+      ? [
+          'workflow.analyze.promote',
+          'workflow.analyze.status',
+          'workflow.summarize',
+          'artifacts.list',
+          'artifact.read',
+        ]
+      : [
+          'workflow.analyze.promote',
+          'workflow.analyze.status',
+          'artifacts.list',
+          'artifact.read',
+          'report.summarize',
+        ]
   const queuedNextActions =
     unpackDebugEnvelope.packed_state && unpackDebugEnvelope.packed_state !== 'not_packed'
       ? [
-          'Use workflow.analyze.status to monitor unpack/debug progression instead of repeating the same start or promote call.',
+          'Use workflow.run action=status to monitor unpack/debug progression instead of repeating the same start or promote call.',
         ]
       : [
-          'Use workflow.analyze.status to monitor the persisted run instead of repeating the same start call.',
+          'Use workflow.run action=status to monitor the persisted run instead of repeating the same start call.',
         ]
   const completedNextActions =
     unpackDebugEnvelope.packed_state && unpackDebugEnvelope.packed_state !== 'not_packed'
       ? [
           'Promote the persisted run through unpack/debug-aware stages before assuming the original packed binary is ready for deep reconstruction.',
+          'Use artifacts.list or artifact.read to inspect persisted unpack/debug artifacts before rerunning heavy stages.',
         ]
       : [
           'Promote the persisted run instead of repeating fast-profile analysis when you need deeper stages.',
+          'Use artifacts.list, artifact.read, or report.summarize to review persisted evidence before requesting more analysis.',
         ]
   return mergeRoutingMetadata(
     mergeCoverageEnvelope(
@@ -3230,6 +3267,8 @@ export function createAnalyzeWorkflowStartHandler(
         goal: input.goal,
         depth: input.depth,
         backendPolicy: input.backend_policy,
+        allowTransformations: input.allow_transformations,
+        allowLiveExecution: input.allow_live_execution,
         forceRefresh: input.force_refresh,
         metadata: {
           allow_transformations: input.allow_transformations,

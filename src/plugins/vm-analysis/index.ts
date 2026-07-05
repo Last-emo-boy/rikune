@@ -32,19 +32,62 @@ import {
   createKeygenSynthesizeHandler,
 } from './tools/keygen-synthesize.js'
 import { mbaSimplifyToolDefinition, createMbaSimplifyHandler } from './tools/mba-simplify.js'
+import {
+  vmWorkflowPlanToolDefinition,
+  createVmWorkflowPlanHandler,
+} from './tools/vm-workflow-plan.js'
 
 const vmAnalysisPlugin: Plugin = {
   id: 'vm-analysis',
   name: 'VM Analysis & Symbolic',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'dotnet', 'shellcode'],
+    platforms: ['windows', 'linux', 'macos', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage', 'emulation', 'correlation'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    capabilities: [
+      'vm-detection',
+      'opcode-extraction',
+      'bytecode-disassembly',
+      'bounded-emulation',
+      'constraint-extraction',
+      'constraint-solving',
+      'keygen-synthesis',
+      'mba-simplification',
+      'symbolic-workflow',
+      'workflow-plan',
+    ],
+    evidence: ['structure', 'behavior', 'workflow', 'provenance'],
+  },
   surfaceRules: { tier: 3, category: 'symbolic-execution' },
   description:
     'Virtual-machine protection analysis, constraint extraction, SMT solving, keygen synthesis, and MBA simplification',
   version: '1.0.0',
   resources: { workers: 'workers' },
+  systemDeps: [
+    {
+      type: 'binary',
+      name: 'python',
+      target: 'python',
+      required: false,
+      description:
+        'Optional Python runtime for explicit SMT worker calls; workflow planning does not load it.',
+    },
+    {
+      type: 'python',
+      name: 'z3-solver',
+      importName: 'z3',
+      required: false,
+      description:
+        'Optional Z3 dependency for smt.solve when the analyst explicitly runs solver-backed tools.',
+    },
+  ],
   register(server, deps) {
     const { workspaceManager: wm, database: db } = deps
 
+    server.registerTool(vmWorkflowPlanToolDefinition, createVmWorkflowPlanHandler())
     server.registerTool(vmDetectToolDefinition, createVmDetectHandler(wm, db))
     server.registerTool(vmPatternAnalyzeToolDefinition, createVmPatternAnalyzeHandler(wm, db))
     server.registerTool(vmOpcodeExtractToolDefinition, createVmOpcodeExtractHandler(wm, db))
@@ -57,6 +100,7 @@ const vmAnalysisPlugin: Plugin = {
     server.registerTool(mbaSimplifyToolDefinition, createMbaSimplifyHandler(wm, db))
 
     return [
+      'vm.workflow.plan',
       'vm.detect',
       'vm.pattern.analyze',
       'vm.opcode.extract',

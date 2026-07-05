@@ -62,6 +62,46 @@ export const firmwareExtractToolDefinition: ToolDefinition = {
     'Extract embedded files from a firmware image using binwalk. Returns a manifest of extracted files.',
   inputSchema: firmwareExtractInputSchema,
   outputSchema: firmwareExtractOutputSchema,
+  aspects: {
+    formats: [
+      'firmware',
+      'uimage',
+      'fit',
+      'dtb',
+      'itb',
+      'initramfs',
+      'cpio',
+      'squashfs',
+      'cramfs',
+      'jffs2',
+      'ubi',
+      'ubifs',
+      'romfs',
+      'archive',
+    ],
+    platforms: ['embedded', 'linux'],
+    architectures: ['arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv', 'x86', 'x64'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_installer_execution'],
+    capabilities: ['filesystem', 'nested-binaries', 'routing', 'extraction-plan'],
+    evidence: ['filesystem', 'nested-binaries', 'artifact', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'firmware_extract',
+      description: 'Manifest of files carved from a firmware image by a static extractor',
+    },
+  ],
+  evidence: [
+    {
+      category: 'filesystem',
+      artifactTypes: ['firmware_extract'],
+    },
+    {
+      category: 'nested-binaries',
+      artifactTypes: ['firmware_extract'],
+    },
+  ],
 }
 
 export function createFirmwareExtractHandler(

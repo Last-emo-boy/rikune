@@ -101,6 +101,12 @@ export interface BinaryDiffResult {
   }
   errors: string[]
   warnings: string[]
+  provenance?: Record<string, unknown>
+  similarity_profile?: Record<string, unknown>
+  evidence_summary?: Record<string, unknown>
+  workflow_handoff?: Record<string, unknown>
+  quality_gates?: Record<string, unknown>
+  recommended_next_tools?: string[]
 }
 
 // ============================================================================

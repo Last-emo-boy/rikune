@@ -15,10 +15,26 @@ import {
   type WorkerResult,
   type ArtifactRef,
   type PluginToolDeps,
+  type BackendWorkerContract,
 } from '../../sdk.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
+import {
+  MANAGED_FAKE_C2_ARTIFACT_TYPES,
+  MANAGED_FAKE_C2_FOLLOW_UP_TOOLS,
+  MANAGED_FAKE_C2_TOOL_NAME,
+  buildManagedFakeC2Envelope,
+  managedFakeC2Aspects,
+} from '../managed-fake-c2-metadata.js'
 
-const TOOL_NAME = 'managed.fake_c2'
+const TOOL_NAME = MANAGED_FAKE_C2_TOOL_NAME
+export const FAKE_C2_ARTIFACT_TYPES = MANAGED_FAKE_C2_ARTIFACT_TYPES
+
+type FakeC2RuntimePolicy = NonNullable<ToolDefinition['runtimePolicy']> & {
+  sinkholedOnly: true
+  noArbitraryOutboundNetwork: true
+  validationPlannerRequired: true
+  workflowSearchAutoRun: false
+}
 
 /* ── Input schema ──────────────────────────────────────────────────────── */
 
@@ -71,23 +87,254 @@ export const FakeC2InputSchema = z.object({
     .array(z.string())
     .optional()
     .describe('Domain names to redirect to the fake C2 (via hosts-file patching in sandbox)'),
+  explicit_runtime_opt_in: z
+    .boolean()
+    .default(false)
+    .describe('Required true before starting the Fake C2 listener.'),
+  isolated_runtime_confirmed: z
+    .boolean()
+    .default(false)
+    .describe('Required true to confirm the listener runs only inside an isolated runtime.'),
+  sinkholed_network_confirmed: z
+    .boolean()
+    .default(false)
+    .describe('Required true to confirm sample traffic is loopback sinkholed or record-only.'),
+  validation_planner_reviewed: z
+    .boolean()
+    .default(false)
+    .describe('Required true after reviewing debug.network.plan/tool.readiness.'),
 })
 
 export const FakeC2OutputSchema = createWorkerResultOutputSchema(z.record(z.any()))
 
+export const FAKE_C2_RUNTIME_POLICY: FakeC2RuntimePolicy = {
+  passiveByDefault: true,
+  requiresUserOptIn: true,
+  requiresIsolation: true,
+  allowedBackends: ['docker', 'windows-sandbox', 'hyperv', 'windows-host-agent'],
+  maxRuntimeMs: 300_000,
+  networkPolicy: 'restricted',
+  sinkholedOnly: true,
+  noArbitraryOutboundNetwork: true,
+  validationPlannerRequired: true,
+  workflowSearchAutoRun: false,
+  notes: [
+    'managed.fake_c2 starts a loopback Fake C2 listener and must be run only after explicit analyst opt-in.',
+    'Use an isolated runtime with sinkholed or record-only routing; do not permit arbitrary outbound network from the sample.',
+    'Run debug.network.plan, dynamic.runtime.status, and tool.readiness as the validation planner before enabling auto_run_sample or DNS redirects.',
+    'workflow.search may recommend or activate this tool but must not start the listener, execute the sample, or mutate DNS/network state.',
+  ],
+}
+
+export const FAKE_C2_WORKER_BACKEND: BackendWorkerContract = {
+  version: 'backend-worker.v1',
+  backendName: 'Managed Fake C2 Runtime Worker',
+  backendKind: 'delegated-runtime',
+  adapter: 'managed-fake-c2.python-worker',
+  availability: 'required',
+  supportedModes: ['live_sandbox', 'manual_runtime'],
+  defaultMode: 'live_sandbox',
+  inputArtifactTypes: ['sample', 'static_config_carver', 'c2_extraction', 'debug_network_plan'],
+  outputArtifactTypes: [FAKE_C2_ARTIFACT_TYPES.session, FAKE_C2_ARTIFACT_TYPES.runtimeEnvelope],
+  policy: {
+    passiveByDefault: true,
+    requiresUserOptIn: true,
+    requiresIsolation: true,
+    noMutation: true,
+    defaultTimeoutMs: 300_000,
+    notes: [
+      'Readiness checks describe the worker contract only; they do not start the listener.',
+      'The worker binds the Fake C2 listener to 127.0.0.1 and expects runtime routing to be isolated and sinkholed.',
+      'auto_run_sample remains false by default and requires a separate explicit opt-in inside a managed sandbox.',
+      'No arbitrary outbound network is allowed; route sample traffic to the loopback sinkhole or record-only runtime capture.',
+    ],
+    sinkholedOnly: true,
+    noArbitraryOutboundNetwork: true,
+    bindsLoopbackOnly: true,
+    autoRunSampleDefault: false,
+  },
+  readiness: {
+    doesNotStartBackend: true,
+    setupActions: [
+      'Run tool.readiness for managed.fake_c2 and confirm the runtime advertises the python-worker contract.',
+      'Use debug.network.plan as the validation planner for DNS, hosts, proxy, or sinkhole routing before execution.',
+      'Keep the runtime isolated and sinkholed; block arbitrary outbound network from the sample.',
+      'Install openssl or set use_tls=false for HTTP-only validation sessions.',
+      'Install dotnet or mono only when auto_run_sample=true has been explicitly approved in an isolated runtime.',
+    ],
+    missingBackendBehavior:
+      'Search and readiness remain metadata-only; managed.fake_c2 must not start from workflow.search and execution is blocked until the delegated runtime worker is available.',
+    qualityContract: {
+      schema: 'rikune.managed_fake_c2.quality_contract.v1',
+      requiredBeforeExecution: [
+        'explicit-opt-in',
+        'isolated-runtime-selected',
+        'sinkholed-network-policy-confirmed',
+        'validation-planner-reviewed',
+      ],
+      forbiddenAutomation: [
+        'workflow.search must not invoke managed.fake_c2 automatically',
+        'no arbitrary outbound network from the sample',
+        'no DNS or hosts mutation outside the isolated runtime',
+      ],
+    },
+    handoffContract: {
+      schema: 'rikune.managed_fake_c2.handoff_contract.v1',
+      producedArtifacts: [FAKE_C2_ARTIFACT_TYPES.session, FAKE_C2_ARTIFACT_TYPES.runtimeEnvelope],
+      expectedConsumers: [
+        'dynamic.behavior.capture',
+        'malware.intel.loop',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+    },
+  },
+}
+
 export const fakeC2ToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Start a configurable fake C2 server with custom endpoint responses. ' +
-    'Configure responses for /plugin, /ping, /gate, /task, etc. to drive ' +
-    'the sample into deeper operational logic. Captures all incoming requests ' +
-    'for analysis. Supports TLS, response delays, and DNS redirection in sandbox.',
+    'Start an explicit opt-in, isolated Fake C2 / FakeNet-style HTTP sinkhole with custom endpoint responses. ' +
+    'Configure responses for /plugin, /ping, /gate, /task, beacon gate, tasking endpoint, and C2 emulation paths ' +
+    'to drive the sample into deeper operational logic inside a managed sandbox. Captures incoming requests ' +
+    'for analysis. Supports TLS self-signed certificates, response delays, DNS hosts redirect handoff notes, ' +
+    'and validation-planner handoff. workflow.search may recommend this tool but must not run it automatically.',
   inputSchema: FakeC2InputSchema,
   outputSchema: FakeC2OutputSchema,
+  aspects: managedFakeC2Aspects(),
+  artifacts: [
+    {
+      type: FAKE_C2_ARTIFACT_TYPES.session,
+      description:
+        'Persisted Fake C2 session JSON containing listener metadata, endpoint configuration, captured HTTP requests, DNS redirect handoff notes, and provenance.',
+      mime: 'application/json',
+      required: true,
+    },
+    {
+      type: FAKE_C2_ARTIFACT_TYPES.runtimeEnvelope,
+      description:
+        'Runtime-node worker artifact managed_fake_c2.json written inside the isolated runtime working directory.',
+      mime: 'application/json',
+      required: false,
+    },
+  ],
+  evidence: [
+    {
+      category: 'network',
+      artifactTypes: [FAKE_C2_ARTIFACT_TYPES.session, FAKE_C2_ARTIFACT_TYPES.runtimeEnvelope],
+      description: 'Loopback sinkhole listener metadata and captured network requests.',
+    },
+    {
+      category: 'http',
+      artifactTypes: [FAKE_C2_ARTIFACT_TYPES.session, FAKE_C2_ARTIFACT_TYPES.runtimeEnvelope],
+      description: 'HTTP method, path, headers, body preview, and body hash request evidence.',
+    },
+    {
+      category: 'c2',
+      artifactTypes: [FAKE_C2_ARTIFACT_TYPES.session, FAKE_C2_ARTIFACT_TYPES.runtimeEnvelope],
+      description: 'C2 beacon gate, tasking endpoint, and response emulation evidence.',
+    },
+    {
+      category: 'timeline',
+      artifactTypes: [FAKE_C2_ARTIFACT_TYPES.session, FAKE_C2_ARTIFACT_TYPES.runtimeEnvelope],
+      description: 'Request timestamps suitable for behavior timeline and evidence graph handoff.',
+    },
+    {
+      category: 'provenance',
+      artifactTypes: [FAKE_C2_ARTIFACT_TYPES.session, FAKE_C2_ARTIFACT_TYPES.runtimeEnvelope],
+      description:
+        'Runtime policy, explicit opt-in, sinkhole boundary, and worker provenance notes.',
+    },
+    {
+      category: 'workflow',
+      artifactTypes: [FAKE_C2_ARTIFACT_TYPES.session, FAKE_C2_ARTIFACT_TYPES.runtimeEnvelope],
+      description:
+        'Validation planner, dynamic behavior capture, evidence graph, and report handoff.',
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'managed-fake-c2.c2-emulation-validation',
+      title: 'Fake C2 sinkhole validation lab',
+      description:
+        'Route static C2 indicators through a validation planner into an explicit opt-in isolated Fake C2 sinkhole, then hand captured requests to behavior capture, malware intel, evidence graph, and reporting.',
+      startsWith: [
+        'static.config.carver',
+        'c2.extract',
+        'debug.network.plan',
+        'tool.readiness',
+        TOOL_NAME,
+      ],
+      nextTools: MANAGED_FAKE_C2_FOLLOW_UP_TOOLS,
+      requiredArtifacts: ['static_config_carver', 'c2_extraction', 'debug_network_plan'],
+      producesArtifacts: [FAKE_C2_ARTIFACT_TYPES.session, FAKE_C2_ARTIFACT_TYPES.runtimeEnvelope],
+      evidence: ['network', 'http', 'c2', 'timeline', 'behavior', 'workflow', 'provenance'],
+      safety: [
+        'explicit-opt-in',
+        'isolated-runtime',
+        'sinkholed-network-only',
+        'no-arbitrary-outbound-network',
+        'validation-planner-required',
+        'workflow-search-does-not-run',
+      ],
+      runtimeBackends: ['python-worker', 'managed-sandbox', 'windows-sandbox', 'hyperv'],
+      searchTags: [
+        'fake c2',
+        'fakenet',
+        'fakenet-style',
+        'http beacon',
+        'beacon gate',
+        'network_ioc',
+        'network-ioc',
+        'sinkhole',
+        'c2 emulation',
+        'dns redirect',
+        'tls self-signed',
+        'tasking endpoint',
+        'validation planner',
+      ],
+      quality: {
+        schema: 'rikune.managed_fake_c2.workflow_quality.v1',
+        gates: [
+          'Explicit analyst opt-in is required before managed.fake_c2 execution.',
+          'Runtime must be isolated and sinkholed with no arbitrary outbound network.',
+          'debug.network.plan and tool.readiness should be reviewed as the validation planner.',
+          'Captured request evidence should be handed to analysis.evidence.graph or report.generate.',
+        ],
+      },
+      handoff: {
+        contract: 'rikune.managed_fake_c2.handoff_contract.v1',
+        mode: 'static-c2-indicators-to-isolated-sinkhole-validation',
+        expectedInputs: ['sample_id', 'endpoints', 'explicit opt-in', 'isolated runtime'],
+        producedArtifacts: [FAKE_C2_ARTIFACT_TYPES.session, FAKE_C2_ARTIFACT_TYPES.runtimeEnvelope],
+        consumers: [
+          'dynamic.behavior.capture',
+          'malware.intel.loop',
+          'analysis.evidence.graph',
+          'report.generate',
+        ],
+        forbiddenAutomation: [
+          'workflow.search must not run managed.fake_c2 automatically',
+          'no arbitrary outbound network',
+        ],
+      },
+    },
+  ],
+  runtimePolicy: FAKE_C2_RUNTIME_POLICY,
   runtime: {
     type: 'python-worker',
     handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
   },
+  workerBackend: FAKE_C2_WORKER_BACKEND,
+}
+
+function missingRuntimeApprovalGates(input: z.infer<typeof FakeC2InputSchema>): string[] {
+  const missing: string[] = []
+  if (input.explicit_runtime_opt_in !== true) missing.push('explicit_runtime_opt_in=true')
+  if (input.isolated_runtime_confirmed !== true) missing.push('isolated_runtime_confirmed=true')
+  if (input.sinkholed_network_confirmed !== true) missing.push('sinkholed_network_confirmed=true')
+  if (input.validation_planner_reviewed !== true) missing.push('validation_planner_reviewed=true')
+  return missing
 }
 
 /* ── Worker bridge ─────────────────────────────────────────────────────── */
@@ -147,6 +394,20 @@ export function createFakeC2Handler(deps: PluginToolDeps) {
   return async (args: z.infer<typeof FakeC2InputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()
     try {
+      const missingApprovalGates = missingRuntimeApprovalGates(args)
+      if (missingApprovalGates.length > 0) {
+        return {
+          ok: false,
+          errors: [
+            `${TOOL_NAME} requires explicit isolated-runtime approval before starting the Fake C2 listener: ${missingApprovalGates.join(', ')}.`,
+          ],
+          warnings: [
+            'Use workflow.search for passive discovery, then review debug.network.plan, dynamic.runtime.status, and tool.readiness before executing managed.fake_c2.',
+          ],
+          metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME },
+        }
+      }
+
       const sample = database.findSample(args.sample_id)
       if (!sample) return { ok: false, errors: [`Sample not found: ${args.sample_id}`] }
 
@@ -169,6 +430,20 @@ export function createFakeC2Handler(deps: PluginToolDeps) {
         pythonCmd,
         resolvePackagePath
       )
+      const enrichedResult = {
+        ...result,
+        ...buildManagedFakeC2Envelope({
+          sample_id: args.sample_id,
+          endpoint_count: args.endpoints.length,
+          dns_redirect_count: args.dns_redirect?.length ?? 0,
+          capture_requests: args.capture_requests,
+          use_tls: args.use_tls,
+          auto_run_sample: args.auto_run_sample,
+          listen_port: args.listen_port,
+          timeout_seconds: args.timeout_seconds,
+          worker_result: result,
+        }),
+      }
 
       const artifacts: ArtifactRef[] = []
       try {
@@ -176,9 +451,9 @@ export function createFakeC2Handler(deps: PluginToolDeps) {
           workspaceManager,
           database,
           args.sample_id,
-          'fake_c2_session',
+          FAKE_C2_ARTIFACT_TYPES.session,
           'managed-fake-c2',
-          result
+          enrichedResult
         )
         if (artRef) artifacts.push(artRef)
       } catch {
@@ -187,7 +462,7 @@ export function createFakeC2Handler(deps: PluginToolDeps) {
 
       return {
         ok: Boolean(result.ok),
-        data: result,
+        data: enrichedResult,
         artifacts,
         metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME },
       }

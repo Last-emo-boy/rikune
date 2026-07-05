@@ -38,6 +38,8 @@ import {
   collectCryptoApiNames,
   summarizeCryptoFindings,
   type BasicStringRecord,
+  type CryptoConstantCandidate,
+  type CryptoFinding,
   type FunctionContextLike,
 } from '../../../artifacts/crypto-breakpoint-analysis.js'
 import {
@@ -173,6 +175,10 @@ export const cryptoIdentifyOutputSchema = z.object({
       runtime_observed_apis: z.array(z.string()),
       summary: z.string(),
       source_artifact_refs: z.array(z.any()),
+      evidence_summary: z.object({}).passthrough().optional(),
+      workflow_handoff: z.object({}).passthrough().optional(),
+      quality_gates: z.object({}).passthrough().optional(),
+      chunk_manifest: z.object({}).passthrough().optional(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
       artifact: z.any().optional(),
@@ -198,6 +204,79 @@ export const cryptoIdentifyToolDefinition: ToolDefinition = {
     'Prefer mode=preview first; use mode=full only when decoded-string and deeper context correlation are worth the extra cost.',
   inputSchema: cryptoIdentifyInputSchema,
   outputSchema: cryptoIdentifyOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll', 'dotnet', 'elf', 'macho', 'shellcode', 'raw-bytes'],
+    platforms: ['windows', 'linux', 'macos', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage', 'correlation'],
+    safety: ['passive', 'opt_in_dynamic', 'no_live_sample_by_default', 'no_network_by_default'],
+    capabilities: [
+      'crypto-identification',
+      'crypto-constant-triage',
+      'function-localization',
+      'breakpoint-planning-handoff',
+      'workflow-handoff',
+      'evidence-correlation',
+    ],
+    evidence: [
+      'crypto',
+      'strings',
+      'imports',
+      'constants',
+      'functions',
+      'runtime-trace',
+      'workflow',
+      'provenance',
+    ],
+  },
+  artifacts: [
+    {
+      type: CRYPTO_IDENTIFICATION_ARTIFACT_TYPE,
+      description:
+        'Crypto algorithm findings, constants, runtime API correlation, workflow handoff, and passive quality gates',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    { category: 'crypto', artifactTypes: [CRYPTO_IDENTIFICATION_ARTIFACT_TYPE] },
+    { category: 'strings', artifactTypes: [CRYPTO_IDENTIFICATION_ARTIFACT_TYPE] },
+    { category: 'imports', artifactTypes: [CRYPTO_IDENTIFICATION_ARTIFACT_TYPE] },
+    { category: 'constants', artifactTypes: [CRYPTO_IDENTIFICATION_ARTIFACT_TYPE] },
+    { category: 'functions', artifactTypes: [CRYPTO_IDENTIFICATION_ARTIFACT_TYPE] },
+    { category: 'runtime-trace', artifactTypes: [CRYPTO_IDENTIFICATION_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [CRYPTO_IDENTIFICATION_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [CRYPTO_IDENTIFICATION_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: [
+    {
+      id: 'static-triage.crypto-runtime-tracing',
+      title: 'Crypto identification to runtime tracing',
+      description:
+        'Turn passive crypto algorithm, constant, API, and function evidence into evidence graph nodes, lifecycle graphs, and opt-in breakpoint or trace plans.',
+      startsWith: ['crypto.identify', 'strings.extract', 'analysis.context.link'],
+      nextTools: [
+        'breakpoint.smart',
+        'trace.condition',
+        'crypto.lifecycle.graph',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+      requiredArtifacts: [],
+      producesArtifacts: [CRYPTO_IDENTIFICATION_ARTIFACT_TYPE],
+      evidence: [
+        'crypto',
+        'strings',
+        'imports',
+        'constants',
+        'functions',
+        'runtime-trace',
+        'workflow',
+        'provenance',
+      ],
+      safety: ['passive', 'opt_in_dynamic', 'no_live_sample_by_default', 'no_network_by_default'],
+      runtimeBackends: ['frida', 'debugger', 'sandbox'],
+    },
+  ],
 }
 
 interface CryptoIdentifyDependencies {
@@ -396,6 +475,177 @@ function buildRecommendations(xrefStatus: 'available' | 'unavailable', findingsC
             'Run ghidra.analyze first if you need stronger function-localized crypto evidence before breakpoint planning.',
             'Use breakpoint.smart only after reviewing whether sample-level crypto evidence is strong enough for manual instrumentation.',
           ],
+  }
+}
+
+function topCryptoFindings(findings: CryptoFinding[], limit = 6) {
+  return findings
+    .slice()
+    .sort((left, right) => right.confidence - left.confidence)
+    .slice(0, limit)
+    .map((finding) => ({
+      algorithm_family: finding.algorithm_family,
+      algorithm_name: finding.algorithm_name,
+      confidence: finding.confidence,
+      function: finding.function || null,
+      address: finding.address || null,
+      source_apis: finding.source_apis.slice(0, 6),
+      dynamic_support: finding.dynamic_support,
+      evidence_count: finding.evidence.length,
+      constant_count: finding.candidate_constants.length,
+    }))
+}
+
+function buildEvidenceSummary(args: {
+  sampleId: string
+  mode: 'preview' | 'full'
+  xrefStatus: 'available' | 'unavailable'
+  algorithms: CryptoFinding[]
+  candidateConstants: CryptoConstantCandidate[]
+  runtimeObservedApis: string[]
+  sourceArtifactRefs: ArtifactRef[]
+  dynamicEvidence: DynamicTraceSummary | null
+  chunkManifest?: Record<string, unknown>
+  warnings: string[]
+}) {
+  const families = Array.from(new Set(args.algorithms.map((finding) => finding.algorithm_family)))
+  const localizedCount = args.algorithms.filter(
+    (finding) => Boolean(finding.function) || Boolean(finding.address)
+  ).length
+
+  return {
+    schema: 'rikune.crypto_identification.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    sample_id: args.sampleId,
+    result_mode: args.mode,
+    xref_status: args.xrefStatus,
+    algorithm_count: args.algorithms.length,
+    algorithm_families: families,
+    localized_algorithm_count: localizedCount,
+    candidate_constant_count: args.candidateConstants.length,
+    runtime_observed_api_count: args.runtimeObservedApis.length,
+    runtime_evidence_present: Boolean(args.dynamicEvidence),
+    dynamic_executed: Boolean(args.dynamicEvidence?.executed),
+    source_artifact_count: args.sourceArtifactRefs.length,
+    chunked_findings: Boolean(args.chunkManifest),
+    warning_count: args.warnings.length,
+    warnings: args.warnings,
+    top_findings: topCryptoFindings(args.algorithms),
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  sampleId: string
+  xrefStatus: 'available' | 'unavailable'
+  algorithms: CryptoFinding[]
+  candidateConstants: CryptoConstantCandidate[]
+  runtimeObservedApis: string[]
+  recommendedTools: string[]
+  warnings: string[]
+}) {
+  const localizedFindings = args.algorithms.filter(
+    (finding) => Boolean(finding.function) || Boolean(finding.address)
+  )
+  const dynamicSupportedFindings = args.algorithms.filter((finding) => finding.dynamic_support)
+  const highConfidenceFindings = args.algorithms.filter((finding) => finding.confidence >= 0.74)
+  const apiBackedFindings = args.algorithms.filter((finding) => finding.source_apis.length > 0)
+
+  return {
+    schema: 'rikune.crypto_identification.workflow_handoff.v1',
+    handoff_mode: 'crypto_identification_to_runtime_tracing',
+    sample_id: args.sampleId,
+    source_tool: TOOL_NAME,
+    recommended_next_tools: args.recommendedTools,
+    crypto_context: {
+      algorithm_count: args.algorithms.length,
+      localized_algorithm_count: localizedFindings.length,
+      dynamic_supported_count: dynamicSupportedFindings.length,
+      high_confidence_count: highConfidenceFindings.length,
+      candidate_constant_count: args.candidateConstants.length,
+      runtime_observed_apis: args.runtimeObservedApis.slice(0, 12),
+      top_findings: topCryptoFindings(args.algorithms),
+    },
+    routing: [
+      {
+        goal: 'crypto-breakpoint-planning',
+        priority:
+          localizedFindings.length > 0 || highConfidenceFindings.length > 0 ? 'high' : 'normal',
+        next_tools: ['breakpoint.smart', 'trace.condition'],
+        required_evidence: ['crypto_identification', 'explicit analyst opt-in'],
+      },
+      {
+        goal: 'crypto-lifecycle-correlation',
+        priority:
+          args.runtimeObservedApis.length > 0 || apiBackedFindings.length > 0 ? 'high' : 'normal',
+        next_tools: ['crypto.lifecycle.graph', 'analysis.evidence.graph'],
+        required_evidence: ['crypto_identification', 'dynamic trace artifact when available'],
+      },
+      {
+        goal: 'function-context-enrichment',
+        priority: args.xrefStatus === 'available' ? 'optional' : 'high',
+        next_tools: ['analysis.context.link', 'code.xrefs.analyze', 'ghidra.analyze'],
+        required_evidence: ['crypto algorithm or constant findings'],
+      },
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: 'normal',
+        next_tools: ['analysis.evidence.graph', 'report.generate'],
+        required_evidence: ['crypto_identification'],
+      },
+    ],
+    artifact_contract: {
+      consumes: [
+        'enriched_string_analysis',
+        'analysis_context_link',
+        'pe_imports',
+        'static_capability_triage',
+        'dynamic_trace_json',
+      ],
+      produces: [CRYPTO_IDENTIFICATION_ARTIFACT_TYPE],
+      expected_consumers: [
+        'breakpoint.smart',
+        'trace.condition',
+        'crypto.lifecycle.graph',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+    },
+    dynamic_boundary: {
+      runtime_started_by_tool: false,
+      sample_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      runtime_followup_requires_opt_in: true,
+    },
+    warnings: args.warnings,
+  }
+}
+
+function buildQualityGates(args: {
+  algorithms: CryptoFinding[]
+  candidateConstants: CryptoConstantCandidate[]
+  dynamicEvidence: DynamicTraceSummary | null
+  warnings: string[]
+}) {
+  const localizedCount = args.algorithms.filter(
+    (finding) => Boolean(finding.function) || Boolean(finding.address)
+  ).length
+  const highConfidenceCount = args.algorithms.filter((finding) => finding.confidence >= 0.74).length
+
+  return {
+    passive_static_identification: true,
+    backend_started: false,
+    sample_executed_by_tool: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    crypto_evidence_present: args.algorithms.length > 0 || args.candidateConstants.length > 0,
+    function_localized_evidence_present: localizedCount > 0,
+    high_confidence_findings_present: highConfidenceCount > 0,
+    dynamic_evidence_used: Boolean(args.dynamicEvidence),
+    evidence_graph_handoff_ready: args.algorithms.length > 0 || args.candidateConstants.length > 0,
+    runtime_followup_requires_opt_in: true,
+    analyst_review_required:
+      highConfidenceCount > 0 || Boolean(args.dynamicEvidence) || args.warnings.length > 0,
+    warning_count: args.warnings.length,
   }
 }
 
@@ -720,6 +970,37 @@ export function createCryptoIdentifyHandler(
           )
         }
       }
+      const runtimeObservedApis = collectCryptoApiNames(importsMap, dynamicEvidence)
+      const combinedWarnings = Array.from(
+        new Set([...warnings, ...chunkWarnings].filter((item) => item.trim().length > 0))
+      )
+      const evidenceSummary = buildEvidenceSummary({
+        sampleId: input.sample_id,
+        mode: input.mode,
+        xrefStatus,
+        algorithms,
+        candidateConstants,
+        runtimeObservedApis,
+        sourceArtifactRefs,
+        dynamicEvidence,
+        chunkManifest,
+        warnings: combinedWarnings,
+      })
+      const workflowHandoff = buildWorkflowHandoff({
+        sampleId: input.sample_id,
+        xrefStatus,
+        algorithms,
+        candidateConstants,
+        runtimeObservedApis,
+        recommendedTools: recommendations.recommended_next_tools,
+        warnings: combinedWarnings,
+      })
+      const qualityGates = buildQualityGates({
+        algorithms,
+        candidateConstants,
+        dynamicEvidence,
+        warnings: combinedWarnings,
+      })
 
       const outputData = {
         status: xrefStatus === 'available' ? 'ready' : 'partial',
@@ -736,10 +1017,13 @@ export function createCryptoIdentifyHandler(
         ],
         algorithms,
         candidate_constants: candidateConstants,
-        runtime_observed_apis: collectCryptoApiNames(importsMap, dynamicEvidence),
+        runtime_observed_apis: runtimeObservedApis,
         summary,
         source_artifact_refs: sourceArtifactRefs,
         ...(chunkManifest ? { chunk_manifest: chunkManifest } : {}),
+        evidence_summary: evidenceSummary,
+        workflow_handoff: workflowHandoff,
+        quality_gates: qualityGates,
         recommended_next_tools: recommendations.recommended_next_tools,
         next_actions: recommendations.next_actions,
       }
@@ -795,9 +1079,7 @@ export function createCryptoIdentifyHandler(
           ...outputData,
           ...(artifact ? { artifact } : {}),
         },
-        warnings: Array.from(
-          new Set([...warnings, ...chunkWarnings].filter((item) => item.trim().length > 0))
-        ),
+        warnings: combinedWarnings,
         artifacts: artifact
           ? [...sourceArtifactRefs, ...chunkArtifacts, artifact]
           : [...sourceArtifactRefs, ...chunkArtifacts],

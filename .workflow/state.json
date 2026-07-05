@@ -1,0 +1,58 @@
+{
+  "version": "2.0",
+  "project_name": "rikune",
+  "status": "completed",
+  "current_milestone": "standalone-rikune-iteration",
+  "current_task_id": null,
+  "milestones": [
+    {
+      "id": "standalone-rikune-iteration",
+      "title": "Rikune Agent Reliability Iteration",
+      "status": "completed",
+      "created_at": "2026-05-20T14:30:57.4784434+08:00",
+      "completed_at": "2026-05-20T15:09:33.2621209+08:00"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "PLN-20260520-001",
+      "type": "plan",
+      "milestone": "standalone-rikune-iteration",
+      "phase": "rikune-iteration",
+      "scope": "standalone",
+      "path": "scratch/20260520-plan-rikune-iteration",
+      "status": "completed",
+      "depends_on": null,
+      "created_at": "2026-05-20T14:30:57.4784434+08:00"
+    },
+    {
+      "id": "EXC-20260520-001",
+      "type": "execute",
+      "milestone": "standalone-rikune-iteration",
+      "phase": "rikune-iteration",
+      "scope": "standalone",
+      "path": ".csv-wave/20260520-plan-rikune-iteration",
+      "status": "completed",
+      "depends_on": "PLN-20260520-001",
+      "harvested": false,
+      "created_at": "2026-05-20T15:09:33.2621209+08:00",
+      "completed_at": "2026-05-20T15:09:33.2621209+08:00"
+    }
+  ],
+  "last_updated": "2026-05-20T15:09:33.2621209+08:00",
+  "accumulated_context": {
+    "key_decisions": [
+      "Prioritize the agent golden path before adding more analysis tools.",
+      "Use progressive discovery/readiness/help as the navigation layer for the broad plugin surface.",
+      "Treat evidence provenance and dynamic runtime sessions as first-class contracts.",
+      "Use manifest-first safe golden fixtures for default CI instead of committing live samples."
+    ],
+    "blockers": [],
+    "deferred": [
+      "Full real-world malware corpus validation remains out of scope for default tests.",
+      "Strict plugin enforcement remains deferred; current implementation reports non-blocking quality warnings."
+    ]
+  },
+  "transition_history": [],
+  "milestone_history": []
+}

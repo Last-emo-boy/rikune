@@ -286,6 +286,23 @@ const PersistedStateVisibilitySchema = z.object({
   deferred_requirements: z.array(z.string()),
 })
 
+const ReportStageSummaryEntrySchema = z.object({
+  stage: z.string(),
+  status: z.string().nullable(),
+  execution_state: z.string().nullable(),
+  summary: z.string().nullable(),
+  artifact_count: z.number().int().nonnegative(),
+  recommended_next_tools: z.array(z.string()),
+})
+
+const ReportProvenanceDigestSchema = z.object({
+  runtime_artifact_count: z.number().int().nonnegative(),
+  static_artifact_count: z.number().int().nonnegative(),
+  semantic_artifact_count: z.number().int().nonnegative(),
+  selected_artifact_ids: z.array(z.string()),
+  artifact_ref_count: z.number().int().nonnegative(),
+})
+
 export const ReportSummarizeOutputSchema = z.object({
   ok: z.boolean(),
   data: z
@@ -389,6 +406,15 @@ export const ReportSummarizeOutputSchema = z.object({
       ),
       persisted_state_visibility: PersistedStateVisibilitySchema.optional().describe(
         'Machine-readable persisted-state and deferred-work explanation showing which run stages were reused and which prerequisites remain deferred.'
+      ),
+      stage_summary: z
+        .array(ReportStageSummaryEntrySchema)
+        .optional()
+        .describe(
+          'Compact staged-run digest with status, evidence artifact counts, and next-tool guidance per persisted stage.'
+        ),
+      provenance_digest: ReportProvenanceDigestSchema.optional().describe(
+        'Compact provenance counts and selected artifact IDs used by dashboard/report consumers.'
       ),
       packed_state: PackedStateSchema.optional().describe(
         'Explicit packed-sample state derived from persisted staged runtime metadata.'
@@ -534,6 +560,21 @@ export const reportSummarizeToolDefinition: ToolDefinition = {
     '- Common mistake: expecting compact mode to inline full static capability arrays, PE trees, or raw backend payloads.',
   inputSchema: ReportSummarizeInputSchema,
   outputSchema: ReportSummarizeOutputSchema,
+  aspects: {
+    formats: ['artifact', 'report', 'analysis-evidence'],
+    platforms: ['all', 'cross-platform'],
+    execution: ['static', 'correlation'],
+    safety: ['passive'],
+    evidence: ['artifact', 'provenance', 'structure', 'signatures', 'strings', 'behavior'],
+  },
+  artifacts: [
+    {
+      type: 'report_summary',
+      description: 'Bounded analyst-facing report summary digest',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [{ category: 'artifact', artifactTypes: ['report_summary'] }],
 }
 
 type TriageSummaryData = {
@@ -1947,6 +1988,7 @@ function buildCompactReportData(params: {
   triageData: TriageSummaryData
   evidenceScope: 'all' | 'latest' | 'session'
   provenance?: z.infer<typeof AnalysisProvenanceSchema>
+  stageSummary?: z.infer<typeof ReportStageSummaryEntrySchema>[]
   ghidraExecution?: z.infer<typeof GhidraExecutionSummarySchema> | null
   selectionDiffs?: z.infer<typeof AnalysisSelectionDiffSchema>
   functionExplanations: Array<z.infer<typeof FunctionExplanationSummarySchema>>
@@ -2058,6 +2100,7 @@ function buildCompactReportData(params: {
     'Use artifact.read or artifacts.list on artifact_refs when you need deeper supporting detail, including persisted explanation graph artifacts.',
     'Continue with ghidra.analyze and workflow.reconstruct when you need code-level reverse engineering instead of a bounded report digest.',
   ]
+  const provenanceDigest = buildReportProvenanceDigest(params.provenance, params.artifactRefs)
 
   return {
     detail_level: params.detailLevel,
@@ -2076,6 +2119,8 @@ function buildCompactReportData(params: {
     compiler_packer_summary: staticDigest.compiler_packer_summary,
     semantic_explanation_summary: staticDigest.semantic_explanation_summary,
     provenance: params.provenance,
+    stage_summary: params.stageSummary,
+    provenance_digest: provenanceDigest,
     ghidra_execution: params.ghidraExecution,
     selection_diffs:
       params.selectionDiffs && Object.keys(params.selectionDiffs).length > 0
@@ -2091,6 +2136,80 @@ function buildCompactReportData(params: {
     recommended_next_tools: recommendedNextTools,
     next_actions: nextActions,
   }
+}
+
+function buildReportProvenanceDigest(
+  provenance: z.infer<typeof AnalysisProvenanceSchema> | undefined,
+  artifactRefs: {
+    supporting: ArtifactRef[]
+    runtime?: ArtifactRef[]
+    static_capabilities?: ArtifactRef[]
+    pe_structure?: ArtifactRef[]
+    compiler_packer?: ArtifactRef[]
+    semantic_explanations?: ArtifactRef[]
+    explanation_graphs?: ArtifactRef[]
+  }
+): z.infer<typeof ReportProvenanceDigestSchema> {
+  const runtimeIds = provenance?.runtime?.artifact_ids ?? []
+  const staticIds = [
+    ...(provenance?.static_capabilities?.artifact_ids ?? []),
+    ...(provenance?.pe_structure?.artifact_ids ?? []),
+    ...(provenance?.compiler_packer?.artifact_ids ?? []),
+  ]
+  const semanticIds = provenance?.semantic_explanations?.artifact_ids ?? []
+  return ReportProvenanceDigestSchema.parse({
+    runtime_artifact_count: runtimeIds.length,
+    static_artifact_count: staticIds.length,
+    semantic_artifact_count: semanticIds.length,
+    selected_artifact_ids: dedupe([...runtimeIds, ...staticIds, ...semanticIds]).slice(0, 24),
+    artifact_ref_count: [
+      artifactRefs.supporting,
+      artifactRefs.runtime,
+      artifactRefs.static_capabilities,
+      artifactRefs.pe_structure,
+      artifactRefs.compiler_packer,
+      artifactRefs.semantic_explanations,
+      artifactRefs.explanation_graphs,
+    ].reduce((sum, refs) => sum + (refs?.length ?? 0), 0),
+  })
+}
+
+function parseReportJsonRecord<T>(value: string | null | undefined, fallback: T): T {
+  if (!value || !value.trim()) {
+    return fallback
+  }
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return fallback
+  }
+}
+
+function buildReportStageSummary(
+  stages: Array<{
+    stage: string
+    status?: string | null
+    execution_state?: string | null
+    result_json?: string | null
+    artifact_refs_json?: string | null
+  }>
+): z.infer<typeof ReportStageSummaryEntrySchema>[] {
+  return stages.slice(0, 16).map((stage) => {
+    const result = parseReportJsonRecord<Record<string, unknown>>(stage.result_json, {})
+    const artifactRefs = parseReportJsonRecord<ArtifactRef[]>(stage.artifact_refs_json, [])
+    return ReportStageSummaryEntrySchema.parse({
+      stage: stage.stage,
+      status: stage.status ?? null,
+      execution_state: stage.execution_state ?? null,
+      summary: typeof result.summary === 'string' ? truncateText(result.summary, 240) : null,
+      artifact_count: Array.isArray(artifactRefs) ? artifactRefs.length : 0,
+      recommended_next_tools: Array.isArray(result.recommended_next_tools)
+        ? result.recommended_next_tools
+            .filter((item): item is string => typeof item === 'string')
+            .slice(0, 8)
+        : [],
+    })
+  })
 }
 
 function estimateJsonChars(value: unknown): number {
@@ -2270,6 +2389,10 @@ export function createReportSummarizeHandler(
         database
           .findAnalysisRunsBySample(input.sample_id)
           .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] || null
+      const latestRunStages =
+        latestRun && typeof database.findAnalysisRunStages === 'function'
+          ? database.findAnalysisRunStages(latestRun.id)
+          : []
       const parseRunStagePayload = (stageName: string): Record<string, unknown> | null => {
         if (!latestRun) {
           return null
@@ -2632,6 +2755,7 @@ export function createReportSummarizeHandler(
           triageData: enrichedTriageData,
           evidenceScope: input.evidence_scope,
           provenance,
+          stageSummary: buildReportStageSummary(latestRunStages),
           ghidraExecution,
           selectionDiffs,
           functionExplanations,
@@ -2678,6 +2802,8 @@ export function createReportSummarizeHandler(
                 compiler_packer_summary: compactReportData.compiler_packer_summary,
                 semantic_explanation_summary: compactReportData.semantic_explanation_summary,
                 provenance: compactReportData.provenance,
+                stage_summary: compactReportData.stage_summary,
+                provenance_digest: compactReportData.provenance_digest,
                 persisted_state_visibility: persistedStateVisibility,
                 packed_state: packedState,
                 unpack_state: unpackState,

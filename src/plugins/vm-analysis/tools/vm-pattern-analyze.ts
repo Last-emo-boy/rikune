@@ -16,8 +16,8 @@ import {
   detectPCIncrement,
   detectHandlerRegularity,
   detectOpcodeRange,
-  type DecompiledFunc,
 } from '../vm/vm-detector.js'
+import { extractDecompiledFunctions, normalizeAddress } from './vm-function-evidence.js'
 
 const TOOL_NAME = 'vm.pattern.analyze'
 
@@ -52,41 +52,6 @@ export const vmPatternAnalyzeToolDefinition: ToolDefinition = {
   outputSchema: vmPatternAnalyzeOutputSchema,
 }
 
-function extractDecompiledFunctions(database: DatabaseManager, sampleId: string): DecompiledFunc[] {
-  const functions: DecompiledFunc[] = []
-  const evidence = database.findAnalysisEvidenceBySample(sampleId)
-  if (!Array.isArray(evidence)) return functions
-
-  for (const entry of evidence) {
-    const family = entry.evidence_family ?? ''
-    if (family === 'function_map' || family === 'decompilation' || family === 'functions') {
-      const data =
-        typeof entry.result_json === 'string' ? JSON.parse(entry.result_json) : entry.result_json
-      if (!data) continue
-      const fnList =
-        (data as Record<string, unknown>).functions ??
-        (data as Record<string, unknown>).decompiled_functions ??
-        []
-      if (Array.isArray(fnList)) {
-        for (const fn of fnList) {
-          if (fn && typeof fn === 'object') {
-            const obj = fn as Record<string, unknown>
-            const code = String(obj.decompiled ?? obj.code ?? obj.decompiled_code ?? '')
-            if (code) {
-              functions.push({
-                name: String(obj.name ?? obj.function_name ?? 'unknown'),
-                address: String(obj.address ?? obj.offset ?? obj.addr ?? '0x0'),
-                decompiled_code: code,
-              })
-            }
-          }
-        }
-      }
-    }
-  }
-  return functions
-}
-
 export function createVmPatternAnalyzeHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager
@@ -115,7 +80,8 @@ export function createVmPatternAnalyzeHandler(
     if (input.function_name) {
       functions = functions.filter((f) => f.name === input.function_name)
     } else if (input.function_address) {
-      functions = functions.filter((f) => f.address === input.function_address)
+      const requestedAddress = normalizeAddress(input.function_address)
+      functions = functions.filter((f) => normalizeAddress(f.address) === requestedAddress)
     }
 
     if (functions.length === 0) {

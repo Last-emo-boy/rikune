@@ -21,6 +21,7 @@ import { mapIndicatorsToAttack, type AttackIndicators } from './attack-map.js'
 
 const TOOL_NAME = 'ioc.export'
 const TOOL_VERSION = '0.1.0'
+const IOC_EXPORT_ARTIFACT_TYPES = ['ioc_export_json', 'ioc_export_csv', 'ioc_export_stix2'] as const
 
 export const IOCExportInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
@@ -54,18 +55,36 @@ const IOCRecordSchema = z.object({
   tags: z.array(z.string()),
 })
 
+const AttackTechniqueExportSchema = z.object({
+  technique_id: z.string(),
+  name: z.string(),
+  tactics: z.array(z.string()),
+  confidence: z.number(),
+})
+
 export const IOCExportOutputSchema = z.object({
   ok: z.boolean(),
   data: z
     .object({
+      schema: z.string().optional(),
       sample_id: z.string(),
       format: z.enum(['json', 'csv', 'stix2']),
       tool_version: z.string(),
+      include_attack_map: z.boolean().optional(),
+      include_low_confidence: z.boolean().optional(),
+      max_iocs: z.number().optional(),
       ioc_count: z.number(),
+      available_ioc_count: z.number().optional(),
       iocs: z.array(IOCRecordSchema),
+      attack_map: z.array(AttackTechniqueExportSchema).optional(),
       content: z.string(),
       mime_type: z.string(),
       attack_technique_count: z.number(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
+      recommended_next_tools: z.array(z.string()).optional(),
+      next_actions: z.array(z.string()).optional(),
       artifact: z
         .object({
           id: z.string(),
@@ -94,6 +113,108 @@ export const iocExportToolDefinition: ToolDefinition = {
     'Export normalized IOC data and optional ATT&CK mapping as JSON, CSV, or STIX 2.1 bundle.',
   inputSchema: IOCExportInputSchema,
   outputSchema: IOCExportOutputSchema,
+  aspects: {
+    formats: [
+      'pe',
+      'elf',
+      'macho',
+      'apk',
+      'dex',
+      'jar',
+      'dotnet',
+      'wasm',
+      'firmware',
+      'archive',
+      'container',
+    ],
+    platforms: [
+      'windows',
+      'linux',
+      'macos',
+      'android',
+      'jvm',
+      'dotnet',
+      'wasm',
+      'embedded',
+      'cross-platform',
+    ],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+    capabilities: [
+      'ioc',
+      'stix-export',
+      'csv-export',
+      'json-export',
+      'workflow-handoff',
+      'evidence-correlation',
+    ],
+    evidence: ['network', 'filesystem', 'registry', 'signatures', 'workflow', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'ioc_export_json',
+      description: 'IOC export as JSON with evidence summary, workflow handoff, and quality gates',
+      mime: 'application/json',
+    },
+    {
+      type: 'ioc_export_csv',
+      description: 'IOC export as CSV',
+      mime: 'text/csv',
+    },
+    {
+      type: 'ioc_export_stix2',
+      description: 'IOC export as STIX 2.1 JSON bundle with MCP handoff extensions',
+      mime: 'application/stix+json',
+    },
+  ],
+  evidence: [
+    {
+      category: 'network',
+      artifactTypes: [...IOC_EXPORT_ARTIFACT_TYPES],
+    },
+    {
+      category: 'filesystem',
+      artifactTypes: [...IOC_EXPORT_ARTIFACT_TYPES],
+    },
+    {
+      category: 'registry',
+      artifactTypes: [...IOC_EXPORT_ARTIFACT_TYPES],
+    },
+    {
+      category: 'signatures',
+      artifactTypes: [...IOC_EXPORT_ARTIFACT_TYPES],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: [...IOC_EXPORT_ARTIFACT_TYPES],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: [...IOC_EXPORT_ARTIFACT_TYPES],
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'threat-intel.ioc-export-handoff',
+      title: 'IOC export to enrichment, detection, and reporting',
+      description:
+        'Normalize static IOC evidence into JSON, CSV, or STIX exports with ATT&CK mapping, quality gates, evidence graph routing, and reporting handoff.',
+      startsWith: ['ioc.export', 'workflow.triage', 'static.config.carver'],
+      nextTools: [
+        'analysis.evidence.graph',
+        'malware.intel.loop',
+        'attack.map',
+        'sigma.rule.generate',
+        'yara.generate',
+        'report.generate',
+      ],
+      requiredArtifacts: ['analysis_evidence'],
+      producesArtifacts: [...IOC_EXPORT_ARTIFACT_TYPES],
+      evidence: ['network', 'filesystem', 'registry', 'signatures', 'workflow', 'provenance'],
+      safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+    },
+  ],
 }
 
 interface IOCRecord {
@@ -102,6 +223,33 @@ interface IOCRecord {
   confidence: 'high' | 'medium' | 'low'
   source: string
   tags: string[]
+}
+
+interface AttackTechniqueExport {
+  technique_id: string
+  name: string
+  tactics: string[]
+  confidence: number
+}
+
+interface IOCExportStructuredPayload {
+  schema: string
+  sample_id: string
+  format: IOCExportInput['format']
+  tool_version: string
+  include_attack_map: boolean
+  include_low_confidence: boolean
+  max_iocs: number
+  ioc_count: number
+  available_ioc_count: number
+  iocs: IOCRecord[]
+  attack_map: AttackTechniqueExport[]
+  attack_technique_count: number
+  evidence_summary: Record<string, unknown>
+  workflow_handoff: Record<string, unknown>
+  quality_gates: Record<string, unknown>
+  recommended_next_tools: string[]
+  next_actions: string[]
 }
 
 function dedupeIOC(records: IOCRecord[]): IOCRecord[] {
@@ -249,6 +397,247 @@ function toCSV(records: IOCRecord[]): string {
   return lines.join('\n')
 }
 
+function countBy(values: string[]): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const value of values) {
+    counts[value] = (counts[value] || 0) + 1
+  }
+  return counts
+}
+
+function buildEvidenceSummary(args: {
+  sampleId: string
+  format: IOCExportInput['format']
+  includeAttackMap: boolean
+  includeLowConfidence: boolean
+  maxIocs: number
+  availableIocCount: number
+  records: IOCRecord[]
+  attackTechniques: AttackTechniqueExport[]
+}) {
+  return {
+    schema: 'rikune.ioc_export.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    sample_id: args.sampleId,
+    export_format: args.format,
+    artifact_type: `ioc_export_${args.format}`,
+    include_attack_map: args.includeAttackMap,
+    include_low_confidence: args.includeLowConfidence,
+    exported_ioc_count: args.records.length,
+    available_ioc_count: args.availableIocCount,
+    truncated_by_max_iocs: args.availableIocCount > args.records.length,
+    max_iocs: args.maxIocs,
+    attack_technique_count: args.attackTechniques.length,
+    ioc_type_counts: countBy(args.records.map((record) => record.type)),
+    confidence_counts: countBy(args.records.map((record) => record.confidence)),
+    source_counts: countBy(args.records.map((record) => record.source)),
+    tag_counts: countBy(args.records.flatMap((record) => record.tags)),
+    evidence_sources: args.includeAttackMap
+      ? ['workflow.triage', 'packer.detect', 'attack-map heuristics']
+      : ['workflow.triage'],
+  }
+}
+
+function buildQualityGates(args: {
+  format: IOCExportInput['format']
+  includeAttackMap: boolean
+  includeLowConfidence: boolean
+  availableIocCount: number
+  records: IOCRecord[]
+  attackTechniques: AttackTechniqueExport[]
+}) {
+  const highConfidenceCount = args.records.filter((record) => record.confidence === 'high').length
+  const highOrMediumConfidenceCount = args.records.filter(
+    (record) => record.confidence === 'high' || record.confidence === 'medium'
+  ).length
+
+  return {
+    schema: 'rikune.ioc_export.quality_gates.v1',
+    passive_export_only: true,
+    sample_executed_by_tool: false,
+    backend_started: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    export_format: args.format,
+    export_artifact_type: `ioc_export_${args.format}`,
+    ioc_count: args.records.length,
+    available_ioc_count: args.availableIocCount,
+    ioc_floor_met: args.records.length > 0,
+    high_confidence_ioc_count: highConfidenceCount,
+    high_or_medium_confidence_ioc_count: highOrMediumConfidenceCount,
+    high_or_medium_confidence_present: highOrMediumConfidenceCount > 0,
+    low_confidence_included: args.includeLowConfidence,
+    attack_map_requested: args.includeAttackMap,
+    attack_map_present: args.attackTechniques.length > 0,
+    stix_review_required: args.format === 'stix2',
+    sharing_review_required: true,
+    analyst_review_required: true,
+  }
+}
+
+function buildRecommendedNextTools(): string[] {
+  return [
+    'analysis.evidence.graph',
+    'malware.intel.loop',
+    'attack.map',
+    'sigma.rule.generate',
+    'yara.generate',
+    'report.generate',
+    'artifact.read',
+  ]
+}
+
+function buildNextActions(args: {
+  format: IOCExportInput['format']
+  includeAttackMap: boolean
+  availableIocCount: number
+  exportedIocCount: number
+  attackTechniqueCount: number
+}) {
+  const actions = [
+    'Review IOC confidence, source attribution, and sharing sensitivity before using the export externally.',
+    'Load the persisted IOC export through analysis.evidence.graph and report.generate for analyst reporting.',
+    'Use malware.intel.loop, sigma.rule.generate, or yara.generate to feed normalized IOCs back into detection coverage.',
+  ]
+
+  if (!args.includeAttackMap) {
+    actions.unshift(
+      'Run attack.map or rerun ioc.export with include_attack_map=true for ATT&CK routing.'
+    )
+  } else if (args.attackTechniqueCount === 0) {
+    actions.unshift(
+      'Review upstream triage evidence because ATT&CK mapping produced no techniques.'
+    )
+  }
+
+  if (args.availableIocCount > args.exportedIocCount) {
+    actions.unshift(
+      'Rerun with a larger max_iocs value if the truncated export omits relevant indicators.'
+    )
+  }
+
+  if (args.format === 'stix2') {
+    actions.unshift(
+      'Validate the STIX 2.1 bundle and custom x_mcp_* extensions before external sharing.'
+    )
+  }
+
+  return actions
+}
+
+function buildWorkflowHandoff(args: {
+  sampleId: string
+  format: IOCExportInput['format']
+  includeAttackMap: boolean
+  includeLowConfidence: boolean
+  maxIocs: number
+  availableIocCount: number
+  records: IOCRecord[]
+  attackTechniques: AttackTechniqueExport[]
+  recommendedNextTools: string[]
+}) {
+  const artifactType = `ioc_export_${args.format}`
+
+  return {
+    schema: 'rikune.ioc_export.workflow_handoff.v1',
+    handoff_mode: 'ioc_export_to_enrichment_detection_and_reporting',
+    source_tool: TOOL_NAME,
+    sample_id: args.sampleId,
+    artifact_type: artifactType,
+    export_format: args.format,
+    include_attack_map: args.includeAttackMap,
+    include_low_confidence: args.includeLowConfidence,
+    max_iocs: args.maxIocs,
+    ioc_count: args.records.length,
+    available_ioc_count: args.availableIocCount,
+    attack_technique_count: args.attackTechniques.length,
+    recommended_next_tools: args.recommendedNextTools,
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      backend_started: false,
+      network_accessed_by_tool: false,
+      live_lookup_started: false,
+      external_sharing_started: false,
+    },
+    routing: [
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: 'high',
+        next_tools: ['analysis.evidence.graph', 'report.generate'],
+        required_evidence: [artifactType],
+      },
+      {
+        goal: 'ioc-enrichment-feedback-loop',
+        priority: args.records.length > 0 ? 'high' : 'low',
+        next_tools: ['malware.intel.loop', 'attack.map'],
+        required_evidence: ['normalized IOC export', artifactType],
+      },
+      {
+        goal: 'detection-rule-generation',
+        priority: args.records.some((record) =>
+          ['url', 'ipv4', 'registry_key'].includes(record.type)
+        )
+          ? 'normal'
+          : 'low',
+        next_tools: ['sigma.rule.generate', 'yara.generate'],
+        required_evidence: ['normalized IOC export', 'analysis evidence'],
+      },
+      {
+        goal: 'sharing-review',
+        priority: args.format === 'stix2' ? 'high' : 'normal',
+        next_tools: ['artifact.read', 'report.generate'],
+        required_evidence: [artifactType, 'analyst sharing approval'],
+      },
+    ],
+  }
+}
+
+function buildStructuredPayload(args: {
+  sampleId: string
+  format: IOCExportInput['format']
+  includeAttackMap: boolean
+  includeLowConfidence: boolean
+  maxIocs: number
+  availableIocCount: number
+  records: IOCRecord[]
+  attackTechniques: AttackTechniqueExport[]
+}): IOCExportStructuredPayload {
+  const recommendedNextTools = buildRecommendedNextTools()
+  const evidenceSummary = buildEvidenceSummary(args)
+  const qualityGates = buildQualityGates(args)
+  const workflowHandoff = buildWorkflowHandoff({
+    ...args,
+    recommendedNextTools,
+  })
+  const nextActions = buildNextActions({
+    format: args.format,
+    includeAttackMap: args.includeAttackMap,
+    availableIocCount: args.availableIocCount,
+    exportedIocCount: args.records.length,
+    attackTechniqueCount: args.attackTechniques.length,
+  })
+
+  return {
+    schema: 'rikune.ioc_export.v1',
+    sample_id: args.sampleId,
+    format: args.format,
+    tool_version: TOOL_VERSION,
+    include_attack_map: args.includeAttackMap,
+    include_low_confidence: args.includeLowConfidence,
+    max_iocs: args.maxIocs,
+    ioc_count: args.records.length,
+    available_ioc_count: args.availableIocCount,
+    iocs: args.records,
+    attack_map: args.attackTechniques,
+    attack_technique_count: args.attackTechniques.length,
+    evidence_summary: evidenceSummary,
+    workflow_handoff: workflowHandoff,
+    quality_gates: qualityGates,
+    recommended_next_tools: recommendedNextTools,
+    next_actions: nextActions,
+  }
+}
+
 function normalizeStixTimestamp(date: Date): string {
   return date.toISOString().replace(/\.\d{3}Z$/, 'Z')
 }
@@ -277,12 +666,8 @@ function buildIndicatorPattern(record: IOCRecord): string | null {
 function toSTIX(
   sampleId: string,
   records: IOCRecord[],
-  attackTechniques: Array<{
-    technique_id: string
-    name: string
-    tactics: string[]
-    confidence: number
-  }>
+  attackTechniques: AttackTechniqueExport[],
+  handoff: IOCExportStructuredPayload
 ): string {
   const now = new Date()
   const created = normalizeStixTimestamp(now)
@@ -429,6 +814,10 @@ function toSTIX(
     report_types: ['threat-report'],
     object_refs: objectRefs,
     published: created,
+    x_mcp_source_tool: TOOL_NAME,
+    x_mcp_evidence_summary: handoff.evidence_summary,
+    x_mcp_workflow_handoff: handoff.workflow_handoff,
+    x_mcp_quality_gates: handoff.quality_gates,
   })
 
   return JSON.stringify(
@@ -437,6 +826,13 @@ function toSTIX(
       id: `bundle--${randomUUID()}`,
       spec_version: '2.1',
       objects,
+      x_mcp_schema: handoff.schema,
+      x_mcp_tool_version: TOOL_VERSION,
+      x_mcp_evidence_summary: handoff.evidence_summary,
+      x_mcp_workflow_handoff: handoff.workflow_handoff,
+      x_mcp_quality_gates: handoff.quality_gates,
+      x_mcp_recommended_next_tools: handoff.recommended_next_tools,
+      x_mcp_next_actions: handoff.next_actions,
     },
     null,
     2
@@ -444,19 +840,12 @@ function toSTIX(
 }
 
 function formatContent(
-  sampleId: string,
   format: IOCExportInput['format'],
-  records: IOCRecord[],
-  attackTechniques: Array<{
-    technique_id: string
-    name: string
-    tactics: string[]
-    confidence: number
-  }>
+  handoff: IOCExportStructuredPayload
 ): { content: string; mimeType: string; extension: string } {
   if (format === 'csv') {
     return {
-      content: toCSV(records),
+      content: toCSV(handoff.iocs),
       mimeType: 'text/csv',
       extension: 'csv',
     }
@@ -464,23 +853,14 @@ function formatContent(
 
   if (format === 'stix2') {
     return {
-      content: toSTIX(sampleId, records, attackTechniques),
+      content: toSTIX(handoff.sample_id, handoff.iocs, handoff.attack_map, handoff),
       mimeType: 'application/stix+json',
       extension: 'json',
     }
   }
 
   return {
-    content: JSON.stringify(
-      {
-        sample_id: sampleId,
-        generated_at: new Date().toISOString(),
-        iocs: records,
-        attack_map: attackTechniques,
-      },
-      null,
-      2
-    ),
+    content: JSON.stringify({ ...handoff, generated_at: new Date().toISOString() }, null, 2),
     mimeType: 'application/json',
     extension: 'json',
   }
@@ -529,14 +909,10 @@ export function createIOCExportHandler(deps: PluginToolDeps) {
       }
       const iocs = triageData.iocs || {}
       let records = collectIOCRecords(iocs, input.include_low_confidence)
+      const availableIocCount = records.length
       records = records.slice(0, input.max_iocs)
 
-      let attackTechniques: Array<{
-        technique_id: string
-        name: string
-        tactics: string[]
-        confidence: number
-      }> = []
+      let attackTechniques: AttackTechniqueExport[] = []
       const warnings: string[] = [...(triageResult.warnings || [])]
 
       if (input.include_attack_map) {
@@ -578,7 +954,17 @@ export function createIOCExportHandler(deps: PluginToolDeps) {
         }
       }
 
-      const formatted = formatContent(input.sample_id, input.format, records, attackTechniques)
+      const structuredPayload = buildStructuredPayload({
+        sampleId: input.sample_id,
+        format: input.format,
+        includeAttackMap: input.include_attack_map,
+        includeLowConfidence: input.include_low_confidence,
+        maxIocs: input.max_iocs,
+        availableIocCount,
+        records,
+        attackTechniques,
+      })
+      const formatted = formatContent(input.format, structuredPayload)
       const artifacts: ArtifactRef[] = []
       let artifactRef: ArtifactRef | undefined
 
@@ -618,14 +1004,25 @@ export function createIOCExportHandler(deps: PluginToolDeps) {
       return {
         ok: true,
         data: {
+          schema: structuredPayload.schema,
           sample_id: input.sample_id,
           format: input.format,
           tool_version: TOOL_VERSION,
+          include_attack_map: input.include_attack_map,
+          include_low_confidence: input.include_low_confidence,
+          max_iocs: input.max_iocs,
           ioc_count: records.length,
+          available_ioc_count: availableIocCount,
           iocs: records,
+          attack_map: attackTechniques,
           content: formatted.content,
           mime_type: formatted.mimeType,
           attack_technique_count: attackTechniques.length,
+          evidence_summary: structuredPayload.evidence_summary,
+          workflow_handoff: structuredPayload.workflow_handoff,
+          quality_gates: structuredPayload.quality_gates,
+          recommended_next_tools: structuredPayload.recommended_next_tools,
+          next_actions: structuredPayload.next_actions,
           artifact: artifactRef,
         },
         warnings: warnings.length > 0 ? Array.from(new Set(warnings)) : undefined,

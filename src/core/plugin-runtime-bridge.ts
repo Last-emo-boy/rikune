@@ -13,6 +13,7 @@ export interface RuntimeBridgeDeps {
   sandboxDir?: string | null
   workspaceManager?: any
   database?: any
+  policyGuard?: any
   resolvePrimarySamplePath?: any
 }
 
@@ -32,7 +33,8 @@ export class PluginRuntimeBridge {
         this.deps.workspaceManager,
         this.deps.database,
         this.deps.resolvePrimarySamplePath,
-        this.deps.sandboxDir ?? null
+        this.deps.sandboxDir ?? null,
+        this.deps.policyGuard
       )
     }
     return baseServer as PluginServerInterface

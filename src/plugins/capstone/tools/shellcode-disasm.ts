@@ -18,6 +18,14 @@ import {
   resolvePythonModuleBackend,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
+import {
+  CAPSTONE_PASSIVE_SAFETY,
+  CAPSTONE_RUNTIME_POLICY,
+  CAPSTONE_SHELLCODE_ARTIFACT_TYPE,
+  CAPSTONE_SHELLCODE_EVIDENCE,
+  CAPSTONE_SHELLCODE_FOLLOW_UP_TOOLS,
+  CAPSTONE_SHELLCODE_WORKFLOW_RECIPES,
+} from '../capstone-metadata.js'
 
 const TOOL_NAME = 'shellcode.disasm'
 
@@ -63,6 +71,52 @@ export const shellcodeDisasmToolDefinition: ToolDefinition = {
     'Disassemble raw shellcode from a sample using Capstone. Includes heuristic API call detection from call/jmp patterns.',
   inputSchema: shellcodeDisasmInputSchema,
   outputSchema: shellcodeDisasmOutputSchema,
+  aspects: {
+    formats: ['shellcode', 'pe', 'elf', 'macho', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64'],
+    execution: ['static', 'triage'],
+    safety: CAPSTONE_PASSIVE_SAFETY,
+    capabilities: [
+      'disassembly',
+      'bounded-disassembly',
+      'shellcode',
+      'api-dispatch-heuristic',
+      'api-resolver-loop',
+      'workflow-handoff',
+    ],
+    evidence: CAPSTONE_SHELLCODE_EVIDENCE,
+  },
+  artifacts: [
+    {
+      type: CAPSTONE_SHELLCODE_ARTIFACT_TYPE,
+      description: 'Bounded shellcode disassembly and API dispatch heuristic preview',
+    },
+  ],
+  evidence: [
+    {
+      category: 'structure',
+      artifactTypes: [CAPSTONE_SHELLCODE_ARTIFACT_TYPE],
+    },
+    {
+      category: 'shellcode',
+      artifactTypes: [CAPSTONE_SHELLCODE_ARTIFACT_TYPE],
+    },
+    {
+      category: 'api-dispatch',
+      artifactTypes: [CAPSTONE_SHELLCODE_ARTIFACT_TYPE],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: [CAPSTONE_SHELLCODE_ARTIFACT_TYPE],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: [CAPSTONE_SHELLCODE_ARTIFACT_TYPE],
+    },
+  ],
+  workflowRecipes: CAPSTONE_SHELLCODE_WORKFLOW_RECIPES,
+  runtimePolicy: CAPSTONE_RUNTIME_POLICY,
 }
 
 const SHELLCODE_DISASM_SCRIPT = `
@@ -171,14 +225,11 @@ export function createShellcodeDisasmHandler(
           api_calls_heuristic: result.parsed?.api_calls_heuristic || [],
           artifact,
           summary: `Shellcode (${input.arch}, ${result.parsed?.shellcode_size || 0} bytes): ${count} instructions, ${(result.parsed?.api_calls_heuristic || []).length} potential API dispatch points.`,
-          recommended_next_tools: [
-            'artifact.read',
-            'speakeasy.shellcode',
-            'hash.resolve',
-            'strings.extract',
-          ],
+          recommended_next_tools: CAPSTONE_SHELLCODE_FOLLOW_UP_TOOLS,
           next_actions: [
+            'Use strings.extract and hash.resolve to corroborate API resolver or string decoding hints.',
             'Use speakeasy.shellcode to emulate the shellcode and trace API calls.',
+            'Use analysis.evidence.graph to preserve shellcode disassembly provenance before reporting.',
             'Use hash.resolve if you see API hash constants.',
           ],
         },

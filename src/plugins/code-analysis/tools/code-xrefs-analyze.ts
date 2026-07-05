@@ -16,6 +16,7 @@ import {
   persistStringXrefJsonArtifact,
 } from '../../strings/string-xref-artifacts.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
+import { CODE_XREFS_ANALYZE_METADATA } from './code-analysis-metadata.js'
 
 const TOOL_NAME = 'code.xrefs.analyze'
 const TOOL_VERSION = '0.1.0'
@@ -149,6 +150,7 @@ export const codeXrefsAnalyzeToolDefinition: ToolDefinition = {
     'Do not use it as a replacement for source-like export; continue with workflow.reconstruct or code.function.decompile after narrowing the target set.',
   inputSchema: codeXrefsAnalyzeInputSchema,
   outputSchema: codeXrefsAnalyzeOutputSchema,
+  ...CODE_XREFS_ANALYZE_METADATA,
 }
 
 interface CodeXrefsAnalyzeDependencies {

@@ -56,6 +56,7 @@ import {
   buildSemanticArtifactProvenance,
 } from '../../../analysis/analysis-provenance.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
+import { CODE_FUNCTIONS_RECONSTRUCT_METADATA } from './code-analysis-metadata.js'
 
 const TOOL_NAME = 'code.functions.reconstruct'
 const TOOL_VERSION = '0.2.14'
@@ -368,6 +369,7 @@ export const codeFunctionsReconstructToolDefinition: ToolDefinition = {
     'Reconstruct function-level semantics by combining decompile, CFG, and assembly evidence with confidence and unresolved gaps.',
   inputSchema: CodeFunctionsReconstructInputSchema,
   outputSchema: CodeFunctionsReconstructOutputSchema,
+  ...CODE_FUNCTIONS_RECONSTRUCT_METADATA,
 }
 
 interface FunctionTarget {
@@ -3330,7 +3332,8 @@ function buildSourceLikeSnippet(
 async function buildDegradedFallbackFunction(
   workspaceManager: WorkspaceManager,
   sampleId: string,
-  targetLabel: string
+  targetLabel: string,
+  functionIndexCompleted = false
 ): Promise<ReconstructedFunction> {
   let workspace: Awaited<ReturnType<WorkspaceManager['getWorkspace']>>
   try {
@@ -3447,14 +3450,23 @@ async function buildDegradedFallbackFunction(
     .filter((line, index, all) => all.indexOf(line) === index)
     .slice(0, 8)
 
+  const nextStepHint = functionIndexCompleted
+    ? '// next step: run workflow.function_index_recover to import the completed Ghidra function index'
+    : '// next step: run ghidra.analyze to unlock function-level pseudocode/cfg'
   const snippetLines = [
-    '// degraded fallback: ghidra function artifacts unavailable',
+    functionIndexCompleted
+      ? '// degraded fallback: Ghidra function index completed but was not imported'
+      : '// degraded fallback: ghidra function artifacts unavailable',
     `// sample_path=${samplePath}`,
     `// inferred_behaviors=${behaviorTags.length > 0 ? behaviorTags.join(',') : 'none'}`,
     '// hint_strings:',
     ...topHints.map((line) => `//   ${line}`),
-    '// next step: run ghidra.analyze to unlock function-level pseudocode/cfg',
+    nextStepHint,
   ]
+
+  const recoveryHint = functionIndexCompleted
+    ? 'a completed Ghidra function index exists but no functions were imported; run workflow.function_index_recover.'
+    : 'run ghidra.analyze for function-level semantics.'
 
   return {
     target: targetLabel,
@@ -3465,7 +3477,7 @@ async function buildDegradedFallbackFunction(
     semantic_summary:
       behaviorTags.length > 0
         ? `Static-only fallback suggests ${behaviorTags.map(describeBehaviorTag).join(' and ')}.`
-        : 'Static-only fallback summary; run ghidra.analyze for function-level semantics.',
+        : `Static-only fallback summary; ${recoveryHint}`,
     xref_signals: [],
     call_context: {
       callers: [],
@@ -3482,7 +3494,9 @@ async function buildDegradedFallbackFunction(
       assembly: 0,
       context: behaviorTags.length > 0 ? 0.24 : 0.16,
     },
-    gaps: ['missing_ghidra_analysis', 'missing_pseudocode', 'missing_cfg'],
+    gaps: functionIndexCompleted
+      ? ['function_index_not_imported', 'missing_pseudocode', 'missing_cfg']
+      : ['missing_ghidra_analysis', 'missing_pseudocode', 'missing_cfg'],
     evidence: {
       pseudocode_lines: 0,
       cfg_nodes: 0,
@@ -3692,10 +3706,12 @@ export function createCodeFunctionsReconstructHandler(
 
       if (targets.length === 0) {
         const fallbackTarget = input.address || input.symbol || `topk:${input.topk}`
+        const functionIndexCompleted = Boolean(completedGhidraAnalysis)
         const fallbackFunction = await buildDegradedFallbackFunction(
           workspaceManager,
           input.sample_id,
-          fallbackTarget
+          fallbackTarget,
+          functionIndexCompleted
         )
         const fallbackOutput = {
           sample_id: input.sample_id,
@@ -3719,7 +3735,9 @@ export function createCodeFunctionsReconstructHandler(
           ok: true,
           data: fallbackOutput,
           warnings: [
-            `No candidate functions available; returned degraded fallback summary. Run ghidra.analyze for full function-level reconstruction on ${input.sample_id}.`,
+            functionIndexCompleted
+              ? `No candidate functions available; returned degraded fallback summary. A completed Ghidra function index exists for ${input.sample_id} but was not imported — run workflow.function_index_recover to import it.`
+              : `No candidate functions available; returned degraded fallback summary. Run ghidra.analyze for full function-level reconstruction on ${input.sample_id}.`,
           ],
           metrics: {
             elapsed_ms: Date.now() - startTime,

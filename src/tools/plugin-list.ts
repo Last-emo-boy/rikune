@@ -9,6 +9,14 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolResult } from '../types.js'
 import { getPluginManager } from '../plugins.js'
 import type { ToolRegistrar } from '../core/registrar.js'
+import { getToolSurfaceManager } from '../core/tool-surface-manager.js'
+import {
+  buildPluginAspectMatrix,
+  buildPluginMatrixSources,
+  buildToolAspectSummary,
+  describeAspectCoverage,
+  normalizeAspects,
+} from './tool-aspect-matrix.js'
 
 // ── Schema ──────────────────────────────────────────────────────────────────
 
@@ -36,6 +44,7 @@ export function createPluginListHandler(_server: ToolRegistrar) {
   return async (args: z.infer<typeof inputSchema>): Promise<ToolResult> => {
     const mgr = getPluginManager()
     let statuses = mgr.getStatuses()
+    const allPlugins = mgr.getDiscoveredPlugins()
 
     if (args.plugin_id) {
       statuses = statuses.filter((s) => s.id === args.plugin_id)
@@ -51,17 +60,62 @@ export function createPluginListHandler(_server: ToolRegistrar) {
       statuses = statuses.filter((s) => (s.executionDomain ?? 'both') === args.execution_domain)
     }
 
+    const statusIds = new Set(statuses.map((s) => s.id))
+    const filteredPlugins = allPlugins.filter((plugin) => statusIds.has(plugin.id))
+    const pluginById = new Map(filteredPlugins.map((plugin) => [plugin.id, plugin]))
+    const surfacePluginIndex = new Map(
+      allPlugins.map((plugin) => [
+        plugin.id,
+        { name: plugin.name, description: plugin.description },
+      ])
+    )
+    for (const status of mgr.getStatuses()) {
+      surfacePluginIndex.set(status.id, { name: status.name, description: status.description })
+    }
+    const surfaceCategories = getToolSurfaceManager().listCategories(surfacePluginIndex)
+    const activatedByPlugin = new Map<string, boolean>()
+    const toolNamesByPlugin = new Map<string, string[]>()
+    for (const category of surfaceCategories) {
+      for (const plugin of category.plugins) {
+        activatedByPlugin.set(plugin.id, plugin.activated)
+        toolNamesByPlugin.set(plugin.id, plugin.tools)
+      }
+    }
+    const toolNameLookup = new Map(
+      filteredPlugins.flatMap((plugin) =>
+        (plugin.tools ?? []).map((tool) => [tool.definition.name, tool.definition] as const)
+      )
+    )
+    const matrixSources = buildPluginMatrixSources({
+      statuses,
+      plugins: filteredPlugins,
+      toolNameLookup,
+      activatedByPlugin,
+      toolNamesByPlugin,
+    })
+    const pluginMatrix = buildPluginAspectMatrix(matrixSources)
+
     const summary = {
       total: statuses.length,
       loaded: statuses.filter((s) => s.status === 'loaded').length,
       skipped: statuses.filter((s) => s.status.startsWith('skipped')).length,
       errored: statuses.filter((s) => s.status === 'error').length,
+      quality_warning_count: statuses.reduce((sum, s) => sum + (s.qualityWarnings?.length ?? 0), 0),
       by_execution_domain: {
         static: statuses.filter((s) => (s.executionDomain ?? 'both') === 'static').length,
         dynamic: statuses.filter((s) => (s.executionDomain ?? 'both') === 'dynamic').length,
         both: statuses.filter((s) => (s.executionDomain ?? 'both') === 'both').length,
       },
+      plugin_matrix: pluginMatrix,
       plugins: statuses.map((s) => {
+        const plugin = pluginById.get(s.id)
+        const pluginAspects = normalizeAspects(plugin?.aspects)
+        const pluginAspectPayload = Object.keys(pluginAspects).length > 0 ? pluginAspects : null
+        const source = matrixSources.find((candidate) => candidate.id === s.id)
+        const matrix = source ? buildPluginAspectMatrix([source]) : null
+        const visiblePluginTools = (plugin?.tools ?? []).filter((tool) =>
+          s.tools.includes(tool.definition.name)
+        )
         const entry: Record<string, unknown> = {
           id: s.id,
           name: s.name,
@@ -71,6 +125,33 @@ export function createPluginListHandler(_server: ToolRegistrar) {
           description: s.description ?? null,
           tools: s.tools,
           tool_count: s.tools.length,
+          activated: activatedByPlugin.get(s.id) ?? null,
+          aspects: pluginAspectPayload,
+          aspect_coverage: describeAspectCoverage(pluginAspectPayload),
+          runtime_policy: plugin?.runtimePolicy ?? null,
+          worker_backends: visiblePluginTools
+            .map((tool) => tool.definition.workerBackend)
+            .filter(Boolean),
+          format_matrix: matrix?.by_format ?? {},
+          plugin_matrix: matrix,
+          artifact_declarations: visiblePluginTools.flatMap(
+            (tool) => tool.definition.artifacts ?? []
+          ),
+          evidence_declarations: visiblePluginTools.flatMap(
+            (tool) => tool.definition.evidence ?? []
+          ),
+          workflow_recipes: visiblePluginTools.flatMap(
+            (tool) => tool.definition.workflowRecipes ?? []
+          ),
+          tool_metadata: visiblePluginTools.map((tool) => ({
+            name: tool.definition.name,
+            ...buildToolAspectSummary(tool.definition, {
+              pluginAspects: plugin?.aspects,
+              pluginRuntimePolicy: plugin?.runtimePolicy,
+            }),
+          })),
+          quality_warning_count: s.qualityWarnings?.length ?? 0,
+          quality_warnings: s.qualityWarnings ?? [],
         }
         if (s.error) entry.error = s.error
         if (args.include_config && s.configFields) {

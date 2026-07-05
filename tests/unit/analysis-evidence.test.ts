@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import {
   buildDeferredEvidenceState,
+  buildEvidenceProvenanceSummary,
   buildFreshEvidenceState,
   buildChunkedEvidenceManifest,
   buildResolvedEvidenceState,
@@ -72,6 +73,7 @@ describe('analysis evidence', () => {
       sample_id: sample.id,
       strings: [{ offset: 0, string: 'hello', encoding: 'ascii' }],
     })
+    expect(reused?.provenance?.tool).toBe('strings.extract')
   })
 
   test('prefers canonical evidence over cache for the same compatibility marker', async () => {
@@ -143,6 +145,9 @@ describe('analysis evidence', () => {
     expect(resolved).not.toBeNull()
     expect(buildResolvedEvidenceState(resolved!).state).toBe('reused')
     expect(buildResolvedEvidenceState(resolved!).backend).toBe('analysis.context.link')
+    expect(buildResolvedEvidenceState(resolved!).provenance?.source_tool).toBe(
+      'analysis.context.link'
+    )
     expect(
       buildFreshEvidenceState({
         evidenceFamily: 'context_link',
@@ -159,6 +164,38 @@ describe('analysis evidence', () => {
       }).state
     ).toBe('deferred')
     expect(record.evidence_family).toBe('context_link')
+  })
+
+  test('builds compact provenance summaries with validation tools and artifact ids', () => {
+    const summary = buildEvidenceProvenanceSummary({
+      evidenceFamily: 'crypto_identify',
+      backend: 'crypto.identify',
+      mode: 'preview',
+      source: 'run_stage',
+      reason: 'Crypto preview was included in a staged run.',
+      confidence: 0.91,
+      artifactRefs: [
+        {
+          id: 'artifact-1',
+          type: 'crypto_identification',
+          path: 'reports/crypto.json',
+          sha256: 'abc',
+        },
+      ],
+    })
+
+    expect(summary).toMatchObject({
+      source_tool: 'crypto.identify',
+      source_backend: 'crypto.identify',
+      source_mode: 'preview',
+      evidence_family: 'crypto_identify',
+      source: 'run_stage',
+      confidence: 0.91,
+      artifact_ids: ['artifact-1'],
+    })
+    expect(summary.validation_tools).toEqual(
+      expect.arrayContaining(['crypto.identify', 'breakpoint.smart', 'artifact.read'])
+    )
   })
 
   test('classifies chunked partial evidence so callers can resume from manifests explicitly', async () => {

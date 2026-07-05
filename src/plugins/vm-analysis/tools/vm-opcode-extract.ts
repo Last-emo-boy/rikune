@@ -8,6 +8,12 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { buildOpcodeTable } from '../vm/opcode-extractor.js'
+import {
+  codeFromFunctionRecord,
+  functionRecordsFromPayload,
+  normalizeAddress,
+  parseJsonLike,
+} from './vm-function-evidence.js'
 
 const TOOL_NAME = 'vm.opcode.extract'
 
@@ -18,6 +24,10 @@ export const vmOpcodeExtractInputSchema = z.object({
     .optional()
     .describe('Name of the VM dispatcher function to analyze (auto-detected if omitted)'),
   function_address: z.string().optional().describe('Address of the VM dispatcher function'),
+  decompiled_code: z
+    .string()
+    .optional()
+    .describe('Optional decompiled dispatcher code when the function body is not persisted yet'),
 })
 
 export const vmOpcodeExtractOutputSchema = z.object({
@@ -53,19 +63,19 @@ export function createVmOpcodeExtractHandler(
 
     // Find the dispatcher function from analysis evidence
     const evidence = database.findAnalysisEvidenceBySample(input.sample_id)
-    let dispatcherCode = ''
+    let dispatcherCode = input.decompiled_code ?? ''
     let dispatcherName = input.function_name ?? ''
+    const requestedAddress = normalizeAddress(input.function_address)
 
     if (Array.isArray(evidence)) {
       // First try VM detection results for auto-detected dispatcher
       for (const entry of evidence) {
         if (entry.evidence_family === 'vm_detection') {
-          const data =
-            typeof entry.result_json === 'string'
-              ? JSON.parse(entry.result_json)
-              : entry.result_json
-          if (data?.candidates?.length > 0 && !input.function_name) {
-            dispatcherName = data.candidates[0].function
+          const data = parseJsonLike(entry.result_json) as
+            | { candidates?: Array<{ function?: string }> }
+            | undefined
+          if (data?.candidates?.length && !input.function_name) {
+            dispatcherName = data.candidates[0]?.function ?? ''
           }
         }
       }
@@ -73,33 +83,27 @@ export function createVmOpcodeExtractHandler(
       // Then find the decompiled code for that function
       for (const entry of evidence) {
         const family = entry.evidence_family ?? ''
-        if (family === 'function_map' || family === 'decompilation' || family === 'functions') {
-          const data =
-            typeof entry.result_json === 'string'
-              ? JSON.parse(entry.result_json)
-              : entry.result_json
+        if (
+          family === 'function_map' ||
+          family === 'decompilation' ||
+          family === 'functions' ||
+          family === 'function_decompile'
+        ) {
+          const data = parseJsonLike(entry.result_json)
           if (!data) continue
 
-          const fnList =
-            (data as Record<string, unknown>).functions ??
-            (data as Record<string, unknown>).decompiled_functions ??
-            []
-          if (Array.isArray(fnList)) {
-            for (const fn of fnList) {
-              if (!fn || typeof fn !== 'object') continue
-              const obj = fn as Record<string, unknown>
-              const name = String(obj.name ?? obj.function_name ?? '')
-              const addr = String(obj.address ?? obj.offset ?? '')
+          for (const obj of functionRecordsFromPayload(data)) {
+            const name = String(obj.name ?? obj.function_name ?? obj.function ?? '')
+            const addr = normalizeAddress(obj.address ?? obj.offset ?? obj.addr)
 
-              if (
-                (input.function_name && name === input.function_name) ||
-                (input.function_address && addr === input.function_address) ||
-                (dispatcherName && name === dispatcherName)
-              ) {
-                dispatcherCode = String(obj.decompiled ?? obj.code ?? obj.decompiled_code ?? '')
-                if (!dispatcherName) dispatcherName = name
-                break
-              }
+            if (
+              (input.function_name && name === input.function_name) ||
+              (requestedAddress && addr === requestedAddress) ||
+              (dispatcherName && name === dispatcherName)
+            ) {
+              dispatcherCode = codeFromFunctionRecord(obj)
+              if (!dispatcherName) dispatcherName = name
+              break
             }
           }
         }
@@ -108,10 +112,18 @@ export function createVmOpcodeExtractHandler(
     }
 
     if (!dispatcherCode) {
+      if (requestedAddress && typeof database.findFunctions === 'function') {
+        const indexed = database
+          .findFunctions(input.sample_id)
+          .find((fn) => normalizeAddress(fn.address) === requestedAddress)
+        if (indexed?.name && !dispatcherName) {
+          dispatcherName = indexed.name
+        }
+      }
       return {
         ok: false,
         errors: [
-          `Could not find dispatcher function${dispatcherName ? ` '${dispatcherName}'` : ''}. Run vm.detect first or specify function_name/function_address.`,
+          `Could not find decompiled dispatcher function${dispatcherName ? ` '${dispatcherName}'` : ''}. Run vm.detect/code.function.decompile first, specify function_name/function_address, or pass decompiled_code directly.`,
         ],
       }
     }

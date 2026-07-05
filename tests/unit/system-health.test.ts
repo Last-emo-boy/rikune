@@ -8,7 +8,10 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
-import { createSystemHealthHandler, SystemHealthInputSchema } from '../../src/tools/system-health.js'
+import {
+  createSystemHealthHandler,
+  SystemHealthInputSchema,
+} from '../../src/tools/system-health.js'
 import type { GhidraHealthStatus } from '../../src/ghidra/ghidra-config.js'
 
 type StaticWorkerHealthData = {
@@ -143,8 +146,9 @@ describe('system.health tool', () => {
     expect(data.cache_observability.key).toContain('health_cache_probe_')
     expect(data.cache_observability.hit_at).toBeTruthy()
     expect(data.result_mode).toBe('environment_health')
-    expect(data.tool_surface_role).toBe('primary')
-    expect(data.recommended_next_tools).toContain('workflow.analyze.start')
+    expect(data.tool_surface_role).toBe('compatibility')
+    expect(data.preferred_primary_tools).toEqual(['workflow.search', 'workflow.run'])
+    expect(data.recommended_next_tools).toContain('workflow.run')
   })
 
   test('should return degraded when optional component fails', async () => {

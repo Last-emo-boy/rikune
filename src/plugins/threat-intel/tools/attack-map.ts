@@ -86,6 +86,9 @@ export const AttackMapOutputSchema = z.object({
         execution_state: z.literal('completed').optional(),
         recommended_next_tools: z.array(z.string()).optional(),
         next_actions: z.array(z.string()).optional(),
+        evidence_summary: z.record(z.any()).optional(),
+        workflow_handoff: z.record(z.any()).optional(),
+        quality_gates: z.record(z.any()).optional(),
       }),
       z.object({
         status: z.literal('queued'),
@@ -124,6 +127,73 @@ export const attackMapToolDefinition: ToolDefinition = {
     'Generate MITRE ATT&CK technique mapping from triage indicators with evidence-linked confidence scoring. Medium and larger samples may return a background job_id; use analysis.context.get before rerunning to discover prior ATT&CK maps, active jobs, and cached context.',
   inputSchema: AttackMapInputSchema,
   outputSchema: AttackMapOutputSchema,
+  aspects: {
+    formats: [
+      'pe',
+      'elf',
+      'macho',
+      'apk',
+      'dex',
+      'jar',
+      'dotnet',
+      'wasm',
+      'firmware',
+      'archive',
+      'container',
+    ],
+    platforms: [
+      'windows',
+      'linux',
+      'macos',
+      'android',
+      'jvm',
+      'dotnet',
+      'wasm',
+      'embedded',
+      'cross-platform',
+    ],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_network_by_default'],
+    capabilities: ['attack-map', 'capability-clustering', 'ioc-correlation'],
+    evidence: ['behavior', 'network', 'filesystem', 'registry', 'signatures', 'provenance'],
+  },
+  evidence: [
+    {
+      category: 'behavior',
+      description: 'ATT&CK technique mapping inferred from static triage evidence',
+    },
+    {
+      category: 'network',
+      description: 'Network IOC evidence contributing to ATT&CK mapping',
+    },
+    {
+      category: 'registry',
+      description: 'Registry IOC evidence contributing to ATT&CK mapping',
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'threat-intel.attack-map-handoff',
+      title: 'ATT&CK mapping evidence handoff',
+      description:
+        'Map static triage, IOC, packer, and runtime hint evidence to ATT&CK techniques, then hand off to evidence graph, detection generation, IOC export, and reporting without live lookups or sample execution.',
+      startsWith: ['attack.map', 'workflow.triage', 'static.capability.triage'],
+      nextTools: [
+        'analysis.evidence.graph',
+        'ioc.export',
+        'sigma.rule.generate',
+        'yara.generate',
+        'malware.intel.loop',
+        'report.generate',
+        'artifact.read',
+      ],
+      requiredArtifacts: ['analysis_evidence', 'triage_iocs'],
+      producesArtifacts: ['attack_map'],
+      evidence: ['behavior', 'network', 'registry', 'signatures', 'workflow', 'provenance'],
+      safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+    },
+  ],
 }
 
 export interface AttackIndicators {
@@ -618,6 +688,195 @@ function getClassification(
   return 'unknown'
 }
 
+function countByString(values: string[]): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const value of values) {
+    counts[value] = (counts[value] || 0) + 1
+  }
+  return counts
+}
+
+function buildRecommendedNextTools(): string[] {
+  return [
+    'analysis.evidence.graph',
+    'ioc.export',
+    'sigma.rule.generate',
+    'yara.generate',
+    'malware.intel.loop',
+    'report.generate',
+    'artifact.read',
+  ]
+}
+
+function buildNextActions(args: {
+  techniqueCount: number
+  highConfidenceCount: number
+  counterEvidenceCount: number
+  capabilityClusterCount: number
+  classification: string
+}) {
+  const actions = [
+    'Use analysis.evidence.graph and report.generate to fold ATT&CK mappings into analyst-facing evidence.',
+    'Use ioc.export, sigma.rule.generate, or yara.generate when mapped techniques need detection handoff.',
+    'Use malware.intel.loop to correlate ATT&CK, IOC, and detection-rule evidence before external sharing.',
+  ]
+
+  if (args.techniqueCount === 0) {
+    actions.unshift(
+      'Gather richer strings, import, IOC, or runtime evidence before promoting ATT&CK coverage.'
+    )
+  } else if (args.highConfidenceCount === 0) {
+    actions.unshift(
+      'Review low and medium confidence ATT&CK mappings before using them in reporting.'
+    )
+  }
+
+  if (args.counterEvidenceCount > 0) {
+    actions.unshift(
+      'Review counter-evidence before promoting suppressed or low-confidence techniques.'
+    )
+  }
+
+  if (args.capabilityClusterCount === 0 && args.classification !== 'benign') {
+    actions.unshift('Review upstream triage because no coherent capability cluster was extracted.')
+  }
+
+  return actions
+}
+
+function buildEvidenceSummary(args: {
+  sampleId: string
+  input: AttackMapInput
+  indicators: AttackIndicators
+  techniqueCount: number
+  capabilityClusterCount: number
+  tacticSummary: Record<string, number>
+  classification: string
+  counterEvidenceCount: number
+}) {
+  return {
+    schema: 'rikune.attack_map.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    sample_id: args.sampleId,
+    artifact_type: 'attack_map',
+    include_low_confidence: args.input.include_low_confidence,
+    max_techniques: args.input.max_techniques,
+    technique_count: args.techniqueCount,
+    capability_cluster_count: args.capabilityClusterCount,
+    tactic_summary: args.tacticSummary,
+    classification: args.classification,
+    counter_evidence_count: args.counterEvidenceCount,
+    indicator_counts: {
+      suspicious_imports: args.indicators.suspiciousImports.length,
+      suspicious_strings: args.indicators.suspiciousStrings.length,
+      commands: args.indicators.commands.length,
+      urls: args.indicators.urls.length,
+      ips: args.indicators.ips.length,
+      registry_keys: args.indicators.registryKeys.length,
+      yara_matches: args.indicators.yaraMatches.length,
+      yara_low_confidence: args.indicators.yaraLowConfidence.length,
+      runtime_hints: args.indicators.runtimeHints?.length || 0,
+    },
+    intent: {
+      label: args.indicators.intentLabel || 'unknown',
+      confidence: args.indicators.intentConfidence || 0,
+    },
+    packer: {
+      packed: args.indicators.packed,
+      confidence: args.indicators.packerConfidence,
+    },
+    evidence_sources: ['workflow.triage', 'packer.detect', 'attack-map heuristics'],
+  }
+}
+
+function buildQualityGates(args: {
+  input: AttackMapInput
+  techniqueCount: number
+  highConfidenceCount: number
+  counterEvidenceCount: number
+  classification: string
+  indicators: AttackIndicators
+}) {
+  const highOrMediumEvidence =
+    args.highConfidenceCount > 0 ||
+    args.indicators.urls.length > 0 ||
+    args.indicators.ips.length > 0 ||
+    args.indicators.suspiciousImports.length >= 2
+
+  return {
+    schema: 'rikune.attack_map.quality_gates.v1',
+    passive_mapping_only: true,
+    sample_executed_by_tool: false,
+    backend_started: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    live_lookup_started: false,
+    include_low_confidence: args.input.include_low_confidence,
+    technique_count: args.techniqueCount,
+    high_confidence_technique_count: args.highConfidenceCount,
+    counter_evidence_count: args.counterEvidenceCount,
+    technique_floor_met: args.techniqueCount > 0,
+    high_confidence_present: args.highConfidenceCount > 0,
+    high_or_medium_evidence_present: highOrMediumEvidence,
+    classification: args.classification,
+    analyst_review_required: true,
+    low_confidence_review_required:
+      args.input.include_low_confidence && args.highConfidenceCount < args.techniqueCount,
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  sampleId: string
+  input: AttackMapInput
+  recommendedNextTools: string[]
+  techniqueCount: number
+  highConfidenceCount: number
+  capabilityClusterCount: number
+  classification: string
+}) {
+  return {
+    schema: 'rikune.attack_map.workflow_handoff.v1',
+    handoff_mode: 'attack_mapping_to_evidence_detection_and_reporting',
+    source_tool: TOOL_NAME,
+    sample_id: args.sampleId,
+    artifact_type: 'attack_map',
+    include_low_confidence: args.input.include_low_confidence,
+    max_techniques: args.input.max_techniques,
+    technique_count: args.techniqueCount,
+    high_confidence_technique_count: args.highConfidenceCount,
+    capability_cluster_count: args.capabilityClusterCount,
+    classification: args.classification,
+    recommended_next_tools: args.recommendedNextTools,
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      backend_started: false,
+      network_accessed_by_tool: false,
+      live_lookup_started: false,
+      external_sharing_started: false,
+    },
+    routing: [
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: args.techniqueCount > 0 ? 'high' : 'normal',
+        next_tools: ['analysis.evidence.graph', 'report.generate'],
+        required_evidence: ['attack_map', 'analysis_evidence'],
+      },
+      {
+        goal: 'ioc-and-detection-handoff',
+        priority: args.techniqueCount > 0 ? 'high' : 'low',
+        next_tools: ['ioc.export', 'sigma.rule.generate', 'yara.generate'],
+        required_evidence: ['attack_map', 'triage_iocs'],
+      },
+      {
+        goal: 'malware-intel-feedback-loop',
+        priority: args.classification === 'malicious' ? 'high' : 'normal',
+        next_tools: ['malware.intel.loop', 'artifact.read'],
+        required_evidence: ['attack_map', 'capability_clusters'],
+      },
+    ],
+  }
+}
+
 export function createAttackMapHandler(
   deps: PluginToolDeps,
   options: { allowDeferred?: boolean } = {}
@@ -662,9 +921,10 @@ export function createAttackMapHandler(
               ...(cachedLookup.data as Record<string, unknown>),
               result_mode: 'completed',
               execution_state: 'completed',
-              recommended_next_tools: ['analysis.context.get', 'report.summarize'],
+              recommended_next_tools: buildRecommendedNextTools(),
               next_actions: [
                 'Reuse this cached ATT&CK mapping unless the sample evidence changed.',
+                'Use analysis.evidence.graph and report.generate to fold cached ATT&CK mapping into analyst reporting.',
                 'Use analysis.context.get before rerunning expensive analysis for this sample.',
               ],
             },
@@ -806,6 +1066,41 @@ export function createAttackMapHandler(
         indicators.intentLabel && indicators.intentLabel !== 'unknown'
           ? ` Triage intent=${indicators.intentLabel}(${Number(indicators.intentConfidence || 0).toFixed(2)}).`
           : ''
+      const recommendedNextTools = buildRecommendedNextTools()
+      const nextActions = buildNextActions({
+        techniqueCount: mapping.techniques.length,
+        highConfidenceCount,
+        counterEvidenceCount,
+        capabilityClusterCount: mapping.capabilityClusters.length,
+        classification,
+      })
+      const evidenceSummary = buildEvidenceSummary({
+        sampleId: input.sample_id,
+        input,
+        indicators,
+        techniqueCount: mapping.techniques.length,
+        capabilityClusterCount: mapping.capabilityClusters.length,
+        tacticSummary,
+        classification,
+        counterEvidenceCount,
+      })
+      const qualityGates = buildQualityGates({
+        input,
+        techniqueCount: mapping.techniques.length,
+        highConfidenceCount,
+        counterEvidenceCount,
+        classification,
+        indicators,
+      })
+      const workflowHandoff = buildWorkflowHandoff({
+        sampleId: input.sample_id,
+        input,
+        recommendedNextTools,
+        techniqueCount: mapping.techniques.length,
+        highConfidenceCount,
+        capabilityClusterCount: mapping.capabilityClusters.length,
+        classification,
+      })
       const data = {
         sample_id: input.sample_id,
         techniques: mapping.techniques,
@@ -819,6 +1114,9 @@ export function createAttackMapHandler(
                 `applied ${counterEvidenceCount} counter-evidence factor(s).${intentSummary}`
               : 'No strong ATT&CK technique mapping from current evidence.',
         },
+        evidence_summary: evidenceSummary,
+        workflow_handoff: workflowHandoff,
+        quality_gates: qualityGates,
       }
 
       await cacheManager.setCachedResult(cacheKey, data, CACHE_TTL_30_DAYS, sample.sha256)
@@ -829,11 +1127,8 @@ export function createAttackMapHandler(
           ...data,
           result_mode: 'completed',
           execution_state: 'completed',
-          recommended_next_tools: ['analysis.context.get', 'report.summarize'],
-          next_actions: [
-            'Use analysis.context.get before rerunning attack.map for this sample.',
-            'Continue to report.summarize if you need this mapping folded into a narrative report.',
-          ],
+          recommended_next_tools: recommendedNextTools,
+          next_actions: nextActions,
         },
         warnings: [
           ...(input.force_refresh ? ['force_refresh=true; bypassed attack.map cache lookup'] : []),

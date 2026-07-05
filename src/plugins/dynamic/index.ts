@@ -98,6 +98,23 @@ const dynamicPlugin: Plugin = {
   id: 'dynamic',
   name: 'Dynamic Analysis Automation',
   executionDomain: 'dynamic',
+  aspects: {
+    formats: ['pe', 'dll', 'dotnet', 'elf', 'so', 'macho', 'apk'],
+    platforms: ['windows', 'linux', 'macos', 'android'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['dynamic'],
+    runtimes: ['frida', 'windows-sandbox', 'hyperv', 'runtime-node', 'host-agent'],
+    safety: ['passive', 'opt_in_dynamic', 'requires_isolation', 'no_live_sample_by_default'],
+    capabilities: [
+      'frida-hooks',
+      'trace-attribution',
+      'memory-dump',
+      'sandbox-execution',
+      'behavior-capture',
+      'debug-plan',
+    ],
+    evidence: ['process', 'memory', 'api-calls', 'timeline', 'network', 'provenance'],
+  },
   surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description:
     'Automated Frida hooking, trace attribution, memory dumping, behavior capture, behavior diffing, dependency analysis, trace/memory import, sandbox execution, explicit runtime debug sessions, Hyper-V control, runtime toolkit inventory, runtime persona planning, CDB, ProcDump, telemetry, network lab, managed runtime, GUI handoff planning, deep dynamic planning, and dynamic runtime status aggregation',

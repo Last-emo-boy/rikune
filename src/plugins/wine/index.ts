@@ -7,6 +7,17 @@
  */
 
 import type { Plugin } from '../sdk.js'
+import {
+  WINE_ARCHITECTURES,
+  WINE_CAPABILITIES,
+  WINE_EVIDENCE,
+  WINE_FORMATS,
+  WINE_PLATFORMS,
+  WINE_RUNTIME_POLICY,
+  WINE_SAFETY,
+  WINE_SEARCH_TERMS,
+  WINE_ROUTE_TERMS,
+} from './wine-metadata.js'
 import { wineRunToolDefinition, createWineRunHandler } from './tools/wine-run.js'
 import { wineEnvToolDefinition, createWineEnvHandler } from './tools/wine-env.js'
 import {
@@ -19,6 +30,19 @@ const winePlugin: Plugin = {
   id: 'wine',
   name: 'Wine',
   executionDomain: 'dynamic',
+  aspects: {
+    formats: WINE_FORMATS,
+    platforms: WINE_PLATFORMS,
+    architectures: WINE_ARCHITECTURES,
+    execution: ['dynamic', 'emulation'],
+    runtimes: ['wine'],
+    safety: WINE_SAFETY,
+    capabilities: WINE_CAPABILITIES,
+    evidence: WINE_EVIDENCE,
+    search: WINE_SEARCH_TERMS,
+    route_terms: WINE_ROUTE_TERMS,
+  },
+  runtimePolicy: WINE_RUNTIME_POLICY,
   surfaceRules: { tier: 3, category: 'dynamic-analysis' },
   description:
     'Wine Windows compatibility layer — prefix management, DLL overrides, registry manipulation, and supervised execution of PE binaries',

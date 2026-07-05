@@ -28,6 +28,27 @@ export const dexClassesListToolDefinition: ToolDefinition = {
     'List all class names defined in DEX bytecode. Works on standalone .dex or .apk (parses all embedded classes.dex files).',
   inputSchema: DexClassesListInputSchema,
   outputSchema: DexClassesListOutputSchema,
+  aspects: {
+    formats: ['dex', 'multi-dex', 'apk', 'aab', 'apks', 'xapk', 'aar'],
+    platforms: ['android', 'jvm'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    capabilities: ['classes', 'inventory', 'routing'],
+    evidence: ['classes', 'strings', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'dex_classes',
+      description: 'DEX class inventory for standalone DEX files and Android package containers',
+    },
+  ],
+  evidence: [
+    {
+      category: 'classes',
+      description: 'Class inventory evidence extracted from DEX bytecode without executing it',
+      artifactTypes: ['dex_classes'],
+    },
+  ],
 }
 
 async function callApkWorker(

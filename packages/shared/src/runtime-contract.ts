@@ -26,6 +26,7 @@ export interface WorkerResult {
   setup_actions?: unknown[]
   required_user_inputs?: unknown[]
   artifacts?: ArtifactRef[]
+  evidence?: unknown[]
   metrics?: Record<string, unknown>
   execution_semantics?: RuntimeExecutionSemantics
 }
@@ -45,6 +46,55 @@ export interface RuntimeFallbackRule {
   reason?: string
 }
 
+export type RuntimeIsolationBackend =
+  | 'local'
+  | 'docker'
+  | 'windows-sandbox'
+  | 'hyperv'
+  | 'windows-host-agent'
+  | 'wine'
+  | 'speakeasy'
+  | 'qiling'
+  | 'unicorn'
+  | 'frida'
+  | 'frida-server'
+  | 'adb'
+  | 'android-emulator'
+  | 'lldb'
+  | 'gdb'
+  | 'strace'
+  | 'ltrace'
+  | 'dtrace'
+  | 'fs-usage'
+  | 'sandbox-exec'
+  | 'codesign-runtime'
+  | 'idevice-tools'
+  | 'ebpf'
+  | 'seccomp'
+  | 'ptrace'
+  | 'wasmtime'
+
+export type RuntimeNetworkPolicy = 'disabled' | 'record_only' | 'restricted' | 'allowed'
+
+export interface DynamicRuntimePolicy {
+  passiveByDefault?: boolean
+  requiresUserOptIn?: boolean
+  requiresIsolation?: boolean
+  allowedBackends?: RuntimeIsolationBackend[]
+  maxRuntimeMs?: number
+  networkPolicy?: RuntimeNetworkPolicy
+  noNetwork?: boolean
+  noMutation?: boolean
+  noLiveExecution?: boolean
+  notes?: string[]
+}
+
+export interface RuntimeIsolationRequirement {
+  required?: boolean
+  backends?: RuntimeIsolationBackend[]
+  reason?: string
+}
+
 export interface ToolRuntimeContract {
   type: RuntimeBackendType
   handler: string
@@ -53,6 +103,10 @@ export interface ToolRuntimeContract {
   requiredTools?: string[]
   optionalTools?: string[]
   produces?: string[]
+  capabilities?: string[]
+  safety?: string[]
+  policy?: DynamicRuntimePolicy
+  isolation?: RuntimeIsolationRequirement
   timeoutMs?: number
   fallback?: RuntimeFallbackRule[]
 }
@@ -60,6 +114,152 @@ export interface ToolRuntimeContract {
 export interface RuntimeBackendCapability extends ToolRuntimeContract {
   description?: string
   requiresSample?: boolean
+}
+
+function uniqueContractValues(values: readonly string[] | undefined): string[] {
+  return Array.from(new Set((values ?? []).filter((value) => value.trim().length > 0)))
+}
+
+function collectMissingContractValues(
+  field: 'modes' | 'requiredTools',
+  capability: RuntimeBackendCapability,
+  contract: ToolRuntimeContract
+): string[] {
+  const required = uniqueContractValues(contract[field] as string[] | undefined)
+  if (required.length === 0) {
+    return []
+  }
+
+  const available = uniqueContractValues(capability[field] as string[] | undefined)
+  if (available.length === 0) {
+    return [`${field}: runtime capability does not declare ${field}`]
+  }
+
+  const missing = required.filter((value) => !available.includes(value))
+  return missing.length > 0 ? [`${field}: missing ${missing.join(', ')}`] : []
+}
+
+function collectMissingIsolationSupport(
+  capability: RuntimeBackendCapability,
+  contract: ToolRuntimeContract
+): string[] {
+  const required = contract.isolation
+  if (!required) {
+    return []
+  }
+
+  const available = capability.isolation
+  const mismatches: string[] = []
+  if (typeof required.required === 'boolean' && available?.required !== required.required) {
+    mismatches.push('isolation.required: runtime capability does not match requirement')
+  }
+
+  const requiredBackends = uniqueContractValues(required.backends)
+  if (requiredBackends.length > 0) {
+    const availableBackends = uniqueContractValues(available?.backends)
+    if (availableBackends.length === 0) {
+      mismatches.push('isolation.backends: runtime capability does not declare isolation backends')
+    } else {
+      const missing = requiredBackends.filter((backend) => !availableBackends.includes(backend))
+      if (missing.length > 0) {
+        mismatches.push(`isolation.backends: missing ${missing.join(', ')}`)
+      }
+    }
+  }
+
+  return mismatches
+}
+
+function collectMissingPolicySupport(
+  capability: RuntimeBackendCapability,
+  contract: ToolRuntimeContract
+): string[] {
+  const required = contract.policy
+  if (!required) {
+    return []
+  }
+
+  const available = capability.policy
+  const mismatches: string[] = []
+  const booleanFields = ['passiveByDefault', 'requiresUserOptIn', 'requiresIsolation'] as const
+  for (const field of booleanFields) {
+    if (typeof required[field] === 'boolean' && available?.[field] !== required[field]) {
+      mismatches.push(`policy.${field}: runtime capability does not match requirement`)
+    }
+  }
+
+  if (
+    typeof required.networkPolicy === 'string' &&
+    available?.networkPolicy !== required.networkPolicy
+  ) {
+    mismatches.push('policy.networkPolicy: runtime capability does not match requirement')
+  }
+
+  if (typeof required.maxRuntimeMs === 'number') {
+    if (
+      typeof available?.maxRuntimeMs !== 'number' ||
+      available.maxRuntimeMs < required.maxRuntimeMs
+    ) {
+      mismatches.push('policy.maxRuntimeMs: runtime capability budget is below requirement')
+    }
+  }
+
+  const requiredBackends = uniqueContractValues(required.allowedBackends)
+  if (requiredBackends.length > 0) {
+    const availableBackends = uniqueContractValues(available?.allowedBackends)
+    if (availableBackends.length === 0) {
+      mismatches.push(
+        'policy.allowedBackends: runtime capability does not declare allowed backends'
+      )
+    } else {
+      const missing = requiredBackends.filter((backend) => !availableBackends.includes(backend))
+      if (missing.length > 0) {
+        mismatches.push(`policy.allowedBackends: missing ${missing.join(', ')}`)
+      }
+    }
+  }
+
+  return mismatches
+}
+
+export function getRuntimeContractSupportMismatches(
+  capability: RuntimeBackendCapability,
+  contract: ToolRuntimeContract
+): string[] {
+  const mismatches: string[] = []
+  if (capability.type !== contract.type) {
+    mismatches.push(`type: expected ${contract.type}, got ${capability.type}`)
+  }
+  if (capability.handler !== contract.handler) {
+    mismatches.push(`handler: expected ${contract.handler}, got ${capability.handler}`)
+  }
+
+  if (mismatches.length > 0) {
+    return mismatches
+  }
+
+  return [
+    ...collectMissingContractValues('modes', capability, contract),
+    ...collectMissingContractValues('requiredTools', capability, contract),
+    ...collectMissingIsolationSupport(capability, contract),
+    ...collectMissingPolicySupport(capability, contract),
+  ]
+}
+
+export function isRuntimeContractSupportedByCapability(
+  capability: RuntimeBackendCapability,
+  contract: ToolRuntimeContract
+): boolean {
+  return getRuntimeContractSupportMismatches(capability, contract).length === 0
+}
+
+export function findRuntimeBackendCapability(
+  capabilities: RuntimeBackendCapability[],
+  contract: ToolRuntimeContract
+): RuntimeBackendCapability | undefined {
+  return capabilities.find((capability) =>
+    isRuntimeContractSupportedByCapability(capability, contract)
+  )
 }
 
 export const RuntimeExecutionModeSchema = z.enum([
@@ -76,22 +276,87 @@ export const RuntimeFallbackRuleSchema = z.object({
   reason: z.string().optional(),
 })
 
-export const ToolRuntimeContractSchema = z.object({
-  type: z.enum(['python-worker', 'spawn', 'inline']),
-  handler: z.string().min(1, 'String must contain at least 1 character'),
-  modes: z.array(RuntimeExecutionModeSchema).optional(),
-  requiredProfiles: z.array(z.string()).optional(),
-  requiredTools: z.array(z.string()).optional(),
-  optionalTools: z.array(z.string()).optional(),
-  produces: z.array(z.string()).optional(),
-  timeoutMs: z.number().int().positive().optional(),
-  fallback: z.array(RuntimeFallbackRuleSchema).optional(),
-})
+export const RuntimeIsolationBackendSchema = z.enum([
+  'local',
+  'docker',
+  'windows-sandbox',
+  'hyperv',
+  'windows-host-agent',
+  'wine',
+  'speakeasy',
+  'qiling',
+  'unicorn',
+  'frida',
+  'frida-server',
+  'adb',
+  'android-emulator',
+  'lldb',
+  'gdb',
+  'strace',
+  'ltrace',
+  'dtrace',
+  'fs-usage',
+  'sandbox-exec',
+  'codesign-runtime',
+  'idevice-tools',
+  'ebpf',
+  'seccomp',
+  'ptrace',
+  'wasmtime',
+])
+
+export const RuntimeNetworkPolicySchema = z.enum([
+  'disabled',
+  'record_only',
+  'restricted',
+  'allowed',
+])
+
+export const DynamicRuntimePolicySchema = z
+  .object({
+    passiveByDefault: z.boolean().optional(),
+    requiresUserOptIn: z.boolean().optional(),
+    requiresIsolation: z.boolean().optional(),
+    allowedBackends: z.array(RuntimeIsolationBackendSchema).optional(),
+    maxRuntimeMs: z.number().int().positive().optional(),
+    networkPolicy: RuntimeNetworkPolicySchema.optional(),
+    noNetwork: z.boolean().optional(),
+    noMutation: z.boolean().optional(),
+    noLiveExecution: z.boolean().optional(),
+    notes: z.array(z.string()).optional(),
+  })
+  .passthrough()
+
+export const RuntimeIsolationRequirementSchema = z
+  .object({
+    required: z.boolean().optional(),
+    backends: z.array(RuntimeIsolationBackendSchema).optional(),
+    reason: z.string().optional(),
+  })
+  .passthrough()
+
+export const ToolRuntimeContractSchema = z
+  .object({
+    type: z.enum(['python-worker', 'spawn', 'inline']),
+    handler: z.string().min(1, 'String must contain at least 1 character'),
+    modes: z.array(RuntimeExecutionModeSchema).optional(),
+    requiredProfiles: z.array(z.string()).optional(),
+    requiredTools: z.array(z.string()).optional(),
+    optionalTools: z.array(z.string()).optional(),
+    produces: z.array(z.string()).optional(),
+    capabilities: z.array(z.string()).optional(),
+    safety: z.array(z.string()).optional(),
+    policy: DynamicRuntimePolicySchema.optional(),
+    isolation: RuntimeIsolationRequirementSchema.optional(),
+    timeoutMs: z.number().int().positive().optional(),
+    fallback: z.array(RuntimeFallbackRuleSchema).optional(),
+  })
+  .passthrough()
 
 export const RuntimeBackendCapabilitySchema = ToolRuntimeContractSchema.extend({
   description: z.string().optional(),
   requiresSample: z.boolean().optional(),
-})
+}).passthrough()
 
 export const RuntimeDelegationFailureCategorySchema = z.enum([
   'runtime_unavailable',

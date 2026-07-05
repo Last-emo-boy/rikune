@@ -6,9 +6,42 @@ import {
 import type { ToolDefinition } from '../../src/types.js'
 
 function createPluginManagerMock() {
+  const plugins = [
+    {
+      id: 'dynamic',
+      name: 'Dynamic',
+      description: 'Dynamic analysis tools',
+      executionDomain: 'dynamic',
+      aspects: {
+        formats: ['pe'],
+        platforms: ['windows'],
+        execution: ['dynamic'],
+        runtimes: ['windows-sandbox'],
+        safety: ['passive', 'opt_in_dynamic'],
+      },
+      runtimePolicy: {
+        passiveByDefault: true,
+        requiresUserOptIn: true,
+        requiresIsolation: true,
+        allowedBackends: ['windows-sandbox'],
+        networkPolicy: 'record_only',
+      },
+    },
+    {
+      id: 'workflow',
+      name: 'Workflow',
+      description: 'Workflow tools',
+      executionDomain: 'static',
+      aspects: {
+        execution: ['triage'],
+        safety: ['passive'],
+      },
+    },
+  ]
   return {
     getPluginForTool: jest.fn((toolName: string) =>
       toolName === 'dynamic.runtime.status' ||
+      toolName === 'windows.runtime.plan' ||
       toolName === 'behavior.capture' ||
       toolName === 'task.status'
         ? toolName === 'task.status'
@@ -23,6 +56,7 @@ function createPluginManagerMock() {
         executionDomain: 'dynamic',
         reasonCode: null,
         statusDetail: 'loaded',
+        qualityWarnings: [{ code: 'missing-output-schema', message: 'test warning' }],
       },
       {
         id: 'workflow',
@@ -32,6 +66,8 @@ function createPluginManagerMock() {
         statusDetail: 'loaded',
       },
     ]),
+    getPlugin: jest.fn((id: string) => plugins.find((plugin) => plugin.id === id)),
+    getDiscoveredPlugins: jest.fn(() => plugins),
   }
 }
 
@@ -61,8 +97,8 @@ describe('tool.readiness', () => {
     expect((result.data as any)?.result_mode).toBe('tool_readiness')
     expect((result.data as any)?.execution_path).toBe('local')
     expect((result.data as any)?.runtime_plane).toBe('local_tool')
-    expect((result.data as any)?.tool_surface_role).toBe('primary')
-    expect((result.data as any)?.preferred_primary_tools).toEqual([])
+    expect((result.data as any)?.tool_surface_role).toBe('compatibility')
+    expect((result.data as any)?.preferred_primary_tools).toEqual(['workflow.search'])
     expect((result.data as any)?.required_runtime_contract).toBeNull()
     expect((result.data as any)?.available_runtime_backends).toEqual([])
     expect((result.data as any)?.execution_semantics).toEqual(
@@ -102,6 +138,23 @@ describe('tool.readiness', () => {
       })
     )
     expect((result.data as any)?.next_actions?.[0]).toMatch(/control-plane/i)
+    expect((result.data as any)?.aspects).toEqual(
+      expect.objectContaining({
+        formats: ['pe'],
+        platforms: ['windows'],
+        execution: ['dynamic'],
+        runtimes: ['windows-sandbox'],
+      })
+    )
+    expect((result.data as any)?.plugin).toEqual(
+      expect.objectContaining({
+        aspects: expect.objectContaining({ platforms: ['windows'] }),
+        runtime_policy: expect.objectContaining({ passiveByDefault: true }),
+        quality_warnings: expect.arrayContaining([
+          expect.objectContaining({ code: 'missing-output-schema' }),
+        ]),
+      })
+    )
   })
 
   test('adds primary-surface guidance for compatibility tools', async () => {
@@ -121,9 +174,9 @@ describe('tool.readiness', () => {
 
     expect(result.ok).toBe(true)
     expect((result.data as any)?.tool_surface_role).toBe('compatibility')
-    expect((result.data as any)?.preferred_primary_tools).toEqual(['workflow.analyze.status'])
+    expect((result.data as any)?.preferred_primary_tools).toEqual(['workflow.run'])
     expect((result.data as any)?.recommended_next_tools).toEqual(
-      expect.arrayContaining(['workflow.analyze.status', 'tool.help', 'plugin.list'])
+      expect.arrayContaining(['workflow.run', 'tool.help', 'plugin.list'])
     )
   })
 
@@ -204,6 +257,239 @@ describe('tool.readiness', () => {
       type: 'inline',
       handler: 'executeBehaviorCapture',
     })
+  })
+
+  test('reports aspect, evidence, and runtime policy metadata for runtime-backed tools', async () => {
+    const runtimePolicy = {
+      passiveByDefault: true,
+      requiresUserOptIn: true,
+      requiresIsolation: true,
+      allowedBackends: ['windows-sandbox' as const],
+      networkPolicy: 'record_only' as const,
+      maxRuntimeMs: 30000,
+      notes: ['fixture policy'],
+    }
+    const handler = createToolReadinessHandler(
+      () =>
+        [
+          {
+            name: 'behavior.capture',
+            description: 'behavior capture',
+            inputSchema: {},
+            aspects: {
+              formats: ['PE'],
+              capabilities: ['behavior'],
+              evidence: ['timeline'],
+            },
+            artifacts: [{ type: 'runtime.trace', description: 'Runtime trace' }],
+            evidence: [{ category: 'behavior', artifactTypes: ['runtime.trace'] }],
+            workflowRecipes: [
+              {
+                id: 'windows.behavior.capture',
+                title: 'Windows behavior capture',
+                startsWith: ['behavior.capture'],
+                nextTools: ['analysis.evidence.graph'],
+                producesArtifacts: ['runtime.trace'],
+                evidence: ['behavior', 'workflow'],
+                safety: ['passive', 'opt_in_dynamic'],
+                runtimeBackends: ['windows-sandbox'],
+              },
+            ],
+            runtimePolicy,
+            runtime: {
+              type: 'inline',
+              handler: 'executeBehaviorCapture',
+              policy: {
+                passiveByDefault: true,
+                requiresUserOptIn: true,
+                networkPolicy: 'disabled',
+              },
+              isolation: {
+                required: true,
+                backends: ['windows-sandbox'],
+              },
+            },
+          },
+        ] as ToolDefinition[],
+      createPluginManagerMock as any,
+      {
+        runtimeMode: 'remote-sandbox',
+        runtimeClient: {
+          getEndpoint: jest.fn(() => ''),
+          validateRuntimeContract: jest.fn(),
+        },
+      }
+    )
+
+    const result = await handler({ tool_name: 'behavior.capture', force_refresh: false })
+
+    expect(result.ok).toBe(false)
+    expect((result.data as any)?.readiness).toBe('runtime_not_started')
+    expect((result.data as any)?.aspects).toEqual(
+      expect.objectContaining({
+        formats: ['pe'],
+        platforms: ['windows'],
+        execution: ['dynamic'],
+        runtimes: ['windows-sandbox'],
+        capabilities: ['behavior'],
+        evidence: ['timeline'],
+      })
+    )
+    expect((result.data as any)?.aspect_coverage).toEqual(
+      expect.arrayContaining(['formats: pe', 'platforms: windows', 'capabilities: behavior'])
+    )
+    expect((result.data as any)?.format_matrix).toEqual(
+      expect.objectContaining({
+        pe: expect.objectContaining({
+          platforms: ['windows'],
+          execution: ['dynamic'],
+          evidence: ['timeline'],
+          artifacts: ['runtime.trace'],
+          workflow_recipes: ['windows.behavior.capture'],
+        }),
+      })
+    )
+    expect((result.data as any)?.artifact_declarations).toEqual([
+      { type: 'runtime.trace', description: 'Runtime trace' },
+    ])
+    expect((result.data as any)?.evidence_declarations).toEqual([
+      { category: 'behavior', artifactTypes: ['runtime.trace'] },
+    ])
+    expect((result.data as any)?.workflow_recipes).toEqual([
+      expect.objectContaining({
+        id: 'windows.behavior.capture',
+        nextTools: ['analysis.evidence.graph'],
+      }),
+    ])
+    expect((result.data as any)?.runtime_policy).toEqual(runtimePolicy)
+    expect((result.data as any)?.runtime_contract_policy).toEqual(
+      expect.objectContaining({ networkPolicy: 'disabled' })
+    )
+    expect((result.data as any)?.policy_gates).toEqual(
+      expect.objectContaining({
+        passive_by_default: true,
+        requires_user_opt_in: true,
+        requires_isolation: true,
+        allowed_backends: ['windows-sandbox'],
+        network_policy: 'record_only',
+      })
+    )
+    expect((result.data as any)?.runtime_policy_status).toEqual(
+      expect.objectContaining({
+        opt_in_required: true,
+        policy_denied: true,
+        requires_isolation: true,
+        isolation_missing: true,
+        backend_missing: true,
+        reasons: expect.arrayContaining([
+          'opt_in_required',
+          'runtime_endpoint_missing',
+          'isolation_missing',
+        ]),
+      })
+    )
+    expect((result.data as any)?.opt_in_required).toBe(true)
+    expect((result.data as any)?.policy_denied).toBe(true)
+    expect((result.data as any)?.isolation_missing).toBe(true)
+    expect((result.data as any)?.backend_missing).toBe(true)
+  })
+
+  test('reports worker backend readiness without starting external backends', async () => {
+    const handler = createToolReadinessHandler(
+      () =>
+        [
+          {
+            name: 'fixture.worker.run',
+            description: 'fixture worker',
+            inputSchema: {},
+            aspects: {
+              formats: ['PE'],
+              execution: ['static'],
+              evidence: ['structure'],
+            },
+            workerBackend: {
+              version: 'backend-worker.v1',
+              backendName: 'FixtureWorker',
+              backendKind: 'external',
+              adapter: 'fixture.worker',
+              availability: 'optional',
+              defaultMode: 'builtin',
+              supportedModes: ['builtin', 'external'],
+              envVar: 'FIXTURE_WORKER_PATH',
+              outputArtifactTypes: ['fixture_worker_artifact'],
+              policy: {
+                passiveByDefault: true,
+                noNetwork: true,
+                noMutation: true,
+                noLiveExecution: true,
+              },
+              readiness: {
+                doesNotStartBackend: true,
+                setupActions: ['Set FIXTURE_WORKER_PATH for external mode.'],
+              },
+            },
+          },
+        ] as ToolDefinition[],
+      createPluginManagerMock as any
+    )
+
+    const result = await handler({ tool_name: 'fixture.worker.run', force_refresh: false })
+
+    expect(result.ok).toBe(true)
+    expect((result.data as any)?.worker_backend).toEqual(
+      expect.objectContaining({
+        version: 'backend-worker.v1',
+        backendName: 'FixtureWorker',
+        adapter: 'fixture.worker',
+      })
+    )
+    expect((result.data as any)?.worker_backend_readiness).toEqual(
+      expect.objectContaining({
+        status: 'ready',
+        backend_name: 'FixtureWorker',
+        mode: 'builtin',
+        does_not_start_backend: true,
+      })
+    )
+  })
+
+  test('keeps local dynamic planning tools passive while surfacing advisory policy', async () => {
+    const handler = createToolReadinessHandler(
+      () =>
+        [
+          {
+            name: 'windows.runtime.plan',
+            description: 'windows plan',
+            inputSchema: {},
+            aspects: {
+              formats: ['pe'],
+              platforms: ['windows'],
+              execution: ['dynamic'],
+              runtimes: ['windows-sandbox'],
+            },
+          },
+        ] as ToolDefinition[],
+      createPluginManagerMock as any
+    )
+
+    const result = await handler({ tool_name: 'windows.runtime.plan', force_refresh: false })
+
+    expect(result.ok).toBe(true)
+    expect((result.data as any)?.readiness).toBe('ready')
+    expect((result.data as any)?.local_dynamic_policy).toBe('planning')
+    expect((result.data as any)?.runtime_policy_status).toEqual(
+      expect.objectContaining({
+        opt_in_required: false,
+        policy_denied: false,
+        requires_isolation: true,
+        backend_missing: false,
+      })
+    )
+    expect((result.data as any)?.runtime_policy_status?.notes).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('advisory for this local readiness/control-plane tool'),
+      ])
+    )
   })
 
   test('treats runtime deobfuscation tools as runtime-delegated', async () => {
@@ -343,6 +629,77 @@ describe('tool.readiness', () => {
     expect(validateRuntimeContract).toHaveBeenCalledWith(
       { type: 'python-worker', handler: 'frida_worker.py' },
       { forceRefresh: true }
+    )
+  })
+
+  test('does not report ready when matching handler lacks required runtime dimensions', async () => {
+    const strictRuntimeContract = {
+      type: 'python-worker' as const,
+      handler: 'frida_worker.py',
+      modes: ['live_sandbox' as const],
+      requiredTools: ['frida'],
+      isolation: { required: true, backends: ['windows-sandbox' as const] },
+      policy: {
+        requiresIsolation: true,
+        allowedBackends: ['windows-sandbox' as const],
+        networkPolicy: 'record_only' as const,
+      },
+    }
+    const handler = createToolReadinessHandler(
+      () =>
+        [
+          {
+            name: 'fixture.runtime.strict',
+            description: 'strict runtime fixture',
+            inputSchema: {},
+            runtime: strictRuntimeContract,
+          },
+        ] as ToolDefinition[],
+      createPluginManagerMock as any,
+      {
+        runtimeMode: 'manual_runtime',
+        runtimeClient: {
+          getEndpoint: () => 'http://127.0.0.1:4010',
+          validateRuntimeContract: async () => ({
+            supported: false,
+            capabilities: [
+              {
+                type: 'python-worker',
+                handler: 'frida_worker.py',
+                modes: ['safe_simulation'],
+                requiredTools: ['python'],
+                isolation: { required: true, backends: ['docker'] },
+                policy: {
+                  requiresIsolation: true,
+                  allowedBackends: ['docker'],
+                  networkPolicy: 'disabled',
+                },
+              },
+            ],
+          }),
+        },
+      }
+    )
+
+    const result = await handler({ tool_name: 'fixture.runtime.strict', force_refresh: false })
+
+    expect(result.ok).toBe(false)
+    expect((result.data as any)?.readiness).toBe('runtime_capability_missing')
+    expect((result.data as any)?.runtime?.capability_advertised).toBe(false)
+    expect((result.data as any)?.required_runtime_contract).toEqual(strictRuntimeContract)
+    expect((result.data as any)?.available_runtime_backends).toEqual([
+      expect.objectContaining({
+        type: 'python-worker',
+        handler: 'frida_worker.py',
+        modes: ['safe_simulation'],
+        requiredTools: ['python'],
+      }),
+    ])
+    expect((result.data as any)?.execution_semantics).toEqual(
+      expect.objectContaining({
+        actual_mode: 'plan_only',
+        target_requires_delegated_runtime: true,
+      })
     )
   })
 

@@ -1,5 +1,36 @@
 {
   "version": "0.1.0",
+  "policy": {
+    "allows_live_malware": false,
+    "allows_host_execution": false,
+    "default_ci_static_only": true,
+    "external_corpus_env": "RIKUNE_REVERSE_BENCH_EXTERNAL"
+  },
+  "reverse_engineering_benchmark": {
+    "manifest": "tests/fixtures/reverse-benchmark.manifest.json",
+    "default_dimensions": [
+      "tool_discovery_quality",
+      "function_recovery_coverage",
+      "decompile_consensus",
+      "string_config_recovery",
+      "js_obfuscation_routing",
+      "safety_gate_correctness"
+    ],
+    "ci_contract": {
+      "fixture_modes": ["metadata-only", "tiny-synthetic"],
+      "does_not_download_external_corpora": true,
+      "does_not_start_backends": true,
+      "records_residual_gaps": true
+    },
+    "optional_external_corpus": {
+      "enabled_by": "RIKUNE_REVERSE_BENCH_EXTERNAL=1",
+      "requirements": [
+        "Use benign or licensed educational corpora only.",
+        "Run executable-oracle checks inside an isolated no-network runtime.",
+        "Keep large samples and private corpora outside the repository."
+      ]
+    }
+  },
   "samples": [
     {
       "label": "native_dll_com_server",
@@ -30,6 +61,46 @@
         "service_binary": false,
         "plugin_binary": false
       }
+    },
+    {
+      "label": "packed_pe_decompiler_consensus",
+      "sample_id": "sha256:<replace-me>",
+      "kind": "packed_executable",
+      "fixture_mode": "metadata-only",
+      "expected_discovery": {
+        "file_type": "PE",
+        "query": "packed unpack decompile consensus",
+        "recommended_tools": [
+          "unpack.workflow.plan",
+          "ghidra.analyze",
+          "retdec.decompile",
+          "decompile.consensus.compare"
+        ],
+        "safety_gates": ["profile_opt_in_required"]
+      },
+      "residual_gaps": [
+        "Default CI validates recommendation metadata only.",
+        "Real cross-decompiler output scoring requires an opt-in external corpus."
+      ]
+    },
+    {
+      "label": "javascript_obfuscation_static_route",
+      "sample_id": "sha256:<replace-me>",
+      "kind": "javascript",
+      "fixture_mode": "tiny-synthetic",
+      "expected_discovery": {
+        "file_type": "JavaScript",
+        "query": "javascript obfuscation vm bytecode",
+        "recommended_tools": [
+          "javascript.obfuscation.profile",
+          "jsimplifier.pipeline.plan",
+          "jsvmp.bytecode.recover"
+        ]
+      },
+      "residual_gaps": [
+        "The default benchmark does not execute JavaScript.",
+        "JSVMP handler-map quality requires corpus-backed AST/IR comparison."
+      ]
     }
   ]
 }

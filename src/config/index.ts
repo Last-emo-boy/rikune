@@ -167,6 +167,7 @@ export const ConfigSchema = z
       .object({
         enabled: z.boolean().default(true), // Default: enabled
         port: z.number().int().min(1).max(65535).default(18080),
+        publicBaseUrl: z.string().url().optional(),
         apiKey: z.string().optional(), // Auto-generated if not set
         maxFileSize: z
           .number()
@@ -382,10 +383,11 @@ export function loadConfigFromEnv(): Record<string, any> {
     if (!config.workers.static) config.workers.static = {}
     config.workers.static.capaRulesPath = process.env.CAPA_RULES_PATH
   }
-  if (process.env.DIE_PATH) {
+  const diePath = process.env.DIE_PATH || process.env.DIEC_PATH
+  if (diePath) {
     if (!config.workers) config.workers = {}
     if (!config.workers.static) config.workers.static = {}
-    config.workers.static.diePath = process.env.DIE_PATH
+    config.workers.static.diePath = diePath
   }
   if (process.env.GRAPHVIZ_DOT_PATH) {
     if (!config.workers) config.workers = {}
@@ -487,6 +489,14 @@ export function loadConfigFromEnv(): Record<string, any> {
   if (process.env.API_PORT) {
     if (!config.api) config.api = {}
     config.api.port = parseInt(process.env.API_PORT, 10)
+  }
+  const apiPublicBaseUrl =
+    process.env.API_PUBLIC_BASE_URL ||
+    process.env.RIKUNE_API_PUBLIC_BASE_URL ||
+    process.env.RIKUNE_ANALYZER_PUBLIC_URL
+  if (apiPublicBaseUrl) {
+    if (!config.api) config.api = {}
+    config.api.publicBaseUrl = apiPublicBaseUrl
   }
   if (process.env.API_KEY) {
     if (!config.api) config.api = {}

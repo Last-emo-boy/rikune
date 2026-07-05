@@ -201,16 +201,16 @@ ENV NODE_ENV=production \
     WORKSPACE_ROOT=/app/workspaces \
     DB_PATH=/app/data/database.db \
     CACHE_ROOT=/app/cache \
-    HOME=/app/cache/home \
+    HOME=/tmp/rikune-home \
     RUNNING_IN_DOCKER=true \
     UPLOAD_PORT=18081 \
     AUDIT_LOG_PATH=/app/logs/audit.log \
-    XDG_CONFIG_HOME=/app/logs/.config \
-    XDG_CACHE_HOME=/app/cache/xdg \
+    XDG_CONFIG_HOME=/tmp/rikune-home/.config \
+    XDG_CACHE_HOME=/tmp/rikune-home/.cache \
     SANDBOX_PYTHON_PATH=/usr/local/bin/python3
 {{RUNTIME_ENV_VARS}}
 
-RUN mkdir -p /app/workspaces /app/data /app/cache /app/cache/home /app/logs /samples /tmp {{EXTRA_DIRS}} && \
+RUN mkdir -p /app/workspaces /app/data /app/cache /tmp/rikune-home /app/logs /samples /tmp {{EXTRA_DIRS}} && \
     chown -R appuser:appuser /app && \
 {{EXTRA_CHOWN}}    chmod 1777 /tmp
 

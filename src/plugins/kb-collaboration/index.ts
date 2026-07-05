@@ -6,6 +6,12 @@
 
 import { requireDatabase, requireWorkspaceManager, type Plugin } from '../sdk.js'
 import {
+  KB_COLLABORATION_PLATFORMS,
+  KB_COLLABORATION_RUNTIME_POLICY,
+  KB_COLLABORATION_SAFETY,
+  KB_FUNCTION_MATCH_CAPABILITIES,
+  KB_FUNCTION_MATCH_EVIDENCE,
+  KB_FUNCTION_MATCH_FORMATS,
   kbFunctionMatchToolDefinition,
   createKbFunctionMatchHandler,
 } from './tools/kb-function-match.js'
@@ -19,11 +25,24 @@ import { kbImportToolDefinition, createKbImportHandler } from './tools/kb-import
 import { kbStatsToolDefinition, createKbStatsHandler } from './tools/kb-stats.js'
 import { analysisNotesToolDefinition, createAnalysisNotesHandler } from './tools/analysis-notes.js'
 import { ruleLibraryToolDefinition, createRuleLibraryHandler } from './tools/rule-library.js'
+import {
+  kbContextSuggestToolDefinition,
+  createKbContextSuggestHandler,
+} from './tools/kb-context-suggest.js'
 
 const kbCollaborationPlugin: Plugin = {
   id: 'kb-collaboration',
   name: 'Knowledge Base & Collaboration',
   executionDomain: 'static',
+  aspects: {
+    formats: KB_FUNCTION_MATCH_FORMATS,
+    platforms: KB_COLLABORATION_PLATFORMS,
+    execution: ['static', 'correlation'],
+    safety: KB_COLLABORATION_SAFETY,
+    capabilities: [...KB_FUNCTION_MATCH_CAPABILITIES, 'rule-library', 'workflow-recommendation'],
+    evidence: KB_FUNCTION_MATCH_EVIDENCE,
+  },
+  runtimePolicy: KB_COLLABORATION_RUNTIME_POLICY,
   surfaceRules: { tier: 0, category: 'static-analysis' },
   description:
     'Function signature matching, analysis templates, and knowledge base import/export/management',
@@ -43,6 +62,7 @@ const kbCollaborationPlugin: Plugin = {
     server.registerTool(kbStatsToolDefinition, createKbStatsHandler(workspaceManager, database))
     server.registerTool(analysisNotesToolDefinition, createAnalysisNotesHandler(deps))
     server.registerTool(ruleLibraryToolDefinition, createRuleLibraryHandler(deps))
+    server.registerTool(kbContextSuggestToolDefinition, createKbContextSuggestHandler(deps))
     return [
       'kb.function.match',
       'analysis.template',
@@ -52,6 +72,7 @@ const kbCollaborationPlugin: Plugin = {
       'kb.stats',
       'analysis.notes',
       'rule.library',
+      'kb.context.suggest',
     ]
   },
 }

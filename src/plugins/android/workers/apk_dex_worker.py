@@ -183,6 +183,32 @@ def list_dex_classes(data: bytes) -> list:
     return sorted(set(classes))
 
 
+def collect_dex_classes(file_path: str) -> list:
+    """List class names from a standalone DEX or an APK/ZIP container.
+
+    Mirrors the DEX-class extraction in parse_apk_structure: container
+    formats (APK/AAB/zip) are unpacked and every embedded .dex entry is
+    parsed, with class names aggregated and de-duplicated. Standalone DEX
+    files are parsed directly. Returns [] for unrecognised input.
+    """
+    with open(file_path, 'rb') as f:
+        data = f.read()
+
+    if data[:4] == DEX_MAGIC:
+        return list_dex_classes(data)
+
+    if zipfile.is_zipfile(file_path):
+        classes = set()
+        with zipfile.ZipFile(file_path, 'r') as zf:
+            for info in zf.infolist():
+                if info.filename.endswith('.dex'):
+                    classes.update(list_dex_classes(zf.read(info.filename)))
+        return sorted(classes)
+
+    # Fall back to treating the bytes as raw DEX (returns [] if not DEX).
+    return list_dex_classes(data)
+
+
 # ---------------------------------------------------------------------------
 # APK structure parsing
 # ---------------------------------------------------------------------------
@@ -391,9 +417,7 @@ def main():
             class_filter=request.get('class_filter'),
         )
     elif action == 'list_dex_classes':
-        with open(request['file_path'], 'rb') as f:
-            data = f.read()
-        classes = list_dex_classes(data)
+        classes = collect_dex_classes(request['file_path'])
         result = {'ok': True, 'classes': classes, 'class_count': len(classes)}
     elif action == 'detect_jni':
         jni = detect_jni_exports(request['file_path'])

@@ -617,7 +617,7 @@ export const reconstructWorkflowToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Run the main source-like reconstruction workflow with auto routing, binary/language preflight, optional function-index recovery, planning, export, and cache observability. ' +
-    'If the user has not picked a workflow yet, prefer workflow.analyze.auto so the server can route by intent first. ' +
+    'If the user has not picked a workflow yet, prefer workflow.search so the server can rank matching profiles first. ' +
     'Use this after sample registration when you want one orchestrated deep-analysis path instead of calling many leaf tools manually. ' +
     'Do not use this as a health check or before the sample is ingested. ' +
     'Read coverage_level, completion_state, coverage_gaps, and upgrade_paths to distinguish queued, bounded, degraded, and fully completed reconstruction output. ' +
@@ -625,7 +625,7 @@ export const reconstructWorkflowToolDefinition: ToolDefinition = {
     '- Use when: you want one-shot reconstruction and export across native or .NET paths.\n' +
     '- Do not use when: you only need quick profiling, string/Xref correlation, or a single leaf artifact.\n' +
     '- Intermediate step: use analysis.context.link, code.xrefs.analyze, or code.function.cfg(format=dot|mermaid) first when you need bounded indicator-to-function or graph context before paying reconstruction cost.\n' +
-    '- Typical next step: if queued, poll task.status(job_id); if completed, inspect export artifacts or continue with module/function review tools.\n' +
+    '- Typical next step: if queued, prefer workflow.run action=status when a plan_id/run_id is available; use task.status(job_id) only for raw queue details. If completed, inspect export artifacts or continue with module/function review tools.\n' +
     '- Common mistake: starting reconstruct before the sample exists or without waiting for queued completion.',
   inputSchema: ReconstructWorkflowInputSchema,
   outputSchema: ReconstructWorkflowOutputSchema,
@@ -1431,6 +1431,13 @@ export function createReconstructWorkflowHandler(
           )
         )
       }
+      // Re-query persisted analyses right before assembling the export so a
+      // ghidra function-index artifact that landed during the preceding async
+      // evidence/semantic loads is picked up and used instead of a stale
+      // "unavailable" view (timing race). No Ghidra re-run and no blocking wait;
+      // findAnalysesBySample is append-only so this can only upgrade the view.
+      analyses = database.findAnalysesBySample(input.sample_id)
+      completedGhidraAnalysis = findBestGhidraAnalysis(analyses, 'function_index')
       const functionDefinitionMarker = pickLatestAnalysisMarker(
         analyses,
         (analysis) => analysis.stage === 'function_definition'

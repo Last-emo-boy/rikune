@@ -33,8 +33,8 @@ afterEach(async () => {
             return
           }
           server.close(() => resolve())
-        }),
-    ),
+        })
+    )
   )
   activeServers.clear()
 })
@@ -73,19 +73,21 @@ describe('runtime-client capability negotiation', () => {
       if (req.method === 'GET' && req.url === '/capabilities') {
         capabilityRequests += 1
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          ok: true,
-          data: {
-            runtime_backends: [
-              {
-                type: 'inline',
-                handler: 'executeSandboxExecute',
-                description: 'Sandbox execute backend.',
-                requiresSample: true,
-              },
-            ],
-          },
-        }))
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: {
+              runtime_backends: [
+                {
+                  type: 'inline',
+                  handler: 'executeSandboxExecute',
+                  description: 'Sandbox execute backend.',
+                  requiresSample: true,
+                },
+              ],
+            },
+          })
+        )
         return
       }
       res.writeHead(404, { 'Content-Type': 'application/json' })
@@ -132,19 +134,21 @@ describe('runtime-client capability negotiation', () => {
       if (req.method === 'GET' && req.url === '/capabilities') {
         capabilityRequests += 1
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          ok: true,
-          data: {
-            runtime_backends: [
-              {
-                type: 'spawn',
-                handler: 'native.sample.execute',
-                description: 'Execute uploaded samples directly.',
-                requiresSample: true,
-              },
-            ],
-          },
-        }))
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: {
+              runtime_backends: [
+                {
+                  type: 'spawn',
+                  handler: 'native.sample.execute',
+                  description: 'Execute uploaded samples directly.',
+                  requiresSample: true,
+                },
+              ],
+            },
+          })
+        )
         return
       }
 
@@ -181,6 +185,95 @@ describe('runtime-client capability negotiation', () => {
     expect(executeRequests).toBe(0)
   })
 
+  test('validates runtime contract dimensions beyond type and handler', async () => {
+    const { endpoint } = await startRuntimeServer((req, res) => {
+      if (req.method === 'GET' && req.url === '/capabilities') {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: {
+              runtime_backends: [
+                {
+                  type: 'python-worker',
+                  handler: 'frida_worker.py',
+                  description: 'Frida worker bridge.',
+                  requiresSample: true,
+                  modes: ['safe_simulation'],
+                  requiredTools: ['python'],
+                  isolation: { required: true, backends: ['docker'] },
+                  policy: {
+                    requiresIsolation: true,
+                    allowedBackends: ['docker'],
+                    networkPolicy: 'disabled',
+                    maxRuntimeMs: 1000,
+                  },
+                },
+              ],
+            },
+          })
+        )
+        return
+      }
+
+      res.writeHead(404, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: false, error: 'Not found' }))
+    })
+
+    const client = createRuntimeClient({ endpoint })
+    const missingDimensions = await client.validateRuntimeContract({
+      type: 'python-worker',
+      handler: 'frida_worker.py',
+      modes: ['live_sandbox'],
+      requiredTools: ['frida'],
+      isolation: { required: true, backends: ['windows-sandbox'] },
+      policy: {
+        requiresIsolation: true,
+        allowedBackends: ['windows-sandbox'],
+        networkPolicy: 'record_only',
+      },
+    })
+
+    expect(missingDimensions.supported).toBe(false)
+    expect(missingDimensions.capability).toBeUndefined()
+    expect(missingDimensions.capabilities?.[0]).toEqual(
+      expect.objectContaining({
+        type: 'python-worker',
+        handler: 'frida_worker.py',
+        modes: ['safe_simulation'],
+        requiredTools: ['python'],
+        isolation: { required: true, backends: ['docker'] },
+        policy: expect.objectContaining({
+          requiresIsolation: true,
+          allowedBackends: ['docker'],
+          networkPolicy: 'disabled',
+        }),
+      })
+    )
+
+    const supported = await client.validateRuntimeContract({
+      type: 'python-worker',
+      handler: 'frida_worker.py',
+      modes: ['safe_simulation'],
+      requiredTools: ['python'],
+      isolation: { required: true, backends: ['docker'] },
+      policy: {
+        requiresIsolation: true,
+        allowedBackends: ['docker'],
+        networkPolicy: 'disabled',
+        maxRuntimeMs: 500,
+      },
+    })
+
+    expect(supported.supported).toBe(true)
+    expect(supported.capability).toEqual(
+      expect.objectContaining({
+        type: 'python-worker',
+        handler: 'frida_worker.py',
+      })
+    )
+  })
+
   test('setEndpoint invalidates cached capabilities for subsequent validation', async () => {
     let firstCapabilityRequests = 0
     let secondCapabilityRequests = 0
@@ -189,19 +282,21 @@ describe('runtime-client capability negotiation', () => {
       if (req.method === 'GET' && req.url === '/capabilities') {
         firstCapabilityRequests += 1
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          ok: true,
-          data: {
-            runtime_backends: [
-              {
-                type: 'spawn',
-                handler: 'native.sample.execute',
-                description: 'Execute uploaded samples directly.',
-                requiresSample: true,
-              },
-            ],
-          },
-        }))
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: {
+              runtime_backends: [
+                {
+                  type: 'spawn',
+                  handler: 'native.sample.execute',
+                  description: 'Execute uploaded samples directly.',
+                  requiresSample: true,
+                },
+              ],
+            },
+          })
+        )
         return
       }
       res.writeHead(404, { 'Content-Type': 'application/json' })
@@ -212,19 +307,21 @@ describe('runtime-client capability negotiation', () => {
       if (req.method === 'GET' && req.url === '/capabilities') {
         secondCapabilityRequests += 1
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          ok: true,
-          data: {
-            runtime_backends: [
-              {
-                type: 'inline',
-                handler: 'executeSandboxExecute',
-                description: 'Run sandbox execution inline.',
-                requiresSample: true,
-              },
-            ],
-          },
-        }))
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: {
+              runtime_backends: [
+                {
+                  type: 'inline',
+                  handler: 'executeSandboxExecute',
+                  description: 'Run sandbox execution inline.',
+                  requiresSample: true,
+                },
+              ],
+            },
+          })
+        )
         return
       }
       res.writeHead(404, { 'Content-Type': 'application/json' })
@@ -264,19 +361,21 @@ describe('runtime-client capability negotiation', () => {
       if (req.method === 'GET' && req.url === '/capabilities') {
         firstCapabilityRequests += 1
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          ok: true,
-          data: {
-            runtime_backends: [
-              {
-                type: 'spawn',
-                handler: 'native.sample.execute',
-                description: 'Execute uploaded samples directly.',
-                requiresSample: true,
-              },
-            ],
-          },
-        }))
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: {
+              runtime_backends: [
+                {
+                  type: 'spawn',
+                  handler: 'native.sample.execute',
+                  description: 'Execute uploaded samples directly.',
+                  requiresSample: true,
+                },
+              ],
+            },
+          })
+        )
         return
       }
       res.writeHead(404, { 'Content-Type': 'application/json' })
@@ -287,19 +386,21 @@ describe('runtime-client capability negotiation', () => {
       if (req.method === 'GET' && req.url === '/capabilities') {
         secondCapabilityRequests += 1
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          ok: true,
-          data: {
-            runtime_backends: [
-              {
-                type: 'inline',
-                handler: 'executeDebugSession',
-                description: 'Start debug sessions inline.',
-                requiresSample: true,
-              },
-            ],
-          },
-        }))
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: {
+              runtime_backends: [
+                {
+                  type: 'inline',
+                  handler: 'executeDebugSession',
+                  description: 'Start debug sessions inline.',
+                  requiresSample: true,
+                },
+              ],
+            },
+          })
+        )
         return
       }
       res.writeHead(404, { 'Content-Type': 'application/json' })
@@ -312,7 +413,8 @@ describe('runtime-client capability negotiation', () => {
 
     const originalFetch = global.fetch
     global.fetch = async (input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       expect(url).toBe('https://host-agent.invalid/sandbox/start')
       return {
         ok: true,

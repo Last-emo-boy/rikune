@@ -7,6 +7,23 @@ Versioning where practical.
 
 ## [Unreleased]
 
+### Plugin Matrix and SDK
+
+- Expanded the plugin SDK contract with manifest v2 authoring helpers, aspect taxonomy, artifact/evidence helpers, dynamic runtime policy metadata, and fixture-backed harness coverage.
+- Added passive static plugin coverage for common binary families including Windows installers/debug symbols, Linux packages/binaries, macOS/iOS containers/signing, Android packages, JVM, .NET/Unity, firmware filesystems, containers, WASM, and script bytecode.
+- Added plan-only dynamic runtime plugins for Windows, Linux, macOS, iOS, Android, and WASM with opt-in isolation policy and no live runtime startup by default.
+- Updated plugin matrix documentation and release quality gates for `qualityWarnings`, aspect metadata, output schemas, and runtime policy compatibility.
+- Completed release-guarded workflow recipes across memory forensics, VM/symbolic analysis, KB analysis memory, runtime opt-in plans, SBOM provenance, Android behavior graphing, Apple security profiling, firmware/IoT planning, Office macro profiling, unpacking retriage, sample family clustering, and malware intel feedback loops.
+- Added release guard coverage so completed vertical workflow recipes remain visible through plugin discovery metadata, tool help/readiness surfaces, and the documented plugin matrix without invoking runtime, network, mount, install, emulator, or debugger paths.
+- Added passive next-wave plugins for JavaScript/JSVMP deobfuscation planning, rev.ng lift/decompile planning, Triton symbolic planning, and Miasm IR/data-flow planning, grounded in current JSIR/CASCADE, REstringer, rev.ng, Triton, and Miasm ecosystem signals while keeping all new backends plan-only by default.
+- Expanded the next-wave reverse-engineering suite with plan-only JSVMP bytecode/handler-map recovery, LIEF binary structure/transformation planning, radare2 cross-backend compatibility planning, and WABT WebAssembly toolchain planning; all remain passive and opt-in before any external backend process exists.
+- Added frontier plan-only suite coverage for JSIMPLIFIER, JSIR/CASCADE, REstringer, Remill, GTIRB, QBDI, superset-decompilation, and CuLifter-style workflows, plus shared backend handoff contracts and richer JSVMP static bytecode/dispatcher profiling.
+- Added `backend-worker.v1` SDK metadata and bounded Worker-backed tools for REstringer, JSIMPLIFIER, JSIR/CASCADE, GTIRB, Remill, Manifold, QBDI, and CuLifter. Worker metadata is surfaced through `plugin.list`, `tools.discover`, `tool.help`, and `tool.readiness` without starting external backends; QBDI remains explicit opt-in delegated runtime only.
+- Added Docker backend packaging routes and backend install profiles. Default images install low-risk static wrappers such as REstringer, JSIMPLIFIER, Manifold, WABT, and LIEF validation; optional profiles can enable JSIR/CASCADE, JSVMP, GTIRB, radare2, and Triton-style static routes; heavy, runtime, GPU, BYO, sidecar, and license-gated backends stay explicit.
+- Added `jsvmp.bytecode.recover` as a bounded Worker-backed JSVMP static recovery tool and wired in-repo JavaScript/Manifold worker wrappers through the external `backend-worker.v1` JSON stdin/stdout bridge.
+- Added passive `ml.model.inventory` coverage for SafeTensors, GGUF/GGML, ONNX, TFLite, PyTorch/pickle checkpoints, and NumPy model artifacts, with unsafe deserialization, external data, prompt/template, and resource-risk signals while forbidding model load, inference, framework import, archive extraction, mutation, and network access.
+- Added passive `shader.ir.inventory` coverage for SPIR-V, DXIL/DXBC containers, WGSL source, and Metal library hints, with entry point, resource binding, container part, and GPU/IR routing signals while forbidding validators, compilers, disassemblers, GPU drivers, shader runtimes, mutation, and network access.
+
 ### Runtime Stability
 
 - Fixed oversized `workflow.analyze.status` responses so response pruning keeps schema-valid structured content and reports pruning through top-level warnings.
@@ -19,11 +36,13 @@ Versioning where practical.
 ### Tests
 
 - Added regression coverage for response pruning, staged run `job_id` preservation, `.pdata` function materialization, and runtime worker idle eviction.
+- Added backend packaging and Docker generator release guards covering install route classification, backend profile gating, external Worker execution denial, timeout, output-size limits, malformed output, and in-repo wrapper external-mode execution.
 
 ### Documentation
 
-- Reworked active documentation to match the current `src/core/*` architecture, staged `workflow.analyze.start/status/promote` pipeline, 56 built-in plugin inventory, Docker profile model, and Analyzer/Runtime split.
+- Reworked active documentation to match the current `src/core/*` architecture, staged `workflow.analyze.start/status/promote` pipeline, built-in plugin inventory, Docker profile model, and Analyzer/Runtime split.
 - Updated installation, deployment, plugin, architecture, troubleshooting, SDK, worker, script-resource, and MCP client setup docs.
+- Documented backend auto-install tiers, `--backend-profile`, `RIKUNE_BACKEND_PROFILE`, Worker packaging metadata, and the default/optional/heavy/runtime/GPU/license-gated backend matrix.
 
 ## [1.0.0-beta.3] - 2025-07-14
 

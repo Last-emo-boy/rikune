@@ -61,6 +61,21 @@ export const ghidraHealthToolDefinition: ToolDefinition = {
     'Run a Ghidra environment health check plus optional end-to-end downstream probes using a real analyzed sample/project.',
   inputSchema: ghidraHealthInputSchema,
   outputSchema: ghidraHealthOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'wasm', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'ios', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'ppc', 'riscv', 'wasm'],
+    execution: ['static', 'decompilation'],
+    safety: ['passive'],
+    capabilities: ['readiness', 'decompile', 'cfg'],
+    evidence: ['provenance'],
+  },
+  evidence: [
+    {
+      category: 'provenance',
+      description: 'Ghidra backend readiness and downstream probe capability metadata',
+    },
+  ],
 }
 
 interface GhidraHealthDependencies {

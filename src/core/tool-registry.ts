@@ -66,6 +66,14 @@ import { registerPluginTools } from './tool-registry/plugin-tools.js'
 import { registerDiagnosticsTools } from './tool-registry/diagnostics-tools.js'
 import { registerScriptResources } from './tool-registry/script-resources.js'
 
+const CORE_GATEWAY_TOOLS = ['workflow.search', 'workflow.run', 'artifact.read']
+const POST_PLUGIN_CORE_TOOLS = [
+  'plugin.list',
+  'plugin.enable',
+  'plugin.disable',
+  'system.config.validate',
+]
+
 export async function registerAllTools(
   server: ToolRegistrar &
     PromptRegistrar &
@@ -82,12 +90,14 @@ export async function registerAllTools(
   registerTaskTools(server, deps)
   registerSystemTools(server, deps)
   registerUtilityTools(server, {
+    database: deps.database,
     runtimeClient: deps.runtimeClient ?? null,
     runtimeMode: deps.config?.runtime?.mode ?? 'disabled',
   })
 
   const coreToolNames = Array.from(server.getToolDefinitions()).map((d) => d.name)
   getToolSurfaceManager().registerCoreTools(coreToolNames)
+  getToolSurfaceManager().registerGatewayCoreTools(CORE_GATEWAY_TOOLS)
 
   const pluginDeps = {
     ...deps,
@@ -151,12 +161,7 @@ export async function registerAllTools(
   registerPluginTools(server)
   registerDiagnosticsTools(server)
 
-  getToolSurfaceManager().registerCoreTools([
-    'plugin_list',
-    'plugin_enable',
-    'plugin_disable',
-    'config_validate',
-  ])
+  getToolSurfaceManager().registerCoreTools(POST_PLUGIN_CORE_TOOLS)
 
   registerScriptResources(server)
 }

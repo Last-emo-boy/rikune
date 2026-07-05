@@ -7,7 +7,8 @@ import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
-import { scoreVMCandidate, classifyVMComponents, type DecompiledFunc } from '../vm/vm-detector.js'
+import { scoreVMCandidate, classifyVMComponents } from '../vm/vm-detector.js'
+import { extractDecompiledFunctions } from './vm-function-evidence.js'
 
 const TOOL_NAME = 'vm.detect'
 
@@ -37,42 +38,6 @@ export const vmDetectToolDefinition: ToolDefinition = {
     'Detect virtual machine (VM) based protection in a binary. Scores functions for VM-like patterns (dispatch loops, bytecode fetches, handler tables) and classifies VM components.',
   inputSchema: vmDetectInputSchema,
   outputSchema: vmDetectOutputSchema,
-}
-
-function extractDecompiledFunctions(database: DatabaseManager, sampleId: string): DecompiledFunc[] {
-  const functions: DecompiledFunc[] = []
-  const evidence = database.findAnalysisEvidenceBySample(sampleId)
-  if (!Array.isArray(evidence)) return functions
-
-  for (const entry of evidence) {
-    const family = entry.evidence_family ?? ''
-    if (family === 'function_map' || family === 'decompilation' || family === 'functions') {
-      const data =
-        typeof entry.result_json === 'string' ? JSON.parse(entry.result_json) : entry.result_json
-      if (!data) continue
-
-      const fnList =
-        (data as Record<string, unknown>).functions ??
-        (data as Record<string, unknown>).decompiled_functions ??
-        []
-      if (Array.isArray(fnList)) {
-        for (const fn of fnList) {
-          if (fn && typeof fn === 'object') {
-            const obj = fn as Record<string, unknown>
-            const code = String(obj.decompiled ?? obj.code ?? obj.decompiled_code ?? '')
-            if (code) {
-              functions.push({
-                name: String(obj.name ?? obj.function_name ?? 'unknown'),
-                address: String(obj.address ?? obj.offset ?? obj.addr ?? '0x0'),
-                decompiled_code: code,
-              })
-            }
-          }
-        }
-      }
-    }
-  }
-  return functions
 }
 
 export function createVmDetectHandler(

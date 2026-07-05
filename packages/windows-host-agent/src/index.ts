@@ -21,8 +21,15 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const PORT = parseInt(process.env.HOST_AGENT_PORT || '18082', 10)
-const BIND_HOST = process.env.HOST_AGENT_BIND_HOST || process.env.HOST_AGENT_HOST || '0.0.0.0'
-const API_KEY = process.env.HOST_AGENT_API_KEY || ''
+const BIND_HOST = (
+  process.env.HOST_AGENT_BIND_HOST ||
+  process.env.HOST_AGENT_HOST ||
+  '127.0.0.1'
+).trim()
+const API_KEY = (process.env.HOST_AGENT_API_KEY || '').trim()
+const RUNTIME_PROXY_BIND_HOST = (
+  process.env.HOST_AGENT_RUNTIME_BIND_HOST || (isLoopbackHost(BIND_HOST) ? '127.0.0.1' : '0.0.0.0')
+).trim()
 const RUNTIME_INTERNAL_PORT = 18081
 const LISTEN_PORT_MIN = 18081
 const LISTEN_PORT_MAX = 19000
@@ -41,6 +48,7 @@ interface ActiveSandbox {
   endpoint: string
   runtimeHost: string
   listenPort: number
+  runtimeProxyHost?: string
   hypervVmName?: string
   hypervSnapshotName?: string
   hypervRestoreOnRelease?: boolean
@@ -129,6 +137,85 @@ function normalizeBackend(raw?: string): HostAgentBackend {
     return 'hyperv-vm'
   }
   return 'windows-sandbox'
+}
+
+function isLoopbackHost(host: string): boolean {
+  const value = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+  return value === 'localhost' || value === '::1' || value.startsWith('127.')
+}
+
+function isAllInterfacesHost(host: string): boolean {
+  const value = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+  return value === '0.0.0.0' || value === '::' || value === '*'
+}
+
+function isProductionEnv(): boolean {
+  return (process.env.NODE_ENV || '').trim().toLowerCase() === 'production'
+}
+
+function getHostAgentAuthDefaultError(): string | null {
+  if (API_KEY) {
+    return null
+  }
+  if (isProductionEnv()) {
+    return 'HOST_AGENT_API_KEY is required when NODE_ENV=production. Set HOST_AGENT_API_KEY before starting Windows Host Agent.'
+  }
+  if (!isLoopbackHost(BIND_HOST)) {
+    return `HOST_AGENT_API_KEY is required when HOST_AGENT_BIND_HOST/HOST_AGENT_HOST binds Windows Host Agent to non-loopback address '${BIND_HOST}'. Use 127.0.0.1 for unauthenticated local development or set HOST_AGENT_API_KEY.`
+  }
+  return null
+}
+
+function getConfiguredRuntimeApiKey(
+  request: StartSandboxRequest | HyperVActionRequest
+): string | undefined {
+  return typeof request.runtimeApiKey === 'string' && request.runtimeApiKey.trim().length > 0
+    ? request.runtimeApiKey.trim()
+    : process.env.HOST_AGENT_RUNTIME_API_KEY || process.env.RUNTIME_API_KEY || API_KEY || undefined
+}
+
+function getSandboxRuntimeAuthDefaultError(runtimeApiKey: string | undefined): string | null {
+  if (runtimeApiKey) {
+    return null
+  }
+  return 'HOST_AGENT_RUNTIME_API_KEY or RUNTIME_API_KEY is required when Windows Host Agent launches a Sandbox Runtime Node, because the runtime binds to 0.0.0.0 inside the sandbox. Pass runtimeApiKey in /sandbox/start for controlled local development.'
+}
+
+function getRuntimeEndpointAuthDefaultError(
+  runtimeApiKey: string | undefined,
+  endpoint: string
+): string | null {
+  if (runtimeApiKey) {
+    return null
+  }
+  if (isProductionEnv()) {
+    return 'RUNTIME_API_KEY, HOST_AGENT_RUNTIME_API_KEY, or HOST_AGENT_API_KEY is required when NODE_ENV=production before connecting a Runtime Node through Windows Host Agent.'
+  }
+  try {
+    const host = new URL(endpoint).hostname
+    if (isLoopbackHost(host)) {
+      return null
+    }
+    return `RUNTIME_API_KEY, HOST_AGENT_RUNTIME_API_KEY, or HOST_AGENT_API_KEY is required when Runtime Node endpoint '${endpoint}' is non-loopback.`
+  } catch {
+    return `RUNTIME_API_KEY, HOST_AGENT_RUNTIME_API_KEY, or HOST_AGENT_API_KEY is required when Runtime Node endpoint '${endpoint}' cannot be verified as loopback.`
+  }
+}
+
+function getAdvertisedRuntimeHost(runtimeProxyBindHost: string): string {
+  if (isAllInterfacesHost(runtimeProxyBindHost)) {
+    return getPrimaryIp() || '127.0.0.1'
+  }
+  if (runtimeProxyBindHost.toLowerCase() === 'localhost') {
+    return '127.0.0.1'
+  }
+  return runtimeProxyBindHost.replace(/^\[|\]$/g, '')
 }
 
 function readEnvFlag(name: string, defaultValue = false): boolean {
@@ -804,13 +891,7 @@ async function restoreHyperVCheckpoint(body: unknown): Promise<Record<string, un
     typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs)
       ? Math.max(1000, request.timeoutMs)
       : parseInt(process.env.HOST_AGENT_HYPERV_WAIT_TIMEOUT_MS || '120000', 10)
-  const runtimeApiKey =
-    typeof request.runtimeApiKey === 'string' && request.runtimeApiKey.trim().length > 0
-      ? request.runtimeApiKey.trim()
-      : process.env.HOST_AGENT_RUNTIME_API_KEY ||
-        process.env.RUNTIME_API_KEY ||
-        API_KEY ||
-        undefined
+  const runtimeApiKey = getConfiguredRuntimeApiKey(request)
 
   if (process.platform !== 'win32') {
     return {
@@ -828,6 +909,18 @@ async function restoreHyperVCheckpoint(body: unknown): Promise<Record<string, un
       backend: 'hyperv-vm',
       vmName,
       error: 'No snapshot name provided. Set HOST_AGENT_HYPERV_SNAPSHOT_NAME or pass snapshotName.',
+    }
+  }
+  if (startAfterRestore && waitForRuntime && endpoint) {
+    const runtimeAuthDefaultError = getRuntimeEndpointAuthDefaultError(runtimeApiKey, endpoint)
+    if (runtimeAuthDefaultError) {
+      return {
+        ok: false,
+        backend: 'hyperv-vm',
+        vmName,
+        endpoint: endpoint || null,
+        error: runtimeAuthDefaultError,
+      }
     }
   }
 
@@ -966,39 +1059,60 @@ async function waitForRuntimeReady(
   return null
 }
 
-async function addPortProxy(sandboxIp: string, listenPort: number): Promise<void> {
-  logger.warn('netsh portproxy is binding to all interfaces. Consider restricting network access.')
-  return new Promise((resolve, reject) => {
-    execFile(
-      'netsh',
-      ['interface', 'portproxy', 'delete', 'v4tov4', `listenport=${listenPort}`],
-      () => {
-        execFile(
-          'netsh',
-          [
-            'interface',
-            'portproxy',
-            'add',
-            'v4tov4',
-            `listenport=${listenPort}`,
-            `connectaddress=${sandboxIp}`,
-            `connectport=${RUNTIME_INTERNAL_PORT}`,
-          ],
-          (err) => {
-            if (err) return reject(err)
-            resolve()
-          }
-        )
-      }
+async function addPortProxy(
+  sandboxIp: string,
+  listenPort: number,
+  listenAddress: string
+): Promise<void> {
+  if (!isLoopbackHost(listenAddress)) {
+    logger.warn(
+      { listenAddress },
+      'netsh portproxy is binding to a non-loopback interface. Ensure Runtime Node API key is configured.'
     )
+  }
+  return new Promise((resolve, reject) => {
+    const deleteArgs = [
+      'interface',
+      'portproxy',
+      'delete',
+      'v4tov4',
+      `listenport=${listenPort}`,
+      `listenaddress=${listenAddress}`,
+    ]
+    execFile('netsh', deleteArgs, () => {
+      execFile(
+        'netsh',
+        [
+          'interface',
+          'portproxy',
+          'add',
+          'v4tov4',
+          `listenport=${listenPort}`,
+          `listenaddress=${listenAddress}`,
+          `connectaddress=${sandboxIp}`,
+          `connectport=${RUNTIME_INTERNAL_PORT}`,
+        ],
+        (err) => {
+          if (err) return reject(err)
+          resolve()
+        }
+      )
+    })
   })
 }
 
-async function removePortProxy(listenPort: number): Promise<void> {
+async function removePortProxy(listenPort: number, listenAddress: string): Promise<void> {
   return new Promise((resolve) => {
     execFile(
       'netsh',
-      ['interface', 'portproxy', 'delete', 'v4tov4', `listenport=${listenPort}`],
+      [
+        'interface',
+        'portproxy',
+        'delete',
+        'v4tov4',
+        `listenport=${listenPort}`,
+        `listenaddress=${listenAddress}`,
+      ],
       () => resolve()
     )
   })
@@ -1035,13 +1149,7 @@ async function startHyperVRuntime(body: unknown): Promise<StartSandboxResult> {
     typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs)
       ? Math.max(1000, request.timeoutMs)
       : parseInt(process.env.HOST_AGENT_HYPERV_WAIT_TIMEOUT_MS || '120000', 10)
-  const runtimeApiKey =
-    typeof request.runtimeApiKey === 'string' && request.runtimeApiKey.trim().length > 0
-      ? request.runtimeApiKey.trim()
-      : process.env.HOST_AGENT_RUNTIME_API_KEY ||
-        process.env.RUNTIME_API_KEY ||
-        API_KEY ||
-        undefined
+  const runtimeApiKey = getConfiguredRuntimeApiKey(request)
 
   const { vmName, snapshotName, endpoint, restoreOnStart, restoreOnRelease, stopOnRelease } =
     getHyperVConfig(request)
@@ -1058,6 +1166,15 @@ async function startHyperVRuntime(body: unknown): Promise<StartSandboxResult> {
       ok: false,
       backend: 'hyperv-vm',
       error: 'HOST_AGENT_HYPERV_RUNTIME_ENDPOINT is required for the hyperv-vm backend',
+      diagnostics: buildHyperVDiagnostics({ vmName, snapshotName, endpoint }),
+    }
+  }
+  const runtimeAuthDefaultError = getRuntimeEndpointAuthDefaultError(runtimeApiKey, endpoint)
+  if (runtimeAuthDefaultError) {
+    return {
+      ok: false,
+      backend: 'hyperv-vm',
+      error: runtimeAuthDefaultError,
       diagnostics: buildHyperVDiagnostics({ vmName, snapshotName, endpoint }),
     }
   }
@@ -1176,13 +1293,11 @@ async function startSandbox(body: unknown): Promise<StartSandboxResult> {
     typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs)
       ? Math.max(1000, request.timeoutMs)
       : 60000
-  const runtimeApiKey =
-    typeof request.runtimeApiKey === 'string' && request.runtimeApiKey.trim().length > 0
-      ? request.runtimeApiKey.trim()
-      : process.env.HOST_AGENT_RUNTIME_API_KEY ||
-        process.env.RUNTIME_API_KEY ||
-        API_KEY ||
-        undefined
+  const runtimeApiKey = getConfiguredRuntimeApiKey(request)
+  const runtimeAuthDefaultError = getSandboxRuntimeAuthDefaultError(runtimeApiKey)
+  if (runtimeAuthDefaultError) {
+    return { ok: false, error: runtimeAuthDefaultError }
+  }
   const listenPort = await allocateListenPort()
   if (listenPort === null) {
     return { ok: false, error: 'No available listen port for new Sandbox runtime' }
@@ -1238,12 +1353,6 @@ async function startSandbox(body: unknown): Promise<StartSandboxResult> {
   const wsbPath = path.join(sandboxDir, 'runtime.wsb')
   const wsbDiagnostics = await writeWsbConfig(wsbPath, sandboxDir, runtimeEntryHost, runtimeApiKey)
 
-  if (process.env.NODE_ENV === 'production' && !API_KEY) {
-    logger.warn(
-      'HOST_AGENT_API_KEY is not set. The sandbox runtime is exposed to all network interfaces.'
-    )
-  }
-
   logger.info({ sandboxDir, wsbPath, listenPort }, 'Launching Windows Sandbox via Host Agent')
 
   const sandboxProcess = spawn('C:\\Windows\\System32\\WindowsSandbox.exe', [wsbPath], {
@@ -1287,16 +1396,15 @@ async function startSandbox(body: unknown): Promise<StartSandboxResult> {
   }
 
   try {
-    await addPortProxy(ready.host, listenPort)
+    await addPortProxy(ready.host, listenPort, RUNTIME_PROXY_BIND_HOST)
   } catch (err) {
     logger.warn(
-      { err, listenPort },
+      { err, listenPort, listenAddress: RUNTIME_PROXY_BIND_HOST },
       'Failed to add portproxy; external Analyzer may not reach the runtime'
     )
   }
 
-  const hostIp = getPrimaryIp() || '127.0.0.1'
-  const endpoint = `http://${hostIp}:${listenPort}`
+  const endpoint = `http://${getAdvertisedRuntimeHost(RUNTIME_PROXY_BIND_HOST)}:${listenPort}`
   const sandboxId = randomUUID()
 
   activeSandboxes.set(sandboxId, {
@@ -1308,10 +1416,17 @@ async function startSandbox(body: unknown): Promise<StartSandboxResult> {
     endpoint,
     runtimeHost: ready.host,
     listenPort,
+    runtimeProxyHost: RUNTIME_PROXY_BIND_HOST,
   })
 
   logger.info(
-    { sandboxId, endpoint, runtimeHost: ready.host, listenPort },
+    {
+      sandboxId,
+      endpoint,
+      runtimeHost: ready.host,
+      listenPort,
+      runtimeProxyHost: RUNTIME_PROXY_BIND_HOST,
+    },
     'Sandbox started and portproxied'
   )
   return { ok: true, endpoint, sandboxId, backend: 'windows-sandbox' }
@@ -1370,7 +1485,7 @@ async function stopSandbox(sandboxId: string): Promise<{ ok: boolean; error?: st
   } catch {}
   try {
     if (box.listenPort > 0) {
-      await removePortProxy(box.listenPort)
+      await removePortProxy(box.listenPort, box.runtimeProxyHost || RUNTIME_PROXY_BIND_HOST)
     }
   } catch {}
   if (box.sandboxDir) {
@@ -1483,6 +1598,12 @@ const server = createServer(async (req, res) => {
     }
   }
 })
+
+const hostAgentAuthDefaultError = getHostAgentAuthDefaultError()
+if (hostAgentAuthDefaultError) {
+  logger.error({ host: BIND_HOST, port: PORT, apiKeyConfigured: false }, hostAgentAuthDefaultError)
+  process.exit(1)
+}
 
 server.listen(PORT, BIND_HOST, () => {
   logger.info(

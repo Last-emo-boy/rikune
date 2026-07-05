@@ -92,6 +92,32 @@ describe('static.behavior.classify tool', () => {
   test('exports behavior classifier tool definition', () => {
     expect(staticBehaviorClassifyToolDefinition.name).toBe('static.behavior.classify')
     expect(staticBehaviorClassifyToolDefinition.description).toContain('persistence')
+    expect(
+      staticBehaviorClassifyToolDefinition.artifacts?.map((artifact) => artifact.type)
+    ).toContain('static_behavior_classifier')
+    expect(staticBehaviorClassifyToolDefinition.evidence?.map((entry) => entry.category)).toEqual(
+      expect.arrayContaining([
+        'behavior',
+        'strings',
+        'imports',
+        'registry',
+        'process',
+        'workflow',
+        'provenance',
+      ])
+    )
+    expect(staticBehaviorClassifyToolDefinition.workflowRecipes?.[0]).toEqual(
+      expect.objectContaining({
+        id: 'static-triage.behavior-runtime-validation',
+        startsWith: expect.arrayContaining(['static.behavior.classify']),
+        nextTools: expect.arrayContaining([
+          'dynamic.behavior.diff',
+          'breakpoint.smart',
+          'analysis.evidence.graph',
+        ]),
+        producesArtifacts: expect.arrayContaining(['static_behavior_classifier']),
+      })
+    )
   })
 
   test('classifies persistence and injection indicators', async () => {
@@ -109,6 +135,67 @@ describe('static.behavior.classify tool', () => {
     expect(data.findings.some((finding: any) => finding.id === 'persistence.run_key')).toBe(true)
     expect(data.findings.some((finding: any) => finding.id === 'injection.remote_thread')).toBe(true)
     expect(data.findings.some((finding: any) => finding.id === 'injection.process_hollowing')).toBe(true)
+    expect(data.evidence_summary).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.static_behavior_classifier.evidence_summary.v1',
+        finding_count: data.summary.finding_count,
+        high_or_critical_count: data.summary.high_or_critical_count,
+        config_artifact_count: 1,
+        dynamic_artifact_count: 1,
+        dynamic_evidence_present: true,
+        dynamic_executed: true,
+      })
+    )
+    expect(data.evidence_summary.top_findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'injection.remote_thread',
+          recommended_tools: expect.arrayContaining(['breakpoint.smart']),
+        }),
+      ])
+    )
+    expect(data.workflow_handoff).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.static_behavior_classifier.workflow_handoff.v1',
+        handoff_mode: 'static_behavior_to_runtime_validation',
+        recommended_next_tools: expect.arrayContaining([
+          'dynamic.behavior.diff',
+          'analysis.evidence.graph',
+        ]),
+        dynamic_boundary: expect.objectContaining({
+          runtime_started_by_tool: false,
+          sample_executed_by_tool: false,
+          runtime_followup_requires_opt_in: true,
+        }),
+      })
+    )
+    expect(data.workflow_handoff.routing).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          goal: 'debug-breakpoint-planning',
+          next_tools: expect.arrayContaining(['breakpoint.smart', 'trace.condition']),
+        }),
+        expect.objectContaining({
+          goal: 'evidence-graph-and-reporting',
+          next_tools: expect.arrayContaining(['analysis.evidence.graph', 'report.generate']),
+        }),
+      ])
+    )
+    expect(data.quality_gates).toEqual(
+      expect.objectContaining({
+        passive_static_classification: true,
+        backend_started: false,
+        sample_executed_by_tool: false,
+        network_accessed_by_tool: false,
+        mutation_performed: false,
+        behavior_evidence_present: true,
+        high_risk_findings_present: true,
+        injection_findings_present: true,
+        dynamic_evidence_used: true,
+        evidence_graph_handoff_ready: true,
+        runtime_followup_requires_opt_in: true,
+      })
+    )
     expect(data.dynamic_summary.executed).toBe(true)
     expect(data.recommended_next_tools).toContain('dynamic.behavior.diff')
     expect(result.artifacts?.[0]?.type).toBe('static_behavior_classifier')

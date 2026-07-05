@@ -54,21 +54,22 @@ describe('MCPRegistry', () => {
       registry.registerTool(makeTool('ghidra.analyze', true), async () => ({ ok: true }))
       const tools = await registry.listTools()
       expect(tools.length).toBe(2)
-      expect(tools.some(t => t.name === 'sample_ingest')).toBe(true)
-      expect(tools.some(t => t.name === 'ghidra_analyze')).toBe(true)
+      expect(tools.some((t) => t.name === 'sample_ingest')).toBe(true)
+      expect(tools.some((t) => t.name === 'ghidra_analyze')).toBe(true)
     })
 
     test('should append prerequisite hint for tools requiring sample_id', async () => {
       registry.registerTool(makeTool('ghidra.analyze', true), async () => ({ ok: true }))
       const tools = await registry.listTools()
-      const t = tools.find(x => x.name === 'ghidra_analyze')
+      const t = tools.find((x) => x.name === 'ghidra_analyze')
       expect(t?.description).toContain('Prerequisite')
+      expect(t?.description).toContain('workflow.run action=request_upload')
     })
 
     test('should not append prerequisite hint for sample entry tools', async () => {
       registry.registerTool(makeTool('sample.ingest'), async () => ({ ok: true }))
       const tools = await registry.listTools()
-      const t = tools.find(x => x.name === 'sample_ingest')
+      const t = tools.find((x) => x.name === 'sample_ingest')
       expect(t?.description).not.toContain('Prerequisite')
     })
 
@@ -78,6 +79,18 @@ describe('MCPRegistry', () => {
       const tools = await registry.listTools(new Set(['sample.ingest']))
       expect(tools.length).toBe(1)
       expect(tools[0].name).toBe('sample_ingest')
+    })
+
+    test('should expose canonical core tools through transport names when visible', async () => {
+      registry.registerTool(makeTool('plugin.list'), async () => ({ ok: true }))
+      registry.registerTool(makeTool('system.config.validate'), async () => ({ ok: true }))
+
+      const tools = await registry.listTools(new Set(['plugin.list', 'system.config.validate']))
+
+      expect(tools.map((tool) => tool.name).sort()).toEqual([
+        'plugin_list',
+        'system_config_validate',
+      ])
     })
   })
 
@@ -112,7 +125,9 @@ describe('MCPRegistry', () => {
 
     test('should throw for missing required prompt argument', async () => {
       registry.registerPrompt(prompt, async (args) => ({ messages: [] }))
-      await expect(registry.getPrompt('test.prompt', {})).rejects.toThrow(/Missing required prompt argument/)
+      await expect(registry.getPrompt('test.prompt', {})).rejects.toThrow(
+        /Missing required prompt argument/
+      )
     })
   })
 

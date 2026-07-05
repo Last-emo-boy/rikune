@@ -13,19 +13,24 @@
 
 import { existsSync } from 'node:fs'
 import { z } from 'zod'
-import { ToolRuntimeContractSchema } from '@rikune/shared'
+import { DynamicRuntimePolicySchema, ToolRuntimeContractSchema } from '@rikune/shared'
 import type {
   ArtifactRef,
+  DynamicRuntimePolicy,
   RuntimeBackendCapability,
   RuntimeBackendType,
   RuntimeDelegationFailureCategory,
   RuntimeExecutionMode,
   RuntimeExecutionSemantics,
   RuntimeFallbackRule,
+  RuntimeIsolationBackend,
+  RuntimeIsolationRequirement,
+  RuntimeNetworkPolicy,
   ToolRuntimeContract,
   WorkerResult,
 } from '@rikune/shared'
 export {
+  DynamicRuntimePolicySchema,
   PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
   SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
   RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPES,
@@ -35,6 +40,9 @@ export {
   RuntimeDelegationFailureResultSchema,
   RuntimeExecutionModeSchema,
   RuntimeFallbackRuleSchema,
+  RuntimeIsolationBackendSchema,
+  RuntimeIsolationRequirementSchema,
+  RuntimeNetworkPolicySchema,
   ToolRuntimeContractSchema,
   buildRuntimeArtifactControlPlaneMetadata,
   inferRuntimeArtifactFamily,
@@ -43,12 +51,16 @@ export {
 } from '@rikune/shared'
 export type {
   ArtifactRef,
+  DynamicRuntimePolicy,
   RuntimeBackendCapability,
   RuntimeBackendType,
   RuntimeDelegationFailureCategory,
   RuntimeExecutionMode,
   RuntimeExecutionSemantics,
   RuntimeFallbackRule,
+  RuntimeIsolationBackend,
+  RuntimeIsolationRequirement,
+  RuntimeNetworkPolicy,
   ToolRuntimeContract,
   WorkerResult,
 } from '@rikune/shared'
@@ -75,8 +87,20 @@ export interface ToolDefinition {
   description: string
   inputSchema: any
   outputSchema?: any
+  /** Aspect metadata used by sample profiling and progressive discovery. */
+  aspects?: PluginAspects
+  /** Artifact families this tool may write. */
+  artifacts?: ToolArtifactSpec[]
+  /** Evidence families this tool may produce. */
+  evidence?: ToolEvidenceSpec[]
+  /** Cross-plugin workflow recipes this tool starts, advances, or completes. */
+  workflowRecipes?: WorkflowRecipeSpec[]
+  /** Dynamic execution policy surfaced by readiness and scaffold templates. */
+  runtimePolicy?: DynamicRuntimePolicy
   /** Runtime execution contract for tools delegated to a runtime node. */
   runtime?: ToolRuntimeContract
+  /** Bounded backend worker contract for optional worker-backed tools. */
+  workerBackend?: BackendWorkerContract
 }
 
 /** Generic tool arguments (for tools that don't use Zod parsing). */
@@ -95,6 +119,552 @@ export interface DefinedTool<TArgs = ToolArgs> {
 
 export interface DefineToolConfig<TArgs = ToolArgs> extends ToolDefinition {
   handler: ToolHandler<TArgs>
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Plugin aspects — shared taxonomy for routing and discovery
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const PLUGIN_ASPECT_FORMATS = [
+  'pe',
+  'efi',
+  'sys',
+  'coff',
+  'coff-lib',
+  'pdb',
+  'msi',
+  'msix',
+  'appx',
+  'cab',
+  'nsis',
+  'inno',
+  'linux-binary',
+  'elf',
+  'elf-executable',
+  'so',
+  'core',
+  'elf-core',
+  'elf-object',
+  'linux-kernel-module',
+  'kernel-driver',
+  'driver',
+  'driver-surface',
+  'ioctl',
+  'windows-driver',
+  'windows-kernel-driver',
+  'linux-driver',
+  'wdm',
+  'kmdf',
+  'windows-interface',
+  'com',
+  'dcom',
+  'ole',
+  'rpc',
+  'alpc',
+  'etw',
+  'wmi',
+  'named-pipe',
+  'service-control',
+  'winrt',
+  'typelib',
+  'tlb',
+  'idl',
+  'compiler-codegen',
+  'codegen',
+  'compiler-provenance',
+  'toolchain-provenance',
+  'build-provenance',
+  'optimization-level',
+  'lto',
+  'pgo',
+  'rich-header',
+  'codeview',
+  'binary-hardening',
+  'hardening',
+  'exploit-mitigation',
+  'mitigation-profile',
+  'checksec',
+  'elf-hardening',
+  'pe-hardening',
+  'macho-hardening',
+  'relro',
+  'pie',
+  'aslr',
+  'nx',
+  'dep',
+  'stack-canary',
+  'stack-protector',
+  'fortify',
+  'cfg',
+  'xfg',
+  'control-flow-integrity',
+  'cet',
+  'ibt',
+  'shstk',
+  'shadow-stack',
+  'pac',
+  'bti',
+  'mte',
+  'memtag',
+  'cheri',
+  'purecap',
+  'capability-hardware',
+  'rust-binary',
+  'rust',
+  'rustc',
+  'cargo',
+  'cargo-crate',
+  'rust-crate',
+  'rust-mangled',
+  'rust-v0-mangled',
+  'rust-legacy-mangled',
+  'panic-unwind',
+  'panic-abort',
+  'rlib',
+  'rmeta',
+  'rust-rlib',
+  'rust-rmeta',
+  'tee-enclave',
+  'confidential-computing',
+  'tee',
+  'enclave',
+  'sgx',
+  'sgx-enclave',
+  'sgx-sigstruct',
+  'sigstruct',
+  'mrenclave',
+  'mrsigner',
+  'optee',
+  'optee-ta',
+  'op-tee',
+  'op-tee-ta',
+  'tee-ta',
+  'trusted-application',
+  'trustlet',
+  'trustzone',
+  'trustzone-ta',
+  'tdx',
+  'tdx-module',
+  'tdx-quote',
+  'tdvf',
+  'tdreport',
+  'sev',
+  'sev-snp',
+  'snp-attestation',
+  'keystone-enclave',
+  'riscv-enclave',
+  'enclave-manifest',
+  'syscall',
+  'syscall-stub',
+  'direct-syscall',
+  'raw-shellcode',
+  'shellcode',
+  'ntdll-stub',
+  'linux-syscall',
+  'mach-trap',
+  'svc',
+  'ecall',
+  'dwarf',
+  'dwarf-debug',
+  'dwarf5',
+  'split-dwarf',
+  'dwo',
+  'dwp',
+  'ctf',
+  'compact-ctf',
+  'debug-file',
+  'debug-section',
+  'debug-info',
+  'debug-types',
+  'gnu-debuglink',
+  'build-id',
+  'type-graph',
+  'ebpf',
+  'bpf',
+  'ebpf-bytecode',
+  'raw-ebpf',
+  'ebpf-elf',
+  'bpf-object',
+  'btf',
+  'btf-ext',
+  'btf-elf',
+  'bpf-btf',
+  'core-relocations',
+  'co-re',
+  'object',
+  'static-lib',
+  'ar',
+  'ar-static-lib',
+  'deb',
+  'rpm',
+  'apk-alpine',
+  'snap',
+  'flatpak',
+  'appimage',
+  'macho',
+  'fat',
+  'universal',
+  'macho-object',
+  'dylib',
+  'framework',
+  'xcframework',
+  'app-bundle',
+  'dsym',
+  'dmg',
+  'pkg',
+  'ipa',
+  'apple-signing',
+  'codesignature',
+  'entitlements',
+  'plist',
+  'mobileprovision',
+  'objc-metadata',
+  'objective-c',
+  'objc',
+  'swift-metadata',
+  'swift',
+  'swiftmodule',
+  'swiftinterface',
+  'swiftdoc',
+  'swift-abi',
+  'swift-reflection',
+  'android-package',
+  'android-bytecode',
+  'apk',
+  'aab',
+  'apks',
+  'dex',
+  'multi-dex',
+  'oat',
+  'art',
+  'odex',
+  'vdex',
+  'aar',
+  'xapk',
+  'split-apk',
+  'apk-signature',
+  'arsc',
+  'jar',
+  'class',
+  'war',
+  'jmod',
+  'kotlin-metadata',
+  'dotnet',
+  'pe-clr',
+  'nupkg',
+  'mono',
+  'winmd',
+  'unity',
+  'unity-metadata',
+  'il2cpp',
+  'wasm',
+  'wasi',
+  'wat',
+  'wasm-component',
+  'component-model',
+  'wit-component',
+  'wasi-preview2',
+  'llvm-bitcode',
+  'llvm-bitcode-wrapper',
+  'llvm-bc',
+  'llvm-ir',
+  'bc',
+  'll',
+  'shader-ir',
+  'shader',
+  'spir-v',
+  'spirv',
+  'spv',
+  'dxil',
+  'dxbc',
+  'dxcontainer',
+  'wgsl',
+  'metal-metallib',
+  'metallib',
+  'ml-model',
+  'ai-model',
+  'model-checkpoint',
+  'safetensors',
+  'gguf',
+  'ggml',
+  'onnx',
+  'tflite',
+  'pytorch-checkpoint',
+  'torch',
+  'pytorch',
+  'pickle',
+  'npy',
+  'npz',
+  'pyc',
+  'lua-bytecode',
+  'v8-cache',
+  'js',
+  'javascript',
+  'mjs',
+  'cjs',
+  'typescript',
+  'source-map',
+  'html',
+  'firmware',
+  'uimage',
+  'fit',
+  'dtb',
+  'itb',
+  'initramfs',
+  'cpio',
+  'squashfs',
+  'cramfs',
+  'jffs2',
+  'ubi',
+  'ubifs',
+  'romfs',
+  'archive',
+  'zip',
+  '7z',
+  'rar',
+  'tar',
+  'gz',
+  'xz',
+  'zstd',
+  'iso',
+  'installer',
+  'container',
+  'docker-image',
+  'oci-image',
+] as const
+
+export const PLUGIN_ASPECT_PLATFORMS = [
+  'windows',
+  'linux',
+  'macos',
+  'ios',
+  'android',
+  'jvm',
+  'dotnet',
+  'wasm',
+  'python',
+  'lua',
+  'node',
+  'embedded',
+  'cross-platform',
+  'all',
+] as const
+
+export const PLUGIN_ASPECT_ARCHITECTURES = [
+  'x86',
+  'x64',
+  'arm',
+  'arm64',
+  'mips',
+  'mipsel',
+  'ppc',
+  'riscv',
+  'wasm',
+] as const
+
+export const PLUGIN_ASPECT_EXECUTIONS = [
+  'static',
+  'dynamic',
+  'emulation',
+  'decompilation',
+  'triage',
+  'correlation',
+] as const
+
+export const PLUGIN_ASPECT_SAFETY = [
+  'passive',
+  'opt_in_dynamic',
+  'requires_isolation',
+  'no_live_sample_by_default',
+  'no_installer_execution',
+  'no_auto_mount',
+  'no_network_by_default',
+] as const
+
+export const PLUGIN_ASPECT_EVIDENCE = [
+  'structure',
+  'symbols',
+  'imports',
+  'exports',
+  'strings',
+  'resources',
+  'signatures',
+  'behavior',
+  'network',
+  'filesystem',
+  'registry',
+  'memory',
+  'timeline',
+  'artifact',
+  'manifest',
+  'certificates',
+  'package-metadata',
+  'nested-binaries',
+  'sbom',
+  'vulnerabilities',
+  'provenance',
+  'workflow',
+  'analysis-memory',
+  'correlation-graph',
+  'provenance-graph',
+] as const
+
+export type PluginAspectFormat = (typeof PLUGIN_ASPECT_FORMATS)[number] | string
+export type PluginAspectPlatform = (typeof PLUGIN_ASPECT_PLATFORMS)[number] | string
+export type PluginAspectArchitecture = (typeof PLUGIN_ASPECT_ARCHITECTURES)[number] | string
+export type PluginAspectExecution = (typeof PLUGIN_ASPECT_EXECUTIONS)[number] | string
+export type PluginAspectSafety = (typeof PLUGIN_ASPECT_SAFETY)[number] | string
+export type PluginAspectEvidence = (typeof PLUGIN_ASPECT_EVIDENCE)[number] | string
+
+const AspectTagsSchema = z.array(z.string().min(1)).default([])
+
+export const PluginAspectsSchema = z
+  .object({
+    formats: AspectTagsSchema.optional(),
+    platforms: AspectTagsSchema.optional(),
+    architectures: AspectTagsSchema.optional(),
+    execution: AspectTagsSchema.optional(),
+    runtimes: AspectTagsSchema.optional(),
+    safety: AspectTagsSchema.optional(),
+    capabilities: AspectTagsSchema.optional(),
+    evidence: AspectTagsSchema.optional(),
+  })
+  .passthrough()
+
+export type PluginAspects = z.infer<typeof PluginAspectsSchema> & Record<string, unknown>
+
+export interface SampleProfileAspectInput {
+  fileTypes?: string[]
+  findings?: string[]
+  platforms?: string[]
+  architectures?: string[]
+  execution?: string[]
+  runtimes?: string[]
+  evidence?: string[]
+}
+
+export interface AspectMatchResult {
+  matched: boolean
+  score: number
+  matchedAspects: Record<string, string[]>
+  missingAspects: Record<string, string[]>
+  reasons: string[]
+}
+
+function normalizeAspectTag(tag: unknown): string | null {
+  if (typeof tag !== 'string') {
+    return null
+  }
+  const normalized = tag.trim().toLowerCase().replace(/_/g, '-')
+  return normalized.length > 0 ? normalized : null
+}
+
+function normalizeAspectTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) {
+    return []
+  }
+  return Array.from(
+    new Set(tags.map(normalizeAspectTag).filter((tag): tag is string => Boolean(tag)))
+  )
+}
+
+export function normalizePluginAspects(aspects: PluginAspects | null | undefined): PluginAspects {
+  return {
+    ...((aspects ?? {}) as Record<string, unknown>),
+    formats: normalizeAspectTags(aspects?.formats),
+    platforms: normalizeAspectTags(aspects?.platforms),
+    architectures: normalizeAspectTags(aspects?.architectures),
+    execution: normalizeAspectTags(aspects?.execution),
+    runtimes: normalizeAspectTags(aspects?.runtimes),
+    safety: normalizeAspectTags(aspects?.safety),
+    capabilities: normalizeAspectTags(aspects?.capabilities),
+    evidence: normalizeAspectTags(aspects?.evidence),
+  }
+}
+
+export function buildSampleProfileAspects(profile: SampleProfileAspectInput): PluginAspects {
+  const fileTypeTags = normalizeAspectTags(profile.fileTypes).flatMap(
+    (tag) => SURFACE_FILE_TYPE_TAGS[tag] ?? [tag]
+  )
+  return normalizePluginAspects({
+    formats: fileTypeTags,
+    platforms: profile.platforms,
+    architectures: profile.architectures,
+    execution: profile.execution,
+    runtimes: profile.runtimes,
+    capabilities: profile.findings,
+    evidence: profile.evidence,
+  })
+}
+
+function matchAspectGroup(pluginTags: string[], sampleTags: string[]): string[] {
+  if (pluginTags.length === 0 || sampleTags.length === 0) {
+    return []
+  }
+  const sample = new Set(sampleTags)
+  return pluginTags.filter((tag) => sample.has(tag))
+}
+
+export function matchSampleProfile(
+  pluginAspects: PluginAspects | null | undefined,
+  sampleProfile: SampleProfileAspectInput | PluginAspects
+): AspectMatchResult {
+  const plugin = normalizePluginAspects(pluginAspects)
+  const sample =
+    'fileTypes' in sampleProfile || 'findings' in sampleProfile
+      ? buildSampleProfileAspects(sampleProfile as SampleProfileAspectInput)
+      : normalizePluginAspects(sampleProfile as PluginAspects)
+
+  const groups: Array<keyof PluginAspects> = [
+    'formats',
+    'platforms',
+    'architectures',
+    'execution',
+    'runtimes',
+    'capabilities',
+    'evidence',
+  ]
+  const matchedAspects: Record<string, string[]> = {}
+  const missingAspects: Record<string, string[]> = {}
+  let declaredGroups = 0
+  let matchedGroups = 0
+
+  for (const group of groups) {
+    const pluginTags = normalizeAspectTags(plugin[group])
+    if (pluginTags.length === 0) {
+      continue
+    }
+    declaredGroups += 1
+    const sampleTags = normalizeAspectTags(sample[group])
+    const matches = matchAspectGroup(pluginTags, sampleTags)
+    if (matches.length > 0) {
+      matchedAspects[group] = matches
+      matchedGroups += 1
+    } else if (sampleTags.length > 0) {
+      missingAspects[group] = pluginTags.filter((tag) => !sampleTags.includes(tag))
+    }
+  }
+
+  const matched = declaredGroups === 0 || matchedGroups > 0
+  return {
+    matched,
+    score: declaredGroups === 0 ? 0 : matchedGroups / declaredGroups,
+    matchedAspects,
+    missingAspects,
+    reasons:
+      declaredGroups === 0
+        ? ['plugin has no declared aspects']
+        : matched
+          ? Object.entries(matchedAspects).map(([group, tags]) => `${group}: ${tags.join(', ')}`)
+          : ['no declared plugin aspects matched the sample profile'],
+  }
+}
+
+export function describeAspectCoverage(aspects: PluginAspects | null | undefined): string[] {
+  const normalized = normalizePluginAspects(aspects)
+  return Object.entries(normalized)
+    .filter(([, value]) => Array.isArray(value) && value.length > 0)
+    .map(([group, value]) => `${group}: ${(value as string[]).join(', ')}`)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -504,6 +1074,24 @@ export interface PluginSystemDep {
    * Example: `[{ source: '${RIKUNE_DATA_ROOT:-D:/Docker/rikune}/ghidra-projects', target: '/ghidra-projects', mode: 'rw' }]`
    */
   volumes?: Array<{ source: string; target: string; mode?: 'ro' | 'rw' }>
+
+  /**
+   * Docker/backend packaging classification used by the generator and release
+   * guards. `installed` means the default selected profile has a concrete
+   * install route. `profile-gated`, `byo`, and `sidecar` are explicit
+   * non-default routes; they prevent descriptive `dockerInstall` text from
+   * being mistaken for an executable install step.
+   */
+  dockerInstallRoute?: 'installed' | 'profile-gated' | 'byo' | 'sidecar' | 'validation-only'
+  dockerInstallProfile?:
+    | 'default'
+    | 'optional'
+    | 'heavy'
+    | 'research'
+    | 'runtime'
+    | 'gpu'
+    | 'license-gated'
+  dockerInstallNotes?: string[]
 }
 
 /**
@@ -515,6 +1103,285 @@ export interface DepCheckResult {
   resolvedPath?: string
   version?: string
   error?: string
+}
+
+export interface BackendWorkerPolicy {
+  passiveByDefault?: boolean
+  requiresUserOptIn?: boolean
+  requiresIsolation?: boolean
+  noNetwork?: boolean
+  noMutation?: boolean
+  noLiveExecution?: boolean
+  maxInputBytes?: number
+  maxOutputBytes?: number
+  defaultTimeoutMs?: number
+  allowedRoots?: string[]
+  notes?: string[]
+  [key: string]: unknown
+}
+
+export interface BackendWorkerContract {
+  version?: 'backend-worker.v1'
+  backendName: string
+  backendKind: 'builtin' | 'external' | 'delegated-runtime'
+  adapter: string
+  availability?: 'builtin' | 'optional' | 'required'
+  envVar?: string
+  commandHint?: string
+  versionHint?: string
+  supportedModes?: string[]
+  defaultMode?: string
+  inputArtifactTypes?: string[]
+  outputArtifactTypes?: string[]
+  policy?: BackendWorkerPolicy
+  readiness?: {
+    doesNotStartBackend?: boolean
+    setupActions?: string[]
+    missingBackendBehavior?: string
+    [key: string]: unknown
+  }
+  packaging?: {
+    installRoute?: 'installed' | 'profile-gated' | 'byo' | 'sidecar' | 'validation-only'
+    installProfile?:
+      | 'default'
+      | 'optional'
+      | 'heavy'
+      | 'research'
+      | 'runtime'
+      | 'gpu'
+      | 'license-gated'
+    dockerFeature?: string
+    envVar?: string
+    dockerDefault?: string
+    notes?: string[]
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
+export interface PluginQualityWarning {
+  code:
+    | 'missing-output-schema'
+    | 'missing-surface-rules'
+    | 'missing-aspects'
+    | 'missing-evidence'
+    | 'missing-workflow-recipe'
+    | 'missing-runtime-policy'
+    | 'dynamic-runtime-contract-missing'
+    | 'missing-system-deps'
+    | 'missing-tools'
+    | 'missing-readiness-check'
+  message: string
+  tool?: string
+  severity?: 'info' | 'warning'
+  plugin_id?: string
+  suggested_task_owner?: string
+}
+
+function suggestedTaskOwnerForPlugin(plugin: Plugin): string {
+  const id = plugin.id
+  if (id.includes('memory')) return 'TASK-003'
+  if (id.includes('vm-analysis') || id.includes('angr') || id.includes('crackme')) return 'TASK-004'
+  if (id.includes('kb-collaboration')) return 'TASK-005'
+  if (plugin.executionDomain === 'dynamic') return 'TASK-006'
+  if (
+    id.includes('runtime') ||
+    id.includes('dynamic') ||
+    id.includes('debug-session') ||
+    id.includes('frida') ||
+    id.includes('qiling') ||
+    id.includes('wine') ||
+    id.includes('speakeasy') ||
+    id.includes('panda')
+  ) {
+    return 'TASK-006'
+  }
+  if (
+    id.includes('sbom') ||
+    id.includes('container') ||
+    id.includes('linux-package') ||
+    id.includes('windows-installer')
+  ) {
+    return 'TASK-007'
+  }
+  if (id.includes('android') || id.includes('apk') || id.includes('dex')) return 'TASK-008'
+  if (id.includes('apple') || id.includes('ios') || id.includes('macos')) return 'TASK-009'
+  if (id.includes('wasm')) return 'TASK-010'
+  if (id.includes('firmware')) return 'TASK-011'
+  if (id.includes('office')) return 'TASK-012'
+  if (id.includes('unpack') || id.includes('deobf') || id.includes('upx')) return 'TASK-013'
+  if (id.includes('similarity') || id.includes('binary-diff')) return 'TASK-014'
+  if (
+    id.includes('malware') ||
+    id.includes('threat-intel') ||
+    id.includes('yara') ||
+    id.includes('vuln')
+  ) {
+    return 'TASK-015'
+  }
+  return 'TASK-002'
+}
+
+function withQualityWarningOwner(
+  plugin: Plugin,
+  warning: Omit<PluginQualityWarning, 'plugin_id' | 'suggested_task_owner'>
+): PluginQualityWarning {
+  return {
+    ...warning,
+    plugin_id: plugin.id,
+    suggested_task_owner: suggestedTaskOwnerForPlugin(plugin),
+  }
+}
+
+function hasDeclaredAspects(aspects: PluginAspects | null | undefined): boolean {
+  return Boolean(
+    aspects && Object.values(aspects).some((value) => Array.isArray(value) && value.length > 0)
+  )
+}
+
+function hasWorkflowCapability(aspects: PluginAspects | null | undefined): boolean {
+  const normalized = normalizePluginAspects(aspects)
+  return [
+    ...(normalized.capabilities ?? []),
+    ...(normalized.evidence ?? []),
+    ...(normalized.execution ?? []),
+  ].some((tag) => tag.includes('workflow') || tag.includes('correlation'))
+}
+
+export function auditPluginQuality(plugin: Plugin): PluginQualityWarning[] {
+  const warnings: PluginQualityWarning[] = []
+  const tools = plugin.tools ?? []
+  const pluginHasAspects = hasDeclaredAspects(plugin.aspects)
+  const pluginHasRuntimePolicy = Boolean(plugin.runtimePolicy)
+
+  if (tools.length === 0 && typeof plugin.register !== 'function') {
+    warnings.push(
+      withQualityWarningOwner(plugin, {
+        code: 'missing-tools',
+        message: 'Plugin declares no tools or register() handler.',
+        severity: 'warning',
+      })
+    )
+  }
+
+  if (!plugin.surfaceRules) {
+    warnings.push(
+      withQualityWarningOwner(plugin, {
+        code: 'missing-surface-rules',
+        message: 'Plugin does not declare progressive surfaceRules; it defaults to always visible.',
+        severity: 'info',
+      })
+    )
+  }
+
+  if (!pluginHasAspects) {
+    warnings.push(
+      withQualityWarningOwner(plugin, {
+        code: 'missing-aspects',
+        message: 'Plugin does not declare aspect metadata for routing and progressive discovery.',
+        severity: 'info',
+      })
+    )
+  }
+
+  if ((plugin.systemDeps ?? []).length === 0 && plugin.executionDomain !== 'static') {
+    warnings.push(
+      withQualityWarningOwner(plugin, {
+        code: 'missing-system-deps',
+        message:
+          'Plugin has no declared systemDeps, so runtime/dependency degradation cannot be reported.',
+        severity: 'info',
+      })
+    )
+  }
+
+  if (
+    !plugin.check &&
+    (plugin.systemDeps ?? []).length === 0 &&
+    plugin.executionDomain === 'dynamic'
+  ) {
+    warnings.push(
+      withQualityWarningOwner(plugin, {
+        code: 'missing-readiness-check',
+        message: 'Dynamic plugin has neither check() nor systemDeps readiness metadata.',
+        severity: 'warning',
+      })
+    )
+  }
+
+  for (const tool of tools) {
+    const definition = tool.definition
+    if (!definition.outputSchema) {
+      warnings.push(
+        withQualityWarningOwner(plugin, {
+          code: 'missing-output-schema',
+          message: `Tool ${definition.name} has no outputSchema.`,
+          tool: definition.name,
+          severity: 'warning',
+        })
+      )
+    }
+    if (!pluginHasAspects && !definition.aspects) {
+      warnings.push(
+        withQualityWarningOwner(plugin, {
+          code: 'missing-aspects',
+          message: `Tool ${definition.name} has no aspect metadata.`,
+          tool: definition.name,
+          severity: 'info',
+        })
+      )
+    }
+    if ((definition.evidence ?? []).length === 0 && (definition.artifacts ?? []).length === 0) {
+      warnings.push(
+        withQualityWarningOwner(plugin, {
+          code: 'missing-evidence',
+          message: `Tool ${definition.name} does not declare artifact or evidence output metadata.`,
+          tool: definition.name,
+          severity: 'info',
+        })
+      )
+    }
+    if (
+      (hasWorkflowCapability(plugin.aspects) || hasWorkflowCapability(definition.aspects)) &&
+      (definition.workflowRecipes ?? []).length === 0
+    ) {
+      warnings.push(
+        withQualityWarningOwner(plugin, {
+          code: 'missing-workflow-recipe',
+          message: `Workflow-capable tool ${definition.name} does not declare workflowRecipes metadata.`,
+          tool: definition.name,
+          severity: 'info',
+        })
+      )
+    }
+    if (plugin.executionDomain === 'dynamic' && !definition.runtime) {
+      warnings.push(
+        withQualityWarningOwner(plugin, {
+          code: 'dynamic-runtime-contract-missing',
+          message: `Dynamic tool ${definition.name} has no runtime delegation contract.`,
+          tool: definition.name,
+          severity: 'info',
+        })
+      )
+    }
+    if (
+      (plugin.executionDomain === 'dynamic' || definition.runtime) &&
+      !pluginHasRuntimePolicy &&
+      !definition.runtimePolicy &&
+      !definition.runtime?.policy
+    ) {
+      warnings.push(
+        withQualityWarningOwner(plugin, {
+          code: 'missing-runtime-policy',
+          message: `Runtime-backed tool ${definition.name} has no dynamic runtime policy.`,
+          tool: definition.name,
+          severity: 'info',
+        })
+      )
+    }
+  }
+
+  return warnings
 }
 
 /** Lifecycle hooks a plugin can implement. */
@@ -542,6 +1409,8 @@ export interface PluginStatus {
   configFields?: PluginConfigField[]
   /** Results of system dependency checks (populated at load time). */
   depChecks?: DepCheckResult[]
+  /** Non-blocking plugin quality contract warnings exposed for maintenance. */
+  qualityWarnings?: PluginQualityWarning[]
   /** Short machine-friendly reason code for skips/errors exposed to control-plane views. */
   reasonCode?:
     | 'disabled-by-config'
@@ -698,13 +1567,676 @@ export interface SurfaceRules {
  */
 export const SURFACE_FILE_TYPE_TAGS: Record<string, string[]> = {
   pe: ['pe', 'pe32', 'pe64', 'dll', 'exe', 'windows'],
-  elf: ['elf', 'linux'],
-  'mach-o': ['macho', 'mach-o', 'macos', 'ios'],
-  'mach-o-fat': ['macho', 'mach-o', 'mach-o-fat', 'macos', 'ios'],
-  apk: ['apk', 'android', 'dex'],
-  dex: ['dex', 'android'],
-  jar: ['jar', 'java', 'class'],
-  class: ['class', 'java'],
+  pe32: ['pe32', 'pe', 'exe', 'windows'],
+  'pe32+': ['pe32+', 'pe32-plus', 'pe64', 'pe', 'exe', 'windows'],
+  'pe32-plus': ['pe32-plus', 'pe32+', 'pe64', 'pe', 'exe', 'windows'],
+  pe64: ['pe64', 'pe32-plus', 'pe32+', 'pe', 'exe', 'windows'],
+  dll: ['pe', 'dll', 'windows'],
+  exe: ['pe', 'exe', 'windows'],
+  efi: ['efi', 'uefi', 'uefi-module', 'uefi-firmware', 'pe', 'windows', 'firmware'],
+  uefi: ['uefi', 'efi', 'uefi-firmware', 'firmware', 'firmware-volume'],
+  'uefi-firmware': ['uefi-firmware', 'uefi', 'efi', 'firmware', 'firmware-volume'],
+  'uefi-module': ['uefi-module', 'uefi', 'efi', 'dxe', 'pei', 'smm'],
+  'uefi-smm': ['uefi-smm', 'smm', 'smi', 'uefi', 'efi', 'uefi-module'],
+  smm: ['smm', 'uefi-smm', 'smi', 'uefi', 'firmware'],
+  smi: ['smi', 'smm', 'uefi-smm', 'uefi', 'firmware'],
+  te: ['te', 'uefi-module', 'uefi', 'firmware'],
+  'firmware-volume': ['firmware-volume', 'uefi-firmware', 'uefi', 'firmware', 'ffs'],
+  'uefi-capsule': ['uefi-capsule', 'capsule', 'uefi-firmware', 'uefi', 'firmware'],
+  capsule: ['capsule', 'uefi-capsule', 'uefi-firmware', 'uefi', 'firmware'],
+  dxe: ['dxe', 'uefi-module', 'uefi', 'efi', 'firmware'],
+  pei: ['pei', 'uefi-module', 'uefi', 'efi', 'firmware'],
+  nvram: ['nvram', 'uefi', 'uefi-firmware', 'variables', 'firmware'],
+  fd: ['fd', 'firmware-volume', 'uefi-firmware', 'uefi', 'firmware'],
+  rom: ['rom', 'firmware', 'uefi-firmware', 'uefi'],
+  cap: ['cap', 'uefi-capsule', 'uefi-firmware', 'uefi', 'firmware'],
+  sys: [
+    'sys',
+    'pe',
+    'windows',
+    'driver',
+    'kernel-driver',
+    'windows-driver',
+    'windows-kernel-driver',
+    'ioctl',
+  ],
+  'pe-clr': ['pe-clr', 'dotnet', 'pe', 'windows'],
+  msi: ['msi', 'installer', 'windows'],
+  msix: ['msix', 'appx', 'installer', 'windows'],
+  appx: ['appx', 'msix', 'installer', 'windows'],
+  cab: ['cab', 'installer', 'archive', 'windows'],
+  nsis: ['nsis', 'installer', 'windows'],
+  inno: ['inno', 'installer', 'windows'],
+  pdb: ['pdb', 'symbols', 'debug-metadata', 'windows'],
+  coff: ['coff', 'symbols', 'windows'],
+  'coff-lib': ['coff', 'coff-lib', 'symbols', 'windows', 'archive'],
+  object: ['object', 'native', 'symbols'],
+  'static-lib': ['static-lib', 'archive', 'symbols', 'native'],
+  'compiler-codegen': [
+    'compiler-codegen',
+    'codegen',
+    'compiler-provenance',
+    'toolchain-provenance',
+    'build-provenance',
+    'optimization-level',
+    'lto',
+    'pgo',
+    'rich-header',
+    'codeview',
+    'native',
+  ],
+  codegen: [
+    'codegen',
+    'compiler-codegen',
+    'compiler-provenance',
+    'toolchain-provenance',
+    'optimization-level',
+  ],
+  'compiler-provenance': [
+    'compiler-provenance',
+    'compiler-codegen',
+    'toolchain-provenance',
+    'build-provenance',
+    'codegen',
+  ],
+  'toolchain-provenance': [
+    'toolchain-provenance',
+    'compiler-provenance',
+    'compiler-codegen',
+    'build-provenance',
+  ],
+  'build-provenance': [
+    'build-provenance',
+    'toolchain-provenance',
+    'compiler-provenance',
+    'compiler-codegen',
+  ],
+  'optimization-level': ['optimization-level', 'compiler-codegen', 'codegen', 'lto', 'pgo'],
+  lto: ['lto', 'optimization-level', 'compiler-codegen', 'codegen', 'llvm'],
+  pgo: ['pgo', 'optimization-level', 'compiler-codegen', 'codegen', 'profile-guided'],
+  'rich-header': ['rich-header', 'compiler-codegen', 'compiler-provenance', 'pe', 'windows'],
+  codeview: ['codeview', 'compiler-codegen', 'debug-metadata', 'pdb', 'pe', 'windows'],
+  'binary-hardening': [
+    'binary-hardening',
+    'hardening',
+    'exploit-mitigation',
+    'mitigation-profile',
+    'checksec',
+    'relro',
+    'pie',
+    'aslr',
+    'nx',
+    'dep',
+    'stack-canary',
+    'fortify',
+    'cfg',
+    'xfg',
+    'cet',
+    'pac',
+    'bti',
+    'mte',
+    'cheri',
+    'native',
+  ],
+  hardening: ['hardening', 'binary-hardening', 'exploit-mitigation', 'checksec'],
+  'exploit-mitigation': ['exploit-mitigation', 'binary-hardening', 'hardening', 'checksec'],
+  'mitigation-profile': ['mitigation-profile', 'binary-hardening', 'hardening'],
+  checksec: ['checksec', 'binary-hardening', 'hardening', 'exploit-mitigation'],
+  'elf-hardening': ['elf-hardening', 'binary-hardening', 'hardening', 'elf', 'linux-binary'],
+  'pe-hardening': ['pe-hardening', 'binary-hardening', 'hardening', 'pe', 'windows'],
+  'macho-hardening': ['macho-hardening', 'binary-hardening', 'hardening', 'macho', 'macos'],
+  relro: ['relro', 'elf-hardening', 'binary-hardening', 'hardening', 'elf'],
+  pie: ['pie', 'aslr', 'binary-hardening', 'hardening'],
+  aslr: ['aslr', 'pie', 'binary-hardening', 'hardening'],
+  nx: ['nx', 'dep', 'binary-hardening', 'hardening'],
+  dep: ['dep', 'nx', 'binary-hardening', 'hardening', 'pe'],
+  'stack-canary': ['stack-canary', 'binary-hardening', 'hardening', 'stack-protector'],
+  fortify: ['fortify', 'binary-hardening', 'hardening'],
+  cfg: ['cfg', 'binary-hardening', 'hardening', 'pe', 'control-flow-integrity'],
+  xfg: ['xfg', 'cfg', 'binary-hardening', 'hardening', 'pe'],
+  cet: ['cet', 'ibt', 'shstk', 'shadow-stack', 'binary-hardening', 'hardening', 'x86', 'x64'],
+  ibt: ['ibt', 'cet', 'binary-hardening', 'hardening'],
+  shstk: ['shstk', 'shadow-stack', 'cet', 'binary-hardening', 'hardening'],
+  'shadow-stack': ['shadow-stack', 'shstk', 'cet', 'binary-hardening', 'hardening'],
+  pac: ['pac', 'bti', 'binary-hardening', 'hardening', 'arm64'],
+  bti: ['bti', 'pac', 'binary-hardening', 'hardening', 'arm64'],
+  mte: ['mte', 'memtag', 'binary-hardening', 'hardening', 'arm64'],
+  cheri: ['cheri', 'purecap', 'binary-hardening', 'hardening', 'capability-hardware'],
+  purecap: ['purecap', 'cheri', 'binary-hardening', 'hardening', 'capability-hardware'],
+  'rust-binary': [
+    'rust-binary',
+    'rust',
+    'rustc',
+    'cargo',
+    'cargo-crate',
+    'rust-crate',
+    'rust-mangled',
+    'rust-v0-mangled',
+    'rust-legacy-mangled',
+    'panic-unwind',
+    'panic-abort',
+    'native',
+  ],
+  rust: ['rust', 'rust-binary', 'rustc', 'cargo', 'rust-mangled', 'native'],
+  rustc: ['rustc', 'rust', 'rust-binary', 'compiler-codegen', 'compiler-provenance'],
+  cargo: ['cargo', 'cargo-crate', 'rust-crate', 'rust', 'rust-binary', 'package-metadata'],
+  'cargo-crate': ['cargo-crate', 'cargo', 'rust-crate', 'rust', 'rust-binary'],
+  'rust-crate': ['rust-crate', 'cargo-crate', 'cargo', 'rust', 'rust-binary'],
+  'rust-mangled': ['rust-mangled', 'rust-v0-mangled', 'rust-legacy-mangled', 'rust-binary'],
+  'rust-v0-mangled': ['rust-v0-mangled', 'rust-mangled', 'rust-binary', 'symbols'],
+  'rust-legacy-mangled': ['rust-legacy-mangled', 'rust-mangled', 'rust-binary', 'symbols'],
+  'panic-unwind': ['panic-unwind', 'rust-binary', 'rust', 'unwind', 'panic'],
+  'panic-abort': ['panic-abort', 'rust-binary', 'rust', 'panic'],
+  rlib: ['rlib', 'rust-binary', 'rust-crate', 'archive', 'static-lib', 'native'],
+  rmeta: ['rmeta', 'rust-binary', 'rust-crate', 'metadata', 'rust'],
+  'rust-rlib': ['rust-rlib', 'rlib', 'rust-binary', 'rust-crate', 'archive', 'static-lib'],
+  'rust-rmeta': ['rust-rmeta', 'rmeta', 'rust-binary', 'rust-crate', 'metadata'],
+  'tee-enclave': [
+    'tee-enclave',
+    'confidential-computing',
+    'tee',
+    'enclave',
+    'sgx',
+    'optee',
+    'op-tee',
+    'trustzone',
+    'tdx',
+    'sev-snp',
+    'riscv-enclave',
+    'attestation',
+  ],
+  'confidential-computing': [
+    'confidential-computing',
+    'tee-enclave',
+    'tee',
+    'enclave',
+    'sgx',
+    'tdx',
+    'sev-snp',
+    'attestation',
+  ],
+  tee: ['tee', 'tee-enclave', 'enclave', 'confidential-computing', 'attestation'],
+  enclave: ['enclave', 'tee-enclave', 'tee', 'confidential-computing', 'attestation'],
+  sgx: [
+    'sgx',
+    'sgx-enclave',
+    'sgx-sigstruct',
+    'tee-enclave',
+    'tee',
+    'enclave',
+    'sigstruct',
+    'mrenclave',
+    'mrsigner',
+  ],
+  'sgx-enclave': [
+    'sgx-enclave',
+    'sgx',
+    'sgx-sigstruct',
+    'tee-enclave',
+    'tee',
+    'enclave',
+    'sigstruct',
+    'mrenclave',
+    'mrsigner',
+  ],
+  'sgx-sigstruct': ['sgx-sigstruct', 'sigstruct', 'sgx', 'sgx-enclave', 'attestation'],
+  sigstruct: ['sigstruct', 'sgx-sigstruct', 'sgx', 'sgx-enclave', 'attestation', 'tee-enclave'],
+  mrenclave: ['mrenclave', 'sgx', 'sgx-enclave', 'measurement', 'tee-enclave'],
+  mrsigner: ['mrsigner', 'sgx', 'sgx-enclave', 'measurement', 'tee-enclave'],
+  optee: ['optee', 'op-tee', 'optee-ta', 'op-tee-ta', 'trustzone', 'tee-ta', 'tee-enclave'],
+  'op-tee': ['op-tee', 'optee', 'op-tee-ta', 'optee-ta', 'trustzone', 'tee-enclave'],
+  'optee-ta': [
+    'optee-ta',
+    'optee',
+    'op-tee-ta',
+    'tee-ta',
+    'trusted-application',
+    'trustzone-ta',
+    'trustzone',
+    'tee-enclave',
+    'elf',
+  ],
+  'op-tee-ta': [
+    'op-tee-ta',
+    'optee-ta',
+    'op-tee',
+    'optee',
+    'tee-ta',
+    'trusted-application',
+    'trustzone',
+    'tee-enclave',
+    'elf',
+  ],
+  'tee-ta': ['tee-ta', 'trusted-application', 'optee-ta', 'op-tee-ta', 'trustzone-ta', 'tee'],
+  'trusted-application': ['trusted-application', 'tee-ta', 'trustlet', 'trustzone-ta', 'tee'],
+  trustlet: ['trustlet', 'trusted-application', 'trustzone-ta', 'tee-ta', 'tee'],
+  trustzone: ['trustzone', 'trustzone-ta', 'optee', 'optee-ta', 'tee-enclave', 'firmware'],
+  'trustzone-ta': ['trustzone-ta', 'trustzone', 'optee-ta', 'optee', 'tee-ta', 'tee-enclave'],
+  tdx: [
+    'tdx',
+    'tdx-module',
+    'tdx-quote',
+    'tdvf',
+    'tdreport',
+    'confidential-computing',
+    'tee-enclave',
+  ],
+  'tdx-module': ['tdx-module', 'tdx', 'tdx-quote', 'confidential-computing', 'firmware'],
+  'tdx-quote': ['tdx-quote', 'tdx', 'tdreport', 'attestation', 'tee-enclave'],
+  tdvf: ['tdvf', 'tdx', 'firmware', 'confidential-computing'],
+  tdreport: ['tdreport', 'tdx', 'tdx-quote', 'attestation', 'measurement', 'tee-enclave'],
+  sev: ['sev', 'sev-snp', 'snp-attestation', 'confidential-computing', 'tee-enclave'],
+  'sev-snp': ['sev-snp', 'sev', 'snp-attestation', 'attestation', 'tee-enclave'],
+  'snp-attestation': ['snp-attestation', 'sev-snp', 'sev', 'attestation', 'tee-enclave'],
+  'keystone-enclave': ['keystone-enclave', 'riscv-enclave', 'riscv', 'tee-enclave'],
+  'riscv-enclave': ['riscv-enclave', 'keystone-enclave', 'riscv', 'tee-enclave'],
+  'enclave-manifest': ['enclave-manifest', 'tee-enclave', 'enclave', 'manifest'],
+  'linux-binary': ['linux-binary', 'elf', 'linux'],
+  elf: ['elf', 'linux', 'linux-binary'],
+  'elf-executable': ['elf-executable', 'elf', 'linux', 'linux-binary'],
+  so: ['elf', 'so', 'linux', 'linux-binary'],
+  'elf-so': ['elf', 'so', 'linux', 'linux-binary'],
+  'elf-core': ['elf-core', 'core', 'elf', 'linux', 'memory', 'linux-binary'],
+  'elf-object': ['elf-object', 'object', 'elf', 'linux', 'symbols'],
+  dwarf: [
+    'dwarf',
+    'dwarf-debug',
+    'debug-info',
+    'debug-types',
+    'debug-metadata',
+    'symbols',
+    'source-map',
+    'source-paths',
+    'type-graph',
+  ],
+  'dwarf-debug': [
+    'dwarf-debug',
+    'dwarf',
+    'debug-info',
+    'debug-types',
+    'debug-file',
+    'debug-section',
+    'debug-metadata',
+    'symbols',
+    'source-map',
+    'source-paths',
+    'type-graph',
+  ],
+  dwarf5: ['dwarf5', 'dwarf', 'dwarf-debug', 'debug-info', 'debug-types', 'type-graph'],
+  'split-dwarf': [
+    'split-dwarf',
+    'dwarf',
+    'dwarf-debug',
+    'dwo',
+    'dwp',
+    'debug-info',
+    'debug-types',
+    'type-graph',
+  ],
+  dwo: ['dwo', 'split-dwarf', 'dwarf', 'dwarf-debug', 'debug-info', 'debug-types'],
+  dwp: ['dwp', 'split-dwarf', 'dwarf', 'dwarf-debug', 'debug-info', 'debug-types'],
+  ctf: ['ctf', 'compact-ctf', 'debug-info', 'debug-types', 'debug-metadata', 'type-graph'],
+  'compact-ctf': ['compact-ctf', 'ctf', 'debug-info', 'debug-types', 'type-graph'],
+  'debug-file': ['debug-file', 'dwarf-debug', 'dwarf', 'debug-info', 'debug-metadata'],
+  'debug-section': ['debug-section', 'dwarf-debug', 'dwarf', 'debug-info', 'debug-metadata'],
+  'debug-info': ['debug-info', 'dwarf', 'dwarf-debug', 'debug-metadata', 'symbols'],
+  'debug-types': ['debug-types', 'dwarf', 'dwarf-debug', 'ctf', 'debug-metadata', 'type-graph'],
+  'gnu-debuglink': ['gnu-debuglink', 'debug-file', 'dwarf-debug', 'debug-metadata'],
+  'build-id': ['build-id', 'debug-file', 'dwarf-debug', 'debug-metadata'],
+  'type-graph': ['type-graph', 'debug-types', 'dwarf', 'ctf', 'debug-metadata'],
+  'cpp-abi': [
+    'cpp-abi',
+    'cxx-abi',
+    'c++',
+    'cpp',
+    'rtti',
+    'vtable',
+    'vftable',
+    'class-layout',
+    'virtual-dispatch',
+  ],
+  'cxx-abi': [
+    'cxx-abi',
+    'cpp-abi',
+    'c++',
+    'cpp',
+    'rtti',
+    'vtable',
+    'class-layout',
+    'virtual-dispatch',
+  ],
+  'itanium-abi': ['itanium-abi', 'cpp-abi', 'cxx-abi', 'rtti', 'typeinfo', 'vtable'],
+  'msvc-abi': ['msvc-abi', 'cpp-abi', 'cxx-abi', 'rtti', 'vftable', 'vbtable'],
+  rtti: ['rtti', 'cpp-abi', 'cxx-abi', 'typeinfo', 'class-layout'],
+  typeinfo: ['typeinfo', 'rtti', 'cpp-abi', 'itanium-abi', 'class-layout'],
+  vtable: ['vtable', 'cpp-abi', 'cxx-abi', 'virtual-dispatch', 'class-layout'],
+  vftable: ['vftable', 'msvc-abi', 'cpp-abi', 'virtual-dispatch', 'class-layout'],
+  vbtable: ['vbtable', 'msvc-abi', 'cpp-abi', 'class-layout'],
+  'class-layout': ['class-layout', 'cpp-abi', 'cxx-abi', 'rtti', 'vtable', 'virtual-dispatch'],
+  'virtual-dispatch': ['virtual-dispatch', 'cpp-abi', 'vtable', 'vftable', 'class-layout'],
+  'exception-handling': ['exception-handling', 'cxx-eh', 'cpp-abi', 'eh-frame', 'xdata', 'pdata'],
+  'cxx-eh': ['cxx-eh', 'exception-handling', 'cpp-abi'],
+  ebpf: ['ebpf', 'bpf', 'ebpf-bytecode', 'linux', 'bytecode'],
+  bpf: ['ebpf', 'bpf', 'ebpf-bytecode', 'linux', 'bytecode'],
+  'ebpf-bytecode': ['ebpf', 'bpf', 'ebpf-bytecode', 'raw-ebpf', 'linux', 'bytecode'],
+  'raw-ebpf': ['ebpf', 'bpf', 'ebpf-bytecode', 'raw-ebpf', 'linux', 'bytecode'],
+  'ebpf-elf': ['ebpf', 'bpf', 'ebpf-elf', 'elf', 'linux', 'object', 'bytecode', 'btf'],
+  'bpf-object': ['ebpf', 'bpf', 'bpf-object', 'elf-object', 'elf', 'linux', 'object', 'btf'],
+  btf: ['btf', 'bpf-btf', 'ebpf', 'bpf', 'linux', 'types', 'debug-metadata'],
+  'btf-ext': ['btf-ext', 'btf', 'core-relocations', 'co-re', 'ebpf', 'bpf', 'linux'],
+  'btf-elf': ['btf-elf', 'btf', 'elf', 'ebpf', 'bpf', 'linux', 'object'],
+  'bpf-btf': ['bpf-btf', 'btf', 'ebpf', 'bpf', 'linux', 'types'],
+  'core-relocations': ['core-relocations', 'co-re', 'btf-ext', 'btf', 'ebpf', 'bpf', 'linux'],
+  'co-re': ['co-re', 'core-relocations', 'btf-ext', 'btf', 'ebpf', 'bpf', 'linux'],
+  xdp: ['xdp', 'ebpf', 'bpf', 'linux', 'network'],
+  'tc-bpf': ['tc-bpf', 'ebpf', 'bpf', 'linux', 'network'],
+  'kprobe-bpf': ['kprobe-bpf', 'ebpf', 'bpf', 'linux', 'kernel-events'],
+  'tracepoint-bpf': ['tracepoint-bpf', 'ebpf', 'bpf', 'linux', 'kernel-events'],
+  'linux-kernel-module': [
+    'linux-kernel-module',
+    'linux-driver',
+    'kernel-driver',
+    'driver',
+    'driver-surface',
+    'ioctl',
+    'elf',
+    'linux',
+    'linux-binary',
+  ],
+  'kernel-driver': [
+    'kernel-driver',
+    'driver',
+    'driver-surface',
+    'ioctl',
+    'windows-driver',
+    'linux-driver',
+    'sys',
+    'linux-kernel-module',
+  ],
+  driver: ['driver', 'kernel-driver', 'driver-surface', 'ioctl', 'sys', 'linux-kernel-module'],
+  'driver-surface': ['driver-surface', 'kernel-driver', 'driver', 'ioctl'],
+  ioctl: ['ioctl', 'driver-surface', 'kernel-driver', 'driver'],
+  'windows-driver': [
+    'windows-driver',
+    'windows-kernel-driver',
+    'kernel-driver',
+    'driver',
+    'driver-surface',
+    'ioctl',
+    'sys',
+    'pe',
+    'windows',
+  ],
+  'windows-kernel-driver': [
+    'windows-kernel-driver',
+    'windows-driver',
+    'kernel-driver',
+    'driver',
+    'driver-surface',
+    'ioctl',
+    'wdm',
+    'kmdf',
+    'sys',
+    'pe',
+    'windows',
+  ],
+  'linux-driver': [
+    'linux-driver',
+    'linux-kernel-module',
+    'kernel-driver',
+    'driver',
+    'driver-surface',
+    'ioctl',
+    'elf',
+    'linux',
+  ],
+  wdm: ['wdm', 'windows-kernel-driver', 'windows-driver', 'kernel-driver', 'ioctl'],
+  kmdf: ['kmdf', 'windows-kernel-driver', 'windows-driver', 'kernel-driver', 'ioctl'],
+  'windows-interface': ['windows-interface', 'windows', 'com', 'rpc', 'ipc', 'etw', 'wmi'],
+  com: ['com', 'dcom', 'ole', 'windows-interface', 'windows', 'clsid', 'iid'],
+  dcom: ['dcom', 'com', 'windows-interface', 'windows', 'rpc'],
+  ole: ['ole', 'com', 'windows-interface', 'windows'],
+  rpc: ['rpc', 'windows-interface', 'windows', 'uuid', 'endpoint'],
+  alpc: ['alpc', 'ipc', 'windows-interface', 'windows'],
+  etw: ['etw', 'event-tracing', 'windows-interface', 'windows', 'provider-guid'],
+  wmi: ['wmi', 'wbem', 'windows-interface', 'windows', 'namespace'],
+  'named-pipe': ['named-pipe', 'pipe', 'ipc', 'windows-interface', 'windows'],
+  'service-control': ['service-control', 'scm', 'windows-service', 'windows-interface', 'windows'],
+  winrt: ['winrt', 'winmd', 'windows-interface', 'windows'],
+  typelib: ['typelib', 'tlb', 'com', 'windows-interface', 'windows'],
+  tlb: ['tlb', 'typelib', 'com', 'windows-interface', 'windows'],
+  idl: ['idl', 'rpc', 'com', 'windows-interface', 'windows'],
+  syscall: ['syscall', 'syscall-stub', 'direct-syscall', 'raw-shellcode', 'shellcode'],
+  'syscall-stub': ['syscall-stub', 'syscall', 'direct-syscall', 'raw-shellcode', 'shellcode'],
+  'direct-syscall': ['direct-syscall', 'syscall-stub', 'syscall', 'windows', 'ntdll-stub'],
+  'raw-shellcode': ['raw-shellcode', 'shellcode', 'syscall', 'bytecode'],
+  shellcode: ['shellcode', 'raw-shellcode', 'syscall', 'bytecode'],
+  'ntdll-stub': ['ntdll-stub', 'direct-syscall', 'syscall-stub', 'syscall', 'windows'],
+  'linux-syscall': ['linux-syscall', 'syscall', 'linux', 'elf', 'linux-binary'],
+  'mach-trap': ['mach-trap', 'syscall', 'macho', 'macos', 'ios'],
+  svc: ['svc', 'syscall', 'arm', 'arm64', 'linux', 'android', 'ios'],
+  ecall: ['ecall', 'syscall', 'riscv', 'linux'],
+  'ar-static-lib': ['ar-static-lib', 'static-lib', 'ar', 'archive', 'object'],
+  cuda: ['cuda', 'gpu', 'accelerator'],
+  gpu: ['gpu', 'accelerator'],
+  sass: ['sass', 'cuda', 'gpu', 'accelerator'],
+  ptx: ['ptx', 'cuda', 'gpu', 'sass', 'accelerator'],
+  cubin: ['cubin', 'cuda', 'gpu', 'sass', 'elf', 'accelerator'],
+  fatbin: ['fatbin', 'cuda', 'gpu', 'ptx', 'cubin', 'sass', 'accelerator', 'container'],
+  'cuda-ptx': ['cuda-ptx', 'ptx', 'cuda', 'gpu', 'sass', 'accelerator'],
+  'cuda-cubin': ['cuda-cubin', 'cubin', 'cuda', 'gpu', 'sass', 'elf', 'accelerator'],
+  'cuda-fatbin': [
+    'cuda-fatbin',
+    'fatbin',
+    'cuda',
+    'gpu',
+    'ptx',
+    'cubin',
+    'sass',
+    'accelerator',
+    'container',
+  ],
+  deb: ['deb', 'linux', 'package'],
+  rpm: ['rpm', 'linux', 'package'],
+  'apk-alpine': ['apk-alpine', 'linux', 'package'],
+  snap: ['snap', 'linux', 'package'],
+  flatpak: ['flatpak', 'linux', 'package'],
+  appimage: ['appimage', 'linux', 'package'],
+  'mach-o': ['macho', 'mach-o', 'macos', 'ios', 'apple-signing', 'objc', 'swift'],
+  'mach-o-fat': ['macho', 'mach-o', 'mach-o-fat', 'macos', 'ios', 'apple-signing', 'objc', 'swift'],
+  macho: ['macho', 'mach-o', 'macos', 'ios', 'apple-signing', 'objc', 'swift'],
+  'macho-object': ['macho-object', 'object', 'macho', 'macos', 'ios', 'objc', 'swift'],
+  dylib: ['dylib', 'macho', 'macos', 'ios', 'apple-signing', 'objc', 'swift'],
+  framework: ['framework', 'macho', 'macos', 'ios', 'container', 'apple-signing', 'objc', 'swift'],
+  xcframework: [
+    'xcframework',
+    'macho',
+    'macos',
+    'ios',
+    'container',
+    'apple-signing',
+    'objc',
+    'swift',
+  ],
+  'app-bundle': [
+    'app-bundle',
+    'macho',
+    'macos',
+    'ios',
+    'container',
+    'apple-signing',
+    'objc',
+    'swift',
+  ],
+  dsym: ['dsym', 'macho', 'symbols', 'debug-metadata', 'macos', 'ios', 'swift'],
+  'apple-signing': ['apple-signing', 'macos', 'ios', 'certificates', 'package-metadata'],
+  codesignature: ['codesignature', 'apple-signing', 'macos', 'ios', 'certificates'],
+  entitlements: ['entitlements', 'apple-signing', 'macos', 'ios', 'manifest'],
+  plist: ['plist', 'apple-signing', 'macos', 'ios', 'manifest'],
+  mobileprovision: ['mobileprovision', 'ios', 'certificates', 'package-metadata', 'apple-signing'],
+  ipa: ['ipa', 'ios', 'macho', 'apple-signing', 'objc', 'swift'],
+  dmg: ['dmg', 'macos', 'container'],
+  pkg: ['pkg', 'macos', 'installer'],
+  'objc-metadata': ['objc-metadata', 'objc', 'objective-c', 'macho', 'macos', 'ios'],
+  'objective-c': ['objective-c', 'objc', 'objc-metadata', 'macho', 'macos', 'ios'],
+  objc: ['objc', 'objective-c', 'objc-metadata', 'macho', 'macos', 'ios'],
+  'swift-metadata': ['swift-metadata', 'swift', 'swift-abi', 'swift-reflection', 'macho'],
+  swift: ['swift', 'swift-metadata', 'swift-abi', 'swift-reflection', 'macho', 'macos', 'ios'],
+  swiftmodule: ['swiftmodule', 'swift-metadata', 'swift', 'swift-abi'],
+  'swift-module': ['swiftmodule', 'swift-metadata', 'swift', 'swift-abi'],
+  swiftinterface: ['swiftinterface', 'swift-metadata', 'swift', 'swift-abi', 'source-interface'],
+  'swift-interface': ['swiftinterface', 'swift-metadata', 'swift', 'swift-abi', 'source-interface'],
+  swiftdoc: ['swiftdoc', 'swift-metadata', 'swift', 'documentation'],
+  'swift-doc': ['swiftdoc', 'swift-metadata', 'swift', 'documentation'],
+  'swift-abi': ['swift-abi', 'swift-metadata', 'swift', 'abi'],
+  'swift-reflection': ['swift-reflection', 'swift-metadata', 'swift', 'reflection'],
+  'android-package': ['android-package', 'android', 'apk', 'dex'],
+  'android-bytecode': ['android-bytecode', 'android', 'dex'],
+  apk: ['apk', 'android', 'dex', 'android-package'],
+  aab: ['aab', 'android', 'dex', 'android-package'],
+  apks: ['apks', 'android', 'split-apk', 'android-package'],
+  xapk: ['xapk', 'android', 'apk', 'android-package'],
+  'split-apk': ['split-apk', 'android', 'apk', 'android-package'],
+  dex: ['dex', 'android', 'android-bytecode'],
+  'multi-dex': ['multi-dex', 'dex', 'android', 'android-bytecode'],
+  oat: ['oat', 'android', 'android-bytecode'],
+  odex: ['odex', 'android', 'android-bytecode'],
+  art: ['art', 'android', 'android-bytecode'],
+  vdex: ['vdex', 'android', 'android-bytecode'],
+  aar: ['aar', 'android', 'jvm', 'java', 'archive', 'android-package'],
+  'apk-signature': ['apk-signature', 'android', 'certificates', 'android-package'],
+  arsc: ['arsc', 'android', 'resources', 'android-package'],
+  jar: ['jar', 'jvm', 'java', 'class'],
+  war: ['war', 'jvm', 'java', 'archive'],
+  jmod: ['jmod', 'jvm', 'java', 'archive'],
+  class: ['class', 'jvm', 'java'],
+  'kotlin-metadata': ['kotlin-metadata', 'jvm', 'java'],
+  dotnet: ['dotnet', 'pe-clr'],
+  nupkg: ['nupkg', 'dotnet', 'archive'],
+  mono: ['mono', 'dotnet'],
+  winmd: ['winmd', 'dotnet', 'pe-clr'],
+  unity: ['unity', 'unity-metadata', 'dotnet'],
+  'unity-metadata': ['unity-metadata', 'unity', 'il2cpp'],
+  il2cpp: ['il2cpp', 'unity', 'native'],
+  wasm: ['wasm', 'wasi'],
+  wat: ['wat', 'wasm', 'wasi'],
+  'wasm-component': [
+    'wasm-component',
+    'component-model',
+    'wit-component',
+    'wasi-preview2',
+    'wasm',
+    'wasi',
+  ],
+  'component-model': [
+    'component-model',
+    'wasm-component',
+    'wit-component',
+    'wasi-preview2',
+    'wasm',
+    'wasi',
+  ],
+  'wit-component': [
+    'wit-component',
+    'component-model',
+    'wasm-component',
+    'wasi-preview2',
+    'wit',
+    'wasm',
+  ],
+  'wasi-preview2': [
+    'wasi-preview2',
+    'component-model',
+    'wasm-component',
+    'wit-component',
+    'wasi',
+    'wasm',
+  ],
+  'llvm-bitcode': ['llvm-bitcode', 'llvm-bc', 'llvm-ir', 'bc', 'bitcode'],
+  'llvm-bitcode-wrapper': [
+    'llvm-bitcode-wrapper',
+    'llvm-bitcode',
+    'llvm-bc',
+    'llvm-ir',
+    'bc',
+    'bitcode',
+  ],
+  'llvm-bc': ['llvm-bc', 'llvm-bitcode', 'llvm-ir', 'bc', 'bitcode'],
+  'llvm-ir': ['llvm-ir', 'llvm-bitcode', 'llvm-bc', 'll', 'bc', 'bitcode'],
+  bc: ['bc', 'llvm-bc', 'llvm-bitcode', 'llvm-ir', 'bitcode'],
+  ll: ['ll', 'llvm-ir', 'llvm-bitcode'],
+  'shader-ir': ['shader-ir', 'shader', 'gpu', 'accelerator'],
+  shader: ['shader', 'shader-ir', 'gpu', 'accelerator'],
+  'spir-v': ['spir-v', 'spirv', 'spv', 'shader-ir', 'vulkan', 'webgpu', 'gpu', 'bytecode'],
+  spirv: ['spirv', 'spir-v', 'spv', 'shader-ir', 'vulkan', 'webgpu', 'gpu', 'bytecode'],
+  spv: ['spv', 'spir-v', 'spirv', 'shader-ir', 'vulkan', 'webgpu', 'gpu', 'bytecode'],
+  dxil: ['dxil', 'dxcontainer', 'dxbc', 'shader-ir', 'directx', 'hlsl', 'gpu', 'llvm-ir'],
+  dxbc: ['dxbc', 'dxcontainer', 'dxil', 'shader-ir', 'directx', 'hlsl', 'gpu'],
+  dxcontainer: ['dxcontainer', 'dxbc', 'dxil', 'shader-ir', 'directx', 'hlsl', 'gpu'],
+  'dxil-container': ['dxil', 'dxcontainer', 'dxbc', 'shader-ir', 'directx', 'hlsl', 'gpu'],
+  'dxbc-container': ['dxbc', 'dxcontainer', 'shader-ir', 'directx', 'hlsl', 'gpu'],
+  wgsl: ['wgsl', 'webgpu', 'shader-ir', 'shader', 'gpu', 'source'],
+  'metal-metallib': ['metal-metallib', 'metallib', 'metal', 'shader-ir', 'gpu', 'apple'],
+  metallib: ['metallib', 'metal-metallib', 'metal', 'shader-ir', 'gpu', 'apple'],
+  'ml-model': ['ml-model', 'ai-model', 'model-checkpoint', 'weights', 'tensor'],
+  'ai-model': ['ai-model', 'ml-model', 'model-checkpoint', 'weights', 'tensor'],
+  'model-checkpoint': ['model-checkpoint', 'ml-model', 'ai-model', 'weights'],
+  safetensors: ['safetensors', 'ml-model', 'ai-model', 'weights', 'tensor'],
+  gguf: ['gguf', 'ggml', 'ml-model', 'ai-model', 'llm', 'weights', 'tensor'],
+  ggml: ['ggml', 'gguf', 'ml-model', 'ai-model', 'llm', 'weights', 'tensor'],
+  onnx: ['onnx', 'ml-model', 'ai-model', 'model-graph', 'tensor'],
+  tflite: ['tflite', 'tensorflow-lite', 'ml-model', 'ai-model', 'model-graph', 'tensor'],
+  'pytorch-checkpoint': [
+    'pytorch-checkpoint',
+    'pytorch',
+    'torch',
+    'pickle',
+    'ml-model',
+    'ai-model',
+    'model-checkpoint',
+    'weights',
+  ],
+  torch: ['torch', 'pytorch', 'pytorch-checkpoint', 'pickle', 'ml-model', 'ai-model'],
+  pytorch: ['pytorch', 'torch', 'pytorch-checkpoint', 'pickle', 'ml-model', 'ai-model'],
+  pickle: ['pickle', 'pytorch-checkpoint', 'ml-model', 'unsafe-deserialization'],
+  npy: ['npy', 'numpy', 'ml-model', 'tensor'],
+  npz: ['npz', 'numpy', 'zip', 'archive', 'ml-model', 'tensor'],
+  pyc: ['pyc', 'python'],
+  'lua-bytecode': ['lua-bytecode', 'lua'],
+  'v8-cache': ['v8-cache', 'node'],
+  js: ['js', 'javascript', 'node', 'browser'],
+  javascript: ['js', 'javascript', 'node', 'browser'],
+  mjs: ['mjs', 'js', 'javascript', 'node'],
+  cjs: ['cjs', 'js', 'javascript', 'node'],
+  typescript: ['typescript', 'js', 'javascript', 'node'],
+  'source-map': ['source-map', 'js', 'javascript'],
+  html: ['html', 'js', 'javascript', 'browser'],
+  firmware: ['firmware', 'embedded'],
+  uimage: ['uimage', 'firmware', 'embedded', 'linux'],
+  fit: ['fit', 'firmware', 'embedded', 'linux'],
+  dtb: ['dtb', 'firmware', 'embedded', 'linux'],
+  itb: ['itb', 'fit', 'firmware', 'embedded', 'linux'],
+  initramfs: ['initramfs', 'firmware', 'archive', 'linux', 'linux-binary'],
+  cpio: ['cpio', 'initramfs', 'archive', 'linux', 'linux-binary'],
+  squashfs: ['squashfs', 'firmware', 'filesystem', 'embedded'],
+  cramfs: ['cramfs', 'firmware', 'filesystem', 'embedded'],
+  jffs2: ['jffs2', 'firmware', 'filesystem', 'embedded'],
+  ubi: ['ubi', 'firmware', 'filesystem', 'embedded'],
+  ubifs: ['ubifs', 'firmware', 'filesystem', 'embedded'],
+  romfs: ['romfs', 'firmware', 'filesystem', 'embedded'],
+  zip: ['zip', 'archive', 'container'],
+  '7z': ['7z', 'archive', 'container'],
+  rar: ['rar', 'archive', 'container'],
+  tar: ['tar', 'archive', 'container'],
+  gz: ['gz', 'archive', 'container'],
+  xz: ['xz', 'archive', 'container'],
+  zstd: ['zstd', 'archive', 'container'],
+  iso: ['iso', 'archive', 'container'],
+  ar: ['ar', 'archive', 'container'],
+  archive: ['archive', 'container'],
+  container: ['container', 'archive'],
+  'docker-image': ['docker-image', 'container', 'archive'],
+  'oci-image': ['oci-image', 'container', 'archive'],
   office: ['office', 'doc', 'xls', 'ppt', 'docx', 'xlsx'],
   pdf: ['pdf'],
   pcap: ['pcap', 'pcapng', 'network'],
@@ -757,6 +2289,13 @@ export const PluginSystemDepSchema = z
         })
       )
       .optional(),
+    dockerInstallRoute: z
+      .enum(['installed', 'profile-gated', 'byo', 'sidecar', 'validation-only'])
+      .optional(),
+    dockerInstallProfile: z
+      .enum(['default', 'optional', 'heavy', 'research', 'runtime', 'gpu', 'license-gated'])
+      .optional(),
+    dockerInstallNotes: z.array(z.string()).optional(),
   })
   .passthrough()
 
@@ -774,13 +2313,116 @@ export const SurfaceRulesSchema = z
   })
   .passthrough()
 
+export const ToolArtifactSpecSchema = z
+  .object({
+    type: z.string().min(1),
+    description: z.string().optional(),
+    mime: z.string().optional(),
+    required: z.boolean().optional(),
+  })
+  .passthrough()
+
+export const ToolEvidenceSpecSchema = z
+  .object({
+    category: z.string().min(1),
+    description: z.string().optional(),
+    artifactTypes: z.array(z.string()).optional(),
+    required: z.boolean().optional(),
+  })
+  .passthrough()
+
+export const WorkflowRecipeSpecSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    description: z.string().optional(),
+    startsWith: z.array(z.string()).optional(),
+    nextTools: z.array(z.string()).optional(),
+    requiredArtifacts: z.array(z.string()).optional(),
+    producesArtifacts: z.array(z.string()).optional(),
+    evidence: z.array(z.string()).optional(),
+    safety: z.array(z.string()).optional(),
+    runtimeBackends: z.array(z.string()).optional(),
+  })
+  .passthrough()
+
+export const BackendWorkerPolicySchema = z
+  .object({
+    passiveByDefault: z.boolean().optional().default(true),
+    requiresUserOptIn: z.boolean().optional().default(false),
+    requiresIsolation: z.boolean().optional().default(false),
+    noNetwork: z.boolean().optional().default(true),
+    noMutation: z.boolean().optional().default(true),
+    noLiveExecution: z.boolean().optional().default(true),
+    maxInputBytes: z.number().int().positive().optional(),
+    maxOutputBytes: z.number().int().positive().optional(),
+    defaultTimeoutMs: z.number().int().positive().optional(),
+    allowedRoots: z.array(z.string()).optional(),
+    notes: z.array(z.string()).optional(),
+  })
+  .passthrough()
+
+export const BackendWorkerContractSchema = z
+  .object({
+    version: z.literal('backend-worker.v1').optional().default('backend-worker.v1'),
+    backendName: z.string().min(1),
+    backendKind: z.enum(['builtin', 'external', 'delegated-runtime']),
+    adapter: z.string().min(1),
+    availability: z.enum(['builtin', 'optional', 'required']).optional().default('optional'),
+    envVar: z.string().optional(),
+    commandHint: z.string().optional(),
+    versionHint: z.string().optional(),
+    supportedModes: z.array(z.string()).optional().default(['builtin']),
+    defaultMode: z.string().optional().default('builtin'),
+    inputArtifactTypes: z.array(z.string()).optional().default([]),
+    outputArtifactTypes: z.array(z.string()).optional().default([]),
+    policy: BackendWorkerPolicySchema.optional().default({}),
+    readiness: z
+      .object({
+        doesNotStartBackend: z.boolean().optional().default(true),
+        setupActions: z.array(z.string()).optional().default([]),
+        missingBackendBehavior: z.string().optional(),
+      })
+      .passthrough()
+      .optional()
+      .default({}),
+    packaging: z
+      .object({
+        installRoute: z
+          .enum(['installed', 'profile-gated', 'byo', 'sidecar', 'validation-only'])
+          .optional(),
+        installProfile: z
+          .enum(['default', 'optional', 'heavy', 'research', 'runtime', 'gpu', 'license-gated'])
+          .optional(),
+        dockerFeature: z.string().optional(),
+        envVar: z.string().optional(),
+        dockerDefault: z.string().optional(),
+        notes: z.array(z.string()).optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough()
+
+export type ToolArtifactSpec = z.infer<typeof ToolArtifactSpecSchema> & Record<string, unknown>
+export type ToolEvidenceSpec = z.infer<typeof ToolEvidenceSpecSchema> & Record<string, unknown>
+export type WorkflowRecipeSpec = z.infer<typeof WorkflowRecipeSpecSchema> & Record<string, unknown>
+export type BackendWorkerPolicySchemaType = z.infer<typeof BackendWorkerPolicySchema>
+export type BackendWorkerContractSchemaType = z.infer<typeof BackendWorkerContractSchema>
+
 export const ToolManifestSchema = z
   .object({
     name: ToolNameSchema,
     description: z.string().min(1),
     inputSchema: z.any().default({ type: 'object', properties: {} }),
     outputSchema: z.any().optional(),
+    aspects: PluginAspectsSchema.optional(),
+    artifacts: z.array(ToolArtifactSpecSchema).optional(),
+    evidence: z.array(ToolEvidenceSpecSchema).optional(),
+    workflowRecipes: z.array(WorkflowRecipeSpecSchema).optional(),
+    runtimePolicy: DynamicRuntimePolicySchema.optional(),
     runtime: ToolRuntimeContractSchema.optional(),
+    workerBackend: BackendWorkerContractSchema.optional(),
     handler: z.string().optional(),
   })
   .passthrough()
@@ -795,6 +2437,8 @@ export const PluginManifestSchema = z
     dependencies: z.array(PluginIdSchema).optional(),
     configSchema: z.array(PluginConfigFieldSchema).optional(),
     systemDeps: z.array(PluginSystemDepSchema).optional(),
+    aspects: PluginAspectsSchema.optional(),
+    runtimePolicy: DynamicRuntimePolicySchema.optional(),
     resources: z
       .object({
         workers: z.string().optional(),
@@ -807,8 +2451,35 @@ export const PluginManifestSchema = z
   })
   .passthrough()
 
-export type ToolManifest = z.infer<typeof ToolManifestSchema>
-export type PluginManifest = z.infer<typeof PluginManifestSchema>
+export interface ToolManifest extends ToolDefinition {
+  handler?: string
+  [key: string]: unknown
+}
+
+export interface PluginManifest {
+  id: string
+  name: string
+  description?: string
+  version?: string
+  executionDomain?: 'static' | 'dynamic' | 'both'
+  dependencies?: string[]
+  configSchema?: PluginConfigField[]
+  systemDeps?: PluginSystemDep[]
+  aspects?: PluginAspects
+  runtimePolicy?: DynamicRuntimePolicy
+  resources?: {
+    workers?: string
+    scripts?: string
+    data?: string
+  }
+  surfaceRules?: SurfaceRules
+  tools?: ToolManifest[]
+  [key: string]: unknown
+}
+
+type ParsedPluginManifest = PluginManifest & {
+  tools: ToolManifest[]
+}
 
 export interface Plugin {
   /** Unique kebab-case identifier, e.g. `'android'`, `'ghidra'`. */
@@ -837,6 +2508,10 @@ export interface Plugin {
    * will auto-generate a check from these declarations.
    */
   systemDeps?: PluginSystemDep[]
+  /** Aspect metadata used by sample profiling and progressive discovery. */
+  aspects?: PluginAspects
+  /** Dynamic execution policy applied to this plugin's runtime-backed tools by default. */
+  runtimePolicy?: DynamicRuntimePolicy
   /**
    * Declares co-located resource directories relative to the plugin root.
    * Used by the Docker generator and build tooling to discover plugin assets.
@@ -928,6 +2603,68 @@ export const WorkerResultMetricsSchema = z
   })
   .passthrough()
 
+export const EvidenceRefSchema = z
+  .object({
+    id: z.string(),
+    category: z.string(),
+    source: z.string(),
+    toolName: z.string().optional(),
+    sampleId: z.string().optional(),
+    artifactRefs: z.array(ArtifactRefSchema).optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    metadata: z.record(z.any()).optional(),
+  })
+  .passthrough()
+
+export const EvidenceTimelineEntrySchema = z
+  .object({
+    timestamp: z.string().optional(),
+    source: z.string(),
+    toolName: z.string(),
+    sampleId: z.string().optional(),
+    category: z.string(),
+    subject: z.string().optional(),
+    action: z.string().optional(),
+    target: z.string().optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    artifactRefs: z.array(ArtifactRefSchema).optional(),
+    metadata: z.record(z.any()).optional(),
+  })
+  .passthrough()
+
+export const ToolOutputEnvelopeSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.any().optional(),
+    warnings: z.array(z.string()).optional(),
+    errors: z.array(z.string()).optional(),
+    artifacts: z.array(ArtifactRefSchema).optional(),
+    evidence: z.array(EvidenceRefSchema).optional(),
+    timeline: z.array(EvidenceTimelineEntrySchema).optional(),
+    metrics: WorkerResultMetricsSchema.optional(),
+  })
+  .passthrough()
+
+export type EvidenceRef = z.infer<typeof EvidenceRefSchema>
+export type EvidenceTimelineEntry = z.infer<typeof EvidenceTimelineEntrySchema>
+export type ToolOutputEnvelope = z.infer<typeof ToolOutputEnvelopeSchema>
+
+export function createEvidenceRef(input: z.input<typeof EvidenceRefSchema>): EvidenceRef {
+  return EvidenceRefSchema.parse(input)
+}
+
+export function createEvidenceTimelineEntry(
+  input: z.input<typeof EvidenceTimelineEntrySchema>
+): EvidenceTimelineEntry {
+  return EvidenceTimelineEntrySchema.parse(input)
+}
+
+export function createToolOutputEnvelope(
+  input: z.input<typeof ToolOutputEnvelopeSchema>
+): ToolOutputEnvelope {
+  return ToolOutputEnvelopeSchema.parse(input)
+}
+
 export function createWorkerResultOutputSchema<TData extends z.ZodTypeAny = z.ZodAny>(
   dataSchema: TData = z.any() as unknown as TData
 ) {
@@ -938,6 +2675,8 @@ export function createWorkerResultOutputSchema<TData extends z.ZodTypeAny = z.Zo
       warnings: z.array(z.string()).optional(),
       errors: z.array(z.string()).optional(),
       artifacts: z.array(ArtifactRefSchema).optional(),
+      evidence: z.array(EvidenceRefSchema).optional(),
+      timeline: z.array(EvidenceTimelineEntrySchema).optional(),
       metrics: WorkerResultMetricsSchema.optional(),
       setup_actions: z.array(z.any()).optional(),
       required_user_inputs: z.array(z.any()).optional(),
@@ -953,6 +2692,25 @@ export interface DefinePluginConfig extends Omit<Plugin, 'register' | 'tools'> {
 }
 
 export type ManifestHandlers = Record<string, ToolHandler>
+
+export interface RegisteredHarnessTool {
+  definition: ToolDefinition
+  handler: (args: unknown) => Promise<unknown>
+}
+
+export interface PluginTestHarnessOptions {
+  deps?: Partial<PluginToolDeps>
+  ctx?: Partial<PluginContext>
+  server?: Partial<PluginServerInterface>
+}
+
+export interface PluginTestHarness {
+  deps: PluginToolDeps
+  ctx: PluginContext
+  registeredTools: RegisteredHarnessTool[]
+  server: PluginServerInterface
+  registerPlugin(plugin: Plugin): string[]
+}
 
 export type PluginServicePath =
   | 'workspace.manager'
@@ -989,6 +2747,8 @@ const PluginShapeSchema = z
     dependencies: z.array(PluginIdSchema).optional(),
     configSchema: z.array(PluginConfigFieldSchema).optional(),
     systemDeps: z.array(PluginSystemDepSchema).optional(),
+    aspects: PluginAspectsSchema.optional(),
+    runtimePolicy: DynamicRuntimePolicySchema.optional(),
     resources: z
       .object({
         workers: z.string().optional(),
@@ -1052,6 +2812,73 @@ function registerDefinedTools(
   return names
 }
 
+function createHarnessLogger(): PluginLogger {
+  return {
+    info() {},
+    warn() {},
+    error() {},
+    debug() {},
+  }
+}
+
+export function createPluginTestHarness(options: PluginTestHarnessOptions = {}): PluginTestHarness {
+  const registeredTools: RegisteredHarnessTool[] = []
+  const deps = {
+    workspaceManager: {},
+    database: {},
+    config: {},
+    services: {
+      workspace: {},
+      platform: {},
+      runtime: {},
+      ghidra: {},
+    },
+    ...options.deps,
+  } as PluginToolDeps
+  const ctx: PluginContext = {
+    pluginId: 'test-plugin',
+    logger: createHarnessLogger(),
+    getConfig(envVar: string) {
+      return process.env[envVar]
+    },
+    getRequiredConfig(envVar: string) {
+      const value = process.env[envVar]
+      if (value === undefined || value.trim().length === 0) {
+        throw new Error(`${envVar} is required`)
+      }
+      return value
+    },
+    dataDir: '.',
+    ...options.ctx,
+  }
+  const server: PluginServerInterface = {
+    registerTool(definition, handler) {
+      registeredTools.push({ definition, handler })
+    },
+    unregisterTool(canonicalName) {
+      const index = registeredTools.findIndex(
+        (tool) =>
+          tool.definition.canonicalName === canonicalName || tool.definition.name === canonicalName
+      )
+      if (index >= 0) {
+        registeredTools.splice(index, 1)
+      }
+    },
+    ...options.server,
+  }
+
+  return {
+    deps,
+    ctx,
+    registeredTools,
+    server,
+    registerPlugin(plugin) {
+      const names = plugin.register?.(server, deps, ctx)
+      return Array.isArray(names) ? names : registeredTools.map((tool) => tool.definition.name)
+    },
+  }
+}
+
 export function defineTool<TArgs = ToolArgs>(config: DefineToolConfig<TArgs>): DefinedTool<TArgs> {
   const definition: ToolDefinition = {
     name: config.name,
@@ -1059,7 +2886,13 @@ export function defineTool<TArgs = ToolArgs>(config: DefineToolConfig<TArgs>): D
     description: config.description,
     inputSchema: config.inputSchema,
     outputSchema: config.outputSchema,
+    aspects: config.aspects,
+    artifacts: config.artifacts,
+    evidence: config.evidence,
+    workflowRecipes: config.workflowRecipes,
+    runtimePolicy: config.runtimePolicy,
     runtime: config.runtime,
+    workerBackend: config.workerBackend,
   }
   const definedTool: DefinedTool<TArgs> = {
     definition,
@@ -1098,7 +2931,7 @@ export function defineManifestPlugin(
   manifestInput: PluginManifest,
   handlers: ManifestHandlers
 ): Plugin {
-  const manifest = PluginManifestSchema.parse(manifestInput) as PluginManifest
+  const manifest = PluginManifestSchema.parse(manifestInput) as ParsedPluginManifest
   const tools = manifest.tools.map((toolManifest: ToolManifest) => {
     const handlerName = String(toolManifest.handler ?? toolManifest.name)
     const handler = handlers[handlerName]
@@ -1112,7 +2945,13 @@ export function defineManifestPlugin(
       description: toolManifest.description,
       inputSchema: toolManifest.inputSchema,
       outputSchema: toolManifest.outputSchema,
-      runtime: toolManifest.runtime as ToolRuntimeContract | undefined,
+      aspects: toolManifest.aspects,
+      artifacts: toolManifest.artifacts,
+      evidence: toolManifest.evidence,
+      workflowRecipes: toolManifest.workflowRecipes,
+      runtimePolicy: toolManifest.runtimePolicy,
+      runtime: toolManifest.runtime,
+      workerBackend: toolManifest.workerBackend,
       handler,
     })
   })
@@ -1126,6 +2965,8 @@ export function defineManifestPlugin(
     dependencies: manifest.dependencies,
     configSchema: manifest.configSchema,
     systemDeps: manifest.systemDeps,
+    aspects: manifest.aspects,
+    runtimePolicy: manifest.runtimePolicy,
     resources: manifest.resources,
     surfaceRules: manifest.surfaceRules,
     tools,
@@ -1141,7 +2982,13 @@ export function validateTool(
     description: definition.description,
     inputSchema: definition.inputSchema,
     outputSchema: definition.outputSchema,
+    aspects: definition.aspects,
+    artifacts: definition.artifacts,
+    evidence: definition.evidence,
+    workflowRecipes: definition.workflowRecipes,
+    runtimePolicy: definition.runtimePolicy,
     runtime: definition.runtime,
+    workerBackend: definition.workerBackend,
   })
   const issues = result.success ? [] : zodIssues(result.error)
   if (isDefinedTool(value) && typeof value.handler !== 'function') {

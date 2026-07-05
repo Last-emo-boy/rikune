@@ -20,6 +20,46 @@ import {
 } from '../../docker-shared.js'
 
 const TOOL_NAME = 'pe.signature.verify'
+const VERIFY_ARTIFACT_TYPE = 'backend_pe-sig_verify'
+const CERTIFICATE_ARTIFACT_TYPE = 'backend_pe-sig_certificate'
+
+export const PE_SIGNATURE_TRUST_REVIEW_SAFETY = [
+  'passive',
+  'no_network_by_default',
+  'no_mutation',
+  'no_live_sample_by_default',
+]
+
+export const PE_SIGNATURE_TRUST_REVIEW_EVIDENCE = [
+  'signatures',
+  'certificates',
+  'authenticode',
+  'trust',
+  'workflow',
+  'provenance',
+]
+
+export const PE_SIGNATURE_VERIFY_RECOMMENDED_NEXT_TOOLS = [
+  'pe.certificate.extract',
+  'pe.structure.analyze',
+  'windows.debug.metadata.inspect',
+  'analysis.evidence.graph',
+  'report.generate',
+  'artifact.read',
+]
+
+export const PE_SIGNATURE_AUTHENTICODE_TRUST_REVIEW_RECIPE = {
+  id: 'pe-signature.authenticode-trust-review',
+  title: 'PE Authenticode trust review',
+  description:
+    'Review PE Authenticode signature status, certificate chain metadata, PE structure context, debug metadata hints, and reporting handoff without network lookups, mutation, or live sample execution.',
+  startsWith: ['pe.signature.verify'],
+  nextTools: PE_SIGNATURE_VERIFY_RECOMMENDED_NEXT_TOOLS,
+  requiredArtifacts: ['sample'],
+  producesArtifacts: [VERIFY_ARTIFACT_TYPE, CERTIFICATE_ARTIFACT_TYPE],
+  evidence: PE_SIGNATURE_TRUST_REVIEW_EVIDENCE,
+  safety: PE_SIGNATURE_TRUST_REVIEW_SAFETY,
+}
 
 export const peSignatureVerifyInputSchema = z.object({
   sample_id: z.string().describe('Sample ID for the PE file.'),
@@ -57,6 +97,40 @@ export const peSignatureVerifyToolDefinition: ToolDefinition = {
   description: 'Verify PE Authenticode digital signature and show signer/issuer details.',
   inputSchema: peSignatureVerifyInputSchema,
   outputSchema: peSignatureVerifyOutputSchema,
+  aspects: {
+    formats: ['pe', 'pe32', 'pe64', 'exe', 'dll', 'sys', 'efi', 'pe-clr'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage'],
+    safety: PE_SIGNATURE_TRUST_REVIEW_SAFETY,
+    capabilities: ['signatures', 'certificates', 'timestamp', 'authenticode', 'trust-review'],
+    evidence: PE_SIGNATURE_TRUST_REVIEW_EVIDENCE,
+  },
+  artifacts: [
+    {
+      type: VERIFY_ARTIFACT_TYPE,
+      description: 'Bounded osslsigncode Authenticode verification report',
+    },
+  ],
+  evidence: [
+    {
+      category: 'signatures',
+      artifactTypes: [VERIFY_ARTIFACT_TYPE],
+    },
+    {
+      category: 'certificates',
+      artifactTypes: [VERIFY_ARTIFACT_TYPE],
+    },
+    {
+      category: 'authenticode',
+      artifactTypes: [VERIFY_ARTIFACT_TYPE],
+    },
+    {
+      category: 'trust',
+      artifactTypes: [VERIFY_ARTIFACT_TYPE],
+    },
+  ],
+  workflowRecipes: [PE_SIGNATURE_AUTHENTICODE_TRUST_REVIEW_RECIPE],
 }
 
 export function createPeSignatureVerifyHandler(
@@ -133,7 +207,7 @@ export function createPeSignatureVerifyHandler(
           summary: isSigned
             ? `Signed by "${signer || 'unknown'}", verification: ${signatureValid ? 'VALID' : 'INVALID'}.`
             : 'No Authenticode signature found.',
-          recommended_next_tools: ['pe.certificate.extract', 'pe.inspect', 'capa.analyze'],
+          recommended_next_tools: [...PE_SIGNATURE_VERIFY_RECOMMENDED_NEXT_TOOLS],
           next_actions: isSigned
             ? [
                 signatureValid

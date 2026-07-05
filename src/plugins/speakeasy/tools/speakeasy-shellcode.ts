@@ -18,6 +18,13 @@ import {
   resolvePythonModuleBackend,
   buildDynamicSetupRequired,
 } from '../../docker-shared.js'
+import {
+  SPEAKEASY_RUNTIME_BACKENDS,
+  SPEAKEASY_RUNTIME_POLICY,
+  SPEAKEASY_SAFETY,
+  SPEAKEASY_SHELLCODE_ARTIFACT_TYPE,
+  SPEAKEASY_SHELLCODE_WORKFLOW_RECIPE,
+} from '../speakeasy-metadata.js'
 
 const TOOL_NAME = 'speakeasy.shellcode'
 
@@ -62,6 +69,31 @@ export const speakeasyShellcodeToolDefinition: ToolDefinition = {
     'Emulate raw shellcode bytes from a sample using Speakeasy. Specify architecture and optional offset.',
   inputSchema: speakeasyShellcodeInputSchema,
   outputSchema: speakeasyShellcodeOutputSchema,
+  aspects: {
+    formats: ['shellcode'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64'],
+    execution: ['dynamic', 'emulation'],
+    runtimes: SPEAKEASY_RUNTIME_BACKENDS,
+    safety: SPEAKEASY_SAFETY,
+    capabilities: ['shellcode-emulation', 'api-trace', 'behavior-hints', 'workflow-handoff'],
+    evidence: ['api-calls', 'memory', 'timeline', 'workflow'],
+  },
+  artifacts: [
+    {
+      type: SPEAKEASY_SHELLCODE_ARTIFACT_TYPE,
+      mimeTypes: ['application/json'],
+      description: 'Speakeasy shellcode emulation report with API and memory behavior evidence.',
+    },
+  ],
+  evidence: [
+    { category: 'api-calls', artifactTypes: [SPEAKEASY_SHELLCODE_ARTIFACT_TYPE] },
+    { category: 'memory', artifactTypes: [SPEAKEASY_SHELLCODE_ARTIFACT_TYPE] },
+    { category: 'timeline', artifactTypes: [SPEAKEASY_SHELLCODE_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [SPEAKEASY_SHELLCODE_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: [SPEAKEASY_SHELLCODE_WORKFLOW_RECIPE],
+  runtimePolicy: SPEAKEASY_RUNTIME_POLICY,
   runtime: { type: 'inline', handler: 'executeSpeakeasyShellcode' },
 }
 

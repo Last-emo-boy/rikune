@@ -57,6 +57,19 @@ export const AnalysisEvidenceRecordSchema = z.object({
   result: z.any(),
 })
 
+export const AnalysisEvidenceProvenanceSummarySchema = z.object({
+  source_tool: z.string(),
+  source_backend: z.string(),
+  source_mode: z.string(),
+  evidence_family: z.string(),
+  source: z.enum(['analysis_evidence', 'cache', 'artifact', 'run_stage', 'none']),
+  freshness_marker: z.string().nullable(),
+  confidence: z.number().min(0).max(1).nullable(),
+  artifact_ids: z.array(z.string()),
+  validation_tools: z.array(z.string()),
+  reason: z.string(),
+})
+
 export const AnalysisEvidenceStateSchema = z.object({
   evidence_family: z.string(),
   backend: z.string(),
@@ -66,12 +79,16 @@ export const AnalysisEvidenceStateSchema = z.object({
   updated_at: z.string().nullable(),
   freshness_marker: z.string().nullable().optional(),
   reason: z.string(),
+  provenance: AnalysisEvidenceProvenanceSummarySchema.optional(),
 })
 
 export type AnalysisEvidenceFamily = z.infer<typeof AnalysisEvidenceFamilySchema>
 export type AnalysisEvidenceRecord = z.infer<typeof AnalysisEvidenceRecordSchema>
 export type AnalysisEvidenceState = z.infer<typeof AnalysisEvidenceStateSchema>
 export type AnalysisEvidenceChunkManifest = z.infer<typeof AnalysisEvidenceChunkManifestSchema>
+export type AnalysisEvidenceProvenanceSummary = z.infer<
+  typeof AnalysisEvidenceProvenanceSummarySchema
+>
 
 export interface CanonicalEvidenceIdentity {
   sample: Pick<Sample, 'id' | 'sha256'>
@@ -99,6 +116,93 @@ export interface ResolvedCanonicalEvidence {
 
 export interface EvidenceStateOptions {
   staleAfterMs?: number
+}
+
+function inferValidationTools(evidenceFamily: string, backend: string): string[] {
+  const tools = new Set<string>(['artifact.read'])
+  if (backend) {
+    tools.add(backend)
+  }
+  switch (evidenceFamily) {
+    case 'strings':
+      tools.add('strings.extract')
+      tools.add('analysis.context.link')
+      break
+    case 'binary_role':
+      tools.add('binary.role.profile')
+      break
+    case 'context_link':
+      tools.add('analysis.context.link')
+      tools.add('code.xrefs.analyze')
+      break
+    case 'crypto_identify':
+      tools.add('crypto.identify')
+      tools.add('breakpoint.smart')
+      break
+    case 'backend_preview':
+      tools.add('workflow.analyze.status')
+      break
+    case 'summary':
+      tools.add('workflow.summarize')
+      tools.add('report.summarize')
+      break
+    case 'unpack_plan':
+    case 'unpack_execution':
+    case 'debug_session':
+    case 'analysis_diff':
+      tools.add('workflow.analyze.status')
+      tools.add('dynamic.runtime.status')
+      break
+  }
+  return Array.from(tools)
+}
+
+function numberOrNull(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null
+  }
+  return Math.max(0, Math.min(1, value))
+}
+
+export function buildEvidenceProvenanceSummary(input: {
+  record?: AnalysisEvidenceRecord | null
+  state?: Pick<AnalysisEvidenceState, 'source' | 'reason'> | null
+  evidenceFamily?: string
+  backend?: string
+  mode?: string
+  source?: AnalysisEvidenceState['source']
+  reason?: string
+  confidence?: number | null
+  artifactRefs?: ArtifactRef[]
+}): AnalysisEvidenceProvenanceSummary {
+  const record = input.record
+  const evidenceFamily = input.evidenceFamily || record?.evidence_family || 'unknown'
+  const backend = input.backend || record?.backend || 'unknown'
+  const mode = input.mode || record?.mode || 'unknown'
+  const metadataConfidence = record?.metadata?.confidence
+  const resultConfidence =
+    record?.result && typeof record.result === 'object'
+      ? (record.result as Record<string, unknown>).confidence
+      : undefined
+  const artifactRefs =
+    input.artifactRefs || (record?.artifact_refs as ArtifactRef[] | undefined) || []
+  return AnalysisEvidenceProvenanceSummarySchema.parse({
+    source_tool:
+      (record?.provenance?.tool as string | undefined) ||
+      (record?.provenance?.source_tool as string | undefined) ||
+      backend,
+    source_backend: backend,
+    source_mode: mode,
+    evidence_family: evidenceFamily,
+    source: input.source || input.state?.source || (record ? 'analysis_evidence' : 'none'),
+    freshness_marker: record?.freshness_marker || null,
+    confidence: numberOrNull(input.confidence ?? metadataConfidence ?? resultConfidence),
+    artifact_ids: artifactRefs
+      .map((artifact) => artifact?.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    validation_tools: inferValidationTools(evidenceFamily, backend),
+    reason: input.reason || input.state?.reason || 'Evidence provenance was summarized.',
+  })
 }
 
 export function buildAnalysisEvidenceCompatibilityMarker(input: CanonicalEvidenceIdentity): string {
@@ -388,6 +492,11 @@ export function buildResolvedEvidenceState(
     updated_at: classified.updated_at,
     freshness_marker: classified.freshness_marker,
     reason: classified.reason,
+    provenance: buildEvidenceProvenanceSummary({
+      record: resolved.record,
+      source: resolved.source,
+      reason: classified.reason,
+    }),
   })
 }
 
@@ -408,6 +517,13 @@ export function buildFreshEvidenceState(input: {
     updated_at: input.updatedAt || new Date().toISOString(),
     freshness_marker: input.freshnessMarker || null,
     reason: input.reason || 'Computed fresh evidence during this request.',
+    provenance: buildEvidenceProvenanceSummary({
+      evidenceFamily: input.evidenceFamily,
+      backend: input.backend,
+      mode: input.mode,
+      source: 'analysis_evidence',
+      reason: input.reason || 'Computed fresh evidence during this request.',
+    }),
   })
 }
 
@@ -428,6 +544,13 @@ export function buildPartialEvidenceState(input: {
     updated_at: input.updatedAt || new Date().toISOString(),
     freshness_marker: input.freshnessMarker || null,
     reason: input.reason,
+    provenance: buildEvidenceProvenanceSummary({
+      evidenceFamily: input.evidenceFamily,
+      backend: input.backend,
+      mode: input.mode,
+      source: 'analysis_evidence',
+      reason: input.reason,
+    }),
   })
 }
 
@@ -446,6 +569,13 @@ export function buildMissingEvidenceState(input: {
     updated_at: null,
     freshness_marker: null,
     reason: input.reason,
+    provenance: buildEvidenceProvenanceSummary({
+      evidenceFamily: input.evidenceFamily,
+      backend: input.backend,
+      mode: input.mode,
+      source: 'none',
+      reason: input.reason,
+    }),
   })
 }
 
@@ -464,5 +594,12 @@ export function buildDeferredEvidenceState(input: {
     updated_at: null,
     freshness_marker: null,
     reason: input.reason,
+    provenance: buildEvidenceProvenanceSummary({
+      evidenceFamily: input.evidenceFamily,
+      backend: input.backend,
+      mode: input.mode,
+      source: 'none',
+      reason: input.reason,
+    }),
   })
 }

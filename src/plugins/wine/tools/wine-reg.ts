@@ -24,6 +24,12 @@ import {
   persistBackendArtifact,
 } from '../../docker-shared.js'
 import type { ArtifactRef } from '../../../types.js'
+import {
+  WINE_REG_ARTIFACT_TYPE,
+  WINE_REG_WORKFLOW_RECIPES,
+  WINE_RUNTIME_POLICY,
+  wineToolAspects,
+} from '../wine-metadata.js'
 
 const inputSchema = z.object({
   action: z
@@ -86,6 +92,25 @@ export const wineRegToolDefinition: ToolDefinition = {
     'Useful for pre-populating environment data (anti-VM bypass) or inspecting registry changes after execution.',
   inputSchema: inputSchema,
   outputSchema: wineRegOutputSchema,
+  aspects: wineToolAspects({
+    capabilities: ['registry-profile', 'registry-export', 'prefix-profile', 'workflow-handoff'],
+    evidence: ['registry', 'configuration', 'workflow', 'provenance'],
+  }),
+  artifacts: [
+    {
+      type: WINE_REG_ARTIFACT_TYPE,
+      description: 'Exported Wine registry subtree from an analysis prefix',
+      mimeTypes: ['text/plain'],
+    },
+  ],
+  evidence: [
+    { category: 'registry', artifactTypes: [WINE_REG_ARTIFACT_TYPE] },
+    { category: 'configuration', artifactTypes: [WINE_REG_ARTIFACT_TYPE] },
+    { category: 'workflow' },
+    { category: 'provenance' },
+  ],
+  workflowRecipes: WINE_REG_WORKFLOW_RECIPES,
+  runtimePolicy: WINE_RUNTIME_POLICY,
   runtime: { type: 'inline', handler: 'executeWineReg' },
 }
 

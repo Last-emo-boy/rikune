@@ -20,6 +20,8 @@ import {
   persistSemanticNameSuggestionsArtifact,
 } from '../../src/artifacts/semantic-name-suggestion-artifacts.js'
 
+jest.setTimeout(60_000)
+
 describe('code.reconstruct.export tool', () => {
   let workspaceManager: WorkspaceManager
   let database: DatabaseManager
@@ -27,21 +29,58 @@ describe('code.reconstruct.export tool', () => {
   let testWorkspaceRoot: string
   let testDbPath: string
   let testCachePath: string
+  let testCaseCounter = 0
+
+  function sleepSync(ms: number) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+  }
+
+  function isRetryableFsCleanupError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') return false
+    const code = (error as NodeJS.ErrnoException).code
+    return code === 'EBUSY' || code === 'ENOTEMPTY' || code === 'EPERM'
+  }
+
+  function nextTestSlug(): string {
+    testCaseCounter += 1
+    return `p${process.pid}-c${testCaseCounter}`
+  }
+
+  function removeDirectoryIfExists(target: string) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (!fs.existsSync(target)) return
+      try {
+        fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 })
+        return
+      } catch (error) {
+        if (!isRetryableFsCleanupError(error) || attempt === 19) throw error
+        sleepSync(150 + attempt * 50)
+      }
+    }
+  }
+
+  function removeFileIfExists(target: string) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (!fs.existsSync(target)) return
+      try {
+        fs.rmSync(target, { force: true, maxRetries: 10, retryDelay: 150 })
+        return
+      } catch (error) {
+        if (!isRetryableFsCleanupError(error) || attempt === 19) throw error
+        sleepSync(150 + attempt * 50)
+      }
+    }
+  }
 
   beforeEach(() => {
-    testWorkspaceRoot = path.join(process.cwd(), 'test-workspace-reconstruct-export')
-    testDbPath = path.join(process.cwd(), 'test-reconstruct-export.db')
-    testCachePath = path.join(process.cwd(), 'test-cache-reconstruct-export')
+    const testSlug = nextTestSlug()
+    testWorkspaceRoot = path.join(process.cwd(), 'test-workspace-reconstruct-export', testSlug)
+    testDbPath = path.join(process.cwd(), `test-reconstruct-export-${testSlug}.db`)
+    testCachePath = path.join(process.cwd(), 'test-cache-reconstruct-export', testSlug)
 
-    if (fs.existsSync(testWorkspaceRoot)) {
-      fs.rmSync(testWorkspaceRoot, { recursive: true, force: true })
-    }
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath)
-    }
-    if (fs.existsSync(testCachePath)) {
-      fs.rmSync(testCachePath, { recursive: true, force: true })
-    }
+    removeDirectoryIfExists(testWorkspaceRoot)
+    removeFileIfExists(testDbPath)
+    removeDirectoryIfExists(testCachePath)
 
     workspaceManager = new WorkspaceManager(testWorkspaceRoot)
     database = new DatabaseManager(testDbPath)
@@ -55,24 +94,18 @@ describe('code.reconstruct.export tool', () => {
       // ignore
     }
 
-    if (fs.existsSync(testWorkspaceRoot)) {
-      fs.rmSync(testWorkspaceRoot, { recursive: true, force: true })
-    }
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath)
-    }
-    if (fs.existsSync(testCachePath)) {
-      fs.rmSync(testCachePath, { recursive: true, force: true })
-    }
+    removeDirectoryIfExists(testWorkspaceRoot)
+    removeFileIfExists(testDbPath)
+    removeDirectoryIfExists(testCachePath)
   })
 
-  async function setupSample(sampleId: string, hashChar: string) {
+  async function setupSample(sampleId: string, hashChar: string, fileType = 'PE') {
     database.insertSample({
       id: sampleId,
       sha256: hashChar.repeat(64),
       md5: hashChar.repeat(32),
       size: 2048,
-      file_type: 'PE',
+      file_type: fileType,
       created_at: new Date().toISOString(),
       source: 'test',
     })
@@ -205,10 +238,39 @@ describe('code.reconstruct.export tool', () => {
               },
             }
       )
+    const nativeBuildValidator = jest.fn<() => Promise<any>>().mockResolvedValue({
+      attempted: false,
+      status: 'unavailable' as const,
+      compiler: 'clang',
+      compiler_path: null,
+      command: null,
+      exit_code: null,
+      timed_out: false,
+      error: 'native build validation disabled in unit test harness',
+      stdout: '',
+      stderr: '',
+      log_path: null,
+      executable_path: null,
+    })
+    const harnessValidator = jest.fn<() => Promise<any>>().mockResolvedValue({
+      attempted: false,
+      status: 'skipped' as const,
+      command: null,
+      exit_code: null,
+      timed_out: false,
+      error: 'native harness execution disabled in unit test harness',
+      stdout: '',
+      stderr: '',
+      log_path: null,
+      matched_entries: 0,
+      mismatched_entries: 0,
+    })
 
     return {
       exportsExtractHandler,
       packerDetectHandler,
+      nativeBuildValidator,
+      harnessValidator,
     }
   }
 
@@ -473,6 +535,7 @@ describe('code.reconstruct.export tool', () => {
           ok: true,
           data: { summary: { top_high_value: [] } },
         }),
+        ...buildBinaryMetadataDependencies(),
         nativeBuildValidator: jest
           .fn<
             (
@@ -492,23 +555,23 @@ describe('code.reconstruct.export tool', () => {
             compilerPath: _compilerPath,
             timeoutMs: _timeoutMs,
           }) => {
-          const executablePath = path.join(exportRoot, 'reconstruct_harness.exe')
-          fs.writeFileSync(executablePath, 'MZ')
-          return {
-            attempted: true,
-            status: 'passed' as const,
-            compiler: 'clang',
-            compiler_path: 'E:/clang/bin/clang.exe',
-            command: '"clang" -std=c99',
-            exit_code: 0,
-            timed_out: false,
-            error: null,
-            stdout: 'build ok',
-            stderr: '',
-            log_path: null,
-            executable_path: executablePath,
-          }
-        }),
+            const executablePath = path.join(exportRoot, 'reconstruct_harness.exe')
+            fs.writeFileSync(executablePath, 'MZ')
+            return {
+              attempted: true,
+              status: 'passed' as const,
+              compiler: 'clang',
+              compiler_path: 'E:/clang/bin/clang.exe',
+              command: '"clang" -std=c99',
+              exit_code: 0,
+              timed_out: false,
+              error: null,
+              stdout: 'build ok',
+              stderr: '',
+              log_path: null,
+              executable_path: executablePath,
+            }
+          }),
         harnessValidator: jest
           .fn<
             (
@@ -533,7 +596,6 @@ describe('code.reconstruct.export tool', () => {
             matched_entries: 1,
             mismatched_entries: 0,
           })),
-        ...buildBinaryMetadataDependencies(),
       }
     )
 
@@ -2618,6 +2680,65 @@ describe('code.reconstruct.export tool', () => {
 
     expect(result.ok).toBe(false)
     expect(result.errors?.[0]).toContain('No reconstructed functions available')
+  })
+
+  test('should keep non-PE samples out of PE metadata fallbacks', async () => {
+    const sampleId = 'sha256:' + 'e'.repeat(64)
+    await setupSample(sampleId, 'e', 'ELF')
+    const workspace = await workspaceManager.getWorkspace(sampleId)
+    fs.writeFileSync(
+      path.join(workspace.original, 'relax_keygen'),
+      Buffer.from([0x7f, 0x45, 0x4c, 0x46])
+    )
+
+    const metadata = buildBinaryMetadataDependencies({ exportsOk: false, packerOk: false })
+    const importsExtractHandler = jest
+      .fn<(args: ToolArgs) => Promise<WorkerResult>>()
+      .mockResolvedValue({
+        ok: false,
+        errors: ['PE imports worker should not run for ELF'],
+      })
+
+    const handler = createCodeReconstructExportHandler(
+      workspaceManager,
+      database,
+      cacheManager,
+      {
+        reconstructFunctionsHandler: jest
+          .fn<(args: ToolArgs) => Promise<WorkerResult>>()
+          .mockResolvedValue(buildReconstructResult()),
+        importsExtractHandler,
+        stringsExtractHandler: jest
+          .fn<(args: ToolArgs) => Promise<WorkerResult>>()
+          .mockResolvedValue({
+            ok: true,
+            data: { summary: { top_high_value: [] } },
+          }),
+        ...metadata,
+      }
+    )
+
+    const result = await handler({
+      sample_id: sampleId,
+      export_name: 'elf_profile_export',
+      min_module_size: 1,
+      reuse_cached: false,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.binary_profile.binary_role).toBe('elf_binary')
+    expect(importsExtractHandler).not.toHaveBeenCalled()
+    expect(metadata.exportsExtractHandler).not.toHaveBeenCalled()
+    expect(metadata.packerDetectHandler).not.toHaveBeenCalled()
+    expect(result.warnings?.join(' ') || '').not.toContain('imports unavailable')
+    expect(result.warnings?.join(' ') || '').not.toContain('exports unavailable')
+    expect(result.warnings?.join(' ') || '').not.toContain('packer unavailable')
+
+    const notesContent = fs.readFileSync(path.join(workspace.root, data.notes_path), 'utf-8')
+    expect(notesContent).toContain('binary_role: elf_binary')
+    expect(notesContent).not.toContain('imports unavailable')
+    expect(notesContent).not.toContain('exports unavailable')
   })
 
   test('should cache export results', async () => {

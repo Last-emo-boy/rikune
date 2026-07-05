@@ -11,6 +11,14 @@ import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
+import {
+  ELF_EXPORTS_ARTIFACT_TYPE,
+  ELF_EXPORTS_WORKFLOW_RECIPES,
+  ELF_MACHO_RUNTIME_POLICY,
+  ELF_MACHO_SAFETY,
+  buildElfMachoWorkerBackend,
+  enrichElfExportsResult,
+} from '../elf-macho-metadata.js'
 
 const TOOL_NAME = 'elf.exports.extract'
 
@@ -31,6 +39,32 @@ export const elfExportsExtractToolDefinition: ToolDefinition = {
   description: 'Extract ELF exported symbols: globally visible symbols with non-zero addresses.',
   inputSchema: ElfExportsExtractInputSchema,
   outputSchema: ElfExportsExtractOutputSchema,
+  aspects: {
+    formats: ['elf', 'so'],
+    platforms: ['linux'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv'],
+    execution: ['static', 'triage'],
+    safety: ELF_MACHO_SAFETY,
+    capabilities: ['exports', 'symbols', 'workflow-handoff'],
+    evidence: ['exports', 'symbols', 'workflow', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: ELF_EXPORTS_ARTIFACT_TYPE,
+      description: 'ELF globally visible exported symbols and symbol metadata',
+      mime: 'application/json',
+      mimeTypes: ['application/json'],
+    },
+  ],
+  evidence: [
+    { category: 'exports', artifactTypes: [ELF_EXPORTS_ARTIFACT_TYPE] },
+    { category: 'symbols', artifactTypes: [ELF_EXPORTS_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [ELF_EXPORTS_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [ELF_EXPORTS_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: ELF_EXPORTS_WORKFLOW_RECIPES,
+  runtimePolicy: ELF_MACHO_RUNTIME_POLICY,
+  workerBackend: buildElfMachoWorkerBackend([ELF_EXPORTS_ARTIFACT_TYPE]),
 }
 
 export function createElfExportsExtractHandler(
@@ -63,6 +97,7 @@ export function createElfExportsExtractHandler(
         exported_symbols: exported,
         total_exports: exported.length,
       }
+      const enriched = enrichElfExportsResult(exportData, { sampleId: args.sample_id })
 
       const artifacts: ArtifactRef[] = []
       try {
@@ -70,9 +105,9 @@ export function createElfExportsExtractHandler(
           workspaceManager,
           database,
           args.sample_id,
-          'elf_exports',
+          ELF_EXPORTS_ARTIFACT_TYPE,
           'elf-exports',
-          exportData
+          enriched
         )
         if (artRef) artifacts.push(artRef)
       } catch {
@@ -81,7 +116,7 @@ export function createElfExportsExtractHandler(
 
       return {
         ok: true,
-        data: exportData,
+        data: enriched,
         artifacts,
         metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME },
       }

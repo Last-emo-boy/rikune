@@ -28,6 +28,22 @@ export const apkStructureAnalyzeToolDefinition: ToolDefinition = {
     'Analyze APK structure: AndroidManifest.xml, DEX files, native libraries (.so), signing info, and packer/hardening indicators (360, Bangbang, Legu, etc.).',
   inputSchema: ApkStructureAnalyzeInputSchema,
   outputSchema: ApkStructureAnalyzeOutputSchema,
+  aspects: {
+    formats: ['apk', 'aab', 'apks', 'xapk', 'split-apk'],
+    platforms: ['android'],
+    architectures: ['arm', 'arm64', 'x86', 'x64'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['structure', 'resources', 'signatures', 'native-lib', 'packer'],
+    evidence: ['structure', 'signatures', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'apk_structure',
+      description: 'APK archive, manifest, DEX, native library, and signing inventory',
+    },
+  ],
+  evidence: [{ category: 'structure', artifactTypes: ['apk_structure'] }],
 }
 
 async function callApkWorker(

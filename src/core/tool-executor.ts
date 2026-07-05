@@ -65,6 +65,18 @@ export class ToolExecutor {
       if (!definition) {
         throw new Error(`Tool not found: ${name}`)
       }
+      const canonicalName = definition.canonicalName || definition.name
+
+      const surface = getToolSurfaceManager()
+      if (surface.isEnabled()) {
+        const visibleToolNames = surface.getVisibleToolNames()
+        if (visibleToolNames.size > 0 && !surface.isToolVisible(canonicalName)) {
+          throw new Error(
+            `Tool hidden by progressive surface: ${canonicalName}. ` +
+              `Use workflow.search query="${canonicalName}" to inspect routing, readiness, and activation requirements.`
+          )
+        }
+      }
 
       // Validate input arguments
       const validatedArgs = this.validateArgs(definition.inputSchema, args)
@@ -76,7 +88,6 @@ export class ToolExecutor {
       }
 
       // Fire plugin before-hook (best effort, non-blocking on failure)
-      const canonicalName = definition.canonicalName || definition.name
       if (pluginRuntime) {
         await pluginRuntime.fireHook(
           'before',
@@ -102,10 +113,9 @@ export class ToolExecutor {
 
       // Progressive surface — scan result for activation signals
       try {
-        const surface = getToolSurfaceManager()
         if (surface.isEnabled()) {
-          const workerData = 'content' in result ? undefined : result
-          if (workerData) surface.processToolResult(canonicalName, workerData)
+          const surfacePayload = 'content' in result ? result.structuredContent : result
+          if (surfacePayload) surface.processToolResult(canonicalName, surfacePayload)
         }
       } catch (e) {
         this.logger.debug({ err: e }, 'Surface expansion failed (best-effort)')

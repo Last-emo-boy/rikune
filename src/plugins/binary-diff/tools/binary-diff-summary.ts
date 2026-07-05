@@ -8,6 +8,12 @@ import type { ToolDefinition, ToolArgs, WorkerResult } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { BinaryDiffResult } from '../binary-diff-engine.js'
+import {
+  BINARY_DIFF_ARTIFACT_TYPE,
+  BINARY_DIFF_ASPECTS,
+  BINARY_DIFF_EVIDENCE,
+  BINARY_DIFF_RUNTIME_POLICY,
+} from '../binary-diff-metadata.js'
 
 // ============================================================================
 // Schemas
@@ -38,9 +44,33 @@ export const BinaryDiffSummaryOutputSchema = z.object({
 export const binaryDiffSummaryToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Produce a compact text digest (≤ 3000 chars) of a binary diff between two samples, focusing on the most significant changes. Requires binary.diff to have been run first.',
+    'Produce a compact report-ready digest of a binary diff between two samples, including variant comparison, function comparison, structural delta, similarity profile, radiff2 readiness/provenance, and ATT&CK/import/export/section/string handoff. Requires binary.diff to have been run first.',
   inputSchema: BinaryDiffSummaryInputSchema,
   outputSchema: BinaryDiffSummaryOutputSchema,
+  aspects: {
+    ...BINARY_DIFF_ASPECTS,
+    capabilities: [
+      ...BINARY_DIFF_ASPECTS.capabilities,
+      'binary-diff-summary',
+      'variant-comparison-summary',
+      'report-summary',
+    ],
+  },
+  evidence: BINARY_DIFF_EVIDENCE,
+  workflowRecipes: [
+    {
+      id: 'binary-diff.report-summary',
+      title: 'Binary diff report and evidence graph summary',
+      description:
+        'Summarize binary_diff artifacts for variant comparison, function comparison, structural delta, radiff2 readiness, evidence graph, report, and similarity workflows.',
+      startsWith: [TOOL_NAME],
+      nextTools: ['analysis.evidence.graph', 'report.generate', 'artifact.read', 'workflow.search'],
+      requiredArtifacts: [BINARY_DIFF_ARTIFACT_TYPE],
+      evidence: ['binary-diff', 'variant-comparison', 'similarity', 'workflow', 'provenance'],
+      safety: ['passive', 'artifact_only', 'no_live_sample_by_default'],
+    },
+  ],
+  runtimePolicy: BINARY_DIFF_RUNTIME_POLICY,
 }
 
 // ============================================================================
@@ -50,6 +80,34 @@ export const binaryDiffSummaryToolDefinition: ToolDefinition = {
 export function generateDiffSummary(diff: BinaryDiffResult, maxChars: number): string {
   const lines: string[] = []
   const stats = diff.summary_stats
+  const similarity = diff.similarity_profile as
+    | {
+        classification?: string
+        overall_similarity?: number | null
+        function_similarity?: {
+          average_modified_similarity?: number | null
+          minimum_modified_similarity?: number | null
+        }
+        structural_similarity?: {
+          imports_similarity?: number | null
+          exports_similarity?: number | null
+          strings_similarity?: number | null
+          section_delta_count?: number
+        }
+      }
+    | undefined
+  const provenance = diff.provenance as
+    | {
+        sources?: {
+          function_diff?: {
+            backend?: string
+            ok?: boolean
+            available?: boolean
+            error?: string | null
+          }
+        }
+      }
+    | undefined
 
   lines.push(
     `# Binary Diff: ${diff.sample_id_a.slice(0, 16)}… vs ${diff.sample_id_b.slice(0, 16)}…`
@@ -63,6 +121,13 @@ export function generateDiffSummary(diff: BinaryDiffResult, maxChars: number): s
   )
   lines.push(`Imports: +${stats.imports_added} added, -${stats.imports_removed} removed`)
   lines.push(`Strings: +${stats.strings_added} added, -${stats.strings_removed} removed`)
+  if (similarity) {
+    const overall =
+      typeof similarity.overall_similarity === 'number'
+        ? `${(similarity.overall_similarity * 100).toFixed(0)}%`
+        : 'unknown'
+    lines.push(`Similarity: ${overall} (${similarity.classification ?? 'unknown'})`)
+  }
   if (stats.attack_techniques_added > 0 || stats.attack_techniques_removed > 0) {
     lines.push(
       `ATT&CK: +${stats.attack_techniques_added} techniques, -${stats.attack_techniques_removed} techniques`
@@ -79,6 +144,42 @@ export function generateDiffSummary(diff: BinaryDiffResult, maxChars: number): s
     for (const fn of topModified) {
       const sim = typeof fn.similarity === 'number' ? `${(fn.similarity * 100).toFixed(0)}%` : '?'
       lines.push(`- ${fn.name} (${sim} similar)`)
+    }
+    lines.push('')
+  }
+
+  if (provenance?.sources?.function_diff) {
+    const source = provenance.sources.function_diff
+    lines.push('## Provenance and Readiness')
+    lines.push(
+      `Function diff backend: ${source.backend ?? 'radiff2'} (${source.ok ? 'ok' : source.available ? 'not ok' : 'not available'})`
+    )
+    if (source.error) lines.push(`- ${source.error}`)
+    lines.push('')
+  }
+
+  if (similarity?.function_similarity || similarity?.structural_similarity) {
+    lines.push('## Similarity Profile')
+    const functionAverage = similarity.function_similarity?.average_modified_similarity
+    const functionMinimum = similarity.function_similarity?.minimum_modified_similarity
+    const structural = similarity.structural_similarity
+    if (typeof functionAverage === 'number') {
+      lines.push(`Function average modified similarity: ${(functionAverage * 100).toFixed(0)}%`)
+    }
+    if (typeof functionMinimum === 'number') {
+      lines.push(`Lowest modified function similarity: ${(functionMinimum * 100).toFixed(0)}%`)
+    }
+    if (structural) {
+      if (typeof structural.imports_similarity === 'number') {
+        lines.push(`Import similarity: ${(structural.imports_similarity * 100).toFixed(0)}%`)
+      }
+      if (typeof structural.exports_similarity === 'number') {
+        lines.push(`Export similarity: ${(structural.exports_similarity * 100).toFixed(0)}%`)
+      }
+      if (typeof structural.strings_similarity === 'number') {
+        lines.push(`String similarity: ${(structural.strings_similarity * 100).toFixed(0)}%`)
+      }
+      lines.push(`Section deltas: ${structural.section_delta_count ?? 0}`)
     }
     lines.push('')
   }
@@ -118,6 +219,40 @@ export function generateDiffSummary(diff: BinaryDiffResult, maxChars: number): s
     }
     for (const imp of (diff.structural_delta?.imports.removed ?? []).slice(0, 10)) {
       lines.push(`- ${imp}`)
+    }
+    lines.push('')
+  }
+
+  // Export changes
+  if (
+    diff.structural_delta?.exports.added.length ||
+    diff.structural_delta?.exports.removed.length
+  ) {
+    lines.push('## Export Changes')
+    for (const exp of (diff.structural_delta?.exports.added ?? []).slice(0, 10)) {
+      lines.push(`+ ${exp}`)
+    }
+    for (const exp of (diff.structural_delta?.exports.removed ?? []).slice(0, 10)) {
+      lines.push(`- ${exp}`)
+    }
+    lines.push('')
+  }
+
+  // Section changes
+  if (
+    diff.structural_delta?.sections.added.length ||
+    diff.structural_delta?.sections.removed.length ||
+    diff.structural_delta?.sections.size_changed.length
+  ) {
+    lines.push('## Section Changes')
+    for (const section of (diff.structural_delta?.sections.added ?? []).slice(0, 10)) {
+      lines.push(`+ ${section}`)
+    }
+    for (const section of (diff.structural_delta?.sections.removed ?? []).slice(0, 10)) {
+      lines.push(`- ${section}`)
+    }
+    for (const section of (diff.structural_delta?.sections.size_changed ?? []).slice(0, 10)) {
+      lines.push(`~ ${section.name}: ${section.size_a} → ${section.size_b}`)
     }
     lines.push('')
   }

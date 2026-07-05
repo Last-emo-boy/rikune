@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "allows_live_malware": false,
+    "allows_host_execution": false,
+    "default_ci_static_only": true,
+    "notes": [
+      "Fixtures are synthetic or metadata-only by default.",
+      "Live runtime validation is opt-in and must use an isolated runtime backend."
+    ]
+  },
+  "fixtures": [
+    {
+      "id": "synthetic-pe-fast-profile",
+      "class": "pe",
+      "default_ci": true,
+      "fixture_mode": "generated",
+      "generator": "tests/integration/workflow.test.ts mocked PE fast-profile dependencies",
+      "expected_file_type": "PE",
+      "expected_signals": {
+        "stage_plan": ["fast_profile", "enrich_static", "function_map", "summarize"],
+        "tooling": ["pe.fingerprint", "pe.imports.extract", "strings.extract", "yara.scan"],
+        "evidence_families": ["backend_preview"],
+        "degradation": ["optional_backends_unavailable"]
+      },
+      "runtime": {
+        "requires_live_execution": false,
+        "expected_actual_mode": "local"
+      }
+    },
+    {
+      "id": "synthetic-packed-pe",
+      "class": "packed-pe",
+      "default_ci": true,
+      "fixture_mode": "metadata-only",
+      "generator": "packer.detect and compiler.packer.detect mocked findings",
+      "expected_file_type": "PE",
+      "expected_signals": {
+        "packed_state": ["suspected_packed", "confirmed_packed"],
+        "recommended_tools": ["workflow.analyze.promote", "upx.inspect", "dynamic.runtime.status"],
+        "degradation": ["unpack_or_debug_deferred"]
+      },
+      "runtime": {
+        "requires_live_execution": false,
+        "expected_actual_mode": "plan_only"
+      }
+    },
+    {
+      "id": "synthetic-dotnet",
+      "class": "dotnet-pe",
+      "default_ci": true,
+      "fixture_mode": "metadata-only",
+      "generator": "dotnet metadata/explanation tests with mocked worker output",
+      "expected_file_type": "PE",
+      "expected_signals": {
+        "tooling": ["dotnet.metadata.extract", "report.summarize"],
+        "recommended_tools": ["workflow.reconstruct"],
+        "degradation": ["dotnet_summary_fallback"]
+      },
+      "runtime": {
+        "requires_live_execution": false,
+        "expected_actual_mode": "local"
+      }
+    },
+    {
+      "id": "synthetic-dll-exports",
+      "class": "dll",
+      "default_ci": true,
+      "fixture_mode": "metadata-only",
+      "generator": "PE structure and export metadata mocked in unit tests",
+      "expected_file_type": "PE",
+      "expected_signals": {
+        "tooling": ["pe.structure.analyze", "pe.exports.extract"],
+        "surface_activation": ["pe", "dll", "windows"]
+      },
+      "runtime": {
+        "requires_live_execution": false,
+        "expected_actual_mode": "local"
+      }
+    },
+    {
+      "id": "synthetic-elf-structure",
+      "class": "elf",
+      "default_ci": true,
+      "fixture_mode": "metadata-only",
+      "generator": "ELF structure tests with synthetic headers",
+      "expected_file_type": "ELF",
+      "expected_signals": {
+        "tooling": ["elf.structure.analyze"],
+        "surface_activation": ["elf", "linux"]
+      },
+      "runtime": {
+        "requires_live_execution": false,
+        "expected_actual_mode": "local"
+      }
+    },
+    {
+      "id": "synthetic-macho-structure",
+      "class": "macho",
+      "default_ci": true,
+      "fixture_mode": "metadata-only",
+      "generator": "Mach-O structure tests with synthetic headers",
+      "expected_file_type": "Mach-O",
+      "expected_signals": {
+        "tooling": ["macho.structure.analyze"],
+        "surface_activation": ["macho", "macos"]
+      },
+      "runtime": {
+        "requires_live_execution": false,
+        "expected_actual_mode": "local"
+      }
+    },
+    {
+      "id": "synthetic-apk-static",
+      "class": "apk",
+      "default_ci": true,
+      "fixture_mode": "metadata-only",
+      "generator": "APK static plugin tests with mocked archive metadata",
+      "expected_file_type": "APK",
+      "expected_signals": {
+        "tooling": ["apk.structure.analyze", "apk.packer.detect"],
+        "surface_activation": ["apk", "android", "dex"]
+      },
+      "runtime": {
+        "requires_live_execution": false,
+        "expected_actual_mode": "local"
+      }
+    },
+    {
+      "id": "degraded-missing-optional-backends",
+      "class": "degraded-environment",
+      "default_ci": true,
+      "fixture_mode": "mocked-environment",
+      "generator": "makeUnavailableBackendResolution() and tool.readiness runtime_not_started tests",
+      "expected_file_type": "any",
+      "expected_signals": {
+        "degradation": [
+          "runtime_not_started",
+          "optional_backends_unavailable",
+          "setup_required"
+        ],
+        "recommended_tools": [
+          "dynamic.runtime.status",
+          "runtime.debug.session.start",
+          "workflow.analyze.status"
+        ]
+      },
+      "runtime": {
+        "requires_live_execution": false,
+        "expected_actual_mode": "plan_only"
+      }
+    }
+  ]
+}

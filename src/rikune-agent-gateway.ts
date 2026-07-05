@@ -68,10 +68,21 @@ interface AgentOptions {
   configPath?: string
 }
 
-const VERSION = '1.0.0-beta.3'
+const VERSION = '1.1.0'
 const DEFAULT_CONNECT_TIMEOUT_MS = 30_000
 const DEFAULT_TOOL_TIMEOUT_MS = 300_000
 const DEFAULT_ANALYZER_HTTP_ENDPOINT = 'http://localhost:18080'
+const DIRECT_TOOL_CALL_NAME = 'rikune_tool_call'
+
+const GATEWAY_INSTRUCTIONS = [
+  'You are connected to Rikune through the Rikune Agent Gateway.',
+  'This gateway intentionally exposes a small, stable MCP tool surface. Do not wait for, request, or expect specialist analyzer tools to appear in tools/list after refresh.',
+  'Use workflow_search first for capability discovery, workflow selection, readiness checks, and explicit activation. workflow_search is passive unless action=activate is explicitly requested.',
+  'Use workflow_run for the normal execution path: request_upload, start, status, and promote. Do not call low-level sample or workflow.analyze tools directly from the MCP surface.',
+  'Use artifact_read for persisted evidence, summaries, reports, decompiler output, and other artifacts returned by workflow_run or workflow_search.',
+  'Use rikune_tool_call only as an advanced subtool gateway when workflow_search identifies a specific internal analyzer tool that is not covered by workflow_run or artifact_read. Pass the internal tool name in the tool field and the tool arguments in arguments; the tool does not need to appear in upstream tools/list after activation.',
+  'Connection tools manage upstream analyzer, VM, and runtime links. Refresh updates the internal capability cache only; it does not expand the MCP tool list.',
+].join('\n')
 
 const CONTROL_TOOL_NAMES = new Set([
   'rikune_connection_status',
@@ -79,11 +90,227 @@ const CONTROL_TOOL_NAMES = new Set([
   'rikune_connection_refresh',
 ])
 
+const STABLE_ANALYZER_TOOLS: Tool[] = [
+  {
+    name: 'workflow_search',
+    description:
+      'Primary Rikune analyzer planning and discovery gateway. Use this first to search, recommend, list, check status, or explicitly activate analysis capabilities. It is passive for status/search/recommend/list and does not require MCP tool-list refreshes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['status', 'search', 'recommend', 'list', 'activate'],
+          description:
+            'Search gateway action. Defaults to search. activate opens internal routes on the analyzer but does not change this MCP surface.',
+        },
+        query: {
+          type: 'string',
+          description: 'Natural-language user request or capability query.',
+        },
+        sample_id: {
+          type: 'string',
+          description: 'Optional sample ID used for file-type/profile routing.',
+        },
+        file_type: {
+          type: 'string',
+          description: 'Optional file type or extension hint, such as pe, .exe, elf, apk, wasm.',
+        },
+        goal: {
+          type: 'string',
+          enum: ['triage', 'static', 'reverse', 'dynamic', 'report'],
+          description: 'Analyst goal used to enrich passive routing search.',
+        },
+        depth: {
+          type: 'string',
+          enum: ['safe', 'balanced', 'deep'],
+          description: 'Requested analysis depth used to enrich passive routing search.',
+        },
+        category: { type: 'string', description: 'Optional capability category filter.' },
+        plugin_id: { type: 'string', description: 'Optional plugin ID filter.' },
+        tool_name: {
+          type: 'string',
+          description: 'Optional canonical or transport tool name filter.',
+        },
+        result_id: {
+          type: 'string',
+          description:
+            'Stable result ID returned by a prior workflow.search result. Use with action=activate to expose only that result-scoped analyzer route internally.',
+        },
+        finding: {
+          type: 'string',
+          description: 'Optional finding/signal hint, such as packed, crypto, shellcode, c2.',
+        },
+        top_k: {
+          oneOf: [
+            { type: 'number', minimum: 1, maximum: 25 },
+            { type: 'string', enum: ['auto'] },
+          ],
+          description: 'Maximum ranked recommendations to return. Defaults to auto upstream.',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'workflow_run',
+    description:
+      'Primary Rikune analyzer execution gateway. Use request_upload for host-file upload, start with a sample_id, status with a plan_id, and promote for deeper staged analysis. Prefer this over low-level sample or workflow.analyze tools.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['request_upload', 'start', 'status', 'promote'],
+          description:
+            'Whitelisted workflow action. Defaults to start upstream. request_upload creates an upload URL.',
+        },
+        filename: { type: 'string', description: 'Optional original filename for upload.' },
+        ttl_seconds: {
+          type: 'number',
+          minimum: 30,
+          maximum: 3600,
+          description: 'Upload token TTL for action=request_upload.',
+        },
+        sample_id: { type: 'string', description: 'Required for action=start.' },
+        plan_id: {
+          type: 'string',
+          description: 'Plan/run ID required for action=status and action=promote.',
+        },
+        goal: {
+          type: 'string',
+          enum: ['triage', 'static', 'reverse', 'dynamic', 'report'],
+          description: 'Analysis goal for action=start.',
+        },
+        depth: {
+          type: 'string',
+          enum: ['safe', 'balanced', 'deep'],
+          description: 'Analysis depth for action=start.',
+        },
+        backend_policy: {
+          type: 'string',
+          enum: ['auto', 'prefer_new', 'legacy_only', 'strict'],
+          description: 'Backend routing policy for action=start.',
+        },
+        allow_transformations: {
+          type: 'boolean',
+          description: 'Allow transform-capable later stages when explicitly promoted.',
+        },
+        allow_live_execution: {
+          type: 'boolean',
+          description:
+            'Allow live-execution-capable routing only when downstream policy permits it.',
+        },
+        stages: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: [
+              'fast_profile',
+              'enrich_static',
+              'function_map',
+              'reconstruct',
+              'semantic_name_review',
+              'semantic_explain_review',
+              'semantic_module_review',
+              'dynamic_plan',
+              'dynamic_execute',
+              'summarize',
+            ],
+          },
+          description: 'Optional promoted stages for action=promote.',
+        },
+        through_stage: {
+          type: 'string',
+          enum: [
+            'fast_profile',
+            'enrich_static',
+            'function_map',
+            'reconstruct',
+            'semantic_name_review',
+            'semantic_explain_review',
+            'semantic_module_review',
+            'dynamic_plan',
+            'dynamic_execute',
+            'summarize',
+          ],
+          description: 'Optional terminal stage for action=promote.',
+        },
+        force_refresh: { type: 'boolean', description: 'Bypass reusable run/stage results.' },
+        include_raw_result: {
+          type: 'boolean',
+          description: 'Include wrapped workflow result for debugging.',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'artifact_read',
+    description:
+      'Primary Rikune artifact reader. Use this to inspect metadata, summaries, bounded content, reports, decompiler output, and supporting evidence produced by workflow_run or internal analyzer subtools.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sample_id: { type: 'string', description: 'Sample ID, usually sha256:<hex>.' },
+        artifact_id: { type: 'string', description: 'Specific artifact UUID to fetch.' },
+        artifact_type: { type: 'string', description: 'Artifact type to fetch latest match.' },
+        path: { type: 'string', description: 'Artifact relative path to fetch.' },
+        read_mode: {
+          type: 'string',
+          enum: ['profile', 'summary', 'content'],
+          description:
+            'profile returns selectors only, summary reads a bounded preview, content returns artifact content.',
+        },
+        include_untracked_files: {
+          type: 'boolean',
+          description: 'Allow synthetic inventory entries under scan roots.',
+        },
+        recursive: {
+          type: 'boolean',
+          description: 'Recursively scan export roots when include_untracked_files=true.',
+        },
+        scan_roots: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Workspace subdirectories to scan for untracked artifact files.',
+        },
+        select_latest: {
+          type: 'boolean',
+          description: 'When selector matches multiple artifacts, choose latest.',
+        },
+        include_content: { type: 'boolean', description: 'Return file content in response.' },
+        max_bytes: {
+          type: 'number',
+          minimum: 256,
+          maximum: 2097152,
+          description: 'Maximum bytes to read from artifact file.',
+        },
+        encoding: {
+          type: 'string',
+          enum: ['auto', 'utf8', 'base64'],
+          description: 'Content encoding mode when include_content=true.',
+        },
+        parse_json: {
+          type: 'boolean',
+          description: 'Parse JSON artifacts into structured object when content is UTF-8.',
+        },
+        ioc_highlights: {
+          type: 'boolean',
+          description: 'Extract IOC highlights from UTF-8 text content.',
+        },
+      },
+      required: ['sample_id'],
+      additionalProperties: false,
+    },
+  },
+]
+
 const CONTROL_TOOLS: Tool[] = [
   {
     name: 'rikune_connection_status',
     description:
-      'Query Rikune connector status, configured analyzer/VM/runtime endpoints, health, and upstream tool counts.',
+      'Query Rikune connector status, configured analyzer/VM/runtime endpoints, health, stable exposed tools, and internally discovered upstream tool counts.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -158,7 +385,8 @@ const CONTROL_TOOLS: Tool[] = [
         },
         api_key: {
           type: 'string',
-          description: 'API key for the selected endpoint. Status output only reports whether it is set.',
+          description:
+            'API key for the selected endpoint. Status output only reports whether it is set.',
         },
         timeout_ms: {
           type: 'number',
@@ -166,11 +394,13 @@ const CONTROL_TOOLS: Tool[] = [
         },
         persist: {
           type: 'boolean',
-          description: 'Persist the setting to the local Rikune agent config file. Defaults to true.',
+          description:
+            'Persist the setting to the local Rikune agent config file. Defaults to true.',
         },
         refresh: {
           type: 'boolean',
-          description: 'Refresh the selected upstream after applying the setting. Defaults to true.',
+          description:
+            'Refresh the selected upstream after applying the setting. Defaults to true.',
         },
       },
       required: ['target'],
@@ -179,7 +409,8 @@ const CONTROL_TOOLS: Tool[] = [
   },
   {
     name: 'rikune_connection_refresh',
-    description: 'Reconnect upstream services and refresh proxied tool lists.',
+    description:
+      'Reconnect upstream services and refresh the internal capability cache. This does not expand the stable MCP tool list.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -193,6 +424,37 @@ const CONTROL_TOOLS: Tool[] = [
     },
   },
 ]
+
+const DIRECT_TOOL_CALL_TOOL: Tool = {
+  name: DIRECT_TOOL_CALL_NAME,
+  description:
+    'Advanced Rikune subtool gateway. Use workflow_search first to find or activate a specific internal analyzer capability, then call that internal tool here without requiring MCP clients to refresh their tool list; the internal tool does not need to appear in upstream tools/list after activation. Prefer workflow_run and artifact_read for normal analysis.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      target: {
+        type: 'string',
+        enum: ['analyzer', 'vm', 'runtime'],
+        description: 'Upstream plane to call. Defaults to analyzer.',
+      },
+      tool: {
+        type: 'string',
+        description:
+          'Internal upstream tool name, using either transport form like pe_fingerprint or canonical form like pe.fingerprint.',
+      },
+      arguments: {
+        type: 'object',
+        description: 'Arguments forwarded to the internal upstream tool.',
+        additionalProperties: true,
+      },
+    },
+    required: ['tool'],
+    additionalProperties: false,
+  },
+}
+
+const LOCAL_GATEWAY_TOOLS: Tool[] = [...CONTROL_TOOLS, DIRECT_TOOL_CALL_TOOL]
+const LOCAL_GATEWAY_TOOL_NAMES = new Set([...CONTROL_TOOL_NAMES, DIRECT_TOOL_CALL_NAME])
 
 export class RikuneAgentGateway {
   private readonly env: NodeJS.ProcessEnv
@@ -224,8 +486,7 @@ export class RikuneAgentGateway {
             listChanged: true,
           },
         },
-        instructions:
-          'Rikune agent is a connector. Use rikune_connection_status, rikune_connection_configure, and rikune_connection_refresh to manage upstream analyzer and runtime links.',
+        instructions: GATEWAY_INSTRUCTIONS,
       }
     )
 
@@ -286,13 +547,19 @@ export class RikuneAgentGateway {
 
   getStatus(includeTools = false): Record<string, unknown> {
     const tools = this.listExposedTools()
+    const discoveredToolCount = Object.values(this.states).reduce(
+      (sum, state) => sum + state.tools.length,
+      0
+    )
     return {
       ok: true,
       data: {
         config_path: this.configPath,
         exposed_tool_count: tools.length,
         control_tool_count: CONTROL_TOOLS.length,
-        upstream_tool_count: tools.length - CONTROL_TOOLS.length,
+        local_gateway_tool_count: LOCAL_GATEWAY_TOOLS.length,
+        stable_proxy_tool_count: tools.length - LOCAL_GATEWAY_TOOLS.length,
+        upstream_tool_count: discoveredToolCount,
         analyzer: this.describeTarget('analyzer'),
         vm: this.describeTarget('vm'),
         runtime: this.describeTarget('runtime'),
@@ -312,7 +579,7 @@ export class RikuneAgentGateway {
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const name = request.params.name
-      const args = (request.params.arguments || {}) as Record<string, unknown>
+      const args = request.params.arguments || {}
 
       if (name === 'rikune_connection_status') {
         return this.asToolResult(await this.handleStatus(args))
@@ -322,6 +589,9 @@ export class RikuneAgentGateway {
       }
       if (name === 'rikune_connection_refresh') {
         return this.asToolResult(await this.handleRefresh(args))
+      }
+      if (name === DIRECT_TOOL_CALL_NAME) {
+        return await this.handleDirectToolCall(args)
       }
 
       return await this.proxyToolCall(name, args)
@@ -396,6 +666,36 @@ export class RikuneAgentGateway {
     return this.getStatus(false)
   }
 
+  private async handleDirectToolCall(args: Record<string, unknown>): Promise<CallToolResult> {
+    const target = args.target === undefined ? 'analyzer' : parseTarget(args.target)
+    const requestedTool = typeof args.tool === 'string' ? args.tool.trim() : ''
+    if (!requestedTool) {
+      return this.errorToolResult('tool is required.')
+    }
+    if (LOCAL_GATEWAY_TOOL_NAMES.has(requestedTool)) {
+      return this.errorToolResult(
+        `Local gateway tool cannot be called through ${DIRECT_TOOL_CALL_NAME}.`
+      )
+    }
+
+    const connected = await this.ensureTargetConnected(target)
+    if (!connected) {
+      return this.errorToolResult(`Upstream ${target} is not connected.`)
+    }
+
+    const state = this.states[target]
+    const upstreamName =
+      this.resolveUpstreamToolName(state, requestedTool) ??
+      (target === 'analyzer' ? requestedTool : null)
+    if (!upstreamName) {
+      return this.errorToolResult(
+        `Upstream ${target} tool not found: ${requestedTool}. Use workflow_search to discover available analyzer capabilities.`
+      )
+    }
+
+    return await this.callUpstreamTool(target, upstreamName, asPlainObject(args.arguments))
+  }
+
   private async proxyToolCall(
     exposedName: string,
     args: Record<string, unknown>
@@ -405,16 +705,76 @@ export class RikuneAgentGateway {
       return this.errorToolResult(`Tool not found: ${exposedName}`)
     }
 
-    const state = this.states[route.target]
-    if (!state.client || !state.connected) {
+    const connected = await this.ensureTargetConnected(route.target)
+    if (!connected) {
       return this.errorToolResult(`Upstream ${route.target} is not connected.`)
     }
 
+    const state = this.states[route.target]
+    const upstreamName =
+      this.resolveUpstreamToolName(state, route.upstreamName) ?? route.upstreamName
+    const result = await this.callUpstreamTool(route.target, upstreamName, args)
+    return this.rewriteUploadUrlsForClient(route, args, result)
+  }
+
+  private rewriteUploadUrlsForClient(
+    route: ToolRoute,
+    args: Record<string, unknown>,
+    result: CallToolResult
+  ): CallToolResult {
+    if (
+      route.target !== 'analyzer' ||
+      normalizeToolLookupName(route.upstreamName) !== 'workflow_run' ||
+      args.action !== 'request_upload' ||
+      !this.config.analyzer.endpoint
+    ) {
+      return result
+    }
+
+    const payload = structuredPayloadFromToolResult(result)
+    if (!payload) {
+      return result
+    }
+
+    const rewritten = rewriteUploadPayload(payload, this.config.analyzer.endpoint)
+    if (!rewritten.changed) {
+      return result
+    }
+
+    return {
+      ...result,
+      structuredContent: rewritten.payload,
+      content: rewriteJsonTextContent(result.content, rewritten.payload),
+    }
+  }
+
+  private async ensureTargetConnected(target: AgentTarget): Promise<boolean> {
+    const state = this.states[target]
+    if (state.client && state.connected) {
+      return true
+    }
+    if (this.config[target].enabled === false) {
+      return false
+    }
+    await this.refreshTarget(target)
+    return Boolean(this.states[target].client && this.states[target].connected)
+  }
+
+  private async callUpstreamTool(
+    target: AgentTarget,
+    upstreamName: string,
+    args: Record<string, unknown>
+  ): Promise<CallToolResult> {
+    const state = this.states[target]
+    if (!state.client || !state.connected) {
+      return this.errorToolResult(`Upstream ${target} is not connected.`)
+    }
+
     try {
-      const timeout = this.config[route.target].timeoutMs || getToolTimeoutMs(this.env)
+      const timeout = this.config[target].timeoutMs || getToolTimeoutMs(this.env)
       return (await state.client.callTool(
         {
-          name: route.upstreamName,
+          name: upstreamName,
           arguments: args,
         },
         undefined,
@@ -425,45 +785,22 @@ export class RikuneAgentGateway {
       )) as CallToolResult
     } catch (error) {
       state.lastError = errorMessage(error)
-      return this.errorToolResult(
-        `Upstream ${route.target} tool call failed: ${errorMessage(error)}`
-      )
+      return this.errorToolResult(`Upstream ${target} tool call failed: ${errorMessage(error)}`)
     }
   }
 
   private listExposedTools(): Tool[] {
-    const tools: Tool[] = [...CONTROL_TOOLS]
+    const tools: Tool[] = [...LOCAL_GATEWAY_TOOLS]
     const routes = new Map<string, ToolRoute>()
-    const usedNames = new Set(CONTROL_TOOL_NAMES)
 
-    for (const target of ['analyzer', 'vm', 'runtime'] as AgentTarget[]) {
-      const state = this.states[target]
-      if (!state.connected || state.tools.length === 0) {
-        continue
-      }
-
-      for (const tool of state.tools) {
-        let exposedName = tool.name
-        if (usedNames.has(exposedName)) {
-          exposedName = `${target}_${tool.name}`.replace(/[^A-Za-z0-9_-]/g, '_')
-        }
-        if (usedNames.has(exposedName)) {
-          continue
-        }
-        usedNames.add(exposedName)
-        routes.set(exposedName, {
-          target,
-          exposedName,
+    if (this.config.analyzer.enabled !== false) {
+      for (const tool of STABLE_ANALYZER_TOOLS) {
+        routes.set(tool.name, {
+          target: 'analyzer',
+          exposedName: tool.name,
           upstreamName: tool.name,
         })
-        tools.push({
-          ...tool,
-          name: exposedName,
-          description:
-            exposedName === tool.name
-              ? tool.description
-              : `[${target}] ${tool.description || tool.name}`,
-        })
+        tools.push(tool)
       }
     }
 
@@ -478,6 +815,19 @@ export class RikuneAgentGateway {
     }
     this.listExposedTools()
     return this.toolRoutes.get(exposedName)
+  }
+
+  private resolveUpstreamToolName(state: UpstreamState, requestedTool: string): string | null {
+    const normalizedRequested = normalizeToolLookupName(requestedTool)
+    for (const tool of state.tools) {
+      if (
+        tool.name === requestedTool ||
+        normalizeToolLookupName(tool.name) === normalizedRequested
+      ) {
+        return tool.name
+      }
+    }
+    return null
   }
 
   private async refreshHttpPlane(
@@ -773,8 +1123,7 @@ function savePersistedConfig(configPath: string, config: AgentConfig): void {
 }
 
 function buildAgentConfig(env: NodeJS.ProcessEnv, persisted: Partial<AgentConfig>): AgentConfig {
-  const analyzerEndpoint =
-    env.RIKUNE_ANALYZER_ENDPOINT || env.ANALYZER_ENDPOINT || ''
+  const analyzerEndpoint = env.RIKUNE_ANALYZER_ENDPOINT || env.ANALYZER_ENDPOINT || ''
   const vmEndpoint = env.RIKUNE_VM_ENDPOINT || env.RUNTIME_HOST_AGENT_ENDPOINT || ''
   const runtimeEndpoint = env.RIKUNE_RUNTIME_ENDPOINT || env.RUNTIME_ENDPOINT || ''
 
@@ -848,11 +1197,9 @@ function buildTransportConfig(
   target: AgentTarget,
   config: UpstreamConfig,
   env: NodeJS.ProcessEnv
-):
-  | {
-      transport: StdioClientTransport | StreamableHTTPClientTransport
-    }
-  | null {
+): {
+  transport: StdioClientTransport | StreamableHTTPClientTransport
+} | null {
   const transport = config.transport || (target === 'analyzer' ? 'docker-stdio' : undefined)
   if (!transport) {
     return null
@@ -1009,6 +1356,145 @@ async function fetchJson(
   return body
 }
 
+function structuredPayloadFromToolResult(result: CallToolResult): Record<string, unknown> | null {
+  if (
+    result.structuredContent &&
+    typeof result.structuredContent === 'object' &&
+    !Array.isArray(result.structuredContent)
+  ) {
+    return cloneRecord(result.structuredContent as Record<string, unknown>)
+  }
+
+  for (const item of result.content || []) {
+    if (!('text' in item) || typeof item.text !== 'string') {
+      continue
+    }
+    try {
+      const parsed = JSON.parse(item.text) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>
+      }
+    } catch {}
+  }
+
+  return null
+}
+
+function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>
+}
+
+function rewriteJsonTextContent(
+  content: CallToolResult['content'],
+  payload: Record<string, unknown>
+): CallToolResult['content'] {
+  let replaced = false
+  return (content || []).map((item) => {
+    if (replaced || !('text' in item) || typeof item.text !== 'string') {
+      return item
+    }
+    try {
+      JSON.parse(item.text)
+      replaced = true
+      return {
+        ...item,
+        text: JSON.stringify(payload),
+      }
+    } catch {
+      return item
+    }
+  })
+}
+
+function rewriteUploadPayload(
+  payload: Record<string, unknown>,
+  analyzerEndpoint: string
+): { payload: Record<string, unknown>; changed: boolean } {
+  const data = asPlainObject(payload.data)
+  if (Object.keys(data).length === 0) {
+    return { payload, changed: false }
+  }
+
+  const uploadUrl = typeof data.upload_url === 'string' ? data.upload_url : undefined
+  const statusUrl = typeof data.status_url === 'string' ? data.status_url : undefined
+  const rewrittenUploadUrl = uploadUrl
+    ? rewriteLocalServiceUrl(uploadUrl, analyzerEndpoint)
+    : undefined
+  const rewrittenStatusUrl = statusUrl
+    ? rewriteLocalServiceUrl(statusUrl, analyzerEndpoint)
+    : undefined
+
+  if (
+    (!rewrittenUploadUrl || rewrittenUploadUrl === uploadUrl) &&
+    (!rewrittenStatusUrl || rewrittenStatusUrl === statusUrl)
+  ) {
+    return { payload, changed: false }
+  }
+
+  const nextData: Record<string, unknown> = { ...data }
+  if (rewrittenUploadUrl && uploadUrl && rewrittenUploadUrl !== uploadUrl) {
+    nextData.upstream_upload_url = uploadUrl
+    nextData.client_upload_url = rewrittenUploadUrl
+    nextData.upload_url = rewrittenUploadUrl
+  }
+  if (rewrittenStatusUrl && statusUrl && rewrittenStatusUrl !== statusUrl) {
+    nextData.upstream_status_url = statusUrl
+    nextData.client_status_url = rewrittenStatusUrl
+    nextData.status_url = rewrittenStatusUrl
+  }
+
+  const nextActions = Array.isArray(nextData.next_actions)
+    ? nextData.next_actions.filter((item): item is string => typeof item === 'string')
+    : []
+  nextData.next_actions = uniqueStrings([
+    'POST file bytes to upload_url; the gateway rewrote localhost upload URLs to the configured analyzer endpoint when needed.',
+    ...nextActions,
+  ])
+  if (typeof nextData.message === 'string') {
+    nextData.message = `${nextData.message} Gateway upload URLs were normalized for this client.`
+  }
+
+  const warnings = Array.isArray(payload.warnings)
+    ? payload.warnings.filter((item): item is string => typeof item === 'string')
+    : []
+  return {
+    payload: {
+      ...payload,
+      data: nextData,
+      warnings: uniqueStrings([
+        ...warnings,
+        'Gateway rewrote localhost upload_url/status_url to the configured analyzer endpoint.',
+      ]),
+    },
+    changed: true,
+  }
+}
+
+function rewriteLocalServiceUrl(value: string, endpoint: string): string | null {
+  try {
+    const original = new URL(value)
+    const host = original.hostname.toLowerCase()
+    if (
+      host !== 'localhost' &&
+      host !== '127.0.0.1' &&
+      host !== '0.0.0.0' &&
+      host !== 'host.docker.internal'
+    ) {
+      return value
+    }
+
+    const base = new URL(endpoint)
+    original.protocol = base.protocol
+    original.hostname = base.hostname
+    original.port = base.port
+    original.username = ''
+    original.password = ''
+    return original.toString()
+  } catch {
+    return null
+  }
+}
+
 function parseTarget(value: unknown): AgentTarget {
   if (value === 'analyzer' || value === 'vm' || value === 'runtime') {
     return value
@@ -1050,6 +1536,16 @@ function assignNumber<T extends object>(
   if (typeof value === 'number' && Number.isFinite(value)) {
     target[targetKey] = value as T[keyof T]
   }
+}
+
+function asPlainObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function normalizeToolLookupName(name: string): string {
+  return name.trim().replace(/\./g, '_').toLowerCase()
 }
 
 function getConnectTimeoutMs(env: NodeJS.ProcessEnv): number {

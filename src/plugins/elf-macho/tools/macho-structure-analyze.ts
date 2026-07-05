@@ -11,6 +11,16 @@ import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
+import {
+  ELF_MACHO_CAPABILITIES,
+  ELF_MACHO_EVIDENCE,
+  ELF_MACHO_RUNTIME_POLICY,
+  ELF_MACHO_SAFETY,
+  MACHO_STRUCTURE_ARTIFACT_TYPE,
+  MACHO_STRUCTURE_WORKFLOW_RECIPES,
+  buildElfMachoWorkerBackend,
+  enrichMachoStructureResult,
+} from '../elf-macho-metadata.js'
 
 const TOOL_NAME = 'macho.structure.analyze'
 
@@ -32,6 +42,43 @@ export const machoStructureAnalyzeToolDefinition: ToolDefinition = {
     'Analyze Mach-O binary structure: load commands, sections, symbols. Handles fat (universal) binaries by listing all architectures.',
   inputSchema: MachoStructureAnalyzeInputSchema,
   outputSchema: MachoStructureAnalyzeOutputSchema,
+  aspects: {
+    formats: [
+      'macho',
+      'fat',
+      'universal',
+      'macho-object',
+      'dylib',
+      'framework',
+      'app-bundle',
+      'dsym',
+    ],
+    platforms: ['macos', 'ios'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage'],
+    safety: ELF_MACHO_SAFETY,
+    capabilities: ELF_MACHO_CAPABILITIES,
+    evidence: ELF_MACHO_EVIDENCE,
+  },
+  artifacts: [
+    {
+      type: MACHO_STRUCTURE_ARTIFACT_TYPE,
+      description: 'Mach-O load commands, segments, sections, symbols, and universal slices',
+      mime: 'application/json',
+      mimeTypes: ['application/json'],
+    },
+  ],
+  evidence: [
+    { category: 'structure', artifactTypes: [MACHO_STRUCTURE_ARTIFACT_TYPE] },
+    { category: 'symbols', artifactTypes: [MACHO_STRUCTURE_ARTIFACT_TYPE] },
+    { category: 'imports', artifactTypes: [MACHO_STRUCTURE_ARTIFACT_TYPE] },
+    { category: 'exports', artifactTypes: [MACHO_STRUCTURE_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [MACHO_STRUCTURE_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [MACHO_STRUCTURE_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: MACHO_STRUCTURE_WORKFLOW_RECIPES,
+  runtimePolicy: ELF_MACHO_RUNTIME_POLICY,
+  workerBackend: buildElfMachoWorkerBackend([MACHO_STRUCTURE_ARTIFACT_TYPE]),
 }
 
 export function createMachoStructureAnalyzeHandler(
@@ -55,15 +102,16 @@ export function createMachoStructureAnalyzeHandler(
         return { ok: false, errors: [String(result.error || 'Mach-O parsing failed')] }
       }
 
+      const enriched = enrichMachoStructureResult(result, { sampleId: args.sample_id })
       const artifacts: ArtifactRef[] = []
       try {
         const artRef = await persistStaticAnalysisJsonArtifact(
           workspaceManager,
           database,
           args.sample_id,
-          'macho_structure',
+          MACHO_STRUCTURE_ARTIFACT_TYPE,
           'macho-structure',
-          result
+          enriched
         )
         if (artRef) artifacts.push(artRef)
       } catch {
@@ -72,7 +120,7 @@ export function createMachoStructureAnalyzeHandler(
 
       return {
         ok: true,
-        data: result,
+        data: enriched,
         artifacts,
         metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME },
       }

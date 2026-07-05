@@ -15,6 +15,7 @@ import type {
   ToolRuntimeContract,
   WorkerResult,
 } from '@rikune/shared'
+import { RuntimeBackendCapabilitySchema, findRuntimeBackendCapability } from '@rikune/shared'
 import type { RuntimeSidecarUpload } from './sidecar-staging.js'
 
 export type { RuntimeBackendCapability } from '@rikune/shared'
@@ -85,7 +86,35 @@ export interface RuntimeClientOptions {
 function cloneRuntimeBackendCapabilities(
   capabilities: RuntimeBackendCapability[]
 ): RuntimeBackendCapability[] {
-  return capabilities.map((capability) => ({ ...capability }))
+  return capabilities.map((capability) => {
+    const clone: RuntimeBackendCapability = { ...capability }
+    if (capability.modes) clone.modes = [...capability.modes]
+    if (capability.requiredProfiles) clone.requiredProfiles = [...capability.requiredProfiles]
+    if (capability.requiredTools) clone.requiredTools = [...capability.requiredTools]
+    if (capability.optionalTools) clone.optionalTools = [...capability.optionalTools]
+    if (capability.produces) clone.produces = [...capability.produces]
+    if (capability.capabilities) clone.capabilities = [...capability.capabilities]
+    if (capability.safety) clone.safety = [...capability.safety]
+    if (capability.policy) {
+      clone.policy = { ...capability.policy }
+      if (capability.policy.allowedBackends) {
+        clone.policy.allowedBackends = [...capability.policy.allowedBackends]
+      }
+      if (capability.policy.notes) {
+        clone.policy.notes = [...capability.policy.notes]
+      }
+    }
+    if (capability.isolation) {
+      clone.isolation = { ...capability.isolation }
+      if (capability.isolation.backends) {
+        clone.isolation.backends = [...capability.isolation.backends]
+      }
+    }
+    if (capability.fallback) {
+      clone.fallback = capability.fallback.map((entry) => ({ ...entry }))
+    }
+    return clone
+  })
 }
 
 function parseRuntimeBackendCapabilities(body: string): RuntimeBackendCapability[] | null {
@@ -105,21 +134,13 @@ function parseRuntimeBackendCapabilities(body: string): RuntimeBackendCapability
       if (!entry || typeof entry !== 'object') {
         continue
       }
-      const candidate = entry as Partial<RuntimeBackendCapability>
+      const parsed = RuntimeBackendCapabilitySchema.safeParse(entry)
       if (
-        (candidate.type === 'python-worker' ||
-          candidate.type === 'spawn' ||
-          candidate.type === 'inline') &&
-        typeof candidate.handler === 'string' &&
-        typeof candidate.description === 'string' &&
-        typeof candidate.requiresSample === 'boolean'
+        parsed.success &&
+        typeof parsed.data.description === 'string' &&
+        typeof parsed.data.requiresSample === 'boolean'
       ) {
-        capabilities.push({
-          type: candidate.type,
-          handler: candidate.handler,
-          description: candidate.description,
-          requiresSample: candidate.requiresSample,
-        })
+        capabilities.push(parsed.data as RuntimeBackendCapability)
       }
     }
 
@@ -199,9 +220,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
       return { supported: null }
     }
 
-    const capability = capabilities.find(
-      (entry) => entry.type === contract.type && entry.handler === contract.handler
-    )
+    const capability = findRuntimeBackendCapability(capabilities, contract)
     return {
       supported: capability !== undefined,
       capability,

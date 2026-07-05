@@ -74,4 +74,18 @@ describe('plugin domain and runtime contracts', () => {
 
     expect(malformed).toEqual([])
   })
+
+  test('orchestrator exposes warning-first plugin quality gates', () => {
+    const orchestratorSource = fs.readFileSync(
+      path.join(repoRoot, 'src/core/plugin-orchestrator.ts'),
+      'utf8'
+    )
+    const sdkSource = fs.readFileSync(path.join(repoRoot, 'packages/plugin-sdk/src/index.ts'), 'utf8')
+
+    expect(orchestratorSource).toContain('qualityWarnings')
+    expect(orchestratorSource).toContain('auditPluginQuality')
+    expect(sdkSource).toContain('missing-aspects')
+    expect(sdkSource).toContain('missing-output-schema')
+    expect(sdkSource).toContain('missing-runtime-policy')
+  })
 })

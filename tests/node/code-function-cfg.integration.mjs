@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-const { createCodeFunctionCFGHandler } = await import('../../dist/tools/code-function-cfg.js')
+const { createCodeFunctionCFGHandler } = await import('../../dist/plugins/code-analysis/tools/code-function-cfg.js')
 
 const sampleCFG = {
   function: 'FUN_140001000',
@@ -117,7 +117,7 @@ async function runBoundedPreviewCase() {
   })
 
   assert.equal(result.ok, true)
-  assert.equal(result.data.tool_surface_role, 'primary')
+  assert.equal(result.data.tool_surface_role, 'specialist')
   assert.equal(result.data.graph_semantics.surface_role, 'local_navigation_aid')
   assert.equal(result.data.graph_semantics.confidence_state, 'observed')
   assert.equal(result.data.preview.format, 'dot')

@@ -8,6 +8,7 @@ import {
   normalizeGhidraError,
 } from '../../../worker/decompiler-worker.js'
 import { logger } from '../../../logger.js'
+import { CODE_FUNCTIONS_SEARCH_METADATA } from './code-analysis-metadata.js'
 
 export const codeFunctionsSearchInputSchema = z
   .object({
@@ -86,6 +87,7 @@ export const codeFunctionsSearchToolDefinition: ToolDefinition = {
     'Use code.xrefs.analyze when you need bounded inbound/outbound relationship summaries instead of a simple function match list.',
   inputSchema: codeFunctionsSearchInputSchema,
   outputSchema: codeFunctionsSearchOutputSchema,
+  ...CODE_FUNCTIONS_SEARCH_METADATA,
 }
 
 export function createCodeFunctionsSearchHandler(

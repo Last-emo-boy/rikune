@@ -75,6 +75,10 @@ import {
   createCodeReconstructPlanHandler,
 } from './tools/code-reconstruct-plan.js'
 import {
+  crossDecompilerConsensusToolDefinition,
+  createCrossDecompilerConsensusHandler,
+} from './tools/cross-decompiler-consensus.js'
+import {
   codeModuleReviewPrepareToolDefinition,
   createCodeModuleReviewPrepareHandler,
 } from './tools/code-module-review-prepare.js'
@@ -82,11 +86,55 @@ import {
   codeModuleReviewApplyToolDefinition,
   createCodeModuleReviewApplyHandler,
 } from './tools/code-module-review-apply.js'
+import { CODE_ANALYSIS_RUNTIME_POLICY } from './tools/code-analysis-metadata.js'
 
 const codeAnalysisPlugin: Plugin = {
   id: 'code-analysis',
   name: 'Code Analysis',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'dotnet', 'wasm', 'apk'],
+    platforms: ['windows', 'linux', 'macos', 'android'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'wasm32', 'wasm64'],
+    execution: ['static', 'decompilation', 'correlation'],
+    safety: ['passive'],
+    capabilities: [
+      'function-analysis',
+      'function-recovery',
+      'function-search',
+      'decompilation',
+      'decompile',
+      'disassembly',
+      'cfg',
+      'control-flow-graph',
+      'xref',
+      'xrefs',
+      'reconstruction',
+      'source-reconstruction',
+      'native-export',
+      'dotnet-export',
+      'renaming',
+      'llm-review',
+      'cross-decompiler-consensus',
+      'cross-decompiler',
+      'ir-comparison',
+    ],
+    evidence: [
+      'functions',
+      'function-index',
+      'function-recovery',
+      'cfg',
+      'xrefs',
+      'symbols',
+      'decompiled-code',
+      'native-export',
+      'dotnet-export',
+      'artifact',
+      'workflow',
+      'provenance',
+    ],
+  },
+  runtimePolicy: CODE_ANALYSIS_RUNTIME_POLICY,
   surfaceRules: { tier: 0, category: 'reverse-engineering' },
   description:
     'Function listing, decompilation, disassembly, CFG, cross-references, reconstruction, renaming, explanation, and module review',
@@ -152,6 +200,10 @@ const codeAnalysisPlugin: Plugin = {
       codeReconstructPlanToolDefinition,
       createCodeReconstructPlanHandler(wm, db, cm)
     )
+    server.registerTool(
+      crossDecompilerConsensusToolDefinition,
+      createCrossDecompilerConsensusHandler()
+    )
 
     return [
       'code.functions.list',
@@ -173,6 +225,7 @@ const codeAnalysisPlugin: Plugin = {
       'code.reconstruct.export',
       'dotnet.reconstruct.export',
       'code.reconstruct.plan',
+      'code.cross_decompiler.consensus',
     ]
   },
 }

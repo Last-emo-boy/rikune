@@ -14,6 +14,54 @@ import {
 } from '../../sdk.js'
 
 const TOOL_NAME = 'dll.dependency.tree'
+export const DLL_DEPENDENCY_TREE_ARTIFACT_TYPE = 'dll_dependency_tree'
+export const DLL_DEPENDENCY_TREE_SAFETY = [
+  'passive',
+  'no_network_by_default',
+  'no_mutation',
+  'no_live_sample_by_default',
+  'no_sample_execution',
+]
+export const DLL_DEPENDENCY_TREE_EVIDENCE = [
+  'imports',
+  'dll-dependency',
+  'dependency-tree',
+  'dependency-graph',
+  'sideload-risk',
+  'cross-module',
+  'workflow',
+  'provenance',
+]
+export const DLL_DEPENDENCY_TREE_FOLLOW_UP_TOOLS = [
+  'pe.imports.extract',
+  'pe.exports.extract',
+  'pe.structure.analyze',
+  'elf.imports.extract',
+  'elf.exports.extract',
+  'elf.structure.analyze',
+  'macho.structure.analyze',
+  'native.object.inventory',
+  'analysis.evidence.graph',
+  'report.generate',
+]
+export const DLL_DEPENDENCY_TREE_RUNTIME_POLICY = {
+  passiveByDefault: true,
+  requiresUserOptIn: false,
+  requiresIsolation: false,
+  allowedBackends: ['local'],
+  networkPolicy: 'disabled',
+  noNetwork: true,
+  noMutation: true,
+  noLiveExecution: true,
+  notes: [
+    'DLL dependency tree analysis classifies static import table evidence only.',
+    'The tool does not load libraries, resolve dependencies through the OS loader, execute samples, or mutate files.',
+  ],
+} as ToolDefinition['runtimePolicy'] & {
+  noNetwork: true
+  noMutation: true
+  noLiveExecution: true
+}
 
 export const DllDependencyTreeInputSchema = z.object({
   sample_id: z.string().describe('Root sample ID (format: sha256:<hex>)'),
@@ -49,9 +97,65 @@ export const dllDependencyTreeToolDefinition: ToolDefinition = {
   description:
     'Build a dependency tree for a binary starting from its import table. ' +
     'Classifies each dependency as known-system, known-sample (in your collection), ' +
-    'or unknown/suspicious. Flags potential DLL side-loading vectors.',
+    'or unknown/suspicious. Flags potential DLL side-loading vectors and exposes dependency graph, cross-module, imports/exports/symbols/call graph, and DLL dependency search metadata.',
   inputSchema: DllDependencyTreeInputSchema,
   outputSchema: DllDependencyTreeOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll', 'exe', 'elf', 'so', 'macho', 'dylib', 'native'],
+    platforms: ['windows', 'linux', 'macos', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage', 'correlation'],
+    safety: DLL_DEPENDENCY_TREE_SAFETY,
+    capabilities: [
+      'dll-dependency',
+      'dependency-tree',
+      'dependency-graph',
+      'cross-module',
+      'import-table',
+      'sideload-risk',
+      'routing',
+      'search-profile',
+      'workflow-handoff',
+    ],
+    evidence: DLL_DEPENDENCY_TREE_EVIDENCE,
+  },
+  artifacts: [
+    {
+      type: DLL_DEPENDENCY_TREE_ARTIFACT_TYPE,
+      description:
+        'Passive dependency tree with system, known-sample, unknown, and sideload-risk classifications',
+      mimeTypes: ['application/json'],
+    },
+  ],
+  evidence: [
+    { category: 'imports', artifactTypes: [DLL_DEPENDENCY_TREE_ARTIFACT_TYPE] },
+    { category: 'dll-dependency', artifactTypes: [DLL_DEPENDENCY_TREE_ARTIFACT_TYPE] },
+    { category: 'dependency-tree', artifactTypes: [DLL_DEPENDENCY_TREE_ARTIFACT_TYPE] },
+    { category: 'dependency-graph', artifactTypes: [DLL_DEPENDENCY_TREE_ARTIFACT_TYPE] },
+    { category: 'sideload-risk', artifactTypes: [DLL_DEPENDENCY_TREE_ARTIFACT_TYPE] },
+    { category: 'cross-module', artifactTypes: [DLL_DEPENDENCY_TREE_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [DLL_DEPENDENCY_TREE_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [DLL_DEPENDENCY_TREE_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: [
+    {
+      id: 'cross-module.dll-dependency-handoff',
+      title: 'DLL and native dependency graph handoff',
+      description:
+        'Classify DLL, SO, dylib, and native dependency graph evidence from import tables, then route unresolved, known-sample, and sideload-risk nodes into format-specific static analysis, evidence graph, and reporting.',
+      startsWith: [TOOL_NAME],
+      nextTools: DLL_DEPENDENCY_TREE_FOLLOW_UP_TOOLS,
+      requiredArtifacts: ['sample', 'static import evidence'],
+      producesArtifacts: [DLL_DEPENDENCY_TREE_ARTIFACT_TYPE],
+      evidence: DLL_DEPENDENCY_TREE_EVIDENCE,
+      safety: DLL_DEPENDENCY_TREE_SAFETY,
+      handoff: {
+        recommended: DLL_DEPENDENCY_TREE_FOLLOW_UP_TOOLS,
+        routes: ['pe', 'elf', 'macho', 'native', 'analysis.evidence.graph', 'report.generate'],
+      },
+    },
+  ],
+  runtimePolicy: DLL_DEPENDENCY_TREE_RUNTIME_POLICY,
 }
 
 const KNOWN_SYSTEM_DLLS = new Set([

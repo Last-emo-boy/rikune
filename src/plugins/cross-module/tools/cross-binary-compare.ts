@@ -14,6 +14,54 @@ import {
 } from '../../sdk.js'
 
 const TOOL_NAME = 'cross.binary.compare'
+export const CROSS_BINARY_COMPARE_ARTIFACT_TYPE = 'cross_binary_compare'
+export const CROSS_BINARY_COMPARE_SAFETY = [
+  'passive',
+  'no_network_by_default',
+  'no_mutation',
+  'no_live_sample_by_default',
+  'no_sample_execution',
+]
+export const CROSS_BINARY_COMPARE_EVIDENCE = [
+  'functions',
+  'function-hashes',
+  'imports',
+  'strings',
+  'similarity',
+  'lineage',
+  'clustering',
+  'workflow',
+  'provenance',
+]
+export const CROSS_BINARY_COMPARE_FOLLOW_UP_TOOLS = [
+  'pe.imports.extract',
+  'pe.exports.extract',
+  'elf.imports.extract',
+  'elf.exports.extract',
+  'elf.structure.analyze',
+  'macho.structure.analyze',
+  'native.object.inventory',
+  'analysis.evidence.graph',
+  'report.generate',
+]
+export const CROSS_BINARY_COMPARE_RUNTIME_POLICY = {
+  passiveByDefault: true,
+  requiresUserOptIn: false,
+  requiresIsolation: false,
+  allowedBackends: ['local'],
+  networkPolicy: 'disabled',
+  noNetwork: true,
+  noMutation: true,
+  noLiveExecution: true,
+  notes: [
+    'Cross-binary comparison only reads existing static evidence such as function hashes, imports, and strings.',
+    'The tool does not execute, load, link, mutate, or contact network resources for compared samples.',
+  ],
+} as ToolDefinition['runtimePolicy'] & {
+  noNetwork: true
+  noMutation: true
+  noLiveExecution: true
+}
 
 export const CrossBinaryCompareInputSchema = z.object({
   sample_ids: z
@@ -61,9 +109,67 @@ export const crossBinaryCompareToolDefinition: ToolDefinition = {
   description:
     'Compare two or more binaries to discover shared code (function hashes), ' +
     'common imported APIs, overlapping strings, and possible lineage/versioning ' +
-    'relationships. Useful for malware family clustering and multi-component analysis.',
+    'relationships. Useful for malware family clustering, cross-module profile search, imports/exports/symbols/call graph context, and multi-component analysis handoff.',
   inputSchema: CrossBinaryCompareInputSchema,
   outputSchema: CrossBinaryCompareOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll', 'exe', 'elf', 'so', 'macho', 'dylib', 'native'],
+    platforms: ['windows', 'linux', 'macos', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage', 'correlation'],
+    safety: CROSS_BINARY_COMPARE_SAFETY,
+    capabilities: [
+      'cross-binary-compare',
+      'cross-module',
+      'similarity',
+      'function-hashes',
+      'import-overlap',
+      'string-overlap',
+      'lineage',
+      'family-clustering',
+      'search-profile',
+      'workflow-handoff',
+    ],
+    evidence: CROSS_BINARY_COMPARE_EVIDENCE,
+  },
+  artifacts: [
+    {
+      type: CROSS_BINARY_COMPARE_ARTIFACT_TYPE,
+      description:
+        'Cross-binary similarity matrix with shared function, import, string, lineage, and clustering evidence',
+      mimeTypes: ['application/json'],
+    },
+  ],
+  evidence: [
+    { category: 'functions', artifactTypes: [CROSS_BINARY_COMPARE_ARTIFACT_TYPE] },
+    { category: 'function-hashes', artifactTypes: [CROSS_BINARY_COMPARE_ARTIFACT_TYPE] },
+    { category: 'imports', artifactTypes: [CROSS_BINARY_COMPARE_ARTIFACT_TYPE] },
+    { category: 'strings', artifactTypes: [CROSS_BINARY_COMPARE_ARTIFACT_TYPE] },
+    { category: 'similarity', artifactTypes: [CROSS_BINARY_COMPARE_ARTIFACT_TYPE] },
+    { category: 'lineage', artifactTypes: [CROSS_BINARY_COMPARE_ARTIFACT_TYPE] },
+    { category: 'clustering', artifactTypes: [CROSS_BINARY_COMPARE_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [CROSS_BINARY_COMPARE_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [CROSS_BINARY_COMPARE_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: [
+    {
+      id: 'cross-module.cross-binary-similarity-handoff',
+      title: 'Cross-binary similarity and lineage handoff',
+      description:
+        'Compare functions, imports, strings, and shared static evidence across PE, ELF, Mach-O, and native module sets, then route similarity and lineage findings into graph and report workflows.',
+      startsWith: [TOOL_NAME],
+      nextTools: CROSS_BINARY_COMPARE_FOLLOW_UP_TOOLS,
+      requiredArtifacts: ['sample', 'static function/import/string evidence'],
+      producesArtifacts: [CROSS_BINARY_COMPARE_ARTIFACT_TYPE],
+      evidence: CROSS_BINARY_COMPARE_EVIDENCE,
+      safety: CROSS_BINARY_COMPARE_SAFETY,
+      handoff: {
+        recommended: CROSS_BINARY_COMPARE_FOLLOW_UP_TOOLS,
+        routes: ['pe', 'elf', 'macho', 'native', 'analysis.evidence.graph', 'report.generate'],
+      },
+    },
+  ],
+  runtimePolicy: CROSS_BINARY_COMPARE_RUNTIME_POLICY,
 }
 
 interface SampleEvidence {

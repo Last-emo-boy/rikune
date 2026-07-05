@@ -17,7 +17,7 @@ import {
   type ToolRuntimeContract,
 } from '@rikune/shared'
 import { logger } from './logger.js'
-import { config } from './config.js'
+import { config, getRuntimeAuthDefaultError } from './config.js'
 import { isIsolatedEnvironment } from './isolation.js'
 import type { ExecuteTask, RuntimeToolInventory } from './executor.js'
 import {
@@ -122,6 +122,19 @@ export function createRuntimeRouter(
         return
       }
 
+      const authDefaultError = getRuntimeAuthDefaultError(config)
+      if (authDefaultError) {
+        res.writeHead(503, { 'Content-Type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            ok: false,
+            code: 'runtime_api_key_required',
+            error: authDefaultError,
+          })
+        )
+        return
+      }
+
       // API key check (if configured)
       if (config.runtime.apiKey) {
         const auth = req.headers.authorization || ''
@@ -131,10 +144,6 @@ export function createRuntimeRouter(
           res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }))
           return
         }
-      } else if (process.env.NODE_ENV === 'production') {
-        logger.warn(
-          'RUNTIME_API_KEY is not set. The runtime node is exposed without authentication.'
-        )
       }
 
       // Routes

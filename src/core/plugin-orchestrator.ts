@@ -23,7 +23,7 @@ import type {
   PluginStatus,
   PluginSystemDep,
 } from '../plugins/sdk.js'
-import { validatePlugin } from '../plugins/sdk.js'
+import { auditPluginQuality, validatePlugin } from '../plugins/sdk.js'
 
 type PluginServer = ToolRegistrar & PromptRegistrar & ResourceRegistrar & SamplingClient
 
@@ -343,6 +343,7 @@ export class PluginOrchestrator {
       status: 'loaded',
       tools: [],
       configFields: plugin.configSchema,
+      qualityWarnings: auditPluginQuality(plugin),
       controlPlaneStatus: 'completed',
       statusDetail: 'Plugin loaded successfully',
     }
@@ -590,11 +591,23 @@ export class PluginOrchestrator {
 
     // Find and unregister tools
     const status = this.plugins.find((s) => s.id === pluginId)
-    if (status) {
-      for (const toolName of status.tools) {
-        this.server.unregisterTool(toolName)
+    const ownedTools = Array.from(this.pluginToolMap.entries())
+      .filter(([, ownerPluginId]) => ownerPluginId === pluginId)
+      .map(([toolName]) => toolName)
+    const statusTools = (status?.tools ?? []).filter((toolName) => {
+      const ownerPluginId = this.pluginToolMap.get(toolName)
+      return ownerPluginId === undefined || ownerPluginId === pluginId
+    })
+    const toolNames = [...new Set([...statusTools, ...ownedTools])]
+
+    for (const toolName of toolNames) {
+      this.server.unregisterTool(toolName)
+      if (this.pluginToolMap.get(toolName) === pluginId) {
         this.pluginToolMap.delete(toolName)
       }
+    }
+
+    if (status) {
       status.status = 'skipped-disabled'
       status.reasonCode = 'manually-unloaded'
       status.controlPlaneStatus = 'cancelled'
@@ -602,6 +615,7 @@ export class PluginOrchestrator {
       status.tools = []
     }
 
+    getToolSurfaceManager().unregisterPlugin(pluginId)
     this.loadedPlugins.delete(pluginId)
     logger.info({ plugin: pluginId }, `Plugin unloaded: ${plugin.name}`)
   }

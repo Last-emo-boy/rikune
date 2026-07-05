@@ -4,12 +4,21 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition, ToolArgs, WorkerResult } from '../../../types.js'
+import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 
 const TOOL_NAME = 'sigma.rule.generate'
+const TOOL_VERSION = '0.1.0'
+const SIGMA_RULES_ARTIFACT_TYPE = 'sigma_rules'
+
+const GeneratedSigmaRuleSchema = z.object({
+  type: z.string(),
+  title: z.string(),
+  rule_yaml: z.string(),
+  indicator_count: z.number(),
+})
 
 export const SigmaRuleGenerateInputSchema = z.object({
   sample_id: z.string().describe('Sample identifier (sha256:<hex>)'),
@@ -40,21 +49,26 @@ export const SigmaRuleGenerateOutputSchema = z.object({
   ok: z.boolean(),
   data: z
     .object({
-      rules: z.array(
-        z.object({
-          type: z.string(),
-          title: z.string(),
-          rule_yaml: z.string(),
-          indicator_count: z.number(),
-        })
-      ),
-      total_rules: z.number(),
-      total_indicators: z.number(),
-      recommended_next_tools: z.array(z.string()),
+      schema: z.string().optional(),
+      tool_version: z.string().optional(),
+      sample_id: z.string().optional(),
+      level: z.enum(['low', 'medium', 'high', 'critical']).optional(),
+      deploy_requested: z.boolean().optional(),
+      requested_rule_types: z.array(z.string()).optional(),
+      rules: z.array(GeneratedSigmaRuleSchema).optional(),
+      total_rules: z.number().optional(),
+      total_indicators: z.number().optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
+      recommended_next_tools: z.array(z.string()).optional(),
+      next_actions: z.array(z.string()).optional(),
     })
+    .passthrough()
     .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
+  artifacts: z.array(z.any()).optional(),
   metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),
 })
 
@@ -66,6 +80,98 @@ export const sigmaRuleGenerateToolDefinition: ToolDefinition = {
     'Uses strings, imports, and behavioral evidence to build detection logic.',
   inputSchema: SigmaRuleGenerateInputSchema,
   outputSchema: SigmaRuleGenerateOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'dotnet', 'apk', 'jar', 'firmware'],
+    platforms: [
+      'windows',
+      'linux',
+      'macos',
+      'android',
+      'jvm',
+      'dotnet',
+      'embedded',
+      'cross-platform',
+    ],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_network_by_default', 'no_live_sample_by_default'],
+    capabilities: [
+      'sigma-generation',
+      'ioc',
+      'detection-rule-generation',
+      'workflow-handoff',
+      'evidence-correlation',
+    ],
+    evidence: [
+      'behavior',
+      'network',
+      'filesystem',
+      'registry',
+      'strings',
+      'imports',
+      'workflow',
+      'provenance',
+    ],
+  },
+  artifacts: [
+    {
+      type: SIGMA_RULES_ARTIFACT_TYPE,
+      description:
+        'Generated Sigma rules with evidence summary, workflow handoff, and quality gates',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    {
+      category: 'behavior',
+      artifactTypes: [SIGMA_RULES_ARTIFACT_TYPE],
+    },
+    {
+      category: 'network',
+      artifactTypes: [SIGMA_RULES_ARTIFACT_TYPE],
+    },
+    {
+      category: 'registry',
+      artifactTypes: [SIGMA_RULES_ARTIFACT_TYPE],
+    },
+    {
+      category: 'strings',
+      artifactTypes: [SIGMA_RULES_ARTIFACT_TYPE],
+    },
+    {
+      category: 'imports',
+      artifactTypes: [SIGMA_RULES_ARTIFACT_TYPE],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: [SIGMA_RULES_ARTIFACT_TYPE],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: [SIGMA_RULES_ARTIFACT_TYPE],
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'threat-intel.sigma-rule-generation-handoff',
+      title: 'Sigma rule generation to validation and reporting',
+      description:
+        'Convert static behavior, string, import, network, and registry evidence into generated Sigma rules with quality gates, evidence graph routing, ATT&CK feedback, and reporting handoff.',
+      startsWith: ['sigma.rule.generate', 'strings.extract', 'ioc.export'],
+      nextTools: [
+        'analysis.evidence.graph',
+        'attack.map',
+        'ioc.export',
+        'yara.generate',
+        'report.generate',
+        'artifact.read',
+      ],
+      requiredArtifacts: ['analysis_evidence'],
+      producesArtifacts: [SIGMA_RULES_ARTIFACT_TYPE],
+      evidence: ['behavior', 'network', 'registry', 'strings', 'imports', 'workflow', 'provenance'],
+      safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+    },
+  ],
 }
 
 // --------------------------------------------------------------------------
@@ -84,6 +190,8 @@ interface SigmaEvidence {
   processNames: string[]
   sha256: string
 }
+
+type GeneratedSigmaRule = z.infer<typeof GeneratedSigmaRuleSchema>
 
 function extractSigmaEvidence(database: DatabaseManager, sampleId: string): SigmaEvidence {
   const evidence: SigmaEvidence = {
@@ -475,6 +583,244 @@ const RULE_GENERATORS: Record<
   image_load: generateImageLoadRule,
 }
 
+function countImportedFunctions(evidence: SigmaEvidence): number {
+  return evidence.imports.reduce((sum, item) => sum + item.functions.length, 0)
+}
+
+function buildEvidenceSummary(args: {
+  sampleId: string
+  input: SigmaRuleGenerateInput
+  evidence: SigmaEvidence
+  rules: GeneratedSigmaRule[]
+  warnings: string[]
+}) {
+  return {
+    schema: 'rikune.sigma_rule_generation.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    sample_id: args.sampleId,
+    artifact_type: SIGMA_RULES_ARTIFACT_TYPE,
+    level: args.input.level,
+    deploy_requested: args.input.deploy,
+    requested_rule_types: args.input.rule_types,
+    generated_rule_types: args.rules.map((rule) => rule.type),
+    rules_generated: args.rules.length,
+    total_indicators: args.rules.reduce((sum, rule) => sum + rule.indicator_count, 0),
+    warning_count: args.warnings.length,
+    warnings: args.warnings,
+    evidence_counts: {
+      strings: args.evidence.strings.length,
+      imports: args.evidence.imports.length,
+      imported_functions: countImportedFunctions(args.evidence),
+      mutexes: args.evidence.mutexes.length,
+      urls: args.evidence.urls.length,
+      ips: args.evidence.ips.length,
+      domains: args.evidence.domains.length,
+      file_paths: args.evidence.filePaths.length,
+      registry_keys: args.evidence.registryKeys.length,
+      process_names: args.evidence.processNames.length,
+    },
+    evidence_sources: ['analysis_evidence', 'sample_metadata'],
+  }
+}
+
+function buildRecommendedNextTools(): string[] {
+  return [
+    'analysis.evidence.graph',
+    'attack.map',
+    'ioc.export',
+    'yara.generate',
+    'report.generate',
+    'artifact.read',
+  ]
+}
+
+function buildNextActions(args: {
+  input: SigmaRuleGenerateInput
+  rules: GeneratedSigmaRule[]
+  totalIndicators: number
+  warnings: string[]
+}): string[] {
+  const actions = [
+    'Review generated Sigma selections for over-broad strings, hostnames, paths, and registry keys before SIEM use.',
+    'Load the persisted sigma_rules artifact through analysis.evidence.graph and report.generate for analyst reporting.',
+    'Use attack.map, ioc.export, and yara.generate to correlate Sigma coverage with ATT&CK, IOC, and YARA evidence.',
+  ]
+
+  if (args.totalIndicators < 3) {
+    actions.unshift(
+      'Gather richer strings, imports, registry, file, or network evidence before promoting these rules.'
+    )
+  }
+
+  if (args.rules.length < args.input.rule_types.length) {
+    actions.unshift(
+      'Review warnings for requested rule types that could not be generated from the available evidence.'
+    )
+  }
+
+  if (args.input.deploy) {
+    actions.unshift(
+      'Treat deploy=true as a deployment request only; review and export the generated YAML before any external SIEM mutation.'
+    )
+  }
+
+  if (args.warnings.length > 0) {
+    actions.unshift('Resolve insufficient-evidence warnings if the missing rule categories matter.')
+  }
+
+  return actions
+}
+
+function buildQualityGates(args: {
+  input: SigmaRuleGenerateInput
+  rules: GeneratedSigmaRule[]
+  totalIndicators: number
+  evidence: SigmaEvidence
+}) {
+  const generatedRuleTypes = new Set(args.rules.map((rule) => rule.type))
+  const missingRuleTypes = args.input.rule_types.filter(
+    (ruleType) => !generatedRuleTypes.has(ruleType)
+  )
+
+  return {
+    schema: 'rikune.sigma_rule_generation.quality_gates.v1',
+    passive_generation_only: true,
+    sample_executed_by_tool: false,
+    backend_started: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    deploy_requested: args.input.deploy,
+    deployment_mutation_requested: args.input.deploy,
+    deployment_performed_by_tool: false,
+    generated_rule_count: args.rules.length,
+    requested_rule_count: args.input.rule_types.length,
+    missing_requested_rule_types: missingRuleTypes,
+    total_indicators: args.totalIndicators,
+    rule_floor_met: args.rules.length > 0,
+    indicator_floor_met: args.totalIndicators > 0,
+    network_rule_present: args.rules.some((rule) =>
+      ['network_connection', 'dns_query'].includes(rule.type)
+    ),
+    registry_rule_present: args.rules.some((rule) => rule.type === 'registry_event'),
+    process_or_file_rule_present: args.rules.some((rule) =>
+      ['process_creation', 'file_event', 'image_load'].includes(rule.type)
+    ),
+    false_positive_review_required: true,
+    siem_validation_required: true,
+    analyst_review_required: true,
+    evidence_floor: {
+      strings: args.evidence.strings.length,
+      imports: args.evidence.imports.length,
+      network_indicators:
+        args.evidence.urls.length + args.evidence.ips.length + args.evidence.domains.length,
+      registry_keys: args.evidence.registryKeys.length,
+      file_or_process_indicators:
+        args.evidence.filePaths.length + args.evidence.processNames.length,
+    },
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  sampleId: string
+  input: SigmaRuleGenerateInput
+  rules: GeneratedSigmaRule[]
+  totalIndicators: number
+  recommendedNextTools: string[]
+}) {
+  const generatedRuleTypes = args.rules.map((rule) => rule.type)
+
+  return {
+    schema: 'rikune.sigma_rule_generation.workflow_handoff.v1',
+    handoff_mode: 'sigma_rule_generation_to_validation_attack_mapping_and_reporting',
+    source_tool: TOOL_NAME,
+    sample_id: args.sampleId,
+    artifact_type: SIGMA_RULES_ARTIFACT_TYPE,
+    level: args.input.level,
+    deploy_requested: args.input.deploy,
+    requested_rule_types: args.input.rule_types,
+    generated_rule_types: generatedRuleTypes,
+    generated_rule_count: args.rules.length,
+    total_indicators: args.totalIndicators,
+    recommended_next_tools: args.recommendedNextTools,
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      backend_started: false,
+      network_accessed_by_tool: false,
+      live_lookup_started: false,
+      siem_deployment_performed: false,
+      deployment_mutation_requested: args.input.deploy,
+    },
+    routing: [
+      {
+        goal: 'rule-validation-and-false-positive-review',
+        priority: 'high',
+        next_tools: ['artifact.read', 'report.generate'],
+        required_evidence: [SIGMA_RULES_ARTIFACT_TYPE, 'SIEM field mapping', 'benign event corpus'],
+      },
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: 'high',
+        next_tools: ['analysis.evidence.graph', 'report.generate'],
+        required_evidence: [SIGMA_RULES_ARTIFACT_TYPE],
+      },
+      {
+        goal: 'attack-and-ioc-feedback-loop',
+        priority: args.totalIndicators > 0 ? 'normal' : 'low',
+        next_tools: ['attack.map', 'ioc.export', 'yara.generate'],
+        required_evidence: ['generated Sigma rules', 'analysis evidence'],
+      },
+    ],
+  }
+}
+
+function buildStructuredResult(args: {
+  sampleId: string
+  input: SigmaRuleGenerateInput
+  evidence: SigmaEvidence
+  rules: GeneratedSigmaRule[]
+  warnings: string[]
+}) {
+  const totalIndicators = args.rules.reduce((sum, rule) => sum + rule.indicator_count, 0)
+  const recommendedNextTools = buildRecommendedNextTools()
+  const evidenceSummary = buildEvidenceSummary(args)
+  const qualityGates = buildQualityGates({
+    input: args.input,
+    rules: args.rules,
+    totalIndicators,
+    evidence: args.evidence,
+  })
+  const workflowHandoff = buildWorkflowHandoff({
+    sampleId: args.sampleId,
+    input: args.input,
+    rules: args.rules,
+    totalIndicators,
+    recommendedNextTools,
+  })
+  const nextActions = buildNextActions({
+    input: args.input,
+    rules: args.rules,
+    totalIndicators,
+    warnings: args.warnings,
+  })
+
+  return {
+    schema: 'rikune.sigma_rule_generation.v1',
+    tool_version: TOOL_VERSION,
+    sample_id: args.sampleId,
+    level: args.input.level,
+    deploy_requested: args.input.deploy,
+    requested_rule_types: args.input.rule_types,
+    rules: args.rules,
+    total_rules: args.rules.length,
+    total_indicators: totalIndicators,
+    evidence_summary: evidenceSummary,
+    workflow_handoff: workflowHandoff,
+    quality_gates: qualityGates,
+    recommended_next_tools: recommendedNextTools,
+    next_actions: nextActions,
+  }
+}
+
 export function createSigmaRuleGenerateHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager
@@ -491,12 +837,7 @@ export function createSigmaRuleGenerateHandler(
 
       const evidence = extractSigmaEvidence(database, input.sample_id)
       const warnings: string[] = []
-      const rules: Array<{
-        type: string
-        title: string
-        rule_yaml: string
-        indicator_count: number
-      }> = []
+      const rules: GeneratedSigmaRule[] = []
 
       for (const ruleType of input.rule_types) {
         const generator = RULE_GENERATORS[ruleType]
@@ -533,35 +874,34 @@ export function createSigmaRuleGenerateHandler(
         }
       }
 
-      const totalIndicators = rules.reduce((sum, r) => sum + r.indicator_count, 0)
-
-      const data = {
+      const data = buildStructuredResult({
+        sampleId: input.sample_id,
+        input,
+        evidence,
         rules,
-        total_rules: rules.length,
-        total_indicators: totalIndicators,
-        recommended_next_tools: ['yara.generate', 'workflow.analyze.start'],
-      }
+        warnings,
+      })
 
+      const artifacts: ArtifactRef[] = []
       try {
-        await persistStaticAnalysisJsonArtifact(
+        const artifactRef = await persistStaticAnalysisJsonArtifact(
           workspaceManager,
           database,
           input.sample_id,
-          'sigma_rules',
+          SIGMA_RULES_ARTIFACT_TYPE,
           'sigma',
-          {
-            tool: TOOL_NAME,
-            data: { total_rules: rules.length, rule_types: rules.map((r) => r.type) },
-          }
+          data
         )
+        artifacts.push(artifactRef)
       } catch {
-        /* best effort */
+        warnings.push('Failed to persist Sigma rule artifact')
       }
 
       return {
         ok: true,
         data,
         warnings: warnings.length > 0 ? warnings : undefined,
+        artifacts: artifacts.length > 0 ? artifacts : undefined,
         metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
       }
     } catch (error) {

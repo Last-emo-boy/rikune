@@ -12,6 +12,7 @@ import type { DatabaseManager } from '../../../database.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import { DecompilerWorker } from '../../../worker/decompiler-worker.js'
 import { logger } from '../../../logger.js'
+import { CODE_FUNCTIONS_LIST_METADATA } from './code-analysis-metadata.js'
 
 /**
  * Input schema for code.functions.list tool
@@ -54,6 +55,7 @@ export const codeFunctionsListToolDefinition: ToolDefinition = {
     'List all indexed functions for a binary sample. Supports Ghidra-extracted, PE metadata-recovered, or manually defined function indexes.',
   inputSchema: codeFunctionsListInputSchema,
   outputSchema: codeFunctionsListOutputSchema,
+  ...CODE_FUNCTIONS_LIST_METADATA,
 }
 
 /**

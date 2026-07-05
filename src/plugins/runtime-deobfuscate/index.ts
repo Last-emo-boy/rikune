@@ -19,6 +19,21 @@ const runtimeDeobfuscatePlugin: Plugin = {
   id: 'runtime-deobfuscate',
   name: 'Runtime Deobfuscation',
   executionDomain: 'dynamic',
+  aspects: {
+    formats: ['pe', 'dll', 'dotnet', 'pe-clr'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64', 'cil'],
+    execution: ['dynamic', 'deobfuscation'],
+    runtimes: ['frida', 'de4dot', 'wine'],
+    safety: ['opt_in_dynamic', 'requires_isolation', 'no_live_sample_by_default'],
+    capabilities: [
+      'runtime-string-decryption',
+      'dynamic-api-resolution',
+      'cfg-tracing',
+      'dotnet-deobfuscation',
+    ],
+    evidence: ['strings', 'api-calls', 'cfg', 'trace', 'dotnet-metadata', 'provenance'],
+  },
   surfaceRules: {
     tier: 2,
     activateOn: { findings: ['obfuscated', 'packed'] },

@@ -40,6 +40,34 @@ const DEFAULT_SIDECAR_EXTENSIONS = new Set([
 const DEFAULT_MAX_SIDECARS = 32
 const DEFAULT_MAX_TOTAL_BYTES = 128 * 1024 * 1024
 
+function normalizeContainmentPath(value: string): string {
+  const resolved = path.resolve(value)
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+}
+
+function isPathWithinRoot(candidate: string, root: string): boolean {
+  const relative = path.relative(
+    normalizeContainmentPath(root),
+    normalizeContainmentPath(candidate)
+  )
+  return (
+    relative === '' ||
+    (relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative))
+  )
+}
+
+function formatAllowedRoots(roots: string[]): string {
+  return roots.map((root) => path.resolve(root)).join(', ')
+}
+
+async function realpathOrResolved(value: string): Promise<string> {
+  try {
+    return await fs.realpath(value)
+  } catch {
+    return path.resolve(value)
+  }
+}
+
 function normalizeExplicitSidecarPaths(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return []
@@ -75,12 +103,41 @@ async function collectExplicitSidecars(
   }
 ): Promise<void> {
   const sampleResolved = path.resolve(samplePath)
+  const sampleSidecarRoot = path.dirname(sampleResolved)
+  const sampleRealPath = await realpathOrResolved(sampleResolved)
+  const allowedRoots = [await realpathOrResolved(sampleSidecarRoot)]
+  const lexicalAllowedRoots = [sampleSidecarRoot, ...allowedRoots]
+  const allowedRootSummary = formatAllowedRoots(allowedRoots)
+
   for (const sidecarPath of sidecarPaths) {
-    const resolved = path.resolve(sidecarPath)
-    if (resolved === sampleResolved) {
+    const resolved = path.resolve(sampleSidecarRoot, sidecarPath)
+    if (!lexicalAllowedRoots.some((root) => isPathWithinRoot(resolved, root))) {
+      state.warnings.push(
+        `Rejected sidecar ${sidecarPath}: path escapes allowed sample sidecar root ${allowedRootSummary}.`
+      )
       continue
     }
-    if (state.seen.has(resolved.toLowerCase())) {
+
+    let realResolved: string
+    try {
+      realResolved = await fs.realpath(resolved)
+    } catch (err) {
+      state.warnings.push(`Skipped sidecar ${sidecarPath}: ${(err as Error).message}`)
+      continue
+    }
+
+    if (!allowedRoots.some((root) => isPathWithinRoot(realResolved, root))) {
+      state.warnings.push(
+        `Rejected sidecar ${sidecarPath}: real path escapes allowed sample sidecar root ${allowedRootSummary}.`
+      )
+      continue
+    }
+
+    if (realResolved === sampleRealPath) {
+      continue
+    }
+    const seenKey = normalizeContainmentPath(realResolved)
+    if (state.seen.has(seenKey)) {
       continue
     }
     if (state.sidecars.length >= state.maxSidecars) {
@@ -91,7 +148,7 @@ async function collectExplicitSidecars(
     }
 
     try {
-      const stat = await fs.stat(resolved)
+      const stat = await fs.stat(realResolved)
       if (!stat.isFile()) {
         state.warnings.push(`Skipped sidecar ${sidecarPath}: not a file.`)
         continue
@@ -100,11 +157,11 @@ async function collectExplicitSidecars(
         state.warnings.push(`Skipped sidecar ${sidecarPath}: sidecar byte budget exceeded.`)
         continue
       }
-      state.seen.add(resolved.toLowerCase())
+      state.seen.add(seenKey)
       state.totalBytes += stat.size
       state.sidecars.push({
-        path: resolved,
-        name: path.basename(resolved),
+        path: realResolved,
+        name: path.basename(realResolved),
         size: stat.size,
         source: 'explicit',
       })
@@ -148,7 +205,8 @@ async function collectAutoSidecars(
     if (!allowedExtensions.has(path.extname(entry.name).toLowerCase())) {
       continue
     }
-    if (state.seen.has(resolved.toLowerCase())) {
+    const seenKey = normalizeContainmentPath(resolved)
+    if (state.seen.has(seenKey)) {
       continue
     }
     if (state.sidecars.length >= state.maxSidecars) {
@@ -167,7 +225,7 @@ async function collectAutoSidecars(
         state.warnings.push(`Skipped auto sidecar ${entry.name}: sidecar byte budget exceeded.`)
         continue
       }
-      state.seen.add(resolved.toLowerCase())
+      state.seen.add(seenKey)
       state.totalBytes += stat.size
       state.sidecars.push({
         path: resolved,

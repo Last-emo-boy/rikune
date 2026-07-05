@@ -35,13 +35,15 @@ export const SampleRequestUploadOutputSchema = z.object({
 export const sampleRequestUploadToolDefinition: ToolDefinition = {
   name: 'sample.request_upload',
   description:
-    'Primary host-file upload entrypoint. Use this when the sample file is on the HOST machine and the MCP worker cannot read that path directly. ' +
+    'Compatibility host-file upload helper. Prefer workflow.run action=request_upload for the primary AI-facing upload path. ' +
+    'Use this direct tool only when a legacy client explicitly needs the underlying upload-session primitive. ' +
     'Do not use this for files that already exist inside the container-accessible filesystem; use sample.ingest(path) instead. ' +
     'The returned daemon-backed upload URL stays valid across MCP worker process boundaries. ' +
     '\n\nDecision guide:\n' +
-    '- Use when: the sample is on the host machine and must be uploaded over HTTP.\n' +
+    '- Use when: a legacy client explicitly needs the direct upload-session helper.\n' +
+    '- Prefer instead: workflow.run action=request_upload for normal host-file upload.\n' +
     '- Do not use when: the file is already readable by the MCP server inside the container or shared filesystem.\n' +
-    '- Typical next step: POST the raw file bytes to upload_url, read sample_id from the HTTP response, then call workflow.triage, ghidra.analyze, or workflow.reconstruct.\n' +
+    '- Typical next step: POST the raw file bytes to upload_url, read sample_id from the HTTP response, then call workflow.run action=start, or workflow.search first if the requested workflow is unclear.\n' +
     '- Common mistake: calling sample.ingest(path=\"C:\\\\host\\\\file.exe\") from a containerized MCP worker.\n' +
     '\nUpload contract:\n' +
     '1. Use HTTP POST (not PUT, not GET).\n' +
@@ -90,21 +92,14 @@ export function createSampleRequestUploadHandler(
           expires_at: session.expires_at,
           ttl_seconds: input.ttl_seconds || 300,
           result_mode: 'upload_session',
-          tool_surface_role: 'primary',
-          preferred_primary_tools: [
-            'workflow.analyze.start',
-            'workflow.analyze.status',
-            'workflow.analyze.promote',
-          ],
-          recommended_next_tools: [
-            'workflow.analyze.start',
-            'workflow.summarize',
-            'workflow.triage',
-          ],
+          tool_surface_role: 'compatibility',
+          preferred_primary_tools: ['workflow.run'],
+          recommended_next_tools: ['workflow.run', 'workflow.search', 'artifact.read'],
           next_actions: [
             'POST the file bytes to upload_url with Content-Type: application/octet-stream.',
             'Read sample_id from the HTTP upload response instead of calling another MCP tool first.',
-            'Use that sample_id with workflow.analyze.start for the primary staged-runtime path, or workflow.triage only when you explicitly want the compatibility quick-profile surface.',
+            'Use that sample_id with workflow.run action=start for the primary staged workflow path.',
+            'Use workflow.search first when the sample type or requested workflow is unclear.',
             'Only use sample.ingest(upload_url) if a legacy client still expects the extra finalize step.',
           ],
         },

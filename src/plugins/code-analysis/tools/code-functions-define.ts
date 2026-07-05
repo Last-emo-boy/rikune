@@ -7,6 +7,7 @@ import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager, Function as DbFunction } from '../../../database.js'
 import { extractPdataFromPE } from '../../../pe-runtime-functions.js'
 import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
+import { CODE_FUNCTIONS_DEFINE_METADATA } from './code-analysis-metadata.js'
 
 const TOOL_NAME = 'code.functions.define'
 
@@ -164,6 +165,7 @@ export const codeFunctionsDefineToolDefinition: ToolDefinition = {
     'Define or import function boundaries manually or from recovered metadata so code.functions.list/rank/reconstruct can use a non-Ghidra function index.',
   inputSchema: codeFunctionsDefineInputSchema,
   outputSchema: codeFunctionsDefineOutputSchema,
+  ...CODE_FUNCTIONS_DEFINE_METADATA,
 }
 
 function normalizeHexAddress(value: string): string {

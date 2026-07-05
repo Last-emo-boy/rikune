@@ -1,5 +1,5 @@
 /**
- * Wine run tool �?preflight or run a sample under Wine or winedbg.
+ * Wine run tool - preflight or run a sample under Wine or winedbg.
  */
 
 import { z } from 'zod'
@@ -26,6 +26,14 @@ import {
   resolveSampleFile,
   resolveAnalysisBackends,
 } from '../../docker-shared.js'
+import {
+  WINE_PROFILE_NEXT_TOOLS,
+  WINE_RUN_ARTIFACT_TYPES,
+  WINE_RUN_WORKFLOW_RECIPES,
+  WINE_RUNTIME_POLICY,
+  buildWineRunEnvelope,
+  wineToolAspects,
+} from '../wine-metadata.js'
 
 export const wineRunInputSchema = z.object({
   sample_id: z.string().describe('Target sample identifier.'),
@@ -81,6 +89,9 @@ const wineRunSuccessOutputSchema = z.object({
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
     })
     .optional(),
   warnings: z.array(z.string()).optional(),
@@ -102,6 +113,38 @@ export const wineRunToolDefinition: ToolDefinition = {
     'Preflight or run a sample under Wine or winedbg. Use this only when you explicitly request Linux-hosted Wine debugging or execution; run/debug modes require approved=true.',
   inputSchema: wineRunInputSchema,
   outputSchema: wineRunOutputSchema,
+  aspects: wineToolAspects({
+    capabilities: [
+      'wine-preflight',
+      'execution-plan',
+      'debug-plan',
+      'approval-gated-execution',
+      'workflow-handoff',
+    ],
+    evidence: ['runtime-readiness', 'process', 'filesystem', 'timeline', 'workflow', 'provenance'],
+  }),
+  artifacts: [
+    {
+      type: WINE_RUN_ARTIFACT_TYPES[0],
+      description: 'Wine stdout/stderr capture from an explicitly approved run',
+      mimeTypes: ['text/plain'],
+    },
+    {
+      type: WINE_RUN_ARTIFACT_TYPES[1],
+      description: 'winedbg stdout/stderr capture from an explicitly approved debug session',
+      mimeTypes: ['text/plain'],
+    },
+  ],
+  evidence: [
+    { category: 'runtime-readiness' },
+    { category: 'process', artifactTypes: WINE_RUN_ARTIFACT_TYPES },
+    { category: 'filesystem', artifactTypes: WINE_RUN_ARTIFACT_TYPES },
+    { category: 'timeline', artifactTypes: WINE_RUN_ARTIFACT_TYPES },
+    { category: 'workflow' },
+    { category: 'provenance' },
+  ],
+  workflowRecipes: WINE_RUN_WORKFLOW_RECIPES,
+  runtimePolicy: WINE_RUNTIME_POLICY,
   runtime: { type: 'inline', handler: 'executeWineRun' },
 }
 
@@ -137,10 +180,20 @@ export function createWineRunHandler(
             mode: input.mode,
             approved: input.approved,
             summary: 'Wine readiness probe completed without launching the sample.',
-            recommended_next_tools: ['sandbox.execute', 'dynamic.dependencies', 'tool.help'],
+            recommended_next_tools: WINE_PROFILE_NEXT_TOOLS,
             next_actions: [
+              'Use windows.runtime.plan or tool.readiness before any approved Wine run/debug workflow.',
               'Set approved=true only when you intentionally want to launch the sample under Wine or winedbg.',
             ],
+            ...buildWineRunEnvelope({
+              status: 'ready',
+              mode: input.mode,
+              approved: input.approved,
+              sampleId: input.sample_id,
+              backendAvailable: wineBackend.available && winedbgBackend.available,
+              executionAttempted: false,
+              recommendedNextTools: WINE_PROFILE_NEXT_TOOLS,
+            }),
           },
           metrics: buildMetrics(startTime, wineRunToolDefinition.name),
         }
@@ -159,10 +212,20 @@ export function createWineRunHandler(
             mode: input.mode,
             approved: false,
             summary: 'Wine execution was not attempted because approved=false.',
-            recommended_next_tools: ['sandbox.execute', 'dynamic.dependencies', 'system.health'],
+            recommended_next_tools: WINE_PROFILE_NEXT_TOOLS,
             next_actions: [
+              'Use windows.runtime.plan to choose an isolated runtime boundary before enabling Wine execution.',
               'Retry with approved=true only when you deliberately want MCP to start the sample under Wine or winedbg.',
             ],
+            ...buildWineRunEnvelope({
+              status: 'denied',
+              mode: input.mode,
+              approved: false,
+              sampleId: input.sample_id,
+              backendAvailable: selectedBackend.available,
+              executionAttempted: false,
+              recommendedNextTools: WINE_PROFILE_NEXT_TOOLS,
+            }),
           },
           warnings: ['Wine execution requires approved=true.'],
           metrics: buildMetrics(startTime, wineRunToolDefinition.name),
@@ -214,10 +277,21 @@ export function createWineRunHandler(
           },
           artifact,
           summary: `${input.mode === 'debug' ? 'winedbg' : 'wine'} launched the sample and exited with code ${result.exitCode}.`,
-          recommended_next_tools: ['artifact.read', 'sandbox.execute', 'dynamic.trace.import'],
+          recommended_next_tools: ['artifact.read', 'wine.reg'],
           next_actions: [
             'Use artifact.read for the full Wine stdout/stderr capture when the preview is truncated.',
           ],
+          ...buildWineRunEnvelope({
+            status: 'ready',
+            mode: input.mode,
+            approved: true,
+            sampleId: input.sample_id,
+            backendAvailable: selectedBackend.available,
+            executionAttempted: true,
+            artifactPersisted: Boolean(artifact),
+            timedOut: result.timedOut,
+            recommendedNextTools: ['artifact.read', 'wine.reg'],
+          }),
         },
         artifacts,
         warnings: result.timedOut ? ['Wine execution timed out before completion.'] : undefined,

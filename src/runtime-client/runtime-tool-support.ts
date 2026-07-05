@@ -1,3 +1,4 @@
+import { findRuntimeBackendCapability } from '@rikune/shared'
 import type { RuntimeBackendCapability, ToolRuntimeContract } from '@rikune/shared'
 
 export interface RuntimeDelegatedToolContract {
@@ -99,6 +100,42 @@ function cloneRuntimeContract(contract: ToolRuntimeContract): ToolRuntimeContrac
   if (contract.modes) {
     clone.modes = [...contract.modes]
   }
+  if (contract.requiredProfiles) {
+    clone.requiredProfiles = [...contract.requiredProfiles]
+  }
+  if (contract.requiredTools) {
+    clone.requiredTools = [...contract.requiredTools]
+  }
+  if (contract.optionalTools) {
+    clone.optionalTools = [...contract.optionalTools]
+  }
+  if (contract.produces) {
+    clone.produces = [...contract.produces]
+  }
+  if (contract.capabilities) {
+    clone.capabilities = [...contract.capabilities]
+  }
+  if (contract.safety) {
+    clone.safety = [...contract.safety]
+  }
+  if (contract.policy) {
+    clone.policy = { ...contract.policy }
+    if (contract.policy.allowedBackends) {
+      clone.policy.allowedBackends = [...contract.policy.allowedBackends]
+    }
+    if (contract.policy.notes) {
+      clone.policy.notes = [...contract.policy.notes]
+    }
+  }
+  if (contract.isolation) {
+    clone.isolation = { ...contract.isolation }
+    if (contract.isolation.backends) {
+      clone.isolation.backends = [...contract.isolation.backends]
+    }
+  }
+  if (contract.fallback) {
+    clone.fallback = contract.fallback.map((entry) => ({ ...entry }))
+  }
   return clone
 }
 
@@ -106,11 +143,7 @@ function findCapability(
   capabilities: RuntimeBackendCapability[],
   contract: ToolRuntimeContract
 ): RuntimeBackendCapability | null {
-  return (
-    capabilities.find(
-      (capability) => capability.type === contract.type && capability.handler === contract.handler
-    ) ?? null
-  )
+  return findRuntimeBackendCapability(capabilities, contract) ?? null
 }
 
 export function listRuntimeDelegatedToolContracts(): RuntimeDelegatedToolContract[] {

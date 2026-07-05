@@ -325,6 +325,7 @@ export class AnalysisTaskRunner {
         runtimeClient,
         workspaceManager: this.workspaceManager,
         database: this.database,
+        policyGuard: this.policyGuard,
         resolvePrimarySamplePath,
         sandboxDir: this.sandboxDirProvider?.() ?? null,
       }),

@@ -14,17 +14,79 @@ import {
   firmwareEntropyToolDefinition,
   createFirmwareEntropyHandler,
 } from './tools/firmware-entropy.js'
+import {
+  firmwareWorkflowPlanToolDefinition,
+  createFirmwareWorkflowPlanHandler,
+} from './tools/firmware-workflow-plan.js'
 
 const firmwarePlugin: Plugin = {
   id: 'firmware',
   name: 'Firmware Analysis',
   executionDomain: 'static',
+  aspects: {
+    formats: [
+      'firmware',
+      'uimage',
+      'fit',
+      'dtb',
+      'itb',
+      'initramfs',
+      'cpio',
+      'squashfs',
+      'cramfs',
+      'jffs2',
+      'ubi',
+      'ubifs',
+      'romfs',
+      'archive',
+    ],
+    platforms: ['embedded', 'linux'],
+    architectures: ['arm', 'arm64', 'mips', 'mipsel', 'ppc', 'riscv', 'x86', 'x64'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_installer_execution'],
+    capabilities: [
+      'signatures',
+      'entropy',
+      'filesystem',
+      'nested-binaries',
+      'routing',
+      'firmware-workflow',
+      'sbom-handoff',
+      'emulation-handoff',
+      'workflow-plan',
+    ],
+    evidence: [
+      'signatures',
+      'filesystem',
+      'nested-binaries',
+      'artifact',
+      'package-metadata',
+      'workflow',
+      'provenance',
+    ],
+  },
   surfaceRules: {
     tier: 1,
-    activateOn: { fileTypes: ['firmware'] },
+    activateOn: {
+      fileTypes: [
+        'firmware',
+        'uimage',
+        'fit',
+        'dtb',
+        'itb',
+        'initramfs',
+        'cpio',
+        'squashfs',
+        'cramfs',
+        'jffs2',
+        'ubi',
+        'ubifs',
+        'romfs',
+      ],
+    },
     category: 'static-analysis',
     extractSignals: (data: Record<string, unknown>): string[] => {
-      if (Array.isArray(data.firmware_signatures) && data.firmware_signatures.length > 0) {
+      if (Array.isArray(data.signatures) && data.signatures.length > 0) {
         return ['firmware']
       }
       return []
@@ -63,8 +125,9 @@ const firmwarePlugin: Plugin = {
     server.registerTool(firmwareScanToolDefinition, createFirmwareScanHandler(wm, db))
     server.registerTool(firmwareExtractToolDefinition, createFirmwareExtractHandler(wm, db))
     server.registerTool(firmwareEntropyToolDefinition, createFirmwareEntropyHandler(wm, db))
+    server.registerTool(firmwareWorkflowPlanToolDefinition, createFirmwareWorkflowPlanHandler())
 
-    return ['firmware.scan', 'firmware.extract', 'firmware.entropy']
+    return ['firmware.scan', 'firmware.extract', 'firmware.entropy', 'firmware.workflow.plan']
   },
 }
 

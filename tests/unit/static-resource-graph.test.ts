@@ -54,6 +54,23 @@ describe('static.resource.graph tool', () => {
   test('exports a static resource graph tool definition', () => {
     expect(staticResourceGraphToolDefinition.name).toBe('static.resource.graph')
     expect(staticResourceGraphToolDefinition.description).toContain('resource')
+    expect(staticResourceGraphToolDefinition.aspects?.capabilities).toEqual(
+      expect.arrayContaining(['resource-graph', 'embedded-payload-triage', 'workflow-handoff'])
+    )
+    expect(staticResourceGraphToolDefinition.artifacts?.map((artifact) => artifact.type)).toContain(
+      'static_resource_graph'
+    )
+    expect(staticResourceGraphToolDefinition.workflowRecipes?.[0]).toEqual(
+      expect.objectContaining({
+        id: 'static-triage.resource-payload-correlation',
+        producesArtifacts: ['static_resource_graph'],
+        nextTools: expect.arrayContaining([
+          'static.config.carver',
+          'unpack.workflow.plan',
+          'analysis.evidence.graph',
+        ]),
+      })
+    )
   })
 
   test('profiles sample bytes and persists a static_resource_graph artifact', async () => {
@@ -66,9 +83,53 @@ describe('static.resource.graph tool', () => {
     const data = result.data as any
     expect(data.schema).toBe('rikune.static_resource_graph.v1')
     expect(data.file.magic).toBe('pe_or_dos')
-    expect(data.file.sha256).toBe(createHash('sha256').update(fs.readFileSync(samplePath)).digest('hex'))
+    expect(data.file.sha256).toBe(
+      createHash('sha256').update(fs.readFileSync(samplePath)).digest('hex')
+    )
     expect(Array.isArray(data.resources)).toBe(true)
     expect(data.recommended_next_tools).toContain('static.config.carver')
+    expect(data.recommended_next_tools).toContain('analysis.evidence.graph')
+    expect(data.evidence_summary).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.static_resource_graph.evidence_summary.v1',
+        source_tool: 'static.resource.graph',
+        sample_id: SAMPLE_ID,
+        file_magic: 'pe_or_dos',
+      })
+    )
+    expect(data.workflow_handoff).toEqual(
+      expect.objectContaining({
+        schema: 'rikune.static_resource_graph.workflow_handoff.v1',
+        handoff_mode: 'static_resource_to_payload_correlation',
+        recommended_next_tools: expect.arrayContaining([
+          'static.config.carver',
+          'analysis.evidence.graph',
+        ]),
+      })
+    )
+    expect(data.workflow_handoff.routing).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          goal: 'evidence-graph-and-reporting',
+          next_tools: expect.arrayContaining(['analysis.evidence.graph', 'report.generate']),
+        }),
+      ])
+    )
+    expect(data.quality_gates).toEqual(
+      expect.objectContaining({
+        passive_static_resource_graph: true,
+        backend_started: false,
+        sample_executed_by_tool: false,
+        network_accessed_by_tool: false,
+        runtime_followup_requires_opt_in: true,
+      })
+    )
+    expect(data.next_actions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('static.config.carver'),
+        expect.stringContaining('unpack.workflow.plan'),
+      ])
+    )
 
     const artifacts = database.findArtifactsByType(SAMPLE_ID, 'static_resource_graph')
     expect(artifacts).toHaveLength(1)

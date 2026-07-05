@@ -26,6 +26,14 @@ export const KeygenVerifyInputSchema = z.object({
     .describe('Address of validation function (hex). Auto-detected if omitted.'),
   emulation_backend: z.enum(['speakeasy', 'qiling']).optional().default('speakeasy'),
   timeout_sec: z.number().int().min(5).max(120).optional().default(30),
+  approved: z
+    .boolean()
+    .optional()
+    .describe('Explicit approval flag honored by PolicyGuard for dynamic execution'),
+  approval_token: z
+    .string()
+    .optional()
+    .describe('Approval token issued by PolicyGuard for dynamic execution'),
 })
 
 export const KeygenVerifyOutputSchema = createWorkerResultOutputSchema(z.record(z.any()))
@@ -102,7 +110,15 @@ export function createKeygenVerifyHandler(deps: PluginToolDeps) {
       if (!sample) return { ok: false, errors: [`Sample not found: ${args.sample_id}`] }
 
       const policyDecision = await policyGuard.checkPermission(
-        { type: 'dynamic_execution', tool: TOOL_NAME, args: { backend: args.emulation_backend } },
+        {
+          type: 'dynamic_execution',
+          tool: TOOL_NAME,
+          args: {
+            backend: args.emulation_backend,
+            approved: args.approved,
+            approval_token: args.approval_token,
+          },
+        },
         { sampleId: args.sample_id, timestamp: new Date().toISOString() }
       )
       await policyGuard.auditLog({

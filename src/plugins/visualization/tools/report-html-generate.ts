@@ -6,6 +6,7 @@
 
 import { z } from 'zod'
 import {
+  ArtifactRefSchema,
   createWorkerResultOutputSchema,
   type ToolDefinition,
   type WorkerResult,
@@ -14,8 +15,11 @@ import {
 } from '../../sdk.js'
 import path from 'node:path'
 import fs from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
 
 const TOOL_NAME = 'report.html.generate'
+const HTML_REPORT_ARTIFACT_TYPE = 'html_report'
+const HTML_REPORT_RECOMMENDED_NEXT_TOOLS = ['artifact.read', 'workflow.search']
 
 export const ReportHtmlGenerateInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
@@ -27,14 +31,48 @@ export const ReportHtmlGenerateInputSchema = z.object({
     .describe('Sections to include'),
 })
 
+const HtmlReportArtifactReadArgsSchema = z.object({
+  sample_id: z.string(),
+  artifact_id: z.string().optional(),
+  path: z.string().optional(),
+  read_mode: z.enum(['profile', 'summary', 'content']),
+  include_content: z.boolean().optional(),
+})
+
+const HtmlReportArtifactReadSchema = z.object({
+  tool: z.literal('artifact.read'),
+  args: HtmlReportArtifactReadArgsSchema,
+})
+
+const HtmlReportWorkflowHandoffSchema = z
+  .object({
+    schema: z.literal('rikune.html_report.workflow_handoff.v1'),
+    source_tool: z.literal(TOOL_NAME),
+    sample_id: z.string(),
+    read_args: HtmlReportArtifactReadArgsSchema,
+    artifact_contract: z.record(z.any()),
+    routing: z.array(z.record(z.any())),
+    dynamic_boundary: z.record(z.any()),
+  })
+  .passthrough()
+
 export const ReportHtmlGenerateOutputSchema = createWorkerResultOutputSchema(
   z.object({
     report_path: z.string(),
+    artifact_id: z.string(),
+    artifact: ArtifactRefSchema,
+    sha256: z.string(),
+    artifact_refs: z.array(ArtifactRefSchema),
+    artifact_read: HtmlReportArtifactReadSchema,
     sections_included: z.array(
       z.enum(['overview', 'static', 'dynamic', 'strings', 'iocs', 'threat_score'])
     ),
     evidence_used: z.number().int().nonnegative(),
     html_size: z.number().int().nonnegative(),
+    recommended_next_tools: z.array(z.string()),
+    next_actions: z.array(z.string()),
+    workflow_handoff: HtmlReportWorkflowHandoffSchema,
+    quality_gates: z.record(z.any()),
   })
 )
 
@@ -46,6 +84,35 @@ export const reportHtmlGenerateToolDefinition: ToolDefinition = {
     'dynamic behavior, strings, IoCs, and threat scoring sections.',
   inputSchema: ReportHtmlGenerateInputSchema,
   outputSchema: ReportHtmlGenerateOutputSchema,
+  aspects: {
+    formats: ['artifact', 'report', 'html-report'],
+    platforms: ['all', 'cross-platform'],
+    execution: ['static', 'correlation'],
+    safety: ['passive'],
+    capabilities: ['html-report-generation', 'report-export', 'artifact-handoff'],
+    evidence: ['artifact', 'provenance', 'behavior', 'network', 'strings'],
+  },
+  artifacts: [
+    {
+      type: HTML_REPORT_ARTIFACT_TYPE,
+      description: 'Self-contained HTML analysis report',
+      mime: 'text/html',
+    },
+  ],
+  evidence: [{ category: 'artifact', artifactTypes: [HTML_REPORT_ARTIFACT_TYPE] }],
+  workflowRecipes: [
+    {
+      id: 'visualization.html-report-artifact',
+      title: 'Generate HTML report artifact',
+      description:
+        'Aggregate existing analysis evidence into a self-contained HTML report and hand it off to artifact.read without exposing broader visualization tools.',
+      startsWith: [TOOL_NAME],
+      nextTools: HTML_REPORT_RECOMMENDED_NEXT_TOOLS,
+      producesArtifacts: [HTML_REPORT_ARTIFACT_TYPE],
+      evidence: ['artifact', 'provenance', 'report'],
+      safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+    },
+  ],
 }
 
 function escapeHtml(text: string): string {
@@ -72,18 +139,19 @@ function severityBadge(level: string): string {
 export function createReportHtmlGenerateHandler(deps: PluginToolDeps) {
   const { workspaceManager, database } = deps
 
-  return async (args: z.infer<typeof ReportHtmlGenerateInputSchema>): Promise<WorkerResult> => {
+  return async (args: unknown): Promise<WorkerResult> => {
     const t0 = Date.now()
     const warnings: string[] = []
 
     try {
-      const sample = database.findSample(args.sample_id)
-      if (!sample) return { ok: false, errors: [`Sample not found: ${args.sample_id}`] }
+      const input = ReportHtmlGenerateInputSchema.parse(args || {})
+      const sample = database.findSample(input.sample_id)
+      if (!sample) return { ok: false, errors: [`Sample not found: ${input.sample_id}`] }
 
-      const fileName = sample.file_type ?? args.sample_id
-      const reportTitle = args.title ?? `Analysis Report: ${fileName}`
+      const fileName = sample.file_type ?? input.sample_id
+      const reportTitle = input.title ?? `Analysis Report: ${fileName}`
 
-      const evidence = database.findAnalysisEvidenceBySample(args.sample_id)
+      const evidence = database.findAnalysisEvidenceBySample(input.sample_id)
       const allEvidence: Array<{ family: string; data: Record<string, unknown> }> = []
       if (Array.isArray(evidence)) {
         for (const entry of evidence) {
@@ -103,9 +171,9 @@ export function createReportHtmlGenerateHandler(deps: PluginToolDeps) {
       const sections: string[] = []
 
       // --- Overview ---
-      if (args.sections.includes('overview')) {
+      if (input.sections.includes('overview')) {
         let overview = `<h2>Overview</h2><table class="info-table">`
-        overview += `<tr><td><strong>Sample ID</strong></td><td><code>${escapeHtml(args.sample_id)}</code></td></tr>`
+        overview += `<tr><td><strong>Sample ID</strong></td><td><code>${escapeHtml(input.sample_id)}</code></td></tr>`
         overview += `<tr><td><strong>Filename</strong></td><td>${escapeHtml(fileName)}</td></tr>`
         overview += `<tr><td><strong>File Size</strong></td><td>${escapeHtml(String(sample.size))} bytes</td></tr>`
         if (sample.file_type)
@@ -116,7 +184,7 @@ export function createReportHtmlGenerateHandler(deps: PluginToolDeps) {
       }
 
       // --- Static Analysis ---
-      if (args.sections.includes('static')) {
+      if (input.sections.includes('static')) {
         let staticSection = `<h2>Static Analysis</h2>`
         const staticFamilies = [
           'pe_fingerprint',
@@ -142,7 +210,7 @@ export function createReportHtmlGenerateHandler(deps: PluginToolDeps) {
       }
 
       // --- Dynamic Behavior ---
-      if (args.sections.includes('dynamic')) {
+      if (input.sections.includes('dynamic')) {
         let dynSection = `<h2>Dynamic Behavior</h2>`
         const dynFamilies = [
           'dynamic_trace',
@@ -169,7 +237,7 @@ export function createReportHtmlGenerateHandler(deps: PluginToolDeps) {
       }
 
       // --- Strings ---
-      if (args.sections.includes('strings')) {
+      if (input.sections.includes('strings')) {
         let strSection = `<h2>Strings</h2>`
         const strEvid = allEvidence.filter(
           (e) => e.family === 'strings' || e.family === 'floss_strings'
@@ -194,7 +262,7 @@ export function createReportHtmlGenerateHandler(deps: PluginToolDeps) {
       }
 
       // --- IoCs ---
-      if (args.sections.includes('iocs')) {
+      if (input.sections.includes('iocs')) {
         let iocSection = `<h2>Indicators of Compromise</h2>`
         const iocEvid = allEvidence.filter(
           (e) => e.family === 'ioc_export' || e.family === 'c2_extract' || e.family === 'attack_map'
@@ -210,7 +278,7 @@ export function createReportHtmlGenerateHandler(deps: PluginToolDeps) {
       }
 
       // --- Threat Score Summary ---
-      if (args.sections.includes('threat_score')) {
+      if (input.sections.includes('threat_score')) {
         let scoreSection = `<h2>Threat Assessment</h2>`
         const scores: Array<{ source: string; score: number; level: string }> = []
         for (const ev of allEvidence) {
@@ -287,23 +355,137 @@ ${sections.join('\n')}
 </html>`
 
       // Write to workspace
-      const workspace = await workspaceManager.createWorkspace(args.sample_id)
+      const workspace = await workspaceManager.createWorkspace(input.sample_id)
       const outDir = workspace.reports
       await fs.mkdir(outDir, { recursive: true })
-      const safeName = args.sample_id.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)
-      const outFile = path.join(outDir, `${safeName}_report.html`)
+      const safeName = input.sample_id.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)
+      const artifactId = randomUUID()
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const outFile = path.join(
+        outDir,
+        `${safeName}_report_${timestamp}_${artifactId.slice(0, 8)}.html`
+      )
       await fs.writeFile(outFile, html, 'utf-8')
 
-      const artifacts: ArtifactRef[] = []
+      const reportSha256 = createHash('sha256').update(html).digest('hex')
+      const relativePath = path.relative(workspace.root, outFile).replace(/\\/g, '/')
+      const artifact: ArtifactRef = {
+        id: artifactId,
+        type: HTML_REPORT_ARTIFACT_TYPE,
+        path: relativePath,
+        sha256: reportSha256,
+        mime: 'text/html',
+        metadata: {
+          source_tool: TOOL_NAME,
+          sample_id: input.sample_id,
+          surface_role: 'html_report_export',
+          sections_included: input.sections,
+          evidence_used: allEvidence.length,
+          html_size: Buffer.byteLength(html, 'utf8'),
+        },
+      }
+      let artifactRegistered = false
+      if (typeof database.insertArtifact === 'function') {
+        database.insertArtifact({
+          id: artifact.id,
+          sample_id: input.sample_id,
+          type: artifact.type,
+          path: artifact.path,
+          sha256: artifact.sha256,
+          mime: artifact.mime,
+          created_at: new Date().toISOString(),
+        })
+        artifactRegistered = true
+      } else {
+        warnings.push('Database artifact registration unavailable; returning inline artifact ref.')
+      }
+
+      const artifactRead = {
+        tool: 'artifact.read',
+        args: artifactRegistered
+          ? {
+              sample_id: input.sample_id,
+              artifact_id: artifact.id,
+              read_mode: 'content' as const,
+              include_content: true,
+            }
+          : {
+              sample_id: input.sample_id,
+              path: artifact.path,
+              read_mode: 'content' as const,
+              include_content: true,
+            },
+      }
+      const workflowHandoff = {
+        schema: 'rikune.html_report.workflow_handoff.v1',
+        source_tool: TOOL_NAME,
+        sample_id: input.sample_id,
+        read_args: artifactRead.args,
+        artifact_contract: {
+          produces: [HTML_REPORT_ARTIFACT_TYPE],
+          artifact_id: artifact.id,
+          artifact_path: artifact.path,
+          sha256: artifact.sha256,
+          mime: artifact.mime,
+          expected_consumers: ['artifact.read'],
+        },
+        routing: [
+          {
+            goal: 'read-generated-html-report',
+            next_tools: ['artifact.read'],
+            artifact_id: artifact.id,
+            read_mode: 'content',
+            read_args: artifactRead.args,
+          },
+          {
+            goal: 'continue-profile-routing',
+            next_tools: ['workflow.search'],
+            query: 'html report evidence summary',
+          },
+        ],
+        dynamic_boundary: {
+          runtime_started_by_tool: false,
+          sample_executed_by_tool: false,
+          network_accessed_by_tool: false,
+          mutation_performed: false,
+        },
+      }
+      const qualityGates = {
+        schema: 'rikune.html_report.quality_gates.v1',
+        passive_correlation_only: true,
+        sample_executed_by_tool: false,
+        network_accessed_by_tool: false,
+        mutation_performed: false,
+        artifact_persisted: artifactRegistered,
+        artifact_file_written: true,
+        artifact_registered: artifactRegistered,
+        html_nonempty: html.length > 0,
+        evidence_present: allEvidence.length > 0,
+        section_count: input.sections.length,
+      }
+      const artifacts: ArtifactRef[] = [artifact]
 
       return {
         ok: true,
         data: {
           report_path: outFile,
-          sections_included: args.sections,
+          artifact_id: artifact.id,
+          artifact,
+          sha256: artifact.sha256,
+          artifact_refs: artifacts,
+          artifact_read: artifactRead,
+          sections_included: input.sections,
           evidence_used: allEvidence.length,
-          html_size: html.length,
+          html_size: Buffer.byteLength(html, 'utf8'),
+          recommended_next_tools: HTML_REPORT_RECOMMENDED_NEXT_TOOLS,
+          next_actions: [
+            'Use artifact.read with the returned html_report artifact_id to inspect or download the generated report.',
+            'Use workflow.search when you need another report, evidence, or visualization follow-up.',
+          ],
+          workflow_handoff: workflowHandoff,
+          quality_gates: qualityGates,
         },
+        warnings: warnings.length > 0 ? warnings : undefined,
         artifacts,
         metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME },
       }

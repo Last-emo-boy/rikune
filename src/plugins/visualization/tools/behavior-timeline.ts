@@ -68,6 +68,24 @@ export const behaviorTimelineToolDefinition: ToolDefinition = {
     'network → persistence → payload), and identifies behavioral bursts.',
   inputSchema: BehaviorTimelineInputSchema,
   outputSchema: BehaviorTimelineOutputSchema,
+  aspects: {
+    formats: ['artifact', 'runtime-trace'],
+    platforms: ['windows', 'linux', 'macos', 'ios', 'android', 'cross-platform'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    evidence: ['timeline', 'behavior', 'network', 'filesystem', 'registry'],
+  },
+  artifacts: [
+    {
+      type: 'behavior_timeline',
+      description: 'Temporal behavior timeline derived from existing trace artifacts',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    { category: 'timeline', artifactTypes: ['behavior_timeline'] },
+    { category: 'behavior', artifactTypes: ['behavior_timeline'] },
+  ],
 }
 
 const PHASE_KEYWORDS: Record<string, string[]> = {

@@ -87,7 +87,8 @@
         <span data-lang-zh>快速评估未知 PE 二进制文件的风险 — 头信息、导入表、熵值、加壳检测和初始威胁评分。</span>
       </p>
       <div class="scenario-card__tools">
-        <code>sample.ingest</code>
+        <code>workflow.search</code>
+        <code>workflow.run</code>
         <code>pe.headers</code>
         <code>pe.imports</code>
         <code>detect.compiler</code>
@@ -130,7 +131,8 @@
         <span data-lang-zh>从托管程序集中提取 CLR 元数据、类型定义、方法签名和资源。</span>
       </p>
       <div class="scenario-card__tools">
-        <code>sample.ingest</code>
+        <code>workflow.search</code>
+        <code>workflow.run</code>
         <code>dotnet.metadata</code>
         <code>dotnet.resources</code>
       </div>
@@ -158,9 +160,9 @@
         <span data-lang-zh>使用分阶段流水线筛查目录下的样本 — 先快速分诊，然后对标记项进行深度分析。</span>
       </p>
       <div class="scenario-card__tools">
-        <code>sample.ingest</code>
-        <code>workflow.analyze.start</code>
-        <code>workflow.summarize</code>
+        <code>workflow.search</code>
+        <code>workflow.run</code>
+        <code>artifact.read</code>
       </div>
     </div>
 
@@ -216,13 +218,25 @@
     <span data-lang-zh>以下是评估未知样本的完整工作流：</span>
   </p>
 
-  <h3><span data-lang-en>Step 1 — Ingest the sample</span><span data-lang-zh>步骤 1 — 导入样本</span></h3>
+  <h3><span data-lang-en>Step 1 — Search and request upload</span><span data-lang-zh>步骤 1 — 搜索并请求上传</span></h3>
   <div class="code-block">
     <div class="code-block__header"><span>MCP Tool Call</span><button class="code-block__copy">Copy</button></div>
     <pre>{
-  <span class="key">"name"</span>: <span class="str">"sample.ingest"</span>,
+  <span class="key">"name"</span>: <span class="str">"workflow.search"</span>,
   <span class="key">"arguments"</span>: {
-    <span class="key">"path"</span>: <span class="str">"C:\\samples\\suspicious.exe"</span>
+    <span class="key">"query"</span>: <span class="str">"threat assessment for a Windows executable"</span>,
+    <span class="key">"file_type"</span>: <span class="str">".exe"</span>,
+    <span class="key">"goal"</span>: <span class="str">"triage"</span>
+  }
+}</pre>
+  </div>
+  <div class="code-block">
+    <div class="code-block__header"><span>MCP Tool Call</span><button class="code-block__copy">Copy</button></div>
+    <pre>{
+  <span class="key">"name"</span>: <span class="str">"workflow.run"</span>,
+  <span class="key">"arguments"</span>: {
+    <span class="key">"action"</span>: <span class="str">"request_upload"</span>,
+    <span class="key">"filename"</span>: <span class="str">"suspicious.exe"</span>
   }
 }</pre>
   </div>
@@ -231,21 +245,23 @@
   <div class="code-block">
     <div class="code-block__header"><span>MCP Tool Call</span><button class="code-block__copy">Copy</button></div>
     <pre>{
-  <span class="key">"name"</span>: <span class="str">"workflow.analyze.start"</span>,
+  <span class="key">"name"</span>: <span class="str">"workflow.run"</span>,
   <span class="key">"arguments"</span>: {
+    <span class="key">"action"</span>: <span class="str">"start"</span>,
     <span class="key">"sample_id"</span>: <span class="str">"sha256:a1b2c3..."</span>,
-    <span class="key">"goal"</span>: <span class="str">"threat_assessment"</span>
+    <span class="key">"goal"</span>: <span class="str">"triage"</span>
   }
 }</pre>
   </div>
 
-  <h3><span data-lang-en>Step 3 — Get the summary</span><span data-lang-zh>步骤 3 — 获取摘要</span></h3>
+  <h3><span data-lang-en>Step 3 — Check status and read artifacts</span><span data-lang-zh>步骤 3 — 查询状态并读取 artifact</span></h3>
   <div class="code-block">
     <div class="code-block__header"><span>MCP Tool Call</span><button class="code-block__copy">Copy</button></div>
     <pre>{
-  <span class="key">"name"</span>: <span class="str">"workflow.summarize"</span>,
+  <span class="key">"name"</span>: <span class="str">"workflow.run"</span>,
   <span class="key">"arguments"</span>: {
-    <span class="key">"sample_id"</span>: <span class="str">"sha256:a1b2c3..."</span>
+    <span class="key">"action"</span>: <span class="str">"status"</span>,
+    <span class="key">"plan_id"</span>: <span class="str">"run_0042"</span>
   }
 }</pre>
   </div>

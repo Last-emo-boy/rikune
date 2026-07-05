@@ -11,8 +11,15 @@ import {
   toolsDiscoverToolDefinition,
   createToolsDiscoverHandler,
 } from '../../tools/tools-discover.js'
+import {
+  workflowSearchToolDefinition,
+  createWorkflowSearchHandler,
+} from '../../tools/workflow-search.js'
 
 interface UtilityToolOptions {
+  database?: {
+    findSample?: (sampleId: string) => { file_type?: string | null } | null
+  }
   runtimeClient?: {
     getEndpoint?(): string
     validateRuntimeContract?(
@@ -38,5 +45,18 @@ export function registerUtilityTools(
       runtimeMode: options.runtimeMode,
     })
   )
-  server.registerTool(toolsDiscoverToolDefinition, createToolsDiscoverHandler(getPluginManager()))
+  server.registerTool(
+    toolsDiscoverToolDefinition,
+    createToolsDiscoverHandler(getPluginManager(), {
+      database: options.database,
+      toolDefinitions: () => server.getToolDefinitions(),
+    })
+  )
+  server.registerTool(
+    workflowSearchToolDefinition,
+    createWorkflowSearchHandler(getPluginManager(), {
+      database: options.database,
+      toolDefinitions: () => server.getToolDefinitions(),
+    })
+  )
 }

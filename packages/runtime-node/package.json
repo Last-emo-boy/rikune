@@ -1,6 +1,6 @@
 {
   "name": "@rikune/runtime-node",
-  "version": "1.0.0-beta.3",
+  "version": "1.1.0",
   "description": "Rikune dynamic analysis runtime node for Windows Sandbox / isolated execution.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,7 +18,7 @@
     "test": "cmd /d /s /c \"pushd ..\\.. && node --experimental-vm-modules node_modules\\jest\\bin\\jest.js --runInBand tests\\unit\\runtime-node && popd\""
   },
   "dependencies": {
-    "@rikune/shared": "1.0.0-beta.3",
+    "@rikune/shared": "1.1.0",
     "pino": "^10.3.1",
     "uuid": "^13.0.0",
     "zod": "^3.25.76"

@@ -65,21 +65,49 @@ describe('retdec.decompile', () => {
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
-  test('declares a main-compatible static decompile MCP tool definition', () => {
-    expect(retdecDecompileToolDefinition).toEqual(
+  test('declares static decompile workflow and optional RetDec backend metadata', () => {
+    expect(retdecDecompileToolDefinition.aspects?.safety).toEqual(
+      expect.arrayContaining(['passive', 'read_only', 'bounded_output', 'no_network_by_default'])
+    )
+    expect(retdecDecompileToolDefinition.workflowRecipes?.[0]).toEqual(
       expect.objectContaining({
-        name: 'retdec.decompile',
-        description: expect.stringContaining('RetDec'),
-        inputSchema: expect.any(Object),
-        outputSchema: expect.any(Object),
+        id: 'retdec.decompile-handoff',
+        startsWith: ['retdec.decompile'],
+        nextTools: expect.arrayContaining([
+          'artifact.read',
+          'workflow.search',
+          'code.cross_decompiler.consensus',
+          'workflow.reconstruct',
+          'analysis.evidence.graph',
+        ]),
+        producesArtifacts: expect.arrayContaining([
+          'backend_retdec_decompile_plain',
+          'backend_retdec_decompile_json-human',
+        ]),
+        safety: expect.arrayContaining(['passive', 'read_only', 'no_network_by_default']),
       })
     )
-    expect(Object.keys(retdecDecompileToolDefinition).sort()).toEqual([
-      'description',
-      'inputSchema',
-      'name',
-      'outputSchema',
-    ])
+    expect(retdecDecompileToolDefinition.runtimePolicy).toEqual(
+      expect.objectContaining({
+        passiveByDefault: true,
+        requiresUserOptIn: true,
+        noNetwork: true,
+        noMutation: true,
+        noLiveExecution: true,
+      })
+    )
+    expect(retdecDecompileToolDefinition.workerBackend).toEqual(
+      expect.objectContaining({
+        backendName: 'retdec',
+        backendKind: 'external',
+        adapter: 'retdec.static.decompile',
+        envVar: 'RETDEC_PATH',
+        readiness: expect.objectContaining({
+          doesNotStartBackend: true,
+          missingBackendBehavior: 'Return setup_required without running any backend command.',
+        }),
+      })
+    )
   })
 
   test('returns a standard handoff envelope while preserving the raw decompile artifact', async () => {

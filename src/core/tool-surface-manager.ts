@@ -13,21 +13,25 @@
  *   - MCP `notifications/tools/list_changed` notifies clients on change
  *
  * Tiers:
- *   0 — Gateway: always visible (~15 tools)
+ *   0 — Gateway-capable: discoverable immediately, but not necessarily listed
+ *       in the initial gateway unless explicitly configured.
  *   1 — Context-activated: appear when sample file type matches
  *   2 — Finding-activated: appear when analysis findings match
- *   3 — Expert: manual activation only via `tools.discover`
+ *   3 — Expert: manual activation only through the workflow.search activation gateway
  */
 
 import pino from 'pino'
 import type { Plugin, SurfaceRules, SurfaceTier } from '../plugins/sdk.js'
 import { SURFACE_FILE_TYPE_TAGS } from '../plugins/sdk.js'
+import { toTransportToolName } from './tool-name-normalization.js'
 
 // MCP stdio reserves stdout for JSON-RPC frames. Send surface logs to stderr.
 const logger = pino(
   { name: 'tool-surface-manager', level: process.env.LOG_LEVEL || 'info' },
   pino.destination({ dest: 2, sync: false })
 )
+
+const SURFACE_EXPANSION_EXCLUDED_TOOLS = new Set(['workflow.search', 'workflow.run'])
 
 // ═══════════════════════════════════════════════════════════════════════════
 // File-type normalization (delegates to SDK vocabulary)
@@ -37,10 +41,8 @@ function normalizeFileTypeTags(rawType: string): string[] {
   const lower = rawType.toLowerCase().trim()
   if (SURFACE_FILE_TYPE_TAGS[lower]) return SURFACE_FILE_TYPE_TAGS[lower]
   // Extension-based fallback
-  if (lower.endsWith('.apk') && SURFACE_FILE_TYPE_TAGS.apk) return SURFACE_FILE_TYPE_TAGS.apk
-  if ((lower.endsWith('.pcap') || lower.endsWith('.pcapng')) && SURFACE_FILE_TYPE_TAGS.pcap)
-    return SURFACE_FILE_TYPE_TAGS.pcap
-  if (lower.endsWith('.jar') && SURFACE_FILE_TYPE_TAGS.jar) return SURFACE_FILE_TYPE_TAGS.jar
+  const extension = lower.includes('.') ? lower.slice(lower.lastIndexOf('.') + 1) : lower
+  if (extension && SURFACE_FILE_TYPE_TAGS[extension]) return SURFACE_FILE_TYPE_TAGS[extension]
   return [lower]
 }
 
@@ -56,7 +58,7 @@ interface PluginSurfaceEntry {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Surface categories for tools.discover
+// Surface categories for workflow.search/tools.discover
 // ═══════════════════════════════════════════════════════════════════════════
 
 export interface DiscoverableCategory {
@@ -71,22 +73,35 @@ export interface DiscoverableCategory {
   }>
 }
 
+export interface DiscoverableCoreTool {
+  name: string
+  transportName: string
+  visible: boolean
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // ToolSurfaceManager
 // ═══════════════════════════════════════════════════════════════════════════
 
 export class ToolSurfaceManager {
   private entries: Map<string, PluginSurfaceEntry> = new Map()
-  /** Core tool names that are always visible (not from plugins). */
+  /** Plugin-owned tool names explicitly exposed without activating their whole plugin. */
+  private visiblePluginTools: Set<string> = new Set()
+  /** All registered core tool names (not from plugins). */
   private coreTools: Set<string> = new Set()
+  /** Core tool names exposed in the initial gateway surface. */
+  private visibleCoreTools: Set<string> = new Set()
   /** Callback to send MCP notification. */
   private notifyListChanged: (() => void) | null = null
   /** Whether progressive surface is enabled (can be disabled via env). */
   private enabled: boolean
+  /** Preserve legacy behavior by making tier-0 plugins visible at startup. */
+  private autoActivateTier0Plugins: boolean
 
   constructor() {
     // Allow full surface via env var for backward compatibility
     this.enabled = (process.env.SURFACE_PROGRESSIVE ?? '1') !== '0'
+    this.autoActivateTier0Plugins = process.env.SURFACE_AUTO_ACTIVATE_TIER0 === '1'
   }
 
   // ── Setup ────────────────────────────────────────────────────────────────
@@ -100,10 +115,22 @@ export class ToolSurfaceManager {
 
   /**
    * Register core tools (non-plugin tools registered in tool-registry.ts).
-   * These are always visible regardless of surface state.
+   * These remain registered and callable by name, but are not necessarily
+   * listed in the initial gateway surface.
    */
   registerCoreTools(toolNames: string[]): void {
     for (const name of toolNames) this.coreTools.add(name)
+  }
+
+  /**
+   * Register the intentionally small core gateway surface.
+   * These tools are visible before sample context or discovery expansion.
+   */
+  registerGatewayCoreTools(toolNames: string[]): void {
+    for (const name of toolNames) {
+      this.coreTools.add(name)
+      this.visibleCoreTools.add(name)
+    }
   }
 
   /**
@@ -112,13 +139,40 @@ export class ToolSurfaceManager {
    */
   registerPlugin(plugin: Plugin, toolNames: string[]): void {
     const rules = plugin.surfaceRules ?? { tier: 0 as const }
-    const activated = rules.tier === 0
+    const activated = this.autoActivateTier0Plugins && rules.tier === 0
     this.entries.set(plugin.id, {
       pluginId: plugin.id,
       tools: toolNames,
       rules,
       activated,
     })
+  }
+
+  /**
+   * Remove a plugin and all of its progressive-surface state.
+   * Used by plugin hot-unload so hidden discovery metadata, activation state,
+   * and signal rules do not survive after the plugin's tools are unregistered.
+   *
+   * @returns tool names that were owned by the removed plugin
+   */
+  unregisterPlugin(pluginId: string): string[] {
+    const entry = this.entries.get(pluginId)
+    if (!entry) return []
+
+    this.entries.delete(pluginId)
+    for (const tool of entry.tools) {
+      this.visiblePluginTools.delete(tool)
+    }
+    if (this.notifyListChanged) {
+      this.notifyListChanged()
+    }
+
+    logger.info(
+      { plugin: pluginId, tools: entry.tools.length },
+      `Surface unregistered: ${pluginId} (-${entry.tools.length} tools)`
+    )
+
+    return [...entry.tools]
   }
 
   // ── Visibility queries ─────────────────────────────────────────────────
@@ -131,7 +185,8 @@ export class ToolSurfaceManager {
     // When disabled, everything is visible
     if (!this.enabled) return new Set<string>() // empty = no filtering
 
-    const visible = new Set<string>(this.coreTools)
+    const visible = new Set<string>(this.visibleCoreTools)
+    for (const tool of this.visiblePluginTools) visible.add(tool)
     for (const entry of this.entries.values()) {
       if (entry.activated) {
         for (const tool of entry.tools) visible.add(tool)
@@ -152,7 +207,8 @@ export class ToolSurfaceManager {
    */
   isToolVisible(toolName: string): boolean {
     if (!this.enabled) return true
-    if (this.coreTools.has(toolName)) return true
+    if (this.visibleCoreTools.has(toolName)) return true
+    if (this.visiblePluginTools.has(toolName)) return true
     for (const entry of this.entries.values()) {
       if (entry.activated && entry.tools.includes(toolName)) return true
     }
@@ -162,15 +218,26 @@ export class ToolSurfaceManager {
   // ── Activation ─────────────────────────────────────────────────────────
 
   /**
-   * Activate plugins matching a file type (tier 1 activation).
+   * Activate plugins matching a file type.
    * Called when a sample is ingested or when triage identifies the file type.
+   * By default only tier-1 format tools are auto-opened. The discovery portal
+   * can opt into tier-2 format tools when the AI explicitly activates by type.
    *
    * @returns list of newly activated plugin IDs
    */
-  activateByFileType(rawFileType: string): string[] {
+  activateByFileType(
+    rawFileType: string,
+    options: { includeTier2?: boolean; includeExpert?: boolean } = {}
+  ): string[] {
     const tags = normalizeFileTypeTags(rawFileType)
     return this.activateMatching((entry) => {
-      if (entry.rules.tier !== 1) return false
+      if (
+        entry.rules.tier !== 1 &&
+        !(options.includeTier2 && entry.rules.tier === 2) &&
+        !(options.includeExpert && entry.rules.tier === 3)
+      ) {
+        return false
+      }
       const fileTypes = entry.rules.activateOn?.fileTypes
       if (!fileTypes) return false
       return fileTypes.some((ft) => tags.includes(ft.toLowerCase()))
@@ -195,7 +262,7 @@ export class ToolSurfaceManager {
 
   /**
    * Activate plugins matching a discovery category (tier 3 or any tier).
-   * Called by `tools.discover`.
+   * Called by the progressive activation gateway.
    *
    * @returns list of newly activated plugin IDs
    */
@@ -208,12 +275,79 @@ export class ToolSurfaceManager {
 
   /**
    * Activate specific plugins by ID.
-   * Called by `tools.discover` when targeting specific plugins.
+   * Called by the progressive activation gateway when targeting specific plugins.
    *
    * @returns list of newly activated plugin IDs
    */
   activatePlugins(pluginIds: string[]): string[] {
     return this.activateMatching((entry) => pluginIds.includes(entry.pluginId))
+  }
+
+  /**
+   * Expose specific plugin-owned tools without activating the whole plugin.
+   * Used by the workflow.search activation gateway for scoped tool activation.
+   *
+   * @returns newly exposed canonical tool names
+   */
+  activatePluginTools(toolNames: string[]): string[] {
+    if (!this.enabled) return []
+    const newlyVisible: string[] = []
+
+    for (const requested of toolNames) {
+      let matched:
+        | {
+            entry: PluginSurfaceEntry
+            canonicalName: string
+          }
+        | undefined
+      for (const entry of this.entries.values()) {
+        const canonicalName = entry.tools.find(
+          (tool) => tool === requested || toTransportToolName(tool) === requested
+        )
+        if (!canonicalName) continue
+        matched = { entry, canonicalName }
+        break
+      }
+
+      if (!matched) continue
+      const { entry, canonicalName } = matched
+      if (entry.activated || this.visiblePluginTools.has(canonicalName)) {
+        continue
+      }
+
+      this.visiblePluginTools.add(canonicalName)
+      newlyVisible.push(canonicalName)
+      logger.info(
+        { plugin: entry.pluginId, tier: entry.rules.tier, tool: canonicalName },
+        `Surface scoped activation: ${canonicalName}`
+      )
+    }
+
+    if (newlyVisible.length > 0 && this.notifyListChanged) {
+      this.notifyListChanged()
+    }
+    return newlyVisible
+  }
+
+  /**
+   * Expose already registered core tools in the gateway list.
+   * Used by the discovery portal and by recommended_next_tools expansion.
+   */
+  activateCoreTools(toolNames: string[]): string[] {
+    if (!this.enabled) return []
+    const newlyVisible: string[] = []
+    for (const name of toolNames) {
+      const canonicalName = Array.from(this.coreTools).find(
+        (tool) => tool === name || toTransportToolName(tool) === name
+      )
+      if (!canonicalName || this.visibleCoreTools.has(canonicalName)) continue
+      this.visibleCoreTools.add(canonicalName)
+      newlyVisible.push(canonicalName)
+    }
+    if (newlyVisible.length > 0 && this.notifyListChanged) {
+      this.notifyListChanged()
+    }
+    return newlyVisible
   }
 
   /**
@@ -228,6 +362,7 @@ export class ToolSurfaceManager {
    */
   processToolResult(toolName: string, result: unknown): string[] {
     if (!this.enabled || !result || typeof result !== 'object') return []
+    if (SURFACE_EXPANSION_EXCLUDED_TOOLS.has(toolName)) return []
 
     const activated: string[] = []
     const data = (result as Record<string, unknown>).data as Record<string, unknown> | undefined
@@ -245,6 +380,7 @@ export class ToolSurfaceManager {
     if (Array.isArray(nextTools)) {
       for (const nextTool of nextTools) {
         if (typeof nextTool !== 'string') continue
+        this.activateCoreTools([nextTool])
         // Find which plugin owns this tool and activate it
         for (const entry of this.entries.values()) {
           if (
@@ -270,7 +406,7 @@ export class ToolSurfaceManager {
 
   /**
    * List all discoverable categories with their plugins and activation status.
-   * Used by the `tools.discover` meta-tool.
+   * Used by workflow.search and the compatibility tools.discover meta-tool.
    */
   listCategories(
     pluginIndex: Map<string, { name: string; description?: string }>
@@ -303,6 +439,20 @@ export class ToolSurfaceManager {
   }
 
   /**
+   * List registered core tools and whether they are currently exposed.
+   * Used by the discovery portal to search the hidden core tool surface.
+   */
+  listCoreTools(): DiscoverableCoreTool[] {
+    return Array.from(this.coreTools)
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => ({
+        name,
+        transportName: toTransportToolName(name),
+        visible: this.visibleCoreTools.has(name),
+      }))
+  }
+
+  /**
    * Get a summary of the current surface state.
    */
   getSurfaceStatus(): {
@@ -321,13 +471,18 @@ export class ToolSurfaceManager {
     }
 
     let totalTools = this.coreTools.size
-    let visibleTools = this.coreTools.size
+    let visibleTools = this.visibleCoreTools.size
 
     for (const entry of this.entries.values()) {
       tiers[entry.rules.tier].total++
       if (entry.activated) tiers[entry.rules.tier].activated++
       totalTools += entry.tools.length
       if (entry.activated) visibleTools += entry.tools.length
+    }
+
+    for (const tool of this.visiblePluginTools) {
+      const owner = [...this.entries.values()].find((entry) => entry.tools.includes(tool))
+      if (owner && !owner.activated) visibleTools += 1
     }
 
     return {

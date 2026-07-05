@@ -10,6 +10,20 @@ import type { DatabaseManager } from '../../../database.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 
 const TOOL_NAME = 'frida.script.generate'
+const TOOL_VERSION = '0.2.0'
+const FRIDA_SCRIPT_ARTIFACT_TYPE = 'frida_script'
+
+const FRIDA_SCRIPT_RECOMMENDED_NEXT_TOOLS = ['artifact.read', 'workflow.search']
+const FRIDA_SCRIPT_RUNTIME_NEXT_TOOLS = ['tool.readiness', 'dynamic.runtime.status']
+
+const FRIDA_SCRIPT_SAFETY = [
+  'passive',
+  'plan_only',
+  'no_live_sample_by_default',
+  'no_backend_started',
+  'no_script_injection',
+  'approval_required_for_live_execution',
+]
 
 export const FridaScriptGenerateInputSchema = z.object({
   sample_id: z.string().describe('Sample identifier (sha256:<hex>)'),
@@ -57,11 +71,16 @@ export const FridaScriptGenerateOutputSchema = z.object({
       ),
       combined_script: z.string(),
       total_hooks: z.number(),
+      evidence_summary: z.record(z.any()),
+      workflow_handoff: z.record(z.any()),
+      quality_gates: z.record(z.any()),
       recommended_next_tools: z.array(z.string()),
+      next_actions: z.array(z.string()),
     })
     .optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
+  artifacts: z.array(z.any()).optional(),
   metrics: z.object({ elapsed_ms: z.number(), tool: z.string() }).optional(),
 })
 
@@ -73,6 +92,86 @@ export const fridaScriptGenerateToolDefinition: ToolDefinition = {
     'Uses import analysis and taint tracking results to target the most relevant APIs.',
   inputSchema: FridaScriptGenerateInputSchema,
   outputSchema: FridaScriptGenerateOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll', 'dotnet', 'elf', 'so', 'macho', 'ipa', 'apk', 'dex', 'android-package'],
+    platforms: ['windows', 'linux', 'macos', 'ios', 'android'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'dynamic-plan'],
+    runtimes: ['frida', 'frida-server', 'adb', 'android-emulator', 'idevice-tools'],
+    safety: FRIDA_SCRIPT_SAFETY,
+    capabilities: [
+      'hook-plan',
+      'script-generation',
+      'api-hook-template',
+      'crypto-hook-plan',
+      'network-hook-plan',
+      'anti-debug-hook-plan',
+      'runtime-instrumentation-plan',
+      'workflow-handoff',
+    ],
+    evidence: [
+      'hook-plan',
+      'api-calls',
+      'filesystem',
+      'registry',
+      'network',
+      'crypto',
+      'process',
+      'memory',
+      'timeline',
+      'workflow',
+      'provenance',
+    ],
+  },
+  artifacts: [
+    {
+      type: FRIDA_SCRIPT_ARTIFACT_TYPE,
+      description:
+        'Generated Frida hook script plan, template coverage, and runtime-gated handoff metadata',
+      mimeTypes: ['application/json'],
+    },
+  ],
+  evidence: [
+    { category: 'hook-plan', artifactTypes: [FRIDA_SCRIPT_ARTIFACT_TYPE] },
+    { category: 'api-calls', artifactTypes: [FRIDA_SCRIPT_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [FRIDA_SCRIPT_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [FRIDA_SCRIPT_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: [
+    {
+      id: 'frida.passive-hook-plan',
+      title: 'Frida passive hook script planning',
+      description:
+        'Generate local Frida hook scripts as a passive plan, then require readiness and explicit approval before injection or trace capture.',
+      startsWith: [TOOL_NAME],
+      nextTools: [...FRIDA_SCRIPT_RECOMMENDED_NEXT_TOOLS, ...FRIDA_SCRIPT_RUNTIME_NEXT_TOOLS],
+      requiredArtifacts: ['sample'],
+      producesArtifacts: [FRIDA_SCRIPT_ARTIFACT_TYPE],
+      evidence: ['hook-plan', 'api-calls', 'workflow', 'provenance'],
+      safety: FRIDA_SCRIPT_SAFETY,
+      runtimeBackends: ['frida', 'frida-server', 'adb', 'android-emulator', 'idevice-tools'],
+      liveExecutionRequires: [
+        'result-scoped activation',
+        'tool.readiness ready',
+        'explicit analyst approval',
+        'isolated runtime target',
+      ],
+    },
+  ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: false,
+    requiresIsolation: false,
+    maxRuntimeMs: 10000,
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    notes: [
+      'frida.script.generate only writes a local hook script plan and must not attach to a process.',
+      'frida.script.inject, frida.trace.capture, and frida.runtime.instrument require readiness, result-scoped activation, and explicit approval.',
+    ],
+  },
 }
 
 // --------------------------------------------------------------------------
@@ -377,6 +476,118 @@ function getImportedApis(database: DatabaseManager, sampleId: string): string[] 
   return []
 }
 
+function buildEvidenceSummary(args: {
+  input: FridaScriptGenerateInput
+  scripts: Array<{ category: string; hook_count: number; apis_hooked: string[] }>
+  totalHooks: number
+}) {
+  return {
+    schema: 'rikune.frida_script_generate.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    artifact_type: FRIDA_SCRIPT_ARTIFACT_TYPE,
+    script_count: args.scripts.length,
+    total_hooks: args.totalHooks,
+    requested_hook_targets: args.input.hook_targets,
+    generated_categories: args.scripts.map((script) => script.category),
+    apis_hooked_count: args.scripts.reduce((sum, script) => sum + script.apis_hooked.length, 0),
+    include_imports_requested: args.input.include_imports,
+    custom_api_count: args.input.custom_apis?.length ?? 0,
+  }
+}
+
+function buildQualityGates(args: { totalHooks: number; warnings: string[] }) {
+  return {
+    schema: 'rikune.frida_script_generate.quality_gates.v1',
+    passive_generation_only: true,
+    sample_executed_by_tool: false,
+    backend_started: false,
+    frida_attached: false,
+    script_injected: false,
+    trace_capture_started: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    generated_script_review_required: true,
+    readiness_required_before_injection: true,
+    approval_required_for_live_execution: true,
+    analyst_review_required: true,
+    hook_count: args.totalHooks,
+    warnings_count: args.warnings.length,
+  }
+}
+
+function buildWorkflowHandoff(args: { sampleId: string; totalHooks: number }) {
+  return {
+    schema: 'rikune.frida_script_generate.workflow_handoff.v1',
+    handoff_mode: 'frida_hook_plan_to_runtime_instrumentation',
+    artifact_type: FRIDA_SCRIPT_ARTIFACT_TYPE,
+    sample_id: args.sampleId,
+    recommended_next_tools: FRIDA_SCRIPT_RECOMMENDED_NEXT_TOOLS,
+    artifact_contract: {
+      type: FRIDA_SCRIPT_ARTIFACT_TYPE,
+      review_mode: 'profile',
+      suggested_read_mode: 'profile',
+      contains_executable_runtime_script: true,
+      hook_count: args.totalHooks,
+    },
+    routing: [
+      {
+        goal: 'review-generated-hook-plan',
+        priority: 'high',
+        next_tools: ['artifact.read'],
+        required_evidence: [FRIDA_SCRIPT_ARTIFACT_TYPE],
+      },
+      {
+        goal: 'runtime-readiness-before-frida-use',
+        priority: 'high',
+        next_tools: ['tool.readiness', 'dynamic.runtime.status'],
+        required_evidence: [FRIDA_SCRIPT_ARTIFACT_TYPE, 'approved runtime target'],
+      },
+      {
+        goal: 'explicit-frida-injection-or-trace-capture',
+        priority: 'conditional',
+        next_tools: ['frida.script.inject', 'frida.trace.capture', 'frida.runtime.instrument'],
+        required_evidence: [
+          'reviewed generated script',
+          'tool.readiness ready',
+          'explicit analyst approval',
+          'isolated target process or device',
+        ],
+      },
+    ],
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      backend_started: false,
+      frida_attached: false,
+      script_injected: false,
+      trace_capture_started: false,
+      network_accessed_by_tool: false,
+      live_execution_requires: [
+        'result-scoped activation',
+        'tool.readiness ready',
+        'explicit analyst approval',
+        'isolated runtime target',
+      ],
+    },
+  }
+}
+
+function buildNextActions(args: { totalHooks: number; warnings: string[] }) {
+  const actions = [
+    'Review the generated Frida script with artifact.read before any runtime use.',
+    'Run tool.readiness or dynamic.runtime.status before enabling Frida injection or trace capture.',
+    'Use workflow.search to activate only the selected Frida runtime tool when an isolated target is approved.',
+  ]
+  if (args.totalHooks > 50) {
+    actions.unshift(
+      'Trim or split the generated hook set before runtime injection because the plan is broad.'
+    )
+  }
+  if (args.warnings.length > 0) {
+    actions.push('Resolve generation warnings before treating the hook plan as runtime-ready.')
+  }
+  return actions
+}
+
 export function createFridaScriptGenerateHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager
@@ -496,33 +707,48 @@ export function createFridaScriptGenerateHandler(
 
       const totalHooks = scripts.reduce((sum, s) => sum + s.hook_count, 0)
 
+      const evidenceSummary = buildEvidenceSummary({ input, scripts, totalHooks })
+      const qualityGates = buildQualityGates({ totalHooks, warnings })
+      const workflowHandoff = buildWorkflowHandoff({ sampleId: input.sample_id, totalHooks })
+      const nextActions = buildNextActions({ totalHooks, warnings })
+
       const data = {
+        schema: 'rikune.frida_script_generate.v1',
+        tool_version: TOOL_VERSION,
+        sample_id: input.sample_id,
+        requested_hook_targets: input.hook_targets,
+        include_imports: input.include_imports,
+        output_format: input.output_format,
         scripts,
         combined_script: combined,
         total_hooks: totalHooks,
-        recommended_next_tools: ['dynamic.trace', 'frida.attach'],
+        evidence_summary: evidenceSummary,
+        workflow_handoff: workflowHandoff,
+        quality_gates: qualityGates,
+        recommended_next_tools: FRIDA_SCRIPT_RECOMMENDED_NEXT_TOOLS,
+        next_actions: nextActions,
       }
 
+      const artifacts: ArtifactRef[] = []
       try {
-        await persistStaticAnalysisJsonArtifact(
+        const artifact = await persistStaticAnalysisJsonArtifact(
           workspaceManager,
           database,
           input.sample_id,
-          'frida_script',
+          FRIDA_SCRIPT_ARTIFACT_TYPE,
           'frida_hooks',
-          {
-            tool: TOOL_NAME,
-            data: { total_hooks: totalHooks, categories: scripts.map((s) => s.category) },
-          }
+          data
         )
+        artifacts.push(artifact)
       } catch {
-        /* best effort */
+        warnings.push('Failed to persist Frida script artifact')
       }
 
       return {
         ok: true,
         data,
         warnings: warnings.length > 0 ? warnings : undefined,
+        artifacts: artifacts.length > 0 ? artifacts : undefined,
         metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
       }
     } catch (error) {

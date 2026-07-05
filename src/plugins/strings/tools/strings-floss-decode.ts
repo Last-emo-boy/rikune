@@ -7,7 +7,6 @@
 import { z } from 'zod'
 import { spawn } from 'child_process'
 import path from 'path'
-import { randomUUID } from 'crypto'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
@@ -109,6 +108,9 @@ export const StringsFlossDecodeOutputSchema = z.object({
       polling_guidance: z.any().optional(),
       recommended_next_tools: z.array(z.string()).optional(),
       next_actions: z.array(z.string()).optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
       decoded_strings: z
         .array(
           z.object({
@@ -153,6 +155,165 @@ export const stringsFlossDecodeToolDefinition: ToolDefinition = {
     'Use this when you suspect stack/tight/decoded strings; use analysis.context.link to merge FLOSS output with raw strings and function attribution.',
   inputSchema: StringsFlossDecodeInputSchema,
   outputSchema: StringsFlossDecodeOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'dotnet', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'dotnet', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips'],
+    execution: ['static', 'triage'],
+    safety: [
+      'passive',
+      'external_static_backend',
+      'no_live_sample_by_default',
+      'no_network_by_default',
+    ],
+    capabilities: [
+      'strings',
+      'floss-decode',
+      'obfuscation',
+      'workflow-handoff',
+      'evidence-correlation',
+    ],
+    evidence: [
+      'strings',
+      'network',
+      'filesystem',
+      'registry',
+      'encoded-config',
+      'workflow',
+      'provenance',
+    ],
+  },
+  artifacts: [
+    {
+      type: 'enriched_string_analysis',
+      description: 'Decoded and enriched FLOSS string output',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    {
+      category: 'strings',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'network',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'filesystem',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'registry',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'encoded-config',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'strings.floss-decoded-evidence',
+      title: 'Decoded string evidence to config and reporting handoff',
+      startsWith: ['strings.floss.decode', 'strings.extract', 'analysis.context.link'],
+      nextTools: [
+        'analysis.context.link',
+        'static.config.carver',
+        'malware.intel.loop',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+      requiredArtifacts: ['sample bytes'],
+      producesArtifacts: ['enriched_string_analysis'],
+      evidence: [
+        'strings',
+        'network',
+        'filesystem',
+        'registry',
+        'encoded-config',
+        'workflow',
+        'provenance',
+      ],
+      safety: [
+        'passive',
+        'external_static_backend',
+        'no_live_sample_by_default',
+        'no_network_by_default',
+      ],
+    },
+  ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: false,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    notes: [
+      'FLOSS decoding is a static backend workflow and must not execute the sample.',
+      'Missing FLARE-FLOSS readiness is surfaced through setup metadata only.',
+    ],
+  } as ToolDefinition['runtimePolicy'] & {
+    noNetwork: true
+    noMutation: true
+    noLiveExecution: true
+  },
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'FLARE-FLOSS static decoder',
+    backendKind: 'external',
+    adapter: 'static_python.strings.floss.decode',
+    availability: 'optional',
+    envVar: 'FLOSS_PATH',
+    supportedModes: ['external'],
+    defaultMode: 'external',
+    inputArtifactTypes: ['sample'],
+    outputArtifactTypes: ['enriched_string_analysis'],
+    policy: {
+      passiveByDefault: true,
+      requiresUserOptIn: false,
+      requiresIsolation: false,
+      noNetwork: true,
+      noMutation: true,
+      noLiveExecution: true,
+      maxInputBytes: 256 * 1024 * 1024,
+      maxOutputBytes: 16 * 1024 * 1024,
+      defaultTimeoutMs: 60_000,
+      notes: [
+        'FLARE-FLOSS is used only as a read-only static decoder.',
+        'Readiness probes must not spawn FLOSS or fall back to dynamic sample execution.',
+      ],
+    },
+    readiness: {
+      doesNotStartBackend: true,
+      setupActions: [
+        'Install FLARE-FLOSS in the static analysis environment.',
+        'Set FLOSS_PATH to the floss command when using an external backend.',
+        'Use strings.extract for raw string triage when FLOSS is unavailable.',
+      ],
+      missingBackendBehavior:
+        'Report backend_missing/setup guidance through readiness metadata; do not start FLOSS from discovery/readiness and do not execute the sample.',
+    },
+    packaging: {
+      installRoute: 'profile-gated',
+      installProfile: 'optional',
+      dockerFeature: 'static-python',
+      envVar: 'FLOSS_PATH',
+      dockerDefault: 'floss',
+      notes: ['Enable the optional static-python profile to include FLARE-FLOSS.'],
+    },
+  },
 }
 
 // ============================================================================
@@ -305,6 +466,246 @@ function normalizeStringsFlossDecodeData(
   return data
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function readString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function readNumber(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function uniqueStrings(values: unknown[], limit = 16): string[] {
+  return Array.from(new Set(values.map(readString).filter(Boolean))).slice(0, limit)
+}
+
+function enrichedBundle(data: Record<string, unknown>): Record<string, unknown> | null {
+  return asRecord(data.enriched)
+}
+
+function highlightValues(
+  enriched: Record<string, unknown> | null,
+  key: string,
+  limit = 8
+): string[] {
+  return asArray(enriched?.[key])
+    .map((value) => asRecord(value))
+    .filter((value): value is Record<string, unknown> => Boolean(value))
+    .map((value) => readString(value.value))
+    .filter(Boolean)
+    .slice(0, limit)
+}
+
+function decodedStringCount(data: Record<string, unknown>): number {
+  return asArray(data.decoded_strings).length || readNumber(data.count, 0)
+}
+
+function buildRecommendedNextTools(data: Record<string, unknown>): string[] {
+  const enriched = enrichedBundle(data)
+  const hasIocs = highlightValues(enriched, 'top_iocs', 1).length > 0
+  const encodedCandidateCount = readNumber(enriched?.encoded_candidate_count, 0)
+  const tools: string[] = [
+    'analysis.context.link',
+    'static.config.carver',
+    'malware.intel.loop',
+    'analysis.evidence.graph',
+    'report.generate',
+  ]
+  if (hasIocs) {
+    tools.push('ioc.export')
+  }
+  if (encodedCandidateCount > 0 || decodedStringCount(data) === 0) {
+    tools.push('crypto.identify', 'unpack.workflow.plan')
+  }
+  return uniqueStrings(tools, 12)
+}
+
+function buildEvidenceSummary(args: {
+  sampleId: string
+  data: Record<string, unknown>
+  warningCount: number
+}) {
+  const enriched = enrichedBundle(args.data)
+  return {
+    schema: 'rikune.strings_floss_decode.evidence_summary.v1',
+    sample_id: args.sampleId,
+    source_tool: TOOL_NAME,
+    decoded_string_count: decodedStringCount(args.data),
+    timeout_occurred: Boolean(args.data.timeout_occurred),
+    partial_results: Boolean(args.data.partial_results),
+    enriched_bundle_present: Boolean(enriched),
+    analyst_relevant_count: readNumber(enriched?.analyst_relevant_count, 0),
+    runtime_noise_count: readNumber(enriched?.runtime_noise_count, 0),
+    encoded_candidate_count: readNumber(enriched?.encoded_candidate_count, 0),
+    top_iocs: highlightValues(enriched, 'top_iocs'),
+    top_suspicious: highlightValues(enriched, 'top_suspicious'),
+    top_decoded: highlightValues(enriched, 'top_decoded'),
+    warning_count: args.warningCount,
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  sampleId: string
+  data: Record<string, unknown>
+  recommendedNextTools: string[]
+  backendStarted: boolean
+}) {
+  const enriched = enrichedBundle(args.data)
+  const hasIocs = highlightValues(enriched, 'top_iocs', 1).length > 0
+  const encodedCandidateCount = readNumber(enriched?.encoded_candidate_count, 0)
+  return {
+    schema: 'rikune.strings_floss_decode.workflow_handoff.v1',
+    handoff_mode: 'decoded_strings_to_config_ioc_and_reporting',
+    sample_id: args.sampleId,
+    source_tool: TOOL_NAME,
+    recommended_next_tools: args.recommendedNextTools,
+    decoded_string_context: {
+      decoded_string_count: decodedStringCount(args.data),
+      analyst_relevant_count: readNumber(enriched?.analyst_relevant_count, 0),
+      encoded_candidate_count: encodedCandidateCount,
+      top_iocs: highlightValues(enriched, 'top_iocs'),
+      top_decoded: highlightValues(enriched, 'top_decoded'),
+    },
+    routing: [
+      {
+        goal: 'decoded-string-context-linking',
+        priority: decodedStringCount(args.data) > 0 ? 'high' : 'optional',
+        next_tools: ['analysis.context.link', 'code.xrefs.analyze'],
+        required_evidence: ['enriched_string_analysis'],
+      },
+      {
+        goal: 'ioc-and-config-carving',
+        priority: hasIocs ? 'high' : 'normal',
+        next_tools: ['static.config.carver', 'ioc.export', 'malware.intel.loop'],
+        required_evidence: ['decoded strings', 'enriched_string_analysis'],
+      },
+      {
+        goal: 'encoded-string-followup',
+        priority: encodedCandidateCount > 0 ? 'normal' : 'optional',
+        next_tools: ['crypto.identify', 'unpack.workflow.plan', 'strings.extract'],
+        required_evidence: ['encoded string candidates', 'enriched_string_analysis'],
+      },
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: 'normal',
+        next_tools: ['analysis.evidence.graph', 'report.generate'],
+        required_evidence: ['enriched_string_analysis'],
+      },
+    ],
+    artifact_contract: {
+      consumes: ['sample bytes'],
+      produces: ['enriched_string_analysis'],
+      expected_consumers: [
+        'analysis.context.link',
+        'static.config.carver',
+        'malware.intel.loop',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+    },
+    dynamic_boundary: {
+      static_backend_started: args.backendStarted,
+      runtime_started_by_tool: false,
+      sample_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+      runtime_followup_requires_opt_in: true,
+    },
+  }
+}
+
+function buildQualityGates(args: { data: Record<string, unknown>; backendStarted: boolean }) {
+  const enriched = enrichedBundle(args.data)
+  const decodedCount = decodedStringCount(args.data)
+  const iocCount = highlightValues(enriched, 'top_iocs', 12).length
+  const encodedCandidateCount = readNumber(enriched?.encoded_candidate_count, 0)
+  return {
+    passive_static_decode: true,
+    static_backend_started: args.backendStarted,
+    runtime_started_by_tool: false,
+    sample_executed_by_tool: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    decoded_strings_present: decodedCount > 0,
+    enriched_bundle_present: Boolean(enriched),
+    ioc_handoff_ready: iocCount > 0,
+    config_handoff_ready: iocCount > 0 || encodedCandidateCount > 0,
+    evidence_graph_handoff_ready: true,
+    timeout_occurred: Boolean(args.data.timeout_occurred),
+    partial_results: Boolean(args.data.partial_results),
+    runtime_followup_requires_opt_in: true,
+    analyst_review_required:
+      decodedCount > 0 ||
+      iocCount > 0 ||
+      encodedCandidateCount > 0 ||
+      Boolean(args.data.partial_results),
+  }
+}
+
+function buildNextActions(args: {
+  data: Record<string, unknown>
+  recommendedNextTools: string[]
+}): string[] {
+  const actions = [
+    'Run analysis.context.link to merge decoded FLOSS strings with raw strings and function context.',
+    'Run analysis.evidence.graph to correlate decoded string evidence with other plugin artifacts.',
+  ]
+  if (args.recommendedNextTools.includes('ioc.export')) {
+    actions.push('Export high-confidence decoded-string IOCs with ioc.export.')
+  }
+  if (args.recommendedNextTools.includes('crypto.identify')) {
+    actions.push(
+      'Use crypto.identify or unpack.workflow.plan for encoded or packed string follow-up.'
+    )
+  }
+  if (decodedStringCount(args.data) === 0) {
+    actions.push(
+      'If decoded strings are empty, collect runtime memory or unpacked payload evidence before rerunning FLOSS.'
+    )
+  }
+  return actions
+}
+
+function buildStructuredHandoff(args: {
+  sampleId: string
+  data: Record<string, unknown>
+  warningCount: number
+  backendStarted: boolean
+}) {
+  const recommendedNextTools = buildRecommendedNextTools(args.data)
+  return {
+    evidenceSummary: buildEvidenceSummary({
+      sampleId: args.sampleId,
+      data: args.data,
+      warningCount: args.warningCount,
+    }),
+    workflowHandoff: buildWorkflowHandoff({
+      sampleId: args.sampleId,
+      data: args.data,
+      recommendedNextTools,
+      backendStarted: args.backendStarted,
+    }),
+    qualityGates: buildQualityGates({
+      data: args.data,
+      backendStarted: args.backendStarted,
+    }),
+    recommendedNextTools,
+    nextActions: buildNextActions({
+      data: args.data,
+      recommendedNextTools,
+    }),
+  }
+}
+
 // ============================================================================
 // Tool Handler
 // ============================================================================
@@ -350,6 +751,13 @@ export function createStringsFlossDecodeHandler(
         const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
         if (cachedLookup) {
           const normalizedCachedData = normalizeStringsFlossDecodeData(cachedLookup.data, input)
+          const warnings = ['Result from cache', formatCacheWarning(cachedLookup.metadata)]
+          const structured = buildStructuredHandoff({
+            sampleId: input.sample_id,
+            data: normalizedCachedData,
+            warningCount: warnings.length,
+            backendStarted: false,
+          })
           return {
             ok: true,
             data: {
@@ -358,8 +766,13 @@ export function createStringsFlossDecodeHandler(
               result_mode: 'full',
               execution_state: 'completed',
               ...normalizedCachedData,
+              evidence_summary: structured.evidenceSummary,
+              workflow_handoff: structured.workflowHandoff,
+              quality_gates: structured.qualityGates,
+              recommended_next_tools: structured.recommendedNextTools,
+              next_actions: structured.nextActions,
             },
-            warnings: ['Result from cache', formatCacheWarning(cachedLookup.metadata)],
+            warnings,
             metrics: {
               elapsed_ms: Date.now() - startTime,
               tool: TOOL_NAME,
@@ -443,6 +856,35 @@ export function createStringsFlossDecodeHandler(
 
       const normalizedData = normalizeStringsFlossDecodeData(workerResponse.data, input)
       const artifacts = [...((workerResponse.artifacts as ArtifactRef[] | undefined) || [])]
+      const warnings: string[] = []
+      if (input.force_refresh) {
+        warnings.push('force_refresh=true; bypassed cache lookup')
+      }
+      if (workerResponse.warnings) {
+        warnings.push(...workerResponse.warnings)
+      }
+      const decodedStrings = normalizedData.decoded_strings
+      if (Array.isArray(decodedStrings) && decodedStrings.length === 0) {
+        warnings.push(
+          'FLOSS decoded 0 strings. This is expected for samples protected by strong obfuscators ' +
+            '(e.g. .NET Reactor, Themida, VMProtect) where string decoding requires runtime execution. ' +
+            'Consider using a debugger or memory dump approach instead.'
+        )
+      }
+      const structured = buildStructuredHandoff({
+        sampleId: input.sample_id,
+        data: normalizedData,
+        warningCount: warnings.length,
+        backendStarted: true,
+      })
+      const resultData = {
+        ...normalizedData,
+        evidence_summary: structured.evidenceSummary,
+        workflow_handoff: structured.workflowHandoff,
+        quality_gates: structured.qualityGates,
+        recommended_next_tools: structured.recommendedNextTools,
+        next_actions: structured.nextActions,
+      }
       if (input.persist_artifact !== false) {
         const artifact = await persistStringXrefJsonArtifact(
           workspaceManager,
@@ -459,7 +901,7 @@ export function createStringsFlossDecodeHandler(
               timeout: input.timeout,
               modes: input.modes,
             },
-            data: normalizedData,
+            data: resultData,
           },
           input.session_tag
         )
@@ -475,23 +917,6 @@ export function createStringsFlossDecodeHandler(
         await cacheManager.setCachedResult(cacheKey, normalizedData, CACHE_TTL_MS, sample.sha256)
       }
 
-      // 7. Build warnings
-      const warnings: string[] = []
-      if (input.force_refresh) {
-        warnings.push('force_refresh=true; bypassed cache lookup')
-      }
-      if (workerResponse.warnings) {
-        warnings.push(...workerResponse.warnings)
-      }
-      const decodedStrings = normalizedData.decoded_strings
-      if (Array.isArray(decodedStrings) && decodedStrings.length === 0) {
-        warnings.push(
-          'FLOSS decoded 0 strings. This is expected for samples protected by strong obfuscators ' +
-            '(e.g. .NET Reactor, Themida, VMProtect) where string decoding requires runtime execution. ' +
-            'Consider using a debugger or memory dump approach instead.'
-        )
-      }
-
       // 8. Return result
       return {
         ok: true,
@@ -500,7 +925,7 @@ export function createStringsFlossDecodeHandler(
           sample_id: input.sample_id,
           result_mode: 'full',
           execution_state: 'completed',
-          ...normalizedData,
+          ...resultData,
           worker_pool: workerResponse.metrics?.worker_pool,
         },
         warnings: warnings.length > 0 ? warnings : undefined,

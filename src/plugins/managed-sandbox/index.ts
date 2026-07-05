@@ -12,6 +12,16 @@ const managedSandboxPlugin: Plugin = {
   id: 'managed-sandbox',
   name: 'Managed Sandbox',
   executionDomain: 'dynamic',
+  aspects: {
+    formats: ['dotnet', 'pe-clr', 'pe', 'dll'],
+    platforms: ['windows'],
+    architectures: ['cil', 'x86', 'x64'],
+    execution: ['dynamic'],
+    runtimes: ['dotnet-runtime', 'managed-sandbox'],
+    safety: ['opt_in_dynamic', 'requires_isolation', 'no_live_sample_by_default'],
+    capabilities: ['managed-sandbox', 'clr-hooks', 'dynamic-load-capture', 'network-sinkhole'],
+    evidence: ['process', 'dotnet-metadata', 'loaded-assemblies', 'network', 'timeline'],
+  },
   surfaceRules: { tier: 2, activateOn: { findings: ['dotnet'] }, category: 'dotnet-analysis' },
   description:
     'Execute .NET assemblies in an isolated sandbox with network sinkholing, ' +

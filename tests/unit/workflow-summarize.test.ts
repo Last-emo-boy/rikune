@@ -321,7 +321,8 @@ describe('workflow.summarize', () => {
     const data = result.data as any
     expect(reportCallCount).toBe(1)
     expect(data.completed_stages).toEqual(['triage', 'static'])
-    expect(data.tool_surface_role).toBe('primary')
+    expect(data.tool_surface_role).toBe('compatibility')
+    expect(data.preferred_primary_tools).toEqual(['workflow.search', 'artifact.read'])
     expect(data.coverage_level).toBe('static_core')
     expect(data.known_findings).toContain('Observed suspicious process APIs.')
     expect(data.stages.triage.summary).toContain('Compact triage summary')

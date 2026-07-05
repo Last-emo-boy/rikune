@@ -16,6 +16,21 @@ import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 const TOOL_NAME = 'pe.symbols.recover'
 const TOOL_VERSION = '0.1.0'
 const CACHE_TTL_MS = CACHE_TTL_30_DAYS
+const SYMBOLS_RECOMMENDED_NEXT_TOOLS = [
+  'code.functions.define',
+  'code.functions.list',
+  'workflow.function_index_recover',
+  'code.cross_decompiler.consensus',
+  'analysis.evidence.graph',
+  'artifact.read',
+  'workflow.search',
+]
+const SYMBOLS_SAFETY = [
+  'passive',
+  'read_only',
+  'no_live_sample_by_default',
+  'no_network_by_default',
+]
 
 const cargoPathPattern =
   /(?:^|[\\/])cargo[\\/](?:registry|git)[\\/][^\\/]+[\\/](?<crate>[A-Za-z0-9_.-]+?)(?:-\d[\w.+-]*)?(?:[\\/]|$)/i
@@ -79,6 +94,11 @@ export const peSymbolsRecoverOutputSchema = z.object({
       count: z.number(),
       symbols: z.array(recoveredSymbolSchema),
       warnings: z.array(z.string()),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
+      recommended_next_tools: z.array(z.string()).optional(),
+      next_actions: z.array(z.string()).optional(),
     })
     .optional(),
   warnings: z.array(z.string()).optional(),
@@ -97,7 +117,93 @@ export const peSymbolsRecoverToolDefinition: ToolDefinition = {
     'Recover importable symbolic function names from PE runtime metadata such as .pdata / .xdata, exports, entry point, and language/runtime hints.',
   inputSchema: peSymbolsRecoverInputSchema,
   outputSchema: peSymbolsRecoverOutputSchema,
+  aspects: {
+    formats: ['pe', 'pe-clr', 'sys', 'efi'],
+    platforms: ['windows', 'cross-platform'],
+    architectures: ['x64', 'arm64'],
+    execution: ['static', 'function-recovery', 'symbol-recovery'],
+    safety: SYMBOLS_SAFETY,
+    capabilities: [
+      'symbol-recovery',
+      'function-naming',
+      'runtime-hints',
+      'rust-hints',
+      'go-hints',
+      'export-correlation',
+      'workflow-handoff',
+    ],
+    evidence: ['symbols', 'functions', 'runtime', 'strings', 'exports', 'workflow', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'pe_recovered_symbols',
+      description: 'Inline PE recovered symbol and runtime hint output returned by the tool',
+      required: false,
+    },
+  ],
+  evidence: [
+    { category: 'symbols', artifactTypes: ['pe_recovered_symbols'] },
+    { category: 'functions', artifactTypes: ['pe_recovered_symbols'] },
+    { category: 'runtime', artifactTypes: ['pe_recovered_symbols'] },
+    { category: 'workflow', artifactTypes: ['pe_recovered_symbols'] },
+    { category: 'provenance', artifactTypes: ['pe_recovered_symbols'] },
+  ],
+  workflowRecipes: [
+    {
+      id: 'pe.symbols-function-naming-handoff',
+      title: 'PE symbol recovery handoff',
+      description:
+        'Recover importable function names from PE runtime metadata, exports, strings, and runtime hints, then route into function definition, consensus review, evidence graph, and reconstruction workflows.',
+      startsWith: [TOOL_NAME],
+      nextTools: SYMBOLS_RECOMMENDED_NEXT_TOOLS,
+      requiredArtifacts: ['sample'],
+      producesArtifacts: ['pe_recovered_symbols'],
+      evidence: ['symbols', 'functions', 'runtime', 'strings', 'workflow', 'provenance'],
+      safety: SYMBOLS_SAFETY,
+      runtimeBackends: ['builtin-pe-parser'],
+    },
+  ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: false,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    maxRuntimeMs: 120000,
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    notes: [
+      'This tool parses PE metadata and consumes static strings/runtime hints; it never executes the sample.',
+      'Recovered names remain evidence hints and should be reviewed before applying semantic renames.',
+    ],
+  },
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'builtin-pe-parser',
+    backendKind: 'builtin',
+    adapter: 'pe.symbols.recover',
+    availability: 'builtin',
+    supportedModes: ['recover-symbols'],
+    defaultMode: 'recover-symbols',
+    inputArtifactTypes: ['sample'],
+    outputArtifactTypes: ['pe_recovered_symbols'],
+    policy: {
+      passiveByDefault: true,
+      noNetwork: true,
+      noMutation: true,
+      noLiveExecution: true,
+      defaultTimeoutMs: 120000,
+      notes: ['Bounded in-process PE metadata and static hint correlation.'],
+    },
+    readiness: {
+      doesNotStartBackend: true,
+      missingBackendBehavior: 'Builtin parser is always available with the Rikune server.',
+    },
+  },
 }
+
+type SymbolsRecoverData = NonNullable<z.infer<typeof peSymbolsRecoverOutputSchema>['data']>
 
 type StringsData = {
   strings?: Array<{
@@ -261,6 +367,113 @@ function recoverSymbolName(options: {
   }
 }
 
+function buildSymbolsEvidenceSummary(
+  data: SymbolsRecoverData,
+  input: z.infer<typeof peSymbolsRecoverInputSchema>
+) {
+  return {
+    schema: 'rikune.pe_symbols.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    tool_version: TOOL_VERSION,
+    sample_id: input.sample_id,
+    machine_name: data.machine_name,
+    entry_point_rva: data.entry_point_rva,
+    primary_runtime: data.primary_runtime,
+    runtime_hints: data.runtime_hints,
+    crate_hints: data.crate_hints,
+    recovered_symbol_count: data.count,
+    exported_symbol_count: data.symbols.filter((symbol) => symbol.is_exported).length,
+    entry_point_symbol_count: data.symbols.filter((symbol) => symbol.is_entry_point).length,
+    high_confidence_symbol_count: data.symbols.filter((symbol) => symbol.confidence >= 0.8).length,
+    naming_strategies: Array.from(new Set(data.symbols.map((symbol) => symbol.name_strategy))),
+  }
+}
+
+function buildSymbolsWorkflowHandoff(
+  data: SymbolsRecoverData,
+  input: z.infer<typeof peSymbolsRecoverInputSchema>
+) {
+  return {
+    schema: 'rikune.pe_symbols.workflow_handoff.v1',
+    handoff_mode: 'pe_symbols_to_function_naming_and_consensus',
+    sample_id: input.sample_id,
+    recommended_next_tools: SYMBOLS_RECOMMENDED_NEXT_TOOLS,
+    data_contract: {
+      type: 'pe_recovered_symbols',
+      recovered_symbol_count: data.count,
+      primary_runtime: data.primary_runtime,
+      inline_result: true,
+    },
+    routing: [
+      {
+        goal: 'apply-function-names',
+        priority: data.count > 0 ? 'high' : 'low',
+        next_tools: ['code.functions.define', 'code.functions.list'],
+        required_evidence: ['pe_recovered_symbols', 'function_index_entries'],
+      },
+      {
+        goal: 'cross-backend-corroboration',
+        priority: 'normal',
+        next_tools: ['code.cross_decompiler.consensus', 'analysis.evidence.graph'],
+        required_evidence: ['pe_recovered_symbols', 'paired backend artifacts'],
+      },
+      {
+        goal: 'recover-missing-function-index',
+        priority: data.count > 0 ? 'normal' : 'high',
+        next_tools: ['workflow.function_index_recover'],
+        required_evidence: ['pe_pdata_runtime_functions', 'runtime hints'],
+      },
+    ],
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      backend_started: false,
+      backend_kind: 'builtin-static-parser',
+      live_execution_started: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+    },
+  }
+}
+
+function buildSymbolsQualityGates(data: SymbolsRecoverData) {
+  return {
+    schema: 'rikune.pe_symbols.quality_gates.v1',
+    passive_static_analysis: true,
+    builtin_parser_only: true,
+    sample_executed_by_tool: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    recovered_symbols_present: data.count > 0,
+    runtime_hints_present: data.runtime_hints.length > 0,
+    exported_symbols_present: data.symbols.some((symbol) => symbol.is_exported),
+    analyst_review_required: data.count > 0,
+  }
+}
+
+function buildSymbolsNextActions(data: SymbolsRecoverData) {
+  return [
+    data.count > 0
+      ? 'Use code.functions.define to apply high-confidence recovered names after reviewing evidence.'
+      : 'Use workflow.function_index_recover or pe.pdata.extract before retrying symbol recovery.',
+    'Use code.cross_decompiler.consensus to corroborate recovered names against decompiler artifacts.',
+    'Use workflow.search to select a result-scoped evidence graph or reconstruction follow-up.',
+  ]
+}
+
+function withSymbolsEnvelope(
+  data: SymbolsRecoverData,
+  input: z.infer<typeof peSymbolsRecoverInputSchema>
+): SymbolsRecoverData {
+  return {
+    ...data,
+    evidence_summary: buildSymbolsEvidenceSummary(data, input),
+    workflow_handoff: buildSymbolsWorkflowHandoff(data, input),
+    quality_gates: buildSymbolsQualityGates(data),
+    recommended_next_tools: SYMBOLS_RECOMMENDED_NEXT_TOOLS,
+    next_actions: buildSymbolsNextActions(data),
+  }
+}
+
 export function createPESymbolsRecoverHandler(deps: PluginToolDeps) {
   const { workspaceManager, database, cacheManager } = deps
   const stringsHandler =
@@ -295,13 +508,20 @@ export function createPESymbolsRecoverHandler(deps: PluginToolDeps) {
       if (!input.force_refresh) {
         const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
         if (cachedLookup) {
+          const cachedData = cachedLookup.data as SymbolsRecoverData
           return {
             ok: true,
-            data: cachedLookup.data,
+            data: withSymbolsEnvelope(cachedData, input),
             warnings: ['Result from cache', formatCacheWarning(cachedLookup.metadata)],
             metrics: {
               elapsed_ms: Date.now() - startTime,
               tool: TOOL_NAME,
+              cached: true,
+              cache_key: cachedLookup.metadata.key,
+              cache_tier: cachedLookup.metadata.tier,
+              cache_created_at: cachedLookup.metadata.createdAt,
+              cache_expires_at: cachedLookup.metadata.expiresAt,
+              cache_hit_at: cachedLookup.metadata.fetchedAt,
             },
           }
         }
@@ -367,7 +587,7 @@ export function createPESymbolsRecoverHandler(deps: PluginToolDeps) {
         }
       })
 
-      const normalized = {
+      const normalized: SymbolsRecoverData = {
         machine: recovery.machine,
         machine_name: recovery.machineName,
         image_base: recovery.imageBase,
@@ -384,7 +604,7 @@ export function createPESymbolsRecoverHandler(deps: PluginToolDeps) {
 
       return {
         ok: true,
-        data: normalized,
+        data: withSymbolsEnvelope(normalized, input),
         warnings: recovery.warnings.length > 0 ? recovery.warnings : undefined,
         metrics: {
           elapsed_ms: Date.now() - startTime,

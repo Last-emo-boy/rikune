@@ -136,6 +136,9 @@ export const hashResolverPlanOutputSchema = z
         recommended_hashes: z.array(z.string()),
         algorithm_hints: z.array(z.any()),
         confidence_summary: z.object({}).passthrough(),
+        evidence_summary: z.object({}).passthrough(),
+        workflow_handoff: z.object({}).passthrough(),
+        quality_gates: z.object({}).passthrough(),
         recommended_next_tools: z.array(z.string()),
         next_actions: z.array(z.string()),
         warnings: z.array(z.string()),
@@ -155,6 +158,58 @@ export const hashResolverPlanToolDefinition: ToolDefinition = {
     'Statically scan a sample for API resolver strings, PEB/module-walk hints, and hash-like constants, then produce a bounded resolver plan for hash.identify/hash.resolve and runtime breakpoint follow-up. Does not execute the sample.',
   inputSchema: hashResolverPlanInputSchema,
   outputSchema: hashResolverPlanOutputSchema,
+  aspects: {
+    formats: ['pe', 'shellcode', 'raw-bytes'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64'],
+    execution: ['static', 'triage', 'correlation'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+    capabilities: [
+      'api-hash-resolution',
+      'shellcode-analysis',
+      'imports',
+      'deobfuscation',
+      'workflow-plan',
+      'evidence-handoff',
+    ],
+    evidence: ['imports', 'strings', 'shellcode', 'workflow', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'api_hash_resolver_plan',
+      description:
+        'Static API resolver indicators, hash candidates, resolution workflow handoff, and passive quality gates',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    { category: 'imports', artifactTypes: ['api_hash_resolver_plan'] },
+    { category: 'strings', artifactTypes: ['api_hash_resolver_plan'] },
+    { category: 'shellcode', artifactTypes: ['api_hash_resolver_plan'] },
+    { category: 'workflow', artifactTypes: ['api_hash_resolver_plan'] },
+    { category: 'provenance', artifactTypes: ['api_hash_resolver_plan'] },
+  ],
+  workflowRecipes: [
+    {
+      id: 'api-hash.resolver-recovery',
+      title: 'API hash resolver recovery',
+      description:
+        'Use passive resolver indicators and hash-like constants to identify algorithms, resolve API names, publish evidence graph nodes, and gate any runtime breakpoint follow-up behind explicit opt-in.',
+      startsWith: ['hash.resolver.plan', 'strings.extract', 'static.behavior.classify'],
+      nextTools: [
+        'hash.identify',
+        'hash.resolve',
+        'analysis.evidence.graph',
+        'report.generate',
+        'breakpoint.smart',
+        'trace.condition',
+      ],
+      requiredArtifacts: [],
+      producesArtifacts: ['api_hash_resolver_plan'],
+      evidence: ['imports', 'strings', 'shellcode', 'workflow', 'provenance'],
+      safety: ['passive', 'opt_in_dynamic', 'no_live_sample_by_default', 'no_network_by_default'],
+    },
+  ],
 }
 
 async function readSamplePrefix(
@@ -392,6 +447,172 @@ function buildAlgorithmHints(indicators: ResolverIndicator[], candidates: HashCa
   ].filter((item) => item.confidence > 0.2)
 }
 
+function countHighConfidence<T extends { confidence: number }>(
+  items: T[],
+  threshold: number
+): number {
+  return items.filter((item) => item.confidence >= threshold).length
+}
+
+function summarizeResolverIndicators(indicators: ResolverIndicator[]) {
+  return indicators.slice(0, 8).map((item) => ({
+    indicator: item.indicator,
+    category: item.category,
+    confidence: item.confidence,
+    offset: item.offset ?? null,
+    evidence: item.evidence,
+  }))
+}
+
+function summarizeHashCandidates(candidates: HashCandidate[]) {
+  return candidates.slice(0, 12).map((item) => ({
+    value: item.normalized,
+    source: item.source,
+    confidence: item.confidence,
+    offset: item.offset ?? null,
+    evidence: item.evidence,
+  }))
+}
+
+function buildEvidenceSummary(args: {
+  source: { fileName: string; totalSize: number; scannedBytes: number; truncated: boolean }
+  resolverIndicators: ResolverIndicator[]
+  hashCandidates: HashCandidate[]
+  recommendedHashes: string[]
+  algorithmHints: Array<{ algorithm: string; confidence: number; rationale: string[] }>
+  includeRawDwords: boolean
+  warnings: string[]
+}) {
+  return {
+    schema: 'rikune.api_hash.resolver_evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    source: {
+      file_name: args.source.fileName,
+      total_size: args.source.totalSize,
+      scanned_bytes: args.source.scannedBytes,
+      truncated: args.source.truncated,
+    },
+    resolver_indicator_count: args.resolverIndicators.length,
+    high_confidence_resolver_indicator_count: countHighConfidence(args.resolverIndicators, 0.75),
+    hash_candidate_count: args.hashCandidates.length,
+    high_confidence_hash_candidate_count: countHighConfidence(args.hashCandidates, 0.5),
+    recommended_hash_count: args.recommendedHashes.length,
+    algorithm_hint_count: args.algorithmHints.length,
+    raw_dword_scan_enabled: args.includeRawDwords,
+    warnings: args.warnings,
+    warning_count: args.warnings.length,
+    top_resolver_indicators: summarizeResolverIndicators(args.resolverIndicators),
+    top_hash_candidates: summarizeHashCandidates(args.hashCandidates),
+    top_algorithm_hints: args.algorithmHints.slice(0, 5).map((item) => ({
+      algorithm: item.algorithm,
+      confidence: item.confidence,
+      rationale: item.rationale,
+    })),
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  sampleId: string
+  resolverIndicators: ResolverIndicator[]
+  hashCandidates: HashCandidate[]
+  recommendedHashes: string[]
+  algorithmHints: Array<{ algorithm: string; confidence: number; rationale: string[] }>
+  warnings: string[]
+}) {
+  const hasRecommendedHashes = args.recommendedHashes.length > 0
+  const algorithmNames = args.algorithmHints.map((item) => item.algorithm)
+
+  return {
+    schema: 'rikune.api_hash.resolver_workflow_handoff.v1',
+    handoff_mode: 'api_hash_resolver_to_resolution',
+    sample_id: args.sampleId,
+    source_tool: TOOL_NAME,
+    recommended_next_tools: [
+      'hash.identify',
+      'hash.resolve',
+      'analysis.evidence.graph',
+      'report.generate',
+      'breakpoint.smart',
+      'trace.condition',
+    ],
+    resolver_context: {
+      resolver_indicators: summarizeResolverIndicators(args.resolverIndicators),
+      recommended_hashes: args.recommendedHashes.slice(0, 24),
+      algorithm_candidates: algorithmNames.slice(0, 8),
+      candidate_preview: summarizeHashCandidates(args.hashCandidates),
+    },
+    routing: [
+      {
+        goal: 'hash-algorithm-identification',
+        priority: hasRecommendedHashes ? 'high' : 'normal',
+        next_tools: ['hash.identify'],
+        required_evidence: ['recommended_hashes', 'algorithm_hints'],
+      },
+      {
+        goal: 'api-name-resolution',
+        priority: hasRecommendedHashes ? 'high' : 'blocked-until-hash-candidates',
+        next_tools: ['hash.resolve'],
+        required_evidence: ['hash.identify result', 'api_hash_resolver_plan'],
+      },
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: 'normal',
+        next_tools: ['analysis.evidence.graph', 'report.generate'],
+        required_evidence: ['api_hash_resolver_plan'],
+      },
+      {
+        goal: 'runtime-resolver-capture',
+        priority: 'optional-opt-in',
+        next_tools: ['breakpoint.smart', 'trace.condition'],
+        required_evidence: ['explicit analyst opt-in', 'isolated runtime plan'],
+      },
+    ],
+    artifact_contract: {
+      consumes: ['sample prefix bytes', 'ascii strings', 'hash-like constants'],
+      produces: ['api_hash_resolver_plan'],
+      expected_consumers: [
+        'hash.identify',
+        'hash.resolve',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+    },
+    dynamic_boundary: {
+      runtime_started_by_tool: false,
+      sample_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      runtime_followup_requires_opt_in: true,
+    },
+    warnings: args.warnings,
+  }
+}
+
+function buildQualityGates(args: {
+  resolverIndicators: ResolverIndicator[]
+  hashCandidates: HashCandidate[]
+  recommendedHashes: string[]
+  warnings: string[]
+}) {
+  return {
+    passive_static_only: true,
+    sample_executed: false,
+    backend_started: false,
+    network_accessed: false,
+    mutation_performed: false,
+    resolver_evidence_present: args.resolverIndicators.length > 0,
+    hash_candidates_present: args.hashCandidates.length > 0,
+    recommended_hashes_present: args.recommendedHashes.length > 0,
+    evidence_graph_handoff_ready:
+      args.resolverIndicators.length > 0 || args.hashCandidates.length > 0,
+    runtime_followup_requires_opt_in: true,
+    analyst_review_required:
+      args.warnings.length > 0 ||
+      args.resolverIndicators.length === 0 ||
+      args.recommendedHashes.length === 0,
+    warning_count: args.warnings.length,
+  }
+}
+
 export function createHashResolverPlanHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager
@@ -442,6 +663,34 @@ export function createHashResolverPlanHandler(
           'No high-confidence hash constants were found; raw DWORD candidates may be noisy.'
         )
       }
+      const evidenceSummary = buildEvidenceSummary({
+        source: {
+          fileName: path.basename(samplePath),
+          totalSize,
+          scannedBytes,
+          truncated,
+        },
+        resolverIndicators,
+        hashCandidates,
+        recommendedHashes,
+        algorithmHints,
+        includeRawDwords: input.include_raw_dwords,
+        warnings,
+      })
+      const workflowHandoff = buildWorkflowHandoff({
+        sampleId: input.sample_id,
+        resolverIndicators,
+        hashCandidates,
+        recommendedHashes,
+        algorithmHints,
+        warnings,
+      })
+      const qualityGates = buildQualityGates({
+        resolverIndicators,
+        hashCandidates,
+        recommendedHashes,
+        warnings,
+      })
 
       const data = {
         schema: 'rikune.api_hash_resolver_plan.v1',
@@ -463,9 +712,14 @@ export function createHashResolverPlanHandler(
           high_confidence_hash_count: recommendedHashes.length,
           raw_dword_scan_enabled: input.include_raw_dwords,
         },
+        evidence_summary: evidenceSummary,
+        workflow_handoff: workflowHandoff,
+        quality_gates: qualityGates,
         recommended_next_tools: [
           'hash.identify',
           'hash.resolve',
+          'analysis.evidence.graph',
+          'report.generate',
           'breakpoint.smart',
           'trace.condition',
           'dynamic.behavior.diff',

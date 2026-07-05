@@ -7,11 +7,11 @@ const { DatabaseManager } = await import('../../dist/database.js')
 const { JobQueue, JobPriority } = await import('../../dist/job-queue.js')
 const {
   AnalysisBudgetScheduler,
-} = await import('../../dist/analysis-budget-scheduler.js')
+} = await import('../../dist/analysis/analysis-budget-scheduler.js')
 const {
   RuntimeWorkerPool,
   buildRizinPreviewCompatibilityKey,
-} = await import('../../dist/runtime-worker-pool.js')
+} = await import('../../dist/worker/runtime-worker-pool.js')
 const { createTaskStatusHandler } = await import('../../dist/tools/task-status.js')
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'worker-pool-budget-integration-'))

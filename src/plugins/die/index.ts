@@ -13,6 +13,31 @@ const diePlugin: Plugin = {
   id: 'die',
   name: 'Detect It Easy',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'dotnet', 'apk', 'firmware', 'archive'],
+    platforms: ['windows', 'linux', 'macos', 'android', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+    capabilities: [
+      'compiler-detect',
+      'packer',
+      'linker-detect',
+      'crypto-detect',
+      'workflow-handoff',
+      'evidence-correlation',
+    ],
+    evidence: [
+      'signatures',
+      'toolchain',
+      'packer',
+      'protector',
+      'file-type',
+      'workflow',
+      'provenance',
+      'structure',
+    ],
+  },
   surfaceRules: {
     tier: 0,
     category: 'static-analysis',
@@ -37,7 +62,7 @@ const diePlugin: Plugin = {
   version: '1.0.0',
   configSchema: [
     {
-      envVar: 'DIEC_PATH',
+      envVar: 'DIE_PATH',
       description: 'Path to diec (DIE console) binary',
       required: false,
       defaultValue: '/usr/bin/diec',
@@ -47,8 +72,8 @@ const diePlugin: Plugin = {
     {
       type: 'binary',
       name: 'diec',
-      target: '$DIEC_PATH',
-      envVar: 'DIEC_PATH',
+      target: '$DIE_PATH',
+      envVar: 'DIE_PATH',
       dockerDefault: '/usr/bin/diec',
       versionFlag: '--version',
       required: false,

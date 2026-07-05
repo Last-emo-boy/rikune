@@ -28,6 +28,39 @@ import { getPythonCommand } from '../../../utils/shared-helpers.js'
 
 const TOOL_NAME = 'sandbox.execute'
 const TOOL_VERSION = '0.1.0'
+const SANDBOX_EXECUTE_ARTIFACT_TYPES = [
+  SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+  PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+]
+const SANDBOX_EXECUTE_SAFETY = [
+  'opt_in_dynamic',
+  'requires_isolation',
+  'approval_required_for_live_execution',
+  'no_live_sample_by_default',
+  'no_network_by_default',
+  'profile_gated_execution',
+]
+const SANDBOX_EXECUTE_RECOMMENDED_NEXT_TOOLS = [
+  'artifact.read',
+  'dynamic.trace.import',
+  'analysis.evidence.graph',
+  'sandbox.report',
+  'report.generate',
+  'workflow.search',
+]
+const SANDBOX_EXECUTE_RUNTIME_POLICY: ToolDefinition['runtimePolicy'] = {
+  passiveByDefault: true,
+  requiresUserOptIn: true,
+  requiresIsolation: true,
+  allowedBackends: ['local', 'docker', 'windows-sandbox', 'hyperv'],
+  maxRuntimeMs: 180_000,
+  networkPolicy: 'disabled',
+  notes: [
+    'sandbox.execute defaults to safe simulation and requires explicit approval before live or emulator-backed dynamic execution.',
+    'Speakeasy is an emulation mode profile; allowedBackends names the isolation carrier used to run or stage dynamic tooling.',
+    'Network access is disabled by default and must remain explicit when a runtime profile enables fake or live network handling.',
+  ],
+}
 
 export const SandboxExecuteInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
@@ -144,6 +177,10 @@ const SandboxExecuteSuccessResultSchema = z.object({
           explanation: z.string(),
         })
         .optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
+      recommended_next_tools: z.array(z.string()).optional(),
       evidence: z.record(z.any()),
       inference: z.object({
         classification: z.string(),
@@ -173,7 +210,100 @@ export const sandboxExecuteToolDefinition: ToolDefinition = {
     'Execute dynamic-analysis workflow in safe simulation mode (default), memory-guided mode, or Speakeasy user-mode emulation and return timeline/IOC/risk outputs.',
   inputSchema: SandboxExecuteInputSchema,
   outputSchema: SandboxExecuteOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll', 'dotnet', 'elf', 'shellcode'],
+    platforms: ['windows', 'linux', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['dynamic', 'emulation', 'safe_simulation', 'triage'],
+    runtimes: ['safe-simulation', 'speakeasy', 'windows-sandbox', 'hyperv'],
+    safety: SANDBOX_EXECUTE_SAFETY,
+    capabilities: [
+      'dynamic-analysis',
+      'safe-simulation',
+      'memory-guided-execution-profile',
+      'sandbox-trace',
+      'runtime-trace',
+      'ioc-extraction',
+      'behavior-timeline',
+      'workflow-handoff',
+    ],
+    evidence: ['behavior', 'network', 'filesystem', 'memory', 'timeline', 'workflow', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+      description: 'Sandbox execution envelope with timeline, IOC, risk, and backend semantics',
+      mimeTypes: ['application/json'],
+    },
+    {
+      type: PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+      description:
+        'Normalized dynamic trace artifact for trace import, evidence graph, and reports',
+      mimeTypes: ['application/json'],
+    },
+  ],
+  evidence: [
+    { category: 'behavior', artifactTypes: SANDBOX_EXECUTE_ARTIFACT_TYPES },
+    { category: 'network', artifactTypes: SANDBOX_EXECUTE_ARTIFACT_TYPES },
+    { category: 'filesystem', artifactTypes: SANDBOX_EXECUTE_ARTIFACT_TYPES },
+    { category: 'memory', artifactTypes: SANDBOX_EXECUTE_ARTIFACT_TYPES },
+    { category: 'timeline', artifactTypes: SANDBOX_EXECUTE_ARTIFACT_TYPES },
+    { category: 'workflow', artifactTypes: SANDBOX_EXECUTE_ARTIFACT_TYPES },
+    { category: 'provenance', artifactTypes: SANDBOX_EXECUTE_ARTIFACT_TYPES },
+  ],
+  workflowRecipes: [
+    {
+      id: 'sandbox.dynamic-execution-profile',
+      title: 'Sandbox dynamic trace and evidence handoff',
+      description:
+        'Run an approved safe simulation, memory-guided profile, emulator-backed trace, or isolated runtime capture, then hand persisted dynamic trace artifacts to artifact review, trace import, evidence graph, sandbox reporting, and report generation.',
+      startsWith: [TOOL_NAME],
+      nextTools: SANDBOX_EXECUTE_RECOMMENDED_NEXT_TOOLS,
+      requiredArtifacts: ['sample'],
+      producesArtifacts: SANDBOX_EXECUTE_ARTIFACT_TYPES,
+      evidence: [
+        'behavior',
+        'network',
+        'filesystem',
+        'memory',
+        'timeline',
+        'workflow',
+        'provenance',
+      ],
+      safety: SANDBOX_EXECUTE_SAFETY,
+      runtimeBackends: ['safe-simulation', 'speakeasy', 'windows-sandbox', 'hyperv'],
+      defaultMode: 'safe_simulation',
+      liveExecutionRequires: ['approved=true', 'isolated runtime', 'network disabled by default'],
+    },
+  ],
+  runtimePolicy: SANDBOX_EXECUTE_RUNTIME_POLICY,
   runtime: { type: 'inline', handler: 'executeSandboxExecute' },
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'SandboxStaticWorker',
+    backendKind: 'builtin',
+    adapter: 'sandbox.execute.dynamic-profile',
+    availability: 'builtin',
+    supportedModes: ['safe_simulation', 'memory_guided', 'speakeasy', 'live_local'],
+    defaultMode: 'safe_simulation',
+    inputArtifactTypes: ['sample'],
+    outputArtifactTypes: SANDBOX_EXECUTE_ARTIFACT_TYPES,
+    policy: {
+      passiveByDefault: true,
+      requiresUserOptIn: true,
+      requiresIsolation: true,
+      defaultTimeoutMs: 20_000,
+      maxInputBytes: 20 * 1024 * 1024,
+      notes: [
+        'Safe simulation is the default worker mode and does not require a live sandbox backend.',
+        'Live and emulator-backed modes remain approval-gated by PolicyGuard.',
+      ],
+    },
+    readiness: {
+      missingBackendBehavior: 'Return a setup error when the bundled static worker is unavailable.',
+      setupActions: ['Ensure workers/static_worker.py is present in the Rikune package.'],
+    },
+  },
 }
 
 interface WorkerRequest {
@@ -368,6 +498,104 @@ function enrichSandboxPayload(payload: SandboxPayload): SandboxPayload & {
   }
 }
 
+function artifactTypesFor(artifacts: ArtifactRef[]): string[] {
+  return Array.from(new Set(artifacts.map((artifact) => artifact.type)))
+}
+
+function buildSandboxExecutionEnvelope(
+  payload: ReturnType<typeof enrichSandboxPayload>,
+  input: SandboxExecuteInput,
+  artifacts: ArtifactRef[]
+) {
+  const artifactTypes = artifactTypesFor(artifacts)
+  const persistedArtifacts = artifacts.map((artifact) => ({
+    id: artifact.id,
+    type: artifact.type,
+    path: artifact.path,
+    mime: artifact.mime ?? 'application/json',
+  }))
+  const executionSemantics = payload.execution_semantics
+  const liveExecution =
+    executionSemantics.live_windows_sandbox_execution || executionSemantics.live_hyperv_execution
+
+  return {
+    ...payload,
+    evidence_summary: {
+      schema: 'rikune.sandbox_execute.evidence_summary.v1',
+      source_tool: TOOL_NAME,
+      run_id: payload.run_id,
+      status: payload.status,
+      mode: payload.mode,
+      backend: payload.backend,
+      simulated: payload.simulated,
+      event_count: payload.event_count,
+      risk: payload.risk,
+      artifact_types: artifactTypes,
+      persisted_artifacts: persistedArtifacts,
+      evidence_categories: ['behavior', 'network', 'filesystem', 'memory', 'timeline', 'workflow'],
+      execution_semantics: executionSemantics,
+      recommended_next_tools: SANDBOX_EXECUTE_RECOMMENDED_NEXT_TOOLS,
+    },
+    workflow_handoff: {
+      schema: 'rikune.sandbox_execute.workflow_handoff.v1',
+      handoff_mode: 'dynamic_trace_to_evidence_graph',
+      recommended_next_tools: SANDBOX_EXECUTE_RECOMMENDED_NEXT_TOOLS,
+      artifact_contract: {
+        consumes: ['sample'],
+        produces: artifactTypes,
+        expected_consumers: [
+          'artifact.read',
+          'dynamic.trace.import',
+          'analysis.evidence.graph',
+          'sandbox.report',
+          'report.generate',
+        ],
+      },
+      routing: [
+        {
+          goal: 'dynamic-trace-import',
+          priority: artifactTypes.includes(PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE)
+            ? 'high'
+            : 'blocked',
+          consumes: [PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE],
+          next_tools: ['dynamic.trace.import', 'analysis.evidence.graph'],
+        },
+        {
+          goal: 'sandbox-reporting',
+          priority: artifactTypes.length > 0 ? 'medium' : 'blocked',
+          consumes: artifactTypes,
+          next_tools: ['artifact.read', 'sandbox.report', 'report.generate'],
+        },
+      ],
+      dynamic_boundary: {
+        sample_executed_by_tool: Boolean(payload.environment?.executed),
+        live_execution: liveExecution,
+        live_windows_sandbox_execution: executionSemantics.live_windows_sandbox_execution,
+        live_hyperv_execution: executionSemantics.live_hyperv_execution,
+        safe_simulation: executionSemantics.safe_simulation,
+        emulation: executionSemantics.emulation,
+        network_policy: input.network,
+      },
+    },
+    quality_gates: {
+      schema: 'rikune.sandbox_execute.quality_gates.v1',
+      approval_required_for_live_execution: true,
+      approved_execution: input.approved === true || input.require_user_approval === true,
+      mode: input.mode,
+      network_policy: input.network,
+      network_disabled_by_default: input.network === 'disabled',
+      live_execution_requires_isolation: true,
+      live_execution: liveExecution,
+      safe_simulation: executionSemantics.safe_simulation,
+      emulation: executionSemantics.emulation,
+      persisted_artifact_count: persistedArtifacts.length,
+      dynamic_trace_persisted: artifactTypes.includes(PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE),
+      sandbox_trace_persisted: artifactTypes.includes(SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE),
+    },
+    recommended_next_tools: SANDBOX_EXECUTE_RECOMMENDED_NEXT_TOOLS,
+  }
+}
+
 export function createSandboxExecuteHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
@@ -499,7 +727,9 @@ export function createSandboxExecuteHandler(
       }
 
       const payload = enrichSandboxPayload(workerResponse.data as SandboxPayload)
-      const artifacts: ArtifactRef[] = workerResponse.artifacts as ArtifactRef[]
+      const artifacts: ArtifactRef[] = Array.isArray(workerResponse.artifacts)
+        ? (workerResponse.artifacts as ArtifactRef[])
+        : []
       const persistedArtifacts: ArtifactRef[] = []
 
       if (input.persist_artifact) {
@@ -509,12 +739,46 @@ export function createSandboxExecuteHandler(
         const persistTimestamp = Date.now()
         const fileName = `sandbox_${persistTimestamp}.json`
         const absPath = path.join(reportDir, fileName)
-        const serialized = JSON.stringify(payload, null, 2)
+        const artifactId = randomUUID()
+        const relativePath = `reports/dynamic/${fileName}`
+        const normalizedTrace = normalizeDynamicTraceArtifactPayload(payload)
+        const provisionalArtifacts: ArtifactRef[] = [
+          {
+            id: artifactId,
+            type: SANDBOX_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+            path: relativePath,
+            sha256: '',
+            mime: 'application/json',
+          },
+        ]
+
+        let normalizedArtifactId: string | undefined
+        let normalizedAbsPath: string | undefined
+        let normalizedRelativePath: string | undefined
+        let normalizedSerialized: string | undefined
+        if (normalizedTrace) {
+          const normalizedFileName = `dynamic_trace_${persistTimestamp}.json`
+          normalizedAbsPath = path.join(reportDir, normalizedFileName)
+          normalizedSerialized = JSON.stringify(normalizedTrace, null, 2)
+          normalizedArtifactId = randomUUID()
+          normalizedRelativePath = `reports/dynamic/${normalizedFileName}`
+          provisionalArtifacts.push({
+            id: normalizedArtifactId,
+            type: PRIMARY_RUNTIME_DYNAMIC_TRACE_ARTIFACT_TYPE,
+            path: normalizedRelativePath,
+            sha256: '',
+            mime: 'application/json',
+          })
+        }
+
+        const persistedEnvelope = buildSandboxExecutionEnvelope(payload, input, [
+          ...artifacts,
+          ...provisionalArtifacts,
+        ])
+        const serialized = JSON.stringify(persistedEnvelope, null, 2)
         await fs.writeFile(absPath, serialized, 'utf-8')
 
-        const artifactId = randomUUID()
         const artifactSha256 = createHash('sha256').update(serialized).digest('hex')
-        const relativePath = `reports/dynamic/${fileName}`
 
         database.insertArtifact({
           id: artifactId,
@@ -536,16 +800,16 @@ export function createSandboxExecuteHandler(
         persistedArtifacts.push(persistedArtifact)
         artifacts.push(persistedArtifact)
 
-        const normalizedTrace = normalizeDynamicTraceArtifactPayload(payload)
-        if (normalizedTrace) {
-          const normalizedFileName = `dynamic_trace_${persistTimestamp}.json`
-          const normalizedAbsPath = path.join(reportDir, normalizedFileName)
-          const normalizedSerialized = JSON.stringify(normalizedTrace, null, 2)
+        if (
+          normalizedTrace &&
+          normalizedArtifactId &&
+          normalizedAbsPath &&
+          normalizedRelativePath &&
+          normalizedSerialized
+        ) {
           await fs.writeFile(normalizedAbsPath, normalizedSerialized, 'utf-8')
 
-          const normalizedArtifactId = randomUUID()
           const normalizedSha256 = createHash('sha256').update(normalizedSerialized).digest('hex')
-          const normalizedRelativePath = `reports/dynamic/${normalizedFileName}`
 
           database.insertArtifact({
             id: normalizedArtifactId,
@@ -582,9 +846,10 @@ export function createSandboxExecuteHandler(
           .map((item) => `${item.type}:${item.id}`)
           .join(', ')}`
         const merged = warnings ? [...warnings, persistedWarning] : [persistedWarning]
+        const enrichedPayload = buildSandboxExecutionEnvelope(payload, input, artifacts)
         return {
           ok: true,
-          data: payload,
+          data: enrichedPayload,
           warnings: Array.from(new Set(merged)),
           artifacts,
           metrics: {
@@ -596,9 +861,10 @@ export function createSandboxExecuteHandler(
         }
       }
 
+      const enrichedPayload = buildSandboxExecutionEnvelope(payload, input, artifacts)
       return {
         ok: true,
-        data: payload,
+        data: enrichedPayload,
         warnings,
         artifacts,
         metrics: {

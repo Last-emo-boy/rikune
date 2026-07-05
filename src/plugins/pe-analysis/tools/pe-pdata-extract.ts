@@ -11,6 +11,16 @@ import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 const TOOL_NAME = 'pe.pdata.extract'
 const TOOL_VERSION = '0.1.0'
 const CACHE_TTL_MS = CACHE_TTL_30_DAYS
+const PDATA_RECOMMENDED_NEXT_TOOLS = [
+  'pe.symbols.recover',
+  'code.functions.list',
+  'code.functions.smart_recover',
+  'code.functions.define',
+  'analysis.evidence.graph',
+  'artifact.read',
+  'workflow.search',
+]
+const PDATA_SAFETY = ['passive', 'read_only', 'no_live_sample_by_default', 'no_network_by_default']
 
 export const pePdataExtractInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
@@ -105,6 +115,11 @@ export const pePdataExtractOutputSchema = z.object({
       skipped_existing_function_count: z.number().int().nonnegative().optional(),
       function_index_status: z.enum(['ready', 'unchanged', 'empty', 'skipped']).optional(),
       analysis_id: z.string().optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
+      recommended_next_tools: z.array(z.string()).optional(),
+      next_actions: z.array(z.string()).optional(),
     })
     .optional(),
   warnings: z.array(z.string()).optional(),
@@ -124,6 +139,93 @@ export const pePdataExtractToolDefinition: ToolDefinition = {
     'Parse the PE exception directory / .pdata section and extract x64 RUNTIME_FUNCTION entries with unwind metadata.',
   inputSchema: pePdataExtractInputSchema,
   outputSchema: pePdataExtractOutputSchema,
+  aspects: {
+    formats: ['pe', 'pe-clr', 'sys', 'efi'],
+    platforms: ['windows', 'cross-platform'],
+    architectures: ['x64', 'arm64'],
+    execution: ['static', 'function-recovery'],
+    safety: PDATA_SAFETY,
+    capabilities: [
+      'pdata',
+      'unwind-info',
+      'runtime-function-table',
+      'function-boundary-recovery',
+      'function-index-materialization',
+      'workflow-handoff',
+    ],
+    evidence: ['functions', 'unwind', 'symbols', 'structure', 'workflow', 'provenance'],
+  },
+  artifacts: [
+    {
+      type: 'pe_pdata_runtime_functions',
+      description: 'Inline PE .pdata runtime function and unwind metadata returned by the tool',
+      required: false,
+    },
+    {
+      type: 'function_index_entries',
+      description: 'Function index entries materialized from PE runtime function metadata',
+      required: false,
+    },
+  ],
+  evidence: [
+    { category: 'functions', artifactTypes: ['pe_pdata_runtime_functions'] },
+    { category: 'unwind', artifactTypes: ['pe_pdata_runtime_functions'] },
+    { category: 'workflow', artifactTypes: ['function_index_entries'] },
+    { category: 'provenance', artifactTypes: ['pe_pdata_runtime_functions'] },
+  ],
+  workflowRecipes: [
+    {
+      id: 'pe.pdata-function-handoff',
+      title: 'PE .pdata function boundary handoff',
+      description:
+        'Recover PE runtime function boundaries from .pdata/.xdata, optionally materialize them into the function index, then hand off to function review, naming, evidence graph, and reconstruction workflows.',
+      startsWith: [TOOL_NAME],
+      nextTools: PDATA_RECOMMENDED_NEXT_TOOLS,
+      requiredArtifacts: ['sample'],
+      producesArtifacts: ['pe_pdata_runtime_functions', 'function_index_entries'],
+      evidence: ['functions', 'unwind', 'symbols', 'workflow', 'provenance'],
+      safety: PDATA_SAFETY,
+      runtimeBackends: ['builtin-pe-parser'],
+    },
+  ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: false,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    maxRuntimeMs: 120000,
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    notes: [
+      'This tool parses PE metadata and never executes the sample.',
+      'Function materialization writes derived static evidence into Rikune function index only.',
+    ],
+  },
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'builtin-pe-parser',
+    backendKind: 'builtin',
+    adapter: 'pe.pdata.extract',
+    availability: 'builtin',
+    supportedModes: ['extract', 'materialize-functions'],
+    defaultMode: 'materialize-functions',
+    inputArtifactTypes: ['sample'],
+    outputArtifactTypes: ['pe_pdata_runtime_functions', 'function_index_entries'],
+    policy: {
+      passiveByDefault: true,
+      noNetwork: true,
+      noMutation: true,
+      noLiveExecution: true,
+      defaultTimeoutMs: 120000,
+      notes: ['Bounded in-process PE metadata parsing; no external backend is started.'],
+    },
+    readiness: {
+      doesNotStartBackend: true,
+      missingBackendBehavior: 'Builtin parser is always available with the Rikune server.',
+    },
+  },
 }
 
 type PdataExtractData = NonNullable<z.infer<typeof pePdataExtractOutputSchema>['data']>
@@ -247,6 +349,109 @@ function skippedMaterializationSummary(): {
   }
 }
 
+function buildPdataEvidenceSummary(data: PdataExtractData, input: PEPdataExtractInput) {
+  return {
+    schema: 'rikune.pe_pdata.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    tool_version: TOOL_VERSION,
+    sample_id: input.sample_id,
+    machine_name: data.machine_name,
+    entry_point_rva: data.entry_point_rva,
+    pdata_present: data.pdata_present,
+    xdata_present: data.xdata_present,
+    runtime_function_count: data.count,
+    executable_entry_count: data.entries.filter((entry) => entry.executable_section).length,
+    unwind_entry_count: data.entries.filter((entry) => Boolean(entry.unwind)).length,
+    export_count: data.exports.length,
+    materialized_function_count: data.materialized_function_count ?? 0,
+    skipped_existing_function_count: data.skipped_existing_function_count ?? 0,
+    function_index_status: data.function_index_status ?? 'skipped',
+    analysis_id: data.analysis_id ?? null,
+  }
+}
+
+function buildPdataWorkflowHandoff(data: PdataExtractData, input: PEPdataExtractInput) {
+  return {
+    schema: 'rikune.pe_pdata.workflow_handoff.v1',
+    handoff_mode: 'pe_pdata_to_function_index_and_review',
+    sample_id: input.sample_id,
+    recommended_next_tools: PDATA_RECOMMENDED_NEXT_TOOLS,
+    data_contract: {
+      type: 'pe_pdata_runtime_functions',
+      runtime_function_count: data.count,
+      function_index_status: data.function_index_status ?? 'skipped',
+      materialized_function_count: data.materialized_function_count ?? 0,
+      inline_result: true,
+    },
+    routing: [
+      {
+        goal: 'review-function-index',
+        priority: data.function_index_status === 'ready' ? 'high' : 'normal',
+        next_tools: ['code.functions.list', 'code.functions.smart_recover'],
+        required_evidence: ['function_index_entries', 'pe_pdata_runtime_functions'],
+      },
+      {
+        goal: 'name-recovered-functions',
+        priority: data.count > 0 ? 'high' : 'low',
+        next_tools: ['code.functions.define'],
+        required_evidence: ['pe_pdata_runtime_functions', 'exports', 'runtime hints'],
+      },
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: 'normal',
+        next_tools: ['analysis.evidence.graph', 'artifact.read'],
+        required_evidence: ['pe_pdata_runtime_functions', 'function_index_entries'],
+      },
+    ],
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      backend_started: false,
+      backend_kind: 'builtin-static-parser',
+      live_execution_started: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+    },
+  }
+}
+
+function buildPdataQualityGates(data: PdataExtractData, input: PEPdataExtractInput) {
+  return {
+    schema: 'rikune.pe_pdata.quality_gates.v1',
+    passive_static_analysis: true,
+    builtin_parser_only: true,
+    sample_executed_by_tool: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    pdata_present: data.pdata_present,
+    xdata_present: data.xdata_present,
+    runtime_functions_recovered: data.count > 0,
+    function_index_materialization_requested: input.materialize_functions,
+    function_index_status: data.function_index_status ?? 'skipped',
+    analyst_review_required: data.count > 0,
+  }
+}
+
+function buildPdataNextActions(data: PdataExtractData) {
+  return [
+    data.function_index_status === 'ready'
+      ? 'Use code.functions.list to review .pdata-derived function boundaries before reconstruction.'
+      : 'Use code.functions.smart_recover if .pdata coverage is incomplete or materialization was skipped.',
+    'Use pe.symbols.recover or code.functions.define to assign evidence-grounded names to recovered function boundaries.',
+    'Use workflow.search to select a result-scoped evidence graph or reconstruction follow-up.',
+  ]
+}
+
+function withPdataEnvelope(data: PdataExtractData, input: PEPdataExtractInput): PdataExtractData {
+  return {
+    ...data,
+    evidence_summary: buildPdataEvidenceSummary(data, input),
+    workflow_handoff: buildPdataWorkflowHandoff(data, input),
+    quality_gates: buildPdataQualityGates(data, input),
+    recommended_next_tools: PDATA_RECOMMENDED_NEXT_TOOLS,
+    next_actions: buildPdataNextActions(data),
+  }
+}
+
 export function createPEPdataExtractHandler(deps: PluginToolDeps) {
   const { workspaceManager, database, cacheManager } = deps
   return async (args: ToolArgs): Promise<WorkerResult> => {
@@ -283,10 +488,7 @@ export function createPEPdataExtractHandler(deps: PluginToolDeps) {
             : skippedMaterializationSummary()
           return {
             ok: true,
-            data: {
-              ...cachedData,
-              ...materialization,
-            },
+            data: withPdataEnvelope({ ...cachedData, ...materialization }, input),
             warnings: ['Result from cache', formatCacheWarning(cachedLookup.metadata)],
             metrics: {
               elapsed_ms: Date.now() - startTime,
@@ -377,10 +579,7 @@ export function createPEPdataExtractHandler(deps: PluginToolDeps) {
 
       return {
         ok: true,
-        data: {
-          ...normalized,
-          ...materialization,
-        },
+        data: withPdataEnvelope({ ...normalized, ...materialization }, input),
         warnings: result.warnings.length > 0 ? result.warnings : undefined,
         metrics: {
           elapsed_ms: Date.now() - startTime,

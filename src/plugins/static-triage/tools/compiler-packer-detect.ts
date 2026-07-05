@@ -94,6 +94,11 @@ export const CompilerPackerDetectDataSchema = z.object({
     })
     .optional(),
   raw_backend: z.any().nullable().optional(),
+  evidence_summary: z.record(z.any()).optional(),
+  workflow_handoff: z.record(z.any()).optional(),
+  quality_gates: z.record(z.any()).optional(),
+  recommended_next_tools: z.array(z.string()).optional(),
+  next_actions: z.array(z.string()).optional(),
 })
 
 export const compilerPackerDetectOutputSchema = z.object({
@@ -110,9 +115,84 @@ export const compilerPackerDetectOutputSchema = z.object({
 export const compilerPackerDetectToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Identify likely compiler, packer, protector, and file-type signatures with a Detect It Easy-style backend and normalized MCP output.',
+    'Identify likely compiler, packer, protector, and file-type signatures with a Detect It Easy-style backend, normalized MCP output, evidence handoff, and passive workflow routing.',
   inputSchema: compilerPackerDetectInputSchema,
   outputSchema: compilerPackerDetectOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll', 'elf', 'macho', 'apk', 'jar', 'wasm', 'raw-bytes'],
+    platforms: ['windows', 'linux', 'macos', 'android', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'cil', 'wasm32'],
+    execution: ['static', 'triage', 'correlation'],
+    safety: [
+      'passive',
+      'external_static_backend',
+      'no_live_sample_by_default',
+      'no_network_by_default',
+    ],
+    capabilities: [
+      'compiler-attribution',
+      'packer-attribution',
+      'protector-attribution',
+      'file-type-attribution',
+      'workflow-handoff',
+      'evidence-correlation',
+    ],
+    evidence: [
+      'toolchain',
+      'signatures',
+      'packer',
+      'protector',
+      'file-type',
+      'workflow',
+      'provenance',
+    ],
+  },
+  artifacts: [
+    {
+      type: COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE,
+      description:
+        'Compiler, packer, protector, file-type attribution, workflow handoff, and passive quality gates',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    { category: 'toolchain', artifactTypes: [COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE] },
+    { category: 'signatures', artifactTypes: [COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE] },
+    { category: 'packer', artifactTypes: [COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE] },
+    { category: 'protector', artifactTypes: [COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE] },
+    { category: 'file-type', artifactTypes: [COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: [
+    {
+      id: 'static-triage.compiler-packer-attribution',
+      title: 'Compiler and packer attribution correlation',
+      description:
+        'Turn Detect It Easy-style compiler, packer, protector, and file-type attribution into packer validation, unpack planning, capability triage, evidence graph, and reporting handoffs.',
+      startsWith: ['compiler.packer.detect', 'die.scan', 'packer.detect'],
+      nextTools: [
+        'packer.detect',
+        'entropy.analyze',
+        'static.resource.graph',
+        'unpack.workflow.plan',
+        'static.capability.triage',
+        'code.cross_decompiler.consensus',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+      requiredArtifacts: ['sample'],
+      producesArtifacts: [COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE],
+      evidence: ['toolchain', 'signatures', 'packer', 'protector', 'file-type', 'workflow'],
+      safety: [
+        'passive',
+        'external_static_backend',
+        'no_live_sample_by_default',
+        'no_network_by_default',
+      ],
+      runtimeBackends: ['detect-it-easy'],
+    },
+  ],
 }
 
 interface DieExecutionResult {
@@ -130,6 +210,9 @@ interface CompilerPackerDetectDependencies {
     timeoutSec: number
   ) => Promise<DieExecutionResult>
 }
+
+type AttributionFinding = z.infer<typeof AttributionFindingSchema>
+type AttributionPartition = ReturnType<typeof partitionFindings>
 
 function detectCategory(
   text: string
@@ -287,6 +370,197 @@ function partitionFindings(findings: z.infer<typeof AttributionFindingSchema>[])
   }
 }
 
+function uniqueStrings(values: string[], limit = 16): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).slice(0, limit)
+}
+
+function topFindingNames(findings: AttributionFinding[], limit = 8): string[] {
+  return [...findings]
+    .sort((left, right) => right.confidence - left.confidence)
+    .slice(0, limit)
+    .map((finding) => finding.name)
+}
+
+function buildRecommendedNextTools(
+  summary: z.infer<typeof CompilerPackerDetectDataSchema>['summary'],
+  status: 'ready' | 'setup_required'
+): string[] {
+  if (status === 'setup_required') {
+    return ['tool.readiness', 'tools.discover']
+  }
+
+  const tools = ['analysis.evidence.graph', 'report.generate']
+  if (summary.packer_count > 0 || summary.protector_count > 0) {
+    tools.push('packer.detect', 'entropy.analyze', 'static.resource.graph', 'unpack.workflow.plan')
+  }
+  if (summary.compiler_count > 0) {
+    tools.push('static.capability.triage', 'code.cross_decompiler.consensus')
+  }
+  if (summary.file_type_count > 0) {
+    tools.push('static.resource.graph', 'static.config.carver')
+  }
+  return uniqueStrings(tools, 12)
+}
+
+function buildEvidenceSummary(args: {
+  status: 'ready' | 'setup_required'
+  sampleId: string
+  partitioned: AttributionPartition
+  summary: z.infer<typeof CompilerPackerDetectDataSchema>['summary']
+  backend: z.infer<typeof BackendSchema>
+  confidenceScore: number | null
+  warnings: string[]
+}) {
+  return {
+    schema: 'rikune.compiler_packer_attribution.evidence_summary.v1',
+    sample_id: args.sampleId,
+    status: args.status,
+    source_tool: TOOL_NAME,
+    backend: {
+      available: args.backend.available,
+      source: args.backend.source,
+      version: args.backend.version,
+      checked_candidate_count: args.backend.checked_candidates.length,
+      error: args.backend.error,
+    },
+    compiler_count: args.summary.compiler_count,
+    packer_count: args.summary.packer_count,
+    protector_count: args.summary.protector_count,
+    file_type_count: args.summary.file_type_count,
+    likely_primary_file_type: args.summary.likely_primary_file_type,
+    top_compilers: topFindingNames(args.partitioned.compiler_findings),
+    top_packers: topFindingNames(args.partitioned.packer_findings),
+    top_protectors: topFindingNames(args.partitioned.protector_findings),
+    confidence_score: args.confidenceScore,
+    warning_count: args.warnings.length,
+    warnings: args.warnings,
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  status: 'ready' | 'setup_required'
+  sampleId: string
+  partitioned: AttributionPartition
+  summary: z.infer<typeof CompilerPackerDetectDataSchema>['summary']
+  recommendedNextTools: string[]
+}) {
+  const hasPackerOrProtector = args.summary.packer_count > 0 || args.summary.protector_count > 0
+  const hasCompiler = args.summary.compiler_count > 0
+
+  return {
+    schema: 'rikune.compiler_packer_attribution.workflow_handoff.v1',
+    handoff_mode: 'compiler_packer_attribution_to_unpack_and_reporting',
+    sample_id: args.sampleId,
+    source_tool: TOOL_NAME,
+    recommended_next_tools: args.recommendedNextTools,
+    attribution_context: {
+      status: args.status,
+      compiler_names: topFindingNames(args.partitioned.compiler_findings),
+      packer_names: topFindingNames(args.partitioned.packer_findings),
+      protector_names: topFindingNames(args.partitioned.protector_findings),
+      likely_primary_file_type: args.summary.likely_primary_file_type,
+      packer_or_protector_present: hasPackerOrProtector,
+    },
+    routing: [
+      {
+        goal: 'packer-validation-and-unpack-planning',
+        priority: hasPackerOrProtector ? 'high' : 'optional',
+        next_tools: [
+          'packer.detect',
+          'entropy.analyze',
+          'static.resource.graph',
+          'unpack.workflow.plan',
+        ],
+        required_evidence: [COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE],
+      },
+      {
+        goal: 'toolchain-aware-static-correlation',
+        priority: hasCompiler ? 'normal' : 'optional',
+        next_tools: [
+          'static.capability.triage',
+          'code.cross_decompiler.consensus',
+          'analysis.evidence.graph',
+        ],
+        required_evidence: ['compiler findings', COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE],
+      },
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: 'normal',
+        next_tools: ['analysis.evidence.graph', 'report.generate'],
+        required_evidence: [COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE],
+      },
+    ],
+    artifact_contract: {
+      consumes: ['sample bytes'],
+      produces: [COMPILER_PACKER_ATTRIBUTION_ARTIFACT_TYPE],
+      expected_consumers: [
+        'packer.detect',
+        'unpack.workflow.plan',
+        'static.capability.triage',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+    },
+    dynamic_boundary: {
+      static_backend_started: args.status === 'ready',
+      runtime_started_by_tool: false,
+      sample_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+      runtime_followup_requires_opt_in: true,
+    },
+  }
+}
+
+function buildQualityGates(args: {
+  status: 'ready' | 'setup_required'
+  summary: z.infer<typeof CompilerPackerDetectDataSchema>['summary']
+  backend: z.infer<typeof BackendSchema>
+  warningCount: number
+}) {
+  return {
+    passive_static_attribution: true,
+    static_backend_available: args.backend.available,
+    static_backend_started: args.status === 'ready',
+    runtime_started_by_tool: false,
+    sample_executed_by_tool: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    compiler_evidence_present: args.summary.compiler_count > 0,
+    packer_evidence_present: args.summary.packer_count > 0,
+    protector_evidence_present: args.summary.protector_count > 0,
+    file_type_evidence_present: args.summary.file_type_count > 0,
+    unpack_handoff_ready: args.summary.packer_count > 0 || args.summary.protector_count > 0,
+    evidence_graph_handoff_ready: args.status === 'ready',
+    setup_required: args.status === 'setup_required',
+    runtime_followup_requires_opt_in: true,
+    analyst_review_required: args.summary.packer_count > 0 || args.summary.protector_count > 0,
+    warning_count: args.warningCount,
+  }
+}
+
+function buildNextActions(summary: z.infer<typeof CompilerPackerDetectDataSchema>['summary']) {
+  if (summary.packer_count > 0 || summary.protector_count > 0) {
+    return [
+      'Review compiler_packer_attribution before choosing any live unpacking path.',
+      'Run packer.detect and entropy.analyze to validate the packer/protector attribution.',
+      'Use unpack.workflow.plan for a passive unpack plan; runtime dumping requires explicit opt-in.',
+      'Send compiler_packer_attribution to analysis.evidence.graph and report.generate for correlation.',
+    ]
+  }
+  if (summary.compiler_count > 0) {
+    return [
+      'Use static.capability.triage to correlate compiler/toolchain context with behavior findings.',
+      'Use code.cross_decompiler.consensus when compiler attribution affects decompiler confidence.',
+      'Send compiler_packer_attribution to analysis.evidence.graph and report.generate for correlation.',
+    ]
+  }
+  return [
+    'Review Detect It Easy findings and file type attribution before escalating.',
+    'Use analysis.evidence.graph and report.generate to preserve attribution provenance.',
+  ]
+}
+
 async function defaultExecuteBackend(
   binaryPath: string,
   samplePath: string,
@@ -352,6 +626,39 @@ export function createCompilerPackerDetectHandler(
 
       const backend = resolveBackend()
       if (!backend.available || !backend.path) {
+        const setupSummary = {
+          compiler_count: 0,
+          packer_count: 0,
+          protector_count: 0,
+          file_type_count: 0,
+          likely_primary_file_type: null,
+        }
+        const setupPartitioned = partitionFindings([])
+        const setupWarnings = backend.error ? [backend.error] : []
+        const recommendedNextTools = buildRecommendedNextTools(setupSummary, 'setup_required')
+        const evidenceSummary = buildEvidenceSummary({
+          status: 'setup_required',
+          sampleId: input.sample_id,
+          partitioned: setupPartitioned,
+          summary: setupSummary,
+          backend,
+          confidenceScore: null,
+          warnings: setupWarnings,
+        })
+        const workflowHandoff = buildWorkflowHandoff({
+          status: 'setup_required',
+          sampleId: input.sample_id,
+          partitioned: setupPartitioned,
+          summary: setupSummary,
+          recommendedNextTools,
+        })
+        const qualityGates = buildQualityGates({
+          status: 'setup_required',
+          summary: setupSummary,
+          backend,
+          warningCount: setupWarnings.length,
+        })
+
         return {
           ok: true,
           data: {
@@ -371,8 +678,17 @@ export function createCompilerPackerDetectHandler(
             backend,
             confidence_semantics: null,
             raw_backend: null,
+            evidence_summary: evidenceSummary,
+            workflow_handoff: workflowHandoff,
+            quality_gates: qualityGates,
+            recommended_next_tools: recommendedNextTools,
+            next_actions: [
+              'Configure Detect It Easy before relying on compiler_packer_attribution.',
+              'Use tool.readiness to verify the DIE backend path without executing the sample.',
+              'After setup, rerun compiler.packer.detect and send the artifact to analysis.evidence.graph.',
+            ],
           },
-          warnings: backend.error ? [backend.error] : undefined,
+          warnings: setupWarnings.length > 0 ? setupWarnings : undefined,
           setup_actions: buildStaticAnalysisSetupActions(),
           required_user_inputs: buildStaticAnalysisRequiredUserInputs(),
           metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
@@ -422,11 +738,36 @@ export function createCompilerPackerDetectHandler(
         protectorCount: summary.protector_count,
         backendSource: backend.source,
       })
+      const recommendedNextTools = buildRecommendedNextTools(summary, 'ready')
+      const evidenceSummary = buildEvidenceSummary({
+        status: 'ready',
+        sampleId: input.sample_id,
+        partitioned,
+        summary,
+        backend,
+        confidenceScore: confidenceSemantics.score,
+        warnings,
+      })
+      const workflowHandoff = buildWorkflowHandoff({
+        status: 'ready',
+        sampleId: input.sample_id,
+        partitioned,
+        summary,
+        recommendedNextTools,
+      })
+      const qualityGates = buildQualityGates({
+        status: 'ready',
+        summary,
+        backend,
+        warningCount: warnings.length,
+      })
+      const nextActions = buildNextActions(summary)
 
       let artifact
       const artifacts = []
       if (input.persist_artifact) {
         const artifactPayload = {
+          schema: 'rikune.compiler_packer_attribution.v1',
           session_tag: input.session_tag || null,
           sample_id: input.sample_id,
           status: 'ready',
@@ -434,6 +775,11 @@ export function createCompilerPackerDetectHandler(
           summary,
           backend,
           confidence_semantics: confidenceSemantics,
+          evidence_summary: evidenceSummary,
+          workflow_handoff: workflowHandoff,
+          quality_gates: qualityGates,
+          recommended_next_tools: recommendedNextTools,
+          next_actions: nextActions,
           raw_backend: {
             format: execution.format,
             command: execution.command,
@@ -469,6 +815,8 @@ export function createCompilerPackerDetectHandler(
             summary,
             artifact_id: artifact?.id || null,
             backend_source: backend.source,
+            recommended_next_tools: recommendedNextTools,
+            workflow_handoff_ready: true,
           }),
           metrics_json: JSON.stringify(summary),
         })
@@ -485,6 +833,11 @@ export function createCompilerPackerDetectHandler(
           confidence_semantics: confidenceSemantics,
           analysis_id: analysisId,
           artifact,
+          evidence_summary: evidenceSummary,
+          workflow_handoff: workflowHandoff,
+          quality_gates: qualityGates,
+          recommended_next_tools: recommendedNextTools,
+          next_actions: nextActions,
           raw_backend: {
             format: execution.format,
             command: execution.command,

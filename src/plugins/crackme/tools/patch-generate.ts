@@ -61,6 +61,14 @@ export const PatchGenerateInputSchema = z.object({
     .describe(
       'Image base address for VA→offset conversion (hex). Auto-detected from PE if omitted.'
     ),
+  approved: z
+    .boolean()
+    .optional()
+    .describe('Explicit approval flag honored by PolicyGuard for dynamic execution'),
+  approval_token: z
+    .string()
+    .optional()
+    .describe('Approval token issued by PolicyGuard for dynamic execution'),
 })
 
 export const PatchGenerateOutputSchema = createWorkerResultOutputSchema(
@@ -171,7 +179,15 @@ export function createPatchGenerateHandler(deps: PluginToolDeps) {
       if (!sample) return { ok: false, errors: [`Sample not found: ${args.sample_id}`] }
 
       const policyDecision = await policyGuard.checkPermission(
-        { type: 'dynamic_execution', tool: TOOL_NAME, args: { patch_count: args.patches.length } },
+        {
+          type: 'dynamic_execution',
+          tool: TOOL_NAME,
+          args: {
+            patch_count: args.patches.length,
+            approved: args.approved,
+            approval_token: args.approval_token,
+          },
+        },
         { sampleId: args.sample_id, timestamp: new Date().toISOString() }
       )
       await policyGuard.auditLog({

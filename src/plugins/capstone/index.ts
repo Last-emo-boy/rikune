@@ -11,14 +11,35 @@ import {
   shellcodeDisasmToolDefinition,
   createShellcodeDisasmHandler,
 } from './tools/shellcode-disasm.js'
+import { CAPSTONE_PASSIVE_SAFETY } from './capstone-metadata.js'
 
 const capstonePlugin: Plugin = {
   id: 'capstone',
   name: 'Capstone Disassembly',
   executionDomain: 'static',
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'shellcode', 'firmware'],
+    platforms: ['windows', 'linux', 'macos', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips'],
+    execution: ['static', 'triage'],
+    safety: CAPSTONE_PASSIVE_SAFETY,
+    capabilities: [
+      'disassembly',
+      'bounded-disassembly',
+      'shellcode',
+      'entrypoint-preview',
+      'function-boundary-seeding',
+      'api-dispatch-heuristic',
+      'workflow-handoff',
+    ],
+    evidence: ['structure', 'disassembly', 'shellcode', 'symbols', 'workflow', 'provenance'],
+  },
   surfaceRules: {
     tier: 2,
-    activateOn: { findings: ['shellcode', 'suspicious_imports'] },
+    activateOn: {
+      fileTypes: ['pe', 'elf', 'macho', 'firmware', 'shellcode'],
+      findings: ['shellcode', 'suspicious_imports', 'entrypoint', 'payload', 'packed'],
+    },
     category: 'reverse-engineering',
   },
   description:

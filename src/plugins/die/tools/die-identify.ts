@@ -45,6 +45,21 @@ export const dieIdentifyToolDefinition: ToolDefinition = {
     'Quick Detect It Easy identification — returns a compact list of detected signatures without full detail.',
   inputSchema: dieIdentifyInputSchema,
   outputSchema: dieIdentifyOutputSchema,
+  aspects: {
+    formats: ['pe', 'elf', 'macho', 'dotnet', 'apk', 'firmware', 'archive'],
+    platforms: ['windows', 'linux', 'macos', 'android', 'embedded', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv'],
+    execution: ['static', 'triage'],
+    safety: ['passive'],
+    capabilities: ['compiler-detect', 'packer', 'quick-identification'],
+    evidence: ['signatures', 'provenance'],
+  },
+  evidence: [
+    {
+      category: 'signatures',
+      description: 'Compact DIE signature identification lines returned inline',
+    },
+  ],
 }
 
 export function createDieIdentifyHandler(

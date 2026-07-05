@@ -26,6 +26,7 @@ ARG ILSPYCMD_VERSION=9.1.0.7988
 ARG RETDEC_VERSION=5.0
 ARG RIZIN_VERSION=0.8.2
 ARG UPX_VERSION=5.1.1
+ARG WABT_VERSION=1.0.39
 
 # =============================================================================
 # Stage 1: TypeScript Builder (always)
@@ -382,6 +383,10 @@ RUN set -eux; \
     install -m 755 /tmp/goresym/GoReSym /usr/local/bin/GoReSym; \
     rm -rf "$tmpzip" /tmp/goresym
 
+RUN mkdir -p /opt/rikune-backends/jsimplifier/bin
+COPY src/plugins/jsimplifier/workers/jsimplifier-worker.js /opt/rikune-backends/jsimplifier/bin/jsimplifier-worker.js
+RUN chmod +x /opt/rikune-backends/jsimplifier/bin/jsimplifier-worker.js
+
 ARG CAPA_RULES_VERSION
 ARG CAPA_VERSION
 ARG DIE_VERSION
@@ -427,11 +432,19 @@ RUN ln -sf /opt/dotnet-tools/ilspycmd /usr/local/bin/ilspycmd && \
 ENV DOTNET_PATH=/usr/bin/dotnet
 ENV ILSPYCMD_PATH=/usr/local/bin/ilspycmd
 
+RUN mkdir -p /opt/rikune-backends/manifold/bin
+COPY src/plugins/manifold/workers/manifold-worker.js /opt/rikune-backends/manifold/bin/manifold-worker.js
+RUN chmod +x /opt/rikune-backends/manifold/bin/manifold-worker.js
+
 # ── Volatility 3 (memory forensics framework) ──
 RUN pip install --no-cache-dir volatility3 && \
-    mkdir -p /opt/vol3-symbols /app/cache/home/.cache && \
-    HOME=/app/cache/home python3 -c "import volatility3; print('✓ volatility3')" && \
-    HOME=/app/cache/home /usr/local/bin/vol --help >/dev/null
+    mkdir -p /opt/vol3-symbols /tmp/rikune-home/.cache && \
+    HOME=/tmp/rikune-home python3 -c "import volatility3; print('✓ volatility3')" && \
+    HOME=/tmp/rikune-home /usr/local/bin/vol --help >/dev/null
+
+RUN mkdir -p /opt/rikune-backends/restringer/bin
+COPY src/plugins/restringer/workers/restringer-worker.js /opt/rikune-backends/restringer/bin/restringer-worker.js
+RUN chmod +x /opt/rikune-backends/restringer/bin/restringer-worker.js
 
 COPY --from=heavy-tools /opt/retdec /opt/retdec
 
@@ -465,6 +478,15 @@ RUN set -eux; \
     ln -sf /opt/upx/upx /usr/local/bin/upx; \
     /usr/local/bin/upx --version >/dev/null
 
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends wabt; \
+    rm -rf /var/lib/apt/lists/*; \
+    mkdir -p /opt/wabt/bin; \
+    for tool in wasm2wat wasm-objdump wasm-decompile wasm2c wasm-validate; do \
+      if command -v "$tool" >/dev/null 2>&1; then ln -sf "$(command -v "$tool")" "/opt/wabt/bin/$tool"; fi; \
+    done
+
 COPY src/plugins/static-triage/helpers/ ./src/plugins/static-triage/helpers/
 
 # -- Validate installed tools --
@@ -479,15 +501,22 @@ RUN (echo "[validate] Rikune Docker image") && \
     (test -f /opt/ghidra/support/analyzeHeadless) && \
     (GoReSym -h >/dev/null 2>&1 || true) && \
     (dot -V >/dev/null 2>&1) && \
+    (node /opt/rikune-backends/jsimplifier/bin/jsimplifier-worker.js --self-test) && \
     (/usr/local/bin/capa --version >/dev/null 2>&1) && \
-    (HOME=/app/cache/home /usr/local/bin/vol --help >/dev/null) && \
+    (node /opt/rikune-backends/manifold/bin/manifold-worker.js --self-test) && \
+    (HOME=/tmp/rikune-home /usr/local/bin/vol --help >/dev/null) && \
     (exiftool -ver >/dev/null 2>&1) && \
     (tshark --version >/dev/null 2>&1) && \
+    (python3 -c "import pefile; print(getattr(pefile, '__version__', 'ok'))") && \
+    (python3 -c "import lief; print(getattr(lief, '__version__', 'ok'))") && \
     (osslsigncode --version >/dev/null 2>&1 || true) && \
+    (node /opt/rikune-backends/restringer/bin/restringer-worker.js --self-test) && \
     (retdec-decompiler --help >/dev/null 2>&1) && \
     (retdec-fileinfo --help >/dev/null 2>&1) && \
     (rizin -v >/dev/null 2>&1) && \
     (upx --version >/dev/null 2>&1) && \
+    (/opt/wabt/bin/wasm2wat --help >/dev/null 2>&1) && \
+    (/opt/wabt/bin/wasm-objdump --help >/dev/null 2>&1) && \
     (echo "[validate] All checks passed")
 
 RUN useradd -m -u 1000 -s /bin/bash appuser
@@ -506,38 +535,41 @@ ENV NODE_ENV=production \
     WORKSPACE_ROOT=/app/workspaces \
     DB_PATH=/app/data/database.db \
     CACHE_ROOT=/app/cache \
-    HOME=/app/cache/home \
+    HOME=/tmp/rikune-home \
     RUNNING_IN_DOCKER=true \
     UPLOAD_PORT=18081 \
     AUDIT_LOG_PATH=/app/logs/audit.log \
-    XDG_CONFIG_HOME=/app/logs/.config \
-    XDG_CACHE_HOME=/app/cache/xdg \
+    XDG_CONFIG_HOME=/tmp/rikune-home/.config \
+    XDG_CACHE_HOME=/tmp/rikune-home/.cache \
     SANDBOX_PYTHON_PATH=/usr/local/bin/python3 \
     JADX_PATH=/opt/jadx/bin/jadx \
     ANGR_PYTHON=/opt/angr-venv/bin/python \
     APKTOOL_PATH=/usr/bin/apktool \
-    DIEC_PATH=/usr/bin/diec \
+    DIE_PATH=/usr/bin/diec \
     ILSPYCMD_PATH=/usr/local/bin/ilspycmd \
     BINWALK_PATH=/usr/bin/binwalk \
     GHIDRA_INSTALL_DIR=/opt/ghidra \
     GORESYM_PATH=/usr/local/bin/GoReSym \
     GRAPHVIZ_DOT_PATH=/usr/bin/dot \
+    JSIMPLIFIER_WORKER_PATH=/opt/rikune-backends/jsimplifier/bin/jsimplifier-worker.js \
     CAPA_RULES_PATH=/opt/capa-rules \
+    MANIFOLD_WORKER_PATH=/opt/rikune-backends/manifold/bin/manifold-worker.js \
     VOLATILITY3_PATH=/usr/local/bin/vol \
     VOL3_SYMBOL_PATH=/opt/vol3-symbols \
     EXIFTOOL_PATH=/usr/bin/exiftool \
     TSHARK_PATH=/usr/bin/tshark \
     OSSLSIGNCODE_PATH=/usr/bin/osslsigncode \
+    RESTRINGER_PATH=/opt/rikune-backends/restringer/bin/restringer-worker.js \
     RETDEC_PATH=/opt/retdec/bin/retdec-decompiler \
     RIZIN_PATH=/opt/rizin/bin/rizin \
     UPX_PATH=/usr/local/bin/upx \
+    WABT_PATH=/opt/wabt/bin \
     GHIDRA_PROJECT_ROOT=/ghidra-projects \
     GHIDRA_LOG_ROOT=/ghidra-logs \
     CAPA_PATH=/usr/local/bin/capa \
-    DIE_PATH=/usr/bin/diec \
     RETDEC_INSTALL_DIR=/opt/retdec
 
-RUN mkdir -p /app/workspaces /app/data /app/cache /app/cache/home /app/logs /samples /tmp /ghidra-projects /ghidra-logs /opt/vol3-symbols && \
+RUN mkdir -p /app/workspaces /app/data /app/cache /tmp/rikune-home /app/logs /samples /tmp /ghidra-projects /ghidra-logs /opt/vol3-symbols && \
     chown -R appuser:appuser /app && \
     chown -R appuser:appuser /ghidra-projects && \
     chown -R appuser:appuser /ghidra-logs && \

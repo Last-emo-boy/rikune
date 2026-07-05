@@ -14,6 +14,90 @@ import {
 } from '../../sdk.js'
 
 const TOOL_NAME = 'kb.function.match'
+export const KB_FUNCTION_MATCH_ARTIFACT_TYPE = 'function_match'
+export const KB_FUNCTION_MATCH_FORMATS = [
+  'artifact',
+  'analysis-evidence',
+  'function',
+  'function-index',
+  'function-signature',
+  'code-reuse',
+  'knowledge-base',
+  'rule',
+]
+export const KB_COLLABORATION_PLATFORMS = ['cross-platform']
+export const KB_COLLABORATION_SAFETY = [
+  'passive',
+  'no_network_by_default',
+  'no_mutation',
+  'no_live_sample_by_default',
+]
+export const KB_FUNCTION_MATCH_CAPABILITIES = [
+  'analysis-memory',
+  'knowledge-reuse',
+  'function-matching',
+  'function-signature-correlation',
+  'code-reuse-detection',
+  'annotation-propagation',
+  'workflow-plan',
+  'workflow-handoff',
+  'search-profile',
+  'evidence-correlation',
+]
+export const KB_FUNCTION_MATCH_EVIDENCE = [
+  'analysis-memory',
+  'functions',
+  'symbols',
+  'api-calls',
+  'code-reuse',
+  'workflow',
+  'provenance',
+  'search-profile',
+]
+export const KB_FUNCTION_MATCH_FOLLOW_UP_TOOLS = [
+  'artifact.read',
+  'analysis.evidence.graph',
+  'analysis.notes',
+  'rule.library',
+  'kb.context.suggest',
+  'kb.export',
+  'report.generate',
+]
+export const KB_FUNCTION_MATCH_WORKFLOW_RECIPES = [
+  {
+    id: 'kb.function-match.reuse-handoff',
+    title: 'Knowledge-base function reuse handoff',
+    description:
+      'Compare function signatures against curated local sample evidence, surface exact and high-confidence reuse, and hand off annotation, evidence-graph, notes, and export follow-ups without network access or sample execution.',
+    startsWith: [TOOL_NAME],
+    nextTools: KB_FUNCTION_MATCH_FOLLOW_UP_TOOLS,
+    requiredArtifacts: ['sample', 'analysis_evidence', 'function_index'],
+    producesArtifacts: [KB_FUNCTION_MATCH_ARTIFACT_TYPE],
+    evidence: KB_FUNCTION_MATCH_EVIDENCE,
+    safety: KB_COLLABORATION_SAFETY,
+    runtimeBackends: ['local'],
+  },
+]
+export const KB_COLLABORATION_RUNTIME_POLICY = {
+  passiveByDefault: true,
+  requiresUserOptIn: false,
+  requiresIsolation: false,
+  allowedBackends: ['local'],
+  networkPolicy: 'disabled',
+  noNetwork: true,
+  noMutation: true,
+  noLiveExecution: true,
+  noSampleExecution: true,
+  notes: [
+    'Knowledge-base collaboration uses local database evidence and workspace artifacts only.',
+    'Function matching does not execute samples, mutate binaries, or use network access.',
+  ],
+} as ToolDefinition['runtimePolicy'] & {
+  noNetwork: true
+  noMutation: true
+  noLiveExecution: true
+  noSampleExecution: true
+}
 
 export const KbFunctionMatchInputSchema = z.object({
   sample_id: z.string().describe('Target sample ID to match functions for'),
@@ -37,6 +121,15 @@ export const KbFunctionMatchOutputSchema = createWorkerResultOutputSchema(
     match_count: z.number().int().nonnegative(),
     exact_matches: z.number().int().nonnegative(),
     high_confidence_matches: z.number().int().nonnegative(),
+    workflowRecipes: z.array(z.any()).optional(),
+    formats: z.array(z.string()).optional(),
+    evidence: z.array(z.string()).optional(),
+    policy: z.record(z.any()).optional(),
+    evidence_summary: z.record(z.any()).optional(),
+    workflow_handoff: z.record(z.any()).optional(),
+    quality_gates: z.record(z.any()).optional(),
+    recommended_next_tools: z.array(z.string()).optional(),
+    next_actions: z.array(z.string()).optional(),
     matches: z.array(
       z.object({
         target_function: z.string(),
@@ -58,6 +151,33 @@ export const kbFunctionMatchToolDefinition: ToolDefinition = {
     'find reused code and propagate function names and annotations.',
   inputSchema: KbFunctionMatchInputSchema,
   outputSchema: KbFunctionMatchOutputSchema,
+  aspects: {
+    formats: KB_FUNCTION_MATCH_FORMATS,
+    platforms: KB_COLLABORATION_PLATFORMS,
+    execution: ['static', 'correlation'],
+    safety: KB_COLLABORATION_SAFETY,
+    capabilities: KB_FUNCTION_MATCH_CAPABILITIES,
+    evidence: KB_FUNCTION_MATCH_EVIDENCE,
+  },
+  artifacts: [
+    {
+      type: KB_FUNCTION_MATCH_ARTIFACT_TYPE,
+      description:
+        'Function signature reuse, exact/high-confidence matches, and analysis-memory handoff',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    { category: 'analysis-memory', artifactTypes: [KB_FUNCTION_MATCH_ARTIFACT_TYPE] },
+    { category: 'functions', artifactTypes: [KB_FUNCTION_MATCH_ARTIFACT_TYPE] },
+    { category: 'symbols', artifactTypes: [KB_FUNCTION_MATCH_ARTIFACT_TYPE] },
+    { category: 'api-calls', artifactTypes: [KB_FUNCTION_MATCH_ARTIFACT_TYPE] },
+    { category: 'code-reuse', artifactTypes: [KB_FUNCTION_MATCH_ARTIFACT_TYPE] },
+    { category: 'workflow', artifactTypes: [KB_FUNCTION_MATCH_ARTIFACT_TYPE] },
+    { category: 'provenance', artifactTypes: [KB_FUNCTION_MATCH_ARTIFACT_TYPE] },
+  ],
+  workflowRecipes: KB_FUNCTION_MATCH_WORKFLOW_RECIPES,
+  runtimePolicy: KB_COLLABORATION_RUNTIME_POLICY,
 }
 
 interface FunctionSig {
@@ -67,6 +187,15 @@ interface FunctionSig {
   hash?: string
   size?: number
   api_calls?: string[]
+}
+
+export interface FunctionMatchEntry {
+  target_function: string
+  target_address: string
+  matched_function: string
+  matched_sample_id: string
+  matched_address: string
+  confidence: number
 }
 
 function signatureOverlap(a: FunctionSig, b: FunctionSig): number {
@@ -98,6 +227,156 @@ function signatureOverlap(a: FunctionSig, b: FunctionSig): number {
   }
 
   return 0
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim().length > 0)))
+}
+
+function buildRecommendedNextTools(input: {
+  exact_matches: number
+  high_confidence_matches: number
+  match_count: number
+}): string[] {
+  return uniqueStrings([
+    'artifact.read',
+    'kb.context.suggest',
+    'analysis.notes',
+    ...(input.match_count > 0 ? ['analysis.evidence.graph', 'report.generate'] : []),
+    ...(input.exact_matches > 0 || input.high_confidence_matches > 0
+      ? ['rule.library', 'kb.export']
+      : []),
+  ])
+}
+
+export function enrichKbFunctionMatchResultData(resultData: {
+  sample_id: string
+  target_function_count: number
+  reference_function_count: number
+  match_count: number
+  exact_matches: number
+  high_confidence_matches: number
+  matches: FunctionMatchEntry[]
+  min_confidence?: number
+  match_against?: string[]
+}) {
+  const recommendedNextTools = buildRecommendedNextTools(resultData)
+  const matchAgainst = resultData.match_against ?? []
+
+  return {
+    sample_id: resultData.sample_id,
+    target_function_count: resultData.target_function_count,
+    reference_function_count: resultData.reference_function_count,
+    match_count: resultData.match_count,
+    exact_matches: resultData.exact_matches,
+    high_confidence_matches: resultData.high_confidence_matches,
+    workflowRecipes: KB_FUNCTION_MATCH_WORKFLOW_RECIPES,
+    formats: KB_FUNCTION_MATCH_FORMATS,
+    evidence: KB_FUNCTION_MATCH_EVIDENCE,
+    policy: {
+      passive: true,
+      no_execute: true,
+      no_network: true,
+      no_mutation: true,
+      no_sample_execution: true,
+      no_live_sample: true,
+    },
+    evidence_summary: {
+      schema: 'rikune.kb_function_match.evidence_summary.v1',
+      source_tool: TOOL_NAME,
+      artifact_type: KB_FUNCTION_MATCH_ARTIFACT_TYPE,
+      sample_id: resultData.sample_id,
+      evidence_categories: KB_FUNCTION_MATCH_EVIDENCE,
+      function_counts: {
+        target_functions: resultData.target_function_count,
+        reference_functions: resultData.reference_function_count,
+        matches: resultData.match_count,
+        exact_matches: resultData.exact_matches,
+        high_confidence_matches: resultData.high_confidence_matches,
+      },
+      match_scope: {
+        match_against: matchAgainst,
+        all_kb_entries_requested: matchAgainst.length === 0,
+        min_confidence: resultData.min_confidence ?? null,
+      },
+      static_only: true,
+      sample_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+    },
+    workflow_handoff: {
+      schema: 'rikune.kb_function_match.workflow_handoff.v1',
+      handoff_mode: 'function_reuse_to_analysis_memory_and_evidence_graph',
+      artifact_type: KB_FUNCTION_MATCH_ARTIFACT_TYPE,
+      recommended_next_tools: recommendedNextTools,
+      artifact_contract: {
+        consumes: ['analysis_evidence', 'function_index'],
+        produces: [KB_FUNCTION_MATCH_ARTIFACT_TYPE],
+        expected_consumers: [
+          'workflow.search',
+          'artifact.read',
+          'kb.context.suggest',
+          'analysis.evidence.graph',
+          'report.generate',
+        ],
+      },
+      routing: [
+        {
+          goal: 'exact-and-high-confidence-function-reuse',
+          priority:
+            resultData.exact_matches > 0 || resultData.high_confidence_matches > 0
+              ? 'high'
+              : 'conditional',
+          next_tools: ['analysis.evidence.graph', 'analysis.notes', 'rule.library'],
+          required_evidence: ['function signatures', 'matched sample IDs', 'confidence scores'],
+          consumes: [KB_FUNCTION_MATCH_ARTIFACT_TYPE],
+          produces: ['function_reuse_evidence'],
+        },
+        {
+          goal: 'analysis-memory-context-refresh',
+          priority: 'normal',
+          next_tools: ['kb.context.suggest', 'analysis.notes', 'kb.export'],
+          required_evidence: [KB_FUNCTION_MATCH_ARTIFACT_TYPE],
+          consumes: [KB_FUNCTION_MATCH_ARTIFACT_TYPE],
+          produces: ['analysis_memory'],
+        },
+        {
+          goal: 'evidence-graph-and-reporting',
+          priority: resultData.match_count > 0 ? 'normal' : 'low',
+          next_tools: ['artifact.read', 'analysis.evidence.graph', 'report.generate'],
+          required_evidence: [KB_FUNCTION_MATCH_ARTIFACT_TYPE],
+          consumes: [KB_FUNCTION_MATCH_ARTIFACT_TYPE],
+          produces: ['evidence_graph', 'analysis_report'],
+        },
+      ],
+      dynamic_boundary: {
+        sample_executed_by_tool: false,
+        network_accessed_by_tool: false,
+        mutation_performed: false,
+        binary_modified_by_tool: false,
+      },
+    },
+    quality_gates: {
+      schema: 'rikune.kb_function_match.quality_gates.v1',
+      passive_local_kb_match: true,
+      target_functions_present: resultData.target_function_count > 0,
+      reference_functions_present: resultData.reference_function_count > 0,
+      matches_present: resultData.match_count > 0,
+      exact_or_high_confidence_matches_present:
+        resultData.exact_matches > 0 || resultData.high_confidence_matches > 0,
+      sample_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+      binary_modified_by_tool: false,
+    },
+    recommended_next_tools: recommendedNextTools,
+    next_actions: [
+      'Review exact and high-confidence matches before propagating names or annotations.',
+      'Publish function reuse evidence to analysis.evidence.graph when matches are present.',
+      'Capture reusable analyst notes before exporting curated knowledge.',
+    ],
+    matches: resultData.matches,
+  }
 }
 
 export function createKbFunctionMatchHandler(deps: PluginToolDeps) {
@@ -206,18 +485,9 @@ export function createKbFunctionMatchHandler(deps: PluginToolDeps) {
       }
 
       // Match functions
-      interface Match {
-        target_function: string
-        target_address: string
-        matched_function: string
-        matched_sample_id: string
-        matched_address: string
-        confidence: number
-      }
-
-      const matches: Match[] = []
+      const matches: FunctionMatchEntry[] = []
       for (const target of targetFunctions) {
-        let bestMatch: Match | null = null
+        let bestMatch: FunctionMatchEntry | null = null
         let bestScore = 0
 
         for (const ref of referenceFunctions) {
@@ -241,7 +511,7 @@ export function createKbFunctionMatchHandler(deps: PluginToolDeps) {
       matches.sort((a, b) => b.confidence - a.confidence)
       const topMatches = matches.slice(0, args.max_matches)
 
-      const resultData = {
+      const resultData = enrichKbFunctionMatchResultData({
         sample_id: args.sample_id,
         target_function_count: targetFunctions.length,
         reference_function_count: referenceFunctions.length,
@@ -250,8 +520,10 @@ export function createKbFunctionMatchHandler(deps: PluginToolDeps) {
         high_confidence_matches: topMatches.filter(
           (m) => m.confidence >= 0.8 && m.confidence < 0.99
         ).length,
+        min_confidence: args.min_confidence,
+        match_against: args.match_against ?? [],
         matches: topMatches,
-      }
+      })
 
       const artifacts: ArtifactRef[] = []
       try {
@@ -259,7 +531,7 @@ export function createKbFunctionMatchHandler(deps: PluginToolDeps) {
           workspaceManager,
           database,
           args.sample_id,
-          'function_match',
+          KB_FUNCTION_MATCH_ARTIFACT_TYPE,
           'kb-function-match',
           resultData
         )

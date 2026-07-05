@@ -38,6 +38,14 @@ export function createSandboxLauncher(): SandboxLauncher {
 
   return {
     async launch(): Promise<RuntimeConnection | null> {
+      const runtimeApiKey = config.runtime.apiKey?.trim()
+      if (!runtimeApiKey) {
+        logger.warn(
+          'Auto-sandbox runtime requires runtime.apiKey because the sandbox Runtime Node binds to a non-loopback address. Set RUNTIME_API_KEY before using auto-sandbox mode.'
+        )
+        return null
+      }
+
       const workspaceRoot = config.runtime.sandboxWorkspace
       const sandboxDir = path.join(workspaceRoot, 'sandbox', randomUUID())
 
@@ -53,7 +61,7 @@ export function createSandboxLauncher(): SandboxLauncher {
         'index.js'
       )
       const wsbPath = path.join(sandboxDir, 'runtime.wsb')
-      await writeWsbConfig(wsbPath, sandboxDir, runtimeEntryHost)
+      await writeWsbConfig(wsbPath, sandboxDir, runtimeEntryHost, runtimeApiKey)
 
       // Best-effort Python check: Windows Sandbox will inherit PATH from the host,
       // but if python is not installed on the host, dynamic tools will fail.
@@ -153,7 +161,8 @@ export function createSandboxLauncher(): SandboxLauncher {
 async function writeWsbConfig(
   wsbPath: string,
   sandboxDir: string,
-  runtimeEntryHost: string
+  runtimeEntryHost: string,
+  runtimeApiKey: string
 ): Promise<void> {
   const projectRoot = process.cwd()
   const stagedRuntimeEntryHost = await stageRuntimeBundle(projectRoot, sandboxDir, runtimeEntryHost)
@@ -192,6 +201,7 @@ foreach ($f in $folders) {
     inboxDir,
     outboxDir,
     readyFileSandbox,
+    runtimeApiKey,
     setupDirHost,
     nodeModulesDirHost,
   })

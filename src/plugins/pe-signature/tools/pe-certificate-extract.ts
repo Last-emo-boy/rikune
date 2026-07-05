@@ -21,8 +21,24 @@ import {
   resolveExecutable,
   buildStaticSetupRequired,
 } from '../../docker-shared.js'
+import {
+  PE_SIGNATURE_AUTHENTICODE_TRUST_REVIEW_RECIPE,
+  PE_SIGNATURE_TRUST_REVIEW_EVIDENCE,
+  PE_SIGNATURE_TRUST_REVIEW_SAFETY,
+} from './pe-signature-verify.js'
 
 const TOOL_NAME = 'pe.certificate.extract'
+const CERTIFICATE_ARTIFACT_TYPE = 'backend_pe-sig_certificate'
+
+export const PE_CERTIFICATE_EXTRACT_RECOMMENDED_NEXT_TOOLS = [
+  'pe.signature.verify',
+  'pe.structure.analyze',
+  'windows.debug.metadata.inspect',
+  'analysis.evidence.graph',
+  'report.generate',
+  'artifact.read',
+  'sample.similarity',
+]
 
 export const peCertificateExtractInputSchema = z.object({
   sample_id: z.string().describe('Sample ID for the PE file.'),
@@ -59,6 +75,36 @@ export const peCertificateExtractToolDefinition: ToolDefinition = {
   description: 'Extract the Authenticode certificate chain from a signed PE file.',
   inputSchema: peCertificateExtractInputSchema,
   outputSchema: peCertificateExtractOutputSchema,
+  aspects: {
+    formats: ['pe', 'pe32', 'pe64', 'exe', 'dll', 'sys', 'efi', 'pe-clr'],
+    platforms: ['windows'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage'],
+    safety: PE_SIGNATURE_TRUST_REVIEW_SAFETY,
+    capabilities: ['certificates', 'signature-chain', 'authenticode', 'trust-review'],
+    evidence: PE_SIGNATURE_TRUST_REVIEW_EVIDENCE,
+  },
+  artifacts: [
+    {
+      type: CERTIFICATE_ARTIFACT_TYPE,
+      description: 'Bounded extracted Authenticode certificate material',
+    },
+  ],
+  evidence: [
+    {
+      category: 'certificates',
+      artifactTypes: [CERTIFICATE_ARTIFACT_TYPE],
+    },
+    {
+      category: 'authenticode',
+      artifactTypes: [CERTIFICATE_ARTIFACT_TYPE],
+    },
+    {
+      category: 'trust',
+      artifactTypes: [CERTIFICATE_ARTIFACT_TYPE],
+    },
+  ],
+  workflowRecipes: [PE_SIGNATURE_AUTHENTICODE_TRUST_REVIEW_RECIPE],
 }
 
 export function createPeCertificateExtractHandler(
@@ -104,7 +150,12 @@ export function createPeCertificateExtractHandler(
             sample_id: input.sample_id,
             has_certificate: false,
             summary: 'No Authenticode certificate found in PE.',
-            recommended_next_tools: ['pe.signature.verify', 'pe.inspect'],
+            recommended_next_tools: [
+              'pe.signature.verify',
+              'pe.structure.analyze',
+              'analysis.evidence.graph',
+              'report.generate',
+            ],
             next_actions: ['The file is unsigned — no certificate to extract.'],
           },
           metrics: buildMetrics(startTime, TOOL_NAME),
@@ -171,7 +222,7 @@ export function createPeCertificateExtractHandler(
           summary: subject
             ? `Certificate: ${subject}, issued by ${issuer}.`
             : 'Certificate extracted (PEM). Use openssl for detailed parsing.',
-          recommended_next_tools: ['pe.signature.verify', 'artifact.read', 'sample.similarity'],
+          recommended_next_tools: [...PE_CERTIFICATE_EXTRACT_RECOMMENDED_NEXT_TOOLS],
           next_actions: [
             'Search for other samples signed with the same certificate.',
             'Check certificate validity and revocation status.',

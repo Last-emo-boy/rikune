@@ -23,6 +23,23 @@ import {
 } from '../../docker-shared.js'
 
 const TOOL_NAME = 'apk.resources.decode'
+const APK_RESOURCES_ARTIFACT_TYPE = 'backend_apk_resources-listing'
+const APK_RESOURCES_SAFETY = [
+  'passive',
+  'static',
+  'no_live_sample_by_default',
+  'no_network_by_default',
+  'no_mutation',
+  'no_live_execution',
+]
+const APK_RESOURCES_EVIDENCE = ['resources', 'strings', 'filesystem', 'workflow', 'provenance']
+const APK_RESOURCES_NEXT_TOOLS = [
+  'apk.manifest.parse',
+  'apk.disassemble',
+  'strings.extract',
+  'analysis.evidence.graph',
+  'artifact.read',
+]
 
 export const apkResourcesDecodeInputSchema = z.object({
   sample_id: z.string().describe('Sample ID for the APK file.'),
@@ -53,6 +70,9 @@ export const apkResourcesDecodeOutputSchema = z.object({
         )
         .optional(),
       artifact: ArtifactRefSchema.optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
@@ -68,6 +88,75 @@ export const apkResourcesDecodeToolDefinition: ToolDefinition = {
   description: 'Decode and list resources from an APK (layouts, strings, drawables, etc.).',
   inputSchema: apkResourcesDecodeInputSchema,
   outputSchema: apkResourcesDecodeOutputSchema,
+  aspects: {
+    formats: ['apk', 'aab', 'apks', 'xapk', 'split-apk', 'aar'],
+    platforms: ['android'],
+    execution: ['static', 'triage'],
+    safety: APK_RESOURCES_SAFETY,
+    capabilities: ['resources', 'strings', 'layouts', 'assets', 'manifest', 'workflow-handoff'],
+    evidence: APK_RESOURCES_EVIDENCE,
+    search: ['resources', 'strings.xml', 'layouts', 'drawables', 'assets', 'apktool'],
+  },
+  artifacts: [
+    {
+      type: APK_RESOURCES_ARTIFACT_TYPE,
+      description: 'APK resource listing generated from APKTool output',
+      mime: 'text/plain',
+    },
+  ],
+  evidence: [
+    {
+      category: 'resources',
+      artifactTypes: [APK_RESOURCES_ARTIFACT_TYPE],
+    },
+    {
+      category: 'strings',
+      artifactTypes: [APK_RESOURCES_ARTIFACT_TYPE],
+    },
+    {
+      category: 'filesystem',
+      artifactTypes: [APK_RESOURCES_ARTIFACT_TYPE],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: [APK_RESOURCES_ARTIFACT_TYPE],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: [APK_RESOURCES_ARTIFACT_TYPE],
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'apk-smali.resource-string-profile',
+      title: 'APK resources and string profile',
+      description:
+        'Decode APK resources with apktool, list resource and text previews, then route manifest, Smali, string extraction, evidence graph, and artifact review without executing Android bytecode.',
+      startsWith: [TOOL_NAME, 'android.package.inventory'],
+      nextTools: APK_RESOURCES_NEXT_TOOLS,
+      requiredArtifacts: ['sample'],
+      producesArtifacts: [APK_RESOURCES_ARTIFACT_TYPE],
+      evidence: APK_RESOURCES_EVIDENCE,
+      safety: APK_RESOURCES_SAFETY,
+    },
+  ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: false,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    notes: [
+      'apk.resources.decode decodes local APK resources with apktool and never executes Android bytecode.',
+    ],
+  } as ToolDefinition['runtimePolicy'] & {
+    noNetwork: true
+    noMutation: true
+    noLiveExecution: true
+  },
 }
 
 function collectResourceFiles(
@@ -90,6 +179,67 @@ function collectResourceFiles(
     }
   }
   return results
+}
+
+function buildResourceEvidenceSummary(args: {
+  input: z.infer<typeof apkResourcesDecodeInputSchema>
+  totalResources: number
+  returnedFiles: number
+  files: Array<{ path: string; size_bytes: number; preview?: string }>
+}) {
+  const pathBuckets = args.files.reduce<Record<string, number>>((acc, file) => {
+    const bucket = file.path.split('/')[0] || 'root'
+    acc[bucket] = (acc[bucket] ?? 0) + 1
+    return acc
+  }, {})
+  return {
+    schema: 'rikune.apk_resources_decode.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    sample_id: args.input.sample_id,
+    artifact_type: APK_RESOURCES_ARTIFACT_TYPE,
+    resource_filter: args.input.resource_filter ?? null,
+    total_resources: args.totalResources,
+    returned_files: args.returnedFiles,
+    previewed_text_resource_count: args.files.filter((file) => file.preview).length,
+    top_resource_buckets: pathBuckets,
+    evidence_sources: ['apktool decoded res directory'],
+  }
+}
+
+function buildResourceWorkflowHandoff(args: {
+  input: z.infer<typeof apkResourcesDecodeInputSchema>
+  recommendedNextTools: string[]
+}) {
+  return {
+    schema: 'rikune.apk_resources_decode.workflow_handoff.v1',
+    handoff_mode: 'apk_resources_to_strings_manifest_and_smali_review',
+    source_tool: TOOL_NAME,
+    sample_id: args.input.sample_id,
+    recommended_next_tools: args.recommendedNextTools,
+    artifact_contract: {
+      consumes: ['sample'],
+      produces: [APK_RESOURCES_ARTIFACT_TYPE],
+      expected_consumers: ['strings.extract', 'apk.manifest.parse', 'analysis.evidence.graph'],
+    },
+    routing: [
+      {
+        goal: 'resource-string-review',
+        next_tools: ['strings.extract', 'artifact.read'],
+        required_evidence: ['resources', 'strings.xml', 'assets'],
+      },
+      {
+        goal: 'manifest-and-smali-correlation',
+        next_tools: ['apk.manifest.parse', 'apk.disassemble', 'analysis.evidence.graph'],
+        required_evidence: ['resource_listing'],
+      },
+    ],
+    dynamic_boundary: {
+      passive_static_only: true,
+      android_bytecode_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+    },
+  }
 }
 
 export function createApkResourcesDecodeHandler(
@@ -159,6 +309,17 @@ export function createApkResourcesDecodeHandler(
         )
         artifacts.push(artifact)
       }
+      const recommendedNextTools = APK_RESOURCES_NEXT_TOOLS
+      const evidenceSummary = buildResourceEvidenceSummary({
+        input,
+        totalResources: allFiles.length,
+        returnedFiles: resourceFiles.length,
+        files: resourceFiles,
+      })
+      const workflowHandoff = buildResourceWorkflowHandoff({
+        input,
+        recommendedNextTools,
+      })
 
       return {
         ok: true,
@@ -168,8 +329,19 @@ export function createApkResourcesDecodeHandler(
           returned_files: resourceFiles.length,
           resource_files: resourceFiles,
           artifact,
+          evidence_summary: evidenceSummary,
+          workflow_handoff: workflowHandoff,
+          quality_gates: {
+            schema: 'rikune.apk_resources_decode.quality_gates.v1',
+            passive_static_only: true,
+            resources_decoded: true,
+            resource_listing_present: allFiles.length > 0,
+            artifact_persisted: Boolean(artifact),
+            android_bytecode_executed_by_tool: false,
+            network_accessed_by_tool: false,
+          },
           summary: `Decoded ${allFiles.length} resource files${filter ? ' (filtered)' : ''}.`,
-          recommended_next_tools: ['apk.manifest.parse', 'apk.disassemble', 'artifact.read'],
+          recommended_next_tools: recommendedNextTools,
           next_actions: [
             'Look for suspicious URL strings in values/strings.xml.',
             'Check layouts for overlay attack indicators.',

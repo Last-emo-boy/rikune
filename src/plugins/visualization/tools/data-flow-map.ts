@@ -65,6 +65,25 @@ export const dataFlowMapToolDefinition: ToolDefinition = {
     '(read → decrypt → decompress → execute) and data exfiltration paths.',
   inputSchema: DataFlowMapInputSchema,
   outputSchema: DataFlowMapOutputSchema,
+  aspects: {
+    formats: ['artifact', 'runtime-trace'],
+    platforms: ['windows', 'linux', 'macos', 'ios', 'android', 'cross-platform'],
+    execution: ['static', 'correlation'],
+    safety: ['passive', 'no_live_sample_by_default'],
+    evidence: ['behavior', 'network', 'filesystem', 'memory'],
+  },
+  artifacts: [
+    {
+      type: 'data_flow_map',
+      description: 'Data-flow graph derived from static and runtime evidence',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    { category: 'behavior', artifactTypes: ['data_flow_map'] },
+    { category: 'network', artifactTypes: ['data_flow_map'] },
+    { category: 'filesystem', artifactTypes: ['data_flow_map'] },
+  ],
 }
 
 interface FlowNode {

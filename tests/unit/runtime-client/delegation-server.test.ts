@@ -3,6 +3,8 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
+import { z } from 'zod'
+import pino from 'pino'
 import {
   createDelegatingServer,
   type RuntimeClientLike,
@@ -29,6 +31,11 @@ import { DebugSessionStartOutputSchema } from '../../../src/plugins/debug-sessio
 import { behaviorCaptureToolDefinition } from '../../../src/plugins/behavior-first/tools/behavior-capture.js'
 import { deobfStringsToolDefinition } from '../../../src/plugins/runtime-deobfuscate/tools/deobf-strings.js'
 import { fakeC2ToolDefinition } from '../../../src/plugins/managed-fake-c2/tools/fake-c2.js'
+import PolicyGuard from '../../../src/policy-guard.js'
+import { MCPRegistry } from '../../../src/core/mcp-registry.js'
+import { ToolExecutor } from '../../../src/core/tool-executor.js'
+
+const silentLogger = pino({ level: 'silent' })
 
 describe('createDelegatingServer', () => {
   let inner: PluginServerInterface & { getProgressReporter?: jest.Mock }
@@ -78,6 +85,18 @@ describe('createDelegatingServer', () => {
       database,
       resolvePrimarySamplePath,
       sandboxDir
+    )
+
+  const createServerWithPolicy = (client: RuntimeClientLike | null, policyGuard: PolicyGuard) =>
+    createDelegatingServer(
+      inner,
+      'test-plugin',
+      client,
+      workspaceManager,
+      database,
+      resolvePrimarySamplePath,
+      sandboxDir,
+      policyGuard
     )
 
   const localDynamicTool: ToolDefinition = {
@@ -339,6 +358,116 @@ describe('createDelegatingServer', () => {
     )
     expect(result.setup_actions).toBeDefined()
     expect(result.required_user_inputs).toBeDefined()
+  })
+
+  test('should enforce policy before delegated runtime validation, upload, or execution', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'rikune-runtime-policy-'))
+    const policyGuard = new PolicyGuard(path.join(tempRoot, 'audit.log'))
+    runtimeClient.validateRuntimeContract = jest.fn().mockResolvedValue({ supported: true })
+
+    try {
+      const server = createServerWithPolicy(runtimeClient, policyGuard)
+      let wrappedHandler: any
+      inner.registerTool = jest.fn((_def, handler) => {
+        wrappedHandler = handler
+      })
+
+      server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
+      const result = await wrappedHandler({ sample_id: 'sha256:abc123' })
+
+      expect(result.ok).toBe(false)
+      expect(result.errors?.[0]).toContain('requires explicit approval')
+      expect((result.data as any)?.execution_semantics).toEqual(
+        expect.objectContaining({
+          actual_mode: 'plan_only',
+          live_execution: false,
+        })
+      )
+      expect(runtimeClient.validateRuntimeContract).not.toHaveBeenCalled()
+      expect(runtimeClient.uploadSample).not.toHaveBeenCalled()
+      expect(runtimeClient.execute).not.toHaveBeenCalled()
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  test('should propagate explicit sidecar rejection warnings to final ToolResult', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'rikune-runtime-sidecar-warning-'))
+    const sampleDir = path.join(tempRoot, 'sample')
+    const samplePath = path.join(sampleDir, 'sample.exe')
+    const registry = new MCPRegistry(silentLogger)
+    const executor = new ToolExecutor(silentLogger)
+
+    await fs.mkdir(sampleDir, { recursive: true })
+    await fs.writeFile(samplePath, 'sample', 'utf8')
+    resolvePrimarySamplePath = jest.fn().mockResolvedValue({ samplePath })
+    runtimeClient.execute = jest.fn().mockResolvedValue(
+      makeRuntimeResponse({
+        result: {
+          ok: true,
+          data: { test: true },
+          warnings: ['Runtime reported partial sidecar processing.'],
+        },
+      })
+    )
+    inner.registerTool = jest.fn((definition, handler) => {
+      registry.registerTool(definition as any, handler as any)
+    })
+
+    try {
+      const server = createServer(runtimeClient)
+      server.registerTool(
+        {
+          ...remoteDynamicTool,
+          inputSchema: z.object({
+            sample_id: z.string(),
+            sidecar_paths: z.array(z.string()).optional(),
+            auto_stage_sidecars: z.boolean().optional(),
+          }),
+        },
+        async () => ({ ok: true }) as WorkerResult
+      )
+
+      const result = await executor.executeTool(
+        'frida_runtime_instrument',
+        {
+          sample_id: 'sha256:abc123',
+          sidecar_paths: ['../escaped.dll'],
+          auto_stage_sidecars: false,
+        },
+        { registry, logger: silentLogger }
+      )
+
+      const textPayload = JSON.parse((result.content[0] as any).text)
+      expect(result.isError).toBe(false)
+      expect(result.structuredContent?.warnings).toEqual(
+        expect.arrayContaining([
+          'Runtime reported partial sidecar processing.',
+          expect.stringContaining(
+            'Rejected sidecar ../escaped.dll: path escapes allowed sample sidecar root'
+          ),
+        ])
+      )
+      expect(textPayload.warnings).toEqual(
+        expect.arrayContaining([
+          'Runtime reported partial sidecar processing.',
+          expect.stringContaining(
+            'Rejected sidecar ../escaped.dll: path escapes allowed sample sidecar root'
+          ),
+        ])
+      )
+      expect(runtimeClient.uploadSample).toHaveBeenCalledWith(
+        expect.any(String),
+        samplePath,
+        expect.stringContaining('inbox'),
+        expect.objectContaining({
+          sidecars: [],
+        })
+      )
+      expect(runtimeClient.execute).toHaveBeenCalled()
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true })
+    }
   })
 
   test('should download artifacts when runtime returns artifactRefs', async () => {

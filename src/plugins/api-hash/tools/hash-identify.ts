@@ -19,6 +19,26 @@ import {
 } from '../../docker-shared.js'
 
 const TOOL_NAME = 'hash.identify'
+const TOOL_VERSION = '0.2.0'
+const HASH_IDENTIFY_RECOMMENDED_NEXT_TOOLS = ['workflow.search']
+const HASH_IDENTIFY_PROFILE_NEXT_TOOLS = [
+  'hash.resolve',
+  'disasm.quick',
+  'analysis.evidence.graph',
+  'report.generate',
+]
+const HASH_IDENTIFY_SAFETY = [
+  'passive',
+  'read_only',
+  'bounded_output',
+  'no_live_sample_by_default',
+  'no_network_by_default',
+]
+
+type ApiHashToolDependencies = {
+  resolveExecutable?: typeof resolveExecutable
+  runPythonJson?: typeof runPythonJson
+}
 
 export const hashIdentifyInputSchema = z.object({
   hashes: z
@@ -33,6 +53,10 @@ export const hashIdentifyOutputSchema = z.object({
   ok: z.boolean(),
   data: z
     .object({
+      schema: z.string().optional(),
+      tool_version: z.string().optional(),
+      unicode: z.boolean().optional(),
+      requested_hash_count: z.number().int().nonnegative().optional(),
       candidates: z
         .array(
           z.object({
@@ -44,12 +68,19 @@ export const hashIdentifyOutputSchema = z.object({
           })
         )
         .optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
+      raw_identify_result: z.record(z.any()).optional(),
       summary: z.string(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
     })
     .optional(),
+  warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
+  setup_actions: z.array(z.any()).optional(),
+  required_user_inputs: z.array(z.any()).optional(),
   metrics: SharedMetricsSchema.optional(),
 })
 
@@ -59,6 +90,103 @@ export const hashIdentifyToolDefinition: ToolDefinition = {
     'Identify the hash algorithm used to produce shellcode API hashes by brute-force matching against known APIs.',
   inputSchema: hashIdentifyInputSchema,
   outputSchema: hashIdentifyOutputSchema,
+  aspects: {
+    formats: ['pe', 'dll', 'shellcode', 'memory', 'raw'],
+    platforms: ['windows', 'cross-platform'],
+    architectures: ['x86', 'x64', 'arm', 'arm64'],
+    execution: ['static', 'triage'],
+    runtimes: ['python'],
+    safety: HASH_IDENTIFY_SAFETY,
+    capabilities: [
+      'api-hash-identification',
+      'shellcode-triage',
+      'hash-algorithm-candidate-ranking',
+      'import-recovery-planning',
+      'workflow-handoff',
+    ],
+    evidence: ['imports', 'symbols', 'behavior', 'workflow', 'provenance'],
+  },
+  evidence: [
+    {
+      category: 'imports',
+      description: 'Candidate API hash algorithm matches for import recovery planning',
+    },
+    {
+      category: 'workflow',
+      description: 'Handoff from hash algorithm identification into hash resolution',
+    },
+    {
+      category: 'provenance',
+      description: 'Passive local Python resolver execution metadata',
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'api-hash.identify-handoff',
+      title: 'API hash algorithm identification handoff',
+      description:
+        'Identify likely API hash algorithms from observed hash values, then route into scoped hash resolution, disassembly corroboration, evidence graph, and reporting.',
+      startsWith: [TOOL_NAME],
+      nextTools: [...HASH_IDENTIFY_RECOMMENDED_NEXT_TOOLS, ...HASH_IDENTIFY_PROFILE_NEXT_TOOLS],
+      requiredArtifacts: ['hash_values'],
+      producesArtifacts: [],
+      evidence: ['imports', 'symbols', 'behavior', 'workflow', 'provenance'],
+      safety: HASH_IDENTIFY_SAFETY,
+      runtimeBackends: ['python'],
+    },
+  ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: false,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    maxRuntimeMs: 30000,
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    notes: [
+      'hash.identify only brute-forces observed hash values against an embedded API name allowlist.',
+      'Use workflow.search to activate hash.resolve or disassembly follow-ups as scoped tools.',
+    ],
+  },
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'python',
+    backendKind: 'external',
+    adapter: 'api_hash.identify',
+    availability: 'optional',
+    envVar: 'PYTHON_PATH',
+    commandHint: 'python -c "<embedded api hash identifier>"',
+    versionHint: 'python --version',
+    supportedModes: ['identify'],
+    defaultMode: 'identify',
+    inputArtifactTypes: ['hash_values'],
+    outputArtifactTypes: [],
+    policy: {
+      passiveByDefault: true,
+      noNetwork: true,
+      noMutation: true,
+      noLiveExecution: true,
+      defaultTimeoutMs: 30000,
+      maxInputBytes: 64 * 1024,
+      maxOutputBytes: 4 * 1024 * 1024,
+      notes: ['Only bounded candidate ranking results are returned inline by this tool.'],
+    },
+    readiness: {
+      doesNotStartBackend: true,
+      setupActions: [
+        'Set PYTHON_PATH or install python3/python on PATH for the embedded identifier.',
+      ],
+      missingBackendBehavior: 'Return setup_required without identifying hash algorithms.',
+    },
+    packaging: {
+      installRoute: 'installed',
+      installProfile: 'default',
+      envVar: 'PYTHON_PATH',
+      dockerDefault: 'python3',
+    },
+  },
 }
 
 const PYTHON_SCRIPT = `
@@ -176,15 +304,105 @@ results.sort(key=lambda x: -x['match_rate'])
 print(json.dumps({'candidates': results}))
 `
 
+function buildHashIdentifyEvidenceSummary(args: {
+  unicode: boolean
+  requestedHashCount: number
+  candidates: Array<Record<string, unknown>>
+}) {
+  const best = args.candidates[0]
+  return {
+    schema: 'rikune.api_hash_identify.evidence_summary.v1',
+    source_tool: TOOL_NAME,
+    tool_version: TOOL_VERSION,
+    unicode: args.unicode,
+    requested_hash_count: args.requestedHashCount,
+    candidate_count: args.candidates.length,
+    best_algorithm: typeof best?.algorithm === 'string' ? best.algorithm : null,
+    best_match_rate: typeof best?.match_rate === 'number' ? best.match_rate : null,
+    best_match_count: typeof best?.matches === 'number' ? best.matches : null,
+  }
+}
+
+function buildHashIdentifyWorkflowHandoff(args: { candidates: Array<Record<string, unknown>> }) {
+  const best = args.candidates[0]
+  const bestAlgorithm = typeof best?.algorithm === 'string' ? best.algorithm : null
+  return {
+    schema: 'rikune.api_hash_identify.workflow_handoff.v1',
+    handoff_mode: 'api_hash_algorithm_identification_to_resolution',
+    best_algorithm: bestAlgorithm,
+    candidate_count: args.candidates.length,
+    recommended_next_tools: HASH_IDENTIFY_RECOMMENDED_NEXT_TOOLS,
+    routing: [
+      {
+        goal: 'resolve-with-identified-algorithm',
+        priority: bestAlgorithm ? 'high' : 'normal',
+        next_tools: ['hash.resolve'],
+        required_evidence: bestAlgorithm
+          ? [`algorithm:${bestAlgorithm}`, 'hash_values']
+          : ['hash_values', 'algorithm candidate'],
+      },
+      {
+        goal: 'corroborate-hash-computation',
+        priority: bestAlgorithm ? 'normal' : 'high',
+        next_tools: ['disasm.quick', 'analysis.evidence.graph'],
+        required_evidence: ['hash computation site', 'candidate algorithm ranking'],
+      },
+      {
+        goal: 'report-api-hash-identification',
+        priority: 'normal',
+        next_tools: ['report.generate'],
+        required_evidence: ['candidate algorithm ranking'],
+      },
+    ],
+    dynamic_boundary: {
+      sample_executed_by_tool: false,
+      backend_started: true,
+      backend_kind: 'external-passive-script',
+      live_execution_started: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+    },
+  }
+}
+
+function buildHashIdentifyQualityGates(args: { candidateCount: number }) {
+  return {
+    schema: 'rikune.api_hash_identify.quality_gates.v1',
+    passive_static_analysis: true,
+    read_only_backend: true,
+    sample_executed_by_tool: false,
+    backend_started_with_bounded_command: true,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    output_bounded_inline: true,
+    artifact_persisted: false,
+    analyst_review_required: true,
+    candidate_count: args.candidateCount,
+  }
+}
+
+function buildHashIdentifyNextActions(args: { candidates: Array<Record<string, unknown>> }) {
+  const best = args.candidates[0]
+  const bestAlgorithm = typeof best?.algorithm === 'string' ? best.algorithm : null
+  return [
+    bestAlgorithm
+      ? `Use workflow.search to activate hash.resolve with algorithm="${bestAlgorithm}" as a scoped follow-up.`
+      : 'Use workflow.search with disassembly and API hash terms to locate or explain the hash computation site.',
+    'Corroborate the candidate algorithm against code before treating resolved API names as behavior evidence.',
+  ]
+}
+
 export function createHashIdentifyHandler(
   _workspaceManager: WorkspaceManager,
-  _database: DatabaseManager
+  _database: DatabaseManager,
+  dependencies?: ApiHashToolDependencies
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
       const input = hashIdentifyInputSchema.parse(args)
-      const backend = resolveExecutable({
+      const resolveExecutableImpl = dependencies?.resolveExecutable || resolveExecutable
+      const backend = resolveExecutableImpl({
         envPath: process.env.PYTHON_PATH,
         pathCandidates: ['python3', 'python'],
         versionArgSets: [['--version']],
@@ -197,28 +415,39 @@ export function createHashIdentifyHandler(
         )
       }
 
-      const result = await runPythonJson(
+      const runPythonJsonImpl = dependencies?.runPythonJson || runPythonJson
+      const result = await runPythonJsonImpl(
         backend.path,
         PYTHON_SCRIPT,
         { hashes: input.hashes, unicode: input.unicode },
         30000
       )
 
-      const parsed = result.parsed
-      const candidates = parsed?.candidates || []
+      const parsed = result.parsed && typeof result.parsed === 'object' ? result.parsed : {}
+      const candidates = Array.isArray(parsed?.candidates) ? parsed.candidates : []
       const best = candidates[0]
 
       return {
         ok: true,
         data: {
+          schema: 'rikune.api_hash_identify.v1',
+          tool_version: TOOL_VERSION,
+          unicode: input.unicode,
+          requested_hash_count: input.hashes.length,
           candidates,
+          evidence_summary: buildHashIdentifyEvidenceSummary({
+            unicode: input.unicode,
+            requestedHashCount: input.hashes.length,
+            candidates,
+          }),
+          workflow_handoff: buildHashIdentifyWorkflowHandoff({ candidates }),
+          quality_gates: buildHashIdentifyQualityGates({ candidateCount: candidates.length }),
+          raw_identify_result: parsed,
           summary: best
             ? `Best match: ${best.algorithm} (${best.matches}/${best.total} = ${Math.round(best.match_rate * 100)}% match rate).`
             : `No algorithm matched the provided hashes.`,
-          recommended_next_tools: ['hash.resolve', 'disasm.quick', 'speakeasy.emulate'],
-          next_actions: best
-            ? [`Use hash.resolve with algorithm="${best.algorithm}" for full resolution.`]
-            : ['Hash values may use a custom or uncommon algorithm.'],
+          recommended_next_tools: HASH_IDENTIFY_RECOMMENDED_NEXT_TOOLS,
+          next_actions: buildHashIdentifyNextActions({ candidates }),
         },
         metrics: buildMetrics(startTime, TOOL_NAME),
       }

@@ -31,6 +31,7 @@ let executeRuntimeToolProbe: typeof import('../../../packages/runtime-node/src/e
 let setSpawnImplementationForTests: typeof import('../../../packages/runtime-node/src/executor.js').setSpawnImplementationForTests
 let listRuntimeBackendCapabilities: typeof import('../../../packages/runtime-node/src/executor.js').listRuntimeBackendCapabilities
 let getRuntimeBackendCapability: typeof import('../../../packages/runtime-node/src/executor.js').getRuntimeBackendCapability
+let isRuntimeContractSupported: typeof import('../../../packages/runtime-node/src/executor.js').isRuntimeContractSupported
 let buildRuntimeToolInventory: typeof import('../../../packages/runtime-node/src/executor.js').buildRuntimeToolInventory
 
 beforeAll(async () => {
@@ -47,10 +48,13 @@ beforeAll(async () => {
   setSpawnImplementationForTests = executorModule.setSpawnImplementationForTests
   listRuntimeBackendCapabilities = executorModule.listRuntimeBackendCapabilities
   getRuntimeBackendCapability = executorModule.getRuntimeBackendCapability
+  isRuntimeContractSupported = executorModule.isRuntimeContractSupported
   buildRuntimeToolInventory = executorModule.buildRuntimeToolInventory
 })
 
-function makeSpawnMock(sequence: Array<{ cmd: string; args: string[]; code: number; stdout?: string; stderr?: string }>) {
+function makeSpawnMock(
+  sequence: Array<{ cmd: string; args: string[]; code: number; stdout?: string; stderr?: string }>
+) {
   let nextIndex = 0
   return (cmd: string, args: string[]) => {
     const matchedIndex = sequence.findIndex((entry, index) => {
@@ -183,48 +187,60 @@ describe('runtime-node executor backend pre-flight checks', () => {
       platformDescriptor = undefined
     }
     jest.restoreAllMocks()
-    try { fs.rmSync(testInbox, { recursive: true, force: true }) } catch {}
-    try { fs.rmSync(testOutbox, { recursive: true, force: true }) } catch {}
+    try {
+      fs.rmSync(testInbox, { recursive: true, force: true })
+    } catch {}
+    try {
+      fs.rmSync(testOutbox, { recursive: true, force: true })
+    } catch {}
   })
 
   describe('runtime backend capability registry', () => {
     test('returns normalized capability entries and lookup by hint', () => {
       const capabilities = listRuntimeBackendCapabilities()
-      expect(capabilities).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          type: 'spawn',
-          handler: 'native.sample.execute',
-          requiresSample: true,
-        }),
-        expect.objectContaining({
-          type: 'inline',
-          handler: 'executeSandboxExecute',
-          requiresSample: true,
-        }),
-        expect.objectContaining({
-          type: 'inline',
-          handler: 'executeBehaviorCapture',
-          requiresSample: true,
-        }),
-        expect.objectContaining({
-          type: 'python-worker',
-          handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
-          requiresSample: true,
-        }),
-        expect.objectContaining({
-          type: 'python-worker',
-          handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
-          requiresSample: true,
-        }),
-      ]))
+      expect(capabilities).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'spawn',
+            handler: 'native.sample.execute',
+            requiresSample: true,
+          }),
+          expect.objectContaining({
+            type: 'inline',
+            handler: 'executeSandboxExecute',
+            requiresSample: true,
+          }),
+          expect.objectContaining({
+            type: 'inline',
+            handler: 'executeBehaviorCapture',
+            requiresSample: true,
+          }),
+          expect.objectContaining({
+            type: 'python-worker',
+            handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+            requiresSample: true,
+          }),
+          expect.objectContaining({
+            type: 'python-worker',
+            handler: 'src/plugins/managed-fake-c2/workers/managed_fake_c2_worker.py',
+            requiresSample: true,
+          }),
+        ])
+      )
 
-      expect(getRuntimeBackendCapability({ type: 'spawn', handler: 'native.sample.execute' })).toMatchObject({
+      expect(
+        getRuntimeBackendCapability({ type: 'spawn', handler: 'native.sample.execute' })
+      ).toMatchObject({
         type: 'spawn',
         handler: 'native.sample.execute',
         requiresSample: true,
       })
-      expect(getRuntimeBackendCapability({ type: 'spawn', handler: 'missing.handler' })).toBeUndefined()
-      expect(getRuntimeBackendCapability({ type: 'inline', handler: 'executeRuntimeToolProbe' })).toMatchObject({
+      expect(
+        getRuntimeBackendCapability({ type: 'spawn', handler: 'missing.handler' })
+      ).toBeUndefined()
+      expect(
+        getRuntimeBackendCapability({ type: 'inline', handler: 'executeRuntimeToolProbe' })
+      ).toMatchObject({
         type: 'inline',
         handler: 'executeRuntimeToolProbe',
         requiresSample: false,
@@ -250,6 +266,41 @@ describe('runtime-node executor backend pre-flight checks', () => {
         requiresSample: true,
       })
     })
+
+    test('does not support matching handlers when required contract dimensions are not advertised', () => {
+      expect(
+        getRuntimeBackendCapability({
+          type: 'inline',
+          handler: 'executeDebugSession',
+          modes: ['live_sandbox'],
+        })
+      ).toBeUndefined()
+      expect(
+        isRuntimeContractSupported({
+          type: 'inline',
+          handler: 'executeDebugSession',
+          requiredTools: ['cdb'],
+        })
+      ).toBe(false)
+      expect(
+        getRuntimeBackendCapability({
+          type: 'inline',
+          handler: 'executeDebugSession',
+          isolation: { required: true, backends: ['windows-sandbox'] },
+        })
+      ).toBeUndefined()
+      expect(
+        isRuntimeContractSupported({
+          type: 'inline',
+          handler: 'executeDebugSession',
+          policy: {
+            requiresIsolation: true,
+            allowedBackends: ['windows-sandbox'],
+            networkPolicy: 'record_only',
+          },
+        })
+      ).toBe(false)
+    })
   })
 
   describe('runtime tool inventory', () => {
@@ -266,23 +317,31 @@ describe('runtime-node executor backend pre-flight checks', () => {
       process.env.RUNTIME_TOOL_DIRS = toolRoot
       try {
         const inventory = buildRuntimeToolInventory()
-        expect(inventory.tools).toEqual(expect.arrayContaining([
-          expect.objectContaining({ id: 'cdb', available: true }),
-          expect.objectContaining({ id: 'procdump', available: true }),
-        ]))
-        expect(inventory.profiles).toEqual(expect.arrayContaining([
-          expect.objectContaining({ id: 'debugger_cdb', status: 'ready' }),
-        ]))
+        expect(inventory.tools).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: 'cdb', available: true }),
+            expect.objectContaining({ id: 'procdump', available: true }),
+          ])
+        )
+        expect(inventory.profiles).toEqual(
+          expect.arrayContaining([expect.objectContaining({ id: 'debugger_cdb', status: 'ready' })])
+        )
 
         const result = await executeRuntimeToolProbe(
-          { taskId: 'tool-probe', sampleId: 'probe', tool: 'runtime.toolkit.probe', args: {}, timeoutMs: 1000 },
+          {
+            taskId: 'tool-probe',
+            sampleId: 'probe',
+            tool: 'runtime.toolkit.probe',
+            args: {},
+            timeoutMs: 1000,
+          },
           () => {},
-          [],
+          []
         )
         expect(result.ok).toBe(true)
-        expect(result.artifactRefs).toEqual(expect.arrayContaining([
-          expect.objectContaining({ name: 'runtime_tool_inventory.json' }),
-        ]))
+        expect(result.artifactRefs).toEqual(
+          expect.arrayContaining([expect.objectContaining({ name: 'runtime_tool_inventory.json' })])
+        )
       } finally {
         if (oldToolDirs === undefined) {
           delete process.env.RUNTIME_TOOL_DIRS
@@ -312,7 +371,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           runtime: { type: 'inline', handler: 'executeDebugSession' },
         },
         () => {},
-        () => {},
+        () => {}
       )
       // executeDebugSession needs cdbPath, so it will fail with cdb not found rather than unknown tool
       expect(result.errors?.[0]).not.toMatch(/Unknown tool/)
@@ -340,7 +399,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           timeoutMs: 1000,
         },
         () => {},
-        () => {},
+        () => {}
       )
       // It should route to python-worker/frida_worker.py and fail because sample file is missing in inbox
       expect(result.errors?.[0]).toMatch(/Sample file not found in runtime inbox/)
@@ -356,7 +415,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           timeoutMs: 1000,
         },
         () => {},
-        () => {},
+        () => {}
       )
       expect(result.ok).toBe(false)
       expect(result.errors?.[0]).toMatch(/Unknown tool/)
@@ -426,12 +485,89 @@ describe('runtime-node executor backend pre-flight checks', () => {
           }),
         })
       )
-      expect((result.result?.data as any)?.recommended_next_tools).toEqual([
-        'deobf.api_resolve',
-      ])
+      expect((result.result?.data as any)?.recommended_next_tools).toEqual(['deobf.api_resolve'])
       expect(result.artifactRefs).toEqual([
         expect.objectContaining({ name: 'strings_runtime.json' }),
       ])
+    })
+
+    test('should only stage worker artifacts from the current task workspace or outbox', async () => {
+      const workerPath = path.resolve(
+        'src',
+        'plugins',
+        'runtime-deobfuscate',
+        'workers',
+        'deobfuscate_worker.py'
+      )
+      const workspaceArtifactPath = path.join(
+        testInbox,
+        'task-sample',
+        'artifacts',
+        'strings_runtime.json'
+      )
+      const outboxArtifactPath = path.join(testOutbox, 'task-sample', 'already_in_outbox.json')
+      const unsafeArtifactPath = path.join(testInbox, 'task-sample-evil', 'host-secret.txt')
+      fs.mkdirSync(path.dirname(workspaceArtifactPath), { recursive: true })
+      fs.mkdirSync(path.dirname(outboxArtifactPath), { recursive: true })
+      fs.mkdirSync(path.dirname(unsafeArtifactPath), { recursive: true })
+      fs.writeFileSync(workspaceArtifactPath, JSON.stringify({ unique_strings: 1 }))
+      fs.writeFileSync(outboxArtifactPath, JSON.stringify({ existing: true }))
+      fs.writeFileSync(unsafeArtifactPath, 'do not stage')
+      const logs: string[] = []
+
+      spawnMock.mockImplementation((cmd: string, args: string[]) => {
+        if (args?.[0] === '--version') {
+          return makeMockProcess({ stdout: 'Python 3.12.0\n', code: 0 })
+        }
+        expect(path.resolve(args[0])).toBe(workerPath)
+        return makeMockProcess({
+          stdout:
+            JSON.stringify({
+              ok: true,
+              data: { unique_strings: 1 },
+              artifacts: [
+                { name: 'strings_runtime.json', path: workspaceArtifactPath },
+                { name: 'already_in_outbox.json', path: outboxArtifactPath },
+                { name: 'host-secret.txt', path: unsafeArtifactPath },
+              ],
+            }) + '\n',
+          code: 0,
+        }) as any
+      })
+
+      const result = await executeTask(
+        {
+          taskId: 'task-sample',
+          sampleId: 'sha256:abc123',
+          tool: 'deobf.strings',
+          args: { timeout: 45 },
+          timeoutMs: 1000,
+          runtime: {
+            type: 'python-worker',
+            handler: 'src/plugins/runtime-deobfuscate/workers/deobfuscate_worker.py',
+          },
+        },
+        (msg) => logs.push(msg),
+        () => {}
+      )
+
+      expect(result.ok).toBe(true)
+      expect(result.artifactRefs).toEqual([
+        expect.objectContaining({ name: 'strings_runtime.json' }),
+        expect.objectContaining({ name: 'already_in_outbox.json' }),
+      ])
+      expect(fs.existsSync(path.join(testOutbox, 'task-sample', 'strings_runtime.json'))).toBe(true)
+      expect(fs.existsSync(path.join(testOutbox, 'task-sample', 'already_in_outbox.json'))).toBe(
+        true
+      )
+      expect(fs.existsSync(path.join(testOutbox, 'task-sample', 'host-secret.txt'))).toBe(false)
+      expect(
+        logs.some(
+          (entry) =>
+            entry.includes('Rejected artifact outside task workspace/outbox') &&
+            entry.includes('host-secret.txt')
+        )
+      ).toBe(true)
     })
 
     test('should execute managed fake C2 worker through the runtime envelope', async () => {
@@ -508,15 +644,31 @@ describe('runtime-node executor backend pre-flight checks', () => {
 
   describe('executeDynamicMemoryDump', () => {
     test('should return error when frida python module is missing', async () => {
-      spawnMock.mockImplementation(makeSpawnMock([
-        { cmd: process.platform === 'win32' ? 'python' : 'python3', args: ['--version'], code: 0 },
-        { cmd: process.platform === 'win32' ? 'python' : 'python3', args: ['-c', 'import frida'], code: 1 },
-      ]))
+      spawnMock.mockImplementation(
+        makeSpawnMock([
+          {
+            cmd: process.platform === 'win32' ? 'python' : 'python3',
+            args: ['--version'],
+            code: 0,
+          },
+          {
+            cmd: process.platform === 'win32' ? 'python' : 'python3',
+            args: ['-c', 'import frida'],
+            code: 1,
+          },
+        ])
+      )
 
       const result = await executeDynamicMemoryDump(
-        { taskId: 'task-sample', sampleId: 's1', tool: 'dynamic.memory.dump', args: {}, timeoutMs: 1000 },
+        {
+          taskId: 'task-sample',
+          sampleId: 's1',
+          tool: 'dynamic.memory.dump',
+          args: {},
+          timeoutMs: 1000,
+        },
         () => {},
-        [],
+        []
       )
 
       expect(result.ok).toBe(false)
@@ -550,7 +702,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
         },
         () => {},
-        () => {},
+        () => {}
       )
 
       expect((result.result?.data as any)?.timeout_sec).toBe(45)
@@ -563,20 +715,31 @@ describe('runtime-node executor backend pre-flight checks', () => {
       }
 
       const processRowsBefore = JSON.stringify([{ ProcessId: 4, Name: 'System' }])
-      const moduleRows = JSON.stringify([{ ModuleName: 'kernel32.dll', FileName: 'C:\\Windows\\System32\\kernel32.dll' }])
-      const networkRows = JSON.stringify([{
-        OwningProcess: 4242,
-        State: 'Established',
-        LocalAddress: '10.0.0.5',
-        LocalPort: 50100,
-        RemoteAddress: '203.0.113.10',
-        RemotePort: 443,
-      }])
+      const moduleRows = JSON.stringify([
+        { ModuleName: 'kernel32.dll', FileName: 'C:\\Windows\\System32\\kernel32.dll' },
+      ])
+      const networkRows = JSON.stringify([
+        {
+          OwningProcess: 4242,
+          State: 'Established',
+          LocalAddress: '10.0.0.5',
+          LocalPort: 50100,
+          RemoteAddress: '203.0.113.10',
+          RemotePort: 443,
+        },
+      ])
       const processRowsAfter = JSON.stringify([
         { ProcessId: 4, Name: 'System' },
-        { ProcessId: 4242, ParentProcessId: 1, Name: 'task-sample.sample', ExecutablePath: samplePath },
+        {
+          ProcessId: 4242,
+          ParentProcessId: 1,
+          Name: 'task-sample.sample',
+          ExecutablePath: samplePath,
+        },
       ])
-      const fileRows = JSON.stringify([{ FullName: path.join(testOutbox, 'task-sample', 'note.txt'), Length: 5 }])
+      const fileRows = JSON.stringify([
+        { FullName: path.join(testOutbox, 'task-sample', 'note.txt'), Length: 5 },
+      ])
       const psOutputs = [processRowsBefore, moduleRows, networkRows, processRowsAfter, fileRows]
 
       spawnMock.mockImplementation((cmd: string) => {
@@ -596,21 +759,23 @@ describe('runtime-node executor backend pre-flight checks', () => {
           runtime: { type: 'inline', handler: 'executeBehaviorCapture' },
         },
         () => {},
-        () => {},
+        () => {}
       )
 
       expect(result.ok).toBe(true)
-      expect((result.result?.data as any).network_events).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          remote_address: '203.0.113.10',
-          remote_port: 443,
-          pid: 4242,
-        }),
-      ]))
+      expect((result.result?.data as any).network_events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            remote_address: '203.0.113.10',
+            remote_port: 443,
+            pid: 4242,
+          }),
+        ])
+      )
       expect((result.result?.data as any).normalized_trace.stages).toContain('network_activity')
-      expect(result.artifactRefs).toEqual(expect.arrayContaining([
-        expect.objectContaining({ name: 'behavior_capture.json' }),
-      ]))
+      expect(result.artifactRefs).toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: 'behavior_capture.json' })])
+      )
     })
   })
 
@@ -624,16 +789,24 @@ describe('runtime-node executor backend pre-flight checks', () => {
       })
 
       const result = await executeDebugSession(
-        { taskId: 'task-debug', sampleId: 's1', tool: 'debug.session.inspect', args: {}, timeoutMs: 1000 },
+        {
+          taskId: 'task-debug',
+          sampleId: 's1',
+          tool: 'debug.session.inspect',
+          args: {},
+          timeoutMs: 1000,
+        },
         () => {},
-        [],
+        []
       )
 
       expect(result.ok).toBe(false)
-      expect(result.artifactRefs).toEqual(expect.arrayContaining([
-        expect.objectContaining({ name: 'debug_session_trace.json' }),
-      ]))
-      const transcript = result.artifactRefs?.find((entry) => entry.name === 'debug_session_trace.json')
+      expect(result.artifactRefs).toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: 'debug_session_trace.json' })])
+      )
+      const transcript = result.artifactRefs?.find(
+        (entry) => entry.name === 'debug_session_trace.json'
+      )
       expect(transcript?.path).toBeTruthy()
       expect(fs.existsSync(transcript!.path)).toBe(true)
       expect(fs.readFileSync(transcript!.path, 'utf-8')).toContain('missing_debugger')
@@ -668,11 +841,13 @@ describe('runtime-node executor backend pre-flight checks', () => {
           timeoutMs: 1000,
         },
         () => {},
-        [],
+        []
       )
 
       expect(result.ok).toBe(true)
-      const transcript = result.artifactRefs?.find((entry) => entry.name === 'debug_session_trace.json')
+      const transcript = result.artifactRefs?.find(
+        (entry) => entry.name === 'debug_session_trace.json'
+      )
       expect(transcript?.path).toBeTruthy()
       const transcriptText = fs.readFileSync(transcript!.path, 'utf-8')
       expect(transcriptText).toContain('debug.session.command_batch')
@@ -690,9 +865,15 @@ describe('runtime-node executor backend pre-flight checks', () => {
       })
 
       const result = await executeProcDumpCapture(
-        { taskId: 'task-procdump-missing', sampleId: 's1', tool: 'debug.procdump.capture', args: {}, timeoutMs: 1000 },
+        {
+          taskId: 'task-procdump-missing',
+          sampleId: 's1',
+          tool: 'debug.procdump.capture',
+          args: {},
+          timeoutMs: 1000,
+        },
         () => {},
-        [],
+        []
       )
 
       expect(result.ok).toBe(false)
@@ -731,14 +912,16 @@ describe('runtime-node executor backend pre-flight checks', () => {
           timeoutMs: 1000,
         },
         () => {},
-        [],
+        []
       )
 
       expect(result.ok).toBe(true)
-      expect(result.artifactRefs).toEqual(expect.arrayContaining([
-        expect.objectContaining({ name: 'procdump_capture.json' }),
-        expect.objectContaining({ name: 'sample-crash.dmp' }),
-      ]))
+      expect(result.artifactRefs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'procdump_capture.json' }),
+          expect.objectContaining({ name: 'sample-crash.dmp' }),
+        ])
+      )
       const metadata = result.artifactRefs?.find((entry) => entry.name === 'procdump_capture.json')
       expect(fs.readFileSync(metadata!.path, 'utf-8')).toContain('launch_crash')
     })
@@ -763,14 +946,17 @@ describe('runtime-node executor backend pre-flight checks', () => {
           timeoutMs: 1000,
         },
         () => {},
-        [],
+        []
       )
 
       expect(result.ok).toBe(true)
       const artifact = result.artifactRefs?.find((entry) => entry.name === 'telemetry_capture.json')
       expect(artifact?.path).toBeTruthy()
       const payload = JSON.parse(fs.readFileSync(artifact!.path, 'utf-8'))
-      expect(payload.profile_results[0]).toMatchObject({ profile: 'procmon', status: 'setup_required' })
+      expect(payload.profile_results[0]).toMatchObject({
+        profile: 'procmon',
+        status: 'setup_required',
+      })
     })
 
     test('captures PowerShell event-log telemetry artifact', async () => {
@@ -799,14 +985,16 @@ describe('runtime-node executor backend pre-flight checks', () => {
           timeoutMs: 1000,
         },
         () => {},
-        [],
+        []
       )
 
       expect(result.ok).toBe(true)
-      expect(result.artifactRefs).toEqual(expect.arrayContaining([
-        expect.objectContaining({ name: 'telemetry_capture.json' }),
-        expect.objectContaining({ name: 'eventlog_snapshot.json' }),
-      ]))
+      expect(result.artifactRefs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'telemetry_capture.json' }),
+          expect.objectContaining({ name: 'eventlog_snapshot.json' }),
+        ])
+      )
     })
 
     test('starts and stops ETW logman capture', async () => {
@@ -830,13 +1018,13 @@ describe('runtime-node executor backend pre-flight checks', () => {
           timeoutMs: 1000,
         },
         () => {},
-        [],
+        []
       )
 
       expect(result.ok).toBe(true)
-      expect(result.artifactRefs).toEqual(expect.arrayContaining([
-        expect.objectContaining({ name: 'etw_process.etl' }),
-      ]))
+      expect(result.artifactRefs).toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: 'etw_process.etl' })])
+      )
     })
   })
 
@@ -847,14 +1035,12 @@ describe('runtime-node executor backend pre-flight checks', () => {
         expect(true).toBe(true)
         return
       }
-      spawnMock.mockImplementation(makeSpawnMock([
-        { cmd: 'wine', args: ['--version'], code: 1 },
-      ]))
+      spawnMock.mockImplementation(makeSpawnMock([{ cmd: 'wine', args: ['--version'], code: 1 }]))
 
       const result = await executeWineRun(
         { taskId: 'task-sample', sampleId: 's1', tool: 'wine.run', args: {}, timeoutMs: 1000 },
         () => {},
-        [],
+        []
       )
 
       expect(result.ok).toBe(false)
@@ -864,15 +1050,31 @@ describe('runtime-node executor backend pre-flight checks', () => {
 
   describe('executeSpeakeasyEmulate', () => {
     test('should return error when speakeasy python module is missing', async () => {
-      spawnMock.mockImplementation(makeSpawnMock([
-        { cmd: process.platform === 'win32' ? 'python' : 'python3', args: ['--version'], code: 0 },
-        { cmd: process.platform === 'win32' ? 'python' : 'python3', args: ['-c', 'import speakeasy'], code: 1 },
-      ]))
+      spawnMock.mockImplementation(
+        makeSpawnMock([
+          {
+            cmd: process.platform === 'win32' ? 'python' : 'python3',
+            args: ['--version'],
+            code: 0,
+          },
+          {
+            cmd: process.platform === 'win32' ? 'python' : 'python3',
+            args: ['-c', 'import speakeasy'],
+            code: 1,
+          },
+        ])
+      )
 
       const result = await executeSpeakeasyEmulate(
-        { taskId: 'task-sample', sampleId: 's1', tool: 'speakeasy.emulate', args: {}, timeoutMs: 1000 },
+        {
+          taskId: 'task-sample',
+          sampleId: 's1',
+          tool: 'speakeasy.emulate',
+          args: {},
+          timeoutMs: 1000,
+        },
         () => {},
-        [],
+        []
       )
 
       expect(result.ok).toBe(false)
@@ -888,23 +1090,33 @@ describe('runtime-node executor backend pre-flight checks', () => {
       const sidecar = path.join(taskDir, 'zg__kYYzqVe.dll')
       fs.writeFileSync(primary, Buffer.from('MZ'))
       fs.writeFileSync(sidecar, Buffer.from('DLL'))
-      fs.writeFileSync(path.join(taskDir, 'upload-manifest.json'), JSON.stringify({
-        schema: 'rikune.runtime_upload_manifest.v1',
-        taskId: 'task-with-sidecar',
-        primary: 'app.exe',
-        files: [
-          { name: 'app.exe', role: 'primary', size: 2, uploadedAt: new Date().toISOString() },
-          { name: 'zg__kYYzqVe.dll', role: 'sidecar', size: 3, uploadedAt: new Date().toISOString() },
-        ],
-      }))
-      spawnMock.mockImplementation(makeSpawnMock([
-        {
-          cmd: primary,
-          args: [],
-          code: 0,
-          stdout: `${JSON.stringify({ ok: true, data: { manifest: true } })}\n`,
-        },
-      ]))
+      fs.writeFileSync(
+        path.join(taskDir, 'upload-manifest.json'),
+        JSON.stringify({
+          schema: 'rikune.runtime_upload_manifest.v1',
+          taskId: 'task-with-sidecar',
+          primary: 'app.exe',
+          files: [
+            { name: 'app.exe', role: 'primary', size: 2, uploadedAt: new Date().toISOString() },
+            {
+              name: 'zg__kYYzqVe.dll',
+              role: 'sidecar',
+              size: 3,
+              uploadedAt: new Date().toISOString(),
+            },
+          ],
+        })
+      )
+      spawnMock.mockImplementation(
+        makeSpawnMock([
+          {
+            cmd: primary,
+            args: [],
+            code: 0,
+            stdout: `${JSON.stringify({ ok: true, data: { manifest: true } })}\n`,
+          },
+        ])
+      )
 
       const result = await executeTask(
         {
@@ -916,7 +1128,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           runtime: { type: 'spawn', handler: 'native.sample.execute' },
         },
         () => {},
-        () => {},
+        () => {}
       )
 
       expect(result.ok).toBe(true)
@@ -926,20 +1138,22 @@ describe('runtime-node executor backend pre-flight checks', () => {
         expect.objectContaining({
           cwd: taskDir,
           windowsHide: true,
-        }),
+        })
       )
     })
 
     test('should execute registered spawn backend and parse structured stdout', async () => {
       const structuredStdout = `${JSON.stringify({ ok: true, data: { backend: 'native.sample.execute', exit: 'ok' } })}\n`
-      spawnMock.mockImplementation(makeSpawnMock([
-        {
-          cmd: samplePath,
-          args: ['--flag', 'value'],
-          code: 0,
-          stdout: structuredStdout,
-        },
-      ]))
+      spawnMock.mockImplementation(
+        makeSpawnMock([
+          {
+            cmd: samplePath,
+            args: ['--flag', 'value'],
+            code: 0,
+            stdout: structuredStdout,
+          },
+        ])
+      )
 
       const result = await executeTask(
         {
@@ -951,7 +1165,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           runtime: { type: 'spawn', handler: 'native.sample.execute' },
         },
         () => {},
-        () => {},
+        () => {}
       )
 
       expect(result.ok).toBe(true)
@@ -964,7 +1178,7 @@ describe('runtime-node executor backend pre-flight checks', () => {
           stdio: ['ignore', 'pipe', 'pipe'],
           timeout: 1000,
           windowsHide: true,
-        }),
+        })
       )
     })
   })
@@ -975,14 +1189,18 @@ describe('runtime-node executor backend pre-flight checks', () => {
         expect(true).toBe(true)
         return
       }
-      spawnMock.mockImplementation(makeSpawnMock([
-        { cmd: 'dotnet', args: ['--version'], code: 1 },
-      ]))
+      spawnMock.mockImplementation(makeSpawnMock([{ cmd: 'dotnet', args: ['--version'], code: 1 }]))
 
       const result = await executeManagedSafeRun(
-        { taskId: 'task-sample', sampleId: 's1', tool: 'managed.safe_run', args: {}, timeoutMs: 1000 },
+        {
+          taskId: 'task-sample',
+          sampleId: 's1',
+          tool: 'managed.safe_run',
+          args: {},
+          timeoutMs: 1000,
+        },
         () => {},
-        [],
+        []
       )
 
       expect(result.ok).toBe(false)

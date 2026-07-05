@@ -287,15 +287,15 @@ export const triageWorkflowToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Compatibility quick-profile workflow for first-pass static assessment within minutes. Use this after sample registration when you explicitly want a compact threat-oriented profile, not the primary staged analysis lifecycle. ' +
-    'When the user has not chosen a workflow yet, prefer workflow.analyze.auto so the server can route by intent first. ' +
-    'Do not treat this as the final reverse-engineering step; deeper analysis continues through workflow.analyze.start/status/promote, with ghidra.analyze and workflow.reconstruct as downstream deep surfaces. ' +
+    'When the user has not chosen a workflow yet, prefer workflow.search so the server can rank matching profiles first. ' +
+    'Do not treat this as the final reverse-engineering step; deeper analysis continues through workflow.run action=start/status/promote, with ghidra.analyze and workflow.reconstruct as downstream deep surfaces. ' +
     'Read coverage_level, completion_state, coverage_gaps, and upgrade_paths to see exactly what quick triage did not cover yet. ' +
     '\n\nDecision guide:\n' +
     '- Use when: you need fast threat posture, runtime hints, strings/imports/YARA context, and compact triage output.\n' +
     '- Best for: small/medium samples or an explicitly requested quick profile.\n' +
-    '- Large-sample pattern: prefer workflow.analyze.auto or workflow.analyze.start, then follow with workflow.analyze.status/promote instead of repeatedly calling workflow.triage.\n' +
+    '- Large-sample pattern: prefer workflow.search, then workflow.run action=start/status/promote instead of repeatedly calling workflow.triage.\n' +
     '- Do not use when: you already need function-level decompilation or source-like reconstruction.\n' +
-    '- Typical next step: continue with workflow.analyze.start/status/promote for staged analysis, or use ghidra.analyze/workflow.reconstruct only when you intentionally need those deeper surfaces.\n' +
+    '- Typical next step: continue with workflow.run action=start/status/promote for staged analysis, or use ghidra.analyze/workflow.reconstruct only when you intentionally need those deeper surfaces.\n' +
     '- Common mistake: assuming workflow.triage alone completes reverse engineering.',
   inputSchema: TriageWorkflowInputSchema,
   outputSchema: TriageWorkflowOutputSchema,
@@ -3314,11 +3314,7 @@ export function createTriageWorkflowHandler(
               recommendation,
               result_mode: 'quick_profile',
               tool_surface_role: 'compatibility',
-              preferred_primary_tools: [
-                'workflow.analyze.start',
-                'workflow.analyze.status',
-                'workflow.analyze.promote',
-              ],
+              preferred_primary_tools: ['workflow.search', 'workflow.run'],
               recommended_next_tools: recommendedNextTools,
               next_actions: nextActions,
               raw_results: rawResults,

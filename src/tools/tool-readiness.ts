@@ -14,6 +14,8 @@ import {
   getRuntimeDelegatedToolContract,
 } from '../runtime-client/runtime-tool-support.js'
 import { ToolSurfaceRoleSchema, buildToolSurfaceGuidance } from '../tool-surface-guidance.js'
+import { buildToolAspectSummary } from './tool-aspect-matrix.js'
+import { checkBackendWorkerReadiness } from '../worker/backend-worker-client.js'
 
 const TOOL_NAME = 'tool.readiness'
 
@@ -40,6 +42,16 @@ type RuntimeReadiness =
   | 'runtime_unreachable'
   | 'runtime_capability_missing'
 
+type AspectMetadata = Record<string, unknown>
+
+type PluginMetadata = {
+  id?: string
+  name?: string
+  description?: string
+  aspects?: AspectMetadata
+  runtimePolicy?: ToolDefinition['runtimePolicy']
+}
+
 const ToolReadinessDataSchema = z
   .object({
     tool_name: z.string(),
@@ -55,6 +67,23 @@ const ToolReadinessDataSchema = z
     runtime_plane: z.string().nullable(),
     tool_surface_role: ToolSurfaceRoleSchema.nullable(),
     preferred_primary_tools: z.array(z.string()),
+    aspects: z.record(z.array(z.string())).nullable().optional(),
+    aspect_coverage: z.array(z.string()).optional(),
+    format_matrix: z.record(z.any()).optional(),
+    artifact_declarations: z.array(z.any()).optional(),
+    evidence_declarations: z.array(z.any()).optional(),
+    workflow_recipes: z.array(z.any()).optional(),
+    runtime_policy: z.any().nullable().optional(),
+    runtime_contract_policy: z.any().nullable().optional(),
+    runtime_isolation: z.any().nullable().optional(),
+    worker_backend: z.any().nullable().optional(),
+    worker_backend_readiness: z.any().nullable().optional(),
+    runtime_policy_status: z.any().nullable().optional(),
+    opt_in_required: z.boolean().optional(),
+    policy_denied: z.boolean().optional(),
+    isolation_missing: z.boolean().optional(),
+    backend_missing: z.boolean().optional(),
+    policy_gates: z.any().nullable().optional(),
     required_runtime_contract: z.any().nullable(),
     runtime_tool_contract: z.any().nullable().optional(),
     runtime_tool_support: z.array(z.any()).optional(),
@@ -78,6 +107,181 @@ export const toolReadinessOutputSchema = z.object({
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.trim().length > 0)))
+}
+
+function resolvePluginDefinition(
+  pluginManager: PluginManager,
+  pluginId: string | null
+): PluginMetadata | null {
+  if (!pluginId) return null
+  const manager = pluginManager as PluginManager & {
+    getPlugin?: (id: string) => PluginMetadata | undefined
+    getDiscoveredPlugins?: () => PluginMetadata[]
+  }
+  return (
+    manager.getPlugin?.(pluginId) ??
+    manager.getDiscoveredPlugins?.().find((plugin) => plugin.id === pluginId) ??
+    null
+  )
+}
+
+function buildToolMetadata(tool: ToolDefinition, plugin: PluginMetadata | null) {
+  const aspectSummary = buildToolAspectSummary(tool, {
+    pluginAspects: plugin?.aspects,
+    pluginRuntimePolicy: plugin?.runtimePolicy,
+  })
+  const runtimePolicy = tool.runtimePolicy ?? tool.runtime?.policy ?? plugin?.runtimePolicy ?? null
+  const runtimeIsolation = tool.runtime?.isolation ?? null
+  const policyGates =
+    runtimePolicy || runtimeIsolation || tool.runtime
+      ? {
+          passive_by_default: runtimePolicy?.passiveByDefault ?? Boolean(tool.runtime),
+          requires_user_opt_in: runtimePolicy?.requiresUserOptIn ?? Boolean(tool.runtime),
+          requires_isolation:
+            runtimePolicy?.requiresIsolation ?? runtimeIsolation?.required ?? Boolean(tool.runtime),
+          allowed_backends: runtimePolicy?.allowedBackends ?? runtimeIsolation?.backends ?? [],
+          network_policy: runtimePolicy?.networkPolicy ?? null,
+          max_runtime_ms: runtimePolicy?.maxRuntimeMs ?? tool.runtime?.timeoutMs ?? null,
+          notes: runtimePolicy?.notes ?? [],
+        }
+      : null
+
+  return {
+    aspects: aspectSummary.aspects,
+    aspect_coverage: aspectSummary.aspect_coverage,
+    format_matrix: aspectSummary.format_matrix,
+    artifact_declarations: aspectSummary.artifact_declarations,
+    evidence_declarations: aspectSummary.evidence_declarations,
+    workflow_recipes: aspectSummary.workflow_recipes,
+    worker_backend: aspectSummary.worker_backend,
+    worker_backend_readiness: tool.workerBackend
+      ? checkBackendWorkerReadiness(tool.workerBackend)
+      : null,
+    runtime_policy: runtimePolicy,
+    runtime_contract_policy: tool.runtime?.policy ?? null,
+    runtime_isolation: runtimeIsolation,
+    policy_gates: policyGates,
+  }
+}
+
+function collectRuntimeBackendTags(capabilities: RuntimeBackendCapability[]): string[] {
+  const tags: string[] = []
+  for (const capability of capabilities) {
+    tags.push(capability.type, capability.handler)
+    if (capability.description) tags.push(capability.description)
+    tags.push(...(capability.capabilities ?? []))
+    tags.push(...(capability.safety ?? []))
+    tags.push(...(capability.policy?.allowedBackends ?? []))
+    tags.push(...(capability.isolation?.backends ?? []))
+  }
+  return uniqueStrings(tags.map((tag) => tag.toLowerCase().replace(/_/g, '-')))
+}
+
+function buildRuntimePolicyStatus(params: {
+  metadata: ReturnType<typeof buildToolMetadata>
+  runtimeRequired?: boolean
+  readiness?: RuntimeReadiness | 'unknown_tool'
+  capabilities?: RuntimeBackendCapability[]
+  runtimeEndpoint?: string | null
+}) {
+  const gates = params.metadata.policy_gates as {
+    passive_by_default?: boolean
+    requires_user_opt_in?: boolean
+    requires_isolation?: boolean
+    allowed_backends?: string[]
+    network_policy?: string | null
+    max_runtime_ms?: number | null
+    notes?: string[]
+  } | null
+
+  if (!gates) {
+    return {
+      runtime_policy_status: null,
+      opt_in_required: false,
+      policy_denied: false,
+      isolation_missing: false,
+      backend_missing: false,
+    }
+  }
+
+  if (!params.runtimeRequired) {
+    return {
+      runtime_policy_status: {
+        passive_by_default: gates.passive_by_default ?? true,
+        opt_in_required: false,
+        policy_denied: false,
+        requires_isolation: Boolean(gates.requires_isolation),
+        isolation_missing: false,
+        backend_missing: false,
+        allowed_backends: uniqueStrings((gates.allowed_backends ?? []).map(String)),
+        matched_backends: [],
+        available_backend_tags: [],
+        network_policy: gates.network_policy ?? null,
+        max_runtime_ms: gates.max_runtime_ms ?? null,
+        readiness: params.readiness ?? null,
+        reasons: [],
+        notes: [
+          ...(gates.notes ?? []),
+          'Policy is advisory for this local readiness/control-plane tool because it has no runtime contract.',
+        ],
+      },
+      opt_in_required: false,
+      policy_denied: false,
+      isolation_missing: false,
+      backend_missing: false,
+    }
+  }
+
+  const capabilities = params.capabilities ?? []
+  const allowedBackends = uniqueStrings((gates.allowed_backends ?? []).map(String))
+  const capabilityTags = collectRuntimeBackendTags(capabilities)
+  const matchedBackends = allowedBackends.filter((backend) => {
+    const normalized = backend.toLowerCase().replace(/_/g, '-')
+    return capabilityTags.some((tag) => tag === normalized || tag.includes(normalized))
+  })
+
+  const optInRequired = Boolean(gates.requires_user_opt_in)
+  const requiresIsolation = Boolean(gates.requires_isolation)
+  const hasRuntimeEndpoint = Boolean(params.runtimeEndpoint)
+  const backendMissing =
+    allowedBackends.length > 0 &&
+    matchedBackends.length === 0 &&
+    (capabilities.length === 0 || params.readiness !== 'ready')
+  const isolationMissing = requiresIsolation && matchedBackends.length === 0
+  const policyDenied = optInRequired || backendMissing || isolationMissing
+  const reasons: string[] = []
+  if (optInRequired) {
+    reasons.push('opt_in_required')
+  }
+  if (backendMissing) {
+    reasons.push(hasRuntimeEndpoint ? 'backend_missing' : 'runtime_endpoint_missing')
+  }
+  if (isolationMissing) {
+    reasons.push('isolation_missing')
+  }
+
+  return {
+    runtime_policy_status: {
+      passive_by_default: gates.passive_by_default ?? true,
+      opt_in_required: optInRequired,
+      policy_denied: policyDenied,
+      requires_isolation: requiresIsolation,
+      isolation_missing: isolationMissing,
+      backend_missing: backendMissing,
+      allowed_backends: allowedBackends,
+      matched_backends: matchedBackends,
+      available_backend_tags: capabilityTags,
+      network_policy: gates.network_policy ?? null,
+      max_runtime_ms: gates.max_runtime_ms ?? null,
+      readiness: params.readiness ?? null,
+      reasons,
+      notes: gates.notes ?? [],
+    },
+    opt_in_required: optInRequired,
+    policy_denied: policyDenied,
+    isolation_missing: isolationMissing,
+    backend_missing: backendMissing,
+  }
 }
 
 function runtimeContractLabel(contract: ToolDefinition['runtime'] | null | undefined): string {
@@ -238,11 +442,22 @@ function localDynamicPolicyGuidance(policy: LocalDynamicToolPolicy | null): {
 function buildLocalReadyPayload(
   tool: ToolDefinition,
   pluginStatus?: Record<string, unknown>,
+  pluginDefinition: PluginMetadata | null = null,
   localDynamicPolicy: LocalDynamicToolPolicy | null = null
 ) {
-  const surfaceGuidance = buildToolSurfaceGuidance(tool.name)
+  const surfaceGuidance = buildToolSurfaceGuidance(tool.name, {
+    runtimeRequired: Boolean(tool.runtime),
+  })
   const guidance = localDynamicPolicyGuidance(localDynamicPolicy)
   const runtimePlane = localRuntimePlane(localDynamicPolicy)
+  const toolMetadata = buildToolMetadata(tool, pluginDefinition)
+  const runtimePolicyStatus = buildRuntimePolicyStatus({
+    metadata: toolMetadata,
+    runtimeRequired: false,
+    readiness: 'ready',
+    capabilities: [],
+    runtimeEndpoint: null,
+  })
 
   return {
     ok: true,
@@ -255,6 +470,8 @@ function buildLocalReadyPayload(
       runtime_plane: runtimePlane,
       tool_surface_role: surfaceGuidance.tool_surface_role,
       preferred_primary_tools: surfaceGuidance.preferred_primary_tools,
+      ...toolMetadata,
+      ...runtimePolicyStatus,
       plugin: pluginStatus ?? null,
       runtime_contract: null,
       required_runtime_contract: null,
@@ -367,8 +584,9 @@ export function createToolReadinessHandler(
             runtime_plane: 'tool_registry',
             reason: 'The requested tool is not registered in the current MCP surface.',
           },
-          recommended_next_tools: ['tool.help', 'plugin.list', 'tools.discover'],
+          recommended_next_tools: ['workflow.search', 'tool.help', 'plugin.list'],
           next_actions: [
+            'Use workflow.search with the requested capability or tool name to find the matching profile before exposing specialist tools.',
             'Verify the canonical tool name and whether the corresponding plugin is loaded.',
           ],
         },
@@ -380,6 +598,7 @@ export function createToolReadinessHandler(
     const pluginStatus = pluginId
       ? pluginManager.getStatuses().find((status) => status.id === pluginId) || null
       : null
+    const pluginDefinition = resolvePluginDefinition(pluginManager, pluginId)
     const pluginPayload = pluginStatus
       ? {
           id: pluginStatus.id,
@@ -387,6 +606,9 @@ export function createToolReadinessHandler(
           execution_domain: pluginStatus.executionDomain ?? 'both',
           reason_code: pluginStatus.reasonCode ?? null,
           status_detail: pluginStatus.statusDetail ?? null,
+          aspects: pluginDefinition?.aspects ?? null,
+          runtime_policy: pluginDefinition?.runtimePolicy ?? null,
+          quality_warnings: pluginStatus.qualityWarnings ?? [],
         }
       : null
 
@@ -395,18 +617,33 @@ export function createToolReadinessHandler(
         pluginPayload?.execution_domain === 'dynamic'
           ? (getLocalDynamicToolPolicy(tool.name) ?? null)
           : null
-      return buildLocalReadyPayload(tool, pluginPayload ?? undefined, localDynamicPolicy)
+      return buildLocalReadyPayload(
+        tool,
+        pluginPayload ?? undefined,
+        pluginDefinition,
+        localDynamicPolicy
+      )
     }
 
     const runtimeMode = options.runtimeMode || 'disabled'
     const runtimeClient = options.runtimeClient ?? null
     const runtimeEndpoint = runtimeClient?.getEndpoint?.() || null
-    const surfaceGuidance = buildToolSurfaceGuidance(tool.name)
+    const surfaceGuidance = buildToolSurfaceGuidance(tool.name, {
+      runtimeRequired: Boolean(tool.runtime),
+    })
     const runtimeToolContract = getRuntimeDelegatedToolContract(tool.name)
+    const toolMetadata = buildToolMetadata(tool, pluginDefinition)
 
     if (runtimeMode === 'remote-sandbox' && !runtimeEndpoint) {
       const guidance = buildRuntimeGuidance('runtime_not_started', tool, runtimeEndpoint, [])
       const runtimePlane = classifyRuntimeReadinessPlane('runtime_not_started', runtimeEndpoint)
+      const runtimePolicyStatus = buildRuntimePolicyStatus({
+        metadata: toolMetadata,
+        runtimeRequired: true,
+        readiness: 'runtime_not_started',
+        capabilities: [],
+        runtimeEndpoint,
+      })
       return {
         ok: false,
         warnings: [
@@ -420,6 +657,8 @@ export function createToolReadinessHandler(
           runtime_plane: runtimePlane,
           tool_surface_role: surfaceGuidance.tool_surface_role,
           preferred_primary_tools: surfaceGuidance.preferred_primary_tools,
+          ...toolMetadata,
+          ...runtimePolicyStatus,
           plugin: pluginPayload,
           runtime_contract: tool.runtime,
           required_runtime_contract: tool.runtime,
@@ -455,6 +694,13 @@ export function createToolReadinessHandler(
     if (!runtimeClient?.validateRuntimeContract) {
       const guidance = buildRuntimeGuidance('runtime_unreachable', tool, runtimeEndpoint, [])
       const runtimePlane = classifyRuntimeReadinessPlane('runtime_unreachable', runtimeEndpoint)
+      const runtimePolicyStatus = buildRuntimePolicyStatus({
+        metadata: toolMetadata,
+        runtimeRequired: true,
+        readiness: 'runtime_unreachable',
+        capabilities: [],
+        runtimeEndpoint,
+      })
       return {
         ok: false,
         warnings: ['No runtime client is configured for delegated runtime validation.'],
@@ -466,6 +712,8 @@ export function createToolReadinessHandler(
           runtime_plane: runtimePlane,
           tool_surface_role: surfaceGuidance.tool_surface_role,
           preferred_primary_tools: surfaceGuidance.preferred_primary_tools,
+          ...toolMetadata,
+          ...runtimePolicyStatus,
           plugin: pluginPayload,
           runtime_contract: tool.runtime,
           required_runtime_contract: tool.runtime,
@@ -510,6 +758,13 @@ export function createToolReadinessHandler(
     const guidance = buildRuntimeGuidance(readiness, tool, runtimeEndpoint, capabilities)
     const runtimePlane = classifyRuntimeReadinessPlane(readiness, runtimeEndpoint)
     const runtimeToolSupportSummary = buildRuntimeToolSupportSummary(capabilities)
+    const runtimePolicyStatus = buildRuntimePolicyStatus({
+      metadata: toolMetadata,
+      runtimeRequired: true,
+      readiness,
+      capabilities,
+      runtimeEndpoint,
+    })
 
     return {
       ok: readiness === 'ready',
@@ -525,6 +780,8 @@ export function createToolReadinessHandler(
         runtime_plane: runtimePlane,
         tool_surface_role: surfaceGuidance.tool_surface_role,
         preferred_primary_tools: surfaceGuidance.preferred_primary_tools,
+        ...toolMetadata,
+        ...runtimePolicyStatus,
         plugin: pluginPayload,
         runtime_contract: tool.runtime,
         required_runtime_contract: tool.runtime,

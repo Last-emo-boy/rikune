@@ -178,6 +178,9 @@ export const StringsExtractOutputSchema = z.object({
       evidence_state: z.array(AnalysisEvidenceStateSchema).optional(),
       recommended_next_tools: z.array(z.string()).optional(),
       next_actions: z.array(z.string()).optional(),
+      evidence_summary: z.record(z.any()).optional(),
+      workflow_handoff: z.record(z.any()).optional(),
+      quality_gates: z.record(z.any()).optional(),
       strings: z
         .array(
           z.object({
@@ -263,6 +266,174 @@ export const stringsExtractToolDefinition: ToolDefinition = {
     'On medium/large samples, prefer mode=preview first and only escalate to mode=full when the workflow explicitly needs complete extraction.',
   inputSchema: StringsExtractInputSchema,
   outputSchema: StringsExtractOutputSchema,
+  aspects: {
+    formats: [
+      'pe',
+      'elf',
+      'macho',
+      'apk',
+      'dex',
+      'jar',
+      'dotnet',
+      'wasm',
+      'firmware',
+      'archive',
+      'container',
+      'pyc',
+      'lua-bytecode',
+      'v8-cache',
+    ],
+    platforms: [
+      'windows',
+      'linux',
+      'macos',
+      'android',
+      'jvm',
+      'dotnet',
+      'wasm',
+      'embedded',
+      'cross-platform',
+    ],
+    architectures: ['x86', 'x64', 'arm', 'arm64', 'mips', 'riscv', 'wasm'],
+    execution: ['static', 'triage'],
+    safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+    capabilities: ['strings', 'ioc', 'context-windows', 'workflow-handoff', 'evidence-correlation'],
+    evidence: [
+      'strings',
+      'network',
+      'filesystem',
+      'registry',
+      'encoded-config',
+      'workflow',
+      'provenance',
+    ],
+  },
+  artifacts: [
+    {
+      type: 'enriched_string_analysis',
+      description: 'Enriched string extraction output with IOC categories and bounded chunks',
+      mime: 'application/json',
+    },
+  ],
+  evidence: [
+    {
+      category: 'strings',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'network',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'filesystem',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'registry',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'encoded-config',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'workflow',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+    {
+      category: 'provenance',
+      artifactTypes: ['enriched_string_analysis'],
+    },
+  ],
+  workflowRecipes: [
+    {
+      id: 'strings.raw-extraction-evidence',
+      title: 'Raw string evidence to context, IOC, and reporting handoff',
+      startsWith: ['strings.extract', 'analysis.context.link'],
+      nextTools: [
+        'analysis.context.link',
+        'strings.floss.decode',
+        'static.config.carver',
+        'malware.intel.loop',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+      requiredArtifacts: ['sample bytes'],
+      producesArtifacts: ['enriched_string_analysis'],
+      evidence: [
+        'strings',
+        'network',
+        'filesystem',
+        'registry',
+        'encoded-config',
+        'workflow',
+        'provenance',
+      ],
+      safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+    },
+  ],
+  runtimePolicy: {
+    passiveByDefault: true,
+    requiresUserOptIn: false,
+    requiresIsolation: false,
+    allowedBackends: ['local'],
+    networkPolicy: 'disabled',
+    noNetwork: true,
+    noMutation: true,
+    noLiveExecution: true,
+    notes: [
+      'Static string extraction reads sample bytes through a bounded worker and does not execute the sample.',
+    ],
+  } as ToolDefinition['runtimePolicy'] & {
+    noNetwork: true
+    noMutation: true
+    noLiveExecution: true
+  },
+  workerBackend: {
+    version: 'backend-worker.v1',
+    backendName: 'Static Python strings extractor',
+    backendKind: 'external',
+    adapter: 'static_python.strings.extract',
+    availability: 'optional',
+    envVar: 'STATIC_WORKER_PYTHON',
+    commandHint: 'python3',
+    supportedModes: ['external'],
+    defaultMode: 'external',
+    inputArtifactTypes: ['sample'],
+    outputArtifactTypes: ['enriched_string_analysis'],
+    policy: {
+      passiveByDefault: true,
+      requiresUserOptIn: false,
+      requiresIsolation: false,
+      noNetwork: true,
+      noMutation: true,
+      noLiveExecution: true,
+      maxInputBytes: 256 * 1024 * 1024,
+      maxOutputBytes: 16 * 1024 * 1024,
+      defaultTimeoutMs: 30_000,
+      notes: [
+        'Worker performs read-only printable string extraction and IOC categorization.',
+        'Missing worker readiness must be reported as setup metadata, not replaced with live execution.',
+      ],
+    },
+    readiness: {
+      doesNotStartBackend: true,
+      setupActions: [
+        'Configure the static Python worker used for strings.extract.',
+        'Retry strings.extract after static worker readiness is restored.',
+      ],
+      missingBackendBehavior:
+        'Return setup_required or partial static evidence with setup actions; do not execute the sample.',
+    },
+    packaging: {
+      installRoute: 'installed',
+      installProfile: 'default',
+      dockerFeature: 'static-python',
+      envVar: 'STATIC_WORKER_PYTHON',
+      dockerDefault: 'python3',
+      notes: ['Uses the shared static Python worker path packaged with the MCP server.'],
+    },
+  },
 }
 
 // ============================================================================
@@ -419,6 +590,266 @@ function normalizeStringsExtractData(
   return data
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function readString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function readNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function uniqueStrings(values: unknown[], limit = 16): string[] {
+  return Array.from(new Set(values.map(readString).filter(Boolean))).slice(0, limit)
+}
+
+function enrichedBundle(data: Record<string, unknown>): Record<string, unknown> | null {
+  return asRecord(data.enriched)
+}
+
+function highlightValues(
+  enriched: Record<string, unknown> | null,
+  key: string,
+  limit = 8
+): string[] {
+  return asArray(enriched?.[key])
+    .map((value) => asRecord(value))
+    .filter((value): value is Record<string, unknown> => Boolean(value))
+    .map((value) => readString(value.value))
+    .filter(Boolean)
+    .slice(0, limit)
+}
+
+function extractedStringCount(data: Record<string, unknown>): number {
+  return asArray(data.strings).length || readNumber(data.count, 0)
+}
+
+function buildRecommendedNextTools(data: Record<string, unknown>): string[] {
+  const enriched = enrichedBundle(data)
+  const hasIocs = highlightValues(enriched, 'top_iocs', 1).length > 0
+  const encodedCandidateCount = readNumber(enriched?.encoded_candidate_count, 0)
+  const tools = [
+    'analysis.context.link',
+    'strings.floss.decode',
+    'static.config.carver',
+    'malware.intel.loop',
+    'analysis.evidence.graph',
+    'report.generate',
+  ]
+  if (hasIocs) {
+    tools.push('ioc.export')
+  }
+  if (encodedCandidateCount > 0) {
+    tools.push('crypto.identify', 'unpack.workflow.plan')
+  }
+  return uniqueStrings(tools, 12)
+}
+
+function buildEvidenceSummary(args: {
+  sampleId: string
+  data: Record<string, unknown>
+  input: StringsExtractInput
+  warningCount: number
+}) {
+  const enriched = enrichedBundle(args.data)
+  return {
+    schema: 'rikune.strings_extract.evidence_summary.v1',
+    sample_id: args.sampleId,
+    source_tool: TOOL_NAME,
+    result_mode: args.input.mode,
+    category_filter: args.input.category_filter,
+    string_count: extractedStringCount(args.data),
+    total_count: readNumber(args.data.total_count, readNumber(args.data.count, 0)),
+    pre_filter_count: readNumber(args.data.pre_filter_count, 0),
+    truncated: Boolean(args.data.truncated),
+    sampled: Boolean(args.data.sampled),
+    scan_mode: readString(args.data.scan_mode) || args.input.mode,
+    enriched_bundle_present: Boolean(enriched),
+    analyst_relevant_count: readNumber(enriched?.analyst_relevant_count, 0),
+    runtime_noise_count: readNumber(enriched?.runtime_noise_count, 0),
+    encoded_candidate_count: readNumber(enriched?.encoded_candidate_count, 0),
+    top_iocs: highlightValues(enriched, 'top_iocs'),
+    top_suspicious: highlightValues(enriched, 'top_suspicious'),
+    context_window_count: asArray(asRecord(args.data.summary)?.context_windows).length,
+    warning_count: args.warningCount,
+  }
+}
+
+function buildWorkflowHandoff(args: {
+  sampleId: string
+  data: Record<string, unknown>
+  input: StringsExtractInput
+  recommendedNextTools: string[]
+  backendStarted: boolean
+}) {
+  const enriched = enrichedBundle(args.data)
+  const stringCount = extractedStringCount(args.data)
+  const hasIocs = highlightValues(enriched, 'top_iocs', 1).length > 0
+  const encodedCandidateCount = readNumber(enriched?.encoded_candidate_count, 0)
+  return {
+    schema: 'rikune.strings_extract.workflow_handoff.v1',
+    handoff_mode: 'raw_strings_to_context_ioc_and_reporting',
+    sample_id: args.sampleId,
+    source_tool: TOOL_NAME,
+    recommended_next_tools: args.recommendedNextTools,
+    string_context: {
+      result_mode: args.input.mode,
+      string_count: stringCount,
+      analyst_relevant_count: readNumber(enriched?.analyst_relevant_count, 0),
+      encoded_candidate_count: encodedCandidateCount,
+      top_iocs: highlightValues(enriched, 'top_iocs'),
+      top_suspicious: highlightValues(enriched, 'top_suspicious'),
+    },
+    routing: [
+      {
+        goal: 'raw-string-context-linking',
+        priority: stringCount > 0 ? 'high' : 'optional',
+        next_tools: ['analysis.context.link', 'code.xrefs.analyze'],
+        required_evidence: ['raw strings', 'enriched_string_analysis'],
+      },
+      {
+        goal: 'decoded-string-followup',
+        priority: encodedCandidateCount > 0 ? 'high' : 'normal',
+        next_tools: ['strings.floss.decode', 'crypto.identify', 'unpack.workflow.plan'],
+        required_evidence: ['raw strings', 'encoded string candidates'],
+      },
+      {
+        goal: 'ioc-and-config-carving',
+        priority: hasIocs ? 'high' : 'normal',
+        next_tools: ['static.config.carver', 'ioc.export', 'malware.intel.loop'],
+        required_evidence: ['raw strings', 'enriched_string_analysis'],
+      },
+      {
+        goal: 'evidence-graph-and-reporting',
+        priority: 'normal',
+        next_tools: ['analysis.evidence.graph', 'report.generate'],
+        required_evidence: ['enriched_string_analysis'],
+      },
+    ],
+    artifact_contract: {
+      consumes: ['sample bytes'],
+      produces: ['enriched_string_analysis'],
+      expected_consumers: [
+        'analysis.context.link',
+        'strings.floss.decode',
+        'static.config.carver',
+        'malware.intel.loop',
+        'analysis.evidence.graph',
+        'report.generate',
+      ],
+    },
+    dynamic_boundary: {
+      static_backend_started: args.backendStarted,
+      runtime_started_by_tool: false,
+      sample_executed_by_tool: false,
+      network_accessed_by_tool: false,
+      mutation_performed: false,
+      runtime_followup_requires_opt_in: true,
+    },
+  }
+}
+
+function buildQualityGates(args: {
+  data: Record<string, unknown>
+  input: StringsExtractInput
+  backendStarted: boolean
+}) {
+  const enriched = enrichedBundle(args.data)
+  const stringCount = extractedStringCount(args.data)
+  const iocCount = highlightValues(enriched, 'top_iocs', 12).length
+  const encodedCandidateCount = readNumber(enriched?.encoded_candidate_count, 0)
+  return {
+    passive_static_extraction: true,
+    preview_mode_used: args.input.mode === 'preview',
+    static_backend_started: args.backendStarted,
+    runtime_started_by_tool: false,
+    sample_executed_by_tool: false,
+    network_accessed_by_tool: false,
+    mutation_performed: false,
+    strings_present: stringCount > 0,
+    enriched_bundle_present: Boolean(enriched),
+    ioc_handoff_ready: iocCount > 0,
+    config_handoff_ready: iocCount > 0 || encodedCandidateCount > 0,
+    evidence_graph_handoff_ready: true,
+    truncated: Boolean(args.data.truncated),
+    sampled: Boolean(args.data.sampled),
+    runtime_followup_requires_opt_in: true,
+    analyst_review_required:
+      stringCount > 0 || iocCount > 0 || encodedCandidateCount > 0 || Boolean(args.data.truncated),
+  }
+}
+
+function buildNextActions(args: {
+  data: Record<string, unknown>
+  recommendedNextTools: string[]
+}): string[] {
+  const actions = [
+    'Run analysis.context.link to merge raw strings with decoded strings and function context.',
+    'Run analysis.evidence.graph to correlate enriched string evidence with other plugin artifacts.',
+  ]
+  if (args.recommendedNextTools.includes('strings.floss.decode')) {
+    actions.push('Run strings.floss.decode when raw strings suggest obfuscation or encoded config.')
+  }
+  if (args.recommendedNextTools.includes('ioc.export')) {
+    actions.push('Export high-confidence string IOCs with ioc.export.')
+  }
+  if (args.recommendedNextTools.includes('crypto.identify')) {
+    actions.push(
+      'Use crypto.identify or unpack.workflow.plan for encoded or packed string follow-up.'
+    )
+  }
+  if (extractedStringCount(args.data) === 0) {
+    actions.push(
+      'If no strings were found, retry with a smaller min_len or inspect packed payloads.'
+    )
+  }
+  return actions
+}
+
+function buildStructuredHandoff(args: {
+  sampleId: string
+  data: Record<string, unknown>
+  input: StringsExtractInput
+  warningCount: number
+  backendStarted: boolean
+}) {
+  const recommendedNextTools = buildRecommendedNextTools(args.data)
+  return {
+    evidenceSummary: buildEvidenceSummary({
+      sampleId: args.sampleId,
+      data: args.data,
+      input: args.input,
+      warningCount: args.warningCount,
+    }),
+    workflowHandoff: buildWorkflowHandoff({
+      sampleId: args.sampleId,
+      data: args.data,
+      input: args.input,
+      recommendedNextTools,
+      backendStarted: args.backendStarted,
+    }),
+    qualityGates: buildQualityGates({
+      data: args.data,
+      input: args.input,
+      backendStarted: args.backendStarted,
+    }),
+    recommendedNextTools,
+    nextActions: buildNextActions({
+      data: args.data,
+      recommendedNextTools,
+    }),
+  }
+}
+
 function chooseInlineStringsLimit(
   sampleSizeTier: ReturnType<typeof classifySampleSizeTier>
 ): number {
@@ -507,6 +938,13 @@ export function createStringsExtractHandler(
                   formatCacheWarning(resolved.cache.metadata),
                 ]
               : buildEvidenceReuseWarnings(resolved)
+          const structured = buildStructuredHandoff({
+            sampleId: input.sample_id,
+            data: normalizedCachedData,
+            input,
+            warningCount: warnings.length,
+            backendStarted: false,
+          })
           return {
             ok: true,
             data: {
@@ -516,6 +954,11 @@ export function createStringsExtractHandler(
               execution_state: 'completed',
               evidence_state: [buildResolvedEvidenceState(resolved)],
               ...normalizedCachedData,
+              evidence_summary: structured.evidenceSummary,
+              workflow_handoff: structured.workflowHandoff,
+              quality_gates: structured.qualityGates,
+              recommended_next_tools: structured.recommendedNextTools,
+              next_actions: structured.nextActions,
             },
             warnings,
             metrics: {
@@ -661,6 +1104,29 @@ export function createStringsExtractHandler(
         }
       }
 
+      const resultWarnings = input.force_refresh
+        ? [
+            'force_refresh=true; bypassed cache lookup',
+            ...(workerResponse.warnings || []),
+            ...chunkWarnings,
+          ]
+        : [...(workerResponse.warnings || []), ...chunkWarnings]
+      const structured = buildStructuredHandoff({
+        sampleId: input.sample_id,
+        data: normalizedData,
+        input,
+        warningCount: resultWarnings.length,
+        backendStarted: true,
+      })
+      const resultData = {
+        ...normalizedData,
+        evidence_summary: structured.evidenceSummary,
+        workflow_handoff: structured.workflowHandoff,
+        quality_gates: structured.qualityGates,
+        recommended_next_tools: structured.recommendedNextTools,
+        next_actions: structured.nextActions,
+      }
+
       if (input.persist_artifact !== false) {
         const artifact = await persistStringXrefJsonArtifact(
           workspaceManager,
@@ -679,7 +1145,7 @@ export function createStringsExtractHandler(
               max_strings: input.max_strings,
               category_filter: input.category_filter,
             },
-            data: normalizedData,
+            data: resultData,
           },
           input.session_tag
         )
@@ -687,7 +1153,7 @@ export function createStringsExtractHandler(
       }
 
       // 6. Cache result
-      await cacheManager.setCachedResult(cacheKey, normalizedData, CACHE_TTL_MS, sample.sha256)
+      await cacheManager.setCachedResult(cacheKey, resultData, CACHE_TTL_MS, sample.sha256)
       persistCanonicalEvidence(database, {
         sample,
         evidenceFamily: 'strings',
@@ -704,7 +1170,7 @@ export function createStringsExtractHandler(
           category_filter: input.category_filter,
           enrich_result: input.enrich_result,
         },
-        result: normalizedData,
+        result: resultData,
         artifactRefs: artifacts,
         metadata: {
           session_tag: input.session_tag || null,
@@ -737,15 +1203,9 @@ export function createStringsExtractHandler(
               mode: input.mode,
             }),
           ],
-          ...normalizedData,
+          ...resultData,
         },
-        warnings: input.force_refresh
-          ? [
-              'force_refresh=true; bypassed cache lookup',
-              ...(workerResponse.warnings || []),
-              ...chunkWarnings,
-            ]
-          : [...(workerResponse.warnings || []), ...chunkWarnings],
+        warnings: resultWarnings,
         errors: workerResponse.errors,
         artifacts,
         metrics: {
