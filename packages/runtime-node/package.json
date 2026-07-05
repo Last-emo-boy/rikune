@@ -20,7 +20,7 @@
   "dependencies": {
     "@rikune/shared": "1.1.0",
     "pino": "^10.3.1",
-    "uuid": "^13.0.0",
+    "uuid": "^14.0.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
