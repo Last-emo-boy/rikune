@@ -44,7 +44,7 @@ export const ghidraHealthOutputSchema = z.object({
   data: z
     .object({
       environment: z.any(),
-      downstream: z.record(z.any()).optional(),
+      downstream: z.record(z.string(), z.any()).optional(),
       reaped_persisted_analysis_ids: z.array(z.string()),
       reaped_persisted_analysis_count: z.number().int().nonnegative(),
       setup_actions: z.array(z.any()),

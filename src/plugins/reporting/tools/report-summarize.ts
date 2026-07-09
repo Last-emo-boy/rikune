@@ -2480,7 +2480,7 @@ export function createReportSummarizeHandler(
       const unpackDebugDiffs = unpackDebugDiffSelection.artifacts
         .map((item) => AnalysisDiffDigestSchema.safeParse(item.payload))
         .filter(
-          (parsed): parsed is z.SafeParseSuccess<z.infer<typeof AnalysisDiffDigestSchema>> =>
+          (parsed): parsed is z.ZodSafeParseSuccess<z.infer<typeof AnalysisDiffDigestSchema>> =>
             parsed.success
         )
         .map((parsed) => parsed.data)
@@ -2971,7 +2971,7 @@ export function createReportSummarizeHandler(
     } catch (error) {
       if (error instanceof z.ZodError) {
         const invalidMode = error.issues.find(
-          (issue) => issue.path[0] === 'mode' && issue.code === z.ZodIssueCode.invalid_enum_value
+          (issue) => issue.path[0] === 'mode' && issue.code === 'invalid_value'
         )
         if (invalidMode) {
           return {

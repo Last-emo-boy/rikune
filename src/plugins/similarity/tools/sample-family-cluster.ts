@@ -14,8 +14,8 @@ const SAMPLE_FAMILY_CLUSTER_RECOMMENDED_NEXT_TOOLS = [
 
 export const SampleFamilyClusterInputSchema = z
   .object({
-    samples: z.array(z.record(z.any())).min(1).default([]),
-    binary_diffs: z.array(z.record(z.any())).optional().default([]),
+    samples: z.array(z.record(z.string(), z.any())).min(1).default([]),
+    binary_diffs: z.array(z.record(z.string(), z.any())).optional().default([]),
     kb_context: z.any().optional(),
     min_shared_features: z.number().int().min(1).max(20).optional().default(2),
   })
@@ -27,14 +27,14 @@ const SampleFamilyClusterDataSchema = z
     tool_version: z.string(),
     result_mode: z.literal('sample_family_cluster'),
     cluster_count: z.number().int().nonnegative(),
-    clusters: z.array(z.record(z.any())),
-    relationships: z.array(z.record(z.any())),
-    evidence_summary: z.record(z.any()),
-    workflow_handoff: z.record(z.any()),
-    route_profile: z.record(z.any()),
-    quality_gates: z.record(z.any()),
-    kb_handoff: z.record(z.any()),
-    reporting_handoff: z.record(z.any()),
+    clusters: z.array(z.record(z.string(), z.any())),
+    relationships: z.array(z.record(z.string(), z.any())),
+    evidence_summary: z.record(z.string(), z.any()),
+    workflow_handoff: z.record(z.string(), z.any()),
+    route_profile: z.record(z.string(), z.any()),
+    quality_gates: z.record(z.string(), z.any()),
+    kb_handoff: z.record(z.string(), z.any()),
+    reporting_handoff: z.record(z.string(), z.any()),
     recommended_next_tools: z.array(z.string()),
     safety_notes: z.array(z.string()),
   })

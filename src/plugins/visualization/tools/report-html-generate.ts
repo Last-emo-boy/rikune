@@ -50,9 +50,9 @@ const HtmlReportWorkflowHandoffSchema = z
     source_tool: z.literal(TOOL_NAME),
     sample_id: z.string(),
     read_args: HtmlReportArtifactReadArgsSchema,
-    artifact_contract: z.record(z.any()),
-    routing: z.array(z.record(z.any())),
-    dynamic_boundary: z.record(z.any()),
+    artifact_contract: z.record(z.string(), z.any()),
+    routing: z.array(z.record(z.string(), z.any())),
+    dynamic_boundary: z.record(z.string(), z.any()),
   })
   .passthrough()
 
@@ -72,7 +72,7 @@ export const ReportHtmlGenerateOutputSchema = createWorkerResultOutputSchema(
     recommended_next_tools: z.array(z.string()),
     next_actions: z.array(z.string()),
     workflow_handoff: HtmlReportWorkflowHandoffSchema,
-    quality_gates: z.record(z.any()),
+    quality_gates: z.record(z.string(), z.any()),
   })
 )
 

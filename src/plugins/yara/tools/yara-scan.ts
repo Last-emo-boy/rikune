@@ -81,7 +81,7 @@ export const YaraScanOutputSchema = z.object({
         z.object({
           rule: z.string(),
           tags: z.array(z.string()),
-          meta: z.record(z.any()),
+          meta: z.record(z.string(), z.any()),
           strings: z.array(
             z.object({
               identifier: z.string(),
@@ -153,13 +153,13 @@ export const YaraScanOutputSchema = z.object({
         .object({
           parser: z.string().nullable().optional(),
           sections_count: z.number().optional(),
-          entry_point: z.record(z.any()).optional(),
+          entry_point: z.record(z.string(), z.any()).optional(),
         })
         .optional(),
       quality_notes: z.array(z.string()).optional(),
-      evidence_summary: z.record(z.any()).optional(),
-      workflow_handoff: z.record(z.any()).optional(),
-      quality_gates: z.record(z.any()).optional(),
+      evidence_summary: z.record(z.string(), z.any()).optional(),
+      workflow_handoff: z.record(z.string(), z.any()).optional(),
+      quality_gates: z.record(z.string(), z.any()).optional(),
       recommended_next_tools: z.array(z.string()).optional(),
       next_actions: z.array(z.string()).optional(),
       artifact: z.any().optional(),

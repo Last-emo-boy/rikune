@@ -400,5 +400,5 @@ export const RuntimeDelegationFailureResultSchema = z.object({
   artifacts: z.array(z.any()).optional(),
   setup_actions: z.array(z.any()).optional(),
   required_user_inputs: z.array(z.any()).optional(),
-  metrics: z.record(z.any()).optional(),
+  metrics: z.record(z.string(), z.any()).optional(),
 })

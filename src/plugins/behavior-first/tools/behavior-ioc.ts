@@ -24,7 +24,7 @@ const TOOL_NAME = 'behavior.ioc'
 export const behaviorIocInputSchema = z.object({
   sample_id: z.string().describe('Sample ID for artifact association'),
   behavior_data: z
-    .record(z.any())
+    .record(z.string(), z.any())
     .describe('Behavioral capture data from behavior.capture tool output'),
   persist_artifact: z.boolean().default(true),
   session_tag: z.string().optional(),

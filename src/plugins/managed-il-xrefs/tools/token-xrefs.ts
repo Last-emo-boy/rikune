@@ -51,7 +51,7 @@ export const TokenXrefsInputSchema = z.object({
   max_nodes: z.number().min(1).max(2000).default(500).describe('Maximum graph nodes to return'),
 })
 
-export const TokenXrefsOutputSchema = createWorkerResultOutputSchema(z.record(z.any()))
+export const TokenXrefsOutputSchema = createWorkerResultOutputSchema(z.record(z.string(), z.any()))
 
 export const tokenXrefsToolDefinition: ToolDefinition = {
   name: TOOL_NAME,

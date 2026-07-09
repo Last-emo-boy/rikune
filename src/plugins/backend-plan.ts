@@ -73,12 +73,12 @@ export const BackendPlanInputSchema = z.object({
 
 export const BackendPlanOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.record(z.any()).optional(),
+  data: z.record(z.string(), z.any()).optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
   artifacts: z.array(z.any()).optional(),
   evidence: z.array(z.any()).optional(),
-  metrics: z.record(z.any()).optional(),
+  metrics: z.record(z.string(), z.any()).optional(),
 })
 
 function uniqueStrings(values: string[]): string[] {

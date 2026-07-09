@@ -77,7 +77,7 @@ export const AttackMapOutputSchema = z.object({
         sample_id: z.string(),
         techniques: z.array(AttackTechniqueSchema),
         capability_clusters: z.array(CapabilityClusterSchema),
-        tactic_summary: z.record(z.number()),
+        tactic_summary: z.record(z.string(), z.number()),
         inference: z.object({
           classification: z.enum(['benign', 'suspicious', 'malicious', 'unknown']),
           summary: z.string(),
@@ -86,9 +86,9 @@ export const AttackMapOutputSchema = z.object({
         execution_state: z.literal('completed').optional(),
         recommended_next_tools: z.array(z.string()).optional(),
         next_actions: z.array(z.string()).optional(),
-        evidence_summary: z.record(z.any()).optional(),
-        workflow_handoff: z.record(z.any()).optional(),
-        quality_gates: z.record(z.any()).optional(),
+        evidence_summary: z.record(z.string(), z.any()).optional(),
+        workflow_handoff: z.record(z.string(), z.any()).optional(),
+        quality_gates: z.record(z.string(), z.any()).optional(),
       }),
       z.object({
         status: z.literal('queued'),
@@ -100,7 +100,7 @@ export const AttackMapOutputSchema = z.object({
         summary: z.string(),
         recommended_next_tools: z.array(z.string()),
         next_actions: z.array(z.string()),
-        metadata: z.record(z.any()).optional(),
+        metadata: z.record(z.string(), z.any()).optional(),
       }),
     ])
     .optional(),

@@ -97,13 +97,13 @@ export const StaticBehaviorClassifyOutputSchema = createWorkerResultOutputSchema
       summary: z.object({
         finding_count: z.number().int().nonnegative(),
         high_or_critical_count: z.number().int().nonnegative(),
-        by_category: z.record(z.number()),
-        by_severity: z.record(z.number()),
+        by_category: z.record(z.string(), z.number()),
+        by_severity: z.record(z.string(), z.number()),
         max_confidence: z.number(),
       }),
-      evidence_summary: z.record(z.any()).optional(),
-      workflow_handoff: z.record(z.any()).optional(),
-      quality_gates: z.record(z.any()).optional(),
+      evidence_summary: z.record(z.string(), z.any()).optional(),
+      workflow_handoff: z.record(z.string(), z.any()).optional(),
+      quality_gates: z.record(z.string(), z.any()).optional(),
       findings: z.array(
         z
           .object({

@@ -20,9 +20,9 @@ export const KbContextSuggestOutputSchema = createWorkerResultOutputSchema(
   z.object({
     result_mode: z.literal('kb_context_suggest'),
     sample_id: z.string(),
-    analysis_memory: z.record(z.any()),
-    recommendations: z.array(z.record(z.any())),
-    provenance: z.array(z.record(z.any())),
+    analysis_memory: z.record(z.string(), z.any()),
+    recommendations: z.array(z.record(z.string(), z.any())),
+    provenance: z.array(z.record(z.string(), z.any())),
     recommended_next_tools: z.array(z.string()),
   })
 )

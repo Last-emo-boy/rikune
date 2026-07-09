@@ -33,7 +33,7 @@ const GeneratedYaraRuleSchema = z.object({
   type: z.string(),
   rule_text: z.string(),
   score: z.number(),
-  breakdown: z.record(z.any()),
+  breakdown: z.record(z.string(), z.any()),
 })
 
 export const YaraGenerateInputSchema = z.object({
@@ -66,9 +66,9 @@ export const YaraGenerateOutputSchema = z.object({
       deploy_requested: z.boolean().optional(),
       rules: z.array(GeneratedYaraRuleSchema).optional(),
       best_rule: GeneratedYaraRuleSchema.optional(),
-      evidence_summary: z.record(z.any()).optional(),
-      workflow_handoff: z.record(z.any()).optional(),
-      quality_gates: z.record(z.any()).optional(),
+      evidence_summary: z.record(z.string(), z.any()).optional(),
+      workflow_handoff: z.record(z.string(), z.any()).optional(),
+      quality_gates: z.record(z.string(), z.any()).optional(),
       recommended_next_tools: z.array(z.string()).optional(),
       next_actions: z.array(z.string()).optional(),
     })

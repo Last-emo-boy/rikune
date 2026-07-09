@@ -339,8 +339,8 @@ describe('runtime-node router capability and execute contract', () => {
     expect(response.body).toContain('schema_validation_failed')
     expect(response.body).toContain('Execute payload validation failed')
     expect(response.body).toContain('taskId must contain only letters, numbers, underscores, or dashes')
-    expect(response.body).toContain('Expected object, received array')
-    expect(response.body).toContain('Number must be greater than or equal to 1')
+    expect(response.body).toContain('Invalid input: expected record, received array')
+    expect(response.body).toContain('Too small: expected number to be >=1')
   })
 
   test('rejects malformed JSON bodies with invalid_json contract', async () => {
@@ -419,7 +419,7 @@ describe('runtime-node router capability and execute contract', () => {
 
     expect(response.statusCode).toBe(400)
     expect(response.body).toContain('schema_validation_failed')
-    expect(response.body).toContain('Invalid enum value')
+    expect(response.body).toContain('Invalid option: expected one of')
     expect(response.body).toContain('String must contain at least 1 character')
   })
 

@@ -107,8 +107,8 @@ export const UnpackChildHandoffOutputSchema = createWorkerResultOutputSchema(
         registered_child_count: z.number().int().nonnegative(),
         executable_like_count: z.number().int().nonnegative(),
         archive_like_count: z.number().int().nonnegative(),
-        by_source: z.record(z.number()),
-        by_magic: z.record(z.number()),
+        by_source: z.record(z.string(), z.number()),
+        by_magic: z.record(z.string(), z.number()),
       }),
       resource_artifact_ids: z.array(z.string()),
       candidates: z.array(

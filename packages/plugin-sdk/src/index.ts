@@ -2277,8 +2277,8 @@ export const PluginSystemDepSchema = z
     dockerFeature: z.string().optional(),
     aptPackages: z.array(z.string()).optional(),
     dockerValidation: z.array(z.string()).optional(),
-    extraEnv: z.record(z.string()).optional(),
-    buildArgs: z.record(z.string()).optional(),
+    extraEnv: z.record(z.string(), z.string()).optional(),
+    buildArgs: z.record(z.string(), z.string()).optional(),
     directories: z.array(z.object({ path: z.string(), chown: z.string().optional() })).optional(),
     volumes: z
       .array(
@@ -2309,7 +2309,7 @@ export const SurfaceRulesSchema = z
       })
       .optional(),
     category: z.string().optional(),
-    signalMap: z.record(z.union([z.string(), z.array(z.string())])).optional(),
+    signalMap: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(),
   })
   .passthrough()
 
@@ -2376,7 +2376,7 @@ export const BackendWorkerContractSchema = z
     defaultMode: z.string().optional().default('builtin'),
     inputArtifactTypes: z.array(z.string()).optional().default([]),
     outputArtifactTypes: z.array(z.string()).optional().default([]),
-    policy: BackendWorkerPolicySchema.optional().default({}),
+    policy: BackendWorkerPolicySchema.optional().prefault({}),
     readiness: z
       .object({
         doesNotStartBackend: z.boolean().optional().default(true),
@@ -2385,7 +2385,7 @@ export const BackendWorkerContractSchema = z
       })
       .passthrough()
       .optional()
-      .default({}),
+      .prefault({}),
     packaging: z
       .object({
         installRoute: z
@@ -2592,7 +2592,7 @@ export const ArtifactRefSchema = z
     path: z.string(),
     sha256: z.string(),
     mime: z.string().optional(),
-    metadata: z.record(z.any()).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
   })
   .passthrough()
 
@@ -2612,7 +2612,7 @@ export const EvidenceRefSchema = z
     sampleId: z.string().optional(),
     artifactRefs: z.array(ArtifactRefSchema).optional(),
     confidence: z.number().min(0).max(1).optional(),
-    metadata: z.record(z.any()).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
   })
   .passthrough()
 
@@ -2628,7 +2628,7 @@ export const EvidenceTimelineEntrySchema = z
     target: z.string().optional(),
     confidence: z.number().min(0).max(1).optional(),
     artifactRefs: z.array(ArtifactRefSchema).optional(),
-    metadata: z.record(z.any()).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
   })
   .passthrough()
 

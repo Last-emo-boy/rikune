@@ -126,7 +126,7 @@ export const SampleProfileGetOutputSchema = z.object({
           next_actions: z.array(z.string()),
         })
         .optional(),
-      routing_profile: z.record(z.any()).optional(),
+      routing_profile: z.record(z.string(), z.any()).optional(),
       workspace: z
         .object({
           status: z.enum([
@@ -156,7 +156,7 @@ export const SampleProfileGetOutputSchema = z.object({
           remediation: z.array(z.string()),
         })
         .optional(),
-      reuse_hints: z.record(z.any()).optional(),
+      reuse_hints: z.record(z.string(), z.any()).optional(),
     })
     .optional(),
   errors: z.array(z.string()).optional(),

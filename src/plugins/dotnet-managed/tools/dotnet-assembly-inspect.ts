@@ -68,9 +68,9 @@ const DotnetAssemblyInventorySchema = z.object({
   workflow_handoff: z
     .object({
       schema: z.literal(DOTNET_ASSEMBLY_WORKFLOW_HANDOFF_SCHEMA),
-      artifact_contract: z.record(z.any()),
-      dynamic_boundary: z.record(z.any()),
-      routing: z.array(z.record(z.any())),
+      artifact_contract: z.record(z.string(), z.any()),
+      dynamic_boundary: z.record(z.string(), z.any()),
+      routing: z.array(z.record(z.string(), z.any())),
     })
     .passthrough()
     .optional(),

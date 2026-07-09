@@ -63,7 +63,7 @@ export const PEStructureAnalyzeDataSchema = z.object({
   exports: z.any(),
   resources: z.any(),
   overlay: z.any(),
-  backend_details: z.record(z.any()),
+  backend_details: z.record(z.string(), z.any()),
   confidence_semantics: ConfidenceSemanticsSchema.nullable(),
   analysis_id: z.string().optional(),
   artifact: z

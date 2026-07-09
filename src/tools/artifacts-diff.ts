@@ -102,7 +102,7 @@ export const artifactsDiffOutputSchema = z.object({
         removed_count: z.number().int().nonnegative(),
         changed_count: z.number().int().nonnegative(),
         unchanged_count: z.number().int().nonnegative(),
-        changed_fields: z.record(z.number().int().nonnegative()),
+        changed_fields: z.record(z.string(), z.number().int().nonnegative()),
         left_types: z.array(z.string()),
         right_types: z.array(z.string()),
       }),

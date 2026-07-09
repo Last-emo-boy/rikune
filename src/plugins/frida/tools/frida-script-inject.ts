@@ -45,7 +45,7 @@ export const FridaScriptInjectInputSchema = z.object({
     .optional()
     .describe('Path to a custom Frida script file (overrides script_name and script_content)'),
   script_parameters: z
-    .record(z.any())
+    .record(z.string(), z.any())
     .optional()
     .describe('Parameters to pass to the Frida script (e.g., module filters, function patterns)'),
   timeout_sec: z

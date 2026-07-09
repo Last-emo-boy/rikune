@@ -60,10 +60,10 @@ export const RuntimeHyperVControlInputSchema = z.object({
 
 const RuntimeHyperVControlOutputSchema = z.object({
   ok: z.boolean(),
-  data: z.record(z.any()).optional(),
+  data: z.record(z.string(), z.any()).optional(),
   warnings: z.array(z.string()).optional(),
   errors: z.array(z.string()).optional(),
-  metrics: z.record(z.any()).optional(),
+  metrics: z.record(z.string(), z.any()).optional(),
 })
 
 export const runtimeHyperVControlToolDefinition: ToolDefinition = {

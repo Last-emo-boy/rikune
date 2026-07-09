@@ -40,7 +40,7 @@ const TemplateStepOutputSchema = z
     description: z.string(),
     required: z.boolean(),
     depends_on: z.array(z.string()).optional(),
-    args_hint: z.record(z.any()).optional(),
+    args_hint: z.record(z.string(), z.any()).optional(),
     status: z.enum(['completed', 'pending']),
   })
   .passthrough()

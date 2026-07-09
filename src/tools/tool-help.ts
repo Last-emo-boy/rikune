@@ -56,9 +56,9 @@ export const toolHelpOutputSchema = z.object({
         surface_role: ToolSurfaceRoleSchema,
         preferred_primary_tools: z.array(z.string()).optional(),
         usage_notes: z.array(z.string()).optional(),
-        aspects: z.record(z.array(z.string())).nullable().optional(),
+        aspects: z.record(z.string(), z.array(z.string())).nullable().optional(),
         aspect_coverage: z.array(z.string()).optional(),
-        format_matrix: z.record(z.any()).optional(),
+        format_matrix: z.record(z.string(), z.any()).optional(),
         artifact_declarations: z.array(z.any()).optional(),
         evidence_declarations: z.array(z.any()).optional(),
         workflow_recipes: z.array(z.any()).optional(),
@@ -97,38 +97,36 @@ function unwrapSchema(schema: z.ZodTypeAny): {
   while (true) {
     if (current instanceof z.ZodOptional) {
       required = false
-      current = current._def.innerType
+      current = current.unwrap() as z.ZodTypeAny
       continue
     }
     if (current instanceof z.ZodDefault) {
       required = false
+      const dv: unknown = current._zod.def.defaultValue
       try {
-        defaultValue = current._def.defaultValue()
+        defaultValue = typeof dv === 'function' ? (dv as () => unknown)() : dv
       } catch {
         defaultValue = undefined
       }
-      current = current._def.innerType
+      current = current.unwrap() as z.ZodTypeAny
       continue
     }
     if (current instanceof z.ZodNullable) {
       nullable = true
-      current = current._def.innerType
+      current = current.unwrap() as z.ZodTypeAny
       continue
     }
     if (current instanceof z.ZodCatch) {
-      current = current._def.innerType
+      current = current.unwrap() as z.ZodTypeAny
       continue
     }
-    if (current instanceof z.ZodEffects) {
-      current = current._def.schema
-      continue
-    }
-    if (current instanceof z.ZodBranded) {
-      current = current._def.type
+    // zod4: .transform() produces a ZodPipe (ZodEffects was removed); unwrap to its input schema.
+    if (current instanceof z.ZodPipe) {
+      current = current._zod.def.in as z.ZodTypeAny
       continue
     }
     if (current instanceof z.ZodReadonly) {
-      current = current._def.innerType
+      current = current.unwrap() as z.ZodTypeAny
       continue
     }
     break
@@ -150,7 +148,7 @@ function describeSchemaType(schema: z.ZodTypeAny): string {
   if (schema instanceof z.ZodLiteral) return 'literal'
   if (schema instanceof z.ZodObject) return 'object'
   if (schema instanceof z.ZodArray) {
-    const itemInfo = unwrapSchema(schema._def.type)
+    const itemInfo = unwrapSchema(schema.element as z.ZodTypeAny)
     return `array<${describeSchemaType(itemInfo.schema)}>`
   }
   if (schema instanceof z.ZodUnion) return 'union'
@@ -182,9 +180,9 @@ function collectSchemaFields(schema: z.ZodTypeAny, prefix = '', toolName?: strin
     field.default_value = info.defaultValue
   }
   if (current instanceof z.ZodEnum) {
-    field.enum_values = [...current._def.values]
+    field.enum_values = [...current.options].map((v) => String(v))
   } else if (current instanceof z.ZodLiteral) {
-    field.enum_values = [String(current._def.value)]
+    field.enum_values = [...current.values].map((v) => String(v))
   }
 
   return [field]

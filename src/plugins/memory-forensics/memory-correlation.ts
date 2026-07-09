@@ -9,7 +9,7 @@ export const MemoryCorrelationInputSchema = z
     netscan: z.any().optional(),
     hivelist: z.any().optional(),
     cmdline: z.any().optional(),
-    sources: z.record(z.any()).optional(),
+    sources: z.record(z.string(), z.any()).optional(),
   })
   .passthrough()
 
@@ -17,14 +17,14 @@ export const MemoryCorrelationOutputSchema = z
   .object({
     result_mode: z.literal('memory_forensics_correlation'),
     sample_id: z.string().nullable(),
-    finding_bundle: z.record(z.any()),
-    ioc_candidates: z.array(z.record(z.any())),
-    behavior_timeline: z.array(z.record(z.any())),
-    correlation_graph: z.record(z.any()),
-    provenance_graph: z.record(z.any()),
-    evidence_summary: z.record(z.any()),
-    workflow_handoff: z.record(z.any()),
-    quality_gates: z.record(z.any()),
+    finding_bundle: z.record(z.string(), z.any()),
+    ioc_candidates: z.array(z.record(z.string(), z.any())),
+    behavior_timeline: z.array(z.record(z.string(), z.any())),
+    correlation_graph: z.record(z.string(), z.any()),
+    provenance_graph: z.record(z.string(), z.any()),
+    evidence_summary: z.record(z.string(), z.any()),
+    workflow_handoff: z.record(z.string(), z.any()),
+    quality_gates: z.record(z.string(), z.any()),
     recommended_next_tools: z.array(z.string()),
     safety_notes: z.array(z.string()),
   })

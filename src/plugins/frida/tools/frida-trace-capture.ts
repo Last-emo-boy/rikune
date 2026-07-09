@@ -85,9 +85,9 @@ export const FridaTraceCaptureOutputSchema = z.object({
       events: z.array(FridaTraceEventSchema),
       aggregation: z
         .object({
-          by_type: z.record(z.number()),
-          by_module: z.record(z.number()),
-          by_function: z.record(z.number()),
+          by_type: z.record(z.string(), z.number()),
+          by_module: z.record(z.string(), z.number()),
+          by_function: z.record(z.string(), z.number()),
         })
         .optional(),
       warnings: z.array(z.string()),

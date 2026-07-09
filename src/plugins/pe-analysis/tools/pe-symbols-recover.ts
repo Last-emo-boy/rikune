@@ -94,9 +94,9 @@ export const peSymbolsRecoverOutputSchema = z.object({
       count: z.number(),
       symbols: z.array(recoveredSymbolSchema),
       warnings: z.array(z.string()),
-      evidence_summary: z.record(z.any()).optional(),
-      workflow_handoff: z.record(z.any()).optional(),
-      quality_gates: z.record(z.any()).optional(),
+      evidence_summary: z.record(z.string(), z.any()).optional(),
+      workflow_handoff: z.record(z.string(), z.any()).optional(),
+      quality_gates: z.record(z.string(), z.any()).optional(),
       recommended_next_tools: z.array(z.string()).optional(),
       next_actions: z.array(z.string()).optional(),
     })

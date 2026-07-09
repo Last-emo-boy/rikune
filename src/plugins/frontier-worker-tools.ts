@@ -22,7 +22,7 @@ export const FrontierWorkerInputSchema = z.object({
   max_input_bytes: z.number().int().positive().optional(),
   goals: z.array(z.string()).optional().default([]),
   artifacts: z.array(z.string()).optional().default([]),
-  profile: z.record(z.any()).optional(),
+  profile: z.record(z.string(), z.any()).optional(),
   passes: z.array(z.string()).optional().default([]),
   target: z
     .object({
@@ -39,12 +39,12 @@ export const FrontierWorkerInputSchema = z.object({
 export const FrontierWorkerOutputSchema = z
   .object({
     ok: z.boolean(),
-    data: z.record(z.any()).optional(),
+    data: z.record(z.string(), z.any()).optional(),
     warnings: z.array(z.string()).optional(),
     errors: z.array(z.string()).optional(),
     artifacts: z.array(z.any()).optional(),
     evidence: z.array(z.any()).optional(),
-    metrics: z.record(z.any()).optional(),
+    metrics: z.record(z.string(), z.any()).optional(),
   })
   .passthrough()
 

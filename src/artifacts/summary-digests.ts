@@ -22,7 +22,7 @@ export const SummaryArtifactRefSchema = z.object({
   path: z.string(),
   sha256: z.string(),
   mime: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 export const DigestBudgetSchema = z.object({
@@ -33,7 +33,7 @@ export const DigestBudgetSchema = z.object({
   omitted: z.number().int().nonnegative(),
 })
 
-export const DigestTruncationSchema = z.record(DigestBudgetSchema)
+export const DigestTruncationSchema = z.record(z.string(), DigestBudgetSchema)
 
 const DetailLevelSchema = z.enum(['compact', 'full'])
 

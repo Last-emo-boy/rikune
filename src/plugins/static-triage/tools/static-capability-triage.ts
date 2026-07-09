@@ -85,7 +85,7 @@ export const StaticCapabilityTriageDataSchema = z.object({
   sample_id: z.string(),
   capability_count: z.number().int().nonnegative(),
   behavior_namespaces: z.array(z.string()),
-  capability_groups: z.record(z.number().int().nonnegative()),
+  capability_groups: z.record(z.string(), z.number().int().nonnegative()),
   capabilities: z.array(CapabilityFindingSchema),
   summary: z.string(),
   backend: CapabilityBackendSchema,
@@ -101,11 +101,11 @@ export const StaticCapabilityTriageDataSchema = z.object({
     })
     .optional(),
   raw_backend: z.any().nullable().optional(),
-  raw_backend_summary: z.record(z.unknown()).optional(),
-  evidence_summary: z.record(z.any()).optional(),
-  correlation_bundle: z.record(z.any()).optional(),
-  workflow_handoff: z.record(z.any()).optional(),
-  quality_gates: z.record(z.any()).optional(),
+  raw_backend_summary: z.record(z.string(), z.unknown()).optional(),
+  evidence_summary: z.record(z.string(), z.any()).optional(),
+  correlation_bundle: z.record(z.string(), z.any()).optional(),
+  workflow_handoff: z.record(z.string(), z.any()).optional(),
+  quality_gates: z.record(z.string(), z.any()).optional(),
 })
 
 export const staticCapabilityTriageOutputSchema = z.object({

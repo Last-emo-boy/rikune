@@ -105,7 +105,7 @@ export const FakeC2InputSchema = z.object({
     .describe('Required true after reviewing debug.network.plan/tool.readiness.'),
 })
 
-export const FakeC2OutputSchema = createWorkerResultOutputSchema(z.record(z.any()))
+export const FakeC2OutputSchema = createWorkerResultOutputSchema(z.record(z.string(), z.any()))
 
 export const FAKE_C2_RUNTIME_POLICY: FakeC2RuntimePolicy = {
   passiveByDefault: true,

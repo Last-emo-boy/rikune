@@ -46,7 +46,7 @@ const BytecodeMetadataSchema = z.object({
   format: z.string(),
   detected_by: z.array(z.string()),
   size: z.number().optional(),
-  header: z.record(z.any()),
+  header: z.record(z.string(), z.any()),
   version_hints: z.array(z.string()),
   string_hints: z.array(z.string()),
   decompile_plan: z.object({
@@ -58,9 +58,9 @@ const BytecodeMetadataSchema = z.object({
   summary: z.string(),
   recommended_next_tools: z.array(z.string()),
   next_actions: z.array(z.string()),
-  evidence_summary: z.record(z.any()),
-  workflow_handoff: z.record(z.any()),
-  quality_gates: z.record(z.any()),
+  evidence_summary: z.record(z.string(), z.any()),
+  workflow_handoff: z.record(z.string(), z.any()),
+  quality_gates: z.record(z.string(), z.any()),
 })
 
 export const BytecodeMetadataInspectInputSchema = z.object({

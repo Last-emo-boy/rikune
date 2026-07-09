@@ -186,7 +186,7 @@ export class ToolExecutor {
     } catch (error) {
       if (error instanceof z.ZodError) {
         // Build detailed validation error message
-        const errorDetails = error.errors.map((e) => {
+        const errorDetails = error.issues.map((e) => {
           const path = e.path.length > 0 ? e.path.join('.') : 'root'
           return `  - ${path}: ${e.message}`
         })

@@ -36,7 +36,7 @@ export const AnalysisContextGetOutputSchema = z.object({
     .object({
       sample_id: z.string(),
       intended_tool: z.string().optional(),
-      reuse_hints: z.record(z.any()),
+      reuse_hints: z.record(z.string(), z.any()),
       result_mode: z.literal('preflight'),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
