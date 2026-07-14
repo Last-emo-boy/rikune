@@ -3,15 +3,457 @@ import { z } from 'zod'
 import { createToolsDiscoverHandler } from '../../src/tools/tools-discover.js'
 import { getToolSurfaceManager } from '../../src/core/tool-surface-manager.js'
 import type { Plugin } from '../../src/plugins/sdk.js'
+import { analysisClaimsApplyToolDefinition } from '../../src/plugins/kb-collaboration/tools/analysis-claims-apply.js'
 
 function resetSurfaceForTest() {
   const surface = getToolSurfaceManager() as any
   surface.entries = new Map()
   surface.coreTools = new Set()
   surface.visibleCoreTools = new Set()
+  surface.visiblePluginTools = new Set()
 }
 
 describe('tools.discover', () => {
+  test('preflights a batch before exposing tools when one target is stale', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const livePlugin: Plugin = {
+      id: 'atomic-live-test',
+      name: 'Atomic Live Test',
+      surfaceRules: { tier: 2, category: 'static-analysis' },
+      tools: [],
+    }
+    const stalePlugin: Plugin = {
+      id: 'atomic-stale-test',
+      name: 'Atomic Stale Test',
+      surfaceRules: { tier: 2, category: 'static-analysis' },
+      tools: [],
+    }
+    surface.registerPlugin(livePlugin, ['atomic.live.inspect'])
+    surface.registerPlugin(stalePlugin, ['atomic.stale.inspect'])
+    surface.unregisterPlugin(stalePlugin.id)
+
+    const handler = createToolsDiscoverHandler({
+      getStatuses: () => [
+        {
+          id: livePlugin.id,
+          name: livePlugin.name,
+          status: 'loaded',
+          tools: ['atomic.live.inspect'],
+          depChecks: [],
+          qualityWarnings: [],
+        },
+        {
+          id: stalePlugin.id,
+          name: stalePlugin.name,
+          status: 'loaded',
+          tools: ['atomic.stale.inspect'],
+          depChecks: [],
+          qualityWarnings: [],
+        },
+      ],
+      getDiscoveredPlugins: () => [livePlugin, stalePlugin],
+      getPlugin: (id: string) => [livePlugin, stalePlugin].find((plugin) => plugin.id === id),
+    } as any)
+
+    const result = await handler({
+      action: 'activate',
+      tool_names: ['atomic.live.inspect', 'atomic.stale.inspect'],
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors?.join('\n')).toContain('atomic.stale.inspect')
+    expect(surface.isToolVisible('atomic.live.inspect')).toBe(false)
+  })
+
+  test('rejects surface-owned ghost tools that are absent from the live MCP registry', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugin: Plugin = {
+      id: 'registry-drift-test',
+      name: 'Registry Drift Test',
+      surfaceRules: { tier: 2, category: 'static-analysis' },
+      tools: [],
+    }
+    surface.registerPlugin(plugin, ['registry.live.inspect', 'registry.ghost.inspect'])
+    const handler = createToolsDiscoverHandler(
+      {
+        getStatuses: () => [
+          {
+            id: plugin.id,
+            name: plugin.name,
+            status: 'loaded',
+            tools: ['registry.live.inspect', 'registry.ghost.inspect'],
+            depChecks: [],
+            qualityWarnings: [],
+          },
+        ],
+        getDiscoveredPlugins: () => [plugin],
+        getPlugin: (id: string) => (id === plugin.id ? plugin : undefined),
+      } as any,
+      {
+        toolDefinitions: () => [
+          {
+            name: 'registry.live.inspect',
+            description: 'Actually registered inspection tool',
+            inputSchema: z.object({}),
+          },
+        ],
+      }
+    )
+
+    const result = await handler({
+      action: 'activate',
+      tool_names: ['registry.live.inspect', 'registry.ghost.inspect'],
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors?.join('\n')).toContain('registry.ghost.inspect')
+    expect(surface.isToolVisible('registry.live.inspect')).toBe(false)
+    expect(surface.isToolVisible('registry.ghost.inspect')).toBe(false)
+  })
+
+  test('specializes a hand-written plugin query to one live tool definition', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugin: Plugin = {
+      id: 'kb-live-definition-test',
+      name: 'KB Live Definition Test',
+      description: 'Hand-written knowledge collaboration plugin',
+      surfaceRules: { tier: 2, category: 'static-analysis' },
+      aspects: {
+        execution: ['static', 'correlation'],
+        safety: ['passive', 'no_live_sample_by_default'],
+        capabilities: ['claim-ledger'],
+        evidence: ['artifact', 'provenance'],
+      },
+      runtimePolicy: {
+        passiveByDefault: true,
+        requiresUserOptIn: false,
+        requiresIsolation: false,
+        allowedBackends: ['local'],
+        networkPolicy: 'disabled',
+      },
+      tools: [],
+    }
+    surface.registerPlugin(plugin, ['analysis.notes', 'analysis.claims.apply'])
+
+    const handler = createToolsDiscoverHandler(
+      {
+        getStatuses: () => [
+          {
+            id: plugin.id,
+            name: plugin.name,
+            description: plugin.description,
+            status: 'loaded',
+            tools: ['analysis.notes', 'analysis.claims.apply'],
+            depChecks: [],
+            qualityWarnings: [],
+          },
+        ],
+        getDiscoveredPlugins: () => [plugin],
+        getPlugin: (id: string) => (id === plugin.id ? plugin : undefined),
+      } as any,
+      {
+        toolDefinitions: () => [
+          {
+            name: 'analysis.notes',
+            description: 'Store freeform notes without a Claim Ledger contract',
+            inputSchema: z.object({ note: z.string() }),
+          },
+          analysisClaimsApplyToolDefinition,
+        ],
+      }
+    )
+
+    const result = await handler({
+      action: 'recommend',
+      query: 'evidence backed claim ledger',
+    })
+
+    expect(result.ok).toBe(true)
+    const recommendation = (result.data as any).recommendations.find(
+      (item: any) => item.tool_name === 'analysis.claims.apply'
+    )
+    expect(recommendation).toEqual(
+      expect.objectContaining({
+        kind: 'plugin_tool',
+        plugin_id: plugin.id,
+        tool_name: 'analysis.claims.apply',
+        recommended_tools: ['analysis.claims.apply'],
+        available_tools: ['analysis.claims.apply'],
+        readiness_state: 'hidden_activation_required',
+      })
+    )
+    expect(recommendation.description).toContain('evidence-backed Claim Ledger')
+    expect(recommendation.tool_surface_role).not.toBe('runtime_gated')
+    expect(recommendation.artifact_declarations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'analysis_claim_set' })])
+    )
+    expect(recommendation.workflow_recipes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'analysis-claim-ledger' })])
+    )
+    expect(surface.isToolVisible('analysis.claims.apply')).toBe(false)
+    expect(surface.isToolVisible('analysis.notes')).toBe(false)
+
+    const exactResult = await handler({
+      action: 'recommend',
+      query: 'tool:analysis.claims.apply',
+    })
+    expect(exactResult.ok).toBe(true)
+    expect((exactResult.data as any).recommendations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'plugin_tool',
+          plugin_id: plugin.id,
+          tool_name: 'analysis.claims.apply',
+        }),
+      ])
+    )
+  })
+
+  test('specializes an exact selector for a declarative plugin', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugin: Plugin = {
+      id: 'declarative-exact-selector-test',
+      name: 'Declarative Exact Selector Test',
+      surfaceRules: { tier: 2, category: 'static-analysis' },
+      tools: [
+        {
+          definition: {
+            name: 'declarative.target.inspect',
+            description: 'Inspect the requested declarative target',
+            inputSchema: z.object({}),
+          },
+          handler: async () => ({ ok: true }),
+        },
+        {
+          definition: {
+            name: 'declarative.sibling.inspect',
+            description: 'Inspect an unrelated declarative sibling',
+            inputSchema: z.object({}),
+          },
+          handler: async () => ({ ok: true }),
+        },
+      ],
+    }
+    const toolNames = plugin.tools.map((tool) => tool.definition.name)
+    surface.registerPlugin(plugin, toolNames)
+    const handler = createToolsDiscoverHandler({
+      getStatuses: () => [
+        {
+          id: plugin.id,
+          name: plugin.name,
+          status: 'loaded',
+          tools: toolNames,
+          depChecks: [],
+          qualityWarnings: [],
+        },
+      ],
+      getDiscoveredPlugins: () => [plugin],
+      getPlugin: (id: string) => (id === plugin.id ? plugin : undefined),
+    } as any)
+
+    const result = await handler({
+      action: 'recommend',
+      query: 'tool:declarative.target.inspect',
+    })
+
+    expect(result.ok).toBe(true)
+    expect((result.data as any).recommendations).toEqual([
+      expect.objectContaining({
+        kind: 'plugin_tool',
+        plugin_id: plugin.id,
+        tool_name: 'declarative.target.inspect',
+        recommended_tools: ['declarative.target.inspect'],
+      }),
+    ])
+    expect(surface.isToolVisible('declarative.target.inspect')).toBe(false)
+    expect(surface.isToolVisible('declarative.sibling.inspect')).toBe(false)
+  })
+
+  test('preserves missing dependency blocking for a specialized live tool', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugin: Plugin = {
+      id: 'blocked-live-definition-test',
+      name: 'Blocked Live Definition Test',
+      description: 'Hand-written Claim Ledger plugin with a missing dependency',
+      surfaceRules: { tier: 2, category: 'static-analysis' },
+      tools: [],
+    }
+    surface.registerPlugin(plugin, ['analysis.claims.apply'])
+
+    const handler = createToolsDiscoverHandler(
+      {
+        getStatuses: () => [
+          {
+            id: plugin.id,
+            name: plugin.name,
+            description: plugin.description,
+            status: 'loaded',
+            tools: ['analysis.claims.apply'],
+            depChecks: [
+              {
+                dep: { name: 'claim-evidence-index' },
+                available: false,
+                error: 'missing',
+              },
+            ],
+            qualityWarnings: [],
+          },
+        ],
+        getDiscoveredPlugins: () => [plugin],
+        getPlugin: (id: string) => (id === plugin.id ? plugin : undefined),
+      } as any,
+      { toolDefinitions: () => [analysisClaimsApplyToolDefinition] }
+    )
+
+    const result = await handler({ action: 'recommend', query: 'evidence backed claim ledger' })
+
+    expect(result.ok).toBe(true)
+    const recommendation = (result.data as any).recommendations.find(
+      (item: any) => item.tool_name === 'analysis.claims.apply'
+    )
+    expect(recommendation).toEqual(
+      expect.objectContaining({
+        readiness_state: 'blocked',
+        available_tools: [],
+        blocked_tools: ['analysis.claims.apply'],
+        missing_deps: [`${plugin.id}: claim-evidence-index`],
+      })
+    )
+    expect(recommendation.activation_command).toBeUndefined()
+    expect(recommendation.next_actions.join('\n')).toContain('Resolve')
+    expect(recommendation.next_actions.join('\n')).not.toContain('action=activate')
+  })
+
+  test('keeps a runtime-contract-only live tool behind the runtime gate', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugin: Plugin = {
+      id: 'runtime-live-definition-test',
+      name: 'Runtime Live Definition Test',
+      description: 'Hand-written runtime inspection plugin',
+      surfaceRules: { tier: 2, category: 'dynamic-analysis' },
+      tools: [],
+    }
+    surface.registerPlugin(plugin, ['runtime.intent.inspect'])
+
+    const handler = createToolsDiscoverHandler(
+      {
+        getStatuses: () => [
+          {
+            id: plugin.id,
+            name: plugin.name,
+            description: plugin.description,
+            status: 'loaded',
+            tools: ['runtime.intent.inspect'],
+            depChecks: [],
+            qualityWarnings: [],
+          },
+        ],
+        getDiscoveredPlugins: () => [plugin],
+        getPlugin: (id: string) => (id === plugin.id ? plugin : undefined),
+      } as any,
+      {
+        toolDefinitions: () => [
+          {
+            name: 'runtime.intent.inspect',
+            description: 'Inspect a signed runtime intent',
+            inputSchema: z.object({ sample_id: z.string() }),
+            runtime: { type: 'inline', handler: 'executeRuntimeIntentInspect' },
+            runtimePolicy: {
+              passiveByDefault: false,
+              requiresUserOptIn: true,
+              requiresIsolation: true,
+              allowedBackends: ['remote-sandbox'],
+              networkPolicy: 'disabled',
+            },
+          },
+        ],
+      }
+    )
+
+    const result = await handler({ action: 'recommend', query: 'signed runtime intent' })
+
+    expect(result.ok).toBe(true)
+    const recommendation = (result.data as any).recommendations.find(
+      (item: any) => item.tool_name === 'runtime.intent.inspect'
+    )
+    expect(recommendation).toEqual(
+      expect.objectContaining({
+        readiness_state: 'runtime_opt_in_required',
+        tool_surface_role: 'runtime_gated',
+        runtime_policy: expect.objectContaining({ requiresUserOptIn: true }),
+      })
+    )
+    expect(recommendation.next_actions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('tool.readiness'),
+        expect.stringContaining('workflow.search action=activate'),
+      ])
+    )
+  })
+
+  test('does not runtime-gate a passive static plugin recommendation', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugin: Plugin = {
+      id: 'passive-static-policy-test',
+      name: 'Passive Static Policy Test',
+      description: 'Local passive correlation tools',
+      aspects: {
+        execution: ['static', 'correlation'],
+        safety: ['passive', 'no_live_sample_by_default'],
+      },
+      runtimePolicy: {
+        passiveByDefault: true,
+        requiresUserOptIn: false,
+        requiresIsolation: false,
+        allowedBackends: ['local'],
+        networkPolicy: 'disabled',
+      },
+      surfaceRules: { tier: 2, category: 'static-analysis' },
+      tools: [],
+    }
+    surface.registerPlugin(plugin, ['passive.local.inspect', 'passive.local.correlate'])
+    const definitions = ['passive.local.inspect', 'passive.local.correlate'].map((name) => ({
+      name,
+      description: 'Perform local passive correlation',
+      inputSchema: z.object({}),
+    }))
+    const handler = createToolsDiscoverHandler(
+      {
+        getStatuses: () => [
+          {
+            id: plugin.id,
+            name: plugin.name,
+            description: plugin.description,
+            status: 'loaded',
+            tools: definitions.map((definition) => definition.name),
+            depChecks: [],
+            qualityWarnings: [],
+          },
+        ],
+        getDiscoveredPlugins: () => [plugin],
+        getPlugin: (id: string) => (id === plugin.id ? plugin : undefined),
+      } as any,
+      { toolDefinitions: () => definitions }
+    )
+
+    const result = await handler({ action: 'recommend', query: 'local passive correlation' })
+
+    expect(result.ok).toBe(true)
+    const recommendation = (result.data as any).recommendations.find(
+      (item: any) => item.plugin_id === plugin.id
+    )
+    expect(recommendation.kind).toBe('plugin')
+    expect(recommendation.readiness_state).toBe('hidden_activation_required')
+    expect(recommendation.tool_surface_role).not.toBe('runtime_gated')
+  })
+
   test('lists categories with role-aware guidance metadata', async () => {
     resetSurfaceForTest()
     const surface = getToolSurfaceManager()

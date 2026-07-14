@@ -130,6 +130,8 @@ Useful follow-up surfaces:
 - `workflow.module_reconstruction_review`
 - `tool.help`, `tool.readiness`, and `tools.discover` for compatibility/debug inspection
 
+`analysis.claims.apply` records evidence-backed AI or imported findings as append-only `inferred` Claim Ledger revisions. Natural-language discovery can return the precise hidden result `tool:analysis.claims.apply` without activating sibling plugin tools. Analyst revisions are intentionally fail-closed: there is no MCP or HTTP path that can self-assign a reviewer or terminal status. A future operator boundary must use signed review intents before trusted decisions are enabled.
+
 ## Architecture
 
 The current code path is:

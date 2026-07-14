@@ -623,7 +623,7 @@ describe('analysis Claim Ledger artifacts', () => {
           claim_id: 'claim-trusted-rejected',
           validation_type: 'evidence_reference_integrity',
           status: 'not_applicable',
-          validator: 'analysis.claims.apply',
+          validator: 'analysis.claims.review',
           validated_at: reviewedAt,
           supporting_evidence_count: 0,
           counter_evidence_count: 0,
@@ -638,11 +638,31 @@ describe('analysis Claim Ledger artifacts', () => {
         json_pointer_count: 0,
       },
     }
-    const trustedArtifact = await persistAnalysisClaimSetArtifact(
+    const mismatchedValidator = AnalysisClaimSetArtifactSchema.safeParse({
+      ...trustedPayload,
+      validation_results: trustedPayload.validation_results.map((result) => ({
+        ...result,
+        validator: 'analysis.claims.apply',
+      })),
+    })
+    expect(mismatchedValidator.success).toBe(false)
+    if (!mismatchedValidator.success) {
+      expect(mismatchedValidator.error.issues.map((issue) => issue.message).join('\n')).toContain(
+        'producer.kind=analyst requires validator=analysis.claims.review'
+      )
+    }
+    await expect(
+      persistAnalysisClaimSetArtifact(workspaceManager, database, trustedPayload)
+    ).rejects.toThrow('fail-closed until a signed operator boundary is configured')
+    const trustedArtifact = await persistFixtureArtifact({
       workspaceManager,
       database,
-      trustedPayload
-    )
+      sampleId: PRIMARY_SAMPLE_ID,
+      id: 'legacy-trusted-review-artifact',
+      type: ANALYSIS_CLAIM_SET_ARTIFACT_TYPE,
+      relativePath: 'reports/claims/default/legacy_trusted_review.json',
+      content: JSON.stringify(trustedPayload, null, 2),
+    })
 
     const result = await handler({
       sample_id: PRIMARY_SAMPLE_ID,
@@ -660,9 +680,7 @@ describe('analysis Claim Ledger artifacts', () => {
     })
 
     expect(result.ok).toBe(false)
-    expect(result.errors?.join('\n')).toContain(
-      'cannot revise a previously rejected claim; use a trusted analyst review entry point'
-    )
+    expect(result.errors?.join('\n')).toContain('cannot revise a previously rejected claim')
 
     const bypassAt = '2026-07-14T11:01:00.000Z'
     const lowLevelBypass: AnalysisClaimSetArtifact = {
@@ -726,7 +744,7 @@ describe('analysis Claim Ledger artifacts', () => {
     }
     await expect(
       persistAnalysisClaimSetArtifact(workspaceManager, database, lowLevelBypass)
-    ).rejects.toThrow('only a trusted analyst revision may replace a reviewed claim')
+    ).rejects.toThrow('terminal reviewed claims cannot be replaced or reopened')
     expect(
       database.findArtifactsByType(PRIMARY_SAMPLE_ID, ANALYSIS_CLAIM_SET_ARTIFACT_TYPE)
     ).toHaveLength(1)

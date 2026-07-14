@@ -244,7 +244,7 @@ export const AnalysisClaimValidationResultSchema = z
     claim_id: AnalysisClaimIdSchema,
     validation_type: z.literal('evidence_reference_integrity'),
     status: z.enum(['passed', 'not_applicable']),
-    validator: z.literal('analysis.claims.apply'),
+    validator: z.enum(['analysis.claims.apply', 'analysis.claims.review']),
     validated_at: IsoTimestampSchema,
     supporting_evidence_count: z.number().int().nonnegative(),
     counter_evidence_count: z.number().int().nonnegative(),
@@ -348,6 +348,15 @@ export const AnalysisClaimSetArtifactSchema = z
       const result = validationByClaimId.get(claim.claim_id)
       if (!result) {
         continue
+      }
+      const expectedValidator =
+        value.producer.kind === 'analyst' ? 'analysis.claims.review' : 'analysis.claims.apply'
+      if (result.validator !== expectedValidator) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['validation_results'],
+          message: `producer.kind=${value.producer.kind} requires validator=${expectedValidator}.`,
+        })
       }
       const supportingCount = claim.supporting_evidence.length
       const counterCount = claim.counter_evidence.length
@@ -743,6 +752,7 @@ export async function validateAndCanonicalizeAnalysisClaims(args: {
   const claims: AnalysisClaim[] = []
   const validationResults: AnalysisClaimValidationResult[] = []
   const reviewedAt = args.reviewedAt || new Date().toISOString()
+  const validator = args.source === 'analyst' ? 'analysis.claims.review' : 'analysis.claims.apply'
 
   for (const draft of args.drafts) {
     if (args.source !== 'analyst' && draft.status !== 'inferred') {
@@ -816,7 +826,7 @@ export async function validateAndCanonicalizeAnalysisClaims(args: {
       claim_id: draft.claim_id,
       validation_type: 'evidence_reference_integrity',
       status: validationCount > 0 ? 'passed' : 'not_applicable',
-      validator: 'analysis.claims.apply',
+      validator,
       validated_at: reviewedAt,
       supporting_evidence_count: supportingEvidence.length,
       counter_evidence_count: counterEvidence.length,
@@ -978,6 +988,11 @@ export async function persistAnalysisClaimSetArtifact(
   payload: AnalysisClaimSetArtifact
 ): Promise<ArtifactRef> {
   const validatedPayload = AnalysisClaimSetArtifactSchema.parse(payload)
+  if (validatedPayload.producer.kind === 'analyst') {
+    throw new Error(
+      'Analyst claim revisions are fail-closed until a signed operator boundary is configured; this writer cannot persist producer=analyst.'
+    )
+  }
   const workspace = await workspaceManager.createWorkspace(validatedPayload.sample_id)
   return await withClaimLedgerWriteLock(validatedPayload.sample_id, workspace.root, async () => {
     const existingArtifacts = database.findArtifactsByType(
@@ -1000,6 +1015,11 @@ export async function persistAnalysisClaimSetArtifact(
     }
     for (const claim of validatedPayload.claims) {
       const previous = existingLedger.byClaimId.get(claim.claim_id)
+      if (previous && ['verified', 'rejected'].includes(previous.claim.status)) {
+        throw new Error(
+          `${claim.claim_id}: terminal reviewed claims cannot be replaced or reopened.`
+        )
+      }
       if (
         previous &&
         previous.claim.review !== null &&

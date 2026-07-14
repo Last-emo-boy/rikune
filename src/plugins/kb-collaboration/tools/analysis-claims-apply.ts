@@ -120,7 +120,7 @@ export const AnalysisClaimsApplyOutputSchema = z
 export const analysisClaimsApplyToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Persist an append-only, evidence-backed Claim Ledger revision. The tool verifies artifact existence, same-sample ownership, file SHA-256, and optional JSON pointers before writing. It validates evidence integrity, not semantic truth. This AI-facing surface only writes inferred LLM/imported claims; reviewed status requires a separate trusted analyst entry point.',
+    'Persist an append-only, evidence-backed Claim Ledger revision. The tool verifies artifact existence, same-sample ownership, file SHA-256, and optional JSON pointers before writing. It validates evidence integrity, not semantic truth. This AI-facing surface only writes inferred LLM/imported claims; analyst revisions remain fail-closed until a signed operator boundary is available.',
   inputSchema: AnalysisClaimsApplyInputSchema,
   outputSchema: AnalysisClaimsApplyOutputSchema,
   aspects: {
@@ -204,7 +204,7 @@ export function createAnalysisClaimsApplyHandler(
             draft.claim_id +
               ': this AI-facing tool cannot revise a previously ' +
               previous.claim.status +
-              ' claim; use a trusted analyst review entry point.',
+              ' claim.',
           ]
         }
         return []
