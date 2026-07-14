@@ -23,9 +23,14 @@ import {
   type PluginEvidence,
 } from '../../../artifacts/evidence-correlation.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
+import {
+  buildAnalysisClaimOverlay,
+  loadAnalysisClaimLedgerIndex,
+  type AnalysisClaimOverlay,
+} from '../../../artifacts/analysis-claim-artifacts.js'
 
 const TOOL_NAME = 'analysis.evidence.graph'
-const TOOL_VERSION = '0.1.0'
+const TOOL_VERSION = '0.2.0'
 
 export const EvidenceGraphInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
@@ -55,12 +60,16 @@ export const EvidenceGraphOutputSchema = createWorkerResultOutputSchema(
         node_count: z.number().int().nonnegative(),
         edge_count: z.number().int().nonnegative(),
         corroboration_edge_count: z.number().int().nonnegative(),
+        claim_set_count: z.number().int().nonnegative(),
+        claim_count: z.number().int().nonnegative(),
+        claim_evidence_anchor_count: z.number().int().nonnegative(),
       }),
       plugin_evidence_summary: z.record(z.any()),
       reporting_handoff: z.record(z.any()),
       quality_gates: z.record(z.any()),
       dynamic_summary: z.any().nullable(),
       graph: z.any(),
+      claim_overlay: z.record(z.any()),
       warnings: z.array(z.string()),
       recommended_next_tools: z.array(z.string()),
     })
@@ -70,7 +79,7 @@ export const EvidenceGraphOutputSchema = createWorkerResultOutputSchema(
 export const evidenceGraphToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Build a compact evidence graph that links specialist static artifacts, plugin evidence handoffs, static expectations, dynamic trace observations, reporting handoffs, and corroboration edges. Does not execute the sample.',
+    'Build a compact evidence graph that links specialist static artifacts, plugin evidence handoffs, static expectations, dynamic trace observations, reporting handoffs, and corroboration edges. Evidence-backed AI/analyst claims are exposed in an independent claim overlay so they cannot be mistaken for observed facts. Does not execute the sample.',
   inputSchema: EvidenceGraphInputSchema,
   outputSchema: EvidenceGraphOutputSchema,
   aspects: {
@@ -78,7 +87,16 @@ export const evidenceGraphToolDefinition: ToolDefinition = {
     platforms: ['all', 'cross-platform'],
     execution: ['static', 'correlation'],
     safety: ['passive', 'no_live_sample_by_default'],
-    evidence: ['provenance', 'timeline', 'behavior', 'network', 'memory', 'artifact', 'workflow'],
+    evidence: [
+      'provenance',
+      'timeline',
+      'behavior',
+      'network',
+      'memory',
+      'artifact',
+      'workflow',
+      'claims',
+    ],
   },
   artifacts: [
     {
@@ -211,10 +229,14 @@ function buildReportingHandoff(args: {
   sampleId: string
   pluginEvidence: PluginEvidence[]
   graph: EvidenceGraph
+  claimOverlay: AnalysisClaimOverlay
   dynamicEvidencePresent: boolean
 }) {
   const pluginRecommended = args.pluginEvidence.flatMap((item) => item.recommended_tools || [])
-  const reportSections = reportSectionsFor(args.pluginEvidence, args.graph)
+  const reportSections = uniqueStrings([
+    ...reportSectionsFor(args.pluginEvidence, args.graph),
+    args.claimOverlay.summary.claim_count > 0 ? 'claim_ledger' : null,
+  ])
 
   return {
     schema: 'rikune.analysis_evidence_graph.reporting_handoff.v1',
@@ -238,6 +260,14 @@ function buildReportingHandoff(args: {
       corroboration_edge_count: args.graph.edges.filter((edge) => edge.label === 'corroborated_by')
         .length,
       preferred_evidence_nodes: preferredEvidenceNodes(args.graph.nodes),
+    },
+    claim_ledger_snapshot: {
+      schema: args.claimOverlay.schema,
+      claim_set_count: args.claimOverlay.summary.claim_set_count,
+      claim_count: args.claimOverlay.summary.claim_count,
+      evidence_anchor_count: args.claimOverlay.summary.evidence_anchor_count,
+      unresolved_reference_count: args.claimOverlay.unresolved_refs.length,
+      analyst_review_required: args.claimOverlay.summary.analyst_review_required,
     },
     routing: [
       {
@@ -272,6 +302,7 @@ function buildReportingHandoff(args: {
         'backend_upx_list',
         'backend_upx_test',
         'dynamic_trace_json',
+        'analysis_claim_set',
       ],
       produces: ['analysis_evidence_graph'],
       expected_consumers: ['workflow.summarize', 'report.summarize', 'report.generate'],
@@ -288,6 +319,7 @@ function buildReportingHandoff(args: {
 function buildQualityGates(args: {
   pluginEvidence: PluginEvidence[]
   graph: EvidenceGraph
+  claimOverlay: AnalysisClaimOverlay
   dynamicEvidencePresent: boolean
   staticExpectationCount: number
   warnings: string[]
@@ -306,13 +338,20 @@ function buildQualityGates(args: {
     plugin_evidence_present: args.pluginEvidence.length > 0,
     static_expectations_present: args.staticExpectationCount > 0,
     dynamic_evidence_present: args.dynamicEvidencePresent,
+    claim_ledger_present: args.claimOverlay.summary.claim_count > 0,
+    claim_count: args.claimOverlay.summary.claim_count,
+    claim_evidence_refs_resolved: args.claimOverlay.unresolved_refs.length === 0,
+    claim_review_required: args.claimOverlay.summary.analyst_review_required,
     report_handoff_ready: args.graph.nodes.length > 1,
     graph_nonempty: args.graph.nodes.length > 0 && args.graph.edges.length > 0,
     function_handoff_present: args.pluginEvidence.some((item) =>
       ['stable_function', 'disputed_function'].includes(item.kind)
     ),
     analyst_review_required:
-      args.warnings.length > 0 || disputedFunctionCount > 0 || backendGapCount > 0,
+      args.warnings.length > 0 ||
+      disputedFunctionCount > 0 ||
+      backendGapCount > 0 ||
+      args.claimOverlay.summary.analyst_review_required,
     warning_count: args.warnings.length,
     disputed_function_count: disputedFunctionCount,
     backend_gap_count: backendGapCount,
@@ -341,20 +380,38 @@ export function createEvidenceGraphHandler(deps: PluginToolDeps) {
         maxStaticArtifacts: input.max_static_artifacts,
       })
       const graph = buildEvidenceGraph(bundle)
+      const claimLedger = await loadAnalysisClaimLedgerIndex(
+        workspace.manager,
+        db,
+        input.sample_id,
+        {
+          scope: input.evidence_scope,
+          sessionTag: input.evidence_session_tag,
+        }
+      )
+      const claimOverlay = await buildAnalysisClaimOverlay(
+        workspace.manager,
+        db,
+        input.sample_id,
+        claimLedger
+      )
+      const warnings = uniqueStrings([...bundle.warnings, ...claimOverlay.warnings])
       const pluginEvidence = bundle.plugin_evidence ?? []
       const pluginEvidenceSummary = buildPluginEvidenceSummary(pluginEvidence)
       const reportingHandoff = buildReportingHandoff({
         sampleId: input.sample_id,
         pluginEvidence,
         graph,
+        claimOverlay,
         dynamicEvidencePresent: Boolean(bundle.dynamic_summary),
       })
       const qualityGates = buildQualityGates({
         pluginEvidence,
         graph,
+        claimOverlay,
         dynamicEvidencePresent: Boolean(bundle.dynamic_summary),
         staticExpectationCount: bundle.expectations.length,
-        warnings: bundle.warnings,
+        warnings,
       })
       const data = {
         schema: 'rikune.analysis_evidence_graph.v1',
@@ -376,6 +433,9 @@ export function createEvidenceGraphHandler(deps: PluginToolDeps) {
           edge_count: graph.edges.length,
           corroboration_edge_count: graph.edges.filter((edge) => edge.label === 'corroborated_by')
             .length,
+          claim_set_count: claimOverlay.summary.claim_set_count,
+          claim_count: claimOverlay.summary.claim_count,
+          claim_evidence_anchor_count: claimOverlay.summary.evidence_anchor_count,
         },
         plugin_evidence_summary: pluginEvidenceSummary,
         reporting_handoff: reportingHandoff,
@@ -390,8 +450,10 @@ export function createEvidenceGraphHandler(deps: PluginToolDeps) {
             }
           : null,
         graph,
-        warnings: bundle.warnings,
+        claim_overlay: claimOverlay,
+        warnings,
         recommended_next_tools: [
+          'analysis.claims.apply',
           'static.config.carver',
           'static.resource.graph',
           'malware.intel.loop',
@@ -423,7 +485,7 @@ export function createEvidenceGraphHandler(deps: PluginToolDeps) {
       return {
         ok: true,
         data,
-        warnings: bundle.warnings.length > 0 ? bundle.warnings : undefined,
+        warnings: warnings.length > 0 ? warnings : undefined,
         artifacts,
         metrics: { elapsed_ms: Date.now() - started, tool: TOOL_NAME },
       }

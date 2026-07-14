@@ -17,9 +17,8 @@ import { createCodeFunctionExplainApplyHandler } from '../plugins/code-analysis/
 const TOOL_NAME = 'code.function.explain.review'
 
 /**
- * @deprecated Use `llm.analyze` with task='explain' instead.
- * This tool will be removed in a future version.
- * Migration guide: docs/MIGRATION.md
+ * Structured end-to-end semantic explanation review with prepare, sampling,
+ * and apply contracts. `llm.analyze` is not a compatible replacement.
  */
 
 const ReviewExplanationSchema = z

@@ -17,9 +17,8 @@ import { createCodeModuleReviewApplyHandler } from '../plugins/code-analysis/too
 const TOOL_NAME = 'code.module.review'
 
 /**
- * @deprecated Use `llm.analyze` with task='review' instead.
- * This tool will be removed in a future version.
- * Migration guide: docs/MIGRATION.md
+ * Structured end-to-end module review with prepare, sampling, and apply
+ * contracts. `llm.analyze` is not a compatible replacement.
  */
 
 const ReviewModuleSchema = z.object({

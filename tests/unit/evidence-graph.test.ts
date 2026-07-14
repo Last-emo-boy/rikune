@@ -12,6 +12,7 @@ import {
 } from '../../src/plugins/visualization/tools/evidence-graph.js'
 import { buildMetadataExtractProfile } from '../../src/plugins/metadata/tools/metadata-extract.js'
 import { buildWindowsInstallerInventoryFromBuffer } from '../../src/plugins/windows-installer/tools/windows-installer-inventory.js'
+import { createAnalysisClaimsApplyHandler } from '../../src/plugins/kb-collaboration/tools/analysis-claims-apply.js'
 
 const SAMPLE_HASH = '4'.repeat(64)
 const SAMPLE_ID = `sha256:${SAMPLE_HASH}`
@@ -196,6 +197,9 @@ describe('analysis.evidence.graph tool', () => {
     expect(data.summary.expectation_count).toBeGreaterThanOrEqual(3)
     expect(data.summary.observation_count).toBeGreaterThanOrEqual(2)
     expect(data.summary.corroboration_edge_count).toBeGreaterThan(0)
+    expect(data.summary.claim_count).toBe(0)
+    expect(data.claim_overlay.schema).toBe('rikune.analysis_claim_overlay.v1')
+    expect(data.claim_overlay.claims).toEqual([])
     expect(
       data.graph.nodes.some(
         (node: any) => node.kind === 'expectation' && node.category === 'network'
@@ -214,6 +218,117 @@ describe('analysis.evidence.graph tool', () => {
       )
     ).toBe(true)
     expect(result.artifacts?.[0]?.type).toBe('analysis_evidence_graph')
+  })
+
+  test('adds evidence-backed claims as an independent overlay', async () => {
+    const evidenceArtifact = database.findArtifactsByType(SAMPLE_ID, 'static_config_carver')[0]
+    const applied = await createAnalysisClaimsApplyHandler(
+      workspaceManager,
+      database
+    )({
+      sample_id: SAMPLE_ID,
+      producer: { kind: 'llm', client_name: 'unit-test', model_name: 'test-model' },
+      claims: [
+        {
+          claim_id: 'claim-c2-config',
+          category: 'finding',
+          subject: 'C2 configuration',
+          statement: 'The configuration contains a candidate C2 URL.',
+          supporting_evidence: [
+            {
+              artifact_id: evidenceArtifact.id,
+              json_pointer: '/candidates/0/value',
+              summary: 'URL candidate emitted by static.config.carver',
+            },
+          ],
+        },
+      ],
+    })
+    expect(applied.ok).toBe(true)
+
+    const result = await createEvidenceGraphHandler({ workspaceManager, database } as any)({
+      sample_id: SAMPLE_ID,
+      persist_artifact: false,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.summary.claim_set_count).toBe(1)
+    expect(data.summary.claim_count).toBe(1)
+    expect(data.claim_overlay.claims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          claim_id: 'claim-c2-config',
+          source: 'llm',
+          status: 'inferred',
+        }),
+      ])
+    )
+    expect(data.claim_overlay.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: 'claim:claim-c2-config',
+          relation: 'supported_by',
+          json_pointer: '/candidates/0/value',
+        }),
+      ])
+    )
+    expect(data.graph.nodes.some((node: any) => node.kind === 'claim')).toBe(false)
+    expect(
+      data.graph.edges.some(
+        (edge: any) => edge.from === 'claim:claim-c2-config' || edge.to === 'claim:claim-c2-config'
+      )
+    ).toBe(false)
+    expect(data.reporting_handoff.report_sections).toContain('claim_ledger')
+    expect(data.quality_gates.claim_review_required).toBe(true)
+  })
+
+  test('marks claim evidence unresolved after the referenced artifact changes', async () => {
+    const evidenceArtifact = database.findArtifactsByType(SAMPLE_ID, 'static_config_carver')[0]
+    const applied = await createAnalysisClaimsApplyHandler(
+      workspaceManager,
+      database
+    )({
+      sample_id: SAMPLE_ID,
+      claims: [
+        {
+          claim_id: 'claim-integrity-regression',
+          category: 'hypothesis',
+          subject: 'Configuration integrity',
+          statement: 'The original configuration artifact supports this hypothesis.',
+          supporting_evidence: [{ artifact_id: evidenceArtifact.id }],
+        },
+      ],
+    })
+    expect(applied.ok).toBe(true)
+
+    const workspace = await workspaceManager.getWorkspace(SAMPLE_ID)
+    const evidencePath = workspaceManager.normalizePath(workspace.root, evidenceArtifact.path)
+    fs.writeFileSync(evidencePath, '{}', 'utf8')
+
+    const result = await createEvidenceGraphHandler({ workspaceManager, database } as any)({
+      sample_id: SAMPLE_ID,
+      persist_artifact: false,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.claim_overlay.unresolved_refs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          claim_id: 'claim-integrity-regression',
+          artifact_id: evidenceArtifact.id,
+          relation: 'supported_by',
+        }),
+      ])
+    )
+    expect(data.claim_overlay.edges.some((edge: any) => edge.relation === 'supported_by')).toBe(
+      false
+    )
+    expect(data.quality_gates.claim_evidence_refs_resolved).toBe(false)
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('claim evidence reference')])
+    )
   })
 
   test('adds plugin evidence from malware, static triage, and cross-decompiler bundles', async () => {

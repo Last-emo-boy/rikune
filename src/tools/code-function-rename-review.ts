@@ -18,9 +18,8 @@ import { createCodeFunctionsReconstructHandler } from '../plugins/code-analysis/
 const TOOL_NAME = 'code.function.rename.review'
 
 /**
- * @deprecated Use `llm.analyze` with task='review' instead.
- * This tool will be removed in a future version.
- * Migration guide: docs/MIGRATION.md
+ * Structured end-to-end semantic rename review with prepare, sampling, apply,
+ * and reconstruction contracts. `llm.analyze` is not a compatible replacement.
  */
 
 const ReviewSuggestionSchema = z

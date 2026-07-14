@@ -41,6 +41,7 @@ export const LlmAnalyzeOutputSchema = z.object({
       task: z.string(),
       response: z.string().describe('LLM response'),
       token_count: z.number().optional().describe('Estimated token count'),
+      model: z.string().optional().describe('Model identifier returned by MCP sampling'),
     })
     .optional(),
   warnings: z.array(z.string()).optional(),
@@ -211,10 +212,12 @@ function logLlmUsage(sampleId: string, task: string, tokenCount: number): void {
 export const llmAnalyzeToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Unified LLM analysis interface. Automatically handles prepare/review/apply flow through MCP Client. ' +
+    'Legacy freeform LLM sampling helper that returns a non-persistent narrative response. ' +
     'Supports four task types: summarize (concise summaries), explain (clear explanations), ' +
     'recommend (actionable recommendations), and review (critical review). ' +
-    'Requires MCP Client with LLM capabilities (e.g., Claude Desktop, Cursor).',
+    'It does not prepare evidence, validate claims, apply semantic changes, or persist analysis artifacts. ' +
+    'Use structured workflows for semantic review and analysis.claims.apply for durable evidence-backed claims. ' +
+    'Requires an MCP Client with LLM sampling capabilities.',
   inputSchema: LlmAnalyzeInputSchema,
   outputSchema: LlmAnalyzeOutputSchema,
 }

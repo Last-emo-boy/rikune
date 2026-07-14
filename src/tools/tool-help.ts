@@ -988,16 +988,16 @@ function buildUsageNotes(definition: ToolDefinition): string[] {
 
   if (definition.name === 'llm.analyze') {
     notes.push(
-      'Unified LLM analysis interface. Use this instead of the deprecated 3-step tools (code.function.rename.*, code.function.explain.*, code.module.review.*).'
+      'Legacy freeform MCP sampling helper. It returns narrative text and does not persist an artifact, validate evidence, or apply semantic changes.'
     )
     notes.push(
       'Supports 4 task types: summarize (concise summaries), explain (clear explanations), recommend (actionable recommendations), review (critical review).'
     )
     notes.push(
-      'Automatically handles context management, smart triggering, and token tracking through MCP Client sampling.'
+      'Use the structured semantic review workflows for prepare/review/apply contracts, or analysis.claims.apply for a durable evidence-backed Claim Ledger revision.'
     )
     notes.push(
-      'Migration: See docs/MIGRATION-LLM-TOOLS.md for examples of migrating from old 3-step API to new unified interface.'
+      'The caller supplies the complete context; this tool only performs sampling and estimated token tracking.'
     )
   }
 
