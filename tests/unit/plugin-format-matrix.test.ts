@@ -3189,8 +3189,15 @@ describe('built-in plugin format matrix discovery', () => {
     expect(reportGenerate?.definition.artifacts?.map((artifact) => artifact.type)).toContain(
       'analysis_report'
     )
-    expect(workflowSummarize?.definition.evidence?.map((entry) => entry.category)).toContain(
-      'artifact'
+    expect(reportGenerate?.definition.evidence).toBeUndefined()
+    expect(workflowSummarize?.definition.evidence).toBeUndefined()
+    expect(workflowSummarize?.definition.artifacts?.map((artifact) => artifact.type)).toEqual(
+      expect.arrayContaining([
+        'summary_triage_digest',
+        'summary_static_digest',
+        'summary_deep_digest',
+        'summary_final_digest',
+      ])
     )
   })
 

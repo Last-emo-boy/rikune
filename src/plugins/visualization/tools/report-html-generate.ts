@@ -81,25 +81,24 @@ export const reportHtmlGenerateToolDefinition: ToolDefinition = {
   description:
     'Generate a self-contained HTML report for a sample analysis. Aggregates all ' +
     'available evidence into a professional report with overview, static analysis, ' +
-    'dynamic behavior, strings, IoCs, and threat scoring sections.',
+    'dynamic behavior, strings, IoCs, and threat scoring sections. The generated ' +
+    'report is context-only and cannot be used as Claim evidence.',
   inputSchema: ReportHtmlGenerateInputSchema,
   outputSchema: ReportHtmlGenerateOutputSchema,
   aspects: {
     formats: ['artifact', 'report', 'html-report'],
     platforms: ['all', 'cross-platform'],
     execution: ['static', 'correlation'],
-    safety: ['passive'],
+    safety: ['passive', 'context-only'],
     capabilities: ['html-report-generation', 'report-export', 'artifact-handoff'],
-    evidence: ['artifact', 'provenance', 'behavior', 'network', 'strings'],
   },
   artifacts: [
     {
       type: HTML_REPORT_ARTIFACT_TYPE,
-      description: 'Self-contained HTML analysis report',
+      description: 'Self-contained context-only HTML analysis report',
       mime: 'text/html',
     },
   ],
-  evidence: [{ category: 'artifact', artifactTypes: [HTML_REPORT_ARTIFACT_TYPE] }],
   workflowRecipes: [
     {
       id: 'visualization.html-report-artifact',
@@ -109,8 +108,7 @@ export const reportHtmlGenerateToolDefinition: ToolDefinition = {
       startsWith: [TOOL_NAME],
       nextTools: HTML_REPORT_RECOMMENDED_NEXT_TOOLS,
       producesArtifacts: [HTML_REPORT_ARTIFACT_TYPE],
-      evidence: ['artifact', 'provenance', 'report'],
-      safety: ['passive', 'no_live_sample_by_default', 'no_network_by_default'],
+      safety: ['passive', 'context-only', 'no_live_sample_by_default', 'no_network_by_default'],
     },
   ],
 }
@@ -378,6 +376,7 @@ ${sections.join('\n')}
         metadata: {
           source_tool: TOOL_NAME,
           sample_id: input.sample_id,
+          artifact_role: 'context_only',
           surface_role: 'html_report_export',
           sections_included: input.sections,
           evidence_used: allEvidence.length,
@@ -423,6 +422,7 @@ ${sections.join('\n')}
         read_args: artifactRead.args,
         artifact_contract: {
           produces: [HTML_REPORT_ARTIFACT_TYPE],
+          artifact_role: 'context_only',
           artifact_id: artifact.id,
           artifact_path: artifact.path,
           sha256: artifact.sha256,
@@ -452,6 +452,7 @@ ${sections.join('\n')}
       }
       const qualityGates = {
         schema: 'rikune.html_report.quality_gates.v1',
+        artifact_role: 'context_only',
         passive_correlation_only: true,
         sample_executed_by_tool: false,
         network_accessed_by_tool: false,

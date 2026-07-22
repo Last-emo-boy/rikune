@@ -106,7 +106,9 @@ node dist/index.js
 - `enrich_static`
 - `function_map`
 - `reconstruct`
-- `semantic_reviews`
+- `semantic_name_review`
+- `semantic_explain_review`
+- `semantic_module_review`
 - `dynamic_plan`
 - `dynamic_execute`
 - `summarize`
@@ -122,12 +124,42 @@ node dist/index.js
 - `workflow.search`
 - `workflow.run`
 - `analysis.context.get`
-- `artifact.read`，以及兼容 artifact helper：`artifact.list`、`artifact.diff`、`artifact.download`
+- `artifact.read`，以及兼容 artifact helper：`artifacts.list`、`artifacts.diff`、`artifact.download`
 - `report.summarize`、`report.generate`、`workflow.summarize`
 - `workflow.semantic_name_review`
 - `workflow.function_explanation_review`
 - `workflow.module_reconstruction_review`
 - `tool.help`、`tool.readiness` 和 `tools.discover` 用于兼容/调试检查
+
+### Agent Case Workspace
+
+Rikune 把确定性 Analyzer Artifact 与 Agent 生成的调查上下文分开：
+
+```text
+Analyzer Artifact（可作为 Evidence）
+  -> analysis.claims.apply（inferred Claim Ledger）
+  -> analysis.case.checkpoint / analysis.case.snapshot（不可变 Case 状态）
+  -> analysis.context.pack（确定性、token-bounded 上下文）
+  -> workflow.summarize（Evidence 与 Context 分栏的最终摘要）
+```
+
+`analysis_claim_set`、`analysis_case_state`、summary 和 report Artifact 都是 context-only，不能成为 Claim evidence，也不能进入 summary 的 `source_artifact_refs`。AI 或 imported producer 只能写入 `inferred` Claim；可信 analyst review 入口仍保持 fail-closed。
+
+每个 Case 通过 `case_id` 隔离。样本只有一个 Case 时，`analysis.context.pack` 和 `workflow.summarize` 会自动选择；存在多个 Case 时必须显式传入 `case_id`，否则调用会 fail closed。选中 Case 后，Claim context 仅包含其 `active_claim_ids`；若 Case state 已存在但无法信任，则隐藏 Claims，不会回退到样本级全量 Ledger。active ID 会通过带完整性校验的 newest-to-oldest scan 解析，上限为 512 个 Claim Set Artifact 和 128 MiB；任何 ID 缺失、链断裂或预算耗尽都会隐藏整个 Case Claim view。增量 Context marker 同样绑定 `case_id`，不能跨 Case 重用。
+
+持久化 summary 的复用由版本化 fingerprint 保护，绑定 resolved synthesis mode、全部 scope/session selector、非 context-only 来源 Artifact metadata、持久化 Evidence/Function/Analysis/Run/RunStage 状态、选中 Claim/Case marker，以及完整性 review 状态。复用前还会对来源 Artifact 文件执行流式 SHA-256 校验。缺少兼容 fingerprint 的旧 digest 会重建，不会直接复用。
+
+Claim 和 Case writer 会先获取带 heartbeat 的 SQLite CAS lease，再获取带 owner identity 的 filesystem lock。stale takeover 同时绑定已观察到的 owner 与 heartbeat；malformed/foreign-host filesystem lock 通过 identity-checked 流程恢复。writer 会在最终 rename 前重新确认 lease ownership，并让 Artifact row insert 以当前 owner token 做原子 fencing。创建 lock 或 JSON Artifact 前，workspace 写路径会验证配置的 canonical root，并拒绝被 symlink 替换的 shard 或 sample 目录。
+
+可复现的 benign CrackMe 验收脚本默认只执行被动 ELF、hardening、strings、Claim、Case、Context 和 deterministic summary 流程；`--deep` 才会启用 Ghidra：
+
+```bash
+npm run test:agent-case:e2e -- \
+  --container <running-rikune-container> \
+  --binary /fixtures/complex_crackme
+```
+
+Fixture 的构建与隔离执行规则见 `tests/fixtures/crackmes/README.md`。
 
 ## 架构概览
 
@@ -285,6 +317,7 @@ npm run docker:generate:all
 npm run test:unit
 npm run test:integration
 npm run test:e2e
+npm run test:agent-case:e2e -- --help
 npm run build:runtime
 ```
 

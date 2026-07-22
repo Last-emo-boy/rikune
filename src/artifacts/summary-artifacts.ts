@@ -38,6 +38,11 @@ export interface SummaryDigestSelection<TPayload = unknown> {
 }
 
 const LATEST_SUMMARY_DIGEST_WINDOW_MS = 10 * 1000
+const MAX_SUMMARY_DIGEST_BYTES = 4 * 1024 * 1024
+
+function pathIsWithin(rootPath: string, candidatePath: string): boolean {
+  return candidatePath === rootPath || candidatePath.startsWith(rootPath + path.sep)
+}
 
 export function getSummaryDigestArtifactType(stage: SummaryStage): string {
   switch (stage) {
@@ -69,25 +74,52 @@ export async function persistSummaryDigestArtifact(
   const reportDir = path.join(workspace.reports, 'summary', sessionSegment)
   await fs.mkdir(reportDir, { recursive: true })
 
-  const fileName = `${getSummaryDigestFilePrefix(stage)}_${Date.now()}.json`
-  const absolutePath = path.join(reportDir, fileName)
-  const serialized = JSON.stringify(payload, null, 2)
-  await fs.writeFile(absolutePath, serialized, 'utf8')
+  const [workspaceRealPath, reportDirRealPath] = await Promise.all([
+    fs.realpath(workspace.root),
+    fs.realpath(reportDir),
+  ])
+  if (!pathIsWithin(workspaceRealPath, reportDirRealPath)) {
+    throw new Error('Summary digest directory resolves outside the workspace.')
+  }
 
   const artifactId = randomUUID()
+  const fileName = `${getSummaryDigestFilePrefix(stage)}_${artifactId}.json`
+  const absolutePath = path.join(reportDirRealPath, fileName)
+  const temporaryPath = `${absolutePath}.tmp-${randomUUID()}`
+  const serialized = JSON.stringify(payload, null, 2)
+  if (Buffer.byteLength(serialized, 'utf8') > MAX_SUMMARY_DIGEST_BYTES) {
+    throw new Error(
+      `Summary digest exceeds the ${MAX_SUMMARY_DIGEST_BYTES}-byte persistence limit.`
+    )
+  }
+
   const artifactSha256 = createHash('sha256').update(serialized).digest('hex')
   const relativePath = path.relative(workspace.root, absolutePath).replace(/\\/g, '/')
   const createdAt = new Date().toISOString()
 
-  database.insertArtifact({
-    id: artifactId,
-    sample_id: sampleId,
-    type: getSummaryDigestArtifactType(stage),
-    path: relativePath,
-    sha256: artifactSha256,
-    mime: 'application/json',
-    created_at: createdAt,
-  })
+  let renamed = false
+  try {
+    await fs.writeFile(temporaryPath, serialized, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    })
+    await fs.rename(temporaryPath, absolutePath)
+    renamed = true
+    database.insertArtifact({
+      id: artifactId,
+      sample_id: sampleId,
+      type: getSummaryDigestArtifactType(stage),
+      path: relativePath,
+      sha256: artifactSha256,
+      mime: 'application/json',
+      created_at: createdAt,
+    })
+  } catch (error) {
+    await fs.unlink(temporaryPath).catch(() => undefined)
+    if (renamed) await fs.unlink(absolutePath).catch(() => undefined)
+    throw error
+  }
 
   return {
     id: artifactId,
@@ -131,6 +163,7 @@ export async function loadSummaryDigestArtifactSelection<TPayload>(
   }
 
   const workspace = await workspaceManager.getWorkspace(sampleId)
+  const workspaceRealPath = await fs.realpath(workspace.root)
   const loaded: Array<{
     artifact_id: string
     created_at: string
@@ -141,8 +174,23 @@ export async function loadSummaryDigestArtifactSelection<TPayload>(
   for (const artifact of artifacts) {
     try {
       const absolutePath = workspaceManager.normalizePath(workspace.root, artifact.path)
-      const content = await fs.readFile(absolutePath, 'utf8')
-      const payload = JSON.parse(content) as TPayload
+      const artifactRealPath = await fs.realpath(absolutePath)
+      if (!pathIsWithin(workspaceRealPath, artifactRealPath)) {
+        continue
+      }
+      const stat = await fs.stat(artifactRealPath)
+      if (!stat.isFile() || stat.size > MAX_SUMMARY_DIGEST_BYTES) {
+        continue
+      }
+      const content = await fs.readFile(artifactRealPath)
+      if (content.length > MAX_SUMMARY_DIGEST_BYTES) {
+        continue
+      }
+      const actualSha256 = createHash('sha256').update(content).digest('hex')
+      if (actualSha256.toLowerCase() !== artifact.sha256.toLowerCase()) {
+        continue
+      }
+      const payload = JSON.parse(content.toString('utf8')) as TPayload
       const sessionTags = Array.from(
         new Set(
           [

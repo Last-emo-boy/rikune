@@ -549,6 +549,7 @@ export const reportSummarizeToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Generate a bounded analyst-facing summary digest from triage/runtime/static context. Default detail_level=compact is the safe AI-facing mode and excludes heavyweight raw analysis trees. This is a compatibility summary surface, not the primary staged final-report workflow. ' +
+    'Its output is context-only and cannot be used as Claim evidence. ' +
     'Prefer workflow.summarize for staged final reporting, and use artifact.read / artifacts.list for deeper supporting detail. ' +
     'Read coverage_level, completion_state, known_findings, suspected_findings, unverified_areas, and upgrade_paths before treating the report as complete. ' +
     '\n\nDecision guide:\n' +
@@ -561,11 +562,10 @@ export const reportSummarizeToolDefinition: ToolDefinition = {
   inputSchema: ReportSummarizeInputSchema,
   outputSchema: ReportSummarizeOutputSchema,
   aspects: {
-    formats: ['artifact', 'report', 'analysis-evidence'],
+    formats: ['artifact', 'report'],
     platforms: ['all', 'cross-platform'],
     execution: ['static', 'correlation'],
     safety: ['passive'],
-    evidence: ['artifact', 'provenance', 'structure', 'signatures', 'strings', 'behavior'],
   },
   artifacts: [
     {
@@ -574,7 +574,6 @@ export const reportSummarizeToolDefinition: ToolDefinition = {
       mime: 'application/json',
     },
   ],
-  evidence: [{ category: 'artifact', artifactTypes: ['report_summary'] }],
 }
 
 type TriageSummaryData = {

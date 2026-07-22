@@ -1,3 +1,7 @@
+import { createHash } from 'crypto'
+import { createReadStream } from 'fs'
+import fs from 'fs/promises'
+import path from 'path'
 import { z } from 'zod'
 import type { CreateMessageRequest } from '@modelcontextprotocol/sdk/types.js'
 import { extractTextBlocks } from '../utils/sampling-helpers.js'
@@ -9,6 +13,24 @@ import type { SamplingClient } from '../core/registrar.js'
 import { createReportSummarizeHandler } from '../plugins/reporting/tools/report-summarize.js'
 import { loadSemanticFunctionExplanationIndex } from '../artifacts/semantic-name-suggestion-artifacts.js'
 import {
+  loadAnalysisClaimLedgerIndex,
+  scopeAnalysisClaimLedgerIndex,
+  type AnalysisClaimLedgerIndex,
+} from '../artifacts/analysis-claim-artifacts.js'
+import {
+  AnalysisCaseIdSchema,
+  analysisCaseBlockingIntegrityIssues,
+  analysisCaseContextMarker,
+  loadAnalysisCaseStateIndex,
+  type AnalysisCaseStateIndex,
+  type LoadedAnalysisCaseState,
+} from '../artifacts/analysis-case-artifacts.js'
+import { isContextOnlyArtifactType } from '../artifacts/context-only-artifacts.js'
+import {
+  SUMMARY_DEEP_DIGEST_ARTIFACT_TYPE,
+  SUMMARY_FINAL_DIGEST_ARTIFACT_TYPE,
+  SUMMARY_STATIC_DIGEST_ARTIFACT_TYPE,
+  SUMMARY_TRIAGE_DIGEST_ARTIFACT_TYPE,
   loadSummaryDigestArtifactSelection,
   persistSummaryDigestArtifact,
   type SummaryStage,
@@ -21,7 +43,12 @@ import {
   FinalStageDigestSchema,
   FunctionExplanationPreviewSchema,
   ExplanationGraphSummarySchema,
+  ClaimLedgerContextSummarySchema,
+  CaseStateContextSummarySchema,
   TopFunctionDigestSchema,
+  SUMMARY_CONTEXT_LIMITS,
+  SummaryDigestReuseFingerprintSchema,
+  type SummaryDigestReuseFingerprint,
   buildArtifactRefFromParts,
   buildDeepStageDigest,
   buildFinalStageDigest,
@@ -43,13 +70,15 @@ const TOOL_NAME = 'workflow.summarize'
 
 const WorkflowSummarizeStageSchema = z.enum(['triage', 'static', 'deep', 'final'])
 
-const SummarySamplingPayloadSchema = z.object({
-  executive_summary: z.string(),
-  analyst_summary: z.string(),
-  key_findings: z.array(z.string()),
-  next_steps: z.array(z.string()),
-  unresolved_unknowns: z.array(z.string()),
-})
+const SummarySamplingPayloadSchema = z
+  .object({
+    executive_summary: z.string(),
+    analyst_summary: z.string(),
+    key_findings: z.array(z.string()),
+    next_steps: z.array(z.string()),
+    unresolved_unknowns: z.array(z.string()),
+  })
+  .strict()
 
 const PersistedSummaryVisibilitySchema = z.object({
   persisted_run_id: z.string().nullable(),
@@ -68,6 +97,9 @@ export const WorkflowSummarizeInputSchema = z
       .string()
       .optional()
       .describe('Optional summary digest session tag used for persisted stage artifact reuse.'),
+    case_id: AnalysisCaseIdSchema.optional().describe(
+      'Optional Case Workspace selector for final synthesis and digest reuse. Required when the sample has multiple cases; a single case is selected automatically.'
+    ),
     reuse_digests: z
       .boolean()
       .default(true)
@@ -207,6 +239,13 @@ export const WorkflowSummarizeOutputSchema = z.object({
       }),
       explanation_graphs: z.array(ExplanationGraphSummarySchema).optional(),
       explanation_artifacts: z.array(SummaryArtifactRefSchema).optional(),
+      claim_context: ClaimLedgerContextSummarySchema.optional(),
+      case_context: CaseStateContextSummarySchema.optional(),
+      review_required: z.boolean().optional(),
+      unresolved_questions: z
+        .array(z.string().max(1200))
+        .max(SUMMARY_CONTEXT_LIMITS.unresolved_questions)
+        .optional(),
       persisted_state_visibility: PersistedSummaryVisibilitySchema.optional(),
       recommended_next_tools: z.array(z.string()),
       next_actions: z.array(z.string()),
@@ -227,6 +266,8 @@ export const workflowSummarizeToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
     'Compatibility staged reporting workflow. Builds or reuses bounded triage/static/deep/final digest artifacts and returns compact final reporting output by stage. ' +
+    'Its persisted summaries are context-only and cannot be used as Claim evidence. ' +
+    'Final synthesis is isolated to case_id; a sole Case Workspace is auto-selected and multiple cases fail closed without a selector. ' +
     'Prefer workflow.search for the primary AI-facing routing path, then use artifact.read for persisted supporting detail. ' +
     'Read coverage_level, completion_state, known_findings, suspected_findings, unverified_areas, and upgrade_paths on the result before treating the summary as complete. ' +
     '\n\nDecision guide:\n' +
@@ -238,20 +279,33 @@ export const workflowSummarizeToolDefinition: ToolDefinition = {
   inputSchema: WorkflowSummarizeInputSchema,
   outputSchema: WorkflowSummarizeOutputSchema,
   aspects: {
-    formats: ['artifact', 'report', 'analysis-evidence'],
+    formats: ['artifact', 'report'],
     platforms: ['all', 'cross-platform'],
     execution: ['static', 'correlation'],
     safety: ['passive'],
-    evidence: ['artifact', 'provenance', 'timeline', 'behavior', 'structure'],
   },
   artifacts: [
     {
-      type: 'workflow_summary',
-      description: 'Staged triage/static/deep/final summary digest artifacts',
+      type: SUMMARY_TRIAGE_DIGEST_ARTIFACT_TYPE,
+      description: 'Context-only triage summary digest',
+      mime: 'application/json',
+    },
+    {
+      type: SUMMARY_STATIC_DIGEST_ARTIFACT_TYPE,
+      description: 'Context-only static summary digest',
+      mime: 'application/json',
+    },
+    {
+      type: SUMMARY_DEEP_DIGEST_ARTIFACT_TYPE,
+      description: 'Context-only deep summary digest',
+      mime: 'application/json',
+    },
+    {
+      type: SUMMARY_FINAL_DIGEST_ARTIFACT_TYPE,
+      description: 'Context-only final summary digest',
       mime: 'application/json',
     },
   ],
-  evidence: [{ category: 'artifact', artifactTypes: ['workflow_summary'] }],
 }
 
 function extractCoverage(payload: unknown): z.infer<typeof CoverageEnvelopeSchema> | null {
@@ -289,6 +343,35 @@ function artifactRefFromArtifact(artifact: Artifact, stage: SummaryStage) {
   })
 }
 
+function sourceArtifactRefsOnly(refs: ArtifactRef[]): ArtifactRef[] {
+  return dedupeArtifactRefs(refs).filter((ref) => !isContextOnlyArtifactType(ref.type))
+}
+
+function applySamplingNarrative(
+  deterministicDigest: z.infer<typeof FinalStageDigestSchema>,
+  sampled: z.infer<typeof SummarySamplingPayloadSchema>,
+  modelName: string | null
+): z.infer<typeof FinalStageDigestSchema> {
+  return FinalStageDigestSchema.parse({
+    ...deterministicDigest,
+    synthesis_mode: 'sampling',
+    model_name: modelName,
+    executive_summary: sampled.executive_summary,
+    analyst_summary: sampled.analyst_summary,
+    next_steps: sampled.next_steps.slice(0, 5),
+    unresolved_unknowns: sampled.unresolved_unknowns.slice(0, 5),
+    // 有证据支撑的字段只从确定性摘要重建。采样候选发现仅为兼容解析，不能进入证据谱系。
+    key_findings: [...deterministicDigest.key_findings],
+    known_findings: [...deterministicDigest.known_findings],
+    suspected_findings: [...deterministicDigest.suspected_findings],
+    unverified_areas: [...deterministicDigest.unverified_areas],
+    coverage_gaps: [...deterministicDigest.coverage_gaps],
+    source_artifact_refs: sourceArtifactRefsOnly(
+      deterministicDigest.source_artifact_refs as ArtifactRef[]
+    ),
+  })
+}
+
 function getArtifactMap(database: DatabaseManager, sampleId: string) {
   return new Map(database.findArtifacts(sampleId).map((item) => [item.id, item]))
 }
@@ -318,14 +401,16 @@ function parseSummaryJsonCandidate(rawText: string) {
 function buildSamplingRequest(
   triageDigest: z.infer<typeof TriageStageDigestSchema>,
   staticDigest: z.infer<typeof StaticStageDigestSchema> | null,
-  deepDigest: z.infer<typeof DeepStageDigestSchema> | null
+  deepDigest: z.infer<typeof DeepStageDigestSchema> | null,
+  summaryContext: FinalSummaryContext
 ): CreateMessageRequest['params'] {
   const systemPrompt = [
     'You are an evidence-grounded reverse-engineering reporting assistant.',
     'Return strict JSON only.',
     'Do not call tools.',
     'Do not include markdown, commentary, or code fences.',
-    'Use only the supplied staged digests.',
+    'Use only the supplied staged digests and context-only analysis state.',
+    'Treat Claim Ledger and Case State as analyst context, never as underlying evidence.',
     'Preserve uncertainty explicitly.',
   ].join(' ')
 
@@ -342,11 +427,19 @@ function buildSamplingRequest(
       boundary_rules: [
         'Do not claim skipped stages were completed.',
         'Preserve the distinction between known findings, suspected findings, and unverified areas from the digests.',
+        'Claim Ledger and Case State are context-only: do not present them as source evidence or copy their artifact identifiers into findings.',
+        'Preserve review-required state and unresolved questions in the analyst narrative without resolving them speculatively.',
       ],
       digests: {
         triage: triageDigest,
         static: staticDigest,
         deep: deepDigest,
+      },
+      analysis_context: {
+        claim_context: summaryContext.claimContext,
+        case_context: summaryContext.caseContext,
+        review_required: summaryContext.reviewRequired,
+        unresolved_questions: summaryContext.unresolvedQuestions,
       },
     },
     null,
@@ -415,6 +508,489 @@ async function loadFunctionExplanationSummaries(
   )
 }
 
+type ClaimLedgerContextSummary = z.infer<typeof ClaimLedgerContextSummarySchema>
+type CaseStateContextSummary = z.infer<typeof CaseStateContextSummarySchema>
+
+interface FinalSummaryContext {
+  claimContext: ClaimLedgerContextSummary
+  caseContext: CaseStateContextSummary
+  reviewRequired: boolean
+  unresolvedQuestions: string[]
+}
+
+function normalizedSelector(value: string | null | undefined): string | null {
+  const normalized = value?.trim()
+  return normalized ? normalized : null
+}
+
+interface SummaryFingerprintBaseState {
+  sourceArtifacts: Array<{
+    id: string
+    type: string
+    path: string
+    sha256: string
+    mime: string | null
+    created_at: string
+  }>
+  evidenceStateSha256: string
+  functionStateSha256: string
+  analysisStateSha256: string
+  analysisRunStateSha256: string
+  analysisRunStageStateSha256: string
+  artifactIntegrityWarnings: string[]
+}
+
+function hashSummaryFingerprintState(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+}
+
+function summaryPathIsWithin(rootPath: string, candidatePath: string): boolean {
+  return candidatePath === rootPath || candidatePath.startsWith(rootPath + path.sep)
+}
+
+async function hashSummarySourceFile(artifactPath: string): Promise<string> {
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(artifactPath)) {
+    hash.update(chunk)
+  }
+  return hash.digest('hex')
+}
+
+async function loadSummaryFingerprintBaseState(input: {
+  workspaceManager: WorkspaceManager
+  database: DatabaseManager
+  sampleId: string
+}): Promise<SummaryFingerprintBaseState> {
+  const artifactRows = input.database
+    .findArtifacts(input.sampleId)
+    .filter((artifact) => !isContextOnlyArtifactType(artifact.type))
+  const sourceArtifacts = artifactRows
+    .map((artifact) => ({
+      id: artifact.id,
+      type: artifact.type,
+      path: artifact.path,
+      sha256: artifact.sha256.toLowerCase(),
+      mime: artifact.mime,
+      created_at: artifact.created_at,
+    }))
+    .sort((left, right) => {
+      const idOrder = left.id.localeCompare(right.id)
+      return idOrder !== 0 ? idOrder : left.sha256.localeCompare(right.sha256)
+    })
+  const workspace = await input.workspaceManager.createWorkspace(input.sampleId)
+  const workspaceRealPath = await fs.realpath(workspace.root)
+  const artifactIntegrityWarnings: string[] = []
+  for (const artifact of artifactRows) {
+    try {
+      const absolutePath = input.workspaceManager.normalizePath(workspace.root, artifact.path)
+      const artifactRealPath = await fs.realpath(absolutePath)
+      if (!summaryPathIsWithin(workspaceRealPath, artifactRealPath)) {
+        throw new Error('path resolves outside the workspace')
+      }
+      const stat = await fs.stat(artifactRealPath)
+      if (!stat.isFile()) {
+        throw new Error('path is not a regular file')
+      }
+      const actualSha256 = await hashSummarySourceFile(artifactRealPath)
+      if (actualSha256.toLowerCase() !== artifact.sha256.toLowerCase()) {
+        throw new Error('actual SHA-256 does not match the artifact record')
+      }
+    } catch (error) {
+      artifactIntegrityWarnings.push(
+        `Summary digest source artifact ${artifact.id} failed integrity validation: ${
+          error instanceof Error ? error.message : String(error)
+        }.`
+      )
+    }
+  }
+  const evidenceState = input.database
+    .findAnalysisEvidenceBySample(input.sampleId)
+    .filter((row) => row.evidence_family !== 'summary')
+    .map((row) => ({
+      id: row.id,
+      evidence_family: row.evidence_family,
+      backend: row.backend,
+      mode: row.mode,
+      compatibility_marker: row.compatibility_marker,
+      freshness_marker: row.freshness_marker,
+      updated_at: row.updated_at,
+      provenance_json: row.provenance_json,
+      metadata_json: row.metadata_json,
+      result_json: row.result_json,
+      artifact_refs_json: row.artifact_refs_json,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id))
+  const functionState = input.database
+    .findFunctions(input.sampleId)
+    .map((entry) => ({
+      sample_id: entry.sample_id,
+      address: entry.address,
+      name: entry.name,
+      size: entry.size,
+      score: entry.score,
+      tags: entry.tags,
+      summary: entry.summary,
+      caller_count: entry.caller_count,
+      callee_count: entry.callee_count,
+      is_entry_point: entry.is_entry_point,
+      is_exported: entry.is_exported,
+      callees: entry.callees,
+    }))
+    .sort((left, right) => left.address.localeCompare(right.address))
+  const analysisState = input.database
+    .findAnalysesBySample(input.sampleId)
+    .map((entry) => ({
+      id: entry.id,
+      sample_id: entry.sample_id,
+      stage: entry.stage,
+      backend: entry.backend,
+      status: entry.status,
+      started_at: entry.started_at,
+      finished_at: entry.finished_at,
+      output_json: entry.output_json,
+      metrics_json: entry.metrics_json,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id))
+  const analysisRunState = input.database
+    .findAnalysisRunsBySample(input.sampleId)
+    .map((entry) => ({
+      id: entry.id,
+      sample_id: entry.sample_id,
+      sample_sha256: entry.sample_sha256,
+      goal: entry.goal,
+      depth: entry.depth,
+      backend_policy: entry.backend_policy,
+      compatibility_marker: entry.compatibility_marker,
+      pipeline_version: entry.pipeline_version,
+      sample_size_tier: entry.sample_size_tier,
+      analysis_budget_profile: entry.analysis_budget_profile,
+      status: entry.status,
+      latest_stage: entry.latest_stage,
+      stage_plan_json: entry.stage_plan_json,
+      artifact_refs_json: entry.artifact_refs_json,
+      metadata_json: entry.metadata_json,
+      created_at: entry.created_at,
+      updated_at: entry.updated_at,
+      finished_at: entry.finished_at,
+      reused_from_run_id: entry.reused_from_run_id,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id))
+  const analysisRunStageState = analysisRunState
+    .flatMap((run) => input.database.findAnalysisRunStages(run.id))
+    .map((entry) => ({
+      run_id: entry.run_id,
+      stage: entry.stage,
+      status: entry.status,
+      execution_state: entry.execution_state,
+      tool: entry.tool,
+      job_id: entry.job_id,
+      result_json: entry.result_json,
+      artifact_refs_json: entry.artifact_refs_json,
+      coverage_json: entry.coverage_json,
+      metadata_json: entry.metadata_json,
+      created_at: entry.created_at,
+      updated_at: entry.updated_at,
+      started_at: entry.started_at,
+      finished_at: entry.finished_at,
+    }))
+    .sort((left, right) => {
+      const runOrder = left.run_id.localeCompare(right.run_id)
+      return runOrder !== 0 ? runOrder : left.stage.localeCompare(right.stage)
+    })
+
+  return {
+    sourceArtifacts,
+    evidenceStateSha256: hashSummaryFingerprintState(evidenceState),
+    functionStateSha256: hashSummaryFingerprintState(functionState),
+    analysisStateSha256: hashSummaryFingerprintState(analysisState),
+    analysisRunStateSha256: hashSummaryFingerprintState(analysisRunState),
+    analysisRunStageStateSha256: hashSummaryFingerprintState(analysisRunStageState),
+    artifactIntegrityWarnings,
+  }
+}
+
+function buildSummaryReuseFingerprint(input: {
+  baseState: SummaryFingerprintBaseState
+  request: z.infer<typeof WorkflowSummarizeInputSchema>
+  stage: SummaryStage
+  resolvedSynthesisMode: 'deterministic' | 'sampling'
+  summaryContext?: FinalSummaryContext
+}): SummaryDigestReuseFingerprint {
+  const fingerprintInput = {
+    schema_version: 1 as const,
+    stage: input.stage,
+    resolved_synthesis_mode:
+      input.stage === 'final' ? input.resolvedSynthesisMode : 'deterministic',
+    input: {
+      through_stage: input.request.through_stage,
+      summary_session_tag: normalizedSelector(input.request.session_tag),
+      case_id:
+        input.stage === 'final'
+          ? input.summaryContext?.caseContext.case_id || normalizedSelector(input.request.case_id)
+          : null,
+      evidence_scope: input.request.evidence_scope,
+      evidence_session_tag: normalizedSelector(input.request.evidence_session_tag),
+      static_scope: input.request.static_scope,
+      static_session_tag: normalizedSelector(input.request.static_session_tag),
+      semantic_scope: input.request.semantic_scope,
+      semantic_session_tag: normalizedSelector(input.request.semantic_session_tag),
+      compare_evidence_scope: input.request.compare_evidence_scope || null,
+      compare_evidence_session_tag: normalizedSelector(input.request.compare_evidence_session_tag),
+      compare_static_scope: input.request.compare_static_scope || null,
+      compare_static_session_tag: normalizedSelector(input.request.compare_static_session_tag),
+      compare_semantic_scope: input.request.compare_semantic_scope || null,
+      compare_semantic_session_tag: normalizedSelector(input.request.compare_semantic_session_tag),
+    },
+    source_artifacts: input.baseState.sourceArtifacts,
+    source_integrity_valid: input.baseState.artifactIntegrityWarnings.length === 0,
+    evidence_state_sha256: input.baseState.evidenceStateSha256,
+    function_state_sha256: input.baseState.functionStateSha256,
+    analysis_state_sha256: input.baseState.analysisStateSha256,
+    analysis_run_state_sha256: input.baseState.analysisRunStateSha256,
+    analysis_run_stage_state_sha256: input.baseState.analysisRunStageStateSha256,
+    claim_context_marker: input.summaryContext?.claimContext.marker || null,
+    case_context_marker: input.summaryContext?.caseContext.marker || null,
+    context_review_required: input.summaryContext?.reviewRequired ?? null,
+  }
+  return SummaryDigestReuseFingerprintSchema.parse({
+    ...fingerprintInput,
+    fingerprint_sha256: createHash('sha256').update(JSON.stringify(fingerprintInput)).digest('hex'),
+  })
+}
+
+interface SelectedCaseState {
+  entry: LoadedAnalysisCaseState | null
+  marker: string
+}
+
+function truncateContextText(value: string, limit: number): string {
+  const normalized = value.trim()
+  if (normalized.length <= limit) {
+    return normalized
+  }
+  const suffix = '... [truncated]'
+  return `${normalized.slice(0, Math.max(0, limit - suffix.length))}${suffix}`
+}
+
+function emptyClaimLedgerContext(): ClaimLedgerContextSummary {
+  return ClaimLedgerContextSummarySchema.parse({
+    artifact_role: 'context_only',
+    marker: 'none',
+    claim_set_count: 0,
+    active_claim_count: 0,
+    included_claim_count: 0,
+    status_counts: {
+      inferred: 0,
+      corroborated: 0,
+      contradicted: 0,
+      verified: 0,
+      rejected: 0,
+    },
+    claims: [],
+    truncated: false,
+  })
+}
+
+function emptyCaseStateContext(): CaseStateContextSummary {
+  return CaseStateContextSummarySchema.parse({
+    artifact_role: 'context_only',
+    marker: 'none',
+    available: false,
+    case_id: null,
+    revision: null,
+    objective: null,
+    decision_count: 0,
+    decisions: [],
+    open_question_count: 0,
+    open_questions: [],
+    attempted_action_count: 0,
+    attempted_actions: [],
+    next_action_count: 0,
+    next_actions: [],
+    active_claim_count: 0,
+    pinned_artifact_count: 0,
+    truncated: false,
+  })
+}
+
+function buildClaimLedgerContext(index: AnalysisClaimLedgerIndex): {
+  summary: ClaimLedgerContextSummary
+  reviewRequired: boolean
+  unresolvedQuestions: string[]
+} {
+  const activeClaims = Array.from(index.byClaimId.values())
+  const reviewRequired =
+    index.truncated ||
+    activeClaims.some(({ claim }) => ['inferred', 'contradicted'].includes(claim.status))
+  const unresolvedQuestions = activeClaims
+    .filter(
+      ({ claim }) =>
+        claim.category === 'open_question' && !['verified', 'rejected'].includes(claim.status)
+    )
+    .map(({ claim }) => truncateContextText(claim.statement, 1200))
+
+  const orderedClaims = [...activeClaims].sort((left, right) => {
+    const leftReview = ['inferred', 'contradicted'].includes(left.claim.status) ? 1 : 0
+    const rightReview = ['inferred', 'contradicted'].includes(right.claim.status) ? 1 : 0
+    if (rightReview !== leftReview) {
+      return rightReview - leftReview
+    }
+    const leftQuestion = left.claim.category === 'open_question' ? 1 : 0
+    const rightQuestion = right.claim.category === 'open_question' ? 1 : 0
+    if (rightQuestion !== leftQuestion) {
+      return rightQuestion - leftQuestion
+    }
+    if (right.ledger_revision !== left.ledger_revision) {
+      return right.ledger_revision - left.ledger_revision
+    }
+    return left.claim.claim_id.localeCompare(right.claim.claim_id)
+  })
+  const includedClaims = orderedClaims.slice(0, SUMMARY_CONTEXT_LIMITS.claims)
+  const statusCounts = {
+    inferred: 0,
+    corroborated: 0,
+    contradicted: 0,
+    verified: 0,
+    rejected: 0,
+  }
+  for (const { claim } of activeClaims) {
+    statusCounts[claim.status] += 1
+  }
+
+  return {
+    summary: ClaimLedgerContextSummarySchema.parse({
+      artifact_role: 'context_only',
+      marker: index.marker,
+      claim_set_count: index.claim_sets.length,
+      active_claim_count: activeClaims.length,
+      included_claim_count: includedClaims.length,
+      status_counts: statusCounts,
+      claims: includedClaims.map(({ claim }) => ({
+        claim_id: claim.claim_id,
+        category: claim.category,
+        subject: truncateContextText(claim.subject, 500),
+        statement: truncateContextText(claim.statement, 1200),
+        status: claim.status,
+        source: claim.source,
+        review_required: ['inferred', 'contradicted'].includes(claim.status),
+      })),
+      truncated: index.truncated || activeClaims.length > includedClaims.length,
+    }),
+    reviewRequired,
+    unresolvedQuestions,
+  }
+}
+
+function selectCaseState(
+  index: AnalysisCaseStateIndex,
+  requestedCaseId?: string
+): SelectedCaseState {
+  const availableCaseIds = Array.from(index.byCaseId.keys()).sort()
+  if (requestedCaseId) {
+    const entry = index.byCaseId.get(requestedCaseId)
+    if (!entry) {
+      const available = availableCaseIds.length > 0 ? availableCaseIds.join(', ') : 'none'
+      throw new Error(
+        `Case not found for sample: ${requestedCaseId}. Available case_id values: ${available}.`
+      )
+    }
+    return { entry, marker: analysisCaseContextMarker(index, requestedCaseId, entry) }
+  }
+  if (availableCaseIds.length > 1) {
+    throw new Error(
+      `Multiple analysis cases exist for this sample (${availableCaseIds.join(', ')}). Provide case_id to select one; final synthesis is fail-closed to prevent cross-case mixing.`
+    )
+  }
+  const entry = availableCaseIds[0] ? index.byCaseId.get(availableCaseIds[0]) || null : null
+  return {
+    entry,
+    marker: analysisCaseContextMarker(index, entry?.payload.case_id || null, entry),
+  }
+}
+
+function buildCaseStateContext(
+  index: AnalysisCaseStateIndex,
+  requestedCaseId?: string
+): {
+  summary: CaseStateContextSummary
+  unresolvedQuestions: string[]
+  activeClaimIds: string[] | null
+} {
+  const selected = selectCaseState(index, requestedCaseId)
+  if (!selected.entry) {
+    const caseStateConfirmedAbsent =
+      index.total_artifact_count === 0 && index.integrity_issues.length === 0
+    return {
+      summary: {
+        ...emptyCaseStateContext(),
+        marker: selected.marker,
+        truncated: index.truncated,
+      },
+      unresolvedQuestions: [],
+      activeClaimIds: caseStateConfirmedAbsent ? null : [],
+    }
+  }
+
+  const { payload } = selected.entry
+  const decisions = payload.decisions
+    .map((item) => truncateContextText(item, 1200))
+    .slice(0, SUMMARY_CONTEXT_LIMITS.case_decisions)
+  const openQuestions = payload.open_questions
+    .map((item) => truncateContextText(item, 1200))
+    .slice(0, SUMMARY_CONTEXT_LIMITS.case_open_questions)
+  const attemptedActions = payload.attempted_actions
+    .map((action) =>
+      truncateContextText(
+        `${action.tool}: ${action.outcome}${action.summary ? ` — ${action.summary}` : ''}`,
+        1200
+      )
+    )
+    .slice(0, SUMMARY_CONTEXT_LIMITS.case_attempted_actions)
+  const nextActions = payload.next_actions
+    .map((item) => truncateContextText(item, 1200))
+    .slice(0, SUMMARY_CONTEXT_LIMITS.case_next_actions)
+  const truncated =
+    index.truncated ||
+    decisions.length < payload.decisions.length ||
+    openQuestions.length < payload.open_questions.length ||
+    attemptedActions.length < payload.attempted_actions.length ||
+    nextActions.length < payload.next_actions.length
+
+  return {
+    summary: CaseStateContextSummarySchema.parse({
+      artifact_role: 'context_only',
+      marker: selected.marker,
+      available: true,
+      case_id: payload.case_id,
+      revision: payload.revision,
+      objective: truncateContextText(payload.objective, 1200),
+      decision_count: payload.decisions.length,
+      decisions,
+      open_question_count: payload.open_questions.length,
+      open_questions: openQuestions,
+      attempted_action_count: payload.attempted_actions.length,
+      attempted_actions: attemptedActions,
+      next_action_count: payload.next_actions.length,
+      next_actions: nextActions,
+      active_claim_count: payload.active_claim_ids.length,
+      pinned_artifact_count: payload.pinned_artifacts.length,
+      truncated,
+    }),
+    unresolvedQuestions: payload.open_questions.map((item) => truncateContextText(item, 1200)),
+    activeClaimIds:
+      analysisCaseBlockingIntegrityIssues(index, payload.case_id).length === 0
+        ? [...payload.active_claim_ids]
+        : [],
+  }
+}
+
+function caseStateRequiresReview(
+  index: AnalysisCaseStateIndex,
+  selectedCaseId: string | null
+): boolean {
+  return analysisCaseBlockingIntegrityIssues(index, selectedCaseId).length > 0
+}
+
 export function createWorkflowSummarizeHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
@@ -450,6 +1026,14 @@ export function createWorkflowSummarizeHandler(
           metrics: toolMetrics(startTime),
         }
       }
+      const samplingAvailable = Boolean(
+        clientCapabilitiesProvider?.()?.sampling && samplingRequester
+      )
+      const samplingRequested =
+        input.synthesis_mode === 'sampling' ||
+        (input.synthesis_mode === 'auto' && samplingAvailable)
+      const resolvedSynthesisModeForReuse: 'deterministic' | 'sampling' =
+        samplingRequested && samplingAvailable ? 'sampling' : 'deterministic'
 
       // Check if there's a persisted analysis run for this sample
       // If found, consume run state and stage artifacts instead of rerunning analysis
@@ -525,8 +1109,122 @@ export function createWorkflowSummarizeHandler(
       const effectiveReuse = input.reuse_digests && !input.force_refresh
       let reusedAnyStage = false
       let compactReportResult: WorkerResult | null = null
+      let finalSummaryContextPromise: Promise<FinalSummaryContext> | null = null
+      let summaryFingerprintBaseStatePromise: Promise<SummaryFingerprintBaseState> | null = null
+      const getSummaryFingerprintBaseState = (): Promise<SummaryFingerprintBaseState> => {
+        if (summaryFingerprintBaseStatePromise === null) {
+          summaryFingerprintBaseStatePromise = loadSummaryFingerprintBaseState({
+            workspaceManager,
+            database,
+            sampleId: input.sample_id,
+          })
+        }
+        return summaryFingerprintBaseStatePromise
+      }
+      const publishSummarySourceIntegrityWarnings = (baseState: SummaryFingerprintBaseState) => {
+        for (const warning of baseState.artifactIntegrityWarnings) {
+          if (!warnings.includes(warning)) warnings.push(warning)
+        }
+      }
       const currentStageArtifactRefs = () =>
         Object.values(stageArtifacts).filter((item): item is ArtifactRef => Boolean(item))
+
+      const getFinalSummaryContext = async (): Promise<FinalSummaryContext> => {
+        if (finalSummaryContextPromise !== null) {
+          return finalSummaryContextPromise
+        }
+        finalSummaryContextPromise = (async () => {
+          await workspaceManager.createWorkspace(input.sample_id)
+          let claimContext = emptyClaimLedgerContext()
+          let caseContext = emptyCaseStateContext()
+          let claimReviewRequired = false
+          let caseReviewRequired = false
+          let claimQuestions: string[] = []
+          let caseQuestions: string[] = []
+          let activeClaimIds: string[] | null = null
+          const [caseResult] = await Promise.allSettled([
+            loadAnalysisCaseStateIndex(workspaceManager, database, input.sample_id),
+          ])
+
+          if (caseResult.status === 'fulfilled') {
+            const built = buildCaseStateContext(caseResult.value, input.case_id)
+            caseContext = built.summary
+            caseReviewRequired =
+              built.summary.truncated ||
+              caseStateRequiresReview(caseResult.value, built.summary.case_id)
+            caseQuestions = built.unresolvedQuestions
+            activeClaimIds = built.activeClaimIds
+            warnings.push(...caseResult.value.warnings.map((item) => `Case State context: ${item}`))
+          } else {
+            if (input.case_id) {
+              throw new Error(
+                `Case State context could not be loaded for case_id=${input.case_id}: ${
+                  caseResult.reason instanceof Error
+                    ? caseResult.reason.message
+                    : String(caseResult.reason)
+                }`
+              )
+            }
+            caseReviewRequired = true
+            activeClaimIds = []
+            warnings.push(
+              `Case State context could not be loaded: ${
+                caseResult.reason instanceof Error
+                  ? caseResult.reason.message
+                  : String(caseResult.reason)
+              }`
+            )
+          }
+
+          const [claimResult] = await Promise.allSettled([
+            loadAnalysisClaimLedgerIndex(
+              workspaceManager,
+              database,
+              input.sample_id,
+              activeClaimIds === null
+                ? { scope: 'all', maxArtifacts: 64 }
+                : { scope: 'all', activeClaimIds }
+            ),
+          ])
+
+          if (claimResult.status === 'fulfilled') {
+            const scopedClaimLedger = scopeAnalysisClaimLedgerIndex(
+              claimResult.value,
+              activeClaimIds
+            )
+            const built = buildClaimLedgerContext(scopedClaimLedger)
+            claimContext = built.summary
+            claimReviewRequired =
+              built.reviewRequired ||
+              built.summary.truncated ||
+              scopedClaimLedger.warnings.length > 0
+            claimQuestions = built.unresolvedQuestions
+            warnings.push(
+              ...scopedClaimLedger.warnings.map((item) => `Claim Ledger context: ${item}`)
+            )
+          } else {
+            claimReviewRequired = true
+            warnings.push(
+              `Claim Ledger context could not be loaded: ${
+                claimResult.reason instanceof Error
+                  ? claimResult.reason.message
+                  : String(claimResult.reason)
+              }`
+            )
+          }
+
+          const unresolvedQuestions = dedupeStrings([...claimQuestions, ...caseQuestions])
+            .map((item) => truncateContextText(item, 1200))
+            .slice(0, SUMMARY_CONTEXT_LIMITS.unresolved_questions)
+          return {
+            claimContext,
+            caseContext,
+            reviewRequired: claimReviewRequired || caseReviewRequired,
+            unresolvedQuestions,
+          }
+        })()
+        return finalSummaryContextPromise
+      }
 
       const getCompactReportData = async () => {
         if (compactReportResult) {
@@ -550,13 +1248,19 @@ export function createWorkflowSummarizeHandler(
           compare_semantic_scope: input.compare_semantic_scope,
           compare_semantic_session_tag: input.compare_semantic_session_tag,
         })
+        // report.summarize may persist new source artifacts (for example explanation graphs).
+        // Refresh the memoized fingerprint snapshot before persisting rebuilt digests so those
+        // report-side effects do not make the new digest immediately stale on the next request.
+        summaryFingerprintBaseStatePromise = null
         warnings.push(...(compactReportResult.warnings || []))
         return compactReportResult
       }
 
       const loadReusedStage = async <TSchema extends z.ZodTypeAny>(
         stage: SummaryStage,
-        schema: TSchema
+        schema: TSchema,
+        accept?: (payload: z.infer<TSchema>) => boolean,
+        summaryContext?: FinalSummaryContext
       ): Promise<z.infer<TSchema> | null> => {
         if (!effectiveReuse) {
           return null
@@ -567,39 +1271,113 @@ export function createWorkflowSummarizeHandler(
           input.sample_id,
           stage,
           {
-            scope: input.session_tag ? 'session' : 'latest',
+            scope: input.session_tag
+              ? 'session'
+              : stage === 'final' && input.case_id
+                ? 'all'
+                : 'latest',
             sessionTag: input.session_tag,
           }
         )
-        if (!selection.latest_payload || selection.artifact_ids.length === 0) {
+        if (selection.artifacts.length === 0) {
           return null
         }
-        try {
-          const parsed = schema.parse(selection.latest_payload)
-          const artifact = artifactMap.get(selection.artifact_ids[0])
-          if (artifact) {
-            stageArtifacts[stage] = artifactRefFromArtifact(artifact, stage)
-          }
-          reusedAnyStage = true
+        const baseState = await getSummaryFingerprintBaseState()
+        if (baseState.artifactIntegrityWarnings.length > 0) {
+          publishSummarySourceIntegrityWarnings(baseState)
           warnings.push(
-            `Reused persisted ${stage} summary digest from ${selection.latest_created_at || 'latest available artifact'}.`
+            `Skipped persisted ${stage} summary digest because source artifact integrity validation failed.`
           )
-          return parsed
-        } catch {
           return null
         }
+        const expectedFingerprint = buildSummaryReuseFingerprint({
+          baseState,
+          request: input,
+          stage,
+          resolvedSynthesisMode: resolvedSynthesisModeForReuse,
+          summaryContext,
+        })
+        let rejectedByContextMarker = false
+        let rejectedLegacyFingerprint = false
+        let rejectedByFingerprint = false
+        for (const candidate of selection.artifacts) {
+          try {
+            const parsed = schema.parse(candidate.payload)
+            if (accept && !accept(parsed)) {
+              rejectedByContextMarker = true
+              continue
+            }
+            if (!parsed.reuse_fingerprint) {
+              rejectedLegacyFingerprint = true
+              continue
+            }
+            if (
+              parsed.reuse_fingerprint.fingerprint_sha256 !==
+                expectedFingerprint.fingerprint_sha256 ||
+              JSON.stringify(parsed.reuse_fingerprint) !== JSON.stringify(expectedFingerprint)
+            ) {
+              rejectedByFingerprint = true
+              continue
+            }
+            const artifact = artifactMap.get(candidate.artifact_id)
+            if (artifact) {
+              stageArtifacts[stage] = artifactRefFromArtifact(artifact, stage)
+            }
+            reusedAnyStage = true
+            warnings.push(
+              `Reused persisted ${stage} summary digest from ${candidate.created_at || 'latest available artifact'}.`
+            )
+            return parsed
+          } catch {
+            continue
+          }
+        }
+        if (rejectedByContextMarker) {
+          warnings.push(
+            `Skipped persisted ${stage} summary digest because its context marker is stale.`
+          )
+        }
+        if (rejectedLegacyFingerprint) {
+          warnings.push(
+            `Skipped persisted ${stage} summary digest because it has no compatible reuse fingerprint.`
+          )
+        }
+        if (rejectedByFingerprint) {
+          warnings.push(
+            `Skipped persisted ${stage} summary digest because its input/source fingerprint is stale.`
+          )
+        }
+        return null
       }
 
-      const persistStage = async (stage: SummaryStage, payload: unknown) => {
+      const persistStage = async <TPayload extends object>(
+        stage: SummaryStage,
+        payload: TPayload,
+        summaryContext?: FinalSummaryContext,
+        resolvedSynthesisMode = resolvedSynthesisModeForReuse
+      ): Promise<TPayload & { reuse_fingerprint: SummaryDigestReuseFingerprint }> => {
+        const baseState = await getSummaryFingerprintBaseState()
+        publishSummarySourceIntegrityWarnings(baseState)
+        const persistedPayload = {
+          ...payload,
+          reuse_fingerprint: buildSummaryReuseFingerprint({
+            baseState,
+            request: input,
+            stage,
+            resolvedSynthesisMode,
+            summaryContext,
+          }),
+        }
         const artifact = await persistSummaryDigestArtifact(
           workspaceManager,
           database,
           input.sample_id,
           stage,
-          payload,
+          persistedPayload,
           input.session_tag
         )
         stageArtifacts[stage] = artifact
+        return persistedPayload
       }
 
       const ensureTriageStage = async () => {
@@ -634,14 +1412,14 @@ export function createWorkflowSummarizeHandler(
           confidence_semantics: data.confidence_semantics,
           recommendation: String(data.recommendation || ''),
           source_artifact_refs: Array.isArray(data.artifact_refs?.supporting)
-            ? (data.artifact_refs.supporting as ArtifactRef[])
+            ? sourceArtifactRefsOnly(data.artifact_refs.supporting as ArtifactRef[])
             : [],
           coverage: extractCoverage(data) || undefined,
         })
-        await persistStage('triage', triageDigest)
-        stageDigests.triage = triageDigest
+        const persistedTriageDigest = await persistStage('triage', triageDigest)
+        stageDigests.triage = persistedTriageDigest
         completedStages.push('triage')
-        return triageDigest
+        return persistedTriageDigest
       }
 
       const ensureStaticStage = async () => {
@@ -685,14 +1463,14 @@ export function createWorkflowSummarizeHandler(
           ]),
           recommendation: String(data.recommendation || ''),
           source_artifact_refs: Array.isArray(data.artifact_refs?.supporting)
-            ? (data.artifact_refs.supporting as ArtifactRef[])
+            ? sourceArtifactRefsOnly(data.artifact_refs.supporting as ArtifactRef[])
             : [],
           coverage: extractCoverage(data) || undefined,
         })
-        await persistStage('static', staticDigest)
-        stageDigests.static = staticDigest
+        const persistedStaticDigest = await persistStage('static', staticDigest)
+        stageDigests.static = persistedStaticDigest
         completedStages.push('static')
-        return staticDigest
+        return persistedStaticDigest
       }
 
       const ensureDeepStage = async () => {
@@ -751,7 +1529,7 @@ export function createWorkflowSummarizeHandler(
             topFunctions.length > 0
               ? 'Use artifact.read on referenced summary or reconstruction artifacts before requesting broader narrative output.'
               : 'Run ghidra.analyze or workflow.reconstruct to produce deeper persisted artifacts before relying on deep-stage synthesis.',
-          source_artifact_refs: dedupeArtifactRefs([
+          source_artifact_refs: sourceArtifactRefsOnly([
             ...(Array.isArray(data.artifact_refs?.supporting)
               ? (data.artifact_refs.supporting as ArtifactRef[])
               : []),
@@ -806,17 +1584,25 @@ export function createWorkflowSummarizeHandler(
             ],
           }),
         })
-        await persistStage('deep', deepDigest)
-        stageDigests.deep = deepDigest
+        const persistedDeepDigest = await persistStage('deep', deepDigest)
+        stageDigests.deep = persistedDeepDigest
         completedStages.push('deep')
-        return deepDigest
+        return persistedDeepDigest
       }
 
       const ensureFinalStage = async () => {
         if (stageDigests.final) {
           return stageDigests.final as z.infer<typeof FinalStageDigestSchema>
         }
-        const reused = await loadReusedStage('final', FinalStageDigestSchema)
+        const summaryContext = await getFinalSummaryContext()
+        const reused = await loadReusedStage(
+          'final',
+          FinalStageDigestSchema,
+          (payload) =>
+            payload.claim_context.marker === summaryContext.claimContext.marker &&
+            payload.case_context.marker === summaryContext.caseContext.marker,
+          summaryContext
+        )
         if (reused) {
           stageDigests.final = reused
           completedStages.push('final')
@@ -842,12 +1628,7 @@ export function createWorkflowSummarizeHandler(
             ? ((compactReportData.artifact_refs as Record<string, unknown>)
                 .explanation_graphs as ArtifactRef[])
             : undefined
-        const samplingAvailable = Boolean(
-          clientCapabilitiesProvider?.()?.sampling && samplingRequester
-        )
-        const requestedMode = input.synthesis_mode
-        const shouldUseSampling =
-          requestedMode === 'sampling' || (requestedMode === 'auto' && samplingAvailable)
+        const shouldUseSampling = samplingRequested
         let finalDigest = buildFinalStageDigest({
           sample_id: input.sample_id,
           session_tag: input.session_tag || null,
@@ -858,7 +1639,11 @@ export function createWorkflowSummarizeHandler(
           synthesis_mode: shouldUseSampling ? 'sampling' : 'deterministic',
           explanation_graphs: Array.isArray(explanationGraphs) ? explanationGraphs : undefined,
           explanation_artifact_refs: explanationArtifacts,
-          source_artifact_refs: dedupeArtifactRefs([
+          claim_context: summaryContext.claimContext,
+          case_context: summaryContext.caseContext,
+          review_required: summaryContext.reviewRequired,
+          unresolved_questions: summaryContext.unresolvedQuestions,
+          source_artifact_refs: sourceArtifactRefsOnly([
             ...(triageDigest.source_artifact_refs as ArtifactRef[]),
             ...(staticDigest.source_artifact_refs as ArtifactRef[]),
             ...(deepDigest.source_artifact_refs as ArtifactRef[]),
@@ -880,7 +1665,11 @@ export function createWorkflowSummarizeHandler(
               synthesis_mode: 'deterministic',
               explanation_graphs: Array.isArray(explanationGraphs) ? explanationGraphs : undefined,
               explanation_artifact_refs: explanationArtifacts,
-              source_artifact_refs: dedupeArtifactRefs([
+              claim_context: summaryContext.claimContext,
+              case_context: summaryContext.caseContext,
+              review_required: summaryContext.reviewRequired,
+              unresolved_questions: summaryContext.unresolvedQuestions,
+              source_artifact_refs: sourceArtifactRefsOnly([
                 ...(triageDigest.source_artifact_refs as ArtifactRef[]),
                 ...(staticDigest.source_artifact_refs as ArtifactRef[]),
                 ...(deepDigest.source_artifact_refs as ArtifactRef[]),
@@ -889,20 +1678,15 @@ export function createWorkflowSummarizeHandler(
           } else {
             try {
               const samplingResult = await samplingRequester(
-                buildSamplingRequest(triageDigest, staticDigest, deepDigest)
+                buildSamplingRequest(triageDigest, staticDigest, deepDigest, summaryContext)
               )
               const responseText = extractTextBlocks(samplingResult)
               const parsed = parseSummaryJsonCandidate(responseText)
-              finalDigest = {
-                ...finalDigest,
-                synthesis_mode: 'sampling',
-                model_name: samplingResult?.model || null,
-                executive_summary: parsed.executive_summary,
-                analyst_summary: parsed.analyst_summary,
-                key_findings: parsed.key_findings.slice(0, 8),
-                next_steps: parsed.next_steps.slice(0, 5),
-                unresolved_unknowns: parsed.unresolved_unknowns.slice(0, 5),
-              }
+              finalDigest = applySamplingNarrative(
+                finalDigest,
+                parsed,
+                samplingResult?.model || null
+              )
             } catch (error) {
               warnings.push(
                 error instanceof Error
@@ -921,7 +1705,11 @@ export function createWorkflowSummarizeHandler(
                   ? explanationGraphs
                   : undefined,
                 explanation_artifact_refs: explanationArtifacts,
-                source_artifact_refs: dedupeArtifactRefs([
+                claim_context: summaryContext.claimContext,
+                case_context: summaryContext.caseContext,
+                review_required: summaryContext.reviewRequired,
+                unresolved_questions: summaryContext.unresolvedQuestions,
+                source_artifact_refs: sourceArtifactRefsOnly([
                   ...(triageDigest.source_artifact_refs as ArtifactRef[]),
                   ...(staticDigest.source_artifact_refs as ArtifactRef[]),
                   ...(deepDigest.source_artifact_refs as ArtifactRef[]),
@@ -931,10 +1719,15 @@ export function createWorkflowSummarizeHandler(
           }
         }
 
-        await persistStage('final', finalDigest)
-        stageDigests.final = finalDigest
+        const persistedFinalDigest = await persistStage(
+          'final',
+          finalDigest,
+          summaryContext,
+          finalDigest.synthesis_mode
+        )
+        stageDigests.final = persistedFinalDigest
         completedStages.push('final')
-        return finalDigest
+        return persistedFinalDigest
       }
 
       await ensureTriageStage()
@@ -972,9 +1765,6 @@ export function createWorkflowSummarizeHandler(
             'Coverage boundary could not be derived from persisted stage artifacts.',
           ],
         })
-      const samplingAvailable = Boolean(
-        clientCapabilitiesProvider?.()?.sampling && samplingRequester
-      )
       const resolvedMode = finalStage?.synthesis_mode || 'deterministic'
       const recommendedNextTools =
         input.through_stage === 'final'
@@ -1028,6 +1818,14 @@ export function createWorkflowSummarizeHandler(
             : {}),
           ...(finalStage?.explanation_artifact_refs
             ? { explanation_artifacts: finalStage.explanation_artifact_refs }
+            : {}),
+          ...(finalStage
+            ? {
+                claim_context: finalStage.claim_context,
+                case_context: finalStage.case_context,
+                review_required: finalStage.review_required,
+                unresolved_questions: finalStage.unresolved_questions,
+              }
             : {}),
           persisted_state_visibility: {
             ...persistedStateVisibility,

@@ -1,19 +1,30 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
 import crypto from 'crypto'
+import { spawn } from 'child_process'
+import { once } from 'events'
+import { unlinkSync, writeFileSync } from 'fs'
 import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import {
   ANALYSIS_CLAIM_SET_ARTIFACT_TYPE,
   ANALYSIS_CLAIM_SET_SCHEMA,
+  ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS,
   AnalysisClaimSetArtifactSchema,
+  analysisClaimLedgerWriteLeaseKey,
   loadAnalysisClaimLedgerIndex,
   persistAnalysisClaimSetArtifact,
+  scopeAnalysisClaimLedgerIndex,
   type AnalysisClaimSetArtifact,
 } from '../../src/artifacts/analysis-claim-artifacts.js'
 import { DatabaseManager } from '../../src/database.js'
 import { createAnalysisClaimsApplyHandler } from '../../src/plugins/kb-collaboration/tools/analysis-claims-apply.js'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
+import {
+  startContextWriteLeaseWriter,
+  waitForContextWriterReady,
+} from '../helpers/context-write-lease-worker.js'
+import { seedAnalysisClaimLedgerFixture } from '../helpers/analysis-claim-ledger-fixture.js'
 
 const PRIMARY_SHA256 = 'a'.repeat(64)
 const SECONDARY_SHA256 = 'b'.repeat(64)
@@ -23,6 +34,7 @@ const PRIMARY_EVIDENCE_ID = 'artifact-primary-evidence'
 const SECONDARY_EVIDENCE_ID = 'artifact-secondary-evidence'
 const CORRUPTED_EVIDENCE_ID = 'artifact-corrupted-evidence'
 const symlinkTest = process.platform === 'win32' ? test.skip : test
+const replacementLockTest = process.platform === 'win32' ? test.skip : test
 
 interface PersistedArtifactFixture {
   id: string
@@ -109,6 +121,21 @@ describe('analysis Claim Ledger artifacts', () => {
     database.close()
     await fs.rm(tempRoot, { recursive: true, force: true })
   })
+
+  const appendOpenQuestion = async (suffix: string) =>
+    await handler({
+      sample_id: PRIMARY_SAMPLE_ID,
+      producer: { kind: 'llm', model_name: 'test-model' },
+      claims: [
+        {
+          claim_id: `claim-lock-${suffix}`,
+          category: 'open_question',
+          subject: 'Claim Ledger lock boundary',
+          statement: 'Can this writer safely acquire the sample-level Claim Ledger lock?',
+          status: 'inferred',
+        },
+      ],
+    })
 
   test('persists canonical evidence metadata and a validated JSON pointer', async () => {
     const result = await handler({
@@ -242,6 +269,83 @@ describe('analysis Claim Ledger artifacts', () => {
     expect(
       database.findArtifactsByType(PRIMARY_SAMPLE_ID, ANALYSIS_CLAIM_SET_ARTIFACT_TYPE)
     ).toHaveLength(countBefore)
+  })
+
+  test.each([
+    'summary_triage_digest',
+    'summary_static_digest',
+    'summary_deep_digest',
+    'summary_final_digest',
+    'workflow_summary',
+    'report_summary',
+    'report_custom_export',
+    'analysis_report',
+    'html_report',
+    'report',
+  ])('rejects context-only %s artifacts as Claim evidence', async (artifactType) => {
+    const artifactId = `context-only-${artifactType}`
+    await persistFixtureArtifact({
+      workspaceManager,
+      database,
+      sampleId: PRIMARY_SAMPLE_ID,
+      id: artifactId,
+      type: artifactType,
+      relativePath: `reports/context/${artifactType}.json`,
+      content: JSON.stringify({ summary: 'Context-only analyst synthesis.' }),
+    })
+
+    const result = await handler({
+      sample_id: PRIMARY_SAMPLE_ID,
+      producer: { kind: 'llm' },
+      claims: [
+        {
+          claim_id: `claim-cites-${artifactType}`,
+          category: 'finding',
+          subject: 'Invalid context-only citation',
+          statement: 'A summary or report must not become self-referential Claim evidence.',
+          status: 'inferred',
+          supporting_evidence: [{ artifact_id: artifactId }],
+        },
+      ],
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors?.join('\n')).toContain(
+      `Context-only artifact type cannot be used as claim evidence: ${artifactType}`
+    )
+    expect(
+      database.findArtifactsByType(PRIMARY_SAMPLE_ID, ANALYSIS_CLAIM_SET_ARTIFACT_TYPE)
+    ).toHaveLength(0)
+  })
+
+  test('does not misclassify deterministic analyzer artifacts ending in _report', async () => {
+    const artifactId = 'deterministic-strings-report'
+    await persistFixtureArtifact({
+      workspaceManager,
+      database,
+      sampleId: PRIMARY_SAMPLE_ID,
+      id: artifactId,
+      type: 'strings_report',
+      relativePath: 'reports/static/strings-report.json',
+      content: JSON.stringify({ strings: ['accepted', 'rejected'] }),
+    })
+
+    const result = await handler({
+      sample_id: PRIMARY_SAMPLE_ID,
+      producer: { kind: 'llm' },
+      claims: [
+        {
+          claim_id: 'claim-cites-strings-report',
+          category: 'finding',
+          subject: 'Deterministic strings output',
+          statement: 'The deterministic analyzer output contains validation strings.',
+          status: 'inferred',
+          supporting_evidence: [{ artifact_id: artifactId }],
+        },
+      ],
+    })
+
+    expect(result.ok).toBe(true)
   })
 
   test('does not allow an LLM producer to promote a claim to verified', async () => {
@@ -581,6 +685,287 @@ describe('analysis Claim Ledger artifacts', () => {
     expect(await fs.readdir(claimDirectory)).toHaveLength(successes.length)
   })
 
+  test('recovers a stale Claim Ledger lock only after its PID and timestamps prove abandonment', async () => {
+    const lockPath = await claimLedgerLockPath(workspaceManager, PRIMARY_SAMPLE_ID)
+    const oldTimestamp = new Date(Date.now() - ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS * 2)
+    await writeClaimLedgerLockFixture({
+      lockPath,
+      sampleId: PRIMARY_SAMPLE_ID,
+      ownerToken: '11111111-1111-4111-8111-111111111111',
+      pid: await exitedProcessPid(),
+      acquiredAt: oldTimestamp,
+      modifiedAt: oldTimestamp,
+    })
+
+    const result = await appendOpenQuestion('stale-recovery')
+    expect(result.ok).toBe(true)
+    await expect(fs.stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  test('allows only one cross-process writer to recover the same stale Claim Ledger lock', async () => {
+    const lockPath = await claimLedgerLockPath(workspaceManager, PRIMARY_SAMPLE_ID)
+    const oldTimestamp = new Date(Date.now() - ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS * 2)
+    await fs.writeFile(lockPath, '', 'utf8')
+    await fs.utimes(lockPath, oldTimestamp, oldTimestamp)
+
+    const readyPath = path.join(tempRoot, 'claim-lease-ready')
+    const releasePath = path.join(tempRoot, 'claim-lease-release')
+    const first = startContextWriteLeaseWriter({
+      kind: 'claim',
+      databasePath: path.join(tempRoot, 'rikune.db'),
+      workspaceRoot: workspaceManager.getWorkspaceRoot(),
+      sampleId: PRIMARY_SAMPLE_ID,
+      suffix: 'winner',
+      readyPath,
+      releasePath,
+    })
+
+    try {
+      await waitForContextWriterReady(readyPath)
+      const second = startContextWriteLeaseWriter({
+        kind: 'claim',
+        databasePath: path.join(tempRoot, 'rikune.db'),
+        workspaceRoot: workspaceManager.getWorkspaceRoot(),
+        sampleId: PRIMARY_SAMPLE_ID,
+        suffix: 'loser',
+      })
+      const loser = await second.completion
+      expect(loser.ok).toBe(false)
+      expect(loser.errors?.join('\n')).toContain('another live context writer')
+      expect(await fs.readFile(lockPath, 'utf8')).toBe('')
+
+      await fs.writeFile(releasePath, 'release', 'utf8')
+      const winner = await first.completion
+      expect(winner.ok).toBe(true)
+    } finally {
+      await fs.writeFile(releasePath, 'release', 'utf8').catch(() => undefined)
+      if (first.child.exitCode === null) first.child.kill()
+    }
+
+    expect(
+      database.findArtifactsByType(PRIMARY_SAMPLE_ID, ANALYSIS_CLAIM_SET_ARTIFACT_TYPE)
+    ).toHaveLength(1)
+    expect(
+      database.findContextWriteLease(analysisClaimLedgerWriteLeaseKey(PRIMARY_SAMPLE_ID))
+    ).toBeNull()
+    await expect(fs.stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  }, 30_000)
+
+  test('fences a stale Claim writer at Artifact commit and removes its final file', async () => {
+    const lockKey = analysisClaimLedgerWriteLeaseKey(PRIMARY_SAMPLE_ID)
+    const takeoverToken = '66666666-6666-4666-8666-666666666666'
+    const originalInsert = database.insertArtifactIfContextLeaseOwned.bind(database)
+    let takeoverSucceeded = false
+
+    database.insertArtifactIfContextLeaseOwned = ((artifact, candidateLockKey, ownerToken) => {
+      if (artifact.type === ANALYSIS_CLAIM_SET_ARTIFACT_TYPE) {
+        database.runSql(
+          'UPDATE context_write_leases SET heartbeat_at = ? WHERE lock_key = ? AND owner_token = ?',
+          [
+            new Date(Date.now() - ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS * 2).toISOString(),
+            candidateLockKey,
+            ownerToken,
+          ]
+        )
+        const takeoverAt = new Date().toISOString()
+        const takeover = database.tryAcquireContextWriteLease(
+          {
+            lock_key: candidateLockKey,
+            owner_token: takeoverToken,
+            host_id: os.hostname(),
+            pid: process.pid,
+            acquired_at: takeoverAt,
+            heartbeat_at: takeoverAt,
+          },
+          new Date(Date.now() - ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS).toISOString()
+        )
+        takeoverSucceeded = takeover.acquired && takeover.takeover
+      }
+      return originalInsert(artifact, candidateLockKey, ownerToken)
+    }) as typeof database.insertArtifactIfContextLeaseOwned
+
+    let result: Awaited<ReturnType<typeof appendOpenQuestion>>
+    try {
+      result = await appendOpenQuestion('artifact-fence-loss')
+    } finally {
+      database.insertArtifactIfContextLeaseOwned = originalInsert
+    }
+
+    expect(takeoverSucceeded).toBe(true)
+    expect(result.ok).toBe(false)
+    expect(result.errors?.join('\n')).toContain(
+      'lost its context write lease before Artifact commit'
+    )
+    expect(
+      database.findArtifactsByType(PRIMARY_SAMPLE_ID, ANALYSIS_CLAIM_SET_ARTIFACT_TYPE)
+    ).toHaveLength(0)
+
+    const workspace = await workspaceManager.getWorkspace(PRIMARY_SAMPLE_ID)
+    const claimDirectory = path.join(workspace.reports, 'claims', 'default')
+    expect(await fs.readdir(claimDirectory)).toEqual([])
+    expect(database.releaseContextWriteLease(lockKey, takeoverToken)).toBe(true)
+    await expect(
+      fs.stat(path.join(workspace.root, '.analysis-claim-ledger.lock'))
+    ).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  test.each([
+    ['empty', ''],
+    ['partial JSON', '{"version":1'],
+    ['schema-invalid', JSON.stringify({ version: 1 })],
+  ])(
+    'recovers an old %s Claim Ledger lock but preserves it while fresh',
+    async (label, content) => {
+      const lockPath = await claimLedgerLockPath(workspaceManager, PRIMARY_SAMPLE_ID)
+      await fs.writeFile(lockPath, content, 'utf8')
+
+      const fresh = await appendOpenQuestion(`fresh-invalid-${label.replace(/\s+/g, '-')}`)
+      expect(fresh.ok).toBe(false)
+      expect(fresh.errors?.join('\n')).toContain('live or recently-active')
+      expect(await fs.readFile(lockPath, 'utf8')).toBe(content)
+
+      const oldTimestamp = new Date(Date.now() - ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS * 2)
+      await fs.utimes(lockPath, oldTimestamp, oldTimestamp)
+      const recovered = await appendOpenQuestion(`stale-invalid-${label.replace(/\s+/g, '-')}`)
+      expect(recovered.ok).toBe(true)
+      await expect(fs.stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    }
+  )
+
+  test('recovers an old complete Claim Ledger lock from another host namespace', async () => {
+    const lockPath = await claimLedgerLockPath(workspaceManager, PRIMARY_SAMPLE_ID)
+    const oldTimestamp = new Date(Date.now() - ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS * 2)
+    await writeClaimLedgerLockFixture({
+      lockPath,
+      sampleId: PRIMARY_SAMPLE_ID,
+      ownerToken: '55555555-5555-4555-8555-555555555555',
+      pid: process.pid,
+      acquiredAt: oldTimestamp,
+      modifiedAt: oldTimestamp,
+      hostId: 'foreign-host.example',
+    })
+
+    const result = await appendOpenQuestion('stale-foreign-host')
+    expect(result.ok).toBe(true)
+    await expect(fs.stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  test.each([
+    [
+      'a live PID',
+      'live-pid',
+      process.pid,
+      ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS * 2,
+      ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS * 2,
+      undefined,
+    ],
+    ['a fresh dead-PID lock', 'fresh-lock', null, 0, 0, undefined],
+    [
+      'an old metadata timestamp on a fresh lock file',
+      'fresh-file',
+      null,
+      ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS * 2,
+      0,
+      undefined,
+    ],
+    [
+      'a fresh metadata timestamp on an old lock file',
+      'fresh-metadata',
+      null,
+      0,
+      ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS * 2,
+      undefined,
+    ],
+    [
+      'a fresh lock from another host namespace',
+      'foreign-host',
+      null,
+      0,
+      0,
+      'foreign-host.example',
+    ],
+  ])(
+    'does not recover %s',
+    async (_label, suffix, configuredPid, metadataAgeMs, fileAgeMs, hostId) => {
+      const lockPath = await claimLedgerLockPath(workspaceManager, PRIMARY_SAMPLE_ID)
+      const acquiredAt = new Date(Date.now() - metadataAgeMs)
+      const modifiedAt = new Date(Date.now() - fileAgeMs)
+      await writeClaimLedgerLockFixture({
+        lockPath,
+        sampleId: PRIMARY_SAMPLE_ID,
+        ownerToken: '22222222-2222-4222-8222-222222222222',
+        pid: configuredPid ?? (await exitedProcessPid()),
+        acquiredAt,
+        modifiedAt,
+        hostId,
+      })
+
+      const result = await appendOpenQuestion(suffix)
+      expect(result.ok).toBe(false)
+      expect(result.errors?.join('\n')).toContain('live or recently-active')
+      expect(JSON.parse(await fs.readFile(lockPath, 'utf8')).owner_token).toBe(
+        '22222222-2222-4222-8222-222222222222'
+      )
+    }
+  )
+
+  test('does not recover an old dead lock for another sample', async () => {
+    const lockPath = await claimLedgerLockPath(workspaceManager, PRIMARY_SAMPLE_ID)
+    const timestamp = new Date(Date.now() - ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS * 2)
+    await writeClaimLedgerLockFixture({
+      lockPath,
+      sampleId: SECONDARY_SAMPLE_ID,
+      ownerToken: '33333333-3333-4333-8333-333333333333',
+      pid: await exitedProcessPid(),
+      acquiredAt: timestamp,
+      modifiedAt: timestamp,
+    })
+
+    const result = await appendOpenQuestion('ownership-mismatch')
+    expect(result.ok).toBe(false)
+    expect(result.errors?.join('\n')).toContain('ownership does not match')
+    expect(JSON.parse(await fs.readFile(lockPath, 'utf8')).owner_token).toBe(
+      '33333333-3333-4333-8333-333333333333'
+    )
+  })
+
+  replacementLockTest(
+    'release never unlinks a replacement Claim Ledger lock owned by another writer',
+    async () => {
+      const lockPath = await claimLedgerLockPath(workspaceManager, PRIMARY_SAMPLE_ID)
+      const originalInsertArtifact = database.insertArtifactIfContextLeaseOwned.bind(database)
+      let replaced = false
+      database.insertArtifactIfContextLeaseOwned = ((artifact, lockKey, ownerToken) => {
+        if (!replaced && artifact.type === ANALYSIS_CLAIM_SET_ARTIFACT_TYPE) {
+          replaced = true
+          unlinkSync(lockPath)
+          writeFileSync(
+            lockPath,
+            JSON.stringify({
+              version: 1,
+              owner_token: '44444444-4444-4444-8444-444444444444',
+              pid: process.pid,
+              host_id: os.hostname(),
+              sample_id: PRIMARY_SAMPLE_ID,
+              acquired_at: new Date().toISOString(),
+            }),
+            'utf8'
+          )
+        }
+        return originalInsertArtifact(artifact, lockKey, ownerToken)
+      }) as typeof database.insertArtifactIfContextLeaseOwned
+
+      const result = await appendOpenQuestion('owner-replacement')
+      database.insertArtifactIfContextLeaseOwned = originalInsertArtifact
+
+      expect(result.ok).toBe(true)
+      expect(replaced).toBe(true)
+      expect(JSON.parse(await fs.readFile(lockPath, 'utf8')).owner_token).toBe(
+        '44444444-4444-4444-8444-444444444444'
+      )
+    }
+  )
+
   test('does not let an LLM replace a trusted analyst rejected claim', async () => {
     const reviewedAt = '2026-07-14T11:00:00.000Z'
     const trustedPayload: AnalysisClaimSetArtifact = {
@@ -799,6 +1184,143 @@ describe('analysis Claim Ledger artifacts', () => {
     const externalEntries = await fs.readdir(externalClaimDirectory, { recursive: true })
     expect(externalEntries.filter((entry) => entry.endsWith('.json'))).toHaveLength(0)
   })
+
+  test('resolves an old Case-active Claim through 65 delta revisions', async () => {
+    await seedAnalysisClaimLedgerFixture({
+      workspaceManager,
+      database,
+      sampleId: PRIMARY_SAMPLE_ID,
+      revisionCount: 65,
+      artifactIdPrefix: 'strict-scan-65',
+      createdAtBase: '2026-07-14T10:00:00.000Z',
+      claimForRevision: (revision) =>
+        revision === 1
+          ? {
+              claim_id: 'claim-case-a-old',
+              subject: 'Case A old Claim',
+              statement: 'Case A must retain this Claim through unrelated Case B churn.',
+            }
+          : {
+              claim_id: 'claim-case-b-churn',
+              subject: 'Case B churn',
+              statement: `Case B Claim revision ${revision}.`,
+            },
+    })
+
+    const loaded = await loadAnalysisClaimLedgerIndex(
+      workspaceManager,
+      database,
+      PRIMARY_SAMPLE_ID,
+      { scope: 'all', activeClaimIds: ['claim-case-a-old'] }
+    )
+    const scoped = scopeAnalysisClaimLedgerIndex(loaded, ['claim-case-a-old'])
+
+    expect(loaded.active_claim_resolution).toMatchObject({
+      status: 'complete',
+      requested_claim_ids: ['claim-case-a-old'],
+      unresolved_claim_ids: [],
+      scanned_artifact_count: 65,
+    })
+    expect(scoped.truncated).toBe(false)
+    expect(scoped.warnings).toEqual([])
+    expect(Array.from(scoped.byClaimId.keys())).toEqual(['claim-case-a-old'])
+    expect(scoped.byClaimId.get('claim-case-a-old')?.ledger_revision).toBe(1)
+  })
+
+  test('withholds the entire active Claim view when the strict scan limit is reached', async () => {
+    await seedAnalysisClaimLedgerFixture({
+      workspaceManager,
+      database,
+      sampleId: PRIMARY_SAMPLE_ID,
+      revisionCount: 4,
+      artifactIdPrefix: 'strict-scan-cap',
+      createdAtBase: '2026-07-14T11:00:00.000Z',
+      claimForRevision: (revision) =>
+        revision === 1
+          ? {
+              claim_id: 'claim-old-beyond-cap',
+              subject: 'Old Claim beyond cap',
+              statement: 'This Claim is intentionally beyond the strict test scan cap.',
+            }
+          : revision === 4
+            ? {
+                claim_id: 'claim-recent-within-cap',
+                subject: 'Recent Claim within cap',
+                statement: 'This Claim resolves before the strict test scan cap.',
+              }
+            : {
+                claim_id: 'claim-cap-churn',
+                subject: 'Cap churn',
+                statement: `Churn revision ${revision}.`,
+              },
+    })
+
+    const loaded = await loadAnalysisClaimLedgerIndex(
+      workspaceManager,
+      database,
+      PRIMARY_SAMPLE_ID,
+      {
+        scope: 'all',
+        activeClaimIds: ['claim-recent-within-cap', 'claim-old-beyond-cap'],
+        maxScanArtifacts: 2,
+      }
+    )
+    const scoped = scopeAnalysisClaimLedgerIndex(loaded, [
+      'claim-recent-within-cap',
+      'claim-old-beyond-cap',
+    ])
+
+    expect(loaded.active_claim_resolution).toMatchObject({
+      status: 'scan_limit',
+      unresolved_claim_ids: ['claim-old-beyond-cap'],
+      scanned_artifact_count: 2,
+    })
+    expect(loaded.byClaimId.size).toBe(0)
+    expect(scoped.byClaimId.size).toBe(0)
+    expect(scoped.claim_sets).toEqual([])
+    expect(scoped.truncated).toBe(true)
+    expect(scoped.warnings.join('\n')).toMatch(/entire Case Claim view was withheld/i)
+  })
+
+  symlinkTest(
+    'rejects a cold-cache replaced sample root before creating a Claim lock',
+    async () => {
+      const workspace = await workspaceManager.getWorkspace(PRIMARY_SAMPLE_ID)
+      const externalWorkspaceRoot = path.join(tempRoot, 'outside-sample-workspace')
+      await fs.mkdir(path.join(externalWorkspaceRoot, 'reports'), { recursive: true })
+      await fs.rm(workspace.root, { recursive: true, force: true })
+      await fs.symlink(externalWorkspaceRoot, workspace.root, 'dir')
+      const externalEntriesBefore = (
+        await fs.readdir(externalWorkspaceRoot, { recursive: true })
+      ).sort()
+      const coldWorkspaceManager = new WorkspaceManager(workspaceManager.getWorkspaceRoot())
+      const coldHandler = createAnalysisClaimsApplyHandler(coldWorkspaceManager, database)
+
+      const result = await coldHandler({
+        sample_id: PRIMARY_SAMPLE_ID,
+        producer: { kind: 'llm', model_name: 'test-model' },
+        claims: [
+          {
+            claim_id: 'claim-replaced-workspace-root',
+            category: 'open_question',
+            subject: 'Workspace root boundary',
+            statement: 'This claim must not follow a replaced sample workspace root.',
+            status: 'inferred',
+          },
+        ],
+      })
+
+      expect(result.ok).toBe(false)
+      expect(result.errors?.join('\n')).toMatch(/sample workspace root.*symlink/i)
+      await expect(
+        fs.stat(path.join(externalWorkspaceRoot, '.analysis-claim-ledger.lock'))
+      ).rejects.toMatchObject({ code: 'ENOENT' })
+      const externalEntriesAfter = (
+        await fs.readdir(externalWorkspaceRoot, { recursive: true })
+      ).sort()
+      expect(externalEntriesAfter).toEqual(externalEntriesBefore)
+    }
+  )
 })
 
 function insertSample(database: DatabaseManager, sampleId: string, sha256: string): void {
@@ -845,4 +1367,44 @@ async function persistFixtureArtifact(args: {
     sha256,
     absolutePath,
   }
+}
+
+async function claimLedgerLockPath(
+  workspaceManager: WorkspaceManager,
+  sampleId: string
+): Promise<string> {
+  const workspace = await workspaceManager.getWorkspace(sampleId)
+  return path.join(workspace.root, '.analysis-claim-ledger.lock')
+}
+
+async function exitedProcessPid(): Promise<number> {
+  const child = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' })
+  if (!child.pid) throw new Error('Failed to start the dead-PID test process.')
+  const pid = child.pid
+  await once(child, 'exit')
+  return pid
+}
+
+async function writeClaimLedgerLockFixture(input: {
+  lockPath: string
+  sampleId: string
+  ownerToken: string
+  pid: number
+  acquiredAt: Date
+  modifiedAt: Date
+  hostId?: string
+}): Promise<void> {
+  await fs.writeFile(
+    input.lockPath,
+    JSON.stringify({
+      version: 1,
+      owner_token: input.ownerToken,
+      pid: input.pid,
+      host_id: input.hostId || os.hostname(),
+      sample_id: input.sampleId,
+      acquired_at: input.acquiredAt.toISOString(),
+    }),
+    'utf8'
+  )
+  await fs.utimes(input.lockPath, input.modifiedAt, input.modifiedAt)
 }

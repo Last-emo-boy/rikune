@@ -98,7 +98,7 @@ Core tools are registered before plugins, but the default AI-facing visible surf
 | --- | --- |
 | Gateway | `workflow.search`, `workflow.run`, `artifact.read` |
 | Sample intake compatibility | `sample.ingest`, `sample.request_upload`, `sample.profile.get`, `analysis.context.get` |
-| Artifacts | `artifact.read`, plus compatibility helpers `artifact.list`, `artifact.diff`, `artifact.download` |
+| Artifacts | `artifact.read`, plus compatibility helpers `artifacts.list`, `artifacts.diff`, `artifact.download` |
 | Workflow compatibility | `workflow.analyze.start`, `workflow.analyze.status`, `workflow.analyze.promote`, `workflow.analyze.auto`, `workflow.triage`, `workflow.deep_static`, `workflow.reconstruct` |
 | Semantic review | `workflow.semantic_name_review`, `workflow.function_explanation_review`, `workflow.module_reconstruction_review` |
 | Tasks | `task.status`, `task.cancel`, `task.sweep` |
@@ -117,10 +117,12 @@ Stages:
 2. `enrich_static`
 3. `function_map`
 4. `reconstruct`
-5. `semantic_reviews`
-6. `dynamic_plan`
-7. `dynamic_execute`
-8. `summarize`
+5. `semantic_name_review`
+6. `semantic_explain_review`
+7. `semantic_module_review`
+8. `dynamic_plan`
+9. `dynamic_execute`
+10. `summarize`
 
 Externally, `workflow.run action=start` creates or reuses an analysis run and executes the initial profile. `workflow.run action=promote` queues or runs deeper stages. `workflow.run action=status` returns compact run state, stage state, evidence, coverage, pending work, and polling guidance. The direct `workflow.analyze.*` handlers remain registered as wrapped compatibility targets.
 
@@ -129,6 +131,25 @@ Long-running stages use `JobQueue` and `AnalysisTaskRunner`. Jobs are persisted 
 The run-state layer preserves the queue `job_id` while a stage transitions from queued to running and completed. This lets `workflow.run action=status`, `task.status`, scheduler telemetry, and restart recovery describe the same underlying worker instead of treating active work as lost context.
 
 Large workflow responses are bounded by `src/core/response-guard.ts`. The guard prunes heavyweight `raw_results` and historical stage payloads while keeping schema-valid structured content. When pruning occurs, the tool returns a top-level warning and callers should use `artifact.read` or a stage-specific tool for full detail.
+
+## Agent Investigation State And Trust Boundaries
+
+Long-lived Agent investigations use four separate layers:
+
+1. Analyzer Artifacts and `AnalysisEvidence` are the only evidence-bearing layer.
+2. `analysis.claims.apply` writes append-only `analysis_claim_set` revisions. AI and imported producers are restricted to `inferred` status.
+3. `analysis.case.checkpoint` writes immutable full `analysis_case_state` snapshots; `analysis.case.snapshot` resumes one Case.
+4. `analysis.context.pack` builds a deterministic, token-bounded view, while `workflow.summarize` persists bounded context-only digests.
+
+Claim sets, Case states, summaries, and reports are centrally classified as context-only. They cannot be cited as Claim evidence or appear in summary source lineage. Claim overlays remain separate from deterministic Evidence Graph nodes.
+
+Case consumers are isolated by `case_id`. A sole Case may be auto-selected, but multiple Cases require an explicit selector. Claim views are restricted to the selected Case's `active_claim_ids`; an existing but untrusted Case state causes Claims to be withheld. Active Claim resolution scans newest-to-oldest with chain, SHA-256, schema, and sample validation, bounded to 512 Claim Set Artifacts and 128 MiB. Missing IDs, integrity failures, or exhausted bounds withhold the complete Case Claim view. Context markers and final-summary reuse both bind to the selected Case and fail closed on cross-Case reuse.
+
+Summary digest reuse is additionally bound to a versioned fingerprint covering synthesis mode, all scope/session selectors, non-context source Artifact metadata, persisted Evidence/Function/Analysis/Run/RunStage state, Claim/Case markers, and integrity-review state. Source Artifact files undergo streaming SHA-256 validation before reuse. Digests without a compatible fingerprint remain parseable but are not reuse candidates.
+
+Claim/Case persistence uses a heartbeat-backed SQLite CAS lease outside the owner-identified filesystem lock. Stale lease takeover compares the observed owner token and heartbeat. Writers synchronously reassert ownership before the final file rename, and the Artifact row insert atomically fences on the current owner token. Stale malformed filesystem locks and stale locks from a prior host namespace are recovered through identity-checked quarantine, while recent or live local locks remain fail-closed. Workspace creation validates the configured canonical root and each shard/sample directory before any lock or Artifact write, rejecting symlink substitution.
+
+Primary Evidence classification uses trusted family/backend/provenance combinations. Arbitrary producer metadata cannot promote a derived result. Sampling may rewrite narrative fields, but Evidence-backed findings, coverage, and source refs are rebuilt from deterministic digests.
 
 ## Runtime Worker Pool and Process Visibility
 
@@ -299,6 +320,7 @@ npm test
 npm run test:unit
 npm run test:integration
 npm run test:e2e
+npm run test:agent-case:e2e -- --help
 npm run typecheck
 ```
 

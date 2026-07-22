@@ -348,6 +348,16 @@ CREATE TABLE IF NOT EXISTS artifacts (
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_sample_type ON artifacts(sample_id, type);
 
+-- context_write_leases 表：为 Claim/Case 等 context-only writer 提供跨进程 CAS lease
+CREATE TABLE IF NOT EXISTS context_write_leases (
+  lock_key TEXT PRIMARY KEY,
+  owner_token TEXT NOT NULL,
+  host_id TEXT NOT NULL,
+  pid INTEGER NOT NULL,
+  acquired_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL
+);
+
 -- upload_sessions 表：存储持久化上传会话
 CREATE TABLE IF NOT EXISTS upload_sessions (
   id TEXT PRIMARY KEY,
@@ -653,6 +663,21 @@ export interface Artifact {
   sha256: string
   mime: string | null
   created_at: string
+}
+
+export interface ContextWriteLease {
+  lock_key: string
+  owner_token: string
+  host_id: string
+  pid: number
+  acquired_at: string
+  heartbeat_at: string
+}
+
+export interface ContextWriteLeaseAcquireResult {
+  acquired: boolean
+  takeover: boolean
+  lease: ContextWriteLease | null
 }
 
 export interface CachedResult {
@@ -1869,6 +1894,39 @@ export class DatabaseManager {
   }
 
   /**
+   * Insert an artifact only while the supplied context-write fencing token still owns its lease.
+   * The ownership predicate and insert are one SQLite statement so a stale writer cannot commit
+   * after another process has completed a CAS takeover.
+   */
+  insertArtifactIfContextLeaseOwned(
+    artifact: Artifact,
+    lockKey: string,
+    ownerToken: string
+  ): boolean {
+    const stmt = this.db.prepare(`
+      INSERT INTO artifacts (id, sample_id, type, path, sha256, mime, created_at)
+      SELECT ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (
+        SELECT 1
+        FROM context_write_leases
+        WHERE lock_key = ? AND owner_token = ?
+      )
+    `)
+    const result = stmt.run(
+      artifact.id,
+      artifact.sample_id,
+      artifact.type,
+      artifact.path,
+      artifact.sha256,
+      artifact.mime,
+      artifact.created_at,
+      lockKey,
+      ownerToken
+    )
+    return result.changes === 1
+  }
+
+  /**
    * Find all artifacts for a sample
    */
   findArtifacts(sampleId: string): Artifact[] {
@@ -1910,6 +1968,119 @@ export class DatabaseManager {
       'SELECT * FROM artifacts WHERE sample_id = ? AND type = ? ORDER BY created_at DESC'
     )
     return stmt.all(sampleId, type) as Artifact[]
+  }
+
+  countArtifactsByType(sampleId: string, type: string): number {
+    const stmt = this.db.prepare(
+      'SELECT COUNT(*) AS count FROM artifacts WHERE sample_id = ? AND type = ?'
+    )
+    const row = stmt.get(sampleId, type) as { count: number }
+    return row.count
+  }
+
+  findArtifactsByTypeLimited(sampleId: string, type: string, limit: number): Artifact[] {
+    if (!Number.isInteger(limit) || limit <= 0) {
+      throw new Error('Artifact query limit must be a positive integer.')
+    }
+    const stmt = this.db.prepare(
+      'SELECT * FROM artifacts WHERE sample_id = ? AND type = ? ORDER BY created_at DESC, rowid DESC LIMIT ?'
+    )
+    return stmt.all(sampleId, type, limit) as Artifact[]
+  }
+
+  // ==================== Context Write Lease Operations ====================
+
+  /**
+   * Atomically acquire a context writer lease, or take over an observed stale owner with CAS.
+   */
+  tryAcquireContextWriteLease(
+    requested: ContextWriteLease,
+    staleBefore: string
+  ): ContextWriteLeaseAcquireResult {
+    const acquire = this.db.transaction((): ContextWriteLeaseAcquireResult => {
+      const inserted = this.db
+        .prepare(
+          `INSERT OR IGNORE INTO context_write_leases
+            (lock_key, owner_token, host_id, pid, acquired_at, heartbeat_at)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          requested.lock_key,
+          requested.owner_token,
+          requested.host_id,
+          requested.pid,
+          requested.acquired_at,
+          requested.heartbeat_at
+        )
+      if (inserted.changes === 1) {
+        return { acquired: true, takeover: false, lease: requested }
+      }
+
+      const incumbent = this.db
+        .prepare('SELECT * FROM context_write_leases WHERE lock_key = ?')
+        .get(requested.lock_key) as ContextWriteLease | undefined
+      if (!incumbent || incumbent.heartbeat_at > staleBefore) {
+        return { acquired: false, takeover: false, lease: incumbent || null }
+      }
+
+      const takenOver = this.db
+        .prepare(
+          `UPDATE context_write_leases
+           SET owner_token = ?, host_id = ?, pid = ?, acquired_at = ?, heartbeat_at = ?
+           WHERE lock_key = ?
+             AND owner_token = ?
+             AND heartbeat_at = ?
+             AND heartbeat_at <= ?`
+        )
+        .run(
+          requested.owner_token,
+          requested.host_id,
+          requested.pid,
+          requested.acquired_at,
+          requested.heartbeat_at,
+          requested.lock_key,
+          incumbent.owner_token,
+          incumbent.heartbeat_at,
+          staleBefore
+        )
+      if (takenOver.changes === 1) {
+        return { acquired: true, takeover: true, lease: requested }
+      }
+
+      const current = this.db
+        .prepare('SELECT * FROM context_write_leases WHERE lock_key = ?')
+        .get(requested.lock_key) as ContextWriteLease | undefined
+      return { acquired: false, takeover: false, lease: current || null }
+    })
+
+    return acquire()
+  }
+
+  /** Refresh and assert lease ownership in one owner-token-conditional write. */
+  heartbeatContextWriteLease(lockKey: string, ownerToken: string, heartbeatAt: string): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE context_write_leases
+         SET heartbeat_at = ?
+         WHERE lock_key = ? AND owner_token = ? AND heartbeat_at <= ?`
+      )
+      .run(heartbeatAt, lockKey, ownerToken, heartbeatAt)
+    return result.changes === 1
+  }
+
+  /** Release only the lease still owned by ownerToken. */
+  releaseContextWriteLease(lockKey: string, ownerToken: string): boolean {
+    const result = this.db
+      .prepare('DELETE FROM context_write_leases WHERE lock_key = ? AND owner_token = ?')
+      .run(lockKey, ownerToken)
+    return result.changes === 1
+  }
+
+  findContextWriteLease(lockKey: string): ContextWriteLease | null {
+    const row = this.db
+      .prepare('SELECT * FROM context_write_leases WHERE lock_key = ?')
+      .get(lockKey) as ContextWriteLease | undefined
+    return row || null
   }
 
   // ==================== Cache Operations ====================

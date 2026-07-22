@@ -31,8 +31,10 @@ describe('WorkspaceManager', () => {
       const workspace = await workspaceManager.createWorkspace(sampleId)
 
       // Check root path structure (ab/cd/<sha256>)
-      expect(workspace.root).toMatch(/ab[/\\]cd[/\\]abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890$/)
-      
+      expect(workspace.root).toMatch(
+        /ab[/\\]cd[/\\]abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890$/
+      )
+
       // Verify all directories exist
       expect(fs.existsSync(workspace.root)).toBe(true)
       expect(fs.existsSync(workspace.original)).toBe(true)
@@ -58,13 +60,15 @@ describe('WorkspaceManager', () => {
       const workspace = await workspaceManager.createWorkspace(sampleId)
 
       // Should normalize to lowercase
-      expect(workspace.root).toMatch(/ab[/\\]cd[/\\]abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890$/)
+      expect(workspace.root).toMatch(
+        /ab[/\\]cd[/\\]abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890$/
+      )
       expect(fs.existsSync(workspace.root)).toBe(true)
     })
 
     it('should be idempotent - creating same workspace twice should succeed', async () => {
       const sampleId = 'sha256:fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321'
-      
+
       const workspace1 = await workspaceManager.createWorkspace(sampleId)
       const workspace2 = await workspaceManager.createWorkspace(sampleId)
 
@@ -101,10 +105,10 @@ describe('WorkspaceManager', () => {
   describe('getWorkspace', () => {
     it('should return workspace path for existing workspace', async () => {
       const sampleId = 'sha256:1111111111111111111111111111111111111111111111111111111111111111'
-      
+
       // Create workspace first
       const created = await workspaceManager.createWorkspace(sampleId)
-      
+
       // Get workspace
       const retrieved = await workspaceManager.getWorkspace(sampleId)
 
@@ -117,10 +121,8 @@ describe('WorkspaceManager', () => {
 
     it('should throw error for non-existent workspace', async () => {
       const sampleId = 'sha256:9999999999999999999999999999999999999999999999999999999999999999'
-      
-      await expect(workspaceManager.getWorkspace(sampleId)).rejects.toThrow(
-        /Workspace not found/
-      )
+
+      await expect(workspaceManager.getWorkspace(sampleId)).rejects.toThrow(/Workspace not found/)
     })
 
     it('should reject invalid sample ID format', async () => {
@@ -134,7 +136,7 @@ describe('WorkspaceManager', () => {
       fs.mkdirSync(workspacePath, { recursive: true })
 
       const normalized = workspaceManager.normalizePath(workspacePath, 'subdir/file.txt')
-      
+
       expect(normalized).toBe(path.join(workspacePath, 'subdir', 'file.txt'))
     })
 
@@ -142,12 +144,7 @@ describe('WorkspaceManager', () => {
       const workspacePath = path.join(testRoot, 'test-workspace')
       fs.mkdirSync(workspacePath, { recursive: true })
 
-      const validPaths = [
-        'file.txt',
-        'subdir/file.txt',
-        './file.txt',
-        'subdir/../file.txt',
-      ]
+      const validPaths = ['file.txt', 'subdir/file.txt', './file.txt', 'subdir/../file.txt']
 
       for (const validPath of validPaths) {
         expect(() => {
@@ -160,11 +157,7 @@ describe('WorkspaceManager', () => {
       const workspacePath = path.join(testRoot, 'test-workspace')
       fs.mkdirSync(workspacePath, { recursive: true })
 
-      const maliciousPaths = [
-        '../../../etc/passwd',
-        '../../outside.txt',
-        '../outside/file.txt',
-      ]
+      const maliciousPaths = ['../../../etc/passwd', '../../outside.txt', '../outside/file.txt']
 
       for (const maliciousPath of maliciousPaths) {
         expect(() => {
@@ -217,11 +210,7 @@ describe('WorkspaceManager', () => {
       const workspacePath = path.join(testRoot, 'test-workspace')
       fs.mkdirSync(workspacePath, { recursive: true })
 
-      const validPaths = [
-        'file.txt',
-        'subdir/file.txt',
-        './file.txt',
-      ]
+      const validPaths = ['file.txt', 'subdir/file.txt', './file.txt']
 
       for (const validPath of validPaths) {
         expect(workspaceManager.isWithinBoundaries(workspacePath, validPath)).toBe(true)
@@ -232,11 +221,7 @@ describe('WorkspaceManager', () => {
       const workspacePath = path.join(testRoot, 'test-workspace')
       fs.mkdirSync(workspacePath, { recursive: true })
 
-      const invalidPaths = [
-        '../outside.txt',
-        '../../etc/passwd',
-        '../../../etc/passwd',
-      ]
+      const invalidPaths = ['../outside.txt', '../../etc/passwd', '../../../etc/passwd']
 
       for (const invalidPath of invalidPaths) {
         expect(workspaceManager.isWithinBoundaries(workspacePath, invalidPath)).toBe(false)
@@ -260,7 +245,7 @@ describe('WorkspaceManager', () => {
       ]
 
       const workspaces = await Promise.all(
-        samples.map(id => workspaceManager.createWorkspace(id))
+        samples.map((id) => workspaceManager.createWorkspace(id))
       )
 
       // Verify different bucket directories
@@ -306,26 +291,26 @@ describe('WorkspaceManager', () => {
   describe('cleanup', () => {
     it('should delete workspace directory and all contents', async () => {
       const sampleId = 'sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'
-      
+
       // Create workspace with some files
       const workspace = await workspaceManager.createWorkspace(sampleId)
       fs.writeFileSync(path.join(workspace.original, 'sample.exe'), 'test data')
       fs.writeFileSync(path.join(workspace.cache, 'result.json'), '{}')
-      
+
       // Verify workspace exists
       expect(fs.existsSync(workspace.root)).toBe(true)
       expect(fs.existsSync(path.join(workspace.original, 'sample.exe'))).toBe(true)
-      
+
       // Clean up
       await workspaceManager.cleanup(sampleId)
-      
+
       // Verify workspace is deleted
       expect(fs.existsSync(workspace.root)).toBe(false)
     })
 
     it('should not throw error if workspace does not exist', async () => {
       const sampleId = 'sha256:9999999999999999999999999999999999999999999999999999999999999999'
-      
+
       // Should not throw
       await expect(workspaceManager.cleanup(sampleId)).resolves.not.toThrow()
     })
@@ -336,20 +321,20 @@ describe('WorkspaceManager', () => {
         'sha256:2222222222222222222222222222222222222222222222222222222222222222',
         'sha256:3333333333333333333333333333333333333333333333333333333333333333',
       ]
-      
+
       // Create workspaces
       const workspaces = await Promise.all(
-        sampleIds.map(id => workspaceManager.createWorkspace(id))
+        sampleIds.map((id) => workspaceManager.createWorkspace(id))
       )
-      
+
       // Verify all exist
       for (const workspace of workspaces) {
         expect(fs.existsSync(workspace.root)).toBe(true)
       }
-      
+
       // Clean up all
-      await Promise.all(sampleIds.map(id => workspaceManager.cleanup(id)))
-      
+      await Promise.all(sampleIds.map((id) => workspaceManager.cleanup(id)))
+
       // Verify all deleted
       for (const workspace of workspaces) {
         expect(fs.existsSync(workspace.root)).toBe(false)
@@ -361,14 +346,14 @@ describe('WorkspaceManager', () => {
     it('should delete workspaces older than retention period', async () => {
       const sampleId = 'sha256:aaaa000000000000000000000000000000000000000000000000000000000000'
       const workspace = await workspaceManager.createWorkspace(sampleId)
-      
+
       // Modify the workspace timestamp to be old (35 days ago)
-      const oldTime = Date.now() - (35 * 24 * 60 * 60 * 1000)
+      const oldTime = Date.now() - 35 * 24 * 60 * 60 * 1000
       fs.utimesSync(workspace.root, new Date(oldTime), new Date(oldTime))
-      
+
       // Clean up with 30-day retention
       const cleanedCount = await workspaceManager.cleanupOldWorkspaces(30)
-      
+
       expect(cleanedCount).toBe(1)
       expect(fs.existsSync(workspace.root)).toBe(false)
     })
@@ -376,10 +361,10 @@ describe('WorkspaceManager', () => {
     it('should not delete workspaces within retention period', async () => {
       const sampleId = 'sha256:bbbb000000000000000000000000000000000000000000000000000000000000'
       const workspace = await workspaceManager.createWorkspace(sampleId)
-      
+
       // Workspace is fresh (just created)
       const cleanedCount = await workspaceManager.cleanupOldWorkspaces(30)
-      
+
       expect(cleanedCount).toBe(0)
       expect(fs.existsSync(workspace.root)).toBe(true)
     })
@@ -388,16 +373,16 @@ describe('WorkspaceManager', () => {
       // Create old workspace
       const oldSampleId = 'sha256:cccc000000000000000000000000000000000000000000000000000000000000'
       const oldWorkspace = await workspaceManager.createWorkspace(oldSampleId)
-      const oldTime = Date.now() - (35 * 24 * 60 * 60 * 1000)
+      const oldTime = Date.now() - 35 * 24 * 60 * 60 * 1000
       fs.utimesSync(oldWorkspace.root, new Date(oldTime), new Date(oldTime))
-      
+
       // Create new workspace
       const newSampleId = 'sha256:dddd000000000000000000000000000000000000000000000000000000000000'
       const newWorkspace = await workspaceManager.createWorkspace(newSampleId)
-      
+
       // Clean up
       const cleanedCount = await workspaceManager.cleanupOldWorkspaces(30)
-      
+
       expect(cleanedCount).toBe(1)
       expect(fs.existsSync(oldWorkspace.root)).toBe(false)
       expect(fs.existsSync(newWorkspace.root)).toBe(true)
@@ -406,22 +391,22 @@ describe('WorkspaceManager', () => {
     it('should clean up empty bucket directories', async () => {
       const sampleId = 'sha256:eeee000000000000000000000000000000000000000000000000000000000000'
       const workspace = await workspaceManager.createWorkspace(sampleId)
-      
+
       // Make workspace old
-      const oldTime = Date.now() - (35 * 24 * 60 * 60 * 1000)
+      const oldTime = Date.now() - 35 * 24 * 60 * 60 * 1000
       fs.utimesSync(workspace.root, new Date(oldTime), new Date(oldTime))
-      
+
       // Get bucket paths
       const bucket1Path = path.join(testRoot, 'ee')
       const bucket2Path = path.join(bucket1Path, 'ee')
-      
+
       // Verify buckets exist
       expect(fs.existsSync(bucket1Path)).toBe(true)
       expect(fs.existsSync(bucket2Path)).toBe(true)
-      
+
       // Clean up
       await workspaceManager.cleanupOldWorkspaces(30)
-      
+
       // Verify empty buckets are removed
       expect(fs.existsSync(bucket2Path)).toBe(false)
       expect(fs.existsSync(bucket1Path)).toBe(false)
@@ -430,26 +415,26 @@ describe('WorkspaceManager', () => {
     it('should return 0 if workspace root does not exist', async () => {
       const emptyRoot = path.join(testRoot, 'non-existent')
       const emptyManager = new WorkspaceManager(emptyRoot)
-      
+
       // Delete the root that was auto-created
       fs.rmSync(emptyRoot, { recursive: true, force: true })
-      
+
       const cleanedCount = await emptyManager.cleanupOldWorkspaces(30)
-      
+
       expect(cleanedCount).toBe(0)
     })
 
     it('should use custom retention period', async () => {
       const sampleId = 'sha256:ffff000000000000000000000000000000000000000000000000000000000000'
       const workspace = await workspaceManager.createWorkspace(sampleId)
-      
+
       // Make workspace 10 days old
-      const oldTime = Date.now() - (10 * 24 * 60 * 60 * 1000)
+      const oldTime = Date.now() - 10 * 24 * 60 * 60 * 1000
       fs.utimesSync(workspace.root, new Date(oldTime), new Date(oldTime))
-      
+
       // Clean up with 7-day retention (should delete)
       const cleanedCount = await workspaceManager.cleanupOldWorkspaces(7)
-      
+
       expect(cleanedCount).toBe(1)
       expect(fs.existsSync(workspace.root)).toBe(false)
     })
@@ -460,20 +445,20 @@ describe('WorkspaceManager', () => {
         'sha256:2200000000000000000000000000000000000000000000000000000000000000',
         'sha256:3300000000000000000000000000000000000000000000000000000000000000',
       ]
-      
+
       const workspaces = await Promise.all(
-        oldSamples.map(id => workspaceManager.createWorkspace(id))
+        oldSamples.map((id) => workspaceManager.createWorkspace(id))
       )
-      
+
       // Make all workspaces old
-      const oldTime = Date.now() - (35 * 24 * 60 * 60 * 1000)
+      const oldTime = Date.now() - 35 * 24 * 60 * 60 * 1000
       for (const workspace of workspaces) {
         fs.utimesSync(workspace.root, new Date(oldTime), new Date(oldTime))
       }
-      
+
       // Clean up
       const cleanedCount = await workspaceManager.cleanupOldWorkspaces(30)
-      
+
       expect(cleanedCount).toBe(3)
       for (const workspace of workspaces) {
         expect(fs.existsSync(workspace.root)).toBe(false)

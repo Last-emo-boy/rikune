@@ -2,23 +2,38 @@ import fs from 'fs/promises'
 import { createReadStream } from 'fs'
 import path from 'path'
 import { createHash, randomUUID } from 'crypto'
+import { hostname } from 'os'
 import { z } from 'zod'
 import type { ArtifactRef } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
+import {
+  withContextWriteLease,
+  type ContextWriteLeaseGuard,
+} from '../persistence/context-write-lease.js'
 import { deriveArtifactSessionTag } from './artifact-inventory.js'
+import { ANALYSIS_CASE_STATE_ARTIFACT_TYPE } from './analysis-case-artifacts.js'
+import { isContextOnlyArtifactType } from './context-only-artifacts.js'
 import { matchesSessionTag, sanitizePathSegment } from '../utils/shared-helpers.js'
 
 export const ANALYSIS_CLAIM_SET_ARTIFACT_TYPE = 'analysis_claim_set'
 export const ANALYSIS_CLAIM_SET_SCHEMA = 'rikune.analysis_claim_set.v1'
 export const ANALYSIS_CLAIM_OVERLAY_SCHEMA = 'rikune.analysis_claim_overlay.v1'
 export const MAX_ANALYSIS_CLAIM_EVIDENCE_REFERENCES = 512
+export const ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS = 5 * 60 * 1000
+export const MAX_CASE_ACTIVE_CLAIM_SCAN_ARTIFACTS = 512
+export const MAX_CASE_ACTIVE_CLAIM_SCAN_BYTES = 128 * 1024 * 1024
+
+export function analysisClaimLedgerWriteLeaseKey(sampleId: string): string {
+  return `analysis-claim-ledger:${sampleId}`
+}
 
 const MAX_JSON_EVIDENCE_BYTES = 8 * 1024 * 1024
 const MAX_JSON_EVIDENCE_BATCH_BYTES = 32 * 1024 * 1024
 const MAX_CLAIM_SET_BYTES = 32 * 1024 * 1024
 const MAX_EVIDENCE_HASH_BATCH_BYTES = 512 * 1024 * 1024
 const MAX_EVIDENCE_ARTIFACTS_PER_BATCH = 512
+const MAX_CLAIM_LEDGER_LOCK_BYTES = 4096
 
 export const AnalysisClaimIdSchema = z
   .string()
@@ -481,12 +496,74 @@ export interface AnalysisClaimLedgerIndex {
   total_artifact_count: number
   truncated: boolean
   warnings: string[]
+  integrity_issues: AnalysisClaimLedgerIntegrityIssue[]
+  active_claim_resolution: AnalysisClaimActiveResolution | null
+}
+
+export type AnalysisClaimLedgerIntegrityKind =
+  | 'scan_truncated'
+  | 'path_outside_workspace'
+  | 'invalid_size'
+  | 'byte_limit'
+  | 'sha256_mismatch'
+  | 'invalid_payload'
+  | 'unreadable'
+  | 'head_revision_mismatch'
+  | 'chain_discontinuity'
+  | 'duplicate_revision'
+  | 'missing_predecessor'
+  | 'parent_mismatch'
+  | 'scan_limit'
+  | 'missing_active_claims'
+
+export interface AnalysisClaimLedgerIntegrityIssue {
+  kind: AnalysisClaimLedgerIntegrityKind
+  reason: string
+  artifact_id: string | null
+  artifact_sha256: string | null
+  related_artifact_id: string | null
+  related_artifact_sha256: string | null
+  expected_ledger_revision: number | null
+  observed_ledger_revision: number | null
+  total_artifact_count: number
+}
+
+type AnalysisClaimLedgerIntegrityIssueInput = Pick<
+  AnalysisClaimLedgerIntegrityIssue,
+  'kind' | 'reason'
+> &
+  Partial<Omit<AnalysisClaimLedgerIntegrityIssue, 'kind' | 'reason' | 'total_artifact_count'>>
+
+function sortAnalysisClaimLedgerIntegrityIssues(
+  issues: AnalysisClaimLedgerIntegrityIssue[]
+): AnalysisClaimLedgerIntegrityIssue[] {
+  return [...issues].sort((left, right) =>
+    JSON.stringify(left).localeCompare(JSON.stringify(right))
+  )
+}
+
+export type AnalysisClaimActiveResolutionStatus =
+  | 'complete'
+  | 'scan_limit'
+  | 'byte_limit'
+  | 'integrity_error'
+  | 'missing'
+
+export interface AnalysisClaimActiveResolution {
+  status: AnalysisClaimActiveResolutionStatus
+  requested_claim_ids: string[]
+  unresolved_claim_ids: string[]
+  scanned_artifact_count: number
+  scanned_bytes: number
 }
 
 export interface LoadAnalysisClaimLedgerOptions {
   scope?: AnalysisClaimScope
   sessionTag?: string
   maxArtifacts?: number
+  activeClaimIds?: readonly string[]
+  maxScanArtifacts?: number
+  maxScanBytes?: number
 }
 
 interface EvidenceArtifactContext {
@@ -589,6 +666,20 @@ async function loadEvidenceArtifactContext(
   }
   if (artifact.type === ANALYSIS_CLAIM_SET_ARTIFACT_TYPE) {
     const result = { error: `Claim-set artifacts cannot be used as evidence: ${artifactId}` }
+    cache.set(artifactId, result)
+    return result
+  }
+  if (artifact.type === ANALYSIS_CASE_STATE_ARTIFACT_TYPE) {
+    const result = {
+      error: `Case-state artifacts are context-only and cannot be used as claim evidence: ${artifactId}`,
+    }
+    cache.set(artifactId, result)
+    return result
+  }
+  if (isContextOnlyArtifactType(artifact.type)) {
+    const result = {
+      error: `Context-only artifact type cannot be used as claim evidence: ${artifact.type} (${artifactId})`,
+    }
     cache.set(artifactId, result)
     return result
   }
@@ -861,10 +952,341 @@ export async function validateAndCanonicalizeAnalysisClaims(args: {
 
 const claimLedgerWriteLocks = new Map<string, Promise<void>>()
 
+const ClaimLedgerLockRecordSchema = z
+  .object({
+    version: z.literal(1),
+    owner_token: z
+      .string()
+      .max(100)
+      .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, {
+        message: 'owner_token must be a UUID.',
+      }),
+    pid: z.number().int().positive(),
+    host_id: z.string().min(1).max(255),
+    sample_id: z.string().min(1).max(500),
+    acquired_at: IsoTimestampSchema,
+  })
+  .strict()
+
+type ClaimLedgerLockRecord = z.infer<typeof ClaimLedgerLockRecordSchema>
+
+interface ClaimLedgerLockFileIdentity {
+  dev: number
+  ino: number
+  size: number
+  mtimeMs: number
+}
+
+interface ClaimLedgerLockSnapshot {
+  record: ClaimLedgerLockRecord
+  identity: ClaimLedgerLockFileIdentity
+}
+
+interface InspectedClaimLedgerLock {
+  record: ClaimLedgerLockRecord | null
+  identity: ClaimLedgerLockFileIdentity
+}
+
+interface OwnedClaimLedgerLock extends ClaimLedgerLockSnapshot {
+  handle: Awaited<ReturnType<typeof fs.open>>
+}
+
+function claimLockFileIdentity(stat: {
+  dev: number
+  ino: number
+  size: number
+  mtimeMs: number
+}): ClaimLedgerLockFileIdentity {
+  return { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs }
+}
+
+function sameClaimLockFile(
+  left: ClaimLedgerLockFileIdentity,
+  right: ClaimLedgerLockFileIdentity,
+  includeMetadata = true
+): boolean {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    (!includeMetadata || (left.size === right.size && left.mtimeMs === right.mtimeMs))
+  )
+}
+
+async function inspectClaimLedgerLock(lockPath: string): Promise<InspectedClaimLedgerLock | null> {
+  let pathStat: Awaited<ReturnType<typeof fs.lstat>>
+  try {
+    pathStat = await fs.lstat(lockPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+  if (!pathStat.isFile() || pathStat.isSymbolicLink()) {
+    throw new Error('Claim Ledger lock path is not a regular non-symlink file.')
+  }
+
+  const handle = await fs.open(lockPath, 'r')
+  try {
+    const handleStat = await handle.stat()
+    const initialIdentity = claimLockFileIdentity(pathStat)
+    const handleIdentity = claimLockFileIdentity(handleStat)
+    if (!handleStat.isFile() || !sameClaimLockFile(initialIdentity, handleIdentity, false)) {
+      throw new Error('Claim Ledger lock changed while it was being inspected.')
+    }
+    let record: ClaimLedgerLockRecord | null = null
+    if (handleStat.size > 0 && handleStat.size <= MAX_CLAIM_LEDGER_LOCK_BYTES) {
+      try {
+        const content = await handle.readFile('utf8')
+        const parsed = ClaimLedgerLockRecordSchema.safeParse(JSON.parse(content) as unknown)
+        record = parsed.success ? parsed.data : null
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error
+      }
+    }
+    let finalPathStat: Awaited<ReturnType<typeof fs.lstat>>
+    try {
+      finalPathStat = await fs.lstat(lockPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw error
+    }
+    const finalIdentity = claimLockFileIdentity(finalPathStat)
+    if (
+      finalPathStat.isSymbolicLink() ||
+      !finalPathStat.isFile() ||
+      !sameClaimLockFile(handleIdentity, finalIdentity)
+    ) {
+      throw new Error('Claim Ledger lock changed while it was being inspected.')
+    }
+    return { record, identity: finalIdentity }
+  } finally {
+    await handle.close().catch(() => undefined)
+  }
+}
+
+async function readClaimLedgerLock(lockPath: string): Promise<ClaimLedgerLockSnapshot | null> {
+  const inspected = await inspectClaimLedgerLock(lockPath)
+  if (!inspected) return null
+  if (!inspected.record) {
+    throw new Error('Claim Ledger lock metadata is malformed.')
+  }
+  return { record: inspected.record, identity: inspected.identity }
+}
+
+function claimLockProcessIsDefinitelyDead(pid: number): boolean {
+  if (pid === process.pid) return false
+  try {
+    process.kill(pid, 0)
+    return false
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ESRCH'
+  }
+}
+
+async function restoreMovedClaimLedgerLock(movedPath: string, lockPath: string): Promise<void> {
+  try {
+    await fs.link(movedPath, lockPath)
+    await fs.unlink(movedPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+  }
+}
+
+async function recoverStaleClaimLedgerLock(lockPath: string, sampleId: string): Promise<boolean> {
+  const snapshot = await inspectClaimLedgerLock(lockPath)
+  if (!snapshot) return true
+  const now = Date.now()
+  const fileIsStale = now - snapshot.identity.mtimeMs >= ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS
+
+  if (!snapshot.record) {
+    if (!fileIsStale) return false
+    const confirmation = await inspectClaimLedgerLock(lockPath)
+    if (
+      !confirmation ||
+      confirmation.record !== null ||
+      !sameClaimLockFile(confirmation.identity, snapshot.identity)
+    ) {
+      return false
+    }
+    const movedPath = `${lockPath}.stale-${randomUUID()}`
+    try {
+      await fs.rename(lockPath, movedPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true
+      throw error
+    }
+    try {
+      const moved = await inspectClaimLedgerLock(movedPath)
+      if (
+        !moved ||
+        moved.record !== null ||
+        !sameClaimLockFile(moved.identity, snapshot.identity)
+      ) {
+        await restoreMovedClaimLedgerLock(movedPath, lockPath)
+        return false
+      }
+      await fs.unlink(movedPath)
+      return true
+    } catch (error) {
+      await restoreMovedClaimLedgerLock(movedPath, lockPath).catch(() => undefined)
+      throw error
+    }
+  }
+
+  if (snapshot.record.sample_id !== sampleId) {
+    throw new Error('Claim Ledger lock ownership does not match the requested sample.')
+  }
+  const acquiredAt = Date.parse(snapshot.record.acquired_at)
+  const metadataIsStale = now - acquiredAt >= ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS
+  const ownerIsLocal = snapshot.record.host_id === hostname()
+  if (
+    !metadataIsStale ||
+    !fileIsStale ||
+    (ownerIsLocal && !claimLockProcessIsDefinitelyDead(snapshot.record.pid))
+  ) {
+    return false
+  }
+
+  const confirmation = await inspectClaimLedgerLock(lockPath)
+  if (!confirmation) return true
+  if (
+    !confirmation.record ||
+    confirmation.record.owner_token !== snapshot.record.owner_token ||
+    confirmation.record.sample_id !== sampleId ||
+    !sameClaimLockFile(confirmation.identity, snapshot.identity)
+  ) {
+    return false
+  }
+  const movedPath = `${lockPath}.stale-${randomUUID()}`
+  try {
+    await fs.rename(lockPath, movedPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true
+    throw error
+  }
+  try {
+    const moved = await inspectClaimLedgerLock(movedPath)
+    if (
+      !moved ||
+      !moved.record ||
+      moved.record.owner_token !== snapshot.record.owner_token ||
+      moved.record.sample_id !== sampleId ||
+      !sameClaimLockFile(moved.identity, snapshot.identity)
+    ) {
+      await restoreMovedClaimLedgerLock(movedPath, lockPath)
+      return false
+    }
+    await fs.unlink(movedPath)
+    return true
+  } catch (error) {
+    await restoreMovedClaimLedgerLock(movedPath, lockPath).catch(() => undefined)
+    throw error
+  }
+}
+
+async function removeClaimLedgerLockWithIdentity(
+  lockPath: string,
+  identity: ClaimLedgerLockFileIdentity
+): Promise<void> {
+  const movedPath = `${lockPath}.cleanup-${randomUUID()}`
+  try {
+    await fs.rename(lockPath, movedPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  try {
+    const moved = claimLockFileIdentity(await fs.lstat(movedPath))
+    if (!sameClaimLockFile(moved, identity, false)) {
+      await restoreMovedClaimLedgerLock(movedPath, lockPath)
+      return
+    }
+    await fs.unlink(movedPath)
+  } catch (error) {
+    await restoreMovedClaimLedgerLock(movedPath, lockPath).catch(() => undefined)
+    throw error
+  }
+}
+
+async function acquireClaimLedgerLock(
+  lockPath: string,
+  sampleId: string
+): Promise<OwnedClaimLedgerLock> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let handle: Awaited<ReturnType<typeof fs.open>> | undefined
+    try {
+      handle = await fs.open(lockPath, 'wx')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      const recovered = attempt === 0 && (await recoverStaleClaimLedgerLock(lockPath, sampleId))
+      if (recovered) continue
+      throw new Error(
+        'Claim Ledger is locked by another live or recently-active process; retry after the active writer completes.',
+        { cause: error }
+      )
+    }
+
+    const record: ClaimLedgerLockRecord = {
+      version: 1,
+      owner_token: randomUUID(),
+      pid: process.pid,
+      host_id: hostname(),
+      sample_id: sampleId,
+      acquired_at: new Date().toISOString(),
+    }
+    try {
+      await handle.writeFile(JSON.stringify(record), 'utf8')
+      await handle.sync()
+      const identity = claimLockFileIdentity(await handle.stat())
+      return { handle, record, identity }
+    } catch (error) {
+      const identity = await handle
+        .stat()
+        .then(claimLockFileIdentity)
+        .catch(() => null)
+      await handle.close().catch(() => undefined)
+      if (identity) {
+        await removeClaimLedgerLockWithIdentity(lockPath, identity).catch(() => undefined)
+      }
+      throw error
+    }
+  }
+  throw new Error('Claim Ledger lock could not be acquired.')
+}
+
+async function releaseClaimLedgerLock(
+  lockPath: string,
+  owned: OwnedClaimLedgerLock
+): Promise<void> {
+  await owned.handle.close().catch(() => undefined)
+  const movedPath = `${lockPath}.release-${owned.record.owner_token}`
+  try {
+    await fs.rename(lockPath, movedPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    return
+  }
+  try {
+    const current = await readClaimLedgerLock(movedPath)
+    if (
+      current &&
+      current.record.owner_token === owned.record.owner_token &&
+      current.record.sample_id === owned.record.sample_id &&
+      sameClaimLockFile(current.identity, owned.identity, false)
+    ) {
+      await fs.unlink(movedPath)
+      return
+    }
+    await restoreMovedClaimLedgerLock(movedPath, lockPath)
+  } catch {
+    // Fail closed: preserve an unverified or replaced lock under its quarantine path.
+  }
+}
+
 async function withClaimLedgerWriteLock<T>(
   sampleId: string,
   workspaceRoot: string,
-  operation: () => Promise<T>
+  database: DatabaseManager,
+  operation: (lease: ContextWriteLeaseGuard) => Promise<T>
 ): Promise<T> {
   const previous = claimLedgerWriteLocks.get(sampleId) || Promise.resolve()
   let release: () => void = () => undefined
@@ -874,33 +1296,25 @@ async function withClaimLedgerWriteLock<T>(
   const queued = previous.then(() => gate)
   claimLedgerWriteLocks.set(sampleId, queued)
   await previous
-  const lockPath = path.join(workspaceRoot, '.analysis-claim-ledger.lock')
-  let lockHandle: Awaited<ReturnType<typeof fs.open>> | undefined
 
   try {
-    try {
-      lockHandle = await fs.open(lockPath, 'wx')
-      await lockHandle.writeFile(
-        JSON.stringify({
-          pid: process.pid,
-          sample_id: sampleId,
-          acquired_at: new Date().toISOString(),
-        })
-      )
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new Error(
-          'Claim Ledger is locked by another process; retry after the active writer completes.'
-        )
-      }
-      throw error
-    }
-    return await operation()
+    return await withContextWriteLease({
+      database,
+      lockKey: analysisClaimLedgerWriteLeaseKey(sampleId),
+      staleMs: ANALYSIS_CLAIM_LEDGER_LOCK_STALE_MS,
+      label: 'Claim Ledger',
+      operation: async (lease) => {
+        const lockPath = path.join(workspaceRoot, '.analysis-claim-ledger.lock')
+        let ownedLock: OwnedClaimLedgerLock | undefined
+        try {
+          ownedLock = await acquireClaimLedgerLock(lockPath, sampleId)
+          return await operation(lease)
+        } finally {
+          if (ownedLock) await releaseClaimLedgerLock(lockPath, ownedLock)
+        }
+      },
+    })
   } finally {
-    if (lockHandle) {
-      await lockHandle.close().catch(() => undefined)
-      await fs.unlink(lockPath).catch(() => undefined)
-    }
     release()
     if (claimLedgerWriteLocks.get(sampleId) === queued) {
       claimLedgerWriteLocks.delete(sampleId)
@@ -994,95 +1408,118 @@ export async function persistAnalysisClaimSetArtifact(
     )
   }
   const workspace = await workspaceManager.createWorkspace(validatedPayload.sample_id)
-  return await withClaimLedgerWriteLock(validatedPayload.sample_id, workspace.root, async () => {
-    const existingArtifacts = database.findArtifactsByType(
-      validatedPayload.sample_id,
-      ANALYSIS_CLAIM_SET_ARTIFACT_TYPE
-    )
-    const existingLedger = await loadAnalysisClaimLedgerIndex(
-      workspaceManager,
-      database,
-      validatedPayload.sample_id,
-      { scope: 'all' }
-    )
-    if (
-      existingLedger.claim_sets.length !== existingArtifacts.length ||
-      existingLedger.warnings.length > 0
-    ) {
-      throw new Error(
-        'Cannot append to Claim Ledger because one or more existing claim-set artifacts are invalid or unreadable.'
+  return await withClaimLedgerWriteLock(
+    validatedPayload.sample_id,
+    workspace.root,
+    database,
+    async (lease) => {
+      const existingArtifacts = database.findArtifactsByType(
+        validatedPayload.sample_id,
+        ANALYSIS_CLAIM_SET_ARTIFACT_TYPE
       )
-    }
-    for (const claim of validatedPayload.claims) {
-      const previous = existingLedger.byClaimId.get(claim.claim_id)
-      if (previous && ['verified', 'rejected'].includes(previous.claim.status)) {
-        throw new Error(
-          `${claim.claim_id}: terminal reviewed claims cannot be replaced or reopened.`
-        )
-      }
+      const existingLedger = await loadAnalysisClaimLedgerIndex(
+        workspaceManager,
+        database,
+        validatedPayload.sample_id,
+        { scope: 'all' }
+      )
       if (
-        previous &&
-        previous.claim.review !== null &&
-        validatedPayload.producer.kind !== 'analyst'
+        existingLedger.claim_sets.length !== existingArtifacts.length ||
+        existingLedger.warnings.length > 0
       ) {
         throw new Error(
-          `${claim.claim_id}: only a trusted analyst revision may replace a reviewed claim.`
+          'Cannot append to Claim Ledger because one or more existing claim-set artifacts are invalid or unreadable.'
         )
       }
-    }
-    const latest = existingLedger.claim_sets[0] || null
-    const expectedRevision = (latest?.payload.ledger_revision || 0) + 1
-    const expectedParentId = latest?.artifact.id || null
-    if (
-      validatedPayload.ledger_revision !== expectedRevision ||
-      validatedPayload.parent_artifact_id !== expectedParentId
-    ) {
-      throw new Error(
-        `Claim Ledger revision conflict: expected revision ${expectedRevision} with parent ${expectedParentId || 'null'}.`
+      for (const claim of validatedPayload.claims) {
+        const previous = existingLedger.byClaimId.get(claim.claim_id)
+        if (previous && ['verified', 'rejected'].includes(previous.claim.status)) {
+          throw new Error(
+            `${claim.claim_id}: terminal reviewed claims cannot be replaced or reopened.`
+          )
+        }
+        if (
+          previous &&
+          previous.claim.review !== null &&
+          validatedPayload.producer.kind !== 'analyst'
+        ) {
+          throw new Error(
+            `${claim.claim_id}: only a trusted analyst revision may replace a reviewed claim.`
+          )
+        }
+      }
+      const latest = existingLedger.claim_sets[0] || null
+      const expectedRevision = (latest?.payload.ledger_revision || 0) + 1
+      const expectedParentId = latest?.artifact.id || null
+      if (
+        validatedPayload.ledger_revision !== expectedRevision ||
+        validatedPayload.parent_artifact_id !== expectedParentId
+      ) {
+        throw new Error(
+          `Claim Ledger revision conflict: expected revision ${expectedRevision} with parent ${expectedParentId || 'null'}.`
+        )
+      }
+
+      const evidenceErrors = await validateCanonicalClaimSetEvidence(
+        workspaceManager,
+        database,
+        validatedPayload
       )
-    }
+      if (evidenceErrors.length > 0) {
+        throw new Error(`Claim-set evidence validation failed: ${evidenceErrors.join(' ')}`)
+      }
 
-    const evidenceErrors = await validateCanonicalClaimSetEvidence(
-      workspaceManager,
-      database,
-      validatedPayload
-    )
-    if (evidenceErrors.length > 0) {
-      throw new Error(`Claim-set evidence validation failed: ${evidenceErrors.join(' ')}`)
-    }
+      const sessionSegment = sanitizePathSegment(
+        validatedPayload.session_tag || undefined,
+        'default'
+      )
+      const { workspaceRealPath, reportDirRealPath } = await ensureSafeClaimReportDirectory(
+        workspace,
+        sessionSegment
+      )
 
-    const sessionSegment = sanitizePathSegment(validatedPayload.session_tag || undefined, 'default')
-    const { workspaceRealPath, reportDirRealPath } = await ensureSafeClaimReportDirectory(
-      workspace,
-      sessionSegment
-    )
+      const artifactId = randomUUID()
+      const fileName = `claim_set_r${validatedPayload.ledger_revision}_${Date.now()}_${artifactId.slice(0, 8)}.json`
+      const absolutePath = path.join(reportDirRealPath, fileName)
+      const temporaryPath = path.join(reportDirRealPath, `.${fileName}.${randomUUID()}.tmp`)
+      const serialized = JSON.stringify(validatedPayload, null, 2)
+      try {
+        await fs.writeFile(temporaryPath, serialized, { encoding: 'utf8', flag: 'wx' })
+        lease.assertOwned()
+        await fs.rename(temporaryPath, absolutePath)
+      } catch (error) {
+        await fs.unlink(temporaryPath).catch(() => undefined)
+        throw error
+      }
 
-    const artifactId = randomUUID()
-    const fileName = `claim_set_r${validatedPayload.ledger_revision}_${Date.now()}_${artifactId.slice(0, 8)}.json`
-    const absolutePath = path.join(reportDirRealPath, fileName)
-    const serialized = JSON.stringify(validatedPayload, null, 2)
-    await fs.writeFile(absolutePath, serialized, { encoding: 'utf8', flag: 'wx' })
-
-    const artifact: ArtifactRef = {
-      id: artifactId,
-      type: ANALYSIS_CLAIM_SET_ARTIFACT_TYPE,
-      path: path.relative(workspaceRealPath, absolutePath).replace(/\\/g, '/'),
-      sha256: createHash('sha256').update(serialized).digest('hex'),
-      mime: 'application/json',
+      const artifact: ArtifactRef = {
+        id: artifactId,
+        type: ANALYSIS_CLAIM_SET_ARTIFACT_TYPE,
+        path: path.relative(workspaceRealPath, absolutePath).replace(/\\/g, '/'),
+        sha256: createHash('sha256').update(serialized).digest('hex'),
+        mime: 'application/json',
+      }
+      try {
+        const committed = database.insertArtifactIfContextLeaseOwned(
+          {
+            ...artifact,
+            sample_id: validatedPayload.sample_id,
+            mime: artifact.mime || null,
+            created_at: validatedPayload.created_at,
+          },
+          lease.lockKey,
+          lease.ownerToken
+        )
+        if (!committed) {
+          throw new Error('Claim Ledger lost its context write lease before Artifact commit.')
+        }
+      } catch (error) {
+        await fs.unlink(absolutePath).catch(() => undefined)
+        throw error
+      }
+      return artifact
     }
-    try {
-      database.insertArtifact({
-        ...artifact,
-        sample_id: validatedPayload.sample_id,
-        mime: artifact.mime || null,
-        created_at: validatedPayload.created_at,
-      })
-    } catch (error) {
-      await fs.unlink(absolutePath).catch(() => undefined)
-      throw error
-    }
-    return artifact
-  })
+  )
 }
 
 function sessionTagsForClaimSet(artifactPath: string, payload: AnalysisClaimSetArtifact): string[] {
@@ -1107,48 +1544,174 @@ export async function loadAnalysisClaimLedgerIndex(
   const workspace = await workspaceManager.getWorkspace(sampleId)
   const workspaceRealPath = await fs.realpath(workspace.root)
   const loaded: LoadedAnalysisClaimSet[] = []
-  const allArtifacts = database.findArtifactsByType(sampleId, ANALYSIS_CLAIM_SET_ARTIFACT_TYPE)
+  const requestedActiveClaimIds =
+    options.activeClaimIds === undefined
+      ? null
+      : Array.from(
+          new Set(options.activeClaimIds.map((claimId) => AnalysisClaimIdSchema.parse(claimId)))
+        ).sort()
+  if (requestedActiveClaimIds && requestedActiveClaimIds.length > 256) {
+    throw new Error('activeClaimIds may contain at most 256 Claim IDs.')
+  }
+  if (requestedActiveClaimIds && scope === 'session') {
+    throw new Error('activeClaimIds cannot be combined with claim scope=session.')
+  }
+  if (requestedActiveClaimIds && options.maxArtifacts !== undefined) {
+    throw new Error('activeClaimIds cannot be combined with maxArtifacts.')
+  }
+
   const hasExplicitLimit =
     typeof options.maxArtifacts === 'number' &&
     Number.isInteger(options.maxArtifacts) &&
     options.maxArtifacts > 0
-  const artifactCandidates = hasExplicitLimit
-    ? allArtifacts.slice(0, options.maxArtifacts)
-    : allArtifacts
-  const truncated = artifactCandidates.length < allArtifacts.length
-  if (truncated) {
-    warnings.push(
-      `Claim ledger scan is incomplete: selected ${artifactCandidates.length} of ${allArtifacts.length} artifact(s).`
-    )
+  const activeScanArtifactLimit = Math.min(
+    options.maxScanArtifacts ?? MAX_CASE_ACTIVE_CLAIM_SCAN_ARTIFACTS,
+    MAX_CASE_ACTIVE_CLAIM_SCAN_ARTIFACTS
+  )
+  const activeScanByteLimit = Math.min(
+    options.maxScanBytes ?? MAX_CASE_ACTIVE_CLAIM_SCAN_BYTES,
+    MAX_CASE_ACTIVE_CLAIM_SCAN_BYTES
+  )
+  if (
+    requestedActiveClaimIds &&
+    (!Number.isInteger(activeScanArtifactLimit) || activeScanArtifactLimit <= 0)
+  ) {
+    throw new Error('maxScanArtifacts must be a positive integer.')
   }
+  if (
+    requestedActiveClaimIds &&
+    (!Number.isInteger(activeScanByteLimit) || activeScanByteLimit <= 0)
+  ) {
+    throw new Error('maxScanBytes must be a positive integer.')
+  }
+
+  const allArtifacts = requestedActiveClaimIds
+    ? null
+    : database.findArtifactsByType(sampleId, ANALYSIS_CLAIM_SET_ARTIFACT_TYPE)
+  const totalArtifactCount = requestedActiveClaimIds
+    ? database.countArtifactsByType(sampleId, ANALYSIS_CLAIM_SET_ARTIFACT_TYPE)
+    : allArtifacts!.length
+  const integrityIssues: AnalysisClaimLedgerIntegrityIssue[] = []
+  const addIntegrityIssue = (issue: AnalysisClaimLedgerIntegrityIssueInput): void => {
+    warnings.push(issue.reason)
+    integrityIssues.push({
+      kind: issue.kind,
+      reason: issue.reason,
+      artifact_id: issue.artifact_id ?? null,
+      artifact_sha256: issue.artifact_sha256?.toLowerCase() ?? null,
+      related_artifact_id: issue.related_artifact_id ?? null,
+      related_artifact_sha256: issue.related_artifact_sha256?.toLowerCase() ?? null,
+      expected_ledger_revision: issue.expected_ledger_revision ?? null,
+      observed_ledger_revision: issue.observed_ledger_revision ?? null,
+      total_artifact_count: totalArtifactCount,
+    })
+  }
+  const artifactCandidates = requestedActiveClaimIds
+    ? requestedActiveClaimIds.length > 0
+      ? database.findArtifactsByTypeLimited(
+          sampleId,
+          ANALYSIS_CLAIM_SET_ARTIFACT_TYPE,
+          activeScanArtifactLimit
+        )
+      : []
+    : hasExplicitLimit
+      ? allArtifacts!.slice(0, options.maxArtifacts)
+      : allArtifacts!
+  const nonActiveScanTruncated =
+    requestedActiveClaimIds === null && artifactCandidates.length < totalArtifactCount
+  if (nonActiveScanTruncated) {
+    const firstOmittedArtifact = allArtifacts![artifactCandidates.length] || null
+    addIntegrityIssue({
+      kind: 'scan_truncated',
+      reason: `Claim ledger scan is incomplete: selected ${artifactCandidates.length} of ${totalArtifactCount} artifact(s).`,
+      artifact_id: firstOmittedArtifact?.id,
+      artifact_sha256: firstOmittedArtifact?.sha256,
+    })
+  }
+
+  const unresolvedActiveClaimIds = new Set(requestedActiveClaimIds || [])
+  let activeResolutionStatus: AnalysisClaimActiveResolutionStatus | null = null
+  let activeScanArtifactCount = 0
+  let activeScanBytes = 0
+  let previousStrictEntry: LoadedAnalysisClaimSet | null = null
 
   for (const artifact of artifactCandidates) {
     try {
       const absolutePath = workspaceManager.normalizePath(workspace.root, artifact.path)
       const artifactRealPath = await fs.realpath(absolutePath)
       if (!pathIsWithin(workspaceRealPath, artifactRealPath)) {
-        warnings.push(`Skipped claim set that resolves outside the workspace: ${artifact.id}`)
+        addIntegrityIssue({
+          kind: 'path_outside_workspace',
+          reason: `Skipped claim set that resolves outside the workspace: ${artifact.id}`,
+          artifact_id: artifact.id,
+          artifact_sha256: artifact.sha256,
+        })
+        if (requestedActiveClaimIds) {
+          activeResolutionStatus = 'integrity_error'
+          break
+        }
         continue
       }
       const stat = await fs.stat(artifactRealPath)
       if (!stat.isFile() || stat.size > MAX_CLAIM_SET_BYTES) {
-        warnings.push(`Skipped invalid-size claim set artifact: ${artifact.id}`)
+        addIntegrityIssue({
+          kind: 'invalid_size',
+          reason: `Skipped invalid-size claim set artifact: ${artifact.id}`,
+          artifact_id: artifact.id,
+          artifact_sha256: artifact.sha256,
+        })
+        if (requestedActiveClaimIds) {
+          activeResolutionStatus = 'integrity_error'
+          break
+        }
         continue
+      }
+      if (requestedActiveClaimIds && activeScanBytes + stat.size > activeScanByteLimit) {
+        addIntegrityIssue({
+          kind: 'byte_limit',
+          reason: `Claim ledger strict scan reached the ${activeScanByteLimit}-byte safe scan budget before artifact ${artifact.id}.`,
+          artifact_id: artifact.id,
+          artifact_sha256: artifact.sha256,
+        })
+        activeResolutionStatus = 'byte_limit'
+        break
+      }
+      if (requestedActiveClaimIds) {
+        activeScanArtifactCount += 1
+        activeScanBytes += stat.size
       }
       const content = await fs.readFile(artifactRealPath)
       const actualSha256 = createHash('sha256').update(content).digest('hex')
       if (actualSha256.toLowerCase() !== artifact.sha256.toLowerCase()) {
-        warnings.push(`Skipped claim set with SHA-256 mismatch: ${artifact.id}`)
+        addIntegrityIssue({
+          kind: 'sha256_mismatch',
+          reason: `Skipped claim set with SHA-256 mismatch: ${artifact.id}`,
+          artifact_id: artifact.id,
+          artifact_sha256: artifact.sha256,
+        })
+        if (requestedActiveClaimIds) {
+          activeResolutionStatus = 'integrity_error'
+          break
+        }
         continue
       }
       const parsed = AnalysisClaimSetArtifactSchema.safeParse(
         JSON.parse(content.toString('utf8')) as unknown
       )
       if (!parsed.success || parsed.data.sample_id !== sampleId) {
-        warnings.push(`Skipped invalid claim set artifact: ${artifact.id}`)
+        addIntegrityIssue({
+          kind: 'invalid_payload',
+          reason: `Skipped invalid claim set artifact: ${artifact.id}`,
+          artifact_id: artifact.id,
+          artifact_sha256: artifact.sha256,
+        })
+        if (requestedActiveClaimIds) {
+          activeResolutionStatus = 'integrity_error'
+          break
+        }
         continue
       }
-      loaded.push({
+      const entry: LoadedAnalysisClaimSet = {
         artifact: {
           id: artifact.id,
           type: artifact.type,
@@ -1159,10 +1722,103 @@ export async function loadAnalysisClaimLedgerIndex(
         },
         payload: parsed.data,
         session_tags: sessionTagsForClaimSet(artifact.path, parsed.data),
-      })
+      }
+      if (requestedActiveClaimIds) {
+        if (!previousStrictEntry) {
+          if (entry.payload.ledger_revision !== totalArtifactCount) {
+            addIntegrityIssue({
+              kind: 'head_revision_mismatch',
+              reason: `Claim ledger strict scan expected head revision ${totalArtifactCount}, received revision ${entry.payload.ledger_revision} from ${entry.artifact.id}.`,
+              artifact_id: entry.artifact.id,
+              artifact_sha256: entry.artifact.sha256,
+              expected_ledger_revision: totalArtifactCount,
+              observed_ledger_revision: entry.payload.ledger_revision,
+            })
+            activeResolutionStatus = 'integrity_error'
+            break
+          }
+        } else if (
+          entry.payload.ledger_revision !== previousStrictEntry.payload.ledger_revision - 1 ||
+          previousStrictEntry.payload.parent_artifact_id !== entry.artifact.id
+        ) {
+          addIntegrityIssue({
+            kind: 'chain_discontinuity',
+            reason: `Claim ledger strict scan found a discontinuity between revision ${previousStrictEntry.payload.ledger_revision} (${previousStrictEntry.artifact.id}) and revision ${entry.payload.ledger_revision} (${entry.artifact.id}).`,
+            artifact_id: entry.artifact.id,
+            artifact_sha256: entry.artifact.sha256,
+            related_artifact_id: previousStrictEntry.artifact.id,
+            related_artifact_sha256: previousStrictEntry.artifact.sha256,
+            expected_ledger_revision: previousStrictEntry.payload.ledger_revision - 1,
+            observed_ledger_revision: entry.payload.ledger_revision,
+          })
+          activeResolutionStatus = 'integrity_error'
+          break
+        }
+        previousStrictEntry = entry
+      }
+      loaded.push(entry)
+      if (requestedActiveClaimIds) {
+        for (const claim of entry.payload.claims) {
+          unresolvedActiveClaimIds.delete(claim.claim_id)
+        }
+        if (unresolvedActiveClaimIds.size === 0) {
+          activeResolutionStatus = 'complete'
+          break
+        }
+      }
     } catch {
-      warnings.push(`Skipped unreadable claim set artifact: ${artifact.id}`)
+      addIntegrityIssue({
+        kind: 'unreadable',
+        reason: `Skipped unreadable claim set artifact: ${artifact.id}`,
+        artifact_id: artifact.id,
+        artifact_sha256: artifact.sha256,
+      })
+      if (requestedActiveClaimIds) {
+        activeResolutionStatus = 'integrity_error'
+        break
+      }
     }
+  }
+
+  if (requestedActiveClaimIds && activeResolutionStatus === null) {
+    if (unresolvedActiveClaimIds.size === 0) {
+      activeResolutionStatus = 'complete'
+    } else if (activeScanArtifactCount >= activeScanArtifactLimit) {
+      activeResolutionStatus = 'scan_limit'
+    } else {
+      activeResolutionStatus = 'missing'
+    }
+  }
+  if (requestedActiveClaimIds && activeResolutionStatus === 'scan_limit') {
+    addIntegrityIssue({
+      kind: 'scan_limit',
+      reason: `Claim ledger strict scan reached the ${activeScanArtifactLimit}-artifact safe scan limit.`,
+      artifact_id: previousStrictEntry?.artifact.id,
+      artifact_sha256: previousStrictEntry?.artifact.sha256,
+      observed_ledger_revision: previousStrictEntry?.payload.ledger_revision,
+    })
+  } else if (requestedActiveClaimIds && activeResolutionStatus === 'missing') {
+    addIntegrityIssue({
+      kind: 'missing_active_claims',
+      reason: `Claim ledger strict scan reached the complete ledger without resolving: ${Array.from(unresolvedActiveClaimIds).sort().join(', ')}.`,
+      artifact_id: previousStrictEntry?.artifact.id,
+      artifact_sha256: previousStrictEntry?.artifact.sha256,
+      observed_ledger_revision: previousStrictEntry?.payload.ledger_revision,
+    })
+  }
+  if (requestedActiveClaimIds && activeResolutionStatus !== 'complete') {
+    const unresolved = Array.from(unresolvedActiveClaimIds).sort()
+    const boundary =
+      activeResolutionStatus === 'scan_limit'
+        ? `the ${activeScanArtifactLimit}-artifact safe scan limit`
+        : activeResolutionStatus === 'byte_limit'
+          ? `the ${activeScanByteLimit}-byte safe scan budget`
+          : activeResolutionStatus === 'missing'
+            ? 'the complete Claim Ledger'
+            : 'Claim Ledger integrity validation'
+    warnings.push(
+      `Case-active Claim resolution stopped at ${boundary}; all requested Claims were withheld${unresolved.length > 0 ? ` (unresolved: ${unresolved.join(', ')})` : ''}.`
+    )
   }
 
   loaded.sort((left, right) => {
@@ -1174,26 +1830,47 @@ export async function loadAnalysisClaimLedgerIndex(
     return createdAtOrder !== 0 ? createdAtOrder : right.artifact.id.localeCompare(left.artifact.id)
   })
 
-  const byRevision = new Map<number, LoadedAnalysisClaimSet>()
-  for (const entry of [...loaded].reverse()) {
-    const existing = byRevision.get(entry.payload.ledger_revision)
-    if (existing) {
-      warnings.push(
-        `Duplicate claim ledger revision ${entry.payload.ledger_revision}: ${existing.artifact.id}, ${entry.artifact.id}`
-      )
-      continue
-    }
-    byRevision.set(entry.payload.ledger_revision, entry)
-    if (entry.payload.ledger_revision > 1) {
-      const previous = byRevision.get(entry.payload.ledger_revision - 1)
-      if (!previous) {
-        warnings.push(
-          `Claim ledger revision ${entry.payload.ledger_revision} has no loaded predecessor.`
-        )
-      } else if (entry.payload.parent_artifact_id !== previous.artifact.id) {
-        warnings.push(
-          `Claim ledger revision ${entry.payload.ledger_revision} does not reference its predecessor.`
-        )
+  if (!requestedActiveClaimIds) {
+    const byRevision = new Map<number, LoadedAnalysisClaimSet>()
+    for (const entry of [...loaded].reverse()) {
+      const existing = byRevision.get(entry.payload.ledger_revision)
+      if (existing) {
+        addIntegrityIssue({
+          kind: 'duplicate_revision',
+          reason: `Duplicate claim ledger revision ${entry.payload.ledger_revision}: ${existing.artifact.id}, ${entry.artifact.id}`,
+          artifact_id: entry.artifact.id,
+          artifact_sha256: entry.artifact.sha256,
+          related_artifact_id: existing.artifact.id,
+          related_artifact_sha256: existing.artifact.sha256,
+          expected_ledger_revision: entry.payload.ledger_revision,
+          observed_ledger_revision: entry.payload.ledger_revision,
+        })
+        continue
+      }
+      byRevision.set(entry.payload.ledger_revision, entry)
+      if (entry.payload.ledger_revision > 1) {
+        const previous = byRevision.get(entry.payload.ledger_revision - 1)
+        if (!previous) {
+          addIntegrityIssue({
+            kind: 'missing_predecessor',
+            reason: `Claim ledger revision ${entry.payload.ledger_revision} has no loaded predecessor.`,
+            artifact_id: entry.artifact.id,
+            artifact_sha256: entry.artifact.sha256,
+            expected_ledger_revision: entry.payload.ledger_revision - 1,
+            observed_ledger_revision: entry.payload.ledger_revision,
+          })
+        } else if (entry.payload.parent_artifact_id !== previous.artifact.id) {
+          addIntegrityIssue({
+            kind: 'parent_mismatch',
+            reason: `Claim ledger revision ${entry.payload.ledger_revision} does not reference its predecessor.`,
+            artifact_id: entry.artifact.id,
+            artifact_sha256: entry.artifact.sha256,
+            related_artifact_id: previous.artifact.id,
+            related_artifact_sha256: previous.artifact.sha256,
+            expected_ledger_revision: entry.payload.ledger_revision - 1,
+            observed_ledger_revision: entry.payload.ledger_revision,
+          })
+        }
       }
     }
   }
@@ -1210,7 +1887,7 @@ export async function loadAnalysisClaimLedgerIndex(
     }
   }
 
-  const byClaimId = new Map<string, LoadedAnalysisClaim>()
+  let byClaimId = new Map<string, LoadedAnalysisClaim>()
   for (const entry of mergeEntries) {
     for (const claim of entry.payload.claims) {
       if (!byClaimId.has(claim.claim_id)) {
@@ -1231,7 +1908,56 @@ export async function loadAnalysisClaimLedgerIndex(
     selected = loaded.filter((entry) => activeArtifactIds.has(entry.artifact.id))
   }
 
+  if (requestedActiveClaimIds) {
+    if (activeResolutionStatus === 'complete') {
+      const activeByClaimId = new Map<string, LoadedAnalysisClaim>()
+      for (const claimId of requestedActiveClaimIds) {
+        const claim = byClaimId.get(claimId)
+        if (claim) activeByClaimId.set(claimId, claim)
+      }
+      byClaimId = activeByClaimId
+      const activeArtifactIds = new Set(
+        Array.from(byClaimId.values()).map((claim) => claim.claim_set_artifact_id)
+      )
+      selected = loaded.filter((entry) => activeArtifactIds.has(entry.artifact.id))
+    } else {
+      byClaimId = new Map()
+      selected = []
+    }
+  }
+
   const createdAt = selected.map((entry) => entry.payload.created_at).sort()
+  const activeClaimResolution: AnalysisClaimActiveResolution | null = requestedActiveClaimIds
+    ? {
+        status: activeResolutionStatus!,
+        requested_claim_ids: requestedActiveClaimIds,
+        unresolved_claim_ids: Array.from(unresolvedActiveClaimIds).sort(),
+        scanned_artifact_count: activeScanArtifactCount,
+        scanned_bytes: activeScanBytes,
+      }
+    : null
+  const truncated = activeClaimResolution
+    ? activeClaimResolution.status !== 'complete'
+    : nonActiveScanTruncated
+  const orderedIntegrityIssues = sortAnalysisClaimLedgerIntegrityIssues(integrityIssues)
+  const baseMarker =
+    selected.length > 0
+      ? selected.map((entry) => `${entry.artifact.id}:${entry.artifact.sha256}`).join('|')
+      : 'none'
+  const markerIntegrityState =
+    orderedIntegrityIssues.length > 0 || truncated
+      ? {
+          total_artifact_count: totalArtifactCount,
+          truncated,
+          active_claim_resolution: activeClaimResolution,
+          integrity_issues: orderedIntegrityIssues,
+        }
+      : null
+  const marker = markerIntegrityState
+    ? `${baseMarker}:integrity:${createHash('sha256')
+        .update(JSON.stringify(markerIntegrityState))
+        .digest('hex')}`
+    : baseMarker
   return {
     byClaimId,
     claim_sets: selected,
@@ -1239,17 +1965,117 @@ export async function loadAnalysisClaimLedgerIndex(
     session_tags: Array.from(new Set(selected.flatMap((entry) => entry.session_tags))),
     earliest_created_at: createdAt[0] || null,
     latest_created_at: createdAt[createdAt.length - 1] || null,
-    marker:
-      selected.length > 0
-        ? selected.map((entry) => `${entry.artifact.id}:${entry.artifact.sha256}`).join('|')
-        : 'none',
-    scope_note:
-      selected.length > 0
+    marker,
+    scope_note: activeClaimResolution
+      ? activeClaimResolution.status === 'complete'
+        ? `Resolved ${byClaimId.size} Case-active Claim(s) after scanning ${activeClaimResolution.scanned_artifact_count} of ${totalArtifactCount} Claim Ledger artifact(s).`
+        : `Withheld all ${activeClaimResolution.requested_claim_ids.length} Case-active Claim(s) because strict resolution ended with status=${activeClaimResolution.status}.`
+      : selected.length > 0
         ? `Selected ${selected.length} claim set artifact(s) containing the active claim revisions using scope=${scope}${sessionTag ? ` selector=${sessionTag}` : ''}.`
         : `No claim set artifacts matched scope=${scope}${sessionTag ? ` selector=${sessionTag}` : ''}.`,
-    total_artifact_count: allArtifacts.length,
+    total_artifact_count: totalArtifactCount,
     truncated,
     warnings,
+    integrity_issues: orderedIntegrityIssues,
+    active_claim_resolution: activeClaimResolution,
+  }
+}
+
+export function scopeAnalysisClaimLedgerIndex(
+  index: AnalysisClaimLedgerIndex,
+  activeClaimIds: readonly string[] | null
+): AnalysisClaimLedgerIndex {
+  if (activeClaimIds === null) {
+    return index
+  }
+
+  const selectedClaimIds = Array.from(new Set(activeClaimIds)).sort()
+  const resolvedByClaimId = new Map<string, LoadedAnalysisClaim>()
+  const missingClaimIds: string[] = []
+  for (const claimId of selectedClaimIds) {
+    const entry = index.byClaimId.get(claimId)
+    if (entry) {
+      resolvedByClaimId.set(claimId, entry)
+    } else {
+      missingClaimIds.push(claimId)
+    }
+  }
+
+  const activeResolution = index.active_claim_resolution
+  const resolutionMatchesSelection =
+    activeResolution !== null &&
+    activeResolution.requested_claim_ids.length === selectedClaimIds.length &&
+    activeResolution.requested_claim_ids.every(
+      (claimId, index) => claimId === selectedClaimIds[index]
+    )
+  const resolutionFailed = resolutionMatchesSelection && activeResolution.status !== 'complete'
+  const withholdAll = resolutionFailed || missingClaimIds.length > 0
+  const byClaimId = withholdAll ? new Map<string, LoadedAnalysisClaim>() : resolvedByClaimId
+
+  const selectedArtifactIds = new Set(
+    Array.from(byClaimId.values()).map((entry) => entry.claim_set_artifact_id)
+  )
+  const claimSets = index.claim_sets.filter((entry) => selectedArtifactIds.has(entry.artifact.id))
+  const selectedEntries = Array.from(byClaimId.values())
+  const createdAt = selectedEntries.map((entry) => entry.created_at).sort()
+  const markerState = withholdAll
+    ? {
+        active_claim_ids: selectedClaimIds,
+        total_artifact_count: index.total_artifact_count,
+        resolution: resolutionFailed
+          ? {
+              status: activeResolution.status,
+              unresolved_claim_ids: activeResolution.unresolved_claim_ids,
+              scanned_artifact_count: activeResolution.scanned_artifact_count,
+              scanned_bytes: activeResolution.scanned_bytes,
+            }
+          : {
+              status: 'missing' as const,
+              unresolved_claim_ids: missingClaimIds,
+              scanned_artifact_count: null,
+              scanned_bytes: null,
+            },
+        integrity_issues: index.integrity_issues,
+      }
+    : selectedClaimIds.map((claimId) => {
+        const entry = byClaimId.get(claimId)!
+        return {
+          claim_id: claimId,
+          claim_set_artifact_id: entry.claim_set_artifact_id,
+          ledger_revision: entry.ledger_revision,
+          created_at: entry.created_at,
+          producer: entry.producer,
+          claim: entry.claim,
+        }
+      })
+  const marker =
+    selectedClaimIds.length > 0
+      ? `case:${createHash('sha256').update(JSON.stringify(markerState)).digest('hex')}`
+      : 'none'
+  const warnings = [...index.warnings]
+  if (withholdAll) {
+    const unresolvedClaimIds = resolutionFailed
+      ? activeResolution.unresolved_claim_ids
+      : missingClaimIds
+    warnings.push(
+      `Case active_claim_ids could not be resolved completely; the entire Case Claim view was withheld${unresolvedClaimIds.length > 0 ? ` (unresolved: ${unresolvedClaimIds.join(', ')})` : ''}.`
+    )
+  }
+
+  return {
+    ...index,
+    byClaimId,
+    claim_sets: claimSets,
+    artifact_ids: claimSets.map((entry) => entry.artifact.id),
+    session_tags: Array.from(new Set(claimSets.flatMap((entry) => entry.session_tags))),
+    earliest_created_at: createdAt[0] || null,
+    latest_created_at: createdAt[createdAt.length - 1] || null,
+    marker,
+    scope_note: withholdAll
+      ? `Withheld all ${selectedClaimIds.length} Case-active Claim(s).`
+      : `Selected ${byClaimId.size} of ${selectedClaimIds.length} Case-active Claim(s).`,
+    truncated: index.truncated || withholdAll,
+    warnings: Array.from(new Set(warnings)),
   }
 }
 
