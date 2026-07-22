@@ -107,7 +107,9 @@ Use `workflow.run action=promote` to request deeper stages. The pipeline current
 - `enrich_static`
 - `function_map`
 - `reconstruct`
-- `semantic_reviews`
+- `semantic_name_review`
+- `semantic_explain_review`
+- `semantic_module_review`
 - `dynamic_plan`
 - `dynamic_execute`
 - `summarize`
@@ -123,12 +125,44 @@ Useful follow-up surfaces:
 - `workflow.search`
 - `workflow.run`
 - `analysis.context.get`
-- `artifact.read`, plus compatibility artifact helpers such as `artifact.list`, `artifact.diff`, and `artifact.download`
+- `artifact.read`, plus compatibility artifact helpers such as `artifacts.list`, `artifacts.diff`, and `artifact.download`
 - `report.summarize`, `report.generate`, `workflow.summarize`
 - `workflow.semantic_name_review`
 - `workflow.function_explanation_review`
 - `workflow.module_reconstruction_review`
 - `tool.help`, `tool.readiness`, and `tools.discover` for compatibility/debug inspection
+
+`analysis.claims.apply` records evidence-backed AI or imported findings as append-only `inferred` Claim Ledger revisions. Natural-language discovery can return the precise hidden result `tool:analysis.claims.apply` without activating sibling plugin tools. Analyst revisions are intentionally fail-closed: there is no MCP or HTTP path that can self-assign a reviewer or terminal status. A future operator boundary must use signed review intents before trusted decisions are enabled.
+
+### Agent Case Workspace
+
+Rikune keeps deterministic Analyzer Artifacts separate from Agent-authored investigation context:
+
+```text
+Analyzer Artifact (eligible Evidence)
+  -> analysis.claims.apply (inferred Claim Ledger)
+  -> analysis.case.checkpoint / analysis.case.snapshot (immutable Case state)
+  -> analysis.context.pack (deterministic, token-bounded context)
+  -> workflow.summarize (final digest with separate Evidence and Context)
+```
+
+`analysis_claim_set`, `analysis_case_state`, summary, and report Artifacts are context-only. They cannot become Claim evidence or enter summary `source_artifact_refs`. AI and imported producers can write only `inferred` Claims; trusted analyst review remains fail-closed.
+
+Each Case is isolated by `case_id`. `analysis.context.pack` and `workflow.summarize` auto-select a sole Case, but fail closed when multiple Cases exist without an explicit selector. Once selected, Claim context is restricted to that Case's `active_claim_ids`; if Case state exists but cannot be trusted, Claims are withheld instead of falling back to the sample-wide Ledger. Active IDs are resolved newest-to-oldest through an integrity-checked scan capped at 512 Claim Set Artifacts and 128 MiB; a missing ID, broken chain, or exhausted budget withholds the entire Case Claim view. Incremental Context markers are also bound to `case_id` and cannot be reused across Cases.
+
+Persisted summary reuse is guarded by a versioned fingerprint over the resolved synthesis mode, every scope/session selector, non-context source Artifact metadata, persisted Evidence/Function/Analysis/Run/RunStage state, selected Claim/Case markers, and integrity-review state. Source Artifact files are streamed through SHA-256 validation before reuse. Legacy digests without a compatible fingerprint are rebuilt instead of being reused.
+
+Claim and Case writers serialize through a heartbeat-backed SQLite CAS lease before taking their owner-identified filesystem locks. Stale takeover is conditional on the observed owner and heartbeat, while malformed/foreign-host filesystem locks use identity-checked recovery. Writers reassert lease ownership before the final rename, then atomically fence the Artifact row insert on the current owner token. Before creating locks or JSON artifacts, workspace writes validate the configured canonical root and reject symlink-replaced shard or sample directories.
+
+The reproducible benign CrackMe acceptance script runs passive ELF, hardening, strings, Claim, Case, Context, and deterministic summary steps by default. `--deep` additionally enables Ghidra:
+
+```bash
+npm run test:agent-case:e2e -- \
+  --container <running-rikune-container> \
+  --binary /fixtures/complex_crackme
+```
+
+See `tests/fixtures/crackmes/README.md` for fixture build and isolated-execution rules.
 
 ## Architecture
 
@@ -286,6 +320,7 @@ Useful focused checks:
 npm run test:unit
 npm run test:integration
 npm run test:e2e
+npm run test:agent-case:e2e -- --help
 npm run build:runtime
 ```
 

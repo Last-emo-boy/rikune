@@ -37,7 +37,7 @@ export const toolsDiscoverInputSchema = z.object({
         '- `status`: Show surface state (how many tools visible vs total).\n' +
         '- `list`: List available categories and plugins that can be activated.\n' +
         '- `recommend`: Return ranked, explainable toolchain recommendations for a sample, file type, query, or goal.\n' +
-        '- `activate`: Activate a specific category or plugin.'
+        '- `activate`: Activate specific tools, a category, or a plugin.'
     ),
   query: z
     .string()
@@ -71,6 +71,14 @@ export const toolsDiscoverInputSchema = z.object({
     .optional()
     .describe(
       'Specific canonical or transport tool name to search for or activate. Activating a tool opens its owning plugin, or exposes the core tool when it is registered as a core tool.'
+    ),
+  tool_names: z
+    .array(z.string().trim().min(1))
+    .min(1)
+    .max(25)
+    .optional()
+    .describe(
+      'Batch of canonical or transport tool names to activate atomically. All names are checked against the current live surface before any tool is exposed.'
     ),
   finding: z
     .string()
@@ -206,7 +214,7 @@ export const toolsDiscoverToolDefinition: ToolDefinition = {
     'Use `action=status` to see how many tools are visible. ' +
     'Use `action=list` with query, sample_id, file_type, category, plugin_id, or tool_name to search all registered core and plugin capabilities, including tools not currently visible in tools/list. ' +
     'Use `action=recommend` to rank matching tools and return match reasons, readiness state, activation plan, and hidden-surface explanation. ' +
-    'Use `action=activate` with tool_name, plugin_id, category, finding, or file_type to expose selected tools when explicitly routed here. ' +
+    'Use `action=activate` with tool_name, atomic tool_names, plugin_id, category, finding, or file_type to expose selected tools when explicitly routed here. ' +
     'This tool is hidden by default in the minimal MCP surface; workflow.search wraps the normal search/activation path.',
   inputSchema: toolsDiscoverInputSchema,
   outputSchema: toolsDiscoverOutputSchema,
@@ -221,19 +229,11 @@ function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.trim().length > 0)))
 }
 
-function collectToolDeclarations(
-  plugin: DiscoverPluginMetadata | undefined,
-  toolNames: string[]
-): {
+function collectToolDeclarations(definitions: ToolDefinition[]): {
   artifact_declarations: unknown[]
   evidence_declarations: unknown[]
   workflow_recipes: unknown[]
 } {
-  const toolNameSet = new Set(toolNames)
-  const definitions = (plugin?.tools ?? [])
-    .map((tool) => tool.definition)
-    .filter((definition) => toolNameSet.has(definition.name))
-
   return {
     artifact_declarations: definitions.flatMap((definition) => definition.artifacts ?? []),
     evidence_declarations: definitions.flatMap((definition) => definition.evidence ?? []),
@@ -278,20 +278,40 @@ function collectSurfaceMaps(
   return { activatedByPlugin, toolNamesByPlugin }
 }
 
-function buildToolNameLookup(plugins: DiscoverPluginMetadata[]): Map<string, ToolAspectSource> {
+function buildToolNameLookup(
+  plugins: DiscoverPluginMetadata[],
+  liveDefinitions: ToolDefinition[] = []
+): Map<string, ToolAspectSource> {
   const lookup = new Map<string, ToolAspectSource>()
   for (const plugin of plugins) {
     for (const tool of plugin.tools ?? []) {
       lookup.set(tool.definition.name, tool.definition)
     }
   }
+  for (const definition of liveDefinitions) {
+    lookup.set(definition.name, definition)
+  }
   return lookup
+}
+
+function ownedToolDefinitions(
+  toolNames: string[],
+  lookup: Map<string, ToolAspectSource>
+): ToolDefinition[] {
+  return toolNames
+    .map((toolName) => lookup.get(toolName))
+    .filter((definition): definition is ToolDefinition => Boolean(definition))
 }
 
 function canonicalToolName(value: string | undefined): string | undefined {
   if (!value) return undefined
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : undefined
+}
+
+function exactToolNameFromQuery(value: string | undefined): string | undefined {
+  const match = value?.trim().match(/^tool:([A-Za-z0-9_.-]+)$/i)
+  return match ? canonicalToolName(match[1]) : undefined
 }
 
 function toolNameCandidates(value: string | undefined): string[] {
@@ -306,6 +326,43 @@ function toolNameMatches(candidate: string, requested: string | undefined): bool
   return (
     requestedNames.includes(candidate) || requestedNames.includes(toTransportToolName(candidate))
   )
+}
+
+export function listLiveSurfaceToolNames(registeredDefinitions?: ToolDefinition[]): string[] {
+  const surface = getToolSurfaceManager()
+  const categories = surface.listCategories(new Map())
+  const surfaceToolNames = uniqueStrings([
+    ...surface.listCoreTools().map((tool) => tool.name),
+    ...categories.flatMap((category) => category.plugins.flatMap((plugin) => plugin.tools)),
+  ])
+  if (!registeredDefinitions) return surfaceToolNames
+
+  const registeredToolNames = new Set(registeredDefinitions.map((definition) => definition.name))
+  return surfaceToolNames.filter((toolName) => registeredToolNames.has(toolName))
+}
+
+export function resolveLiveSurfaceToolNames(
+  requestedToolNames: string[],
+  liveToolNames: string[] = listLiveSurfaceToolNames()
+): { resolvedToolNames: string[]; unknownToolNames: string[] } {
+  const resolvedToolNames: string[] = []
+  const unknownToolNames: string[] = []
+
+  for (const requestedToolName of uniqueStrings(requestedToolNames)) {
+    const matches = liveToolNames.filter((candidate) =>
+      toolNameMatches(candidate, requestedToolName)
+    )
+    if (matches.length === 0) {
+      unknownToolNames.push(requestedToolName)
+    } else {
+      resolvedToolNames.push(...matches)
+    }
+  }
+
+  return {
+    resolvedToolNames: uniqueStrings(resolvedToolNames),
+    unknownToolNames: uniqueStrings(unknownToolNames),
+  }
 }
 
 function collectSearchText(values: unknown[]): string {
@@ -330,7 +387,11 @@ function collectSearchText(values: unknown[]): string {
   return parts.join(' ').toLowerCase()
 }
 
-function pluginSearchText(plugin: DiscoverPluginMetadata | undefined, toolNames: string[]): string {
+function pluginSearchText(
+  plugin: DiscoverPluginMetadata | undefined,
+  toolNames: string[],
+  definitions: ToolDefinition[] = []
+): string {
   return collectSearchText([
     plugin?.id,
     plugin?.name,
@@ -338,23 +399,24 @@ function pluginSearchText(plugin: DiscoverPluginMetadata | undefined, toolNames:
     plugin?.aspects,
     toolNames,
     toolNames.map((toolName) => toTransportToolName(toolName)),
-    ...(plugin?.tools ?? []).map((tool) => [
-      tool.definition.name,
-      toTransportToolName(tool.definition.name),
-      tool.definition.description,
-      tool.definition.aspects,
-      tool.definition.artifacts,
-      tool.definition.evidence,
-      tool.definition.workflowRecipes,
-      tool.definition.runtime,
-      tool.definition.workerBackend,
+    ...definitions.map((definition) => [
+      definition.name,
+      toTransportToolName(definition.name),
+      definition.description,
+      definition.aspects,
+      definition.artifacts,
+      definition.evidence,
+      definition.workflowRecipes,
+      definition.runtime,
+      definition.workerBackend,
     ]),
   ])
 }
 
 function searchTerms(input: z.infer<typeof toolsDiscoverInputSchema>): string[] {
+  const freeTextQuery = exactToolNameFromQuery(input.query) ? undefined : input.query
   return uniqueStrings(
-    [input.query, input.tool_name, input.plugin_id, input.finding, input.category]
+    [freeTextQuery, input.tool_name, input.plugin_id, input.finding, input.category]
       .filter((value): value is string => typeof value === 'string')
       .flatMap((value) =>
         value
@@ -371,10 +433,12 @@ function pluginMatchesSearch(params: {
   category: string
   plugin?: DiscoverPluginMetadata
   toolNames: string[]
+  toolDefinitions: ToolDefinition[]
   input: z.infer<typeof toolsDiscoverInputSchema>
   targetMatchedPluginIds: Set<string>
 }): boolean {
-  const { pluginId, category, plugin, toolNames, input, targetMatchedPluginIds } = params
+  const { pluginId, category, plugin, toolNames, toolDefinitions, input, targetMatchedPluginIds } =
+    params
   if (input.category && !category.toLowerCase().includes(input.category.toLowerCase())) {
     return false
   }
@@ -389,7 +453,7 @@ function pluginMatchesSearch(params: {
   }
   const terms = searchTerms(input)
   if (terms.length === 0) return true
-  const haystack = `${pluginId} ${category} ${pluginSearchText(plugin, toolNames)}`
+  const haystack = `${pluginId} ${category} ${pluginSearchText(plugin, toolNames, toolDefinitions)}`
   return terms.every((term) => haystack.includes(term))
 }
 
@@ -464,10 +528,14 @@ function aspectsIndicateRuntimeGate(aspects: Record<string, string[]> | null): b
   return (
     execution.includes('dynamic') ||
     runtimes.length > 0 ||
-    safety.some((tag) =>
-      ['opt-in-dynamic', 'requires-isolation', 'no-live-sample-by-default'].includes(tag)
-    )
+    safety.some((tag) => ['opt-in-dynamic', 'requires-isolation'].includes(tag))
   )
+}
+
+function runtimePolicyRequiresGate(policy: unknown): boolean {
+  if (!policy || typeof policy !== 'object') return false
+  const record = policy as Record<string, unknown>
+  return record.requiresUserOptIn === true || record.requiresIsolation === true
 }
 
 function buildPluginRecommendationFields(params: {
@@ -476,6 +544,7 @@ function buildPluginRecommendationFields(params: {
   category: string
   pluginId: string
   toolNames: string[]
+  toolDefinitions: ToolDefinition[]
   tier: number
   activated: boolean
   plugin?: DiscoverPluginMetadata
@@ -491,6 +560,7 @@ function buildPluginRecommendationFields(params: {
     category,
     pluginId,
     toolNames,
+    toolDefinitions,
     tier,
     activated,
     plugin,
@@ -501,14 +571,17 @@ function buildPluginRecommendationFields(params: {
     qualityWarnings,
   } = params
   const terms = searchTerms(input)
-  const searchText = `${pluginId} ${category} ${pluginSearchText(plugin, toolNames)}`
+  const searchText = `${pluginId} ${category} ${pluginSearchText(plugin, toolNames, toolDefinitions)}`
   const matchedTerms = scoreTermsInText(terms, searchText)
   const matchedTargetTags = fileTypeTags.filter((tag) =>
     Object.keys(perPluginMatrix?.by_format ?? {}).includes(tag)
   )
   const runtimeRequired =
     aspectsIndicateRuntimeGate(aspects) ||
-    toolSummaries.some((summary) => Boolean(summary.runtime_contract || summary.runtime_policy))
+    toolSummaries.some(
+      (summary) =>
+        Boolean(summary.runtime_contract) || runtimePolicyRequiresGate(summary.runtime_policy)
+    )
   const workerRequired = toolSummaries.some((summary) => Boolean(summary.worker_backend))
   const missingDeps = perPluginMatrix?.missing_deps ?? []
   const blockedTools = perPluginMatrix?.blocked_tools ?? []
@@ -784,7 +857,10 @@ export function createToolsDiscoverHandler(
   } = {}
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
-    const input = toolsDiscoverInputSchema.parse(args)
+    const parsedInput = toolsDiscoverInputSchema.parse(args)
+    const input = parsedInput.tool_name
+      ? parsedInput
+      : { ...parsedInput, tool_name: exactToolNameFromQuery(parsedInput.query) }
     const surface = getToolSurfaceManager()
     const sample = input.sample_id ? options.database?.findSample?.(input.sample_id) : null
     const resolvedFileType = input.file_type ?? sample?.file_type ?? undefined
@@ -801,15 +877,22 @@ export function createToolsDiscoverHandler(
       pluginStatusIndex.set(p.id, { qualityWarnings: p.qualityWarnings })
     }
     const allCategories = surface.listCategories(pluginIndex)
+    const registeredToolDefinitions = options.toolDefinitions
+      ? options.toolDefinitions()
+      : undefined
     const toolDefinitionIndex = new Map(
-      (options.toolDefinitions?.() ?? []).map((definition) => [definition.name, definition])
+      (registeredToolDefinitions ?? []).map((definition) => [definition.name, definition])
+    )
+    const toolNameLookup = buildToolNameLookup(
+      [...pluginMetadataIndex.values()],
+      [...toolDefinitionIndex.values()]
     )
     const coreTools = surface.listCoreTools()
     const surfaceMaps = collectSurfaceMaps(allCategories)
     const matrixSources = buildPluginMatrixSources({
       statuses: pluginManager.getStatuses(),
       plugins: [...pluginMetadataIndex.values()],
-      toolNameLookup: buildToolNameLookup([...pluginMetadataIndex.values()]),
+      toolNameLookup,
       activatedByPlugin: surfaceMaps.activatedByPlugin,
       toolNamesByPlugin: surfaceMaps.toolNamesByPlugin,
     })
@@ -821,20 +904,19 @@ export function createToolsDiscoverHandler(
       p: ReturnType<typeof surface.listCategories>[number]['plugins'][number]
     ) => {
       const plugin = pluginMetadataIndex.get(p.id)
+      const toolDefinitions = ownedToolDefinitions(p.tools, toolNameLookup)
       const pluginSource = matrixSources.find((source) => source.id === p.id)
       const perPluginMatrix = pluginSource
         ? buildPluginAspectMatrix([pluginSource], { targetTags: fileTypeTags })
         : null
       const normalizedAspects = normalizeAspects(plugin?.aspects)
       const aspects = Object.keys(normalizedAspects).length > 0 ? normalizedAspects : null
-      const toolSummaries = (plugin?.tools ?? [])
-        .filter((tool) => p.tools.includes(tool.definition.name))
-        .map((tool) =>
-          buildToolAspectSummary(tool.definition, {
-            pluginAspects: plugin?.aspects,
-            pluginRuntimePolicy: plugin?.runtimePolicy,
-          })
-        )
+      const toolSummaries = toolDefinitions.map((definition) =>
+        buildToolAspectSummary(definition, {
+          pluginAspects: plugin?.aspects,
+          pluginRuntimePolicy: plugin?.runtimePolicy,
+        })
+      )
       const backendProfile = plugin
         ? buildPluginBackendInstallProfile(plugin)
         : buildPluginBackendInstallProfile({ systemDeps: [], tools: [] })
@@ -870,7 +952,7 @@ export function createToolsDiscoverHandler(
           toolSummaries.find((summary) => summary.worker_backend)?.worker_backend ?? null,
         backend_install_profile: backendProfile.entries,
         backend_profile_summary: backendProfile.summary,
-        ...collectToolDeclarations(plugin, p.tools),
+        ...collectToolDeclarations(toolDefinitions),
         recommended_tools: perPluginMatrix?.target?.recommended_tools.length
           ? perPluginMatrix.target.recommended_tools
           : (perPluginMatrix?.recommended_tools ?? []),
@@ -889,6 +971,7 @@ export function createToolsDiscoverHandler(
           tier: p.tier,
           activated: p.activated,
           plugin,
+          toolDefinitions,
           aspects,
           perPluginMatrix,
           toolSummaries,
@@ -898,18 +981,141 @@ export function createToolsDiscoverHandler(
         quality_warnings: qualityWarnings,
       }
     }
+    const buildPluginRecommendationEntry = (
+      category: string,
+      pluginSurface: ReturnType<typeof surface.listCategories>[number]['plugins'][number]
+    ) => {
+      const base = {
+        kind: 'plugin',
+        category,
+        plugin_id: pluginSurface.id,
+        ...buildPluginPortalEntry(category, pluginSurface),
+      }
+      const plugin = pluginMetadataIndex.get(pluginSurface.id)
+      if ((plugin?.tools?.length ?? 0) > 0 && !input.tool_name) return base
+      const pluginSource = matrixSources.find((source) => source.id === pluginSurface.id)
+      const perPluginMatrix = pluginSource
+        ? buildPluginAspectMatrix([pluginSource], { targetTags: fileTypeTags })
+        : null
+      const qualityWarnings = pluginStatusIndex.get(pluginSurface.id)?.qualityWarnings ?? []
+
+      const terms = searchTerms(input)
+      if (terms.length === 0) return base
+      const matchingDefinitions = ownedToolDefinitions(pluginSurface.tools, toolNameLookup).filter(
+        (definition) => {
+          if (input.tool_name) return toolNameMatches(definition.name, input.tool_name)
+          const text = collectSearchText([
+            definition.name,
+            toTransportToolName(definition.name),
+            definition.description,
+            definition.aspects,
+            definition.artifacts,
+            definition.evidence,
+            definition.workflowRecipes,
+            definition.runtime,
+            definition.workerBackend,
+          ])
+          return terms.every((term) => text.includes(term))
+        }
+      )
+      if (matchingDefinitions.length !== 1) return base
+
+      const definition = matchingDefinitions[0]
+      const summary = buildToolAspectSummary(definition, {
+        pluginAspects: plugin?.aspects,
+        pluginRuntimePolicy: plugin?.runtimePolicy,
+      })
+      const visible = surface.isToolVisible(definition.name)
+      const runtimeRequired =
+        aspectsIndicateRuntimeGate(summary.aspects) ||
+        Boolean(summary.runtime_contract) ||
+        runtimePolicyRequiresGate(summary.runtime_policy)
+      const workerRequired = Boolean(summary.worker_backend)
+      const blockedTools = perPluginMatrix?.blocked_tools ?? []
+      const missingDeps = perPluginMatrix?.missing_deps ?? []
+      const toolBlocked = blockedTools.some((toolName) =>
+        toolNameMatches(definition.name, toolName)
+      )
+      const availableTools = toolBlocked || missingDeps.length > 0 ? [] : [definition.name]
+      const toolGuidance = buildToolSurfaceGuidance(definition.name, { runtimeRequired })
+      const selectedBackendProfile = buildPluginBackendInstallProfile({
+        systemDeps: plugin?.systemDeps,
+        tools: [{ definition }],
+      })
+      const resolvedReadiness = readinessState({
+        activated: visible,
+        missingDeps,
+        blockedTools: toolBlocked ? [definition.name] : [],
+        qualityWarnings,
+        runtimeRequired,
+        workerRequired,
+        backendProfile: selectedBackendProfile,
+      })
+      const surfaceAction = visible
+        ? `Call ${definition.name} directly; it is already visible in tools/list.`
+        : `Use workflow.search action=activate tool_name=${definition.name}.`
+      const readinessAction = `Call tool.readiness for ${definition.name} before execution.`
+      const blockedActions = perPluginMatrix?.next_actions ?? []
+      const requiresReadiness = !['ready', 'hidden_activation_required'].includes(resolvedReadiness)
+      return {
+        ...base,
+        kind: 'plugin_tool',
+        name: definition.name,
+        tool_name: definition.name,
+        description: definition.description,
+        tool_count: 1,
+        activated: visible,
+        aspects: summary.aspects,
+        aspect_coverage: summary.aspect_coverage,
+        format_matrix: summary.format_matrix,
+        runtime_policy: summary.runtime_policy,
+        runtime_contract: summary.runtime_contract,
+        worker_backend: summary.worker_backend,
+        backend_install_profile: selectedBackendProfile.entries,
+        backend_profile_summary: selectedBackendProfile.summary,
+        ...toolGuidance,
+        artifact_declarations: summary.artifact_declarations,
+        evidence_declarations: summary.evidence_declarations,
+        workflow_recipes: summary.workflow_recipes,
+        recommended_tools: [definition.name],
+        available_tools: availableTools,
+        blocked_tools: toolBlocked ? [definition.name] : [],
+        next_actions:
+          resolvedReadiness === 'blocked'
+            ? blockedActions
+            : uniqueStrings([...(requiresReadiness ? [readinessAction] : []), surfaceAction]),
+        score: Number(base.score ?? 0) + 60,
+        match_reasons: uniqueStrings([
+          ...(Array.isArray(base.match_reasons) ? base.match_reasons : []),
+          `Query uniquely matches live tool ${definition.name}.`,
+        ]),
+        readiness_state: resolvedReadiness,
+        activation_plan:
+          resolvedReadiness === 'blocked'
+            ? blockedActions
+            : uniqueStrings([
+                ...(requiresReadiness ? [readinessAction] : []),
+                visible
+                  ? `Call ${definition.name} directly.`
+                  : `Call workflow.search action=activate tool_name=${definition.name}.`,
+              ]),
+        activation_command: toolBlocked
+          ? undefined
+          : { action: 'activate', tool_name: definition.name },
+        why_hidden: visible
+          ? []
+          : ['Tool is registered but not currently exposed in the gateway surface.'],
+      }
+    }
     const buildRecommendationList = (
       categories: typeof allCategories,
       matchingCoreTools: typeof coreTools
     ) =>
       [
         ...categories.flatMap((category) =>
-          category.plugins.map((plugin) => ({
-            kind: 'plugin',
-            category: category.category,
-            plugin_id: plugin.id,
-            ...buildPluginPortalEntry(category.category, plugin),
-          }))
+          category.plugins.map((plugin) =>
+            buildPluginRecommendationEntry(category.category, plugin)
+          )
         ),
         ...matchingCoreTools.map((tool) => ({
           kind: 'core_tool',
@@ -938,6 +1144,7 @@ export function createToolsDiscoverHandler(
               category: c.category,
               plugin: pluginMetadataIndex.get(p.id),
               toolNames: p.tools,
+              toolDefinitions: ownedToolDefinitions(p.tools, toolNameLookup),
               input: matchInput,
               targetMatchedPluginIds,
             })
@@ -1085,16 +1292,39 @@ export function createToolsDiscoverHandler(
         const activated: string[] = []
         const activatedCoreTools: string[] = []
         const activatedScopedTools: string[] = []
+        const knownPluginIds = new Set(
+          allCategories.flatMap((category) => category.plugins.map((plugin) => plugin.id))
+        )
+        const knownToolNames = listLiveSurfaceToolNames(registeredToolDefinitions)
+        const requestedToolInputs = uniqueStrings([
+          ...(input.tool_name ? [input.tool_name] : []),
+          ...(input.tool_names ?? []),
+        ])
+        const { resolvedToolNames: requestedToolNames, unknownToolNames } =
+          resolveLiveSurfaceToolNames(requestedToolInputs, knownToolNames)
+
+        if (input.plugin_id && !knownPluginIds.has(input.plugin_id)) {
+          return {
+            ok: false,
+            errors: [`Unknown or unloaded plugin_id=${input.plugin_id}. Re-run discovery.`],
+          }
+        }
+        if (unknownToolNames.length > 0) {
+          const label = unknownToolNames.length === 1 ? 'tool_name' : 'tool_names'
+          return {
+            ok: false,
+            errors: [
+              `Unknown or unloaded ${label}=${unknownToolNames.join(',')}. Re-run discovery.`,
+            ],
+          }
+        }
 
         if (input.plugin_id) {
           activated.push(...surface.activatePlugins([input.plugin_id]))
         }
-        if (input.tool_name) {
-          const targetTools = toolNameCandidates(input.tool_name)
-          if (targetTools.length > 0) {
-            activatedCoreTools.push(...surface.activateCoreTools(targetTools))
-            activatedScopedTools.push(...surface.activatePluginTools(targetTools))
-          }
+        if (requestedToolNames.length > 0) {
+          activatedCoreTools.push(...surface.activateCoreTools(requestedToolNames))
+          activatedScopedTools.push(...surface.activatePluginTools(requestedToolNames))
         }
         if (input.category) {
           activated.push(...surface.activateByCategory(input.category))
@@ -1122,19 +1352,23 @@ export function createToolsDiscoverHandler(
         const updatedMatrixSources = buildPluginMatrixSources({
           statuses: pluginManager.getStatuses(),
           plugins: [...pluginMetadataIndex.values()],
-          toolNameLookup: buildToolNameLookup([...pluginMetadataIndex.values()]),
+          toolNameLookup,
           activatedByPlugin: updatedSurfaceMaps.activatedByPlugin,
           toolNamesByPlugin: updatedSurfaceMaps.toolNamesByPlugin,
         })
         const updatedPluginMatrix = buildPluginAspectMatrix(updatedMatrixSources, {
           targetTags: fileTypeTags,
         })
+        const exposedRequestedTools = requestedToolNames.filter((toolName) =>
+          surface.isToolVisible(toolName)
+        )
         const activationAudit = {
           at: new Date().toISOString(),
           action: 'activate',
           request: {
             plugin_id: input.plugin_id ?? null,
             tool_name: input.tool_name ?? null,
+            tool_names: input.tool_names ?? null,
             category: input.category ?? null,
             finding: input.finding ?? null,
             file_type: resolvedFileType ?? null,
@@ -1143,7 +1377,7 @@ export function createToolsDiscoverHandler(
           activated_plugins: unique,
           activated_core_tools: uniqueStrings(activatedCoreTools),
           activated_scoped_tools: uniqueStrings(activatedScopedTools),
-          activated_tools: uniqueStrings(activatedTools),
+          activated_tools: uniqueStrings([...activatedTools, ...exposedRequestedTools]),
           matched_plugins: updatedPluginMatrix.target?.matched_plugins ?? [],
           matched_tools: updatedPluginMatrix.target?.matched_tools ?? [],
           policy: {
@@ -1157,7 +1391,11 @@ export function createToolsDiscoverHandler(
         }
 
         if (unique.length === 0) {
-          const exposedTools = uniqueStrings([...activatedCoreTools, ...activatedScopedTools])
+          const exposedTools = uniqueStrings([
+            ...activatedCoreTools,
+            ...activatedScopedTools,
+            ...exposedRequestedTools,
+          ])
           return {
             ok: true,
             data: {

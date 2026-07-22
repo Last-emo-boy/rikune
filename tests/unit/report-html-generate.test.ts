@@ -10,6 +10,7 @@ import { createHash } from 'crypto'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { createArtifactReadHandler } from '../../src/tools/artifact-read.js'
+import { isContextOnlyArtifactType } from '../../src/artifacts/context-only-artifacts.js'
 import {
   createReportHtmlGenerateHandler,
   ReportHtmlGenerateInputSchema,
@@ -52,6 +53,14 @@ describe('report.html.generate tool', () => {
   })
 
   test('declares an html_report artifact handoff recipe', () => {
+    expect(isContextOnlyArtifactType('html_report')).toBe(true)
+    expect(reportHtmlGenerateToolDefinition.description).toContain('context-only')
+    expect(reportHtmlGenerateToolDefinition.description).toContain(
+      'cannot be used as Claim evidence'
+    )
+    expect(reportHtmlGenerateToolDefinition.evidence).toBeUndefined()
+    expect(reportHtmlGenerateToolDefinition.aspects?.evidence).toBeUndefined()
+    expect(reportHtmlGenerateToolDefinition.aspects?.safety).toContain('context-only')
     expect(reportHtmlGenerateToolDefinition.artifacts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -67,9 +76,11 @@ describe('report.html.generate tool', () => {
           startsWith: ['report.html.generate'],
           nextTools: expect.arrayContaining(['artifact.read', 'workflow.search']),
           producesArtifacts: ['html_report'],
+          safety: expect.arrayContaining(['context-only']),
         }),
       ])
     )
+    expect(reportHtmlGenerateToolDefinition.workflowRecipes?.[0]?.evidence).toBeUndefined()
   })
 
   describe('Handler', () => {
@@ -110,6 +121,7 @@ describe('report.html.generate tool', () => {
         expect.objectContaining({
           source_tool: 'report.html.generate',
           sample_id: sampleId,
+          artifact_role: 'context_only',
           surface_role: 'html_report_export',
           evidence_used: 3,
         })
@@ -169,6 +181,7 @@ describe('report.html.generate tool', () => {
       expect(data.workflow_handoff.artifact_contract).toEqual(
         expect.objectContaining({
           produces: ['html_report'],
+          artifact_role: 'context_only',
           artifact_id: artifact?.id,
           artifact_path: artifact?.path,
           sha256,
@@ -179,6 +192,7 @@ describe('report.html.generate tool', () => {
       expect(data.quality_gates).toEqual(
         expect.objectContaining({
           schema: 'rikune.html_report.quality_gates.v1',
+          artifact_role: 'context_only',
           passive_correlation_only: true,
           sample_executed_by_tool: false,
           network_accessed_by_tool: false,

@@ -21,12 +21,14 @@ import type { WorkspacePath } from '../types.js'
  */
 export class WorkspaceManager {
   private workspaceRoot: string
+  private readonly trustedWorkspaceRootRealPath: string
   private workspacePathCache: Map<string, WorkspacePath> = new Map()
   private readonly CACHE_SIZE_LIMIT = 1000
 
   constructor(workspaceRoot: string) {
     this.workspaceRoot = path.resolve(workspaceRoot)
     this.ensureWorkspaceRoot()
+    this.trustedWorkspaceRootRealPath = fs.realpathSync.native(this.workspaceRoot)
   }
 
   /**
@@ -58,28 +60,32 @@ export class WorkspaceManager {
     // Check cache first (Requirement 26.3)
     const cachedPath = this.workspacePathCache.get(sha256)
     if (cachedPath && fs.existsSync(cachedPath.root)) {
-      return cachedPath
+      return await this.resolveWorkspaceForWrite(sampleId)
     }
 
     const workspacePath = this.generateWorkspacePath(sha256)
+    await this.assertTrustedWorkspaceRoot()
+    await this.ensureRealDirectory(
+      path.join(this.workspaceRoot, sha256.substring(0, 2)),
+      'First workspace shard'
+    )
+    await this.ensureRealDirectory(
+      path.join(this.workspaceRoot, sha256.substring(0, 2), sha256.substring(2, 4)),
+      'Second workspace shard'
+    )
+    await this.ensureRealDirectory(workspacePath.root, 'Sample workspace root')
 
-    // Create directory structure asynchronously
-    const subdirs = ['original', 'cache', 'ghidra', 'dotnet', 'reports']
-
-    // Create root workspace directory
-    await fsPromises.mkdir(workspacePath.root, { recursive: true })
-
-    // Create all subdirectories in parallel (Requirement 26.3)
+    const safeWorkspacePath = await this.resolveWorkspaceForWrite(sampleId)
     await Promise.all(
-      subdirs.map((subdir) =>
-        fsPromises.mkdir(path.join(workspacePath.root, subdir), { recursive: true })
+      ['original', 'cache', 'ghidra', 'dotnet', 'reports'].map((subdir) =>
+        this.ensureRealDirectory(path.join(safeWorkspacePath.root, subdir), `Workspace ${subdir}`)
       )
     )
 
     // Cache the workspace path
-    this.cacheWorkspacePath(sha256, workspacePath)
+    this.cacheWorkspacePath(sha256, safeWorkspacePath)
 
-    return workspacePath
+    return safeWorkspacePath
   }
 
   /**
@@ -110,6 +116,69 @@ export class WorkspaceManager {
     this.cacheWorkspacePath(sha256, workspacePath)
 
     return workspacePath
+  }
+
+  /**
+   * Resolve an existing sample workspace against the configured workspace root.
+   * Rejects replaced shard/sample directories before callers create security-sensitive files.
+   */
+  public async resolveWorkspaceForWrite(sampleId: string): Promise<WorkspacePath> {
+    const sha256 = this.extractSha256(sampleId)
+    const workspacePath = this.generateWorkspacePath(sha256)
+    await this.assertTrustedWorkspaceRoot()
+
+    const bucket1Path = path.join(this.workspaceRoot, sha256.substring(0, 2))
+    const bucket2Path = path.join(bucket1Path, sha256.substring(2, 4))
+    for (const [label, directoryPath] of [
+      ['First workspace shard', bucket1Path],
+      ['Second workspace shard', bucket2Path],
+      ['Sample workspace root', workspacePath.root],
+    ] as const) {
+      const directoryStat = await fsPromises.lstat(directoryPath)
+      if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
+        throw new Error(`${label} must be a real directory, not a symlink.`)
+      }
+    }
+
+    const workspaceRealPath = await fsPromises.realpath(workspacePath.root)
+    const relativeWorkspacePath = path.relative(
+      this.trustedWorkspaceRootRealPath,
+      workspaceRealPath
+    )
+    if (
+      relativeWorkspacePath === '..' ||
+      relativeWorkspacePath.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relativeWorkspacePath)
+    ) {
+      throw new Error('Sample workspace root resolves outside the configured workspace root.')
+    }
+
+    return {
+      root: workspaceRealPath,
+      original: path.join(workspaceRealPath, 'original'),
+      cache: path.join(workspaceRealPath, 'cache'),
+      ghidra: path.join(workspaceRealPath, 'ghidra'),
+      reports: path.join(workspaceRealPath, 'reports'),
+    }
+  }
+
+  private async assertTrustedWorkspaceRoot(): Promise<void> {
+    const currentWorkspaceRootRealPath = await fsPromises.realpath(this.workspaceRoot)
+    if (currentWorkspaceRootRealPath !== this.trustedWorkspaceRootRealPath) {
+      throw new Error('Configured workspace root no longer resolves to its trusted location.')
+    }
+  }
+
+  private async ensureRealDirectory(directoryPath: string, label: string): Promise<void> {
+    try {
+      await fsPromises.mkdir(directoryPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    }
+    const directoryStat = await fsPromises.lstat(directoryPath)
+    if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
+      throw new Error(`${label} must be a real directory, not a symlink.`)
+    }
   }
 
   /**

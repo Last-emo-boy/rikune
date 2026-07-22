@@ -172,6 +172,125 @@ export const ExplanationGraphSummarySchema = z.object({
   artifact_ref: SummaryArtifactRefSchema.optional(),
 })
 
+export const SUMMARY_CONTEXT_LIMITS = {
+  claims: 8,
+  case_decisions: 5,
+  case_open_questions: 8,
+  case_attempted_actions: 5,
+  case_next_actions: 5,
+  unresolved_questions: 8,
+} as const
+
+const SummaryDigestScopeSchema = z.enum(['all', 'latest', 'session'])
+
+export const SummaryDigestReuseFingerprintSchema = z
+  .object({
+    schema_version: z.literal(1),
+    stage: z.enum(SUMMARY_STAGE_VALUES),
+    resolved_synthesis_mode: z.enum(['deterministic', 'sampling']),
+    input: z
+      .object({
+        through_stage: z.enum(SUMMARY_STAGE_VALUES),
+        summary_session_tag: z.string().nullable(),
+        case_id: z.string().nullable(),
+        evidence_scope: SummaryDigestScopeSchema,
+        evidence_session_tag: z.string().nullable(),
+        static_scope: SummaryDigestScopeSchema,
+        static_session_tag: z.string().nullable(),
+        semantic_scope: SummaryDigestScopeSchema,
+        semantic_session_tag: z.string().nullable(),
+        compare_evidence_scope: SummaryDigestScopeSchema.nullable(),
+        compare_evidence_session_tag: z.string().nullable(),
+        compare_static_scope: SummaryDigestScopeSchema.nullable(),
+        compare_static_session_tag: z.string().nullable(),
+        compare_semantic_scope: SummaryDigestScopeSchema.nullable(),
+        compare_semantic_session_tag: z.string().nullable(),
+      })
+      .strict(),
+    source_artifacts: z.array(
+      z
+        .object({
+          id: z.string(),
+          type: z.string(),
+          path: z.string(),
+          sha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
+          mime: z.string().nullable(),
+          created_at: z.string(),
+        })
+        .strict()
+    ),
+    source_integrity_valid: z.boolean(),
+    evidence_state_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    function_state_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    analysis_state_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    analysis_run_state_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    analysis_run_stage_state_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    claim_context_marker: z.string().nullable(),
+    case_context_marker: z.string().nullable(),
+    context_review_required: z.boolean().nullable(),
+    fingerprint_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict()
+
+export type SummaryDigestReuseFingerprint = z.infer<typeof SummaryDigestReuseFingerprintSchema>
+
+export const ClaimContextItemSchema = z
+  .object({
+    claim_id: z.string().max(200),
+    category: z.enum(['finding', 'hypothesis', 'ioc', 'technique', 'verdict', 'open_question']),
+    subject: z.string().max(500),
+    statement: z.string().max(1200),
+    status: z.enum(['inferred', 'corroborated', 'contradicted', 'verified', 'rejected']),
+    source: z.enum(['llm', 'analyst', 'imported']),
+    review_required: z.boolean(),
+  })
+  .strict()
+
+export const ClaimLedgerContextSummarySchema = z
+  .object({
+    artifact_role: z.literal('context_only'),
+    marker: z.string(),
+    claim_set_count: z.number().int().nonnegative(),
+    active_claim_count: z.number().int().nonnegative(),
+    included_claim_count: z.number().int().nonnegative(),
+    status_counts: z
+      .object({
+        inferred: z.number().int().nonnegative(),
+        corroborated: z.number().int().nonnegative(),
+        contradicted: z.number().int().nonnegative(),
+        verified: z.number().int().nonnegative(),
+        rejected: z.number().int().nonnegative(),
+      })
+      .strict(),
+    claims: z.array(ClaimContextItemSchema).max(SUMMARY_CONTEXT_LIMITS.claims),
+    truncated: z.boolean(),
+  })
+  .strict()
+
+export const CaseStateContextSummarySchema = z
+  .object({
+    artifact_role: z.literal('context_only'),
+    marker: z.string(),
+    available: z.boolean(),
+    case_id: z.string().nullable(),
+    revision: z.number().int().positive().nullable(),
+    objective: z.string().max(1200).nullable(),
+    decision_count: z.number().int().nonnegative(),
+    decisions: z.array(z.string().max(1200)).max(SUMMARY_CONTEXT_LIMITS.case_decisions),
+    open_question_count: z.number().int().nonnegative(),
+    open_questions: z.array(z.string().max(1200)).max(SUMMARY_CONTEXT_LIMITS.case_open_questions),
+    attempted_action_count: z.number().int().nonnegative(),
+    attempted_actions: z
+      .array(z.string().max(1200))
+      .max(SUMMARY_CONTEXT_LIMITS.case_attempted_actions),
+    next_action_count: z.number().int().nonnegative(),
+    next_actions: z.array(z.string().max(1200)).max(SUMMARY_CONTEXT_LIMITS.case_next_actions),
+    active_claim_count: z.number().int().nonnegative(),
+    pinned_artifact_count: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+  })
+  .strict()
+
 const DigestBaseSchema = z
   .object({
     schema_version: z.literal(1),
@@ -181,6 +300,7 @@ const DigestBaseSchema = z
     created_at: z.string(),
     session_tag: z.string().nullable().optional(),
     source_artifact_refs: z.array(SummaryArtifactRefSchema),
+    reuse_fingerprint: SummaryDigestReuseFingerprintSchema.optional(),
     truncation: DigestTruncationSchema.optional(),
   })
   .extend(CoverageEnvelopeSchema.shape)
@@ -230,6 +350,47 @@ export const FinalStageDigestSchema = DigestBaseSchema.extend({
   key_findings: z.array(z.string()),
   next_steps: z.array(z.string()),
   unresolved_unknowns: z.array(z.string()),
+  claim_context: ClaimLedgerContextSummarySchema.optional().default({
+    artifact_role: 'context_only',
+    marker: 'none',
+    claim_set_count: 0,
+    active_claim_count: 0,
+    included_claim_count: 0,
+    status_counts: {
+      inferred: 0,
+      corroborated: 0,
+      contradicted: 0,
+      verified: 0,
+      rejected: 0,
+    },
+    claims: [],
+    truncated: false,
+  }),
+  case_context: CaseStateContextSummarySchema.optional().default({
+    artifact_role: 'context_only',
+    marker: 'none',
+    available: false,
+    case_id: null,
+    revision: null,
+    objective: null,
+    decision_count: 0,
+    decisions: [],
+    open_question_count: 0,
+    open_questions: [],
+    attempted_action_count: 0,
+    attempted_actions: [],
+    next_action_count: 0,
+    next_actions: [],
+    active_claim_count: 0,
+    pinned_artifact_count: 0,
+    truncated: false,
+  }),
+  review_required: z.boolean().optional().default(false),
+  unresolved_questions: z
+    .array(z.string().max(1200))
+    .max(SUMMARY_CONTEXT_LIMITS.unresolved_questions)
+    .optional()
+    .default([]),
   stage_artifact_refs: z.array(SummaryArtifactRefSchema),
   explanation_graphs: z.array(ExplanationGraphSummarySchema).optional(),
   explanation_artifact_refs: z.array(SummaryArtifactRefSchema).optional(),
@@ -270,6 +431,7 @@ const DIGEST_LIST_LIMITS = {
   rewrite_guidance: 2,
   next_steps: 5,
   unresolved_unknowns: 5,
+  unresolved_questions: SUMMARY_CONTEXT_LIMITS.unresolved_questions,
   stage_artifacts: 4,
 } as const
 
@@ -381,6 +543,10 @@ export interface BuildFinalStageDigestInput {
   source_artifact_refs?: ArtifactRef[]
   explanation_graphs?: z.infer<typeof ExplanationGraphSummarySchema>[]
   explanation_artifact_refs?: ArtifactRef[]
+  claim_context?: z.infer<typeof ClaimLedgerContextSummarySchema>
+  case_context?: z.infer<typeof CaseStateContextSummarySchema>
+  review_required?: boolean
+  unresolved_questions?: string[]
   coverage?: CoverageEnvelope
 }
 
@@ -724,6 +890,49 @@ export function buildFinalStageDigest(input: BuildFinalStageDigestInput): FinalS
       ),
     ])
   )
+  const unresolvedQuestions = limitArray(
+    'unresolved_questions',
+    dedupeStrings(input.unresolved_questions || [])
+  )
+  const claimContext =
+    input.claim_context ||
+    ClaimLedgerContextSummarySchema.parse({
+      artifact_role: 'context_only',
+      marker: 'none',
+      claim_set_count: 0,
+      active_claim_count: 0,
+      included_claim_count: 0,
+      status_counts: {
+        inferred: 0,
+        corroborated: 0,
+        contradicted: 0,
+        verified: 0,
+        rejected: 0,
+      },
+      claims: [],
+      truncated: false,
+    })
+  const caseContext =
+    input.case_context ||
+    CaseStateContextSummarySchema.parse({
+      artifact_role: 'context_only',
+      marker: 'none',
+      available: false,
+      case_id: null,
+      revision: null,
+      objective: null,
+      decision_count: 0,
+      decisions: [],
+      open_question_count: 0,
+      open_questions: [],
+      attempted_action_count: 0,
+      attempted_actions: [],
+      next_action_count: 0,
+      next_actions: [],
+      active_claim_count: 0,
+      pinned_artifact_count: 0,
+      truncated: false,
+    })
   const mergedCoverage =
     input.coverage ||
     buildCoverageEnvelope({
@@ -802,6 +1011,10 @@ export function buildFinalStageDigest(input: BuildFinalStageDigestInput): FinalS
     key_findings: keyFindings.values,
     next_steps: nextSteps.values,
     unresolved_unknowns: unresolved.values,
+    claim_context: claimContext,
+    case_context: caseContext,
+    review_required: input.review_required || false,
+    unresolved_questions: unresolvedQuestions.values,
     ...(input.explanation_graphs?.length
       ? {
           explanation_graphs: input.explanation_graphs.slice(0, 4),
@@ -819,6 +1032,7 @@ export function buildFinalStageDigest(input: BuildFinalStageDigestInput): FinalS
       ['key_findings', keyFindings.budget],
       ['next_steps', nextSteps.budget],
       ['unresolved_unknowns', unresolved.budget],
+      ['unresolved_questions', unresolvedQuestions.budget],
     ]),
   }
 }

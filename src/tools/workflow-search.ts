@@ -1,7 +1,11 @@
 import { z } from 'zod'
 import type { ToolArgs, ToolDefinition, WorkerResult } from '../types.js'
 import type { PluginManager } from '../plugins.js'
-import { createToolsDiscoverHandler } from './tools-discover.js'
+import {
+  createToolsDiscoverHandler,
+  listLiveSurfaceToolNames,
+  resolveLiveSurfaceToolNames,
+} from './tools-discover.js'
 import { normalizeFileTypeTags } from './tool-aspect-matrix.js'
 
 const WorkflowSearchActionSchema = z.enum(['status', 'search', 'recommend', 'list', 'activate'])
@@ -249,10 +253,16 @@ export const workflowSearchToolDefinition: ToolDefinition = {
 }
 
 function buildDiscoverQuery(input: WorkflowSearchInput): string | undefined {
+  if (exactToolNameFromQuery(input.query)) return undefined
   const terms = [input.query, input.goal, input.depth].filter(
     (value): value is string => typeof value === 'string' && value.trim().length > 0
   )
   return terms.length > 0 ? terms.join(' ') : undefined
+}
+
+function exactToolNameFromQuery(value: string | undefined): string | undefined {
+  const match = value?.trim().match(/^tool:([A-Za-z0-9_.-]+)$/i)
+  return match?.[1]
 }
 
 function toDiscoverAction(action: z.infer<typeof WorkflowSearchActionSchema>) {
@@ -932,6 +942,10 @@ function resultIdForRanked(ranked: RankedRecommendation): string {
 }
 
 function recommendationKey(item: Record<string, unknown>, index: number): string {
+  if (stringValue(item.kind) === 'plugin_tool') {
+    const toolName = stringValue(item.tool_name) ?? stringValue(item.name)
+    if (toolName) return `tool:${toolName}`
+  }
   const pluginId = stringValue(item.plugin_id) ?? stringValue(item.id)
   if (pluginId) return `plugin:${pluginId}`
   const toolName = stringValue(item.tool_name) ?? stringValue(item.name)
@@ -1444,7 +1458,8 @@ function buildSearchProfile(
 function normalizeRecommendation(
   ranked: RankedRecommendation,
   index: number,
-  metadata?: { matched_lanes?: string[]; selected_via_lane?: string }
+  metadata: { matched_lanes?: string[]; selected_via_lane?: string } | undefined,
+  liveToolNames: string[]
 ) {
   const item = ranked.item
   const workflowRecipes = Array.isArray(item.workflow_recipes)
@@ -1452,14 +1467,14 @@ function normalizeRecommendation(
     : []
   const readinessState = typeof item.readiness_state === 'string' ? item.readiness_state : 'unknown'
   const resultId = recommendationResultId(item, index)
-  const scopedToolNames = resultScopedToolNames(item)
+  const scopedToolNames = resultScopedToolNames(item, liveToolNames)
   return {
     result_id: resultId,
     rank: index + 1,
     score: ranked.total_score,
     matched_lanes: metadata?.matched_lanes ?? [],
     selected_via_lane: metadata?.selected_via_lane ?? 'global_fill',
-    kind: item.kind === 'core_tool' ? 'tool' : item.kind,
+    kind: item.kind === 'core_tool' || item.kind === 'plugin_tool' ? 'tool' : item.kind,
     tool_name: item.tool_name ?? item.name,
     plugin_id: item.plugin_id ?? item.id,
     workflow_id: workflowRecipes.length > 0 ? workflowRecipes[0]?.id : undefined,
@@ -1493,6 +1508,10 @@ function normalizeRecommendation(
 }
 
 function recommendationResultId(item: Record<string, unknown>, index: number): string {
+  if (stringValue(item.kind) === 'plugin_tool') {
+    const toolName = stringValue(item.tool_name) ?? stringValue(item.name)
+    if (toolName) return `tool:${toolName}`
+  }
   const pluginId = stringValue(item.plugin_id) ?? stringValue(item.id)
   if (pluginId) return `plugin:${pluginId}`
   const toolName = stringValue(item.tool_name) ?? stringValue(item.name)
@@ -1512,20 +1531,22 @@ function workflowRecipeStartTools(item: Record<string, unknown>): string[] {
   )
 }
 
-function resultScopedToolNames(item: Record<string, unknown>): string[] {
+function resultScopedToolNames(item: Record<string, unknown>, liveToolNames: string[]): string[] {
+  const resolveLive = (toolNames: string[]) =>
+    resolveLiveSurfaceToolNames(toolNames, liveToolNames).resolvedToolNames.slice(0, 8)
   const kind = stringValue(item.kind)
-  if (kind === 'core_tool') {
+  if (kind === 'core_tool' || kind === 'plugin_tool') {
     const toolName = stringValue(item.tool_name) ?? stringValue(item.name)
-    return toolName ? [toolName] : []
+    return toolName ? resolveLive([toolName]) : []
   }
 
-  const workflowStartTools = workflowRecipeStartTools(item)
+  const workflowStartTools = resolveLive(workflowRecipeStartTools(item))
   if (workflowStartTools.length > 0) return workflowStartTools.slice(0, 8)
 
-  const recommendedTools = stringArray(item.recommended_tools)
+  const recommendedTools = resolveLive(stringArray(item.recommended_tools))
   if (recommendedTools.length > 0) return recommendedTools.slice(0, 8)
 
-  return stringArray(item.available_tools).slice(0, 1)
+  return resolveLive(stringArray(item.available_tools)).slice(0, 1)
 }
 
 function normalizeActivationCommand(
@@ -1581,7 +1602,10 @@ export function createWorkflowSearchHandler(
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
-      const input = workflowSearchInputSchema.parse(args)
+      const parsedInput = workflowSearchInputSchema.parse(args)
+      const input = parsedInput.tool_name
+        ? parsedInput
+        : { ...parsedInput, tool_name: exactToolNameFromQuery(parsedInput.query) }
       const discoveryAction =
         input.action === 'activate' && input.result_id
           ? 'recommend'
@@ -1614,7 +1638,7 @@ export function createWorkflowSearchHandler(
         ? (discoveryData.recommendations as Record<string, unknown>[])
         : []
       const supplementalRecommendations: Record<string, unknown>[] = []
-      if (shouldSupplementArtifactCandidates(input, searchProfiles)) {
+      if (!input.tool_name && shouldSupplementArtifactCandidates(input, searchProfiles)) {
         const supplementalDiscovery = await discover({
           action: 'recommend',
           query: 'evidence',
@@ -1667,13 +1691,17 @@ export function createWorkflowSearchHandler(
         input.action === 'activate' && input.result_id
           ? rankedRecommendations.slice(0, resultWindow)
           : quotaSelection.selected
+      const registeredToolDefinitions = options.toolDefinitions
+        ? options.toolDefinitions()
+        : undefined
+      const liveToolNames = listLiveSurfaceToolNames(registeredToolDefinitions)
       const results = selectedRecommendations.map((item, index) => {
         const resultId = resultIdForRanked(item)
         const metadata = quotaSelection.selection_metadata.get(resultId) ?? {
           matched_lanes: matchedLanesForRecommendation(item, searchProfiles),
           selected_via_lane: 'global_fill',
         }
-        return normalizeRecommendation(item, index, metadata)
+        return normalizeRecommendation(item, index, metadata, liveToolNames)
       })
 
       if (input.action === 'activate' && input.result_id) {
@@ -1763,22 +1791,36 @@ export function createWorkflowSearchHandler(
           }
         }
 
-        const activationResults = []
-        for (const toolName of scopedToolNames) {
-          const activation = await discover({ action: 'activate', tool_name: toolName })
-          activationResults.push(asRecord(activation.data))
-          if (!activation.ok) {
-            return {
-              ok: false,
-              errors: activation.errors ?? [`Failed to activate scoped tool ${toolName}.`],
-              warnings: uniqueStrings([
-                ...(discovery.warnings ?? []),
-                ...(activation.warnings ?? []),
-              ]),
-              metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
-            }
+        const preflight = resolveLiveSurfaceToolNames(scopedToolNames)
+        if (preflight.unknownToolNames.length > 0) {
+          return {
+            ok: false,
+            errors: [
+              `Result ${input.result_id} references unknown or unloaded tools: ${preflight.unknownToolNames.join(', ')}. Re-run discovery.`,
+            ],
+            warnings: discovery.warnings,
+            metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
           }
         }
+
+        const activation = await discover({
+          action: 'activate',
+          tool_names: preflight.resolvedToolNames,
+        })
+        if (!activation.ok) {
+          return {
+            ok: false,
+            errors: activation.errors ?? [
+              `Failed to activate scoped tools: ${preflight.resolvedToolNames.join(', ')}.`,
+            ],
+            warnings: uniqueStrings([
+              ...(discovery.warnings ?? []),
+              ...(activation.warnings ?? []),
+            ]),
+            metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
+          }
+        }
+        const activationResults = [asRecord(activation.data)]
 
         const activationAudits = activationResults.map((result) =>
           asRecord(result.activation_audit)

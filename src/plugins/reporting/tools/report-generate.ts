@@ -228,6 +228,7 @@ export const reportGenerateToolDefinition: ToolDefinition = {
   name: 'report.generate',
   description:
     'Export a comprehensive archival report artifact in Markdown, JSON, or HTML. This is an export-only surface over already persisted analysis state, not the primary AI-facing staged summary flow. ' +
+    'Its output is context-only and cannot be used as Claim evidence. ' +
     'Prefer workflow.summarize for staged analyst synthesis and report.summarize for deterministic compact compatibility snapshots.',
   inputSchema: reportGenerateInputSchema,
   outputSchema: reportGenerateOutputSchema,
@@ -236,7 +237,6 @@ export const reportGenerateToolDefinition: ToolDefinition = {
     platforms: ['all', 'cross-platform'],
     execution: ['static', 'correlation'],
     safety: ['passive'],
-    evidence: ['artifact', 'provenance', 'timeline', 'behavior'],
   },
   artifacts: [
     {
@@ -244,7 +244,6 @@ export const reportGenerateToolDefinition: ToolDefinition = {
       description: 'Archival report artifact in Markdown, JSON, or HTML',
     },
   ],
-  evidence: [{ category: 'artifact', artifactTypes: ['analysis_report'] }],
 }
 
 /**

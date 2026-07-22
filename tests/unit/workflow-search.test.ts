@@ -27,6 +27,7 @@ import uefiSmmSurfacePlugin from '../../src/plugins/uefi-smm-surface/index.js'
 import wasmComponentPlugin from '../../src/plugins/wasm-component/index.js'
 import windowsInterfaceSurfacePlugin from '../../src/plugins/windows-interface-surface/index.js'
 import appleObjcSwiftPlugin from '../../src/plugins/apple-objc-swift/index.js'
+import { analysisClaimsApplyToolDefinition } from '../../src/plugins/kb-collaboration/tools/analysis-claims-apply.js'
 
 const logger = pino({ level: 'silent' })
 
@@ -66,6 +67,105 @@ function registerPluginsForSearch(plugins: Plugin[]) {
 }
 
 describe('workflow.search', () => {
+  test('finds and activates only the live Claim tool from a hand-written plugin', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugin: Plugin = {
+      id: 'kb-live-claim-search-test',
+      name: 'KB Live Claim Search Test',
+      description: 'Hand-written knowledge collaboration plugin',
+      surfaceRules: { tier: 2, category: 'static-analysis' },
+      tools: [],
+    }
+    surface.registerCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    surface.registerPlugin(plugin, ['analysis.notes', 'analysis.claims.apply'])
+    const pluginManager = {
+      getStatuses: () => [
+        {
+          id: plugin.id,
+          name: plugin.name,
+          description: plugin.description,
+          status: 'loaded',
+          tools: ['analysis.notes', 'analysis.claims.apply'],
+          depChecks: [],
+          qualityWarnings: [],
+        },
+      ],
+      getDiscoveredPlugins: () => [plugin],
+      getPlugin: (id: string) => (id === plugin.id ? plugin : undefined),
+    }
+    const handler = createWorkflowSearchHandler(pluginManager as any, {
+      toolDefinitions: () => [
+        workflowSearchToolDefinition,
+        {
+          name: 'analysis.notes',
+          description: 'Store freeform notes without a Claim Ledger contract',
+          inputSchema: z.object({ note: z.string() }),
+        },
+        analysisClaimsApplyToolDefinition,
+      ],
+    })
+
+    expect([...surface.getVisibleToolNames()].sort()).toEqual(
+      ['artifact.read', 'workflow.run', 'workflow.search'].sort()
+    )
+    const exactSearch = await handler({ query: 'tool:analysis.claims.apply' })
+    expect(exactSearch.ok).toBe(true)
+    expect((exactSearch.data as any).results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          result_id: 'tool:analysis.claims.apply',
+          tool_name: 'analysis.claims.apply',
+        }),
+      ])
+    )
+
+    const exactSearchWithContext = await handler({
+      query: 'tool:analysis.claims.apply',
+      goal: 'report',
+      depth: 'deep',
+    })
+    expect(exactSearchWithContext.ok).toBe(true)
+    expect((exactSearchWithContext.data as any).results).toEqual([
+      expect.objectContaining({
+        result_id: 'tool:analysis.claims.apply',
+        tool_name: 'analysis.claims.apply',
+      }),
+    ])
+
+    const search = await handler({ query: 'evidence backed claim ledger' })
+    expect(search.ok).toBe(true)
+    const result = (search.data as any).results.find(
+      (item: any) => item.tool_name === 'analysis.claims.apply'
+    )
+    expect(result).toEqual(
+      expect.objectContaining({
+        result_id: 'tool:analysis.claims.apply',
+        kind: 'tool',
+        plugin_id: plugin.id,
+        activation_scope: expect.objectContaining({
+          mode: 'result_scoped',
+          tool_names: ['analysis.claims.apply'],
+        }),
+      })
+    )
+    expect([...surface.getVisibleToolNames()].sort()).toEqual(
+      ['artifact.read', 'workflow.run', 'workflow.search'].sort()
+    )
+
+    const activated = await handler({
+      action: 'activate',
+      query: 'evidence backed claim ledger',
+      result_id: result.result_id,
+    })
+    expect(activated.ok).toBe(true)
+    expect((activated.data as any).activated_tools).toEqual(['analysis.claims.apply'])
+    expect((activated.data as any).activation_audit.policy.backend_execution_started).toBe(false)
+    expect(surface.isToolVisible('analysis.claims.apply')).toBe(true)
+    expect(surface.isToolVisible('analysis.notes')).toBe(false)
+  })
+
   test('recommends hidden plugin capabilities without activating them', async () => {
     resetSurfaceForTest()
     const surface = getToolSurfaceManager()
@@ -237,7 +337,6 @@ describe('workflow.search', () => {
     surface.registerCoreTools(['workflow.search'])
     surface.registerGatewayCoreTools(['workflow.search'])
     registerPluginsForSearch(plugins)
-
     const handler = createWorkflowSearchHandler(createPluginManager(plugins))
     const result = await handler({ action: 'activate', tool_name: 'dynamic.deep_plan' })
 
@@ -368,6 +467,102 @@ describe('workflow.search', () => {
     expect(surface.isToolVisible('dynamic.behavior.capture')).toBe(false)
   })
 
+  test('filters recipe activation scope to tools registered by partial PLUGINS', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [
+      {
+        id: 'static-triage',
+        name: 'Static Triage',
+        description: 'Static capability correlation for a partial plugin deployment',
+        surfaceRules: { tier: 0, category: 'static-analysis' },
+        tools: [
+          {
+            definition: {
+              name: 'static.capability.triage',
+              description: 'Correlate static capabilities from strings and imports',
+              inputSchema: z.object({ sample_id: z.string() }),
+              workflowRecipes: [
+                {
+                  id: 'static-triage.capability-correlation',
+                  title: 'Static capability correlation loop',
+                  startsWith: ['static.capability.triage', 'strings.extract', 'pe.imports.extract'],
+                },
+              ],
+            },
+            handler: async () => ({ ok: true }),
+          },
+        ],
+      },
+      {
+        id: 'strings',
+        name: 'Strings',
+        description: 'Extract static strings',
+        surfaceRules: { tier: 0, category: 'static-analysis' },
+        tools: [
+          {
+            definition: {
+              name: 'strings.extract',
+              description: 'Extract static strings from a sample',
+              inputSchema: z.object({ sample_id: z.string() }),
+            },
+            handler: async () => ({ ok: true }),
+          },
+        ],
+      },
+    ]
+    surface.registerCoreTools(['workflow.search'])
+    surface.registerGatewayCoreTools(['workflow.search'])
+    registerPluginsForSearch(plugins)
+    surface.registerPlugin(
+      {
+        id: 'orphan-pe-surface',
+        name: 'Orphan PE Surface',
+        surfaceRules: { tier: 2, category: 'static-analysis' },
+        tools: [],
+      },
+      ['pe.imports.extract']
+    )
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins), {
+      toolDefinitions: () => [
+        workflowSearchToolDefinition,
+        ...plugins.flatMap((plugin) => plugin.tools.map((tool) => tool.definition)),
+      ],
+    })
+    const searched = await handler({
+      action: 'search',
+      query: 'static capability correlation',
+      top_k: 10,
+    })
+
+    expect(searched.ok).toBe(true)
+    const result = (searched.data as any).results.find(
+      (item: any) => item.plugin_id === 'static-triage'
+    )
+    expect(result.result_id).toBe('plugin:static-triage')
+    expect(result.activation_scope.tool_names).toEqual([
+      'static.capability.triage',
+      'strings.extract',
+    ])
+    expect(result.activation_scope.tool_names).not.toContain('pe.imports.extract')
+
+    const activated = await handler({
+      action: 'activate',
+      query: 'static capability correlation',
+      result_id: result.result_id,
+      top_k: 10,
+    })
+
+    expect(activated.ok).toBe(true)
+    expect((activated.data as any).activated_tools).toEqual([
+      'static.capability.triage',
+      'strings.extract',
+    ])
+    expect(surface.isToolVisible('static.capability.triage')).toBe(true)
+    expect(surface.isToolVisible('strings.extract')).toBe(true)
+  })
+
   test('activates plugin result IDs directly when the prior search window is unavailable', async () => {
     resetSurfaceForTest()
     const surface = getToolSurfaceManager()
@@ -411,6 +606,54 @@ describe('workflow.search', () => {
     expect(data.activation_audit.result_id_direct_activation_used).toBe(true)
     expect(data.activation_audit.policy.backend_execution_started).toBe(false)
     expect(surface.isToolVisible('direct.result.inspect')).toBe(true)
+  })
+
+  test('rejects stale or fabricated result IDs after the target leaves the live surface', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugin: Plugin = {
+      id: 'stale-result-id-test',
+      name: 'Stale Result ID Test',
+      description: 'Plugin removed after its result was discovered',
+      surfaceRules: { tier: 3, category: 'reverse-engineering' },
+      tools: [
+        {
+          definition: {
+            name: 'stale.result.inspect',
+            description: 'Inspect a target before it is unloaded',
+            inputSchema: z.object({ sample_id: z.string() }),
+          },
+          handler: async () => ({ ok: true }),
+        },
+      ],
+    }
+    surface.registerCoreTools(['workflow.search'])
+    surface.registerGatewayCoreTools(['workflow.search'])
+    registerPluginsForSearch([plugin])
+    const handler = createWorkflowSearchHandler(createPluginManager([plugin]))
+
+    const searched = await handler({ action: 'search', query: 'target before unloaded' })
+    expect(searched.ok).toBe(true)
+    const resultId = (searched.data as any).results.find(
+      (item: any) => item.plugin_id === plugin.id
+    ).result_id
+    surface.unregisterPlugin(plugin.id)
+
+    const stale = await handler({
+      action: 'activate',
+      result_id: resultId,
+      query: 'unrelated query after unload',
+    })
+    expect(stale.ok).toBe(false)
+    expect(stale.errors?.join('\n')).toContain('Unknown or unloaded')
+
+    const fabricated = await handler({
+      action: 'activate',
+      result_id: 'tool:made.up.tool',
+      query: 'unrelated fabricated target',
+    })
+    expect(fabricated.ok).toBe(false)
+    expect(fabricated.errors?.join('\n')).toContain('Unknown or unloaded')
   })
 
   test('reranks recommendations with file profile, query, and goal signals', async () => {
@@ -982,6 +1225,33 @@ describe('workflow.search', () => {
     expect(data.search_profile.recommended_tools).toContain('binary.hardening.inventory')
     expect(surface.isToolVisible('binary.hardening.inventory')).toBe(false)
     expect(surface.isToolVisible('tools.discover')).toBe(false)
+  })
+
+  test('specializes an exact selector for a declarative plugin to one tool result', async () => {
+    resetSurfaceForTest()
+    const surface = getToolSurfaceManager()
+    const plugins: Plugin[] = [binaryHardeningPlugin]
+    surface.registerCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    surface.registerGatewayCoreTools(['workflow.search', 'workflow.run', 'artifact.read'])
+    registerPluginsForSearch(plugins)
+
+    const handler = createWorkflowSearchHandler(createPluginManager(plugins))
+    const result = await handler({ query: 'tool:binary.hardening.inventory' })
+
+    expect(result.ok).toBe(true)
+    expect((result.data as any).results).toEqual([
+      expect.objectContaining({
+        result_id: 'tool:binary.hardening.inventory',
+        kind: 'tool',
+        plugin_id: 'binary-hardening',
+        tool_name: 'binary.hardening.inventory',
+        activation_scope: expect.objectContaining({
+          mode: 'result_scoped',
+          tool_names: ['binary.hardening.inventory'],
+        }),
+      }),
+    ])
+    expect(surface.isToolVisible('binary.hardening.inventory')).toBe(false)
   })
 
   test('recommends passive Rust binary inventory without runtime opt-in', async () => {

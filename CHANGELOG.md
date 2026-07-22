@@ -7,6 +7,15 @@ Versioning where practical.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-22
+
+### Agent Case Workspace
+
+- Added immutable, revisioned Agent Case state with checkpoint snapshots and deterministic context packs for multi-round analysis.
+- Added evidence-backed Claim Ledger scoping, strict tool discovery, integrity checks, and downstream summary/report trust markers.
+- Added SQLite-backed context write leases with heartbeat renewal and owner-token fencing for atomic artifact writes.
+- Added complex CrackMe MCP end-to-end coverage together with expanded unit, integration, architecture, and tool catalog documentation.
+
 ### Plugin Matrix and SDK
 
 - Expanded the plugin SDK contract with manifest v2 authoring helpers, aspect taxonomy, artifact/evidence helpers, dynamic runtime policy metadata, and fixture-backed harness coverage.
