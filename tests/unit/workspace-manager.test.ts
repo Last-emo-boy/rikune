@@ -76,6 +76,38 @@ describe('WorkspaceManager', () => {
       expect(fs.existsSync(workspace1.root)).toBe(true)
     })
 
+    it('should accept equivalent Windows workspace-root casing', async () => {
+      if (process.platform !== 'win32') return
+
+      const mixedCaseRoot = path.join(testRoot, 'MixedCaseRoot')
+      fs.mkdirSync(mixedCaseRoot)
+      const differentlyCasedRoot = mixedCaseRoot.toUpperCase()
+      const manager = new WorkspaceManager(differentlyCasedRoot)
+      const sampleId = 'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+
+      const workspace = await manager.createWorkspace(sampleId)
+
+      expect(fs.existsSync(workspace.root)).toBe(true)
+    })
+
+    it('should reject a configured workspace-root link retargeted after initialization', async () => {
+      const trustedTarget = path.join(testRoot, 'trusted-target')
+      const outsideTarget = path.join(testRoot, 'outside-target')
+      const linkedRoot = path.join(testRoot, 'linked-root')
+      const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+      fs.mkdirSync(trustedTarget)
+      fs.mkdirSync(outsideTarget)
+      fs.symlinkSync(trustedTarget, linkedRoot, linkType)
+      const manager = new WorkspaceManager(linkedRoot)
+      fs.unlinkSync(linkedRoot)
+      fs.symlinkSync(outsideTarget, linkedRoot, linkType)
+      const sampleId = 'sha256:edededededededededededededededededededededededededededededededed'
+
+      await expect(manager.createWorkspace(sampleId)).rejects.toThrow(
+        /workspace root no longer resolves to its trusted location/i
+      )
+    })
+
     it('should reject invalid sample ID format', async () => {
       const invalidIds = [
         'invalid-format',

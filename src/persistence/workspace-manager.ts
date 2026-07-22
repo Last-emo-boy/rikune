@@ -28,7 +28,7 @@ export class WorkspaceManager {
   constructor(workspaceRoot: string) {
     this.workspaceRoot = path.resolve(workspaceRoot)
     this.ensureWorkspaceRoot()
-    this.trustedWorkspaceRootRealPath = fs.realpathSync(this.workspaceRoot)
+    this.trustedWorkspaceRootRealPath = fs.realpathSync.native(this.workspaceRoot)
   }
 
   /**
