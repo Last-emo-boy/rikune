@@ -19,7 +19,6 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
@@ -41,6 +40,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Normalize image name
+        id: image
+        shell: bash
+        run: echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
@@ -53,7 +57,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -83,27 +87,27 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           # Test Node.js
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} node --version
+          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} node --version
 
           # Test Python
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} python3 --version
+          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} python3 --version
 
           # Test Java
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} java -version
+          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} java -version
 
           # Test Ghidra
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} \
+          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} \
             /opt/ghidra/support/analyzeHeadless -help > /dev/null 2>&1 && echo "Ghidra OK"
 
           # Test Python packages
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} \
+          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} \
             python3 -c "import pefile, lief, yara, capa, floss, dnfile, speakeasy" && echo "Python packages OK"
 
       - name: Image size check
         if: github.event_name == 'pull_request'
         run: |
           IMAGE_BYTES=$(docker image inspect \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} \
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} \
             --format '{{.Size}}')
           echo "Image size: ${IMAGE_BYTES} bytes"
 
@@ -116,6 +120,6 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: actions/attest-build-provenance@v4
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-name: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
