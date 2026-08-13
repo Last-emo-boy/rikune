@@ -19,6 +19,11 @@ Versioning where practical.
 - Added indexed scan windows, per-record and total-byte budgets, comparison caps, malformed evidence
   reporting, and canonical SHA-256 self-reference exclusion for local KB/evidence reads.
 
+### Continuous Integration
+
+- Repaired Docker workflow validation and made PR smoke tests consume a locally loaded, full-SHA
+  image while main/tag builds publish and attest only the supported GHCR image.
+
 ## [1.3.0] - 2026-07-22
 
 ### Agent Case Workspace
