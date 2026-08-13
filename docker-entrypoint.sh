@@ -356,13 +356,17 @@ log_info "  - Root filesystem: ${READ_ONLY_MODE:-read-only (recommended)}"
 log_info ""
 
 # =============================================================================
-# Step 7: Start MCP Server
+# Step 7: Start requested command
 # =============================================================================
 
-log_info "=== Starting MCP Server ==="
-log_info "Command: node dist/index.js"
+if [ "$#" -eq 0 ]; then
+    set -- node dist/index.js
+fi
+
+log_info "=== Starting Container Command ==="
 log_info ""
 
-# Use exec to replace this shell process with Node.js
-# This ensures proper signal handling and PID 1 behavior
-exec node dist/index.js
+# Docker's CMD supplies the MCP server command by default. Forward explicit
+# arguments so `docker run IMAGE <command>` works for diagnostics and tooling.
+# Use exec so the requested process becomes PID 1 and receives signals directly.
+exec "$@"
