@@ -7,6 +7,23 @@ Versioning where practical.
 
 ## [Unreleased]
 
+### Knowledge Base Function Matching
+
+- Fixed the default `kb.function.match` path so omitted `match_against` performs bounded local
+  `function_kb` correlation instead of silently returning no references.
+- Added explainable API, string, CFG, constant, size, and call-context scoring with deterministic
+  tie-breaking, explicit calibration, provenance, ambiguity, and truncation diagnostics.
+- Restricted exact matches to syntactically valid SHA-256/SHA-512 function-byte digests; weak or
+  mismatched hash declarations now fall back to feature matching, and legacy API/size-only matches
+  remain review-tier.
+- Added indexed scan windows, per-record and total-byte budgets, comparison caps, malformed evidence
+  reporting, and canonical SHA-256 self-reference exclusion for local KB/evidence reads.
+
+### Continuous Integration
+
+- Repaired Docker workflow validation and made PR smoke tests consume a locally loaded, full-SHA
+  image while main/tag builds publish and attest only the supported GHCR image.
+
 ## [1.3.0] - 2026-07-22
 
 ### Agent Case Workspace

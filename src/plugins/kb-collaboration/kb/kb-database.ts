@@ -82,6 +82,9 @@ export function initializeKnowledgeBase(db: DatabaseManager): void {
   db.runSql(`
     CREATE INDEX IF NOT EXISTS idx_function_kb_updated ON function_kb(updated_at DESC)
   `)
+  db.runSql(`
+    CREATE INDEX IF NOT EXISTS idx_function_kb_confidence_id ON function_kb(semantics_confidence DESC, id ASC)
+  `)
 
   // Create sample_kb table
   db.runSql(`

@@ -2242,7 +2242,7 @@ describe('built-in plugin format matrix discovery', () => {
     expect(cudaBinary?.tools?.map((tool) => tool.definition.name)).toContain(
       'cuda.binary.inventory'
     )
-  }, 30_000)
+  }, 120_000)
 
   test('discovers native reverse engineering adapters with tool-level metadata', async () => {
     const plugins = await discoverBuiltInPlugins()

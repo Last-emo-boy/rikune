@@ -19,7 +19,6 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
@@ -27,17 +26,36 @@ jobs:
     timeout-minutes: 120
     permissions:
       contents: read
+      id-token: write
+      attestations: write
       packages: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Generate Docker build files
+        run: npm run docker:generate
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Normalize image name
+        id: image
+        shell: bash
+        run: echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -47,36 +65,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to Docker Hub
-        if: github.event_name != 'pull_request' && secrets.DOCKER_USERNAME
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-            rikune
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,format=long
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -88,36 +99,39 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           # Test Node.js
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} node --version
-          
+          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} node --version
+
           # Test Python
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} python3 --version
-          
+          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} python3 --version
+
           # Test Java
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} java -version
-          
+          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} java -version
+
           # Test Ghidra
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} \
+          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} \
             /opt/ghidra/support/analyzeHeadless -help > /dev/null 2>&1 && echo "Ghidra OK"
-          
+
           # Test Python packages
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} \
+          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} \
             python3 -c "import pefile, lief, yara, capa, floss, dnfile, speakeasy" && echo "Python packages OK"
 
       - name: Image size check
+        if: github.event_name == 'pull_request'
         run: |
-          IMAGE_SIZE=$(docker images ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }} --format "{{.Size}}")
-          echo "Image size: $IMAGE_SIZE"
-          
-          # Warn if image is larger than 3GB
-          if [[ $(echo $IMAGE_SIZE | grep -oP '\d+(\.\d+)?') > 3 ]]; then
-            echo "::warning::Image size ($IMAGE_SIZE) exceeds recommended 3GB"
+          IMAGE_BYTES=$(docker image inspect \
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} \
+            --format '{{.Size}}')
+          echo "Image size: ${IMAGE_BYTES} bytes"
+
+          # Warn if image is larger than 3 GiB
+          if (( IMAGE_BYTES > 3221225472 )); then
+            echo "::warning::Image size (${IMAGE_BYTES} bytes) exceeds recommended 3 GiB"
           fi
 
       - name: Generate artifact attestation
         if: github.event_name != 'pull_request'
         uses: actions/attest-build-provenance@v4
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-name: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true

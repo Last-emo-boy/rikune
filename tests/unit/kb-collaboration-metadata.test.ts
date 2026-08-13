@@ -15,7 +15,7 @@ describe('kb-collaboration metadata deepening', () => {
       (candidate) => candidate.id === 'kb.function-match.reuse-handoff'
     )
 
-    expect(kbCollaborationPlugin.aspects?.formats).toEqual(
+    expect(definition.aspects?.formats).toEqual(
       expect.arrayContaining([
         'analysis-evidence',
         'function',
@@ -24,7 +24,7 @@ describe('kb-collaboration metadata deepening', () => {
         'code-reuse',
       ])
     )
-    expect(kbCollaborationPlugin.aspects?.capabilities).toEqual(
+    expect(definition.aspects?.capabilities).toEqual(
       expect.arrayContaining([
         'analysis-memory',
         'knowledge-reuse',
@@ -324,7 +324,7 @@ describe('kb-collaboration metadata deepening', () => {
                     {
                       address: '0x401000',
                       name: 'sub_401000',
-                      hash: 'same-hash',
+                      hash: 'b'.repeat(64),
                       size: 64,
                       api_calls: ['CreateFileW'],
                     },
@@ -342,7 +342,7 @@ describe('kb-collaboration metadata deepening', () => {
                 {
                   address: '0x402000',
                   name: 'known_loader',
-                  hash: 'same-hash',
+                  hash: 'b'.repeat(64),
                   size: 64,
                   api_calls: ['CreateFileW'],
                 },
