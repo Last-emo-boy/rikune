@@ -289,6 +289,7 @@ CREATE TABLE IF NOT EXISTS analysis_evidence (
 CREATE INDEX IF NOT EXISTS idx_analysis_evidence_sample_family ON analysis_evidence(sample_id, evidence_family, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_analysis_evidence_compatibility ON analysis_evidence(sample_id, evidence_family, compatibility_marker, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_analysis_evidence_backend ON analysis_evidence(sample_id, backend, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_analysis_evidence_sample_order ON analysis_evidence(sample_id, updated_at DESC, created_at DESC, id DESC);
 
 -- debug_sessions 表：存储持久化调试会话状态
 CREATE TABLE IF NOT EXISTS debug_sessions (
@@ -500,6 +501,61 @@ CREATE TABLE IF NOT EXISTS batch_samples (
 
 CREATE INDEX IF NOT EXISTS idx_batch_samples_batch ON batch_samples(batch_id);
 CREATE INDEX IF NOT EXISTS idx_batch_samples_status ON batch_samples(status);
+
+-- function_kb 表：存储可复用的函数特征与语义
+CREATE TABLE IF NOT EXISTS function_kb (
+  id TEXT PRIMARY KEY,
+  features_apis_json TEXT NOT NULL,
+  features_strings_json TEXT NOT NULL,
+  features_cfg_shape TEXT NOT NULL,
+  features_crypto_constants_json TEXT,
+  semantics_name TEXT NOT NULL,
+  semantics_explanation TEXT NOT NULL,
+  semantics_behavior TEXT NOT NULL,
+  semantics_confidence REAL NOT NULL,
+  semantics_source TEXT NOT NULL,
+  samples_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  user_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_function_kb_name ON function_kb(semantics_name);
+CREATE INDEX IF NOT EXISTS idx_function_kb_confidence ON function_kb(semantics_confidence DESC);
+CREATE INDEX IF NOT EXISTS idx_function_kb_updated ON function_kb(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_function_kb_confidence_id ON function_kb(semantics_confidence DESC, id ASC);
+
+-- sample_kb 表：存储样本与威胁情报的本地关联
+CREATE TABLE IF NOT EXISTS sample_kb (
+  id TEXT PRIMARY KEY,
+  sample_id TEXT NOT NULL UNIQUE,
+  threat_intel_family TEXT,
+  threat_intel_campaign TEXT,
+  threat_intel_tags_json TEXT,
+  threat_intel_attribution TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  user_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_sample_kb_sample ON sample_kb(sample_id);
+CREATE INDEX IF NOT EXISTS idx_sample_kb_family ON sample_kb(threat_intel_family);
+
+-- kb_index 表：为后续有界候选检索保存本地特征索引
+CREATE TABLE IF NOT EXISTS kb_index (
+  id TEXT PRIMARY KEY,
+  entry_type TEXT NOT NULL,
+  entry_id TEXT NOT NULL,
+  api_hash TEXT,
+  string_hash TEXT,
+  feature_vector_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_kb_index_type ON kb_index(entry_type, entry_id);
+CREATE INDEX IF NOT EXISTS idx_kb_index_api_hash ON kb_index(api_hash);
+CREATE INDEX IF NOT EXISTS idx_kb_index_string_hash ON kb_index(string_hash);
 `
 
 /**
@@ -583,6 +639,16 @@ export interface AnalysisEvidence {
   created_at: string
   updated_at: string
   last_accessed_at: string | null
+}
+
+export interface BoundedAnalysisEvidenceResult {
+  rows: AnalysisEvidence[]
+  total_rows: number
+  eligible_rows: number
+  oversized_rows: number
+  selected_bytes: number
+  truncated: boolean
+  scan_truncated: boolean
 }
 
 export interface DebugSession {
@@ -1455,13 +1521,126 @@ export class DatabaseManager {
       sql += ' AND evidence_family = ?'
       params.push(family)
     }
-    sql += ' ORDER BY datetime(updated_at) DESC'
+    sql += ' ORDER BY updated_at DESC, created_at DESC, id DESC'
     if (typeof limit === 'number') {
       sql += ' LIMIT ?'
       params.push(limit)
     }
     const stmt = this.db.prepare(sql)
     return stmt.all(...params) as AnalysisEvidence[]
+  }
+
+  findBoundedAnalysisEvidenceBySample(
+    sampleId: string,
+    options: {
+      families?: string[]
+      maxRows: number
+      maxScanRows?: number
+      maxResultJsonBytes: number
+      maxTotalResultJsonBytes: number
+    }
+  ): BoundedAnalysisEvidenceResult {
+    const families = Array.from(
+      new Set((options.families ?? []).filter((family) => family.trim().length > 0))
+    )
+    const familyFilter =
+      families.length > 0 ? `WHERE evidence_family IN (${families.map(() => '?').join(', ')})` : ''
+    const resultBytesSql = `length(CAST(COALESCE(result_json, '') AS BLOB))`
+    const maxScanRows = Math.max(options.maxRows, options.maxScanRows ?? options.maxRows * 2)
+    const stats = this.queryOneSql<{
+      total_rows: number
+      eligible_rows: number
+      oversized_rows: number
+    }>(
+      `
+        WITH candidates AS (
+          SELECT id, evidence_family, ${resultBytesSql} AS result_bytes
+          FROM analysis_evidence
+          WHERE sample_id = ?
+          ORDER BY updated_at DESC, created_at DESC, id DESC
+          LIMIT ?
+        ),
+        filtered AS (
+          SELECT result_bytes
+          FROM candidates
+          ${familyFilter}
+        )
+        SELECT
+          (SELECT COUNT(*) FROM candidates) AS total_rows,
+          COALESCE(SUM(CASE WHEN result_bytes <= ? THEN 1 ELSE 0 END), 0) AS eligible_rows,
+          COALESCE(SUM(CASE WHEN result_bytes > ? THEN 1 ELSE 0 END), 0) AS oversized_rows
+        FROM filtered
+      `,
+      [sampleId, maxScanRows, ...families, options.maxResultJsonBytes, options.maxResultJsonBytes]
+    ) ?? { total_rows: 0, eligible_rows: 0, oversized_rows: 0 }
+
+    const boundedRows = this.querySql<AnalysisEvidence & { _result_bytes: number }>(
+      `
+        WITH candidates AS (
+          SELECT
+            id,
+            evidence_family,
+            updated_at,
+            created_at,
+            ${resultBytesSql} AS result_bytes
+          FROM analysis_evidence
+          WHERE sample_id = ?
+          ORDER BY updated_at DESC, created_at DESC, id DESC
+          LIMIT ?
+        ),
+        eligible AS (
+          SELECT id, updated_at, created_at, result_bytes
+          FROM candidates
+          ${familyFilter}
+          ${familyFilter ? 'AND' : 'WHERE'} result_bytes <= ?
+        ),
+        budgeted AS (
+          SELECT
+            id,
+            updated_at,
+            created_at,
+            result_bytes,
+            SUM(result_bytes) OVER (
+              ORDER BY updated_at DESC, created_at DESC, id DESC
+            ) AS cumulative_bytes
+          FROM eligible
+        ),
+        selected AS (
+          SELECT id, updated_at, created_at, result_bytes
+          FROM budgeted
+          WHERE cumulative_bytes <= ?
+          ORDER BY updated_at DESC, created_at DESC, id DESC
+          LIMIT ?
+        )
+        SELECT evidence.*, selected.result_bytes AS _result_bytes
+        FROM selected
+        JOIN analysis_evidence AS evidence ON evidence.id = selected.id
+        ORDER BY selected.updated_at DESC, selected.created_at DESC, selected.id DESC
+      `,
+      [
+        sampleId,
+        maxScanRows,
+        ...families,
+        options.maxResultJsonBytes,
+        options.maxTotalResultJsonBytes,
+        options.maxRows,
+      ]
+    )
+    const selectedBytes = boundedRows.reduce(
+      (sum, row) => sum + (Number.isFinite(row._result_bytes) ? row._result_bytes : 0),
+      0
+    )
+    const rows = boundedRows.map(({ _result_bytes: _ignored, ...row }) => row as AnalysisEvidence)
+
+    return {
+      rows,
+      total_rows: stats.total_rows,
+      eligible_rows: stats.eligible_rows,
+      oversized_rows: stats.oversized_rows,
+      selected_bytes: selectedBytes,
+      truncated: stats.eligible_rows > rows.length || stats.total_rows >= maxScanRows,
+      scan_truncated: stats.total_rows >= maxScanRows,
+    }
   }
 
   findLatestCompatibleAnalysisEvidence(

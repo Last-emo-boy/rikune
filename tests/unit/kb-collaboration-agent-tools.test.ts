@@ -16,7 +16,7 @@ describe('kb-collaboration agent workspace tools', () => {
 
     const returned = kbCollaborationPlugin.register(server as never, dependencies as never)
 
-    expect(kbCollaborationPlugin.version).toBe('1.2.0')
+    expect(kbCollaborationPlugin.version).toBe('1.3.0')
     expect(kbCollaborationPlugin.aspects?.capabilities).toEqual(
       expect.arrayContaining(['claim-ledger', 'case-workspace', 'analysis-context-pack'])
     )

@@ -281,6 +281,7 @@ emulators, or attach debuggers.
 | `memory-forensics.offline-correlation` | `memory-forensics` | `memory-forensics.correlate` | `analysis.evidence.graph`, `report.generate` | Existing Volatility rows only; no live memory, no network. |
 | `vm.symbolic.workflow` | `vm-analysis` | `vm.workflow.plan` | `constraint.extract`, `smt.solve`, `keygen.synthesize` | Planner only; no solver or emulator is started. |
 | `kb.analysis-memory.reuse` | `kb-collaboration` | `kb.context.suggest` | `kb.function.match`, `rule.library`, `kb.export` | Local analysis memory only; no network. |
+| `kb.function-match.reuse-handoff` | `kb-collaboration` | `kb.function.match` | `analysis.evidence.graph`, `analysis.notes`, `rule.library`, `kb.export`, `report.generate` | Deterministic local function correlation only; no sample execution, mutation, or network. |
 | `windows.runtime.opt-in` | `windows-runtime` | `windows.runtime.plan` | `dynamic.runtime.status`, runtime-backed tools after approval | Plan-only, opt-in, isolated, network disabled. |
 | `linux.runtime.opt-in` | `linux-runtime` | `linux.runtime.plan` | `dynamic.runtime.status`, `qiling`/debug tooling after approval | Plan-only, opt-in, isolated, network disabled. |
 | `macos.runtime.opt-in` | `macos-runtime` | `macos.runtime.plan` | `dynamic.runtime.status`, LLDB/DTrace tooling after approval | Plan-only, opt-in, isolated, network disabled. |
@@ -349,6 +350,32 @@ emulators, or attach debuggers.
 | `uefi.smm-surface-static-inventory` | `uefi-smm-surface` | `uefi.smm.surface.inventory` | `artifact.read`, `firmware.scan`, `firmware.workflow.plan`, `pe.structure.analyze`, `pe.imports.extract`, `strings.extract`, `code.xrefs.analyze`, `vuln.pattern.scan`, `analysis.evidence.graph`, `report.generate`, `workflow.search` | Passive UEFI/SMM trust-boundary inventory for SMI handler, CommBuffer, protocol/service, NVRAM/Secure Boot variable, flash/capsule, MMIO, and MSR evidence; no firmware boot, SMI trigger, SMM execution, EFI variable write, NVRAM mutation, capsule apply, SPI flash/MMIO/MSR access, emulation, external tool, mutation, or network. |
 | `llvm.bitcode-static-inventory` | `llvm-bitcode` | `llvm.bitcode.inventory` | `artifact.read`, `metadata.extract`, `strings.extract`, `analysis.evidence.graph`, `report.generate`, `workflow.search` | Passive LLVM bitcode and wrapper inventory; no LLVM toolchain, compile, link, JIT, interpreter, sample execution, mutation, or network. |
 | `wabt.wasm.toolchain-plan` | `wabt` | `wabt.toolchain.plan` | `strings.extract`, `sbom.generate`, `wasm.runtime.plan`, `analysis.evidence.graph` | Plan-only WABT toolchain routing; no wasm2wat/wasm-objdump process, module instantiation, WASI grant, or network. |
+
+### Explainable Local Function Matching
+
+`kb.function.match` uses two explicit reference modes:
+
+- With `match_against`, it compares the target function index with function evidence from the
+  requested samples. Only a syntactically validated SHA-256 or SHA-512 function-byte digest can
+  produce an authoritative exact match; weak, mismatched, or malformed digests fall back to feature
+  matching. Legacy API-call plus size similarity remains visible for existing clients, but
+  single-view results are capped below high-confidence and require analyst review.
+- Without `match_against`, it queries a server-bounded `function_kb` candidate set, excluding every
+  entry associated with the target sample after canonical SHA-256 identity normalization. API-only
+  seed entries cannot cross the default match threshold by themselves. Indexed scan windows,
+  per-row limits, total-byte budgets, and pair-count budgets bound the query and comparison set;
+  truncation is explicit in warnings, diagnostics, and quality gates.
+
+Non-exact matches use a deterministic multi-view profile over API calls, strings, CFG shape,
+crypto constants, call context, and function size. It requires at least two independent strong
+views for a KB match, normalizes over comparable evidence, and then applies coverage and stored
+reference trust. Every match reports `score_breakdown`, `score_weights`, `shared_features`,
+`match_basis`, `calibration`, comparable and matched evidence coverage, reference provenance, and
+bounded alternatives with explicit truncation state. Candidates within the declared ambiguity
+margin are marked for analyst review; stable tie-breaking keeps output independent of SQLite row
+order. This profile is a documented heuristic rather than a statistically calibrated probability,
+and the result remains a similarity hypothesis rather than proof of semantic equivalence, so
+annotation propagation must follow evidence review.
 
 ## Advanced Safety Categories
 

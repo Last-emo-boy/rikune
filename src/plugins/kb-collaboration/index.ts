@@ -9,9 +9,6 @@ import {
   KB_COLLABORATION_PLATFORMS,
   KB_COLLABORATION_RUNTIME_POLICY,
   KB_COLLABORATION_SAFETY,
-  KB_FUNCTION_MATCH_CAPABILITIES,
-  KB_FUNCTION_MATCH_EVIDENCE,
-  KB_FUNCTION_MATCH_FORMATS,
   kbFunctionMatchToolDefinition,
   createKbFunctionMatchHandler,
 } from './tools/kb-function-match.js'
@@ -51,25 +48,29 @@ const kbCollaborationPlugin: Plugin = {
   name: 'Knowledge Base & Collaboration',
   executionDomain: 'static',
   aspects: {
-    formats: KB_FUNCTION_MATCH_FORMATS,
+    formats: ['artifact', 'analysis-evidence', 'knowledge-base', 'rule'],
     platforms: KB_COLLABORATION_PLATFORMS,
     execution: ['static', 'correlation'],
     safety: KB_COLLABORATION_SAFETY,
     capabilities: [
-      ...KB_FUNCTION_MATCH_CAPABILITIES,
+      'analysis-memory',
+      'knowledge-reuse',
+      'workflow-plan',
+      'workflow-handoff',
+      'search-profile',
       'rule-library',
       'workflow-recommendation',
       'claim-ledger',
       'case-workspace',
       'analysis-context-pack',
     ],
-    evidence: [...KB_FUNCTION_MATCH_EVIDENCE, 'provenance'],
+    evidence: ['analysis-memory', 'workflow', 'provenance'],
   },
   runtimePolicy: KB_COLLABORATION_RUNTIME_POLICY,
   surfaceRules: { tier: 0, category: 'static-analysis' },
   description:
     'Function signature matching, evidence-backed Claim Ledger production, context-only Case Workspace checkpoints, deterministic analysis context packing, analysis templates, and knowledge base import/export/management',
-  version: '1.2.0',
+  version: '1.3.0',
   resources: { data: 'data' },
   register(server, deps) {
     const workspaceManager = requireWorkspaceManager(deps, 'kb-collaboration')
