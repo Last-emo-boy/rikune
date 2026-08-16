@@ -13,6 +13,16 @@ import { getPythonCommand } from '../../utils/shared-helpers.js'
 const execFileAsync = promisify(execFile)
 
 /**
+ * Python imports are module paths, not arbitrary code. Keep the value
+ * constrained to dotted identifiers before interpolating it into `python -c`.
+ */
+export function isValidPythonImportName(value: unknown): value is string {
+  return (
+    typeof value === 'string' && /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(value)
+  )
+}
+
+/**
  * Resolve the effective target path for a dependency, substituting `$ENV_VAR`
  * references and falling back to dockerDefault or the bare name.
  */
@@ -49,8 +59,16 @@ export async function checkOneDep(dep: PluginSystemDep): Promise<DepCheckResult>
       }
       case 'python': {
         const mod = dep.importName ?? dep.name
+        if (!isValidPythonImportName(mod)) {
+          throw new Error(`Invalid Python import name: ${String(mod)}`)
+        }
+        // `target` is the pip package name for Python deps. Interpreter
+        // selection is controlled by envVar/dockerDefault, then the platform
+        // default, so package metadata is never executed as a command.
+        const target = resolveDepTarget({ ...dep, name: getPythonCommand(), target: undefined })
+        result.resolvedPath = target
         await execFileAsync(
-          getPythonCommand(),
+          target,
           ['-c', `import ${mod}; print(getattr(${mod}, '__version__', 'ok'))`],
           { timeout: 10000 }
         )

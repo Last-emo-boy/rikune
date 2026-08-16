@@ -359,9 +359,30 @@ export function zodFieldToJsonSchema(schema: z.ZodTypeAny): Record<string, unkno
     return withSchemaMetadata(zodFieldToJsonSchema(schema._def.innerType), schema)
   }
 
+  // Preserve intersections emitted by manifest-backed schemas. JSON Schema's
+  // `allOf` expresses the same conjunctive validation semantics as Zod's
+  // intersection and keeps tools/list faithful to the execution schema.
+  if (schema instanceof z.ZodIntersection) {
+    return withSchemaMetadata(
+      {
+        allOf: [zodFieldToJsonSchema(schema._def.left), zodFieldToJsonSchema(schema._def.right)],
+      },
+      schema
+    )
+  }
+
   // Handle any/unknown
   if (schema instanceof z.ZodAny || schema instanceof z.ZodUnknown) {
     return withSchemaMetadata({}, schema)
+  }
+
+  // JSON Schema boolean/null primitives used by manifest-backed tools.
+  if (schema instanceof z.ZodNever) {
+    return withSchemaMetadata({ not: {} }, schema)
+  }
+
+  if (schema instanceof z.ZodNull) {
+    return withSchemaMetadata({ type: 'null' }, schema)
   }
 
   // Handle string

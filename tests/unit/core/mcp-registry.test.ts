@@ -46,6 +46,21 @@ describe('MCPRegistry', () => {
         registry.registerTool(makeTool('sample_ingest'), async () => ({ ok: true }))
       }).toThrow(/collision/)
     })
+
+    test('should reject exact duplicate names without replacing the original handler', async () => {
+      const originalHandler = async () => ({ ok: true, data: { source: 'original' } })
+      registry.registerTool(makeTool('sample.ingest'), originalHandler)
+
+      expect(() => {
+        registry.registerTool(makeTool('sample.ingest'), async () => ({
+          ok: true,
+          data: { source: 'replacement' },
+        }))
+      }).toThrow(/already registered/)
+
+      expect(registry.getHandler('sample_ingest')).toBe(originalHandler)
+      expect(registry.getToolDefinitions()).toHaveLength(1)
+    })
   })
 
   describe('listTools', () => {

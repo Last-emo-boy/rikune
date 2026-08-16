@@ -144,7 +144,8 @@ describe('MCPServer', () => {
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
       const tools = await server.listTools()
-      const schema = tools.find((tool) => tool.name === toTransportToolName('schema.wrappers'))?.inputSchema as any
+      const schema = tools.find((tool) => tool.name === toTransportToolName('schema.wrappers'))
+        ?.inputSchema as any
 
       expect(schema.type).toBe('object')
       expect(schema.required).toBeUndefined()
@@ -187,8 +188,11 @@ describe('MCPServer', () => {
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
       const tools = await server.listTools()
-      const schema = tools.find((tool) => tool.name === toTransportToolName('schema.fidelity'))?.inputSchema as any
-      const outputSchema = tools.find((tool) => tool.name === toTransportToolName('schema.fidelity'))?.outputSchema as any
+      const schema = tools.find((tool) => tool.name === toTransportToolName('schema.fidelity'))
+        ?.inputSchema as any
+      const outputSchema = tools.find(
+        (tool) => tool.name === toTransportToolName('schema.fidelity')
+      )?.outputSchema as any
 
       expect(schema.description).toContain('routing arguments')
       expect(schema['x-guidance']).toEqual(
@@ -222,7 +226,8 @@ describe('MCPServer', () => {
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
       const tools = await server.listTools()
-      const outputSchema = tools.find((tool) => tool.name === toTransportToolName('schema.any'))?.outputSchema as any
+      const outputSchema = tools.find((tool) => tool.name === toTransportToolName('schema.any'))
+        ?.outputSchema as any
 
       expect(outputSchema.properties.data.properties.raw.type).toBeUndefined()
       expect(outputSchema.properties.data.properties.bag.additionalProperties.type).toBeUndefined()
@@ -232,15 +237,14 @@ describe('MCPServer', () => {
       const toolDefinition = {
         name: 'schema.union',
         description: 'Union conversion test',
-        inputSchema: z
-          .object({ path: z.string() })
-          .or(z.object({ bytes_b64: z.string() })),
+        inputSchema: z.object({ path: z.string() }).or(z.object({ bytes_b64: z.string() })),
       }
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
       const tools = await server.listTools()
-      const schema = tools.find((tool) => tool.name === toTransportToolName('schema.union'))?.inputSchema as any
+      const schema = tools.find((tool) => tool.name === toTransportToolName('schema.union'))
+        ?.inputSchema as any
 
       expect(Array.isArray(schema.anyOf)).toBe(true)
       expect(schema.anyOf).toHaveLength(2)
@@ -820,8 +824,14 @@ describe('MCPServer', () => {
         inputSchema: z.object({ id: z.string() }),
       }
 
-      const handler1 = async (args: any) => ({ ok: true, data: { handler: 'handler1', id: args.id } })
-      const handler2 = async (args: any) => ({ ok: true, data: { handler: 'handler2', id: args.id } })
+      const handler1 = async (args: any) => ({
+        ok: true,
+        data: { handler: 'handler1', id: args.id },
+      })
+      const handler2 = async (args: any) => ({
+        ok: true,
+        data: { handler: 'handler2', id: args.id },
+      })
 
       server.registerTool(tool1, handler1)
       server.registerTool(tool2, handler2)
@@ -838,7 +848,7 @@ describe('MCPServer', () => {
       expect(parsedResult2.data.handler).toBe('handler2')
     })
 
-    it('should handle tool registration with same name (overwrite)', () => {
+    it('should reject duplicate tool registration without replacing the handler', async () => {
       const tool = {
         name: 'overwrite.test',
         description: 'Original tool',
@@ -849,10 +859,13 @@ describe('MCPServer', () => {
       const handler2 = async () => ({ ok: true, data: { version: 2 } })
 
       server.registerTool(tool, handler1)
-      server.registerTool({ ...tool, description: 'Updated tool' }, handler2)
+      expect(() => server.registerTool({ ...tool, description: 'Updated tool' }, handler2)).toThrow(
+        'Tool already registered: overwrite.test'
+      )
 
-      // Should not throw, last registration wins
-      expect(server).toBeDefined()
+      const result = await server.callTool('overwrite.test', {})
+      const textContent = result.content[0] as TextContent
+      expect(JSON.parse(textContent.text).data.version).toBe(1)
     })
 
     it('should return error when handler is missing for registered tool', async () => {
@@ -868,7 +881,7 @@ describe('MCPServer', () => {
       // Manually remove handler to test error case
       // This tests the internal error handling when handler is not found
       const result = await server.callTool('missing.handler', {})
-      
+
       // Should succeed since we registered with a handler
       expect(result.isError).toBe(false)
     })
@@ -1035,7 +1048,9 @@ describe('MCPServer', () => {
         data: { result: 'success' },
         warnings: ['Warning 1', 'Warning 2'],
         errors: [],
-        artifacts: [{ id: 'artifact-1', type: 'report', path: '/path/to/report', sha256: 'abc123' }],
+        artifacts: [
+          { id: 'artifact-1', type: 'report', path: '/path/to/report', sha256: 'abc123' },
+        ],
         metrics: { elapsed: 100, memory: 50 },
       })
 

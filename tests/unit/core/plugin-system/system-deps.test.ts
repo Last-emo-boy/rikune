@@ -14,11 +14,8 @@ jest.unstable_mockModule('child_process', () => ({
 
 const { accessSync } = await import('fs')
 const { execFile } = await import('child_process')
-const {
-  resolveDepTarget,
-  checkOneDep,
-  checkSystemDeps,
-} = await import('../../../../src/core/plugin-system/system-deps.js')
+const { resolveDepTarget, isValidPythonImportName, checkOneDep, checkSystemDeps } =
+  await import('../../../../src/core/plugin-system/system-deps.js')
 
 describe('system-deps', () => {
   const mockedAccessSync = accessSync as jest.MockedFunction<typeof accessSync>
@@ -28,6 +25,7 @@ describe('system-deps', () => {
     mockedAccessSync.mockClear()
     mockedExecFile.mockClear()
     delete process.env.TEST_VAR
+    delete process.env.GTIRB_PYTHON
   })
 
   function mockExecFileSuccess(stdout = '1.0.0') {
@@ -45,16 +43,22 @@ describe('system-deps', () => {
   describe('resolveDepTarget', () => {
     test('should use env var when set', () => {
       process.env.TEST_VAR = '/opt/test'
-      expect(resolveDepTarget({ type: 'binary', name: 'test', envVar: 'TEST_VAR' })).toBe('/opt/test')
+      expect(resolveDepTarget({ type: 'binary', name: 'test', envVar: 'TEST_VAR' })).toBe(
+        '/opt/test'
+      )
     })
 
     test('should substitute env var in target', () => {
       process.env.TEST_VAR = '/usr/bin/test'
-      expect(resolveDepTarget({ type: 'binary', name: 'test', target: '$TEST_VAR' })).toBe('/usr/bin/test')
+      expect(resolveDepTarget({ type: 'binary', name: 'test', target: '$TEST_VAR' })).toBe(
+        '/usr/bin/test'
+      )
     })
 
     test('should fall back to dockerDefault', () => {
-      expect(resolveDepTarget({ type: 'binary', name: 'test', dockerDefault: '/opt/test' })).toBe('/opt/test')
+      expect(resolveDepTarget({ type: 'binary', name: 'test', dockerDefault: '/opt/test' })).toBe(
+        '/opt/test'
+      )
     })
 
     test('should fall back to name when nothing else', () => {
@@ -96,7 +100,9 @@ describe('system-deps', () => {
     })
 
     test('directory: unavailable', async () => {
-      mockedAccessSync.mockImplementation(() => { throw new Error('ENOENT') })
+      mockedAccessSync.mockImplementation(() => {
+        throw new Error('ENOENT')
+      })
       const result = await checkOneDep({ type: 'directory', name: 'test', target: '/missing' })
       expect(result.available).toBe(false)
     })
@@ -110,7 +116,11 @@ describe('system-deps', () => {
     test('python-venv: available', async () => {
       mockedAccessSync.mockImplementation(() => {})
       mockExecFileSuccess('Python 3.11.0')
-      const result = await checkOneDep({ type: 'python-venv', name: 'venv', target: '/opt/venv/bin/python' })
+      const result = await checkOneDep({
+        type: 'python-venv',
+        name: 'venv',
+        target: '/opt/venv/bin/python',
+      })
       expect(result.available).toBe(true)
       expect(result.version).toBe('Python 3.11.0')
     })
@@ -119,6 +129,75 @@ describe('system-deps', () => {
       mockExecFileSuccess('ok')
       const result = await checkOneDep({ type: 'python', name: 'requests', importName: 'requests' })
       expect(result.available).toBe(true)
+    })
+
+    test.each([
+      {
+        source: 'envVar',
+        envValue: '/env/gtirb/python',
+        target: '/target/gtirb/python',
+        dockerDefault: '/opt/rikune-venvs/gtirb/bin/python',
+        expected: '/env/gtirb/python',
+      },
+      {
+        source: 'dockerDefault (target is package metadata)',
+        envValue: undefined,
+        target: 'gtirb',
+        dockerDefault: '/opt/rikune-venvs/gtirb/bin/python',
+        expected: '/opt/rikune-venvs/gtirb/bin/python',
+      },
+      {
+        source: 'dockerDefault',
+        envValue: undefined,
+        target: '$GTIRB_PYTHON',
+        dockerDefault: '/opt/rikune-venvs/gtirb/bin/python',
+        expected: '/opt/rikune-venvs/gtirb/bin/python',
+      },
+    ])(
+      'python: resolves the interpreter from $source',
+      async ({ envValue, target, dockerDefault, expected }) => {
+        if (envValue) process.env.GTIRB_PYTHON = envValue
+        mockExecFileSuccess('ok')
+
+        const result = await checkOneDep({
+          type: 'python',
+          name: 'gtirb',
+          importName: 'gtirb',
+          envVar: 'GTIRB_PYTHON',
+          target,
+          dockerDefault,
+        })
+
+        expect(result.available).toBe(true)
+        expect(result.resolvedPath).toBe(expected)
+        expect(mockedExecFile).toHaveBeenCalledWith(
+          expected,
+          ['-c', "import gtirb; print(getattr(gtirb, '__version__', 'ok'))"],
+          { timeout: 10000 },
+          expect.any(Function)
+        )
+      }
+    )
+
+    test('python: rejects code-like import names before invoking Python', async () => {
+      mockExecFileSuccess('ok')
+      const result = await checkOneDep({
+        type: 'python',
+        name: 'requests',
+        importName: "requests; __import__('os').system('touch /tmp/pwned')",
+      })
+
+      expect(result.available).toBe(false)
+      expect(result.error).toMatch(/Invalid Python import name/)
+      expect(mockedExecFile).not.toHaveBeenCalled()
+    })
+
+    test('python import validator accepts dotted module paths only', () => {
+      expect(isValidPythonImportName('_vendor.pkg2')).toBe(true)
+      expect(isValidPythonImportName('pkg.submodule')).toBe(true)
+      expect(isValidPythonImportName('pkg-name')).toBe(false)
+      expect(isValidPythonImportName('pkg; print(1)')).toBe(false)
+      expect(isValidPythonImportName('pkg\nprint(1)')).toBe(false)
     })
   })
 
@@ -132,16 +211,16 @@ describe('system-deps', () => {
     test('should return allRequiredOk=true when all required deps pass', async () => {
       mockExecFileSuccess()
       const result = await checkSystemDeps({
-        systemDeps: [
-          { type: 'env-var', name: 'test', envVar: 'TEST_VAR', required: true },
-        ],
+        systemDeps: [{ type: 'env-var', name: 'test', envVar: 'TEST_VAR', required: true }],
       })
       expect(result.allRequiredOk).toBe(false) // TEST_VAR not set
     })
 
     test('should return allRequiredOk=true when required dep fails but optional passes', async () => {
       mockExecFileFail()
-      mockedAccessSync.mockImplementation(() => { throw new Error('ENOENT') })
+      mockedAccessSync.mockImplementation(() => {
+        throw new Error('ENOENT')
+      })
       const result = await checkSystemDeps({
         systemDeps: [
           { type: 'binary', name: 'missing', required: false },
@@ -154,9 +233,7 @@ describe('system-deps', () => {
     test('should return allRequiredOk=true when only optional deps fail', async () => {
       mockExecFileFail()
       const result = await checkSystemDeps({
-        systemDeps: [
-          { type: 'binary', name: 'missing', required: false },
-        ],
+        systemDeps: [{ type: 'binary', name: 'missing', required: false }],
       })
       expect(result.allRequiredOk).toBe(true)
     })

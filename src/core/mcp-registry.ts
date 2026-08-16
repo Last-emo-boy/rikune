@@ -85,7 +85,11 @@ export class MCPRegistry {
     const transportName = toTransportToolName(canonicalName)
     const existingTransport = this.tools.get(transportName)
 
-    if (existingTransport && existingTransport.canonicalName !== canonicalName) {
+    if (this.canonicalToolDefinitions.has(canonicalName)) {
+      throw new Error(`Tool already registered: ${canonicalName}`)
+    }
+
+    if (existingTransport) {
       throw new Error(`Tool name collision while registering ${canonicalName} as ${transportName}`)
     }
 

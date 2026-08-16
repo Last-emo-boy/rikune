@@ -9,7 +9,10 @@ import path from 'path'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
-import { createReportSummarizeHandler } from '../../src/plugins/reporting/tools/report-summarize.js'
+import {
+  createReportSummarizeHandler,
+  ReportSummarizeOutputSchema,
+} from '../../src/plugins/reporting/tools/report-summarize.js'
 
 describe('report.summarize tool', () => {
   let workspaceManager: WorkspaceManager
@@ -143,13 +146,14 @@ describe('report.summarize tool', () => {
     expect(result.warnings!.some((item) => item.includes('dotnet'))).toBe(true)
     const data = result.data as { summary: string }
     expect(data.summary.toLowerCase()).toContain('dotnet fallback')
+    expect(ReportSummarizeOutputSchema.safeParse(result).success).toBe(true)
   })
 
   test('should generate report structure for triage mode', async () => {
     // Create a test sample with workspace
     const sampleId = 'sha256:' + '1'.repeat(64)
     const sha256 = '1'.repeat(64)
-    
+
     database.insertSample({
       id: sampleId,
       sha256,
@@ -162,7 +166,7 @@ describe('report.summarize tool', () => {
 
     // Create workspace and sample file
     const workspace = await workspaceManager.createWorkspace(sampleId)
-    
+
     // Create a minimal PE file (MZ header)
     const peData = Buffer.alloc(1024)
     peData.write('MZ', 0, 'ascii')
@@ -186,18 +190,18 @@ describe('report.summarize tool', () => {
     if (result.ok && result.data) {
       // Verify report structure (Requirements: 15.2, 24.2)
       const data = result.data as any
-      
+
       expect(data.summary).toBeDefined()
       expect(typeof data.summary).toBe('string')
-      
+
       expect(data.confidence).toBeDefined()
       expect(typeof data.confidence).toBe('number')
       expect(data.confidence).toBeGreaterThanOrEqual(0)
       expect(data.confidence).toBeLessThanOrEqual(1)
-      
+
       expect(data.threat_level).toBeDefined()
       expect(['clean', 'suspicious', 'malicious', 'unknown']).toContain(data.threat_level)
-      
+
       expect(data.iocs).toBeDefined()
       expect(data.iocs.suspicious_imports).toBeDefined()
       expect(Array.isArray(data.iocs.suspicious_imports)).toBe(true)
@@ -205,10 +209,10 @@ describe('report.summarize tool', () => {
       expect(Array.isArray(data.iocs.suspicious_strings)).toBe(true)
       expect(data.iocs.yara_matches).toBeDefined()
       expect(Array.isArray(data.iocs.yara_matches)).toBe(true)
-      
+
       expect(data.evidence).toBeDefined()
       expect(Array.isArray(data.evidence)).toBe(true)
-      
+
       expect(data.recommendation).toBeDefined()
       expect(typeof data.recommendation).toBe('string')
     }

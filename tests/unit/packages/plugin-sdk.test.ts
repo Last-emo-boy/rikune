@@ -454,6 +454,62 @@ describe('@rikune/plugin-sdk', () => {
     expect(handler).toHaveBeenCalledWith({ sample_id: 'sha256:test' }, {}, undefined)
   })
 
+  test('definePlugin preserves async custom registration results', async () => {
+    const plugin = definePlugin({
+      id: 'async-demo',
+      name: 'Async Demo',
+      tools: [],
+      register: async (server) => {
+        await Promise.resolve()
+        server.registerTool(
+          {
+            name: 'async_demo.run',
+            description: 'Async registration demo',
+            inputSchema: { type: 'object' },
+          },
+          async () => ok({ registered: true })
+        )
+        return ['async_demo.run']
+      },
+    })
+    const registered: string[] = []
+    const server = {
+      registerTool(definition: ToolDefinition) {
+        registered.push(definition.name)
+      },
+      unregisterTool() {},
+    }
+
+    const result = plugin.register?.(server, {})
+    expect(result).toBeInstanceOf(Promise)
+    await expect(result).resolves.toEqual(['async_demo.run'])
+    expect(registered).toEqual(['async_demo.run'])
+  })
+
+  test('plugin test harness awaits async registration', async () => {
+    const harness = createPluginTestHarness()
+    const plugin: Plugin = {
+      id: 'async-harness',
+      name: 'Async Harness',
+      register: async (server) => {
+        await Promise.resolve()
+        server.registerTool(
+          {
+            name: 'async_harness.run',
+            description: 'Async harness registration',
+            inputSchema: { type: 'object' },
+          },
+          async () => ok({ registered: true })
+        )
+      },
+    }
+
+    await expect(harness.registerPlugin(plugin)).resolves.toEqual(['async_harness.run'])
+    expect(harness.registeredTools.map((tool) => tool.definition.name)).toEqual([
+      'async_harness.run',
+    ])
+  })
+
   test('defineTool preserves workflow recipe metadata', () => {
     const tool = defineTool({
       name: 'demo.workflow.seed',

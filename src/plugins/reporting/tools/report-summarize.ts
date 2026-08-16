@@ -1527,6 +1527,8 @@ function createMinimalDotnetFallback(
     ok: true,
     data: {
       detail_level: detailLevel,
+      tool_surface_role: 'compatibility',
+      preferred_primary_tools: ['workflow.summarize'],
       ...buildCoverageEnvelope({
         coverageLevel: 'quick',
         completionState: 'degraded',

@@ -27,6 +27,82 @@ import { auditPluginQuality, validatePlugin } from '../plugins/sdk.js'
 
 type PluginServer = ToolRegistrar & PromptRegistrar & ResourceRegistrar & SamplingClient
 
+type PluginDepsWithServices = ToolDeps & {
+  services?: {
+    platform?: Record<string, unknown>
+    [key: string]: unknown
+  }
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    value !== null &&
+    (typeof value === 'object' || typeof value === 'function') &&
+    typeof (value as { then?: unknown }).then === 'function'
+  )
+}
+
+/**
+ * Plugins that need sampling or internal tool calls receive a narrow facade,
+ * not the mutable MCPServer instance. Registration remains available only
+ * through the scoped `server` argument supplied to register().
+ */
+function createPluginPlatformServerFacade(server: PluginServer): Readonly<Record<string, unknown>> {
+  const facade: Record<string, unknown> = {}
+  for (const methodName of ['getClientCapabilities', 'getClientVersion', 'createMessage']) {
+    const method = (server as unknown as Record<string, unknown>)[methodName]
+    if (typeof method === 'function') {
+      facade[methodName] = method.bind(server)
+    }
+  }
+  const callTool = (server as unknown as { callTool?: (...args: unknown[]) => unknown }).callTool
+  if (typeof callTool === 'function') {
+    const boundCallTool = callTool.bind(server)
+    const blockedTools = new Set([
+      'plugin.enable',
+      'plugin_enable',
+      'plugin.disable',
+      'plugin_disable',
+    ])
+    facade.callToolInternal = async (...args: unknown[]) => {
+      const toolName = args[0]
+      const normalizedToolName =
+        typeof toolName === 'string'
+          ? toolName.replace(/[^A-Za-z0-9_-]/g, '_').replace(/_+/g, '_')
+          : null
+      if (
+        typeof toolName === 'string' &&
+        (blockedTools.has(toolName) ||
+          (normalizedToolName !== null && blockedTools.has(normalizedToolName)))
+      ) {
+        throw new Error(`Plugin dependency facade cannot invoke control-plane tool '${toolName}'`)
+      }
+      return boundCallTool(...args)
+    }
+  }
+  return Object.freeze(facade)
+}
+
+function createScopedPluginDeps(deps: ToolDeps, server: PluginServer): ToolDeps {
+  const source = deps as PluginDepsWithServices
+  const platformServer = createPluginPlatformServerFacade(server)
+  const services = source.services
+    ? {
+        ...source.services,
+        platform: {
+          ...(source.services.platform ?? {}),
+          server: platformServer,
+        },
+      }
+    : undefined
+
+  return {
+    ...source,
+    server: platformServer as unknown as ToolDeps['server'],
+    ...(services ? { services } : {}),
+  } as ToolDeps
+}
+
 const DELEGATED_EXECUTION_DOCKER_FEATURES = new Set([
   'dynamic-python',
   'frida',
@@ -205,13 +281,18 @@ export class PluginOrchestrator {
     const externalPlugins = await discoverExternalPlugins()
     const allPlugins = [...builtInPlugins, ...externalPlugins, ...extraPlugins]
 
-    // Deduplicate by id (first occurrence wins — built-in takes priority)
-    const seen = new Set<string>()
+    // Keep built-in-first precedence, but surface every rejected duplicate so
+    // discovery order never changes plugin ownership silently.
+    const seen = new Map<string, Plugin>()
     const uniquePlugins: Plugin[] = []
+    const duplicatePlugins: Array<{ plugin: Plugin; retained: Plugin }> = []
     for (const p of allPlugins) {
-      if (!seen.has(p.id)) {
-        seen.add(p.id)
+      const retained = seen.get(p.id)
+      if (!retained) {
+        seen.set(p.id, p)
         uniquePlugins.push(p)
+      } else {
+        duplicatePlugins.push({ plugin: p, retained })
       }
     }
 
@@ -221,6 +302,30 @@ export class PluginOrchestrator {
     const enabledIds = new Set(enabled.map((p) => p.id))
     const roleAllowedIds = new Set(roleFiltered.map((p) => p.id))
     const sorted = this.topoSort(roleFiltered)
+
+    for (const { plugin, retained } of duplicatePlugins) {
+      const statusDetail =
+        `Duplicate plugin ID '${plugin.id}' rejected; ` +
+        `the first discovered definition '${retained.name}' was retained`
+      this.plugins.push({
+        id: plugin.id,
+        name: plugin.name,
+        description: plugin.description,
+        version: plugin.version,
+        executionDomain: plugin.executionDomain ?? 'both',
+        status: 'error',
+        tools: [],
+        configFields: plugin.configSchema,
+        reasonCode: 'duplicate-plugin-id',
+        statusDetail,
+        controlPlaneStatus: 'failed',
+        error: statusDetail,
+      })
+      logger.warn(
+        { plugin: plugin.id, retainedPluginName: retained.name },
+        'Duplicate plugin ID rejected during discovery'
+      )
+    }
 
     // Record disabled plugins
     for (const p of uniquePlugins) {
@@ -332,10 +437,17 @@ export class PluginOrchestrator {
    * Load a single plugin. Used internally and for hot-load.
    */
   async loadOne(plugin: Plugin, server: PluginServer, deps: ToolDeps): Promise<PluginStatus> {
+    const pluginId = plugin.id
+    // Work with a descriptor snapshot whose identity cannot be changed by a
+    // stateful or hostile register()/check() implementation.
+    plugin = Object.freeze({ ...plugin, id: pluginId })
+    if (this.loadedPlugins.has(pluginId)) {
+      throw new Error(`Plugin '${pluginId}' is already loaded`)
+    }
     const isAnalyzerDynamic =
       config.node.role === 'analyzer' && plugin.executionDomain === 'dynamic'
     const status: PluginStatus = {
-      id: plugin.id,
+      id: pluginId,
       name: plugin.name,
       description: plugin.description,
       version: plugin.version,
@@ -357,7 +469,7 @@ export class PluginOrchestrator {
       status.error = status.statusDetail
       this.plugins.push(status)
       logger.error(
-        { plugin: plugin.id, errors: pluginValidation.errors },
+        { plugin: pluginId, errors: pluginValidation.errors },
         `Plugin failed validation: ${plugin.name}`
       )
       return status
@@ -374,7 +486,7 @@ export class PluginOrchestrator {
           status.error = `Required dependency '${dep}' is not loaded`
           this.plugins.push(status)
           logger.info(
-            { plugin: plugin.id, dep },
+            { plugin: pluginId, dep },
             `Plugin skipped (dependency not loaded): ${plugin.name}`
           )
           return status
@@ -389,7 +501,7 @@ export class PluginOrchestrator {
         if (!ok) {
           if (isAnalyzerDynamic) {
             logger.debug(
-              { plugin: plugin.id },
+              { plugin: pluginId },
               `Plugin check failed but loading anyway for delegation: ${plugin.name}`
             )
           } else {
@@ -400,7 +512,7 @@ export class PluginOrchestrator {
             status.error = 'Prerequisite check returned false'
             this.plugins.push(status)
             logger.info(
-              { plugin: plugin.id },
+              { plugin: pluginId },
               `Plugin skipped (prerequisites not met): ${plugin.name}`
             )
             return status
@@ -409,7 +521,7 @@ export class PluginOrchestrator {
       } catch (err) {
         if (isAnalyzerDynamic) {
           logger.debug(
-            { plugin: plugin.id, err },
+            { plugin: pluginId, err },
             `Plugin check error but loading anyway for delegation: ${plugin.name}`
           )
         } else {
@@ -419,7 +531,7 @@ export class PluginOrchestrator {
           status.statusDetail = `Prerequisite check threw: ${err}`
           status.error = `Prerequisite check threw: ${err}`
           this.plugins.push(status)
-          logger.warn({ plugin: plugin.id, err }, `Plugin skipped (check error): ${plugin.name}`)
+          logger.warn({ plugin: pluginId, err }, `Plugin skipped (check error): ${plugin.name}`)
           return status
         }
       }
@@ -435,17 +547,17 @@ export class PluginOrchestrator {
       for (const r of results) {
         if (r.available) {
           logger.debug(
-            { plugin: plugin.id, dep: r.dep.name, path: r.resolvedPath, version: r.version },
+            { plugin: pluginId, dep: r.dep.name, path: r.resolvedPath, version: r.version },
             `  ✓ ${r.dep.name}`
           )
         } else if (r.dep.required) {
           logger.warn(
-            { plugin: plugin.id, dep: r.dep.name, error: r.error },
+            { plugin: pluginId, dep: r.dep.name, error: r.error },
             `  ✗ ${r.dep.name} (required, missing)`
           )
         } else {
           logger.debug(
-            { plugin: plugin.id, dep: r.dep.name },
+            { plugin: pluginId, dep: r.dep.name },
             `  ○ ${r.dep.name} (optional, not found)`
           )
         }
@@ -463,7 +575,7 @@ export class PluginOrchestrator {
         status.error = `Missing required system deps: ${missing.join(', ')}`
         this.plugins.push(status)
         logger.info(
-          { plugin: plugin.id, missing },
+          { plugin: pluginId, missing },
           `Plugin skipped (system deps not met): ${plugin.name}`
         )
         return status
@@ -471,12 +583,15 @@ export class PluginOrchestrator {
     } else if (plugin.systemDeps && plugin.systemDeps.length > 0 && isRemoteRuntimeAnalyzer()) {
       status.statusDetail = 'Plugin loaded for remote runtime delegation'
       logger.debug(
-        { plugin: plugin.id },
+        { plugin: pluginId },
         `Plugin system dependency checks delegated to runtime: ${plugin.name}`
       )
     }
 
     // Register tools
+    const registeredDuringLoad = new Set<string>()
+    let registrationActive = true
+    let targetServer: PluginServerInterface | null = null
     try {
       // Create scoped PluginContext for this plugin
       const ctx = createPluginContext(plugin)
@@ -488,25 +603,93 @@ export class PluginOrchestrator {
           .map((f) => f.envVar)
         if (missing.length > 0) {
           logger.warn(
-            { plugin: plugin.id, missing },
+            { plugin: pluginId, missing },
             `Plugin ${plugin.name}: missing required config: ${missing.join(', ')} — loading anyway`
           )
         }
       }
 
       const bridge = new PluginRuntimeBridge(deps)
-      const targetServer = bridge.createServerForPlugin(server, plugin.id, plugin.executionDomain)
+      const pluginServer = bridge.createServerForPlugin(server, pluginId, plugin.executionDomain)
+      targetServer = pluginServer
+      const ownerForTool = (canonicalName: string) => this.pluginToolMap.get(canonicalName)
+      const assertRegistrationActive = () => {
+        if (!registrationActive) {
+          throw new Error(`Plugin '${pluginId}' registration server is no longer active`)
+        }
+      }
+      const throwToolOwnershipError = (canonicalName: string): never => {
+        throw new Error(
+          `Plugin '${pluginId}' cannot unregister tool '${canonicalName}' owned by another plugin or the core`
+        )
+      }
+      const registrationServer: PluginServerInterface = Object.freeze({
+        registerTool(definition, handler) {
+          assertRegistrationActive()
+          pluginServer.registerTool(definition, handler)
+          registeredDuringLoad.add(definition.name)
+        },
+        unregisterTool(canonicalName) {
+          const owner = ownerForTool(canonicalName)
+          if (owner !== undefined && owner !== pluginId) {
+            throwToolOwnershipError(canonicalName)
+          }
+          assertRegistrationActive()
+          if (!registeredDuringLoad.has(canonicalName) && owner !== pluginId) {
+            throwToolOwnershipError(canonicalName)
+          }
+          pluginServer.unregisterTool(canonicalName)
+          registeredDuringLoad.delete(canonicalName)
+        },
+      })
+      const scopedDeps = createScopedPluginDeps(deps, server)
 
-      const toolNames = this.registerPlugin(plugin, targetServer, deps, ctx)
-      const names: string[] = Array.isArray(toolNames) ? toolNames : []
+      let toolNames: unknown
+      try {
+        const registrationResult: unknown = this.registerPlugin(
+          plugin,
+          registrationServer,
+          scopedDeps,
+          ctx
+        )
+        toolNames = isPromiseLike(registrationResult)
+          ? await registrationResult
+          : registrationResult
+      } finally {
+        registrationActive = false
+      }
+      if (toolNames !== undefined && !Array.isArray(toolNames)) {
+        throw new Error(
+          `Plugin '${pluginId}' register() must return an array of registered tool names or void`
+        )
+      }
+      const declaredNames: string[] = Array.isArray(toolNames) ? toolNames : []
+      const unregisteredNames = declaredNames.filter(
+        (toolName) => typeof toolName !== 'string' || !registeredDuringLoad.has(toolName)
+      )
+      if (unregisteredNames.length > 0) {
+        throw new Error(
+          `Plugin '${pluginId}' declared tools that were not registered during load: ${unregisteredNames.join(', ')}`
+        )
+      }
+      const names: string[] = [...new Set([...declaredNames, ...registeredDuringLoad])]
+      const conflictingOwners = names.filter((toolName) => {
+        const owner = this.pluginToolMap.get(toolName)
+        return owner !== undefined && owner !== pluginId
+      })
+      if (conflictingOwners.length > 0) {
+        throw new Error(
+          `Plugin '${pluginId}' attempted to claim tools owned by another plugin: ${conflictingOwners.join(', ')}`
+        )
+      }
       status.tools = names
       status.controlPlaneStatus = 'completed'
       status.statusDetail =
         names.length > 0
           ? `Plugin loaded with ${names.length} tool${names.length === 1 ? '' : 's'}`
           : 'Plugin loaded without registering tools'
-      for (const t of names) this.pluginToolMap.set(t, plugin.id)
-      this.loadedPlugins.set(plugin.id, plugin)
+      for (const t of names) this.pluginToolMap.set(t, pluginId)
+      this.loadedPlugins.set(pluginId, plugin)
       this.plugins.push(status)
 
       // Register plugin with progressive surface manager
@@ -517,19 +700,41 @@ export class PluginOrchestrator {
         try {
           await plugin.hooks.onActivate()
         } catch (e) {
-          logger.warn({ plugin: plugin.id, err: e }, 'Plugin onActivate hook threw — swallowed')
+          logger.warn({ plugin: pluginId, err: e }, 'Plugin onActivate hook threw — swallowed')
         }
       }
 
-      logger.info({ plugin: plugin.id, tools: names.length }, `Plugin loaded: ${plugin.name}`)
+      logger.info({ plugin: pluginId, tools: names.length }, `Plugin loaded: ${plugin.name}`)
     } catch (err) {
+      const cleanupNames = new Set(registeredDuringLoad)
+      for (const [toolName, ownerPluginId] of this.pluginToolMap) {
+        if (ownerPluginId === pluginId) cleanupNames.add(toolName)
+      }
+      for (const toolName of cleanupNames) {
+        try {
+          targetServer?.unregisterTool(toolName)
+        } catch (rollbackError) {
+          logger.warn(
+            { plugin: pluginId, tool: toolName, err: rollbackError },
+            'Plugin registration rollback failed'
+          )
+        }
+        if (this.pluginToolMap.get(toolName) === pluginId) {
+          this.pluginToolMap.delete(toolName)
+        }
+      }
+      if (this.loadedPlugins.delete(pluginId)) {
+        getToolSurfaceManager().unregisterPlugin(pluginId)
+      }
       status.status = 'error'
       status.reasonCode = 'registration-failed'
       status.controlPlaneStatus = 'failed'
       status.statusDetail = `Registration failed: ${err}`
       status.error = `Registration failed: ${err}`
-      this.plugins.push(status)
-      logger.error({ plugin: plugin.id, err }, `Plugin failed to load: ${plugin.name}`)
+      if (!this.plugins.includes(status)) {
+        this.plugins.push(status)
+      }
+      logger.error({ plugin: pluginId, err }, `Plugin failed to load: ${plugin.name}`)
     }
 
     return status
@@ -540,7 +745,7 @@ export class PluginOrchestrator {
     targetServer: PluginServerInterface,
     deps: ToolDeps,
     ctx: PluginContext
-  ): string[] | void {
+  ): string[] | void | Promise<string[] | void> {
     if (plugin.register) {
       return plugin.register(targetServer, deps, ctx)
     }

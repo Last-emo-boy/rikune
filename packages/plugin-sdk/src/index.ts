@@ -1419,6 +1419,7 @@ export interface PluginStatus {
     | 'prerequisite-check-failed'
     | 'system-deps-missing'
     | 'registration-failed'
+    | 'duplicate-plugin-id'
     | 'manually-unloaded'
   /** Human-readable explanation of the current status or skip/error outcome. */
   statusDetail?: string
@@ -2410,12 +2411,384 @@ export type WorkflowRecipeSpec = z.infer<typeof WorkflowRecipeSpecSchema> & Reco
 export type BackendWorkerPolicySchemaType = z.infer<typeof BackendWorkerPolicySchema>
 export type BackendWorkerContractSchemaType = z.infer<typeof BackendWorkerContractSchema>
 
+export type ManifestJsonSchema = boolean | Record<string, unknown>
+
+function isZodSchema(value: unknown): value is z.ZodTypeAny {
+  return value instanceof z.ZodType
+}
+
+function isManifestJsonSchema(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function manifestSchemaError(path: string, message: string): never {
+  throw new Error(`Invalid manifest JSON Schema at ${path}: ${message}`)
+}
+
+function manifestSchemaArray(value: unknown, path: string, keyword: string): ManifestJsonSchema[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    return manifestSchemaError(path, `'${keyword}' must be a non-empty array`)
+  }
+  return value as ManifestJsonSchema[]
+}
+
+function manifestSchemaNumber(
+  value: unknown,
+  path: string,
+  keyword: string,
+  options: { integer?: boolean; nonNegative?: boolean } = {}
+): number | undefined {
+  if (value === undefined) return undefined
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    (options.integer && !Number.isInteger(value)) ||
+    (options.nonNegative && value < 0)
+  ) {
+    return manifestSchemaError(path, `'${keyword}' must be a valid number`)
+  }
+  return value
+}
+
+function manifestSchemaUnion(schemas: z.ZodTypeAny[], path: string): z.ZodTypeAny {
+  if (schemas.length === 0) {
+    return manifestSchemaError(path, 'schema union must contain at least one member')
+  }
+  if (schemas.length === 1) return schemas[0]
+  return z.union(schemas as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]])
+}
+
+function manifestSchemaIntersection(schemas: z.ZodTypeAny[], path: string): z.ZodTypeAny {
+  if (schemas.length === 0) {
+    return manifestSchemaError(path, 'schema intersection must contain at least one member')
+  }
+  return schemas.slice(1).reduce((combined, schema) => z.intersection(combined, schema), schemas[0])
+}
+
+const manifestTypeSpecificKeywords = [
+  'minLength',
+  'maxLength',
+  'pattern',
+  'format',
+  'minimum',
+  'maximum',
+  'exclusiveMinimum',
+  'exclusiveMaximum',
+  'multipleOf',
+  'items',
+  'minItems',
+  'maxItems',
+  'properties',
+  'required',
+  'additionalProperties',
+] as const
+
+function applyManifestSchemaDescription(
+  schema: z.ZodTypeAny,
+  definition: Record<string, unknown>
+): z.ZodTypeAny {
+  return typeof definition.description === 'string'
+    ? schema.describe(definition.description)
+    : schema
+}
+
+function manifestStringSchema(definition: Record<string, unknown>, path: string): z.ZodTypeAny {
+  let schema = z.string()
+  const minLength = manifestSchemaNumber(definition.minLength, path, 'minLength', {
+    integer: true,
+    nonNegative: true,
+  })
+  const maxLength = manifestSchemaNumber(definition.maxLength, path, 'maxLength', {
+    integer: true,
+    nonNegative: true,
+  })
+  if (minLength !== undefined) schema = schema.min(minLength)
+  if (maxLength !== undefined) schema = schema.max(maxLength)
+  if (definition.pattern !== undefined) {
+    if (typeof definition.pattern !== 'string') {
+      return manifestSchemaError(path, "'pattern' must be a string")
+    }
+    if (definition.pattern.length > 512) {
+      return manifestSchemaError(path, "'pattern' exceeds the 512-character safety limit")
+    }
+    try {
+      schema = schema.regex(new RegExp(definition.pattern))
+    } catch {
+      return manifestSchemaError(path, "'pattern' must be a valid regular expression")
+    }
+  }
+  switch (definition.format) {
+    case undefined:
+      break
+    case 'email':
+      schema = schema.email()
+      break
+    case 'uri':
+    case 'url':
+      schema = schema.url()
+      break
+    case 'uuid':
+      schema = schema.uuid()
+      break
+    case 'date-time':
+      schema = schema.datetime()
+      break
+    default:
+      // 未识别的 format 在 JSON Schema 中属于注解，不收紧运行时校验。
+      break
+  }
+  return schema
+}
+
+function manifestNumberSchema(
+  definition: Record<string, unknown>,
+  path: string,
+  integer: boolean
+): z.ZodTypeAny {
+  let schema = z.number()
+  if (integer) schema = schema.int()
+
+  const minimum = manifestSchemaNumber(definition.minimum, path, 'minimum')
+  const maximum = manifestSchemaNumber(definition.maximum, path, 'maximum')
+  const exclusiveMinimum = manifestSchemaNumber(
+    definition.exclusiveMinimum,
+    path,
+    'exclusiveMinimum'
+  )
+  const exclusiveMaximum = manifestSchemaNumber(
+    definition.exclusiveMaximum,
+    path,
+    'exclusiveMaximum'
+  )
+  const multipleOf = manifestSchemaNumber(definition.multipleOf, path, 'multipleOf')
+
+  if (minimum !== undefined) schema = schema.min(minimum)
+  if (maximum !== undefined) schema = schema.max(maximum)
+  if (exclusiveMinimum !== undefined) schema = schema.gt(exclusiveMinimum)
+  if (exclusiveMaximum !== undefined) schema = schema.lt(exclusiveMaximum)
+  if (multipleOf !== undefined) {
+    if (multipleOf <= 0) {
+      return manifestSchemaError(path, "'multipleOf' must be greater than zero")
+    }
+    schema = schema.multipleOf(multipleOf)
+  }
+  return schema
+}
+
+function manifestArraySchema(definition: Record<string, unknown>, path: string): z.ZodTypeAny {
+  if (Array.isArray(definition.items)) {
+    return manifestSchemaError(path, "tuple-form 'items' is not supported; use a single schema")
+  }
+  const itemSchema =
+    definition.items === undefined
+      ? z.unknown()
+      : manifestJsonSchemaToZod(definition.items, `${path}.items`)
+  let schema = z.array(itemSchema)
+  const minItems = manifestSchemaNumber(definition.minItems, path, 'minItems', {
+    integer: true,
+    nonNegative: true,
+  })
+  const maxItems = manifestSchemaNumber(definition.maxItems, path, 'maxItems', {
+    integer: true,
+    nonNegative: true,
+  })
+  if (minItems !== undefined) schema = schema.min(minItems)
+  if (maxItems !== undefined) schema = schema.max(maxItems)
+  return schema
+}
+
+function manifestObjectSchema(definition: Record<string, unknown>, path: string): z.ZodTypeAny {
+  const rawProperties = definition.properties ?? {}
+  if (!isManifestJsonSchema(rawProperties)) {
+    return manifestSchemaError(path, "'properties' must be an object")
+  }
+  const rawRequired = definition.required ?? []
+  if (!Array.isArray(rawRequired) || rawRequired.some((key) => typeof key !== 'string')) {
+    return manifestSchemaError(path, "'required' must be an array of property names")
+  }
+  const required = new Set(rawRequired as string[])
+
+  const shape: Record<string, z.ZodTypeAny> = {}
+  for (const [key, propertySchema] of Object.entries(rawProperties)) {
+    const converted = manifestJsonSchemaToZod(propertySchema, `${path}.properties.${key}`)
+    shape[key] = required.has(key) ? converted : converted.optional()
+  }
+  for (const key of required) {
+    if (!(key in shape)) {
+      shape[key] = z.unknown().refine((value) => value !== undefined, {
+        message: 'Required',
+      })
+    }
+  }
+
+  let schema: z.AnyZodObject = z.object(shape)
+  const additionalProperties = definition.additionalProperties
+  if (additionalProperties === false) {
+    schema = schema.strict()
+  } else if (additionalProperties === undefined || additionalProperties === true) {
+    schema = schema.passthrough()
+  } else {
+    schema = schema.catchall(
+      manifestJsonSchemaToZod(additionalProperties, `${path}.additionalProperties`)
+    )
+  }
+  return schema
+}
+
+/**
+ * 将 manifest 中可序列化的 JSON Schema 转成 server 执行管线使用的 Zod schema。
+ * 不支持的组合关键字会显式失败，避免列表 schema 与实际参数校验静默分叉。
+ */
+export function manifestJsonSchemaToZod(value: unknown, path = '$'): z.ZodTypeAny {
+  if (isZodSchema(value)) return value
+  if (value === true) return z.unknown()
+  if (value === false) return z.never()
+  if (!isManifestJsonSchema(value)) {
+    return manifestSchemaError(path, 'schema must be an object or boolean')
+  }
+
+  for (const unsupported of [
+    '$ref',
+    '$defs',
+    'definitions',
+    '$dynamicRef',
+    '$recursiveRef',
+    'allOf',
+    'oneOf',
+    'not',
+    'if',
+    'then',
+    'else',
+    'patternProperties',
+    'dependentSchemas',
+    'dependentRequired',
+    'dependencies',
+    'unevaluatedProperties',
+    'unevaluatedItems',
+    'contains',
+    'minContains',
+    'maxContains',
+    'uniqueItems',
+    'minProperties',
+    'maxProperties',
+    'propertyNames',
+    'prefixItems',
+    'additionalItems',
+    'contentEncoding',
+    'contentMediaType',
+    'contentSchema',
+  ]) {
+    if (unsupported in value) {
+      return manifestSchemaError(path, `'${unsupported}' is not supported`)
+    }
+  }
+
+  const constraintSchemas: z.ZodTypeAny[] = []
+
+  if ('const' in value) {
+    const literal = value.const
+    if (
+      literal !== null &&
+      typeof literal !== 'string' &&
+      typeof literal !== 'number' &&
+      typeof literal !== 'boolean'
+    ) {
+      return manifestSchemaError(path, "'const' must be a JSON primitive")
+    }
+    constraintSchemas.push(z.literal(literal))
+  }
+
+  if (value.enum !== undefined) {
+    if (!Array.isArray(value.enum) || value.enum.length === 0) {
+      return manifestSchemaError(path, "'enum' must be a non-empty array")
+    }
+    const members = value.enum.map((literal, index) => {
+      if (
+        literal !== null &&
+        typeof literal !== 'string' &&
+        typeof literal !== 'number' &&
+        typeof literal !== 'boolean'
+      ) {
+        return manifestSchemaError(`${path}.enum.${index}`, 'enum values must be JSON primitives')
+      }
+      return z.literal(literal)
+    })
+    constraintSchemas.push(manifestSchemaUnion(members, path))
+  }
+
+  if (value.anyOf !== undefined) {
+    const members = manifestSchemaArray(value.anyOf, path, 'anyOf').map((member, index) =>
+      manifestJsonSchemaToZod(member, `${path}.anyOf.${index}`)
+    )
+    constraintSchemas.push(manifestSchemaUnion(members, path))
+  }
+
+  const hasExplicitType = value.type !== undefined
+  if (!hasExplicitType) {
+    const untypedKeywords = manifestTypeSpecificKeywords.filter(
+      (keyword) => value[keyword] !== undefined
+    )
+    if (untypedKeywords.length > 0) {
+      return manifestSchemaError(
+        path,
+        `validation keyword(s) '${untypedKeywords.join(', ')}' require an explicit 'type'`
+      )
+    }
+  }
+
+  const rawTypes = Array.isArray(value.type) ? value.type : [value.type]
+  if (Array.isArray(value.type) && value.type.length === 0) {
+    return manifestSchemaError(path, "'type' must contain at least one type")
+  }
+  const types = rawTypes[0] === undefined ? [] : rawTypes
+  if (types.some((type) => typeof type !== 'string')) {
+    return manifestSchemaError(path, "'type' must be a string or an array of strings")
+  }
+
+  if (types.length > 0) {
+    const members = (types as string[]).map((type) => {
+      switch (type) {
+        case 'object':
+          return manifestObjectSchema(value, path)
+        case 'array':
+          return manifestArraySchema(value, path)
+        case 'string':
+          return manifestStringSchema(value, path)
+        case 'integer':
+          return manifestNumberSchema(value, path, true)
+        case 'number':
+          return manifestNumberSchema(value, path, false)
+        case 'boolean':
+          return z.boolean()
+        case 'null':
+          return z.null()
+        default:
+          return manifestSchemaError(path, `unsupported type '${type}'`)
+      }
+    })
+
+    if (value.nullable === true && !(types as string[]).includes('null')) {
+      members.push(z.null())
+    }
+    constraintSchemas.push(manifestSchemaUnion(members, path))
+  } else if (constraintSchemas.length === 0) {
+    constraintSchemas.push(z.unknown())
+  }
+
+  return applyManifestSchemaDescription(manifestSchemaIntersection(constraintSchemas, path), value)
+}
+
+export const ManifestJsonSchemaSchema = z.custom<z.ZodTypeAny | boolean | Record<string, unknown>>(
+  (value) => typeof value === 'boolean' || isZodSchema(value) || isManifestJsonSchema(value),
+  { message: 'Expected a JSON Schema object or Zod schema' }
+)
+
 export const ToolManifestSchema = z
   .object({
     name: ToolNameSchema,
     description: z.string().min(1),
-    inputSchema: z.any().default({ type: 'object', properties: {} }),
-    outputSchema: z.any().optional(),
+    inputSchema: ManifestJsonSchemaSchema.default({ type: 'object', properties: {} }),
+    outputSchema: ManifestJsonSchemaSchema.optional(),
     aspects: PluginAspectsSchema.optional(),
     artifacts: z.array(ToolArtifactSpecSchema).optional(),
     evidence: z.array(ToolEvidenceSpecSchema).optional(),
@@ -2557,7 +2930,7 @@ export interface Plugin {
     server: PluginServerInterface,
     deps: PluginToolDeps,
     ctx?: PluginContext
-  ) => string[] | void
+  ) => string[] | void | Promise<string[] | void>
   /** Optional cleanup when the plugin is unloaded at runtime. */
   teardown?: () => void | Promise<void>
 }
@@ -2709,7 +3082,7 @@ export interface PluginTestHarness {
   ctx: PluginContext
   registeredTools: RegisteredHarnessTool[]
   server: PluginServerInterface
-  registerPlugin(plugin: Plugin): string[]
+  registerPlugin(plugin: Plugin): string[] | Promise<string[]>
 }
 
 export type PluginServicePath =
@@ -2821,6 +3194,14 @@ function createHarnessLogger(): PluginLogger {
   }
 }
 
+function isPromiseLike<T = unknown>(value: unknown): value is PromiseLike<T> {
+  return (
+    value !== null &&
+    (typeof value === 'object' || typeof value === 'function') &&
+    typeof (value as { then?: unknown }).then === 'function'
+  )
+}
+
 export function createPluginTestHarness(options: PluginTestHarnessOptions = {}): PluginTestHarness {
   const registeredTools: RegisteredHarnessTool[] = []
   const deps = {
@@ -2873,8 +3254,14 @@ export function createPluginTestHarness(options: PluginTestHarnessOptions = {}):
     registeredTools,
     server,
     registerPlugin(plugin) {
+      const startIndex = registeredTools.length
       const names = plugin.register?.(server, deps, ctx)
-      return Array.isArray(names) ? names : registeredTools.map((tool) => tool.definition.name)
+      const fallbackNames = () =>
+        registeredTools.slice(startIndex).map((tool) => tool.definition.name)
+      if (isPromiseLike<string[] | void>(names)) {
+        return names.then((resolved) => (Array.isArray(resolved) ? resolved : fallbackNames()))
+      }
+      return Array.isArray(names) ? names : fallbackNames()
     },
   }
 }
@@ -2914,6 +3301,14 @@ export function definePlugin(config: DefinePluginConfig): Plugin {
     register(server, deps, ctx) {
       const names = registerDefinedTools(tools, server, deps, ctx)
       const customNames = customRegister?.(server, deps, ctx)
+      if (isPromiseLike<string[] | void>(customNames)) {
+        return customNames.then((resolved) => {
+          if (Array.isArray(resolved)) {
+            names.push(...resolved)
+          }
+          return Array.from(new Set(names))
+        })
+      }
       if (Array.isArray(customNames)) {
         names.push(...customNames)
       }
@@ -2943,8 +3338,17 @@ export function defineManifestPlugin(
     return defineTool({
       name: toolManifest.name,
       description: toolManifest.description,
-      inputSchema: toolManifest.inputSchema,
-      outputSchema: toolManifest.outputSchema,
+      inputSchema: manifestJsonSchemaToZod(
+        toolManifest.inputSchema,
+        `tools.${toolManifest.name}.inputSchema`
+      ),
+      outputSchema:
+        toolManifest.outputSchema === undefined
+          ? undefined
+          : manifestJsonSchemaToZod(
+              toolManifest.outputSchema,
+              `tools.${toolManifest.name}.outputSchema`
+            ),
       aspects: toolManifest.aspects,
       artifacts: toolManifest.artifacts,
       evidence: toolManifest.evidence,

@@ -155,13 +155,16 @@ export async function registerAllTools(
       },
     },
   }
-  await loadPlugins(server, pluginDeps)
-  server.setPluginManager(getPluginManager())
 
+  // Register control-plane tools before loading third-party plugins. This
+  // reserves their names in the fail-closed registry and prevents a plugin
+  // from pre-empting a core tool that is registered later in startup.
   registerPluginTools(server)
   registerDiagnosticsTools(server)
-
   getToolSurfaceManager().registerCoreTools(POST_PLUGIN_CORE_TOOLS)
+
+  await loadPlugins(server, pluginDeps)
+  server.setPluginManager(getPluginManager())
 
   registerScriptResources(server)
 }
