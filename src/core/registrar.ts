@@ -21,7 +21,18 @@ export interface PromptRegistrar {
 
 export interface ResourceRegistrar {
   registerResource(
-    meta: { uri: string; name: string; description?: string; mimeType?: string },
+    meta: {
+      uri: string
+      name: string
+      description?: string
+      mimeType?: string
+      size?: number
+      annotations?: {
+        audience?: Array<'user' | 'assistant'>
+        priority?: number
+        lastModified?: string
+      }
+    },
     handler: () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>
   ): void
   registerResourceTemplate(meta: {
@@ -29,6 +40,11 @@ export interface ResourceRegistrar {
     name: string
     description?: string
     mimeType?: string
+    annotations?: {
+      audience?: Array<'user' | 'assistant'>
+      priority?: number
+      lastModified?: string
+    }
   }): void
 }
 

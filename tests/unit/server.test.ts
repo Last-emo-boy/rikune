@@ -387,6 +387,38 @@ describe('MCPServer', () => {
         uri: 'rikune://sample/abc/artifact/1',
       })
     })
+
+    it('should register and retrieve resources with annotations', async () => {
+      server.registerResource(
+        {
+          uri: 'rikune://analysis/report',
+          name: 'Analysis Report',
+          description: 'Reverse engineering analysis report',
+          mimeType: 'application/json',
+          size: 4096,
+          annotations: {
+            audience: ['user', 'assistant'],
+            priority: 0.9,
+            lastModified: '2026-08-18T12:00:00Z',
+          },
+        },
+        async () => ({ uri: 'rikune://analysis/report', text: '{}' })
+      )
+      const { resources } = await server.listResources()
+      expect(resources).toHaveLength(1)
+      expect(resources[0]).toEqual(
+        expect.objectContaining({
+          uri: 'rikune://analysis/report',
+          name: 'Analysis Report',
+          size: 4096,
+          annotations: {
+            audience: ['user', 'assistant'],
+            priority: 0.9,
+            lastModified: '2026-08-18T12:00:00Z',
+          },
+        })
+      )
+    })
   })
 
   describe('Elicitation Helpers', () => {

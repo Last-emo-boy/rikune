@@ -298,7 +298,18 @@ export class MCPServer
    * Register an MCP resource (read-only content exposed to clients).
    */
   public registerResource(
-    meta: { uri: string; name: string; description?: string; mimeType?: string },
+    meta: {
+      uri: string
+      name: string
+      description?: string
+      mimeType?: string
+      size?: number
+      annotations?: {
+        audience?: Array<'user' | 'assistant'>
+        priority?: number
+        lastModified?: string
+      }
+    },
     handler: () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>
   ): void {
     this.registry.registerResource(meta, handler)
@@ -312,6 +323,11 @@ export class MCPServer
     name: string
     description?: string
     mimeType?: string
+    annotations?: {
+      audience?: Array<'user' | 'assistant'>
+      priority?: number
+      lastModified?: string
+    }
   }): void {
     this.registry.registerResourceTemplate(meta)
   }

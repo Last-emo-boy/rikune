@@ -83,7 +83,18 @@ export class MCPRegistry {
   private promptHandlers: Map<string, PromptHandler>
   private resources: Map<
     string,
-    { uri: string; name: string; description?: string; mimeType?: string }
+    {
+      uri: string
+      name: string
+      description?: string
+      mimeType?: string
+      size?: number
+      annotations?: {
+        audience?: Array<'user' | 'assistant'>
+        priority?: number
+        lastModified?: string
+      }
+    }
   >
   private resourceHandlers: Map<
     string,
@@ -96,6 +107,11 @@ export class MCPRegistry {
       name: string
       description?: string
       mimeType?: string
+      annotations?: {
+        audience?: Array<'user' | 'assistant'>
+        priority?: number
+        lastModified?: string
+      }
     }
   >
   private completionProviders: Map<
@@ -190,7 +206,18 @@ export class MCPRegistry {
    * Register an MCP resource (read-only content exposed to clients).
    */
   registerResource(
-    meta: { uri: string; name: string; description?: string; mimeType?: string },
+    meta: {
+      uri: string
+      name: string
+      description?: string
+      mimeType?: string
+      size?: number
+      annotations?: {
+        audience?: Array<'user' | 'assistant'>
+        priority?: number
+        lastModified?: string
+      }
+    },
     handler: () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>
   ): void {
     this.logger.info({ resource: meta.uri }, 'Registering resource')
@@ -206,6 +233,11 @@ export class MCPRegistry {
     name: string
     description?: string
     mimeType?: string
+    annotations?: {
+      audience?: Array<'user' | 'assistant'>
+      priority?: number
+      lastModified?: string
+    }
   }): void {
     this.logger.info({ template: meta.uriTemplate }, 'Registering resource template')
     this.resourceTemplates.set(meta.uriTemplate, meta)
@@ -464,7 +496,18 @@ export class MCPRegistry {
     return { resources: page, nextCursor }
   }
 
-  getResources(): Array<{ uri: string; name: string; description?: string; mimeType?: string }> {
+  getResources(): Array<{
+    uri: string
+    name: string
+    description?: string
+    mimeType?: string
+    size?: number
+    annotations?: {
+      audience?: Array<'user' | 'assistant'>
+      priority?: number
+      lastModified?: string
+    }
+  }> {
     return Array.from(this.resources.values())
   }
 
@@ -473,6 +516,11 @@ export class MCPRegistry {
     name: string
     description?: string
     mimeType?: string
+    annotations?: {
+      audience?: Array<'user' | 'assistant'>
+      priority?: number
+      lastModified?: string
+    }
   }> {
     return Array.from(this.resourceTemplates.values())
   }
