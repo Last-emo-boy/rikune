@@ -6,10 +6,10 @@ import type {
   SamplingClient,
 } from './registrar.js'
 import { config } from '../config.js'
-import { createDelegatingServer } from '../runtime-client/delegation-server.js'
+import { createDelegatingServer, type RuntimeClientLike } from '../runtime-client/delegation-server.js'
 
 export interface RuntimeBridgeDeps {
-  runtimeClient?: any
+  runtimeClient?: RuntimeClientLike | null
   sandboxDir?: string | null
   workspaceManager?: any
   database?: any

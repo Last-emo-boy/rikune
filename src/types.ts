@@ -215,6 +215,23 @@ export interface BackendWorkerContract {
 }
 
 /**
+ * MCP tool annotations — behavioral hints surfaced to clients.
+ * All hints are advisory; clients treat them as untrusted metadata.
+ */
+export interface ToolAnnotations {
+  /** Human-readable display name for the tool. */
+  title?: string
+  /** If true, the tool does not modify its environment. */
+  readOnlyHint?: boolean
+  /** If true, the tool may perform destructive side effects. */
+  destructiveHint?: boolean
+  /** If true, repeated calls with the same arguments yield the same result. */
+  idempotentHint?: boolean
+  /** If true, the tool interacts with an open-world external system. */
+  openWorldHint?: boolean
+}
+
+/**
  * Tool definition following MCP protocol
  */
 export interface ToolDefinition {
@@ -223,6 +240,11 @@ export interface ToolDefinition {
   description: string
   inputSchema: JSONSchema
   outputSchema?: JSONSchema
+  /**
+   * MCP tool annotations surfaced to clients as hints about tool behavior.
+   * When omitted, annotations are derived from runtimePolicy/workerBackend.
+   */
+  annotations?: ToolAnnotations
   /** Aspect metadata used by sample profiling and progressive discovery. */
   aspects?: PluginAspects
   /** Artifact families this tool may write. */

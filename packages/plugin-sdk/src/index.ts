@@ -80,6 +80,23 @@ export interface ToolResult {
 // Tool Definition
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * MCP tool annotations — behavioral hints surfaced to clients.
+ * All hints are advisory; clients treat them as untrusted metadata.
+ */
+export interface ToolAnnotations {
+  /** Human-readable display name for the tool. */
+  title?: string
+  /** If true, the tool does not modify its environment. */
+  readOnlyHint?: boolean
+  /** If true, the tool may perform destructive side effects. */
+  destructiveHint?: boolean
+  /** If true, repeated calls with the same arguments yield the same result. */
+  idempotentHint?: boolean
+  /** If true, the tool interacts with an open-world external system. */
+  openWorldHint?: boolean
+}
+
 /** Schema for a tool's inputs. */
 export interface ToolDefinition {
   name: string
@@ -87,6 +104,12 @@ export interface ToolDefinition {
   description: string
   inputSchema: any
   outputSchema?: any
+  /**
+   * MCP tool annotations surfaced to clients as hints about tool behavior.
+   * When omitted, annotations are derived from runtimePolicy/workerBackend
+   * (e.g. passiveByDefault → readOnlyHint: true). Explicit values win.
+   */
+  annotations?: ToolAnnotations
   /** Aspect metadata used by sample profiling and progressive discovery. */
   aspects?: PluginAspects
   /** Artifact families this tool may write. */

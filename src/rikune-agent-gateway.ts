@@ -172,6 +172,11 @@ const STABLE_ANALYZER_TOOLS: Tool[] = [
       },
       additionalProperties: false,
     },
+    annotations: {
+      title: 'Workflow Search',
+      readOnlyHint: true,
+      idempotentHint: true,
+    },
   },
   {
     name: 'workflow_run',
@@ -265,6 +270,10 @@ const STABLE_ANALYZER_TOOLS: Tool[] = [
       },
       additionalProperties: false,
     },
+    annotations: {
+      title: 'Workflow Run',
+      destructiveHint: true,
+    },
   },
   {
     name: 'artifact_read',
@@ -324,6 +333,11 @@ const STABLE_ANALYZER_TOOLS: Tool[] = [
       required: ['sample_id'],
       additionalProperties: false,
     },
+    annotations: {
+      title: 'Artifact Read',
+      readOnlyHint: true,
+      idempotentHint: true,
+    },
   },
 ]
 
@@ -345,6 +359,11 @@ const CONTROL_TOOLS: Tool[] = [
         },
       },
       additionalProperties: false,
+    },
+    annotations: {
+      title: 'Connection Status',
+      readOnlyHint: true,
+      idempotentHint: true,
     },
   },
   {
@@ -427,6 +446,10 @@ const CONTROL_TOOLS: Tool[] = [
       required: ['target'],
       additionalProperties: false,
     },
+    annotations: {
+      title: 'Connection Configure',
+      destructiveHint: true,
+    },
   },
   {
     name: 'rikune_connection_refresh',
@@ -442,6 +465,10 @@ const CONTROL_TOOLS: Tool[] = [
         },
       },
       additionalProperties: false,
+    },
+    annotations: {
+      title: 'Connection Refresh',
+      destructiveHint: true,
     },
   },
 ]
@@ -471,6 +498,10 @@ const DIRECT_TOOL_CALL_TOOL: Tool = {
     },
     required: ['tool'],
     additionalProperties: false,
+  },
+  annotations: {
+    title: 'Rikune Subtool Gateway',
+    openWorldHint: true,
   },
 }
 

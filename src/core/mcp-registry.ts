@@ -7,6 +7,7 @@ import { z } from 'zod'
 import type pino from 'pino'
 import type {
   ToolDefinition,
+  ToolAnnotations,
   ToolArgs,
   WorkerResult,
   PromptDefinition,
@@ -26,6 +27,50 @@ type ToolResult = {
   content: TextContent[]
   structuredContent?: Record<string, unknown>
   isError?: boolean
+}
+
+/**
+ * Derive MCP tool annotations from an explicit definition or from the tool's
+ * runtime policy / worker backend contract. Explicit annotations always win;
+ * derived hints are only added when the tool does not provide its own.
+ *
+ * Mapping:
+ *   passiveByDefault / noMutation  → readOnlyHint: true
+ *   !noMutation                    → destructiveHint: true
+ *   noLiveExecution && !noMutation → idempotentHint: true (re-runs are safe)
+ *   !noNetwork                     → openWorldHint: true
+ */
+function deriveToolAnnotations(definition: ToolDefinition): ToolAnnotations | undefined {
+  const explicit = definition.annotations
+  const policy = definition.runtimePolicy
+  const worker = definition.workerBackend
+  const derivedPolicy = policy ?? worker?.policy
+
+  if (!derivedPolicy) {
+    return explicit
+  }
+
+  const derived: ToolAnnotations = {}
+  if (derivedPolicy.passiveByDefault || derivedPolicy.noMutation) {
+    derived.readOnlyHint = true
+  } else {
+    derived.destructiveHint = true
+  }
+  if (derivedPolicy.noLiveExecution && derivedPolicy.noMutation) {
+    derived.idempotentHint = true
+  }
+  if (derivedPolicy.noNetwork === false) {
+    derived.openWorldHint = true
+  }
+
+  // Explicit annotations take precedence over derived hints.
+  if (!explicit) {
+    return derived
+  }
+  return {
+    ...derived,
+    ...explicit,
+  }
 }
 
 export class MCPRegistry {
@@ -154,6 +199,9 @@ export class MCPRegistry {
         ? zodToJsonSchema(definition.outputSchema)
         : undefined
 
+      // Derive MCP tool annotations from explicit definition or runtime policy.
+      const annotations = deriveToolAnnotations(definition)
+
       // Append prerequisite hint for tools that require a sample_id input
       const needsHint =
         !MCPRegistry.SAMPLE_ENTRY_TOOLS.has(canonicalName) &&
@@ -167,6 +215,7 @@ export class MCPRegistry {
         description,
         inputSchema: inputSchema as Tool['inputSchema'],
         ...(outputSchema ? { outputSchema: outputSchema as Tool['outputSchema'] } : {}),
+        ...(annotations ? { annotations } : {}),
       })
     }
 

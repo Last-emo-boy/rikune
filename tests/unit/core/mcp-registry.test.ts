@@ -107,6 +107,54 @@ describe('MCPRegistry', () => {
         'system_config_validate',
       ])
     })
+
+    test('derives readOnlyHint from passiveByDefault runtime policy', async () => {
+      const tool = makeTool('static.profile')
+      tool.runtimePolicy = { passiveByDefault: true, noNetwork: true, noMutation: true, noLiveExecution: true }
+      registry.registerTool(tool, async () => ({ ok: true }))
+      const tools = await registry.listTools()
+      const t = tools.find((x) => x.name === 'static_profile')
+      expect(t?.annotations).toEqual(
+        expect.objectContaining({ readOnlyHint: true, idempotentHint: true })
+      )
+      expect(t?.annotations?.destructiveHint).toBeUndefined()
+    })
+
+    test('derives destructiveHint when noMutation is false', async () => {
+      const tool = makeTool('dynamic.patch')
+      tool.runtimePolicy = { passiveByDefault: false, noNetwork: true, noMutation: false, noLiveExecution: false }
+      registry.registerTool(tool, async () => ({ ok: true }))
+      const tools = await registry.listTools()
+      const t = tools.find((x) => x.name === 'dynamic_patch')
+      expect(t?.annotations).toEqual(expect.objectContaining({ destructiveHint: true }))
+      expect(t?.annotations?.readOnlyHint).toBeUndefined()
+    })
+
+    test('derives openWorldHint when noNetwork is false', async () => {
+      const tool = makeTool('network.fetch')
+      tool.runtimePolicy = { passiveByDefault: true, noNetwork: false, noMutation: true, noLiveExecution: true }
+      registry.registerTool(tool, async () => ({ ok: true }))
+      const tools = await registry.listTools()
+      const t = tools.find((x) => x.name === 'network_fetch')
+      expect(t?.annotations).toEqual(expect.objectContaining({ openWorldHint: true }))
+    })
+
+    test('explicit annotations override derived hints', async () => {
+      const tool = makeTool('custom.tool')
+      tool.runtimePolicy = { passiveByDefault: true, noNetwork: true, noMutation: true, noLiveExecution: true }
+      tool.annotations = { readOnlyHint: false, title: 'Custom Tool' }
+      registry.registerTool(tool, async () => ({ ok: true }))
+      const tools = await registry.listTools()
+      const t = tools.find((x) => x.name === 'custom_tool')
+      expect(t?.annotations).toEqual(expect.objectContaining({ title: 'Custom Tool', readOnlyHint: false, idempotentHint: true }))
+    })
+
+    test('tools without runtime policy have no derived annotations', async () => {
+      registry.registerTool(makeTool('plain.tool'), async () => ({ ok: true }))
+      const tools = await registry.listTools()
+      const t = tools.find((x) => x.name === 'plain_tool')
+      expect(t?.annotations).toBeUndefined()
+    })
   })
 
   describe('getToolDefinitions / getToolDefinition', () => {
