@@ -185,11 +185,14 @@ export class MCPServer
       return { contents: [content] }
     })
 
-    // Handle resources/templates/list request
-    this.server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
-      this.logger.debug('Handling resources/templates/list request')
+    // Handle resources/templates/list request (with cursor pagination)
+    this.server.setRequestHandler(ListResourceTemplatesRequestSchema, async (request) => {
+      const cursor = request.params?.cursor
+      this.logger.debug({ cursor: cursor ?? null }, 'Handling resources/templates/list request')
+      const { resourceTemplates, nextCursor } = await this.registry.listResourceTemplates(cursor)
       return {
-        resourceTemplates: this.registry.getResourceTemplates(),
+        resourceTemplates,
+        ...(nextCursor ? { nextCursor } : {}),
       }
     })
 

@@ -280,6 +280,56 @@ describe('MCPRegistry', () => {
       registry.unsubscribeFromResource('rikune://sample/abc')
       expect(registry.isSubscribedToResource('rikune://sample/abc')).toBe(false)
     })
+
+    test('listResourceTemplates returns all templates without cursor', async () => {
+      registry.registerResourceTemplate({
+        uriTemplate: 'rikune://sample/{id}/artifact/{aid}',
+        name: 'Artifact',
+        description: 'd1',
+      })
+      const { resourceTemplates, nextCursor } = await registry.listResourceTemplates()
+      expect(resourceTemplates).toHaveLength(1)
+      expect(nextCursor).toBeUndefined()
+    })
+
+    test('listResourceTemplates paginates with cursor and sorts by uriTemplate', async () => {
+      registry.registerResourceTemplate({ uriTemplate: 'rikune://zzz/{id}', name: 'Z' })
+      registry.registerResourceTemplate({ uriTemplate: 'rikune://aaa/{id}', name: 'A' })
+      registry.registerResourceTemplate({ uriTemplate: 'rikune://mmm/{id}', name: 'M' })
+
+      const page1 = await registry.listResourceTemplates(MCPRegistry.encodeOffsetCursor(0))
+      // pageSize = 100 so all fit on first page when starting from offset 0
+      expect(page1.resourceTemplates.map((t) => t.uriTemplate)).toEqual([
+        'rikune://aaa/{id}',
+        'rikune://mmm/{id}',
+        'rikune://zzz/{id}',
+      ])
+      expect(page1.nextCursor).toBeUndefined()
+
+      // Register many templates to test multi-page pagination
+      for (let i = 0; i < 105; i++) {
+        registry.registerResourceTemplate({
+          uriTemplate: `rikune://tpl/${String(i).padStart(3, '0')}/{id}`,
+          name: `T${i}`,
+        })
+      }
+      const bigPage1 = await registry.listResourceTemplates(MCPRegistry.encodeOffsetCursor(0))
+      expect(bigPage1.resourceTemplates).toHaveLength(100)
+      expect(bigPage1.nextCursor).toBeDefined()
+
+      const bigPage2 = await registry.listResourceTemplates(bigPage1.nextCursor!)
+      expect(bigPage2.resourceTemplates.length).toBeGreaterThan(0)
+      expect(bigPage2.nextCursor).toBeUndefined()
+
+      // Total across pages should equal all registered templates (3 + 105 = 108)
+      expect(bigPage1.resourceTemplates.length + bigPage2.resourceTemplates.length).toBe(108)
+    })
+
+    test('listResourceTemplates throws on invalid cursor', async () => {
+      await expect(registry.listResourceTemplates('!!!invalid!!!')).rejects.toThrow(
+        /resources\/templates\/list cursor/
+      )
+    })
   })
 
   describe('getToolNameMappings', () => {

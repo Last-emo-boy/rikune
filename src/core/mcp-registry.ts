@@ -532,6 +532,42 @@ export class MCPRegistry {
   }
 
   /**
+   * List resource templates (MCP protocol method) with optional cursor pagination.
+   * Templates are sorted by uriTemplate for deterministic pagination.
+   * Same backwards-compatible pagination model as listResources.
+   */
+  async listResourceTemplates(cursor?: string): Promise<{
+    resourceTemplates: Array<{
+      uriTemplate: string
+      name: string
+      title?: string
+      description?: string
+      mimeType?: string
+      annotations?: {
+        audience?: Array<'user' | 'assistant'>
+        priority?: number
+        lastModified?: string
+      }
+    }>
+    nextCursor?: string
+  }> {
+    const sorted = [...this.resourceTemplates.values()].sort((a, b) =>
+      a.uriTemplate.localeCompare(b.uriTemplate)
+    )
+
+    if (cursor === undefined || cursor === null) {
+      return { resourceTemplates: sorted }
+    }
+
+    const offset = MCPRegistry.decodeOffsetCursor(cursor, 'resources/templates/list')
+    const pageSize = MCPRegistry.TOOL_PAGE_SIZE
+    const page = sorted.slice(offset, offset + pageSize)
+    const nextOffset = offset + pageSize
+    const nextCursor = nextOffset < sorted.length ? MCPRegistry.encodeOffsetCursor(nextOffset) : undefined
+    return { resourceTemplates: page, nextCursor }
+  }
+
+  /**
    * Detect whether a Zod schema is an object that contains a `sample_id`
    * (or `sample_id_a` / `sample_id_b`) required input field.
    */
