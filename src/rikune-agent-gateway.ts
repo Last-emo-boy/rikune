@@ -71,6 +71,10 @@ interface UpstreamState {
   httpHealth?: unknown
   capabilities?: unknown
   toolkit?: unknown
+  /** Periodic upstream heartbeat timer; null when no MCP client is connected. */
+  heartbeatTimer: ReturnType<typeof setInterval> | null
+  /** Consecutive heartbeat failure count; triggers reconnect on threshold. */
+  heartbeatFailures: number
 }
 
 interface ToolRoute {
@@ -1124,6 +1128,7 @@ export class RikuneAgentGateway {
       state.serverCapabilities = upstreamCaps
       state.lastConnectedAt = new Date().toISOString()
       state.lastError = undefined
+      this.startHeartbeat(target)
     } catch (error) {
       state.lastError = errorMessage(error)
       state.connected = false
@@ -1136,12 +1141,57 @@ export class RikuneAgentGateway {
   }
 
   private async closeTarget(target: AgentTarget): Promise<void> {
+    this.stopHeartbeat(target)
     const client = this.states[target].client
     this.states[target].client = null
     if (!client) {
       return
     }
     await client.close().catch(() => {})
+  }
+
+  /**
+   * Heartbeat interval in milliseconds for upstream MCP connections.
+   * A periodic ping detects stale connections and triggers reconnect.
+   */
+  private static readonly HEARTBEAT_INTERVAL_MS = 60_000
+  private static readonly HEARTBEAT_TIMEOUT_MS = 15_000
+  private static readonly HEARTBEAT_FAILURE_THRESHOLD = 3
+
+  private startHeartbeat(target: AgentTarget): void {
+    const state = this.states[target]
+    this.stopHeartbeat(target)
+    state.heartbeatFailures = 0
+    state.heartbeatTimer = setInterval(() => {
+      this.runHeartbeat(target).catch(() => {})
+    }, RikuneAgentGateway.HEARTBEAT_INTERVAL_MS)
+  }
+
+  private stopHeartbeat(target: AgentTarget): void {
+    const state = this.states[target]
+    if (state.heartbeatTimer) {
+      clearInterval(state.heartbeatTimer)
+      state.heartbeatTimer = null
+    }
+    state.heartbeatFailures = 0
+  }
+
+  private async runHeartbeat(target: AgentTarget): Promise<void> {
+    const state = this.states[target]
+    if (!state.client || !state.connected) return
+    try {
+      await state.client.ping({ timeout: RikuneAgentGateway.HEARTBEAT_TIMEOUT_MS })
+      state.heartbeatFailures = 0
+    } catch (error) {
+      state.heartbeatFailures++
+      process.stderr.write(
+        `[gateway] Upstream '${target}' heartbeat failed (${state.heartbeatFailures}/${RikuneAgentGateway.HEARTBEAT_FAILURE_THRESHOLD}): ${errorMessage(error)}\n`
+      )
+      if (state.heartbeatFailures >= RikuneAgentGateway.HEARTBEAT_FAILURE_THRESHOLD) {
+        process.stderr.write(`[gateway] Reconnecting stale upstream '${target}'\n`)
+        await this.refreshTarget(target).catch(() => {})
+      }
+    }
   }
 
   private describeTarget(target: AgentTarget): Record<string, unknown> {
@@ -1162,6 +1212,8 @@ export class RikuneAgentGateway {
       api_key_configured: Boolean(config.apiKey),
       mcp_connected: state.connected,
       http_health: state.httpHealth || null,
+      heartbeat_active: state.heartbeatTimer !== null,
+      heartbeat_failures: state.heartbeatFailures,
       tool_count: state.tools.length,
       server: state.serverVersion || null,
       server_capabilities: state.serverCapabilities || null,
@@ -1258,6 +1310,8 @@ function createEmptyState(): UpstreamState {
     client: null,
     tools: [],
     connected: false,
+    heartbeatTimer: null,
+    heartbeatFailures: 0,
   }
 }
 

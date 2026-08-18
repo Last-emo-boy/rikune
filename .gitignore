@@ -117,3 +117,4 @@ install-info.json
 .tmp-test/
 C:\\
 .runtime-task-store.json
+.test-results.json
