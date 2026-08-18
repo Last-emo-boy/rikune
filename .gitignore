@@ -116,3 +116,4 @@ install-info.json
 .workflow/
 .tmp-test/
 C:\\
+.runtime-task-store.json
