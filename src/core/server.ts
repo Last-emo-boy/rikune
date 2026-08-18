@@ -9,6 +9,7 @@ import {
   CallToolRequestSchema,
   type CallToolResult,
   type ClientCapabilities,
+  CompleteRequestSchema,
   type CreateMessageRequest,
   type CreateMessageResult,
   type CreateMessageResultWithTools,
@@ -95,6 +96,7 @@ export class MCPServer
           tools: { listChanged: true },
           prompts: {},
           resources: { listChanged: true },
+          completions: {},
         },
       }
     )
@@ -165,6 +167,36 @@ export class MCPServer
         resourceTemplates: this.registry.getResourceTemplates(),
       }
     })
+
+    // Handle completion/complete request
+    this.server.setRequestHandler(CompleteRequestSchema, async (request) => {
+      const { ref, argument, context } = request.params
+      this.logger.debug({ ref, argument }, 'Handling completion/complete request')
+
+      let key: string
+      if (ref.type === 'ref/prompt') {
+        key = `prompt:${ref.name}:${argument.name}`
+      } else {
+        key = `resource:${ref.uri}`
+      }
+
+      const provider = this.registry.getCompletionProvider(key)
+      if (!provider) {
+        return { completion: { values: [], total: 0, hasMore: false } }
+      }
+
+      const values = await provider(
+        argument.value,
+        context?.arguments as Record<string, unknown> | undefined
+      )
+      return {
+        completion: {
+          values: values.slice(0, 100),
+          total: values.length,
+          hasMore: values.length > 100,
+        },
+      }
+    })
   }
 
   /**
@@ -208,6 +240,25 @@ export class MCPServer
     mimeType?: string
   }): void {
     this.registry.registerResourceTemplate(meta)
+  }
+
+  /**
+   * Register a completion provider (MCP completion/complete handler).
+   */
+  public registerCompletionProvider(
+    key: string,
+    provider: (value: string, context?: Record<string, unknown>) => Promise<string[]>
+  ): void {
+    this.registry.registerCompletionProvider(key, provider)
+  }
+
+  /**
+   * Get a registered completion provider by key.
+   */
+  public getCompletionProvider(
+    key: string
+  ): ((value: string, context?: Record<string, unknown>) => Promise<string[]>) | undefined {
+    return this.registry.getCompletionProvider(key)
   }
 
   /**

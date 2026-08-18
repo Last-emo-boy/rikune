@@ -420,6 +420,27 @@ describe('MCPServer', () => {
     })
   })
 
+  describe('Completion', () => {
+    it('should register and invoke a prompt argument completion provider', async () => {
+      server.registerCompletionProvider(
+        'prompt:code_review:language',
+        async (value) => {
+          const all = ['python', 'pytorch', 'pyside', 'javascript', 'java']
+          return all.filter((v) => v.startsWith(value))
+        }
+      )
+      const provider = server.getCompletionProvider('prompt:code_review:language')
+      expect(provider).toBeDefined()
+      const results = await provider!('py')
+      expect(results).toEqual(['python', 'pytorch', 'pyside'])
+    })
+
+    it('should return empty values when no completion provider is registered', async () => {
+      const provider = server.getCompletionProvider('prompt:unknown:arg')
+      expect(provider).toBeUndefined()
+    })
+  })
+
   describe('Sampling Helpers', () => {
     it('should report client sampling capabilities when advertised by the MCP client', () => {
       const sdkServer = server.getServer() as any

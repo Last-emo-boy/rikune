@@ -98,6 +98,10 @@ export class MCPRegistry {
       mimeType?: string
     }
   >
+  private completionProviders: Map<
+    string,
+    (value: string, context?: Record<string, unknown>) => Promise<string[]>
+  >
 
   /**
    * Tool names that are sample-ingestion entry points themselves and should
@@ -130,6 +134,7 @@ export class MCPRegistry {
     this.resources = new Map()
     this.resourceHandlers = new Map()
     this.resourceTemplates = new Map()
+    this.completionProviders = new Map()
   }
 
   /**
@@ -202,6 +207,24 @@ export class MCPRegistry {
   }): void {
     this.logger.info({ template: meta.uriTemplate }, 'Registering resource template')
     this.resourceTemplates.set(meta.uriTemplate, meta)
+  }
+
+  /**
+   * Register a completion provider for a prompt argument or resource URI.
+   * The key format: `prompt:{name}:{arg}` or `resource:{uri}`.
+   */
+  registerCompletionProvider(
+    key: string,
+    provider: (value: string, context?: Record<string, unknown>) => Promise<string[]>
+  ): void {
+    this.logger.debug({ key }, 'Registering completion provider')
+    this.completionProviders.set(key, provider)
+  }
+
+  getCompletionProvider(
+    key: string
+  ): ((value: string, context?: Record<string, unknown>) => Promise<string[]>) | undefined {
+    return this.completionProviders.get(key)
   }
 
   /**
