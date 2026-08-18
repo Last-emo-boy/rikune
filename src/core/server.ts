@@ -384,11 +384,11 @@ export class MCPServer
     const surface = getToolSurfaceManager()
     surface.setNotifyCallback(() => {
       if (!this.clientInitialized) return
-      try {
-        this.server.sendToolListChanged()
-      } catch (e) {
+      // sendToolListChanged() returns a Promise; catch rejections to avoid
+      // unhandled promise rejection (sync try/catch only catches sync throws).
+      this.server.sendToolListChanged().catch((e) => {
         this.logger.debug({ err: e }, 'Tool list change notification failed (best-effort)')
-      }
+      })
     })
   }
 

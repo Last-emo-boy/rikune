@@ -1107,11 +1107,18 @@ export class RikuneAgentGateway {
           `Upstream '${target}' did not declare 'tools' capability; refusing to call tools/list`
         )
       }
-      const listed = await client.listTools(undefined, {
-        timeout: config.timeoutMs || getConnectTimeoutMs(this.env),
-      })
+      // Fetch all upstream tools, following pagination cursors until exhausted.
+      const allTools: Tool[] = []
+      let cursor: string | undefined
+      do {
+        const page = await client.listTools(cursor ? { cursor } : undefined, {
+          timeout: config.timeoutMs || getConnectTimeoutMs(this.env),
+        })
+        allTools.push(...(page.tools || []))
+        cursor = page.nextCursor
+      } while (cursor)
       state.client = client
-      state.tools = listed.tools || []
+      state.tools = allTools
       state.connected = true
       state.serverVersion = client.getServerVersion()
       state.serverCapabilities = upstreamCaps
