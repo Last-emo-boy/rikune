@@ -73,6 +73,22 @@ describe('MCPRegistry', () => {
       expect(tools.some((t) => t.name === 'ghidra_analyze')).toBe(true)
     })
 
+    test('should surface tool title when provided', async () => {
+      const tool = makeTool('ghidra.analyze')
+      tool.title = 'Ghidra Analyzer'
+      registry.registerTool(tool, async () => ({ ok: true }))
+      const { tools } = await registry.listTools()
+      const t = tools.find((x) => x.name === 'ghidra_analyze')
+      expect(t?.title).toBe('Ghidra Analyzer')
+    })
+
+    test('should omit title when not provided', async () => {
+      registry.registerTool(makeTool('sample.ingest'), async () => ({ ok: true }))
+      const { tools } = await registry.listTools()
+      const t = tools.find((x) => x.name === 'sample_ingest')
+      expect(t?.title).toBeUndefined()
+    })
+
     test('should append prerequisite hint for tools requiring sample_id', async () => {
       registry.registerTool(makeTool('ghidra.analyze', true), async () => ({ ok: true }))
       const { tools } = await registry.listTools()

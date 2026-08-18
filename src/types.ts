@@ -238,6 +238,8 @@ export interface ToolDefinition {
   name: string
   canonicalName?: string
   description: string
+  /** Human-readable display name (MCP 2025-06-18 Tool.title). */
+  title?: string
   inputSchema: JSONSchema
   outputSchema?: JSONSchema
   /**

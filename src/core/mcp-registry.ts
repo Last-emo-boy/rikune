@@ -333,6 +333,7 @@ export class MCPRegistry {
 
       allTools.push({
         name,
+        ...(definition.title ? { title: definition.title } : {}),
         description,
         inputSchema: inputSchema as Tool['inputSchema'],
         ...(outputSchema ? { outputSchema: outputSchema as Tool['outputSchema'] } : {}),
