@@ -7,6 +7,7 @@
  */
 
 import { z } from 'zod'
+import { createTrustedFetch } from '@rikune/shared'
 import {
   getDatabase,
   getRuntimeConfig,
@@ -14,6 +15,12 @@ import {
   type ToolDefinition,
   type WorkerResult,
 } from '../../sdk.js'
+import {
+  endpointUrl,
+  getEndpointCredentialSource,
+  validateRuntimeEndpointResolution,
+  type RuntimeEndpointResolution,
+} from '../../../infrastructure/trusted-runtime-endpoint.js'
 
 const TOOL_NAME = 'dynamic.toolkit.status'
 
@@ -86,8 +93,13 @@ async function fetchJsonStatus(
   headers: Record<string, string>,
   timeoutMs = 10_000
 ): Promise<FetchStatus> {
+  let trustedFetch: ReturnType<typeof createTrustedFetch> | null = null
   try {
-    const response = await fetch(url, {
+    trustedFetch = createTrustedFetch({
+      allowedOrigins: [new URL(url).origin],
+      label: 'dynamic toolkit Runtime Node endpoint',
+    })
+    const response = await trustedFetch(url, {
       headers,
       signal: AbortSignal.timeout(timeoutMs),
     })
@@ -115,6 +127,10 @@ async function fetchJsonStatus(
       body: null,
       error: error instanceof Error ? error.message : String(error),
     }
+  } finally {
+    if (trustedFetch) {
+      await trustedFetch.close().catch(() => {})
+    }
   }
 }
 
@@ -140,21 +156,56 @@ function resolveRuntimeEndpoint(
   deps: PluginToolDeps,
   input: z.infer<typeof DynamicToolkitStatusInputSchema>,
   rows: any[]
-): { endpoint?: string; source: string } {
+): RuntimeEndpointResolution {
   const runtime = getRuntimeConfig(deps)
   if (input.runtime_endpoint) {
-    return { endpoint: input.runtime_endpoint, source: 'input.runtime_endpoint' }
+    return {
+      endpoint: input.runtime_endpoint,
+      source: 'input.runtime_endpoint',
+      configuredEndpoint:
+        typeof runtime.endpoint === 'string' && runtime.endpoint.trim()
+          ? runtime.endpoint
+          : undefined,
+    }
   }
   if (typeof runtime.endpoint === 'string' && runtime.endpoint.trim()) {
-    return { endpoint: runtime.endpoint, source: 'config.runtime.endpoint' }
+    return {
+      endpoint: runtime.endpoint,
+      source: 'config.runtime.endpoint',
+      configuredEndpoint: runtime.endpoint,
+    }
   }
   for (const row of rows) {
     const metadata = parseJsonObject(row?.metadata_json)
     if (typeof metadata.endpoint === 'string' && metadata.endpoint.length > 0) {
-      return { endpoint: metadata.endpoint, source: `debug_session:${row.id}` }
+      return {
+        endpoint: metadata.endpoint,
+        source: `debug_session:${row.id}`,
+        configuredEndpoint:
+          typeof runtime.endpoint === 'string' && runtime.endpoint.trim()
+            ? runtime.endpoint
+            : undefined,
+        provenance: {
+          kind: 'persisted-session',
+          parentEndpoint:
+            typeof metadata.endpoint_parent === 'string' ? metadata.endpoint_parent : undefined,
+          backend:
+            typeof metadata.backend === 'string'
+              ? metadata.backend
+              : typeof row?.backend === 'string'
+                ? row.backend
+                : undefined,
+        },
+      }
     }
   }
-  return { source: 'none' }
+  return {
+    source: 'none',
+    configuredEndpoint:
+      typeof runtime.endpoint === 'string' && runtime.endpoint.trim()
+        ? runtime.endpoint
+        : undefined,
+  }
 }
 
 function toolkitSummary(inventory: any): Record<string, unknown> {
@@ -233,6 +284,20 @@ export function createDynamicToolkitStatusHandler(deps: PluginToolDeps) {
     const runtimeApiKey = input.runtime_api_key || runtime.apiKey
     const endpointResolution = resolveRuntimeEndpoint(deps, input, rows)
 
+    try {
+      validateRuntimeEndpointResolution(
+        endpointResolution,
+        getEndpointCredentialSource(input.runtime_api_key, runtime.apiKey),
+        'Runtime Node endpoint'
+      )
+    } catch (error) {
+      return {
+        ok: false,
+        errors: [error instanceof Error ? error.message : String(error)],
+        metrics: { elapsed_ms: Date.now() - started, tool: TOOL_NAME },
+      }
+    }
+
     if (!endpointResolution.endpoint) {
       const guidance = buildGuidance('not_configured', null)
       return {
@@ -251,9 +316,9 @@ export function createDynamicToolkitStatusHandler(deps: PluginToolDeps) {
 
     const headers = getAuthHeader(runtimeApiKey)
     const [health, capabilities, toolkit] = await Promise.all([
-      fetchJsonStatus(new URL('/health', endpointResolution.endpoint).toString(), headers),
-      fetchJsonStatus(new URL('/capabilities', endpointResolution.endpoint).toString(), headers),
-      fetchJsonStatus(new URL('/toolkit', endpointResolution.endpoint).toString(), headers),
+      fetchJsonStatus(endpointUrl(endpointResolution.endpoint, '/health'), headers),
+      fetchJsonStatus(endpointUrl(endpointResolution.endpoint, '/capabilities'), headers),
+      fetchJsonStatus(endpointUrl(endpointResolution.endpoint, '/toolkit'), headers),
     ])
     const inventory = toolkit.ok ? toolkit.body?.data : null
     const status: 'ready' | 'partial' = toolkit.ok ? 'ready' : 'partial'

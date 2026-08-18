@@ -33,5 +33,8 @@
   },
   "dependencies": {
     "@rikune/shared": "1.1.0"
+  },
+  "engines": {
+    "node": ">=18.17.0"
   }
 }

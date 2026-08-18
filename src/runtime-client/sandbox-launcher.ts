@@ -11,7 +11,12 @@ import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
 import { logger } from '../logger.js'
 import { config } from '../config.js'
-import { buildWsbXml } from '@rikune/shared'
+import {
+  assertTrustedHttpEndpoint,
+  buildWsbXml,
+  createTrustedFetch,
+  endpointUrl,
+} from '@rikune/shared'
 
 export interface RuntimeConnection {
   endpoint: string
@@ -30,6 +35,61 @@ export interface HealthCheckOptions {
   intervalMs?: number
   unhealthyThreshold?: number
   onUnhealthy?: () => void | Promise<void>
+}
+
+export function validateAutoSandboxRuntimeEndpoint(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error('Auto-sandbox ready file must contain a Runtime Node endpoint.')
+  }
+  const parsed = assertTrustedHttpEndpoint(value, {
+    label: 'auto-sandbox ready-file runtime endpoint',
+  })
+  if (parsed.url.protocol !== 'http:') {
+    throw new Error('Auto-sandbox Runtime Node endpoints must use http.')
+  }
+  return parsed.origin
+}
+
+export function parseAutoSandboxReadyEndpoint(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+  const endpoint = (value as { endpoint?: unknown }).endpoint
+  if (endpoint === undefined || endpoint === null || endpoint === '') {
+    return null
+  }
+  return validateAutoSandboxRuntimeEndpoint(endpoint)
+}
+
+export async function probeAutoSandboxRuntimeHealth(
+  endpoint: string,
+  runtimeApiKey: string | undefined
+): Promise<void> {
+  const trustedApiKey = runtimeApiKey?.trim()
+  if (!trustedApiKey) {
+    throw new Error('Auto-sandbox Runtime Node health checks require a runtime API key.')
+  }
+  const trustedEndpoint = validateAutoSandboxRuntimeEndpoint(endpoint)
+  const trustedFetch = createTrustedFetch({
+    allowedOrigins: [trustedEndpoint],
+    label: 'auto-sandbox runtime endpoint',
+  })
+  try {
+    const response = await trustedFetch(endpointUrl(trustedEndpoint, '/health'), {
+      headers: { Authorization: `Bearer ${trustedApiKey}` },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {})
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const data = (await response.json()) as { ok?: boolean }
+    if (data.ok !== true) {
+      throw new Error('Health check returned not ok')
+    }
+  } finally {
+    await trustedFetch.close().catch(() => {})
+  }
 }
 
 export function createSandboxLauncher(): SandboxLauncher {
@@ -121,12 +181,7 @@ export function createSandboxLauncher(): SandboxLauncher {
       healthCheckTimer = setInterval(async () => {
         if (!currentConnection) return
         try {
-          const res = await fetch(`${currentConnection.endpoint}/health`, {
-            signal: AbortSignal.timeout(10_000),
-          })
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          const data = (await res.json()) as { ok?: boolean }
-          if (!data.ok) throw new Error('Health check returned not ok')
+          await probeAutoSandboxRuntimeHealth(currentConnection.endpoint, config.runtime.apiKey)
           consecutiveFailures = 0
         } catch (err) {
           consecutiveFailures++
@@ -294,13 +349,12 @@ async function waitForRuntimeReady(sandboxDir: string, timeoutMs: number): Promi
     try {
       const raw = await fs.readFile(readyFile, 'utf-8')
       const data = JSON.parse(raw)
-      if (data.endpoint && typeof data.endpoint === 'string') {
-        return data.endpoint
-      }
-      return 'http://127.0.0.1:18081'
+      const endpoint = parseAutoSandboxReadyEndpoint(data)
+      if (endpoint) return endpoint
     } catch {
-      await new Promise((r) => setTimeout(r, interval))
+      // The runtime may still be writing the ready file.
     }
+    await new Promise((r) => setTimeout(r, interval))
   }
   return null
 }

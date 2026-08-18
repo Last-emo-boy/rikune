@@ -3,7 +3,10 @@
  */
 
 import { describe, test, expect, beforeEach, jest } from '@jest/globals'
-import { createRuntimeRecovery, type RecoveryContext } from '../../../src/runtime-client/recovery.js'
+import {
+  createRuntimeRecovery,
+  type RecoveryContext,
+} from '../../../src/runtime-client/recovery.js'
 import type { Config } from '../../../src/config.js'
 
 describe('createRuntimeRecovery', () => {
@@ -22,7 +25,9 @@ describe('createRuntimeRecovery', () => {
 
     mockSandboxLauncher = {
       teardown: jest.fn().mockResolvedValue(undefined),
-      launch: jest.fn().mockResolvedValue({ endpoint: 'http://127.0.0.1:18081', sandboxDir: '/tmp/sandbox' }),
+      launch: jest
+        .fn()
+        .mockResolvedValue({ endpoint: 'http://127.0.0.1:18081', sandboxDir: '/tmp/sandbox' }),
     }
 
     mockConfig = {
@@ -50,7 +55,11 @@ describe('createRuntimeRecovery', () => {
     test('should recover by calling host agent /sandbox/start', async () => {
       ;(global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ ok: true, endpoint: 'http://new-endpoint:18081', sandboxId: 'sb-123' }),
+        json: async () => ({
+          ok: true,
+          endpoint: 'http://host-agent:18081',
+          sandboxId: 'sb-123',
+        }),
       })
 
       const recovery = createRuntimeRecovery({
@@ -65,14 +74,18 @@ describe('createRuntimeRecovery', () => {
       expect(result).toBe(true)
       expect(global.fetch).toHaveBeenCalledWith(
         'http://host-agent:18082/sandbox/start',
-        expect.objectContaining({ method: 'POST' })
+        expect.objectContaining({ method: 'POST', redirect: 'error' })
       )
     })
 
     test('should update existing runtimeClient endpoint', async () => {
       ;(global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ ok: true, endpoint: 'http://new-endpoint:18081', sandboxId: 'sb-123' }),
+        json: async () => ({
+          ok: true,
+          endpoint: 'http://host-agent:18081',
+          sandboxId: 'sb-123',
+        }),
       })
 
       const recovery = createRuntimeRecovery({
@@ -85,7 +98,62 @@ describe('createRuntimeRecovery', () => {
       const result = await recovery.recover()
 
       expect(result).toBe(true)
-      expect(mockRuntimeClient.setEndpoint).toHaveBeenCalledWith('http://new-endpoint:18081')
+      expect(mockRuntimeClient.setEndpoint).toHaveBeenCalledWith('http://host-agent:18081', {
+        trustedParentEndpoint: 'http://host-agent:18082',
+      })
+    })
+
+    test('should reject a runtime endpoint that is not bound to the Host Agent', async () => {
+      ;(global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          endpoint: 'http://attacker.invalid:18081',
+          sandboxId: 'sb-malicious',
+        }),
+      })
+
+      const recovery = createRuntimeRecovery({
+        config: mockConfig,
+        runtimeClient: mockRuntimeClient,
+        runtimeConnection: null,
+        sandboxLauncher: null,
+      })
+
+      await expect(recovery.recover()).resolves.toBe(false)
+      expect(mockRuntimeClient.setEndpoint).not.toHaveBeenCalled()
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://host-agent:18082/sandbox/start',
+        expect.objectContaining({ redirect: 'error' })
+      )
+    })
+
+    test('accepts a direct Hyper-V VM endpoint designated by the trusted Host Agent', async () => {
+      ;(global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          endpoint: 'http://hyperv-runtime.internal:18081',
+          sandboxId: 'hyperv-session',
+          backend: 'hyperv-vm',
+        }),
+      })
+
+      const recovery = createRuntimeRecovery({
+        config: mockConfig,
+        runtimeClient: mockRuntimeClient,
+        runtimeConnection: null,
+        sandboxLauncher: null,
+      })
+
+      await expect(recovery.recover()).resolves.toBe(true)
+      expect(mockRuntimeClient.setEndpoint).toHaveBeenCalledWith(
+        'http://hyperv-runtime.internal:18081',
+        {
+          trustedParentEndpoint: 'http://host-agent:18082',
+          trustedHostAgentBackend: 'hyperv-vm',
+        }
+      )
     })
 
     test('should return false when host agent responds with non-ok', async () => {
@@ -144,6 +212,52 @@ describe('createRuntimeRecovery', () => {
       expect(mockSandboxLauncher.launch).toHaveBeenCalled()
     })
 
+    test('should use the previous connection as provenance when the listener port changes', async () => {
+      mockConfig.runtime.apiKey = 'runtime-secret'
+      mockSandboxLauncher.launch.mockResolvedValueOnce({
+        endpoint: 'http://127.0.0.1:18082',
+        sandboxDir: '/tmp/sandbox-new',
+      })
+
+      const recovery = createRuntimeRecovery({
+        config: mockConfig,
+        runtimeClient: mockRuntimeClient,
+        runtimeConnection: {
+          endpoint: 'http://127.0.0.1:18081',
+          sandboxDir: '/tmp/sandbox-old',
+        } as any,
+        sandboxLauncher: mockSandboxLauncher,
+      })
+
+      await expect(recovery.recover()).resolves.toBe(true)
+      expect(mockRuntimeClient.setEndpoint).toHaveBeenCalledWith('http://127.0.0.1:18082', {
+        trustedLocalSandboxLaunch: true,
+      })
+    })
+
+    test('allows a trusted local launcher to rotate to a new sandbox host', async () => {
+      mockConfig.runtime.apiKey = 'runtime-secret'
+      mockSandboxLauncher.launch.mockResolvedValueOnce({
+        endpoint: 'http://192.168.137.11:18081',
+        sandboxDir: '/tmp/sandbox-new',
+      })
+
+      const recovery = createRuntimeRecovery({
+        config: mockConfig,
+        runtimeClient: mockRuntimeClient,
+        runtimeConnection: {
+          endpoint: 'http://192.168.137.10:18081',
+          sandboxDir: '/tmp/sandbox-old',
+        } as any,
+        sandboxLauncher: mockSandboxLauncher,
+      })
+
+      await expect(recovery.recover()).resolves.toBe(true)
+      expect(mockRuntimeClient.setEndpoint).toHaveBeenCalledWith('http://192.168.137.11:18081', {
+        trustedLocalSandboxLaunch: true,
+      })
+    })
+
     test('should create new runtimeClient if none exists', async () => {
       // createRuntimeClient is imported inside recovery.ts; we verify via setters
       const recovery = createRuntimeRecovery({
@@ -187,6 +301,50 @@ describe('createRuntimeRecovery', () => {
 
       expect(result).toBe(false)
     })
+
+    test('coalesces concurrent recovery attempts into one sandbox launch', async () => {
+      let resolveLaunch: ((connection: unknown) => void) | undefined
+      mockSandboxLauncher.launch.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveLaunch = resolve
+          })
+      )
+      const recovery = createRuntimeRecovery({
+        config: mockConfig,
+        runtimeClient: mockRuntimeClient,
+        runtimeConnection: null,
+        sandboxLauncher: mockSandboxLauncher,
+      })
+
+      const first = recovery.recover()
+      const second = recovery.recover()
+      expect(second).toBe(first)
+      await Promise.resolve()
+      expect(mockSandboxLauncher.teardown).toHaveBeenCalledTimes(1)
+      expect(mockSandboxLauncher.launch).toHaveBeenCalledTimes(1)
+
+      resolveLaunch?.({ endpoint: 'http://127.0.0.1:18081', sandboxDir: '/tmp/sandbox' })
+      await expect(Promise.all([first, second])).resolves.toEqual([true, true])
+      expect(mockRuntimeClient.setEndpoint).toHaveBeenCalledTimes(1)
+    })
+
+    test('releases the single-flight lock after a failed recovery', async () => {
+      mockSandboxLauncher.launch.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        endpoint: 'http://127.0.0.1:18081',
+        sandboxDir: '/tmp/sandbox-retry',
+      })
+      const recovery = createRuntimeRecovery({
+        config: mockConfig,
+        runtimeClient: mockRuntimeClient,
+        runtimeConnection: null,
+        sandboxLauncher: mockSandboxLauncher,
+      })
+
+      await expect(recovery.recover()).resolves.toBe(false)
+      await expect(recovery.recover()).resolves.toBe(true)
+      expect(mockSandboxLauncher.launch).toHaveBeenCalledTimes(2)
+    })
   })
 
   describe('setter methods', () => {
@@ -208,7 +366,10 @@ describe('createRuntimeRecovery', () => {
 
       // Verify by checking recovery uses updated refs in auto-sandbox path
       mockConfig.runtime.mode = 'auto-sandbox'
-      ;(newLauncher as any).launch.mockResolvedValue({ endpoint: 'http://test', sandboxDir: '/tmp' })
+      ;(newLauncher as any).launch.mockResolvedValue({
+        endpoint: 'http://test',
+        sandboxDir: '/tmp',
+      })
 
       const result = await recovery.recover()
       expect(result).toBe(true)

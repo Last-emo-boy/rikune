@@ -182,6 +182,12 @@ describe('PluginOrchestrator', () => {
       )
       expect(orchestrator.getDiscoveredPlugins()).toEqual([retained])
       expect(rejectedRegister).not.toHaveBeenCalled()
+      expect(statuses.find((status) => status.id === 'duplicate-id')).toEqual(
+        expect.objectContaining({ status: 'loaded' })
+      )
+      expect(
+        statuses.filter((status) => status.id === 'duplicate-id').map((status) => status.status)
+      ).toEqual(['loaded', 'error'])
     })
   })
 
@@ -222,6 +228,39 @@ describe('PluginOrchestrator', () => {
         expect.objectContaining({ name: 'a.tool' }),
         expect.any(Function)
       )
+    })
+
+    test('should preserve the original plugin as callback this receiver', async () => {
+      type StatefulPlugin = Plugin & { checkCount: number; registrationCount: number }
+      const plugin = {
+        ...makePlugin('stateful'),
+        checkCount: 0,
+        registrationCount: 0,
+        check(this: StatefulPlugin) {
+          this.checkCount += 1
+          return true
+        },
+        register(this: StatefulPlugin, server: PluginServerInterface) {
+          this.registrationCount += 1
+          server.registerTool(
+            { name: 'stateful.tool', description: 'Stateful tool', inputSchema: {} },
+            async () => ({ ok: true })
+          )
+          return ['stateful.tool']
+        },
+      } as StatefulPlugin
+
+      const status = await orchestrator.loadOne(plugin, mockServer as any, mockDeps)
+      const descriptor = orchestrator.getPlugin('stateful') as StatefulPlugin | undefined
+
+      expect(status.status).toBe('loaded')
+      expect(plugin.checkCount).toBe(1)
+      expect(plugin.registrationCount).toBe(1)
+      expect(descriptor).not.toBe(plugin)
+      expect(descriptor?.checkCount).toBe(0)
+      expect(descriptor?.registrationCount).toBe(0)
+      expect(Object.isFrozen(descriptor)).toBe(true)
+      expect(orchestrator.getPluginForTool('stateful.tool')).toBe('stateful')
     })
 
     test('should auto-register declarative plugin tools', async () => {

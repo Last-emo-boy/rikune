@@ -152,6 +152,7 @@ describe('dynamic.runtime.status tool', () => {
       config: {
         runtime: {
           mode: 'remote-sandbox',
+          endpoint: runtimeEndpoint,
           hostAgentEndpoint,
         },
       },
@@ -262,5 +263,79 @@ describe('dynamic.runtime.status tool', () => {
     expect((result.data as any).next_actions.join(' ')).toContain(
       'Configure runtime.hostAgentEndpoint'
     )
+  })
+
+  test('rejects a caller endpoint override before sending configured runtime credentials', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch')
+    const result = await createDynamicRuntimeStatusHandler({
+      config: {
+        runtime: {
+          endpoint: 'http://runtime.internal:18081',
+          apiKey: 'configured-runtime-secret',
+        },
+      },
+      database: {},
+    } as any)({ runtime_endpoint: 'http://attacker.example:18081' })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors?.[0]).toMatch(/configured endpoint origin/)
+    expect(fetchSpy).not.toHaveBeenCalled()
+    fetchSpy.mockRestore()
+  })
+
+  test('rejects persisted Hyper-V provenance before sending a configured runtime key', async () => {
+    const row = createDebugSessionRow('http://hyperv-runtime.internal:18081')
+    row.backend = 'hyperv-vm'
+    row.metadata_json = JSON.stringify({
+      endpoint: 'http://hyperv-runtime.internal:18081',
+      endpoint_parent: 'http://host-agent.internal:18082',
+      sandbox_id: 'hyperv-session',
+    })
+    const fetchSpy = jest.spyOn(globalThis, 'fetch')
+
+    const result = await createDynamicRuntimeStatusHandler({
+      config: { runtime: { apiKey: 'runtime-secret' } },
+      database: { findDebugSession: jest.fn().mockReturnValue(row) },
+    } as any)({ session_id: row.id })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors?.[0]).toMatch(/configured endpoint allowlist/)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  test('allows a caller-selected endpoint when the runtime key is explicit', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      return new Response(
+        JSON.stringify(
+          url.endsWith('/capabilities')
+            ? { ok: true, data: { runtime_backends: [] } }
+            : { ok: true, role: 'runtime-node' }
+        ),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    })
+
+    const result = await createDynamicRuntimeStatusHandler({
+      config: {
+        runtime: {
+          endpoint: 'http://configured-runtime.internal:18081',
+          apiKey: 'configured-runtime-secret',
+        },
+      },
+      database: {},
+    } as any)({
+      runtime_endpoint: 'http://caller-runtime.internal:18081',
+      runtime_api_key: 'explicit-runtime-secret',
+    })
+
+    expect(result.ok).toBe(true)
+    expect((result.data as any).runtime_endpoint).toBe('http://caller-runtime.internal:18081')
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    for (const [, init] of fetchSpy.mock.calls) {
+      expect((init as RequestInit).headers).toEqual({
+        Authorization: 'Bearer explicit-runtime-secret',
+      })
+    }
   })
 })

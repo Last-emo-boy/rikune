@@ -26,6 +26,7 @@ import {
 } from './runtime-client/index.js'
 import { getPluginManager } from './plugins.js'
 import { shutdownRuntimeWorkerPool } from './worker/runtime-worker-pool.js'
+import { assertTrustedHttpEndpoint, createTrustedFetch, endpointUrl } from '@rikune/shared'
 
 // Export public API
 export { MCPServer } from './core/server.js'
@@ -154,10 +155,28 @@ async function main() {
           return
         }
         try {
-          const healthRes = await fetch(`${config.runtime.endpoint}/health`, {
-            signal: AbortSignal.timeout(10_000),
+          const manualEndpoint = assertTrustedHttpEndpoint(config.runtime.endpoint, {
+            label: 'configured manual Runtime Node endpoint',
           })
-          if (!healthRes.ok) {
+          const trustedFetch = createTrustedFetch({
+            allowedOrigins: [manualEndpoint.origin],
+            label: 'configured manual Runtime Node endpoint',
+          })
+          let healthRes: Response | undefined
+          try {
+            healthRes = await trustedFetch(endpointUrl(manualEndpoint.url, '/health'), {
+              headers: config.runtime.apiKey
+                ? { Authorization: `Bearer ${config.runtime.apiKey}` }
+                : {},
+              signal: AbortSignal.timeout(10_000),
+            })
+          } finally {
+            if (healthRes?.body) {
+              await healthRes.body.cancel().catch(() => {})
+            }
+            await trustedFetch.close().catch(() => {})
+          }
+          if (!healthRes?.ok) {
             logger.warn(
               { endpoint: config.runtime.endpoint },
               'Configured manual runtime endpoint is not healthy; dynamic tools will be unavailable'
@@ -165,7 +184,7 @@ async function main() {
             return
           }
           runtimeClient = createRuntimeClient({
-            endpoint: config.runtime.endpoint,
+            endpoint: manualEndpoint.origin,
             apiKey: config.runtime.apiKey,
           })
           runtimeClient.recover = async () => false // manual mode cannot auto-recover
@@ -222,16 +241,18 @@ async function main() {
           }
           const connection = await sandboxLauncher.launch()
           if (connection) {
-            runtimeConnection = connection
-            recovery.setRuntimeConnection(runtimeConnection)
             if (!runtimeClient) {
               runtimeClient = createRuntimeClient({
                 endpoint: connection.endpoint,
                 apiKey: config.runtime.apiKey,
               })
             } else {
-              runtimeClient.setEndpoint(connection.endpoint)
+              runtimeClient.setEndpoint(connection.endpoint, {
+                trustedLocalSandboxLaunch: true,
+              })
             }
+            runtimeConnection = connection
+            recovery.setRuntimeConnection(runtimeConnection)
             runtimeClient.recover = recovery.recover
             recovery.setRuntimeClient(runtimeClient)
             logger.info({ endpoint: connection.endpoint }, 'Auto-sandbox runtime connected')
@@ -322,6 +343,9 @@ async function main() {
       }
       analysisTaskRunner.stop()
       await shutdownRuntimeWorkerPool()
+      if (runtimeClient?.close) {
+        await runtimeClient.close().catch(() => {})
+      }
       await server.stop()
       process.exit(0)
     }

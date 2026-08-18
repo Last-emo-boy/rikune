@@ -15,7 +15,12 @@ import { randomUUID } from 'crypto'
 import os from 'os'
 import net from 'net'
 import { logger } from './logger.js'
-import { buildWsbXml } from '@rikune/shared'
+import {
+  assertTrustedHttpEndpoint,
+  buildWsbXml,
+  createTrustedFetch,
+  endpointUrl,
+} from '@rikune/shared'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -383,26 +388,44 @@ async function waitForRuntimeEndpoint(
 ): Promise<boolean> {
   const started = Date.now()
   const interval = 2000
-  const healthUrl = new URL('/health', endpoint).toString()
-
-  while (Date.now() - started < timeoutMs) {
-    try {
-      const res = await fetch(healthUrl, {
-        headers: runtimeApiKey ? { Authorization: `Bearer ${runtimeApiKey}` } : {},
-        signal: AbortSignal.timeout(Math.min(interval, 5000)),
-      })
-      if (res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { ok?: boolean }
-        if (data.ok !== false) {
-          return true
-        }
-      }
-    } catch {
-      // Runtime may still be booting.
-    }
-    await new Promise((resolve) => setTimeout(resolve, interval))
+  let healthUrl: string
+  try {
+    healthUrl = endpointUrl(endpoint, '/health', { label: 'Hyper-V Runtime Node endpoint' })
+  } catch {
+    return false
   }
-  return false
+
+  const trustedFetch = createTrustedFetch({
+    allowedOrigins: [new URL(healthUrl).origin],
+    label: 'Hyper-V Runtime Node endpoint',
+  })
+  try {
+    while (Date.now() - started < timeoutMs) {
+      try {
+        const res = await trustedFetch(healthUrl, {
+          headers: runtimeApiKey ? { Authorization: `Bearer ${runtimeApiKey}` } : {},
+          redirect: 'error',
+          signal: AbortSignal.timeout(Math.min(interval, 5000)),
+        })
+        if (!res.ok) {
+          if (res.body) {
+            await res.body.cancel().catch(() => {})
+          }
+        } else {
+          const data = (await res.json().catch(() => ({}))) as { ok?: boolean }
+          if (data.ok === true) {
+            return true
+          }
+        }
+      } catch {
+        // Runtime may still be booting.
+      }
+      await new Promise((resolve) => setTimeout(resolve, interval))
+    }
+    return false
+  } finally {
+    await trustedFetch.close().catch(() => {})
+  }
 }
 
 async function stageRuntimeBundle(sandboxDir: string, runtimeEntryHost: string): Promise<string> {
@@ -1166,6 +1189,16 @@ async function startHyperVRuntime(body: unknown): Promise<StartSandboxResult> {
       ok: false,
       backend: 'hyperv-vm',
       error: 'HOST_AGENT_HYPERV_RUNTIME_ENDPOINT is required for the hyperv-vm backend',
+      diagnostics: buildHyperVDiagnostics({ vmName, snapshotName, endpoint }),
+    }
+  }
+  try {
+    assertTrustedHttpEndpoint(endpoint, { label: 'HOST_AGENT_HYPERV_RUNTIME_ENDPOINT' })
+  } catch (err) {
+    return {
+      ok: false,
+      backend: 'hyperv-vm',
+      error: err instanceof Error ? err.message : String(err),
       diagnostics: buildHyperVDiagnostics({ vmName, snapshotName, endpoint }),
     }
   }

@@ -1,6 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { randomUUID } from 'crypto'
 import { setTimeout as sleep } from 'timers/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
@@ -14,6 +15,12 @@ import {
   ListToolsRequestSchema,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js'
+import {
+  assertTrustedHttpEndpoint,
+  canonicalHttpOrigin,
+  createTrustedFetch,
+  type ParsedHttpServiceEndpoint,
+} from '@rikune/shared'
 import {
   buildDockerLauncherCommand,
   formatCommand,
@@ -44,6 +51,13 @@ interface AgentConfig {
   runtime: UpstreamConfig
 }
 
+type CredentialSource = 'none' | 'persisted' | 'environment' | 'configured'
+
+interface BuiltAgentConfig {
+  config: AgentConfig
+  credentialSources: Record<AgentTarget, CredentialSource>
+}
+
 interface UpstreamState {
   client: Client | null
   tools: Tool[]
@@ -66,6 +80,13 @@ interface ToolRoute {
 interface AgentOptions {
   env?: NodeJS.ProcessEnv
   configPath?: string
+}
+
+interface ValidatedTargetEndpoints {
+  endpoint?: ParsedHttpServiceEndpoint
+  healthEndpoint?: ParsedHttpServiceEndpoint
+  mcpEndpoint?: ParsedHttpServiceEndpoint
+  allowedOrigins: string[]
 }
 
 const VERSION = '1.1.0'
@@ -462,13 +483,21 @@ export class RikuneAgentGateway {
   private readonly server: Server
   private started = false
   private config: AgentConfig
+  private credentialSources: Record<AgentTarget, CredentialSource>
   private states: Record<AgentTarget, UpstreamState>
   private toolRoutes = new Map<string, ToolRoute>()
 
   constructor(options: AgentOptions = {}) {
-    this.env = loadEffectiveEnv(options.env ?? process.env)
+    const inputEnv = options.env ?? process.env
+    const fileEnvSources = loadRuntimeEnvFileSources(inputEnv)
+    this.env = mergeEnvironmentSources([...fileEnvSources, inputEnv])
     this.configPath = options.configPath || getAgentConfigPath(this.env)
-    this.config = buildAgentConfig(this.env, loadPersistedConfig(this.configPath))
+    const builtConfig = buildAgentConfig(this.env, loadPersistedConfig(this.configPath), [
+      ...fileEnvSources,
+      inputEnv,
+    ])
+    this.config = builtConfig.config
+    this.credentialSources = builtConfig.credentialSources
     this.states = {
       analyzer: createEmptyState(),
       vm: createEmptyState(),
@@ -536,13 +565,21 @@ export class RikuneAgentGateway {
     state.capabilities = undefined
     state.toolkit = undefined
 
+    let validated: ValidatedTargetEndpoints
+    try {
+      validated = validateTargetEndpoints(target, config)
+    } catch (error) {
+      state.lastError = errorMessage(error)
+      return
+    }
+
     if (config.enabled === false) {
       state.lastError = 'Connection is disabled.'
       return
     }
 
-    await this.refreshHttpPlane(target, config, state)
-    await this.refreshMcpPlane(target, config, state)
+    await this.refreshHttpPlane(target, config, state, validated)
+    await this.refreshMcpPlane(target, config, state, validated)
   }
 
   getStatus(includeTools = false): Record<string, unknown> {
@@ -608,7 +645,10 @@ export class RikuneAgentGateway {
   private async handleConfigure(args: Record<string, unknown>): Promise<Record<string, unknown>> {
     const target = parseTarget(args.target)
     const current = this.config[target]
+    const currentCredentialSource = this.credentialSources[target]
     const next: UpstreamConfig = { ...current }
+    const hasExplicitApiKey =
+      Object.prototype.hasOwnProperty.call(args, 'api_key') && typeof args.api_key === 'string'
 
     assignBoolean(args, 'enabled', next, 'enabled')
     assignString(args, 'transport', next, 'transport')
@@ -634,13 +674,28 @@ export class RikuneAgentGateway {
       next.enabled = true
     }
 
+    validateConfigurationUpdate(target, current, next, hasExplicitApiKey)
+
     this.config[target] = next
-    if (args.persist !== false) {
-      savePersistedConfig(this.configPath, this.config)
+    if (hasExplicitApiKey) {
+      this.credentialSources[target] = 'configured'
+    }
+    try {
+      if (args.refresh !== false) {
+        await this.refreshTarget(target)
+      }
+      if (args.persist !== false) {
+        savePersistedConfig(this.configPath, this.config, this.credentialSources)
+      }
+    } catch (error) {
+      this.config[target] = current
+      this.credentialSources[target] = currentCredentialSource
+      await this.closeTarget(target).catch(() => {})
+      this.states[target].connected = false
+      throw error
     }
 
     if (args.refresh !== false) {
-      await this.refreshTarget(target)
       this.notifyToolListChanged()
     }
 
@@ -750,6 +805,15 @@ export class RikuneAgentGateway {
 
   private async ensureTargetConnected(target: AgentTarget): Promise<boolean> {
     const state = this.states[target]
+    try {
+      validateTargetEndpoints(target, this.config[target])
+    } catch (error) {
+      state.lastError = errorMessage(error)
+      state.connected = false
+      state.tools = []
+      await this.closeTarget(target)
+      return false
+    }
     if (state.client && state.connected) {
       return true
     }
@@ -766,6 +830,14 @@ export class RikuneAgentGateway {
     args: Record<string, unknown>
   ): Promise<CallToolResult> {
     const state = this.states[target]
+    try {
+      validateTargetEndpoints(target, this.config[target])
+    } catch (error) {
+      state.lastError = errorMessage(error)
+      state.connected = false
+      await this.closeTarget(target)
+      return this.errorToolResult(`Upstream ${target} configuration is not trusted.`)
+    }
     if (!state.client || !state.connected) {
       return this.errorToolResult(`Upstream ${target} is not connected.`)
     }
@@ -833,7 +905,8 @@ export class RikuneAgentGateway {
   private async refreshHttpPlane(
     target: AgentTarget,
     config: UpstreamConfig,
-    state: UpstreamState
+    state: UpstreamState,
+    validated: ValidatedTargetEndpoints = validateTargetEndpoints(target, config)
   ): Promise<void> {
     const healthUrls = getHealthUrls(target, config)
     if (healthUrls.length === 0) {
@@ -841,17 +914,24 @@ export class RikuneAgentGateway {
     }
 
     try {
-      state.httpHealth = await fetchFirstJson(healthUrls, getHttpHeaders(target, config), 8_000)
+      state.httpHealth = await fetchFirstJson(
+        healthUrls,
+        getHttpHeaders(target, config),
+        8_000,
+        validated.allowedOrigins
+      )
       if (target === 'runtime' && config.endpoint) {
         state.capabilities = await fetchJson(
           toHostReachableUrl(new URL('/capabilities', config.endpoint).toString()),
           getHttpHeaders(target, config),
-          8_000
+          8_000,
+          validated.allowedOrigins
         ).catch((error) => ({ ok: false, error: errorMessage(error) }))
         state.toolkit = await fetchJson(
           toHostReachableUrl(new URL('/toolkit', config.endpoint).toString()),
           getHttpHeaders(target, config),
-          8_000
+          8_000,
+          validated.allowedOrigins
         ).catch((error) => ({ ok: false, error: errorMessage(error) }))
       }
     } catch (error) {
@@ -863,9 +943,10 @@ export class RikuneAgentGateway {
   private async refreshMcpPlane(
     target: AgentTarget,
     config: UpstreamConfig,
-    state: UpstreamState
+    state: UpstreamState,
+    validated: ValidatedTargetEndpoints = validateTargetEndpoints(target, config)
   ): Promise<void> {
-    const transportConfig = buildTransportConfig(target, config, this.env)
+    const transportConfig = buildTransportConfig(target, config, this.env, validated)
     if (!transportConfig) {
       return
     }
@@ -1004,7 +1085,7 @@ export async function runRikuneAgentCli(
     return 0
   }
 
-  const gateway = new RikuneAgentGateway({ env: effectiveEnv })
+  const gateway = new RikuneAgentGateway({ env })
   if (!rest.includes('--no-initial-refresh')) {
     await gateway.refreshAll({ notify: false })
   }
@@ -1028,16 +1109,60 @@ function createEmptyState(): UpstreamState {
 }
 
 function loadEffectiveEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const fileEnv = loadRuntimeEnvFiles(env)
-  return {
-    ...fileEnv,
-    ...env,
+  return mergeEnvironmentSources([...loadRuntimeEnvFileSources(env), env])
+}
+
+function mergeEnvironmentSources(sources: readonly NodeJS.ProcessEnv[]): NodeJS.ProcessEnv {
+  const merged = Object.assign({}, ...sources)
+  for (const pair of [
+    {
+      endpointKeys: ['RIKUNE_ANALYZER_ENDPOINT', 'ANALYZER_ENDPOINT'],
+      apiKeyKeys: ['RIKUNE_ANALYZER_API_KEY', 'ANALYZER_API_KEY'],
+    },
+    {
+      endpointKeys: ['RIKUNE_VM_ENDPOINT', 'RUNTIME_HOST_AGENT_ENDPOINT', 'RIKUNE_VM_MCP_ENDPOINT'],
+      apiKeyKeys: ['RIKUNE_VM_API_KEY', 'RUNTIME_HOST_AGENT_API_KEY'],
+    },
+    {
+      endpointKeys: ['RIKUNE_RUNTIME_ENDPOINT', 'RUNTIME_ENDPOINT', 'RIKUNE_RUNTIME_MCP_ENDPOINT'],
+      apiKeyKeys: ['RIKUNE_RUNTIME_API_KEY', 'RUNTIME_API_KEY'],
+    },
+  ]) {
+    applyAtomicEnvironmentPair(merged, sources, pair.endpointKeys, pair.apiKeyKeys)
+  }
+  return merged
+}
+
+function applyAtomicEnvironmentPair(
+  merged: NodeJS.ProcessEnv,
+  sources: readonly NodeJS.ProcessEnv[],
+  endpointKeys: readonly string[],
+  apiKeyKeys: readonly string[]
+): void {
+  const sourceWithEndpoint = [...sources]
+    .reverse()
+    .find((source) => endpointKeys.some((key) => Boolean(source[key])))
+  const selectedSource =
+    sourceWithEndpoint ||
+    [...sources].reverse().find((source) => apiKeyKeys.some((key) => Boolean(source[key])))
+
+  for (const key of [...endpointKeys, ...apiKeyKeys]) {
+    delete merged[key]
+  }
+  if (!selectedSource) {
+    return
+  }
+
+  for (const key of sourceWithEndpoint ? [...endpointKeys, ...apiKeyKeys] : apiKeyKeys) {
+    if (selectedSource[key]) {
+      merged[key] = selectedSource[key]
+    }
   }
 }
 
-function loadRuntimeEnvFiles(env: NodeJS.ProcessEnv): Record<string, string> {
+function loadRuntimeEnvFileSources(env: NodeJS.ProcessEnv): Array<Record<string, string>> {
   if (env.RIKUNE_AGENT_NO_ENV_FILE === '1' || env.RIKUNE_AGENT_LOAD_ENV_FILE === 'false') {
-    return {}
+    return []
   }
 
   const candidates = [
@@ -1046,11 +1171,7 @@ function loadRuntimeEnvFiles(env: NodeJS.ProcessEnv): Record<string, string> {
     path.join(process.cwd(), '.docker-runtime.env'),
   ].filter((value): value is string => Boolean(value))
 
-  const result: Record<string, string> = {}
-  for (const candidate of candidates) {
-    Object.assign(result, parseEnvFile(candidate))
-  }
-  return result
+  return candidates.map((candidate) => parseEnvFile(candidate))
 }
 
 function parseEnvFile(filePath: string): Record<string, string> {
@@ -1104,33 +1225,75 @@ function loadPersistedConfig(configPath: string): Partial<AgentConfig> {
   }
 }
 
-function savePersistedConfig(configPath: string, config: AgentConfig): void {
-  fs.mkdirSync(path.dirname(configPath), { recursive: true })
-  fs.writeFileSync(
-    configPath,
+function savePersistedConfig(
+  configPath: string,
+  config: AgentConfig,
+  credentialSources: Record<AgentTarget, CredentialSource>
+): void {
+  const directory = path.dirname(configPath)
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
+  const forPersistence = (target: AgentTarget): UpstreamConfig => {
+    const persisted = { ...config[target] }
+    if (credentialSources[target] === 'environment') {
+      delete persisted.apiKey
+    }
+    return persisted
+  }
+  const persistedTargets: AgentConfig = {
+    analyzer: forPersistence('analyzer'),
+    vm: forPersistence('vm'),
+    runtime: forPersistence('runtime'),
+  }
+  const payload =
     JSON.stringify(
       {
-        analyzer: config.analyzer,
-        vm: config.vm,
-        runtime: config.runtime,
+        ...persistedTargets,
         updated_at: new Date().toISOString(),
       },
       null,
       2
-    ) + '\n',
-    'utf8'
-  )
+    ) + '\n'
+  const temporaryPath = path.join(directory, `.${path.basename(configPath)}.${randomUUID()}.tmp`)
+  try {
+    fs.writeFileSync(temporaryPath, payload, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    })
+    fs.renameSync(temporaryPath, configPath)
+  } catch (error) {
+    try {
+      fs.unlinkSync(temporaryPath)
+    } catch {}
+    throw error
+  }
 }
 
-function buildAgentConfig(env: NodeJS.ProcessEnv, persisted: Partial<AgentConfig>): AgentConfig {
-  const analyzerEndpoint = env.RIKUNE_ANALYZER_ENDPOINT || env.ANALYZER_ENDPOINT || ''
-  const vmEndpoint = env.RIKUNE_VM_ENDPOINT || env.RUNTIME_HOST_AGENT_ENDPOINT || ''
-  const runtimeEndpoint = env.RIKUNE_RUNTIME_ENDPOINT || env.RUNTIME_ENDPOINT || ''
+function buildAgentConfig(
+  env: NodeJS.ProcessEnv,
+  persisted: Partial<AgentConfig>,
+  environmentSources: readonly NodeJS.ProcessEnv[] = [env]
+): BuiltAgentConfig {
+  const analyzerEnvironment = selectEnvironmentHttpConfig(environmentSources, (source) => ({
+    endpoint: source.RIKUNE_ANALYZER_ENDPOINT || source.ANALYZER_ENDPOINT || undefined,
+    apiKey:
+      source.RIKUNE_ANALYZER_API_KEY || source.ANALYZER_API_KEY || source.API_KEY || undefined,
+  }))
+  const vmEnvironment = selectEnvironmentHttpConfig(environmentSources, (source) => ({
+    endpoint: source.RIKUNE_VM_ENDPOINT || source.RUNTIME_HOST_AGENT_ENDPOINT || undefined,
+    mcpEndpoint: source.RIKUNE_VM_MCP_ENDPOINT || undefined,
+    apiKey: source.RIKUNE_VM_API_KEY || source.RUNTIME_HOST_AGENT_API_KEY || undefined,
+  }))
+  const runtimeEnvironment = selectEnvironmentHttpConfig(environmentSources, (source) => ({
+    endpoint: source.RIKUNE_RUNTIME_ENDPOINT || source.RUNTIME_ENDPOINT || undefined,
+    mcpEndpoint: source.RIKUNE_RUNTIME_MCP_ENDPOINT || undefined,
+    apiKey: source.RIKUNE_RUNTIME_API_KEY || source.RUNTIME_API_KEY || undefined,
+  }))
 
   const analyzer: UpstreamConfig = {
     enabled: persisted.analyzer?.enabled ?? true,
     transport: persisted.analyzer?.transport || 'docker-stdio',
-    endpoint: persisted.analyzer?.endpoint || analyzerEndpoint || DEFAULT_ANALYZER_HTTP_ENDPOINT,
+    endpoint: persisted.analyzer?.endpoint || DEFAULT_ANALYZER_HTTP_ENDPOINT,
     ...persisted.analyzer,
   }
   const vm: UpstreamConfig = {
@@ -1145,12 +1308,12 @@ function buildAgentConfig(env: NodeJS.ProcessEnv, persisted: Partial<AgentConfig
   if (env.RIKUNE_ANALYZER_TRANSPORT) {
     analyzer.transport = env.RIKUNE_ANALYZER_TRANSPORT as McpTransportKind
   }
-  if (analyzerEndpoint) {
-    analyzer.endpoint = analyzerEndpoint
-  }
-  if (env.RIKUNE_ANALYZER_API_KEY || env.ANALYZER_API_KEY || env.API_KEY) {
-    analyzer.apiKey = env.RIKUNE_ANALYZER_API_KEY || env.ANALYZER_API_KEY || env.API_KEY
-  }
+  const analyzerCredentialFromEnvironment = applyEnvironmentHttpConfig(
+    analyzer,
+    persisted.analyzer,
+    analyzerEnvironment,
+    { allowDefaultEndpointCredential: true, enableOnEndpoint: false }
+  )
   if (env.RIKUNE_DOCKER_CONTAINER || env.RIKUNE_ANALYZER_CONTAINER) {
     analyzer.container = env.RIKUNE_DOCKER_CONTAINER || env.RIKUNE_ANALYZER_CONTAINER
   }
@@ -1158,45 +1321,220 @@ function buildAgentConfig(env: NodeJS.ProcessEnv, persisted: Partial<AgentConfig
     analyzer.image = env.RIKUNE_DOCKER_IMAGE
   }
 
-  if (vmEndpoint) {
-    vm.enabled = true
-    vm.endpoint = vmEndpoint
-  }
-  if (env.RIKUNE_VM_API_KEY || env.RUNTIME_HOST_AGENT_API_KEY) {
-    vm.apiKey = env.RIKUNE_VM_API_KEY || env.RUNTIME_HOST_AGENT_API_KEY
-  }
-  if (env.RIKUNE_VM_MCP_ENDPOINT) {
-    vm.enabled = true
-    vm.mcpEndpoint = env.RIKUNE_VM_MCP_ENDPOINT
+  const vmCredentialFromEnvironment = applyEnvironmentHttpConfig(vm, persisted.vm, vmEnvironment)
+  if (vmEnvironment.mcpEndpoint) {
     vm.transport = vm.transport || 'streamable-http'
   }
   if (vm.mcpEndpoint && !vm.transport) {
     vm.transport = 'streamable-http'
   }
 
-  if (runtimeEndpoint) {
-    runtime.enabled = true
-    runtime.endpoint = runtimeEndpoint
-  }
-  if (env.RIKUNE_RUNTIME_MCP_ENDPOINT) {
-    runtime.enabled = true
-    runtime.mcpEndpoint = env.RIKUNE_RUNTIME_MCP_ENDPOINT
+  const runtimeCredentialFromEnvironment = applyEnvironmentHttpConfig(
+    runtime,
+    persisted.runtime,
+    runtimeEnvironment
+  )
+  if (runtimeEnvironment.mcpEndpoint) {
     runtime.transport = runtime.transport || 'streamable-http'
-  }
-  if (env.RIKUNE_RUNTIME_API_KEY || env.RUNTIME_API_KEY) {
-    runtime.apiKey = env.RIKUNE_RUNTIME_API_KEY || env.RUNTIME_API_KEY
   }
   if (runtime.mcpEndpoint && !runtime.transport) {
     runtime.transport = 'streamable-http'
   }
 
-  return { analyzer, vm, runtime }
+  return {
+    config: { analyzer, vm, runtime },
+    credentialSources: {
+      analyzer: getInitialCredentialSource(persisted.analyzer, analyzerCredentialFromEnvironment),
+      vm: getInitialCredentialSource(persisted.vm, vmCredentialFromEnvironment),
+      runtime: getInitialCredentialSource(persisted.runtime, runtimeCredentialFromEnvironment),
+    },
+  }
+}
+
+function getInitialCredentialSource(
+  persisted: UpstreamConfig | undefined,
+  environmentCredentialApplied: boolean
+): CredentialSource {
+  if (environmentCredentialApplied) {
+    return 'environment'
+  }
+  return persisted && Object.prototype.hasOwnProperty.call(persisted, 'apiKey')
+    ? 'persisted'
+    : 'none'
+}
+
+function selectEnvironmentHttpConfig(
+  sources: readonly NodeJS.ProcessEnv[],
+  read: (source: NodeJS.ProcessEnv) => {
+    endpoint?: string
+    mcpEndpoint?: string
+    apiKey?: string
+  }
+): { endpoint?: string; mcpEndpoint?: string; apiKey?: string } {
+  let unboundApiKey: string | undefined
+  for (let index = sources.length - 1; index >= 0; index -= 1) {
+    const candidate = read(sources[index])
+    unboundApiKey ||= candidate.apiKey
+    if (candidate.endpoint || candidate.mcpEndpoint) {
+      return candidate
+    }
+  }
+  return unboundApiKey ? { apiKey: unboundApiKey } : {}
+}
+
+function applyEnvironmentHttpConfig(
+  target: UpstreamConfig,
+  persisted: UpstreamConfig | undefined,
+  environment: { endpoint?: string; mcpEndpoint?: string; apiKey?: string },
+  options: { allowDefaultEndpointCredential?: boolean; enableOnEndpoint?: boolean } = {}
+): boolean {
+  const hasEnvironmentEndpoint = Boolean(environment.endpoint || environment.mcpEndpoint)
+  if (hasEnvironmentEndpoint) {
+    delete target.endpoint
+    delete target.healthEndpoint
+    delete target.mcpEndpoint
+    delete target.apiKey
+
+    if (options.enableOnEndpoint !== false) {
+      target.enabled = true
+    }
+    if (environment.endpoint) {
+      target.endpoint = environment.endpoint
+    }
+    if (environment.mcpEndpoint) {
+      target.mcpEndpoint = environment.mcpEndpoint
+    }
+    if (environment.apiKey) {
+      target.apiKey = environment.apiKey
+    }
+    return Boolean(environment.apiKey)
+  }
+
+  if (
+    environment.apiKey &&
+    options.allowDefaultEndpointCredential === true &&
+    !hasPersistedCredentialBinding(persisted)
+  ) {
+    target.apiKey = environment.apiKey
+    return true
+  }
+  return false
+}
+
+function hasPersistedCredentialBinding(config: UpstreamConfig | undefined): boolean {
+  return Boolean(
+    config &&
+    (config.endpoint ||
+      config.healthEndpoint ||
+      config.mcpEndpoint ||
+      Object.prototype.hasOwnProperty.call(config, 'apiKey'))
+  )
+}
+
+function validateOptionalTargetEndpoint(
+  value: unknown,
+  label: string
+): ParsedHttpServiceEndpoint | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined
+  }
+  if (typeof value !== 'string') {
+    throw new Error(`${label} must be a URL string.`)
+  }
+  return assertTrustedHttpEndpoint(value, { label })
+}
+
+function validateTargetEndpoints(
+  target: AgentTarget,
+  config: UpstreamConfig
+): ValidatedTargetEndpoints {
+  if (config.apiKey !== undefined && typeof config.apiKey !== 'string') {
+    throw new Error(`${target} API key must be a string.`)
+  }
+
+  const endpoint = validateOptionalTargetEndpoint(config.endpoint, `${target} endpoint`)
+  const healthEndpoint = validateOptionalTargetEndpoint(
+    config.healthEndpoint,
+    `${target} health endpoint`
+  )
+  const mcpEndpoint = validateOptionalTargetEndpoint(config.mcpEndpoint, `${target} MCP endpoint`)
+  const configuredEndpoints = [endpoint, healthEndpoint, mcpEndpoint].filter(
+    (value): value is ParsedHttpServiceEndpoint => Boolean(value)
+  )
+
+  if (config.apiKey && configuredEndpoints.length > 0) {
+    const credentialEndpoint = endpoint || mcpEndpoint || healthEndpoint
+    const credentialOrigin = canonicalHttpOrigin(credentialEndpoint!.url)
+    for (const configuredEndpoint of configuredEndpoints) {
+      if (canonicalHttpOrigin(configuredEndpoint.url) !== credentialOrigin) {
+        throw new Error(
+          `${target} HTTP endpoints must use one origin when an API key is configured.`
+        )
+      }
+    }
+  }
+
+  const allowedOrigins = configuredEndpoints.map((item) => canonicalHttpOrigin(item.url))
+  for (const healthUrl of getHealthUrls(target, config)) {
+    const trustedHealthUrl = assertTrustedHttpEndpoint(healthUrl, {
+      label: `${target} health request endpoint`,
+    })
+    allowedOrigins.push(canonicalHttpOrigin(trustedHealthUrl.url))
+  }
+
+  return {
+    endpoint,
+    healthEndpoint,
+    mcpEndpoint,
+    allowedOrigins: uniqueStrings(allowedOrigins),
+  }
+}
+
+function getCredentialBindingEndpoint(config: UpstreamConfig): string | undefined {
+  return config.endpoint || config.mcpEndpoint || config.healthEndpoint
+}
+
+function validateConfigurationUpdate(
+  target: AgentTarget,
+  current: UpstreamConfig,
+  next: UpstreamConfig,
+  hasExplicitApiKey: boolean
+): void {
+  validateTargetEndpoints(target, next)
+
+  if (!current.apiKey || hasExplicitApiKey) {
+    return
+  }
+
+  const currentEndpoint = getCredentialBindingEndpoint(current)
+  const nextEndpoint = getCredentialBindingEndpoint(next)
+  const currentOrigin = currentEndpoint
+    ? canonicalHttpOrigin(
+        assertTrustedHttpEndpoint(currentEndpoint, {
+          label: `${target} configured credential endpoint`,
+        }).url
+      )
+    : undefined
+  const nextOrigin = nextEndpoint
+    ? canonicalHttpOrigin(
+        assertTrustedHttpEndpoint(nextEndpoint, {
+          label: `${target} candidate credential endpoint`,
+        }).url
+      )
+    : undefined
+
+  if (currentOrigin !== nextOrigin) {
+    throw new Error(
+      `${target} endpoint origin cannot change while retaining its configured API key; provide api_key explicitly.`
+    )
+  }
 }
 
 function buildTransportConfig(
   target: AgentTarget,
   config: UpstreamConfig,
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
+  validated: ValidatedTargetEndpoints = validateTargetEndpoints(target, config)
 ): {
   transport: StdioClientTransport | StreamableHTTPClientTransport
 } | null {
@@ -1241,17 +1579,31 @@ function buildTransportConfig(
   }
 
   if (transport === 'streamable-http') {
-    const endpoint = config.mcpEndpoint || config.endpoint
+    const endpoint = config.mcpEndpoint ? validated.mcpEndpoint : validated.endpoint
     if (!endpoint) {
       return null
     }
-    return {
-      transport: new StreamableHTTPClientTransport(new URL(endpoint), {
-        requestInit: {
-          headers: getHttpHeaders(target, config),
-        },
-      }),
+    const mcpOrigin = canonicalHttpOrigin(endpoint.url)
+    const trustedFetch = createTrustedFetch({
+      allowedOrigins: [mcpOrigin],
+      label: `${target} MCP request endpoint`,
+    })
+    const transportInstance = new StreamableHTTPClientTransport(new URL(endpoint.url.toString()), {
+      requestInit: {
+        headers: getHttpHeaders(target, config),
+        redirect: 'error',
+      },
+      fetch: trustedFetch,
+    })
+    const closeTransport = transportInstance.close.bind(transportInstance)
+    transportInstance.close = async () => {
+      try {
+        await closeTransport()
+      } finally {
+        await trustedFetch.close()
+      }
     }
+    return { transport: transportInstance }
   }
 
   return null
@@ -1264,10 +1616,10 @@ function toSpawnEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 }
 
 function getHealthUrl(target: AgentTarget, config: UpstreamConfig): string | null {
-  if (config.healthEndpoint) {
+  if (typeof config.healthEndpoint === 'string' && config.healthEndpoint) {
     return config.healthEndpoint
   }
-  if (!config.endpoint) {
+  if (typeof config.endpoint !== 'string' || !config.endpoint) {
     return null
   }
   try {
@@ -1287,6 +1639,9 @@ function getHealthUrls(target: AgentTarget, config: UpstreamConfig): string[] {
   const healthUrl = getHealthUrl(target, config)
   if (!healthUrl) {
     return []
+  }
+  if (config.apiKey) {
+    return [healthUrl]
   }
   return uniqueStrings([healthUrl, toHostReachableUrl(healthUrl)])
 }
@@ -1319,12 +1674,13 @@ function getHttpHeaders(target: AgentTarget, config: UpstreamConfig): Record<str
 async function fetchFirstJson(
   urls: string[],
   headers: Record<string, string>,
-  timeoutMs: number
+  timeoutMs: number,
+  allowedOrigins: readonly string[]
 ): Promise<unknown> {
   let lastError: unknown
   for (const url of urls) {
     try {
-      const body = await fetchJson(url, headers, timeoutMs)
+      const body = await fetchJson(url, headers, timeoutMs, allowedOrigins)
       return {
         endpoint: url,
         body,
@@ -1339,21 +1695,33 @@ async function fetchFirstJson(
 async function fetchJson(
   url: string,
   headers: Record<string, string>,
-  timeoutMs: number
+  timeoutMs: number,
+  allowedOrigins: readonly string[]
 ): Promise<unknown> {
-  const response = await fetch(url, {
-    headers,
-    signal: AbortSignal.timeout(timeoutMs),
-  })
-  const text = await response.text()
-  let body: unknown = text
-  try {
-    body = text ? JSON.parse(text) : null
-  } catch {}
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}${text ? ` ${text.slice(0, 500)}` : ''}`)
+  if (allowedOrigins.length === 0) {
+    throw new Error('HTTP request has no configured endpoint origin.')
   }
-  return body
+  const trustedFetch = createTrustedFetch({
+    allowedOrigins,
+    label: 'gateway HTTP request endpoint',
+  })
+  try {
+    const response = await trustedFetch(url, {
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    const text = await response.text()
+    let body: unknown = text
+    try {
+      body = text ? JSON.parse(text) : null
+    } catch {}
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}${text ? ` ${text.slice(0, 500)}` : ''}`)
+    }
+    return body
+  } finally {
+    await trustedFetch.close().catch(() => {})
+  }
 }
 
 function structuredPayloadFromToolResult(result: CallToolResult): Record<string, unknown> | null {

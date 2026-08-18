@@ -542,10 +542,9 @@ export function loadConfigFromEnv(): Record<string, any> {
     if (!config.runtime) config.runtime = {}
     config.runtime.hostAgentEndpoint = process.env.RUNTIME_HOST_AGENT_ENDPOINT
   }
-  const hostAgentApiKey = process.env.RUNTIME_HOST_AGENT_API_KEY || process.env.RUNTIME_API_KEY
-  if (hostAgentApiKey) {
+  if (process.env.RUNTIME_HOST_AGENT_API_KEY) {
     if (!config.runtime) config.runtime = {}
-    config.runtime.hostAgentApiKey = hostAgentApiKey
+    config.runtime.hostAgentApiKey = process.env.RUNTIME_HOST_AGENT_API_KEY
   }
   if (process.env.RUNTIME_SANDBOX_WORKSPACE) {
     if (!config.runtime) config.runtime = {}
@@ -597,6 +596,56 @@ export function mergeConfigs(...configs: any[]): any {
   return configs.reduce((acc, config) => deepMerge(acc, config), {})
 }
 
+type RuntimeCredentialField = 'endpoint' | 'apiKey' | 'hostAgentEndpoint' | 'hostAgentApiKey'
+type ConfigSource = 'file' | 'environment'
+
+function getRuntimeCredentialSource(
+  fileConfig: Partial<Config>,
+  envConfig: Record<string, any>,
+  field: RuntimeCredentialField
+): ConfigSource | undefined {
+  const envValue = envConfig.runtime?.[field]
+  if (typeof envValue === 'string' && envValue.length > 0) {
+    return 'environment'
+  }
+
+  const fileValue = fileConfig.runtime?.[field]
+  if (typeof fileValue === 'string' && fileValue.length > 0) {
+    return 'file'
+  }
+
+  return undefined
+}
+
+function validateRuntimeCredentialPairSources(
+  fileConfig: Partial<Config>,
+  envConfig: Record<string, any>,
+  endpointField: 'endpoint' | 'hostAgentEndpoint',
+  apiKeyField: 'apiKey' | 'hostAgentApiKey'
+): void {
+  const endpointSource = getRuntimeCredentialSource(fileConfig, envConfig, endpointField)
+  const apiKeySource = getRuntimeCredentialSource(fileConfig, envConfig, apiKeyField)
+
+  if (endpointSource && apiKeySource && endpointSource !== apiKeySource) {
+    throw new Error(
+      `Configuration validation failed: runtime.${endpointField} and runtime.${apiKeyField} must come from the same source (file or environment)`
+    )
+  }
+}
+
+function validateRuntimeCredentialSources(
+  fileConfig: Partial<Config>,
+  envConfig: Record<string, any>
+): void {
+  validateRuntimeCredentialPairSources(fileConfig, envConfig, 'endpoint', 'apiKey')
+  validateRuntimeCredentialPairSources(
+    fileConfig,
+    envConfig,
+    'hostAgentEndpoint',
+    'hostAgentApiKey'
+  )
+}
+
 /**
  * Apply platform-aware defaults after parsing.
  * - Windows: analyzer role + auto-sandbox runtime mode
@@ -625,6 +674,7 @@ export function loadConfig(configPath?: string): Config {
   const resolvedConfigPath = configPath || process.env.CONFIG_PATH || getDefaultConfigPath()
   const fileConfig = loadConfigFromFile(resolvedConfigPath)
   const envConfig = loadConfigFromEnv()
+  validateRuntimeCredentialSources(fileConfig, envConfig)
   const mergedConfig = mergeConfigs(fileConfig, envConfig)
 
   const result = ConfigSchema.safeParse(mergedConfig)

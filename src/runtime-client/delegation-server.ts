@@ -64,6 +64,7 @@ export interface RuntimeClientLike {
   ): Promise<RuntimeContractValidationResult>
   getEndpoint?(): string
   recover?(options?: { forceRefreshCapabilities?: boolean }): Promise<boolean>
+  close?(): Promise<void>
 }
 
 export interface RuntimeDelegatedToolHandlerOptions {

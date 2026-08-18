@@ -2,7 +2,7 @@
  * Unit tests for runtime.hyperv.control.
  */
 
-import { describe, test, expect } from '@jest/globals'
+import { describe, test, expect, jest } from '@jest/globals'
 import http from 'http'
 import {
   createRuntimeHyperVControlHandler,
@@ -32,33 +32,39 @@ describe('runtime.hyperv.control tool', () => {
 
         if (req.method === 'GET' && requestUrl.pathname === '/hyperv/status') {
           res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({
-            ok: true,
-            backend: 'hyperv-vm',
-            hyperv: { configured: true, vmName: 'rikune-runtime', state: 'Running' },
-          }))
+          res.end(
+            JSON.stringify({
+              ok: true,
+              backend: 'hyperv-vm',
+              hyperv: { configured: true, vmName: 'rikune-runtime', state: 'Running' },
+            })
+          )
           return
         }
         if (req.method === 'POST' && requestUrl.pathname === '/hyperv/restore') {
           res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({
-            ok: true,
-            backend: 'hyperv-vm',
-            vmName: 'rikune-runtime',
-            snapshotName: body?.snapshotName,
-            runtimeReady: true,
-          }))
+          res.end(
+            JSON.stringify({
+              ok: true,
+              backend: 'hyperv-vm',
+              vmName: 'rikune-runtime',
+              snapshotName: body?.snapshotName,
+              runtimeReady: true,
+            })
+          )
           return
         }
         if (req.method === 'POST' && requestUrl.pathname === '/hyperv/checkpoints') {
           res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({
-            ok: true,
-            backend: 'hyperv-vm',
-            vmName: 'rikune-runtime',
-            snapshotName: body?.snapshotName,
-            checkpoint: { name: body?.snapshotName },
-          }))
+          res.end(
+            JSON.stringify({
+              ok: true,
+              backend: 'hyperv-vm',
+              vmName: 'rikune-runtime',
+              snapshotName: body?.snapshotName,
+              checkpoint: { name: body?.snapshotName },
+            })
+          )
           return
         }
         res.writeHead(404, { 'Content-Type': 'application/json' })
@@ -107,13 +113,15 @@ describe('runtime.hyperv.control tool', () => {
       ])
       expect(requests[0].auth).toBe('Bearer host-secret')
       expect(requests[1].body).toEqual({ snapshotName: 'post-analysis' })
-      expect(requests[2].body).toEqual(expect.objectContaining({
-        snapshotName: 'clean-base',
-        start: true,
-        waitForRuntime: true,
-        timeoutMs: 45_000,
-        runtimeApiKey: 'runtime-secret',
-      }))
+      expect(requests[2].body).toEqual(
+        expect.objectContaining({
+          snapshotName: 'clean-base',
+          start: true,
+          waitForRuntime: true,
+          timeoutMs: 45_000,
+          runtimeApiKey: 'runtime-secret',
+        })
+      )
       expect((restore.data as any).recommended_next_tools).toContain('dynamic.runtime.status')
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
@@ -129,4 +137,62 @@ describe('runtime.hyperv.control tool', () => {
     expect((result.data as any).failure_category).toBe('host_agent_not_configured')
     expect(result.errors?.[0]).toContain('runtime.hostAgentEndpoint')
   })
+
+  test('rejects a Host Agent origin override before leaking the configured key', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch')
+    const result = await createRuntimeHyperVControlHandler({
+      config: {
+        runtime: {
+          hostAgentEndpoint: 'http://host-agent.internal:18082',
+          hostAgentApiKey: 'configured-host-agent-secret',
+        },
+      },
+    } as any)({ host_agent_endpoint: 'http://attacker.example:18082', action: 'status' })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors?.[0]).toMatch(/configured endpoint origin/)
+    expect(fetchSpy).not.toHaveBeenCalled()
+    fetchSpy.mockRestore()
+  })
+
+  test.each([
+    [
+      'configured Runtime Node key',
+      {
+        host_agent_api_key: 'explicit-host-agent-secret',
+      },
+    ],
+    [
+      'configured Host Agent key',
+      {
+        runtime_api_key: 'explicit-runtime-secret',
+      },
+    ],
+  ])(
+    'rejects a Hyper-V restore origin override before sending a %s',
+    async (_label, credentialOverride) => {
+      const fetchSpy = jest.spyOn(globalThis, 'fetch')
+      try {
+        const result = await createRuntimeHyperVControlHandler({
+          config: {
+            runtime: {
+              hostAgentEndpoint: 'http://configured-host-agent.internal:18082',
+              hostAgentApiKey: 'configured-host-agent-secret',
+              apiKey: 'configured-runtime-secret',
+            },
+          },
+        } as any)({
+          action: 'restore',
+          host_agent_endpoint: 'http://attacker.example:18082',
+          ...credentialOverride,
+        })
+
+        expect(result.ok).toBe(false)
+        expect(result.errors?.[0]).toMatch(/configured endpoint origin/)
+        expect(fetchSpy).not.toHaveBeenCalled()
+      } finally {
+        fetchSpy.mockRestore()
+      }
+    }
+  )
 })

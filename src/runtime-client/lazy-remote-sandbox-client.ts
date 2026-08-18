@@ -9,6 +9,14 @@
 import type { Config } from '../config.js'
 import { logger } from '../logger.js'
 import {
+  assertTrustedHttpEndpoint,
+  createTrustedFetch,
+  endpointUrl,
+  type ParsedHttpServiceEndpoint,
+  type TrustedFetch,
+} from '@rikune/shared'
+import { validateRuntimeEndpointFromHostAgent } from '../infrastructure/trusted-runtime-endpoint.js'
+import {
   createRuntimeClient,
   type RuntimeBackendCapability,
   type RuntimeContractValidationResult,
@@ -17,10 +25,15 @@ import {
   type RuntimeExecuteRequest,
   type RuntimeExecuteResponse,
   type RuntimeHealthResponse,
+  type RuntimeEndpointUpdateOptions,
   type RuntimeUploadOptions,
 } from './runtime-client.js'
 
 type RuntimeClient = ReturnType<typeof createRuntimeClient>
+
+function validateHostAgentEndpoint(value: string): ParsedHttpServiceEndpoint {
+  return assertTrustedHttpEndpoint(value, { label: 'runtime.hostAgentEndpoint' })
+}
 
 export class HostAgentSandboxStartError extends Error {
   constructor(
@@ -35,8 +48,13 @@ export class HostAgentSandboxStartError extends Error {
 export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeClient {
   let client: RuntimeClient | null = null
   let startPromise: Promise<RuntimeClient> | null = null
+  let hostAgentFetch: TrustedFetch | null = null
+  let closed = false
 
   async function startSandbox(): Promise<RuntimeClient> {
+    if (closed) {
+      throw new Error('Remote-sandbox runtime client is closed')
+    }
     if (client) {
       return client
     }
@@ -49,7 +67,21 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
         throw new Error('runtime.hostAgentEndpoint is required for remote-sandbox runtime mode')
       }
 
-      const startRes = await fetch(`${config.runtime.hostAgentEndpoint}/sandbox/start`, {
+      let hostAgentEndpoint: ParsedHttpServiceEndpoint
+      try {
+        hostAgentEndpoint = validateHostAgentEndpoint(config.runtime.hostAgentEndpoint)
+      } catch (err) {
+        throw new HostAgentSandboxStartError(
+          `Configured Host Agent endpoint is not trusted: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+      const startUrl = endpointUrl(hostAgentEndpoint.url, '/sandbox/start')
+      hostAgentFetch ??= createTrustedFetch({
+        allowedOrigins: [hostAgentEndpoint.origin],
+        label: 'runtime.hostAgentEndpoint',
+      })
+
+      const startRes = await hostAgentFetch(startUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -76,21 +108,35 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
         ok?: boolean
         endpoint?: string
         sandboxId?: string
+        backend?: string
       }
-      if (!startData.ok || !startData.endpoint) {
+      if (!startData.ok || typeof startData.endpoint !== 'string' || !startData.endpoint.trim()) {
         throw new HostAgentSandboxStartError(
           `Host agent returned an unsuccessful sandbox start: ${JSON.stringify(startData)}`
         )
       }
 
+      let runtimeEndpoint: ParsedHttpServiceEndpoint
+      try {
+        runtimeEndpoint = validateRuntimeEndpointFromHostAgent(
+          startData.endpoint,
+          hostAgentEndpoint.url.toString(),
+          startData.backend
+        )
+      } catch (err) {
+        throw new HostAgentSandboxStartError(
+          `Host Agent returned an untrusted runtime endpoint: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+
       const next = createRuntimeClient({
-        endpoint: startData.endpoint,
+        endpoint: startData.endpoint.trim(),
         apiKey: config.runtime.apiKey,
       })
       next.recover = recover
       client = next
       logger.info(
-        { endpoint: startData.endpoint, sandboxId: startData.sandboxId },
+        { endpoint: runtimeEndpoint.url.toString(), sandboxId: startData.sandboxId },
         'Remote-sandbox runtime connected'
       )
       logger.warn(
@@ -107,7 +153,12 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
   }
 
   async function recover(options?: { forceRefreshCapabilities?: boolean }): Promise<boolean> {
+    if (closed) {
+      return false
+    }
+    const previous = client
     client = null
+    await previous?.close?.()
     try {
       const next = await startSandbox()
       if (options?.forceRefreshCapabilities) {
@@ -169,13 +220,56 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
       client?.invalidateCapabilitiesCache()
     },
 
-    setEndpoint(newEndpoint: string): void {
+    async close(): Promise<void> {
+      closed = true
+      const pending = startPromise
+      if (pending) {
+        await pending.catch(() => {})
+      }
+      const current = client
+      client = null
+      await current?.close?.()
+      const fetchClient = hostAgentFetch
+      hostAgentFetch = null
+      if (fetchClient) {
+        await fetchClient.close().catch(() => {})
+      }
+    },
+
+    setEndpoint(newEndpoint: string, updateOptions?: RuntimeEndpointUpdateOptions): void {
+      if (closed) {
+        throw new Error('Remote-sandbox runtime client is closed')
+      }
       if (!client) {
+        if (
+          config.runtime.apiKey &&
+          !updateOptions?.trustedParentEndpoint &&
+          updateOptions?.trustedLocalSandboxLaunch !== true
+        ) {
+          throw new Error(
+            'Cannot attach a keyed runtime endpoint without a trusted parent endpoint'
+          )
+        }
+        if (updateOptions?.trustedParentEndpoint) {
+          validateRuntimeEndpointFromHostAgent(
+            newEndpoint,
+            updateOptions.trustedParentEndpoint,
+            updateOptions.trustedHostAgentBackend
+          )
+        }
+        if (updateOptions?.trustedLocalSandboxLaunch === true) {
+          const parsed = assertTrustedHttpEndpoint(newEndpoint, {
+            label: 'local sandbox runtime endpoint',
+          })
+          if (parsed.url.protocol !== 'http:') {
+            throw new Error('Local Windows Sandbox runtime endpoints must use http.')
+          }
+        }
         client = createRuntimeClient({ endpoint: newEndpoint, apiKey: config.runtime.apiKey })
         client.recover = recover
         return
       }
-      client.setEndpoint(newEndpoint)
+      client.setEndpoint(newEndpoint, updateOptions)
     },
 
     getEndpoint(): string {

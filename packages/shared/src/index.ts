@@ -1,6 +1,8 @@
 export { buildWsbXml, escapeXml, type WsbConfig } from './wsb-builder.js'
 export * from './runtime-contract.js'
 export * from './runtime-control-plane.js'
+export * from './network-endpoint-policy.js'
+export * from './trusted-fetch.js'
 
 export function getPythonCommand(
   platform: NodeJS.Platform = process.platform,

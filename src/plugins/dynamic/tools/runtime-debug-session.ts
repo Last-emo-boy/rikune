@@ -15,6 +15,8 @@ import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
 import {
   buildRuntimeArtifactControlPlaneMetadata,
+  createTrustedFetch,
+  createTrustedLookup,
   ToolRuntimeContractSchema,
   type RuntimeBackendCapability,
 } from '@rikune/shared'
@@ -32,6 +34,12 @@ import {
   resolveRuntimeSidecarUploads,
   type RuntimeSidecarUpload,
 } from '../../../runtime-client/sidecar-staging.js'
+import {
+  endpointUrl,
+  getEndpointCredentialSource,
+  validateRuntimeEndpointResolution,
+  type RuntimeEndpointProvenance,
+} from '../../../infrastructure/trusted-runtime-endpoint.js'
 
 const SESSION_START_TOOL = 'runtime.debug.session.start'
 const SESSION_STATUS_TOOL = 'runtime.debug.session.status'
@@ -120,6 +128,7 @@ interface RuntimeDebugSession {
   capabilities?: RuntimeBackendCapability[] | null
   artifactRefs?: ArtifactRef[]
   hypervPolicy?: Record<string, unknown>
+  endpointProvenance?: RuntimeEndpointProvenance
 }
 
 const sessions = new Map<string, RuntimeDebugSession>()
@@ -312,24 +321,32 @@ async function fetchJson(
   options: RequestInit = {},
   timeoutMs = 30_000
 ): Promise<{ status: number; ok: boolean; body: any; text: string }> {
-  const res = await fetch(url, {
-    ...options,
-    signal: options.signal ?? AbortSignal.timeout(timeoutMs),
+  const trustedFetch = createTrustedFetch({
+    allowedOrigins: [new URL(url).origin],
+    label: 'runtime debug HTTP endpoint',
   })
-  const text = await res.text()
-  let body: any = null
-  if (text.trim()) {
-    try {
-      body = JSON.parse(text)
-    } catch {
-      body = null
+  try {
+    const res = await trustedFetch(url, {
+      ...options,
+      signal: options.signal ?? AbortSignal.timeout(timeoutMs),
+    })
+    const text = await res.text()
+    let body: any = null
+    if (text.trim()) {
+      try {
+        body = JSON.parse(text)
+      } catch {
+        body = null
+      }
     }
+    return { status: res.status, ok: res.ok, body, text }
+  } finally {
+    await trustedFetch.close().catch(() => {})
   }
-  return { status: res.status, ok: res.ok, body, text }
 }
 
 async function runtimeHealth(endpoint: string, runtimeApiKey?: string): Promise<unknown> {
-  const healthUrl = new URL('/health', endpoint).toString()
+  const healthUrl = endpointUrl(endpoint, '/health')
   const response = await fetchJson(healthUrl, { headers: getAuthHeader(runtimeApiKey) }, 10_000)
   if (!response.ok) {
     return {
@@ -363,6 +380,27 @@ function resolveRuntimeApiKey(
 ): string | undefined {
   const runtime = getRuntimeConfig(deps)
   return inputKey || runtime.apiKey
+}
+
+function validateRuntimeSessionEndpoint(
+  session: RuntimeDebugSession,
+  deps: PluginToolDeps,
+  inputKey: string | undefined,
+  label = 'Runtime Node session endpoint'
+): void {
+  const runtime = getRuntimeConfig(deps)
+  validateRuntimeEndpointResolution(
+    {
+      endpoint: session.endpoint,
+      configuredEndpoint:
+        typeof runtime.endpoint === 'string' && runtime.endpoint.trim()
+          ? runtime.endpoint
+          : undefined,
+      provenance: session.endpointProvenance,
+    },
+    getEndpointCredentialSource(inputKey, runtime.apiKey),
+    label
+  )
 }
 
 function resolveHyperVStartPolicy(input: z.infer<typeof RuntimeDebugSessionStartInputSchema>): {
@@ -525,6 +563,7 @@ function buildSessionMetadata(
   return {
     runtime_debug_schema: 'v1',
     endpoint: session.endpoint,
+    endpoint_parent: session.endpointProvenance?.parentEndpoint ?? null,
     sandbox_id: session.sandboxId ?? null,
     backend: session.backend ?? null,
     started_at: session.startedAt,
@@ -647,11 +686,20 @@ function restorePersistedSession(
     return undefined
   }
 
+  const backend =
+    typeof metadata.backend === 'string' ? metadata.backend : (row.backend ?? undefined)
+  const endpointParent =
+    typeof metadata.endpoint_parent === 'string' ? metadata.endpoint_parent : undefined
   const session: RuntimeDebugSession = {
     sessionId: row.id,
     endpoint,
     sandboxId: typeof metadata.sandbox_id === 'string' ? metadata.sandbox_id : undefined,
-    backend: typeof metadata.backend === 'string' ? metadata.backend : (row.backend ?? undefined),
+    backend,
+    endpointProvenance: {
+      kind: 'persisted-session',
+      parentEndpoint: endpointParent,
+      backend,
+    },
     startedAt: row.created_at,
     stoppedAt:
       typeof metadata.stopped_at === 'string'
@@ -698,6 +746,7 @@ function normalizePersistedDebugSession(row: any): Record<string, unknown> {
     session_tag: row?.session_tag,
     artifact_refs: parseArtifactRefs(row?.artifact_refs_json),
     endpoint: typeof metadata.endpoint === 'string' ? metadata.endpoint : null,
+    endpoint_parent: typeof metadata.endpoint_parent === 'string' ? metadata.endpoint_parent : null,
     sandbox_id: typeof metadata.sandbox_id === 'string' ? metadata.sandbox_id : null,
     last_task_id: typeof metadata.last_task_id === 'string' ? metadata.last_task_id : null,
     hyperv_policy:
@@ -714,7 +763,7 @@ async function runtimeCapabilities(
   endpoint: string,
   runtimeApiKey?: string
 ): Promise<RuntimeBackendCapability[] | null> {
-  const capabilitiesUrl = new URL('/capabilities', endpoint).toString()
+  const capabilitiesUrl = endpointUrl(endpoint, '/capabilities')
   const response = await fetchJson(
     capabilitiesUrl,
     { headers: getAuthHeader(runtimeApiKey) },
@@ -861,24 +910,32 @@ async function downloadRuntimeArtifact(
 ): Promise<string> {
   const basename = path.win32.basename(path.posix.basename(artifactName))
   const safeName = sanitizePathSegment(basename, 'artifact.bin')
-  const url = new URL(
-    `/download/${encodeURIComponent(taskId)}/${encodeURIComponent(basename)}`,
-    endpoint
-  ).toString()
-  const response = await fetch(url, {
-    headers: getAuthHeader(runtimeApiKey),
-    signal: AbortSignal.timeout(60_000),
+  const url = endpointUrl(
+    endpoint,
+    `/download/${encodeURIComponent(taskId)}/${encodeURIComponent(basename)}`
+  )
+  const trustedFetch = createTrustedFetch({
+    allowedOrigins: [new URL(endpoint).origin],
+    label: 'runtime artifact endpoint',
   })
-  if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    throw new Error(
-      `Runtime artifact download failed for ${safeName}: HTTP ${response.status}${text ? ` ${text}` : ''}`
-    )
+  try {
+    const response = await trustedFetch(url, {
+      headers: getAuthHeader(runtimeApiKey),
+      signal: AbortSignal.timeout(60_000),
+    })
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      throw new Error(
+        `Runtime artifact download failed for ${safeName}: HTTP ${response.status}${text ? ` ${text}` : ''}`
+      )
+    }
+    const bytes = Buffer.from(await response.arrayBuffer())
+    const destPath = path.join(downloadDir, safeName)
+    await fs.promises.writeFile(destPath, bytes)
+    return destPath
+  } finally {
+    await trustedFetch.close().catch(() => {})
   }
-  const bytes = Buffer.from(await response.arrayBuffer())
-  const destPath = path.join(downloadDir, safeName)
-  await fs.promises.writeFile(destPath, bytes)
-  return destPath
 }
 
 async function persistRuntimeDebugArtifacts(
@@ -957,7 +1014,7 @@ async function uploadRuntimeFile(
   filename: string,
   role: 'primary' | 'sidecar'
 ): Promise<void> {
-  const url = new URL('/upload', endpoint)
+  const url = new URL(endpointUrl(endpoint, '/upload'))
   url.searchParams.set('taskId', taskId)
   url.searchParams.set(
     'filename',
@@ -971,15 +1028,18 @@ async function uploadRuntimeFile(
     'Content-Length': stat.size.toString(),
     ...getAuthHeader(runtimeApiKey),
   }
+  const trustedLookup = createTrustedLookup()
+  const requestHostname = url.hostname.startsWith('[') ? url.hostname.slice(1, -1) : url.hostname
 
   await new Promise<void>((resolve, reject) => {
     const req = transport.request(
       {
-        hostname: url.hostname,
+        hostname: requestHostname,
         port: url.port || (url.protocol === 'https:' ? 443 : 80),
         path: `${url.pathname}${url.search}`,
         method: 'POST',
         headers,
+        lookup: trustedLookup,
         timeout: 120_000,
       },
       (res) => {
@@ -1045,7 +1105,7 @@ async function pollRuntimeTask(
 ): Promise<unknown> {
   const started = Date.now()
   while (Date.now() - started < timeoutMs + 30_000) {
-    const statusUrl = new URL(`/tasks/${encodeURIComponent(taskId)}`, endpoint).toString()
+    const statusUrl = endpointUrl(endpoint, `/tasks/${encodeURIComponent(taskId)}`)
     const status = await fetchJson(statusUrl, { headers: getAuthHeader(runtimeApiKey) }, 30_000)
     if (!status.ok) {
       throw new Error(
@@ -1070,8 +1130,20 @@ export function createRuntimeDebugSessionStartHandler(deps: PluginToolDeps) {
     try {
       const input = RuntimeDebugSessionStartInputSchema.parse(rawArgs)
       const runtimeApiKey = resolveRuntimeApiKey(input.runtime_api_key, deps)
+      const runtime = getRuntimeConfig(deps)
 
       if (input.manual_endpoint) {
+        validateRuntimeEndpointResolution(
+          {
+            endpoint: input.manual_endpoint,
+            configuredEndpoint:
+              typeof runtime.endpoint === 'string' && runtime.endpoint.trim()
+                ? runtime.endpoint
+                : undefined,
+          },
+          getEndpointCredentialSource(input.runtime_api_key, runtime.apiKey),
+          'manual Runtime Node endpoint'
+        )
         const health = await runtimeHealth(input.manual_endpoint, runtimeApiKey)
         const sessionId = randomUUID()
         const session: RuntimeDebugSession = {
@@ -1108,7 +1180,25 @@ export function createRuntimeDebugSessionStartHandler(deps: PluginToolDeps) {
         }
       }
 
-      const startUrl = new URL('/sandbox/start', hostAgentEndpoint).toString()
+      const hostAgentResolution = {
+        endpoint: hostAgentEndpoint,
+        configuredEndpoint:
+          typeof runtime.hostAgentEndpoint === 'string' && runtime.hostAgentEndpoint.trim()
+            ? runtime.hostAgentEndpoint
+            : undefined,
+      }
+      validateRuntimeEndpointResolution(
+        hostAgentResolution,
+        getEndpointCredentialSource(input.host_agent_api_key, runtime.hostAgentApiKey),
+        'Host Agent endpoint'
+      )
+      validateRuntimeEndpointResolution(
+        hostAgentResolution,
+        getEndpointCredentialSource(input.runtime_api_key, runtime.apiKey),
+        'Host Agent endpoint receiving the Runtime Node API key'
+      )
+
+      const startUrl = endpointUrl(hostAgentEndpoint, '/sandbox/start')
       const hypervStartPolicy = resolveHyperVStartPolicy(input)
       const response = await fetchJson(
         startUrl,
@@ -1140,6 +1230,19 @@ export function createRuntimeDebugSessionStartHandler(deps: PluginToolDeps) {
         }
       }
 
+      validateRuntimeEndpointResolution(
+        {
+          endpoint: response.body.endpoint,
+          provenance: {
+            kind: 'live-host-agent',
+            parentEndpoint: hostAgentEndpoint,
+            backend: response.body.backend || response.body.runtimeBackend,
+          },
+        },
+        getEndpointCredentialSource(input.runtime_api_key, runtime.apiKey),
+        'Runtime Node endpoint returned by Host Agent'
+      )
+
       const health = await runtimeHealth(response.body.endpoint, runtimeApiKey).catch((err) => ({
         ok: false,
         error: err instanceof Error ? err.message : String(err),
@@ -1153,6 +1256,11 @@ export function createRuntimeDebugSessionStartHandler(deps: PluginToolDeps) {
         startedAt: new Date().toISOString(),
         lastHealth: health,
         artifactRefs: [],
+        endpointProvenance: {
+          kind: 'live-host-agent',
+          parentEndpoint: hostAgentEndpoint,
+          backend: response.body.backend || response.body.runtimeBackend,
+        },
         hypervPolicy:
           response.body.hyperv && typeof response.body.hyperv === 'object'
             ? {
@@ -1190,6 +1298,9 @@ export function createRuntimeDebugSessionStatusHandler(deps: PluginToolDeps) {
       const input = RuntimeDebugSessionStatusInputSchema.parse(rawArgs)
       const runtimeApiKey = resolveRuntimeApiKey(input.runtime_api_key, deps)
       const selected = input.session_id ? getRuntimeDebugSession(deps, input.session_id) : undefined
+      if (selected) {
+        validateRuntimeSessionEndpoint(selected, deps, input.runtime_api_key)
+      }
       const runtime = selected
         ? await runtimeHealth(selected.endpoint, runtimeApiKey).catch((err) => ({
             ok: false,
@@ -1221,10 +1332,25 @@ export function createRuntimeDebugSessionStatusHandler(deps: PluginToolDeps) {
 
       const hostAgentEndpoint = resolveHostAgentEndpoint(input.host_agent_endpoint, deps)
       const hostAgentApiKey = resolveHostAgentApiKey(input.host_agent_api_key, deps)
+      const runtimeConfig = getRuntimeConfig(deps)
+      if (hostAgentEndpoint) {
+        validateRuntimeEndpointResolution(
+          {
+            endpoint: hostAgentEndpoint,
+            configuredEndpoint:
+              typeof runtimeConfig.hostAgentEndpoint === 'string' &&
+              runtimeConfig.hostAgentEndpoint.trim()
+                ? runtimeConfig.hostAgentEndpoint
+                : undefined,
+          },
+          getEndpointCredentialSource(input.host_agent_api_key, runtimeConfig.hostAgentApiKey),
+          'Host Agent endpoint'
+        )
+      }
       let hostAgent: unknown = null
       if (hostAgentEndpoint) {
         hostAgent = await fetchJson(
-          new URL('/sandbox/health', hostAgentEndpoint).toString(),
+          endpointUrl(hostAgentEndpoint, '/sandbox/health'),
           { headers: getAuthHeader(hostAgentApiKey) },
           10_000
         )
@@ -1290,8 +1416,21 @@ export function createRuntimeDebugSessionStopHandler(deps: PluginToolDeps) {
             metrics: { elapsed_ms: Date.now() - start, tool: SESSION_STOP_TOOL },
           }
         }
+        const runtimeConfig = getRuntimeConfig(deps)
+        validateRuntimeEndpointResolution(
+          {
+            endpoint: hostAgentEndpoint,
+            configuredEndpoint:
+              typeof runtimeConfig.hostAgentEndpoint === 'string' &&
+              runtimeConfig.hostAgentEndpoint.trim()
+                ? runtimeConfig.hostAgentEndpoint
+                : undefined,
+          },
+          getEndpointCredentialSource(input.host_agent_api_key, runtimeConfig.hostAgentApiKey),
+          'Host Agent endpoint'
+        )
         const response = await fetchJson(
-          new URL('/sandbox/stop', hostAgentEndpoint).toString(),
+          endpointUrl(hostAgentEndpoint, '/sandbox/stop'),
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeader(hostAgentApiKey) },
@@ -1357,6 +1496,7 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
       }
 
       const runtimeApiKey = resolveRuntimeApiKey(input.runtime_api_key, deps)
+      validateRuntimeSessionEndpoint(session, deps, input.runtime_api_key)
       const taskId = randomUUID()
       let sidecarWarnings: string[] = []
       let stagedSidecarCount = 0
@@ -1437,7 +1577,7 @@ export function createRuntimeDebugCommandHandler(deps: PluginToolDeps) {
         }
       }
 
-      const executeUrl = new URL('/execute', session.endpoint).toString()
+      const executeUrl = endpointUrl(session.endpoint, '/execute')
       const submit = await fetchJson(
         executeUrl,
         {

@@ -8,7 +8,7 @@
  */
 
 import { z } from 'zod'
-import type { RuntimeBackendCapability } from '@rikune/shared'
+import { createTrustedFetch, type RuntimeBackendCapability } from '@rikune/shared'
 import {
   getDatabase,
   getRuntimeConfig,
@@ -18,6 +18,12 @@ import {
   type WorkerResult,
 } from '../../sdk.js'
 import { buildRuntimeToolSupportSummary } from '../../../runtime-client/runtime-tool-support.js'
+import {
+  endpointUrl,
+  getEndpointCredentialSource,
+  validateRuntimeEndpointResolution,
+  type RuntimeEndpointResolution,
+} from '../../../infrastructure/trusted-runtime-endpoint.js'
 
 const TOOL_NAME = 'dynamic.runtime.status'
 
@@ -37,6 +43,7 @@ interface RuntimeSessionSummary {
   created_at?: string
   updated_at?: string
   finished_at?: string | null
+  endpoint_parent?: string | null
 }
 
 interface FetchStatus {
@@ -142,8 +149,13 @@ async function fetchJsonStatus(
   headers: Record<string, string>,
   timeoutMs = 10_000
 ): Promise<FetchStatus> {
+  let trustedFetch: ReturnType<typeof createTrustedFetch> | null = null
   try {
-    const response = await fetch(url, {
+    trustedFetch = createTrustedFetch({
+      allowedOrigins: [new URL(url).origin],
+      label: 'dynamic runtime status endpoint',
+    })
+    const response = await trustedFetch(url, {
       headers,
       signal: AbortSignal.timeout(timeoutMs),
     })
@@ -170,6 +182,10 @@ async function fetchJsonStatus(
       status: 0,
       body: null,
       error: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    if (trustedFetch) {
+      await trustedFetch.close().catch(() => {})
     }
   }
 }
@@ -217,6 +233,7 @@ function normalizePersistedSession(row: any): RuntimeSessionSummary {
     backend: typeof row?.backend === 'string' ? row.backend : null,
     current_phase: typeof row?.current_phase === 'string' ? row.current_phase : null,
     endpoint: typeof metadata.endpoint === 'string' ? metadata.endpoint : null,
+    endpoint_parent: typeof metadata.endpoint_parent === 'string' ? metadata.endpoint_parent : null,
     sandbox_id: typeof metadata.sandbox_id === 'string' ? metadata.sandbox_id : null,
     last_task_id: typeof metadata.last_task_id === 'string' ? metadata.last_task_id : null,
     artifact_count: artifactRefs.length,
@@ -261,13 +278,24 @@ function resolveRuntimeEndpoint(
   deps: PluginToolDeps,
   input: z.infer<typeof DynamicRuntimeStatusInputSchema>,
   sessions: RuntimeSessionSummary[]
-): { endpoint?: string; source: string } {
+): RuntimeEndpointResolution {
   const runtime = getRuntimeConfig(deps)
   if (input.runtime_endpoint) {
-    return { endpoint: input.runtime_endpoint, source: 'input.runtime_endpoint' }
+    return {
+      endpoint: input.runtime_endpoint,
+      source: 'input.runtime_endpoint',
+      configuredEndpoint:
+        typeof runtime.endpoint === 'string' && runtime.endpoint.trim()
+          ? runtime.endpoint
+          : undefined,
+    }
   }
   if (typeof runtime.endpoint === 'string' && runtime.endpoint.trim().length > 0) {
-    return { endpoint: runtime.endpoint, source: 'config.runtime.endpoint' }
+    return {
+      endpoint: runtime.endpoint,
+      source: 'config.runtime.endpoint',
+      configuredEndpoint: runtime.endpoint,
+    }
   }
   const sessionWithEndpoint = sessions.find(
     (session) => typeof session.endpoint === 'string' && session.endpoint.length > 0
@@ -276,26 +304,58 @@ function resolveRuntimeEndpoint(
     return {
       endpoint: sessionWithEndpoint.endpoint,
       source: `debug_session:${sessionWithEndpoint.session_id}`,
+      configuredEndpoint:
+        typeof runtime.endpoint === 'string' && runtime.endpoint.trim()
+          ? runtime.endpoint
+          : undefined,
+      provenance: {
+        kind: 'persisted-session',
+        parentEndpoint: sessionWithEndpoint.endpoint_parent || undefined,
+        backend: sessionWithEndpoint.backend,
+      },
     }
   }
-  return { source: 'none' }
+  return {
+    source: 'none',
+    configuredEndpoint:
+      typeof runtime.endpoint === 'string' && runtime.endpoint.trim()
+        ? runtime.endpoint
+        : undefined,
+  }
 }
 
 function resolveHostAgentEndpoint(
   deps: PluginToolDeps,
   input: z.infer<typeof DynamicRuntimeStatusInputSchema>
-): { endpoint?: string; source: string } {
+): RuntimeEndpointResolution {
   const runtime = getRuntimeConfig(deps)
   if (input.host_agent_endpoint) {
-    return { endpoint: input.host_agent_endpoint, source: 'input.host_agent_endpoint' }
+    return {
+      endpoint: input.host_agent_endpoint,
+      source: 'input.host_agent_endpoint',
+      configuredEndpoint:
+        typeof runtime.hostAgentEndpoint === 'string' && runtime.hostAgentEndpoint.trim()
+          ? runtime.hostAgentEndpoint
+          : undefined,
+    }
   }
   if (
     typeof runtime.hostAgentEndpoint === 'string' &&
     runtime.hostAgentEndpoint.trim().length > 0
   ) {
-    return { endpoint: runtime.hostAgentEndpoint, source: 'config.runtime.hostAgentEndpoint' }
+    return {
+      endpoint: runtime.hostAgentEndpoint,
+      source: 'config.runtime.hostAgentEndpoint',
+      configuredEndpoint: runtime.hostAgentEndpoint,
+    }
   }
-  return { source: 'none' }
+  return {
+    source: 'none',
+    configuredEndpoint:
+      typeof runtime.hostAgentEndpoint === 'string' && runtime.hostAgentEndpoint.trim()
+        ? runtime.hostAgentEndpoint
+        : undefined,
+  }
 }
 
 function runtimeMode(deps: PluginToolDeps): string {
@@ -500,22 +560,41 @@ export function createDynamicRuntimeStatusHandler(deps: PluginToolDeps) {
     const runtimeResolution = resolveRuntimeEndpoint(deps, input, sessions)
     const hostAgentResolution = resolveHostAgentEndpoint(deps, input)
 
+    try {
+      validateRuntimeEndpointResolution(
+        runtimeResolution,
+        getEndpointCredentialSource(input.runtime_api_key, runtime.apiKey),
+        'Runtime Node endpoint'
+      )
+      validateRuntimeEndpointResolution(
+        hostAgentResolution,
+        getEndpointCredentialSource(input.host_agent_api_key, runtime.hostAgentApiKey),
+        'Host Agent endpoint'
+      )
+    } catch (error) {
+      return {
+        ok: false,
+        errors: [error instanceof Error ? error.message : String(error)],
+        metrics: { elapsed_ms: Date.now() - started, tool: TOOL_NAME },
+      }
+    }
+
     const [runtimeHealth, runtimeCapabilitiesResult, hostAgentHealth] = await Promise.all([
       runtimeResolution.endpoint
         ? fetchJsonStatus(
-            new URL('/health', runtimeResolution.endpoint).toString(),
+            endpointUrl(runtimeResolution.endpoint, '/health'),
             getAuthHeader(runtimeApiKey)
           )
         : Promise.resolve(null),
       runtimeResolution.endpoint
         ? fetchJsonStatus(
-            new URL('/capabilities', runtimeResolution.endpoint).toString(),
+            endpointUrl(runtimeResolution.endpoint, '/capabilities'),
             getAuthHeader(runtimeApiKey)
           )
         : Promise.resolve(null),
       hostAgentResolution.endpoint
         ? fetchJsonStatus(
-            new URL('/sandbox/health', hostAgentResolution.endpoint).toString(),
+            endpointUrl(hostAgentResolution.endpoint, '/sandbox/health'),
             getAuthHeader(hostAgentApiKey)
           )
         : Promise.resolve(null),

@@ -15,6 +15,9 @@
     "dist/**/*.js",
     "dist/**/*.d.ts"
   ],
+  "engines": {
+    "node": ">=18.17.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -24,6 +27,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "undici": "^6.28.0",
     "zod": "^3.25.76"
   }
 }

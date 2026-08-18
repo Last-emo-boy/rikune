@@ -3,6 +3,7 @@
  */
 
 import http from 'http'
+import https from 'https'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -13,9 +14,16 @@ import type {
   RuntimeSseEvent,
   RuntimeTaskSnapshot,
   ToolRuntimeContract,
+  TrustedLookupResolver,
   WorkerResult,
 } from '@rikune/shared'
-import { RuntimeBackendCapabilitySchema, findRuntimeBackendCapability } from '@rikune/shared'
+import {
+  assertTrustedHttpEndpoint,
+  createTrustedLookup,
+  RuntimeBackendCapabilitySchema,
+  findRuntimeBackendCapability,
+} from '@rikune/shared'
+import { validateRuntimeEndpointFromHostAgent } from '../infrastructure/trusted-runtime-endpoint.js'
 import type { RuntimeSidecarUpload } from './sidecar-staging.js'
 
 export type { RuntimeBackendCapability } from '@rikune/shared'
@@ -81,6 +89,20 @@ export interface RuntimeClientOptions {
   endpoint: string
   apiKey?: string
   healthCheckTimeoutMs?: number
+  /** Resolver used by every new raw HTTP/TLS socket for this client. */
+  resolveEndpointAddresses?: TrustedLookupResolver
+}
+
+/**
+ * Provenance supplied by an internal recovery path when a runtime rotates to
+ * a new listener. The parent endpoint must already be trusted by that path.
+ */
+export interface RuntimeEndpointUpdateOptions {
+  trustedParentEndpoint?: string
+  /** Backend asserted by a response from the trusted Host Agent. */
+  trustedHostAgentBackend?: string
+  /** Provenance from the local Windows Sandbox launcher; host/IP may rotate. */
+  trustedLocalSandboxLaunch?: boolean
 }
 
 function cloneRuntimeBackendCapabilities(
@@ -117,43 +139,89 @@ function cloneRuntimeBackendCapabilities(
   })
 }
 
+function parseRuntimeBackendCapabilityEntries(entries: unknown): RuntimeBackendCapability[] | null {
+  if (!Array.isArray(entries)) {
+    return null
+  }
+
+  const capabilities: RuntimeBackendCapability[] = []
+  for (const entry of entries) {
+    const parsed = RuntimeBackendCapabilitySchema.safeParse(entry)
+    if (
+      !parsed.success ||
+      typeof parsed.data.description !== 'string' ||
+      typeof parsed.data.requiresSample !== 'boolean'
+    ) {
+      return null
+    }
+    capabilities.push(parsed.data as RuntimeBackendCapability)
+  }
+
+  return capabilities
+}
+
 function parseRuntimeBackendCapabilities(body: string): RuntimeBackendCapability[] | null {
   try {
     const payload = JSON.parse(body) as {
+      ok?: unknown
       data?: {
         runtime_backends?: unknown
       }
     }
-    const entries = payload?.data?.runtime_backends
-    if (!Array.isArray(entries)) {
+    if (payload?.ok !== true) {
       return null
     }
-
-    const capabilities: RuntimeBackendCapability[] = []
-    for (const entry of entries) {
-      if (!entry || typeof entry !== 'object') {
-        continue
-      }
-      const parsed = RuntimeBackendCapabilitySchema.safeParse(entry)
-      if (
-        parsed.success &&
-        typeof parsed.data.description === 'string' &&
-        typeof parsed.data.requiresSample === 'boolean'
-      ) {
-        capabilities.push(parsed.data as RuntimeBackendCapability)
-      }
-    }
-
-    return capabilities
+    return parseRuntimeBackendCapabilityEntries(payload.data?.runtime_backends)
   } catch (err) {
     logger.debug({ err }, 'Runtime capabilities response parsing failed')
     return null
   }
 }
 
+function validateRuntimePathSegment(value: unknown, label: string): string {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value === '.' ||
+    value === '..' ||
+    value.includes('\0') ||
+    value.includes('/') ||
+    value.includes('\\') ||
+    path.posix.isAbsolute(value) ||
+    path.win32.isAbsolute(value)
+  ) {
+    throw new Error(`Invalid runtime ${label}: expected a non-empty path segment`)
+  }
+  return value
+}
+
+function assertPathWithinDirectory(rootPath: string, candidatePath: string): void {
+  const relativePath = path.relative(path.resolve(rootPath), path.resolve(candidatePath))
+  if (
+    relativePath.length === 0 ||
+    relativePath === '..' ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath)
+  ) {
+    throw new Error('Resolved runtime artifact path escapes its expected directory')
+  }
+}
+
+function getRequestHostname(url: URL): string {
+  const { hostname } = url
+  return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
+}
+
 export function createRuntimeClient(options: RuntimeClientOptions) {
-  let endpoint = options.endpoint
+  // Validate before retaining the endpoint or allowing the API key to reach
+  // any request sink. Private/LAN addresses remain valid; metadata and
+  // unspecified addresses are rejected by the shared policy.
+  assertTrustedHttpEndpoint(options.endpoint, { label: 'runtime endpoint' })
+  let endpoint = options.endpoint.trim()
   const apiKey = options.apiKey
+  const trustedLookup = createTrustedLookup(options.resolveEndpointAddresses)
+  const httpAgent = new http.Agent({ keepAlive: true, lookup: trustedLookup })
+  const httpsAgent = new https.Agent({ keepAlive: true, lookup: trustedLookup })
   let capabilitiesCache: RuntimeBackendCapability[] | null = null
 
   function replaceCapabilitiesCache(capabilities: RuntimeBackendCapability[] | null) {
@@ -164,8 +232,31 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     replaceCapabilitiesCache(null)
   }
 
-  function setEndpoint(newEndpoint: string) {
-    endpoint = newEndpoint
+  function setEndpoint(newEndpoint: string, updateOptions: RuntimeEndpointUpdateOptions = {}) {
+    if (updateOptions.trustedLocalSandboxLaunch === true) {
+      const parsed = assertTrustedHttpEndpoint(newEndpoint, { label: 'runtime endpoint' })
+      if (parsed.url.protocol !== 'http:') {
+        throw new Error('Local Windows Sandbox runtime endpoints must use http.')
+      }
+    } else if (updateOptions.trustedParentEndpoint) {
+      validateRuntimeEndpointFromHostAgent(
+        newEndpoint,
+        updateOptions.trustedParentEndpoint,
+        updateOptions.trustedHostAgentBackend,
+        'runtime endpoint'
+      )
+    } else if (apiKey) {
+      // Without explicit provenance, a keyed client cannot move its
+      // credentials across origins, including to another port.
+      assertTrustedHttpEndpoint(newEndpoint, {
+        label: 'runtime endpoint',
+        configuredEndpoint: endpoint,
+        credentialSource: 'configured',
+      })
+    } else {
+      assertTrustedHttpEndpoint(newEndpoint, { label: 'runtime endpoint' })
+    }
+    endpoint = newEndpoint.trim()
     invalidateCapabilitiesCache()
   }
 
@@ -253,14 +344,19 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
       taskId?: string
       status?: string
       error?: string
-      capabilities?: RuntimeBackendCapability[]
+      capabilities?: unknown
     }
     if (submitRes.statusCode !== 202 || !submitBody.ok) {
-      const responseCapabilities = Array.isArray(submitBody.capabilities)
-        ? submitBody.capabilities
+      const hasResponseCapabilities = submitBody.capabilities !== undefined
+      const responseCapabilities = hasResponseCapabilities
+        ? parseRuntimeBackendCapabilityEntries(submitBody.capabilities)
         : null
-      if (responseCapabilities) {
-        replaceCapabilitiesCache(responseCapabilities)
+      if (hasResponseCapabilities) {
+        if (responseCapabilities) {
+          replaceCapabilitiesCache(responseCapabilities)
+        } else {
+          invalidateCapabilitiesCache()
+        }
       } else if (
         typeof submitBody.error === 'string' &&
         submitBody.error.startsWith('Unsupported runtime contract:')
@@ -462,11 +558,14 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     const stat = fs.statSync(localPath)
     const stream = fs.createReadStream(localPath)
     await new Promise<void>((resolve, reject) => {
-      const req = http.request(
+      const transport = url.protocol === 'https:' ? https : http
+      const req = transport.request(
         {
-          hostname: url.hostname,
+          hostname: getRequestHostname(url),
           port: url.port || (url.protocol === 'https:' ? 443 : 80),
           path: url.pathname + url.search,
+          agent: url.protocol === 'https:' ? httpsAgent : httpAgent,
+          lookup: trustedLookup,
           method: 'POST',
           headers: {
             'Content-Type': 'application/octet-stream',
@@ -502,24 +601,74 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     outboxHostDir: string,
     artifactNames: string[]
   ): Promise<string[]> {
+    if (!Array.isArray(artifactNames)) {
+      throw new Error('Invalid runtime artifact names: expected an array of basenames')
+    }
+    const validatedTaskId = validateRuntimePathSegment(taskId, 'task ID')
+    const validatedArtifactNames: string[] = []
+    for (const name of artifactNames as unknown[]) {
+      validatedArtifactNames.push(validateRuntimePathSegment(name, 'artifact name'))
+    }
+
     if (isLocalhost(endpoint)) {
       const downloaded: string[] = []
-      for (const name of artifactNames) {
-        const src = path.join(outboxHostDir, taskId, name)
-        if (fs.existsSync(src)) {
-          downloaded.push(src)
+      const taskOutboxDir = path.join(outboxHostDir, validatedTaskId)
+      assertPathWithinDirectory(outboxHostDir, taskOutboxDir)
+      let taskOutboxStat: fs.Stats
+      try {
+        taskOutboxStat = await fs.promises.lstat(taskOutboxDir)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          return downloaded
         }
+        throw error
+      }
+      if (!taskOutboxStat.isDirectory() || taskOutboxStat.isSymbolicLink()) {
+        throw new Error('Runtime task outbox must be a real directory, not a symbolic link')
+      }
+
+      const [outboxRealPath, taskOutboxRealPath] = await Promise.all([
+        fs.promises.realpath(outboxHostDir),
+        fs.promises.realpath(taskOutboxDir),
+      ])
+      assertPathWithinDirectory(outboxRealPath, taskOutboxRealPath)
+
+      for (const name of validatedArtifactNames) {
+        const src = path.join(taskOutboxDir, name)
+        assertPathWithinDirectory(taskOutboxDir, src)
+        let sourceStat: fs.Stats
+        try {
+          sourceStat = await fs.promises.lstat(src)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            continue
+          }
+          throw error
+        }
+        if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+          throw new Error('Runtime artifact must be a real file, not a symbolic link')
+        }
+        const sourceRealPath = await fs.promises.realpath(src)
+        assertPathWithinDirectory(taskOutboxRealPath, sourceRealPath)
+        downloaded.push(sourceRealPath)
       }
       return downloaded
     }
     const downloaded: string[] = []
     const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'rikune-runtime-'))
-    for (const name of artifactNames) {
-      const url = new URL(
-        `/download/${encodeURIComponent(taskId)}/${encodeURIComponent(name)}`,
-        endpoint
-      )
-      const destPath = path.join(tempDir, `${taskId}_${name}`)
+    const downloadTargets = validatedArtifactNames.map((name) => {
+      const destPath = path.join(tempDir, `${validatedTaskId}_${name}`)
+      assertPathWithinDirectory(tempDir, destPath)
+      return {
+        name,
+        url: new URL(
+          `/download/${encodeURIComponent(validatedTaskId)}/${encodeURIComponent(name)}`,
+          endpoint
+        ),
+        destPath,
+      }
+    })
+    for (const { name, url, destPath } of downloadTargets) {
       try {
         await downloadFile(url, destPath)
         downloaded.push(destPath)
@@ -533,11 +682,14 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
   async function downloadFile(url: URL, destPath: string): Promise<void> {
     const file = fs.createWriteStream(destPath)
     await new Promise<void>((resolve, reject) => {
-      const req = http.get(
+      const transport = url.protocol === 'https:' ? https : http
+      const req = transport.get(
         {
-          hostname: url.hostname,
+          hostname: getRequestHostname(url),
           port: url.port || (url.protocol === 'https:' ? 443 : 80),
           path: url.pathname + url.search,
+          agent: url.protocol === 'https:' ? httpsAgent : httpAgent,
+          lookup: trustedLookup,
           headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
           timeout: 60_000,
         },
@@ -560,6 +712,11 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
         reject(new Error('Download timeout'))
       })
     })
+  }
+
+  async function close(): Promise<void> {
+    httpAgent.destroy()
+    httpsAgent.destroy()
   }
 
   function get(path: string): Promise<{ statusCode: number; body: string }> {
@@ -642,11 +799,14 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
       }
     }
 
-    const req = http.request(
+    const transport = url.protocol === 'https:' ? https : http
+    const req = transport.request(
       {
-        hostname: url.hostname,
+        hostname: getRequestHostname(url),
         port: url.port || (url.protocol === 'https:' ? 443 : 80),
         path: url.pathname + url.search,
+        agent: url.protocol === 'https:' ? httpsAgent : httpAgent,
+        lookup: trustedLookup,
         method: 'GET',
         headers: {
           Accept: 'text/event-stream',
@@ -725,11 +885,14 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
         headers['Content-Length'] = Buffer.byteLength(payload).toString()
       }
 
-      const req = http.request(
+      const transport = url.protocol === 'https:' ? https : http
+      const req = transport.request(
         {
-          hostname: url.hostname,
+          hostname: getRequestHostname(url),
           port: url.port || (url.protocol === 'https:' ? 443 : 80),
           path: url.pathname + url.search,
+          agent: url.protocol === 'https:' ? httpsAgent : httpAgent,
+          lookup: trustedLookup,
           method,
           headers,
           timeout: 30000,
@@ -770,6 +933,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     setEndpoint,
     getEndpoint,
     subscribeEvents,
+    close,
     recover: undefined as (() => Promise<boolean>) | undefined,
   }
 }

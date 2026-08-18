@@ -7,12 +7,17 @@
  */
 
 import { z } from 'zod'
+import { createTrustedFetch } from '@rikune/shared'
 import {
   getRuntimeConfig,
   type PluginToolDeps,
   type ToolDefinition,
   type WorkerResult,
 } from '../../sdk.js'
+import {
+  getEndpointCredentialSource,
+  validateRuntimeEndpointResolution,
+} from '../../../infrastructure/trusted-runtime-endpoint.js'
 
 const TOOL_NAME = 'runtime.hyperv.control'
 
@@ -89,32 +94,40 @@ async function fetchHostAgentJson(
   } = {}
 ): Promise<{ ok: boolean; status: number; body: any; text: string; error?: string }> {
   const url = new URL(path, endpoint).toString()
-  const response = await fetch(url, {
-    method: options.method || 'GET',
-    headers: {
-      ...getAuthHeader(options.apiKey),
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    signal: AbortSignal.timeout(options.timeoutMs || 30_000),
+  const trustedFetch = createTrustedFetch({
+    allowedOrigins: [new URL(endpoint).origin],
+    label: 'Runtime Hyper-V Host Agent endpoint',
   })
-  const text = await response.text()
-  let body: any = null
-  if (text.trim()) {
-    try {
-      body = JSON.parse(text)
-    } catch {
-      body = { text }
+  try {
+    const response = await trustedFetch(url, {
+      method: options.method || 'GET',
+      headers: {
+        ...getAuthHeader(options.apiKey),
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: AbortSignal.timeout(options.timeoutMs || 30_000),
+    })
+    const text = await response.text()
+    let body: any = null
+    if (text.trim()) {
+      try {
+        body = JSON.parse(text)
+      } catch {
+        body = { text }
+      }
     }
-  }
-  return {
-    ok: response.ok,
-    status: response.status,
-    body,
-    text,
-    error: response.ok
-      ? undefined
-      : body?.error || body?.message || text || `HTTP ${response.status}`,
+    return {
+      ok: response.ok,
+      status: response.status,
+      body,
+      text,
+      error: response.ok
+        ? undefined
+        : body?.error || body?.message || text || `HTTP ${response.status}`,
+    }
+  } finally {
+    await trustedFetch.close().catch(() => {})
   }
 }
 
@@ -241,6 +254,26 @@ export function createRuntimeHyperVControlHandler(deps: PluginToolDeps) {
     }
 
     try {
+      const runtime = getRuntimeConfig(deps)
+      const hostAgentResolution = {
+        endpoint: hostAgentEndpoint,
+        configuredEndpoint:
+          typeof runtime.hostAgentEndpoint === 'string' && runtime.hostAgentEndpoint.trim()
+            ? runtime.hostAgentEndpoint
+            : undefined,
+      }
+      validateRuntimeEndpointResolution(
+        hostAgentResolution,
+        getEndpointCredentialSource(input.host_agent_api_key, runtime.hostAgentApiKey),
+        'Host Agent endpoint'
+      )
+      if (input.action === 'restore') {
+        validateRuntimeEndpointResolution(
+          hostAgentResolution,
+          getEndpointCredentialSource(input.runtime_api_key, runtime.apiKey),
+          'Host Agent endpoint receiving the Runtime Node API key'
+        )
+      }
       const body = buildRequestBody(input, runtimeApiKey)
       const response = await fetchHostAgentJson(hostAgentEndpoint, actionPath(input.action), {
         method: input.action === 'status' || input.action === 'checkpoints' ? 'GET' : 'POST',

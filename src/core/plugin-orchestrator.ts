@@ -303,30 +303,6 @@ export class PluginOrchestrator {
     const roleAllowedIds = new Set(roleFiltered.map((p) => p.id))
     const sorted = this.topoSort(roleFiltered)
 
-    for (const { plugin, retained } of duplicatePlugins) {
-      const statusDetail =
-        `Duplicate plugin ID '${plugin.id}' rejected; ` +
-        `the first discovered definition '${retained.name}' was retained`
-      this.plugins.push({
-        id: plugin.id,
-        name: plugin.name,
-        description: plugin.description,
-        version: plugin.version,
-        executionDomain: plugin.executionDomain ?? 'both',
-        status: 'error',
-        tools: [],
-        configFields: plugin.configSchema,
-        reasonCode: 'duplicate-plugin-id',
-        statusDetail,
-        controlPlaneStatus: 'failed',
-        error: statusDetail,
-      })
-      logger.warn(
-        { plugin: plugin.id, retainedPluginName: retained.name },
-        'Duplicate plugin ID rejected during discovery'
-      )
-    }
-
     // Record disabled plugins
     for (const p of uniquePlugins) {
       if (!enabledIds.has(p.id)) {
@@ -364,6 +340,33 @@ export class PluginOrchestrator {
     // Load in topological order
     for (const plugin of sorted) {
       await this.loadOne(plugin, server, deps)
+    }
+
+    // Append rejected duplicates after the retained definitions have reached
+    // their terminal status. Consumers that select the first status by ID then
+    // observe the retained plugin's outcome instead of its duplicate warning.
+    for (const { plugin, retained } of duplicatePlugins) {
+      const statusDetail =
+        `Duplicate plugin ID '${plugin.id}' rejected; ` +
+        `the first discovered definition '${retained.name}' was retained`
+      this.plugins.push({
+        id: plugin.id,
+        name: plugin.name,
+        description: plugin.description,
+        version: plugin.version,
+        executionDomain: plugin.executionDomain ?? 'both',
+        status: 'error',
+        tools: [],
+        configFields: plugin.configSchema,
+        reasonCode: 'duplicate-plugin-id',
+        statusDetail,
+        controlPlaneStatus: 'failed',
+        error: statusDetail,
+      })
+      logger.warn(
+        { plugin: plugin.id, retainedPluginName: retained.name },
+        'Duplicate plugin ID rejected during discovery'
+      )
     }
 
     logger.info(
@@ -437,9 +440,10 @@ export class PluginOrchestrator {
    * Load a single plugin. Used internally and for hot-load.
    */
   async loadOne(plugin: Plugin, server: PluginServer, deps: ToolDeps): Promise<PluginStatus> {
+    const pluginReceiver = plugin
     const pluginId = plugin.id
-    // Work with a descriptor snapshot whose identity cannot be changed by a
-    // stateful or hostile register()/check() implementation.
+    // Keep validation and ownership on an immutable descriptor snapshot while
+    // lifecycle methods retain the original object as their `this` receiver.
     plugin = Object.freeze({ ...plugin, id: pluginId })
     if (this.loadedPlugins.has(pluginId)) {
       throw new Error(`Plugin '${pluginId}' is already loaded`)
@@ -497,7 +501,7 @@ export class PluginOrchestrator {
     // Run prerequisite check
     if (plugin.check) {
       try {
-        const ok = await plugin.check()
+        const ok = await plugin.check.call(pluginReceiver)
         if (!ok) {
           if (isAnalyzerDynamic) {
             logger.debug(
@@ -650,7 +654,8 @@ export class PluginOrchestrator {
           plugin,
           registrationServer,
           scopedDeps,
-          ctx
+          ctx,
+          pluginReceiver
         )
         toolNames = isPromiseLike(registrationResult)
           ? await registrationResult
@@ -744,10 +749,11 @@ export class PluginOrchestrator {
     plugin: Plugin,
     targetServer: PluginServerInterface,
     deps: ToolDeps,
-    ctx: PluginContext
+    ctx: PluginContext,
+    pluginReceiver: Plugin
   ): string[] | void | Promise<string[] | void> {
     if (plugin.register) {
-      return plugin.register(targetServer, deps, ctx)
+      return plugin.register.call(pluginReceiver, targetServer, deps, ctx)
     }
 
     const names: string[] = []

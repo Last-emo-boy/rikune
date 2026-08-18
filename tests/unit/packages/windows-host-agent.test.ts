@@ -46,6 +46,12 @@ describe('@rikune/windows-host-agent package', () => {
     expect(source).toContain('HOST_AGENT_BACKEND')
     expect(source).toContain('HOST_AGENT_HYPERV_VM_NAME')
     expect(source).toContain('HOST_AGENT_HYPERV_RUNTIME_ENDPOINT')
+    expect(source).toContain(
+      "assertTrustedHttpEndpoint(endpoint, { label: 'HOST_AGENT_HYPERV_RUNTIME_ENDPOINT' })"
+    )
+    expect(source).toContain("endpointUrl(endpoint, '/health'")
+    expect(source).toContain("redirect: 'error'")
+    expect(source).toContain('if (data.ok === true)')
     expect(source).toContain('HOST_AGENT_HYPERV_RESTORE_ON_RELEASE')
     expect(source).toContain('hypervRestoreOnRelease')
     expect(source).toContain('HostAgentStartDiagnostics')
