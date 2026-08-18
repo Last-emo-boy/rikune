@@ -134,13 +134,14 @@ export class MCPServer
     })
 
     // Handle tools/call request
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    this.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       this.logger.debug({ tool: request.params.name }, 'Handling tools/call request')
       const progressToken = request.params._meta?.progressToken
       const result = await this.callTool(
         request.params.name,
         request.params.arguments || {},
-        progressToken
+        progressToken,
+        extra?.signal
       )
       return result
     })
@@ -394,12 +395,14 @@ export class MCPServer
   public async callTool(
     name: string,
     args: unknown,
-    progressToken?: string | number
+    progressToken?: string | number,
+    signal?: AbortSignal
   ): Promise<CallToolResult> {
     return this.executor.executeTool(name, args, {
       registry: this.registry,
       pluginRuntime: this.pluginManager ?? undefined,
       logger: this.logger,
+      signal,
     })
   }
 

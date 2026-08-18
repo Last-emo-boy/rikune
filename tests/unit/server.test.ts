@@ -574,6 +574,43 @@ describe('MCPServer', () => {
       expect(parsedResult.errors).toContain('Tool not found: non.existent')
     })
 
+    it('should reject execution when AbortSignal is already aborted', async () => {
+      const toolDefinition = {
+        name: 'test.cancel',
+        description: 'Cancellable tool',
+        inputSchema: z.object({}),
+      }
+      let handlerCalled = false
+      server.registerTool(toolDefinition, async () => {
+        handlerCalled = true
+        return { ok: true, data: {} }
+      })
+
+      const controller = new AbortController()
+      controller.abort()
+      const result = await server.callTool('test.cancel', {}, undefined, controller.signal)
+
+      expect(result.isError).toBe(true)
+      expect(handlerCalled).toBe(false)
+      const textContent = result.content[0] as TextContent
+      const parsedResult = JSON.parse(textContent.text)
+      expect(parsedResult.errors[0]).toContain('cancelled')
+    })
+
+    it('should execute normally when AbortSignal is not aborted', async () => {
+      const toolDefinition = {
+        name: 'test.nosignal',
+        description: 'No cancellation',
+        inputSchema: z.object({}),
+      }
+      server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
+
+      const controller = new AbortController()
+      const result = await server.callTool('test.nosignal', {}, undefined, controller.signal)
+
+      expect(result.isError).toBe(false)
+    })
+
     it('should validate input arguments', async () => {
       const toolDefinition = {
         name: 'test.validate',

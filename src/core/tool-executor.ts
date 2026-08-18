@@ -28,6 +28,7 @@ export interface ExecuteToolOptions {
   registry: MCPRegistry
   pluginRuntime?: PluginRuntimeLike
   logger: pino.Logger
+  signal?: AbortSignal
 }
 
 /**
@@ -94,6 +95,12 @@ export class ToolExecutor {
           canonicalName,
           validatedArgs as Record<string, unknown>
         )
+      }
+
+      // Cooperative cancellation: check if the request was cancelled
+      // by the client before executing the handler
+      if (options.signal?.aborted) {
+        throw new Error(`Tool execution cancelled: ${canonicalName}`)
       }
 
       // Execute handler
