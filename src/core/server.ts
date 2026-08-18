@@ -89,7 +89,7 @@ export class MCPServer
       },
       {
         capabilities: {
-          tools: {},
+          tools: { listChanged: true },
           prompts: {},
           resources: {},
         },
