@@ -623,6 +623,7 @@ export class RikuneAgentGateway {
       {
         name: 'rikune-agent',
         version: VERSION,
+        title: 'Rikune Agent Gateway',
       },
       {
         capabilities: {

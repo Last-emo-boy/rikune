@@ -1009,6 +1009,22 @@ describe('MCPServer', () => {
       expect(server.getLogger()).toBeDefined()
     })
 
+    it('should advertise serverInfo with title in initialize response', () => {
+      const info = server.getServerInfo()
+      expect(info.name).toBe('rikune')
+      expect(info.version).toBe('1.1.0')
+      expect(info.title).toBe('Rikune Reverse Analysis Platform')
+    })
+
+    it('should provide instructions for connected clients', () => {
+      const instructions = server.getInstructions()
+      expect(instructions).toBeDefined()
+      expect(typeof instructions).toBe('string')
+      expect(instructions!).toContain('workflow_search')
+      expect(instructions!).toContain('workflow_run')
+      expect(instructions!).toContain('artifact_read')
+    })
+
     it('should stop server gracefully', async () => {
       await expect(server.stop()).resolves.not.toThrow()
     })

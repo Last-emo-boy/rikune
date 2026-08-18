@@ -96,6 +96,7 @@ export class MCPServer
       {
         name: 'rikune',
         version: '1.1.0',
+        title: 'Rikune Reverse Analysis Platform',
       },
       {
         capabilities: {
@@ -105,6 +106,10 @@ export class MCPServer
           completions: {},
           logging: {},
         },
+        instructions:
+          'Rikune is a reverse-analysis MCP platform. Use workflow_search for capability discovery, ' +
+          'workflow_run for analyzer execution (request_upload → start → status → promote), ' +
+          'and artifact_read for persisted evidence. Do not call low-level analyzer tools directly.',
       }
     )
 
@@ -574,6 +579,23 @@ export class MCPServer
    */
   public getServer(): Server {
     return this.server
+  }
+
+  /**
+   * Get the server info (name, version, title) advertised in the initialize
+   * response.
+   */
+  public getServerInfo(): { name: string; version: string; title?: string } {
+    // SDK stores serverInfo as a private field; access via the same pattern
+    // used by getClientVersion/getClientCapabilities.
+    return (this.server as unknown as { _serverInfo: { name: string; version: string; title?: string } })._serverInfo
+  }
+
+  /**
+   * Get the server instructions advertised in the initialize response.
+   */
+  public getInstructions(): string | undefined {
+    return (this.server as unknown as { _instructions?: string })._instructions
   }
 
   /**
