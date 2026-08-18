@@ -1078,6 +1078,24 @@ export class RikuneAgentGateway {
         },
         {
           capabilities: {},
+          listChanged: {
+            tools: {
+              onChanged: (error, tools) => {
+                if (error) {
+                  process.stderr.write(
+                    `[gateway] Upstream '${target}' tools/list_changed refresh failed: ${errorMessage(error)}\n`
+                  )
+                  return
+                }
+                if (tools) {
+                  state.tools = tools
+                  process.stderr.write(
+                    `[gateway] Upstream '${target}' tools updated via listChanged (${tools.length} tools)\n`
+                  )
+                }
+              },
+            },
+          },
         }
       )
       await client.connect(transportConfig.transport, {

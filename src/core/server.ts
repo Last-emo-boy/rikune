@@ -74,6 +74,12 @@ export class MCPServer
   private registry: MCPRegistry
   private executor: ToolExecutor
   private clientLogLevel: LoggingLevel | null = null
+  /**
+   * Whether the MCP client has sent the `initialized` notification,
+   * completing the MCP handshake. List-changed notifications are only
+   * sent after this becomes true to avoid sending to an unready client.
+   */
+  private clientInitialized = false
 
   constructor(config: Config, dependencies: MCPServerDependencies = {}) {
     // Create logger that writes to stderr to avoid interfering with MCP protocol on stdout
@@ -112,6 +118,14 @@ export class MCPServer
           'and artifact_read for persisted evidence. Do not call low-level analyzer tools directly.',
       }
     )
+
+    // Track MCP handshake completion: the SDK fires `oninitialized` when
+    // the client sends `notifications/initialized`. We gate list-changed
+    // notifications on this flag to avoid notifying an unready client.
+    this.server.oninitialized = () => {
+      this.clientInitialized = true
+      this.logger.debug('MCP client handshake completed (initialized received)')
+    }
 
     this.setupHandlers()
     this.logger.info('MCP Server initialized')
@@ -364,9 +378,12 @@ export class MCPServer
   public setPluginManager(mgr: PluginManager): void {
     this.pluginManager = mgr
 
-    // Wire progressive surface notification so clients refresh their tool list
+    // Wire progressive surface notification so clients refresh their tool list.
+    // Only notify after the MCP handshake is complete; sending a notification
+    // to a client that hasn't sent `initialized` is a protocol violation.
     const surface = getToolSurfaceManager()
     surface.setNotifyCallback(() => {
+      if (!this.clientInitialized) return
       try {
         this.server.sendToolListChanged()
       } catch (e) {
@@ -448,14 +465,17 @@ export class MCPServer
    * to the given URI via resources/subscribe.
    */
   public async notifyResourceUpdated(uri: string): Promise<void> {
+    if (!this.clientInitialized) return
     if (!this.registry.isSubscribedToResource(uri)) return
     await this.server.sendResourceUpdated({ uri })
   }
 
   /**
    * Notify clients that the list of available resources has changed.
+   * Only sent after the MCP handshake is complete.
    */
   public async notifyResourceListChanged(): Promise<void> {
+    if (!this.clientInitialized) return
     await this.server.sendResourceListChanged()
   }
 
@@ -660,5 +680,13 @@ export class MCPServer
    */
   public getLogger(): pino.Logger {
     return this.logger
+  }
+
+  /**
+   * Whether the MCP client has completed the handshake by sending the
+   * `initialized` notification.
+   */
+  public isClientInitialized(): boolean {
+    return this.clientInitialized
   }
 }

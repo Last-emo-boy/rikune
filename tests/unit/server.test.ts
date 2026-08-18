@@ -375,6 +375,7 @@ describe('MCPServer', () => {
     })
 
     it('should send resource updated notification only when subscribed', async () => {
+      ;(server as any).clientInitialized = true
       const sdkServer = server.getServer() as any
       sdkServer.sendResourceUpdated = jest.fn(async () => {})
       // No subscription yet — should not send
@@ -1040,6 +1041,36 @@ describe('MCPServer', () => {
       expect(instructions!).toContain('workflow_search')
       expect(instructions!).toContain('workflow_run')
       expect(instructions!).toContain('artifact_read')
+    })
+
+    it('should report not initialized before handshake', () => {
+      // Reset the private flag to simulate pre-handshake state
+      ;(server as any).clientInitialized = false
+      expect(server.isClientInitialized()).toBe(false)
+    })
+
+    it('should report initialized after oninitialized callback fires', () => {
+      const sdkServer = server.getServer() as any
+      expect(sdkServer.oninitialized).toBeDefined()
+      sdkServer.oninitialized()
+      expect(server.isClientInitialized()).toBe(true)
+    })
+
+    it('should not send list-changed notifications before handshake completes', async () => {
+      ;(server as any).clientInitialized = false
+      const sdkServer = server.getServer() as any
+      sdkServer.sendResourceListChanged = jest.fn()
+      sdkServer.sendToolListChanged = jest.fn()
+      await server.notifyResourceListChanged()
+      expect(sdkServer.sendResourceListChanged).not.toHaveBeenCalled()
+    })
+
+    it('should send list-changed notifications after handshake completes', async () => {
+      ;(server as any).clientInitialized = true
+      const sdkServer = server.getServer() as any
+      sdkServer.sendResourceListChanged = jest.fn(async () => {})
+      await server.notifyResourceListChanged()
+      expect(sdkServer.sendResourceListChanged).toHaveBeenCalled()
     })
 
     it('should stop server gracefully', async () => {
