@@ -13,6 +13,7 @@ import {
   type CallToolResult,
   type Implementation,
   ListToolsRequestSchema,
+  type ServerCapabilities,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js'
 import {
@@ -63,6 +64,7 @@ interface UpstreamState {
   tools: Tool[]
   connected: boolean
   serverVersion?: Implementation
+  serverCapabilities?: ServerCapabilities
   lastError?: string
   lastConnectedAt?: string
   lastRefreshAt?: string
@@ -677,6 +679,7 @@ export class RikuneAgentGateway {
     state.tools = []
     state.connected = false
     state.serverVersion = undefined
+    state.serverCapabilities = undefined
     state.httpHealth = undefined
     state.capabilities = undefined
     state.toolkit = undefined
@@ -1080,6 +1083,12 @@ export class RikuneAgentGateway {
       await client.connect(transportConfig.transport, {
         timeout: config.timeoutMs || getConnectTimeoutMs(this.env),
       })
+      const upstreamCaps = client.getServerCapabilities()
+      if (!upstreamCaps?.tools) {
+        throw new Error(
+          `Upstream '${target}' did not declare 'tools' capability; refusing to call tools/list`
+        )
+      }
       const listed = await client.listTools(undefined, {
         timeout: config.timeoutMs || getConnectTimeoutMs(this.env),
       })
@@ -1087,12 +1096,14 @@ export class RikuneAgentGateway {
       state.tools = listed.tools || []
       state.connected = true
       state.serverVersion = client.getServerVersion()
+      state.serverCapabilities = upstreamCaps
       state.lastConnectedAt = new Date().toISOString()
       state.lastError = undefined
     } catch (error) {
       state.lastError = errorMessage(error)
       state.connected = false
       state.tools = []
+      state.serverCapabilities = undefined
       try {
         await transportConfig.transport.close()
       } catch {}
@@ -1128,6 +1139,7 @@ export class RikuneAgentGateway {
       http_health: state.httpHealth || null,
       tool_count: state.tools.length,
       server: state.serverVersion || null,
+      server_capabilities: state.serverCapabilities || null,
       last_connected_at: state.lastConnectedAt || null,
       last_refresh_at: state.lastRefreshAt || null,
       last_error: state.lastError || null,

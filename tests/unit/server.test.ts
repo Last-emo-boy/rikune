@@ -549,6 +549,9 @@ describe('MCPServer', () => {
 
     it('should forward createMessage requests to the underlying MCP SDK server', async () => {
       const sdkServer = server.getServer() as any
+      sdkServer.getClientCapabilities = jest.fn().mockReturnValue({
+        sampling: {},
+      })
       sdkServer.createMessage = jest.fn(async () => ({
         role: 'assistant',
         model: 'test-model',
@@ -585,6 +588,20 @@ describe('MCPServer', () => {
         maxTokens: 256,
       })
       expect((result as any).model).toBe('test-model')
+    })
+
+    it('should reject createMessage when client does not advertise sampling', async () => {
+      const sdkServer = server.getServer() as any
+      sdkServer.getClientCapabilities = jest.fn().mockReturnValue({})
+      sdkServer.createMessage = jest.fn(async () => ({})) as any
+
+      await expect(
+        server.createMessage({
+          messages: [{ role: 'user', content: { type: 'text', text: 'hi' } }],
+          maxTokens: 1,
+        })
+      ).rejects.toThrow(/does not support sampling/)
+      expect(sdkServer.createMessage).not.toHaveBeenCalled()
     })
   })
 

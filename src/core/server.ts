@@ -621,10 +621,17 @@ export class MCPServer
 
   /**
    * Request client-mediated MCP sampling from the connected client.
+   * Throws if the connected client did not advertise sampling support.
    */
   public async createMessage(
     params: CreateMessageRequest['params']
   ): Promise<CreateMessageResult | CreateMessageResultWithTools> {
+    if (!this.supportsSampling()) {
+      throw new Error(
+        'Client does not support sampling; cannot create message. ' +
+        'The connected MCP client did not advertise sampling capability.'
+      )
+    }
     return this.server.createMessage(params)
   }
 
