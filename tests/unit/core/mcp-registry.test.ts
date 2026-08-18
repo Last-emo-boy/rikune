@@ -176,7 +176,7 @@ describe('MCPRegistry', () => {
       expect(page1.nextCursor).toBeUndefined()
 
       // First paginated page
-      const pageA = await registry.listTools(null, MCPRegistry.encodeToolCursor(0))
+      const pageA = await registry.listTools(null, MCPRegistry.encodeOffsetCursor(0))
       expect(pageA.tools.length).toBe(100)
       expect(pageA.tools[0].name).toBe('tool_000')
       expect(pageA.nextCursor).toBeDefined()
@@ -204,7 +204,7 @@ describe('MCPRegistry', () => {
         registry.registerTool(makeTool(`tool.${i}`), async () => ({ ok: true }))
       }
       const visible = new Set(['tool.0', 'tool.1', 'tool.2'])
-      const page = await registry.listTools(visible, MCPRegistry.encodeToolCursor(0))
+      const page = await registry.listTools(visible, MCPRegistry.encodeOffsetCursor(0))
       expect(page.tools.length).toBe(3)
       expect(page.nextCursor).toBeUndefined()
     })

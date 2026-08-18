@@ -311,11 +311,11 @@ export class MCPRegistry {
     }
 
     // Cursor is an opaque base64-encoded offset into the sorted tool list.
-    const offset = MCPRegistry.decodeToolCursor(cursor)
+    const offset = MCPRegistry.decodeOffsetCursor(cursor, 'tools/list')
     const pageSize = MCPRegistry.TOOL_PAGE_SIZE
     const page = allTools.slice(offset, offset + pageSize)
     const nextOffset = offset + pageSize
-    const nextCursor = nextOffset < allTools.length ? MCPRegistry.encodeToolCursor(nextOffset) : undefined
+    const nextCursor = nextOffset < allTools.length ? MCPRegistry.encodeOffsetCursor(nextOffset) : undefined
 
     this.logger.debug(
       { count: page.length, offset, total: allTools.length, hasNext: !!nextCursor },
@@ -324,11 +324,11 @@ export class MCPRegistry {
     return { tools: page, nextCursor }
   }
 
-  private static encodeToolCursor(offset: number): string {
+  private static encodeOffsetCursor(offset: number): string {
     return Buffer.from(`offset=${offset}`).toString('base64url')
   }
 
-  private static decodeToolCursor(cursor: string): number {
+  private static decodeOffsetCursor(cursor: string, method: string): number {
     try {
       const decoded = Buffer.from(cursor, 'base64url').toString('utf8')
       const match = decoded.match(/^offset=(\d+)$/)
@@ -341,16 +341,20 @@ export class MCPRegistry {
     } catch {
       // fall through to error below
     }
-    throw new Error(`Invalid tools/list cursor: ${cursor}`)
+    throw new Error(`Invalid ${method} cursor: ${cursor}`)
   }
 
   /**
-   * List all available prompts (MCP protocol method)
+   * List all available prompts (MCP protocol method) with optional cursor pagination.
+   * Same backwards-compatible pagination model as listTools.
    */
-  async listPrompts(): Promise<Prompt[]> {
+  async listPrompts(cursor?: string): Promise<{ prompts: Prompt[]; nextCursor?: string }> {
     const prompts: Prompt[] = []
 
-    for (const [name, definition] of this.prompts.entries()) {
+    const sortedNames = [...this.prompts.keys()].sort()
+    for (const name of sortedNames) {
+      const definition = this.prompts.get(name)
+      if (!definition) continue
       prompts.push({
         name,
         title: definition.title,
@@ -363,8 +367,22 @@ export class MCPRegistry {
       })
     }
 
-    this.logger.debug({ count: prompts.length }, 'Listed prompts')
-    return prompts
+    if (cursor === undefined || cursor === null) {
+      this.logger.debug({ count: prompts.length }, 'Listed prompts (unpaginated)')
+      return { prompts }
+    }
+
+    const offset = MCPRegistry.decodeOffsetCursor(cursor, 'prompts/list')
+    const pageSize = MCPRegistry.TOOL_PAGE_SIZE
+    const page = prompts.slice(offset, offset + pageSize)
+    const nextOffset = offset + pageSize
+    const nextCursor = nextOffset < prompts.length ? MCPRegistry.encodeOffsetCursor(nextOffset) : undefined
+
+    this.logger.debug(
+      { count: page.length, offset, total: prompts.length, hasNext: !!nextCursor },
+      'Listed prompts (paginated)'
+    )
+    return { prompts: page, nextCursor }
   }
 
   /**
@@ -431,6 +449,19 @@ export class MCPRegistry {
     uri: string
   ): (() => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>) | undefined {
     return this.resourceHandlers.get(uri)
+  }
+
+  async listResources(cursor?: string): Promise<{ resources: Array<{ uri: string; name: string; description?: string; mimeType?: string }>; nextCursor?: string }> {
+    const resources = Array.from(this.resources.values())
+    if (cursor === undefined || cursor === null) {
+      return { resources }
+    }
+    const offset = MCPRegistry.decodeOffsetCursor(cursor, 'resources/list')
+    const pageSize = MCPRegistry.TOOL_PAGE_SIZE
+    const page = resources.slice(offset, offset + pageSize)
+    const nextOffset = offset + pageSize
+    const nextCursor = nextOffset < resources.length ? MCPRegistry.encodeOffsetCursor(nextOffset) : undefined
+    return { resources: page, nextCursor }
   }
 
   getResources(): Array<{ uri: string; name: string; description?: string; mimeType?: string }> {

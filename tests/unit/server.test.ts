@@ -281,7 +281,7 @@ describe('MCPServer', () => {
         })
       )
 
-      const prompts = await server.listPrompts()
+      const { prompts } = await server.listPrompts()
       expect(prompts).toHaveLength(1)
       expect(prompts[0].name).toBe('reverse.semantic_name_review')
       expect(prompts[0].title).toBe('Semantic Name Review')

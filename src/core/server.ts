@@ -123,11 +123,10 @@ export class MCPServer
       return await this.listTools(cursor)
     })
 
-    this.server.setRequestHandler(ListPromptsRequestSchema, async () => {
+    this.server.setRequestHandler(ListPromptsRequestSchema, async (request) => {
       this.logger.debug('Handling prompts/list request')
-      return {
-        prompts: await this.listPrompts(),
-      }
+      const cursor = request.params?.cursor
+      return await this.listPrompts(cursor)
     })
 
     this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
@@ -149,11 +148,10 @@ export class MCPServer
     })
 
     // Handle resources/list request
-    this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    this.server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
       this.logger.debug('Handling resources/list request')
-      return {
-        resources: this.registry.getResources(),
-      }
+      const cursor = request.params?.cursor
+      return await this.listResources(cursor)
     })
 
     // Handle resources/read request
@@ -387,17 +385,17 @@ export class MCPServer
   }
 
   /**
-   * List all available prompts (MCP protocol method)
+   * List all available prompts (MCP protocol method) with optional cursor pagination.
    */
-  public async listPrompts(): Promise<any[]> {
-    return this.registry.listPrompts()
+  public async listPrompts(cursor?: string): Promise<{ prompts: any[]; nextCursor?: string }> {
+    return this.registry.listPrompts(cursor)
   }
 
   /**
-   * List all registered resources (MCP protocol method)
+   * List all registered resources (MCP protocol method) with optional cursor pagination.
    */
-  public async listResources(): Promise<{ resources: any[] }> {
-    return { resources: this.registry.getResources() }
+  public async listResources(cursor?: string): Promise<{ resources: any[]; nextCursor?: string }> {
+    return this.registry.listResources(cursor)
   }
 
   /**
