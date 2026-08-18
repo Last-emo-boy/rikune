@@ -24,6 +24,7 @@ export interface ResourceRegistrar {
     meta: {
       uri: string
       name: string
+      title?: string
       description?: string
       mimeType?: string
       size?: number
@@ -38,6 +39,7 @@ export interface ResourceRegistrar {
   registerResourceTemplate(meta: {
     uriTemplate: string
     name: string
+    title?: string
     description?: string
     mimeType?: string
     annotations?: {

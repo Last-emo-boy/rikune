@@ -419,6 +419,19 @@ describe('MCPServer', () => {
         })
       )
     })
+
+    it('should register resource template with title', () => {
+      server.registerResourceTemplate({
+        uriTemplate: 'rikune://sample/{sample_id}/artifact/{artifact_id}',
+        name: 'sample_artifact',
+        title: '📁 Sample Artifact',
+        description: 'Parameterized artifact resource',
+        mimeType: 'application/json',
+      })
+      const templates = server.getResourceTemplates()
+      expect(templates).toHaveLength(1)
+      expect(templates[0].title).toBe('📁 Sample Artifact')
+    })
   })
 
   describe('Elicitation Helpers', () => {

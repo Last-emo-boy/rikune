@@ -86,6 +86,7 @@ export class MCPRegistry {
     {
       uri: string
       name: string
+      title?: string
       description?: string
       mimeType?: string
       size?: number
@@ -105,6 +106,7 @@ export class MCPRegistry {
     {
       uriTemplate: string
       name: string
+      title?: string
       description?: string
       mimeType?: string
       annotations?: {
@@ -209,6 +211,7 @@ export class MCPRegistry {
     meta: {
       uri: string
       name: string
+      title?: string
       description?: string
       mimeType?: string
       size?: number
@@ -231,6 +234,7 @@ export class MCPRegistry {
   registerResourceTemplate(meta: {
     uriTemplate: string
     name: string
+    title?: string
     description?: string
     mimeType?: string
     annotations?: {
@@ -499,6 +503,7 @@ export class MCPRegistry {
   getResources(): Array<{
     uri: string
     name: string
+    title?: string
     description?: string
     mimeType?: string
     size?: number
@@ -514,6 +519,7 @@ export class MCPRegistry {
   getResourceTemplates(): Array<{
     uriTemplate: string
     name: string
+    title?: string
     description?: string
     mimeType?: string
     annotations?: {

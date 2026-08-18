@@ -301,6 +301,7 @@ export class MCPServer
     meta: {
       uri: string
       name: string
+      title?: string
       description?: string
       mimeType?: string
       size?: number
@@ -321,6 +322,7 @@ export class MCPServer
   public registerResourceTemplate(meta: {
     uriTemplate: string
     name: string
+    title?: string
     description?: string
     mimeType?: string
     annotations?: {
