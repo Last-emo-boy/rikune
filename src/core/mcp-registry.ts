@@ -102,6 +102,7 @@ export class MCPRegistry {
     string,
     (value: string, context?: Record<string, unknown>) => Promise<string[]>
   >
+  private resourceSubscriptions: Set<string>
 
   /**
    * Tool names that are sample-ingestion entry points themselves and should
@@ -135,6 +136,7 @@ export class MCPRegistry {
     this.resourceHandlers = new Map()
     this.resourceTemplates = new Map()
     this.completionProviders = new Map()
+    this.resourceSubscriptions = new Set()
   }
 
   /**
@@ -225,6 +227,22 @@ export class MCPRegistry {
     key: string
   ): ((value: string, context?: Record<string, unknown>) => Promise<string[]>) | undefined {
     return this.completionProviders.get(key)
+  }
+
+  subscribeToResource(uri: string): void {
+    this.resourceSubscriptions.add(uri)
+  }
+
+  unsubscribeFromResource(uri: string): void {
+    this.resourceSubscriptions.delete(uri)
+  }
+
+  isSubscribedToResource(uri: string): boolean {
+    return this.resourceSubscriptions.has(uri)
+  }
+
+  getResourceSubscriptions(): string[] {
+    return Array.from(this.resourceSubscriptions)
   }
 
   /**

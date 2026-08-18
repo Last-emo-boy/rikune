@@ -24,6 +24,8 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
   SetLevelRequestSchema,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import pino from 'pino'
 import { createProgressReporter, type ProgressReporter } from '../streaming-progress.js'
@@ -99,7 +101,7 @@ export class MCPServer
         capabilities: {
           tools: { listChanged: true },
           prompts: {},
-          resources: { listChanged: true },
+          resources: { listChanged: true, subscribe: true },
           completions: {},
           logging: {},
         },
@@ -172,6 +174,22 @@ export class MCPServer
       return {
         resourceTemplates: this.registry.getResourceTemplates(),
       }
+    })
+
+    // Handle resources/subscribe request
+    this.server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+      const uri = request.params.uri
+      this.logger.debug({ uri }, 'Handling resources/subscribe request')
+      this.registry.subscribeToResource(uri)
+      return {}
+    })
+
+    // Handle resources/unsubscribe request
+    this.server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+      const uri = request.params.uri
+      this.logger.debug({ uri }, 'Handling resources/unsubscribe request')
+      this.registry.unsubscribeFromResource(uri)
+      return {}
     })
 
     // Handle completion/complete request
@@ -387,6 +405,37 @@ export class MCPServer
    */
   public getResourceTemplates(): any[] {
     return this.registry.getResourceTemplates()
+  }
+
+  /**
+   * Subscribe to resource change notifications (MCP protocol method).
+   */
+  public async subscribeToResource(uri: string): Promise<void> {
+    this.registry.subscribeToResource(uri)
+  }
+
+  /**
+   * Unsubscribe from resource change notifications.
+   */
+  public async unsubscribeFromResource(uri: string): Promise<void> {
+    this.registry.unsubscribeFromResource(uri)
+  }
+
+  /**
+   * Notify subscribed clients that a resource has changed.
+   * Only sends the notification if a client has previously subscribed
+   * to the given URI via resources/subscribe.
+   */
+  public async notifyResourceUpdated(uri: string): Promise<void> {
+    if (!this.registry.isSubscribedToResource(uri)) return
+    await this.server.sendResourceUpdated({ uri })
+  }
+
+  /**
+   * Notify clients that the list of available resources has changed.
+   */
+  public async notifyResourceListChanged(): Promise<void> {
+    await this.server.sendResourceListChanged()
   }
 
   /**

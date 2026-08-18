@@ -271,6 +271,15 @@ describe('MCPRegistry', () => {
         mimeType: 'application/json',
       })
     })
+
+    test('should track resource subscriptions', () => {
+      expect(registry.isSubscribedToResource('rikune://sample/abc')).toBe(false)
+      registry.subscribeToResource('rikune://sample/abc')
+      expect(registry.isSubscribedToResource('rikune://sample/abc')).toBe(true)
+      expect(registry.getResourceSubscriptions()).toEqual(['rikune://sample/abc'])
+      registry.unsubscribeFromResource('rikune://sample/abc')
+      expect(registry.isSubscribedToResource('rikune://sample/abc')).toBe(false)
+    })
   })
 
   describe('getToolNameMappings', () => {

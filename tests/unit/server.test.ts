@@ -373,6 +373,20 @@ describe('MCPServer', () => {
         mimeType: 'application/json',
       })
     })
+
+    it('should send resource updated notification only when subscribed', async () => {
+      const sdkServer = server.getServer() as any
+      sdkServer.sendResourceUpdated = jest.fn(async () => {})
+      // No subscription yet — should not send
+      await server.notifyResourceUpdated('rikune://sample/abc/artifact/1')
+      expect(sdkServer.sendResourceUpdated).not.toHaveBeenCalled()
+      // Subscribe via the SDK handler
+      await server.subscribeToResource('rikune://sample/abc/artifact/1')
+      await server.notifyResourceUpdated('rikune://sample/abc/artifact/1')
+      expect(sdkServer.sendResourceUpdated).toHaveBeenCalledWith({
+        uri: 'rikune://sample/abc/artifact/1',
+      })
+    })
   })
 
   describe('Elicitation Helpers', () => {
