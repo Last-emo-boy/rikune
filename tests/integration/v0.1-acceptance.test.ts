@@ -503,7 +503,7 @@ describe('V0.1 Acceptance Tests', () => {
     })
 
     test('should have all V0.1 tools registered', async () => {
-      const tools = await server.listTools()
+      const { tools } = await server.listTools()
       
       expect(tools).toBeDefined()
       expect(Array.isArray(tools)).toBe(true)
@@ -530,7 +530,7 @@ describe('V0.1 Acceptance Tests', () => {
     })
 
     test('should have valid schemas for all tools', async () => {
-      const tools = await server.listTools()
+      const { tools } = await server.listTools()
       
       for (const tool of tools) {
         // Verify tool definition structure

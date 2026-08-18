@@ -67,7 +67,7 @@ describe('MCPRegistry', () => {
     test('should list registered tools with transport names', async () => {
       registry.registerTool(makeTool('sample.ingest'), async () => ({ ok: true }))
       registry.registerTool(makeTool('ghidra.analyze', true), async () => ({ ok: true }))
-      const tools = await registry.listTools()
+      const { tools } = await registry.listTools()
       expect(tools.length).toBe(2)
       expect(tools.some((t) => t.name === 'sample_ingest')).toBe(true)
       expect(tools.some((t) => t.name === 'ghidra_analyze')).toBe(true)
@@ -75,7 +75,7 @@ describe('MCPRegistry', () => {
 
     test('should append prerequisite hint for tools requiring sample_id', async () => {
       registry.registerTool(makeTool('ghidra.analyze', true), async () => ({ ok: true }))
-      const tools = await registry.listTools()
+      const { tools } = await registry.listTools()
       const t = tools.find((x) => x.name === 'ghidra_analyze')
       expect(t?.description).toContain('Prerequisite')
       expect(t?.description).toContain('workflow.run action=request_upload')
@@ -83,7 +83,7 @@ describe('MCPRegistry', () => {
 
     test('should not append prerequisite hint for sample entry tools', async () => {
       registry.registerTool(makeTool('sample.ingest'), async () => ({ ok: true }))
-      const tools = await registry.listTools()
+      const { tools } = await registry.listTools()
       const t = tools.find((x) => x.name === 'sample_ingest')
       expect(t?.description).not.toContain('Prerequisite')
     })
@@ -91,7 +91,7 @@ describe('MCPRegistry', () => {
     test('should filter by visible set', async () => {
       registry.registerTool(makeTool('sample.ingest'), async () => ({ ok: true }))
       registry.registerTool(makeTool('ghidra.analyze'), async () => ({ ok: true }))
-      const tools = await registry.listTools(new Set(['sample.ingest']))
+      const { tools } = await registry.listTools(new Set(['sample.ingest']))
       expect(tools.length).toBe(1)
       expect(tools[0].name).toBe('sample_ingest')
     })
@@ -100,7 +100,7 @@ describe('MCPRegistry', () => {
       registry.registerTool(makeTool('plugin.list'), async () => ({ ok: true }))
       registry.registerTool(makeTool('system.config.validate'), async () => ({ ok: true }))
 
-      const tools = await registry.listTools(new Set(['plugin.list', 'system.config.validate']))
+      const { tools } = await registry.listTools(new Set(['plugin.list', 'system.config.validate']))
 
       expect(tools.map((tool) => tool.name).sort()).toEqual([
         'plugin_list',
@@ -112,7 +112,7 @@ describe('MCPRegistry', () => {
       const tool = makeTool('static.profile')
       tool.runtimePolicy = { passiveByDefault: true, noNetwork: true, noMutation: true, noLiveExecution: true }
       registry.registerTool(tool, async () => ({ ok: true }))
-      const tools = await registry.listTools()
+      const { tools } = await registry.listTools()
       const t = tools.find((x) => x.name === 'static_profile')
       expect(t?.annotations).toEqual(
         expect.objectContaining({ readOnlyHint: true, idempotentHint: true })
@@ -124,7 +124,7 @@ describe('MCPRegistry', () => {
       const tool = makeTool('dynamic.patch')
       tool.runtimePolicy = { passiveByDefault: false, noNetwork: true, noMutation: false, noLiveExecution: false }
       registry.registerTool(tool, async () => ({ ok: true }))
-      const tools = await registry.listTools()
+      const { tools } = await registry.listTools()
       const t = tools.find((x) => x.name === 'dynamic_patch')
       expect(t?.annotations).toEqual(expect.objectContaining({ destructiveHint: true }))
       expect(t?.annotations?.readOnlyHint).toBeUndefined()
@@ -134,7 +134,7 @@ describe('MCPRegistry', () => {
       const tool = makeTool('network.fetch')
       tool.runtimePolicy = { passiveByDefault: true, noNetwork: false, noMutation: true, noLiveExecution: true }
       registry.registerTool(tool, async () => ({ ok: true }))
-      const tools = await registry.listTools()
+      const { tools } = await registry.listTools()
       const t = tools.find((x) => x.name === 'network_fetch')
       expect(t?.annotations).toEqual(expect.objectContaining({ openWorldHint: true }))
     })
@@ -144,16 +144,69 @@ describe('MCPRegistry', () => {
       tool.runtimePolicy = { passiveByDefault: true, noNetwork: true, noMutation: true, noLiveExecution: true }
       tool.annotations = { readOnlyHint: false, title: 'Custom Tool' }
       registry.registerTool(tool, async () => ({ ok: true }))
-      const tools = await registry.listTools()
+      const { tools } = await registry.listTools()
       const t = tools.find((x) => x.name === 'custom_tool')
       expect(t?.annotations).toEqual(expect.objectContaining({ title: 'Custom Tool', readOnlyHint: false, idempotentHint: true }))
     })
 
     test('tools without runtime policy have no derived annotations', async () => {
       registry.registerTool(makeTool('plain.tool'), async () => ({ ok: true }))
-      const tools = await registry.listTools()
+      const { tools } = await registry.listTools()
       const t = tools.find((x) => x.name === 'plain_tool')
       expect(t?.annotations).toBeUndefined()
+    })
+
+    test('returns all tools without nextCursor when cursor is omitted', async () => {
+      for (let i = 0; i < 5; i++) {
+        registry.registerTool(makeTool(`tool.${i}`), async () => ({ ok: true }))
+      }
+      const result = await registry.listTools()
+      expect(result.tools.length).toBe(5)
+      expect(result.nextCursor).toBeUndefined()
+    })
+
+    test('paginates tools with cursor and returns nextCursor', async () => {
+      for (let i = 0; i < 250; i++) {
+        registry.registerTool(makeTool(`tool.${String(i).padStart(3, '0')}`), async () => ({
+          ok: true,
+        }))
+      }
+      const page1 = await registry.listTools(null, undefined)
+      expect(page1.tools.length).toBe(250)
+      expect(page1.nextCursor).toBeUndefined()
+
+      // First paginated page
+      const pageA = await registry.listTools(null, MCPRegistry.encodeToolCursor(0))
+      expect(pageA.tools.length).toBe(100)
+      expect(pageA.tools[0].name).toBe('tool_000')
+      expect(pageA.nextCursor).toBeDefined()
+
+      // Second page
+      const pageB = await registry.listTools(null, pageA.nextCursor!)
+      expect(pageB.tools.length).toBe(100)
+      expect(pageB.tools[0].name).toBe('tool_100')
+      expect(pageB.nextCursor).toBeDefined()
+
+      // Third (final) page
+      const pageC = await registry.listTools(null, pageB.nextCursor!)
+      expect(pageC.tools.length).toBe(50)
+      expect(pageC.tools[0].name).toBe('tool_200')
+      expect(pageC.nextCursor).toBeUndefined()
+    })
+
+    test('throws on invalid cursor', async () => {
+      registry.registerTool(makeTool('tool.a'), async () => ({ ok: true }))
+      await expect(registry.listTools(null, 'invalid-cursor')).rejects.toThrow(/Invalid tools\/list cursor/)
+    })
+
+    test('pagination respects visible set filtering', async () => {
+      for (let i = 0; i < 5; i++) {
+        registry.registerTool(makeTool(`tool.${i}`), async () => ({ ok: true }))
+      }
+      const visible = new Set(['tool.0', 'tool.1', 'tool.2'])
+      const page = await registry.listTools(visible, MCPRegistry.encodeToolCursor(0))
+      expect(page.tools.length).toBe(3)
+      expect(page.nextCursor).toBeUndefined()
     })
   })
 

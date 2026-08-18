@@ -105,11 +105,10 @@ export class MCPServer
    */
   private setupHandlers(): void {
     // Handle tools/list request
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+    this.server.setRequestHandler(ListToolsRequestSchema, async (request) => {
       this.logger.debug('Handling tools/list request')
-      return {
-        tools: await this.listTools(),
-      }
+      const cursor = request.params?.cursor
+      return await this.listTools(cursor)
     })
 
     this.server.setRequestHandler(ListPromptsRequestSchema, async () => {
@@ -226,12 +225,15 @@ export class MCPServer
   }
 
   /**
-   * List all available tools (MCP protocol method)
+   * List all available tools (MCP protocol method) with optional cursor pagination.
+   * When cursor is omitted, all visible tools are returned without a nextCursor
+   * (backwards compatible). When cursor is provided, a page of tools is returned
+   * with a nextCursor if more tools remain.
    */
-  public async listTools(): Promise<any[]> {
+  public async listTools(cursor?: string): Promise<{ tools: any[]; nextCursor?: string }> {
     const surface = getToolSurfaceManager()
     const visibleSet = surface.isEnabled() ? surface.getVisibleToolNames() : null
-    return this.registry.listTools(visibleSet)
+    return this.registry.listTools(visibleSet, cursor)
   }
 
   /**

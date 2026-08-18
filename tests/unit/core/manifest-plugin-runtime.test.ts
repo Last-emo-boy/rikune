@@ -73,7 +73,7 @@ describe('manifest plugin runtime schema compatibility', () => {
 
     plugin.register?.(registry as any, {})
 
-    const listed = await registry.listTools()
+    const { tools: listed } = await registry.listTools()
     expect(listed).toHaveLength(1)
     expect(listed[0]).toMatchObject({
       name: 'manifest_runtime_echo',
@@ -153,7 +153,7 @@ describe('manifest plugin runtime schema compatibility', () => {
     )
 
     plugin.register?.(registry as any, {})
-    const listed = await registry.listTools()
+    const { tools: listed } = await registry.listTools()
     expect(listed).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

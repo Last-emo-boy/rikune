@@ -79,7 +79,7 @@ async function runHealthCheck(): Promise<void> {
         {
           ok: true,
           mode: 'health-check',
-          tool_count: (await server.listTools()).length,
+          tool_count: (await server.listTools()).tools.length,
           prompt_count: (await server.listPrompts()).length,
         },
         null,

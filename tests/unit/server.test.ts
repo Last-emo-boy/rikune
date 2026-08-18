@@ -82,7 +82,7 @@ describe('MCPServer', () => {
 
   describe('listTools', () => {
     it('should return empty array when no tools registered', async () => {
-      const tools = await server.listTools()
+      const { tools } = await server.listTools()
       expect(tools).toEqual([])
     })
 
@@ -99,7 +99,7 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, handler)
 
-      const tools = await server.listTools()
+      const { tools } = await server.listTools()
       expect(tools).toHaveLength(1)
       expect(tools[0].name).toBe(toTransportToolName('test.tool'))
       expect(tools[0].description).toBe('A test tool')
@@ -122,7 +122,7 @@ describe('MCPServer', () => {
       server.registerTool(tool1, async () => ({ ok: true, data: {} }))
       server.registerTool(tool2, async () => ({ ok: true, data: {} }))
 
-      const tools = await server.listTools()
+      const { tools } = await server.listTools()
       expect(tools).toHaveLength(2)
       expect(tools.map((t) => t.name)).toContain(toTransportToolName('tool.one'))
       expect(tools.map((t) => t.name)).toContain(toTransportToolName('tool.two'))
@@ -143,7 +143,7 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
-      const tools = await server.listTools()
+      const { tools } = await server.listTools()
       const schema = tools.find((tool) => tool.name === toTransportToolName('schema.wrappers'))
         ?.inputSchema as any
 
@@ -187,7 +187,7 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
-      const tools = await server.listTools()
+      const { tools } = await server.listTools()
       const schema = tools.find((tool) => tool.name === toTransportToolName('schema.fidelity'))
         ?.inputSchema as any
       const outputSchema = tools.find(
@@ -225,7 +225,7 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
-      const tools = await server.listTools()
+      const { tools } = await server.listTools()
       const outputSchema = tools.find((tool) => tool.name === toTransportToolName('schema.any'))
         ?.outputSchema as any
 
@@ -242,7 +242,7 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
-      const tools = await server.listTools()
+      const { tools } = await server.listTools()
       const schema = tools.find((tool) => tool.name === toTransportToolName('schema.union'))
         ?.inputSchema as any
 
@@ -1241,7 +1241,7 @@ describe('MCPServer', () => {
         },
       }))
 
-      const tools = await server.listTools()
+      const { tools } = await server.listTools()
       expect(tools.map((tool) => tool.name)).toContain('sample_ingest')
 
       const dottedCall = await server.callTool('sample.ingest', { value: 'dotted' })

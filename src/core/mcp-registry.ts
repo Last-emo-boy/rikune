@@ -182,12 +182,33 @@ export class MCPRegistry {
   }
 
   /**
-   * List all available tools (MCP protocol method)
+   * Default page size for paginated tools/list responses.
+   * When no cursor is supplied, all visible tools are returned (backwards
+   * compatible). When a cursor is supplied, results are paged.
    */
-  async listTools(visibleSet?: Set<string> | null): Promise<Tool[]> {
-    const tools: Tool[] = []
+  static readonly TOOL_PAGE_SIZE = 100
 
-    for (const [name, definition] of this.tools.entries()) {
+  /**
+   * List all available tools (MCP protocol method) with optional cursor pagination.
+   *
+   * When cursor is omitted, all visible tools are returned without a nextCursor
+   * (backwards compatible with non-paginating clients). When a cursor is
+   * provided, a page of tools is returned with a nextCursor if more remain.
+   */
+  async listTools(
+    visibleSet?: Set<string> | null,
+    cursor?: string
+  ): Promise<{ tools: Tool[]; nextCursor?: string }> {
+    const allTools: Tool[] = []
+
+    // Collect the full sorted tool set first so cursor pagination is stable
+    // across calls. Map iteration order is insertion order; sort by transport
+    // name for deterministic pagination.
+    const sortedNames = [...this.tools.keys()].sort()
+
+    for (const name of sortedNames) {
+      const definition = this.tools.get(name)
+      if (!definition) continue
       // Progressive surface filtering — skip tools not currently visible
       const canonicalName = definition.canonicalName || definition.name
       if (visibleSet && visibleSet.size > 0 && !visibleSet.has(canonicalName)) {
@@ -210,7 +231,7 @@ export class MCPRegistry {
         ? definition.description + MCPRegistry.SAMPLE_PREREQUISITE_HINT
         : definition.description
 
-      tools.push({
+      allTools.push({
         name,
         description,
         inputSchema: inputSchema as Tool['inputSchema'],
@@ -219,8 +240,44 @@ export class MCPRegistry {
       })
     }
 
-    this.logger.debug({ count: tools.length }, 'Listed tools')
-    return tools
+    // No cursor → return everything (backwards compatible).
+    if (cursor === undefined || cursor === null) {
+      this.logger.debug({ count: allTools.length }, 'Listed tools (unpaginated)')
+      return { tools: allTools }
+    }
+
+    // Cursor is an opaque base64-encoded offset into the sorted tool list.
+    const offset = MCPRegistry.decodeToolCursor(cursor)
+    const pageSize = MCPRegistry.TOOL_PAGE_SIZE
+    const page = allTools.slice(offset, offset + pageSize)
+    const nextOffset = offset + pageSize
+    const nextCursor = nextOffset < allTools.length ? MCPRegistry.encodeToolCursor(nextOffset) : undefined
+
+    this.logger.debug(
+      { count: page.length, offset, total: allTools.length, hasNext: !!nextCursor },
+      'Listed tools (paginated)'
+    )
+    return { tools: page, nextCursor }
+  }
+
+  private static encodeToolCursor(offset: number): string {
+    return Buffer.from(`offset=${offset}`).toString('base64url')
+  }
+
+  private static decodeToolCursor(cursor: string): number {
+    try {
+      const decoded = Buffer.from(cursor, 'base64url').toString('utf8')
+      const match = decoded.match(/^offset=(\d+)$/)
+      if (match) {
+        const offset = parseInt(match[1], 10)
+        if (Number.isFinite(offset) && offset >= 0) {
+          return offset
+        }
+      }
+    } catch {
+      // fall through to error below
+    }
+    throw new Error(`Invalid tools/list cursor: ${cursor}`)
   }
 
   /**

@@ -495,7 +495,7 @@ describe('workflow.run', () => {
       )
     }
 
-    const tools = await registry.listTools(new Set(['workflow.run']))
+    const { tools } = await registry.listTools(new Set(['workflow.run']))
 
     expect(tools.map((tool) => tool.name)).toEqual(['workflow_run'])
   })

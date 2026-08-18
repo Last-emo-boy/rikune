@@ -177,7 +177,7 @@ describe('MCP Tools Integration Tests', () => {
 
   describe('Tool Registration and Discovery', () => {
     test('should list all registered tools', async () => {
-      const tools = await server.listTools()
+      const { tools } = await server.listTools()
 
       expect(tools).toBeDefined()
       expect(Array.isArray(tools)).toBe(true)
@@ -198,7 +198,7 @@ describe('MCP Tools Integration Tests', () => {
     })
 
     test('should have valid schema for each tool', async () => {
-      const tools = await server.listTools()
+      const { tools } = await server.listTools()
 
       for (const tool of tools) {
         expect(tool.name).toBeDefined()
