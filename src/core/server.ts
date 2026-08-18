@@ -16,11 +16,14 @@ import {
   type ElicitResult,
   GetPromptRequestSchema,
   type Implementation,
+  type LoggingLevel,
+  type LoggingMessageNotification,
   ListPromptsRequestSchema,
   ListResourceTemplatesRequestSchema,
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
+  SetLevelRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import pino from 'pino'
 import { createProgressReporter, type ProgressReporter } from '../streaming-progress.js'
@@ -68,6 +71,7 @@ export class MCPServer
   private pluginManager: PluginManager | null = null
   private registry: MCPRegistry
   private executor: ToolExecutor
+  private clientLogLevel: LoggingLevel | null = null
 
   constructor(config: Config, dependencies: MCPServerDependencies = {}) {
     // Create logger that writes to stderr to avoid interfering with MCP protocol on stdout
@@ -97,6 +101,7 @@ export class MCPServer
           prompts: {},
           resources: { listChanged: true },
           completions: {},
+          logging: {},
         },
       }
     )
@@ -197,6 +202,58 @@ export class MCPServer
         },
       }
     })
+
+    // Handle logging/setLevel request
+    this.server.setRequestHandler(SetLevelRequestSchema, async (request) => {
+      const level = request.params.level
+      this.logger.debug({ level }, 'Setting client log level')
+      this.clientLogLevel = level
+      return {}
+    })
+  }
+
+  /**
+   * Minimum log level below which messages should not be forwarded to the
+   * client. When the client has not called logging/setLevel, all levels
+   * are forwarded (null = no filter).
+   */
+  private static readonly LOG_LEVEL_ORDER: LoggingLevel[] = [
+    'debug',
+    'info',
+    'notice',
+    'warning',
+    'error',
+    'critical',
+    'alert',
+    'emergency',
+  ]
+
+  private shouldForwardLogLevel(level: LoggingLevel): boolean {
+    if (!this.clientLogLevel) return true
+    const minIdx = MCPServer.LOG_LEVEL_ORDER.indexOf(this.clientLogLevel)
+    const msgIdx = MCPServer.LOG_LEVEL_ORDER.indexOf(level)
+    if (minIdx === -1 || msgIdx === -1) return true
+    return msgIdx >= minIdx
+  }
+
+  /**
+   * Send a log message notification to the connected client.
+   * Respects the minimum log level configured by the client via logging/setLevel.
+   */
+  public async sendLogMessage(
+    level: LoggingLevel,
+    data: unknown,
+    logger?: string
+  ): Promise<void> {
+    if (!this.shouldForwardLogLevel(level)) return
+    const params: LoggingMessageNotification['params'] = {
+      level,
+      data: data as any,
+    }
+    if (logger) {
+      params.logger = logger
+    }
+    await this.server.sendLoggingMessage(params)
   }
 
   /**

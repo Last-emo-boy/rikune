@@ -441,6 +441,42 @@ describe('MCPServer', () => {
     })
   })
 
+  describe('Logging', () => {
+    it('should send log messages to the client via sendLogMessage', async () => {
+      const sdkServer = server.getServer() as any
+      sdkServer.sendLoggingMessage = jest.fn(async () => {})
+      await server.sendLogMessage('info', { msg: 'hello' }, 'test-logger')
+      expect(sdkServer.sendLoggingMessage).toHaveBeenCalledWith({
+        level: 'info',
+        data: { msg: 'hello' },
+        logger: 'test-logger',
+      })
+    })
+
+    it('should respect client log level filter after logging/setLevel', async () => {
+      const sdkServer = server.getServer() as any
+      sdkServer.sendLoggingMessage = jest.fn(async () => {})
+      // Simulate client setting minimum level to "error"
+      sdkServer.setRequestHandler = jest.fn()
+      // Manually set the internal client log level
+      ;(server as any).clientLogLevel = 'error'
+      await server.sendLogMessage('info', { msg: 'should be filtered' })
+      expect(sdkServer.sendLoggingMessage).not.toHaveBeenCalled()
+      await server.sendLogMessage('error', { msg: 'should pass' })
+      expect(sdkServer.sendLoggingMessage).toHaveBeenCalledWith({
+        level: 'error',
+        data: { msg: 'should pass' },
+      })
+    })
+
+    it('should forward all log levels when no level is set', async () => {
+      const sdkServer = server.getServer() as any
+      sdkServer.sendLoggingMessage = jest.fn(async () => {})
+      await server.sendLogMessage('debug', { msg: 'trace' })
+      expect(sdkServer.sendLoggingMessage).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('Sampling Helpers', () => {
     it('should report client sampling capabilities when advertised by the MCP client', () => {
       const sdkServer = server.getServer() as any
