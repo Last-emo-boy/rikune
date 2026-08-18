@@ -342,7 +342,36 @@ describe('MCPServer', () => {
 
       await expect(server.getPrompt('prompt.required', {})).rejects.toThrow(
         'Missing required prompt argument: bundle'
+      ) 
+    }) 
+  })
+
+  describe('Resources', () => {
+    it('should register and retrieve resources', async () => {
+      server.registerResource(
+        { uri: 'test://resource', name: 'Test', mimeType: 'text/plain' },
+        async () => ({ uri: 'test://resource', text: 'hello', mimeType: 'text/plain' })
       )
+      const { resources } = await server.listResources()
+      expect(resources).toHaveLength(1)
+      expect(resources[0].uri).toBe('test://resource')
+    })
+
+    it('should register and list resource templates', () => {
+      server.registerResourceTemplate({
+        uriTemplate: 'rikune://sample/{sample_id}/artifact/{artifact_id}',
+        name: 'Sample Artifact',
+        description: 'Parameterized artifact resource',
+        mimeType: 'application/json',
+      })
+      const templates = server.getResourceTemplates()
+      expect(templates).toHaveLength(1)
+      expect(templates[0]).toEqual({
+        uriTemplate: 'rikune://sample/{sample_id}/artifact/{artifact_id}',
+        name: 'Sample Artifact',
+        description: 'Parameterized artifact resource',
+        mimeType: 'application/json',
+      })
     })
   })
 

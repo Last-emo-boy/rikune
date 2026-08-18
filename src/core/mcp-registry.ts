@@ -89,6 +89,15 @@ export class MCPRegistry {
     string,
     () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>
   >
+  private resourceTemplates: Map<
+    string,
+    {
+      uriTemplate: string
+      name: string
+      description?: string
+      mimeType?: string
+    }
+  >
 
   /**
    * Tool names that are sample-ingestion entry points themselves and should
@@ -120,6 +129,7 @@ export class MCPRegistry {
     this.promptHandlers = new Map()
     this.resources = new Map()
     this.resourceHandlers = new Map()
+    this.resourceTemplates = new Map()
   }
 
   /**
@@ -179,6 +189,19 @@ export class MCPRegistry {
     this.logger.info({ resource: meta.uri }, 'Registering resource')
     this.resources.set(meta.uri, meta)
     this.resourceHandlers.set(meta.uri, handler)
+  }
+
+  /**
+   * Register a resource template (parameterized URI template per MCP spec).
+   */
+  registerResourceTemplate(meta: {
+    uriTemplate: string
+    name: string
+    description?: string
+    mimeType?: string
+  }): void {
+    this.logger.info({ template: meta.uriTemplate }, 'Registering resource template')
+    this.resourceTemplates.set(meta.uriTemplate, meta)
   }
 
   /**
@@ -371,6 +394,15 @@ export class MCPRegistry {
 
   getResources(): Array<{ uri: string; name: string; description?: string; mimeType?: string }> {
     return Array.from(this.resources.values())
+  }
+
+  getResourceTemplates(): Array<{
+    uriTemplate: string
+    name: string
+    description?: string
+    mimeType?: string
+  }> {
+    return Array.from(this.resourceTemplates.values())
   }
 
   /**

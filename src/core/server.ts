@@ -15,6 +15,7 @@ import {
   GetPromptRequestSchema,
   type Implementation,
   ListPromptsRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
@@ -91,7 +92,7 @@ export class MCPServer
         capabilities: {
           tools: { listChanged: true },
           prompts: {},
-          resources: {},
+          resources: { listChanged: true },
         },
       }
     )
@@ -154,6 +155,14 @@ export class MCPServer
       const content = await handler()
       return { contents: [content] }
     })
+
+    // Handle resources/templates/list request
+    this.server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
+      this.logger.debug('Handling resources/templates/list request')
+      return {
+        resourceTemplates: this.registry.getResourceTemplates(),
+      }
+    })
   }
 
   /**
@@ -185,6 +194,18 @@ export class MCPServer
     handler: () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>
   ): void {
     this.registry.registerResource(meta, handler)
+  }
+
+  /**
+   * Register a resource template (parameterized URI per MCP spec).
+   */
+  public registerResourceTemplate(meta: {
+    uriTemplate: string
+    name: string
+    description?: string
+    mimeType?: string
+  }): void {
+    this.registry.registerResourceTemplate(meta)
   }
 
   /**
@@ -241,6 +262,20 @@ export class MCPServer
    */
   public async listPrompts(): Promise<any[]> {
     return this.registry.listPrompts()
+  }
+
+  /**
+   * List all registered resources (MCP protocol method)
+   */
+  public async listResources(): Promise<{ resources: any[] }> {
+    return { resources: this.registry.getResources() }
+  }
+
+  /**
+   * List all registered resource templates (MCP protocol method)
+   */
+  public getResourceTemplates(): any[] {
+    return this.registry.getResourceTemplates()
   }
 
   /**

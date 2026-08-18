@@ -23,6 +23,12 @@ export interface ResourceRegistrar {
     meta: { uri: string; name: string; description?: string; mimeType?: string },
     handler: () => Promise<{ uri: string; mimeType?: string; text?: string; blob?: string }>
   ): void
+  registerResourceTemplate(meta: {
+    uriTemplate: string
+    name: string
+    description?: string
+    mimeType?: string
+  }): void
 }
 
 export interface SamplingClient {

@@ -506,6 +506,7 @@ export function createRuntimeDelegatedToolHandler(
       return []
     },
     registerResource() {},
+    registerResourceTemplate() {},
     getClientCapabilities() {
       return undefined
     },

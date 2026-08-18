@@ -254,6 +254,23 @@ describe('MCPRegistry', () => {
       expect(registry.getResourceHandler('test://resource')).toBe(handler)
       expect(registry.getResources()).toHaveLength(1)
     })
+
+    test('should register and retrieve resource templates', () => {
+      registry.registerResourceTemplate({
+        uriTemplate: 'rikune://sample/{sample_id}/artifact/{artifact_id}',
+        name: 'Sample Artifact',
+        description: 'Parameterized artifact resource by sample and artifact ID',
+        mimeType: 'application/json',
+      })
+      const templates = registry.getResourceTemplates()
+      expect(templates).toHaveLength(1)
+      expect(templates[0]).toEqual({
+        uriTemplate: 'rikune://sample/{sample_id}/artifact/{artifact_id}',
+        name: 'Sample Artifact',
+        description: 'Parameterized artifact resource by sample and artifact ID',
+        mimeType: 'application/json',
+      })
+    })
   })
 
   describe('getToolNameMappings', () => {
