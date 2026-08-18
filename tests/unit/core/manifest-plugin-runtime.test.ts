@@ -103,15 +103,13 @@ describe('manifest plugin runtime schema compatibility', () => {
       },
     })
 
-    const missingRequired = await executor.executeTool(
-      'manifest_runtime_echo',
-      {},
-      { registry, logger }
-    )
-    expect(missingRequired.isError).toBe(true)
-    expect(JSON.parse((missingRequired.content[0] as any).text).errors[0]).toContain(
-      'Invalid arguments'
-    )
+    await expect(
+      executor.executeTool(
+        'manifest_runtime_echo',
+        {},
+        { registry, logger }
+      )
+    ).rejects.toThrow(/Invalid arguments/)
     expect(handler).not.toHaveBeenCalled()
 
     const valid = await executor.executeTool(

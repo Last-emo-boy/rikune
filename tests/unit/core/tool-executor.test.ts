@@ -54,22 +54,19 @@ describe('ToolExecutor', () => {
       ok: true,
     }))
 
-    const result = await executor.executeTool(
-      'test_tool',
-      { count: 'not-a-number' },
-      { registry, logger }
-    )
-
-    expect(result.isError).toBe(true)
-    const text = (result.content[0] as any).text
-    expect(JSON.parse(text).errors[0]).toMatch(/Invalid arguments/)
+    await expect(
+      executor.executeTool(
+        'test_tool',
+        { count: 'not-a-number' },
+        { registry, logger }
+      )
+    ).rejects.toThrow(/Invalid arguments/)
   })
 
   test('should return error when tool not found', async () => {
-    const result = await executor.executeTool('missing_tool', {}, { registry, logger })
-    expect(result.isError).toBe(true)
-    const text = (result.content[0] as any).text
-    expect(JSON.parse(text).errors[0]).toMatch(/Tool not found/)
+    await expect(
+      executor.executeTool('missing_tool', {}, { registry, logger })
+    ).rejects.toThrow(/Tool not found/)
   })
 
   test('should fire plugin before/after hooks', async () => {
@@ -155,12 +152,8 @@ describe('ToolExecutor', () => {
     getToolSurfaceManager().registerCoreTools(['workflow.analyze.start'])
     getToolSurfaceManager().registerGatewayCoreTools(['tools.discover'])
 
-    const result = await executor.executeTool('workflow_analyze_start', {}, { registry, logger })
-
-    expect(result.isError).toBe(true)
-    const text = (result.content[0] as any).text
-    expect(JSON.parse(text).errors[0]).toContain(
-      'Use workflow.search query="workflow.analyze.start"'
-    )
+    await expect(
+      executor.executeTool('workflow_analyze_start', {}, { registry, logger })
+    ).rejects.toThrow(/Use workflow\.search query="workflow\.analyze\.start"/)
   })
 })

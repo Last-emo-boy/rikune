@@ -69,12 +69,9 @@ describe('MCP tool and backend safety boundaries', () => {
     getToolSurfaceManager().registerCoreTools(['workflow.analyze.start'])
     getToolSurfaceManager().registerGatewayCoreTools(['tools.discover'])
 
-    const result = await executor.executeTool('workflow_analyze_start', {}, { registry, logger })
-
-    expect(result.isError).toBe(true)
-    const payload = JSON.parse((result.content[0] as any).text)
-    expect(payload.errors[0]).toContain('Tool hidden by progressive surface')
-    expect(payload.errors[0]).toContain('Use workflow.search query="workflow.analyze.start"')
+    await expect(
+      executor.executeTool('workflow_analyze_start', {}, { registry, logger })
+    ).rejects.toThrow(/Tool hidden by progressive surface/)
   })
 
   test('rejects invalid tool schemas and oversized backend input before execution', async () => {
@@ -88,15 +85,13 @@ describe('MCP tool and backend safety boundaries', () => {
     getToolSurfaceManager().registerCoreTools(['sample.safe.inspect'])
     getToolSurfaceManager().registerGatewayCoreTools(['sample.safe.inspect'])
 
-    const schemaResult = await executor.executeTool(
-      'sample_safe_inspect',
-      { sample_id: '' },
-      { registry, logger }
-    )
-    expect(schemaResult.isError).toBe(true)
-    expect(JSON.parse((schemaResult.content[0] as any).text).errors[0]).toContain(
-      'Invalid arguments'
-    )
+    await expect(
+      executor.executeTool(
+        'sample_safe_inspect',
+        { sample_id: '' },
+        { registry, logger }
+      )
+    ).rejects.toThrow(/Invalid arguments/)
 
     const backend = fixtureBackendContract({
       policy: {

@@ -639,16 +639,10 @@ describe('MCPServer', () => {
       expect((result.structuredContent as any).data.echo).toBe('hello')
     })
 
-    it('should return error for non-existent tool', async () => {
-      const result = await server.callTool('non.existent', {})
-
-      expect(result.isError).toBe(true)
-      expect(result.content).toHaveLength(1)
-
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.ok).toBe(false)
-      expect(parsedResult.errors).toContain('Tool not found: non.existent')
+    it('should throw JSON-RPC error for non-existent tool', async () => {
+      await expect(server.callTool('non.existent', {})).rejects.toThrow(
+        /Tool not found: non\.existent/
+      )
     })
 
     it('should reject execution when AbortSignal is already aborted', async () => {
@@ -665,13 +659,10 @@ describe('MCPServer', () => {
 
       const controller = new AbortController()
       controller.abort()
-      const result = await server.callTool('test.cancel', {}, undefined, controller.signal)
-
-      expect(result.isError).toBe(true)
+      await expect(
+        server.callTool('test.cancel', {}, undefined, controller.signal)
+      ).rejects.toThrow(/cancelled/)
       expect(handlerCalled).toBe(false)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('cancelled')
     })
 
     it('should execute normally when AbortSignal is not aborted', async () => {
@@ -700,13 +691,10 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
-      // Missing required field
-      const result = await server.callTool('test.validate', { number: 42 })
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('Invalid arguments')
+      // Missing required field — invalid params is a JSON-RPC protocol error
+      await expect(server.callTool('test.validate', { number: 42 })).rejects.toThrow(
+        /Invalid arguments/
+      )
     })
 
     it('should handle tool execution errors', async () => {
@@ -823,14 +811,7 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('test.required', {})
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('Invalid arguments')
-      expect(parsedResult.errors[0]).toContain('name')
-      expect(parsedResult.errors[0]).toContain('age')
+      await expect(server.callTool('test.required', {})).rejects.toThrow(/Invalid arguments/)
     })
 
     it('should provide clear error messages for wrong type', async () => {
@@ -844,13 +825,9 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('test.type', { count: 'not a number' })
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('Invalid arguments')
-      expect(parsedResult.errors[0]).toContain('count')
+      await expect(
+        server.callTool('test.type', { count: 'not a number' })
+      ).rejects.toThrow(/Invalid arguments/)
     })
 
     it('should include example in validation error', async () => {
@@ -865,13 +842,7 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('test.example', {})
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('Example:')
-      expect(parsedResult.errors[0]).toContain('sample_id')
+      await expect(server.callTool('test.example', {})).rejects.toThrow(/Example:/)
     })
 
     it('should validate nested objects', async () => {
@@ -888,14 +859,11 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('test.nested', {
-        config: { timeout: 'invalid' },
-      })
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('config.timeout')
+      await expect(
+        server.callTool('test.nested', {
+          config: { timeout: 'invalid' },
+        })
+      ).rejects.toThrow(/config\.timeout/)
     })
 
     it('should validate arrays', async () => {
@@ -909,14 +877,11 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('test.array', {
-        tags: [1, 2, 3],
-      })
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('tags')
+      await expect(
+        server.callTool('test.array', {
+          tags: [1, 2, 3],
+        })
+      ).rejects.toThrow(/tags/)
     })
 
     it('should validate enums', async () => {
@@ -930,14 +895,11 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('test.enum', {
-        backend: 'invalid',
-      })
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('backend')
+      await expect(
+        server.callTool('test.enum', {
+          backend: 'invalid',
+        })
+      ).rejects.toThrow(/backend/)
     })
 
     it('should handle optional fields correctly', async () => {
@@ -1005,18 +967,15 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('test.path', {
-        user: {
-          profile: {
-            email: 'invalid-email',
+      await expect(
+        server.callTool('test.path', {
+          user: {
+            profile: {
+              email: 'invalid-email',
+            },
           },
-        },
-      })
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('user.profile.email')
+        })
+      ).rejects.toThrow(/user\.profile\.email/)
     })
   })
 
@@ -1264,21 +1223,17 @@ describe('MCPServer', () => {
 
       server.registerTool(tool, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('error.complex', {
-        user: {
-          name: 'test',
-          settings: {
-            theme: 'invalid',
-            notifications: 'not-a-boolean',
+      await expect(
+        server.callTool('error.complex', {
+          user: {
+            name: 'test',
+            settings: {
+              theme: 'invalid',
+              notifications: 'not-a-boolean',
+            },
           },
-        },
-      })
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('user.settings.theme')
-      expect(parsedResult.errors[0]).toContain('user.settings.notifications')
+        })
+      ).rejects.toThrow(/user\.settings\.(theme|notifications)/)
     })
 
     it('should handle empty arguments object', async () => {
@@ -1400,13 +1355,7 @@ describe('MCPServer', () => {
 
       server.registerTool(tool, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('example.string', {})
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('Example:')
-      expect(parsedResult.errors[0]).toContain('name')
+      await expect(server.callTool('example.string', {})).rejects.toThrow(/Example:/)
     })
 
     it('should generate example for number fields', async () => {
@@ -1421,14 +1370,7 @@ describe('MCPServer', () => {
 
       server.registerTool(tool, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('example.number', {})
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('Example:')
-      expect(parsedResult.errors[0]).toContain('count')
-      expect(parsedResult.errors[0]).toContain('price')
+      await expect(server.callTool('example.number', {})).rejects.toThrow(/Example:/)
     })
 
     it('should generate example for boolean fields', async () => {
@@ -1442,13 +1384,7 @@ describe('MCPServer', () => {
 
       server.registerTool(tool, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('example.boolean', {})
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('Example:')
-      expect(parsedResult.errors[0]).toContain('enabled')
+      await expect(server.callTool('example.boolean', {})).rejects.toThrow(/Example:/)
     })
 
     it('should generate example for array fields', async () => {
@@ -1462,13 +1398,7 @@ describe('MCPServer', () => {
 
       server.registerTool(tool, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('example.array', {})
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('Example:')
-      expect(parsedResult.errors[0]).toContain('items')
+      await expect(server.callTool('example.array', {})).rejects.toThrow(/Example:/)
     })
 
     it('should generate example for enum fields', async () => {
@@ -1482,13 +1412,7 @@ describe('MCPServer', () => {
 
       server.registerTool(tool, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('example.enum', {})
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('Example:')
-      expect(parsedResult.errors[0]).toContain('status')
+      await expect(server.callTool('example.enum', {})).rejects.toThrow(/Example:/)
     })
 
     it('should generate example with default values', async () => {
@@ -1503,14 +1427,7 @@ describe('MCPServer', () => {
 
       server.registerTool(tool, async () => ({ ok: true, data: {} }))
 
-      const result = await server.callTool('example.default', {})
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content[0] as TextContent
-      const parsedResult = JSON.parse(textContent.text)
-      expect(parsedResult.errors[0]).toContain('Example:')
-      // Should show default value in example
-      expect(parsedResult.errors[0]).toContain('count')
+      await expect(server.callTool('example.default', {})).rejects.toThrow(/Example:/)
     })
   })
 

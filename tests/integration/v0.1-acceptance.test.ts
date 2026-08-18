@@ -691,31 +691,19 @@ describe('V0.1 Acceptance Tests', () => {
     })
 
     test('should validate input parameters', async () => {
-      // Test with invalid parameter type
-      const result = await server.callTool('strings.extract', {
+      // Invalid parameter type is a JSON-RPC protocol error (InvalidParams)
+      await expect(server.callTool('strings.extract', {
         sample_id: testSampleId,
         min_len: 'not-a-number', // Should be number
-      })
-      
-      expect(result.isError).toBe(true)
-      const textContent = result.content.find(c => c.type === 'text')
-      expect(textContent).toBeDefined()
-      // The error message should contain information about invalid arguments
-      expect(textContent!.text).toContain('Invalid arguments')
+      })).rejects.toThrow(/Invalid arguments/)
     })
 
     test('should handle missing required parameters', async () => {
-      // Test with missing required parameter
-      const result = await server.callTool('pe.fingerprint', {
+      // Missing required parameter is a JSON-RPC protocol error (InvalidParams)
+      await expect(server.callTool('pe.fingerprint', {
         // Missing sample_id
         fast: true,
-      })
-      
-      expect(result.isError).toBe(true)
-      const textContent = result.content.find(c => c.type === 'text')
-      expect(textContent).toBeDefined()
-      // The error message should contain information about invalid arguments
-      expect(textContent!.text).toContain('Invalid arguments')
+      })).rejects.toThrow(/Invalid arguments/)
     })
   })
 })

@@ -3,6 +3,7 @@
  */
 
 import type { CallToolResult, TextContent } from '@modelcontextprotocol/sdk/types.js'
+import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import type pino from 'pino'
 import type { ToolArgs, WorkerResult } from '../types.js'
@@ -64,7 +65,7 @@ export class ToolExecutor {
         ? registry.getToolDefinitionByTransportName(resolvedName)
         : undefined
       if (!definition) {
-        throw new Error(`Tool not found: ${name}`)
+        throw new McpError(ErrorCode.MethodNotFound, `Tool not found: ${name}`)
       }
       const canonicalName = definition.canonicalName || definition.name
 
@@ -72,7 +73,8 @@ export class ToolExecutor {
       if (surface.isEnabled()) {
         const visibleToolNames = surface.getVisibleToolNames()
         if (visibleToolNames.size > 0 && !surface.isToolVisible(canonicalName)) {
-          throw new Error(
+          throw new McpError(
+            ErrorCode.InvalidParams,
             `Tool hidden by progressive surface: ${canonicalName}. ` +
               `Use workflow.search query="${canonicalName}" to inspect routing, readiness, and activation requirements.`
           )
@@ -85,7 +87,7 @@ export class ToolExecutor {
       // Get handler
       const handler = registry.getHandler(resolvedName)
       if (!handler) {
-        throw new Error(`Handler not found for tool: ${name}`)
+        throw new McpError(ErrorCode.InternalError, `Handler not found for tool: ${name}`)
       }
 
       // Fire plugin before-hook (best effort, non-blocking on failure)
@@ -100,7 +102,7 @@ export class ToolExecutor {
       // Cooperative cancellation: check if the request was cancelled
       // by the client before executing the handler
       if (options.signal?.aborted) {
-        throw new Error(`Tool execution cancelled: ${canonicalName}`)
+        throw new McpError(ErrorCode.InvalidRequest, `Tool execution cancelled: ${canonicalName}`)
       }
 
       // Execute handler
@@ -158,6 +160,13 @@ export class ToolExecutor {
         )
       }
     } catch (error) {
+      // Protocol errors (unknown tool, invalid params, etc.) are re-thrown
+      // as McpError so the SDK returns a proper JSON-RPC error response
+      // with the correct error code, per MCP 2025-06-18 spec.
+      if (error instanceof McpError) {
+        throw error
+      }
+
       const elapsed = Date.now() - startTime
       this.logger.error({ tool: name, elapsed, error }, 'Tool execution failed')
 
@@ -202,7 +211,10 @@ export class ToolExecutor {
         const example = generateSchemaExample(schema)
         const exampleStr = example ? `\n\nExample:\n${JSON.stringify(example, null, 2)}` : ''
 
-        throw new Error(`Invalid arguments:\n${errorDetails.join('\n')}${exampleStr}`)
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Invalid arguments:\n${errorDetails.join('\n')}${exampleStr}`
+        )
       }
       throw error
     }

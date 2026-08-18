@@ -338,36 +338,23 @@ describe('MCP Tools Integration Tests', () => {
 
   describe('Schema Validation', () => {
     test('should reject invalid input for sample.ingest', async () => {
-      const result = await server.callTool('sample.ingest', {
+      await expect(server.callTool('sample.ingest', {
         // Missing both path and bytes_b64
         filename: 'test.exe'
-      })
-
-      expect(result.isError).toBe(true)
-      expect(result.content).toBeDefined()
-      const textContent = result.content.find(c => c.type === 'text')
-      expect(textContent).toBeDefined()
-      expect(textContent!.text).toContain('Invalid arguments')
+      })).rejects.toThrow(/Invalid arguments/)
     })
 
     test('should reject invalid sample_id format', async () => {
-      const result = await server.callTool('sample.profile.get', {
+      await expect(server.callTool('sample.profile.get', {
         sample_id: 'invalid-format'
-      })
-
-      expect(result.isError).toBe(true)
+      })).rejects.toThrow()
     })
 
     test('should reject missing required parameters', async () => {
-      const result = await server.callTool('pe.fingerprint', {
+      await expect(server.callTool('pe.fingerprint', {
         // Missing sample_id
         fast: true
-      })
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content.find(c => c.type === 'text')
-      expect(textContent).toBeDefined()
-      expect(textContent!.text).toContain('Invalid arguments')
+      })).rejects.toThrow(/Invalid arguments/)
     })
 
     test('should accept optional parameters', async () => {
@@ -380,12 +367,10 @@ describe('MCP Tools Integration Tests', () => {
     })
 
     test('should reject invalid parameter types', async () => {
-      const result = await server.callTool('strings.extract', {
+      await expect(server.callTool('strings.extract', {
         sample_id: testSampleId,
         min_len: 'not-a-number' // should be number
-      })
-
-      expect(result.isError).toBe(true)
+      })).rejects.toThrow(/Invalid arguments/)
     })
   })
 
@@ -405,14 +390,9 @@ describe('MCP Tools Integration Tests', () => {
     })
 
     test('should handle invalid tool name', async () => {
-      const result = await server.callTool('non.existent.tool', {
+      await expect(server.callTool('non.existent.tool', {
         sample_id: testSampleId
-      })
-
-      expect(result.isError).toBe(true)
-      const textContent = result.content.find(c => c.type === 'text')
-      expect(textContent).toBeDefined()
-      expect(textContent!.text).toContain('not found')
+      })).rejects.toThrow(/not found/)
     })
 
     test('should handle malformed PE file', async () => {
