@@ -77,6 +77,7 @@ describe('frontier worker-backed plugins', () => {
         execution_semantics: expect.objectContaining({
           actual_mode: 'worker_builtin',
           live_execution: false,
+          data_provenance: 'fixture',
         }),
       })
     )
@@ -174,6 +175,7 @@ describe('frontier worker-backed plugins', () => {
               live_execution: false,
               no_network: true,
               no_mutation: true,
+              data_provenance: 'analysis',
             }),
           })
         )

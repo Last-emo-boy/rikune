@@ -123,6 +123,7 @@ describe('backend worker contract', () => {
         execution_semantics: expect.objectContaining({
           actual_mode: 'worker_builtin',
           live_execution: false,
+          data_provenance: 'fixture',
         }),
       })
     )
@@ -166,6 +167,7 @@ describe('backend worker contract', () => {
         execution_semantics: expect.objectContaining({
           actual_mode: 'worker_external',
           live_execution: false,
+          data_provenance: 'analysis',
         }),
       })
     )

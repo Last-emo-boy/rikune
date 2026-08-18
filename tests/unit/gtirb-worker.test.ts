@@ -3,7 +3,10 @@ import { getToolSurfaceManager } from '../../src/core/tool-surface-manager.js'
 import gtirbPlugin from '../../src/plugins/gtirb/index.js'
 import { createPluginTestHarness } from '../../src/plugins/sdk.js'
 import { createWorkflowSearchHandler } from '../../src/tools/workflow-search.js'
-import { expectFrontierWorkerTool } from './frontier-worker-test-utils.js'
+import {
+  expectFrontierWorkerTool,
+  expectFrontierWorkerRejectsExternal,
+} from './frontier-worker-test-utils.js'
 
 describe('gtirb worker', () => {
   function toolNames() {
@@ -332,5 +335,12 @@ describe('gtirb worker', () => {
     expect(data.selected_passes).toEqual(['cfg', 'symbols'])
     expect(data.goals).toEqual(['cfg-symbol-correlation'])
     expect(data.target).toEqual(expect.objectContaining({ architecture: 'x64', function: 'entry' }))
+  })
+
+  test('rejects external backend without explicit opt-in', async () => {
+    await expectFrontierWorkerRejectsExternal({
+      pluginId: 'gtirb',
+      toolName: 'gtirb.ir.generate',
+    })
   })
 })

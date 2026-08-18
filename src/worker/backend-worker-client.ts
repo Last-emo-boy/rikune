@@ -340,6 +340,8 @@ function localArtifact(
       metadata: {
         size,
         generated_by: 'backend-worker-client',
+        passthrough: true,
+        data_provenance: 'fixture',
       },
     },
   }
@@ -581,6 +583,7 @@ export async function runBackendWorker(
           live_execution: !request.context.policy.noLiveExecution,
           no_network: request.context.policy.noNetwork,
           no_mutation: request.context.policy.noMutation,
+          data_provenance: 'analysis',
         },
         stderr: external.stderr ? truncateDiagnostic(external.stderr) : undefined,
       },
@@ -635,6 +638,7 @@ export async function runBackendWorker(
         live_execution: false,
         no_network: request.context.policy.noNetwork,
         no_mutation: request.context.policy.noMutation,
+        data_provenance: 'fixture',
       },
     },
     artifacts: artifact ? [artifact] : [],

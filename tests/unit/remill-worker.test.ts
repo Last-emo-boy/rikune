@@ -1,5 +1,8 @@
 import { describe, test } from '@jest/globals'
-import { expectFrontierWorkerTool } from './frontier-worker-test-utils.js'
+import {
+  expectFrontierWorkerTool,
+  expectFrontierWorkerRejectsExternal,
+} from './frontier-worker-test-utils.js'
 
 describe('remill worker', () => {
   test('runs builtin bounded lift contract', async () => {
@@ -11,4 +14,11 @@ describe('remill worker', () => {
       args: { target: { function: 'entry' } },
     })
   }, 30_000)
+
+  test('rejects external backend without explicit opt-in', async () => {
+    await expectFrontierWorkerRejectsExternal({
+      pluginId: 'remill',
+      toolName: 'remill.lift.run',
+    })
+  })
 })

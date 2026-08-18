@@ -1,5 +1,8 @@
 import { describe, test } from '@jest/globals'
-import { expectFrontierWorkerTool } from './frontier-worker-test-utils.js'
+import {
+  expectFrontierWorkerTool,
+  expectFrontierWorkerRejectsExternal,
+} from './frontier-worker-test-utils.js'
 
 describe('manifold worker', () => {
   test('runs builtin fact extraction contract', async () => {
@@ -8,6 +11,13 @@ describe('manifold worker', () => {
       toolName: 'manifold.fact.extract',
       backendName: 'Manifold',
       fixtureKey: 'agreement',
+    })
+  })
+
+  test('rejects external backend without explicit opt-in', async () => {
+    await expectFrontierWorkerRejectsExternal({
+      pluginId: 'manifold',
+      toolName: 'manifold.fact.extract',
     })
   })
 })

@@ -1,5 +1,8 @@
 import { describe, test } from '@jest/globals'
-import { expectFrontierWorkerTool } from './frontier-worker-test-utils.js'
+import {
+  expectFrontierWorkerTool,
+  expectFrontierWorkerRejectsExternal,
+} from './frontier-worker-test-utils.js'
 
 describe('culifter worker', () => {
   test(
@@ -14,4 +17,11 @@ describe('culifter worker', () => {
     },
     30000
   )
+
+  test('rejects external backend without explicit opt-in', async () => {
+    await expectFrontierWorkerRejectsExternal({
+      pluginId: 'culifter',
+      toolName: 'culifter.gpu.artifact.inventory',
+    })
+  })
 })
