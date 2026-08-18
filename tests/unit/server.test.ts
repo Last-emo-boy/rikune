@@ -375,6 +375,51 @@ describe('MCPServer', () => {
     })
   })
 
+  describe('Elicitation Helpers', () => {
+    it('should report no elicitation support when client does not advertise it', () => {
+      const sdkServer = server.getServer() as any
+      sdkServer.getClientCapabilities = jest.fn().mockReturnValue(undefined)
+      expect(server.supportsElicitation()).toBe(false)
+    })
+
+    it('should report elicitation support when client advertises it', () => {
+      const sdkServer = server.getServer() as any
+      sdkServer.getClientCapabilities = jest.fn().mockReturnValue({
+        elicitation: {},
+      })
+      expect(server.supportsElicitation()).toBe(true)
+    })
+
+    it('should decline when elicitation is not supported', async () => {
+      const sdkServer = server.getServer() as any
+      sdkServer.getClientCapabilities = jest.fn().mockReturnValue(undefined)
+      const result = await server.elicit({ message: 'test' })
+      expect(result.action).toBe('decline')
+    })
+
+    it('should forward elicit requests to the SDK server when supported', async () => {
+      const sdkServer = server.getServer() as any
+      sdkServer.getClientCapabilities = jest.fn().mockReturnValue({
+        elicitation: {},
+      })
+      sdkServer.elicitInput = jest.fn(async () => ({
+        action: 'accept',
+        content: { name: 'octocat' },
+      }))
+      const result = await server.elicit({
+        message: 'Please provide your username',
+        requestedSchema: {
+          type: 'object',
+          properties: { name: { type: 'string' } },
+          required: ['name'],
+        },
+      })
+      expect(result.action).toBe('accept')
+      expect(result.content).toEqual({ name: 'octocat' })
+      expect(sdkServer.elicitInput).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('Sampling Helpers', () => {
     it('should report client sampling capabilities when advertised by the MCP client', () => {
       const sdkServer = server.getServer() as any

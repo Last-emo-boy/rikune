@@ -12,6 +12,7 @@ import {
   type CreateMessageRequest,
   type CreateMessageResult,
   type CreateMessageResultWithTools,
+  type ElicitResult,
   GetPromptRequestSchema,
   type Implementation,
   ListPromptsRequestSchema,
@@ -29,19 +30,20 @@ import type { DatabaseManager } from '../database.js'
 import type { PolicyGuard } from '../policy-guard.js'
 import type { StorageManager } from '../storage/storage-manager.js'
 import type { ToolDefinition, PromptDefinition } from '../types.js'
+import type {
+  ElicitationClient,
+  ResourceRegistrar,
+  SamplingClient,
+  PluginManagerSetter,
+  ToolRegistrar,
+  PromptRegistrar,
+} from './registrar.js'
 import { FileServer } from '../api/file-server.js'
 import { createSampleFinalizationService } from '../sample/sample-finalization.js'
 import { getToolSurfaceManager } from './tool-surface-manager.js'
 import { MCPRegistry } from './mcp-registry.js'
 import { ToolExecutor } from './tool-executor.js'
 import type { ApiBootstrapper } from '../api/api-bootstrapper.js'
-import type {
-  ToolRegistrar,
-  PromptRegistrar,
-  ResourceRegistrar,
-  SamplingClient,
-  PluginManagerSetter,
-} from './registrar.js'
 
 interface MCPServerDependencies {
   workspaceManager?: WorkspaceManager
@@ -55,7 +57,7 @@ interface MCPServerDependencies {
  * MCP Server class implementing the Model Context Protocol
  */
 export class MCPServer
-  implements ToolRegistrar, PromptRegistrar, ResourceRegistrar, SamplingClient, PluginManagerSetter
+  implements ToolRegistrar, PromptRegistrar, ResourceRegistrar, SamplingClient, ElicitationClient, PluginManagerSetter
 {
   private server: Server
   private logger: pino.Logger
@@ -426,6 +428,26 @@ export class MCPServer
     params: CreateMessageRequest['params']
   ): Promise<CreateMessageResult | CreateMessageResultWithTools> {
     return this.server.createMessage(params)
+  }
+
+  /**
+   * Whether the connected MCP client advertised elicitation support.
+   */
+  public supportsElicitation(): boolean {
+    return Boolean(this.getClientCapabilities()?.elicitation)
+  }
+
+  /**
+   * Request additional information from the user via client-mediated elicitation.
+   * Returns the user's action (accept/decline/cancel) and content if accepted.
+   */
+  public async elicit(
+    params: Record<string, unknown>
+  ): Promise<ElicitResult> {
+    if (!this.supportsElicitation()) {
+      return { action: 'decline' }
+    }
+    return await this.server.elicitInput(params as any)
   }
 
   /**

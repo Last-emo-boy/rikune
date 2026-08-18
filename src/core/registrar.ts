@@ -3,6 +3,7 @@ import type {
   CreateMessageRequest,
   CreateMessageResult,
   CreateMessageResultWithTools,
+  ElicitResult,
   Implementation,
 } from '@modelcontextprotocol/sdk/types.js'
 import type { ToolDefinition, PromptDefinition } from '../types.js'
@@ -37,6 +38,13 @@ export interface SamplingClient {
   createMessage(
     params: CreateMessageRequest['params']
   ): Promise<CreateMessageResult | CreateMessageResultWithTools>
+}
+
+export interface ElicitationClient {
+  supportsElicitation(): boolean
+  elicit(
+    params: Record<string, unknown>
+  ): Promise<ElicitResult>
 }
 
 export interface PluginManagerSetter {
