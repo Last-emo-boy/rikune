@@ -1,20 +1,15 @@
-name: Recover v1.3.0 Release
+name: Audit v1.3.0 Release
 
 on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: 'Enter release-v1.3.0 exactly'
+        description: 'Enter audit-v1.3.0 exactly'
         required: true
         type: string
-      dry_run:
-        description: 'Validate all artifacts without publishing'
-        required: true
-        default: true
-        type: boolean
 
 concurrency:
-  group: recover-v1.3.0
+  group: audit-v1.3.0
   cancel-in-progress: false
 
 env:
@@ -25,11 +20,11 @@ env:
   WORKSPACE_VERSION: 1.1.0
 
 jobs:
-  recover:
+  audit:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: write
+      contents: read
       id-token: write
 
     steps:
@@ -37,15 +32,9 @@ jobs:
         shell: bash
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
-          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          test "$CONFIRMATION" = release-v1.3.0
-          case "$DRY_RUN" in
-            true|false) ;;
-            *) echo "dry_run must be true or false" >&2; exit 1 ;;
-          esac
-          echo "RELEASE_DRY_RUN=$DRY_RUN" >> "$GITHUB_ENV"
+          test "$CONFIRMATION" = audit-v1.3.0
 
       - name: Checkout immutable v1.3.0 source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -185,101 +174,26 @@ jobs:
             npm publish "$tarball" --dry-run --provenance --access public --tag latest --ignore-scripts
           done
 
-      - name: Authenticate npm publisher
-        if: env.RELEASE_DRY_RUN != 'true'
-        shell: bash
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set -euo pipefail
-          identity=$(npm whoami --registry "$NPM_REGISTRY_URL")
-          npm owner ls rikune --registry "$NPM_REGISTRY_URL" | awk '{print $1}' | grep -Fx "$identity"
-          echo "Authenticated npm owner: $identity"
-
-      - name: Publish or recover exact npm artifacts
-        if: env.RELEASE_DRY_RUN != 'true'
-        shell: bash
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set -euo pipefail
-          matrix=(
-            'release/meta-shared.json'
-            'release/meta-plugin-sdk.json'
-            'release/meta-runtime-node.json'
-            'release/meta-windows-host-agent.json'
-            'release/meta-root.json'
-          )
-          for metadata in "${matrix[@]}"; do
-            name=$(jq -r '.[0].name' "$metadata")
-            version=$(jq -r '.[0].version' "$metadata")
-            expected=$(jq -r '.[0].integrity' "$metadata")
-            tarball="./release/$(jq -r '.[0].filename' "$metadata")"
-            encoded=$(node -p 'encodeURIComponent(process.argv[1])' "$name")
-            status=$(curl --silent --show-error --output remote.json --write-out '%{http_code}' \
-              "$NPM_REGISTRY_URL/$encoded/$version")
-            case "$status" in
-              200)
-                test "$(jq -r '.dist.integrity' remote.json)" = "$expected"
-                echo "$name@$version already has the expected integrity"
-                ;;
-              404)
-                npm publish "$tarball" --provenance --access public --tag latest --ignore-scripts
-                ;;
-              *)
-                echo "Unexpected npm registry status $status for $name@$version" >&2
-                exit 1
-                ;;
-            esac
-
-            verified=false
-            for attempt in $(seq 1 12); do
-              status=$(curl --silent --show-error --output remote.json --write-out '%{http_code}' \
-                "$NPM_REGISTRY_URL/$encoded/$version")
-              if [[ "$status" == 200 ]]; then
-                test "$(jq -r '.dist.integrity' remote.json)" = "$expected"
-                verified=true
-                break
-              fi
-              sleep 10
-            done
-            test "$verified" = true
-          done
-
-      - name: Verify clean installation from the public registry
-        if: env.RELEASE_DRY_RUN != 'true'
+      - name: Record current npm dual-use policy blocker
         shell: bash
         run: |
           set -euo pipefail
-          consumer="$RUNNER_TEMP/rikune-v1.3.0-registry-consumer"
-          mkdir "$consumer"
-          npm install --prefix "$consumer" --no-fund \
-            rikune@1.3.0 \
-            @rikune/runtime-node@1.1.0 \
-            @rikune/windows-host-agent@1.1.0
-          npm audit --prefix "$consumer" --omit=dev --audit-level=high
-          test "$(node -p "require('$consumer/node_modules/rikune/package.json').version")" = 1.3.0
-          test "$(node -p "require('$consumer/node_modules/@rikune/plugin-sdk/package.json').version")" = 1.1.0
-          test "$(node -p "require('$consumer/node_modules/@rikune/shared/package.json').version")" = 1.1.0
-          node -e "require('$consumer/node_modules/better-sqlite3'); console.log('native dependency ok')"
+          test "$(node -p "require('./package.json').contentPolicy?.class || 'absent'")" = absent
+          test ! -e DISCLOSURE
+          printf '%s\n' \
+            'npm real publication is intentionally disabled.' \
+            'The immutable v1.3.0 source predates the current dual-use declaration requirements.' \
+            'Policy: https://docs.npmjs.com/policies/dual-use/' \
+            > release/NPM-POLICY-BLOCKER.txt
 
-      - name: Create or update GitHub Release
-        if: env.RELEASE_DRY_RUN != 'true'
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+      - name: Upload immutable audit evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          tag_name: v1.3.0
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          body: |
-            Immutable source: `cc1003a3499543cf510b70e182939f83d1d76e85`
-
-            npm release set:
-            - `rikune@1.3.0`
-            - `@rikune/shared@1.1.0`
-            - `@rikune/plugin-sdk@1.1.0`
-            - `@rikune/runtime-node@1.1.0`
-            - `@rikune/windows-host-agent@1.1.0`
-          files: |
+          name: rikune-v1.3.0-audit-evidence
+          path: |
             release/*.tgz
             release/manifest.json
             release/SHA256SUMS
+            release/NPM-POLICY-BLOCKER.txt
+          if-no-files-found: error
+          retention-days: 30
