@@ -24,7 +24,7 @@ artifact gateway 覆盖不到的内部 analyzer subtool 时，才使用 `rikune_
 - 可选 HTTP API 和 dashboard，用于上传、下载、健康检查、SSE 事件和 artifact 访问。
 - 按 SHA-256 分桶的样本工作区，保存原始样本、缓存、Ghidra/.NET 输出和报告。
 - SQLite 持久化 samples、analysis runs、jobs、evidence、artifacts、batches、debug sessions 和 scheduler telemetry。
-- 111 个内置插件，支持第三方插件自动发现。
+- 117 个内置插件，支持第三方插件自动发现。
 - 渐进式工具暴露：默认面向 AI 的入口刻意保持很小；`workflow.search` 根据样本类型、发现结果和 profile metadata 路由到相关专业能力，而不是一次暴露所有工具。
 - 覆盖 PE、ELF、Mach-O、APK/DEX、Office、firmware、UEFI/SMM、CUDA PTX/CUBIN/fatbin、strings、YARA、SBOM、签名、packer、.NET、Go、Rust 等静态分析。
 - 可集成 Ghidra、Rizin、RetDec、angr、Capstone、Graphviz、Qiling、PANDA、Speakeasy、Wine、Frida 等后端。
@@ -209,9 +209,11 @@ Docker/WSL analyzer 应使用 `remote-sandbox`，不要使用 `auto-sandbox`。
 
 ## 插件系统
 
-内置插件位于 `src/plugins/<id>/`，当前共 111 个。插件可以注册工具、声明依赖、暴露配置 schema、参与生命周期 hooks，并给 Docker 生成器提供安装元数据，也可以通过 `workerBackend` metadata 声明受限 Worker-backed 工具。
+内置插件位于 `src/plugins/<id>/`，当前共 117 个。插件可以注册工具、声明依赖、暴露配置 schema、参与生命周期 hooks，并给 Docker 生成器提供安装元数据，也可以通过 `workerBackend` metadata 声明受限 Worker-backed 工具。
 
 frontier Worker 套件保留 plan-only 工具作为 triage 和 handoff surface，再在旁边新增显式执行工具。`restringer.deobfuscation.run`、`jsimplifier.pipeline.run`、`jsir.cascade.normalize`、`jsvmp.bytecode.recover`、`gtirb.ir.generate`、`remill.lift.run`、`manifold.fact.extract`、`qbdi.trace.run` 和 `culifter.gpu.artifact.inventory` 会通过 `workflow.search`、`plugin.list`、`tool.help`、`tool.readiness` 暴露 Worker contract；`tools.discover` 保留为低层兼容入口。Discovery 和 readiness 保持 passive：只报告 backend metadata 和 setup guidance，不启动 REstringer、JSIMPLIFIER、JSIR/CASCADE、JSVMP、GTIRB、Remill、Manifold、QBDI、GPU driver、Node/V8、browser 或 runtime instrumentation。
+
+`pdf-analysis` 插件通过 `pdf.analyze` 对 PDF 结构、内嵌 JavaScript 文本、URI、action 和 embedded-file marker 进行受限的被动检查。它使用仓库内置的 Python 标准库 worker，不打开文档，也不执行内嵌内容。
 
 Docker 生成器直接读取插件 `systemDeps` 和 Worker packaging metadata。默认镜像安装低风险静态 wrapper，例如 REstringer、JSIMPLIFIER、Manifold、WABT 和 LIEF validation；optional profile 可启用 JSIR/CASCADE、JSVMP、GTIRB、radare2、Triton 等静态路线；heavy/runtime/GPU/license-sensitive backend 保持 profile-gated、BYO 或 sidecar。
 
@@ -283,7 +285,7 @@ src/
   tools/                      核心工具实现
   workflows/                  staged analysis、triage、reconstruction、review
   analysis/                   analysis run state 和后台任务 runner
-  plugins/                    111 个内置插件
+  plugins/                    117 个内置插件
   persistence/                SQLite 和 workspace 持久化
   sample/                     样本 finalization 和 workspace 检查
   storage/                    artifacts、uploads、retention
@@ -399,9 +401,6 @@ Rikune 面向恶意样本和不可信二进制分析，但它本身不是万能�
 - [DEPLOYMENT.md](DEPLOYMENT.md)：部署 profile 和 runtime topology。
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：当前代码架构。
 - [docs/PLUGINS.md](docs/PLUGINS.md)：插件列表、SDK、生命周期、发现机制。
-- [docs/ANALYSIS-RUNTIME.md](docs/ANALYSIS-RUNTIME.md)：staged runtime 和分析执行模型。
-- [docs/ASYNC-JOB-PATTERN.md](docs/ASYNC-JOB-PATTERN.md)：异步 job 和轮询模式。
-- [docs/MIGRATION-ASYNC.md](docs/MIGRATION-ASYNC.md)：迁移到 staged async workflow 的说明。
 - [docs/DYNAMIC-RUNTIME-ROADMAP.md](docs/DYNAMIC-RUNTIME-ROADMAP.md)：runtime roadmap 和状态。
 - [CONTRIBUTING.md](CONTRIBUTING.md)：开发和贡献流程。
 - [packages/plugin-sdk/README.md](packages/plugin-sdk/README.md)：插件作者 SDK。

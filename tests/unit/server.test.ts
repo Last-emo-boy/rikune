@@ -8,6 +8,7 @@ import { Config, getDefaultAuditLogPath, getDefaultCacheRoot } from '../../src/c
 import { z } from 'zod'
 import { TextContent } from '@modelcontextprotocol/sdk/types.js'
 import { toTransportToolName } from '../../src/tool-name-normalization'
+import { RIKUNE_VERSION } from '../../src/version'
 
 describe('MCPServer', () => {
   let server: MCPServer
@@ -342,8 +343,8 @@ describe('MCPServer', () => {
 
       await expect(server.getPrompt('prompt.required', {})).rejects.toThrow(
         'Missing required prompt argument: bundle'
-      ) 
-    }) 
+      )
+    })
   })
 
   describe('Resources', () => {
@@ -482,13 +483,10 @@ describe('MCPServer', () => {
 
   describe('Completion', () => {
     it('should register and invoke a prompt argument completion provider', async () => {
-      server.registerCompletionProvider(
-        'prompt:code_review:language',
-        async (value) => {
-          const all = ['python', 'pytorch', 'pyside', 'javascript', 'java']
-          return all.filter((v) => v.startsWith(value))
-        }
-      )
+      server.registerCompletionProvider('prompt:code_review:language', async (value) => {
+        const all = ['python', 'pytorch', 'pyside', 'javascript', 'java']
+        return all.filter((v) => v.startsWith(value))
+      })
       const provider = server.getCompletionProvider('prompt:code_review:language')
       expect(provider).toBeDefined()
       const results = await provider!('py')
@@ -825,9 +823,9 @@ describe('MCPServer', () => {
 
       server.registerTool(toolDefinition, async () => ({ ok: true, data: {} }))
 
-      await expect(
-        server.callTool('test.type', { count: 'not a number' })
-      ).rejects.toThrow(/Invalid arguments/)
+      await expect(server.callTool('test.type', { count: 'not a number' })).rejects.toThrow(
+        /Invalid arguments/
+      )
     })
 
     it('should include example in validation error', async () => {
@@ -989,7 +987,7 @@ describe('MCPServer', () => {
     it('should advertise serverInfo with title in initialize response', () => {
       const info = server.getServerInfo()
       expect(info.name).toBe('rikune')
-      expect(info.version).toBe('1.1.0')
+      expect(info.version).toBe(RIKUNE_VERSION)
       expect(info.title).toBe('Rikune Reverse Analysis Platform')
     })
 

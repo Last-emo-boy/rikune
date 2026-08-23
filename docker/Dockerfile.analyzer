@@ -105,6 +105,8 @@ COPY src/plugins/elf-macho/workers/ ./src/plugins/elf-macho/workers/
 COPY src/plugins/host-correlation/workers/ ./src/plugins/host-correlation/workers/
 COPY src/plugins/malware/workers/ ./src/plugins/malware/workers/
 COPY src/plugins/managed-il-xrefs/workers/ ./src/plugins/managed-il-xrefs/workers/
+COPY src/plugins/pdf-analysis/workers/ ./src/plugins/pdf-analysis/workers/
+COPY src/plugins/python-decompile/workers/ ./src/plugins/python-decompile/workers/
 COPY src/plugins/vm-analysis/workers/ ./src/plugins/vm-analysis/workers/
 
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
@@ -273,7 +275,7 @@ ENV HTTP_PROXY="${HTTP_PROXY}" \
     NO_PROXY="${NO_PROXY}"
 
 LABEL maintainer="rikune"
-LABEL version="1.0.0-beta.3"
+LABEL version="1.4.0"
 LABEL description="MCP server for Windows binary reverse engineering"
 
 RUN rm -f /etc/apt/sources.list.d/* && cat > /etc/apt/sources.list <<EOF
@@ -341,6 +343,8 @@ COPY --from=python-base /app/src/plugins/elf-macho/workers/ ./src/plugins/elf-ma
 COPY --from=python-base /app/src/plugins/host-correlation/workers/ ./src/plugins/host-correlation/workers/
 COPY --from=python-base /app/src/plugins/malware/workers/ ./src/plugins/malware/workers/
 COPY --from=python-base /app/src/plugins/managed-il-xrefs/workers/ ./src/plugins/managed-il-xrefs/workers/
+COPY --from=python-base /app/src/plugins/pdf-analysis/workers/ ./src/plugins/pdf-analysis/workers/
+COPY --from=python-base /app/src/plugins/python-decompile/workers/ ./src/plugins/python-decompile/workers/
 COPY --from=python-base /app/src/plugins/vm-analysis/workers/ ./src/plugins/vm-analysis/workers/
 
 RUN python3 -m py_compile ./workers/static_worker.py || echo "Python worker validation skipped"
@@ -502,6 +506,7 @@ RUN (echo "[validate] Rikune Docker image") && \
     (GoReSym -h >/dev/null 2>&1 || true) && \
     (dot -V >/dev/null 2>&1) && \
     (node /opt/rikune-backends/jsimplifier/bin/jsimplifier-worker.js --self-test) && \
+    (rizin -v >/dev/null 2>&1) && \
     (/usr/local/bin/capa --version >/dev/null 2>&1) && \
     (node /opt/rikune-backends/manifold/bin/manifold-worker.js --self-test) && \
     (HOME=/tmp/rikune-home /usr/local/bin/vol --help >/dev/null) && \
@@ -513,7 +518,6 @@ RUN (echo "[validate] Rikune Docker image") && \
     (node /opt/rikune-backends/restringer/bin/restringer-worker.js --self-test) && \
     (retdec-decompiler --help >/dev/null 2>&1) && \
     (retdec-fileinfo --help >/dev/null 2>&1) && \
-    (rizin -v >/dev/null 2>&1) && \
     (upx --version >/dev/null 2>&1) && \
     (/opt/wabt/bin/wasm2wat --help >/dev/null 2>&1) && \
     (/opt/wabt/bin/wasm-objdump --help >/dev/null 2>&1) && \
@@ -552,6 +556,7 @@ ENV NODE_ENV=production \
     GORESYM_PATH=/usr/local/bin/GoReSym \
     GRAPHVIZ_DOT_PATH=/usr/bin/dot \
     JSIMPLIFIER_WORKER_PATH=/opt/rikune-backends/jsimplifier/bin/jsimplifier-worker.js \
+    RIZIN_PATH=/opt/rizin/bin/rizin \
     CAPA_RULES_PATH=/opt/capa-rules \
     MANIFOLD_WORKER_PATH=/opt/rikune-backends/manifold/bin/manifold-worker.js \
     VOLATILITY3_PATH=/usr/local/bin/vol \
@@ -561,7 +566,6 @@ ENV NODE_ENV=production \
     OSSLSIGNCODE_PATH=/usr/bin/osslsigncode \
     RESTRINGER_PATH=/opt/rikune-backends/restringer/bin/restringer-worker.js \
     RETDEC_PATH=/opt/retdec/bin/retdec-decompiler \
-    RIZIN_PATH=/opt/rizin/bin/rizin \
     UPX_PATH=/usr/local/bin/upx \
     WABT_PATH=/opt/wabt/bin \
     GHIDRA_PROJECT_ROOT=/ghidra-projects \

@@ -3,12 +3,26 @@ name: Publish npm Package
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Exact package version to validate or publish'
+        required: true
+        type: string
+      dry_run:
+        description: 'Run every gate without publishing to npm or creating a GitHub Release'
+        required: true
+        default: true
+        type: boolean
 
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-npm-${{ github.ref }}
   cancel-in-progress: false
+
+env:
+  NPM_REGISTRY_URL: https://registry.npmjs.org
+  PACKAGE_NAME: rikune
 
 jobs:
   publish:
@@ -20,19 +34,119 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release ref and package version
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          DISPATCH_VERSION: ${{ inputs.version || '' }}
+          DISPATCH_DRY_RUN: ${{ inputs.dry_run || false }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = Get-Content -Raw package.json | ConvertFrom-Json
+          $packageVersion = [string]$package.version
+          $semverPattern = '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$'
+
+          if ($packageVersion -notmatch $semverPattern) {
+            throw "package.json version is not valid SemVer: $packageVersion"
+          }
+          $dryRun = $false
+          if ($env:EVENT_NAME -eq 'workflow_dispatch') {
+            if ([string]::IsNullOrWhiteSpace($env:DISPATCH_VERSION)) {
+              throw 'workflow_dispatch requires an explicit version input.'
+            }
+            if ($env:DISPATCH_VERSION -ne $packageVersion) {
+              throw "Dispatch version '$env:DISPATCH_VERSION' does not match package.json version '$packageVersion'."
+            }
+            $dryRun = $env:DISPATCH_DRY_RUN -eq 'true'
+            if (-not $dryRun -and $env:REF_TYPE -ne 'tag') {
+              throw "A non-dry-run dispatch must run from tag v$packageVersion; received ref type '$env:REF_TYPE'."
+            }
+          }
+          if ($env:EVENT_NAME -ne 'workflow_dispatch' -or -not $dryRun) {
+            if ($env:REF_TYPE -ne 'tag') {
+              throw "A real release must run from a tag; received ref type '$env:REF_TYPE'."
+            }
+            if ($env:REF_NAME -ne "v$packageVersion") {
+              throw "Release tag '$env:REF_NAME' does not match package.json version '$packageVersion'."
+            }
+          } elseif ($env:REF_TYPE -eq 'tag' -and $env:REF_NAME -ne "v$packageVersion") {
+            throw "Dry-run tag '$env:REF_NAME' does not match package.json version '$packageVersion'."
+          }
+          if (-not $dryRun) {
+            git merge-base --is-ancestor HEAD refs/remotes/origin/main
+            if ($LASTEXITCODE -ne 0) {
+              throw "Release commit must be reachable from origin/main."
+            }
+          }
+
+          $distTag = if ($packageVersion.Contains('-')) { 'next' } else { 'latest' }
+          Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_VERSION=$packageVersion"
+          Add-Content -Path $env:GITHUB_ENV -Value "NPM_DIST_TAG=$distTag"
+          Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_DRY_RUN=$($dryRun.ToString().ToLowerInvariant())"
+          Write-Host "Validated release v$packageVersion (npm dist-tag: $distTag, dry-run: $dryRun)."
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
           registry-url: https://registry.npmjs.org
 
+      - name: Pin npm CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm install --global npm@10.9.0 --ignore-scripts
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to install the pinned npm CLI.'
+          }
+          $npmVersion = [string](npm --version)
+          if ($npmVersion.Trim() -ne '10.9.0') {
+            throw "Expected npm 10.9.0, received '$npmVersion'."
+          }
+
+      - name: Preflight npm publishing identity
+        shell: pwsh
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $identityOutput = npm whoami --color=false --registry=$env:NPM_REGISTRY_URL 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            throw "npm authentication failed before build: $identityOutput"
+          }
+          $identityCandidates = @($identityOutput | ForEach-Object {
+            $line = ([string]$_).Trim()
+            if ($line -match '^[a-z0-9][a-z0-9._-]*$') { $line }
+          })
+          if ($identityCandidates.Count -ne 1) {
+            throw 'npm authentication did not return one unambiguous identity.'
+          }
+          $identity = $identityCandidates[0]
+
+          $ownerOutput = npm owner ls $env:PACKAGE_NAME --color=false --registry=$env:NPM_REGISTRY_URL 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to read npm owners for $env:PACKAGE_NAME: $ownerOutput"
+          }
+          $ownerNames = @($ownerOutput | ForEach-Object {
+            if ([string]$_ -match '^([^\s<]+)') { $Matches[1] }
+          })
+          if ($identity -notin $ownerNames) {
+            throw "Authenticated npm identity '$identity' is not an owner of $env:PACKAGE_NAME."
+          }
+          Write-Host "Authenticated npm publishing identity: $identity"
+
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install JavaScript dependencies
         run: npm ci
@@ -44,30 +158,119 @@ jobs:
         run: npm run build
 
       - name: Validate Python worker syntax
-        run: python -m py_compile workers/static_worker.py workers/speakeasy_compat.py
+        run: python -m py_compile workers/static_worker.py workers/speakeasy_compat.py src/plugins/pdf-analysis/workers/pdf_analyze_worker.py src/plugins/python-decompile/workers/pyc_decompile_worker.py
 
       - name: Run key unit tests
-        run: >
-          npm test -- --runInBand
-          tests/unit/tool-help.test.ts
-          tests/unit/sample-ingest.test.ts
-          tests/unit/dynamic-dependencies.test.ts
-          tests/unit/dotnet-metadata-extract.test.ts
-          tests/unit/system-health.test.ts
-
-      - name: Validate npm package contents
-        run: npm run pack:dry-run
+        shell: pwsh
+        run: |
+          npm test -- --runInBand tests/unit/tool-help.test.ts tests/unit/sample-ingest.test.ts tests/unit/dynamic-dependencies.test.ts tests/unit/dotnet-metadata-extract.test.ts tests/unit/system-health.test.ts tests/unit/release-package.test.ts
 
       - name: Create npm package tarball
-        run: npm pack
+        id: pack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $packOutput = npm pack --ignore-scripts --json
+          if ($LASTEXITCODE -ne 0) {
+            throw 'npm pack failed.'
+          }
+          $packItems = @($packOutput | ConvertFrom-Json)
+          if ($packItems.Count -ne 1) {
+            throw "Expected exactly one npm tarball, received $($packItems.Count)."
+          }
+          $pack = $packItems[0]
+          if ([string]$pack.name -ne $env:PACKAGE_NAME) {
+            throw "Packed package name '$($pack.name)' does not match '$env:PACKAGE_NAME'."
+          }
+          if ([string]$pack.version -ne $env:RELEASE_VERSION) {
+            throw "Packed version '$($pack.version)' does not match '$env:RELEASE_VERSION'."
+          }
+          if (-not (Test-Path -LiteralPath ([string]$pack.filename) -PathType Leaf)) {
+            throw "npm pack did not create '$($pack.filename)'."
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "TARBALL_PATH=$($pack.filename)"
+          Add-Content -Path $env:GITHUB_ENV -Value "TARBALL_INTEGRITY=$($pack.integrity)"
+          Write-Host "Created immutable release tarball $($pack.filename)."
+
+      - name: Verify installable release tarball
+        shell: pwsh
+        run: node scripts/verify-release-package.mjs "$env:TARBALL_PATH" "$env:RELEASE_VERSION"
+
+      - name: Detect an already published identical artifact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $registryBase = $env:NPM_REGISTRY_URL.TrimEnd('/')
+          $encodedPackage = [uri]::EscapeDataString($env:PACKAGE_NAME)
+          $encodedVersion = [uri]::EscapeDataString($env:RELEASE_VERSION)
+          $versionUrl = "$registryBase/$encodedPackage/$encodedVersion"
+          $metadata = $null
+          try {
+            $metadata = Invoke-RestMethod -Uri $versionUrl -Method Get -TimeoutSec 30
+          } catch {
+            $statusCode = $_.Exception.Response.StatusCode
+            if ($null -eq $statusCode -or [int]$statusCode -ne 404) {
+              throw
+            }
+          }
+
+          $alreadyPublished = $false
+          if ($null -ne $metadata) {
+            $publishedIntegrity = [string]$metadata.dist.integrity
+            if ($publishedIntegrity -ne $env:TARBALL_INTEGRITY) {
+              throw "Registry already contains $env:PACKAGE_NAME@$env:RELEASE_VERSION with integrity '$publishedIntegrity', not '$env:TARBALL_INTEGRITY'."
+            }
+            $alreadyPublished = $true
+            Write-Host 'The identical npm artifact is already published; continuing recovery without republishing.'
+          } else {
+            Write-Host 'The target npm version is available for publication.'
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_ALREADY_PUBLISHED=$($alreadyPublished.ToString().ToLowerInvariant())"
 
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        if: env.RELEASE_DRY_RUN != 'true' && env.RELEASE_ALREADY_PUBLISHED != 'true'
+        shell: pwsh
+        run: npm publish "$env:TARBALL_PATH" --provenance --access public --tag "$env:NPM_DIST_TAG" --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Verify published npm registry artifact
+        if: env.RELEASE_DRY_RUN != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $verified = $false
+          for ($attempt = 1; $attempt -le 12; $attempt++) {
+            $publishedVersionOutput = npm view "$env:PACKAGE_NAME@$env:RELEASE_VERSION" version --json --registry=$env:NPM_REGISTRY_URL 2>$null
+            if ($LASTEXITCODE -eq 0) {
+              $publishedVersion = [string]($publishedVersionOutput | ConvertFrom-Json)
+              if ($publishedVersion -eq $env:RELEASE_VERSION) {
+                $publishedIntegrityOutput = npm view "$env:PACKAGE_NAME@$env:RELEASE_VERSION" dist.integrity --json --registry=$env:NPM_REGISTRY_URL 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                  $publishedIntegrity = [string]($publishedIntegrityOutput | ConvertFrom-Json)
+                  if ($publishedIntegrity -ne $env:TARBALL_INTEGRITY) {
+                    throw "Registry integrity '$publishedIntegrity' does not match packed integrity '$env:TARBALL_INTEGRITY'."
+                  }
+                  $verified = $true
+                  break
+                }
+              }
+            }
+            if ($attempt -lt 12) {
+              Write-Host "Registry has not converged yet (attempt $attempt/12); retrying in 10 seconds."
+              Start-Sleep -Seconds 10
+            }
+          }
+          if (-not $verified) {
+            throw "Unable to verify $env:PACKAGE_NAME@$env:RELEASE_VERSION on the npm registry."
+          }
+          Write-Host "Verified $env:PACKAGE_NAME@$env:RELEASE_VERSION and matching registry integrity."
+
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v3
+        if: env.RELEASE_DRY_RUN != 'true'
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
+          tag_name: v${{ env.RELEASE_VERSION }}
           generate_release_notes: true
-          files: "*.tgz"
+          fail_on_unmatched_files: true
+          files: ${{ env.TARBALL_PATH }}

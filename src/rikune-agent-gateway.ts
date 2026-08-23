@@ -27,6 +27,7 @@ import {
   formatCommand,
   maskDockerLauncherCommand,
 } from './npm-docker-launcher.js'
+import { RIKUNE_VERSION } from './version.js'
 
 type AgentTarget = 'analyzer' | 'vm' | 'runtime'
 type McpTransportKind = 'docker-stdio' | 'docker-run' | 'stdio' | 'streamable-http'
@@ -95,7 +96,7 @@ interface ValidatedTargetEndpoints {
   allowedOrigins: string[]
 }
 
-const VERSION = '1.1.0'
+const VERSION = RIKUNE_VERSION
 const DEFAULT_CONNECT_TIMEOUT_MS = 30_000
 const DEFAULT_TOOL_TIMEOUT_MS = 300_000
 const DEFAULT_ANALYZER_HTTP_ENDPOINT = 'http://localhost:18080'

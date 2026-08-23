@@ -7,22 +7,68 @@ Versioning where practical.
 
 ## [Unreleased]
 
-### Knowledge Base Function Matching
+## [1.4.0] - 2026-08-23
 
-- Fixed the default `kb.function.match` path so omitted `match_against` performs bounded local
-  `function_kb` correlation instead of silently returning no references.
-- Added explainable API, string, CFG, constant, size, and call-context scoring with deterministic
-  tie-breaking, explicit calibration, provenance, ambiguity, and truncation diagnostics.
-- Restricted exact matches to syntactically valid SHA-256/SHA-512 function-byte digests; weak or
-  mismatched hash declarations now fall back to feature matching, and legacy API/size-only matches
-  remain review-tier.
-- Added indexed scan windows, per-record and total-byte budgets, comparison caps, malformed evidence
-  reporting, and canonical SHA-256 self-reference exclusion for local KB/evidence reads.
+### Added
 
-### Continuous Integration
+- Added MCP tool and resource annotations, top-level titles, tool `outputSchema` declarations,
+  server title/instructions, resource templates, resource subscriptions, and update notifications.
+- Added cursor pagination for tools, prompts, resources, and resource templates together with
+  `listChanged` capability notifications and upstream change consumption.
+- Added MCP elicitation, completion, logging-level filtering, and pre-execution cancellation guards
+  driven by `AbortSignal`.
+- Added proactive Gateway heartbeats, stale-connection recovery, initialized-state gating, and
+  mandatory capability negotiation.
+- Added passive plugins for serialization-format inventory, Zig binaries, FLIRT library-function
+  identification, Python `.pyc` decompilation, JVM bytecode decompilation, and bounded PDF static
+  analysis. The built-in plugin inventory now contains 117 plugins.
 
-- Repaired Docker workflow validation and made PR smoke tests consume a locally loaded, full-SHA
-  image while main/tag builds publish and attest only the supported GHCR image.
+### Changed
+
+- Reworked `kb.function.match` into bounded local correlation with explainable API, string, CFG,
+  constant, size, and call-context scoring; deterministic tie-breaking; calibration, provenance,
+  ambiguity, truncation diagnostics; and canonical self-reference exclusion.
+- Restricted exact function matches to syntactically valid SHA-256/SHA-512 byte digests and kept
+  weaker legacy API/size-only matches at review tier.
+- Tightened plugin registration, duplicate-ID handling, manifest JSON Schema conversion, and
+  plugin/worker contracts.
+- Moved the runtime product version to a single `package.json` source used by MCP server info,
+  Gateway, health/readiness, and dashboard APIs.
+- Bumped the changed `@rikune/shared`, `@rikune/plugin-sdk`, `@rikune/runtime-node`, and
+  `@rikune/windows-host-agent` workspaces to `1.2.0`.
+
+### Security
+
+- Added fail-closed runtime endpoint validation, special-use IP rejection, DNS pinning, same-origin
+  credential binding, and redirect-safe trusted fetch behavior to harden SSRF and DNS-rebinding
+  boundaries.
+- Added runtime sidecar path containment and stricter Analyzer-to-Runtime endpoint trust checks.
+- Added Worker `data_provenance` metadata and explicit refusal of unsupported external inputs.
+- Bounded PDF input, decompression, extracted content, and worker output handling without executing
+  embedded JavaScript or opening network connections.
+- Refreshed the dependency lockfile to resolve the npm audit findings present at release time.
+
+### Fixed
+
+- Distinguished MCP protocol/parameter errors from resolved tool execution failures.
+- Fixed unhandled Promise rejections and complete upstream MCP pagination.
+- Fixed omitted `kb.function.match.match_against` so it performs bounded local `function_kb`
+  correlation instead of silently returning no references.
+- Repaired Docker workflow validation, normalized GHCR image names, generated Dockerfiles before
+  image builds, forwarded container entrypoint arguments, and made PR smoke tests consume the exact
+  locally loaded image.
+- Restored the optional JVM decompiler Docker route with a real Java/CFR fragment and made generated
+  image version labels follow the root package version.
+
+### Packaging
+
+- Bundled `@rikune/shared` and `@rikune/plugin-sdk` into the root npm tarball so public installs no
+  longer depend on unavailable scoped registry packages.
+- Added the public `rikune/plugin-sdk.js` bridge for external plugin authors.
+- Updated the plugin scaffold to depend on the public `rikune` package and import that bridge instead
+  of referencing an unpublished scoped SDK version.
+- Added release checks for tag/package version equality, npm identity, tarball contents, clean
+  installation, bundled workspace imports, registry publication, and GitHub Release creation.
 
 ## [1.3.0] - 2026-07-22
 

@@ -305,10 +305,7 @@ function detectProtobuf(data: Buffer): FormatDetection | null {
   }
 }
 
-function readVarint(
-  data: Buffer,
-  offset: number
-): { value: bigint; nextOffset: number } | null {
+function readVarint(data: Buffer, offset: number): { value: bigint; nextOffset: number } | null {
   if (offset >= data.length) return null
   let result = 0n
   let shift = 0n
@@ -354,9 +351,7 @@ function detectCapnProto(data: Buffer): FormatDetection | null {
   return {
     format: 'capn-proto',
     confidence: 'medium',
-    detected_by: [
-      `segment-table (${segmentCount} segments, ${totalWords} words)`,
-    ],
+    detected_by: [`segment-table (${segmentCount} segments, ${totalWords} words)`],
     magic_offset: offset,
     magic_bytes: toHex(data, offset, 8),
     variant: 'binary',
@@ -436,7 +431,9 @@ function detectMessagePack(data: Buffer): FormatDetection | null {
   return {
     format: 'msgpack',
     confidence: parsed.depth >= 3 ? 'medium' : 'low',
-    detected_by: [`leading-marker 0x${first.toString(16).padStart(2, '0')} (${parsed.depth} values)`],
+    detected_by: [
+      `leading-marker 0x${first.toString(16).padStart(2, '0')} (${parsed.depth} values)`,
+    ],
     magic_offset: 0,
     magic_bytes: toHex(data, 0, Math.min(16, data.length)),
     variant: 'binary',
@@ -711,9 +708,7 @@ function parseCbor(
         if (!item) return null
         cursor = item.nextOffset
       }
-      return cursor < data.length
-        ? { nextOffset: cursor + 1, depth: depth + 1 }
-        : null
+      return cursor < data.length ? { nextOffset: cursor + 1, depth: depth + 1 } : null
     }
     next += payloadLen
     return next <= data.length ? { nextOffset: next, depth: depth + 1 } : null
@@ -726,9 +721,7 @@ function parseCbor(
         if (!item) return null
         cursor = item.nextOffset
       }
-      return cursor < data.length
-        ? { nextOffset: cursor + 1, depth: depth + 1 }
-        : null
+      return cursor < data.length ? { nextOffset: cursor + 1, depth: depth + 1 } : null
     }
     for (let i = 0; i < payloadLen && next < data.length; i++) {
       const item = parseCbor(data, next, depth + 1, maxDepth)
@@ -748,9 +741,7 @@ function parseCbor(
         if (!val) return null
         cursor = val.nextOffset
       }
-      return cursor < data.length
-        ? { nextOffset: cursor + 1, depth: depth + 1 }
-        : null
+      return cursor < data.length ? { nextOffset: cursor + 1, depth: depth + 1 } : null
     }
     for (let i = 0; i < payloadLen && next < data.length; i++) {
       const key = parseCbor(data, next, depth + 1, maxDepth)
@@ -790,12 +781,7 @@ function detectBson(data: Buffer): FormatDetection | null {
   }
 }
 
-function scanForBytes(
-  data: Buffer,
-  needle: Buffer,
-  start: number,
-  maxScan: number
-): number {
+function scanForBytes(data: Buffer, needle: Buffer, start: number, maxScan: number): number {
   const limit = Math.min(start + maxScan, data.length - needle.length + 1)
   for (let i = start; i < limit; i++) {
     if (data[i] !== needle[0]) continue
@@ -950,11 +936,7 @@ function buildRiskSignals(
       )
     )
   }
-  if (
-    format === 'protobuf' &&
-    detections[0] &&
-    detections[0].confidence === 'low'
-  ) {
+  if (format === 'protobuf' && detections[0] && detections[0].confidence === 'low') {
     signals.push(
       riskSignal(
         'protobuf.heuristic_only',
@@ -990,8 +972,9 @@ function buildInventory(
   const fieldHints: FieldHint[] = format === 'protobuf' ? extractProtobufFieldHints(data) : []
   const structEntries = buildStructEntries(data, format)
   const riskSignals = buildRiskSignals(format, strings, detections)
-  const confidence: Confidence =
-    !primary ? 'low' : detections.some((d) => d.confidence === 'high')
+  const confidence: Confidence = !primary
+    ? 'low'
+    : detections.some((d) => d.confidence === 'high')
       ? 'high'
       : detections.some((d) => d.confidence === 'medium')
         ? 'medium'
@@ -1030,7 +1013,7 @@ function buildInventory(
 export const serializationInventoryToolDefinition: ToolDefinition = {
   name: TOOL_NAME,
   description:
-    'Passive identification and profiling of binary serialization formats: Protocol Buffers (wire), Cap\'n Proto, MessagePack, FlatBuffers, Thrift, Avro, CBOR, and BSON. Never deserializes into runtime objects or follows external schema references.',
+    "Passive identification and profiling of binary serialization formats: Protocol Buffers (wire), Cap'n Proto, MessagePack, FlatBuffers, Thrift, Avro, CBOR, and BSON. Never deserializes into runtime objects or follows external schema references.",
   inputSchema: SerializationInventoryInputSchema,
   outputSchema: SerializationInventoryOutputSchema,
   aspects: {

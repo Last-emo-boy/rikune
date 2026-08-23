@@ -352,7 +352,8 @@ export class MCPRegistry {
     const pageSize = MCPRegistry.TOOL_PAGE_SIZE
     const page = allTools.slice(offset, offset + pageSize)
     const nextOffset = offset + pageSize
-    const nextCursor = nextOffset < allTools.length ? MCPRegistry.encodeOffsetCursor(nextOffset) : undefined
+    const nextCursor =
+      nextOffset < allTools.length ? MCPRegistry.encodeOffsetCursor(nextOffset) : undefined
 
     this.logger.debug(
       { count: page.length, offset, total: allTools.length, hasNext: !!nextCursor },
@@ -413,7 +414,8 @@ export class MCPRegistry {
     const pageSize = MCPRegistry.TOOL_PAGE_SIZE
     const page = prompts.slice(offset, offset + pageSize)
     const nextOffset = offset + pageSize
-    const nextCursor = nextOffset < prompts.length ? MCPRegistry.encodeOffsetCursor(nextOffset) : undefined
+    const nextCursor =
+      nextOffset < prompts.length ? MCPRegistry.encodeOffsetCursor(nextOffset) : undefined
 
     this.logger.debug(
       { count: page.length, offset, total: prompts.length, hasNext: !!nextCursor },
@@ -488,7 +490,10 @@ export class MCPRegistry {
     return this.resourceHandlers.get(uri)
   }
 
-  async listResources(cursor?: string): Promise<{ resources: Array<{ uri: string; name: string; description?: string; mimeType?: string }>; nextCursor?: string }> {
+  async listResources(cursor?: string): Promise<{
+    resources: Array<{ uri: string; name: string; description?: string; mimeType?: string }>
+    nextCursor?: string
+  }> {
     const resources = Array.from(this.resources.values())
     if (cursor === undefined || cursor === null) {
       return { resources }
@@ -497,7 +502,8 @@ export class MCPRegistry {
     const pageSize = MCPRegistry.TOOL_PAGE_SIZE
     const page = resources.slice(offset, offset + pageSize)
     const nextOffset = offset + pageSize
-    const nextCursor = nextOffset < resources.length ? MCPRegistry.encodeOffsetCursor(nextOffset) : undefined
+    const nextCursor =
+      nextOffset < resources.length ? MCPRegistry.encodeOffsetCursor(nextOffset) : undefined
     return { resources: page, nextCursor }
   }
 
@@ -564,7 +570,8 @@ export class MCPRegistry {
     const pageSize = MCPRegistry.TOOL_PAGE_SIZE
     const page = sorted.slice(offset, offset + pageSize)
     const nextOffset = offset + pageSize
-    const nextCursor = nextOffset < sorted.length ? MCPRegistry.encodeOffsetCursor(nextOffset) : undefined
+    const nextCursor =
+      nextOffset < sorted.length ? MCPRegistry.encodeOffsetCursor(nextOffset) : undefined
     return { resourceTemplates: page, nextCursor }
   }
 

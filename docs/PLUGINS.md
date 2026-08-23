@@ -21,7 +21,7 @@ A plugin can:
 
 ## Built-In Plugins
 
-The repository currently contains 111 built-in plugins.
+The repository currently contains 117 built-in plugins.
 
 | ID | Name | Domain | Surface tier |
 | --- | --- | --- | --- |
@@ -71,9 +71,11 @@ The repository currently contains 111 built-in plugins.
 | `jsir-cascade` | JSIR/CASCADE Plan | static | 3 |
 | `jsvmp-analysis` | JSVMP Analysis Plan | static | 2 |
 | `jvm` | JVM Bytecode Inventory | static | 1 |
+| `jvm-decompile` | JVM Bytecode Decompiler (CFR) | static | 2 |
 | `javascript-deobfuscation` | JavaScript Deobfuscation | static | 2 |
 | `kb-collaboration` | Knowledge Base & Collaboration | static | 0 |
 | `kernel-driver-surface` | Kernel Driver Surface Inventory | static | 1 |
+| `lib-identify` | Library Function Identification (FLIRT) | static | 2 |
 | `lief` | LIEF Binary Plan | static | 3 |
 | `llvm-bitcode` | LLVM Bitcode Inventory | static | 1 |
 | `linux-binary` | Linux Binary Inventory | static | 1 |
@@ -95,8 +97,10 @@ The repository currently contains 111 built-in plugins.
 | `office-analysis` | Office Analysis | static | 1 |
 | `panda` | PANDA | dynamic | 3 |
 | `pcap-analysis` | PCAP Analysis | static | 1 |
+| `pdf-analysis` | PDF Static Analysis | static | 2 |
 | `pe-analysis` | PE Analysis | static | 0 |
 | `pe-signature` | PE Authenticode Signature | static | 2 |
+| `python-decompile` | Python Bytecode Decompiler | static | 2 |
 | `qbdi` | QBDI Instrumentation Plan | static | 3 |
 | `qiling` | Qiling | dynamic | 3 |
 | `radare2` | radare2 Pipeline Plan | static | 3 |
@@ -109,6 +113,7 @@ The repository currently contains 111 built-in plugins.
 | `runtime-deobfuscate` | Runtime Deobfuscation | dynamic | 2 |
 | `rust-binary` | Rust Binary Inventory | static | 1 |
 | `sbom` | SBOM | static | 2 |
+| `serialization-format` | Serialization Format Inventory | static | 1 |
 | `shader-ir` | Shader IR Inventory | static | 1 |
 | `similarity` | Sample Similarity | static | 2 |
 | `speakeasy` | Speakeasy Emulator | dynamic | 2 |
@@ -136,6 +141,7 @@ The repository currently contains 111 built-in plugins.
 | `wine` | Wine | dynamic | 3 |
 | `yara` | YARA | static | 0 |
 | `yara-x` | YARA-X | static | 2 |
+| `zig-binary` | Zig Binary Inventory | static | 1 |
 
 Surface tier meanings:
 
@@ -143,6 +149,8 @@ Surface tier meanings:
 - `1`: file-type activated tools.
 - `2`: finding/signal activated tools.
 - `3`: expert tools, usually selected by `workflow.search` and exposed only through explicit activation or readiness checks.
+
+`pdf-analysis` exposes `pdf.analyze`, a bounded passive parser backed by a bundled Python standard-library worker. It inventories PDF objects, embedded JavaScript as text, URIs, actions, and embedded-file markers without opening the document, evaluating JavaScript, or using the network.
 
 ## Discovery Portal Contract
 

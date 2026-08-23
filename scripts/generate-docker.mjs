@@ -19,12 +19,13 @@
 // =============================================================================
 
 import { execFileSync } from 'child_process'
-import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs'
-import { join, dirname, basename } from 'path'
+import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync } from 'fs'
+import { join, dirname, basename, resolve } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
+const RIKUNE_VERSION = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
 const DEFAULT_DATA_ROOT = 'D:/Docker/rikune'
 const DEFAULT_NO_PROXY =
   'localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com'
@@ -240,14 +241,19 @@ const plugin = mod.default
 console.log(JSON.stringify({
   id: plugin?.id,
   executionDomain: plugin?.executionDomain ?? 'both',
+  dependencies: plugin?.dependencies ?? [],
   systemDeps: plugin?.systemDeps ?? [],
 }))
 `
-  const output = execFileSync(process.execPath, ['--import', 'tsx', '--eval', loader, srcIndexPath], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
+  const output = execFileSync(
+    process.execPath,
+    ['--import', 'tsx', '--eval', loader, srcIndexPath],
+    {
+      cwd: ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }
+  )
   return JSON.parse(output)
 }
 
@@ -263,6 +269,7 @@ async function loadPluginMetadata(pluginIds) {
     return {
       id,
       executionDomain: plugin?.executionDomain ?? 'both',
+      dependencies: Array.isArray(plugin?.dependencies) ? plugin.dependencies : [],
       systemDeps: plugin?.systemDeps ?? [],
     }
   }
@@ -275,7 +282,7 @@ async function loadPluginMetadata(pluginIds) {
     const indexPath = join(distDir, id, 'index.js')
     const srcIndexPath = join(ROOT, 'src', 'plugins', id, 'index.ts')
     if (!existsSync(indexPath) && !existsSync(srcIndexPath)) {
-      result.set(id, { id, executionDomain: 'both', systemDeps: [] })
+      result.set(id, { id, executionDomain: 'both', dependencies: [], systemDeps: [] })
       continue
     }
     try {
@@ -295,7 +302,7 @@ async function loadPluginMetadata(pluginIds) {
       if (plugin?.systemDeps?.length > 0) loaded++
     } catch (err) {
       failures.push(`${id}: ${err instanceof Error ? err.message : String(err)}`)
-      result.set(id, { id, executionDomain: 'both', systemDeps: [] })
+      result.set(id, { id, executionDomain: 'both', dependencies: [], systemDeps: [] })
     }
   }
 
@@ -311,6 +318,61 @@ async function loadPluginMetadata(pluginIds) {
     if (failures.length > 10) console.log(`    ... ${failures.length - 10} more`)
   }
   return result
+}
+
+async function expandPluginDependencies(pluginIds, metadata, allPluginIds) {
+  const knownIds = new Set(allPluginIds)
+  const selectedIds = new Set(pluginIds)
+  let pendingIds = [...pluginIds]
+
+  while (pendingIds.length > 0) {
+    const missingMetadataIds = pendingIds.filter((id) => !metadata.has(id))
+    if (missingMetadataIds.length > 0) {
+      const loadedMetadata = await loadPluginMetadata(missingMetadataIds)
+      for (const [id, pluginMetadata] of loadedMetadata) metadata.set(id, pluginMetadata)
+    }
+
+    const nextIds = []
+    for (const id of pendingIds) {
+      for (const dependencyId of metadata.get(id)?.dependencies ?? []) {
+        if (!knownIds.has(dependencyId)) {
+          throw new Error(`Plugin '${id}' depends on unknown plugin '${dependencyId}'.`)
+        }
+        if (!selectedIds.has(dependencyId)) {
+          selectedIds.add(dependencyId)
+          nextIds.push(dependencyId)
+        }
+      }
+    }
+    pendingIds = nextIds
+  }
+
+  return allPluginIds.filter((id) => selectedIds.has(id))
+}
+
+function prunePluginsWithMissingDependencies(pluginIds, metadata) {
+  const selectedIds = new Set(pluginIds)
+  const removed = []
+  let changed = true
+
+  while (changed) {
+    changed = false
+    for (const id of [...selectedIds]) {
+      const missingDependency = (metadata.get(id)?.dependencies ?? []).find(
+        (dependencyId) => !selectedIds.has(dependencyId)
+      )
+      if (missingDependency) {
+        selectedIds.delete(id)
+        removed.push({ id, missingDependency })
+        changed = true
+      }
+    }
+  }
+
+  return {
+    pluginIds: pluginIds.filter((id) => selectedIds.has(id)),
+    removed,
+  }
 }
 
 function depsForPluginIds(pluginIds, metadata, profile = PROFILES.full) {
@@ -359,18 +421,20 @@ function classifyInstallRoute(feature, deps, fragments, backendProfile) {
   const explicitRoute = routes.values().next().value
   const installProfile = profiles.values().next().value ?? 'default'
 
-  if (explicitRoute === 'byo' || explicitRoute === 'sidecar' || explicitRoute === 'validation-only') {
+  if (
+    explicitRoute === 'byo' ||
+    explicitRoute === 'sidecar' ||
+    explicitRoute === 'validation-only'
+  ) {
     return { route: explicitRoute, installProfile, enabled: false }
   }
-  if (
-    explicitRoute === 'profile-gated' &&
-    !BACKEND_PROFILES[backendProfile]?.has(installProfile)
-  ) {
+  if (explicitRoute === 'profile-gated' && !BACKEND_PROFILES[backendProfile]?.has(installProfile)) {
     return { route: 'profile-gated', installProfile, enabled: false }
   }
   if (hasFragment) return { route: explicitRoute ?? 'installed', installProfile, enabled: true }
   if (hasApt) return { route: explicitRoute ?? 'installed', installProfile, enabled: true }
-  if (feature === 'dynamic-python') return { route: explicitRoute ?? 'installed', installProfile, enabled: true }
+  if (feature === 'dynamic-python')
+    return { route: explicitRoute ?? 'installed', installProfile, enabled: true }
   if (hasValidation && hasDockerDefault) {
     return { route: explicitRoute ?? 'validation-only', installProfile, enabled: true }
   }
@@ -385,7 +449,11 @@ function collectBackendInstallReport(pluginDepMap, fragments, backendProfile = '
       const route = dep.dockerInstallRoute ?? 'installed'
       const profile = dep.dockerInstallProfile ?? 'default'
       const key = `${dep.dockerFeature}:${route}:${profile}`
-      const entry = byFeature.get(key) ?? { feature: dep.dockerFeature, plugins: new Set(), deps: [] }
+      const entry = byFeature.get(key) ?? {
+        feature: dep.dockerFeature,
+        plugins: new Set(),
+        deps: [],
+      }
       entry.plugins.add(plugin)
       entry.deps.push(dep)
       byFeature.set(key, entry)
@@ -509,6 +577,7 @@ function processTemplate(
   }
 
   let result = output.join('\n')
+  result = result.replaceAll('{{RIKUNE_VERSION}}', RIKUNE_VERSION)
 
   // 4b. {{FEATURE_ARGS}} - global ARG declarations from fragments
   const featureArgLines = []
@@ -630,7 +699,13 @@ function makePluginsEnv(pluginIds) {
   return pluginIds.length > 0 ? pluginIds.join(',') : ''
 }
 
-function generateDockerCompose(requirements, buildPluginIds, runtimePluginIds, profile, backendProfile) {
+function generateDockerCompose(
+  requirements,
+  buildPluginIds,
+  runtimePluginIds,
+  profile,
+  backendProfile
+) {
   const { features, envVars, extraEnv, buildArgs, volumes: pluginVolumes } = requirements
 
   // Build args from plugins. Proxy args are always set explicitly so Docker
@@ -796,8 +871,8 @@ Usage:
 Options:
   --profile=<name>  full | static | hybrid (default: full)
   --all-profiles    Generate full, static, and hybrid deployment files
-  --include=<ids>   Only include these plugins (comma-separated)
-  --exclude=<ids>   Exclude these plugins
+  --include=<ids>   Include these plugins and their transitive plugin dependencies
+  --exclude=<ids>   Exclude these plugins and cascade-remove dependent plugins
   --output=<dir>    Output directory (default: project root)
   --backend-profile=<name>  default | full | optional | heavy | research | runtime | gpu | all
   --dry-run         Preview profile resolution without writing files
@@ -830,18 +905,32 @@ Options:
     selectedPluginIds = selectedPluginIds.filter((id) => include.has(id))
     console.log(`  --include: ${selectedPluginIds.length} selected`)
   }
+
+  console.log('\n  Loading plugin metadata from dist/...')
+  const metadata = await loadPluginMetadata(selectedPluginIds)
+  if (flags.include) {
+    const explicitlySelected = new Set(selectedPluginIds)
+    selectedPluginIds = await expandPluginDependencies(selectedPluginIds, metadata, allPlugins)
+    const addedDependencies = selectedPluginIds.filter((id) => !explicitlySelected.has(id))
+    if (addedDependencies.length > 0) {
+      console.log(`  --include dependencies: added ${addedDependencies.join(', ')}`)
+    }
+  }
   if (flags.exclude) {
     const exclude = new Set(flags.exclude.split(',').map((s) => s.trim()))
     const before = selectedPluginIds.length
     selectedPluginIds = selectedPluginIds.filter((id) => !exclude.has(id))
     console.log(`  --exclude: removed ${before - selectedPluginIds.length}`)
   }
+  const prunedSelection = prunePluginsWithMissingDependencies(selectedPluginIds, metadata)
+  selectedPluginIds = prunedSelection.pluginIds
+  for (const item of prunedSelection.removed) {
+    console.log(`  --exclude cascade: removed ${item.id} (requires ${item.missingDependency})`)
+  }
   console.log(
     `  Runtime selection base (${selectedPluginIds.length}): ${selectedPluginIds.join(', ')}`
   )
 
-  console.log('\n  Loading plugin metadata from dist/...')
-  const metadata = await loadPluginMetadata(selectedPluginIds)
   const fragments = discoverDockerFragments()
 
   const templatePath = join(ROOT, 'docker', 'Dockerfile.template')
@@ -850,7 +939,7 @@ Options:
     process.exit(1)
   }
 
-  const outputDir = flags.output ? join(ROOT, flags.output) : ROOT
+  const outputDir = flags.output ? resolve(ROOT, flags.output) : ROOT
   const template = readFileSync(templatePath, 'utf-8')
 
   for (const profile of selectedProfiles) {
@@ -925,11 +1014,21 @@ Options:
       pluginScriptIds,
       fragments
     )
-    writeFileSync(join(outputDir, profile.dockerfile), dockerfile, 'utf-8')
+    const dockerfilePath = join(outputDir, profile.dockerfile)
+    mkdirSync(dirname(dockerfilePath), { recursive: true })
+    writeFileSync(dockerfilePath, dockerfile, 'utf-8')
     console.log(`  OK ${profile.dockerfile} (${dockerfile.split('\n').length} lines)`)
 
-    const compose = generateDockerCompose(req, buildPluginIds, runtimePluginIds, profile, backendProfile)
-    writeFileSync(join(outputDir, profile.composeFile), compose, 'utf-8')
+    const compose = generateDockerCompose(
+      req,
+      buildPluginIds,
+      runtimePluginIds,
+      profile,
+      backendProfile
+    )
+    const composePath = join(outputDir, profile.composeFile)
+    mkdirSync(dirname(composePath), { recursive: true })
+    writeFileSync(composePath, compose, 'utf-8')
     console.log(`  OK ${profile.composeFile} (${compose.split('\n').length} lines)`)
   }
 

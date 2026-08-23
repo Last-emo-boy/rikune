@@ -19,6 +19,7 @@ import { handleSseConnection } from './sse-events.js'
 import { handleDashboardApi } from './routes/dashboard-api.js'
 import { isRikuneError } from '../errors.js'
 import { randomUUID } from 'crypto'
+import { RIKUNE_VERSION } from '../version.js'
 
 export interface FileServerConfig {
   port: number
@@ -163,12 +164,12 @@ export class FileServer {
       }
 
       if (pathname === '/api/v1/health' && req.method === 'GET') {
-        await handleHealthCheck(res, '1.1.0')
+        await handleHealthCheck(res, RIKUNE_VERSION)
         return
       }
 
       if (pathname === '/api/v1/ready' && req.method === 'GET') {
-        await handleReadinessCheck(res, '1.1.0')
+        await handleReadinessCheck(res, RIKUNE_VERSION)
         return
       }
 

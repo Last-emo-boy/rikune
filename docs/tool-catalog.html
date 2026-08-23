@@ -297,10 +297,10 @@
           <h2><span data-lang-en>Overview</span><span data-lang-zh>概览</span></h2>
           <div class="catalog-stats">
             <div class="catalog-stat"><strong>35</strong><span>core tools</span></div>
-            <div class="catalog-stat"><strong>111</strong><span>built-in plugins</span></div>
-            <div class="catalog-stat"><strong>305</strong><span>plugin tools</span></div>
-            <div class="catalog-stat"><strong>340</strong><span>cataloged tools</span></div>
-            <div class="catalog-stat"><strong>147</strong><span>runtime-aware</span></div>
+            <div class="catalog-stat"><strong>117</strong><span>built-in plugins</span></div>
+            <div class="catalog-stat"><strong>312</strong><span>plugin tools</span></div>
+            <div class="catalog-stat"><strong>347</strong><span>cataloged tools</span></div>
+            <div class="catalog-stat"><strong>152</strong><span>runtime-aware</span></div>
             <div class="catalog-stat"><strong>45</strong><span>worker-backed</span></div>
           </div>
           <p class="catalog-note">
@@ -321,18 +321,18 @@
             </tbody>
           </table>
           <div class="category-strip">
-            <span>static-analysis <strong>103</strong></span><span>reverse-engineering <strong>67</strong></span><span>dynamic-analysis <strong>61</strong></span><span>malware-analysis <strong>16</strong></span><span>symbolic-execution <strong>14</strong></span><span>workflow-orchestration <strong>13</strong></span><span>dotnet-analysis <strong>11</strong></span><span>android-analysis <strong>10</strong></span><span>unpacking <strong>8</strong></span><span>memory-forensics <strong>7</strong></span><span>artifact-management <strong>4</strong></span><span>system-diagnostics <strong>4</strong></span><span>go-analysis <strong>3</strong></span><span>network-analysis <strong>3</strong></span><span>plugin-management <strong>3</strong></span><span>sample-intake <strong>3</strong></span><span>task-control <strong>3</strong></span><span>tool-discovery <strong>3</strong></span><span>vulnerability-research <strong>2</strong></span><span>analysis-context <strong>1</strong></span><span>llm-review <strong>1</strong></span>
+            <span>static-analysis <strong>105</strong></span><span>reverse-engineering <strong>71</strong></span><span>dynamic-analysis <strong>61</strong></span><span>malware-analysis <strong>17</strong></span><span>symbolic-execution <strong>14</strong></span><span>workflow-orchestration <strong>13</strong></span><span>dotnet-analysis <strong>11</strong></span><span>android-analysis <strong>10</strong></span><span>unpacking <strong>8</strong></span><span>memory-forensics <strong>7</strong></span><span>artifact-management <strong>4</strong></span><span>system-diagnostics <strong>4</strong></span><span>go-analysis <strong>3</strong></span><span>network-analysis <strong>3</strong></span><span>plugin-management <strong>3</strong></span><span>sample-intake <strong>3</strong></span><span>task-control <strong>3</strong></span><span>tool-discovery <strong>3</strong></span><span>vulnerability-research <strong>2</strong></span><span>analysis-context <strong>1</strong></span><span>llm-review <strong>1</strong></span>
           </div>
           <div class="catalog-controls" aria-label="Tool catalog filters">
             <input id="catalogSearch" type="search" placeholder="Search tool, plugin, backend, format, capability..." />
             <select id="categoryFilter">
               <option value="">All categories</option>
-              <option value="static-analysis">static-analysis (103)</option><option value="reverse-engineering">reverse-engineering (67)</option><option value="dynamic-analysis">dynamic-analysis (61)</option><option value="malware-analysis">malware-analysis (16)</option><option value="symbolic-execution">symbolic-execution (14)</option><option value="workflow-orchestration">workflow-orchestration (13)</option><option value="dotnet-analysis">dotnet-analysis (11)</option><option value="android-analysis">android-analysis (10)</option><option value="unpacking">unpacking (8)</option><option value="memory-forensics">memory-forensics (7)</option><option value="artifact-management">artifact-management (4)</option><option value="system-diagnostics">system-diagnostics (4)</option><option value="go-analysis">go-analysis (3)</option><option value="network-analysis">network-analysis (3)</option><option value="plugin-management">plugin-management (3)</option><option value="sample-intake">sample-intake (3)</option><option value="task-control">task-control (3)</option><option value="tool-discovery">tool-discovery (3)</option><option value="vulnerability-research">vulnerability-research (2)</option><option value="analysis-context">analysis-context (1)</option><option value="llm-review">llm-review (1)</option>
+              <option value="static-analysis">static-analysis (105)</option><option value="reverse-engineering">reverse-engineering (71)</option><option value="dynamic-analysis">dynamic-analysis (61)</option><option value="malware-analysis">malware-analysis (17)</option><option value="symbolic-execution">symbolic-execution (14)</option><option value="workflow-orchestration">workflow-orchestration (13)</option><option value="dotnet-analysis">dotnet-analysis (11)</option><option value="android-analysis">android-analysis (10)</option><option value="unpacking">unpacking (8)</option><option value="memory-forensics">memory-forensics (7)</option><option value="artifact-management">artifact-management (4)</option><option value="system-diagnostics">system-diagnostics (4)</option><option value="go-analysis">go-analysis (3)</option><option value="network-analysis">network-analysis (3)</option><option value="plugin-management">plugin-management (3)</option><option value="sample-intake">sample-intake (3)</option><option value="task-control">task-control (3)</option><option value="tool-discovery">tool-discovery (3)</option><option value="vulnerability-research">vulnerability-research (2)</option><option value="analysis-context">analysis-context (1)</option><option value="llm-review">llm-review (1)</option>
             </select>
             <select id="domainFilter">
               <option value="">All domains</option>
               <option value="core">core</option>
-              <option value="static">static (237)</option><option value="dynamic">dynamic (61)</option><option value="both">both (7)</option>
+              <option value="static">static (244)</option><option value="dynamic">dynamic (61)</option><option value="both">both (7)</option>
             </select>
             <label><input id="runtimeOnly" type="checkbox" /> Runtime</label>
             <label><input id="workerOnly" type="checkbox" /> Worker</label>
@@ -4889,6 +4889,47 @@
                 </div>
               </section>
 
+              <section class="plugin-card" data-plugin-card data-search="jvm-decompile jvm bytecode decompiler (cfr) decompile jvm bytecode (.class/.jar) to java source via cfr. never executes the bytecode — cfr parses class files to recover source. static reverse-engineering reverse-engineering jvm.decompile decompile jvm bytecode (.class,.jar,.war,.aar,.jmod) to java source using cfr (class file reader), a single-jar java decompiler. recovers readable java source without executing the bytecode. optional class_filter narrows output. requires java 8+ (java) and the cfr jar (cfr_jar). useful for supply-chain jar analysis, malware applet inspection, and source-less java application recovery.   java binary  jvm-decompile cfr file cfr_jar jvm-decompile" data-domain="static">
+                <button class="plugin-card__summary" type="button" data-plugin-toggle>
+                  <span>
+                    <code>jvm-decompile</code>
+                    <strong>JVM Bytecode Decompiler (CFR)</strong>
+                  </span>
+                  <span>1 tools</span>
+                </button>
+                <div class="plugin-card__body">
+                  <p>Decompile JVM bytecode (.class/.jar) to Java source via CFR. Never executes the bytecode — CFR parses class files to recover source.</p>
+                  <div class="tool-tags">
+                    <span class="badge badge--purple">static</span>
+                    <span class="badge badge--blue">tier 2</span>
+                    <span class="tool-badge">reverse-engineering</span>
+                  </div>
+                  <div class="dependency-list"><strong>Declared deps</strong> <span class="tool-badge">java / optional</span><span class="tool-badge">cfr / CFR_JAR / optional</span></div>
+                  <div class="tool-row-list">
+
+                    <article class="tool-row" data-tool-row data-search="jvm.decompile decompile jvm bytecode (.class,.jar,.war,.aar,.jmod) to java source using cfr (class file reader), a single-jar java decompiler. recovers readable java source without executing the bytecode. optional class_filter narrows output. requires java 8+ (java) and the cfr jar (cfr_jar). useful for supply-chain jar analysis, malware applet inspection, and source-less java application recovery. jvm-decompile jvm bytecode decompiler (cfr) reverse-engineering static class jar war aar jmod kotlin-metadata java jvm android cross-platform static decompilation cfr passive read_only no_live_sample_by_default no_network_by_default bounded_output java-decompilation class-recovery source-recovery archive-decompilation workflow-handoff source classes provenance jvm_decompiled_source source classes  " data-category="reverse-engineering" data-domain="static" data-runtime="yes" data-worker="no">
+                      <div class="tool-row__head">
+                        <code>jvm.decompile</code>
+                        <div class="tool-row__badges">
+                          <span class="badge badge--blue">reverse-engineering</span>
+                          <span class="badge badge--purple">static</span>
+                          <span class="badge badge--amber">runtime-aware</span>
+
+                        </div>
+                      </div>
+                      <p>Decompile JVM bytecode (.class,.jar,.war,.aar,.jmod) to Java source using CFR (Class File Reader), a single-JAR Java decompiler. Recovers readable Java source without executing the bytecode. Optional class_filter narrows output. Requires Java 8+ (java) and the CFR jar (CFR_JAR). Useful for supply-chain JAR analysis, malware applet inspection, and source-less Java application recovery.</p>
+                      <div class="tool-row__meta">
+
+
+
+                        <span><strong>Artifacts</strong> jvm_decompiled_source</span>
+                      </div>
+                      <div class="tool-tags"><span class="tool-badge">class</span><span class="tool-badge">jar</span><span class="tool-badge">war</span><span class="tool-badge">aar</span><span class="tool-badge">jmod</span><span class="tool-badge">kotlin-metadata</span><span class="tool-badge">java</span><span class="tool-badge">java-decompilation</span><span class="tool-badge">class-recovery</span><span class="tool-badge">source-recovery</span></div>
+                    </article>
+                  </div>
+                </div>
+              </section>
+
               <section class="plugin-card" data-plugin-card data-search="kb-collaboration knowledge base &amp; collaboration function signature matching, evidence-backed claim ledger production, context-only case workspace checkpoints, deterministic analysis context packing, analysis templates, and knowledge base import/export/management static static-analysis static-analysis kb.function.match match function signatures from a sample against the knowledge base and other analyzed samples. uses exact byte hashes plus deterministic api, string, cfg, constant, size, and call-context evidence to explain reused code candidates before names or annotations are propagated.   analysis.template get a recommended analysis plan from a pre-defined template. returns an ordered list of tools to call for common workflows like malware triage, crackme solving, or apk analysis. use with analyze.pipeline for automated execution.   kb.import.bulk bulk-import knowledge base entries from capa rules, misp threat intel events, jsonl exports, or seed the built-in windows api knowledge.   kb.export export knowledge base entries (function_kb and/or sample_kb) as jsonl for sharing or backup.   kb.import import a jsonl knowledge base file exported by kb.export, with configurable conflict resolution strategy.   kb.stats display knowledge base statistics: entry counts, source distribution, confidence histogram, and optional category breakdown.   analysis.notes analysis notebook system: add structured notes/findings to a sample, list all notes, search across notes, or export. notes support categories (finding, hypothesis, ioc, technique, verdict), severity levels, tags, and cross-sample references. findings are automatically indexed in the knowledge base for future reuse.   analysis.claims.apply persist an append-only, evidence-backed claim ledger revision. the tool verifies artifact existence, same-sample ownership, file sha-256, and optional json pointers before writing. it validates evidence integrity, not semantic truth. this ai-facing surface only writes inferred llm/imported claims; analyst revisions remain fail-closed until a signed operator boundary is available.   analysis.case.checkpoint append an immutable, context-only case workspace checkpoint. each write is a full snapshot with optimistic parent/revision checks and canonical same-sample artifact references. prompts, private reasoning, secrets, and raw tool arguments are prohibited.   analysis.case.snapshot load the newest immutable case workspace snapshot and its bounded revision history. case state is context-only: it supports resume and handoff but is never claim evidence.   analysis.context.pack build a deterministic, token-bounded context snapshot for one sample. primary and derived evidence remain strictly separated; claim ledger, case state, summaries, and reports are context-only. use case_id to isolate one case workspace; a sole case is auto-selected and multiple cases fail closed without a selector. the opaque marker is bound to the selected case and supports incremental follow-up without running tools or changing analysis state.   rule.library manage yara and sigma detection rule library: list rules across samples, get rule details, add tags/status labels, export in native formats, and view statistics. integrates with yara.generate and sigma.rule.generate tools.   kb.context.suggest suggest local analysis-memory context for a sample: reusable function knowledge, notes, rule-library actions, and import/export follow-ups based on existing evidence tags. no network access is performed.  " data-domain="static">
                 <button class="plugin-card__summary" type="button" data-plugin-toggle>
                   <span>
@@ -5206,6 +5247,67 @@
                         <span><strong>Artifacts</strong> kernel_driver_surface_inventory</span>
                       </div>
                       <div class="tool-tags"><span class="tool-badge">kernel-driver</span><span class="tool-badge">driver</span><span class="tool-badge">driver-surface</span><span class="tool-badge">ioctl</span><span class="tool-badge">windows-driver</span><span class="tool-badge">windows-kernel-driver</span><span class="tool-badge">linux-driver</span><span class="tool-badge">linux-kernel-module</span><span class="tool-badge">sys</span><span class="tool-badge">pe</span></div>
+                    </article>
+                  </div>
+                </div>
+              </section>
+
+              <section class="plugin-card" data-plugin-card data-search="lib-identify library function identification (flirt) static library function identification via rizin flirt signatures (sigdb). matches functions against known libraries to separate boilerplate from custom code. static reverse-engineering reverse-engineering lib.identify identify known static library functions in a binary using rizin flirt signatures (sigdb). matches functions against known libraries (libc, msvc crt, openssl, zlib, etc.) so analysts can separate library boilerplate from custom code. requires rizin (rizin_path) and a sigdb (clone rizinorg/sigdb). passive and read-only — never executes the sample.   lib.signatures.list list available flirt signature modules in the rizin sigdb applicable to a sample. returns module name, architecture, bits, and function count per signature. use before lib.identify to scope the matching filter. requires rizin (rizin_path) and a sigdb. passive and read-only — never executes the sample.   rizin binary rizin_path rizin rizin-sigdb directory rz_sigdb sigdb" data-domain="static">
+                <button class="plugin-card__summary" type="button" data-plugin-toggle>
+                  <span>
+                    <code>lib-identify</code>
+                    <strong>Library Function Identification (FLIRT)</strong>
+                  </span>
+                  <span>2 tools</span>
+                </button>
+                <div class="plugin-card__body">
+                  <p>Static library function identification via rizin FLIRT signatures (sigdb). Matches functions against known libraries to separate boilerplate from custom code.</p>
+                  <div class="tool-tags">
+                    <span class="badge badge--purple">static</span>
+                    <span class="badge badge--blue">tier 2</span>
+                    <span class="tool-badge">reverse-engineering</span>
+                  </div>
+                  <div class="dependency-list"><strong>Declared deps</strong> <span class="tool-badge">rizin / RIZIN_PATH / optional</span><span class="tool-badge">rizin-sigdb / RZ_SIGDB / optional</span></div>
+                  <div class="tool-row-list">
+
+                    <article class="tool-row" data-tool-row data-search="lib.identify identify known static library functions in a binary using rizin flirt signatures (sigdb). matches functions against known libraries (libc, msvc crt, openssl, zlib, etc.) so analysts can separate library boilerplate from custom code. requires rizin (rizin_path) and a sigdb (clone rizinorg/sigdb). passive and read-only — never executes the sample. lib-identify library function identification (flirt) reverse-engineering static pe elf macho firmware object windows linux macos embedded cross-platform x86 x64 arm arm64 mips ppc riscv static triage passive read_only no_live_sample_by_default no_network_by_default bounded_output library-function-identification flirt-signature-matching sigdb-enumeration function-naming boilerplate-filtering workflow-handoff symbols functions signatures provenance rizin backend_lib_identify_matches lib_signatures_list symbols functions  " data-category="reverse-engineering" data-domain="static" data-runtime="yes" data-worker="no">
+                      <div class="tool-row__head">
+                        <code>lib.identify</code>
+                        <div class="tool-row__badges">
+                          <span class="badge badge--blue">reverse-engineering</span>
+                          <span class="badge badge--purple">static</span>
+                          <span class="badge badge--amber">runtime-aware</span>
+
+                        </div>
+                      </div>
+                      <p>Identify known static library functions in a binary using rizin FLIRT signatures (sigdb). Matches functions against known libraries (libc, MSVC CRT, OpenSSL, zlib, etc.) so analysts can separate library boilerplate from custom code. Requires rizin (RIZIN_PATH) and a sigdb (clone rizinorg/sigdb). Passive and read-only — never executes the sample.</p>
+                      <div class="tool-row__meta">
+
+
+
+                        <span><strong>Artifacts</strong> backend_lib_identify_matches, lib_signatures_list</span>
+                      </div>
+                      <div class="tool-tags"><span class="tool-badge">pe</span><span class="tool-badge">elf</span><span class="tool-badge">macho</span><span class="tool-badge">firmware</span><span class="tool-badge">object</span><span class="tool-badge">library-function-identification</span><span class="tool-badge">flirt-signature-matching</span><span class="tool-badge">sigdb-enumeration</span><span class="tool-badge">function-naming</span><span class="tool-badge">boilerplate-filtering</span></div>
+                    </article>
+
+                    <article class="tool-row" data-tool-row data-search="lib.signatures.list list available flirt signature modules in the rizin sigdb applicable to a sample. returns module name, architecture, bits, and function count per signature. use before lib.identify to scope the matching filter. requires rizin (rizin_path) and a sigdb. passive and read-only — never executes the sample. lib-identify library function identification (flirt) reverse-engineering static pe elf macho firmware object windows linux macos embedded cross-platform x86 x64 arm arm64 mips ppc riscv static triage passive read_only no_live_sample_by_default no_network_by_default bounded_output library-function-identification flirt-signature-matching sigdb-enumeration function-naming boilerplate-filtering flirt-signature-inventory workflow-handoff symbols functions signatures provenance rizin backend_lib_signatures_list symbols  " data-category="reverse-engineering" data-domain="static" data-runtime="yes" data-worker="no">
+                      <div class="tool-row__head">
+                        <code>lib.signatures.list</code>
+                        <div class="tool-row__badges">
+                          <span class="badge badge--blue">reverse-engineering</span>
+                          <span class="badge badge--purple">static</span>
+                          <span class="badge badge--amber">runtime-aware</span>
+
+                        </div>
+                      </div>
+                      <p>List available FLIRT signature modules in the rizin sigdb applicable to a sample. Returns module name, architecture, bits, and function count per signature. Use before lib.identify to scope the matching filter. Requires rizin (RIZIN_PATH) and a sigdb. Passive and read-only — never executes the sample.</p>
+                      <div class="tool-row__meta">
+
+
+
+                        <span><strong>Artifacts</strong> backend_lib_signatures_list</span>
+                      </div>
+                      <div class="tool-tags"><span class="tool-badge">pe</span><span class="tool-badge">elf</span><span class="tool-badge">macho</span><span class="tool-badge">firmware</span><span class="tool-badge">object</span><span class="tool-badge">library-function-identification</span><span class="tool-badge">flirt-signature-matching</span><span class="tool-badge">sigdb-enumeration</span><span class="tool-badge">function-naming</span><span class="tool-badge">boilerplate-filtering</span></div>
                     </article>
                   </div>
                 </div>
@@ -6452,6 +6554,47 @@
                 </div>
               </section>
 
+              <section class="plugin-card" data-plugin-card data-search="pdf-analysis pdf static analysis statically inspect pdf structure, embedded javascript, uris, launch actions, and embedded-file markers without opening the document or executing content. static malware-analysis malware-analysis pdf.analyze static analysis of pdf structure, embedded javascript, and actions. parses the pdf object model to extract the object catalog, embedded javascript (/js, /javascript actions), flatedecode stream contents, open actions, uris, and embedded files. useful for pdf malware triage (droppers, phishing payloads). passive and read-only — never executes embedded javascript or opens uris.   python3 binary  " data-domain="static">
+                <button class="plugin-card__summary" type="button" data-plugin-toggle>
+                  <span>
+                    <code>pdf-analysis</code>
+                    <strong>PDF Static Analysis</strong>
+                  </span>
+                  <span>1 tools</span>
+                </button>
+                <div class="plugin-card__body">
+                  <p>Statically inspect PDF structure, embedded JavaScript, URIs, launch actions, and embedded-file markers without opening the document or executing content.</p>
+                  <div class="tool-tags">
+                    <span class="badge badge--purple">static</span>
+                    <span class="badge badge--blue">tier 2</span>
+                    <span class="tool-badge">malware-analysis</span>
+                  </div>
+                  <div class="dependency-list"><strong>Declared deps</strong> <span class="tool-badge">python3 / required</span></div>
+                  <div class="tool-row-list">
+
+                    <article class="tool-row" data-tool-row data-search="pdf.analyze static analysis of pdf structure, embedded javascript, and actions. parses the pdf object model to extract the object catalog, embedded javascript (/js, /javascript actions), flatedecode stream contents, open actions, uris, and embedded files. useful for pdf malware triage (droppers, phishing payloads). passive and read-only — never executes embedded javascript or opens uris. pdf-analysis pdf static analysis malware-analysis static pdf pdf-portfolio pdf-interactive cross-platform document static triage passive read_only bounded_output no_live_sample_by_default no_network_by_default no_js_execution pdf-static-analysis javascript-extraction object-model-parsing action-inventory malware-triage workflow-handoff structure javascript uris actions provenance pdf_static_analysis structure javascript uris  " data-category="malware-analysis" data-domain="static" data-runtime="yes" data-worker="no">
+                      <div class="tool-row__head">
+                        <code>pdf.analyze</code>
+                        <div class="tool-row__badges">
+                          <span class="badge badge--blue">malware-analysis</span>
+                          <span class="badge badge--purple">static</span>
+                          <span class="badge badge--amber">runtime-aware</span>
+
+                        </div>
+                      </div>
+                      <p>Static analysis of PDF structure, embedded JavaScript, and actions. Parses the PDF object model to extract the object catalog, embedded JavaScript (/JS, /JavaScript actions), FlateDecode stream contents, open actions, URIs, and embedded files. Useful for PDF malware triage (droppers, phishing payloads). Passive and read-only — never executes embedded JavaScript or opens URIs.</p>
+                      <div class="tool-row__meta">
+
+
+
+                        <span><strong>Artifacts</strong> pdf_static_analysis</span>
+                      </div>
+                      <div class="tool-tags"><span class="tool-badge">pdf</span><span class="tool-badge">pdf-portfolio</span><span class="tool-badge">pdf-interactive</span><span class="tool-badge">pdf-static-analysis</span><span class="tool-badge">javascript-extraction</span><span class="tool-badge">object-model-parsing</span><span class="tool-badge">action-inventory</span><span class="tool-badge">malware-triage</span><span class="tool-badge">workflow-handoff</span><span class="tool-badge">passive</span></div>
+                    </article>
+                  </div>
+                </div>
+              </section>
+
               <section class="plugin-card" data-plugin-card data-search="pe-analysis pe analysis windows pe structure analysis, import/export extraction, fingerprinting, and symbol recovery static static-analysis static-analysis pe.structure.analyze parse pe headers, sections, imports, exports, resources, and overlays through pefile and lief with a canonical mcp schema. static python pe structure worker static_python.pe.structure.analyze pe.imports.extract 提取 pe 文件的导入表（dll 和函数），支持按 dll 分组   pe.exports.extract extract pe file export table (function names, ordinals, addresses, forwarders)   pe.fingerprint 提取 pe 文件指纹信息（机器类型、子系统、时间戳、imphash、节区熵值、签名）   pe.pdata.extract parse the pe exception directory /.pdata section and extract x64 runtime_function entries with unwind metadata. builtin-pe-parser pe.pdata.extract pe.security.profile passively profile pe hardening posture from headers, dllcharacteristics, load config, tls, and section flags without loading or executing the sample. builtin-pe-parser pe.security.profile pe.symbols.recover recover importable symbolic function names from pe runtime metadata such as.pdata /.xdata, exports, entry point, and language/runtime hints. builtin-pe-parser pe.symbols.recover pefile python  static-python lief python  static-python" data-domain="static">
                 <button class="plugin-card__summary" type="button" data-plugin-toggle>
                   <span>
@@ -6669,6 +6812,47 @@
                         <span><strong>Artifacts</strong> backend_pe-sig_certificate</span>
                       </div>
                       <div class="tool-tags"><span class="tool-badge">pe</span><span class="tool-badge">pe32</span><span class="tool-badge">pe64</span><span class="tool-badge">exe</span><span class="tool-badge">dll</span><span class="tool-badge">sys</span><span class="tool-badge">efi</span><span class="tool-badge">pe-clr</span><span class="tool-badge">signatures</span><span class="tool-badge">certificates</span></div>
+                    </article>
+                  </div>
+                </div>
+              </section>
+
+              <section class="plugin-card" data-plugin-card data-search="python-decompile python bytecode decompiler decompile python bytecode (.pyc) to source via decompyle3/uncompyle6, with a dis.dis disassembly fallback. never executes the code object bytecode. static reverse-engineering reverse-engineering python.decompile decompile python bytecode (.pyc) to source code or a bounded disassembly. recovers source via decompyle3 (3.7-3.8) or uncompyle6 (2.7, 3.5-3.8) when installed; otherwise produces a dis.dis disassembly that always works. also returns code object metadata (names, constants, varnames). useful for pyinstaller payloads, supply-chain packages, and source-less python applications. never imports or executes the code object bytecode.   decompyle3 python  python-decompile uncompyle6 python  python-decompile" data-domain="static">
+                <button class="plugin-card__summary" type="button" data-plugin-toggle>
+                  <span>
+                    <code>python-decompile</code>
+                    <strong>Python Bytecode Decompiler</strong>
+                  </span>
+                  <span>1 tools</span>
+                </button>
+                <div class="plugin-card__body">
+                  <p>Decompile Python bytecode (.pyc) to source via decompyle3/uncompyle6, with a dis.dis disassembly fallback. Never executes the code object bytecode.</p>
+                  <div class="tool-tags">
+                    <span class="badge badge--purple">static</span>
+                    <span class="badge badge--blue">tier 2</span>
+                    <span class="tool-badge">reverse-engineering</span>
+                  </div>
+                  <div class="dependency-list"><strong>Declared deps</strong> <span class="tool-badge">decompyle3 / optional</span><span class="tool-badge">uncompyle6 / optional</span></div>
+                  <div class="tool-row-list">
+
+                    <article class="tool-row" data-tool-row data-search="python.decompile decompile python bytecode (.pyc) to source code or a bounded disassembly. recovers source via decompyle3 (3.7-3.8) or uncompyle6 (2.7, 3.5-3.8) when installed; otherwise produces a dis.dis disassembly that always works. also returns code object metadata (names, constants, varnames). useful for pyinstaller payloads, supply-chain packages, and source-less python applications. never imports or executes the code object bytecode. python-decompile python bytecode decompiler reverse-engineering static pyc pyo python python-bytecode python cross-platform static decompilation passive read_only no_live_sample_by_default no_network_by_default bounded_output python-decompilation bytecode-disassembly code-object-recovery source-recovery workflow-handoff source disassembly strings provenance python_decompiled_source source disassembly  " data-category="reverse-engineering" data-domain="static" data-runtime="yes" data-worker="no">
+                      <div class="tool-row__head">
+                        <code>python.decompile</code>
+                        <div class="tool-row__badges">
+                          <span class="badge badge--blue">reverse-engineering</span>
+                          <span class="badge badge--purple">static</span>
+                          <span class="badge badge--amber">runtime-aware</span>
+
+                        </div>
+                      </div>
+                      <p>Decompile Python bytecode (.pyc) to source code or a bounded disassembly. Recovers source via decompyle3 (3.7-3.8) or uncompyle6 (2.7, 3.5-3.8) when installed; otherwise produces a dis.dis disassembly that always works. Also returns code object metadata (names, constants, varnames). Useful for PyInstaller payloads, supply-chain packages, and source-less Python applications. Never imports or executes the code object bytecode.</p>
+                      <div class="tool-row__meta">
+
+
+
+                        <span><strong>Artifacts</strong> python_decompiled_source</span>
+                      </div>
+                      <div class="tool-tags"><span class="tool-badge">pyc</span><span class="tool-badge">pyo</span><span class="tool-badge">python</span><span class="tool-badge">python-bytecode</span><span class="tool-badge">python-decompilation</span><span class="tool-badge">bytecode-disassembly</span><span class="tool-badge">code-object-recovery</span><span class="tool-badge">source-recovery</span><span class="tool-badge">workflow-handoff</span><span class="tool-badge">passive</span></div>
                     </article>
                   </div>
                 </div>
@@ -7361,6 +7545,47 @@
                         <span><strong>Artifacts</strong> sbom_provenance_graph</span>
                       </div>
                       <div class="tool-tags"><span class="tool-badge">pe</span><span class="tool-badge">elf</span><span class="tool-badge">macho</span><span class="tool-badge">apk</span><span class="tool-badge">jar</span><span class="tool-badge">dotnet</span><span class="tool-badge">nupkg</span><span class="tool-badge">deb</span><span class="tool-badge">rpm</span><span class="tool-badge">apk-alpine</span></div>
+                    </article>
+                  </div>
+                </div>
+              </section>
+
+              <section class="plugin-card" data-plugin-card data-search="serialization-format serialization format inventory passive identification and profiling of binary serialization formats: protocol buffers, cap&#39;n proto, messagepack, flatbuffers, thrift, avro, cbor, and bson without runtime deserialization. static static-analysis static-analysis serialization.inventory passive identification and profiling of binary serialization formats: protocol buffers (wire), cap&#39;n proto, messagepack, flatbuffers, thrift, avro, cbor, and bson. never deserializes into runtime objects or follows external schema references.  " data-domain="static">
+                <button class="plugin-card__summary" type="button" data-plugin-toggle>
+                  <span>
+                    <code>serialization-format</code>
+                    <strong>Serialization Format Inventory</strong>
+                  </span>
+                  <span>1 tools</span>
+                </button>
+                <div class="plugin-card__body">
+                  <p>Passive identification and profiling of binary serialization formats: Protocol Buffers, Cap&#39;n Proto, MessagePack, FlatBuffers, Thrift, Avro, CBOR, and BSON without runtime deserialization.</p>
+                  <div class="tool-tags">
+                    <span class="badge badge--purple">static</span>
+                    <span class="badge badge--blue">tier 1</span>
+                    <span class="tool-badge">static-analysis</span>
+                  </div>
+
+                  <div class="tool-row-list">
+
+                    <article class="tool-row" data-tool-row data-search="serialization.inventory passive identification and profiling of binary serialization formats: protocol buffers (wire), cap&#39;n proto, messagepack, flatbuffers, thrift, avro, cbor, and bson. never deserializes into runtime objects or follows external schema references. serialization-format serialization format inventory static-analysis static protobuf capn-proto msgpack flatbuffers thrift avro cbor bson serialization binary-serialization cross-platform linux windows macos android ios embedded x86 x64 arm arm64 wasm static triage correlation workflow-plan passive no_deserialization no_runtime_decode no_network_by_default no_mutation no_extract_to_execution_path serialization-format-detection wire-format-profiling field-hint-extraction schema-risk-triage external-reference-detection workflow-routing structure metadata strings workflow provenance serialization_inventory structure metadata strings workflow provenance  " data-category="static-analysis" data-domain="static" data-runtime="no" data-worker="no">
+                      <div class="tool-row__head">
+                        <code>serialization.inventory</code>
+                        <div class="tool-row__badges">
+                          <span class="badge badge--blue">static-analysis</span>
+                          <span class="badge badge--purple">static</span>
+
+
+                        </div>
+                      </div>
+                      <p>Passive identification and profiling of binary serialization formats: Protocol Buffers (wire), Cap&#39;n Proto, MessagePack, FlatBuffers, Thrift, Avro, CBOR, and BSON. Never deserializes into runtime objects or follows external schema references.</p>
+                      <div class="tool-row__meta">
+
+
+
+                        <span><strong>Artifacts</strong> serialization_inventory</span>
+                      </div>
+                      <div class="tool-tags"><span class="tool-badge">protobuf</span><span class="tool-badge">capn-proto</span><span class="tool-badge">msgpack</span><span class="tool-badge">flatbuffers</span><span class="tool-badge">thrift</span><span class="tool-badge">avro</span><span class="tool-badge">cbor</span><span class="tool-badge">bson</span><span class="tool-badge">serialization</span><span class="tool-badge">binary-serialization</span></div>
                     </article>
                   </div>
                 </div>
@@ -9492,6 +9717,47 @@
                   </div>
                 </div>
               </section>
+
+              <section class="plugin-card" data-plugin-card data-search="zig-binary zig binary inventory passive zig binary inventory for elf, pe, mach-o, wasm, object, and archive artifacts, covering zig mangled symbol candidates, zig compiler markers, build.zig.zon hints, panic/allocator/runtime markers, and target triples without demangling or execution. static static-analysis static-analysis zig.binary.inventory passive zig binary inventory for elf, pe, mach-o, wasm, object, and archive artifacts, covering zig mangled symbol candidates, zig compiler markers, build.zig.zon hints, panic/allocator/runtime markers, and target triples without demangling or execution.  " data-domain="static">
+                <button class="plugin-card__summary" type="button" data-plugin-toggle>
+                  <span>
+                    <code>zig-binary</code>
+                    <strong>Zig Binary Inventory</strong>
+                  </span>
+                  <span>1 tools</span>
+                </button>
+                <div class="plugin-card__body">
+                  <p>Passive Zig binary inventory for ELF, PE, Mach-O, WASM, object, and archive artifacts, covering Zig mangled symbol candidates, zig compiler markers, build.zig.zon hints, panic/allocator/runtime markers, and target triples without demangling or execution.</p>
+                  <div class="tool-tags">
+                    <span class="badge badge--purple">static</span>
+                    <span class="badge badge--blue">tier 1</span>
+                    <span class="tool-badge">static-analysis</span>
+                  </div>
+
+                  <div class="tool-row-list">
+
+                    <article class="tool-row" data-tool-row data-search="zig.binary.inventory passive zig binary inventory for elf, pe, mach-o, wasm, object, and archive artifacts, covering zig mangled symbol candidates, zig compiler markers, build.zig.zon hints, panic/allocator/runtime markers, and target triples without demangling or execution. zig-binary zig binary inventory static-analysis static zig zig-binary zig-archive zig-object elf macho pe wasm cross-platform linux windows macos wasi embedded x86 x64 arm arm64 riscv64 wasm static triage correlation workflow-plan passive no_execute no_native_load no_zig_invocation no_external_demangler no_external_tool no_network_by_default no_mutation zig-language-detection zig-mangled-symbol-candidates zig-compiler-provenance zig-panic-profile zig-allocator-profile zig-std-runtime-markers target-triple-candidates workflow-routing symbols language-runtime provenance package-metadata panic allocator target workflow zig_binary_inventory symbols language-runtime provenance package-metadata panic allocator target workflow  " data-category="static-analysis" data-domain="static" data-runtime="no" data-worker="no">
+                      <div class="tool-row__head">
+                        <code>zig.binary.inventory</code>
+                        <div class="tool-row__badges">
+                          <span class="badge badge--blue">static-analysis</span>
+                          <span class="badge badge--purple">static</span>
+
+
+                        </div>
+                      </div>
+                      <p>Passive Zig binary inventory for ELF, PE, Mach-O, WASM, object, and archive artifacts, covering Zig mangled symbol candidates, zig compiler markers, build.zig.zon hints, panic/allocator/runtime markers, and target triples without demangling or execution.</p>
+                      <div class="tool-row__meta">
+
+
+
+                        <span><strong>Artifacts</strong> zig_binary_inventory</span>
+                      </div>
+                      <div class="tool-tags"><span class="tool-badge">zig</span><span class="tool-badge">zig-binary</span><span class="tool-badge">zig-archive</span><span class="tool-badge">zig-object</span><span class="tool-badge">elf</span><span class="tool-badge">macho</span><span class="tool-badge">pe</span><span class="tool-badge">wasm</span><span class="tool-badge">zig-language-detection</span><span class="tool-badge">zig-mangled-symbol-candidates</span></div>
+                    </article>
+                  </div>
+                </div>
+              </section>
           </div>
         </section>
 
@@ -9517,24 +9783,24 @@
             </tbody>
           </table>
           <script type="application/json" id="catalogMetadata">{
-  "generatedAt": "2026-08-13T03:40:50.743Z",
+  "generatedAt": "2026-08-23T08:41:49.082Z",
   "counts": {
     "coreTools": 35,
-    "builtInPlugins": 111,
-    "pluginTools": 305,
-    "totalTools": 340,
-    "runtimeTools": 147,
+    "builtInPlugins": 117,
+    "pluginTools": 312,
+    "totalTools": 347,
+    "runtimeTools": 152,
     "workerTools": 45,
     "registrationErrors": 0
   },
   "categories": [
     {
       "name": "static-analysis",
-      "count": 103
+      "count": 105
     },
     {
       "name": "reverse-engineering",
-      "count": 67
+      "count": 71
     },
     {
       "name": "dynamic-analysis",
@@ -9542,7 +9808,7 @@
     },
     {
       "name": "malware-analysis",
-      "count": 16
+      "count": 17
     },
     {
       "name": "symbolic-execution",
@@ -9616,7 +9882,7 @@
   "domains": [
     {
       "name": "static",
-      "count": 237
+      "count": 244
     },
     {
       "name": "dynamic",

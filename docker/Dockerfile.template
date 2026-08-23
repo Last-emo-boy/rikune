@@ -125,7 +125,7 @@ ENV HTTP_PROXY="${HTTP_PROXY}" \
     NO_PROXY="${NO_PROXY}"
 
 LABEL maintainer="rikune"
-LABEL version="1.0.0-beta.3"
+LABEL version="{{RIKUNE_VERSION}}"
 LABEL description="MCP server for Windows binary reverse engineering"
 
 RUN rm -f /etc/apt/sources.list.d/* && cat > /etc/apt/sources.list <<EOF

@@ -5,6 +5,8 @@
  * Entry point
  */
 
+import { resolve as resolvePath } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { MCPServer } from './core/server.js'
 import { loadConfig } from './config.js'
 import { WorkspaceManager } from './workspace-manager.js'
@@ -92,7 +94,7 @@ async function runHealthCheck(): Promise<void> {
   }
 }
 
-async function main() {
+export async function startRikuneServer(): Promise<void> {
   try {
     if (process.argv.includes('--health-check')) {
       await runHealthCheck()
@@ -362,4 +364,7 @@ async function main() {
   }
 }
 
-main()
+const invokedPath = process.argv[1] ? pathToFileURL(resolvePath(process.argv[1])).href : ''
+if (invokedPath === import.meta.url) {
+  await startRikuneServer()
+}

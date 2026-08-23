@@ -50,6 +50,7 @@ import { getToolSurfaceManager } from './tool-surface-manager.js'
 import { MCPRegistry } from './mcp-registry.js'
 import { ToolExecutor } from './tool-executor.js'
 import type { ApiBootstrapper } from '../api/api-bootstrapper.js'
+import { RIKUNE_VERSION } from '../version.js'
 
 interface MCPServerDependencies {
   workspaceManager?: WorkspaceManager
@@ -63,7 +64,13 @@ interface MCPServerDependencies {
  * MCP Server class implementing the Model Context Protocol
  */
 export class MCPServer
-  implements ToolRegistrar, PromptRegistrar, ResourceRegistrar, SamplingClient, ElicitationClient, PluginManagerSetter
+  implements
+    ToolRegistrar,
+    PromptRegistrar,
+    ResourceRegistrar,
+    SamplingClient,
+    ElicitationClient,
+    PluginManagerSetter
 {
   private server: Server
   private logger: pino.Logger
@@ -101,7 +108,7 @@ export class MCPServer
     this.server = new Server(
       {
         name: 'rikune',
-        version: '1.1.0',
+        version: RIKUNE_VERSION,
         title: 'Rikune Reverse Analysis Platform',
       },
       {
@@ -279,11 +286,7 @@ export class MCPServer
    * Send a log message notification to the connected client.
    * Respects the minimum log level configured by the client via logging/setLevel.
    */
-  public async sendLogMessage(
-    level: LoggingLevel,
-    data: unknown,
-    logger?: string
-  ): Promise<void> {
+  public async sendLogMessage(level: LoggingLevel, data: unknown, logger?: string): Promise<void> {
     if (!this.shouldForwardLogLevel(level)) return
     const params: LoggingMessageNotification['params'] = {
       level,
@@ -611,7 +614,9 @@ export class MCPServer
   public getServerInfo(): { name: string; version: string; title?: string } {
     // SDK stores serverInfo as a private field; access via the same pattern
     // used by getClientVersion/getClientCapabilities.
-    return (this.server as unknown as { _serverInfo: { name: string; version: string; title?: string } })._serverInfo
+    return (
+      this.server as unknown as { _serverInfo: { name: string; version: string; title?: string } }
+    )._serverInfo
   }
 
   /**
@@ -652,7 +657,7 @@ export class MCPServer
     if (!this.supportsSampling()) {
       throw new Error(
         'Client does not support sampling; cannot create message. ' +
-        'The connected MCP client did not advertise sampling capability.'
+          'The connected MCP client did not advertise sampling capability.'
       )
     }
     return this.server.createMessage(params)
@@ -669,9 +674,7 @@ export class MCPServer
    * Request additional information from the user via client-mediated elicitation.
    * Returns the user's action (accept/decline/cancel) and content if accepted.
    */
-  public async elicit(
-    params: Record<string, unknown>
-  ): Promise<ElicitResult> {
+  public async elicit(params: Record<string, unknown>): Promise<ElicitResult> {
     if (!this.supportsElicitation()) {
       return { action: 'decline' }
     }

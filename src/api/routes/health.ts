@@ -13,6 +13,7 @@ import type { StorageManager } from '../../storage/storage-manager.js'
 import type { JobQueue } from '../../job-queue.js'
 import { config } from '../../config.js'
 import type { RuntimeClientOptions } from '../../runtime-client/runtime-client.js'
+import { RIKUNE_VERSION } from '../../version.js'
 
 export interface HealthResponse {
   status: string
@@ -155,7 +156,7 @@ export async function handleHealthCheck(res: ServerResponse, version?: string): 
     status: 'healthy',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    version: version || '1.1.0',
+    version: version || RIKUNE_VERSION,
   }
 
   res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -227,7 +228,7 @@ export async function handleReadinessCheck(res: ServerResponse, version?: string
     status: overall,
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    version: version || '1.1.0',
+    version: version || RIKUNE_VERSION,
     checks,
   }
 

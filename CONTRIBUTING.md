@@ -177,22 +177,61 @@ Current authoritative docs:
 
 Historical changelog entries should stay historical. Add new notes under `Unreleased`.
 
-## Release Flow
+## Stable Release Flow
 
-Before release:
+Stable releases are tag-driven. Do not run `npm publish` from a development workstation and do not create a release tag until the release commit is on `main` and its CI run is green.
+
+### Prepare The Release Commit
+
+1. Update the root version, matching workspace package versions, exact workspace dependency pins, `package-lock.json`, and `CHANGELOG.md` in one release commit.
+2. Keep `@rikune/plugin-sdk` and `@rikune/shared` in both the root `dependencies` and `bundleDependencies`. The published root package must carry these workspace contracts rather than depend on an unpublished local workspace state.
+3. Confirm the generated Docker profiles and documentation describe the same commit.
+4. Run the release gates:
 
 ```bash
+npm ci
 npm run validate
-npm run build
+npm run test:integration
+npm run test:node
 npm run docker:generate:all
-npm test
+npm run release:check
+npm pack --dry-run
 ```
 
-NPM release:
+Review the pack output before tagging. It must report `@rikune/plugin-sdk` and `@rikune/shared` as bundled dependencies and include the CLI, compiled output, declared workers, and static resources needed by the root package.
+
+### Push And Tag
+
+Derive the tag from `package.json`; do not type a second, independent version value:
 
 ```bash
-npm version prerelease --preid beta
-npm publish
+release_version=$(node -p "require('./package.json').version")
+release_tag="v${release_version}"
+
+git push origin main
+# Wait for the main CI run to succeed before continuing.
+git tag -a "$release_tag" -m "release: $release_tag"
+git push origin "$release_tag"
 ```
 
-Docker release should build and tag generated profiles from the same commit that produced the package.
+The publish workflow independently compares the pushed tag with the root package version and fails closed on a mismatch. A matching stable tag triggers the npm publication with provenance and the GitHub Release; the Docker workflow builds its release images from the same tagged commit. `workflow_dispatch` is a recovery mechanism, not the normal release path.
+
+### Verify The Published Release
+
+Watch both Actions workflows and then verify the registry, GitHub Release, and a clean install:
+
+```bash
+gh run list --workflow publish-npm.yml --limit 1
+gh run list --workflow docker-build.yml --limit 1
+gh release view "$release_tag"
+test "$(npm view rikune version)" = "$release_version"
+
+release_verify_dir=$(mktemp -d)
+npm install --prefix "$release_verify_dir" --ignore-scripts "rikune@$release_version"
+node -e "const p=require(process.argv[1]); if(p.version!==process.argv[2]) process.exit(1)" \
+  "$release_verify_dir/node_modules/rikune/package.json" "$release_version"
+test -f "$release_verify_dir/node_modules/rikune/node_modules/@rikune/plugin-sdk/package.json"
+test -f "$release_verify_dir/node_modules/rikune/node_modules/@rikune/shared/package.json"
+```
+
+If publication or installation verification fails, preserve the failed run and logs, fix the cause on `main`, and publish a new version. Do not move or overwrite a public release tag.

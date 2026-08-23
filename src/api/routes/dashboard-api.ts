@@ -34,6 +34,7 @@ import type { PluginStatus } from '../../plugins/sdk.js'
 import type { RuntimeSseEvent } from '../../runtime-client/index.js'
 import type { JobQueue } from '../../job-queue.js'
 import { extractRuntimeTaskStatusFromEvent } from '@rikune/shared'
+import { RIKUNE_VERSION } from '../../version.js'
 import {
   normalizeAnalysisRunStatus,
   normalizeAnalysisStageStatus,
@@ -457,7 +458,7 @@ function handleOverview(res: ServerResponse): void {
 
   sendJson(res, 200, {
     server: {
-      version: '1.1.0',
+      version: RIKUNE_VERSION,
       uptime_seconds: Math.floor((Date.now() - SERVER_START_TIME) / 1000),
       uptime_human: formatUptime(Date.now() - SERVER_START_TIME),
       started_at: new Date(SERVER_START_TIME).toISOString(),

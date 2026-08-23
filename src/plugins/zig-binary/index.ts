@@ -21,12 +21,7 @@ const zigBinaryPlugin = definePlugin({
   surfaceRules: {
     tier: 1,
     activateOn: {
-      fileTypes: [
-        'zig',
-        'zig-binary',
-        'zig-archive',
-        'zig-object',
-      ],
+      fileTypes: ['zig', 'zig-binary', 'zig-archive', 'zig-object'],
       findings: [
         'zig',
         'zig.org',

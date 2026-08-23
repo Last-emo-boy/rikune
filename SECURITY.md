@@ -97,6 +97,23 @@ When exposed beyond localhost:
 - avoid permissive CORS;
 - do not expose upload endpoints publicly without additional controls.
 
+## Outbound Endpoint Trust
+
+Configured Analyzer, Runtime Node, and Host Agent endpoints are trust inputs. Current control-plane clients use the shared endpoint policy and trusted fetch path where wired in. That path:
+
+- accepts only `http` or `https` service endpoints and rejects URL credentials, query strings, and fragments in configured base endpoints;
+- can bind credentials to the configured origin or an explicitly trusted parent endpoint;
+- validates the complete DNS answer before the HTTP socket is opened and rejects metadata, link-local, unspecified, and related special-use targets, including covered IPv4-mapped IPv6 forms;
+- uses the validated resolver in the HTTP dispatcher and forces `redirect: 'error'` so a redirect cannot silently move credentials or requests to another origin.
+
+These controls reduce SSRF and DNS-rebinding paths to the protected address classes; they do not make every private, public, or allowlisted endpoint trustworthy. Operators must control endpoint configuration and DNS, authenticate control-plane services, and restrict network reachability. New credentialed outbound clients should reuse the shared endpoint and trusted-fetch helpers rather than use a separate redirect-following `fetch` path.
+
+## Sidecars And Worker Provenance
+
+Runtime sidecars are hostile sample-adjacent inputs, not trusted configuration. Sidecar staging confines explicit paths lexically and by resolved real path to the sample directory, accepts regular files only, and applies extension, file-count, and total-byte budgets. Keep those limits enabled. Containment prevents path escape; it does not make sidecar contents safe, so parsers and live runtimes still require the same isolation as the primary sample.
+
+Worker-backed results expose execution metadata such as requested and actual mode, backend, adapter, contract version, and whether data came from a deterministic builtin fixture or an external analysis worker. Preserve this metadata when promoting artifacts or evidence. It is audit provenance, not cryptographic attestation: an operator-supplied worker path, binary, container, or sidecar can still be malicious or compromised. Pin and review external backends, verify distributable hashes or signatures where available, and do not treat a successful readiness check or `data_provenance` label as proof of integrity.
+
 ## Operational Guidance
 
 - Prefer `static` Docker for routine triage.

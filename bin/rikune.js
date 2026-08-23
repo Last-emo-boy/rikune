@@ -15,4 +15,5 @@ if (subcommand === 'agent' || subcommand === 'rikune-agent') {
   process.exit(exitCode)
 }
 
-await import('../dist/index.js')
+const { startRikuneServer } = await import('../dist/index.js')
+await startRikuneServer()

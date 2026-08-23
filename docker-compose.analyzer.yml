@@ -4,7 +4,7 @@
 # Auto-generated from plugin systemDeps.
 # Profile: Static-only Docker analyzer
 # Backend profile: default
-# Build plugins: 94 | Runtime plugins: 94
+# Build plugins: 100 | Runtime plugins: 100
 # Features: angr, binwalk, capa, die, dotnet-runtime, ghidra, goresym, graphviz, jadx, jsimplifier, manifold, restringer, retdec, rizin, static-python, upx, vol3, wabt
 # Regenerate: npm run docker:generate -- --profile=static
 # =============================================================================
@@ -73,7 +73,7 @@ services:
       - RIKUNE_BACKEND_PROFILE=default
       - NODE_ROLE=analyzer
       - RUNTIME_MODE=disabled
-      - PLUGINS=android,android-package,angr,api-hash,apk-smali,apple-container,apple-objc-swift,apple-signing,batch,binary-diff,binary-hardening,btf,bytecode,capstone,code-analysis,compiler-codegen,container-analysis,cpp-abi-layout,crackme,cross-module,cuda-binary,culifter,deep-unpack,die,dotnet-decompile,dotnet-managed,dotnet-reactor,ebpf-bytecode,elf-macho,external-re-bridge,firmware,ghidra,go-analysis,graphviz,gtirb,host-correlation,javascript-deobfuscation,jsimplifier,jsir-cascade,jsvmp-analysis,jvm,kb-collaboration,kernel-driver-surface,lief,linux-binary,linux-package,llvm-bitcode,malware,managed-il-xrefs,manifold,memory-forensics,metadata,miasm,ml-model,native-debug-types,native-object,observability,office-analysis,pcap-analysis,pe-analysis,pe-signature,qbdi,radare2,remill,reporting,restringer,retdec,revng,rizin,rust-binary,sbom,shader-ir,similarity,static-triage,strings,syscall-abi-surface,tee-enclave,threat-intel,triton,uefi-smm-surface,unity-managed,unpacking,upx,visualization,vm-analysis,vuln-scanner,wabt,wasm,wasm-component,windows-debug-symbols,windows-installer,windows-interface-surface,yara,yara-x
+      - PLUGINS=android,android-package,angr,api-hash,apk-smali,apple-container,apple-objc-swift,apple-signing,batch,binary-diff,binary-hardening,btf,bytecode,capstone,code-analysis,compiler-codegen,container-analysis,cpp-abi-layout,crackme,cross-module,cuda-binary,culifter,deep-unpack,die,dotnet-decompile,dotnet-managed,dotnet-reactor,ebpf-bytecode,elf-macho,external-re-bridge,firmware,ghidra,go-analysis,graphviz,gtirb,host-correlation,javascript-deobfuscation,jsimplifier,jsir-cascade,jsvmp-analysis,jvm,jvm-decompile,kb-collaboration,kernel-driver-surface,lib-identify,lief,linux-binary,linux-package,llvm-bitcode,malware,managed-il-xrefs,manifold,memory-forensics,metadata,miasm,ml-model,native-debug-types,native-object,observability,office-analysis,pcap-analysis,pdf-analysis,pe-analysis,pe-signature,python-decompile,qbdi,radare2,remill,reporting,restringer,retdec,revng,rizin,rust-binary,sbom,serialization-format,shader-ir,similarity,static-triage,strings,syscall-abi-surface,tee-enclave,threat-intel,triton,uefi-smm-surface,unity-managed,unpacking,upx,visualization,vm-analysis,vuln-scanner,wabt,wasm,wasm-component,windows-debug-symbols,windows-installer,windows-interface-surface,yara,yara-x,zig-binary
       - WORKSPACE_ROOT=/app/workspaces
       - DB_PATH=/app/data/database.db
       - CACHE_ROOT=/app/cache
@@ -93,6 +93,7 @@ services:
       - GORESYM_PATH=/usr/local/bin/GoReSym
       - GRAPHVIZ_DOT_PATH=/usr/bin/dot
       - JSIMPLIFIER_WORKER_PATH=/opt/rikune-backends/jsimplifier/bin/jsimplifier-worker.js
+      - RIZIN_PATH=/opt/rizin/bin/rizin
       - CAPA_RULES_PATH=/opt/capa-rules
       - MANIFOLD_WORKER_PATH=/opt/rikune-backends/manifold/bin/manifold-worker.js
       - VOLATILITY3_PATH=/usr/local/bin/vol
@@ -102,7 +103,6 @@ services:
       - OSSLSIGNCODE_PATH=/usr/bin/osslsigncode
       - RESTRINGER_PATH=/opt/rikune-backends/restringer/bin/restringer-worker.js
       - RETDEC_PATH=/opt/retdec/bin/retdec-decompiler
-      - RIZIN_PATH=/opt/rizin/bin/rizin
       - UPX_PATH=/usr/local/bin/upx
       - WABT_PATH=/opt/wabt/bin
       - GHIDRA_PROJECT_ROOT=/ghidra-projects

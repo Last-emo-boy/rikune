@@ -6,7 +6,10 @@ import type {
   SamplingClient,
 } from './registrar.js'
 import { config } from '../config.js'
-import { createDelegatingServer, type RuntimeClientLike } from '../runtime-client/delegation-server.js'
+import {
+  createDelegatingServer,
+  type RuntimeClientLike,
+} from '../runtime-client/delegation-server.js'
 
 export interface RuntimeBridgeDeps {
   runtimeClient?: RuntimeClientLike | null

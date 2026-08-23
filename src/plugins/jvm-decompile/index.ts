@@ -60,6 +60,8 @@ const jvmDecompilePlugin: Plugin = {
       dockerDefault: '/opt/java/openjdk/bin/java',
       dockerInstall: 'FROM eclipse-temurin:21-jdk',
       dockerFeature: 'jvm-decompile',
+      dockerInstallRoute: 'profile-gated',
+      dockerInstallProfile: 'optional',
     },
     {
       type: 'file',

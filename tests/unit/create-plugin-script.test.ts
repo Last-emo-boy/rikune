@@ -6,6 +6,9 @@ import path from 'node:path'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
+const rikuneVersion = JSON.parse(
+  fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')
+).version
 
 describe('scripts/create-plugin.js', () => {
   test('scaffolds a compiled-JS plugin project shape', async () => {
@@ -33,7 +36,10 @@ describe('scripts/create-plugin.js', () => {
       ) as Record<string, unknown>
 
       expect(packageJson.name).toBe('rikune-plugin-demo-plugin')
-      expect(indexTs).toContain("from '@rikune/plugin-sdk'")
+      expect(packageJson.dependencies).toEqual(
+        expect.objectContaining({ rikune: `^${rikuneVersion}`, zod: '^3.25.76' })
+      )
+      expect(indexTs).toContain("from 'rikune/plugin-sdk.js'")
       expect(indexTs).toContain('definePlugin')
       expect(indexTs).toContain('defineTool')
       expect(manifestExample.id).toBe('demo-plugin')
@@ -48,7 +54,9 @@ describe('scripts/create-plugin.js', () => {
       expect((manifestExample.tools as any[])[0]).toEqual(
         expect.objectContaining({
           outputSchema: expect.any(Object),
-          artifacts: expect.arrayContaining([expect.objectContaining({ type: 'demo-plugin.json' })]),
+          artifacts: expect.arrayContaining([
+            expect.objectContaining({ type: 'demo-plugin.json' }),
+          ]),
           evidence: expect.arrayContaining([expect.objectContaining({ category: 'structure' })]),
         })
       )
@@ -108,15 +116,34 @@ describe('scripts/create-plugin.js', () => {
       expect(manifestExample.aspects).toEqual(
         expect.objectContaining({
           formats: expect.arrayContaining(['pe', 'elf', 'macho', 'ipa', 'apk', 'dex', 'wasm']),
-          platforms: expect.arrayContaining(['windows', 'linux', 'macos', 'ios', 'android', 'wasm']),
-          runtimes: expect.arrayContaining(['windows-sandbox', 'qiling', 'lldb', 'adb', 'wasmtime']),
+          platforms: expect.arrayContaining([
+            'windows',
+            'linux',
+            'macos',
+            'ios',
+            'android',
+            'wasm',
+          ]),
+          runtimes: expect.arrayContaining([
+            'windows-sandbox',
+            'qiling',
+            'lldb',
+            'adb',
+            'wasmtime',
+          ]),
         })
       )
       expect(manifestExample.tools[0].runtime).toEqual(
         expect.objectContaining({
           modes: expect.arrayContaining(['plan_only', 'emulation', 'manual_runtime']),
           isolation: expect.objectContaining({
-            backends: expect.arrayContaining(['windows-sandbox', 'qiling', 'lldb', 'adb', 'wasmtime']),
+            backends: expect.arrayContaining([
+              'windows-sandbox',
+              'qiling',
+              'lldb',
+              'adb',
+              'wasmtime',
+            ]),
           }),
           policy: expect.objectContaining({
             passiveByDefault: true,

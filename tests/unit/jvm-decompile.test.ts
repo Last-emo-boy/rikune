@@ -22,9 +22,15 @@ describe('jvm-decompile plugin', () => {
   let tempDir: string
   let workspaceManager: WorkspaceManager
   let database: DatabaseManager
+  let originalJavaEnv: Record<'CFR_JAR' | 'JAVA_PATH' | 'JAVA_HOME', string | undefined>
   const sampleId = `sha256:${'c'.repeat(64)}`
 
   beforeEach(async () => {
+    originalJavaEnv = {
+      CFR_JAR: process.env.CFR_JAR,
+      JAVA_PATH: process.env.JAVA_PATH,
+      JAVA_HOME: process.env.JAVA_HOME,
+    }
     resetSurfaceForTest()
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jvm-decompile-test-'))
     workspaceManager = new WorkspaceManager(path.join(tempDir, 'workspaces'))
@@ -47,6 +53,10 @@ describe('jvm-decompile plugin', () => {
   })
 
   afterEach(async () => {
+    for (const [name, value] of Object.entries(originalJavaEnv)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
     database.close()
     await fs.rm(tempDir, { recursive: true, force: true })
   })
@@ -72,10 +82,13 @@ describe('jvm-decompile plugin', () => {
     const fakeServer = {
       registerTool: (def: { name: string }) => registered.push(def.name),
     }
-    const toolNames = jvmDecompilePlugin.register?.(fakeServer as any, {
-      workspaceManager,
-      database,
-    } as any)
+    const toolNames = jvmDecompilePlugin.register?.(
+      fakeServer as any,
+      {
+        workspaceManager,
+        database,
+      } as any
+    )
     expect(registered).toEqual(['jvm.decompile'])
     expect(toolNames).toEqual(['jvm.decompile'])
   })
@@ -137,5 +150,87 @@ describe('jvm-decompile plugin', () => {
     const parsed = jvmDecompileToolDefinition.inputSchema as any
     expect(parsed.shape.class_filter).toBeDefined()
     expect(parsed.shape.class_filter.isOptional()).toBe(true)
+  })
+
+  test('returns timeout errors without persisting partial CFR output', async () => {
+    process.env.CFR_JAR = path.join(tempDir, 'cfr.jar')
+    const handler = createJvmDecompileHandler({
+      workspaceManager,
+      database,
+      resolveJava: () => ({
+        available: true,
+        source: 'config',
+        path: '/opt/java/bin/java',
+        version: '21',
+        checked_candidates: ['/opt/java/bin/java'],
+        error: null,
+      }),
+      executeCommand: async () => ({
+        stdout: '/*\n * Decompiled with CFR\n */\npublic class Partial {}',
+        stderr: 'timeout',
+        exitCode: 1,
+        timedOut: true,
+      }),
+    } as any)
+
+    const result = await handler({ sample_id: sampleId, timeout_sec: 5 })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors?.[0]).toBe('CFR timed out after 5 seconds.')
+    expect(database.findArtifacts(sampleId)).toHaveLength(0)
+  })
+
+  test('rejects non-zero CFR exits even when output overflow leaves partial stdout', async () => {
+    process.env.CFR_JAR = path.join(tempDir, 'cfr.jar')
+    const handler = createJvmDecompileHandler({
+      workspaceManager,
+      database,
+      resolveJava: () => ({
+        available: true,
+        source: 'config',
+        path: '/opt/java/bin/java',
+        version: '21',
+        checked_candidates: ['/opt/java/bin/java'],
+        error: null,
+      }),
+      executeCommand: async () => ({
+        stdout: '/*\n * Decompiled with CFR\n */\npublic class Truncated {}',
+        stderr: 'stdout maxBuffer length exceeded',
+        exitCode: 1,
+        timedOut: false,
+      }),
+    } as any)
+
+    const result = await handler({ sample_id: sampleId })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors?.[0]).toBe('CFR exited with code 1')
+    expect(database.findArtifacts(sampleId)).toHaveLength(0)
+  })
+
+  test('returns setup_required without executing CFR when Java is unavailable', async () => {
+    process.env.CFR_JAR = path.join(tempDir, 'cfr.jar')
+    const handler = createJvmDecompileHandler({
+      workspaceManager,
+      database,
+      resolveJava: () => ({
+        available: false,
+        source: 'none',
+        path: null,
+        version: null,
+        checked_candidates: ['java'],
+        error: 'Executable was not found in config, environment variables, or PATH.',
+      }),
+      executeCommand: async () => {
+        throw new Error('executeCommand should not be called')
+      },
+    } as any)
+
+    const result = await handler({ sample_id: sampleId })
+
+    expect(result.ok).toBe(true)
+    expect((result.data as any).status).toBe('setup_required')
+    expect((result.data as any).backend.missing).toBe('java')
+    expect(database.findArtifacts(sampleId)).toHaveLength(0)
   })
 })

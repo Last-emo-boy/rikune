@@ -17,6 +17,9 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
+const rikuneVersion = JSON.parse(
+  fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8')
+).version
 const pluginsDir = process.env.RIKUNE_PLUGIN_OUTPUT_DIR
   ? path.resolve(process.env.RIKUNE_PLUGIN_OUTPUT_DIR)
   : path.join(projectRoot, 'plugins')
@@ -100,7 +103,7 @@ const packageJson = {
     typecheck: 'tsc --noEmit -p tsconfig.json',
   },
   dependencies: {
-    '@rikune/plugin-sdk': '1.0.0-beta.3',
+    rikune: `^${rikuneVersion}`,
     zod: '^3.25.76',
   },
   devDependencies: {
@@ -166,7 +169,15 @@ function templateDefaults() {
           'no_network_by_default',
         ],
         capabilities: ['readiness', 'behavior-plan', 'runtime-policy', 'trace-plan', 'hook-plan'],
-        evidence: ['timeline', 'behavior', 'process', 'filesystem', 'network', 'memory', 'provenance'],
+        evidence: [
+          'timeline',
+          'behavior',
+          'process',
+          'filesystem',
+          'network',
+          'memory',
+          'provenance',
+        ],
       },
       runtimePolicy: {
         passiveByDefault: true,
@@ -354,10 +365,7 @@ const manifestExample = {
   surfaceRules: {
     tier: defaults.executionDomain === 'dynamic' ? 3 : template === 'format-adapter' ? 1 : 3,
     category: defaults.category,
-    activateOn:
-      template === 'format-adapter'
-        ? { fileTypes: defaults.aspects.formats }
-        : undefined,
+    activateOn: template === 'format-adapter' ? { fileTypes: defaults.aspects.formats } : undefined,
   },
   tools: [
     {
@@ -382,8 +390,8 @@ const manifestExample = {
 }
 
 function renderManifestOnlyIndex() {
-  return `import { defineManifestPlugin, ok } from '@rikune/plugin-sdk'
-import type { PluginManifest } from '@rikune/plugin-sdk'
+  return `import { defineManifestPlugin, ok } from 'rikune/plugin-sdk.js'
+import type { PluginManifest } from 'rikune/plugin-sdk.js'
 
 const manifest: PluginManifest = ${JSON.stringify(manifestExample, null, 2)}
 
@@ -404,7 +412,7 @@ export default ${camelId}Plugin
 function renderCodeIndex() {
   const sdkImports =
     defaults.runtimePolicy || defaults.runtime
-      ? `import type { DynamicRuntimePolicy, ToolRuntimeContract } from '@rikune/plugin-sdk'\n`
+      ? `import type { DynamicRuntimePolicy, ToolRuntimeContract } from 'rikune/plugin-sdk.js'\n`
       : ''
   const runtimePolicyBlock = defaults.runtimePolicy
     ? `\nconst runtimePolicy: DynamicRuntimePolicy = ${JSON.stringify(defaults.runtimePolicy, null, 2)}\n`
@@ -461,7 +469,7 @@ function renderCodeIndex() {
         }`
 
   return `import { z } from 'zod'
-import { createEvidenceRef, definePlugin, defineTool, ok } from '@rikune/plugin-sdk'
+import { createEvidenceRef, definePlugin, defineTool, ok } from 'rikune/plugin-sdk.js'
 ${sdkImports}
 ${runtimePolicyBlock}
 ${runtimeContractBlock}

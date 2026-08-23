@@ -148,12 +148,16 @@ function detectContainer(data: Buffer): ContainerKind {
   if (data.length >= 4) {
     const magic = data.readUInt32BE(0)
     if (magic === 0x7f454c46) return 'elf'
-    if (magic === 0xfeedface || magic === 0xfeedfacf || magic === 0xcefaedfe || magic === 0xcffaedfe)
+    if (
+      magic === 0xfeedface ||
+      magic === 0xfeedfacf ||
+      magic === 0xcefaedfe ||
+      magic === 0xcffaedfe
+    )
       return 'macho'
     if (magic === 0x50450000) return 'pe'
     if (data[0] === 0x21 && data.subarray(1, 9).toString('ascii') === '<arch>\n') return 'archive'
-    if (data[0] === 0x00 && data[1] === 0x61 && data[2] === 0x73 && data[3] === 0x6d)
-      return 'wasm'
+    if (data[0] === 0x00 && data[1] === 0x61 && data[2] === 0x73 && data[3] === 0x6d) return 'wasm'
   }
   return 'raw'
 }
@@ -315,10 +319,14 @@ function buildInventory(
   }
 
   const detectedBy: string[] = []
-  if (zigCompilerCandidates.length > 0) detectedBy.push(`zig-compiler-version (${zigCompilerCandidates.length})`)
-  if (runtimeMarkers.length > 0) detectedBy.push(`zig-std-runtime-markers (${runtimeMarkers.length})`)
-  if (symbolCandidates.length > 0) detectedBy.push(`zig-mangled-symbols (${symbolCandidates.length})`)
-  if (buildSystemMarkers.length > 0) detectedBy.push(`build-system-markers (${buildSystemMarkers.length})`)
+  if (zigCompilerCandidates.length > 0)
+    detectedBy.push(`zig-compiler-version (${zigCompilerCandidates.length})`)
+  if (runtimeMarkers.length > 0)
+    detectedBy.push(`zig-std-runtime-markers (${runtimeMarkers.length})`)
+  if (symbolCandidates.length > 0)
+    detectedBy.push(`zig-mangled-symbols (${symbolCandidates.length})`)
+  if (buildSystemMarkers.length > 0)
+    detectedBy.push(`build-system-markers (${buildSystemMarkers.length})`)
   if (panicMarkers.length > 0) detectedBy.push(`panic-markers (${panicMarkers.length})`)
   if (ecosystemMarkers.length > 0) detectedBy.push(`ecosystem-markers (${ecosystemMarkers.length})`)
   if (detectedBy.length === 0) detectedBy.push('no-direct-zig-evidence')
@@ -428,16 +436,7 @@ function buildInventory(
 // ─── Tool definition & handler ─────────────────────────────────────────────
 
 export const zigBinaryInventoryAspects = {
-  formats: [
-    'zig',
-    'zig-binary',
-    'zig-archive',
-    'zig-object',
-    'elf',
-    'macho',
-    'pe',
-    'wasm',
-  ],
+  formats: ['zig', 'zig-binary', 'zig-archive', 'zig-object', 'elf', 'macho', 'pe', 'wasm'],
   platforms: ['cross-platform', 'linux', 'windows', 'macos', 'wasi', 'embedded'],
   architectures: ['x86', 'x64', 'arm', 'arm64', 'riscv64', 'wasm'],
   execution: ['static', 'triage', 'correlation', 'workflow-plan'],
@@ -505,7 +504,10 @@ export function createZigBinaryInventoryHandler(deps: Partial<PluginToolDeps> = 
 
       const resolved = await deps.resolvePrimarySamplePath(deps.workspaceManager, parsed.sample_id)
       const stat = await fs.stat(resolved.samplePath)
-      const maxReadBytes = Math.min(parsed.max_read_bytes ?? DEFAULT_MAX_READ_BYTES, MAX_PREVIEW_BYTES)
+      const maxReadBytes = Math.min(
+        parsed.max_read_bytes ?? DEFAULT_MAX_READ_BYTES,
+        MAX_PREVIEW_BYTES
+      )
       const readSize = Math.max(0, Math.min(stat.size, maxReadBytes))
       const file = await fs.open(resolved.samplePath, 'r')
       let data: Buffer

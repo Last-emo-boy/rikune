@@ -1,15 +1,23 @@
 # Plugin SDK For Rikune
 
-`@rikune/plugin-sdk` is the public contract for Rikune plugins. Plugins should import SDK types and helpers from this package instead of importing Analyzer internals.
+`@rikune/plugin-sdk` is the canonical contract for Rikune plugins. Plugins should import SDK types and helpers from this contract instead of importing Analyzer internals.
 
 ## Installation
 
-Inside this monorepo the package is available through npm workspaces.
+Inside this monorepo the package is available through npm workspaces:
 
-For external plugins:
+```ts
+import { definePlugin, defineTool, ok } from '@rikune/plugin-sdk'
+```
+
+The scoped package is bundled into the public `rikune` tarball rather than published independently. External plugins should install `rikune` and use its stable bridge:
 
 ```bash
-npm install @rikune/plugin-sdk zod
+npm install rikune zod
+```
+
+```ts
+import { definePlugin, defineTool, ok } from 'rikune/plugin-sdk.js'
 ```
 
 ## Core Concepts
@@ -32,7 +40,7 @@ npm install @rikune/plugin-sdk zod
 
 ```ts
 import { z } from 'zod'
-import { definePlugin, defineTool, ok } from '@rikune/plugin-sdk'
+import { definePlugin, defineTool, ok } from 'rikune/plugin-sdk.js'
 
 const inspectTool = defineTool({
   name: 'example.inspect',

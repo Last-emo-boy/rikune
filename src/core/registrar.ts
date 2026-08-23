@@ -60,9 +60,7 @@ export interface SamplingClient {
 
 export interface ElicitationClient {
   supportsElicitation(): boolean
-  elicit(
-    params: Record<string, unknown>
-  ): Promise<ElicitResult>
+  elicit(params: Record<string, unknown>): Promise<ElicitResult>
 }
 
 export interface PluginManagerSetter {

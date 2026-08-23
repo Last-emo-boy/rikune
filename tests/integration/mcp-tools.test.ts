@@ -12,43 +12,43 @@ import { PolicyGuard } from '../../src/policy-guard.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import {
   sampleIngestToolDefinition,
-  createSampleIngestHandler
+  createSampleIngestHandler,
 } from '../../src/tools/sample-ingest.js'
 import {
   sampleProfileGetToolDefinition,
-  createSampleProfileGetHandler
+  createSampleProfileGetHandler,
 } from '../../src/tools/sample-profile-get.js'
 import {
   peFingerprintToolDefinition,
-  createPEFingerprintHandler
+  createPEFingerprintHandler,
 } from '../../src/plugins/pe-analysis/tools/pe-fingerprint.js'
 import {
   peImportsExtractToolDefinition,
-  createPEImportsExtractHandler
+  createPEImportsExtractHandler,
 } from '../../src/plugins/pe-analysis/tools/pe-imports-extract.js'
 import {
   peExportsExtractToolDefinition,
-  createPEExportsExtractHandler
+  createPEExportsExtractHandler,
 } from '../../src/plugins/pe-analysis/tools/pe-exports-extract.js'
 import {
   stringsExtractToolDefinition,
-  createStringsExtractHandler
+  createStringsExtractHandler,
 } from '../../src/plugins/strings/tools/strings-extract.js'
 import {
   stringsFlossDecodeToolDefinition,
-  createStringsFlossDecodeHandler
+  createStringsFlossDecodeHandler,
 } from '../../src/plugins/strings/tools/strings-floss-decode.js'
 import {
   yaraScanToolDefinition,
-  createYaraScanHandler
+  createYaraScanHandler,
 } from '../../src/plugins/yara/tools/yara-scan.js'
 import {
   runtimeDetectToolDefinition,
-  createRuntimeDetectHandler
+  createRuntimeDetectHandler,
 } from '../../src/plugins/static-triage/tools/runtime-detect.js'
 import {
   packerDetectToolDefinition,
-  createPackerDetectHandler
+  createPackerDetectHandler,
 } from '../../src/plugins/static-triage/tools/packer-detect.js'
 import fs from 'fs'
 import path from 'path'
@@ -103,10 +103,7 @@ describe('MCP Tools Integration Tests', () => {
       sampleIngestToolDefinition,
       createSampleIngestHandler(workspaceManager, database, policyGuard)
     )
-    server.registerTool(
-      sampleProfileGetToolDefinition,
-      createSampleProfileGetHandler(database)
-    )
+    server.registerTool(sampleProfileGetToolDefinition, createSampleProfileGetHandler(database))
     server.registerTool(
       peFingerprintToolDefinition,
       createPEFingerprintHandler({ workspaceManager, database, cacheManager } as any)
@@ -184,7 +181,7 @@ describe('MCP Tools Integration Tests', () => {
       expect(tools.length).toBeGreaterThanOrEqual(10)
 
       // Verify all expected tools are registered
-      const toolNames = tools.map(t => t.name)
+      const toolNames = tools.map((t) => t.name)
       expect(toolNames).toContain('sample_ingest')
       expect(toolNames).toContain('sample_profile_get')
       expect(toolNames).toContain('pe_fingerprint')
@@ -220,7 +217,7 @@ describe('MCP Tools Integration Tests', () => {
       const result = await server.callTool('sample.ingest', {
         bytes_b64: base64Data,
         filename: 'test.exe',
-        source: 'integration_test'
+        source: 'integration_test',
       })
 
       expect(result.isError).toBeFalsy()
@@ -228,7 +225,7 @@ describe('MCP Tools Integration Tests', () => {
       expect(result.content.length).toBeGreaterThan(0)
 
       // Extract sample_id from result
-      const textContent = result.content.find(c => c.type === 'text')
+      const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent).toBeDefined()
       const data = JSON.parse(textContent!.text!)
       expect(data.ok).toBe(true)
@@ -240,11 +237,11 @@ describe('MCP Tools Integration Tests', () => {
 
     test('should get sample profile', async () => {
       const result = await server.callTool('sample.profile.get', {
-        sample_id: testSampleId
+        sample_id: testSampleId,
       })
 
       expect(result.isError).toBeFalsy()
-      const textContent = result.content.find(c => c.type === 'text')
+      const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent).toBeDefined()
       const data = JSON.parse(textContent!.text!)
       expect(data.ok).toBe(true)
@@ -256,11 +253,11 @@ describe('MCP Tools Integration Tests', () => {
     test('should extract PE fingerprint', async () => {
       const result = await server.callTool('pe.fingerprint', {
         sample_id: testSampleId,
-        fast: true
+        fast: true,
       })
 
       expect(result.isError).toBeFalsy()
-      const textContent = result.content.find(c => c.type === 'text')
+      const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent).toBeDefined()
       const data = JSON.parse(textContent!.text!)
       expect(data.ok).toBe(true)
@@ -270,11 +267,11 @@ describe('MCP Tools Integration Tests', () => {
     test('should extract PE imports', async () => {
       const result = await server.callTool('pe.imports.extract', {
         sample_id: testSampleId,
-        group_by_dll: true
+        group_by_dll: true,
       })
 
       expect(result.isError).toBeFalsy()
-      const textContent = result.content.find(c => c.type === 'text')
+      const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent).toBeDefined()
       const data = JSON.parse(textContent!.text!)
       expect(data.ok).toBe(true)
@@ -283,11 +280,11 @@ describe('MCP Tools Integration Tests', () => {
 
     test('should extract PE exports', async () => {
       const result = await server.callTool('pe.exports.extract', {
-        sample_id: testSampleId
+        sample_id: testSampleId,
       })
 
       expect(result.isError).toBeFalsy()
-      const textContent = result.content.find(c => c.type === 'text')
+      const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent).toBeDefined()
       const data = JSON.parse(textContent!.text!)
       expect(data.ok).toBe(true)
@@ -297,11 +294,11 @@ describe('MCP Tools Integration Tests', () => {
     test('should extract strings', async () => {
       const result = await server.callTool('strings.extract', {
         sample_id: testSampleId,
-        min_len: 4
+        min_len: 4,
       })
 
       expect(result.isError).toBeFalsy()
-      const textContent = result.content.find(c => c.type === 'text')
+      const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent).toBeDefined()
       const data = JSON.parse(textContent!.text!)
       expect(data.ok).toBe(true)
@@ -310,11 +307,11 @@ describe('MCP Tools Integration Tests', () => {
 
     test('should detect runtime', async () => {
       const result = await server.callTool('runtime.detect', {
-        sample_id: testSampleId
+        sample_id: testSampleId,
       })
 
       expect(result.isError).toBeFalsy()
-      const textContent = result.content.find(c => c.type === 'text')
+      const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent).toBeDefined()
       const data = JSON.parse(textContent!.text!)
       expect(data.ok).toBe(true)
@@ -324,11 +321,11 @@ describe('MCP Tools Integration Tests', () => {
 
     test('should detect packer', async () => {
       const result = await server.callTool('packer.detect', {
-        sample_id: testSampleId
+        sample_id: testSampleId,
       })
 
       expect(result.isError).toBeFalsy()
-      const textContent = result.content.find(c => c.type === 'text')
+      const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent).toBeDefined()
       const data = JSON.parse(textContent!.text!)
       expect(data.ok).toBe(true)
@@ -338,28 +335,41 @@ describe('MCP Tools Integration Tests', () => {
 
   describe('Schema Validation', () => {
     test('should reject invalid input for sample.ingest', async () => {
-      await expect(server.callTool('sample.ingest', {
-        // Missing both path and bytes_b64
-        filename: 'test.exe'
-      })).rejects.toThrow(/Invalid arguments/)
+      await expect(
+        server.callTool('sample.ingest', {
+          // Missing both path and bytes_b64
+          filename: 'test.exe',
+        })
+      ).rejects.toThrow(/Invalid arguments/)
     })
 
     test('should reject invalid sample_id format', async () => {
-      await expect(server.callTool('sample.profile.get', {
-        sample_id: 'invalid-format'
-      })).rejects.toThrow()
+      const result = await server.callTool('sample.profile.get', {
+        sample_id: 'invalid-format',
+      })
+
+      expect(result.isError).toBe(true)
+      const textContent = result.content.find((c) => c.type === 'text')
+      expect(textContent).toBeDefined()
+      const data = JSON.parse(textContent!.text!)
+      expect(data.ok).toBe(false)
+      expect(data.errors).toEqual(
+        expect.arrayContaining([expect.stringContaining('invalid-format')])
+      )
     })
 
     test('should reject missing required parameters', async () => {
-      await expect(server.callTool('pe.fingerprint', {
-        // Missing sample_id
-        fast: true
-      })).rejects.toThrow(/Invalid arguments/)
+      await expect(
+        server.callTool('pe.fingerprint', {
+          // Missing sample_id
+          fast: true,
+        })
+      ).rejects.toThrow(/Invalid arguments/)
     })
 
     test('should accept optional parameters', async () => {
       const result = await server.callTool('pe.fingerprint', {
-        sample_id: testSampleId
+        sample_id: testSampleId,
         // fast parameter is optional
       })
 
@@ -367,21 +377,23 @@ describe('MCP Tools Integration Tests', () => {
     })
 
     test('should reject invalid parameter types', async () => {
-      await expect(server.callTool('strings.extract', {
-        sample_id: testSampleId,
-        min_len: 'not-a-number' // should be number
-      })).rejects.toThrow(/Invalid arguments/)
+      await expect(
+        server.callTool('strings.extract', {
+          sample_id: testSampleId,
+          min_len: 'not-a-number', // should be number
+        })
+      ).rejects.toThrow(/Invalid arguments/)
     })
   })
 
   describe('Error Handling', () => {
     test('should handle non-existent sample gracefully', async () => {
       const result = await server.callTool('pe.fingerprint', {
-        sample_id: 'sha256:0000000000000000000000000000000000000000000000000000000000000000'
+        sample_id: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
       })
 
       expect(result.isError).toBe(true)
-      const textContent = result.content.find(c => c.type === 'text')
+      const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent).toBeDefined()
       const data = JSON.parse(textContent!.text!)
       expect(data.ok).toBe(false)
@@ -390,9 +402,11 @@ describe('MCP Tools Integration Tests', () => {
     })
 
     test('should handle invalid tool name', async () => {
-      await expect(server.callTool('non.existent.tool', {
-        sample_id: testSampleId
-      })).rejects.toThrow(/not found/)
+      await expect(
+        server.callTool('non.existent.tool', {
+          sample_id: testSampleId,
+        })
+      ).rejects.toThrow(/not found/)
     })
 
     test('should handle malformed PE file', async () => {
@@ -402,28 +416,28 @@ describe('MCP Tools Integration Tests', () => {
 
       const ingestResult = await server.callTool('sample.ingest', {
         bytes_b64: base64Data,
-        filename: 'malformed.exe'
+        filename: 'malformed.exe',
       })
 
       expect(ingestResult.isError).toBeFalsy()
-      const textContent = ingestResult.content.find(c => c.type === 'text')
+      const textContent = ingestResult.content.find((c) => c.type === 'text')
       const ingestData = JSON.parse(textContent!.text!)
       const malformedSampleId = ingestData.data.sample_id
 
       // Try to extract PE fingerprint from malformed file
       const fingerprintResult = await server.callTool('pe.fingerprint', {
         sample_id: malformedSampleId,
-        fast: true
+        fast: true,
       })
 
       // Should return error or partial result
-      const fingerprintText = fingerprintResult.content.find(c => c.type === 'text')
+      const fingerprintText = fingerprintResult.content.find((c) => c.type === 'text')
       expect(fingerprintText).toBeDefined()
       const fingerprintData = JSON.parse(fingerprintText!.text!)
       // Either error or warnings should be present
       expect(
-        fingerprintData.ok === false || 
-        (fingerprintData.warnings && fingerprintData.warnings.length > 0)
+        fingerprintData.ok === false ||
+          (fingerprintData.warnings && fingerprintData.warnings.length > 0)
       ).toBe(true)
     })
 
@@ -446,35 +460,35 @@ describe('MCP Tools Integration Tests', () => {
       const testData = createMinimalPE()
       const ingestResult = await server.callTool('sample.ingest', {
         bytes_b64: testData.toString('base64'),
-        filename: 'chain-test.exe'
+        filename: 'chain-test.exe',
       })
       expect(ingestResult.isError).toBeFalsy()
-      const ingestText = ingestResult.content.find(c => c.type === 'text')
+      const ingestText = ingestResult.content.find((c) => c.type === 'text')
       const ingestData = JSON.parse(ingestText!.text!)
       const sampleId = ingestData.data.sample_id
 
       // 2. Get profile
       const profileResult = await server.callTool('sample.profile.get', {
-        sample_id: sampleId
+        sample_id: sampleId,
       })
       expect(profileResult.isError).toBeFalsy()
 
       // 3. Extract fingerprint
       const fingerprintResult = await server.callTool('pe.fingerprint', {
         sample_id: sampleId,
-        fast: true
+        fast: true,
       })
       expect(fingerprintResult.isError).toBeFalsy()
 
       // 4. Detect runtime
       const runtimeResult = await server.callTool('runtime.detect', {
-        sample_id: sampleId
+        sample_id: sampleId,
       })
       expect(runtimeResult.isError).toBeFalsy()
 
       // 5. Detect packer
       const packerResult = await server.callTool('packer.detect', {
-        sample_id: sampleId
+        sample_id: sampleId,
       })
       expect(packerResult.isError).toBeFalsy()
 
@@ -488,20 +502,20 @@ describe('MCP Tools Integration Tests', () => {
       // First call
       const result1 = await server.callTool('pe.fingerprint', {
         sample_id: testSampleId,
-        fast: true
+        fast: true,
       })
       expect(result1.isError).toBeFalsy()
 
       // Second call should use cache
       const result2 = await server.callTool('pe.fingerprint', {
         sample_id: testSampleId,
-        fast: true
+        fast: true,
       })
       expect(result2.isError).toBeFalsy()
 
       // Results should be consistent
-      const text1 = result1.content.find(c => c.type === 'text')
-      const text2 = result2.content.find(c => c.type === 'text')
+      const text1 = result1.content.find((c) => c.type === 'text')
+      const text2 = result2.content.find((c) => c.type === 'text')
       expect(text1).toBeDefined()
       expect(text2).toBeDefined()
     })
@@ -510,14 +524,14 @@ describe('MCP Tools Integration Tests', () => {
       // Call with fast=true
       const result1 = await server.callTool('pe.fingerprint', {
         sample_id: testSampleId,
-        fast: true
+        fast: true,
       })
       expect(result1.isError).toBeFalsy()
 
       // Call with fast=false (different cache key)
       const result2 = await server.callTool('pe.fingerprint', {
         sample_id: testSampleId,
-        fast: false
+        fast: false,
       })
       expect(result2.isError).toBeFalsy()
 
@@ -533,13 +547,13 @@ describe('MCP Tools Integration Tests', () => {
         promises.push(
           server.callTool('pe.fingerprint', {
             sample_id: testSampleId,
-            fast: true
+            fast: true,
           })
         )
       }
 
       const results = await Promise.all(promises)
-      
+
       // All calls should succeed
       for (const result of results) {
         expect(result.isError).toBeFalsy()
@@ -552,11 +566,11 @@ describe('MCP Tools Integration Tests', () => {
         server.callTool('pe.imports.extract', { sample_id: testSampleId }),
         server.callTool('pe.exports.extract', { sample_id: testSampleId }),
         server.callTool('strings.extract', { sample_id: testSampleId, min_len: 4 }),
-        server.callTool('runtime.detect', { sample_id: testSampleId })
+        server.callTool('runtime.detect', { sample_id: testSampleId }),
       ]
 
       const results = await Promise.all(promises)
-      
+
       // All calls should succeed
       for (const result of results) {
         expect(result.isError).toBeFalsy()

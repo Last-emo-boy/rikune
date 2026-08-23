@@ -25,7 +25,7 @@ primary workflow or artifact gateways.
 - Optional HTTP API and dashboard for uploads, downloads, health checks, SSE events, and artifact access.
 - SHA-256 based sample workspaces with durable original files, cache directories, analysis artifacts, and upload sessions.
 - SQLite-backed persistence for samples, analyses, jobs, evidence, artifacts, batches, debug sessions, and scheduler telemetry.
-- Plugin architecture with 111 built-in plugins and external plugin discovery.
+- Plugin architecture with 117 built-in plugins and external plugin discovery.
 - Progressive tool surface: the default AI-facing gateway is intentionally small; `workflow.search` uses sample type, findings, and profile metadata to route toward specialist capabilities without exposing every tool up front.
 - Static analysis and enrichment for PE, ELF, Mach-O, APK/DEX, Office, firmware, UEFI/SMM, CUDA PTX/CUBIN/fatbin, strings, YARA, SBOM, signatures, packers, .NET, Go, Rust, and more.
 - Ghidra, Rizin, RetDec, angr, Capstone, Graphviz, Qiling, PANDA, Speakeasy, Wine, Frida, and dynamic-runtime integration where available.
@@ -212,9 +212,11 @@ Docker/WSL analyzers should use `remote-sandbox`, not `auto-sandbox`.
 
 ## Plugin System
 
-Rikune currently includes 111 built-in plugins under `src/plugins/<id>/`. Plugins can register tools, declare dependencies, expose configuration schema, participate in lifecycle hooks, provide Docker metadata, and declare bounded Worker-backed tools through `workerBackend` metadata.
+Rikune currently includes 117 built-in plugins under `src/plugins/<id>/`. Plugins can register tools, declare dependencies, expose configuration schema, participate in lifecycle hooks, provide Docker metadata, and declare bounded Worker-backed tools through `workerBackend` metadata.
 
-The frontier Worker suite keeps plan-only tools as triage and handoff surfaces, then adds explicit execution tools beside them. `restringer.deobfuscation.run`, `jsimplifier.pipeline.run`, `jsir.cascade.normalize`, `gtirb.ir.generate`, `remill.lift.run`, `manifold.fact.extract`, `qbdi.trace.run`, and `culifter.gpu.artifact.inventory` expose Worker contracts through `workflow.search`, `plugin.list`, `tool.help`, and `tool.readiness`; `tools.discover` remains a low-level compatibility portal. Discovery and readiness remain passive: they report backend metadata and setup guidance without starting REstringer, JSIMPLIFIER, JSIR/CASCADE, GTIRB, Remill, Manifold, QBDI, GPU drivers, Node/V8, browsers, or runtime instrumentation.
+The frontier Worker suite keeps plan-only tools as triage and handoff surfaces, then adds explicit execution tools beside them. `restringer.deobfuscation.run`, `jsimplifier.pipeline.run`, `jsir.cascade.normalize`, `jsvmp.bytecode.recover`, `gtirb.ir.generate`, `remill.lift.run`, `manifold.fact.extract`, `qbdi.trace.run`, and `culifter.gpu.artifact.inventory` expose Worker contracts through `workflow.search`, `plugin.list`, `tool.help`, and `tool.readiness`; `tools.discover` remains a low-level compatibility portal. Discovery and readiness remain passive: they report backend metadata and setup guidance without starting REstringer, JSIMPLIFIER, JSIR/CASCADE, JSVMP, GTIRB, Remill, Manifold, QBDI, GPU drivers, Node/V8, browsers, or runtime instrumentation.
+
+The `pdf-analysis` plugin exposes `pdf.analyze` for bounded, passive PDF structure, embedded JavaScript text, URI, action, and embedded-file inspection. It uses a bundled Python standard-library worker and does not open the document or execute embedded content.
 
 Docker generation reads plugin `systemDeps` and Worker packaging metadata directly. Default images install low-risk static wrappers such as REstringer, JSIMPLIFIER, Manifold, WABT, and LIEF validation; optional profiles can enable JSIR/CASCADE, JSVMP, GTIRB, radare2, and Triton-style static routes; heavy/runtime/GPU/license-sensitive backends remain profile-gated, BYO, or sidecar.
 
@@ -286,7 +288,7 @@ src/
   tools/                      core tool implementations
   workflows/                  staged analysis, triage, reconstruction, review workflows
   analysis/                   run state and background task runner
-  plugins/                    111 built-in plugins
+  plugins/                    117 built-in plugins
   persistence/                SQLite and workspace persistence
   sample/                     sample finalization and workspace inspection
   storage/                    artifacts, uploads, retention
@@ -402,9 +404,6 @@ See [SECURITY.md](SECURITY.md) and [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 - [DEPLOYMENT.md](DEPLOYMENT.md): deployment profiles and runtime topology.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): current code architecture.
 - [docs/PLUGINS.md](docs/PLUGINS.md): plugin list, SDK concepts, lifecycle, discovery.
-- [docs/ANALYSIS-RUNTIME.md](docs/ANALYSIS-RUNTIME.md): staged runtime and analysis execution model.
-- [docs/ASYNC-JOB-PATTERN.md](docs/ASYNC-JOB-PATTERN.md): async job and polling pattern.
-- [docs/MIGRATION-ASYNC.md](docs/MIGRATION-ASYNC.md): migration notes for staged async workflows.
 - [docs/DYNAMIC-RUNTIME-ROADMAP.md](docs/DYNAMIC-RUNTIME-ROADMAP.md): runtime roadmap and status.
 - [CONTRIBUTING.md](CONTRIBUTING.md): development and contribution flow.
 - [packages/plugin-sdk/README.md](packages/plugin-sdk/README.md): plugin authoring package.

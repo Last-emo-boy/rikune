@@ -8,6 +8,7 @@
  */
 
 import { z } from 'zod'
+import path from 'node:path'
 import type {
   WorkerResult,
   ToolDefinition,
@@ -24,6 +25,10 @@ import {
   buildMetrics,
   resolveSampleFile,
 } from '../../docker-shared.js'
+import {
+  resolveExecutable,
+  type ExternalExecutableResolution,
+} from '../../../infrastructure/static-backend-discovery.js'
 
 const TOOL_NAME = 'jvm.decompile'
 const TOOL_VERSION = '0.1.0'
@@ -201,23 +206,32 @@ export const jvmDecompileToolDefinition: ToolDefinition = {
   },
 }
 
-function resolveJava(): { available: boolean; path: string | null } {
-  // Prefer configured path, then PATH 'java' (shared with ghidra's Java dep).
-  const envPath = process.env.JAVA_PATH || process.env.JAVA_HOME
-  if (envPath) {
-    return { available: true, path: envPath.endsWith('java') ? envPath : `${envPath}/bin/java` }
-  }
-  // Best-effort: assume 'java' on PATH is usable (JVM plugin requires Java too).
-  return { available: true, path: 'java' }
+function resolveJava(): ExternalExecutableResolution {
+  const javaHome = process.env.JAVA_HOME?.trim()
+  const javaHomeBinary = javaHome
+    ? path.join(javaHome, 'bin', process.platform === 'win32' ? 'java.exe' : 'java')
+    : null
+
+  return resolveExecutable({
+    configuredPath: process.env.JAVA_PATH,
+    envPath: javaHomeBinary,
+    pathCandidates: ['java'],
+    versionArgSets: [['-version']],
+  })
 }
 
-export function createJvmDecompileHandler(deps: PluginToolDeps) {
+interface JvmDecompileDependencies {
+  executeCommand?: typeof executeCommand
+  resolveJava?: () => ExternalExecutableResolution
+}
+
+export function createJvmDecompileHandler(deps: PluginToolDeps & JvmDecompileDependencies) {
   const { workspaceManager, database } = deps
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
       const input = jvmDecompileInputSchema.parse(args)
-      const java = resolveJava()
+      const java = (deps.resolveJava ?? resolveJava)()
       const cfrJar = process.env.CFR_JAR || null
       if (!cfrJar) {
         return buildSetupRequired('CFR_JAR', java, startTime)
@@ -232,9 +246,24 @@ export function createJvmDecompileHandler(deps: PluginToolDeps) {
       if (input.silent) cfrArgs.push('--silent', 'true')
       if (!input.comments) cfrArgs.push('--comments', '0')
 
-      const result = await executeCommand(java.path, cfrArgs, input.timeout_sec * 1000)
+      const result = await (deps.executeCommand ?? executeCommand)(
+        java.path,
+        cfrArgs,
+        input.timeout_sec * 1000
+      )
 
-      if (result.exitCode !== 0 && !result.stdout.trim()) {
+      if (result.timedOut) {
+        return {
+          ok: false,
+          errors: [
+            `CFR timed out after ${input.timeout_sec} seconds.`,
+            result.stderr || result.stdout || 'No decompiler output was returned before timeout.',
+          ],
+          metrics: buildMetrics(startTime, TOOL_NAME),
+        }
+      }
+
+      if (result.exitCode !== 0) {
         return {
           ok: false,
           errors: [

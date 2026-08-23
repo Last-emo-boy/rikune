@@ -1,5 +1,8 @@
 import { execFileSync } from 'child_process'
+import { existsSync, mkdtempSync, rmSync } from 'fs'
 import { describe, expect, test } from '@jest/globals'
+import { tmpdir } from 'os'
+import { join } from 'path'
 
 function dockerDryRun(args: string[] = []): string {
   return execFileSync('node', ['scripts/generate-docker.mjs', '--dry-run', ...args], {
@@ -26,6 +29,19 @@ describe('docker generator backend install reports', () => {
 
     const enabled = dockerDryRun(['--include=jsir-cascade', '--backend-profile=optional'])
     expect(enabled).toContain('jsir-cascade: profile-gated (optional) enabled')
+  })
+
+  test('optional JVM decompiler profile installs Java and CFR through its fragment', () => {
+    const skipped = dockerDryRun(['--include=jvm-decompile'])
+    expect(skipped).toContain('jvm-decompile: profile-gated (optional) skipped')
+    expect(skipped).not.toContain('jvm-decompile: installed')
+
+    const enabled = dockerDryRun(['--include=jvm-decompile', '--backend-profile=optional'])
+    expect(enabled).toContain('--include dependencies: added jvm')
+    expect(enabled).toContain('Runtime plugins (2): jvm, jvm-decompile')
+    expect(enabled).toContain('jvm-decompile: profile-gated (optional) enabled')
+    expect(enabled).not.toContain('jvm-decompile: installed')
+    expect(enabled).toContain('jvm-decompile (jvm-decompile) [args, stage, runtime]')
   })
 
   test('all declared backend routes avoid missing install classifications', () => {
@@ -61,5 +77,31 @@ describe('docker generator backend install reports', () => {
 
     expect(output).toContain('Backend install profile: research')
     expect(output).toContain('dynamic-python: profile-gated (license-gated) enabled')
+  })
+
+  test('creates nested profile paths below a new output directory', () => {
+    const outputDir = mkdtempSync(join(tmpdir(), 'rikune-docker-output-'))
+    try {
+      execFileSync(
+        'node',
+        [
+          'scripts/generate-docker.mjs',
+          '--profile=static',
+          '--include=jvm-decompile',
+          '--backend-profile=optional',
+          `--output=${outputDir}`,
+        ],
+        {
+          cwd: process.cwd(),
+          encoding: 'utf8',
+          env: { ...process.env },
+        }
+      )
+
+      expect(existsSync(join(outputDir, 'docker', 'Dockerfile.analyzer'))).toBe(true)
+      expect(existsSync(join(outputDir, 'docker-compose.analyzer.yml'))).toBe(true)
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true })
+    }
   })
 })

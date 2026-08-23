@@ -68,7 +68,7 @@ const serializationFormatPlugin = definePlugin({
     category: 'static-analysis',
   },
   description:
-    'Passive identification and profiling of binary serialization formats: Protocol Buffers, Cap\'n Proto, MessagePack, FlatBuffers, Thrift, Avro, CBOR, and BSON without runtime deserialization.',
+    "Passive identification and profiling of binary serialization formats: Protocol Buffers, Cap'n Proto, MessagePack, FlatBuffers, Thrift, Avro, CBOR, and BSON without runtime deserialization.",
   version: '1.0.0',
   tools: [
     defineTool({
