@@ -129,21 +129,21 @@ const WINDOWS_POWERSHELL_LEGACY_ENGLISH_HEX_RESOURCE_SHAPES = [
     ),
   ],
   [
-    'legacy-en-managed-entry-shape',
+    'legacy-en-managed-entry-load-shape',
     Buffer.from(
       'Internal Windows PowerShell error.  Loading managed Windows PowerShell failed with error ',
       'utf16le'
     ),
   ],
   [
-    'legacy-en-managed-entry-shape',
+    'legacy-en-managed-entry-dispatch-shape',
     Buffer.from(
       'Internal Windows PowerShell error.  Retrieving Dispatch ID for managed Windows PowerShell entrance method failed with error ',
       'utf16le'
     ),
   ],
   [
-    'legacy-en-managed-entry-shape',
+    'legacy-en-managed-entry-invoke-shape',
     Buffer.from(
       'Internal Windows PowerShell error.  Invoking managed Windows PowerShell failed with error ',
       'utf16le'
@@ -437,7 +437,7 @@ function classifyWindowsPowerShellLegacyEnglishResource(value) {
     }
   }
   if (matchesWindowsPowerShellLegacyEnglishManagedException(value)) {
-    matches.push('legacy-en-managed-entry-shape')
+    matches.push('legacy-en-managed-exception-shape')
   }
   if (matchesWindowsPowerShellLegacyEnglishConsoleHostStartup(value)) {
     matches.push('legacy-en-consolehost-startup-shape')

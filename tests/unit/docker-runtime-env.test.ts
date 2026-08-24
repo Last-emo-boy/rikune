@@ -563,35 +563,35 @@ describe('Docker runtime env writer', () => {
       },
       {
         name: 'managed entry load',
-        expected: 'legacy-en-managed-entry-shape',
+        expected: 'legacy-en-managed-entry-load-shape',
         canaries: ['ff'],
         stderr:
           'Internal Windows PowerShell error.  Loading managed Windows PowerShell failed with error ff.\r\n',
       },
       {
         name: 'managed entry dispatch lookup',
-        expected: 'legacy-en-managed-entry-shape',
+        expected: 'legacy-en-managed-entry-dispatch-shape',
         canaries: ['badf00d'],
         stderr:
           'Internal Windows PowerShell error.  Retrieving Dispatch ID for managed Windows PowerShell entrance method failed with error badf00d.\r\n',
       },
       {
         name: 'managed entry invocation',
-        expected: 'legacy-en-managed-entry-shape',
+        expected: 'legacy-en-managed-entry-invoke-shape',
         canaries: ['80004005'],
         stderr:
           'Internal Windows PowerShell error.  Invoking managed Windows PowerShell failed with error 80004005.\r\n',
       },
       {
         name: 'managed exception wrapper',
-        expected: 'legacy-en-managed-entry-shape',
+        expected: 'legacy-en-managed-exception-shape',
         canaries: ['managed-sensitive-description'],
         stderr:
           'Windows PowerShell terminated with the following error: \r\n managed-sensitive-description\r\n',
       },
       {
         name: 'managed exception wrapper whose dynamic description ends with CRLF',
-        expected: 'legacy-en-managed-entry-shape',
+        expected: 'legacy-en-managed-exception-shape',
         canaries: ['managed-multiline-description'],
         stderr:
           'Windows PowerShell terminated with the following error: \r\n managed-multiline-description\r\n\r\n',
