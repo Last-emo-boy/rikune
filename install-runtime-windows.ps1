@@ -466,7 +466,7 @@ function Invoke-RuntimePrivateEnvSnapshotOperation {
             $nativeFailureText = [string](@($operationOutput) -join "`n")
             $nativeFailureCategory = "unclassified"
             if (
-                $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+RIKUNE_PRIVATE_ENV_FAILURE=(acl-(?:snapshot-match|pre-unlink)-child-other):\s+Unable to verify Windows ACL \(child-status=(0xFFFF0000); child-stderr=(silent|ascii-like|ascii-nul-le-shape|opaque|legacy-en-clr-load-shape|legacy-en-clr-start-shape|legacy-en-appdomain-shape|legacy-en-managed-entry-load-shape|legacy-en-managed-entry-dispatch-shape|legacy-en-managed-entry-invoke-shape|legacy-en-managed-exception-shape|legacy-en-consolehost-startup-shape)\)[ \t]*\r?$'
+                $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+RIKUNE_PRIVATE_ENV_FAILURE=(acl-(?:snapshot-match|pre-unlink)-child-other):\s+Unable to verify Windows ACL \(child-status=(0xFFFF0000); child-stderr=(silent|ascii-like|ascii-nul-le-shape|opaque|legacy-en-clr-load-shape|legacy-en-clr-start-shape|legacy-en-appdomain-shape|legacy-en-managed-entry-load-shape|legacy-en-managed-entry-dispatch-shape|legacy-en-managed-entry-invoke-shape|legacy-en-managed-exception-shape|legacy-en-initial-session-state-type-init-shape|legacy-en-consolehost-startup-shape)\)[ \t]*\r?$'
             ) {
                 $nativeFailureCategory = [string]$Matches[1]
                 $nativeAclChildStatus = "0x$(([string]$Matches[2]).Substring(2).ToUpperInvariant())"

@@ -154,6 +154,10 @@ const WINDOWS_POWERSHELL_LEGACY_ENGLISH_MANAGED_EXCEPTION_PREFIX = Buffer.from(
   'Windows PowerShell terminated with the following error: \r\n ',
   'utf16le'
 )
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_INITIAL_SESSION_STATE_TYPE_INIT = Buffer.from(
+  "The type initializer for 'System.Management.Automation.Runspaces.InitialSessionState' threw an exception.",
+  'utf16le'
+)
 const WINDOWS_POWERSHELL_LEGACY_ENGLISH_CONSOLEHOST_STARTUP_PREFIX = Buffer.from(
   'The shell cannot be started. A failure occurred during initialization:\r\n',
   'utf16le'
@@ -417,6 +421,21 @@ function matchesWindowsPowerShellLegacyEnglishManagedException(value) {
   )
 }
 
+function matchesWindowsPowerShellLegacyEnglishInitialSessionStateTypeInit(value) {
+  const contentEnd = windowsPowerShellWideContentEnd(value)
+  const descriptionStart = WINDOWS_POWERSHELL_LEGACY_ENGLISH_MANAGED_EXCEPTION_PREFIX.length
+  return (
+    contentEnd ===
+      descriptionStart + WINDOWS_POWERSHELL_LEGACY_ENGLISH_INITIAL_SESSION_STATE_TYPE_INIT.length &&
+    bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_MANAGED_EXCEPTION_PREFIX, 0) &&
+    bufferMatchesAt(
+      value,
+      WINDOWS_POWERSHELL_LEGACY_ENGLISH_INITIAL_SESSION_STATE_TYPE_INIT,
+      descriptionStart
+    )
+  )
+}
+
 function matchesWindowsPowerShellLegacyEnglishConsoleHostStartup(value) {
   const contentEnd = windowsPowerShellWideContentEnd(value)
   return (
@@ -436,7 +455,9 @@ function classifyWindowsPowerShellLegacyEnglishResource(value) {
       matches.push(token)
     }
   }
-  if (matchesWindowsPowerShellLegacyEnglishManagedException(value)) {
+  if (matchesWindowsPowerShellLegacyEnglishInitialSessionStateTypeInit(value)) {
+    matches.push('legacy-en-initial-session-state-type-init-shape')
+  } else if (matchesWindowsPowerShellLegacyEnglishManagedException(value)) {
     matches.push('legacy-en-managed-exception-shape')
   }
   if (matchesWindowsPowerShellLegacyEnglishConsoleHostStartup(value)) {

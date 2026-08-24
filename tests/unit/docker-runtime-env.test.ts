@@ -597,6 +597,42 @@ describe('Docker runtime env writer', () => {
           'Windows PowerShell terminated with the following error: \r\n managed-multiline-description\r\n\r\n',
       },
       {
+        name: 'InitialSessionState type initializer exception',
+        expected: 'legacy-en-initial-session-state-type-init-shape',
+        canaries: [
+          "The type initializer for 'System.Management.Automation.Runspaces.InitialSessionState' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Runspaces.InitialSessionState' threw an exception.\r\n",
+      },
+      {
+        name: 'different managed type initializer remains generic',
+        expected: 'legacy-en-managed-exception-shape',
+        canaries: [
+          "The type initializer for 'System.Management.Automation.Runspaces.OtherState' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Runspaces.OtherState' threw an exception.\r\n",
+      },
+      {
+        name: 'InitialSessionState type initializer with an extra CRLF remains generic',
+        expected: 'legacy-en-managed-exception-shape',
+        canaries: [
+          "The type initializer for 'System.Management.Automation.Runspaces.InitialSessionState' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Runspaces.InitialSessionState' threw an exception.\r\n\r\n",
+      },
+      {
+        name: 'InitialSessionState type initializer with extra ASCII remains generic',
+        expected: 'legacy-en-managed-exception-shape',
+        canaries: [
+          "The type initializer for 'System.Management.Automation.Runspaces.InitialSessionState' threw an exception. extra",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Runspaces.InitialSessionState' threw an exception. extra\r\n",
+      },
+      {
         name: 'ConsoleHost startup',
         expected: 'legacy-en-consolehost-startup-shape',
         canaries: ['consolehost-sensitive-description'],
