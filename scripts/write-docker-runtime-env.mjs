@@ -96,11 +96,12 @@ function requireSecureRuntimeEndpoint(name, value, allowInsecureRuntimeHttp) {
   )
 }
 
-function commandFailure(result) {
-  return `${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim()
+function commandOutputLines(value) {
+  return String(value ?? '').trim().split(/\r?\n/u).filter(Boolean)
 }
 
 const WINDOWS_PRIVATE_FILE_ACL_MARKER = 'RIKUNE_PRIVATE_FILE_ACL_V1'
+const WINDOWS_PRIVATE_FILE_ACL_STARTED_MARKER = 'RIKUNE_PRIVATE_FILE_ACL_STARTED_V1'
 const WINDOWS_PRIVATE_FILE_ACL_FAILURE_PREFIX = 'RIKUNE_PRIVATE_FILE_ACL_FAILURE='
 const WINDOWS_PRIVATE_FILE_ACL_ASSERTION_EXIT_CODE = 86
 const WINDOWS_PRIVATE_FILE_ACL_FAILURE_REASONS = new Set([
@@ -140,6 +141,7 @@ function Fail-PrivateFileAcl {
     [Console]::Error.Write('${WINDOWS_PRIVATE_FILE_ACL_FAILURE_PREFIX}' + $Reason)
     exit ${WINDOWS_PRIVATE_FILE_ACL_ASSERTION_EXIT_CODE}
 }
+[Console]::Error.WriteLine('${WINDOWS_PRIVATE_FILE_ACL_STARTED_MARKER}')
 if ([string]::IsNullOrWhiteSpace($targetPath)) { Fail-PrivateFileAcl 'missing-target' }
 
 try {
@@ -235,14 +237,30 @@ function normalizeWindowsAclFailurePhase(value) {
 }
 
 function windowsAclChildFailureReason(result) {
-  if (result.status !== WINDOWS_PRIVATE_FILE_ACL_ASSERTION_EXIT_CODE) return 'child-exit'
-  const output = commandFailure(result)
-  const marker = new RegExp(`^${WINDOWS_PRIVATE_FILE_ACL_FAILURE_PREFIX}([a-z0-9-]+)$`, 'u').exec(
-    output
-  )
-  return marker && WINDOWS_PRIVATE_FILE_ACL_FAILURE_REASONS.has(marker[1])
-    ? marker[1]
-    : 'child-exit'
+  const stdoutLines = commandOutputLines(result.stdout)
+  const stderrLines = commandOutputLines(result.stderr)
+  const started = stderrLines[0] === WINDOWS_PRIVATE_FILE_ACL_STARTED_MARKER
+  const failureMarker = stderrLines.length === 2
+    ? new RegExp(`^${WINDOWS_PRIVATE_FILE_ACL_FAILURE_PREFIX}([a-z0-9-]+)$`, 'u').exec(
+        stderrLines[1]
+      )
+    : null
+  const fixedAssertion =
+    stdoutLines.length === 0 &&
+    started &&
+    failureMarker &&
+    WINDOWS_PRIVATE_FILE_ACL_FAILURE_REASONS.has(failureMarker[1])
+
+  if (result.status === WINDOWS_PRIVATE_FILE_ACL_ASSERTION_EXIT_CODE) {
+    if (fixedAssertion) return failureMarker[1]
+    return started ? 'assertion-protocol' : 'assertion-start-missing'
+  }
+  if (result.status === 1) {
+    if (fixedAssertion) return 'child-assertion-exit'
+    return started ? 'child-started-exit' : 'child-startup-exit'
+  }
+  if (result.status === null) return 'child-signal'
+  return 'child-other'
 }
 
 function windowsAclFailure(mode, phase, reason) {

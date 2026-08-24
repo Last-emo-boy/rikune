@@ -365,7 +365,14 @@ $nativeDiagnosticCases = @(
     @{ Snapshot = "snapshot-secret-acl-detail"; Category = "acl-snapshot-match-owner"; ExitCode = 77; Phase = "verifier-rollback-remove"; UseRemoveWrapper = $true },
     @{ Snapshot = "snapshot-secret-acl-pre-unlink"; Category = "acl-pre-unlink-rule"; ExitCode = 78; Phase = "verifier-commit-remove"; UseRemoveWrapper = $true },
     @{ Snapshot = "snapshot-secret-acl-operation"; Category = "acl-snapshot-match-acl-read"; ExitCode = 80; Phase = "verifier-rollback-remove"; UseRemoveWrapper = $true },
-    @{ Snapshot = "snapshot-secret-acl-child-exit"; Category = "acl-snapshot-match-child-exit"; ExitCode = 81; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false }
+    @{ Snapshot = "snapshot-secret-acl-child-exit"; Category = "acl-snapshot-match-child-exit"; ExitCode = 81; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
+    @{ Snapshot = "snapshot-secret-acl-started-exit"; Category = "acl-snapshot-match-child-started-exit"; ExitCode = 82; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
+    @{ Snapshot = "snapshot-secret-acl-assertion-exit"; Category = "acl-snapshot-match-child-assertion-exit"; ExitCode = 83; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
+    @{ Snapshot = "snapshot-secret-acl-startup-exit"; Category = "acl-snapshot-match-child-startup-exit"; ExitCode = 84; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
+    @{ Snapshot = "snapshot-secret-acl-signal"; Category = "acl-snapshot-match-child-signal"; ExitCode = 85; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
+    @{ Snapshot = "snapshot-secret-acl-other"; Category = "acl-snapshot-match-child-other"; ExitCode = 86; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
+    @{ Snapshot = "snapshot-secret-acl-assertion-protocol"; Category = "acl-snapshot-match-assertion-protocol"; ExitCode = 87; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
+    @{ Snapshot = "snapshot-secret-acl-assertion-start"; Category = "acl-snapshot-match-assertion-start-missing"; ExitCode = 88; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false }
 )
 New-Item -ItemType Directory -Path $nativeDiagnosticRoot -Force | Out-Null
 try {
@@ -384,8 +391,15 @@ process.stdin.on('end', () => {
     'snapshot-secret-acl-pre-unlink': [78, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-pre-unlink-rule: Unable to verify Windows ACL\nError: ignored '${mode}-EACCES-unlink-child-secret-marker'\n`],
     'snapshot-secret-acl-operation': [80, `node.exe : Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-acl-read: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
     'snapshot-secret-acl-child-exit': [81, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-exit: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-started-exit': [82, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-started-exit: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-assertion-exit': [83, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-assertion-exit: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-startup-exit': [84, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-startup-exit: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-signal': [85, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-signal: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-other': [86, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-assertion-protocol': [87, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-assertion-protocol: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-assertion-start': [88, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-assertion-start-missing: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
   }
-  const selected = cases[mode] ?? [82, `Error: unclassified ${mode}-child-secret-marker\n`]
+  const selected = cases[mode] ?? [89, `Error: unclassified ${mode}-child-secret-marker\n`]
   process.stderr.write(selected[1])
   process.exit(selected[0])
 })
@@ -1084,6 +1098,65 @@ Assert-Contract (
 
 # Windows-only integration: exercise both secure writers against legacy broad ACLs.
 if ($IsWindows) {
+    $windowsAclProtocolProbe = Join-Path (
+        [System.IO.Path]::GetTempPath()
+    ) "rikune-windows-acl-protocol-$([Guid]::NewGuid().ToString('N')).mjs"
+    try {
+        @'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { pathToFileURL } from 'node:url'
+
+const writerPath = process.argv[2]
+const target = fs.mkdtempSync(path.join(os.tmpdir(), 'rikune-windows-acl-protocol-'))
+try {
+  const { invokeWindowsFileAcl } = await import(pathToFileURL(path.resolve(writerPath)).href)
+  let failure
+  try {
+    invokeWindowsFileAcl(target, 'verify', { failurePhase: 'snapshot-match' })
+  } catch (error) {
+    failure = error
+  }
+  const expected =
+    'RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-not-file: Unable to verify Windows ACL'
+  if (failure instanceof Error && failure.message === expected) {
+    process.stdout.write('RIKUNE_WINDOWS_ACL_PROTOCOL_V1')
+  } else {
+    const category =
+      failure instanceof Error
+        ? /^RIKUNE_PRIVATE_ENV_FAILURE=(acl-snapshot-match-[a-z0-9-]+): Unable to verify Windows ACL$/u.exec(
+            failure.message
+          )?.[1] ?? 'unclassified'
+        : 'missing-failure'
+    process.stderr.write(`RIKUNE_WINDOWS_ACL_PROTOCOL_FAILURE=${category}`)
+    process.exitCode = 91
+  }
+} finally {
+  fs.rmSync(target, { recursive: true, force: true })
+}
+'@ | Set-Content -LiteralPath $windowsAclProtocolProbe -Encoding utf8NoBOM
+        $windowsAclProtocolOutput = & node $windowsAclProtocolProbe $nodeWriter 2>&1
+        $windowsAclProtocolExit = $LASTEXITCODE
+        $windowsAclProtocolText = [string](@($windowsAclProtocolOutput) -join "`n")
+        if ($windowsAclProtocolExit -ne 0) {
+            $windowsAclProtocolCategory = "unclassified"
+            if (
+                $windowsAclProtocolText -match '^RIKUNE_WINDOWS_ACL_PROTOCOL_FAILURE=(acl-snapshot-match-(?:spawn|child-exit|child-assertion-exit|child-started-exit|child-startup-exit|child-signal|child-other|assertion-protocol|assertion-start-missing|marker|missing-target|not-file|reparse|sid|invalid-operation|inheritance|owner|entry-count|rule|attributes-read|identity-read|descriptor-build|rule-build|acl-write|acl-read|owner-read|rules-read|rule-inspect|marker-write))$'
+            ) {
+                $windowsAclProtocolCategory = [string]$Matches[1]
+            }
+            throw "Windows PowerShell 5.1 ACL protocol probe failed (category=$windowsAclProtocolCategory; exit=$windowsAclProtocolExit)"
+        }
+        Assert-Contract (
+            $windowsAclProtocolText -ceq "RIKUNE_WINDOWS_ACL_PROTOCOL_V1"
+        ) "Windows PowerShell 5.1 ACL protocol probe must return only its fixed success marker"
+    } finally {
+        Remove-Item -LiteralPath $windowsAclProtocolProbe -Force -ErrorAction SilentlyContinue
+        $windowsAclProtocolOutput = $null
+        $windowsAclProtocolText = $null
+    }
+
     function Get-AllowRulesForSid {
         param(
             [System.Security.AccessControl.FileSecurity]$Acl,

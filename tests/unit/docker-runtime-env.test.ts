@@ -229,6 +229,9 @@ describe('Docker runtime env writer', () => {
     expect(aclScript).toContain(
       "[Console]::Error.Write('RIKUNE_PRIVATE_FILE_ACL_FAILURE=' + $Reason)"
     )
+    expect(aclScript).toContain(
+      "[Console]::Error.WriteLine('RIKUNE_PRIVATE_FILE_ACL_STARTED_V1')"
+    )
     expect(aclScript).toContain('exit 86')
     for (const reason of [
       'attributes-read',
@@ -296,12 +299,12 @@ describe('Docker runtime env writer', () => {
         result: {
           status: 86,
           stdout: '',
-          stderr: `RIKUNE_PRIVATE_FILE_ACL_FAILURE=${reason}`,
+          stderr: `RIKUNE_PRIVATE_FILE_ACL_STARTED_V1\nRIKUNE_PRIVATE_FILE_ACL_FAILURE=${reason}`,
         },
       })),
       {
         phase: 'snapshot-match',
-        category: 'acl-snapshot-match-child-exit',
+        category: 'acl-snapshot-match-child-startup-exit',
         result: {
           status: 1,
           stdout: 'child-secret-marker',
@@ -310,29 +313,78 @@ describe('Docker runtime env writer', () => {
       },
       {
         phase: 'snapshot-match',
-        category: 'acl-snapshot-match-child-exit',
+        category: 'acl-snapshot-match-child-assertion-exit',
         result: {
           status: 1,
           stdout: '',
-          stderr: 'RIKUNE_PRIVATE_FILE_ACL_FAILURE=owner',
+          stderr:
+            'RIKUNE_PRIVATE_FILE_ACL_STARTED_V1\nRIKUNE_PRIVATE_FILE_ACL_FAILURE=owner',
         },
       },
       {
-        phase: 'pre-unlink',
-        category: 'acl-pre-unlink-child-exit',
+        phase: 'capture',
+        category: 'acl-capture-owner',
         result: {
           status: 86,
           stdout: '',
-          stderr: 'RIKUNE_PRIVATE_FILE_ACL_FAILURE=future-reason',
+          stderr:
+            'RIKUNE_PRIVATE_FILE_ACL_STARTED_V1\r\nRIKUNE_PRIVATE_FILE_ACL_FAILURE=owner',
         },
       },
       {
         phase: 'pre-unlink',
-        category: 'acl-pre-unlink-child-exit',
+        category: 'acl-pre-unlink-assertion-protocol',
+        result: {
+          status: 86,
+          stdout: '',
+          stderr:
+            'RIKUNE_PRIVATE_FILE_ACL_STARTED_V1\nRIKUNE_PRIVATE_FILE_ACL_FAILURE=future-reason',
+        },
+      },
+      {
+        phase: 'pre-unlink',
+        category: 'acl-pre-unlink-assertion-protocol',
         result: {
           status: 86,
           stdout: 'child-secret-marker',
-          stderr: 'RIKUNE_PRIVATE_FILE_ACL_FAILURE=owner',
+          stderr:
+            'RIKUNE_PRIVATE_FILE_ACL_STARTED_V1\nRIKUNE_PRIVATE_FILE_ACL_FAILURE=owner',
+        },
+      },
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-started-exit',
+        result: {
+          status: 1,
+          stdout: '',
+          stderr: 'RIKUNE_PRIVATE_FILE_ACL_STARTED_V1\nchild-secret-marker',
+        },
+      },
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-assertion-start-missing',
+        result: {
+          status: 86,
+          stdout: '',
+          stderr: 'RIKUNE_PRIVATE_FILE_ACL_FAILURE=owner\nchild-secret-marker',
+        },
+      },
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-signal',
+        result: {
+          status: null,
+          stdout: '',
+          stderr: 'child-secret-marker',
+        },
+      },
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-other',
+        result: {
+          status: 9,
+          stdout: '',
+          stderr: 'child-secret-marker',
         },
       },
       {
@@ -361,6 +413,7 @@ describe('Docker runtime env writer', () => {
       )
       expect(message).not.toContain('child-secret-marker')
       expect(message).not.toContain('RIKUNE_PRIVATE_FILE_ACL_FAILURE')
+      expect(message).not.toContain('RIKUNE_PRIVATE_FILE_ACL_STARTED')
     }
   })
 
