@@ -96,16 +96,18 @@ function requireSecureRuntimeEndpoint(name, value, allowInsecureRuntimeHttp) {
   )
 }
 
+function commandOutputText(value) {
+  return Buffer.isBuffer(value) ? value.toString('utf8') : String(value ?? '')
+}
+
 function commandOutputLines(value) {
-  return String(value ?? '')
-    .trim()
-    .split(/\r?\n/u)
-    .filter(Boolean)
+  return commandOutputText(value).trim().split(/\r?\n/u).filter(Boolean)
 }
 
 const WINDOWS_PRIVATE_FILE_ACL_MARKER = 'RIKUNE_PRIVATE_FILE_ACL_V1'
 const WINDOWS_PRIVATE_FILE_ACL_FAILURE_PREFIX = 'RIKUNE_PRIVATE_FILE_ACL_FAILURE='
 const WINDOWS_PRIVATE_FILE_ACL_ASSERTION_EXIT_CODE = 86
+const WINDOWS_POWERSHELL_INIT_FAILURE_STATUS = '0xFFFF0000'
 const WINDOWS_PRIVATE_FILE_ACL_FAILURE_REASONS = new Set([
   'missing-target',
   'not-file',
@@ -237,6 +239,45 @@ function normalizeWindowsAclFailurePhase(value) {
   return WINDOWS_PRIVATE_FILE_ACL_FAILURE_PHASES.has(phase) ? phase : 'unscoped'
 }
 
+function isAsciiLikeByte(value) {
+  return value === 0x09 || value === 0x0a || value === 0x0d || (value >= 0x20 && value <= 0x7e)
+}
+
+function isAsciiLikeOutput(value) {
+  return Buffer.isBuffer(value) && value.length > 0 && value.every(isAsciiLikeByte)
+}
+
+function isAsciiNulLeShape(value) {
+  if (!Buffer.isBuffer(value) || value.length < 8 || value.length % 2 !== 0) return false
+  for (let index = 0; index < value.length; index += 2) {
+    if (!isAsciiLikeByte(value[index]) || value[index + 1] !== 0) return false
+  }
+  return true
+}
+
+function classifyWindowsPowerShellInitializationOutput(result) {
+  if (normalizeWindowsAclChildStatus(result?.status) !== WINDOWS_POWERSHELL_INIT_FAILURE_STATUS) {
+    return null
+  }
+  if (
+    !Buffer.isBuffer(result.stdout) ||
+    !Buffer.isBuffer(result.stderr) ||
+    result.stdout.length !== 0
+  ) {
+    return 'opaque'
+  }
+  if (result.stderr.length === 0) {
+    return 'silent'
+  }
+  if (isAsciiLikeOutput(result.stderr)) {
+    return 'ascii-like'
+  }
+  if (isAsciiNulLeShape(result.stderr)) {
+    return 'ascii-nul-le-shape'
+  }
+  return 'opaque'
+}
+
 function windowsAclChildFailureReason(result) {
   const stdoutLines = commandOutputLines(result.stdout)
   const stderrLines = commandOutputLines(result.stderr)
@@ -266,13 +307,19 @@ function normalizeWindowsAclChildStatus(value) {
   return `0x${(value >>> 0).toString(16).toUpperCase().padStart(8, '0')}`
 }
 
-function windowsAclFailure(mode, phase, reason, childStatus) {
+function windowsAclFailure(mode, phase, reason, childResult) {
   const action = mode === 'set' ? 'restrict' : 'verify'
   const category = `acl-${normalizeWindowsAclFailurePhase(phase)}-${reason}`
   const normalizedChildStatus =
-    reason === 'child-other' ? normalizeWindowsAclChildStatus(childStatus) : null
+    reason === 'child-other' ? normalizeWindowsAclChildStatus(childResult?.status) : null
+  const childStderrClass =
+    reason === 'child-other' ? classifyWindowsPowerShellInitializationOutput(childResult) : null
   const childStatusSuffix =
-    normalizedChildStatus === null ? '' : ` (child-status=${normalizedChildStatus})`
+    normalizedChildStatus === null
+      ? ''
+      : ` (child-status=${normalizedChildStatus}${
+          childStderrClass === null ? '' : `; child-stderr=${childStderrClass}`
+        })`
   return new Error(
     `RIKUNE_PRIVATE_ENV_FAILURE=${category}: Unable to ${action} Windows ACL${childStatusSuffix}`
   )
@@ -358,7 +405,7 @@ export function invokeWindowsFileAcl(filePath, mode, options = {}) {
   const result = runCommand(
     powershell,
     ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encodedCommand],
-    { encoding: 'utf8', windowsHide: true, env: childEnvironment }
+    { encoding: 'buffer', windowsHide: true, env: childEnvironment }
   )
   if (result.error) {
     throw windowsAclFailure(mode, options.failurePhase, 'spawn')
@@ -368,10 +415,10 @@ export function invokeWindowsFileAcl(filePath, mode, options = {}) {
       mode,
       options.failurePhase,
       windowsAclChildFailureReason(result),
-      result.status
+      result
     )
   }
-  if (String(result.stdout || '').trim() !== WINDOWS_PRIVATE_FILE_ACL_MARKER) {
+  if (commandOutputText(result.stdout).trim() !== WINDOWS_PRIVATE_FILE_ACL_MARKER) {
     throw windowsAclFailure(mode, options.failurePhase, 'marker')
   }
 }

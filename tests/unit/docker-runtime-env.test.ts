@@ -164,7 +164,11 @@ describe('Docker runtime env writer', () => {
 
   test('launches the Windows ACL helper with only trusted executable search paths', () => {
     let invocation:
-      | { command: string; args: string[]; options: { env: Record<string, string> } }
+      | {
+          command: string
+          args: string[]
+          options: { encoding: 'buffer'; env: Record<string, string> }
+        }
       | undefined
     const environment = {
       SystemRoot: 'C:\\Windows',
@@ -185,9 +189,17 @@ describe('Docker runtime env writer', () => {
     invokeWindowsFileAcl('C:\\secure\\.env', 'verify', {
       environment,
       powershell: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
-      spawn: (command: string, args: string[], options: { env: Record<string, string> }) => {
+      spawn: (
+        command: string,
+        args: string[],
+        options: { encoding: 'buffer'; env: Record<string, string> }
+      ) => {
         invocation = { command, args, options }
-        return { status: 0, stdout: 'RIKUNE_PRIVATE_FILE_ACL_V1', stderr: '' }
+        return {
+          status: 0,
+          stdout: Buffer.from('RIKUNE_PRIVATE_FILE_ACL_V1', 'utf8'),
+          stderr: Buffer.alloc(0),
+        }
       },
     })
 
@@ -198,6 +210,7 @@ describe('Docker runtime env writer', () => {
       'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules'
     )
     expect(childEnvironment.PSModuleAnalysisCachePath).toBe('NUL')
+    expect(invocation!.options.encoding).toBe('buffer')
     expect(childEnvironment.SYSTEMDRIVE).toBe('C:')
     expect(childEnvironment.SYSTEMROOT).toBe('C:\\Windows')
     expect(childEnvironment.WINDIR).toBe('C:\\Windows')
@@ -326,8 +339,8 @@ describe('Docker runtime env writer', () => {
         category: 'acl-capture-owner',
         result: {
           status: 86,
-          stdout: '',
-          stderr: 'RIKUNE_PRIVATE_FILE_ACL_FAILURE=owner\r\n',
+          stdout: Buffer.alloc(0),
+          stderr: Buffer.from('RIKUNE_PRIVATE_FILE_ACL_FAILURE=owner\r\n', 'utf8'),
         },
       },
       {
@@ -363,8 +376,8 @@ describe('Docker runtime env writer', () => {
         childStatus: '0x00000009',
         result: {
           status: 9,
-          stdout: '',
-          stderr: 'child-secret-marker',
+          stdout: Buffer.alloc(0),
+          stderr: Buffer.from('child-secret-marker\r\n', 'utf8'),
         },
       },
       {
@@ -377,16 +390,94 @@ describe('Docker runtime env writer', () => {
           stderr: 'child-secret-marker',
         },
       },
-      ...[-65536, 0xffff0000].map((status) => ({
+      {
         phase: 'snapshot-match',
         category: 'acl-snapshot-match-child-other',
         childStatus: '0xFFFF0000',
+        childStderr: 'silent',
         result: {
-          status,
-          stdout: '',
+          status: -65536,
+          stdout: Buffer.alloc(0),
+          stderr: Buffer.alloc(0),
+        },
+      },
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-other',
+        childStatus: '0xFFFF0000',
+        childStderr: 'ascii-nul-le-shape',
+        result: {
+          status: 0xffff0000,
+          stdout: Buffer.alloc(0),
+          stderr: Buffer.from('Native child-secret-marker\r\n', 'utf16le'),
+        },
+      },
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-other',
+        childStatus: '0xFFFF0000',
+        childStderr: 'ascii-like',
+        result: {
+          status: -65536,
+          stdout: Buffer.alloc(0),
+          stderr: Buffer.from('managed child-secret-marker\r\n', 'utf8'),
+        },
+      },
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-other',
+        childStatus: '0xFFFF0000',
+        childStderr: 'opaque',
+        result: {
+          status: -65536,
+          stdout: Buffer.alloc(0),
+          stderr: Buffer.from([0xff, 0xfe, 0x41, 0x00, 0x42, 0x00, 0x43, 0x00]),
+        },
+      },
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-other',
+        childStatus: '0xFFFF0000',
+        childStderr: 'opaque',
+        result: {
+          status: -65536,
+          stdout: Buffer.alloc(0),
+          stderr: Buffer.from('无法启动 PowerShell\r\n', 'utf16le'),
+        },
+      },
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-other',
+        childStatus: '0xFFFF0000',
+        childStderr: 'opaque',
+        result: {
+          status: -65536,
+          stdout: Buffer.alloc(0),
+          stderr: Buffer.from([0x41, 0x00, 0x42]),
+        },
+      },
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-other',
+        childStatus: '0xFFFF0000',
+        childStderr: 'opaque',
+        result: {
+          status: -65536,
+          stdout: Buffer.alloc(0),
           stderr: 'child-secret-marker',
         },
-      })),
+      },
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-other',
+        childStatus: '0xFFFF0000',
+        childStderr: 'opaque',
+        result: {
+          status: -65536,
+          stdout: Buffer.from('child-secret-marker', 'utf8'),
+          stderr: Buffer.alloc(0),
+        },
+      },
       {
         phase: 'snapshot-match',
         category: 'acl-snapshot-match-child-other',
@@ -417,8 +508,12 @@ describe('Docker runtime env writer', () => {
       }
       expect(failure).toBeInstanceOf(Error)
       const message = (failure as Error).message
+      const childStderrSuffix =
+        'childStderr' in testCase ? `; child-stderr=${testCase.childStderr}` : ''
       const childStatusSuffix =
-        'childStatus' in testCase ? ` (child-status=${testCase.childStatus})` : ''
+        'childStatus' in testCase
+          ? ` (child-status=${testCase.childStatus}${childStderrSuffix})`
+          : ''
       expect(message).toBe(
         `RIKUNE_PRIVATE_ENV_FAILURE=${testCase.category}: Unable to verify Windows ACL${childStatusSuffix}`
       )
@@ -994,8 +1089,10 @@ describe('Docker runtime env writer', () => {
       '$operationOutput = $Snapshot | & $NodePath $WriterPath 2>&1'
     )
     expect(runtimeInstaller).toContain('$nativeFailureCategory = "unclassified"')
+    expect(runtimeInstaller).toContain('$nativeAclChildStderrClass = $null')
     expect(runtimeInstaller).toContain('$PSNativeCommandUseErrorActionPreference = $false')
     expect(runtimeInstaller).toContain('category=$nativeFailureCategory; exit=$nativeExitCode')
+    expect(runtimeInstaller).toContain('child-stderr=$nativeAclChildStderrClass')
     expect(runtimeInstaller).not.toMatch(
       /\$safeFailureMessage\s*=.*(?:\$Snapshot|\$operationOutput|\$nativeFailureText)/u
     )

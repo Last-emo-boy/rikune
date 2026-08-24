@@ -370,7 +370,14 @@ $nativeDiagnosticCases = @(
     @{ Snapshot = "snapshot-secret-acl-assertion-exit"; Category = "acl-snapshot-match-child-assertion-exit"; ExitCode = 83; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
     @{ Snapshot = "snapshot-secret-acl-signal"; Category = "acl-snapshot-match-child-signal"; ExitCode = 84; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
     @{ Snapshot = "snapshot-secret-acl-other"; Category = "acl-snapshot-match-child-other"; ExitCode = 85; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false; ChildStatus = "0x00000009" },
-    @{ Snapshot = "snapshot-secret-acl-assertion-protocol"; Category = "acl-snapshot-match-assertion-protocol"; ExitCode = 86; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false }
+    @{ Snapshot = "snapshot-secret-acl-assertion-protocol"; Category = "acl-snapshot-match-assertion-protocol"; ExitCode = 86; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
+    @{ Snapshot = "snapshot-secret-acl-init-silent"; Category = "acl-snapshot-match-child-other"; ExitCode = 87; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false; ChildStatus = "0xFFFF0000"; ChildStderr = "silent" },
+    @{ Snapshot = "snapshot-secret-acl-init-ascii-nul"; Category = "acl-snapshot-match-child-other"; ExitCode = 88; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false; ChildStatus = "0xFFFF0000"; ChildStderr = "ascii-nul-le-shape" },
+    @{ Snapshot = "snapshot-secret-acl-init-ascii"; Category = "acl-snapshot-match-child-other"; ExitCode = 89; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false; ChildStatus = "0xFFFF0000"; ChildStderr = "ascii-like" },
+    @{ Snapshot = "snapshot-secret-acl-init-opaque"; Category = "acl-snapshot-match-child-other"; ExitCode = 90; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false; ChildStatus = "0xFFFF0000"; ChildStderr = "opaque" },
+    @{ Snapshot = "snapshot-secret-acl-init-mixed-case"; Category = "acl-snapshot-match-child-other"; ExitCode = 93; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false; ChildStatus = "0xFFFF0000"; ChildStderr = "ascii-like" },
+    @{ Snapshot = "snapshot-secret-acl-init-invalid-token"; Category = "unclassified"; ExitCode = 91; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
+    @{ Snapshot = "snapshot-secret-acl-init-wrong-status"; Category = "unclassified"; ExitCode = 92; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false }
 )
 New-Item -ItemType Directory -Path $nativeDiagnosticRoot -Force | Out-Null
 try {
@@ -394,8 +401,15 @@ process.stdin.on('end', () => {
     'snapshot-secret-acl-signal': [84, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-signal: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
     'snapshot-secret-acl-other': [85, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL (child-status=0x00000009)\nError: ignored '${mode}-child-secret-marker'\n`],
     'snapshot-secret-acl-assertion-protocol': [86, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-assertion-protocol: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-init-silent': [87, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL (child-status=0xFFFF0000; child-stderr=silent)\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-init-ascii-nul': [88, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL (child-status=0xFFFF0000; child-stderr=ascii-nul-le-shape)\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-init-ascii': [89, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL (child-status=0xFFFF0000; child-stderr=ascii-like)\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-init-opaque': [90, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL (child-status=0xFFFF0000; child-stderr=opaque)\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-init-mixed-case': [93, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL (child-status=0xffff0000; child-stderr=AsCiI-LiKe)\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-init-invalid-token': [91, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL (child-status=0xFFFF0000; child-stderr=child-secret-marker)\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-init-wrong-status': [92, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL (child-status=0x00000009; child-stderr=silent)\nError: ignored '${mode}-child-secret-marker'\n`],
   }
-  const selected = cases[mode] ?? [87, `Error: unclassified ${mode}-child-secret-marker\n`]
+  const selected = cases[mode] ?? [93, `Error: unclassified ${mode}-child-secret-marker\n`]
   process.stderr.write(selected[1])
   process.exit(selected[0])
 })
@@ -440,9 +454,22 @@ process.stdin.on('end', () => {
         if ($nativeDiagnosticCase.ContainsKey("ChildStatus")) {
             $nativeDiagnosticMetadata += "; child-status=$($nativeDiagnosticCase.ChildStatus)"
         }
+        if ($nativeDiagnosticCase.ContainsKey("ChildStderr")) {
+            $nativeDiagnosticMetadata += "; child-stderr=$($nativeDiagnosticCase.ChildStderr)"
+        }
         Assert-Contract (
             $nativeDiagnosticFailure.Message.Contains("$nativeDiagnosticMetadata)")
         ) "Native diagnostic fixture must expose only fixed metadata in its message"
+        if (-not $nativeDiagnosticCase.ContainsKey("ChildStatus")) {
+            Assert-Contract (
+                -not $nativeDiagnosticFailure.Message.Contains("; child-status=") -and
+                -not $nativeDiagnosticFailure.Message.Contains("; child-stderr=")
+            ) "Native diagnostic fixture must omit rejected child metadata"
+        } elseif (-not $nativeDiagnosticCase.ContainsKey("ChildStderr")) {
+            Assert-Contract (
+                -not $nativeDiagnosticFailure.Message.Contains("; child-stderr=")
+            ) "Native diagnostic fixture must omit rejected child stderr metadata"
+        }
         Assert-Contract (
             -not $nativeDiagnosticFailure.Message.Contains($nativeDiagnosticCase.Snapshot) -and
             -not $nativeDiagnosticFailure.Message.Contains($nativeDiagnosticChildMarker)
@@ -796,9 +823,11 @@ foreach ($requiredFragment in @(
     '$operationOutput = $Snapshot | & $NodePath $WriterPath 2>&1',
     '$nativeFailureCategory = "unclassified"',
     '$nativeAclChildStatus = $null',
+    '$nativeAclChildStderrClass = $null',
     '$PSNativeCommandUseErrorActionPreference = $false',
     'category=$nativeFailureCategory; exit=$nativeExitCode',
     'child-status=$nativeAclChildStatus',
+    'child-stderr=$nativeAclChildStderrClass',
     'exit $privateEnvFailureExitCode',
     'Write-SecureRuntimeEnvFile -Path $envFile -Content $envContent -RequireAbsent',
     '$previousEntry = Get-ProcessEnvironmentEntrySnapshot -Name $EnvironmentName',

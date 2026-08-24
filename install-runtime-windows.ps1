@@ -456,6 +456,7 @@ function Invoke-RuntimePrivateEnvSnapshotOperation {
     $operationOutput = $null
     $nativeFailureText = $null
     $nativeAclChildStatus = $null
+    $nativeAclChildStderrClass = $null
     $PSNativeCommandUseErrorActionPreference = $false
     try {
         [Environment]::SetEnvironmentVariable($EnvironmentName, $Path, "Process")
@@ -465,6 +466,12 @@ function Invoke-RuntimePrivateEnvSnapshotOperation {
             $nativeFailureText = [string](@($operationOutput) -join "`n")
             $nativeFailureCategory = "unclassified"
             if (
+                $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+RIKUNE_PRIVATE_ENV_FAILURE=(acl-(?:snapshot-match|pre-unlink)-child-other):\s+Unable to verify Windows ACL \(child-status=(0xFFFF0000); child-stderr=(silent|ascii-like|ascii-nul-le-shape|opaque)\)[ \t]*\r?$'
+            ) {
+                $nativeFailureCategory = [string]$Matches[1]
+                $nativeAclChildStatus = "0x$(([string]$Matches[2]).Substring(2).ToUpperInvariant())"
+                $nativeAclChildStderrClass = ([string]$Matches[3]).ToLowerInvariant()
+            } elseif (
                 $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+RIKUNE_PRIVATE_ENV_FAILURE=(acl-(?:snapshot-match|pre-unlink)-child-other):\s+Unable to verify Windows ACL \(child-status=(0x[0-9A-F]{8})\)[ \t]*\r?$'
             ) {
                 $nativeFailureCategory = [string]$Matches[1]
@@ -507,6 +514,9 @@ function Invoke-RuntimePrivateEnvSnapshotOperation {
             } else {
                 "; child-status=$nativeAclChildStatus"
             }
+            if ($null -ne $nativeAclChildStderrClass) {
+                $nativeFailureDetail += "; child-stderr=$nativeAclChildStderrClass"
+            }
             $safeFailureMessage = "$FailureMessage (phase=$FailurePhase; category=$nativeFailureCategory; exit=$nativeExitCode$nativeFailureDetail)"
             throw (New-NativeInstallerFailure `
                 -Message $safeFailureMessage `
@@ -521,6 +531,7 @@ function Invoke-RuntimePrivateEnvSnapshotOperation {
         $operationOutput = $null
         $nativeFailureText = $null
         $nativeAclChildStatus = $null
+        $nativeAclChildStderrClass = $null
         Restore-ProcessEnvironmentEntry -Name $EnvironmentName -Snapshot $previousEntry
     }
 }
