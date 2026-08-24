@@ -349,6 +349,150 @@ Assert-Contract (
     (@($generatedKeys | Select-Object -Unique).Count -eq $generatedKeys.Count)
 ) "Repeated CSPRNG calls unexpectedly returned duplicate runtime API keys"
 
+# Native snapshot-operation diagnostics must classify fixed metadata without exposing child output.
+$nativeDiagnosticRoot = Join-Path ([System.IO.Path]::GetTempPath()) "rikune-native-diagnostic-$([Guid]::NewGuid().ToString('N'))"
+$nativeDiagnosticWriter = Join-Path $nativeDiagnosticRoot "writer.mjs"
+$nativeDiagnosticEnvironmentName = "RIKUNE_VERIFIER_NATIVE_DIAGNOSTIC_PATH"
+$nativeDiagnosticEnvironment = Get-ProcessEnvironmentEntrySnapshot -Name $nativeDiagnosticEnvironmentName
+$nativeDiagnosticRemoveEnvironment = Get-ProcessEnvironmentEntrySnapshot -Name "RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH"
+$nativeDiagnosticNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+$nativeDiagnosticChildMarker = "child-secret-marker"
+$nativeDiagnosticCases = @(
+    @{ Snapshot = "snapshot-secret-eperm"; Category = "unlink-eperm"; ExitCode = 73; Phase = "verifier-rollback-remove"; UseRemoveWrapper = $true },
+    @{ Snapshot = "snapshot-secret-ebusy"; Category = "unlink-ebusy"; ExitCode = 74; Phase = "verifier-commit-remove"; UseRemoveWrapper = $true },
+    @{ Snapshot = "snapshot-secret-eacces"; Category = "unlink-eacces"; ExitCode = 75; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
+    @{ Snapshot = "snapshot-secret-acl"; Category = "acl-verify"; ExitCode = 76; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false }
+)
+New-Item -ItemType Directory -Path $nativeDiagnosticRoot -Force | Out-Null
+try {
+    @'
+let snapshot = ''
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', (chunk) => { snapshot += chunk })
+process.stdin.on('end', () => {
+  const mode = snapshot.trim()
+  const cases = {
+    'snapshot-secret-eperm': [73, `Error: EPERM: operation not permitted, unlink '${mode}-Unable to verify Windows ACL-child-secret-marker'\n`],
+    'snapshot-secret-ebusy': [74, `Error: EBUSY: resource busy or locked, unlink '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-eacces': [75, `Error: EACCES: permission denied, unlink '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl': [76, `Error: Unable to verify Windows ACL on '${mode}-Error: EPERM: operation not permitted, unlink-child-secret-marker'\n`],
+  }
+  const selected = cases[mode] ?? [77, `Error: unclassified ${mode}-child-secret-marker\n`]
+  process.stderr.write(selected[1])
+  process.exit(selected[0])
+})
+'@ | Set-Content -LiteralPath $nativeDiagnosticWriter -Encoding utf8NoBOM
+    Remove-Item -LiteralPath "Env:$nativeDiagnosticEnvironmentName" -ErrorAction SilentlyContinue
+    $Error.Clear()
+    $PSNativeCommandUseErrorActionPreference = $true
+    foreach ($nativeDiagnosticCase in $nativeDiagnosticCases) {
+        $nativeDiagnosticFailure = $null
+        try {
+            if ($nativeDiagnosticCase.UseRemoveWrapper) {
+                Remove-RuntimePrivateEnvForSnapshot `
+                    -Path (Join-Path $nativeDiagnosticRoot "target.env") `
+                    -Snapshot $nativeDiagnosticCase.Snapshot `
+                    -NodePath (Get-Command node -ErrorAction Stop).Source `
+                    -WriterPath $nativeDiagnosticWriter `
+                    -FailurePhase $nativeDiagnosticCase.Phase
+            } else {
+                Invoke-RuntimePrivateEnvSnapshotOperation `
+                    -EnvironmentName $nativeDiagnosticEnvironmentName `
+                    -Path (Join-Path $nativeDiagnosticRoot "target.env") `
+                    -Snapshot $nativeDiagnosticCase.Snapshot `
+                    -NodePath (Get-Command node -ErrorAction Stop).Source `
+                    -WriterPath $nativeDiagnosticWriter `
+                    -FailureMessage "Synthetic native snapshot operation failed" `
+                    -FailurePhase $nativeDiagnosticCase.Phase
+            }
+        } catch {
+            $nativeDiagnosticFailure = $_.Exception
+        }
+        Assert-Contract ($null -ne $nativeDiagnosticFailure) "Native diagnostic fixture must fail"
+        Assert-Contract (
+            [int]$nativeDiagnosticFailure.Data["RIKUNE_NATIVE_EXIT_CODE"] -eq $nativeDiagnosticCase.ExitCode
+        ) "Native diagnostic fixture must preserve the exact child exit code"
+        Assert-Contract (
+            [string]$nativeDiagnosticFailure.Data["RIKUNE_NATIVE_FAILURE_CATEGORY"] -eq $nativeDiagnosticCase.Category
+        ) "Native diagnostic fixture must classify '$($nativeDiagnosticCase.Category)'"
+        Assert-Contract (
+            [string]$nativeDiagnosticFailure.Data["RIKUNE_NATIVE_FAILURE_PHASE"] -eq $nativeDiagnosticCase.Phase
+        ) "Native diagnostic fixture must preserve only the fixed failure phase"
+        Assert-Contract (
+            $nativeDiagnosticFailure.Message.Contains(
+                "phase=$($nativeDiagnosticCase.Phase); category=$($nativeDiagnosticCase.Category); exit=$($nativeDiagnosticCase.ExitCode)"
+            )
+        ) "Native diagnostic fixture must expose only fixed metadata in its message"
+        Assert-Contract (
+            -not $nativeDiagnosticFailure.Message.Contains($nativeDiagnosticCase.Snapshot) -and
+            -not $nativeDiagnosticFailure.Message.Contains($nativeDiagnosticChildMarker)
+        ) "Native diagnostic fixture must not expose snapshot or child output"
+        $nativeDiagnosticDataKeys = @(
+            $nativeDiagnosticFailure.Data.Keys |
+                ForEach-Object { [string]$_ } |
+                Sort-Object
+        )
+        Assert-Contract (
+            $nativeDiagnosticDataKeys.Count -eq 3 -and
+            ($nativeDiagnosticDataKeys -join ',') -eq (
+                'RIKUNE_NATIVE_EXIT_CODE,RIKUNE_NATIVE_FAILURE_CATEGORY,RIKUNE_NATIVE_FAILURE_PHASE'
+            )
+        ) "Native diagnostic fixture must expose exactly three fixed Data keys"
+        $nativeDiagnosticDataText = [string](@($nativeDiagnosticFailure.Data.Values) -join "`n")
+        Assert-Contract (
+            -not $nativeDiagnosticDataText.Contains($nativeDiagnosticCase.Snapshot) -and
+            -not $nativeDiagnosticDataText.Contains($nativeDiagnosticChildMarker)
+        ) "Native diagnostic fixture Data must not expose snapshot or child output"
+        Assert-Contract (
+            $null -eq $nativeDiagnosticFailure.InnerException -and
+            -not $nativeDiagnosticFailure.ToString().Contains($nativeDiagnosticCase.Snapshot) -and
+            -not $nativeDiagnosticFailure.ToString().Contains($nativeDiagnosticChildMarker)
+        ) "Native diagnostic fixture exception serialization must not expose child output"
+        if ($nativeDiagnosticCase.UseRemoveWrapper) {
+            Assert-ProcessEnvironmentEntryMatchesSnapshot `
+                -Name "RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH" `
+                -Snapshot $nativeDiagnosticRemoveEnvironment `
+                -Message "Native diagnostic remove wrapper must restore its selector exactly"
+        } else {
+            Assert-Contract (
+                -not (Get-ProcessEnvironmentEntrySnapshot -Name $nativeDiagnosticEnvironmentName).Exists
+            ) "Native diagnostic fixture must restore an absent selector as absent"
+        }
+        Assert-Contract (
+            $PSNativeCommandUseErrorActionPreference -eq $true
+        ) "Native diagnostic helper must not mutate the caller native-error preference"
+    }
+    $nativeDiagnosticErrorText = [string](@($Error) -join "`n")
+    foreach ($nativeDiagnosticCase in $nativeDiagnosticCases) {
+        Assert-Contract (
+            -not $nativeDiagnosticErrorText.Contains($nativeDiagnosticCase.Snapshot)
+        ) "Native diagnostic fixture must not retain snapshot output in the PowerShell error history"
+    }
+    Assert-Contract (
+        -not $nativeDiagnosticErrorText.Contains($nativeDiagnosticChildMarker)
+    ) "Native diagnostic fixture must not retain child output in the PowerShell error history"
+} finally {
+    try {
+        Restore-ProcessEnvironmentEntry `
+            -Name $nativeDiagnosticEnvironmentName `
+            -Snapshot $nativeDiagnosticEnvironment
+        Restore-ProcessEnvironmentEntry `
+            -Name "RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH" `
+            -Snapshot $nativeDiagnosticRemoveEnvironment
+    } finally {
+        $PSNativeCommandUseErrorActionPreference = $nativeDiagnosticNativeErrorPreference
+        $nativeDiagnosticCases = $null
+        $nativeDiagnosticChildMarker = $null
+        $nativeDiagnosticErrorText = $null
+        $nativeDiagnosticDataKeys = $null
+        $nativeDiagnosticDataText = $null
+        Remove-Item -LiteralPath $nativeDiagnosticRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+Assert-Contract (
+    $PSNativeCommandUseErrorActionPreference -eq $nativeDiagnosticNativeErrorPreference
+) "Native diagnostic fixture must restore the caller native-error preference exactly"
+
 $explicitKey = [string]::new([char]0x65, 32)
 $environmentKey = [string]::new([char]0x66, 32)
 $resolvedKey = Resolve-RuntimeApiKey `
@@ -627,6 +771,11 @@ foreach ($requiredFragment in @(
     '$privateEnvTransactionActive = $true',
     '$privateEnvTransactionCommitted = $true',
     'RIKUNE_NATIVE_EXIT_CODE',
+    'RIKUNE_NATIVE_FAILURE_CATEGORY',
+    '$operationOutput = $Snapshot | & $NodePath $WriterPath 2>&1',
+    '$nativeFailureCategory = "unclassified"',
+    '$PSNativeCommandUseErrorActionPreference = $false',
+    'category=$nativeFailureCategory; exit=$nativeExitCode',
     'exit $privateEnvFailureExitCode',
     'Write-SecureRuntimeEnvFile -Path $envFile -Content $envContent -RequireAbsent',
     '$previousEntry = Get-ProcessEnvironmentEntrySnapshot -Name $EnvironmentName',
@@ -1047,7 +1196,8 @@ if ($IsWindows) {
                 -Path $powerShellTarget `
                 -Snapshot $runtimeTransactionSnapshot `
                 -NodePath $nodeCommand `
-                -WriterPath $nodeWriter
+                -WriterPath $nodeWriter `
+                -FailurePhase "verifier-rollback-remove"
             Assert-Contract (
                 -not (Test-Path -LiteralPath $powerShellTarget)
             ) "Windows runtime transaction must keep the protected env absent during lifecycle commands"
@@ -1067,7 +1217,8 @@ if ($IsWindows) {
                 -Path $powerShellTarget `
                 -Snapshot $runtimeTransactionSnapshot `
                 -NodePath $nodeCommand `
-                -WriterPath $nodeWriter
+                -WriterPath $nodeWriter `
+                -FailurePhase "verifier-commit-remove"
             $runtimeTransactionReplacement = "HOST_AGENT_API_KEY=$([string]::new([char]0x63, 64))`n"
             Write-SecureRuntimeEnvFile `
                 -Path $powerShellTarget `

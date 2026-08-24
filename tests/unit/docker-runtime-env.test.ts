@@ -758,6 +758,16 @@ describe('Docker runtime env writer', () => {
     expect(runtimeInstaller).toContain('RIKUNE_STAGE_DOCKER_ENV_PATH')
     expect(runtimeInstaller).toContain('RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH')
     expect(runtimeInstaller).toContain('RIKUNE_RESTORE_PRIVATE_ENV_PATH')
+    expect(runtimeInstaller).toContain('RIKUNE_NATIVE_FAILURE_CATEGORY')
+    expect(runtimeInstaller).toContain(
+      '$operationOutput = $Snapshot | & $NodePath $WriterPath 2>&1'
+    )
+    expect(runtimeInstaller).toContain('$nativeFailureCategory = "unclassified"')
+    expect(runtimeInstaller).toContain('$PSNativeCommandUseErrorActionPreference = $false')
+    expect(runtimeInstaller).toContain('category=$nativeFailureCategory; exit=$nativeExitCode')
+    expect(runtimeInstaller).not.toMatch(
+      /\$safeFailureMessage\s*=.*(?:\$Snapshot|\$operationOutput|\$nativeFailureText)/u
+    )
     expect(runtimeInstaller).toContain(
       'Write-SecureRuntimeEnvFile -Path $envFile -Content $envContent -RequireAbsent'
     )
@@ -769,7 +779,9 @@ describe('Docker runtime env writer', () => {
     )
     const runtimeRemoveIndex = runtimeInstaller.indexOf('Remove-RuntimePrivateEnvForSnapshot `')
     const runtimeNpmIndex = runtimeInstaller.indexOf('& npm ci --include=dev')
-    const runtimeWriteIndex = runtimeInstaller.lastIndexOf('Write-SecureRuntimeEnvFile -Path $envFile')
+    const runtimeWriteIndex = runtimeInstaller.lastIndexOf(
+      'Write-SecureRuntimeEnvFile -Path $envFile'
+    )
     const runtimeCommitIndex = runtimeInstaller.lastIndexOf(
       '$privateEnvTransactionCommitted = $true'
     )

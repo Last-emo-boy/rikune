@@ -395,10 +395,21 @@ function Write-SecureRuntimeEnvFile {
 }
 
 function New-NativeInstallerFailure {
-    param([string]$Message, [int]$ExitCode)
+    param(
+        [string]$Message,
+        [int]$ExitCode,
+        [string]$Category = "",
+        [string]$Phase = ""
+    )
 
     $failure = [System.InvalidOperationException]::new($Message)
     $failure.Data["RIKUNE_NATIVE_EXIT_CODE"] = $ExitCode
+    if (-not [string]::IsNullOrWhiteSpace($Category)) {
+        $failure.Data["RIKUNE_NATIVE_FAILURE_CATEGORY"] = $Category
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Phase)) {
+        $failure.Data["RIKUNE_NATIVE_FAILURE_PHASE"] = $Phase
+    }
     return $failure
 }
 
@@ -436,21 +447,64 @@ function Invoke-RuntimePrivateEnvSnapshotOperation {
         [string]$Snapshot,
         [string]$NodePath,
         [string]$WriterPath,
-        [string]$FailureMessage
+        [string]$FailureMessage,
+        [ValidatePattern('^[a-z0-9][a-z0-9-]{0,63}$')]
+        [string]$FailurePhase = "snapshot-operation"
     )
 
     $previousEntry = Get-ProcessEnvironmentEntrySnapshot -Name $EnvironmentName
+    $operationOutput = $null
+    $nativeFailureText = $null
+    $PSNativeCommandUseErrorActionPreference = $false
     try {
         [Environment]::SetEnvironmentVariable($EnvironmentName, $Path, "Process")
-        $operationOutput = $Snapshot | & $NodePath $WriterPath 2>$null
+        $operationOutput = $Snapshot | & $NodePath $WriterPath 2>&1
         $nativeExitCode = $LASTEXITCODE
         if ($nativeExitCode -ne 0) {
-            throw (New-NativeInstallerFailure -Message $FailureMessage -ExitCode $nativeExitCode)
+            $nativeFailureText = [string](@($operationOutput) -join "`n")
+            $nativeFailureCategory = "unclassified"
+            if (
+                $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+EPERM:[^\r\n]*,\s+unlink(?:\s|$)'
+            ) {
+                $nativeFailureCategory = "unlink-eperm"
+            } elseif (
+                $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+EBUSY:[^\r\n]*,\s+unlink(?:\s|$)'
+            ) {
+                $nativeFailureCategory = "unlink-ebusy"
+            } elseif (
+                $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+EACCES:[^\r\n]*,\s+unlink(?:\s|$)'
+            ) {
+                $nativeFailureCategory = "unlink-eacces"
+            } elseif (
+                $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+Unable to verify Windows ACL\b'
+            ) {
+                $nativeFailureCategory = "acl-verify"
+            } elseif (
+                $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+Private environment target changed\b'
+            ) {
+                $nativeFailureCategory = "snapshot-changed"
+            } elseif (
+                $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+Private environment snapshot(?: original bytes)? (?:must contain canonical base64|has an invalid schema|must contain valid UTF-8 JSON)\b'
+            ) {
+                $nativeFailureCategory = "snapshot-invalid"
+            } elseif (
+                $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+Exactly one private environment operation selector\b'
+            ) {
+                $nativeFailureCategory = "selector-invalid"
+            }
+            $safeFailureMessage = "$FailureMessage (phase=$FailurePhase; category=$nativeFailureCategory; exit=$nativeExitCode)"
+            throw (New-NativeInstallerFailure `
+                -Message $safeFailureMessage `
+                -ExitCode $nativeExitCode `
+                -Category $nativeFailureCategory `
+                -Phase $FailurePhase)
         }
         if (@($operationOutput).Count -ne 0) {
             throw "Secure Windows runtime env snapshot operation produced unexpected output"
         }
     } finally {
+        $operationOutput = $null
+        $nativeFailureText = $null
         Restore-ProcessEnvironmentEntry -Name $EnvironmentName -Snapshot $previousEntry
     }
 }
@@ -460,7 +514,9 @@ function Remove-RuntimePrivateEnvForSnapshot {
         [string]$Path,
         [string]$Snapshot,
         [string]$NodePath,
-        [string]$WriterPath
+        [string]$WriterPath,
+        [ValidateSet("installer-pre-build", "verifier-rollback-remove", "verifier-commit-remove")]
+        [string]$FailurePhase = "installer-pre-build"
     )
 
     Invoke-RuntimePrivateEnvSnapshotOperation `
@@ -469,7 +525,8 @@ function Remove-RuntimePrivateEnvForSnapshot {
         -Snapshot $Snapshot `
         -NodePath $NodePath `
         -WriterPath $WriterPath `
-        -FailureMessage "Secure removal of the staged Windows runtime env failed"
+        -FailureMessage "Secure removal of the staged Windows runtime env failed" `
+        -FailurePhase $FailurePhase
 }
 
 function Restore-RuntimePrivateEnvSnapshot {
@@ -486,7 +543,8 @@ function Restore-RuntimePrivateEnvSnapshot {
         -Snapshot $Snapshot `
         -NodePath $NodePath `
         -WriterPath $WriterPath `
-        -FailureMessage "Secure restoration of the Windows runtime env failed"
+        -FailureMessage "Secure restoration of the Windows runtime env failed" `
+        -FailurePhase "snapshot-restore"
 }
 
 function Resolve-PinnedPm2Command {
