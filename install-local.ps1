@@ -1,5 +1,5 @@
-# Rikune — Local (Non-Docker) Install Script
-# Requires: PowerShell 7+, Node.js 22+, CPython 3.12 x86_64
+# Rikune — Legacy Windows Native Analyzer Installer
+# v1.4.0 retains this entry point only to fail closed before any environment or file mutation.
 # Encoding: UTF-8 without BOM
 
 param(
@@ -13,7 +13,8 @@ param(
     [switch]$SkipOptional,
 
     [Parameter(HelpMessage="Runtime execution mode")]
-    [ValidateSet("disabled", "auto-sandbox", "manual", "remote-sandbox")]
+    # Legacy compatibility only; every invocation exits below before mutation in v1.4.0.
+    [ValidateSet("disabled", "manual", "remote-sandbox")]
     [string]$RuntimeMode = "disabled",
 
     [Parameter(HelpMessage="Enable verbose output")]
@@ -22,6 +23,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
+
+Write-Host "[ERROR] Rikune v1.4.0 requires a Linux kernel for the Analyzer and sample-custody data plane." -ForegroundColor Red
+Write-Host "Native Windows/macOS Node Analyzer and auto-sandbox topologies are not supported." -ForegroundColor Red
+Write-Host ""
+Write-Host "Supported Windows-host paths:" -ForegroundColor Yellow
+Write-Host "  Static Linux container:  .\rikune.ps1 install -Profile static"
+Write-Host "  Hybrid Linux container:  .\rikune.ps1 install -Profile hybrid -InstallRuntime"
+Write-Host "  Windows runtime only:     .\install-runtime-windows.ps1"
+Write-Host "WSL2 users may run ./install-local.sh inside WSL2 and must keep sample data on the WSL Linux filesystem (for example ~/.rikune), never /mnt/<drive> DrvFS."
+exit 1
+
 $explicitAnalyzerApiKey = $env:RIKUNE_API_KEY
 if ([string]::IsNullOrWhiteSpace($explicitAnalyzerApiKey)) {
     $explicitAnalyzerApiKey = $env:RIKUNE_ANALYZER_API_KEY
@@ -31,10 +43,12 @@ if ([string]::IsNullOrWhiteSpace($explicitAnalyzerApiKey)) {
     "RIKUNE_ANALYZER_API_KEY",
     "RIKUNE_STAGE_LOCAL_ENV_PATH",
     "RIKUNE_LOCAL_EXISTING_ENV_BASE64",
+    "RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN",
+    "RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH",
+    "RIKUNE_RESTORE_PRIVATE_ENV_PATH",
     "RIKUNE_LOCAL_ENV_PATH",
     "RIKUNE_LOCAL_ENV_FORCE_KEYS",
     "ANALYZER_API_KEY",
-    "STAGED_LOCAL_ENV_BASE64",
     "RUNTIME_HOST_AGENT_API_KEY",
     "HOST_AGENT_API_KEY",
     "HOST_AGENT_RUNTIME_API_KEY",
@@ -91,6 +105,39 @@ function Write-Step {
     param([string]$Text)
     Write-Host "`n[STEP] $Text" -ForegroundColor $ColorPrimary
     Write-Host "-----------------------------------------" -ForegroundColor $ColorPrimary
+}
+
+function Get-LocalPrivateEnvSnapshot {
+    param([string]$Path, [string]$Writer)
+
+    $previousValue = [Environment]::GetEnvironmentVariable("RIKUNE_STAGE_LOCAL_ENV_PATH", "Process")
+    try {
+        [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_LOCAL_ENV_PATH", $Path, "Process")
+        $snapshotOutput = & node $Writer
+        if ($LASTEXITCODE -ne 0) { throw "Secure local environment staging failed" }
+        return [string](@($snapshotOutput) -join '')
+    } finally {
+        [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_LOCAL_ENV_PATH", $previousValue, "Process")
+    }
+}
+
+function Invoke-LocalPrivateEnvSnapshotOperation {
+    param(
+        [string]$EnvironmentName,
+        [string]$Path,
+        [string]$Snapshot,
+        [string]$Writer,
+        [string]$FailureMessage
+    )
+
+    $previousValue = [Environment]::GetEnvironmentVariable($EnvironmentName, "Process")
+    try {
+        [Environment]::SetEnvironmentVariable($EnvironmentName, $Path, "Process")
+        $Snapshot | & node $Writer
+        if ($LASTEXITCODE -ne 0) { throw $FailureMessage }
+    } finally {
+        [Environment]::SetEnvironmentVariable($EnvironmentName, $previousValue, "Process")
+    }
 }
 
 function Get-OptionalFeatureByName {
@@ -207,13 +254,15 @@ if (-not $isWindowsPlatform -or -not $isX64Platform) {
 # Node.js
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Error-Message "Node.js not found"
-    Write-Host "  Install Node.js 22+: https://nodejs.org/" -ForegroundColor $ColorError
+    Write-Host "  Install Node.js 22.9+: https://nodejs.org/" -ForegroundColor $ColorError
     exit 1
 }
 $nodeVersion = (node --version).Trim()
-$nodeMajor = [int]($nodeVersion -replace '^v','').Split('.')[0]
-if ($nodeMajor -lt 22) {
-    Write-Error-Message "Node.js $nodeVersion is too old (need 22+)"
+$nodeParts = ($nodeVersion -replace '^v','').Split('.')
+$nodeMajor = [int]$nodeParts[0]
+$nodeMinor = [int]$nodeParts[1]
+if ($nodeMajor -lt 22 -or ($nodeMajor -eq 22 -and $nodeMinor -lt 9)) {
+    Write-Error-Message "Node.js $nodeVersion is too old (need 22.9+)"
     exit 1
 }
 Write-Success "Node.js: $nodeVersion"
@@ -227,30 +276,25 @@ Write-Success "npm: $((npm --version).Trim())"
 
 $envFile = Join-Path $ProjectRoot ".env"
 $localEnvWriter = Join-Path $ProjectRoot "scripts/write-local-runtime-env.mjs"
+$privateEnvWriter = Join-Path $ProjectRoot "scripts/write-docker-runtime-env.mjs"
 if (-not (Test-Path -LiteralPath $localEnvWriter -PathType Leaf)) {
     throw "Secure local environment writer not found: $localEnvWriter"
 }
-[Environment]::SetEnvironmentVariable("RIKUNE_STAGE_LOCAL_ENV_PATH", $envFile, "Process")
+if (-not (Test-Path -LiteralPath $privateEnvWriter -PathType Leaf)) {
+    throw "Secure private environment writer not found: $privateEnvWriter"
+}
+$privateEnvSnapshot = $null
+$privateEnvTransactionActive = $false
+$privateEnvTransactionCommitted = $false
 try {
-    $stageOutput = & node $localEnvWriter
-    if ($LASTEXITCODE -ne 0) { throw "Secure local environment staging failed" }
-    $stagedLocalEnvBase64 = [string](@($stageOutput) -join '')
-} finally {
-    [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_LOCAL_ENV_PATH", $null, "Process")
-}
-
-if ($RuntimeMode -eq "auto-sandbox") {
-    if (-not [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
-        Write-Error-Message "RUNTIME_MODE=auto-sandbox requires a Windows-native analyzer"
-        exit 1
-    }
-    $sandboxFeature = Get-OptionalFeatureByName -Names @("Containers-DisposableClientVM", "Containers-DisposableClient")
-    if (-not $sandboxFeature -or $sandboxFeature.State -ne "Enabled") {
-        Write-Warning-Message "Windows Sandbox is not enabled. Enable the 'Windows Sandbox' optional feature before running auto-sandbox dynamic tools."
-    } else {
-        Write-Success "Windows Sandbox feature enabled"
-    }
-}
+    $privateEnvSnapshot = Get-LocalPrivateEnvSnapshot -Path $envFile -Writer $localEnvWriter
+    $privateEnvTransactionActive = $true
+    Invoke-LocalPrivateEnvSnapshotOperation `
+        -EnvironmentName "RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH" `
+        -Path $envFile `
+        -Snapshot $privateEnvSnapshot `
+        -Writer $privateEnvWriter `
+        -FailureMessage "Secure removal of the staged local environment failed"
 
 # Python
 $pythonCmd = $null
@@ -562,7 +606,7 @@ API_KEY=__RIKUNE_CSPRNG_API_KEY__
 $managedWriterEnvironment = @{
     RIKUNE_LOCAL_ENV_PATH = $envFile
     RIKUNE_LOCAL_ENV_FORCE_KEYS = "NODE_ROLE,RUNTIME_MODE,WORKSPACE_ROOT,DB_PATH,CACHE_ROOT,AUDIT_LOG_PATH,LOG_LEVEL,SANDBOX_PYTHON_PATH,API_ENABLED,API_PORT,API_STORAGE_ROOT"
-    RIKUNE_LOCAL_EXISTING_ENV_BASE64 = $stagedLocalEnvBase64
+    RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN = "1"
     RIKUNE_API_KEY = $explicitAnalyzerApiKey
 }
 $previousWriterEnvironment = @{}
@@ -571,14 +615,30 @@ foreach ($name in $managedWriterEnvironment.Keys) {
     [Environment]::SetEnvironmentVariable($name, [string]$managedWriterEnvironment[$name], "Process")
 }
 try {
-    $envContent | & node $localEnvWriter
+    ($privateEnvSnapshot + "`n" + $envContent) | & node $localEnvWriter
     if ($LASTEXITCODE -ne 0) { throw "Secure local environment generation failed" }
 } finally {
     foreach ($name in $managedWriterEnvironment.Keys) {
         [Environment]::SetEnvironmentVariable($name, $previousWriterEnvironment[$name], "Process")
     }
-    $stagedLocalEnvBase64 = $null
     $explicitAnalyzerApiKey = $null
+}
+    $privateEnvTransactionCommitted = $true
+    $privateEnvSnapshot = $null
+} finally {
+    if ($privateEnvTransactionActive -and -not $privateEnvTransactionCommitted) {
+        try {
+            Invoke-LocalPrivateEnvSnapshotOperation `
+                -EnvironmentName "RIKUNE_RESTORE_PRIVATE_ENV_PATH" `
+                -Path $envFile `
+                -Snapshot $privateEnvSnapshot `
+                -Writer $privateEnvWriter `
+                -FailureMessage "Secure restoration of the local environment failed"
+        } catch {
+            Write-Error-Message "Failed to restore the protected local env after installer failure: $($_.Exception.Message)"
+        }
+    }
+    $privateEnvSnapshot = $null
 }
 Write-Success "Protected environment file: $envFile"
 Write-Info "Edit .env to set paths to your locally installed tools"

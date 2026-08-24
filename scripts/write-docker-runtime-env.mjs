@@ -56,6 +56,7 @@ function commandFailure(result) {
 
 const WINDOWS_PRIVATE_FILE_ACL_MARKER = 'RIKUNE_PRIVATE_FILE_ACL_V1'
 const WINDOWS_PRIVATE_FILE_ACL_SCRIPT = String.raw`
+$env:PSModulePath = $env:SystemRoot + '\System32\WindowsPowerShell\v1.0\Modules'
 $ErrorActionPreference = 'Stop'
 $targetPath = $env:RIKUNE_PRIVATE_ENV_PATH
 $mode = $env:RIKUNE_PRIVATE_ENV_ACL_MODE
@@ -104,11 +105,38 @@ if (
 [Console]::Out.Write('${WINDOWS_PRIVATE_FILE_ACL_MARKER}')
 `
 
-function resolveTrustedWindowsPowerShell(environment = process.env) {
-  const systemRoot = String(environment.SystemRoot || environment.windir || '')
-  if (!path.win32.isAbsolute(systemRoot) || /[\r\n\0]/u.test(systemRoot)) {
-    throw new Error('Unable to resolve a trusted Windows SystemRoot')
+function readWindowsEnvironmentValue(environment, name) {
+  const matchedName = Object.keys(environment).find(
+    (candidate) => candidate.toUpperCase() === name.toUpperCase()
+  )
+  const value = matchedName === undefined ? '' : String(environment[matchedName] ?? '')
+  if (/[\r\n\0]/u.test(value)) {
+    throw new Error(`Unsafe Windows child environment value: ${name}`)
   }
+  return value
+}
+
+function resolveTrustedWindowsSystemRoot(environment) {
+  const configuredSystemRoot = readWindowsEnvironmentValue(environment, 'SYSTEMROOT')
+  const configuredWindowsDirectory = readWindowsEnvironmentValue(environment, 'WINDIR')
+  if (
+    configuredSystemRoot &&
+    configuredWindowsDirectory &&
+    path.win32.resolve(configuredSystemRoot).toLowerCase() !==
+      path.win32.resolve(configuredWindowsDirectory).toLowerCase()
+  ) {
+    throw new Error('SystemRoot and windir must resolve to the same Windows directory')
+  }
+
+  const systemRoot = configuredSystemRoot || configuredWindowsDirectory
+  if (!/^[A-Za-z]:[\\/]/u.test(systemRoot) || !path.win32.isAbsolute(systemRoot)) {
+    throw new Error('Unable to resolve a trusted drive-qualified Windows SystemRoot')
+  }
+  return path.win32.resolve(systemRoot)
+}
+
+export function resolveTrustedWindowsPowerShell(environment = process.env) {
+  const systemRoot = resolveTrustedWindowsSystemRoot(environment)
   const powershell = path.win32.join(
     systemRoot,
     'System32',
@@ -123,21 +151,35 @@ function resolveTrustedWindowsPowerShell(environment = process.env) {
   return powershell
 }
 
-function invokeWindowsFileAcl(filePath, mode, options = {}) {
+export function invokeWindowsFileAcl(filePath, mode, options = {}) {
   const environment = options.environment || process.env
   const runCommand = options.spawn || spawnSync
   const powershell = options.powershell || resolveTrustedWindowsPowerShell(environment)
   const encodedCommand = Buffer.from(WINDOWS_PRIVATE_FILE_ACL_SCRIPT, 'utf16le').toString('base64')
+  const systemRoot = resolveTrustedWindowsSystemRoot(environment)
+  const system32 = path.win32.join(systemRoot, 'System32')
+  const trustedPowerShellModules = path.win32.join(system32, 'WindowsPowerShell', 'v1.0', 'Modules')
+  const systemDrive = path.win32.parse(systemRoot).root.replace(/[\\/]$/u, '')
+  const configuredTemp = readWindowsEnvironmentValue(environment, 'TEMP')
+  const configuredTmp = readWindowsEnvironmentValue(environment, 'TMP')
+  const temp = configuredTemp || configuredTmp
+  const tmp = configuredTmp || temp
   const childEnvironment = {
-    SystemRoot: environment.SystemRoot,
-    TEMP: environment.TEMP,
-    TMP: environment.TMP,
-    windir: environment.windir,
+    HOMEDRIVE: systemDrive,
+    HOMEPATH: '\\',
+    LOGONSERVER: '',
+    PATH: system32,
+    SYSTEMDRIVE: systemDrive,
+    SYSTEMROOT: systemRoot,
+    TEMP: temp,
+    TMP: tmp,
+    USERDOMAIN: '',
+    USERNAME: '',
+    USERPROFILE: '',
+    WINDIR: systemRoot,
+    PSModulePath: trustedPowerShellModules,
     RIKUNE_PRIVATE_ENV_PATH: path.resolve(filePath),
     RIKUNE_PRIVATE_ENV_ACL_MODE: mode,
-  }
-  for (const key of Object.keys(childEnvironment)) {
-    if (childEnvironment[key] === undefined) delete childEnvironment[key]
   }
   const result = runCommand(
     powershell,
@@ -186,19 +228,27 @@ export function assertProtectedExistingFile({
   const absoluteTarget = path.resolve(requireEnvValue('targetPath', targetPath))
   const initial = fs.lstatSync(absoluteTarget)
   if (!initial.isFile() || initial.isSymbolicLink()) {
-    throw new Error(`Existing private environment target must be a non-link regular file: ${absoluteTarget}`)
+    throw new Error(
+      `Existing private environment target must be a non-link regular file: ${absoluteTarget}`
+    )
   }
   if (initial.nlink !== 1) {
-    throw new Error(`Existing private environment target must have exactly one hard link: ${absoluteTarget}`)
+    throw new Error(
+      `Existing private environment target must have exactly one hard link: ${absoluteTarget}`
+    )
   }
   if (initial.size > maxBytes) {
-    throw new Error(`Existing private environment target exceeds ${maxBytes} bytes: ${absoluteTarget}`)
+    throw new Error(
+      `Existing private environment target exceeds ${maxBytes} bytes: ${absoluteTarget}`
+    )
   }
   if (platform === 'win32') {
     verifyWindowsAcl(absoluteTarget)
   } else {
     if (typeof process.getuid !== 'function' || initial.uid !== process.getuid()) {
-      throw new Error(`Existing private environment target must be owned by the current user: ${absoluteTarget}`)
+      throw new Error(
+        `Existing private environment target must be owned by the current user: ${absoluteTarget}`
+      )
     }
     if ((initial.mode & 0o777) !== 0o600) {
       throw new Error(`Existing private environment target must have mode 0600: ${absoluteTarget}`)
@@ -213,6 +263,17 @@ export function readPrivateUtf8File({
   verifyWindowsAcl = verifyWindowsFileAcl,
   maxBytes = 64 * 1024,
 }) {
+  return new TextDecoder('utf-8', { fatal: true }).decode(
+    readPrivateUtf8Bytes({ targetPath, platform, verifyWindowsAcl, maxBytes })
+  )
+}
+
+export function readPrivateUtf8Bytes({
+  targetPath,
+  platform = process.platform,
+  verifyWindowsAcl = verifyWindowsFileAcl,
+  maxBytes = 64 * 1024,
+}) {
   const { absoluteTarget, initial } = assertProtectedExistingFile({
     targetPath,
     platform,
@@ -222,13 +283,13 @@ export function readPrivateUtf8File({
   const noFollow = fs.constants.O_NOFOLLOW || 0
   const closeOnExec = fs.constants.O_CLOEXEC || 0
   const descriptor = fs.openSync(absoluteTarget, fs.constants.O_RDONLY | noFollow | closeOnExec)
-  let content
+  let bytes
   try {
     const opened = fs.fstatSync(descriptor)
     if (!isSameFile(initial, opened) || opened.size !== initial.size) {
       throw new Error(`Private environment target changed during validation: ${absoluteTarget}`)
     }
-    const bytes = fs.readFileSync(descriptor)
+    bytes = fs.readFileSync(descriptor)
     const completed = fs.fstatSync(descriptor)
     if (
       !isSameFile(opened, completed) ||
@@ -238,7 +299,7 @@ export function readPrivateUtf8File({
       throw new Error(`Private environment target changed while reading: ${absoluteTarget}`)
     }
     try {
-      content = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+      new TextDecoder('utf-8', { fatal: true }).decode(bytes)
     } catch {
       throw new Error(`Private environment target must contain valid UTF-8: ${absoluteTarget}`)
     }
@@ -249,7 +310,188 @@ export function readPrivateUtf8File({
   if (!isSameFile(initial, final) || final.size !== initial.size) {
     throw new Error(`Private environment target changed after reading: ${absoluteTarget}`)
   }
-  return content
+  return bytes
+}
+
+const PRIVATE_ENV_SNAPSHOT_VERSION = 1
+
+function assertCanonicalBase64(name, value, maxBytes = 128 * 1024) {
+  const normalized = String(value ?? '').trim()
+  if (
+    normalized.length > maxBytes * 2 ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(normalized)
+  ) {
+    throw new Error(`${name} must contain canonical base64`)
+  }
+  const bytes = Buffer.from(normalized, 'base64')
+  if (bytes.toString('base64') !== normalized || bytes.length > maxBytes) {
+    throw new Error(`${name} must contain canonical base64`)
+  }
+  return bytes
+}
+
+function assertSnapshotTarget(snapshot, targetPath) {
+  const absoluteTarget = path.resolve(requireEnvValue('targetPath', targetPath))
+  if (snapshot.targetPath !== absoluteTarget) {
+    throw new Error('Private environment snapshot target does not match the requested target')
+  }
+  return absoluteTarget
+}
+
+export function capturePrivateEnvSnapshot({
+  targetPath,
+  platform = process.platform,
+  verifyWindowsAcl = verifyWindowsFileAcl,
+}) {
+  const absoluteTarget = path.resolve(requireEnvValue('targetPath', targetPath))
+  if (!pathEntryExists(absoluteTarget)) {
+    return { targetPath: absoluteTarget, existed: false, originalBytes: Buffer.alloc(0) }
+  }
+  const originalBytes = readPrivateUtf8Bytes({
+    targetPath: absoluteTarget,
+    platform,
+    verifyWindowsAcl,
+  })
+  if (originalBytes.includes(0)) {
+    throw new Error(`Private environment target must not contain NUL bytes: ${absoluteTarget}`)
+  }
+  return {
+    targetPath: absoluteTarget,
+    existed: true,
+    originalBytes,
+  }
+}
+
+export function encodePrivateEnvSnapshot(snapshot) {
+  const originalBytes = Buffer.from(snapshot?.originalBytes ?? [])
+  const payload = {
+    version: PRIVATE_ENV_SNAPSHOT_VERSION,
+    targetPath: String(snapshot?.targetPath ?? ''),
+    existed: snapshot?.existed === true,
+    originalBase64: originalBytes.toString('base64'),
+  }
+  if (!path.isAbsolute(payload.targetPath) || /[\r\n\0]/u.test(payload.targetPath)) {
+    throw new Error('Private environment snapshot target must be an absolute path')
+  }
+  if (!payload.existed && originalBytes.length !== 0) {
+    throw new Error('A missing private environment snapshot cannot contain original bytes')
+  }
+  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64')
+}
+
+export function decodePrivateEnvSnapshot(encoded) {
+  const serialized = assertCanonicalBase64('Private environment snapshot', encoded)
+  let payload
+  try {
+    payload = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(serialized))
+  } catch {
+    throw new Error('Private environment snapshot must contain valid UTF-8 JSON')
+  }
+  if (
+    payload?.version !== PRIVATE_ENV_SNAPSHOT_VERSION ||
+    typeof payload.targetPath !== 'string' ||
+    !path.isAbsolute(payload.targetPath) ||
+    /[\r\n\0]/u.test(payload.targetPath) ||
+    typeof payload.existed !== 'boolean' ||
+    typeof payload.originalBase64 !== 'string'
+  ) {
+    throw new Error('Private environment snapshot has an invalid schema')
+  }
+  const originalBytes = assertCanonicalBase64(
+    'Private environment snapshot original bytes',
+    payload.originalBase64,
+    64 * 1024
+  )
+  if (!payload.existed && originalBytes.length !== 0) {
+    throw new Error('A missing private environment snapshot cannot contain original bytes')
+  }
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(originalBytes)
+  } catch {
+    throw new Error('Private environment snapshot original bytes must contain valid UTF-8')
+  }
+  if (originalBytes.includes(0)) {
+    throw new Error('Private environment snapshot original bytes must not contain NUL bytes')
+  }
+  return {
+    targetPath: payload.targetPath,
+    existed: payload.existed,
+    originalBytes,
+  }
+}
+
+export function privateEnvSnapshotContent(snapshot) {
+  if (!snapshot.existed) return ''
+  return new TextDecoder('utf-8', { fatal: true }).decode(snapshot.originalBytes)
+}
+
+function snapshotMatchesCurrentFile(snapshot, options) {
+  if (!snapshot.existed || !pathEntryExists(snapshot.targetPath)) return false
+  const currentBytes = readPrivateUtf8Bytes({ targetPath: snapshot.targetPath, ...options })
+  return (
+    currentBytes.length === snapshot.originalBytes.length &&
+    crypto.timingSafeEqual(currentBytes, snapshot.originalBytes)
+  )
+}
+
+export function removePrivateEnvForSnapshot({
+  targetPath,
+  snapshot,
+  platform = process.platform,
+  verifyWindowsAcl = verifyWindowsFileAcl,
+}) {
+  const absoluteTarget = assertSnapshotTarget(snapshot, targetPath)
+  if (!snapshot.existed) {
+    if (pathEntryExists(absoluteTarget)) {
+      throw new Error('Private environment target appeared after the missing-file snapshot')
+    }
+    return false
+  }
+  if (!snapshotMatchesCurrentFile(snapshot, { platform, verifyWindowsAcl })) {
+    throw new Error('Private environment target changed after the transaction snapshot')
+  }
+  return removeProtectedExistingFile({
+    targetPath: absoluteTarget,
+    platform,
+    verifyWindowsAcl,
+  })
+}
+
+export function restorePrivateEnvSnapshot({
+  targetPath,
+  snapshot,
+  platform = process.platform,
+  restrictWindowsAcl = restrictWindowsFileAcl,
+  verifyWindowsAcl = verifyWindowsFileAcl,
+}) {
+  const absoluteTarget = assertSnapshotTarget(snapshot, targetPath)
+  if (!snapshot.existed) {
+    if (pathEntryExists(absoluteTarget)) {
+      throw new Error(
+        'Private environment rollback refused to remove a file created after the missing-file snapshot'
+      )
+    }
+    return
+  }
+
+  if (pathEntryExists(absoluteTarget)) {
+    if (snapshotMatchesCurrentFile(snapshot, { platform, verifyWindowsAcl })) return
+    throw new Error(
+      'Private environment rollback refused to overwrite bytes changed after the transaction snapshot'
+    )
+  }
+
+  writePrivateUtf8File({
+    targetPath: absoluteTarget,
+    content: snapshot.originalBytes,
+    platform,
+    restrictWindowsAcl,
+    verifyWindowsAcl,
+    requireAbsent: true,
+  })
+  if (!snapshotMatchesCurrentFile(snapshot, { platform, verifyWindowsAcl })) {
+    throw new Error('Private environment rollback did not restore the original bytes')
+  }
 }
 
 export function removeProtectedExistingFile({
@@ -286,10 +528,7 @@ export function parseDockerRuntimeEnv(content) {
   return values
 }
 
-export function resolveAnalyzerApiKey({
-  explicitKey,
-  randomBytes = crypto.randomBytes,
-}) {
+export function resolveAnalyzerApiKey({ explicitKey, randomBytes = crypto.randomBytes }) {
   const explicit = assertEnvValue('RIKUNE_API_KEY', explicitKey).trim()
   if (explicit.length > 0) {
     return { key: requireStrongApiKey('RIKUNE_API_KEY', explicit), generated: false }
@@ -308,19 +547,33 @@ export function writePrivateUtf8File({
   platform = process.platform,
   restrictWindowsAcl = restrictWindowsFileAcl,
   verifyWindowsAcl = verifyWindowsFileAcl,
+  requireAbsent = false,
 }) {
   const absoluteTarget = path.resolve(requireEnvValue('targetPath', targetPath))
-  const normalizedContent = String(content ?? '')
-  if (normalizedContent.includes('\0')) {
+  const normalizedContent = Buffer.isBuffer(content)
+    ? Buffer.from(content)
+    : Buffer.from(String(content ?? ''), 'utf8')
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(normalizedContent)
+  } catch {
+    throw new Error('content must contain valid UTF-8')
+  }
+  if (normalizedContent.includes(0)) {
     throw new Error('content cannot contain NUL bytes')
   }
   if (pathEntryExists(absoluteTarget)) {
+    if (requireAbsent) {
+      throw new Error(
+        'Private environment transaction target appeared before the atomic replacement'
+      )
+    }
     assertProtectedExistingFile({ targetPath: absoluteTarget, platform, verifyWindowsAcl })
   }
   fs.mkdirSync(path.dirname(absoluteTarget), { recursive: true })
   const temporaryPath = `${absoluteTarget}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`
   let descriptor
   let renamed = false
+  let replacementIdentity
 
   try {
     descriptor = fs.openSync(temporaryPath, 'wx', 0o600)
@@ -333,23 +586,58 @@ export function writePrivateUtf8File({
       fs.fchmodSync(descriptor, 0o600)
     }
 
-    fs.writeFileSync(descriptor, normalizedContent, { encoding: 'utf8' })
+    fs.writeFileSync(descriptor, normalizedContent)
     fs.fsyncSync(descriptor)
     fs.closeSync(descriptor)
     descriptor = undefined
+    replacementIdentity = fs.lstatSync(temporaryPath)
 
-    fs.renameSync(temporaryPath, absoluteTarget)
-    renamed = true
+    if (requireAbsent) {
+      fs.linkSync(temporaryPath, absoluteTarget)
+      renamed = true
+      fs.unlinkSync(temporaryPath)
+    } else {
+      fs.renameSync(temporaryPath, absoluteTarget)
+      renamed = true
+    }
     if (platform === 'win32') {
       restrictWindowsAcl(absoluteTarget)
     } else {
       fs.chmodSync(absoluteTarget, 0o600)
-      assertProtectedExistingFile({ targetPath: absoluteTarget, platform })
+    }
+    const { initial: installedIdentity } = assertProtectedExistingFile({
+      targetPath: absoluteTarget,
+      platform,
+      verifyWindowsAcl,
+    })
+    if (!isSameFile(replacementIdentity, installedIdentity)) {
+      throw new Error(
+        `Private environment target changed during atomic replacement: ${absoluteTarget}`
+      )
+    }
+    const writtenBytes = readPrivateUtf8Bytes({
+      targetPath: absoluteTarget,
+      platform,
+      verifyWindowsAcl,
+    })
+    if (
+      writtenBytes.length !== normalizedContent.length ||
+      !crypto.timingSafeEqual(writtenBytes, normalizedContent)
+    ) {
+      throw new Error(
+        `Private environment target bytes did not verify after replacement: ${absoluteTarget}`
+      )
     }
   } catch (error) {
-    if (renamed) {
+    if (renamed && pathEntryExists(absoluteTarget)) {
       try {
-        fs.rmSync(absoluteTarget, { force: true })
+        const currentIdentity = fs.lstatSync(absoluteTarget)
+        if (!replacementIdentity || !isSameFile(replacementIdentity, currentIdentity)) {
+          throw new Error(
+            `Refusing to remove a private environment target changed after replacement: ${absoluteTarget}`
+          )
+        }
+        fs.unlinkSync(absoluteTarget)
       } catch (cleanupError) {
         throw new AggregateError(
           [error, cleanupError],
@@ -376,10 +664,12 @@ export function writeDockerRuntimeEnv({
   hostAgentApiKey = '',
   runtimeApiKey = '',
   allowInsecureRuntimeHttp = false,
+  existingContent,
   randomBytes = crypto.randomBytes,
   platform = process.platform,
   restrictWindowsAcl = restrictWindowsFileAcl,
   verifyWindowsAcl = verifyWindowsFileAcl,
+  requireAbsent = false,
 }) {
   const normalizedTarget = assertEnvValue('targetPath', targetPath).trim()
   if (normalizedTarget.length === 0) {
@@ -408,6 +698,9 @@ export function writeDockerRuntimeEnv({
     throw new Error('RUNTIME_HOST_AGENT_API_KEY and RUNTIME_API_KEY must be distinct')
   }
   const absoluteTarget = path.resolve(normalizedTarget)
+  if (requireAbsent && pathEntryExists(absoluteTarget)) {
+    throw new Error('Private environment transaction target appeared before the final writer')
+  }
   const resolvedKey = resolveAnalyzerApiKey({
     explicitKey: analyzerApiKey,
     randomBytes,
@@ -432,6 +725,30 @@ export function writeDockerRuntimeEnv({
     )
   }
 
+  const existing = parseDockerRuntimeEnv(
+    existingContent === undefined && pathEntryExists(absoluteTarget)
+      ? readPrivateUtf8File({ targetPath: absoluteTarget, platform, verifyWindowsAcl })
+      : existingContent || ''
+  )
+  const managedKeys = new Set([
+    'RIKUNE_DATA_ROOT',
+    'RIKUNE_BUILD_HTTP_PROXY',
+    'RIKUNE_BUILD_HTTPS_PROXY',
+    'RIKUNE_BUILD_NO_PROXY',
+    'RIKUNE_API_KEY',
+    'RIKUNE_ANALYZER_API_KEY',
+    'RUNTIME_HOST_AGENT_ENDPOINT',
+    'RUNTIME_HOST_AGENT_API_KEY',
+    'RUNTIME_API_KEY',
+    'RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP',
+  ])
+  const preserved = Object.entries(existing)
+    .filter(([name]) => !managedKeys.has(name))
+    .map(([name, value]) => `${name}=${value}`)
+  if (preserved.length > 0) {
+    lines.push('', '# Existing user settings preserved by secure installer', ...preserved)
+  }
+
   const content = `${lines.join('\n')}\n`
   writePrivateUtf8File({
     targetPath: absoluteTarget,
@@ -439,18 +756,47 @@ export function writeDockerRuntimeEnv({
     platform,
     restrictWindowsAcl,
     verifyWindowsAcl,
+    requireAbsent,
   })
 
   return { analyzerApiKey: resolvedKey.key, generated: resolvedKey.generated }
+}
+
+async function readStandardInput() {
+  let content = ''
+  process.stdin.setEncoding('utf8')
+  for await (const chunk of process.stdin) content += chunk
+  return content
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : ''
 if (invokedPath === fileURLToPath(import.meta.url)) {
   if (process.env.RIKUNE_VERIFY_PRIVATE_ENV_PATH) {
     assertProtectedExistingFile({ targetPath: process.env.RIKUNE_VERIFY_PRIVATE_ENV_PATH })
+  } else if (process.env.RIKUNE_STAGE_DOCKER_ENV_PATH) {
+    const snapshot = capturePrivateEnvSnapshot({
+      targetPath: process.env.RIKUNE_STAGE_DOCKER_ENV_PATH,
+    })
+    process.stdout.write(encodePrivateEnvSnapshot(snapshot))
+  } else if (process.env.RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH) {
+    const snapshot = decodePrivateEnvSnapshot(await readStandardInput())
+    removePrivateEnvForSnapshot({
+      targetPath: process.env.RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH,
+      snapshot,
+    })
+  } else if (process.env.RIKUNE_RESTORE_PRIVATE_ENV_PATH) {
+    const snapshot = decodePrivateEnvSnapshot(await readStandardInput())
+    restorePrivateEnvSnapshot({
+      targetPath: process.env.RIKUNE_RESTORE_PRIVATE_ENV_PATH,
+      snapshot,
+    })
   } else if (process.env.RIKUNE_REMOVE_PRIVATE_ENV_PATH) {
     removeProtectedExistingFile({ targetPath: process.env.RIKUNE_REMOVE_PRIVATE_ENV_PATH })
   } else {
+    const snapshot = process.env.RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN
+      ? decodePrivateEnvSnapshot(await readStandardInput())
+      : undefined
+    if (snapshot) assertSnapshotTarget(snapshot, process.env.RIKUNE_DOCKER_ENV_PATH)
     writeDockerRuntimeEnv({
       targetPath: process.env.RIKUNE_DOCKER_ENV_PATH,
       dataRoot: process.env.RIKUNE_DOCKER_ENV_DATA_ROOT,
@@ -465,6 +811,8 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
       allowInsecureRuntimeHttp: /^(1|true|yes|on)$/iu.test(
         process.env.RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP || ''
       ),
+      existingContent: snapshot ? privateEnvSnapshotContent(snapshot) : undefined,
+      requireAbsent: snapshot !== undefined,
     })
   }
 }

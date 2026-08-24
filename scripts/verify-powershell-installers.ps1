@@ -7,6 +7,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $installerPaths = @(
     (Join-Path $projectRoot "install-docker.ps1"),
+    (Join-Path $projectRoot "install-local.ps1"),
     (Join-Path $projectRoot "install-runtime-windows.ps1"),
     (Join-Path $projectRoot "rikune.ps1")
 )
@@ -88,6 +89,8 @@ foreach ($installerPath in $installerPaths) {
 
 $dockerAst = $installerAsts["install-docker.ps1"]
 $dockerSource = $dockerAst.Extent.Text
+$localInstallerAst = $installerAsts["install-local.ps1"]
+$localInstallerSource = $localInstallerAst.Extent.Text
 $runtimeAst = $installerAsts["install-runtime-windows.ps1"]
 $runtimeSource = $runtimeAst.Extent.Text
 $rikuneAst = $installerAsts["rikune.ps1"]
@@ -406,6 +409,58 @@ Assert-Contract (
 Assert-Contract (
     $runtimeSource.Contains('Assert-SecureRuntimeEndpoint -Endpoint $HyperVRuntimeEndpoint -AllowInsecure:$AllowInsecureRuntimeHttp')
 ) "install-runtime-windows.ps1 must enforce the relayed insecure-HTTP opt-in on the Hyper-V Runtime endpoint"
+
+foreach ($requiredFragment in @(
+    'RIKUNE_STAGE_DOCKER_ENV_PATH',
+    'RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH',
+    'RIKUNE_RESTORE_PRIVATE_ENV_PATH',
+    'RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN',
+    '$privateEnvTransactionActive = $true',
+    '$privateEnvTransactionCommitted = $true',
+    'RIKUNE_NATIVE_EXIT_CODE',
+    'exit $privateEnvFailureExitCode',
+    '$nodeMinor -lt 9',
+    'need 22.9+',
+    'finally'
+)) {
+    Assert-Contract ($dockerSource.Contains($requiredFragment)) "Docker installer is missing the private env transaction fragment '$requiredFragment'"
+}
+$dockerStageIndex = $dockerSource.IndexOf('Get-PrivateEnvSnapshot -Path $envFile')
+$dockerDependencyIndex = $dockerSource.IndexOf('& npm ci --include=dev')
+$dockerWriterIndex = $dockerSource.LastIndexOf('Write-EnvFile `')
+$dockerCommitIndex = $dockerSource.LastIndexOf('$privateEnvTransactionCommitted = $true')
+$dockerComposeIndex = $dockerSource.IndexOf('Write-Step "Docker Compose"')
+Assert-Contract (
+    $dockerStageIndex -ge 0 -and
+    $dockerDependencyIndex -gt $dockerStageIndex -and
+    $dockerWriterIndex -gt $dockerDependencyIndex -and
+    $dockerCommitIndex -gt $dockerWriterIndex -and
+    $dockerComposeIndex -gt $dockerCommitIndex
+) "Docker private env transaction must cover dependency/generate failures and commit immediately after the verified writer"
+
+foreach ($requiredFragment in @(
+    'RIKUNE_STAGE_LOCAL_ENV_PATH',
+    'RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH',
+    'RIKUNE_RESTORE_PRIVATE_ENV_PATH',
+    'RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN',
+    '$privateEnvTransactionActive = $true',
+    '$privateEnvTransactionCommitted = $true',
+    '$nodeMinor -lt 9',
+    'need 22.9+',
+    'finally'
+)) {
+    Assert-Contract ($localInstallerSource.Contains($requiredFragment)) "Local PowerShell installer is missing the private env transaction fragment '$requiredFragment'"
+}
+$localStageIndex = $localInstallerSource.IndexOf('Get-LocalPrivateEnvSnapshot -Path $envFile')
+$localDependencyIndex = $localInstallerSource.IndexOf('npm ci --include=dev')
+$localWriterIndex = $localInstallerSource.IndexOf('RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN = "1"')
+$localCommitIndex = $localInstallerSource.LastIndexOf('$privateEnvTransactionCommitted = $true')
+Assert-Contract (
+    $localStageIndex -ge 0 -and
+    $localDependencyIndex -gt $localStageIndex -and
+    $localWriterIndex -gt $localDependencyIndex -and
+    $localCommitIndex -gt $localWriterIndex
+) "Local PowerShell private env transaction must cover dependency failures and commit after the verified writer"
 
 $consoleCommands = @(
     "Write-Host", "Write-Output", "Write-Information", "Write-Verbose", "Write-Debug",
@@ -833,6 +888,43 @@ if ($IsWindows) {
         ) "Node secure env writer did not persist the requested analyzer key"
 
         Assert-ProtectedFileAcl -Path $targetPath -Description "Node Docker runtime env file"
+
+        $snapshotOriginalBytes = [System.IO.File]::ReadAllBytes($targetPath)
+        $snapshotEnvironmentNames = @(
+            "RIKUNE_STAGE_DOCKER_ENV_PATH",
+            "RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH",
+            "RIKUNE_RESTORE_PRIVATE_ENV_PATH"
+        )
+        $snapshotPreviousEnvironment = @{}
+        foreach ($name in $snapshotEnvironmentNames) {
+            $snapshotPreviousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+        }
+        try {
+            [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", $targetPath, "Process")
+            $privateSnapshot = [string](@(& $nodeCommand $nodeWriter) -join '')
+            if ($LASTEXITCODE -ne 0) { throw "Node private env snapshot capture failed with exit code $LASTEXITCODE" }
+            [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", $null, "Process")
+
+            [Environment]::SetEnvironmentVariable("RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH", $targetPath, "Process")
+            $privateSnapshot | & $nodeCommand $nodeWriter
+            if ($LASTEXITCODE -ne 0) { throw "Node private env snapshot removal failed with exit code $LASTEXITCODE" }
+            Assert-Contract (-not (Test-Path -LiteralPath $targetPath)) "Snapshot removal must remove the exact protected source"
+            [Environment]::SetEnvironmentVariable("RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH", $null, "Process")
+
+            [Environment]::SetEnvironmentVariable("RIKUNE_RESTORE_PRIVATE_ENV_PATH", $targetPath, "Process")
+            $privateSnapshot | & $nodeCommand $nodeWriter
+            if ($LASTEXITCODE -ne 0) { throw "Node private env snapshot restoration failed with exit code $LASTEXITCODE" }
+        } finally {
+            foreach ($name in $snapshotEnvironmentNames) {
+                [Environment]::SetEnvironmentVariable($name, $snapshotPreviousEnvironment[$name], "Process")
+            }
+            $privateSnapshot = $null
+        }
+        Assert-Contract (
+            [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($targetPath)) -eq
+                [Convert]::ToBase64String($snapshotOriginalBytes)
+        ) "Windows private env snapshot restoration must preserve exact UTF-8 bytes"
+        Assert-ProtectedFileAcl -Path $targetPath -Description "Restored Node Docker runtime env file"
 
         $temporaryFiles = @(Get-ChildItem -LiteralPath $aclTestRoot -Filter ".docker-runtime.env.*.tmp" -Force)
         Assert-Contract ($temporaryFiles.Count -eq 0) "Node secure env writer must not leave temporary files behind"

@@ -44,6 +44,11 @@ RESET_DATA=false
 FOLLOW=false
 TAIL=100
 ALLOW_INSECURE_RUNTIME_HTTP=false
+PRIVATE_ENV_WRITER="$PROJECT_ROOT/scripts/write-docker-runtime-env.mjs"
+PRIVATE_ENV_TARGET="$PROJECT_ROOT/.docker-runtime.env"
+PRIVATE_ENV_SNAPSHOT=""
+PRIVATE_ENV_TRANSACTION_ACTIVE=false
+PRIVATE_ENV_TRANSACTION_COMMITTED=false
 
 usage() {
   cat <<EOF
@@ -222,11 +227,47 @@ verify_private_env_file() {
     node "$PROJECT_ROOT/scripts/write-docker-runtime-env.mjs"
 }
 
-remove_existing_env_file() {
-  local target="$PROJECT_ROOT/.docker-runtime.env"
-  RIKUNE_REMOVE_PRIVATE_ENV_PATH="$target" \
-    node "$PROJECT_ROOT/scripts/write-docker-runtime-env.mjs"
+rollback_private_env_transaction() {
+  local original_status="${1:-1}"
+  trap - EXIT INT TERM
+  if [ "$PRIVATE_ENV_TRANSACTION_ACTIVE" = true ] && [ "$PRIVATE_ENV_TRANSACTION_COMMITTED" != true ]; then
+    set +e
+    printf '%s' "$PRIVATE_ENV_SNAPSHOT" |
+      RIKUNE_RESTORE_PRIVATE_ENV_PATH="$PRIVATE_ENV_TARGET" node "$PRIVATE_ENV_WRITER"
+    local restore_status=$?
+    set -e
+    if [ "$restore_status" -ne 0 ]; then
+      err "Failed to restore the protected Compose env after installer failure."
+      [ "$original_status" -ne 0 ] || original_status=1
+    fi
+  fi
+  PRIVATE_ENV_SNAPSHOT=""
+  exit "$original_status"
+}
+
+interrupt_private_env_transaction() {
+  case "$1" in
+    INT) exit 130 ;;
+    TERM) exit 143 ;;
+  esac
+}
+
+begin_private_env_transaction() {
+  PRIVATE_ENV_SNAPSHOT="$(RIKUNE_STAGE_DOCKER_ENV_PATH="$PRIVATE_ENV_TARGET" node "$PRIVATE_ENV_WRITER")"
+  export -n PRIVATE_ENV_SNAPSHOT 2>/dev/null || true
+  PRIVATE_ENV_TRANSACTION_ACTIVE=true
+  trap 'rollback_private_env_transaction "$?"' EXIT
+  trap 'interrupt_private_env_transaction INT' INT
+  trap 'interrupt_private_env_transaction TERM' TERM
+  printf '%s' "$PRIVATE_ENV_SNAPSHOT" |
+    RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH="$PRIVATE_ENV_TARGET" node "$PRIVATE_ENV_WRITER"
   info "Any prior protected Compose env was removed before dependency lifecycle commands; credentials will be rotated after build."
+}
+
+commit_private_env_transaction() {
+  PRIVATE_ENV_TRANSACTION_COMMITTED=true
+  PRIVATE_ENV_SNAPSHOT=""
+  trap - EXIT INT TERM
 }
 
 assert_secret_environment_cleared() {
@@ -278,14 +319,17 @@ check_prereqs() {
   has_compose || { err "Docker Compose not found"; exit 1; }
   ok "Docker Compose available"
 
-  require_cmd node "Install Node.js 22+."
+  require_cmd node "Install Node.js 22.9+."
   require_cmd npm "Install npm with Node.js."
   local node_version
   node_version="$(node --version)"
-  local node_major="${node_version#v}"
+  local node_version_core="${node_version#v}"
+  local node_major="$node_version_core"
   node_major="${node_major%%.*}"
-  if [ "$node_major" -lt 22 ]; then
-    err "Node.js $node_version is too old; 22+ is required"
+  local node_minor="${node_version_core#*.}"
+  node_minor="${node_minor%%.*}"
+  if [ "$node_major" -lt 22 ] || { [ "$node_major" -eq 22 ] && [ "$node_minor" -lt 9 ]; }; then
+    err "Node.js $node_version is too old; 22.9+ is required"
     exit 1
   fi
   ok "Node.js: $node_version"
@@ -309,6 +353,8 @@ write_env_file() {
     "$DATA_ROOT/config"
   prepare_linux_data_root_permissions
 
+  printf '%s' "$PRIVATE_ENV_SNAPSHOT" |
+  RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN=1 \
   RIKUNE_DOCKER_ENV_PATH="$env_file" \
   RIKUNE_DOCKER_ENV_DATA_ROOT="$DATA_ROOT" \
   RIKUNE_DOCKER_ENV_PROFILE="$profile" \
@@ -322,6 +368,10 @@ write_env_file() {
   RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP="$ALLOW_INSECURE_RUNTIME_HTTP" \
     node "$PROJECT_ROOT/scripts/write-docker-runtime-env.mjs"
 
+  # The writer atomically installed and verified the new private file. From this
+  # point onward it is authoritative; later Compose failures must not restore an
+  # old key while a container may already be using the new one.
+  commit_private_env_transaction
   chmod 600 "$env_file"
 
   ok "Wrote .docker-runtime.env"
@@ -446,7 +496,8 @@ install_stack() {
   fi
 
   check_prereqs
-  remove_existing_env_file
+  [ -f "$PRIVATE_ENV_WRITER" ] || { err "Secure private environment writer not found: $PRIVATE_ENV_WRITER"; exit 1; }
+  begin_private_env_transaction
   assert_secret_environment_cleared
   build_project
   generate_profile "$profile"

@@ -4,9 +4,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  readPrivateUtf8File,
+  capturePrivateEnvSnapshot,
+  decodePrivateEnvSnapshot,
+  encodePrivateEnvSnapshot,
   pathEntryExists,
-  removeProtectedExistingFile,
+  privateEnvSnapshotContent,
+  readPrivateUtf8File,
   resolveAnalyzerApiKey,
   writePrivateUtf8File,
 } from './write-docker-runtime-env.mjs'
@@ -100,20 +103,13 @@ export function stageLocalRuntimeEnv({
     )
   }
   const absoluteTarget = path.resolve(normalizedTarget)
-  if (!pathEntryExists(absoluteTarget)) return ''
-
-  const existing = parseStrictLocalEnv(
-    readPrivateUtf8File({ targetPath: absoluteTarget, platform, verifyWindowsAcl })
-  )
-  existing.delete('API_KEY')
-  existing.delete('RIKUNE_API_KEY')
-  const stagedContent =
-    existing.size > 0
-      ? `${Array.from(existing, ([name, value]) => `${name}=${value}`).join('\n')}\n`
-      : ''
-
-  removeProtectedExistingFile({ targetPath: absoluteTarget, platform, verifyWindowsAcl })
-  return stagedContent
+  const snapshot = capturePrivateEnvSnapshot({
+    targetPath: absoluteTarget,
+    platform,
+    verifyWindowsAcl,
+  })
+  if (snapshot.existed) parseStrictLocalEnv(privateEnvSnapshotContent(snapshot))
+  return snapshot
 }
 
 function decodeStagedExistingContent(encoded) {
@@ -145,6 +141,7 @@ export function writeLocalRuntimeEnv({
   platform = process.platform,
   restrictWindowsAcl,
   verifyWindowsAcl,
+  requireAbsent = false,
 }) {
   const normalizedTarget = String(targetPath ?? '')
   if (!normalizedTarget.trim() || /[\r\n\0]/u.test(normalizedTarget)) {
@@ -175,6 +172,7 @@ export function writeLocalRuntimeEnv({
     platform,
     restrictWindowsAcl,
     verifyWindowsAcl,
+    requireAbsent,
   })
   return { apiKey: rendered.apiKey }
 }
@@ -189,23 +187,39 @@ async function readStandardInput() {
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : ''
 if (invokedPath === fileURLToPath(import.meta.url)) {
   if (Object.hasOwn(process.env, 'RIKUNE_STAGE_LOCAL_ENV_PATH')) {
-    const staged = stageLocalRuntimeEnv({
+    const snapshot = stageLocalRuntimeEnv({
       targetPath: process.env.RIKUNE_STAGE_LOCAL_ENV_PATH,
     })
-    process.stdout.write(Buffer.from(staged, 'utf8').toString('base64'))
+    process.stdout.write(encodePrivateEnvSnapshot(snapshot))
   } else {
-    const template = await readStandardInput()
+    const input = await readStandardInput()
+    let template = input
+    let snapshot
+    if (process.env.RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN) {
+      const separator = input.indexOf('\n')
+      if (separator < 1) {
+        throw new Error('Local runtime env snapshot stdin must precede the template')
+      }
+      snapshot = decodePrivateEnvSnapshot(input.slice(0, separator).trim())
+      template = input.slice(separator + 1)
+      if (snapshot.targetPath !== path.resolve(String(process.env.RIKUNE_LOCAL_ENV_PATH ?? ''))) {
+        throw new Error('Private environment snapshot target does not match the requested target')
+      }
+    }
     writeLocalRuntimeEnv({
       targetPath: process.env.RIKUNE_LOCAL_ENV_PATH,
       template,
-      stagedExistingContent: Object.hasOwn(process.env, 'RIKUNE_LOCAL_EXISTING_ENV_BASE64')
-        ? decodeStagedExistingContent(process.env.RIKUNE_LOCAL_EXISTING_ENV_BASE64)
-        : undefined,
+      stagedExistingContent: snapshot
+        ? privateEnvSnapshotContent(snapshot)
+        : Object.hasOwn(process.env, 'RIKUNE_LOCAL_EXISTING_ENV_BASE64')
+          ? decodeStagedExistingContent(process.env.RIKUNE_LOCAL_EXISTING_ENV_BASE64)
+          : undefined,
       explicitApiKey: process.env.RIKUNE_API_KEY || '',
       forcedKeys: String(process.env.RIKUNE_LOCAL_ENV_FORCE_KEYS || '')
         .split(',')
         .map((value) => value.trim())
         .filter(Boolean),
+      requireAbsent: snapshot !== undefined,
     })
   }
 }

@@ -34,6 +34,11 @@ HOST_AGENT_ENDPOINT_EXPLICIT=false
 [ -n "$HOST_AGENT_ENDPOINT" ] && HOST_AGENT_ENDPOINT_EXPLICIT=true
 SKIP_WINDOWS_SETUP=false
 ALLOW_INSECURE_RUNTIME_HTTP=false
+ENV_FILE="$PROJECT_ROOT/.docker-runtime.env"
+PRIVATE_ENV_WRITER="$PROJECT_ROOT/scripts/write-docker-runtime-env.mjs"
+PRIVATE_ENV_SNAPSHOT=""
+PRIVATE_ENV_TRANSACTION_ACTIVE=false
+PRIVATE_ENV_TRANSACTION_COMMITTED=false
 
 usage() {
   cat <<EOF
@@ -141,11 +146,47 @@ assert_secret_environment_cleared() {
   done
 }
 
-remove_existing_env_file() {
-  local target="$PROJECT_ROOT/.docker-runtime.env"
-  RIKUNE_REMOVE_PRIVATE_ENV_PATH="$target" \
-    node "$PROJECT_ROOT/scripts/write-docker-runtime-env.mjs"
+rollback_private_env_transaction() {
+  local original_status="${1:-1}"
+  trap - EXIT INT TERM
+  if [ "$PRIVATE_ENV_TRANSACTION_ACTIVE" = true ] && [ "$PRIVATE_ENV_TRANSACTION_COMMITTED" != true ]; then
+    set +e
+    printf '%s' "$PRIVATE_ENV_SNAPSHOT" |
+      RIKUNE_RESTORE_PRIVATE_ENV_PATH="$ENV_FILE" node "$PRIVATE_ENV_WRITER"
+    local restore_status=$?
+    set -e
+    if [ "$restore_status" -ne 0 ]; then
+      err "Failed to restore the protected Compose env after hybrid deployment failure."
+      [ "$original_status" -ne 0 ] || original_status=1
+    fi
+  fi
+  PRIVATE_ENV_SNAPSHOT=""
+  exit "$original_status"
+}
+
+interrupt_private_env_transaction() {
+  case "$1" in
+    INT) exit 130 ;;
+    TERM) exit 143 ;;
+  esac
+}
+
+begin_private_env_transaction() {
+  PRIVATE_ENV_SNAPSHOT="$(RIKUNE_STAGE_DOCKER_ENV_PATH="$ENV_FILE" node "$PRIVATE_ENV_WRITER")"
+  export -n PRIVATE_ENV_SNAPSHOT 2>/dev/null || true
+  PRIVATE_ENV_TRANSACTION_ACTIVE=true
+  trap 'rollback_private_env_transaction "$?"' EXIT
+  trap 'interrupt_private_env_transaction INT' INT
+  trap 'interrupt_private_env_transaction TERM' TERM
+  printf '%s' "$PRIVATE_ENV_SNAPSHOT" |
+    RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH="$ENV_FILE" node "$PRIVATE_ENV_WRITER"
   info "Any prior protected Compose env was removed before dependency lifecycle commands; credentials will be rotated after build."
+}
+
+commit_private_env_transaction() {
+  PRIVATE_ENV_TRANSACTION_COMMITTED=true
+  PRIVATE_ENV_SNAPSHOT=""
+  trap - EXIT INT TERM
 }
 
 provision_analyzer_api_key() {
@@ -175,12 +216,22 @@ ok "Docker: $(docker --version | awk '{print $3}' | tr -d ',')"
 docker compose version >/dev/null 2>&1 || { err "Docker Compose plugin not found"; exit 1; }
 ok "Docker Compose plugin available"
 
-command -v node >/dev/null 2>&1 || { err "Node.js 22+ not found"; exit 1; }
+command -v node >/dev/null 2>&1 || { err "Node.js 22.9+ not found"; exit 1; }
 command -v npm >/dev/null 2>&1 || { err "npm not found"; exit 1; }
-ok "Node.js: $(node --version)"
+NODE_VERSION="$(node --version)"
+NODE_VERSION_CORE="${NODE_VERSION#v}"
+NODE_MAJOR="${NODE_VERSION_CORE%%.*}"
+NODE_MINOR="${NODE_VERSION_CORE#*.}"
+NODE_MINOR="${NODE_MINOR%%.*}"
+if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt 9 ]; }; then
+  err "Node.js $NODE_VERSION is too old; 22.9+ is required"
+  exit 1
+fi
+ok "Node.js: $NODE_VERSION"
 ok "npm: $(npm --version)"
 
-remove_existing_env_file
+[ -f "$PRIVATE_ENV_WRITER" ] || { err "Secure private environment writer not found: $PRIVATE_ENV_WRITER"; exit 1; }
+begin_private_env_transaction
 assert_secret_environment_cleared
 
 if [ -n "$WINDOWS_HOST" ]; then
@@ -314,7 +365,8 @@ ok "Generated docker-compose.hybrid.yml and docker/Dockerfile.hybrid"
 
 assert_secret_environment_cleared
 provision_analyzer_api_key
-ENV_FILE="$PROJECT_ROOT/.docker-runtime.env"
+printf '%s' "$PRIVATE_ENV_SNAPSHOT" |
+RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN=1 \
 RIKUNE_DOCKER_ENV_PATH="$ENV_FILE" \
 RIKUNE_DOCKER_ENV_DATA_ROOT="$DATA_ROOT" \
 RIKUNE_DOCKER_ENV_PROFILE="hybrid" \
@@ -327,6 +379,9 @@ RUNTIME_HOST_AGENT_API_KEY="$HOST_AGENT_API_KEY" \
 RUNTIME_API_KEY="$RUNTIME_API_KEY" \
 RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP="$ALLOW_INSECURE_RUNTIME_HTTP" \
   node scripts/write-docker-runtime-env.mjs
+# The verified replacement is authoritative before any container can start.
+# Later Compose/health failures must not restore an old, mismatched credential.
+commit_private_env_transaction
 chmod 600 "$ENV_FILE"
 ok "Compose env file written: $ENV_FILE"
 

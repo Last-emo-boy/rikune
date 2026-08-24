@@ -1,5 +1,5 @@
 # Rikune - Docker profile installer
-# Requires: PowerShell 7+, Docker Desktop / Docker Engine, Node.js 22+
+# Requires: PowerShell 7+, Docker Desktop / Docker Engine, Node.js 22.9+
 
 param(
     [ValidateSet("static", "full", "hybrid")]
@@ -342,6 +342,7 @@ function Test-HttpHealth {
 function Write-EnvFile {
     param(
         [string]$Path,
+        [string]$Snapshot,
         [string]$Root,
         [hashtable]$ProfileConfig,
         [string]$BuildHttpProxy,
@@ -357,6 +358,7 @@ function Write-EnvFile {
     if (-not (Test-Path $writer)) { throw "Docker runtime env writer not found: $writer" }
 
     $managedEnvironment = @{
+        RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN = "1"
         RIKUNE_DOCKER_ENV_PATH = $Path
         RIKUNE_DOCKER_ENV_DATA_ROOT = ($Root -replace "\\", "/")
         RIKUNE_DOCKER_ENV_PROFILE = $ProfileConfig.Generator
@@ -375,8 +377,11 @@ function Write-EnvFile {
         [Environment]::SetEnvironmentVariable($name, [string]$managedEnvironment[$name], "Process")
     }
     try {
-        & node $writer
-        if ($LASTEXITCODE -ne 0) { throw "Secure Docker runtime env generation failed" }
+        $Snapshot | & node $writer
+        if ($LASTEXITCODE -ne 0) {
+            $nativeExitCode = $LASTEXITCODE
+            throw (New-NativeInstallerFailure -Message "Secure Docker runtime env generation failed" -ExitCode $nativeExitCode)
+        }
     } finally {
         foreach ($name in $managedEnvironment.Keys) {
             [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], "Process")
@@ -385,19 +390,75 @@ function Write-EnvFile {
 
 }
 
-function Remove-ExistingEnvFile {
+function New-NativeInstallerFailure {
+    param([string]$Message, [int]$ExitCode)
+
+    $failure = [System.InvalidOperationException]::new($Message)
+    $failure.Data["RIKUNE_NATIVE_EXIT_CODE"] = $ExitCode
+    return $failure
+}
+
+function Get-PrivateEnvSnapshot {
     param([string]$Path)
 
     $writer = Join-Path $ProjectRoot "scripts/write-docker-runtime-env.mjs"
     if (-not (Test-Path $writer)) { throw "Docker runtime env writer not found: $writer" }
+    $previousValue = [Environment]::GetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", "Process")
     try {
-        [Environment]::SetEnvironmentVariable("RIKUNE_REMOVE_PRIVATE_ENV_PATH", $Path, "Process")
-        & node $writer
-        if ($LASTEXITCODE -ne 0) { throw "Secure removal of the stale Docker runtime env failed" }
+        [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", $Path, "Process")
+        $snapshotOutput = & node $writer
+        if ($LASTEXITCODE -ne 0) {
+            $nativeExitCode = $LASTEXITCODE
+            throw (New-NativeInstallerFailure -Message "Secure Docker runtime env staging failed" -ExitCode $nativeExitCode)
+        }
+        return [string](@($snapshotOutput) -join '')
     } finally {
-        [Environment]::SetEnvironmentVariable("RIKUNE_REMOVE_PRIVATE_ENV_PATH", $null, "Process")
+        [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", $previousValue, "Process")
     }
+}
+
+function Invoke-PrivateEnvSnapshotOperation {
+    param(
+        [string]$EnvironmentName,
+        [string]$Path,
+        [string]$Snapshot,
+        [string]$FailureMessage
+    )
+
+    $writer = Join-Path $ProjectRoot "scripts/write-docker-runtime-env.mjs"
+    if (-not (Test-Path $writer)) { throw "Docker runtime env writer not found: $writer" }
+    $previousValue = [Environment]::GetEnvironmentVariable($EnvironmentName, "Process")
+    try {
+        [Environment]::SetEnvironmentVariable($EnvironmentName, $Path, "Process")
+        $Snapshot | & node $writer
+        if ($LASTEXITCODE -ne 0) {
+            $nativeExitCode = $LASTEXITCODE
+            throw (New-NativeInstallerFailure -Message $FailureMessage -ExitCode $nativeExitCode)
+        }
+    } finally {
+        [Environment]::SetEnvironmentVariable($EnvironmentName, $previousValue, "Process")
+    }
+}
+
+function Remove-ExistingEnvFile {
+    param([string]$Path, [string]$Snapshot)
+
+    Invoke-PrivateEnvSnapshotOperation `
+        -EnvironmentName "RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH" `
+        -Path $Path `
+        -Snapshot $Snapshot `
+        -FailureMessage "Secure removal of the staged Docker runtime env failed"
     Write-Info "Any prior protected Compose env was removed before dependency lifecycle commands; credentials will be rotated after build."
+}
+
+function Restore-ExistingEnvFile {
+    param([string]$Path, [string]$Snapshot)
+
+    Invoke-PrivateEnvSnapshotOperation `
+        -EnvironmentName "RIKUNE_RESTORE_PRIVATE_ENV_PATH" `
+        -Path $Path `
+        -Snapshot $Snapshot `
+        -FailureMessage "Secure restoration of the Docker runtime env failed"
 }
 
 function Configure-McpClient {
@@ -615,8 +676,15 @@ Write-Info "Data root: $DataRoot"
 
 Write-Step "Checking prerequisites"
 Require-Command "docker" "Install Docker Desktop: https://www.docker.com/products/docker-desktop/"
-Require-Command "node" "Install Node.js 22+: https://nodejs.org/"
-Require-Command "npm" "Install npm with Node.js 22+"
+Require-Command "node" "Install Node.js 22.9+: https://nodejs.org/"
+Require-Command "npm" "Install npm with Node.js 22.9+"
+$nodeVersion = (node --version).Trim()
+$nodeParts = ($nodeVersion -replace '^v','').Split('.')
+$nodeMajor = [int]$nodeParts[0]
+$nodeMinor = [int]$nodeParts[1]
+if ($nodeMajor -lt 22 -or ($nodeMajor -eq 22 -and $nodeMinor -lt 9)) {
+    throw "Node.js $nodeVersion is too old (need 22.9+)"
+}
 
 try {
     & docker info *> $null
@@ -633,10 +701,18 @@ if (-not $script:ComposeCommand) {
     exit 1
 }
 Write-Success "Docker Compose available: $(if ($script:ComposeCommand -eq 'docker') { 'docker compose' } else { 'docker-compose' })"
-Write-Success "Node.js: $((node --version).Trim())"
+Write-Success "Node.js: $nodeVersion"
 Write-Success "npm: $((npm --version).Trim())"
 
-Remove-ExistingEnvFile -Path $envFile
+$privateEnvSnapshot = $null
+$privateEnvTransactionActive = $false
+$privateEnvTransactionCommitted = $false
+$privateEnvFailure = $null
+$privateEnvFailureExitCode = 1
+try {
+    $privateEnvSnapshot = Get-PrivateEnvSnapshot -Path $envFile
+    $privateEnvTransactionActive = $true
+    Remove-ExistingEnvFile -Path $envFile -Snapshot $privateEnvSnapshot
 
 Write-Step "Resolving proxy and runtime settings"
 
@@ -729,23 +805,31 @@ Push-Location $ProjectRoot
 try {
     Write-Info "Installing npm dependencies from package-lock.json..."
     & npm ci --include=dev
-    if ($LASTEXITCODE -ne 0) { throw "npm ci --include=dev failed" }
+    if ($LASTEXITCODE -ne 0) {
+        $nativeExitCode = $LASTEXITCODE
+        throw (New-NativeInstallerFailure -Message "npm ci --include=dev failed" -ExitCode $nativeExitCode)
+    }
 
     Write-Info "Building TypeScript and workspace packages..."
     & npm run build
-    if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
+    if ($LASTEXITCODE -ne 0) {
+        $nativeExitCode = $LASTEXITCODE
+        throw (New-NativeInstallerFailure -Message "npm run build failed" -ExitCode $nativeExitCode)
+    }
 
     Write-Info "Generating Docker files for profile '$Profile'..."
     & node scripts/generate-docker.mjs "--profile=$($profileConfig.Generator)"
-    if ($LASTEXITCODE -ne 0) { throw "Docker profile generation failed" }
+    if ($LASTEXITCODE -ne 0) {
+        $nativeExitCode = $LASTEXITCODE
+        throw (New-NativeInstallerFailure -Message "Docker profile generation failed" -ExitCode $nativeExitCode)
+    }
 
     if (-not (Test-Path $composePath)) {
         throw "Expected Compose file not found: $composePath"
     }
     Write-Success "Generated $($profileConfig.Compose)"
 } catch {
-    Write-Error-Message $_.Exception.Message
-    exit 1
+    throw
 } finally {
     Pop-Location
 }
@@ -753,6 +837,7 @@ try {
 Assert-NoSecretEnvironment -Names $secretEnvironmentAliases
 Write-EnvFile `
     -Path $envFile `
+    -Snapshot $privateEnvSnapshot `
     -Root $DataRoot `
     -ProfileConfig $profileConfig `
     -BuildHttpProxy $buildHttpProxy `
@@ -762,6 +847,27 @@ Write-EnvFile `
     -HybridHostKey $HostAgentApiKey `
     -HybridRuntimeKey $RuntimeApiKey `
     -AllowInsecureRuntimeHttp:$AllowInsecureRuntimeHttp
+    $privateEnvTransactionCommitted = $true
+    $privateEnvSnapshot = $null
+} catch {
+    $privateEnvFailure = $_
+    if ($_.Exception.Data.Contains("RIKUNE_NATIVE_EXIT_CODE")) {
+        $privateEnvFailureExitCode = [int]$_.Exception.Data["RIKUNE_NATIVE_EXIT_CODE"]
+    }
+} finally {
+    if ($privateEnvTransactionActive -and -not $privateEnvTransactionCommitted) {
+        try {
+            Restore-ExistingEnvFile -Path $envFile -Snapshot $privateEnvSnapshot
+        } catch {
+            Write-Error-Message "Failed to restore the protected Compose env after installer failure: $($_.Exception.Message)"
+        }
+    }
+    $privateEnvSnapshot = $null
+}
+if ($null -ne $privateEnvFailure) {
+    Write-Error-Message $privateEnvFailure.Exception.Message
+    exit $privateEnvFailureExitCode
+}
 Write-Success "Compose env file: $envFile"
 
 Write-Step "Docker Compose"
