@@ -601,10 +601,11 @@
               <span class="terminal__title">PowerShell</span>
             </div>
             <div class="terminal__body">
-              <span class="comment"># Search, upload, and run staged analysis through the gateway</span>
+              <span class="comment"
+                ># Search, upload, and run staged analysis through the gateway</span
+              >
               <span class="prompt">❯</span> <span class="cmd">workflow.search</span>
-              <span class="flag">--file_type</span> .exe
-              <span class="flag">--goal</span> reverse
+              <span class="flag">--file_type</span> .exe <span class="flag">--goal</span> reverse
               <span class="output"> ✓ ranked PE staged workflow profile</span>
 
               <span class="prompt">❯</span> <span class="cmd">workflow.run</span>
@@ -731,13 +732,14 @@
             </p>
             <p>
               <span data-lang-en
-                >The dynamic runtime roadmap tracks session persistence, Hyper-V debugging,
-                runtime toolkit inventory, deep dynamic planning, persona planning, Frida execution,
+                >The dynamic runtime roadmap tracks session persistence, Hyper-V debugging, runtime
+                toolkit inventory, deep dynamic planning, persona planning, Frida execution,
                 behavior capture, memory dump workflows, and dashboard runtime views.</span
               >
               <span data-lang-zh
-                >动态运行时迭代计划覆盖 session 持久化、Hyper-V 调试、runtime 工具库存、深度动态计划、
-                persona 规划、Frida 执行、行为捕获、内存转储 workflow 和 Dashboard Runtime 页。</span
+                >动态运行时迭代计划覆盖 session 持久化、Hyper-V 调试、runtime
+                工具库存、深度动态计划、 persona 规划、Frida 执行、行为捕获、内存转储 workflow 和
+                Dashboard Runtime 页。</span
               >
             </p>
           </div>
@@ -847,8 +849,8 @@
           <div class="arch__layer">
             <span class="arch__layer-title">Execution Surfaces</span>
             <div class="arch__items">
-              <span class="arch__chip">Linux Analyzer (static-only)</span>
-              <span class="arch__chip">Windows-native Analyzer</span>
+              <span class="arch__chip">Linux-kernel Analyzer</span>
+              <span class="arch__chip">Windows/macOS Control Host</span>
               <span class="arch__chip">Windows Runtime Node</span>
               <span class="arch__chip">Windows Host Agent</span>
               <span class="arch__chip">Windows Sandbox</span>
@@ -973,7 +975,8 @@
             <div class="pipeline__card">
               <div class="pipeline__stage-num">06</div>
               <div class="pipeline__stage-name">
-                <span data-lang-en>Semantic Explain Review</span><span data-lang-zh>语义解释审查</span>
+                <span data-lang-en>Semantic Explain Review</span
+                ><span data-lang-zh>语义解释审查</span>
               </div>
               <div class="pipeline__stage-desc">
                 <span data-lang-en>LLM function explanations</span
@@ -986,7 +989,8 @@
             <div class="pipeline__card">
               <div class="pipeline__stage-num">07</div>
               <div class="pipeline__stage-name">
-                <span data-lang-en>Semantic Module Review</span><span data-lang-zh>语义模块审查</span>
+                <span data-lang-en>Semantic Module Review</span
+                ><span data-lang-zh>语义模块审查</span>
               </div>
               <div class="pipeline__stage-desc">
                 <span data-lang-en>Module reconstruction review</span
@@ -1068,12 +1072,14 @@
         </h2>
         <p class="install__sub reveal">
           <span data-lang-en
-            >Choose the deployment shape that matches your risk model: static-only Linux Docker,
-            Windows-native auto-sandbox, or split analyzer/runtime.</span
+            >The v1.4.0 Analyzer and sample-custody data plane require a Linux kernel: native Linux,
+            a Linux container, or WSL2. Choose static-only or split analyzer/runtime deployment.
+            WSL2 sample data must reside on its Linux filesystem, not DrvFS.</span
           >
           <span data-lang-zh
-            >根据你的风险模型选择部署形态：纯静态 Linux Docker、Windows 原生 auto-sandbox，或拆分式
-            analyzer/runtime。</span
+            >v1.4.0 的 Analyzer 与 sample-custody 数据面要求 Linux kernel：原生 Linux、Linux
+            container 或 WSL2。请按风险模型选择纯静态或拆分式 analyzer/runtime 部署；WSL2
+            样本数据必须位于 WSL Linux filesystem，不能使用 DrvFS。</span
           >
         </p>
         <div
@@ -1082,23 +1088,26 @@
         >
           <p style="margin: 0">
             <span data-lang-en
-              ><strong>Best-practice runtime split:</strong> install the <code>static</code>
-              Docker profile for safe offline analysis, use <code>hybrid</code> when a Windows Host
-              Agent / Windows Sandbox or Hyper-V VM runtime is ready, and reserve
-              <code>auto-sandbox</code> for Windows-native analyzers. Runtime execution starts
-              through explicit <code>runtime.debug.session.*</code> tools, and runtime-side tool
-              readiness is checked with <code>dynamic.toolkit.status</code>; connecting an MCP client
-              alone does not execute samples. <code>sandbox.execute</code> reports
+              ><strong>Best-practice runtime split:</strong> install the <code>static</code> Docker
+              profile for safe offline analysis, use <code>hybrid</code> when a Windows Host Agent /
+              Windows Sandbox or Hyper-V VM runtime is ready. Windows and macOS may host the Linux
+              container/control plane; native Windows/macOS Node Analyzer and
+              <code>auto-sandbox</code> topologies are unsupported in v1.4.0. Runtime execution
+              starts through explicit <code>runtime.debug.session.*</code> tools, and runtime-side
+              tool readiness is checked with <code>dynamic.toolkit.status</code>; connecting an MCP
+              client alone does not execute samples. <code>sandbox.execute</code> reports
               <code>execution_semantics</code> for live Sandbox, live Hyper-V, safe simulation, or
               emulation.</span
             >
             <span data-lang-zh
               ><strong>推荐实践：</strong>使用 <code>static</code> Docker profile 进行安全离线分析；
               只有在 Windows Host Agent / Windows Sandbox 或 Hyper-V VM 运行时就绪时才使用
-              <code>hybrid</code>；<code>auto-sandbox</code> 仅适用于 Windows 原生 analyzer。运行时执行由显式
-              <code>runtime.debug.session.*</code> 工具触发，runtime 内工具就绪状态由
+              <code>hybrid</code>。Windows 与 macOS 可承载 Linux container/control plane；v1.4.0
+              不支持原生 Windows/macOS Node Analyzer 与 <code>auto-sandbox</code> 拓扑。运行时执行由
+              显式 <code>runtime.debug.session.*</code> 工具触发，runtime 内工具就绪状态由
               <code>dynamic.toolkit.status</code> 查询；不会因为 MCP 客户端连接而自动执行样本。
-              <code>sandbox.execute</code> 会用 <code>execution_semantics</code> 标明 live Sandbox、live Hyper-V、safe simulation 或 emulation。</span
+              <code>sandbox.execute</code> 会用 <code>execution_semantics</code> 标明 live Sandbox、
+              live Hyper-V、safe simulation 或 emulation。</span
             >
           </p>
         </div>
@@ -1120,11 +1129,7 @@
   <span class="key">"mcpServers"</span>: {
     <span class="key">"rikune"</span>: {
       <span class="key">"command"</span>: <span class="str">"npx"</span>,
-      <span class="key">"args"</span>: [<span class="str">"-y"</span>, <span class="str">"rikune"</span>],
-      <span class="key">"env"</span>: {
-        <span class="key">"GHIDRA_INSTALL_DIR"</span>: <span class="str">"C:\\ghidra"</span>,
-        <span class="key">"RIKUNE_WORKSPACE"</span>: <span class="str">"D:\\rikune-workspace"</span>
-      }
+      <span class="key">"args"</span>: [<span class="str">"-y"</span>, <span class="str">"rikune"</span>, <span class="str">"docker-stdio"</span>]
     }
   }
 }</pre>
@@ -1141,11 +1146,7 @@
   <span class="key">"servers"</span>: {
     <span class="key">"rikune"</span>: {
       <span class="key">"command"</span>: <span class="str">"npx"</span>,
-      <span class="key">"args"</span>: [<span class="str">"-y"</span>, <span class="str">"rikune"</span>],
-      <span class="key">"env"</span>: {
-        <span class="key">"GHIDRA_INSTALL_DIR"</span>: <span class="str">"C:\\ghidra"</span>,
-        <span class="key">"RIKUNE_WORKSPACE"</span>: <span class="str">"D:\\rikune-workspace"</span>
-      }
+      <span class="key">"args"</span>: [<span class="str">"-y"</span>, <span class="str">"rikune"</span>, <span class="str">"docker-stdio"</span>]
     }
   }
 }</pre>
@@ -1203,8 +1204,10 @@ PYTHONUNBUFFERED = "1"</pre>
   -HyperVRestoreOnRelease
 
 <span class="comment"># Linux analyzer + remote Windows Host Agent</span>
+<span class="comment"># Bootstrap only inside an isolated trusted network/VPN.</span>
 ./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt; \
-  --host-agent-endpoint https://runtime.example.internal
+  --host-agent-endpoint https://runtime.example.internal \
+  --allow-insecure-runtime-http
 
 <span class="comment"># Full Linux toolchain image</span>
 .\rikune.ps1 install -Profile full</pre>
@@ -1220,8 +1223,15 @@ PYTHONUNBUFFERED = "1"</pre>
             <pre><span class="comment"># Install globally</span>
 npm install -g rikune
 
-<span class="comment"># Or run directly with npx</span>
-npx -y rikune</pre>
+<span class="comment"># Linux-native Analyzer (or inside WSL2)</span>
+rikune
+
+<span class="comment"># Linux-container Analyzer on Windows/macOS or another Docker host</span>
+rikune docker-stdio
+
+<span class="comment"># The same two entry points without a global install</span>
+npx -y rikune
+npx -y rikune docker-stdio</pre>
           </div>
         </div>
       </div>

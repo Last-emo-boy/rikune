@@ -233,8 +233,10 @@
   -HyperVRestoreOnRelease
 
 <span class="comment"># Linux analyzer + remote Windows Host Agent</span>
+<span class="comment"># Bootstrap only inside an isolated trusted network/VPN.</span>
 ./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt; \
-  --host-agent-endpoint https://runtime.example.internal</pre>
+  --host-agent-endpoint https://runtime.example.internal \
+  --allow-insecure-runtime-http</pre>
           </div>
           <p>
             <span data-lang-en
@@ -425,35 +427,44 @@
               <tr>
                 <td>
                   <strong
-                    ><span data-lang-en>Windows Native + Auto Sandbox</span
-                    ><span data-lang-zh>Windows 原生 + Auto Sandbox</span></strong
+                    ><span data-lang-en>Windows/macOS Control Host</span
+                    ><span data-lang-zh>Windows/macOS 控制宿主机</span></strong
                   >
                 </td>
                 <td>
-                  <span data-lang-en>Windows-native analyzer</span
-                  ><span data-lang-zh>Windows 原生 analyzer</span>
+                  <span data-lang-en>Linux container (or WSL2 on Windows)</span
+                  ><span data-lang-zh>Linux container（Windows 也可使用 WSL2）</span>
                 </td>
                 <td>
-                  <span data-lang-en>Local Windows Sandbox</span
-                  ><span data-lang-zh>本机 Windows Sandbox</span>
+                  <span data-lang-en>Windows Host Agent + Sandbox/Hyper-V when configured</span
+                  ><span data-lang-zh>按需配置 Windows Host Agent + Sandbox/Hyper-V</span>
                 </td>
                 <td>
-                  <span data-lang-en>Single-host dynamic execution with explicit sandboxing</span
-                  ><span data-lang-zh>单机显式沙箱动态执行</span>
+                  <span data-lang-en>Supported host role; no native Node Analyzer</span
+                  ><span data-lang-zh>受支持的宿主机角色；不运行原生 Node Analyzer</span>
                 </td>
               </tr>
             </tbody>
           </table>
           <blockquote>
             <span data-lang-en
-              ><strong>Important:</strong> Docker or WSL analyzers cannot use
-              <code>auto-sandbox</code>. For Linux-side analyzers, use the
-              <code>hybrid</code> profile when you need a Windows runtime.</span
+              ><strong>Important:</strong> The v1.4.0 Analyzer and sample-custody data plane require
+              a Linux kernel. Native Windows/macOS Node Analyzer and
+              <code>auto-sandbox</code> topologies are unsupported. Use the
+              <code>hybrid</code> profile to delegate live work from a Linux Analyzer to a Windows
+              Host Agent. For WSL2-native Analyzer data, keep all sample-custody paths on the WSL
+              Linux filesystem, never a <code>/mnt/&lt;drive&gt;</code> DrvFS mount. Generated Analyzer
+              images are pinned to <code>linux/amd64</code>; Docker Desktop uses amd64 emulation on
+              Apple Silicon, so do not override the generated platform setting.</span
             >
             <span data-lang-zh
-              ><strong>重要：</strong>Docker 或 WSL 中的 analyzer 不能使用
-              <code>auto-sandbox</code>。如果 analyzer 在 Linux 一侧，需要 Windows 运行时时请使用
-              <code>hybrid</code> profile。</span
+              ><strong>重要：</strong>v1.4.0 的 Analyzer 与 sample-custody 数据面要求 Linux
+              kernel；不支持原生 Windows/macOS Node Analyzer 与 <code>auto-sandbox</code> 拓扑。需要
+              Windows live runtime 时，请使用 <code>hybrid</code> profile，把任务从 Linux Analyzer
+              委托给 Windows Host Agent。若 Analyzer 原生运行在 WSL2 中，所有 sample-custody
+              路径都必须位于 WSL Linux filesystem，不能使用 <code>/mnt/&lt;drive&gt;</code> DrvFS
+              mount。生成的 Analyzer image 固定为 <code>linux/amd64</code>；Apple Silicon 上的 Docker
+              Desktop 会使用 amd64 emulation，请勿覆盖生成的 platform 设置。</span
             >
           </blockquote>
         </section>
@@ -984,8 +995,10 @@ node scripts/generate-docker.mjs --profile=full --backend-profile=research --dry
   -HyperVRestoreOnRelease
 
 <span class="comment"># Linux analyzer + remote Windows Host Agent</span>
+<span class="comment"># Bootstrap only inside an isolated trusted network/VPN.</span>
 ./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt; \
-  --host-agent-endpoint https://runtime.example.internal</pre>
+  --host-agent-endpoint https://runtime.example.internal \
+  --allow-insecure-runtime-http</pre>
           </div>
         </section>
 
@@ -996,28 +1009,24 @@ node scripts/generate-docker.mjs --profile=full --backend-profile=research --dry
             <div class="code-block__header">
               <span>bash</span><button class="code-block__copy">Copy</button>
             </div>
-            <pre><span class="comment"># Generate all profile files</span>
-npm run docker:generate:all
+            <pre><span class="comment"># Choose exactly one profile. Each initializer generates its own Compose/env contract.</span>
 
-	<span class="comment"># Create/rotate a strong analyzer API key; never commit this file</span>
-RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
-RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
-RIKUNE_DOCKER_ENV_PROFILE=static \
-  node scripts/write-docker-runtime-env.mjs
-
-<span class="comment"># Static-only Linux analyzer (safe default)</span>
+<span class="comment"># Option A: static-only Linux analyzer (safe default)</span>
+./rikune.sh install --profile static --data-root "$HOME/.rikune" --skip-start
 docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
 
-<span class="comment"># Hybrid Linux analyzer + Windows runtime plane</span>
+<span class="comment"># Option B: hybrid Linux analyzer + Windows runtime plane</span>
+<span class="comment"># The installer prompts for two distinct runtime keys without putting them in argv.</span>
+./rikune.sh install --profile hybrid --data-root "$HOME/.rikune" \
+  --host-agent-endpoint https://runtime.example.internal --skip-start
 docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml up -d --build analyzer
 
-<span class="comment"># Full Linux toolchain image</span>
+<span class="comment"># Option C: full Linux toolchain image</span>
+./rikune.sh install --profile full --data-root "$HOME/.rikune" --skip-start
 docker compose --env-file .docker-runtime.env -f docker-compose.yml up -d --build mcp-server
 
-<span class="comment"># View analyzer logs</span>
+<span class="comment"># Example: view or stop the selected hybrid stack</span>
 docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml logs -f analyzer
-
-<span class="comment"># Stop the selected stack</span>
 docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml down</pre>
           </div>
           <blockquote>

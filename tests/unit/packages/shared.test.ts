@@ -8,6 +8,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import {
   assertTrustedHttpEndpoint,
+  TRUSTED_WINDOWS_POWERSHELL_MODULE_PATH_PRELUDE,
   buildWsbXml,
   canonicalHttpOrigin,
   createTrustedFetch,
@@ -96,6 +97,10 @@ describe('@rikune/shared', () => {
     const encoded = xml.match(/-EncodedCommand ([A-Za-z0-9+/=]+)/)?.[1]
     expect(encoded).toBeTruthy()
     const script = Buffer.from(encoded || '', 'base64').toString('utf16le')
+    expect(script.startsWith(`${TRUSTED_WINDOWS_POWERSHELL_MODULE_PATH_PRELUDE}\r\n`)).toBe(true)
+    expect(script).toContain(
+      String.raw`$env:SystemRoot + '\System32\WindowsPowerShell\v1.0\Modules'`
+    )
     expect(script).toContain("& 'C:\\rikune-setup\\setup-sandbox-env.ps1'")
     expect(script).toContain("$env:RUNTIME_API_KEY = 'sandbox-secret'")
     expect(script).toContain("$env:RUNTIME_PYTHON_PATH = 'C:\\rikune-python\\python.exe'")

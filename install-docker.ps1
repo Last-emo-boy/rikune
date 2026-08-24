@@ -35,23 +35,16 @@ param(
     [Parameter(HelpMessage = "Windows Host Agent endpoint for hybrid profile")]
     [string]$HostAgentEndpoint,
 
-    [Parameter(HelpMessage = "Deprecated argv-based Host Agent key input. Prefer RUNTIME_HOST_AGENT_API_KEY or the hidden guided prompt.")]
-    [string]$HostAgentApiKey,
-
-    [Parameter(HelpMessage = "Deprecated argv-based Runtime Node key input. Prefer RUNTIME_API_KEY or the hidden guided prompt.")]
-    [string]$RuntimeApiKey,
-
     [Parameter(HelpMessage = "Allow plaintext HTTP to a non-loopback Host Agent only on an isolated trusted network")]
     [switch]$AllowInsecureRuntimeHttp,
-
-    [ValidateSet("None", "Claude", "Copilot", "Codex", "Generic")]
-    [string]$ConfigureClient = "None",
 
     [Parameter(HelpMessage = "Force guided prompts even when some parameters are provided")]
     [switch]$Interactive
 )
 
 $ErrorActionPreference = "Stop"
+$HostAgentApiKey = $null
+$RuntimeApiKey = $null
 
 $ColorPrimary = "Cyan"
 $ColorSuccess = "Green"
@@ -245,68 +238,6 @@ function Get-SystemProxy {
     }
 }
 
-function ConvertTo-TomlString {
-    param([string]$Value)
-    if ($null -eq $Value) { return '""' }
-    $escaped = $Value.Replace('\', '\\').Replace('"', '\"')
-    return '"' + $escaped + '"'
-}
-
-function ConvertTo-TomlArray {
-    param([string[]]$Values)
-    return "[" + (($Values | ForEach-Object { ConvertTo-TomlString $_ }) -join ", ") + "]"
-}
-
-function Set-CodexMcpConfig {
-    param(
-        [string]$ConfigFile,
-        [hashtable]$ProfileConfig,
-        [string]$AnalyzerApiKey
-    )
-
-    $configDir = Split-Path -Parent $ConfigFile
-    if (-not (Test-Path $configDir)) {
-        New-Item -ItemType Directory -Path $configDir -Force | Out-Null
-    }
-
-    $mcpArgs = @("stdio")
-
-    $block = @"
-[mcp_servers.rikune]
-type = "stdio"
-command = "rikune-agent"
-startup_timeout_sec = 180
-args = $(ConvertTo-TomlArray $mcpArgs)
-
-[mcp_servers.rikune.env]
-RIKUNE_DOCKER_CONTAINER = $(ConvertTo-TomlString $ProfileConfig.Container)
-RIKUNE_ANALYZER_ENDPOINT = "http://localhost:18080"
-RIKUNE_ANALYZER_API_KEY = $(ConvertTo-TomlString $AnalyzerApiKey)
-"@
-
-    if ($ProfileConfig.RuntimeMode -eq "remote-sandbox") {
-        $agentHostEndpoint = Convert-EndpointForHostAgent $HostAgentEndpoint
-        $block += @"
-RIKUNE_VM_ENDPOINT = $(ConvertTo-TomlString $agentHostEndpoint)
-RUNTIME_HOST_AGENT_ENDPOINT = $(ConvertTo-TomlString $HostAgentEndpoint)
-RUNTIME_HOST_AGENT_API_KEY = $(ConvertTo-TomlString $HostAgentApiKey)
-RUNTIME_API_KEY = $(ConvertTo-TomlString $RuntimeApiKey)
-"@
-    }
-
-    $content = ""
-    if (Test-Path $ConfigFile) {
-        $content = Get-Content -Path $ConfigFile -Raw
-        $content = [regex]::Replace($content, '(?ms)^\[mcp_servers\.rikune(?:\.env)?\]\r?\n.*?(?=^\[|\z)', '').TrimEnd()
-    }
-
-    if ([string]::IsNullOrWhiteSpace($content)) {
-        $block | Set-Content -Path $ConfigFile -Encoding UTF8
-    } else {
-        ($content + "`r`n`r`n" + $block) | Set-Content -Path $ConfigFile -Encoding UTF8
-    }
-}
-
 function Test-HttpHealth {
     param(
         [string]$Uri,
@@ -461,68 +392,6 @@ function Restore-ExistingEnvFile {
         -FailureMessage "Secure restoration of the Docker runtime env failed"
 }
 
-function Configure-McpClient {
-    param(
-        [string]$Client,
-        [hashtable]$ProfileConfig,
-        [string]$AnalyzerApiKey
-    )
-
-    if ($Client -eq "None") { return }
-
-    $config = @{
-        mcpServers = @{
-            rikune = @{
-                command = "rikune-agent"
-                args = @("stdio")
-                env = @{
-                    RIKUNE_DOCKER_CONTAINER = $ProfileConfig.Container
-                    RIKUNE_ANALYZER_ENDPOINT = "http://localhost:18080"
-                    RIKUNE_ANALYZER_API_KEY = $AnalyzerApiKey
-                }
-                timeout = 300000
-            }
-        }
-    }
-
-    if ($ProfileConfig.RuntimeMode -eq "remote-sandbox") {
-        $agentHostEndpoint = Convert-EndpointForHostAgent $HostAgentEndpoint
-        $config.mcpServers.rikune.env.RIKUNE_VM_ENDPOINT = $agentHostEndpoint
-        $config.mcpServers.rikune.env.RUNTIME_HOST_AGENT_ENDPOINT = $HostAgentEndpoint
-        $config.mcpServers.rikune.env.RUNTIME_HOST_AGENT_API_KEY = $HostAgentApiKey
-        $config.mcpServers.rikune.env.RUNTIME_API_KEY = $RuntimeApiKey
-    }
-
-    switch ($Client) {
-        "Claude" {
-            $configDir = Join-Path $env:APPDATA "Claude"
-            $configFile = Join-Path $configDir "claude_desktop_config.json"
-        }
-        "Copilot" {
-            $configDir = Join-Path $env:APPDATA "GitHub Copilot"
-            $configFile = Join-Path $configDir "mcp.json"
-        }
-        "Codex" {
-            $configDir = Join-Path $env:USERPROFILE ".codex"
-            $configFile = Join-Path $configDir "config.toml"
-        }
-        "Generic" {
-            $configDir = Join-Path $DataRoot "config"
-            $configFile = Join-Path $configDir "mcp-client-config.json"
-        }
-    }
-
-    if ($Client -eq "Codex") {
-        Set-CodexMcpConfig -ConfigFile $configFile -ProfileConfig $ProfileConfig -AnalyzerApiKey $AnalyzerApiKey
-    } else {
-        if (-not (Test-Path $configDir)) {
-            New-Item -ItemType Directory -Path $configDir -Force | Out-Null
-        }
-        $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configFile -Encoding UTF8
-    }
-    Write-Success "MCP client config written: $configFile"
-}
-
 function Read-DefaultString {
     param(
         [string]$Prompt,
@@ -576,24 +445,6 @@ function Read-Profile {
     }
 }
 
-function Read-ClientChoice {
-    Write-Host ""
-    Write-Host "Configure an MCP client now?" -ForegroundColor $ColorPrimary
-    Write-Host "  [0] Skip" -ForegroundColor $ColorInfo
-    Write-Host "  [1] Claude Desktop" -ForegroundColor $ColorInfo
-    Write-Host "  [2] GitHub Copilot" -ForegroundColor $ColorInfo
-    Write-Host "  [3] Codex" -ForegroundColor $ColorInfo
-    Write-Host "  [4] Generic file under DataRoot/config" -ForegroundColor $ColorInfo
-    $choice = Read-Host "Select (default: 0)"
-    switch ($choice) {
-        "1" { return "Claude" }
-        "2" { return "Copilot" }
-        "3" { return "Codex" }
-        "4" { return "Generic" }
-        default { return "None" }
-    }
-}
-
 try { Clear-Host } catch { }
 Write-Header "Rikune Docker Installer"
 
@@ -626,7 +477,6 @@ if ($PromptMode) {
 
     $SkipBuild = Read-YesNo "Skip Docker image build" $false
     $SkipStart = Read-YesNo "Skip starting the service" $false
-    $ConfigureClient = Read-ClientChoice
 }
 
 $secretEnvironmentAliases = @(
@@ -945,8 +795,6 @@ if ($SkipStart) {
         Write-Success "Hybrid Host Agent and Runtime Node lifecycle verified from the analyzer container"
     }
 }
-
-Configure-McpClient -Client $ConfigureClient -ProfileConfig $profileConfig -AnalyzerApiKey $AnalyzerApiKey
 
 $installInfo = @{
     InstallDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"

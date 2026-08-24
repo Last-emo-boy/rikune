@@ -39,6 +39,17 @@ Runtime Node
 
 The Analyzer owns MCP, storage, plugin orchestration, static analysis, and workflow state. Runtime Node owns isolated execution. The Windows Host Agent owns sandbox or VM lifecycle.
 
+## Platform Contract
+
+In v1.4.0, the Analyzer and sample-custody data plane require a Linux kernel: native Linux, a
+Linux container, or WSL2. Windows and macOS may host the Linux container/control plane. Live
+Windows execution remains a separate runtime plane provided by the Windows Host Agent with
+Windows Sandbox or Hyper-V. Native Windows/macOS Node Analyzer and `auto-sandbox` topologies are
+unsupported; the secure-filesystem boundary fails closed on those platforms.
+WSL2 is supported only when the data root and every sample-custody path live on the distribution's
+Linux filesystem (for example `~/.rikune` inside ext4.vhdx). `/mnt/c` and other
+`/mnt/<drive>` DrvFS mounts do not satisfy the filesystem contract.
+
 ## Entry Point
 
 The main entry is `src/index.ts`.
@@ -52,7 +63,7 @@ Startup sequence:
    - `disabled`
    - `manual`
    - `remote-sandbox`
-   - `auto-sandbox`
+   - `auto-sandbox` (accepted for configuration compatibility; no supported v1.4.0 topology)
 5. Create `MCPServer`.
 6. Register all core tools, prompts, resources, and plugins through `registerAllTools()`.
 7. Start MCP stdio transport.
@@ -289,7 +300,7 @@ Profiles:
 | `static` | Linux Docker analyzer | runtime disabled |
 | `hybrid` | Linux Docker analyzer | Windows Host Agent plus Sandbox or Hyper-V |
 | `full` | Linux Docker full toolchain | runtime disabled unless configured |
-| Windows native | Windows Node process | local `auto-sandbox` possible |
+| Windows/macOS control host | Linux container (or WSL2 on Windows) | Windows Host Agent plus Sandbox or Hyper-V when configured |
 
 ## Prompts And Resources
 

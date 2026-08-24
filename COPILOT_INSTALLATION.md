@@ -1,24 +1,28 @@
 # Install In GitHub Copilot
 
-Use the local installer when you want to register Rikune as an MCP server for GitHub Copilot or VS Code.
+Use the Linux Docker Analyzer when you want to register Rikune as an MCP server for GitHub Copilot or VS Code. Native Windows and macOS Node Analyzers are not supported in v1.4.0 because sample custody requires Linux filesystem primitives.
 
 ```powershell
-.\install-local.ps1
+.\rikune.ps1 install -Profile static -DataRoot "D:\Docker\rikune"
 ```
 
-The installer can build the project, check dependencies, and update supported MCP client configuration files.
+The installer builds and starts the Linux Analyzer container. Client configuration is an explicit,
+manual step so the installer never overwrites an existing MCP configuration or copies runtime
+credentials into a client-owned file. Use `-Profile hybrid -InstallRuntime` when a Windows Host
+Agent/runtime is required.
 
 ## Recommended Flow
 
-1. Install Node.js 22+.
+1. Install Docker Desktop and Node.js 22.9+.
 2. Clone or unpack this repository.
 3. Run:
 
 ```powershell
-.\install-local.ps1
+.\rikune.ps1 install -Profile static -DataRoot "D:\Docker\rikune"
 ```
 
-4. Select the GitHub Copilot / VS Code MCP option when prompted.
+4. Run **MCP: Open Workspace Folder Configuration** in VS Code, or create `.vscode/mcp.json`, and
+   add the Docker stdio config below.
 5. Restart VS Code or reload the MCP client.
 6. Ask the client to call `tool.help`, `sample.ingest`, or `workflow.analyze.start`.
 
@@ -36,47 +40,46 @@ or, when live Windows runtime is required:
 
 ## What The Script Updates
 
-Depending on selected options, the installer can:
+The Docker installer:
 
-- run `npm install`;
+- run `npm ci`;
 - run `npm run build`;
-- verify Node, npm, Python, Java, and Ghidra paths;
-- configure local MCP stdio command;
-- configure Docker stdio command;
-- preserve existing client configuration where possible.
+- verify Docker, Docker Compose, Node.js, and npm;
+- generate the selected Compose profile;
+- build, start, and health-check the Linux Analyzer container.
+
+It does not edit VS Code, Copilot, Claude, Codex, or generic client configuration files.
 
 ## Example MCP Config
-
-Local build:
-
-```json
-{
-  "mcpServers": {
-    "rikune": {
-      "command": "node",
-      "args": ["D:/Playground/windows-exe-decompiler-mcp-server/dist/index.js"],
-      "env": {
-        "API_ENABLED": "true",
-        "API_PORT": "18080",
-        "PLUGINS": "*"
-      }
-    }
-  }
-}
-```
 
 Docker stdio:
 
 ```json
 {
-  "mcpServers": {
+  "servers": {
     "rikune": {
+      "type": "stdio",
       "command": "docker",
-      "args": ["exec", "-i", "rikune-analyzer", "node", "dist/index.js"]
+      "args": [
+        "exec",
+        "-i",
+        "-e",
+        "API_ENABLED=false",
+        "-e",
+        "NODE_ENV=production",
+        "-e",
+        "PYTHONUNBUFFERED=1",
+        "rikune-analyzer",
+        "node",
+        "dist/index.js"
+      ]
     }
   }
 }
 ```
+
+This `.vscode/mcp.json` form uses the credential-free Docker stdio channel. Do not embed the
+Analyzer, Host Agent, or Runtime API keys in a workspace file.
 
 ## Verify
 
@@ -102,13 +105,16 @@ Useful tools:
 
 For Ghidra, keep Java 21+ available and set `GHIDRA_INSTALL_DIR` if auto-detection fails.
 
-For Python workers:
+For Python workers on the Linux Analyzer, use the exact production locks instead of
+installing the mutable `requirements.txt` inputs directly:
 
-```powershell
-python -m pip install -r requirements.txt
-python -m pip install -r workers/requirements.txt
-python -m pip install -r workers/requirements-dynamic.txt
+```bash
+python -m pip install --require-hashes -r requirements.lock.txt
+python -m pip install --require-hashes -r workers/requirements-dynamic.lock.txt
 ```
+
+On Windows, keep the Analyzer in Docker/WSL2 and use the native Host Agent only for
+runtime delegation. Do not install Analyzer Python workers on the Windows host.
 
 ## Scope
 

@@ -11,7 +11,12 @@ import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
 import { logger } from '../logger.js'
 import { buildRawCommandLine, decodeProcessStreams } from '../process-output.js'
 import { resolvePackagePath } from '../runtime-paths.js'
-import { config, getDefaultGhidraLogRoot, getDefaultGhidraProjectRoot } from '../config.js'
+import {
+  config,
+  getDefaultGhidraLogRoot,
+  getDefaultGhidraProjectRoot,
+  type Config,
+} from '../config.js'
 
 export interface GhidraConfig {
   installDir: string
@@ -262,13 +267,13 @@ export function probeJavaRuntime(
   }
 }
 
-export function getConfiguredGhidraProjectRoot(): string {
-  const configured = config.workers.ghidra.projectRoot?.trim()
+export function getConfiguredGhidraProjectRoot(activeConfig: Config = config): string {
+  const configured = activeConfig.workers.ghidra.projectRoot?.trim()
   return path.resolve(configured || getDefaultGhidraProjectRoot())
 }
 
-export function getConfiguredGhidraLogRoot(): string {
-  const configured = config.workers.ghidra.logRoot?.trim()
+export function getConfiguredGhidraLogRoot(activeConfig: Config = config): string {
+  const configured = activeConfig.workers.ghidra.logRoot?.trim()
   return path.resolve(configured || getDefaultGhidraLogRoot())
 }
 
@@ -643,9 +648,12 @@ function resolveScriptsDirectory(baseDir?: string): string {
 /**
  * Initialize Ghidra configuration
  */
-export function initializeGhidraConfig(installDir?: string): GhidraConfig {
-  const projectRoot = getConfiguredGhidraProjectRoot()
-  const logRoot = getConfiguredGhidraLogRoot()
+export function initializeGhidraConfig(
+  installDir?: string,
+  activeConfig: Config = config
+): GhidraConfig {
+  const projectRoot = getConfiguredGhidraProjectRoot(activeConfig)
+  const logRoot = getConfiguredGhidraLogRoot(activeConfig)
 
   // Detect installation directory
   const detectedInstallDir = installDir || detectGhidraInstallation()
@@ -658,7 +666,7 @@ export function initializeGhidraConfig(installDir?: string): GhidraConfig {
       scriptsDir: '',
       projectRoot,
       logRoot,
-      minJavaVersion: config.workers.ghidra.minJavaVersion,
+      minJavaVersion: activeConfig.workers.ghidra.minJavaVersion,
       isValid: false,
     }
   }
@@ -674,7 +682,7 @@ export function initializeGhidraConfig(installDir?: string): GhidraConfig {
       scriptsDir: '',
       projectRoot,
       logRoot,
-      minJavaVersion: config.workers.ghidra.minJavaVersion,
+      minJavaVersion: activeConfig.workers.ghidra.minJavaVersion,
       isValid: false,
     }
   }
@@ -692,7 +700,7 @@ export function initializeGhidraConfig(installDir?: string): GhidraConfig {
     scriptsDir,
     projectRoot,
     logRoot,
-    minJavaVersion: config.workers.ghidra.minJavaVersion,
+    minJavaVersion: activeConfig.workers.ghidra.minJavaVersion,
     version: version || undefined,
     isValid: true,
   }
@@ -716,12 +724,12 @@ export function initializeGhidraConfig(installDir?: string): GhidraConfig {
  * bootstrap. Importing this module remains read-only, so a baked static image
  * can validate its exact lock and backend identity first.
  */
-export function prepareGhidraRuntimeDirectories(): void {
-  const initialized = initializeGhidraConfig()
+export function prepareGhidraRuntimeDirectories(activeConfig: Config = config): void {
+  const initialized = initializeGhidraConfig(undefined, activeConfig)
   Object.assign(ghidraConfig, initialized)
   if (ghidraConfig.scriptsDir) fs.mkdirSync(ghidraConfig.scriptsDir, { recursive: true })
-  const projectRoot = getConfiguredGhidraProjectRoot()
-  const logRoot = getConfiguredGhidraLogRoot()
+  const projectRoot = getConfiguredGhidraProjectRoot(activeConfig)
+  const logRoot = getConfiguredGhidraLogRoot(activeConfig)
   fs.mkdirSync(projectRoot, { recursive: true })
   fs.mkdirSync(logRoot, { recursive: true })
   migrateLegacyGhidraSampleDirectories(projectRoot)

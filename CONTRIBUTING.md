@@ -2,7 +2,14 @@
 
 This repository is a TypeScript monorepo with a Node.js MCP Analyzer, plugin packages, a Runtime Node, a Windows Host Agent, Python workers, Docker profiles, and tests.
 
-Use Node.js 22+ for repository development.
+Use Node.js 22.9+ for repository development.
+
+The v1.4.0 Analyzer and sample-custody data plane require a Linux kernel. Use native Linux, a
+Linux container, or WSL2 for root-package Analyzer development and its unit/integration tests.
+Windows/macOS may be control/container hosts; native Windows work remains in the Host Agent,
+Runtime Node, installer, and runtime integration surfaces.
+When developing in WSL2, keep test workspaces and all sample-custody data on the distribution's
+Linux filesystem (for example `~/.rikune`), never under `/mnt/<drive>` DrvFS mounts.
 
 ## Development Setup
 
@@ -29,13 +36,13 @@ docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml log
 docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml down
 ```
 
-### Native Development
+### Native Linux Development
 
 ```bash
 npm install
 npm run build
 npm test
-node dist/index.js
+node --env-file-if-exists=.env dist/index.js
 ```
 
 Python worker dependencies:
@@ -139,7 +146,10 @@ Touch points:
 - dynamic plugin runtime contracts;
 - `tool.readiness` and readiness diagnostics.
 
-Live execution must remain explicit and policy-gated. Docker/WSL Analyzer profiles should use `remote-sandbox`; Windows-native Analyzer can use `auto-sandbox`.
+Live execution must remain explicit and policy-gated. Linux-kernel Analyzer profiles should use
+`remote-sandbox` to delegate to a Windows Host Agent. Native Windows/macOS Node Analyzer and
+`auto-sandbox` topologies are unsupported in v1.4.0; do not weaken the secure-filesystem
+fail-closed boundary to make them appear supported.
 
 ## Docker Guidelines
 
@@ -223,7 +233,7 @@ git tag -a "$release_tag" -m "release: $release_tag"
 git push origin "$release_tag"
 ```
 
-The tag starts the `stage` phase. The workflow rechecks the exact-SHA successful `main` CI run, builds and verifies the npm package, then creates, signs, attests, and runs the immutable static OCI candidate. It exposes `npm-release-candidate` only after all those jobs succeed. The workflow never stores an npm token and never publishes to npm.
+The tag starts the `stage` phase. The workflow rechecks the exact-SHA successful `main` CI run, builds and verifies the npm package, then creates, signs, attests, and runs the immutable static OCI candidate. Before exposing `npm-release-candidate`, it also binds and verifies the immutable version tag `ghcr.io/last-emo-boy/rikune-analyzer-static:1.4.0` to that digest, because the package uses that image by default. The workflow never stores an npm token and never publishes to npm.
 
 ### Human npm 2FA Ceremony
 
@@ -262,7 +272,7 @@ gh workflow run publish-npm.yml \
   -f release_phase=verify-human-published
 ```
 
-The verification phase must reuse the previously staged OCI digest; it cannot build or overwrite the candidate. It compares npm integrity and `gitHead`, publishes OCI aliases, and creates the GitHub Release only after all checks pass.
+The verification phase must reuse the previously staged OCI digest and verify the already-bound immutable version tag; it cannot build or overwrite either one. It compares npm integrity and `gitHead`, publishes only the mutable `1.4` and `latest` OCI aliases, and creates the GitHub Release after all checks pass.
 
 ### Verify The Published Release
 

@@ -2,7 +2,7 @@
 
 Integration tests exercise MCP tools, upload/session flows, file server behavior, plugin workflows, and end-to-end analysis paths.
 
-Use Node.js 22+ for repository tests.
+Use Node.js 22.9+ for repository tests.
 
 ## Test Files
 
@@ -85,7 +85,7 @@ Tests use small synthetic fixtures and generated minimal binaries where possible
 
 ### better-sqlite3 Errors
 
-Use Node.js 22+ and rebuild native modules:
+Use Node.js 22.9+ and rebuild native modules:
 
 ```bash
 npm rebuild better-sqlite3

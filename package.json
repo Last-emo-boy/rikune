@@ -76,9 +76,9 @@
     "build:host-agent": "turbo run build --filter=@rikune/windows-host-agent",
     "copy-static": "node scripts/copy-static-assets.mjs",
     "clean": "node -e \"const fs=require('fs'); for (const p of ['dist']) { fs.rmSync(p,{recursive:true,force:true}); }\"",
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx --env-file-if-exists=.env watch src/index.ts",
     "dev:dashboard": "node -e \"const fs=require('fs'),p=require('path');const s='src/api/dashboard',d='dist/api/dashboard';fs.mkdirSync(d,{recursive:true});const cp=()=>{fs.readdirSync(s).forEach(f=>fs.copyFileSync(p.join(s,f),p.join(d,f)));console.log('Dashboard copied',new Date().toLocaleTimeString())};cp();fs.watch(s,{recursive:true},cp)\"",
-    "start": "node dist/index.js",
+    "start": "node --env-file-if-exists=.env dist/index.js",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
     "test:unit": "cross-env NODE_OPTIONS=--experimental-vm-modules jest tests/unit",
     "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --runInBand tests/integration",
@@ -98,9 +98,9 @@
     "prepack": "npm run build",
     "pack:dry-run": "npm pack --dry-run",
     "release:check": "npm run build && npm pack --dry-run",
-    "docker:build": "npm run build && npm run docker:generate && docker compose -f docker-compose.yml build mcp-server",
-    "docker:build:static": "npm run build && npm run docker:generate:static && docker compose -f docker-compose.analyzer.yml build analyzer",
-    "docker:build:hybrid": "npm run build && npm run docker:generate:hybrid && docker compose -f docker-compose.hybrid.yml build analyzer",
+    "docker:build": "npm run build && npm run docker:generate && docker compose --env-file .docker-runtime.env -f docker-compose.yml build mcp-server",
+    "docker:build:static": "npm run build && npm run docker:generate:static && docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml build analyzer",
+    "docker:build:hybrid": "npm run build && npm run docker:generate:hybrid && docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml build analyzer",
     "docker:generate": "node scripts/generate-docker.mjs --profile=full",
     "docker:generate:static": "node scripts/generate-docker.mjs --profile=static",
     "docker:generate:hybrid": "node scripts/generate-docker.mjs --profile=hybrid",
@@ -109,9 +109,9 @@
     "docker:generate:full": "node scripts/generate-docker.mjs --profile=full",
     "docs:api": "npm run docs:tool-catalog",
     "docs:tool-catalog": "tsx scripts/generate-tool-catalog-doc.mjs",
-    "docker:up:static": "npm run build && npm run docker:generate:static && docker compose -f docker-compose.analyzer.yml up -d analyzer",
-    "docker:up:full": "npm run build && npm run docker:generate && docker compose -f docker-compose.yml up -d mcp-server",
-    "docker:up:hybrid": "npm run build && npm run docker:generate:hybrid && docker compose -f docker-compose.hybrid.yml up -d analyzer",
+    "docker:up:static": "npm run build && npm run docker:generate:static && docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d analyzer",
+    "docker:up:full": "npm run build && npm run docker:generate && docker compose --env-file .docker-runtime.env -f docker-compose.yml up -d mcp-server",
+    "docker:up:hybrid": "npm run build && npm run docker:generate:hybrid && docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml up -d analyzer",
     "docker:run": "docker run --rm -it rikune:latest bash",
     "docker:test": "docker run --rm --entrypoint /usr/local/bin/validate-docker-full-stack.sh rikune:latest",
     "docker:clean": "docker system prune -af && docker builder prune -af",
@@ -183,7 +183,7 @@
     }
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.9.0"
   },
   "packageManager": "npm@10.9.0"
 }

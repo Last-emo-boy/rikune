@@ -32,6 +32,20 @@ artifact gateway 覆盖不到的内部 analyzer subtool 时，才使用 `rikune_
 - 可选 Analyzer/Runtime 分离架构，通过 Windows Host Agent、Windows Sandbox 或 Hyper-V VM 执行真实 Windows 运行时任务。
 - 对 live execution、网络访问、外部上传、批量反编译等危险能力做策略门控。
 
+## v1.4.0 平台支持范围
+
+Analyzer 与 sample-custody 数据面要求 Linux kernel：原生 Linux、Linux container 或 WSL2。
+Windows 与 macOS 可作为受支持的 Linux container/control host；Windows 还可承载 Windows Host
+Agent、Windows Sandbox 或 Hyper-V runtime，用于显式的 live execution。v1.4.0 不支持原生
+Windows/macOS Node Analyzer，也不支持 `auto-sandbox` 拓扑。该边界保留 Linux secure-filesystem
+的 fail-closed 契约，不会把不受支持的 filesystem 误当成等价实现。
+在 WSL2 中，`RIKUNE_DATA_ROOT` 以及所有 workspace/sample/storage 路径必须位于 WSL Linux
+filesystem（例如发行版 ext4.vhdx 内的 `~/.rikune`）。sample custody 不支持 `/mnt/c` 或其他
+`/mnt/<drive>` DrvFS 路径。
+当前生成的 Analyzer image 为 `linux/amd64`，所有生成的 Compose service 都会显式固定该
+platform；Apple Silicon 上的 Docker Desktop 会通过 amd64 emulation 运行。不要删除或覆盖生成的
+platform pin。
+
 ## 快速开始
 
 ### Static Docker Analyzer
@@ -46,21 +60,9 @@ artifact gateway 覆盖不到的内部 analyzer subtool 时，才使用 `rikune_
 ./rikune.sh install --profile static --data-root "$HOME/.rikune"
 ```
 
-手工等价流程：
-
-```bash
-RIKUNE_REMOVE_PRIVATE_ENV_PATH="$PWD/.docker-runtime.env" node scripts/write-docker-runtime-env.mjs
-unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
-  HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY
-npm ci --include=dev
-npm run build
-npm run docker:generate:all
-RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
-RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
-RIKUNE_DOCKER_ENV_PROFILE=static \
-  node scripts/write-docker-runtime-env.mjs
-docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
-```
+wrapper 是唯一受支持的安装事务：它会在 dependency lifecycle command 前 snapshot 并移除受保护的
+Compose env，在 pre-commit 工作失败时恢复原文件，并只在新文件完成安全验证后提交轮换后的
+credential。不要用底层 env writer 与 `npm ci` 命令手工复刻该流程。
 
 env writer 默认使用操作系统 CSPRNG 轮换新的 32-byte analyzer API key；仅当本次调用显式传入 key 时才保留指定值，并在 POSIX 系统上把文件权限设为 `0600`。Compose 默认只绑定 `127.0.0.1`。本地 Dashboard 地址为 `http://127.0.0.1:18080/?key=<RIKUNE_API_KEY>`；不要分享该 URL，也不要提交 `.docker-runtime.env`。
 
@@ -72,27 +74,32 @@ Hybrid profile 在 Docker 中运行 Analyzer，把真实 Windows 执行委托给
 .\rikune.ps1 install -Profile hybrid -InstallRuntime
 ```
 
-Linux/macOS analyzer + 远程 Windows runtime host：
+Linux/macOS 宿主机上的 Linux-container analyzer + 远程 Windows runtime host：
 
 ```bash
+# 仅在隔离的可信网络/VPN 内 bootstrap；Sandbox runtime ports 使用 HTTP。
 ./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user> \
-  --host-agent-endpoint https://runtime.example.internal
+  --host-agent-endpoint https://runtime.example.internal \
+  --allow-insecure-runtime-http
 ```
 
-HTTPS endpoint 应由可信 reverse proxy / VPN 路径转发到仅绑定 loopback 的 Host Agent。只有在隔离的可信网络中需要直接明文传输时，才显式添加 `--allow-insecure-runtime-http`；该 opt-in 会让 bootstrap 的 Host Agent 绑定到非 loopback 地址。Runtime key 只通过受保护环境或隐藏 prompt 提供，不接受 CLI 参数。
+HTTPS endpoint 应通过可信 reverse proxy / VPN 路径提供。远程 bootstrap 在该隔离网络内部仍使用明文 Host Agent/Sandbox runtime ports，因此必须显式使用上方的 `--allow-insecure-runtime-http` opt-in。若 runtime 已单独加固并预先部署，请改用 `--skip-windows-setup`，并省略不安全 opt-in。Runtime key 只通过受保护环境或隐藏 prompt 提供，不接受 CLI 参数。
 
 连接 MCP 客户端不会启动 Sandbox，也不会运行样本。只有 `runtime.debug.session.start`、`runtime.debug.command`、`sandbox.execute` 或 promoted dynamic execution stage 这类显式 live runtime 工具才会触发运行时。
 
-### Native 开发
+### 原生 Linux 开发
+
+根 Analyzer 仅可直接运行在 Linux kernel 上。Windows 请使用 WSL2 或 Linux container；macOS
+请使用 Linux container/VM。Windows runtime package 仍可在原生 Windows host 上开发和测试。
 
 ```bash
 npm ci --include=dev
 npm run build
 npm test
-node dist/index.js
+node --env-file-if-exists=.env dist/index.js
 ```
 
-根包要求 Node.js 22 或更新版本。部分 runtime 子包仍能在较旧 Node 上运行，但仓库开发、根 CLI 和发布包以 Node 22+ 为基线。
+根包要求 Node.js 22.9 或更新版本。部分 runtime 子包仍能在较旧 Node 上运行，但仓库开发、根 CLI 和发布包以 Node 22.9+ 为基线。
 
 ## 主要 Gateway 流程
 
@@ -181,7 +188,7 @@ Fixture 的构建与隔离执行规则见 `tests/fixtures/crackmes/README.md`。
 src/index.ts
   -> loadConfig()
   -> WorkspaceManager / DatabaseManager / PolicyGuard / CacheManager / StorageManager / JobQueue
-  -> 可选 RuntimeClient 或 Windows sandbox bootstrap
+  -> 可选 RuntimeClient 或 Windows Host Agent-backed runtime delegation
   -> registerAllTools()
   -> MCP stdio server
 ```
@@ -215,9 +222,10 @@ src/index.ts
 - `disabled`：禁用 runtime delegation。
 - `manual`：连接指定 runtime endpoint。
 - `remote-sandbox`：委托给 Windows Host Agent。
-- `auto-sandbox`：Windows 原生 Analyzer 本地启动 Windows Sandbox。
+- `auto-sandbox`：兼容配置值；v1.4.0 没有受支持的对应部署拓扑。
 
-Docker/WSL analyzer 应使用 `remote-sandbox`，不要使用 `auto-sandbox`。
+Linux-kernel analyzer 应通过 `remote-sandbox` 委托给 Windows Host Agent。v1.4.0 不支持原生
+Windows/macOS Node Analyzer 与 `auto-sandbox` 拓扑。
 
 ## 插件系统
 
@@ -277,7 +285,7 @@ HTTP 层处理 API key 鉴权、rate limit、安全头和受限 CORS。
 
 开发基线：
 
-- Node.js 22+
+- Node.js 22.9+
 - npm
 - CPython 3.12 x86_64，用于 native workers 与仓库中带 hash 的 Python 环境
 - Docker 20.10+ 与 Docker Compose v2
@@ -337,18 +345,16 @@ npm run build:runtime
 
 ## MCP 客户端配置
 
-本地构建：
+Linux 原生本地构建（包括 repository 与数据均位于 Linux filesystem 的 WSL2）：
 
 ```json
 {
   "mcpServers": {
     "rikune": {
       "command": "node",
-      "args": ["D:/Playground/windows-exe-decompiler-mcp-server/dist/index.js"],
+      "args": ["/home/user/rikune/dist/index.js"],
       "env": {
-        "API_ENABLED": "true",
-        "API_PORT": "18080",
-        "API_PUBLIC_BASE_URL": "http://127.0.0.1:18080",
+        "API_ENABLED": "false",
         "PLUGINS": "*"
       }
     }
@@ -363,7 +369,19 @@ Docker stdio：
   "mcpServers": {
     "rikune": {
       "command": "docker",
-      "args": ["exec", "-i", "rikune-analyzer", "node", "dist/index.js"]
+      "args": [
+        "exec",
+        "-i",
+        "-e",
+        "API_ENABLED=false",
+        "-e",
+        "NODE_ENV=production",
+        "-e",
+        "PYTHONUNBUFFERED=1",
+        "rikune-analyzer",
+        "node",
+        "dist/index.js"
+      ]
     }
   }
 }
@@ -373,8 +391,11 @@ Docker stdio：
 
 ```bash
 npm install -g rikune
+# Linux 原生 Analyzer（或在 WSL2 内运行）
 rikune
+# 在任一受支持 Docker host 上运行 Linux-container Analyzer
 rikune docker-stdio
+# Agent/control-plane 入口
 rikune agent
 ```
 

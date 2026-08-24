@@ -150,6 +150,7 @@ RUN chown root:root /app/LICENSE /app/DISCLOSURE && \
 COPY scripts/secure-fs-helper.py scripts/verify-hybrid-runtime.mjs ./scripts/
 RUN chown root:root ./scripts/secure-fs-helper.py ./scripts/verify-hybrid-runtime.mjs && \
     chmod 0555 ./scripts/secure-fs-helper.py ./scripts/verify-hybrid-runtime.mjs
+{{FULL_STACK_VALIDATOR_COPY}}
 
 # Data files (API semantics, etc.)
 RUN mkdir -p ./data

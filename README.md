@@ -33,6 +33,21 @@ primary workflow or artifact gateways.
 - Optional Analyzer/Runtime split for live Windows execution through a Windows Host Agent, Windows Sandbox, or Hyper-V VM.
 - Policy gates for live execution, network access, external upload, and bulk decompilation.
 
+## Platform Support in v1.4.0
+
+The Analyzer and sample-custody data plane require a Linux kernel: native Linux, a Linux
+container, or WSL2. Windows and macOS can host the supported Linux-container/control plane;
+Windows can additionally host the Windows Host Agent, Windows Sandbox, or Hyper-V runtime for
+explicit live execution. A native Windows or macOS Node Analyzer, including the
+`auto-sandbox` topology, is not supported in v1.4.0. This boundary preserves the fail-closed
+Linux secure-filesystem contract instead of treating unsupported filesystems as equivalent.
+Under WSL2, keep `RIKUNE_DATA_ROOT` and every workspace/sample/storage path on the WSL Linux
+filesystem (for example `~/.rikune` in the distribution's ext4.vhdx). `/mnt/c` and other
+`/mnt/<drive>` DrvFS paths are not supported for sample custody.
+The generated Analyzer images are currently `linux/amd64`. Every generated Compose service pins
+that platform explicitly; Apple Silicon Docker Desktop hosts run it through amd64 emulation. Do
+not remove or override the generated platform pin.
+
 ## Quick Start
 
 ### Static Docker Analyzer
@@ -47,21 +62,10 @@ Static Docker is the safest default. It does not execute samples.
 ./rikune.sh install --profile static --data-root "$HOME/.rikune"
 ```
 
-Manual equivalent:
-
-```bash
-RIKUNE_REMOVE_PRIVATE_ENV_PATH="$PWD/.docker-runtime.env" node scripts/write-docker-runtime-env.mjs
-unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
-  HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY
-npm ci --include=dev
-npm run build
-npm run docker:generate:all
-RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
-RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
-RIKUNE_DOCKER_ENV_PROFILE=static \
-  node scripts/write-docker-runtime-env.mjs
-docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
-```
+The wrapper is the supported installation transaction. It snapshots and removes the protected
+Compose env before dependency lifecycle commands, restores it if pre-commit work fails, and commits
+the rotated credentials only after the new file verifies. Do not reproduce that sequence with the
+lower-level env writer and `npm ci` commands.
 
 The env writer rotates to a new 32-byte analyzer API key from the operating system CSPRNG unless a key is explicitly supplied for that invocation, and sets file mode `0600` on POSIX systems. Compose binds the API to `127.0.0.1` by default. The local Dashboard is `http://127.0.0.1:18080/?key=<RIKUNE_API_KEY>`; do not share that URL or commit `.docker-runtime.env`.
 
@@ -76,24 +80,30 @@ Hybrid mode runs the Analyzer in Docker and delegates live Windows work to a Win
 From Linux/macOS with a remote Windows runtime host:
 
 ```bash
+# Bootstrap only inside an isolated trusted network/VPN; sandbox runtime ports use HTTP.
 ./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user> \
-  --host-agent-endpoint https://runtime.example.internal
+  --host-agent-endpoint https://runtime.example.internal \
+  --allow-insecure-runtime-http
 ```
 
-The HTTPS endpoint should terminate at a trusted reverse proxy/VPN path to the loopback Host Agent. For direct plaintext transport on an isolated trusted network only, add `--allow-insecure-runtime-http`; this is an explicit opt-in and binds the bootstrapped Host Agent beyond loopback. Runtime keys are accepted through a protected environment or hidden prompt, never as CLI arguments.
+The HTTPS endpoint should terminate at a trusted reverse proxy/VPN path. Remote bootstrap still uses plaintext Host Agent/Sandbox runtime ports inside that isolated network, so it requires the explicit `--allow-insecure-runtime-http` opt-in shown above. With a separately secured, pre-provisioned runtime, use `--skip-windows-setup` instead and omit the insecure opt-in. Runtime keys are accepted through a protected environment or hidden prompt, never as CLI arguments.
 
 Connecting an MCP client does not start Windows Sandbox or run a sample. Live runtime work only starts when a tool explicitly requests it, such as `runtime.debug.session.start`, `runtime.debug.command`, `sandbox.execute`, or a promoted dynamic execution stage.
 
-### Native Development
+### Native Linux Development
+
+Run the root Analyzer directly only on a Linux kernel. On Windows, use WSL2 or a Linux container;
+on macOS, use a Linux container/VM. Windows runtime packages can still be developed and tested on
+their native Windows host.
 
 ```bash
 npm ci --include=dev
 npm run build
 npm test
-node dist/index.js
+node --env-file-if-exists=.env dist/index.js
 ```
 
-The root package requires Node.js 22 or newer. Some runtime subpackages can run on older Node versions, but repository development and the published root CLI should use Node 22+.
+The root package requires Node.js 22.9 or newer. Some runtime subpackages can run on older Node versions, but repository development and the published root CLI should use Node 22.9+.
 
 ## Primary Gateway Flow
 
@@ -184,7 +194,7 @@ The current code path is:
 src/index.ts
   -> loadConfig()
   -> WorkspaceManager / DatabaseManager / PolicyGuard / CacheManager / StorageManager / JobQueue
-  -> optional RuntimeClient or Windows sandbox bootstrap
+  -> optional RuntimeClient or Windows Host Agent-backed runtime delegation
   -> registerAllTools()
   -> MCP stdio server
 ```
@@ -218,9 +228,10 @@ Runtime modes are configured through `runtime.mode` or environment variables:
 - `disabled`: no runtime delegation.
 - `manual`: connect to a supplied runtime endpoint.
 - `remote-sandbox`: delegate to a Windows Host Agent.
-- `auto-sandbox`: Windows-native analyzer launches Windows Sandbox locally.
+- `auto-sandbox`: compatibility configuration value; no supported v1.4.0 deployment topology.
 
-Docker/WSL analyzers should use `remote-sandbox`, not `auto-sandbox`.
+Linux-kernel analyzers should use `remote-sandbox` to delegate to a Windows Host Agent. Native
+Windows/macOS Node Analyzer and `auto-sandbox` topologies are unsupported in v1.4.0.
 
 ## Plugin System
 
@@ -280,7 +291,7 @@ API key auth, rate limiting, security headers, and limited CORS are handled by t
 
 Minimum development baseline:
 
-- Node.js 22+
+- Node.js 22.9+
 - npm
 - CPython 3.12 x86_64 for native workers and the repository's hash-locked Python environments
 - Docker 20.10+ and Docker Compose v2 for Docker profiles
@@ -340,14 +351,14 @@ npm run build:runtime
 
 ## MCP Client Configuration
 
-Local build:
+Linux-native local build (including WSL2 with the repository and data on its Linux filesystem):
 
 ```json
 {
   "mcpServers": {
     "rikune": {
       "command": "node",
-      "args": ["D:/Playground/windows-exe-decompiler-mcp-server/dist/index.js"],
+      "args": ["/home/user/rikune/dist/index.js"],
       "env": {
         "API_ENABLED": "false",
         "PLUGINS": "*"
@@ -364,7 +375,19 @@ Docker stdio:
   "mcpServers": {
     "rikune": {
       "command": "docker",
-      "args": ["exec", "-i", "rikune-analyzer", "node", "dist/index.js"]
+      "args": [
+        "exec",
+        "-i",
+        "-e",
+        "API_ENABLED=false",
+        "-e",
+        "NODE_ENV=production",
+        "-e",
+        "PYTHONUNBUFFERED=1",
+        "rikune-analyzer",
+        "node",
+        "dist/index.js"
+      ]
     }
   }
 }
@@ -374,8 +397,11 @@ Published package:
 
 ```bash
 npm install -g rikune
+# Linux-native Analyzer (or inside WSL2)
 rikune
+# Linux-container Analyzer on any supported Docker host
 rikune docker-stdio
+# Agent/control-plane entry point
 rikune agent
 ```
 

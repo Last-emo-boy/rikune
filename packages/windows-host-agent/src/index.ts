@@ -17,6 +17,10 @@ import os from 'os'
 import net from 'net'
 import { logger } from './logger.js'
 import {
+  buildTrustedWindowsPowerShellScript,
+  resolveTrustedWindowsCommand,
+} from './windows-child-process.js'
+import {
   assertTrustedHttpEndpoint,
   buildWsbXml,
   createTrustedFetch,
@@ -148,10 +152,30 @@ export type WindowsCommandRunner = (
   args: string[]
 ) => Promise<WindowsCommandResult>
 
+export interface WindowsExecFileOptions {
+  windowsHide: boolean
+  timeout: number
+  signal?: AbortSignal
+  env: NodeJS.ProcessEnv
+}
+
+export type WindowsExecFile = (
+  command: string,
+  args: readonly string[],
+  options: WindowsExecFileOptions,
+  callback: (
+    error: NodeJS.ErrnoException | null,
+    stdout: string | Buffer,
+    stderr: string | Buffer
+  ) => void
+) => unknown
+
 interface WindowsAclOptions {
   platform?: NodeJS.Platform
   runCommand?: WindowsCommandRunner
   currentUserSid?: string
+  environment?: NodeJS.ProcessEnv
+  execFile?: WindowsExecFile
 }
 
 interface RestrictedFileHandle {
@@ -196,6 +220,8 @@ export interface PortProxyCommandOptions {
   commandTimeoutMs?: number
   maxAttempts?: number
   wait?: (delayMs: number) => Promise<void>
+  environment?: NodeJS.ProcessEnv
+  execFile?: WindowsExecFile
 }
 
 export interface RestrictedWsbFileDependencies {
@@ -720,14 +746,27 @@ function existingExecutablePath(rawPath?: string): string | null {
   }
 }
 
-function findExecutableOnPath(command: string): Promise<string | null> {
+export function findExecutableOnPath(
+  command: string,
+  options: { environment?: NodeJS.ProcessEnv; execFile?: WindowsExecFile } = {}
+): Promise<string | null> {
   const timeoutMs = remainingOperationMs('where.exe command', 5_000)
   const signal = sandboxOperationContext.getStore()?.controller.signal
+  const trustedCommand = resolveTrustedWindowsCommand(
+    'where.exe',
+    options.environment || process.env
+  )
+  const executeFile = options.execFile || (execFile as unknown as WindowsExecFile)
   return new Promise((resolve) => {
-    execFile(
-      'where.exe',
+    executeFile(
+      trustedCommand.command,
       [command],
-      { windowsHide: true, timeout: timeoutMs, signal },
+      {
+        windowsHide: true,
+        timeout: timeoutMs,
+        signal,
+        env: trustedCommand.env,
+      },
       (err, stdout) => {
         if (err) {
           resolve(null)
@@ -755,17 +794,31 @@ async function resolveHostPythonPath(): Promise<string | null> {
   )
 }
 
+export function resolveWindowsSandboxLaunchCommand(environment: NodeJS.ProcessEnv = process.env): {
+  command: string
+  env: NodeJS.ProcessEnv
+} {
+  return resolveTrustedWindowsCommand('WindowsSandbox.exe', environment)
+}
+
 function runPowerShell(
   script: string,
   timeoutMs = 120_000
 ): Promise<{ stdout: string; stderr: string }> {
   const boundedTimeoutMs = remainingOperationMs('PowerShell command', timeoutMs)
   const signal = sandboxOperationContext.getStore()?.controller.signal
+  const trustedCommand = resolveTrustedWindowsCommand('powershell.exe', process.env)
   return new Promise((resolve, reject) => {
     execFile(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script],
-      { windowsHide: true, timeout: boundedTimeoutMs, signal },
+      trustedCommand.command,
+      [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        buildTrustedWindowsPowerShellScript(script),
+      ],
+      { windowsHide: true, timeout: boundedTimeoutMs, signal, env: trustedCommand.env },
       (err, stdout, stderr) => {
         const result = {
           stdout: stdout?.toString() || '',
@@ -937,14 +990,25 @@ async function readJsonBody(req: IncomingMessage, maxBytes = 10 * 1024 * 1024): 
   })
 }
 
-function runWindowsCommand(command: string, args: string[]): Promise<WindowsCommandResult> {
+function runWindowsCommand(
+  command: string,
+  args: string[],
+  options: { environment?: NodeJS.ProcessEnv; execFile?: WindowsExecFile } = {}
+): Promise<WindowsCommandResult> {
   const timeoutMs = remainingOperationMs(command)
   const signal = sandboxOperationContext.getStore()?.controller.signal
+  const trustedCommand = resolveTrustedWindowsCommand(command, options.environment || process.env)
+  const executeFile = options.execFile || (execFile as unknown as WindowsExecFile)
   return new Promise((resolve, reject) => {
-    execFile(
-      command,
+    executeFile(
+      trustedCommand.command,
       args,
-      { windowsHide: true, timeout: timeoutMs, signal },
+      {
+        windowsHide: true,
+        timeout: timeoutMs,
+        signal,
+        env: trustedCommand.env,
+      },
       (err, stdout, stderr) => {
         const result = {
           stdout: stdout?.toString() || '',
@@ -977,7 +1041,13 @@ async function resolveWindowsAclContext(options: WindowsAclOptions): Promise<{
     throw new Error('Restricted Windows Sandbox ACLs can only be applied on Windows')
   }
 
-  const rawRunCommand = options.runCommand || runWindowsCommand
+  const rawRunCommand =
+    options.runCommand ||
+    ((command: string, args: string[]) =>
+      runWindowsCommand(command, args, {
+        environment: options.environment,
+        execFile: options.execFile,
+      }))
   const runCommand: WindowsCommandRunner = (command, args) =>
     runBoundedOperation(`${command} command`, () => rawRunCommand(command, args))
   let currentUserSid = options.currentUserSid?.trim()
@@ -994,7 +1064,7 @@ async function resolveWindowsAclContext(options: WindowsAclOptions): Promise<{
 
 export async function verifyRestrictedWindowsAcl(
   targetPath: string,
-  _isDirectory: boolean,
+  isDirectory: boolean,
   options: WindowsAclOptions = {}
 ): Promise<void> {
   const { runCommand, currentUserSid } = await resolveWindowsAclContext(options)
@@ -1002,7 +1072,7 @@ export async function verifyRestrictedWindowsAcl(
   const auditScript = [
     `$ErrorActionPreference = 'Stop'`,
     `$target = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedTarget}'))`,
-    `$acl = Get-Acl -LiteralPath $target`,
+    `$acl = [System.IO.${isDirectory ? 'Directory' : 'File'}]::GetAccessControl($target)`,
     `$ownerSid = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value`,
     `$rules = @($acl.Access | ForEach-Object { $sid = $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value; [pscustomobject]@{ Sid = $sid; Type = $_.AccessControlType.ToString(); Rights = $_.FileSystemRights.ToString(); Inherited = $_.IsInherited } })`,
     `[pscustomobject]@{ OwnerSid = $ownerSid; Protected = $acl.AreAccessRulesProtected; Rules = $rules } | ConvertTo-Json -Compress -Depth 4`,
@@ -1011,7 +1081,7 @@ export async function verifyRestrictedWindowsAcl(
     '-NoProfile',
     '-NonInteractive',
     '-Command',
-    auditScript,
+    buildTrustedWindowsPowerShellScript(auditScript),
   ])
 
   let snapshot: {
@@ -1102,7 +1172,13 @@ export async function verifyWindowsPathNotReparse(
   if (platform !== 'win32') {
     return
   }
-  const runCommand = options.runCommand || runWindowsCommand
+  const runCommand =
+    options.runCommand ||
+    ((command: string, args: string[]) =>
+      runWindowsCommand(command, args, {
+        environment: options.environment,
+        execFile: options.execFile,
+      }))
   const encodedTarget = Buffer.from(targetPath, 'utf8').toString('base64')
   const expectedAttribute = expectedDirectory ? 'Directory' : 'Normal'
   const auditScript = [
@@ -1119,7 +1195,7 @@ export async function verifyWindowsPathNotReparse(
     '-NoProfile',
     '-NonInteractive',
     '-Command',
-    auditScript,
+    buildTrustedWindowsPowerShellScript(auditScript),
   ])
   if (result.stdout.trim() !== `${expectedAttribute}:SAFE`) {
     throw new Error(`Unable to verify Windows Sandbox path attributes for '${targetPath}'`)
@@ -1583,11 +1659,11 @@ async function collectWindowsSandboxDiagnostics(params: {
   wsbPath: string
   timeoutMs: number
   listenPort: number
+  windowsSandboxExecutable: string
   wsbDiagnostics?: WsbConfigDiagnostics
   sandboxExit?: { code: number | null; signal: NodeJS.Signals | null } | null
   missingPaths?: Array<{ name: string; path: string; exists: boolean }>
 }): Promise<HostAgentStartDiagnostics> {
-  const windowsSandboxExecutable = 'C:\\Windows\\System32\\WindowsSandbox.exe'
   return {
     backend: 'windows-sandbox',
     sandboxDir: params.sandboxDir,
@@ -1597,8 +1673,8 @@ async function collectWindowsSandboxDiagnostics(params: {
     mappedFolders: params.wsbDiagnostics?.mappedFolders,
     logonCommandSummary: params.wsbDiagnostics?.logonCommandSummary,
     windowsSandbox: {
-      executable: windowsSandboxExecutable,
-      exists: existsSync(windowsSandboxExecutable),
+      executable: params.windowsSandboxExecutable,
+      exists: existsSync(params.windowsSandboxExecutable),
       exit: params.sandboxExit ?? null,
     },
     readyFile: await readFilePreview(path.join(params.sandboxDir, 'outbox', 'runtime.ready.json')),
@@ -2108,14 +2184,27 @@ async function proveWindowsSandboxTermination(
   }
 }
 
-function runNetshCommand(args: string[]): Promise<WindowsCommandResult> {
+function runNetshCommand(
+  args: string[],
+  options: { environment?: NodeJS.ProcessEnv; execFile?: WindowsExecFile } = {}
+): Promise<WindowsCommandResult> {
   const timeoutMs = remainingOperationMs('netsh command')
   const signal = sandboxOperationContext.getStore()?.controller.signal
+  const trustedCommand = resolveTrustedWindowsCommand(
+    'netsh.exe',
+    options.environment || process.env
+  )
+  const executeFile = options.execFile || (execFile as unknown as WindowsExecFile)
   return new Promise((resolve, reject) => {
-    execFile(
-      'netsh',
+    executeFile(
+      trustedCommand.command,
       args,
-      { windowsHide: true, timeout: timeoutMs, signal },
+      {
+        windowsHide: true,
+        timeout: timeoutMs,
+        signal,
+        env: trustedCommand.env,
+      },
       (error, stdout, stderr) => {
         const result = {
           stdout: stdout?.toString() || '',
@@ -2137,7 +2226,7 @@ function runNetshCommand(args: string[]): Promise<WindowsCommandResult> {
 }
 
 function createBoundedNetshRunner(options: PortProxyCommandOptions): NetshCommandRunner {
-  const rawRunNetsh = options.runNetsh || runNetshCommand
+  const rawRunNetsh = options.runNetsh || ((args: string[]) => runNetshCommand(args, options))
   const commandTimeoutMs =
     typeof options.commandTimeoutMs === 'number' &&
     Number.isSafeInteger(options.commandTimeoutMs) &&
@@ -2746,6 +2835,17 @@ async function startSandbox(body: unknown): Promise<StartSandboxResult> {
     return { ok: false, error: 'Windows Host Agent requires Windows platform' }
   }
 
+  let windowsSandboxCommand: ReturnType<typeof resolveWindowsSandboxLaunchCommand>
+  try {
+    windowsSandboxCommand = resolveWindowsSandboxLaunchCommand(process.env)
+  } catch (error) {
+    return {
+      ok: false,
+      backend: 'windows-sandbox',
+      error: `Unable to resolve the trusted Windows Sandbox executable: ${formatErrorMessage(error)}`,
+    }
+  }
+
   const request = (body && typeof body === 'object' ? body : {}) as StartSandboxRequest
   const { requestId, error: requestIdError } = resolveSandboxStartRequestId(request.requestId)
   if (requestIdError || !requestId) {
@@ -2826,6 +2926,7 @@ async function startSandbox(body: unknown): Promise<StartSandboxResult> {
       wsbPath: path.join(sandboxDir, 'runtime.wsb'),
       timeoutMs,
       listenPort,
+      windowsSandboxExecutable: windowsSandboxCommand.command,
       missingPaths: requiredPaths,
     })
     await fs.rm(sandboxDir, { recursive: true, force: true })
@@ -2927,8 +3028,9 @@ async function startSandbox(body: unknown): Promise<StartSandboxResult> {
           { sandboxDir, wsbPath: protectedWsbPath, listenPort },
           'Launching Windows Sandbox via Host Agent'
         )
-        const child = spawn('C:\\Windows\\System32\\WindowsSandbox.exe', [protectedWsbPath], {
+        const child = spawn(windowsSandboxCommand.command, [protectedWsbPath], {
           detached: true,
+          env: windowsSandboxCommand.env,
           windowsHide: true,
           stdio: 'ignore',
         })
@@ -2960,6 +3062,7 @@ async function startSandbox(body: unknown): Promise<StartSandboxResult> {
       wsbPath,
       timeoutMs,
       listenPort,
+      windowsSandboxExecutable: windowsSandboxCommand.command,
       sandboxExit,
     })
     const cleanupFailures = await cleanupFailedWindowsSandboxStart({
@@ -2991,6 +3094,7 @@ async function startSandbox(body: unknown): Promise<StartSandboxResult> {
       wsbPath,
       timeoutMs,
       listenPort,
+      windowsSandboxExecutable: windowsSandboxCommand.command,
       wsbDiagnostics,
       sandboxExit,
     })
@@ -3024,6 +3128,7 @@ async function startSandbox(body: unknown): Promise<StartSandboxResult> {
       wsbPath,
       timeoutMs,
       listenPort,
+      windowsSandboxExecutable: windowsSandboxCommand.command,
       wsbDiagnostics,
       sandboxExit,
     })

@@ -15,6 +15,7 @@ import {
   getDefaultConfigPath,
   getDefaultDatabasePath,
   getDefaultCacheRoot,
+  getDefaultStorageRoot,
   getDefaultWorkspaceRoot,
   getDefaultAuditLogPath,
   getDefaultGhidraProjectRoot,
@@ -71,6 +72,13 @@ describe('Configuration Loading', () => {
     delete process.env.API_ENABLED
     delete process.env.API_KEY
     delete process.env.API_PORT
+    delete process.env.API_STORAGE_ROOT
+    delete process.env.NODE_ROLE
+    delete process.env.RUNTIME_MODE
+    delete process.env.RUNTIME_ENDPOINT
+    delete process.env.RUNTIME_API_KEY
+    delete process.env.RUNTIME_HOST_AGENT_ENDPOINT
+    delete process.env.RUNTIME_HOST_AGENT_API_KEY
   })
 
   describe('loadConfigFromFile', () => {
@@ -283,6 +291,9 @@ describe('Configuration Loading', () => {
       expect(config.cache.root).toBe(getDefaultCacheRoot())
       expect(config.logging.auditPath).toBe(getDefaultAuditLogPath())
       expect(config.api.enabled).toBe(false)
+      expect(config.api.storageRoot).toBe(getDefaultStorageRoot())
+      expect(config.node.role).toBe('analyzer')
+      expect(config.runtime.mode).toBe('disabled')
     })
 
     test('should load default user config path when no explicit config path is provided', () => {
@@ -330,6 +341,46 @@ describe('Configuration Loading', () => {
       expect(config.server.port).toBe(8080)
       expect(config.server.host).toBe('custom.host')
       expect(config.logging.level).toBe('debug')
+    })
+
+    test('should preserve an explicit file-only node role and runtime mode', () => {
+      fs.writeFileSync(
+        testConfigPath,
+        JSON.stringify({
+          node: { role: 'hybrid' },
+          runtime: {
+            mode: 'remote-sandbox',
+            hostAgentEndpoint: 'http://127.0.0.1:18082',
+            hostAgentApiKey: 'file-host-agent-key',
+          },
+        })
+      )
+
+      const config = loadConfig(testConfigPath)
+
+      expect(config.node.role).toBe('hybrid')
+      expect(config.runtime.mode).toBe('remote-sandbox')
+    })
+
+    test('should let environment node and runtime settings override file values', () => {
+      fs.writeFileSync(
+        testConfigPath,
+        JSON.stringify({
+          node: { role: 'hybrid' },
+          runtime: {
+            mode: 'remote-sandbox',
+            hostAgentEndpoint: 'http://127.0.0.1:18082',
+            hostAgentApiKey: 'file-host-agent-key',
+          },
+        })
+      )
+      process.env.NODE_ROLE = 'analyzer'
+      process.env.RUNTIME_MODE = 'disabled'
+
+      const config = loadConfig(testConfigPath)
+
+      expect(config.node.role).toBe('analyzer')
+      expect(config.runtime.mode).toBe('disabled')
     })
 
     test('should load public API base URL from environment', () => {
@@ -397,6 +448,7 @@ describe('Configuration Loading', () => {
       expect(config.cache.root).toBe(getDefaultCacheRoot())
       expect(config.cache.ttl).toBe(30 * 24 * 60 * 60)
       expect(config.logging.auditPath).toBe(getDefaultAuditLogPath())
+      expect(config.api.storageRoot).toBe(getDefaultStorageRoot())
     })
   })
 

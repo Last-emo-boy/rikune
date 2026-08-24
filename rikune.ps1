@@ -13,10 +13,6 @@ param(
     [string]$ProjectRoot = $PSScriptRoot,
 
     [string]$HostAgentEndpoint,
-    [Parameter(HelpMessage = "Deprecated argv-based Host Agent key input. Prefer the protected RUNTIME_HOST_AGENT_API_KEY process environment.")]
-    [string]$HostAgentApiKey,
-    [Parameter(HelpMessage = "Deprecated argv-based Runtime Node key input. Prefer the protected, distinct RUNTIME_API_KEY process environment.")]
-    [string]$RuntimeApiKey,
     [int]$HostAgentPort = 18082,
     [ValidateSet("windows-sandbox", "hyperv-vm")]
     [string]$RuntimeBackend = "windows-sandbox",
@@ -419,10 +415,7 @@ function Get-RuntimeCredentials {
         $endpoint = "http://host.docker.internal:$port"
     }
 
-    $hostKey = $HostAgentApiKey
-    if ([string]::IsNullOrWhiteSpace($hostKey)) {
-        $hostKey = $env:RUNTIME_HOST_AGENT_API_KEY
-    }
+    $hostKey = $env:RUNTIME_HOST_AGENT_API_KEY
     if ([string]::IsNullOrWhiteSpace($hostKey) -and $runtimeEnv.ContainsKey("HOST_AGENT_API_KEY")) {
         $hostKey = $runtimeEnv["HOST_AGENT_API_KEY"]
     }
@@ -430,10 +423,7 @@ function Get-RuntimeCredentials {
         $hostKey = $dockerEnv["RUNTIME_HOST_AGENT_API_KEY"]
     }
 
-    $runtimeKey = $RuntimeApiKey
-    if ([string]::IsNullOrWhiteSpace($runtimeKey)) {
-        $runtimeKey = $env:RUNTIME_API_KEY
-    }
+    $runtimeKey = $env:RUNTIME_API_KEY
     if ([string]::IsNullOrWhiteSpace($runtimeKey) -and $dockerEnv.ContainsKey("RUNTIME_API_KEY")) {
         $runtimeKey = $dockerEnv["RUNTIME_API_KEY"]
     }
@@ -533,14 +523,10 @@ function Install-Runtime {
     if ($Service) { $args += "-Service" }
     if ($SkipBuild) { $args += "-SkipBuild" }
     $childEnvironment = @{}
-    if (-not [string]::IsNullOrWhiteSpace($HostAgentApiKey)) {
-        $childEnvironment.RIKUNE_HOST_AGENT_API_KEY = $HostAgentApiKey
-    } elseif (-not [string]::IsNullOrWhiteSpace($env:RUNTIME_HOST_AGENT_API_KEY)) {
+    if (-not [string]::IsNullOrWhiteSpace($env:RUNTIME_HOST_AGENT_API_KEY)) {
         $childEnvironment.RIKUNE_HOST_AGENT_API_KEY = $env:RUNTIME_HOST_AGENT_API_KEY
     }
-    if (-not [string]::IsNullOrWhiteSpace($RuntimeApiKey)) {
-        $childEnvironment.RIKUNE_RUNTIME_NODE_API_KEY = $RuntimeApiKey
-    } elseif (-not [string]::IsNullOrWhiteSpace($env:RUNTIME_API_KEY)) {
+    if (-not [string]::IsNullOrWhiteSpace($env:RUNTIME_API_KEY)) {
         $childEnvironment.RIKUNE_RUNTIME_NODE_API_KEY = $env:RUNTIME_API_KEY
     }
 
@@ -564,8 +550,8 @@ function Install-Stack {
     Write-Info "Data root: $DataRoot"
 
     $dockerEndpoint = $HostAgentEndpoint
-    $hostKey = $HostAgentApiKey
-    $runtimeKey = $RuntimeApiKey
+    $hostKey = $null
+    $runtimeKey = $null
     $resetHandledByWrapper = $false
 
     if ($ProfileName -eq "hybrid") {
@@ -740,8 +726,14 @@ function Show-Doctor {
 
     if (Test-Command "node") {
         $nodeVersion = (node --version).Trim()
-        $nodeMajor = [int]($nodeVersion -replace "^v", "").Split(".")[0]
-        if ($nodeMajor -ge 22) { Write-Ok "Node.js: $nodeVersion" } else { Write-Warn "Node.js $nodeVersion found, but 22+ is recommended" }
+        $nodeParts = ($nodeVersion -replace "^v", "").Split(".")
+        $nodeMajor = [int]$nodeParts[0]
+        $nodeMinor = if ($nodeParts.Length -gt 1) { [int]$nodeParts[1] } else { 0 }
+        if ($nodeMajor -gt 22 -or ($nodeMajor -eq 22 -and $nodeMinor -ge 9)) {
+            Write-Ok "Node.js: $nodeVersion"
+        } else {
+            Write-Warn "Node.js $nodeVersion found, but 22.9+ is required"
+        }
     } else {
         Write-Err "Node.js not found"
     }

@@ -9,9 +9,22 @@
 | 日常静态逆向、样本不执行 | `static` |
 | Docker Analyzer + Windows Sandbox / Hyper-V live runtime | `hybrid` |
 | 大而全的 Linux 工具链镜像 | `full` |
-| Windows 本机 Analyzer + 本地 Sandbox | native + `auto-sandbox` |
+| Windows/macOS 宿主机 | Linux container；Windows runtime 使用 Host Agent / Sandbox / Hyper-V |
 
 不确定时先用 `static`。
+
+v1.4.0 的 Analyzer 与 sample-custody 数据面要求 Linux kernel（原生 Linux、Linux container 或
+WSL2）。Windows/macOS 可作为 Linux container/control host；不支持原生 Windows/macOS Node
+Analyzer 与 `auto-sandbox` 拓扑。Windows 上的 live runtime 仍由 Windows Host Agent、Windows
+Sandbox 或 Hyper-V 提供。
+
+当前 Analyzer image 为 `linux/amd64`。生成的 Compose 文件会显式固定该 platform；Apple
+Silicon 上的 Docker Desktop 使用 amd64 emulation 运行。不要手工删除或覆盖生成的 platform
+设置。
+
+使用 WSL2 时，`RIKUNE_DATA_ROOT`、workspace、sample 与 storage 路径必须位于 WSL Linux
+filesystem（例如发行版 ext4.vhdx 中的 `~/.rikune`）；sample custody 不支持 `/mnt/c` 或其他
+`/mnt/<drive>` DrvFS 路径。
 
 ## 快速安装
 
@@ -33,10 +46,13 @@ Linux/macOS static：
 ./rikune.sh install --profile static --data-root "$HOME/.rikune"
 ```
 
-Linux/macOS Analyzer + 远程 Windows runtime host：
+Linux/macOS 宿主机上的 Linux-container Analyzer + 远程 Windows runtime host：
 
 ```bash
-./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user>
+# 仅在隔离的可信网络/VPN 内 bootstrap；Sandbox runtime ports 使用 HTTP。
+./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user> \
+  --host-agent-endpoint https://runtime.example.internal \
+  --allow-insecure-runtime-http
 ```
 
 ## 安装脚本做什么
@@ -50,8 +66,7 @@ Linux/macOS Analyzer + 远程 Windows runtime host：
 5. 写入 `.docker-runtime.env`。
 6. 根据 profile 构建镜像。
 7. 启动 compose service。
-8. 可选配置 MCP 客户端。
-9. hybrid 时可安装或检查 Windows Host Agent。
+8. hybrid 时可安装或检查 Windows Host Agent。
 
 ## Profile 说明
 
@@ -107,7 +122,6 @@ Linux/macOS Analyzer + 远程 Windows runtime host：
 .\install-docker.ps1 -Profile static -SkipStart
 .\install-docker.ps1 -Profile static -SkipBuild
 .\install-docker.ps1 -Profile static -ResetData
-.\install-docker.ps1 -ConfigureClient Codex
 ```
 
 ## Linux/macOS 参数示例
@@ -116,66 +130,25 @@ Linux/macOS Analyzer + 远程 Windows runtime host：
 ./rikune.sh
 ./rikune.sh install --profile static --data-root "$HOME/.rikune"
 ./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user> \
-  --host-agent-endpoint https://runtime.example.internal
+  --host-agent-endpoint https://runtime.example.internal \
+  --allow-insecure-runtime-http
 ./rikune.sh status
 ./rikune.sh logs
 ./rikune.sh stop
 ```
 
-## 手工部署
+## 受支持的 profile 安装
 
-Static：
-
-```bash
-RIKUNE_REMOVE_PRIVATE_ENV_PATH="$PWD/.docker-runtime.env" node scripts/write-docker-runtime-env.mjs
-unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
-  HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY
-npm ci --include=dev
-npm run build
-npm run docker:generate:all
-RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
-RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
-RIKUNE_DOCKER_ENV_PROFILE=static \
-  node scripts/write-docker-runtime-env.mjs
-docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
-```
-
-Full：
+不要把删除 env、安装 dependency、重建和轮换 credential 手工拼接成“等价流程”。受支持的
+installer 会对受保护的 env 执行 snapshot/rollback transaction，避免依赖或构建失败造成数据
+丢失：
 
 ```bash
-RIKUNE_REMOVE_PRIVATE_ENV_PATH="$PWD/.docker-runtime.env" node scripts/write-docker-runtime-env.mjs
-unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
-  HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY
-npm ci --include=dev
-npm run build
-npm run docker:generate:all
-RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
-RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
-RIKUNE_DOCKER_ENV_PROFILE=full \
-  node scripts/write-docker-runtime-env.mjs
-docker compose --env-file .docker-runtime.env -f docker-compose.yml up -d --build mcp-server
-```
-
-Hybrid：
-
-```bash
-HOST_AGENT_KEY='<至少 32 个可打印非空白 ASCII 字符>'
-RUNTIME_NODE_KEY='<另一把至少 32 个字符的 key>'
-export -n HOST_AGENT_KEY RUNTIME_NODE_KEY
-RIKUNE_REMOVE_PRIVATE_ENV_PATH="$PWD/.docker-runtime.env" node scripts/write-docker-runtime-env.mjs
-unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
-  HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY
-npm ci --include=dev
-npm run build
-npm run docker:generate:all
-RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
-RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
-RIKUNE_DOCKER_ENV_PROFILE=hybrid \
-RUNTIME_HOST_AGENT_ENDPOINT="https://runtime.example.internal" \
-RUNTIME_HOST_AGENT_API_KEY="$HOST_AGENT_KEY" \
-RUNTIME_API_KEY="$RUNTIME_NODE_KEY" \
-  node scripts/write-docker-runtime-env.mjs
-docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml up -d --build analyzer
+./rikune.sh install --profile static --data-root "$HOME/.rikune"
+./rikune.sh install --profile full --data-root "$HOME/.rikune"
+./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user> \
+  --host-agent-endpoint https://runtime.example.internal \
+  --allow-insecure-runtime-http
 ```
 
 ## `.docker-runtime.env`
@@ -233,7 +206,8 @@ curl http://localhost:18080/api/v1/ready
 - Host Agent 默认端口通常是 `18082`。
 - Runtime Node 默认端口通常是 `18081`，由 Host Agent 在 Sandbox/VM 内启动并转发。
 - Windows Sandbox 后端要求 Host Agent 运行在已登录用户会话中。
-- Docker/WSL Analyzer 不能使用 `auto-sandbox`，应使用 `remote-sandbox`。
+- v1.4.0 的 Analyzer 必须运行在 Linux kernel 上，并通过 `remote-sandbox` 委托 Windows Host
+  Agent；不支持原生 Windows/macOS Node Analyzer 与 `auto-sandbox`。
 - MCP 连接、`dynamic.runtime.status`、`dynamic.deep_plan`、`debug.*.plan` 不会启动 Sandbox。
 - `runtime.debug.session.start`、`runtime.debug.command`、`sandbox.execute` 和 promoted `dynamic_execute` 才会请求 live runtime。
 - `sandbox.execute` 返回的 `execution_semantics` 会说明本次是 live sandbox、live Hyper-V、safe simulation 还是 emulation。

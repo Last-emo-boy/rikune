@@ -159,6 +159,7 @@ describe('docker generator backend install reports', () => {
         'utf8'
       )
       const hybridDockerfile = readFileSync(join(outputDir, 'docker', 'Dockerfile.hybrid'), 'utf8')
+      const fullDockerfile = readFileSync(join(outputDir, 'Dockerfile'), 'utf8')
       const staticCompose = readFileSync(join(outputDir, 'docker-compose.analyzer.yml'), 'utf8')
       const hybridCompose = readFileSync(join(outputDir, 'docker-compose.hybrid.yml'), 'utf8')
 
@@ -171,6 +172,14 @@ describe('docker generator backend install reports', () => {
       expect(hybridDockerfile).toContain('USER 1000:1000')
       expect(hybridDockerfile).toContain('scripts/verify-hybrid-runtime.mjs')
       expect(hybridDockerfile).toContain('chmod 0555 ./scripts/secure-fs-helper.py')
+      expect(fullDockerfile).toContain(
+        'COPY scripts/validate-docker-full-stack.sh /usr/local/bin/validate-docker-full-stack.sh'
+      )
+      expect(fullDockerfile).toContain(
+        'chmod 0555 /usr/local/bin/validate-docker-full-stack.sh'
+      )
+      expect(staticDockerfile).not.toContain('validate-docker-full-stack.sh')
+      expect(hybridDockerfile).not.toContain('validate-docker-full-stack.sh')
       expect(staticCompose).toContain('dockerfile: docker/Dockerfile.analyzer')
       expect(hybridCompose).toContain('dockerfile: docker/Dockerfile.hybrid')
       expect(hybridCompose).toContain(

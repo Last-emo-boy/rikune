@@ -45,11 +45,15 @@ case "$(uname -m)" in
     ;;
 esac
 
-command -v node >/dev/null 2>&1 || { printf 'Node.js 22+ is required.\n' >&2; exit 1; }
-node_major="$(node --version)"
-node_major="${node_major#v}"
-node_major="${node_major%%.*}"
-[ "$node_major" -ge 22 ] || { printf 'Node.js 22+ is required.\n' >&2; exit 1; }
+command -v node >/dev/null 2>&1 || { printf 'Node.js 22.9+ is required.\n' >&2; exit 1; }
+node_version="$(node --version)"
+node_version="${node_version#v}"
+node_major="${node_version%%.*}"
+node_minor="${node_version#*.}"; node_minor="${node_minor%%.*}"
+if [ "$node_major" -lt 22 ] || { [ "$node_major" -eq 22 ] && [ "$node_minor" -lt 9 ]; }; then
+  printf 'Node.js 22.9+ is required.\n' >&2
+  exit 1
+fi
 command -v npm >/dev/null 2>&1 || { printf 'npm is required.\n' >&2; exit 1; }
 
 python_command=""

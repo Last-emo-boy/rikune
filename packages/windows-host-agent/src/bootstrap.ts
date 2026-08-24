@@ -12,6 +12,10 @@ import { realpathSync, type Stats } from 'fs'
 import path from 'path'
 import { TextDecoder } from 'util'
 import { fileURLToPath } from 'url'
+import {
+  encodeTrustedWindowsPowerShellScript,
+  resolveTrustedWindowsCommand,
+} from './windows-child-process.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -38,7 +42,6 @@ export const INSTALLER_MANAGED_ENV_KEYS = [
 const INSTALLER_MANAGED_ENV_KEY_SET = new Set<string>(INSTALLER_MANAGED_ENV_KEYS)
 const MAX_RUNTIME_ENV_FILE_BYTES = 64 * 1024
 const ACL_EVIDENCE_MARKER = 'RIKUNE_WINDOWS_RUNTIME_ENV_ACL_V1'
-const POWERSHELL_ENV_KEYS = ['SystemRoot', 'TEMP', 'TMP', 'windir'] as const
 
 const WINDOWS_ACL_VERIFIER_SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
@@ -190,28 +193,6 @@ function runWindowsCommand(
   })
 }
 
-function findEnvironmentValue(environment: NodeJS.ProcessEnv, name: string): string | undefined {
-  const entry = Object.entries(environment).find(
-    ([key, value]) => key.toLowerCase() === name.toLowerCase() && value !== undefined
-  )
-  return entry?.[1]
-}
-
-function buildPowerShellEnvironment(
-  environment: NodeJS.ProcessEnv,
-  targetPath: string
-): NodeJS.ProcessEnv {
-  const childEnvironment: NodeJS.ProcessEnv = {}
-  for (const allowedKey of POWERSHELL_ENV_KEYS) {
-    const value = findEnvironmentValue(environment, allowedKey)
-    if (value !== undefined) {
-      childEnvironment[allowedKey] = value
-    }
-  }
-  childEnvironment.RIKUNE_HOST_AGENT_ENV_PATH = targetPath
-  return childEnvironment
-}
-
 export async function verifyWindowsRuntimeEnvAcl(
   targetPath: string,
   options: {
@@ -226,35 +207,13 @@ export async function verifyWindowsRuntimeEnvAcl(
   }
 
   const environment = options.environment || process.env
-  const configuredSystemRoot = findEnvironmentValue(environment, 'SystemRoot')
-  const configuredWindowsDirectory = findEnvironmentValue(environment, 'windir')
-  if (
-    configuredSystemRoot &&
-    configuredWindowsDirectory &&
-    path.win32.resolve(configuredSystemRoot).toLowerCase() !==
-      path.win32.resolve(configuredWindowsDirectory).toLowerCase()
-  ) {
-    throw new Error('SystemRoot and windir must resolve to the same Windows directory')
-  }
-  const systemRoot = configuredSystemRoot || configuredWindowsDirectory
-  if (!systemRoot) {
-    throw new Error('SystemRoot is required to locate Windows PowerShell')
-  }
-  if (!path.win32.isAbsolute(systemRoot)) {
-    throw new Error('SystemRoot must be an absolute Windows path')
-  }
-
-  const command = path.win32.join(
-    systemRoot,
-    'System32',
-    'WindowsPowerShell',
-    'v1.0',
-    'powershell.exe'
-  )
-  const encodedScript = Buffer.from(WINDOWS_ACL_VERIFIER_SCRIPT, 'utf16le').toString('base64')
+  const trustedCommand = resolveTrustedWindowsCommand('powershell.exe', environment, {
+    RIKUNE_HOST_AGENT_ENV_PATH: targetPath,
+  })
+  const encodedScript = encodeTrustedWindowsPowerShellScript(WINDOWS_ACL_VERIFIER_SCRIPT)
   const args = ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encodedScript]
-  const result = await (options.runCommand || runWindowsCommand)(command, args, {
-    env: buildPowerShellEnvironment(environment, targetPath),
+  const result = await (options.runCommand || runWindowsCommand)(trustedCommand.command, args, {
+    env: trustedCommand.env,
     maxBuffer: 64 * 1024,
     windowsHide: true,
   })

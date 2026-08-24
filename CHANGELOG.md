@@ -40,6 +40,12 @@ Versioning where practical.
 - Bumped the changed `@rikune/shared`, `@rikune/plugin-sdk`, `@rikune/runtime-node`,
   `@rikune/windows-host-agent`, and `@rikune/tsconfig` workspaces to `1.4.0` so every
   published manifest and bundled internal dependency matches the release version.
+- Defined the v1.4.0 platform contract: the Analyzer and sample-custody data plane require a
+  Linux kernel (native Linux, a Linux container, or WSL2). Windows and macOS remain supported as
+  Linux-container/control hosts, while live Windows execution remains available through the
+  Windows Host Agent with Windows Sandbox or Hyper-V. Native Windows/macOS Node Analyzer and
+  `auto-sandbox` topologies are not supported in v1.4.0. WSL2 sample-custody paths must reside on
+  the WSL Linux filesystem, not a `/mnt/<drive>` DrvFS mount.
 
 ### Security
 
@@ -68,7 +74,12 @@ Versioning where practical.
 - Refreshed the dependency lockfile to resolve the npm audit findings present at release time.
 - Hardened Windows and Hybrid bootstrap paths with CSPRNG credentials, protected atomic env-file
   replacement, PowerShell 7 gates, exact project-local PM2, HTTPS-by-default remote endpoints, and
-  stdin/process-environment secret delivery that keeps API keys out of child command lines.
+  stdin/process-environment secret delivery that keeps API keys out of public and child-process
+  command lines.
+- Wrapped local, Docker, and Hybrid private env replacement in exact-byte snapshot/rollback
+  transactions that remove prior credentials before dependency lifecycle commands, commit only
+  after an atomic protected final write, preserve concurrent replacements, and reject poisoned or
+  ambiguous internal operation selectors without exposing snapshots on stdout.
 - Hardened the dashboard against stored and DOM XSS by escaping API-derived values in both text and
   attribute contexts, replacing inline handlers with delegated events, allowlisting Markdown link
   schemes, stripping query-string API keys from browser history, and isolating untrusted HTML and
@@ -79,6 +90,17 @@ Versioning where practical.
   or conceal failed cleanup.
 - Made Windows runtime environment temp files acquire their exact current-user-only DACL atomically
   at `CreateNew`, before any secret bytes are written, and re-verified the ACL after replacement.
+- Restricted both Windows Host Agent ACL-verification launch paths to the trusted local
+  drive-qualified `SystemRoot`, with a minimal child environment that excludes inherited command
+  search paths and API credentials.
+- Reset every trusted host and Windows Sandbox PowerShell payload to the drive-qualified
+  `$PSHOME\Modules` path before any cmdlet can autoload, excluding user-writable module paths even
+  when Windows PowerShell expands `PSModulePath` during startup.
+- Enforced the WSL2-native sample-custody boundary before Analyzer or local-installer mutations by
+  rejecting WSL1/unverified kernels, canonicalizing the nearest existing root ancestor, and
+  rejecting Windows-mounted `drvfs`, `9p`, `plan9`, `virtio-plan9`, and `virtiofs` transports.
+- Pinned generated Analyzer Compose services to `linux/amd64`, including deterministic Docker
+  Desktop emulation on Apple Silicon hosts for the image's amd64-only toolchain.
 - Disabled bundled and Docker-based Qiling installation after its supported dependency chain was
   proven to require vulnerable Pillow versions below the v1.4.0 baseline. Qiling remains available
   only through an independently audited BYO interpreter configured with `QILING_PYTHON`.
@@ -98,6 +120,11 @@ Versioning where practical.
   orphaned Markdown generator that silently emitted an empty API reference.
 - Made static-profile version-evidence patterns compatible with the release image's Node.js 22
   runtime and verified the exact Rizin and capa command/output contracts against the built image.
+- Removed installer-side mutation of client-owned MCP configuration files and documented the
+  schema-correct, credential-free Docker stdio setup for VS Code/Copilot instead.
+- Restored executable Git modes for public Linux installers and container entrypoints, made every
+  npm Compose command load the installer-owned private env explicitly, and installed the full-image
+  validation entrypoint at the path used by `npm run docker:test`.
 
 ### Packaging
 
@@ -106,6 +133,9 @@ Versioning where practical.
   human maintainer 2FA ceremony.
 - Added a single v1.4.0 release DAG whose npm verification depends on the verified linux/amd64
   static OCI candidate, SPDX 2.3 SBOM, provenance, signature, and attestations.
+- Bound and verified the immutable `ghcr.io/last-emo-boy/rikune-analyzer-static:1.4.0` tag before
+  exposing the npm candidate, so irreversible human npm publication can never precede the default
+  OCI reference required by the package.
 - Bundled `@rikune/shared` and `@rikune/plugin-sdk` into the root npm tarball so public installs no
   longer depend on unavailable scoped registry packages.
 - Added the public `rikune/plugin-sdk.js` bridge for external plugin authors.

@@ -13,6 +13,7 @@ import {
   startWindowsHostAgentBootstrap,
   verifyWindowsRuntimeEnvAcl,
 } from '../../../packages/windows-host-agent/src/bootstrap.js'
+import { TRUSTED_WINDOWS_POWERSHELL_MODULE_PATH_PRELUDE } from '../../../packages/windows-host-agent/src/windows-child-process.js'
 
 const STRONG_API_KEY = 'a'.repeat(32)
 const STRONG_RUNTIME_API_KEY = 'b'.repeat(32)
@@ -100,10 +101,7 @@ describe('Windows Host Agent secure bootstrap parser', () => {
 
   test.each([
     [`HOST_AGENT_API_KEY=${STRONG_API_KEY}\n`, 'HOST_AGENT_RUNTIME_API_KEY'],
-    [
-      `HOST_AGENT_API_KEY=${STRONG_API_KEY}\nHOST_AGENT_RUNTIME_API_KEY=too-short\n`,
-      'at least 32',
-    ],
+    [`HOST_AGENT_API_KEY=${STRONG_API_KEY}\nHOST_AGENT_RUNTIME_API_KEY=too-short\n`, 'at least 32'],
     [
       `HOST_AGENT_API_KEY=${STRONG_API_KEY}\nHOST_AGENT_RUNTIME_API_KEY=${STRONG_API_KEY}\n`,
       'must be distinct',
@@ -307,7 +305,10 @@ describe('real Windows ACL verifier command contract', () => {
         platform: 'win32',
         environment: {
           SystemRoot: 'C:\\Windows',
-          PATH: 'C:\\Windows\\System32',
+          windir: 'c:\\windows\\',
+          TEMP: 'C:\\trusted-temp',
+          TMP: 'C:\\trusted-tmp',
+          PATH: 'C:\\attacker-controlled-bin',
           PSModulePath: 'C:\\attacker-controlled-modules',
           HOST_AGENT_API_KEY: secret,
           RUNTIME_API_KEY: secret,
@@ -320,15 +321,29 @@ describe('real Windows ACL verifier command contract', () => {
     expect(command).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
     expect(JSON.stringify(args)).not.toContain(secret)
     expect(JSON.stringify(args)).not.toContain(targetPath)
-    expect(options.env.RIKUNE_HOST_AGENT_ENV_PATH).toBe(targetPath)
-    expect(options.env.HOST_AGENT_API_KEY).toBeUndefined()
-    expect(options.env.RUNTIME_API_KEY).toBeUndefined()
-    expect(options.env.PATH).toBeUndefined()
-    expect(options.env.PSModulePath).toBeUndefined()
+    expect(options.env).toEqual({
+      HOMEDRIVE: 'C:',
+      HOMEPATH: '\\',
+      LOGONSERVER: '',
+      PATH: 'C:\\Windows\\System32',
+      PSModulePath: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',
+      SYSTEMDRIVE: 'C:',
+      SystemRoot: 'C:\\Windows',
+      TEMP: 'C:\\trusted-temp',
+      TMP: 'C:\\trusted-tmp',
+      USERDOMAIN: '',
+      USERNAME: '',
+      USERPROFILE: '',
+      windir: 'C:\\Windows',
+      RIKUNE_HOST_AGENT_ENV_PATH: targetPath,
+    })
     expect(options.windowsHide).toBe(true)
 
     const encodedCommand = args[args.indexOf('-EncodedCommand') + 1]!
     const verifierScript = Buffer.from(encodedCommand, 'base64').toString('utf16le')
+    expect(
+      verifierScript.startsWith(`${TRUSTED_WINDOWS_POWERSHELL_MODULE_PATH_PRELUDE}\r\n`)
+    ).toBe(true)
     expect(verifierScript).toContain('FileAttributes]::ReparsePoint')
     expect(verifierScript).toContain('File]::GetAccessControl')
     expect(verifierScript).toContain('AreAccessRulesProtected')
@@ -340,5 +355,22 @@ describe('real Windows ACL verifier command contract', () => {
     expect(verifierScript).not.toContain('Get-Acl')
     expect(verifierScript).not.toContain('Get-Item')
     expect(verifierScript).not.toContain('ConvertTo-Json')
+  })
+
+  test.each([
+    ['UNC path', '\\\\attacker.example\\share\\Windows'],
+    ['root-relative path', '\\Windows'],
+    ['device path', '\\\\?\\C:\\Windows'],
+  ])('rejects an unsafe %s before invoking PowerShell', async (_description, systemRoot) => {
+    const runCommand = jest.fn()
+
+    await expect(
+      verifyWindowsRuntimeEnvAcl('C:\\rikune\\.env.runtime-windows', {
+        platform: 'win32',
+        environment: { SystemRoot: systemRoot, windir: systemRoot },
+        runCommand,
+      })
+    ).rejects.toThrow('A trusted drive-qualified local Windows SystemRoot is required')
+    expect(runCommand).not.toHaveBeenCalled()
   })
 })

@@ -106,6 +106,11 @@ $runtimeHelperNames = @(
     "Assert-ProtectedRuntimeEnvFile",
     "New-ExactAclRuntimeEnvStream",
     "Write-SecureRuntimeEnvFile",
+    "New-NativeInstallerFailure",
+    "Get-RuntimePrivateEnvSnapshot",
+    "Invoke-RuntimePrivateEnvSnapshotOperation",
+    "Remove-RuntimePrivateEnvForSnapshot",
+    "Restore-RuntimePrivateEnvSnapshot",
     "Resolve-PinnedPm2Command"
 )
 $runtimeHelperAsts = @{}
@@ -201,31 +206,27 @@ Assert-Contract (
 $explicitKey = [string]::new([char]0x65, 32)
 $environmentKey = [string]::new([char]0x66, 32)
 $resolvedKey = Resolve-RuntimeApiKey `
-    -ExplicitlySupplied $true `
-    -SuppliedKey $explicitKey `
-    -EnvironmentKey $environmentKey
-Assert-Contract ($resolvedKey -eq $explicitKey) "An explicitly supplied strong runtime API key must take precedence"
+    -Name "RIKUNE_HOST_AGENT_API_KEY" `
+    -EnvironmentKey $explicitKey
+Assert-Contract ($resolvedKey -eq $explicitKey) "A protected process-environment Host Agent key must be honored"
 
 $resolvedKey = Resolve-RuntimeApiKey `
-    -ExplicitlySupplied $false `
-    -SuppliedKey $null `
+    -Name "RIKUNE_RUNTIME_NODE_API_KEY" `
     -EnvironmentKey $environmentKey
 Assert-Contract ($resolvedKey -eq $environmentKey) "A protected process-environment API key must be honored"
 
 $resolvedKey = Resolve-RuntimeApiKey `
-    -ExplicitlySupplied $false `
-    -SuppliedKey $null `
+    -Name "RIKUNE_RUNTIME_NODE_API_KEY" `
     -EnvironmentKey $null
 Assert-Contract ($resolvedKey -match '^[a-f0-9]{64}$') "An omitted runtime API key must be generated with the CSPRNG"
 
+$resolvedKey = Resolve-RuntimeApiKey -Name "RIKUNE_RUNTIME_NODE_API_KEY" -EnvironmentKey " "
+Assert-Contract ($resolvedKey -match '^[a-f0-9]{64}$') "A blank process-environment API key must be treated as omitted and regenerated"
 Assert-Throws {
-    Resolve-RuntimeApiKey -ExplicitlySupplied $true -SuppliedKey " " -EnvironmentKey $null
-} "An explicitly supplied blank runtime API key must fail closed"
-Assert-Throws {
-    Resolve-RuntimeApiKey -ExplicitlySupplied $true -SuppliedKey "too-short" -EnvironmentKey $null
+    Resolve-RuntimeApiKey -Name "RIKUNE_RUNTIME_NODE_API_KEY" -EnvironmentKey "too-short"
 } "A short runtime API key must fail closed"
 Assert-Throws {
-    Resolve-RuntimeApiKey -ExplicitlySupplied $true -SuppliedKey "$explicitKey`n" -EnvironmentKey $null
+    Resolve-RuntimeApiKey -Name "RIKUNE_RUNTIME_NODE_API_KEY" -EnvironmentKey "$explicitKey`n"
 } "A runtime API key containing a line break must fail closed"
 
 $fingerprint = Get-SecretFingerprint -Secret $explicitKey
@@ -291,10 +292,10 @@ $bindHostDefault = if ($null -eq $bindHostParameter.DefaultValue) {
 Assert-Contract ($bindHostDefault -eq "127.0.0.1") "Windows Host Agent must default to the loopback bind address"
 
 foreach ($requiredFragment in @(
-    'PSBoundParameters.ContainsKey("ApiKey")',
     '$capturedHostApiKey',
     '$capturedRuntimeApiKey',
-    '[Environment]::SetEnvironmentVariable($secretEnvironmentName, $null, "Process")',
+    'foreach ($name in ($secretEnvironmentAliases + $privateEnvControlNames))',
+    '[Environment]::SetEnvironmentVariable($name, $null, "Process")',
     'Host Agent and Runtime Node API keys must be distinct',
     'Resolve-RuntimeWorkspaceRoot',
     'Resolve-PinnedPm2Command'
@@ -374,8 +375,8 @@ Assert-NoSecretArgumentAssignments -FunctionAst $installRuntimeAst -Owner "rikun
 Assert-NoSecretArgumentAssignments -FunctionAst $installStackAst -Owner "rikune.ps1 Install-Stack"
 
 foreach ($requiredFragment in @(
-    '$childEnvironment.RIKUNE_HOST_AGENT_API_KEY = $HostAgentApiKey',
-    '$childEnvironment.RIKUNE_RUNTIME_NODE_API_KEY = $RuntimeApiKey',
+    '$childEnvironment.RIKUNE_HOST_AGENT_API_KEY = $env:RUNTIME_HOST_AGENT_API_KEY',
+    '$childEnvironment.RIKUNE_RUNTIME_NODE_API_KEY = $env:RUNTIME_API_KEY',
     'Invoke-ChildPowerShell -Arguments $args -Environment $childEnvironment',
     '"-BindHost", "127.0.0.1"',
     '"-RuntimeBindHost", "127.0.0.1"',
@@ -436,6 +437,7 @@ $privateEnvInternalControls = @(
 foreach ($controlName in $privateEnvInternalControls) {
     Assert-Contract ($dockerSource.Contains('"' + $controlName + '"')) "Docker installer must scrub inherited private env control '$controlName'"
     Assert-Contract ($localInstallerSource.Contains('"' + $controlName + '"')) "Local PowerShell installer must scrub inherited private env control '$controlName'"
+    Assert-Contract ($runtimeSource.Contains('"' + $controlName + '"')) "Windows runtime installer must scrub inherited private env control '$controlName'"
 }
 
 foreach ($requiredFragment in @(
@@ -468,6 +470,38 @@ Assert-Contract (
     $dockerCommitIndex -gt $dockerWriterIndex -and
     $dockerComposeIndex -gt $dockerCommitIndex
 ) "Docker private env transaction must cover dependency/generate failures and commit immediately after the verified writer"
+
+foreach ($requiredFragment in @(
+    'RIKUNE_STAGE_DOCKER_ENV_PATH',
+    'RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH',
+    'RIKUNE_RESTORE_PRIVATE_ENV_PATH',
+    '$privateEnvTransactionActive = $true',
+    '$privateEnvTransactionCommitted = $true',
+    'RIKUNE_NATIVE_EXIT_CODE',
+    'exit $privateEnvFailureExitCode',
+    'Write-SecureRuntimeEnvFile -Path $envFile -Content $envContent -RequireAbsent',
+    '$nodeMinor -lt 9',
+    'need 22.9+',
+    'finally'
+)) {
+    Assert-Contract ($runtimeSource.Contains($requiredFragment)) "Windows runtime installer is missing the private env transaction fragment '$requiredFragment'"
+}
+$runtimeScrubIndex = $runtimeSource.IndexOf('foreach ($name in ($secretEnvironmentAliases + $privateEnvControlNames))')
+$runtimeStageIndex = $runtimeSource.IndexOf('$privateEnvSnapshot = Get-RuntimePrivateEnvSnapshot')
+$runtimeRemoveIndex = $runtimeSource.IndexOf('Remove-RuntimePrivateEnvForSnapshot `')
+$runtimeDependencyIndex = $runtimeSource.IndexOf('& npm ci --include=dev')
+$runtimeWriterIndex = $runtimeSource.LastIndexOf('Write-SecureRuntimeEnvFile -Path $envFile')
+$runtimeCommitIndex = $runtimeSource.LastIndexOf('$privateEnvTransactionCommitted = $true')
+$runtimeStartIndex = $runtimeSource.IndexOf('Write-Step "Starting Windows Host Agent"')
+Assert-Contract (
+    $runtimeScrubIndex -ge 0 -and
+    $runtimeStageIndex -gt $runtimeScrubIndex -and
+    $runtimeRemoveIndex -gt $runtimeStageIndex -and
+    $runtimeDependencyIndex -gt $runtimeRemoveIndex -and
+    $runtimeWriterIndex -gt $runtimeDependencyIndex -and
+    $runtimeCommitIndex -gt $runtimeWriterIndex -and
+    $runtimeStartIndex -gt $runtimeCommitIndex
+) "Windows runtime private env transaction must remove the old file before npm, commit immediately after the verified writer, and exclude service startup from rollback"
 
 foreach ($requiredFragment in @(
     'RIKUNE_STAGE_LOCAL_ENV_PATH',
@@ -689,11 +723,14 @@ Assert-Contract (
 
 $secureWriterSource = $runtimeHelperAsts["Write-SecureRuntimeEnvFile"].Extent.Text
 foreach ($requiredFragment in @(
+    "[switch]`$RequireAbsent",
+    "Runtime environment transaction target appeared before the final writer",
     "New-ExactAclRuntimeEnvStream -Path `$TargetPath",
     "Assert-ProtectedRuntimeEnvFile -Path `$temporaryPath",
     "UTF8Encoding]::new(`$false).GetBytes(`$Content)",
     "`$stream.Write(`$contentBytes, 0, `$contentBytes.Length)",
     "`$stream.Flush(`$true)",
+    "File]::Move(`$temporaryPath, `$absolutePath, `$false)",
     "File]::Move(`$temporaryPath, `$absolutePath, `$true)"
 )) {
     Assert-Contract ($secureWriterSource.Contains($requiredFragment)) "Write-SecureRuntimeEnvFile is missing '$requiredFragment'"
@@ -834,6 +871,63 @@ if ($IsWindows) {
         Assert-Contract (
             @(Get-ChildItem -LiteralPath $aclTestRoot -Filter "*.tmp" -Force).Count -eq 0
         ) "PowerShell secure env writer must not leave temporary files behind"
+
+        $runtimeTransactionOriginalBytes = [System.IO.File]::ReadAllBytes($powerShellTarget)
+        $runtimeTransactionPreviousControls = @{}
+        $runtimeTransactionSnapshot = $null
+        foreach ($name in $privateEnvInternalControls) {
+            $runtimeTransactionPreviousControls[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+            [Environment]::SetEnvironmentVariable($name, $null, "Process")
+        }
+        try {
+            $runtimeTransactionSnapshot = Get-RuntimePrivateEnvSnapshot `
+                -Path $powerShellTarget `
+                -NodePath $nodeCommand `
+                -WriterPath $nodeWriter
+            Remove-RuntimePrivateEnvForSnapshot `
+                -Path $powerShellTarget `
+                -Snapshot $runtimeTransactionSnapshot `
+                -NodePath $nodeCommand `
+                -WriterPath $nodeWriter
+            Assert-Contract (
+                -not (Test-Path -LiteralPath $powerShellTarget)
+            ) "Windows runtime transaction must keep the protected env absent during lifecycle commands"
+
+            Restore-RuntimePrivateEnvSnapshot `
+                -Path $powerShellTarget `
+                -Snapshot $runtimeTransactionSnapshot `
+                -NodePath $nodeCommand `
+                -WriterPath $nodeWriter
+            Assert-Contract (
+                [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($powerShellTarget)) -eq
+                    [Convert]::ToBase64String($runtimeTransactionOriginalBytes)
+            ) "Windows runtime transaction rollback must restore exact bytes"
+            Assert-ProtectedFileAcl -Path $powerShellTarget -Description "Rolled-back Windows runtime env file"
+
+            Remove-RuntimePrivateEnvForSnapshot `
+                -Path $powerShellTarget `
+                -Snapshot $runtimeTransactionSnapshot `
+                -NodePath $nodeCommand `
+                -WriterPath $nodeWriter
+            $runtimeTransactionReplacement = "HOST_AGENT_API_KEY=$([string]::new([char]0x63, 64))`n"
+            Write-SecureRuntimeEnvFile `
+                -Path $powerShellTarget `
+                -Content $runtimeTransactionReplacement `
+                -RequireAbsent
+            Assert-Contract (
+                [System.IO.File]::ReadAllText($powerShellTarget) -eq $runtimeTransactionReplacement
+            ) "Windows runtime transaction must commit only the verified replacement"
+            Assert-ProtectedFileAcl -Path $powerShellTarget -Description "Committed Windows runtime env file"
+        } finally {
+            $runtimeTransactionSnapshot = $null
+            foreach ($name in $privateEnvInternalControls) {
+                [Environment]::SetEnvironmentVariable(
+                    $name,
+                    $runtimeTransactionPreviousControls[$name],
+                    "Process"
+                )
+            }
+        }
 
         $failureTarget = Join-Path $aclTestRoot ".env.runtime-windows.failure"
         $failureOriginalContent = "ORIGINAL_TARGET_MUST_SURVIVE=true`n"

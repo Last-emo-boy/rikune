@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   validate:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
@@ -38,14 +38,23 @@ jobs:
         run: npm ci
 
       - name: Install baseline Python dependencies
-        run: python -m pip install --require-hashes -r requirements.windows.lock.txt
+        run: python -m pip install --require-hashes -r requirements.lock.txt
+
+      - name: Validate shell installer syntax
+        run: bash -n install-local.sh rikune.sh deploy-hybrid.sh scripts/setup.sh
 
       - name: Build TypeScript
         run: npm run build
 
-      - name: Validate PowerShell installer contracts
-        shell: pwsh
-        run: ./scripts/verify-powershell-installers.ps1
+      - name: Validate generated Docker artifacts
+        run: |
+          npm run docker:generate:all
+          git diff --exit-code -- \
+            docker/Dockerfile.analyzer \
+            docker/Dockerfile.hybrid \
+            docker-compose.analyzer.yml \
+            docker-compose.hybrid.yml \
+            static-profile.lock.json
 
       - name: Build runtime-node package
         run: cd packages/runtime-node && npm run build
@@ -95,6 +104,101 @@ jobs:
         with:
           name: npm-package
           path: '*.tgz'
+
+  windows-contracts:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Validate exact Windows Python dependency closure
+        run: python -m pip install --require-hashes -r requirements.windows.lock.txt
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Validate PowerShell installer and ACL contracts
+        shell: pwsh
+        run: ./scripts/verify-powershell-installers.ps1
+
+      - name: Validate Windows worker syntax
+        run: python -m py_compile workers/static_worker.py workers/speakeasy_compat.py
+
+      - name: Verify native Analyzer entry fails closed on Windows
+        shell: cmd
+        run: |
+          node .\bin\rikune.js > native-analyzer.out 2>&1
+          if %ERRORLEVEL% EQU 0 exit /b 1
+          findstr /C:"requires a Linux kernel" native-analyzer.out >nul
+
+      - name: Verify legacy native Analyzer installer fails closed before mutation
+        shell: pwsh
+        run: |
+          $probeRoot = Join-Path $env:RUNNER_TEMP "rikune-install-local-contract-$([Guid]::NewGuid().ToString('N'))"
+          $probeProjectRoot = Join-Path $probeRoot "project"
+          $probeDataRoot = Join-Path $probeRoot "data"
+          New-Item -ItemType Directory -Path $probeProjectRoot, $probeDataRoot | Out-Null
+
+          $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+          $startInfo.FileName = (Get-Command pwsh -ErrorAction Stop).Source
+          $startInfo.UseShellExecute = $false
+          $startInfo.RedirectStandardOutput = $true
+          $startInfo.RedirectStandardError = $true
+          foreach ($argument in @(
+            '-NoLogo',
+            '-NoProfile',
+            '-NonInteractive',
+            '-File',
+            (Resolve-Path ./install-local.ps1).Path,
+            '-ProjectRoot',
+            $probeProjectRoot,
+            '-DataRoot',
+            $probeDataRoot
+          )) {
+            $startInfo.ArgumentList.Add($argument)
+          }
+
+          $process = [System.Diagnostics.Process]::Start($startInfo)
+          $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+          $stderrTask = $process.StandardError.ReadToEndAsync()
+          $process.WaitForExit()
+          $output = "$($stdoutTask.GetAwaiter().GetResult())`n$($stderrTask.GetAwaiter().GetResult())"
+          $exitCode = $process.ExitCode
+          $process.Dispose()
+
+          if ($exitCode -ne 1) {
+            throw "install-local.ps1 must fail closed with exit code 1; received $exitCode"
+          }
+          if ($output -notmatch [regex]::Escape('requires a Linux kernel')) {
+            throw "install-local.ps1 did not emit the Linux-kernel support boundary"
+          }
+          if (@(Get-ChildItem -LiteralPath $probeProjectRoot, $probeDataRoot -Force).Count -ne 0) {
+            throw "install-local.ps1 mutated the isolated project or data root before failing closed"
+          }
+
+      - name: Run Windows Host Agent and runtime contract tests
+        run: >
+          npm test -- --runInBand --forceExit
+          --testPathPatterns="tests/unit/(packages/windows-host-agent|runtime-node/|ghidra-config|setup-script-contract|local-installer-python-lock)"
+        timeout-minutes: 15
 
   security:
     runs-on: ubuntu-latest

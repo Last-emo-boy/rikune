@@ -6,7 +6,7 @@
     <title>Local Setup — Rikune</title>
     <meta
       name="description"
-      content="Local (non-Docker) deployment guide for Rikune MCP Server — install everything on your own machine."
+      content="Native Linux and WSL2 deployment guide for the Rikune MCP Server."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -80,15 +80,17 @@
           ><span data-lang-zh>本地部署</span>
         </div>
         <h1>
-          <span data-lang-en>Local Setup (No Docker)</span
-          ><span data-lang-zh>本地部署（无需 Docker）</span>
+          <span data-lang-en>Local Setup (Linux Kernel)</span
+          ><span data-lang-zh>本地部署（Linux Kernel）</span>
         </h1>
         <p>
           <span data-lang-en
-            >Run Rikune directly on your machine — install only the tools you need, add more
+            >Run Rikune directly on native Linux or WSL2 — install only the tools you need, add more
             later.</span
           >
-          <span data-lang-zh>直接在你的机器上运行 Rikune — 只安装需要的工具，后续随时添加。</span>
+          <span data-lang-zh
+            >在原生 Linux 或 WSL2 中直接运行 Rikune — 只安装需要的工具，后续随时添加。</span
+          >
         </p>
       </div>
     </div>
@@ -134,17 +136,27 @@
           <h2><span data-lang-en>Overview</span><span data-lang-zh>概览</span></h2>
           <p>
             <span data-lang-en>
-              Rikune can run <strong>without Docker</strong> — directly on Windows, Linux, or macOS.
-              The core engine (Node.js + Python workers) requires only Node.js and Python. All
-              external analysis tools (Ghidra, Rizin, capa, Frida, etc.) are <em>optional</em> —
-              Rikune auto-detects what is available at startup via the plugin
-              <code>systemDeps</code> mechanism and only enables the tools it finds.
+              In v1.4.0, Rikune can run <strong>without Docker only on a Linux kernel</strong>:
+              native Linux or WSL2. Windows and macOS can instead host a supported Linux container;
+              Windows may also run the Host Agent with Windows Sandbox or Hyper-V for live runtime
+              work. Native Windows/macOS Node Analyzer and <code>auto-sandbox</code> topologies are
+              unsupported. In WSL2, the data root and all sample-custody paths must remain on the
+              WSL Linux filesystem (for example <code>~/.rikune</code> in ext4.vhdx), not
+              <code>/mnt/c</code> or another <code>/mnt/&lt;drive&gt;</code> DrvFS mount. On a
+              supported Linux kernel/filesystem, external analysis tools (Ghidra, Rizin, capa,
+              Frida, etc.) remain <em>optional</em> and are auto-detected through plugin
+              <code>systemDeps</code>.
             </span>
             <span data-lang-zh>
-              Rikune 可以<strong>不依赖 Docker</strong>运行 — 直接在 Windows、Linux 或 macOS
-              上运行。 核心引擎（Node.js + Python worker）只需要 Node.js 和 Python。
-              所有外部分析工具（Ghidra、Rizin、capa、Frida 等）都是<em>可选的</em> — Rikune
-              启动时通过插件 <code>systemDeps</code> 机制自动检测可用工具， 只启用检测到的工具。
+              v1.4.0 仅支持在 <strong>Linux kernel 上不依赖 Docker</strong>运行 Rikune：原生 Linux
+              或 WSL2。Windows 与 macOS 可改为承载受支持的 Linux container；Windows 还可运行 Windows
+              Host Agent，并通过 Windows Sandbox 或 Hyper-V 处理 live runtime 任务。原生
+              Windows/macOS Node Analyzer 与 <code>auto-sandbox</code> 拓扑不受支持。在 WSL2
+              中，data root 与所有 sample-custody 路径必须保留在 WSL Linux filesystem（例如
+              ext4.vhdx 中的 <code>~/.rikune</code>），不能使用 <code>/mnt/c</code> 或其他
+              <code>/mnt/&lt;drive&gt;</code> DrvFS mount。在受支持的 Linux kernel/filesystem 上，
+              Ghidra、Rizin、capa、Frida 等外部分析工具仍是<em>可选的</em>，并通过插件
+              <code>systemDeps</code> 自动检测。
             </span>
           </p>
 
@@ -166,8 +178,8 @@
                 ><span data-lang-en>No Overhead</span><span data-lang-zh>无额外开销</span></strong
               ><br />
               <span style="color: var(--text-dim); font-size: 0.82rem"
-                ><span data-lang-en>Native performance, no container layer</span
-                ><span data-lang-zh>原生性能，无容器层</span></span
+                ><span data-lang-en>Native Linux performance, no container layer</span
+                ><span data-lang-zh>原生 Linux 性能，无容器层</span></span
               >
             </div>
             <div class="feature-card" style="padding: 16px; text-align: center">
@@ -195,8 +207,18 @@
             </thead>
             <tbody>
               <tr>
+                <td>
+                  <strong><span data-lang-en>Kernel</span><span data-lang-zh>Kernel</span></strong>
+                </td>
+                <td><span data-lang-en>Linux</span><span data-lang-zh>Linux</span></td>
+                <td>
+                  <span data-lang-en>Native Linux or WSL2 Linux filesystem; never WSL DrvFS</span
+                  ><span data-lang-zh>原生 Linux 或 WSL2 Linux filesystem；不能使用 WSL DrvFS</span>
+                </td>
+              </tr>
+              <tr>
                 <td><strong>Node.js</strong></td>
-                <td>22+</td>
+                <td>22.9+</td>
                 <td><a href="https://nodejs.org/" target="_blank" rel="noopener">nodejs.org</a></td>
               </tr>
               <tr>
@@ -236,13 +258,26 @@
             <span data-lang-en>Auto Install Script</span><span data-lang-zh>自动安装脚本</span>
           </h2>
           <p>
-            <span data-lang-en
-              >The easiest way to get started locally — the install script handles everything:</span
-            >
-            <span data-lang-zh>本地上手最简单的方式 — 安装脚本自动处理一切：</span>
+            <span data-lang-en>Choose the supported entry point for the host role:</span>
+            <span data-lang-zh>请根据宿主机角色选择受支持的入口：</span>
           </p>
 
-          <h3>Windows (PowerShell)</h3>
+          <h3>
+            <span data-lang-en>Windows Host (PowerShell)</span
+            ><span data-lang-zh>Windows 宿主机（PowerShell）</span>
+          </h3>
+          <p>
+            <span data-lang-en
+              >Run the Analyzer in a Linux container. Use the runtime-only installer when this host
+              should provide Windows Sandbox or Hyper-V execution. The legacy
+              <code>install-local.ps1</code> entry point exits before making changes.</span
+            >
+            <span data-lang-zh
+              >请在 Linux container 中运行 Analyzer。若此宿主机需要提供 Windows Sandbox 或 Hyper-V
+              执行能力，请使用 runtime-only installer。旧的
+              <code>install-local.ps1</code> 入口会在产生任何变更前退出。</span
+            >
+          </p>
           <div class="code-block">
             <div class="code-block__header">
               <span>PowerShell</span><button class="code-block__copy">Copy</button>
@@ -250,13 +285,21 @@
             <pre>
 git clone https://github.com/Last-emo-boy/rikune.git
 cd rikune
-.\install-local.ps1
 
-<span class="comment"># Windows-native analyzer with local Windows Sandbox execution</span>
-.\install-local.ps1 -RuntimeMode auto-sandbox</pre>
+<span class="comment"># Static Analyzer in a Linux container</span>
+.\rikune.ps1 install -Profile static
+
+<span class="comment"># Linux-container Analyzer + Windows Host Agent/runtime</span>
+.\rikune.ps1 install -Profile hybrid -InstallRuntime
+
+<span class="comment"># Windows runtime host only</span>
+.\install-runtime-windows.ps1</pre>
           </div>
 
-          <h3>Linux / macOS (Bash)</h3>
+          <h3>
+            <span data-lang-en>Native Linux / WSL2 (Bash)</span
+            ><span data-lang-zh>原生 Linux / WSL2（Bash）</span>
+          </h3>
           <div class="code-block">
             <div class="code-block__header">
               <span>bash</span><button class="code-block__copy">Copy</button>
@@ -271,11 +314,14 @@ chmod +x install-local.sh
 ./install-local.sh -r remote-sandbox</pre>
           </div>
 
-          <p><span data-lang-en>The script will:</span><span data-lang-zh>脚本会：</span></p>
+          <p>
+            <span data-lang-en>The native Linux/WSL2 script will:</span
+            ><span data-lang-zh>原生 Linux/WSL2 脚本会：</span>
+          </p>
           <ol>
             <li>
-              <span data-lang-en>Verify Node.js 22+ and CPython 3.12 x86_64</span
-              ><span data-lang-zh>验证 Node.js 22+ 和 CPython 3.12 x86_64</span>
+              <span data-lang-en>Verify Node.js 22.9+ and CPython 3.12 x86_64</span
+              ><span data-lang-zh>验证 Node.js 22.9+ 和 CPython 3.12 x86_64</span>
             </li>
             <li>
               <span data-lang-en
@@ -319,8 +365,17 @@ chmod +x install-local.sh
         <section id="manual" class="reveal">
           <h2><span data-lang-en>Manual Setup</span><span data-lang-zh>手动安装</span></h2>
           <p>
-            <span data-lang-en>If you prefer to set up step by step:</span>
-            <span data-lang-zh>如果你更喜欢逐步安装：</span>
+            <span data-lang-en
+              >The following direct setup is supported only on a clean native Linux/WSL2 checkout
+              that has no existing <code>.env</code>. For installation or upgrades, use
+              <code>install-local.sh</code> so credentials are protected across dependency and build
+              failures.</span
+            >
+            <span data-lang-zh
+              >以下直接安装流程仅适用于没有现有 <code>.env</code> 的全新原生 Linux/WSL2
+              checkout。安装或升级请使用 <code>install-local.sh</code>，以便在 dependency/build
+              失败时保护 credential。</span
+            >
           </p>
 
           <h3>
@@ -345,18 +400,15 @@ npm run build</pre
             <div class="code-block__header">
               <span>bash</span><button class="code-block__copy">Copy</button>
             </div>
-            <pre><span class="comment"># Create a CPython 3.12 x86_64 venv</span>
-python3.12 -m venv venv
-source venv/bin/activate   <span class="comment"># Linux x86_64</span>
-<span class="comment"># .\venv\Scripts\Activate.ps1  # Windows</span>
+            <pre><span class="comment"># Create the worker venv at the path used by every startup example</span>
+python3.12 -m venv workers/venv
+source workers/venv/bin/activate   <span class="comment"># Linux x86_64</span>
 
-<span class="comment"># Install the platform-specific hash-locked baseline from the Rikune package root</span>
+<span class="comment"># Install the Linux hash-locked baseline from the Rikune package root</span>
 python -m pip install --require-hashes -r requirements.lock.txt
-<span class="comment"># Windows: python -m pip install --require-hashes -r requirements.windows.lock.txt</span>
 
 <span class="comment"># Optional: hash-locked dynamic analysis (frida, speakeasy, pandare)</span>
 python -m pip install --require-hashes -r workers/requirements-dynamic.lock.txt
-<span class="comment"># Windows: python -m pip install --require-hashes -r workers/requirements-dynamic.windows.lock.txt</span>
 
 <span class="comment"># Qiling automatic installation is disabled: its supported dependency chain</span>
 <span class="comment"># requires Pillow &lt;11, below the v1.4.0 vulnerability baseline.</span>
@@ -593,18 +645,17 @@ node dist/index.js</pre
           <blockquote>
             <span data-lang-en
               ><strong>Runtime note:</strong> For local static-only work, keep
-              <code>RUNTIME_MODE=disabled</code>. If you run the analyzer natively on Windows, you
-              can opt into <code>auto-sandbox</code> to launch Windows Sandbox for real sample
-              execution. Linux or WSL analyzers must use <code>manual</code> or
-              <code>remote-sandbox</code> to reach a separate Windows Runtime Node / Host
-              Agent.</span
+              <code>RUNTIME_MODE=disabled</code>. A Linux-kernel Analyzer must use
+              <code>manual</code> or <code>remote-sandbox</code> to reach a separate Windows Runtime
+              Node / Host Agent. Native Windows/macOS Node Analyzer and
+              <code>auto-sandbox</code> topologies are unsupported in v1.4.0.</span
             >
             <span data-lang-zh
               ><strong>运行时说明：</strong>如果只是本地静态分析，请保持
-              <code>RUNTIME_MODE=disabled</code>。如果 analyzer 原生运行在 Windows 上，可以开启
-              <code>auto-sandbox</code>，通过 Windows Sandbox 执行真实样本。Linux 或 WSL 中的
-              analyzer 必须使用 <code>manual</code> 或 <code>remote-sandbox</code> 连接独立的
-              Windows Runtime Node / Host Agent。</span
+              <code>RUNTIME_MODE=disabled</code>。Linux-kernel Analyzer 必须使用
+              <code>manual</code> 或 <code>remote-sandbox</code> 连接独立的 Windows Runtime Node /
+              Host Agent。v1.4.0 不支持原生 Windows/macOS Node Analyzer 与
+              <code>auto-sandbox</code> 拓扑。</span
             >
           </blockquote>
         </section>
@@ -628,9 +679,9 @@ node dist/index.js</pre
               <span>.env</span><button class="code-block__copy">Copy</button>
             </div>
             <pre><span class="comment"># Core (required)</span>
-WORKSPACE_ROOT=~/.rikune/workspaces
-DB_PATH=~/.rikune/data/database.db
-CACHE_ROOT=~/.rikune/cache
+WORKSPACE_ROOT=/home/you/.rikune/workspaces
+DB_PATH=/home/you/.rikune/data/database.db
+CACHE_ROOT=/home/you/.rikune/cache
 SANDBOX_PYTHON_PATH=./workers/venv/bin/python
 LOG_LEVEL=info
 
@@ -638,12 +689,10 @@ LOG_LEVEL=info
 API_ENABLED=true
 API_PORT=18080
 API_KEY=replace-with-output-of-openssl-rand-hex-32
-API_STORAGE_ROOT=~/.rikune/storage
+API_STORAGE_ROOT=/home/you/.rikune/storage
 
 <span class="comment"># Runtime mode (pick one shape)</span>
 RUNTIME_MODE=disabled
-# Windows-native single-host execution:
-# RUNTIME_MODE=auto-sandbox
 # Split analyzer/runtime deployment:
 # RUNTIME_MODE=manual
 # RUNTIME_ENDPOINT=https://runtime-vm.example.internal:18081
@@ -657,8 +706,8 @@ RUNTIME_MODE=disabled
 
 <span class="comment"># Ghidra (set if installed)</span>
 GHIDRA_INSTALL_DIR=/opt/ghidra
-GHIDRA_PROJECT_ROOT=~/.rikune/ghidra-projects
-GHIDRA_LOG_ROOT=~/.rikune/ghidra-logs
+GHIDRA_PROJECT_ROOT=/home/you/.rikune/ghidra-projects
+GHIDRA_LOG_ROOT=/home/you/.rikune/ghidra-logs
 
 <span class="comment"># Tool paths (set for tools you have installed)</span>
 RIZIN_PATH=/usr/bin/rizin
@@ -691,30 +740,32 @@ QILING_PYTHON=./qiling-venv/bin/python</pre>
           </h2>
           <p>
             <span data-lang-en
-              >For local mode, the MCP client runs <code>node dist/index.js</code> directly (no
-              Docker):</span
+              >For local mode, the MCP client must run inside the same native Linux/WSL2 environment
+              and starts <code>node dist/index.js</code> there. Windows/macOS host clients should
+              use the Docker-backed form below.</span
             >
             <span data-lang-zh
-              >本地模式下，MCP 客户端直接运行 <code>node dist/index.js</code>（无需 Docker）：</span
+              >本地模式要求 MCP 客户端运行在同一个原生 Linux/WSL2 环境中，并在该环境内启动
+              <code>node dist/index.js</code>。Windows/macOS 宿主机上的客户端请使用下方的 Docker
+              配置。</span
             >
           </p>
 
           <h3>Claude Desktop</h3>
           <div class="code-block">
             <div class="code-block__header">
-              <span>%APPDATA%\Claude\claude_desktop_config.json</span
-              ><button class="code-block__copy">Copy</button>
+              <span>Linux MCP client JSON</span><button class="code-block__copy">Copy</button>
             </div>
             <pre>{
   <span class="str">"mcpServers"</span>: {
     <span class="str">"rikune"</span>: {
       <span class="str">"command"</span>: <span class="str">"node"</span>,
-      <span class="str">"args"</span>: [<span class="str">"C:/path/to/rikune/dist/index.js"</span>],
+      <span class="str">"args"</span>: [<span class="str">"/home/you/rikune/dist/index.js"</span>],
       <span class="str">"env"</span>: {
-        <span class="str">"WORKSPACE_ROOT"</span>: <span class="str">"C:/Users/you/.rikune/workspaces"</span>,
-        <span class="str">"DB_PATH"</span>: <span class="str">"C:/Users/you/.rikune/data/database.db"</span>,
-        <span class="str">"CACHE_ROOT"</span>: <span class="str">"C:/Users/you/.rikune/cache"</span>,
-        <span class="str">"SANDBOX_PYTHON_PATH"</span>: <span class="str">"C:/path/to/rikune/workers/venv/Scripts/python.exe"</span>
+        <span class="str">"WORKSPACE_ROOT"</span>: <span class="str">"/home/you/.rikune/workspaces"</span>,
+        <span class="str">"DB_PATH"</span>: <span class="str">"/home/you/.rikune/data/database.db"</span>,
+        <span class="str">"CACHE_ROOT"</span>: <span class="str">"/home/you/.rikune/cache"</span>,
+        <span class="str">"SANDBOX_PYTHON_PATH"</span>: <span class="str">"/home/you/rikune/workers/venv/bin/python"</span>
       }
     }
   }
@@ -730,11 +781,11 @@ QILING_PYTHON=./qiling-venv/bin/python</pre>
   <span class="str">"servers"</span>: {
     <span class="str">"rikune"</span>: {
       <span class="str">"command"</span>: <span class="str">"node"</span>,
-      <span class="str">"args"</span>: [<span class="str">"C:/path/to/rikune/dist/index.js"</span>],
+      <span class="str">"args"</span>: [<span class="str">"/home/you/rikune/dist/index.js"</span>],
       <span class="str">"env"</span>: {
-        <span class="str">"WORKSPACE_ROOT"</span>: <span class="str">"C:/Users/you/.rikune/workspaces"</span>,
-        <span class="str">"DB_PATH"</span>: <span class="str">"C:/Users/you/.rikune/data/database.db"</span>,
-        <span class="str">"SANDBOX_PYTHON_PATH"</span>: <span class="str">"C:/path/to/rikune/workers/venv/Scripts/python.exe"</span>
+        <span class="str">"WORKSPACE_ROOT"</span>: <span class="str">"/home/you/.rikune/workspaces"</span>,
+        <span class="str">"DB_PATH"</span>: <span class="str">"/home/you/.rikune/data/database.db"</span>,
+        <span class="str">"SANDBOX_PYTHON_PATH"</span>: <span class="str">"/home/you/rikune/workers/venv/bin/python"</span>
       }
     }
   }
@@ -744,21 +795,20 @@ QILING_PYTHON=./qiling-venv/bin/python</pre>
           <h3>Codex</h3>
           <div class="code-block">
             <div class="code-block__header">
-              <span>%USERPROFILE%\.codex\config.toml</span
-              ><button class="code-block__copy">Copy</button>
+              <span>~/.codex/config.toml</span><button class="code-block__copy">Copy</button>
             </div>
             <pre>
 [mcp_servers.rikune]
 command = "node"
-args = ["C:/path/to/rikune/dist/index.js"]
+args = ["/home/you/rikune/dist/index.js"]
 
 [mcp_servers.rikune.env]
 NODE_ENV = "production"
 PYTHONUNBUFFERED = "1"
-WORKSPACE_ROOT = "C:/Users/you/.rikune/workspaces"
-DB_PATH = "C:/Users/you/.rikune/data/database.db"
-CACHE_ROOT = "C:/Users/you/.rikune/cache"
-GHIDRA_INSTALL_DIR = "C:/path/to/ghidra"</pre
+WORKSPACE_ROOT = "/home/you/.rikune/workspaces"
+DB_PATH = "/home/you/.rikune/data/database.db"
+CACHE_ROOT = "/home/you/.rikune/cache"
+GHIDRA_INSTALL_DIR = "/opt/ghidra"</pre
             >
           </div>
 
@@ -804,14 +854,15 @@ PYTHONUNBUFFERED = "1"</pre
 
           <blockquote>
             <span data-lang-en
-              >💡 <strong>Tip:</strong> The <code>install-local.ps1</code> script can auto-generate
-              native configs, and <code>install-docker.ps1 -ConfigureClient</code> can generate
-              Docker JSON configs. Codex users who keep MCP servers in <code>config.toml</code> can
-              copy the TOML form above.</span
+              >💡 <strong>Tip:</strong> Installers do not overwrite client-owned MCP configuration
+              files. Add the Docker stdio form manually and keep API credentials out of workspace
+              files. Use <code>install-local.sh</code> only on native Linux or WSL2. Codex users who
+              keep MCP servers in <code>config.toml</code> can copy the TOML form above.</span
             >
             <span data-lang-zh
-              >💡 <strong>提示</strong>：<code>install-local.ps1</code> 可以生成原生运行配置，
-              <code>install-docker.ps1 -ConfigureClient</code> 可以生成 Docker JSON 配置。使用
+              >💡 <strong>提示</strong>：installer 不会覆盖 client 自有的 MCP 配置文件。请手工添加
+              Docker stdio 配置，并避免把 API credential 写入 workspace 文件。
+              <code>install-local.sh</code> 仅用于原生 Linux 或 WSL2。使用
               <code>config.toml</code> 管理 MCP server 的 Codex 用户可以复制上面的 TOML 写法。</span
             >
           </blockquote>
@@ -830,7 +881,7 @@ PYTHONUNBUFFERED = "1"</pre
 npm start
 
 <span class="comment"># Or directly</span>
-node dist/index.js</pre>
+node --env-file-if-exists=.env dist/index.js</pre>
           </div>
 
           <h3>
@@ -1005,7 +1056,10 @@ Plugin dynamic: frida ✓
               <tr>
                 <th></th>
                 <th><span data-lang-en>Docker</span><span data-lang-zh>Docker 方案</span></th>
-                <th><span data-lang-en>Local</span><span data-lang-zh>本地方案</span></th>
+                <th>
+                  <span data-lang-en>Native Linux / WSL2</span
+                  ><span data-lang-zh>原生 Linux / WSL2</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -1018,7 +1072,7 @@ Plugin dynamic: frida ✓
                   <span data-lang-en>— one command</span><span data-lang-zh>— 一条命令</span>
                 </td>
                 <td>
-                  <code>install-local.ps1</code> / <code>.sh</code>
+                  <code>install-local.sh</code>
                   <span data-lang-en>— interactive</span><span data-lang-zh>— 交互式</span>
                 </td>
               </tr>
@@ -1084,7 +1138,8 @@ Plugin dynamic: frida ✓
                   <span data-lang-en>Identical everywhere</span><span data-lang-zh>各处一致</span>
                 </td>
                 <td>
-                  <span data-lang-en>OS-dependent paths</span><span data-lang-zh>路径依赖 OS</span>
+                  <span data-lang-en>Linux kernel only</span
+                  ><span data-lang-zh>仅限 Linux kernel</span>
                 </td>
               </tr>
               <tr>

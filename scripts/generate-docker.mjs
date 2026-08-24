@@ -795,6 +795,14 @@ LABEL org.opencontainers.image.rikune.profile="static"`
 USER 1000:1000`
       : ''
   )
+  result = result.replace(
+    '{{FULL_STACK_VALIDATOR_COPY}}',
+    profile.id === 'full'
+      ? `COPY scripts/validate-docker-full-stack.sh /usr/local/bin/validate-docker-full-stack.sh
+RUN chown root:root /usr/local/bin/validate-docker-full-stack.sh && \\
+    chmod 0555 /usr/local/bin/validate-docker-full-stack.sh`
+      : ''
+  )
 
   // 4b. {{FEATURE_ARGS}} - global ARG declarations from fragments
   const featureArgLines = []
@@ -1030,6 +1038,7 @@ name: ${profile.composeName}
 services:
   ${profile.service}:
     image: ${profile.image}
+    platform: linux/amd64
     build:
       context: .
       dockerfile: ${profile.dockerfile}

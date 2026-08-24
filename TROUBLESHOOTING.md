@@ -56,7 +56,7 @@ Fix:
 2. Enable the Windows Sandbox feature.
 3. Reboot after enabling.
 4. Run Host Agent in the logged-on user session.
-5. If this is Docker/WSL Analyzer, use `RUNTIME_MODE=remote-sandbox`; do not use `auto-sandbox`.
+5. Rikune v1.4.0 does not support a native Windows Analyzer. Use the Linux `hybrid` Analyzer with `RUNTIME_MODE=remote-sandbox`; do not use `auto-sandbox`.
 
 ## E1002: Host Agent Port Unreachable
 

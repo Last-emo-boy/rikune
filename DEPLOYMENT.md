@@ -1,6 +1,6 @@
 # Rikune Deployment Guide
 
-Rikune can run as a static Analyzer, a hybrid Analyzer plus Windows runtime, a full Linux toolchain image, or a Windows-native process. Docker files are generated from templates and compiled plugin metadata; do not hand-edit generated compose files unless you intend to regenerate and reapply the change.
+Rikune v1.4.0 runs its Analyzer and sample-custody data plane on Linux. Supported shapes are a static Linux Analyzer, a hybrid Linux Analyzer plus Windows runtime, or the full Linux toolchain image. Windows and macOS can host the Linux container/control plane; Windows live execution belongs to the separate Host Agent, Sandbox, or Hyper-V runtime. The generated Analyzer images are `linux/amd64`, and generated Compose services pin that platform so Apple Silicon Docker Desktop hosts use amd64 emulation. Docker files are generated from templates and compiled plugin metadata; do not hand-edit generated compose files or remove the platform pin.
 
 ## Deployment Profiles
 
@@ -9,7 +9,6 @@ Rikune can run as a static Analyzer, a hybrid Analyzer plus Windows runtime, a f
 | `static` | Linux Docker | disabled | `docker/Dockerfile.analyzer` | `docker-compose.analyzer.yml` | `rikune-analyzer` |
 | `hybrid` | Linux Docker | Windows Host Agent plus Sandbox or Hyper-V | `docker/Dockerfile.analyzer` | `docker-compose.hybrid.yml` | `rikune-analyzer` |
 | `full` | Linux Docker full toolchain | disabled unless configured | `Dockerfile` | `docker-compose.yml` | `rikune` |
-| Windows native | Windows Node process | local `auto-sandbox` possible | none | none | none |
 
 Use `static` first unless you need live runtime evidence. Use `hybrid` when the Analyzer should stay in Docker but Windows execution must happen in an isolated Windows environment.
 
@@ -31,7 +30,9 @@ Linux/macOS:
 ```bash
 ./rikune.sh
 ./rikune.sh install --profile static --data-root "$HOME/.rikune"
-./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user>
+./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user> \
+  --host-agent-endpoint https://runtime.example.internal \
+  --allow-insecure-runtime-http
 ./rikune.sh status
 ./rikune.sh logs
 ./rikune.sh stop
@@ -41,8 +42,9 @@ Lower-level scripts remain available for automation:
 
 - `install-docker.ps1`
 - `install-runtime-windows.ps1`
-- `install-local.ps1`
 - `install-local.sh`
+
+`install-local.ps1` is retained only as a fail-fast compatibility shim that redirects Windows users to the supported Docker/Host Agent paths.
 
 ## Static Docker Analyzer
 
@@ -52,21 +54,9 @@ Static Docker is the default safe profile. It disables runtime execution and kee
 .\rikune.ps1 install -Profile static -DataRoot "D:\Docker\rikune"
 ```
 
-Manual equivalent:
-
-```bash
-RIKUNE_REMOVE_PRIVATE_ENV_PATH="$PWD/.docker-runtime.env" node scripts/write-docker-runtime-env.mjs
-unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
-  HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY
-npm ci --include=dev
-npm run build
-npm run docker:generate:all
-RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
-RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
-RIKUNE_DOCKER_ENV_PROFILE=static \
-  node scripts/write-docker-runtime-env.mjs
-docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
-```
+On Linux/macOS, run `./rikune.sh install --profile static --data-root "$HOME/.rikune"`.
+The installer owns the protected env snapshot/rollback transaction; lower-level env-writer and
+dependency commands are not a safe manual equivalent.
 
 Expected runtime configuration:
 
@@ -102,14 +92,16 @@ The Host Agent must run in the logged-on user session for Windows Sandbox compat
 
 ### Remote Windows Host
 
-For Linux/macOS Analyzer plus remote Windows runtime host:
+For a Linux-container Analyzer on a Linux/macOS host plus a remote Windows runtime host:
 
 ```bash
+# Bootstrap only inside an isolated trusted network/VPN; sandbox runtime ports use HTTP.
 ./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user> \
-  --host-agent-endpoint https://runtime.example.internal
+  --host-agent-endpoint https://runtime.example.internal \
+  --allow-insecure-runtime-http
 ```
 
-The script syncs the repository to Windows, runs the Windows runtime installer, generates compose files, writes a mode-`0600` `.docker-runtime.env`, and starts the Analyzer. The HTTPS endpoint should terminate at a trusted reverse proxy/VPN path to the loopback Host Agent. Direct plaintext HTTP requires `--allow-insecure-runtime-http` and is only supported as an explicit opt-in on an isolated trusted network. Provide strong runtime keys through a protected environment or hidden prompt, never through CLI arguments.
+The script syncs the repository to Windows, runs the Windows runtime installer, generates compose files, writes a mode-`0600` `.docker-runtime.env`, and starts the Analyzer. The HTTPS endpoint should terminate at a trusted reverse proxy/VPN path. Remote bootstrap still uses plaintext Host Agent/Sandbox runtime ports inside that isolated network, so it requires the explicit `--allow-insecure-runtime-http` opt-in shown above. With a separately secured, pre-provisioned runtime, use `--skip-windows-setup` instead and omit the insecure opt-in. Provide strong runtime keys through a protected environment or hidden prompt, never through CLI arguments.
 
 ### Hyper-V Runtime
 
@@ -141,19 +133,11 @@ docker compose --env-file .docker-runtime.env -f docker-compose.yml up -d --buil
 
 Use this profile when you want the complete static and emulation-oriented Linux toolchain in one container.
 
-## Windows Native + Auto Sandbox
+## Native Windows And macOS Analyzers
 
-Windows-native Analyzer can use `auto-sandbox`. In this mode the Analyzer launches Windows Sandbox locally and connects to the Runtime Node inside it.
+Native Windows and macOS Node Analyzers are not supported in v1.4.0. The fail-closed sample-custody helper requires Linux `openat2`/dirfd and file-identity semantics. On Windows or macOS, run the Linux Analyzer container; for live Windows evidence, pair the `hybrid` profile with the Windows Host Agent. `auto-sandbox` remains a compatibility configuration value, but it is not a supported v1.4.0 deployment topology.
 
-Requirements:
-
-- Windows Sandbox enabled.
-- Interactive user session.
-- Node.js 22+.
-- Runtime bundle built with `npm run build:runtime`.
-- Host has enough memory for Windows Sandbox.
-
-Docker and WSL should not use `auto-sandbox` because Windows Sandbox launch and portproxy behavior must be controlled from Windows.
+For WSL2-native development, keep the workspace and sample-custody root on the WSL Linux filesystem rather than `/mnt/c`/DrvFS.
 
 ## Environment Variables
 
@@ -165,7 +149,7 @@ Common Analyzer variables:
 | `API_PORT` | HTTP API port, default commonly 18080 |
 | `API_KEY` | Required Analyzer API key whenever the HTTP API is enabled |
 | `PLUGINS` | Plugin filter |
-| `RUNTIME_MODE` | `disabled`, `manual`, `remote-sandbox`, or `auto-sandbox` |
+| `RUNTIME_MODE` | `disabled`, `manual`, or `remote-sandbox`; `auto-sandbox` is not a supported v1.4.0 topology |
 | `RUNTIME_ENDPOINT` | Manual Runtime Node endpoint |
 | `RUNTIME_API_KEY` | Runtime Node API key |
 | `RUNTIME_HOST_AGENT_ENDPOINT` | Windows Host Agent endpoint |
@@ -185,20 +169,32 @@ For Docker Compose plus stdio:
   "mcpServers": {
     "rikune": {
       "command": "docker",
-      "args": ["exec", "-i", "rikune-analyzer", "node", "dist/index.js"]
+      "args": [
+        "exec",
+        "-i",
+        "-e",
+        "API_ENABLED=false",
+        "-e",
+        "NODE_ENV=production",
+        "-e",
+        "PYTHONUNBUFFERED=1",
+        "rikune-analyzer",
+        "node",
+        "dist/index.js"
+      ]
     }
   }
 }
 ```
 
-For local build:
+For a Linux-native local build (including WSL2 with data on its Linux filesystem):
 
 ```json
 {
   "mcpServers": {
     "rikune": {
       "command": "node",
-      "args": ["D:/Playground/windows-exe-decompiler-mcp-server/dist/index.js"]
+      "args": ["/home/user/rikune/dist/index.js"]
     }
   }
 }
@@ -207,8 +203,11 @@ For local build:
 For the published CLI:
 
 ```bash
+# Linux-native Analyzer (or inside WSL2)
 rikune
+# Linux-container Analyzer on any supported Docker host
 rikune docker-stdio
+# Agent/control-plane entry point
 rikune agent
 ```
 

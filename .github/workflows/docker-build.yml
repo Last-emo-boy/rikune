@@ -171,7 +171,9 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
-          tags: rikune:full-ci
+          tags: |
+            rikune:full-ci
+            rikune:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
@@ -179,6 +181,9 @@ jobs:
 
       - name: Run basic image tests
         run: |
+          # Exercise the public package script and its installed image entrypoint.
+          npm run docker:test
+
           # Test Node.js
           docker run --rm rikune:full-ci node --version
 

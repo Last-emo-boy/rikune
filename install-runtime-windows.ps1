@@ -31,9 +31,6 @@ param(
     [Parameter(HelpMessage="Skip best-effort Hyper-V firewall rules that allow WSL/Docker analyzers to reach Host Agent/runtime ports.")]
     [switch]$SkipHyperVFirewallRules,
 
-    [Parameter(HelpMessage="Deprecated argv-based Host Agent key input. Prefer the temporary RIKUNE_HOST_AGENT_API_KEY process environment variable.")]
-    [string]$ApiKey,
-
     [Parameter(HelpMessage="Read an optional Host Agent key from standard input so remote bootstrap does not expose it in process arguments.")]
     [switch]$ReadApiKeyFromStdin,
 
@@ -138,25 +135,15 @@ function New-CryptographicApiKey {
 
 function Resolve-RuntimeApiKey {
     param(
-        [bool]$ExplicitlySupplied,
-        [AllowNull()][string]$SuppliedKey,
+        [string]$Name,
         [AllowNull()][string]$EnvironmentKey
     )
 
-    $candidates = @()
-    if ($ExplicitlySupplied) {
-        $candidates += @{ Name = "ApiKey"; Value = $SuppliedKey }
-    } else {
-        if (-not [string]::IsNullOrWhiteSpace($EnvironmentKey)) {
-            $candidates += @{ Name = "RIKUNE_RUNTIME_API_KEY"; Value = $EnvironmentKey }
-        }
-    }
-
-    if ($candidates.Count -eq 0) { return New-CryptographicApiKey }
-    $candidate = Assert-SafeRuntimeEnvValue -Name $candidates[0].Name -Value $candidates[0].Value
+    if ([string]::IsNullOrWhiteSpace($EnvironmentKey)) { return New-CryptographicApiKey }
+    $candidate = Assert-SafeRuntimeEnvValue -Name $Name -Value $EnvironmentKey
     $candidate = $candidate.Trim()
     if ($candidate -notmatch '^[\x21-\x7e]{32,}$') {
-        throw "$($candidates[0].Name) must contain at least 32 printable non-space ASCII characters"
+        throw "$Name must contain at least 32 printable non-space ASCII characters"
     }
     return $candidate
 }
@@ -322,12 +309,16 @@ function Write-SecureRuntimeEnvFile {
     param(
         [string]$Path,
         [string]$Content,
-        [scriptblock]$SecureFileCreator
+        [scriptblock]$SecureFileCreator,
+        [switch]$RequireAbsent
     )
 
     $absolutePath = [System.IO.Path]::GetFullPath($Path)
     $parent = Split-Path -Parent $absolutePath
     [System.IO.Directory]::CreateDirectory($parent) | Out-Null
+    if ($RequireAbsent -and (Test-Path -LiteralPath $absolutePath)) {
+        throw "Runtime environment transaction target appeared before the final writer: $absolutePath"
+    }
     if (Test-Path -LiteralPath $absolutePath) {
         Assert-RegularNonReparseRuntimeEnvPath -Path $absolutePath
     }
@@ -355,7 +346,11 @@ function Write-SecureRuntimeEnvFile {
         $stream.Dispose()
         $stream = $null
 
-        [System.IO.File]::Move($temporaryPath, $absolutePath, $true)
+        if ($RequireAbsent) {
+            [System.IO.File]::Move($temporaryPath, $absolutePath, $false)
+        } else {
+            [System.IO.File]::Move($temporaryPath, $absolutePath, $true)
+        }
         $destinationReplaced = $true
         Assert-ProtectedRuntimeEnvFile -Path $absolutePath
         if ([System.IO.File]::ReadAllText($absolutePath) -cne $Content) {
@@ -374,6 +369,101 @@ function Write-SecureRuntimeEnvFile {
             Remove-Item -LiteralPath $temporaryPath -Force
         }
     }
+}
+
+function New-NativeInstallerFailure {
+    param([string]$Message, [int]$ExitCode)
+
+    $failure = [System.InvalidOperationException]::new($Message)
+    $failure.Data["RIKUNE_NATIVE_EXIT_CODE"] = $ExitCode
+    return $failure
+}
+
+function Get-RuntimePrivateEnvSnapshot {
+    param(
+        [string]$Path,
+        [string]$NodePath,
+        [string]$WriterPath
+    )
+
+    $previousValue = [Environment]::GetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", "Process")
+    try {
+        [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", $Path, "Process")
+        $snapshotOutput = & $NodePath $WriterPath 2>$null
+        $nativeExitCode = $LASTEXITCODE
+        if ($nativeExitCode -ne 0) {
+            throw (New-NativeInstallerFailure `
+                -Message "Secure Windows runtime env staging failed" `
+                -ExitCode $nativeExitCode)
+        }
+        $snapshot = [string](@($snapshotOutput) -join '')
+        if ([string]::IsNullOrWhiteSpace($snapshot)) {
+            throw "Secure Windows runtime env staging returned an empty snapshot"
+        }
+        return $snapshot
+    } finally {
+        [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", $previousValue, "Process")
+    }
+}
+
+function Invoke-RuntimePrivateEnvSnapshotOperation {
+    param(
+        [string]$EnvironmentName,
+        [string]$Path,
+        [string]$Snapshot,
+        [string]$NodePath,
+        [string]$WriterPath,
+        [string]$FailureMessage
+    )
+
+    $previousValue = [Environment]::GetEnvironmentVariable($EnvironmentName, "Process")
+    try {
+        [Environment]::SetEnvironmentVariable($EnvironmentName, $Path, "Process")
+        $operationOutput = $Snapshot | & $NodePath $WriterPath 2>$null
+        $nativeExitCode = $LASTEXITCODE
+        if ($nativeExitCode -ne 0) {
+            throw (New-NativeInstallerFailure -Message $FailureMessage -ExitCode $nativeExitCode)
+        }
+        if (@($operationOutput).Count -ne 0) {
+            throw "Secure Windows runtime env snapshot operation produced unexpected output"
+        }
+    } finally {
+        [Environment]::SetEnvironmentVariable($EnvironmentName, $previousValue, "Process")
+    }
+}
+
+function Remove-RuntimePrivateEnvForSnapshot {
+    param(
+        [string]$Path,
+        [string]$Snapshot,
+        [string]$NodePath,
+        [string]$WriterPath
+    )
+
+    Invoke-RuntimePrivateEnvSnapshotOperation `
+        -EnvironmentName "RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH" `
+        -Path $Path `
+        -Snapshot $Snapshot `
+        -NodePath $NodePath `
+        -WriterPath $WriterPath `
+        -FailureMessage "Secure removal of the staged Windows runtime env failed"
+}
+
+function Restore-RuntimePrivateEnvSnapshot {
+    param(
+        [string]$Path,
+        [string]$Snapshot,
+        [string]$NodePath,
+        [string]$WriterPath
+    )
+
+    Invoke-RuntimePrivateEnvSnapshotOperation `
+        -EnvironmentName "RIKUNE_RESTORE_PRIVATE_ENV_PATH" `
+        -Path $Path `
+        -Snapshot $Snapshot `
+        -NodePath $NodePath `
+        -WriterPath $WriterPath `
+        -FailureMessage "Secure restoration of the Windows runtime env failed"
 }
 
 function Resolve-PinnedPm2Command {
@@ -580,7 +670,7 @@ $capturedRuntimeApiKey = if (-not [string]::IsNullOrWhiteSpace($env:RIKUNE_RUNTI
     $env:RUNTIME_API_KEY
 }
 
-foreach ($secretEnvironmentName in @(
+$secretEnvironmentAliases = @(
     "RIKUNE_HOST_AGENT_API_KEY",
     "RIKUNE_RUNTIME_API_KEY",
     "RIKUNE_RUNTIME_NODE_API_KEY",
@@ -590,8 +680,32 @@ foreach ($secretEnvironmentName in @(
     "RUNTIME_API_KEY",
     "RIKUNE_API_KEY",
     "RIKUNE_ANALYZER_API_KEY"
-)) {
-    [Environment]::SetEnvironmentVariable($secretEnvironmentName, $null, "Process")
+)
+$privateEnvControlNames = @(
+    "RIKUNE_VERIFY_PRIVATE_ENV_PATH",
+    "RIKUNE_STAGE_DOCKER_ENV_PATH",
+    "RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH",
+    "RIKUNE_RESTORE_PRIVATE_ENV_PATH",
+    "RIKUNE_REMOVE_PRIVATE_ENV_PATH",
+    "RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN",
+    "RIKUNE_DOCKER_ENV_PATH",
+    "RIKUNE_DOCKER_ENV_DATA_ROOT",
+    "RIKUNE_DOCKER_ENV_PROFILE",
+    "RIKUNE_BUILD_HTTP_PROXY",
+    "RIKUNE_BUILD_HTTPS_PROXY",
+    "RIKUNE_BUILD_NO_PROXY",
+    "RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP",
+    "RIKUNE_STAGE_LOCAL_ENV_PATH",
+    "RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN",
+    "RIKUNE_LOCAL_EXISTING_ENV_BASE64",
+    "RIKUNE_LOCAL_ENV_PATH",
+    "RIKUNE_LOCAL_ENV_FORCE_KEYS",
+    "RIKUNE_PRIVATE_ENV_PATH",
+    "RIKUNE_PRIVATE_ENV_ACL_MODE",
+    "STAGED_LOCAL_ENV_BASE64"
+)
+foreach ($name in ($secretEnvironmentAliases + $privateEnvControlNames)) {
+    [Environment]::SetEnvironmentVariable($name, $null, "Process")
 }
 $stdinApiKey = $null
 
@@ -727,12 +841,14 @@ Write-Step "Checking Required Tools"
 
 # Node.js
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-    Exit-WithError "Node.js not found. Install Node.js 22+ from https://nodejs.org/"
+    Exit-WithError "Node.js not found. Install Node.js 22.9+ from https://nodejs.org/"
 }
 $nodeVersion = (node --version).Trim()
-$nodeMajor = [int]($nodeVersion -replace '^v','').Split('.')[0]
-if ($nodeMajor -lt 22) {
-    Exit-WithError "Node.js $nodeVersion is too old (need 22+)"
+$nodeParts = ($nodeVersion -replace '^v','').Split('.')
+$nodeMajor = [int]$nodeParts[0]
+$nodeMinor = [int]$nodeParts[1]
+if ($nodeMajor -lt 22 -or ($nodeMajor -eq 22 -and $nodeMinor -lt 9)) {
+    Exit-WithError "Node.js $nodeVersion is too old (need 22.9+)"
 }
 Write-Success "Node.js: $nodeVersion"
 
@@ -784,104 +900,139 @@ if (-not $pythonPath -or -not (Test-Path -LiteralPath $pythonPath -PathType Leaf
 Write-Info "Node path for Sandbox mapping: $nodePath"
 Write-Info "Python path for Sandbox mapping: $pythonPath"
 
-# =============================================================================
-# Step 3: Install npm Dependencies & Build
-# =============================================================================
-Write-Step "Installing npm Dependencies & Building"
-
-Push-Location $ProjectRoot
-try {
-    Write-Info "Running npm ci --include=dev (root lockfile)..."
-    npm ci --include=dev 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Exit-WithError "npm ci --include=dev failed"
-    }
-    Write-Success "Root npm dependencies installed from package-lock.json"
-
-    if (-not $SkipBuild) {
-        Write-Info "Building Runtime Node..."
-        npm run build:runtime 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) { Exit-WithError "Build of runtime-node failed" }
-        Write-Success "Runtime Node built"
-
-        Write-Info "Building Windows Host Agent..."
-        npm run build:host-agent 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) { Exit-WithError "Build of windows-host-agent failed" }
-        Write-Success "Windows Host Agent built"
-    } else {
-        Write-Warning-Message "Skipped npm build step"
-    }
-} catch {
-    Exit-WithError "Build error: $($_.Exception.Message)"
-} finally {
-    Pop-Location
-}
-
-# =============================================================================
-# Step 4: Create Workspace Directories
-# =============================================================================
-Write-Step "Creating Workspace Directories"
-
-$WorkspaceRoot = Resolve-RuntimeWorkspaceRoot `
-    -RequestedRoot $WorkspaceRoot `
-    -ProjectRoot $ProjectRoot `
-    -LocalAppData $env:LOCALAPPDATA
-
-$directories = @("workspace", "workspace\sandbox", "workspace\logs", "workspace\inbox", "workspace\outbox")
-foreach ($dir in $directories) {
-    $fullPath = Join-Path $WorkspaceRoot $dir
-    if (-not (Test-Path $fullPath)) {
-        New-Item -ItemType Directory -Path $fullPath -Force | Out-Null
-        Write-Success "Created: $fullPath"
-    }
-}
-
-# =============================================================================
-# Step 5: Generate Host Agent Configuration
-# =============================================================================
-Write-Step "Generating Host Agent Configuration"
-
 $envFile = Join-Path $ProjectRoot ".env.runtime-windows"
-$hostApiKey = Resolve-RuntimeApiKey `
-    -ExplicitlySupplied ($PSBoundParameters.ContainsKey("ApiKey")) `
-    -SuppliedKey $ApiKey `
-    -EnvironmentKey $capturedHostApiKey
-$runtimeApiKey = Resolve-RuntimeApiKey `
-    -ExplicitlySupplied $false `
-    -SuppliedKey $null `
-    -EnvironmentKey $capturedRuntimeApiKey
-$capturedHostApiKey = $null
-$capturedRuntimeApiKey = $null
-if ([string]::Equals($hostApiKey, $runtimeApiKey, [System.StringComparison]::Ordinal)) {
-    Exit-WithError "Host Agent and Runtime Node API keys must be distinct security principals."
+$privateEnvWriter = Join-Path $ProjectRoot "scripts\write-docker-runtime-env.mjs"
+if (-not (Test-Path -LiteralPath $privateEnvWriter -PathType Leaf)) {
+    Exit-WithError "Private runtime env transaction writer not found: $privateEnvWriter"
 }
 
-if (-not (Test-IsLoopbackRuntimeHost -HostName $BindHost) -or
-    -not (Test-IsLoopbackRuntimeHost -HostName $RuntimeBindHost)) {
-    Write-Warning-Message "A Host Agent or Runtime portproxy listener will bind non-loopback by explicit trusted-network opt-in. Protect this path with TLS/VPN and a restrictive firewall."
-}
+$privateEnvSnapshot = $null
+$privateEnvTransactionActive = $false
+$privateEnvTransactionCommitted = $false
+$privateEnvFailure = $null
+$privateEnvFailureExitCode = 1
+$hostApiKey = $null
+$runtimeApiKey = $null
+$envContent = $null
+try {
+    $privateEnvSnapshot = Get-RuntimePrivateEnvSnapshot `
+        -Path $envFile `
+        -NodePath $nodePath `
+        -WriterPath $privateEnvWriter
+    $privateEnvTransactionActive = $true
+    Remove-RuntimePrivateEnvForSnapshot `
+        -Path $envFile `
+        -Snapshot $privateEnvSnapshot `
+        -NodePath $nodePath `
+        -WriterPath $privateEnvWriter
+    Write-Info "Any prior protected Windows runtime env was removed before npm lifecycle commands; credentials will be rotated after build."
 
-$runtimeEnvValues = @{
-    HOST_AGENT_BIND_HOST = $BindHost
-    HOST_AGENT_RUNTIME_BIND_HOST = $RuntimeBindHost
-    HOST_AGENT_RUNTIME_ADVERTISED_HOST = $RuntimeAdvertisedHost
-    HOST_AGENT_API_KEY = $hostApiKey
-    HOST_AGENT_RUNTIME_API_KEY = $runtimeApiKey
-    HOST_AGENT_WORKSPACE = $WorkspaceRoot
-    HOST_AGENT_NODE_PATH = $nodePath
-    HOST_AGENT_PYTHON_PATH = $pythonPath
-    HOST_AGENT_BACKEND = $RuntimeBackend
-    HOST_AGENT_HYPERV_VM_NAME = $HyperVVmName
-    HOST_AGENT_HYPERV_SNAPSHOT_NAME = $HyperVSnapshotName
-    HOST_AGENT_HYPERV_RUNTIME_ENDPOINT = $HyperVRuntimeEndpoint
-}
-foreach ($entry in $runtimeEnvValues.GetEnumerator()) {
-    $allowEmpty = $entry.Key.StartsWith("HOST_AGENT_HYPERV_") -or
-        $entry.Key -eq "HOST_AGENT_RUNTIME_ADVERTISED_HOST"
-    Assert-SafeRuntimeEnvValue -Name $entry.Key -Value ([string]$entry.Value) -AllowEmpty:$allowEmpty | Out-Null
-}
+    # =============================================================================
+    # Step 3: Install npm Dependencies & Build
+    # =============================================================================
+    Write-Step "Installing npm Dependencies & Building"
 
-$envContent = @"
+    Push-Location $ProjectRoot
+    try {
+        Write-Info "Running npm ci --include=dev (root lockfile)..."
+        & npm ci --include=dev 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            $nativeExitCode = $LASTEXITCODE
+            throw (New-NativeInstallerFailure `
+                -Message "npm ci --include=dev failed" `
+                -ExitCode $nativeExitCode)
+        }
+        Write-Success "Root npm dependencies installed from package-lock.json"
+
+        if (-not $SkipBuild) {
+            Write-Info "Building Runtime Node..."
+            & npm run build:runtime 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                $nativeExitCode = $LASTEXITCODE
+                throw (New-NativeInstallerFailure `
+                    -Message "Build of runtime-node failed" `
+                    -ExitCode $nativeExitCode)
+            }
+            Write-Success "Runtime Node built"
+
+            Write-Info "Building Windows Host Agent..."
+            & npm run build:host-agent 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                $nativeExitCode = $LASTEXITCODE
+                throw (New-NativeInstallerFailure `
+                    -Message "Build of windows-host-agent failed" `
+                    -ExitCode $nativeExitCode)
+            }
+            Write-Success "Windows Host Agent built"
+        } else {
+            Write-Warning-Message "Skipped npm build step"
+        }
+    } finally {
+        Pop-Location
+    }
+
+    # =============================================================================
+    # Step 4: Create Workspace Directories
+    # =============================================================================
+    Write-Step "Creating Workspace Directories"
+
+    $WorkspaceRoot = Resolve-RuntimeWorkspaceRoot `
+        -RequestedRoot $WorkspaceRoot `
+        -ProjectRoot $ProjectRoot `
+        -LocalAppData $env:LOCALAPPDATA
+
+    $directories = @("workspace", "workspace\sandbox", "workspace\logs", "workspace\inbox", "workspace\outbox")
+    foreach ($dir in $directories) {
+        $fullPath = Join-Path $WorkspaceRoot $dir
+        if (-not (Test-Path $fullPath)) {
+            New-Item -ItemType Directory -Path $fullPath -Force | Out-Null
+            Write-Success "Created: $fullPath"
+        }
+    }
+
+    # =============================================================================
+    # Step 5: Generate Host Agent Configuration
+    # =============================================================================
+    Write-Step "Generating Host Agent Configuration"
+
+    $hostApiKey = Resolve-RuntimeApiKey `
+        -Name "RIKUNE_HOST_AGENT_API_KEY" `
+        -EnvironmentKey $capturedHostApiKey
+    $runtimeApiKey = Resolve-RuntimeApiKey `
+        -Name "RIKUNE_RUNTIME_NODE_API_KEY" `
+        -EnvironmentKey $capturedRuntimeApiKey
+    $capturedHostApiKey = $null
+    $capturedRuntimeApiKey = $null
+    if ([string]::Equals($hostApiKey, $runtimeApiKey, [System.StringComparison]::Ordinal)) {
+        throw "Host Agent and Runtime Node API keys must be distinct security principals."
+    }
+
+    if (-not (Test-IsLoopbackRuntimeHost -HostName $BindHost) -or
+        -not (Test-IsLoopbackRuntimeHost -HostName $RuntimeBindHost)) {
+        Write-Warning-Message "A Host Agent or Runtime portproxy listener will bind non-loopback by explicit trusted-network opt-in. Protect this path with TLS/VPN and a restrictive firewall."
+    }
+
+    $runtimeEnvValues = @{
+        HOST_AGENT_BIND_HOST = $BindHost
+        HOST_AGENT_RUNTIME_BIND_HOST = $RuntimeBindHost
+        HOST_AGENT_RUNTIME_ADVERTISED_HOST = $RuntimeAdvertisedHost
+        HOST_AGENT_API_KEY = $hostApiKey
+        HOST_AGENT_RUNTIME_API_KEY = $runtimeApiKey
+        HOST_AGENT_WORKSPACE = $WorkspaceRoot
+        HOST_AGENT_NODE_PATH = $nodePath
+        HOST_AGENT_PYTHON_PATH = $pythonPath
+        HOST_AGENT_BACKEND = $RuntimeBackend
+        HOST_AGENT_HYPERV_VM_NAME = $HyperVVmName
+        HOST_AGENT_HYPERV_SNAPSHOT_NAME = $HyperVSnapshotName
+        HOST_AGENT_HYPERV_RUNTIME_ENDPOINT = $HyperVRuntimeEndpoint
+    }
+    foreach ($entry in $runtimeEnvValues.GetEnumerator()) {
+        $allowEmpty = $entry.Key.StartsWith("HOST_AGENT_HYPERV_") -or
+            $entry.Key -eq "HOST_AGENT_RUNTIME_ADVERTISED_HOST"
+        Assert-SafeRuntimeEnvValue -Name $entry.Key -Value ([string]$entry.Value) -AllowEmpty:$allowEmpty | Out-Null
+    }
+
+    $envContent = @"
 # Rikune Windows Runtime Environment — generated by install-runtime-windows.ps1
 # This file configures the Windows Host Agent and the Runtime Node inside Windows Sandbox.
 
@@ -911,11 +1062,41 @@ HOST_AGENT_HYPERV_STOP_ON_RELEASE=$($HyperVStopOnRelease.IsPresent.ToString().To
 # ALLOW_UNSAFE_RUNTIME=true
 "@
 
-$envContent = "$($envContent.TrimEnd())`n"
-Write-SecureRuntimeEnvFile -Path $envFile -Content $envContent
-Write-Success "Environment file: $envFile"
-Write-Info "Host Agent key fingerprint: $(Get-SecretFingerprint -Secret $hostApiKey)"
-Write-Info "Runtime Node key fingerprint: $(Get-SecretFingerprint -Secret $runtimeApiKey)"
+    $envContent = "$($envContent.TrimEnd())`n"
+    Write-SecureRuntimeEnvFile -Path $envFile -Content $envContent -RequireAbsent
+    $privateEnvTransactionCommitted = $true
+    $privateEnvSnapshot = $null
+    Write-Success "Environment file: $envFile"
+    Write-Info "Host Agent key fingerprint: $(Get-SecretFingerprint -Secret $hostApiKey)"
+    Write-Info "Runtime Node key fingerprint: $(Get-SecretFingerprint -Secret $runtimeApiKey)"
+} catch {
+    $privateEnvFailure = $_
+    if ($_.Exception.Data.Contains("RIKUNE_NATIVE_EXIT_CODE")) {
+        $privateEnvFailureExitCode = [int]$_.Exception.Data["RIKUNE_NATIVE_EXIT_CODE"]
+    }
+} finally {
+    if ($privateEnvTransactionActive -and -not $privateEnvTransactionCommitted) {
+        try {
+            Restore-RuntimePrivateEnvSnapshot `
+                -Path $envFile `
+                -Snapshot $privateEnvSnapshot `
+                -NodePath $nodePath `
+                -WriterPath $privateEnvWriter
+        } catch {
+            Write-Error-Message "Failed to restore the protected Windows runtime env after installer failure: $($_.Exception.Message)"
+        }
+    }
+    $privateEnvSnapshot = $null
+    $capturedHostApiKey = $null
+    $capturedRuntimeApiKey = $null
+    $envContent = $null
+    $hostApiKey = $null
+    $runtimeApiKey = $null
+}
+if ($null -ne $privateEnvFailure) {
+    Write-Error-Message $privateEnvFailure.Exception.Message
+    exit $privateEnvFailureExitCode
+}
 
 # =============================================================================
 # Step 6: Start Host Agent

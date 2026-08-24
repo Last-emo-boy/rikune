@@ -30,6 +30,10 @@ export function getDefaultCacheRoot(): string {
   return path.join(getDefaultAppRoot(), 'cache')
 }
 
+export function getDefaultStorageRoot(): string {
+  return path.join(getDefaultAppRoot(), 'storage')
+}
+
 export function getDefaultAuditLogPath(): string {
   return path.join(getDefaultAppRoot(), 'audit.log')
 }
@@ -174,7 +178,7 @@ export const ConfigSchema = z
           .int()
           .min(1)
           .default(500 * 1024 * 1024), // 500MB
-        storageRoot: z.string().default('/app/storage'),
+        storageRoot: z.string().default(getDefaultStorageRoot()),
         retentionDays: z.number().int().min(1).default(30),
         maxTotalBytes: z.number().int().min(0).default(0), // 0 = unlimited
       })
@@ -182,7 +186,7 @@ export const ConfigSchema = z
         enabled: false,
         port: 18080,
         maxFileSize: 500 * 1024 * 1024,
-        storageRoot: '/app/storage',
+        storageRoot: getDefaultStorageRoot(),
         retentionDays: 30,
         maxTotalBytes: 0,
       }),
@@ -655,27 +659,6 @@ function validateRuntimeCredentialSources(
 }
 
 /**
- * Apply platform-aware defaults after parsing.
- * - Windows: analyzer role + auto-sandbox runtime mode
- * - Others: analyzer role + disabled runtime mode
- */
-function applyPlatformDefaults(data: Config): Config {
-  const isWindows = process.platform === 'win32'
-  // Only apply defaults when the values come from schema defaults (not explicitly set by user)
-  // Zod defaults are already applied, so we check env vars to know if user explicitly set them.
-  const nodeRoleFromEnv = process.env.NODE_ROLE
-  const runtimeModeFromEnv = process.env.RUNTIME_MODE
-
-  if (!nodeRoleFromEnv) {
-    data.node.role = 'analyzer'
-  }
-  if (!runtimeModeFromEnv) {
-    data.runtime.mode = isWindows ? 'auto-sandbox' : 'disabled'
-  }
-  return data
-}
-
-/**
  * Load and validate configuration from all sources
  */
 export function loadConfig(configPath?: string): Config {
@@ -690,7 +673,7 @@ export function loadConfig(configPath?: string): Config {
     throw new Error(`Configuration validation failed: ${result.error.message}`)
   }
 
-  return applyPlatformDefaults(result.data)
+  return result.data
 }
 
 /**

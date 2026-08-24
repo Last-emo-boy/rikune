@@ -9,6 +9,10 @@ const runtimePowershellSource = fs.readFileSync(
   path.join(repoRoot, 'install-runtime-windows.ps1'),
   'utf8'
 )
+const packageManifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
+  scripts: Record<string, string>
+  engines: { node: string }
+}
 
 const productionLocks = [
   'requirements.lock.txt',
@@ -44,6 +48,21 @@ function activePipInstallLines(source: string): string[] {
 }
 
 describe('local installer Python production-lock contract', () => {
+  test('loads the protected local environment explicitly on every recommended start path', () => {
+    expect(packageManifest.engines.node).toBe('>=22.9.0')
+    expect(packageManifest.scripts.start).toBe(
+      'node --env-file-if-exists=.env dist/index.js'
+    )
+    expect(packageManifest.scripts.dev).toBe(
+      'tsx --env-file-if-exists=.env watch src/index.ts'
+    )
+    expect(shellSource).toContain('node --env-file=.env dist/index.js')
+    expect(shellSource).toContain('DATA_ROOT="$(realpath -m -- "$DATA_ROOT")"')
+    expect(shellSource.indexOf('DATA_ROOT="$(realpath -m -- "$DATA_ROOT")"')).toBeLessThan(
+      shellSource.indexOf('cd "$PROJECT_ROOT"', shellSource.indexOf('assert_supported_wsl_data_root'))
+    )
+  })
+
   test('keeps every selected production lock complete and hash-pinned for CPython 3.12', () => {
     for (const relativePath of productionLocks) {
       assertCompleteHashLock(relativePath)

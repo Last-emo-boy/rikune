@@ -1,3 +1,5 @@
+import { encodeTrustedWindowsPowerShellScript } from './windows-powershell.js'
+
 export interface WsbConfig {
   runtimeDirHost: string
   runtimeFileName: string
@@ -29,10 +31,6 @@ function quotePowerShellString(str: string): string {
 
 function buildPowerShellArray(values: string[]): string {
   return `@(${values.map(quotePowerShellString).join(', ')})`
-}
-
-function buildEncodedPowerShellCommand(script: string): string {
-  return Buffer.from(script, 'utf16le').toString('base64')
 }
 
 export function buildWsbXml(cfg: WsbConfig): string {
@@ -115,7 +113,7 @@ export function buildWsbXml(cfg: WsbConfig): string {
     `  $_ | Out-String | Add-Content -Path 'C:\\rikune-outbox\\runtime.stderr.log'`,
     `}`,
   ].join('\r\n')
-  const logonCommand = `powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${buildEncodedPowerShellCommand(runtimeScript)}`
+  const logonCommand = `powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodeTrustedWindowsPowerShellScript(runtimeScript)}`
 
   const mappedFolders = [
     `    <MappedFolder>\n      <HostFolder>${escapeXml(cfg.runtimeDirHost)}</HostFolder>\n      <SandboxFolder>C:\\rikune-runtime</SandboxFolder>\n      <ReadOnly>true</ReadOnly>\n    </MappedFolder>`,

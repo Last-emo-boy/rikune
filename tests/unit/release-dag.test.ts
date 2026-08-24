@@ -1,5 +1,7 @@
 import { describe, expect, test } from '@jest/globals'
+import { spawnSync } from 'child_process'
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import YAML from 'yaml'
 
@@ -16,6 +18,7 @@ describe('v1.4.0 release DAG', () => {
       'hybrid-build-verify',
       'static-build-push',
       'static-verify',
+      'static-version-alias',
       'npm-candidate-ceremony',
       'npm-human-publication-verify',
       'release-and-alias',
@@ -52,7 +55,11 @@ describe('v1.4.0 release DAG', () => {
       false
     )
     const ceremonyJob = workflow.jobs['npm-candidate-ceremony']
-    expect(ceremonyJob.needs).toEqual(['preflight', 'hybrid-build-verify', 'static-verify'])
+    expect(ceremonyJob.needs).toEqual([
+      'preflight',
+      'hybrid-build-verify',
+      'static-version-alias',
+    ])
     expect(ceremonyJob.if).toContain("needs.preflight.outputs.phase == 'stage'")
     const candidateUpload = ceremonyJob.steps.find(
       (step: any) =>
@@ -78,7 +85,7 @@ describe('v1.4.0 release DAG', () => {
     expect(ceremonyPack).toContain('test "$HYBRID_IMAGE_REVISION" = "$GITHUB_SHA"')
     expect(ceremonyPack).toContain('static_oci_verified:true')
     expect(ceremonyJob.steps.find((step: any) => step.id === 'pack').env.STATIC_OCI_DIGEST).toBe(
-      '${{ needs.static-verify.outputs.digest }}'
+      '${{ needs.static-version-alias.outputs.digest }}'
     )
     expect(
       ceremonyJob.steps.find((step: any) => step.id === 'pack').env.HYBRID_IMAGE_REVISION
@@ -145,8 +152,9 @@ describe('v1.4.0 release DAG', () => {
       'The staged immutable candidate is missing; verification cannot create it.'
     )
     expect(candidateState.run).toContain('existing_digest=')
-    expect(candidateState.run).not.toMatch(/\|not found/u)
-    expect(candidateState.run).toContain('404 Not Found')
+    expect(candidateState.run).toContain(
+      'bash scripts/registry-ref-is-absent.sh "$CANDIDATE" candidate-inspect.err'
+    )
     for (const stepName of [
       'Build and push linux/amd64 candidate',
       'Sign GitHub build provenance attestation',
@@ -158,17 +166,37 @@ describe('v1.4.0 release DAG', () => {
       )
       expect(mutationStep.if).toBe("needs.preflight.outputs.phase == 'stage'")
     }
+    const versionAliasJob = workflow.jobs['static-version-alias']
+    expect(versionAliasJob.needs).toEqual(['preflight', 'static-verify'])
+    expect(versionAliasJob.if).toContain("needs.preflight.outputs.dry_run != 'true'")
+    expect(versionAliasJob.permissions.packages).toBe('write')
+    expect(versionAliasJob.outputs.digest).toBe('${{ steps.contract.outputs.digest }}')
+    const versionAliasScript = versionAliasJob.steps
+      .map((step: any) => step.run || '')
+      .join('\n')
+    expect(versionAliasScript).toContain('versioned="$STATIC_IMAGE:$RELEASE_VERSION"')
+    expect(versionAliasScript).toContain('RELEASE_PHASE')
+    expect(versionAliasScript).toContain('[[ "$RELEASE_PHASE" == stage ]]')
+    expect(versionAliasScript).toContain('docker buildx imagetools create --tag "$versioned"')
+    expect(versionAliasScript).toContain(
+      'bash scripts/registry-ref-is-absent.sh "$versioned" "$inspect_error"'
+    )
+    expect(versionAliasScript).toContain(
+      'must exist before human npm publication; refusing to repair it afterward.'
+    )
+    expect(versionAliasScript).toContain('echo "digest=$immutable_digest" >> "$GITHUB_OUTPUT"')
+
     expect(workflow.jobs['npm-human-publication-verify'].needs).toEqual([
       'preflight',
       'hybrid-build-verify',
-      'static-verify',
+      'static-version-alias',
     ])
     expect(workflow.jobs['npm-human-publication-verify'].if).toContain(
       "inputs.release_phase == 'verify-human-published'"
     )
     expect(workflow.jobs['release-and-alias'].needs).toEqual([
       'hybrid-build-verify',
-      'static-verify',
+      'static-version-alias',
       'npm-human-publication-verify',
     ])
 
@@ -246,9 +274,12 @@ describe('v1.4.0 release DAG', () => {
     expect(aliasScript).toContain(
       'test \'${{ needs.hybrid-build-verify.outputs.revision }}\' = "$GITHUB_SHA"'
     )
-    expect(aliasScript).toContain('manifest unknown')
-    expect(aliasScript).toContain('Unable to prove that immutable tag 1.4.0 is absent')
-    expect(aliasScript).toContain('existing_digest')
+    expect(aliasScript).toContain("digest='${{ needs.static-version-alias.outputs.digest }}'")
+    expect(aliasScript).toContain(
+      'docker buildx imagetools inspect "$STATIC_IMAGE:$RELEASE_VERSION"'
+    )
+    expect(aliasScript).toContain('for alias in 1.4 latest')
+    expect(aliasScript).not.toContain('imagetools create --tag "$STATIC_IMAGE:1.4.0"')
     expect(registryVerifyScript).toContain('dist-tags.latest')
 
     const runbook = fs.readFileSync(path.join(process.cwd(), 'CONTRIBUTING.md'), 'utf8')
@@ -265,6 +296,37 @@ describe('v1.4.0 release DAG', () => {
     expect(candidateVerifier).toContain('manifest.artifact_name')
     expect(candidateVerifier).toContain('manifest.repository')
     expect(candidateVerifier).toContain('manifest.workflow')
+  })
+
+  test('recognizes only exact missing-registry evidence for the inspected reference', () => {
+    const helper = path.join(process.cwd(), 'scripts', 'registry-ref-is-absent.sh')
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rikune-registry-absence-'))
+    const inspected = 'ghcr.io/last-emo-boy/rikune-analyzer-static:candidate-1.4.0-deadbeef'
+
+    const statusFor = (stderr: string, reference = inspected): number | null => {
+      const errorFile = path.join(tempRoot, `error-${Math.random().toString(16).slice(2)}.txt`)
+      fs.writeFileSync(errorFile, stderr)
+      return spawnSync('bash', [helper, reference, errorFile], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      }).status
+    }
+
+    try {
+      expect(statusFor(`ERROR: ${inspected}: not found\n`)).toBe(0)
+      expect(statusFor(`${inspected}: not found\r\n`)).toBe(0)
+      expect(statusFor('ERROR: manifest unknown\n')).toBe(0)
+      expect(statusFor('ERROR: unexpected status from HEAD request: 404 Not Found\n')).toBe(0)
+      expect(statusFor('ERROR: unauthorized: authentication required\n')).toBe(1)
+      expect(
+        statusFor(
+          'ERROR: ghcr.io/last-emo-boy/rikune-analyzer-static:another-tag: not found\n'
+        )
+      ).toBe(1)
+      expect(statusFor(`ERROR: failed to resolve ${inspected}: network timeout\n`)).toBe(1)
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true })
+    }
   })
 
   test('packages the root dual-use disclosure contract', () => {

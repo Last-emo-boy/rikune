@@ -343,7 +343,7 @@ jobs:
               echo "Immutable candidate already exists; refusing to overwrite $CANDIDATE" >&2
               exit 1
             fi
-            if ! grep -Eqi 'manifest unknown|MANIFEST_UNKNOWN|status code: 404|unexpected status[^[:cntrl:]]*404|404 Not Found' candidate-inspect.err; then
+            if ! bash scripts/registry-ref-is-absent.sh "$CANDIDATE" candidate-inspect.err; then
               cat candidate-inspect.err >&2
               echo "Unable to prove that immutable candidate is absent; refusing to build." >&2
               exit 1
@@ -562,9 +562,67 @@ jobs:
           gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY" --predicate-type https://slsa.dev/provenance/v1
           gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY" --predicate-type https://spdx.dev/Document/v2.3
 
+  static-version-alias:
+    name: Bind immutable v1.4.0 OCI before npm exposure
+    needs: [preflight, static-verify]
+    if: needs.preflight.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.contract.outputs.digest }}
+    steps:
+      - name: Checkout release contract
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Publish or verify immutable v1.4.0 OCI tag
+        id: contract
+        shell: bash
+        env:
+          RELEASE_PHASE: ${{ needs.preflight.outputs.phase }}
+          VERIFIED_DIGEST: ${{ needs.static-verify.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$VERIFIED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          [[ "$RELEASE_PHASE" == stage || "$RELEASE_PHASE" == verify-human-published ]]
+          source="$STATIC_IMAGE@$VERIFIED_DIGEST"
+          versioned="$STATIC_IMAGE:$RELEASE_VERSION"
+          inspect_error=$(mktemp)
+          if existing=$(docker buildx imagetools inspect "$versioned" 2>"$inspect_error"); then
+            existing_digest=$(awk '/^Digest:/ {print $2; exit}' <<<"$existing")
+            test "$existing_digest" = "$VERIFIED_DIGEST"
+          elif [[ "$RELEASE_PHASE" == stage ]] && bash scripts/registry-ref-is-absent.sh "$versioned" "$inspect_error"; then
+            docker buildx imagetools create --tag "$versioned" "$source"
+          elif [[ "$RELEASE_PHASE" == verify-human-published ]]; then
+            cat "$inspect_error" >&2
+            echo "Immutable OCI $versioned must exist before human npm publication; refusing to repair it afterward." >&2
+            exit 1
+          else
+            cat "$inspect_error" >&2
+            echo "Unable to prove that immutable OCI $versioned is absent; refusing to publish." >&2
+            exit 1
+          fi
+          immutable_digest=$(docker buildx imagetools inspect "$versioned" | awk '/^Digest:/ {print $2; exit}')
+          test "$immutable_digest" = "$VERIFIED_DIGEST"
+          echo "digest=$immutable_digest" >> "$GITHUB_OUTPUT"
+
   npm-candidate-ceremony:
-    name: Expose npm candidate only after static OCI verification
-    needs: [preflight, hybrid-build-verify, static-verify]
+    name: Expose npm candidate only after versioned OCI exists
+    needs: [preflight, hybrid-build-verify, static-version-alias]
     if: >-
       needs.preflight.outputs.dry_run != 'true' &&
       needs.preflight.outputs.phase == 'stage'
@@ -594,7 +652,7 @@ jobs:
         shell: bash
         env:
           EXPECTED_INTEGRITY: ${{ needs.preflight.outputs.integrity }}
-          STATIC_OCI_DIGEST: ${{ needs.static-verify.outputs.digest }}
+          STATIC_OCI_DIGEST: ${{ needs.static-version-alias.outputs.digest }}
           HYBRID_IMAGE_REVISION: ${{ needs.hybrid-build-verify.outputs.revision }}
         run: |
           set -euo pipefail
@@ -652,7 +710,7 @@ jobs:
 
   npm-human-publication-verify:
     name: Verify package published by human npm 2FA ceremony
-    needs: [preflight, hybrid-build-verify, static-verify]
+    needs: [preflight, hybrid-build-verify, static-version-alias]
     if: >-
       needs.preflight.outputs.dry_run != 'true' &&
       github.event_name == 'workflow_dispatch' &&
@@ -697,7 +755,7 @@ jobs:
 
   release-and-alias:
     name: Publish OCI aliases and GitHub Release
-    needs: [hybrid-build-verify, static-verify, npm-human-publication-verify]
+    needs: [hybrid-build-verify, static-version-alias, npm-human-publication-verify]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -754,20 +812,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          digest='${{ needs.static-verify.outputs.digest }}'
+          digest='${{ needs.static-version-alias.outputs.digest }}'
           source="$STATIC_IMAGE@$digest"
-          inspect_error=$(mktemp)
-          if existing=$(docker buildx imagetools inspect "$STATIC_IMAGE:1.4.0" 2>"$inspect_error"); then
-            existing_digest=$(awk '/^Digest:/ {print $2; exit}' <<<"$existing")
-            test "$existing_digest" = "$digest"
-          elif grep -Eqi 'manifest unknown|MANIFEST_UNKNOWN|status code: 404|unexpected status[^[:cntrl:]]*404|404 Not Found' "$inspect_error"; then
-            docker buildx imagetools create --tag "$STATIC_IMAGE:1.4.0" "$source"
-          else
-            cat "$inspect_error" >&2
-            echo 'Unable to prove that immutable tag 1.4.0 is absent; refusing to publish.' >&2
-            exit 1
-          fi
-          immutable_digest=$(docker buildx imagetools inspect "$STATIC_IMAGE:1.4.0" | awk '/^Digest:/ {print $2; exit}')
+          immutable_digest=$(docker buildx imagetools inspect "$STATIC_IMAGE:$RELEASE_VERSION" | awk '/^Digest:/ {print $2; exit}')
           test "$immutable_digest" = "$digest"
           for alias in 1.4 latest; do
             docker buildx imagetools create --tag "$STATIC_IMAGE:$alias" "$source"
@@ -783,7 +830,7 @@ jobs:
           fail_on_unmatched_files: true
           body: |
             npm: rikune@1.4.0 (human 2FA publication verified)
-            Static OCI: ghcr.io/last-emo-boy/rikune-analyzer-static@${{ needs.static-verify.outputs.digest }}
+            Static OCI: ghcr.io/last-emo-boy/rikune-analyzer-static@${{ needs.static-version-alias.outputs.digest }}
             Hybrid Dockerfile: linux/amd64 build and hardened startup verified at ${{ needs.hybrid-build-verify.outputs.revision }}
           files: |
             release-package/*.tgz

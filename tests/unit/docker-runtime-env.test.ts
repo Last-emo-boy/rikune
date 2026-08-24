@@ -663,7 +663,7 @@ describe('Docker runtime env writer', () => {
     expect(shellInstaller).toContain('scripts/write-docker-runtime-env.mjs')
     expect(shellInstaller).toContain('chmod 600 "$env_file"')
     expect(powershellInstaller).toContain('scripts/write-docker-runtime-env.mjs')
-    expect(powershellInstaller).toContain('RIKUNE_ANALYZER_API_KEY = $AnalyzerApiKey')
+    expect(powershellInstaller).toContain('RIKUNE_API_KEY = $AnalyzerKey')
     expect(powershellInstaller).not.toContain('function Read-EnvFile')
     expect(powershellInstaller).not.toContain('& icacls')
     expect(powershellInstaller).toContain('RIKUNE_STAGE_DOCKER_ENV_PATH')
@@ -752,6 +752,34 @@ describe('Docker runtime env writer', () => {
     expect(runtimeInstaller).not.toMatch(/API Key:\s*\$apiKey/u)
     expect(runtimeInstaller).not.toContain('$env:HOST_AGENT_API_KEY = "$apiKey"')
     expect(runtimeInstaller).not.toContain('$env:HOST_AGENT_RUNTIME_API_KEY = "$apiKey"')
+    for (const name of PRIVATE_ENV_INTERNAL_CONTROL_NAMES) {
+      expect(runtimeInstaller).toContain(`"${name}"`)
+    }
+    expect(runtimeInstaller).toContain('RIKUNE_STAGE_DOCKER_ENV_PATH')
+    expect(runtimeInstaller).toContain('RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH')
+    expect(runtimeInstaller).toContain('RIKUNE_RESTORE_PRIVATE_ENV_PATH')
+    expect(runtimeInstaller).toContain(
+      'Write-SecureRuntimeEnvFile -Path $envFile -Content $envContent -RequireAbsent'
+    )
+    const runtimeScrubIndex = runtimeInstaller.indexOf(
+      'foreach ($name in ($secretEnvironmentAliases + $privateEnvControlNames))'
+    )
+    const runtimeStageIndex = runtimeInstaller.indexOf(
+      '$privateEnvSnapshot = Get-RuntimePrivateEnvSnapshot'
+    )
+    const runtimeRemoveIndex = runtimeInstaller.indexOf('Remove-RuntimePrivateEnvForSnapshot `')
+    const runtimeNpmIndex = runtimeInstaller.indexOf('& npm ci --include=dev')
+    const runtimeWriteIndex = runtimeInstaller.lastIndexOf('Write-SecureRuntimeEnvFile -Path $envFile')
+    const runtimeCommitIndex = runtimeInstaller.lastIndexOf(
+      '$privateEnvTransactionCommitted = $true'
+    )
+    const runtimeStartIndex = runtimeInstaller.indexOf('Write-Step "Starting Windows Host Agent"')
+    expect(runtimeStageIndex).toBeGreaterThan(runtimeScrubIndex)
+    expect(runtimeRemoveIndex).toBeGreaterThan(runtimeStageIndex)
+    expect(runtimeNpmIndex).toBeGreaterThan(runtimeRemoveIndex)
+    expect(runtimeWriteIndex).toBeGreaterThan(runtimeNpmIndex)
+    expect(runtimeCommitIndex).toBeGreaterThan(runtimeWriteIndex)
+    expect(runtimeStartIndex).toBeGreaterThan(runtimeCommitIndex)
 
     expect(powershellWrapper).toContain(
       'RIKUNE_HOST_AGENT_API_KEY = $env:RUNTIME_HOST_AGENT_API_KEY'

@@ -14,6 +14,7 @@ import {
   createRestrictedSandboxWorkspace,
   createUniqueRestrictedSandboxWorkspace,
   ensureRestrictedSandboxRoot,
+  findExecutableOnPath,
   normalizeServerDeadlineMs,
   parsePortProxyRows,
   ProtectedWsbLifecycleError,
@@ -24,6 +25,7 @@ import {
   resolveRuntimeAdvertisedHost,
   resolveRuntimeApiKey,
   resolveSandboxStartRequestId,
+  resolveWindowsSandboxLaunchCommand,
   runProtectedWsbLifecycle,
   runSandboxStartDeadlineGuard,
   validateRuntimeAdvertisedHost,
@@ -31,6 +33,11 @@ import {
   verifyWindowsPathNotReparse,
   writeRestrictedWsbFile,
 } from '../../../packages/windows-host-agent/src/index.js'
+import {
+  buildTrustedWindowsPowerShellScript,
+  LIBUV_WINDOWS_REQUIRED_ENV_KEYS,
+  resolveTrustedWindowsCommand,
+} from '../../../packages/windows-host-agent/src/windows-child-process.js'
 
 const packageJsonPath = path.resolve(process.cwd(), 'packages/windows-host-agent/package.json')
 const sourcePath = path.resolve(process.cwd(), 'packages/windows-host-agent/src/index.ts')
@@ -119,6 +126,7 @@ describe('@rikune/windows-host-agent package', () => {
     expect(source).toContain('createHyperVCheckpoint')
     expect(source).toContain('listHyperVCheckpoints')
     expect(source).toContain('Get-VMSnapshot')
+    expect(source).toContain('buildTrustedWindowsPowerShellScript(script)')
     expect(source).toContain('Checkpoint-VM')
     expect(source).toContain('Restore-VMSnapshot')
     expect(source).toContain('runtime-startup.log')
@@ -294,6 +302,78 @@ describe('Windows Sandbox advertised endpoint and portproxy hardening', () => {
       })
     ).rejects.toThrow('timed out after 10ms')
     expect(hungNetsh).toHaveBeenCalledTimes(1)
+  })
+
+  test('executes netsh and where.exe from trusted System32 with an exact child environment', async () => {
+    const environment = {
+      SystemRoot: 'C:\\Windows',
+      windir: 'c:\\windows\\',
+      TEMP: 'C:\\trusted-temp',
+      TMP: 'C:\\trusted-tmp',
+      PATH: 'C:\\attacker-controlled-bin',
+      PSModulePath: 'C:\\attacker-controlled-modules',
+      HOST_AGENT_API_KEY: 'secret-must-not-enter-child-environment',
+    }
+    const expectedEnvironment = {
+      HOMEDRIVE: 'C:',
+      HOMEPATH: '\\',
+      LOGONSERVER: '',
+      PATH: 'C:\\Windows\\System32',
+      PSModulePath: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',
+      SYSTEMDRIVE: 'C:',
+      SystemRoot: 'C:\\Windows',
+      TEMP: 'C:\\trusted-temp',
+      TMP: 'C:\\trusted-tmp',
+      USERDOMAIN: '',
+      USERNAME: '',
+      USERPROFILE: '',
+      windir: 'C:\\Windows',
+    }
+    const netshExecFile = jest.fn(
+      (
+        _command: string,
+        _args: readonly string[],
+        _options: { env: NodeJS.ProcessEnv },
+        callback: (
+          error: NodeJS.ErrnoException | null,
+          stdout: string | Buffer,
+          stderr: string | Buffer
+        ) => void
+      ) => callback(null, '', '')
+    )
+
+    await reconcileStaleRikunePortProxyRules({
+      environment,
+      execFile: netshExecFile,
+    })
+
+    expect(netshExecFile).toHaveBeenCalledTimes(2)
+    for (const [command, args, options] of netshExecFile.mock.calls) {
+      expect(command).toBe('C:\\Windows\\System32\\netsh.exe')
+      expect(args).toEqual(['interface', 'portproxy', 'show', 'v4tov4'])
+      expect(options.env).toEqual(expectedEnvironment)
+    }
+
+    const whereExecFile = jest.fn(
+      (
+        _command: string,
+        _args: readonly string[],
+        _options: { env: NodeJS.ProcessEnv },
+        callback: (
+          error: NodeJS.ErrnoException | null,
+          stdout: string | Buffer,
+          stderr: string | Buffer
+        ) => void
+      ) => callback(Object.assign(new Error('not found'), { code: 'ENOENT' }), '', '')
+    )
+    await expect(
+      findExecutableOnPath('python', { environment, execFile: whereExecFile })
+    ).resolves.toBeNull()
+
+    const [whereCommand, whereArgs, whereOptions] = whereExecFile.mock.calls[0]!
+    expect(whereCommand).toBe('C:\\Windows\\System32\\where.exe')
+    expect(whereArgs).toEqual(['python'])
+    expect(whereOptions.env).toEqual(expectedEnvironment)
   })
 
   test.each([
@@ -659,6 +739,178 @@ describe('Windows Sandbox key-bearing config hardening', () => {
       'powershell.exe',
       expect.arrayContaining(['-NoProfile', '-NonInteractive', '-Command'])
     )
+    const auditScript = (runCommand.mock.calls[4]?.[1] as string[]).join(' ')
+    expect(auditScript).toContain("$env:PSModulePath = $env:SystemRoot +")
+    expect(auditScript).toContain('[System.IO.File]::GetAccessControl')
+    expect(auditScript).not.toContain('Get-Acl')
+  })
+
+  test('uses the directory ACL API for protected workspace verification', async () => {
+    const currentUserSid = 'S-1-5-21-111-222-333-1001'
+    const runCommand = jest.fn(async () => ({
+      stdout: JSON.stringify({
+        OwnerSid: currentUserSid,
+        Protected: true,
+        Rules: [
+          { Sid: currentUserSid, Type: 'Allow', Rights: 'FullControl', Inherited: false },
+          { Sid: 'S-1-5-18', Type: 'Allow', Rights: 'FullControl', Inherited: false },
+          { Sid: 'S-1-5-32-544', Type: 'Allow', Rights: 'FullControl', Inherited: false },
+        ],
+      }),
+      stderr: '',
+    }))
+
+    await verifyRestrictedWindowsAcl('C:\\restricted\\sandbox', true, {
+      platform: 'win32',
+      currentUserSid,
+      runCommand,
+    })
+
+    const auditScript = (runCommand.mock.calls[0]?.[1] as string[]).join(' ')
+    expect(auditScript).toContain("$env:PSModulePath = $env:SystemRoot +")
+    expect(auditScript).toContain('[System.IO.Directory]::GetAccessControl')
+    expect(auditScript).not.toContain('Get-Acl')
+  })
+
+  test('uses trusted System32 commands with a minimal child environment', async () => {
+    const currentUserSid = 'S-1-5-21-111-222-333-1001'
+    const executeFile = jest.fn(
+      (
+        _command: string,
+        _args: readonly string[],
+        _options: { env: NodeJS.ProcessEnv },
+        callback: (
+          error: NodeJS.ErrnoException | null,
+          stdout: string | Buffer,
+          stderr: string | Buffer
+        ) => void
+      ) => {
+        callback(
+          null,
+          JSON.stringify({
+            OwnerSid: currentUserSid,
+            Protected: true,
+            Rules: [
+              { Sid: currentUserSid, Type: 'Allow', Rights: 'FullControl', Inherited: false },
+              { Sid: 'S-1-5-18', Type: 'Allow', Rights: 'FullControl', Inherited: false },
+              {
+                Sid: 'S-1-5-32-544',
+                Type: 'Allow',
+                Rights: 'FullControl',
+                Inherited: false,
+              },
+            ],
+          }),
+          ''
+        )
+      }
+    )
+
+    await verifyRestrictedWindowsAcl('C:\\restricted\\runtime.wsb', false, {
+      platform: 'win32',
+      currentUserSid,
+      environment: {
+        sYsTeMrOoT: 'C:\\Windows',
+        WINDIR: 'c:\\windows\\',
+        Temp: 'C:\\trusted-temp',
+        tMp: 'C:\\trusted-tmp',
+        PATH: 'C:\\attacker-controlled-bin',
+        PSModulePath: 'C:\\attacker-controlled-modules',
+        HOST_AGENT_API_KEY: 'secret-must-not-enter-child-environment',
+        RUNTIME_API_KEY: 'secret-must-not-enter-child-environment',
+      },
+      execFile: executeFile,
+    })
+
+    const [command, args, options] = executeFile.mock.calls[0]!
+    expect(command).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
+    expect(args).toEqual(expect.arrayContaining(['-NoProfile', '-NonInteractive', '-Command']))
+    expect(options.env).toEqual({
+      HOMEDRIVE: 'C:',
+      HOMEPATH: '\\',
+      LOGONSERVER: '',
+      PATH: 'C:\\Windows\\System32',
+      PSModulePath: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',
+      SYSTEMDRIVE: 'C:',
+      SystemRoot: 'C:\\Windows',
+      TEMP: 'C:\\trusted-temp',
+      TMP: 'C:\\trusted-tmp',
+      USERDOMAIN: '',
+      USERNAME: '',
+      USERPROFILE: '',
+      windir: 'C:\\Windows',
+    })
+    expect(options.env.HOST_AGENT_API_KEY).toBeUndefined()
+    expect(options.env.RUNTIME_API_KEY).toBeUndefined()
+  })
+
+  test('resolves Windows Sandbox diagnostics and launch data from an injected non-C SystemRoot', () => {
+    expect(
+      resolveWindowsSandboxLaunchCommand({
+        SystemRoot: 'D:\\Windows',
+        windir: 'd:\\windows\\',
+        TEMP: 'D:\\trusted-temp',
+        TMP: 'D:\\trusted-tmp',
+        PATH: 'C:\\attacker-controlled-bin',
+        PSModulePath: 'C:\\attacker-controlled-modules',
+        HOST_AGENT_API_KEY: 'secret-must-not-enter-child-environment',
+      })
+    ).toEqual({
+      command: 'D:\\Windows\\System32\\WindowsSandbox.exe',
+      env: {
+        HOMEDRIVE: 'D:',
+        HOMEPATH: '\\',
+        LOGONSERVER: '',
+        PATH: 'D:\\Windows\\System32',
+        PSModulePath: 'D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',
+        SYSTEMDRIVE: 'D:',
+        SystemRoot: 'D:\\Windows',
+        TEMP: 'D:\\trusted-temp',
+        TMP: 'D:\\trusted-tmp',
+        USERDOMAIN: '',
+        USERNAME: '',
+        USERPROFILE: '',
+        windir: 'D:\\Windows',
+      },
+    })
+  })
+
+  test('rejects inconsistent or relative Windows system roots before command execution', async () => {
+    const currentUserSid = 'S-1-5-21-111-222-333-1001'
+    const executeFile = jest.fn()
+
+    await expect(
+      verifyRestrictedWindowsAcl('C:\\restricted\\runtime.wsb', false, {
+        platform: 'win32',
+        currentUserSid,
+        environment: { SystemRoot: 'C:\\Windows', windir: 'D:\\Windows' },
+        execFile: executeFile,
+      })
+    ).rejects.toThrow('SystemRoot and windir must resolve to the same Windows directory')
+    await expect(
+      verifyRestrictedWindowsAcl('C:\\restricted\\runtime.wsb', false, {
+        platform: 'win32',
+        currentUserSid,
+        environment: { SystemRoot: 'relative-windows-root' },
+        execFile: executeFile,
+      })
+    ).rejects.toThrow('A trusted drive-qualified local Windows SystemRoot is required')
+
+    for (const unsafeSystemRoot of [
+      '\\\\attacker.example\\share\\Windows',
+      '\\Windows',
+      '\\\\?\\C:\\Windows',
+    ]) {
+      await expect(
+        verifyRestrictedWindowsAcl('C:\\restricted\\runtime.wsb', false, {
+          platform: 'win32',
+          currentUserSid,
+          environment: { SystemRoot: unsafeSystemRoot },
+          execFile: executeFile,
+        })
+      ).rejects.toThrow('A trusted drive-qualified local Windows SystemRoot is required')
+    }
+    expect(executeFile).not.toHaveBeenCalled()
   })
 
   test('rejects an explicit Everyone allow ACE during normalized verification', async () => {
@@ -1227,4 +1479,99 @@ describe('Windows Sandbox key-bearing config hardening', () => {
     expect(await runIcacls([sandboxDir])).not.toContain('(I)')
     expect(await runIcacls([filePath])).not.toContain('(I)')
   })
+
+  windowsOnlyTest(
+    'prevents libuv from restoring poisoned parent search paths or API secrets',
+    async () => {
+      const systemRoot = process.env.SystemRoot || process.env.windir
+      if (!systemRoot) {
+        throw new Error('The Windows test runner did not provide SystemRoot or windir')
+      }
+
+      const sentinel = 'RIKUNE_POISONED_PARENT_ENVIRONMENT_SENTINEL'
+      const poisonedKeys = [
+        'PATH',
+        'PSModulePath',
+        'HOST_AGENT_API_KEY',
+        'RUNTIME_API_KEY',
+      ] as const
+      const previousValues = new Map(poisonedKeys.map((key) => [key, process.env[key]] as const))
+      const trustedCommand = resolveTrustedWindowsCommand('powershell.exe', {
+        SystemRoot: systemRoot,
+        windir: systemRoot,
+        TEMP: process.env.TEMP,
+        TMP: process.env.TMP,
+        PATH: sentinel,
+        PSModulePath: sentinel,
+        HOST_AGENT_API_KEY: sentinel,
+        RUNTIME_API_KEY: sentinel,
+      })
+
+      try {
+        for (const key of poisonedKeys) {
+          process.env[key] = sentinel
+        }
+        const inspectedKeys = [
+          ...LIBUV_WINDOWS_REQUIRED_ENV_KEYS,
+          'PSModulePath',
+          'TMP',
+          'HOST_AGENT_API_KEY',
+          'RUNTIME_API_KEY',
+        ]
+        const powerShellScript = [
+          `$names = @(${inspectedKeys.map((key) => `'${key}'`).join(',')})`,
+          `foreach ($name in $names) {`,
+          `  $value = [Environment]::GetEnvironmentVariable($name)`,
+          `  [Console]::Out.WriteLine(('{0}={1}' -f $name, $value))`,
+          `}`,
+        ].join('\n')
+        const stdout = await new Promise<string>((resolve, reject) => {
+          execFile(
+            trustedCommand.command,
+            [
+              '-NoLogo',
+              '-NoProfile',
+              '-NonInteractive',
+              '-Command',
+              buildTrustedWindowsPowerShellScript(powerShellScript),
+            ],
+            { windowsHide: true, env: trustedCommand.env },
+            (error, output, stderr) => {
+              if (error) {
+                reject(new Error(stderr.toString() || error.message))
+                return
+              }
+              resolve(output.toString())
+            }
+          )
+        })
+        const observedEnvironment = Object.fromEntries(
+          stdout
+            .trim()
+            .split(/\r?\n/u)
+            .map((line) => {
+              const separator = line.indexOf('=')
+              return [line.slice(0, separator), line.slice(separator + 1)]
+            })
+        )
+
+        expect(observedEnvironment.PATH.toLowerCase()).toBe(trustedCommand.env.PATH!.toLowerCase())
+        expect(observedEnvironment.PSModulePath.toLowerCase()).toBe(
+          trustedCommand.env.PSModulePath!.toLowerCase()
+        )
+        expect(observedEnvironment.HOST_AGENT_API_KEY).toBe('')
+        expect(observedEnvironment.RUNTIME_API_KEY).toBe('')
+        expect(Object.values(observedEnvironment).join('\n')).not.toContain(sentinel)
+      } finally {
+        for (const key of poisonedKeys) {
+          const previousValue = previousValues.get(key)
+          if (previousValue === undefined) {
+            delete process.env[key]
+          } else {
+            process.env[key] = previousValue
+          }
+        }
+      }
+    }
+  )
 })

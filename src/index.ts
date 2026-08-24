@@ -5,10 +5,15 @@
  * Entry point
  */
 
-import { resolve as resolvePath } from 'node:path'
+import { dirname, resolve as resolvePath } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { assertSupportedAnalyzerPlatform } from './analyzer-platform.js'
+import {
+  assertSupportedAnalyzerFilesystem,
+  type AnalyzerCustodyRoot,
+} from './analyzer-filesystem.js'
 import { MCPServer } from './core/server.js'
-import { loadConfig } from './config.js'
+import { loadConfig, type Config } from './config.js'
 import { WorkspaceManager } from './workspace-manager.js'
 import { DatabaseManager } from './database.js'
 import { PolicyGuard } from './policy-guard.js'
@@ -47,10 +52,30 @@ export { WorkspaceManager } from './workspace-manager.js'
 export * from './types.js'
 export { RikuneError, ErrorCode, toRikuneError, isRikuneError } from './errors.js'
 
+function getAnalyzerCustodyRoots(config: Config): AnalyzerCustodyRoot[] {
+  const roots: AnalyzerCustodyRoot[] = [
+    { name: 'workspace.root', path: config.workspace.root },
+    { name: 'cache.root', path: config.cache.root },
+    { name: 'logging.auditPath', path: dirname(resolvePath(config.logging.auditPath)) },
+    { name: 'api.storageRoot', path: config.api.storageRoot },
+    { name: 'workers.ghidra.projectRoot', path: config.workers.ghidra.projectRoot },
+    { name: 'workers.ghidra.logRoot', path: config.workers.ghidra.logRoot },
+  ]
+  if (config.database.type === 'sqlite') {
+    roots.push({ name: 'database.path', path: dirname(resolvePath(config.database.path)) })
+  }
+  return roots
+}
+
+function loadValidatedAnalyzerConfig(): Config {
+  const config = loadConfig(process.env.CONFIG_PATH)
+  assertSupportedAnalyzerFilesystem(getAnalyzerCustodyRoots(config))
+  return config
+}
+
 async function runHealthCheck(): Promise<void> {
-  const configPath = process.env.CONFIG_PATH
-  const config = loadConfig(configPath)
-  prepareGhidraRuntimeDirectories()
+  const config = loadValidatedAnalyzerConfig()
+  prepareGhidraRuntimeDirectories(config)
 
   const workspaceManager = new WorkspaceManager(config.workspace.root)
   const database = new DatabaseManager(config.database.path)
@@ -135,15 +160,16 @@ async function runHealthCheck(): Promise<void> {
 
 export async function startRikuneServer(): Promise<void> {
   try {
+    assertSupportedAnalyzerPlatform(process.platform)
+
     if (process.argv.includes('--health-check')) {
       await runHealthCheck()
       process.exit(0)
     }
 
     // Load configuration
-    const configPath = process.env.CONFIG_PATH
-    const config = loadConfig(configPath)
-    prepareGhidraRuntimeDirectories()
+    const config = loadValidatedAnalyzerConfig()
+    prepareGhidraRuntimeDirectories(config)
 
     // Initialize components
     const workspaceManager = new WorkspaceManager(config.workspace.root)
@@ -293,11 +319,12 @@ export async function startRikuneServer(): Promise<void> {
         return
       }
 
-      // auto-sandbox mode: only possible on Windows host directly
+      // Retained for configuration compatibility. Supported v1.4.0 Analyzer
+      // processes are Linux-only and therefore refuse this mode below.
       if (config.runtime.mode === 'auto-sandbox') {
         if (process.platform !== 'win32') {
           logger.warn(
-            'Auto-sandbox mode requires Windows host; dynamic tools will be unavailable on this platform'
+            'Auto-sandbox has no supported v1.4.0 Analyzer topology; dynamic tools will be unavailable'
           )
           return
         }
