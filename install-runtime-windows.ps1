@@ -273,28 +273,56 @@ function Assert-ProtectedRuntimeEnvFile {
         $true,
         [System.Security.Principal.SecurityIdentifier]
     ))
-    $fullControl = [System.Security.AccessControl.FileSystemRights]::FullControl
-    $hasCurrentUserFullControl = $false
-    foreach ($rule in $rules) {
-        if ($rule.IsInherited -or
-            $rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow -or
-            $rule.IdentityReference.Value -ne $currentSid) {
-            throw "Runtime environment file ACL contains an inherited, denied, or unexpected identity entry"
-        }
-        if (($rule.FileSystemRights -band $fullControl) -eq $fullControl) {
-            $hasCurrentUserFullControl = $true
-        }
+    if ($rules.Count -ne 1) {
+        throw "Runtime environment file must have exactly one ACL entry"
     }
-    if (-not $hasCurrentUserFullControl) {
-        throw "Runtime environment file must grant FullControl to the current Windows user"
+    $rule = $rules[0]
+    if ($rule.IsInherited -or
+        $rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow -or
+        $rule.IdentityReference.Value -ne $currentSid -or
+        $rule.FileSystemRights -ne [System.Security.AccessControl.FileSystemRights]::FullControl -or
+        $rule.InheritanceFlags -ne [System.Security.AccessControl.InheritanceFlags]::None -or
+        $rule.PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None) {
+        throw "Runtime environment file ACL must grant only the current Windows user FullControl"
     }
+}
+
+function New-ExactAclRuntimeEnvStream {
+    param([string]$Path)
+
+    $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    if ($null -eq $currentSid) {
+        throw "Unable to resolve the current Windows user SID"
+    }
+
+    $security = [System.Security.AccessControl.FileSecurity]::new()
+    $security.SetOwner($currentSid)
+    $security.SetAccessRuleProtection($true, $false)
+    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+        $currentSid,
+        [System.Security.AccessControl.FileSystemRights]::FullControl,
+        [System.Security.AccessControl.InheritanceFlags]::None,
+        [System.Security.AccessControl.PropagationFlags]::None,
+        [System.Security.AccessControl.AccessControlType]::Allow
+    )
+    $security.SetAccessRule($rule)
+
+    return [System.IO.FileSystemAclExtensions]::Create(
+        [System.IO.FileInfo]::new($Path),
+        [System.IO.FileMode]::CreateNew,
+        [System.Security.AccessControl.FileSystemRights]::FullControl,
+        [System.IO.FileShare]::None,
+        4096,
+        [System.IO.FileOptions]::WriteThrough,
+        $security
+    )
 }
 
 function Write-SecureRuntimeEnvFile {
     param(
         [string]$Path,
         [string]$Content,
-        [string]$IcaclsPath
+        [scriptblock]$SecureFileCreator
     )
 
     $absolutePath = [System.IO.Path]::GetFullPath($Path)
@@ -306,27 +334,26 @@ function Write-SecureRuntimeEnvFile {
 
     $temporaryPath = Join-Path $parent ".$([System.IO.Path]::GetFileName($absolutePath)).$PID.$([Guid]::NewGuid().ToString('N')).tmp"
     $destinationReplaced = $false
+    $stream = $null
     try {
-        $stream = [System.IO.File]::Open($temporaryPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-        $stream.Dispose()
+        if ($null -eq $SecureFileCreator) {
+            $SecureFileCreator = {
+                param([string]$TargetPath)
+                New-ExactAclRuntimeEnvStream -Path $TargetPath
+            }
+        }
 
-        $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-        if ([string]::IsNullOrWhiteSpace($IcaclsPath)) {
-            $IcaclsPath = Join-Path ([Environment]::SystemDirectory) "icacls.exe"
+        $stream = & $SecureFileCreator $temporaryPath
+        if ($stream -isnot [System.IO.FileStream] -or -not $stream.CanWrite) {
+            throw "Secure runtime environment creator must return a writable FileStream"
         }
-        if (-not (Test-Path -LiteralPath $IcaclsPath -PathType Leaf)) {
-            throw "Trusted System32 icacls.exe was not found"
-        }
-        & $IcaclsPath $temporaryPath /inheritance:r /grant:r "*${currentSid}:(F)" *> $null
-        if ($LASTEXITCODE -ne 0) { throw "Unable to restrict ACL on runtime environment temp file" }
-        & $IcaclsPath $temporaryPath /setowner "*$currentSid" *> $null
-        if ($LASTEXITCODE -ne 0) { throw "Unable to set the owner on runtime environment temp file" }
         Assert-ProtectedRuntimeEnvFile -Path $temporaryPath
 
-        [System.IO.File]::WriteAllText($temporaryPath, $Content, [System.Text.UTF8Encoding]::new($false))
-        $stream = [System.IO.File]::Open($temporaryPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+        $contentBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($Content)
+        $stream.Write($contentBytes, 0, $contentBytes.Length)
         $stream.Flush($true)
         $stream.Dispose()
+        $stream = $null
 
         [System.IO.File]::Move($temporaryPath, $absolutePath, $true)
         $destinationReplaced = $true
@@ -340,6 +367,9 @@ function Write-SecureRuntimeEnvFile {
         }
         throw
     } finally {
+        if ($null -ne $stream) {
+            $stream.Dispose()
+        }
         if (Test-Path -LiteralPath $temporaryPath) {
             Remove-Item -LiteralPath $temporaryPath -Force
         }

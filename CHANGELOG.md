@@ -77,6 +77,8 @@ Versioning where practical.
   remaining budget through PowerShell, `netsh`, ACL, readiness, and Hyper-V calls, and added
   request-correlated status reconciliation so late or ambiguous responses cannot orphan resources
   or conceal failed cleanup.
+- Made Windows runtime environment temp files acquire their exact current-user-only DACL atomically
+  at `CreateNew`, before any secret bytes are written, and re-verified the ACL after replacement.
 - Disabled bundled and Docker-based Qiling installation after its supported dependency chain was
   proven to require vulnerable Pillow versions below the v1.4.0 baseline. Qiling remains available
   only through an independently audited BYO interpreter configured with `QILING_PYTHON`.

@@ -101,6 +101,7 @@ $runtimeHelperNames = @(
     "Resolve-RuntimeWorkspaceRoot",
     "Assert-RegularNonReparseRuntimeEnvPath",
     "Assert-ProtectedRuntimeEnvFile",
+    "New-ExactAclRuntimeEnvStream",
     "Write-SecureRuntimeEnvFile",
     "Resolve-PinnedPm2Command"
 )
@@ -575,23 +576,53 @@ Assert-Contract ($null -ne $lockPm2) "package-lock.json is missing node_modules/
 Assert-Contract ([string]$lockRoot["devDependencies"]["pm2"] -eq $expectedPm2Version) "package-lock.json root PM2 pin must match package.json"
 Assert-Contract ([string]$lockPm2["version"] -eq $expectedPm2Version) "package-lock.json installed PM2 version must match the exact root pin"
 
+$secureCreatorSource = $runtimeHelperAsts["New-ExactAclRuntimeEnvStream"].Extent.Text
+foreach ($requiredFragment in @(
+    "FileSecurity]::new()",
+    "SetOwner(`$currentSid)",
+    "SetAccessRuleProtection(`$true, `$false)",
+    "FileSystemAccessRule]::new(",
+    "FileSystemRights]::FullControl",
+    "InheritanceFlags]::None",
+    "PropagationFlags]::None",
+    "AccessControlType]::Allow",
+    "SetAccessRule(`$rule)",
+    "FileSystemAclExtensions]::Create(",
+    "FileMode]::CreateNew",
+    "FileShare]::None",
+    "FileOptions]::WriteThrough"
+)) {
+    Assert-Contract ($secureCreatorSource.Contains($requiredFragment)) "New-ExactAclRuntimeEnvStream is missing '$requiredFragment'"
+}
+Assert-Contract (
+    $secureCreatorSource -match 'FileOptions\]::WriteThrough,\s*\$security\s*\)'
+) "New-ExactAclRuntimeEnvStream must pass the exact FileSecurity descriptor to Create"
+
 $secureWriterSource = $runtimeHelperAsts["Write-SecureRuntimeEnvFile"].Extent.Text
 foreach ($requiredFragment in @(
-    "FileMode]::CreateNew",
-    "icacls.exe",
-    "/inheritance:r",
-    "/grant:r",
-    "UTF8Encoding]::new(`$false)",
+    "New-ExactAclRuntimeEnvStream -Path `$TargetPath",
+    "Assert-ProtectedRuntimeEnvFile -Path `$temporaryPath",
+    "UTF8Encoding]::new(`$false).GetBytes(`$Content)",
+    "`$stream.Write(`$contentBytes, 0, `$contentBytes.Length)",
+    "`$stream.Flush(`$true)",
     "File]::Move(`$temporaryPath, `$absolutePath, `$true)"
 )) {
     Assert-Contract ($secureWriterSource.Contains($requiredFragment)) "Write-SecureRuntimeEnvFile is missing '$requiredFragment'"
 }
-$aclIndex = $secureWriterSource.IndexOf("icacls.exe", [System.StringComparison]::Ordinal)
-$secretWriteIndex = $secureWriterSource.IndexOf("WriteAllText", [System.StringComparison]::Ordinal)
+$secureCreateIndex = $secureWriterSource.IndexOf("& `$SecureFileCreator `$temporaryPath", [System.StringComparison]::Ordinal)
+$aclVerifyIndex = $secureWriterSource.IndexOf("Assert-ProtectedRuntimeEnvFile -Path `$temporaryPath", [System.StringComparison]::Ordinal)
+$secretWriteIndex = $secureWriterSource.IndexOf("`$stream.Write(`$contentBytes", [System.StringComparison]::Ordinal)
+$durableFlushIndex = $secureWriterSource.IndexOf("`$stream.Flush(`$true)", [System.StringComparison]::Ordinal)
 $atomicMoveIndex = $secureWriterSource.IndexOf("File]::Move", [System.StringComparison]::Ordinal)
+$targetVerifyIndex = $secureWriterSource.LastIndexOf("Assert-ProtectedRuntimeEnvFile -Path `$absolutePath", [System.StringComparison]::Ordinal)
 Assert-Contract (
-    $aclIndex -ge 0 -and $secretWriteIndex -gt $aclIndex -and $atomicMoveIndex -gt $secretWriteIndex
-) "Runtime env writer must restrict the empty temp file before writing the secret and atomically replacing the destination"
+    $secureCreateIndex -ge 0 -and
+    $aclVerifyIndex -gt $secureCreateIndex -and
+    $secretWriteIndex -gt $aclVerifyIndex -and
+    $durableFlushIndex -gt $secretWriteIndex -and
+    $atomicMoveIndex -gt $durableFlushIndex -and
+    $targetVerifyIndex -gt $atomicMoveIndex
+) "Runtime env writer must atomically create with an exact ACL, verify, write, durably flush, atomically replace, and re-verify in order"
 
 $nodeWriter = Join-Path $projectRoot "scripts/write-docker-runtime-env.mjs"
 $nodeWriterSource = [System.IO.File]::ReadAllText($nodeWriter)
@@ -646,25 +677,22 @@ if ($IsWindows) {
 
         $acl = Get-Acl -LiteralPath $Path
         Assert-Contract $acl.AreAccessRulesProtected "$Description must have ACL inheritance disabled"
-        Assert-Contract (
-            @($acl.Access | Where-Object { $_.IsInherited }).Count -eq 0
-        ) "$Description must not retain inherited ACL entries"
-
-        foreach ($broadSid in @("S-1-1-0", "S-1-5-11", "S-1-5-32-545")) {
-            Assert-Contract (
-                @(Get-AllowRulesForSid -Acl $acl -Sid $broadSid).Count -eq 0
-            ) "$Description must not grant broad access to SID $broadSid"
-        }
-
         $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-        $currentRules = @(Get-AllowRulesForSid -Acl $acl -Sid $currentSid)
-        $fullControl = [System.Security.AccessControl.FileSystemRights]::FullControl
-        $hasFullControl = @(
-            $currentRules | Where-Object {
-                ($_.FileSystemRights -band $fullControl) -eq $fullControl
-            }
-        ).Count -gt 0
-        Assert-Contract $hasFullControl "$Description must grant FullControl to the current Windows identity"
+        $rules = @($acl.GetAccessRules(
+            $true,
+            $true,
+            [System.Security.Principal.SecurityIdentifier]
+        ))
+        Assert-Contract ($rules.Count -eq 1) "$Description must have exactly one ACL entry"
+        $rule = $rules[0]
+        Assert-Contract (
+            -not $rule.IsInherited -and
+            $rule.IdentityReference.Value -eq $currentSid -and
+            $rule.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and
+            $rule.FileSystemRights -eq [System.Security.AccessControl.FileSystemRights]::FullControl -and
+            $rule.InheritanceFlags -eq [System.Security.AccessControl.InheritanceFlags]::None -and
+            $rule.PropagationFlags -eq [System.Security.AccessControl.PropagationFlags]::None
+        ) "$Description must grant only the current Windows identity FullControl"
     }
 
     function Add-LegacyEveryoneAce {
@@ -729,14 +757,47 @@ if ($IsWindows) {
             Write-SecureRuntimeEnvFile `
                 -Path $failureTarget `
                 -Content "SECRET_MUST_NOT_REPLACE_TARGET=true`n" `
-                -IcaclsPath (Join-Path $aclTestRoot "missing-icacls.exe")
-        } "PowerShell runtime env writer must fail closed when trusted ACL tooling is unavailable"
+                -SecureFileCreator {
+                    param([string]$TemporaryPath)
+
+                    $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+                    $security = [System.Security.AccessControl.FileSecurity]::new()
+                    $security.SetOwner($currentSid)
+                    $security.SetAccessRuleProtection($true, $false)
+                    foreach ($sid in @(
+                        $currentSid,
+                        [System.Security.Principal.SecurityIdentifier]::new("S-1-1-0")
+                    )) {
+                        $security.AddAccessRule(
+                            [System.Security.AccessControl.FileSystemAccessRule]::new(
+                                $sid,
+                                [System.Security.AccessControl.FileSystemRights]::FullControl,
+                                [System.Security.AccessControl.InheritanceFlags]::None,
+                                [System.Security.AccessControl.PropagationFlags]::None,
+                                [System.Security.AccessControl.AccessControlType]::Allow
+                            )
+                        )
+                    }
+                    return [System.IO.FileSystemAclExtensions]::Create(
+                        [System.IO.FileInfo]::new($TemporaryPath),
+                        [System.IO.FileMode]::CreateNew,
+                        [System.Security.AccessControl.FileSystemRights]::FullControl,
+                        [System.IO.FileShare]::None,
+                        4096,
+                        [System.IO.FileOptions]::WriteThrough,
+                        $security
+                    )
+                }
+        } "PowerShell runtime env writer must reject an insecure creator before writing secret content"
         Assert-Contract (
             [System.IO.File]::ReadAllText($failureTarget) -eq $failureOriginalContent
-        ) "ACL failure must leave the previous runtime env target untouched"
+        ) "Insecure creator rejection must leave the previous runtime env target untouched"
+        Assert-Contract (
+            -not [System.IO.File]::ReadAllText($failureTarget).Contains("SECRET_MUST_NOT_REPLACE_TARGET")
+        ) "Insecure creator rejection must happen before secret content is written"
         Assert-Contract (
             @(Get-ChildItem -LiteralPath $aclTestRoot -Filter "*.tmp" -Force).Count -eq 0
-        ) "ACL failure must clean the PowerShell runtime env temporary file"
+        ) "Insecure creator rejection must clean the PowerShell runtime env temporary file"
 
         [System.IO.File]::WriteAllText(
             $targetPath,
