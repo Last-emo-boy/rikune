@@ -522,6 +522,271 @@ describe('Docker runtime env writer', () => {
     }
   })
 
+  test('recognizes fixed legacy English PowerShell initialization resource shapes', () => {
+    const target = 'C:\\secure\\resource-shape.env'
+    const environment = { SystemRoot: 'C:\\Windows' }
+    const powershell = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+    const cases = [
+      {
+        name: 'CLR load',
+        expected: 'legacy-en-clr-load-shape',
+        canaries: ['v4.0.30319', '3'],
+        stderr:
+          'Version v4.0.30319 of the .NET Framework is not installed and it is required to run version 3 of Windows PowerShell.\r\n',
+      },
+      {
+        name: 'CLR load with an arbitrary printable runtime request',
+        expected: 'legacy-en-clr-load-shape',
+        canaries: ['custom-runtime-build', '3.1'],
+        stderr:
+          'Version custom-runtime-build of the .NET Framework is not installed and it is required to run version 3.1 of Windows PowerShell.\r\n',
+      },
+      {
+        name: 'CLR start with a failing HRESULT',
+        expected: 'legacy-en-clr-start-shape',
+        canaries: ['80004005'],
+        stderr: 'Starting the CLR failed with HRESULT 80004005.\r\n',
+      },
+      {
+        name: 'AppDomain with eight hex digits',
+        expected: 'legacy-en-appdomain-shape',
+        canaries: ['8007000e'],
+        stderr:
+          'Internal Windows PowerShell error.  Default CLR domain initialization failed with error 8007000e.\r\n',
+      },
+      {
+        name: 'AppDomain null result with a zero HRESULT',
+        expected: 'legacy-en-appdomain-shape',
+        canaries: [],
+        stderr:
+          'Internal Windows PowerShell error.  Default CLR domain initialization failed with error 0.\r\n',
+      },
+      {
+        name: 'managed entry load',
+        expected: 'legacy-en-managed-entry-shape',
+        canaries: ['ff'],
+        stderr:
+          'Internal Windows PowerShell error.  Loading managed Windows PowerShell failed with error ff.\r\n',
+      },
+      {
+        name: 'managed entry dispatch lookup',
+        expected: 'legacy-en-managed-entry-shape',
+        canaries: ['badf00d'],
+        stderr:
+          'Internal Windows PowerShell error.  Retrieving Dispatch ID for managed Windows PowerShell entrance method failed with error badf00d.\r\n',
+      },
+      {
+        name: 'managed entry invocation',
+        expected: 'legacy-en-managed-entry-shape',
+        canaries: ['80004005'],
+        stderr:
+          'Internal Windows PowerShell error.  Invoking managed Windows PowerShell failed with error 80004005.\r\n',
+      },
+      {
+        name: 'managed exception wrapper',
+        expected: 'legacy-en-managed-entry-shape',
+        canaries: ['managed-sensitive-description'],
+        stderr:
+          'Windows PowerShell terminated with the following error: \r\n managed-sensitive-description\r\n',
+      },
+      {
+        name: 'managed exception wrapper whose dynamic description ends with CRLF',
+        expected: 'legacy-en-managed-entry-shape',
+        canaries: ['managed-multiline-description'],
+        stderr:
+          'Windows PowerShell terminated with the following error: \r\n managed-multiline-description\r\n\r\n',
+      },
+      {
+        name: 'ConsoleHost startup',
+        expected: 'legacy-en-consolehost-startup-shape',
+        canaries: ['consolehost-sensitive-description'],
+        stderr:
+          'The shell cannot be started. A failure occurred during initialization:\r\nconsolehost-sensitive-description\r\n',
+      },
+      {
+        name: 'ConsoleHost startup with an empty inner exception message',
+        expected: 'legacy-en-consolehost-startup-shape',
+        canaries: [],
+        stderr: 'The shell cannot be started. A failure occurred during initialization:\r\n\r\n',
+      },
+    ]
+
+    for (const testCase of cases) {
+      let failure: unknown
+      try {
+        invokeWindowsFileAcl(target, 'verify', {
+          environment,
+          powershell,
+          failurePhase: 'snapshot-match',
+          spawn: () => ({
+            status: 0xffff0000,
+            stdout: Buffer.alloc(0),
+            stderr: Buffer.from(testCase.stderr, 'utf16le'),
+          }),
+        })
+      } catch (error) {
+        failure = error
+      }
+
+      expect(failure).toBeInstanceOf(Error)
+      const message = (failure as Error).message
+      expect(message).toBe(
+        `RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL (child-status=0xFFFF0000; child-stderr=${testCase.expected})`
+      )
+      for (const canary of testCase.canaries) {
+        expect(message).not.toContain(canary)
+      }
+      expect(message).not.toContain(testCase.stderr)
+    }
+
+    const knownShape = Buffer.from('Starting the CLR failed with HRESULT 8007000e.\r\n', 'utf16le')
+    expect(() =>
+      invokeWindowsFileAcl(target, 'verify', {
+        environment,
+        powershell,
+        failurePhase: 'snapshot-match',
+        spawn: () => ({
+          status: 9,
+          stdout: Buffer.alloc(0),
+          stderr: knownShape,
+        }),
+      })
+    ).toThrow(
+      'RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL (child-status=0x00000009)'
+    )
+    expect(() =>
+      invokeWindowsFileAcl(target, 'verify', {
+        environment,
+        powershell,
+        failurePhase: 'snapshot-match',
+        spawn: () => ({
+          status: -65536,
+          stdout: Buffer.from('unexpected', 'utf8'),
+          stderr: knownShape,
+        }),
+      })
+    ).toThrow(
+      'RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL (child-status=0xFFFF0000; child-stderr=opaque)'
+    )
+  })
+
+  test('falls back for partial, ambiguous, and unsupported UTF-16LE initialization text', () => {
+    const target = 'C:\\secure\\resource-near-miss.env'
+    const environment = { SystemRoot: 'C:\\Windows' }
+    const powershell = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+    const knownStart = 'Starting the CLR failed with HRESULT 8007000e.\r\n'
+    const cases = [
+      {
+        name: 'uncalled CLR bind resource',
+        stderr: 'CLR initialization failed with error 8007000e.\r\n',
+      },
+      {
+        name: 'nine hex digits',
+        stderr: 'Starting the CLR failed with HRESULT 18007000e.\r\n',
+      },
+      {
+        name: 'non-hex HRESULT',
+        stderr: 'Starting the CLR failed with HRESULT 8007000g.\r\n',
+      },
+      {
+        name: 'uppercase HRESULT',
+        stderr: 'Starting the CLR failed with HRESULT BADF00D.\r\n',
+      },
+      {
+        name: 'missing period',
+        stderr: 'Starting the CLR failed with HRESULT 8007000e\r\n',
+      },
+      {
+        name: 'missing resource terminator CRLF',
+        stderr: knownStart.slice(0, -2),
+      },
+      {
+        name: 'fixed resource with an extra trailing CRLF',
+        stderr: `${knownStart}\r\n`,
+      },
+      {
+        name: 'one UTF-16LE pair differs in the fixed prefix',
+        stderr: 'Starting the ClR failed with HRESULT 8007000e.\r\n',
+      },
+      {
+        name: 'extra leading content',
+        stderr: `unexpected\r\n${knownStart}`,
+      },
+      {
+        name: 'extra trailing content',
+        stderr: `${knownStart}unexpected`,
+      },
+      {
+        name: 'concatenated fixed resources',
+        stderr: `${knownStart}${knownStart}`,
+      },
+      {
+        name: 'non-numeric Windows PowerShell version',
+        stderr:
+          'Version v4.0.30319 of the .NET Framework is not installed and it is required to run version 3_beta of Windows PowerShell.\r\n',
+      },
+      {
+        name: 'empty Windows PowerShell version segment',
+        stderr:
+          'Version v4.0.30319 of the .NET Framework is not installed and it is required to run version 3..1 of Windows PowerShell.\r\n',
+      },
+      {
+        name: 'empty first CLR version',
+        stderr:
+          'Version  of the .NET Framework is not installed and it is required to run version 3 of Windows PowerShell.\r\n',
+      },
+      {
+        name: 'empty Windows PowerShell version',
+        stderr:
+          'Version v4.0.30319 of the .NET Framework is not installed and it is required to run version  of Windows PowerShell.\r\n',
+      },
+      {
+        name: 'ambiguous repeated CLR load middle fragment',
+        stderr:
+          'Version runtime of the .NET Framework is not installed and it is required to run version injected of the .NET Framework is not installed and it is required to run version 3 of Windows PowerShell.\r\n',
+      },
+      {
+        name: 'managed wrapper without description',
+        stderr: 'Windows PowerShell terminated with the following error: \r\n ',
+      },
+      {
+        name: 'managed wrapper without terminating CRLF',
+        stderr:
+          'Windows PowerShell terminated with the following error: \r\n managed-sensitive-description',
+      },
+      {
+        name: 'ConsoleHost header without description',
+        stderr: 'The shell cannot be started. A failure occurred during initialization:\r\n',
+      },
+      {
+        name: 'ConsoleHost message without terminating CRLF',
+        stderr:
+          'The shell cannot be started. A failure occurred during initialization:\r\nconsolehost-sensitive-description',
+      },
+      {
+        name: 'localized ASCII text',
+        stderr: 'No se puede iniciar el shell porque fallo la inicializacion.\r\n',
+      },
+    ]
+
+    for (const testCase of cases) {
+      expect(() =>
+        invokeWindowsFileAcl(target, 'verify', {
+          environment,
+          powershell,
+          failurePhase: 'snapshot-match',
+          spawn: () => ({
+            status: -65536,
+            stdout: Buffer.alloc(0),
+            stderr: Buffer.from(testCase.stderr, 'utf16le'),
+          }),
+        })
+      ).toThrow(
+        'RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL (child-status=0xFFFF0000; child-stderr=ascii-nul-le-shape)'
+      )
+    }
+  })
+
   test('generates one strong analyzer key and writes both server and client settings', () => {
     const target = createTarget()
     const result = write(target)

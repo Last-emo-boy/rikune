@@ -108,6 +108,56 @@ const WINDOWS_PRIVATE_FILE_ACL_MARKER = 'RIKUNE_PRIVATE_FILE_ACL_V1'
 const WINDOWS_PRIVATE_FILE_ACL_FAILURE_PREFIX = 'RIKUNE_PRIVATE_FILE_ACL_FAILURE='
 const WINDOWS_PRIVATE_FILE_ACL_ASSERTION_EXIT_CODE = 86
 const WINDOWS_POWERSHELL_INIT_FAILURE_STATUS = '0xFFFF0000'
+const WINDOWS_POWERSHELL_WIDE_CRLF = Buffer.from('\r\n', 'utf16le')
+const WINDOWS_POWERSHELL_WIDE_PERIOD = Buffer.from('.', 'utf16le')
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_CLR_LOAD_PREFIX = Buffer.from('Version ', 'utf16le')
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_CLR_LOAD_MIDDLE = Buffer.from(
+  ' of the .NET Framework is not installed and it is required to run version ',
+  'utf16le'
+)
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_CLR_LOAD_SUFFIX = Buffer.from(
+  ' of Windows PowerShell.',
+  'utf16le'
+)
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_HEX_RESOURCE_SHAPES = [
+  ['legacy-en-clr-start-shape', Buffer.from('Starting the CLR failed with HRESULT ', 'utf16le')],
+  [
+    'legacy-en-appdomain-shape',
+    Buffer.from(
+      'Internal Windows PowerShell error.  Default CLR domain initialization failed with error ',
+      'utf16le'
+    ),
+  ],
+  [
+    'legacy-en-managed-entry-shape',
+    Buffer.from(
+      'Internal Windows PowerShell error.  Loading managed Windows PowerShell failed with error ',
+      'utf16le'
+    ),
+  ],
+  [
+    'legacy-en-managed-entry-shape',
+    Buffer.from(
+      'Internal Windows PowerShell error.  Retrieving Dispatch ID for managed Windows PowerShell entrance method failed with error ',
+      'utf16le'
+    ),
+  ],
+  [
+    'legacy-en-managed-entry-shape',
+    Buffer.from(
+      'Internal Windows PowerShell error.  Invoking managed Windows PowerShell failed with error ',
+      'utf16le'
+    ),
+  ],
+]
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_MANAGED_EXCEPTION_PREFIX = Buffer.from(
+  'Windows PowerShell terminated with the following error: \r\n ',
+  'utf16le'
+)
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_CONSOLEHOST_STARTUP_PREFIX = Buffer.from(
+  'The shell cannot be started. A failure occurred during initialization:\r\n',
+  'utf16le'
+)
 const WINDOWS_PRIVATE_FILE_ACL_FAILURE_REASONS = new Set([
   'missing-target',
   'not-file',
@@ -255,6 +305,146 @@ function isAsciiNulLeShape(value) {
   return true
 }
 
+function bufferMatchesAt(value, expected, offset) {
+  return (
+    offset >= 0 &&
+    offset + expected.length <= value.length &&
+    value.subarray(offset, offset + expected.length).equals(expected)
+  )
+}
+
+function windowsPowerShellWideContentEnd(value) {
+  const trailingCrLfOffset = value.length - WINDOWS_POWERSHELL_WIDE_CRLF.length
+  return bufferMatchesAt(value, WINDOWS_POWERSHELL_WIDE_CRLF, trailingCrLfOffset)
+    ? trailingCrLfOffset
+    : null
+}
+
+function isWindowsPowerShellWideHex(value, start, end) {
+  const characterCount = (end - start) / 2
+  if (characterCount < 1 || characterCount > 8 || (end - start) % 2 !== 0) return false
+  for (let index = start; index < end; index += 2) {
+    const character = value[index]
+    const isHexDigit =
+      (character >= 0x30 && character <= 0x39) || (character >= 0x61 && character <= 0x66)
+    if (!isHexDigit || value[index + 1] !== 0) return false
+  }
+  return true
+}
+
+function isWindowsPowerShellWidePrintableSlot(value, start, end) {
+  const characterCount = (end - start) / 2
+  if (characterCount < 1 || characterCount > 64 || (end - start) % 2 !== 0) return false
+  for (let index = start; index < end; index += 2) {
+    if (value[index] < 0x20 || value[index] > 0x7e || value[index + 1] !== 0) return false
+  }
+  return true
+}
+
+function isWindowsPowerShellWideNumericVersion(value, start, end) {
+  const characterCount = (end - start) / 2
+  if (characterCount < 1 || characterCount > 16 || (end - start) % 2 !== 0) return false
+  let segmentHasDigit = false
+  let dotCount = 0
+  for (let index = start; index < end; index += 2) {
+    const character = value[index]
+    const isDigit = character >= 0x30 && character <= 0x39
+    if (value[index + 1] !== 0) return false
+    if (isDigit) {
+      segmentHasDigit = true
+      continue
+    }
+    if (character !== 0x2e || !segmentHasDigit) return false
+    segmentHasDigit = false
+    dotCount += 1
+  }
+  return segmentHasDigit && dotCount <= 3
+}
+
+function matchesWindowsPowerShellLegacyEnglishClrLoad(value) {
+  const contentEnd = windowsPowerShellWideContentEnd(value)
+  if (contentEnd === null) return false
+  const suffixStart = contentEnd - WINDOWS_POWERSHELL_LEGACY_ENGLISH_CLR_LOAD_SUFFIX.length
+  if (
+    !bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_CLR_LOAD_PREFIX, 0) ||
+    !bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_CLR_LOAD_SUFFIX, suffixStart)
+  ) {
+    return false
+  }
+
+  const firstVersionStart = WINDOWS_POWERSHELL_LEGACY_ENGLISH_CLR_LOAD_PREFIX.length
+  const middleStart = value.indexOf(
+    WINDOWS_POWERSHELL_LEGACY_ENGLISH_CLR_LOAD_MIDDLE,
+    firstVersionStart
+  )
+  const nextMiddleStart =
+    middleStart < 0
+      ? -1
+      : value.indexOf(WINDOWS_POWERSHELL_LEGACY_ENGLISH_CLR_LOAD_MIDDLE, middleStart + 2)
+  if (
+    middleStart < firstVersionStart ||
+    middleStart % 2 !== 0 ||
+    nextMiddleStart !== -1 ||
+    middleStart + WINDOWS_POWERSHELL_LEGACY_ENGLISH_CLR_LOAD_MIDDLE.length >= suffixStart
+  ) {
+    return false
+  }
+  const secondVersionStart = middleStart + WINDOWS_POWERSHELL_LEGACY_ENGLISH_CLR_LOAD_MIDDLE.length
+  return (
+    isWindowsPowerShellWidePrintableSlot(value, firstVersionStart, middleStart) &&
+    isWindowsPowerShellWideNumericVersion(value, secondVersionStart, suffixStart)
+  )
+}
+
+function matchesWindowsPowerShellLegacyEnglishHexResource(value, prefix) {
+  const contentEnd = windowsPowerShellWideContentEnd(value)
+  if (contentEnd === null) return false
+  const periodStart = contentEnd - WINDOWS_POWERSHELL_WIDE_PERIOD.length
+  const hexStart = prefix.length
+  return (
+    bufferMatchesAt(value, prefix, 0) &&
+    bufferMatchesAt(value, WINDOWS_POWERSHELL_WIDE_PERIOD, periodStart) &&
+    isWindowsPowerShellWideHex(value, hexStart, periodStart)
+  )
+}
+
+function matchesWindowsPowerShellLegacyEnglishManagedException(value) {
+  const contentEnd = windowsPowerShellWideContentEnd(value)
+  return (
+    contentEnd !== null &&
+    bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_MANAGED_EXCEPTION_PREFIX, 0) &&
+    contentEnd > WINDOWS_POWERSHELL_LEGACY_ENGLISH_MANAGED_EXCEPTION_PREFIX.length
+  )
+}
+
+function matchesWindowsPowerShellLegacyEnglishConsoleHostStartup(value) {
+  const contentEnd = windowsPowerShellWideContentEnd(value)
+  return (
+    contentEnd !== null &&
+    bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_CONSOLEHOST_STARTUP_PREFIX, 0) &&
+    contentEnd >= WINDOWS_POWERSHELL_LEGACY_ENGLISH_CONSOLEHOST_STARTUP_PREFIX.length
+  )
+}
+
+function classifyWindowsPowerShellLegacyEnglishResource(value) {
+  const matches = []
+  if (matchesWindowsPowerShellLegacyEnglishClrLoad(value)) {
+    matches.push('legacy-en-clr-load-shape')
+  }
+  for (const [token, prefix] of WINDOWS_POWERSHELL_LEGACY_ENGLISH_HEX_RESOURCE_SHAPES) {
+    if (matchesWindowsPowerShellLegacyEnglishHexResource(value, prefix)) {
+      matches.push(token)
+    }
+  }
+  if (matchesWindowsPowerShellLegacyEnglishManagedException(value)) {
+    matches.push('legacy-en-managed-entry-shape')
+  }
+  if (matchesWindowsPowerShellLegacyEnglishConsoleHostStartup(value)) {
+    matches.push('legacy-en-consolehost-startup-shape')
+  }
+  return matches.length === 1 ? matches[0] : null
+}
+
 function classifyWindowsPowerShellInitializationOutput(result) {
   if (normalizeWindowsAclChildStatus(result?.status) !== WINDOWS_POWERSHELL_INIT_FAILURE_STATUS) {
     return null
@@ -273,7 +463,7 @@ function classifyWindowsPowerShellInitializationOutput(result) {
     return 'ascii-like'
   }
   if (isAsciiNulLeShape(result.stderr)) {
-    return 'ascii-nul-le-shape'
+    return classifyWindowsPowerShellLegacyEnglishResource(result.stderr) ?? 'ascii-nul-le-shape'
   }
   return 'opaque'
 }
