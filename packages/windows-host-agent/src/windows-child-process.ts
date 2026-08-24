@@ -95,6 +95,7 @@ export function buildTrustedWindowsChildEnvironment(
     HOMEPATH: '\\',
     LOGONSERVER: '',
     PATH: trustedSystem32,
+    PSModuleAnalysisCachePath: 'NUL',
     PSModulePath: trustedPowerShellModules,
     SYSTEMDRIVE: systemDrive,
     SystemRoot: trustedSystemRoot,

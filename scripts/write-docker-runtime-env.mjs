@@ -350,6 +350,7 @@ export function invokeWindowsFileAcl(filePath, mode, options = {}) {
     USERNAME: '',
     USERPROFILE: '',
     WINDIR: systemRoot,
+    PSModuleAnalysisCachePath: 'NUL',
     PSModulePath: trustedPowerShellModules,
     RIKUNE_PRIVATE_ENV_PATH: path.resolve(filePath),
     RIKUNE_PRIVATE_ENV_ACL_MODE: mode,

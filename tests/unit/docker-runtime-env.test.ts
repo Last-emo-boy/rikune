@@ -177,6 +177,7 @@ describe('Docker runtime env writer', () => {
       USERDOMAIN: 'TRUSTED',
       USERNAME: 'analyst',
       USERPROFILE: 'C:\\Users\\analyst',
+      PSModuleAnalysisCachePath: 'C:\\attacker\\cache',
       PSModulePath: 'C:\\attacker\\modules',
       RIKUNE_API_KEY: 'must-not-reach-child',
     }
@@ -196,6 +197,7 @@ describe('Docker runtime env writer', () => {
     expect(childEnvironment.PSModulePath).toBe(
       'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules'
     )
+    expect(childEnvironment.PSModuleAnalysisCachePath).toBe('NUL')
     expect(childEnvironment.SYSTEMDRIVE).toBe('C:')
     expect(childEnvironment.SYSTEMROOT).toBe('C:\\Windows')
     expect(childEnvironment.WINDIR).toBe('C:\\Windows')
@@ -210,6 +212,7 @@ describe('Docker runtime env writer', () => {
       'HOMEPATH',
       'LOGONSERVER',
       'PATH',
+      'PSModuleAnalysisCachePath',
       'SYSTEMDRIVE',
       'SYSTEMROOT',
       'TEMP',

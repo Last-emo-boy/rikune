@@ -311,6 +311,7 @@ describe('Windows Sandbox advertised endpoint and portproxy hardening', () => {
       TEMP: 'C:\\trusted-temp',
       TMP: 'C:\\trusted-tmp',
       PATH: 'C:\\attacker-controlled-bin',
+      PSModuleAnalysisCachePath: 'C:\\attacker-controlled-cache',
       PSModulePath: 'C:\\attacker-controlled-modules',
       HOST_AGENT_API_KEY: 'secret-must-not-enter-child-environment',
     }
@@ -319,6 +320,7 @@ describe('Windows Sandbox advertised endpoint and portproxy hardening', () => {
       HOMEPATH: '\\',
       LOGONSERVER: '',
       PATH: 'C:\\Windows\\System32',
+      PSModuleAnalysisCachePath: 'NUL',
       PSModulePath: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',
       SYSTEMDRIVE: 'C:',
       SystemRoot: 'C:\\Windows',
@@ -815,6 +817,7 @@ describe('Windows Sandbox key-bearing config hardening', () => {
         Temp: 'C:\\trusted-temp',
         tMp: 'C:\\trusted-tmp',
         PATH: 'C:\\attacker-controlled-bin',
+        PSModuleAnalysisCachePath: 'C:\\attacker-controlled-cache',
         PSModulePath: 'C:\\attacker-controlled-modules',
         HOST_AGENT_API_KEY: 'secret-must-not-enter-child-environment',
         RUNTIME_API_KEY: 'secret-must-not-enter-child-environment',
@@ -830,6 +833,7 @@ describe('Windows Sandbox key-bearing config hardening', () => {
       HOMEPATH: '\\',
       LOGONSERVER: '',
       PATH: 'C:\\Windows\\System32',
+      PSModuleAnalysisCachePath: 'NUL',
       PSModulePath: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',
       SYSTEMDRIVE: 'C:',
       SystemRoot: 'C:\\Windows',
@@ -852,6 +856,7 @@ describe('Windows Sandbox key-bearing config hardening', () => {
         TEMP: 'D:\\trusted-temp',
         TMP: 'D:\\trusted-tmp',
         PATH: 'C:\\attacker-controlled-bin',
+        PSModuleAnalysisCachePath: 'C:\\attacker-controlled-cache',
         PSModulePath: 'C:\\attacker-controlled-modules',
         HOST_AGENT_API_KEY: 'secret-must-not-enter-child-environment',
       })
@@ -862,6 +867,7 @@ describe('Windows Sandbox key-bearing config hardening', () => {
         HOMEPATH: '\\',
         LOGONSERVER: '',
         PATH: 'D:\\Windows\\System32',
+        PSModuleAnalysisCachePath: 'NUL',
         PSModulePath: 'D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',
         SYSTEMDRIVE: 'D:',
         SystemRoot: 'D:\\Windows',
@@ -1491,6 +1497,7 @@ describe('Windows Sandbox key-bearing config hardening', () => {
       const sentinel = 'RIKUNE_POISONED_PARENT_ENVIRONMENT_SENTINEL'
       const poisonedKeys = [
         'PATH',
+        'PSModuleAnalysisCachePath',
         'PSModulePath',
         'HOST_AGENT_API_KEY',
         'RUNTIME_API_KEY',
@@ -1502,6 +1509,7 @@ describe('Windows Sandbox key-bearing config hardening', () => {
         TEMP: process.env.TEMP,
         TMP: process.env.TMP,
         PATH: sentinel,
+        PSModuleAnalysisCachePath: sentinel,
         PSModulePath: sentinel,
         HOST_AGENT_API_KEY: sentinel,
         RUNTIME_API_KEY: sentinel,
@@ -1513,6 +1521,7 @@ describe('Windows Sandbox key-bearing config hardening', () => {
         }
         const inspectedKeys = [
           ...LIBUV_WINDOWS_REQUIRED_ENV_KEYS,
+          'PSModuleAnalysisCachePath',
           'PSModulePath',
           'TMP',
           'HOST_AGENT_API_KEY',
@@ -1556,6 +1565,7 @@ describe('Windows Sandbox key-bearing config hardening', () => {
         )
 
         expect(observedEnvironment.PATH.toLowerCase()).toBe(trustedCommand.env.PATH!.toLowerCase())
+        expect(observedEnvironment.PSModuleAnalysisCachePath).toBe('NUL')
         expect(observedEnvironment.PSModulePath.toLowerCase()).toBe(
           trustedCommand.env.PSModulePath!.toLowerCase()
         )
